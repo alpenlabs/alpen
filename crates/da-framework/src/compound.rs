@@ -63,9 +63,9 @@ impl<T: ShiftBitmap> BitReader<T> {
             panic!("bitqueue: out of bits");
         }
 
-        let pos = self.off;
+        let b = self.mask.get(self.off);
         self.off += 1;
-        self.mask.get(pos)
+        b
     }
 
     /// Decodes a member of a compound, using the "default" value if the next
@@ -76,7 +76,7 @@ impl<T: ShiftBitmap> BitReader<T> {
     ) -> CodecResult<C> {
         let set = self.next();
         if set {
-            C::decode_inner(dec)
+            C::decode_set(dec)
         } else {
             Ok(C::default())
         }
@@ -100,9 +100,8 @@ impl<T: ShiftBitmap> BitWriter<T> {
     /// Prepares to write a compound member.
     pub fn prepare_member<C: CompoundMember>(&mut self, c: &C) {
         let b = !c.is_default();
-        let pos = self.off;
+        self.mask.put(self.off, b);
         self.off += 1;
-        self.mask.put(pos, b);
     }
 
     pub fn mask(&self) -> T {
@@ -127,19 +126,13 @@ macro_rules! make_compound_traits {
 
                 $(let $fname = _mct_field_decode!(bitr dec; $daty $fty);)*
 
-                Ok(Self {
-                    $(
-                        $fname,
-                    )*
-                })
+                Ok(Self { $($fname,)* })
             }
 
             fn encode(&self, enc: &mut impl $crate::Encoder) -> $crate::CodecResult<()> {
                 let mut bitw = $crate::compound::BitWriter::<$maskty>::new();
 
-                $(
-                    bitw.prepare_member(&self.$fname);
-                )*
+                $(bitw.prepare_member(&self.$fname);)*
 
                 bitw.mask().encode(enc)?;
 
@@ -179,7 +172,9 @@ macro_rules! make_compound_traits {
     };
 }
 
+/// Expands to a decoder for each type of member that we support in a compound.
 macro_rules! _mct_field_decode {
+    // Register
     ($reader:ident $dec:ident; register $fty:ty) => {
         $reader.decode_next_member::<DaRegister<$fty>>($dec)?
     };
@@ -190,16 +185,19 @@ pub trait CompoundMember: Sized {
     /// Returns the default value.
     fn default() -> Self;
 
-    /// Returns if the member is a default value.
+    /// Returns if this is a default value, and therefore shouldn't be encoded.
     fn is_default(&self) -> bool;
 
-    /// Decodes a inner value which is presumed to be in the modifying case.
+    /// Decodes a set value, since we know it to be in the modifying case.
     ///
-    /// This is how we try to avoid encoding unset register values.
-    fn decode_inner(dec: &mut impl Decoder) -> CodecResult<Self>;
+    /// Returns an instance that we're setting.
+    fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self>;
 
-    /// Encodes the new value.  This should be free of any tagging to indicate
-    /// if the value is set or not, in this context we assume it's set.
+    /// Encodes the new value, which we assume is in a modifying case.  This
+    /// should be free of any tagging to indicate if the value is set or not, in
+    /// this context we assume it's set.
+    ///
+    /// Returns error if actually unset.
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()>;
 }
 
@@ -212,7 +210,7 @@ impl<T: Codec + Clone> CompoundMember for DaRegister<T> {
         <DaRegister<_> as DaWrite>::is_default(self)
     }
 
-    fn decode_inner(dec: &mut impl Decoder) -> CodecResult<Self> {
+    fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self> {
         DaRegister::set_from_decoder(dec)
     }
 
