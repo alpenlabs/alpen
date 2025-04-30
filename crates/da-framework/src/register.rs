@@ -32,6 +32,9 @@ impl<T> DaRegister<T> {
 impl<T: Clone + Eq> DaRegister<T> {
     /// Constructs a new instance by comparing an original and new value,
     /// cloning the new one if it's different.
+    ///
+    /// This only really makes sense for registers since they're the only type
+    /// we can consistently do this with.
     pub fn compare(orig: &T, new: &T) -> Self {
         if new == orig {
             Self::new_unset()
