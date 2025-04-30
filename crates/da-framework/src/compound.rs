@@ -1,65 +1,71 @@
 //! Compound DA type infra.
 
-use crate::{Codec, CodecResult, DaRegister, Decoder, Encoder};
+use crate::{Codec, CodecResult, DaRegister, DaWrite, Decoder, Encoder};
 
-/// Describes an interface like an iterator where we keep reading bits off of
-/// some bitmap.
-trait ShrBitmap {
+/// Describes a bitmap we can read/write to.
+pub trait ShiftBitmap: Copy {
+    /// Returns the total number of bits we can store.
     const BITS: u8;
-    fn next(&mut self) -> bool;
+
+    /// Returns an empty bitmap.
+    fn zero() -> Self;
+
+    /// Reads the bit at some some index.
+    fn get(&self, off: u8) -> bool;
+
+    /// Writes the bit at some index.
+    fn put(&mut self, off: u8, b: bool);
 }
 
-impl ShrBitmap for u8 {
-    const BITS: u8 = 8;
+macro_rules! impl_shift_bitmap {
+    ($t:ident) => {
+        impl ShiftBitmap for $t {
+            const BITS: u8 = $t::BITS as u8;
 
-    fn next(&mut self) -> bool {
-        let b = (*self & 1) == 1;
-        *self >>= 1;
-        b
-    }
-}
+            fn zero() -> Self {
+                0
+            }
 
-impl ShrBitmap for u16 {
-    const BITS: u8 = 16;
+            fn get(&self, off: u8) -> bool {
+                (*self >> off) & 1 == 1
+            }
 
-    fn next(&mut self) -> bool {
-        let b = (*self & 1) == 1;
-        *self >>= 1;
-        b
-    }
-}
-
-impl ShrBitmap for u32 {
-    const BITS: u8 = 32;
-
-    fn next(&mut self) -> bool {
-        let b = (*self & 1) == 1;
-        *self >>= 1;
-        b
-    }
-}
-
-/// Safer interface around a [`ShrBitmap`] that ensures we don't overflow.
-pub struct BitQueue<T: ShrBitmap> {
-    remaining: u8,
-    v: T,
-}
-
-impl<T: ShrBitmap> BitQueue<T> {
-    pub fn from_shrbm(v: T) -> Self {
-        Self {
-            remaining: T::BITS,
-            v,
+            fn put(&mut self, off: u8, b: bool) {
+                let mask = 1 << off;
+                if b {
+                    *self |= mask;
+                } else {
+                    *self &= !mask;
+                }
+            }
         }
+    };
+}
+
+impl_shift_bitmap!(u8);
+impl_shift_bitmap!(u16);
+impl_shift_bitmap!(u32);
+
+/// Safer interface around a [`ShiftBitmap`] that ensures we don't overflow.
+pub struct BitReader<T: ShiftBitmap> {
+    off: u8,
+    mask: T,
+}
+
+impl<T: ShiftBitmap> BitReader<T> {
+    pub fn from_mask(v: T) -> Self {
+        Self { off: 0, mask: v }
     }
 
     /// Returns the next bit, if possible.
     pub fn next(&mut self) -> bool {
-        if self.remaining > 0 {
+        if self.off >= T::BITS {
             panic!("bitqueue: out of bits");
         }
 
-        self.v.next()
+        let pos = self.off;
+        self.off += 1;
+        self.mask.get(pos)
     }
 
     /// Decodes a member of a compound, using the "default" value if the next
@@ -77,6 +83,33 @@ impl<T: ShrBitmap> BitQueue<T> {
     }
 }
 
+/// Safer interface around a [`ShiftBitmap`] that ensures we don't overflow.
+pub struct BitWriter<T: ShiftBitmap> {
+    off: u8,
+    mask: T,
+}
+
+impl<T: ShiftBitmap> BitWriter<T> {
+    pub fn new() -> Self {
+        Self {
+            off: 0,
+            mask: T::zero(),
+        }
+    }
+
+    /// Prepares to write a compound member.
+    pub fn prepare_member<C: CompoundMember>(&mut self, c: &C) {
+        let b = !c.is_default();
+        let pos = self.off;
+        self.off += 1;
+        self.mask.put(pos, b);
+    }
+
+    pub fn mask(&self) -> T {
+        self.mask
+    }
+}
+
 /// Macro to generate encode/decode and apply impls for a compount DA type.
 #[macro_export]
 macro_rules! make_compound_traits {
@@ -90,9 +123,9 @@ macro_rules! make_compound_traits {
         impl $crate::Codec for $tyname {
             fn decode(dec: &mut impl $crate::Decoder) -> $crate::CodecResult<Self> {
                 let mask = <$maskty>::decode(dec)?;
-                let mut queue = $crate::compound::BitQueue::from_shrbm(mask);
+                let mut bitr = $crate::compound::BitReader::from_mask(mask);
 
-                $(let $fname = _mct_field_decode!(queue dec; $daty $fty);)*
+                $(let $fname = _mct_field_decode!(bitr dec; $daty $fty);)*
 
                 Ok(Self {
                     $(
@@ -102,17 +135,16 @@ macro_rules! make_compound_traits {
             }
 
             fn encode(&self, enc: &mut impl $crate::Encoder) -> $crate::CodecResult<()> {
-                let mut mask: $maskty = 0;
+                let mut bitw = $crate::compound::BitWriter::<$maskty>::new();
 
                 $(
-                    mask <<= 1;
-                    if !self.$fname.is_default() {
-                        mask |= 1;
-                    }
-                )*;
+                    bitw.prepare_member(&self.$fname);
+                )*
 
-                mask.encode(enc)?;
+                bitw.mask().encode(enc)?;
 
+                // This goes through them in the same order as the above, which
+                // is why this is safe.
                 $(
                     if !self.$fname.is_default() {
                         self.$fname.encode_set(enc)?;
@@ -129,6 +161,7 @@ macro_rules! make_compound_traits {
             fn is_default(&self) -> bool {
                 let mut v = true;
 
+                // Kinda weird way to && all these different values.
                 $(
                     v &= self.$fname.is_default();
                 )*
@@ -137,6 +170,7 @@ macro_rules! make_compound_traits {
             }
 
             fn apply(&self, target: &mut Self::Target) {
+                // Depends on all the members being accessible.
                 $(
                     self.$fname.apply(&mut target.$fname);
                 )*
@@ -146,8 +180,8 @@ macro_rules! make_compound_traits {
 }
 
 macro_rules! _mct_field_decode {
-    ($queue:ident $dec:ident; register $fty:ty) => {
-        $queue.decode_next_member::<DaRegister<$fty>>($dec)?
+    ($reader:ident $dec:ident; register $fty:ty) => {
+        $reader.decode_next_member::<DaRegister<$fty>>($dec)?
     };
 }
 
@@ -155,6 +189,9 @@ macro_rules! _mct_field_decode {
 pub trait CompoundMember: Sized {
     /// Returns the default value.
     fn default() -> Self;
+
+    /// Returns if the member is a default value.
+    fn is_default(&self) -> bool;
 
     /// Decodes a inner value which is presumed to be in the modifying case.
     ///
@@ -166,9 +203,13 @@ pub trait CompoundMember: Sized {
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()>;
 }
 
-impl<T: Codec> CompoundMember for DaRegister<T> {
+impl<T: Codec + Clone> CompoundMember for DaRegister<T> {
     fn default() -> Self {
         DaRegister::new_unset()
+    }
+
+    fn is_default(&self) -> bool {
+        <DaRegister<_> as DaWrite>::is_default(self)
     }
 
     fn decode_inner(dec: &mut impl Decoder) -> CodecResult<Self> {
@@ -190,7 +231,7 @@ mod tests {
         y: i32,
     }
 
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     pub struct DaPointDiff {
         x: DaRegister<i32>,
         y: DaRegister<i32>,
@@ -221,15 +262,15 @@ mod tests {
         };
 
         let buf12 = encode_to_vec(&p12).expect("test: encode p12");
-        eprintln!("buf12 {buf12:?}");
-        assert_eq!(buf12, [0, 1, 0, 0, 0, 32]);
+        eprintln!("p12 {p12:?} buf12 {buf12:?}");
+        assert_eq!(buf12, [0, 2, 0, 0, 0, 32]);
 
         let buf13 = encode_to_vec(&p13).expect("test: encode p13");
-        eprintln!("buf13 {buf13:?}");
-        assert_eq!(buf13, [0, 2, 0, 0, 0, 8]);
+        eprintln!("p13 {p13:?} buf13 {buf13:?}");
+        assert_eq!(buf13, [0, 1, 0, 0, 0, 8]);
 
         let buf23 = encode_to_vec(&p23).expect("test: encode p23");
-        eprintln!("buf23 {buf23:?}");
+        eprintln!("p23 {p23:?} buf23 {buf23:?}");
         assert_eq!(buf23, [0, 3, 0, 0, 0, 8, 0, 0, 0, 16]);
     }
 
