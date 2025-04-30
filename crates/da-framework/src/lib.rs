@@ -7,6 +7,9 @@ pub use codec::{
 mod compound;
 pub use compound::CompoundMember;
 
+mod counter;
+pub use counter::DaCounter;
+
 mod register;
 pub use register::DaRegister;
 
