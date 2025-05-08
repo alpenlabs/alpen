@@ -13586,6 +13586,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-chain-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "strata-chainexec",
+ "strata-primitives",
+ "strata-state",
+ "thiserror 2.0.12",
+ "tokio",
+]
+
+[[package]]
 name = "strata-chainexec"
 version = "0.1.0"
 dependencies = [

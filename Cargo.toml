@@ -9,6 +9,7 @@ members = [
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
+  "crates/chain-worker",
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
@@ -96,6 +97,7 @@ strata-asm-stf = { path = "crates/asm/stf" }
 strata-btcio = { path = "crates/btcio" }
 strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
+strata-chain-worker = { path = "crates/chain-worker" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
