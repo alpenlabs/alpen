@@ -17,7 +17,12 @@ impl<C: ExecContext> ChainExecutor<C> {
 
     /// Tries to process a block.  This only works if it's a next block after
     /// the current tip block.
-    pub fn try_process_block(&self, blkid: &L2BlockId, block: &L2BlockBundle) -> ExecResult<()> {
+    pub fn try_process_block(
+        &self,
+        blkid: &L2BlockId,
+        block: &L2BlockBundle,
+        ctx: &mut impl BlockStateContext,
+    ) -> ExecResult<()> {
         // TODO copy most of this from handle_new_block in FCM
         Err(Error::Unimplemented)
     }

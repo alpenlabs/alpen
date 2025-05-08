@@ -13,7 +13,7 @@ mod executor;
 mod tip_state;
 mod validation_util;
 
-pub use context::ExecContext;
+pub use context::{BlockStateContext, ExecContext};
 pub use errors::{Error, ExecResult};
 pub use executor::ChainExecutor;
 pub use tip_state::TipState;
