@@ -679,6 +679,7 @@ fn handle_new_block(
 /// pending unfinalized blocks tree.  The block is assumed to already be
 /// structurally consistent.
 // TODO remove FCM arg from this
+// TODO remove from this module, exists in chainexec
 fn check_new_block(
     blkid: &L2BlockId,
     block: &L2Block,
