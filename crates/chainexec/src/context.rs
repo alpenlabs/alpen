@@ -12,4 +12,12 @@ pub trait ExecContext {
 
     /// Fetches a block's toplevel post-state.
     fn fetch_block_toplevel_post_state(&self, blkid: &L2BlockId) -> ExecResult<Chainstate>;
+
+    // TODO L1 manifests
+}
+
+/// Context trait used to access and manipulate chainstate a block is being
+/// executed on top of.
+pub trait BlockStateContext {
+    // TODO
 }
