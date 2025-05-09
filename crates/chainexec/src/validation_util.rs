@@ -2,7 +2,9 @@
 
 use strata_primitives::prelude::*;
 use strata_state::{
-    block_validation::{check_block_credential, verify_sequencer_signature},
+    block_validation::{
+        check_block_credential, validate_block_segments, verify_sequencer_signature,
+    },
     prelude::*,
 };
 use tracing::*;
