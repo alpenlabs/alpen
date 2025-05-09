@@ -1,4 +1,4 @@
-//!
+//! Execution context traits.
 
 use strata_primitives::prelude::*;
 use strata_state::{block::L2BlockBundle, chain_state::Chainstate, prelude::*};
@@ -19,5 +19,7 @@ pub trait ExecContext {
 /// Context trait used to access and manipulate chainstate a block is being
 /// executed on top of.
 pub trait BlockStateContext {
+    fn toplevel_chainstate(&self) -> Chainstate;
+
     // TODO
 }
