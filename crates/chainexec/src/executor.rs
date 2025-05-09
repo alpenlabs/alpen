@@ -1,9 +1,11 @@
 //! Chain executor.
 
+use strata_chaintsn::transition::process_block;
 use strata_primitives::prelude::*;
-use strata_state::block::L2BlockBundle;
+use strata_state::{block::L2BlockBundle, header::L2Header, state_op::StateCache};
+use tracing::*;
 
-use crate::{Error, ExecContext, ExecResult};
+use crate::{BlockStateContext, Error, ExecContext, ExecResult};
 
 pub struct ChainExecutor<C: ExecContext> {
     context: C,
@@ -23,6 +25,39 @@ impl<C: ExecContext> ChainExecutor<C> {
         block: &L2BlockBundle,
         ctx: &mut impl BlockStateContext,
     ) -> ExecResult<()> {
+        let header = block.header();
+        let body = block.body();
+
+        let pre_state = ctx.toplevel_chainstate();
+
+        // Get the prev epoch to check if the epoch advanced, and the prev
+        // epoch's terminal in case we need it.
+        let pre_state_epoch_finishing = pre_state.is_epoch_finishing();
+        let pre_state_epoch = pre_state.cur_epoch();
+
+        // Apply the state transition.
+        let mut pre_cache = StateCache::new(pre_state);
+        process_block(&mut pre_cache, header, body, &self.params)?;
+
+        // Finalize the post state.
+        let wb = pre_cache.finalize();
+        let post_state = wb.new_toplevel_state();
+        let post_state_epoch = post_state.cur_epoch();
+
+        // Sanity check.
+        assert!(
+            (!pre_state_epoch_finishing && post_state_epoch == pre_state_epoch)
+                || (pre_state_epoch_finishing && post_state_epoch == pre_state_epoch + 1),
+            "chainexec: nonsensical post-state epoch (pre={pre_state_epoch}, post={post_state_epoch})"
+        );
+
+        // Verify state root matches.
+        let computed_sr = post_state.compute_state_root();
+        if *header.state_root() != computed_sr {
+            warn!(block_sr = %header.state_root(), %computed_sr, "state root mismatch");
+            Err(Error::StateRootMismatch)?
+        }
+
         // TODO copy most of this from handle_new_block in FCM
         Err(Error::Unimplemented)
     }
