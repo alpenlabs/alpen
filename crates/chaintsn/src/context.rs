@@ -30,6 +30,9 @@ pub trait StateProvider {
 
 /// Provider for queries to sideloaded state like L1 block manifests.
 pub trait AuxProvider {
-    /// Fetches an L1 block manifest.
-    fn get_l1_block_manifest(&self, block: &L1BlockCommitment) -> ProviderResult<L1BlockManifest>;
+    /// Returns the height of the new tip.
+    fn get_l1_tip_height(&self) -> u64;
+
+    /// Fetches an L1 block manifest by height.
+    fn get_l1_block_manifest(&self, height: u64) -> ProviderResult<L1BlockManifest>;
 }
