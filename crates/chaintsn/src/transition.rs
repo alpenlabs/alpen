@@ -4,7 +4,6 @@
 
 use std::{cmp::max, collections::HashMap};
 
-use bitcoin::{block::Header, consensus, params::Params, OutPoint, Transaction};
 use rand_core::{RngCore, SeedableRng};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_primitives::{
@@ -31,6 +30,7 @@ use strata_state::{
 use tracing::warn;
 
 use crate::{
+    checkin::{process_l1_view_update, SegmentAuxData},
     errors::{OpError, TsnError},
     macros::*,
     slot_rng::{self, SlotRng},
@@ -75,7 +75,9 @@ pub fn process_block(
     }
 
     // Go through each stage and play out the operations it has.
-    let has_new_epoch = process_l1_view_update(state, body.l1_segment(), params)?;
+    let cur_l1_height = state.state().l1_view().safe_height();
+    let l1_prov = SegmentAuxData::new(cur_l1_height + 1, body.l1_segment());
+    let has_new_epoch = process_l1_view_update(state, &l1_prov, params)?;
     let ready_withdrawals = process_execution_update(state, body.exec_segment().update())?;
     process_deposit_updates(state, ready_withdrawals, &mut rng, params)?;
 
@@ -162,19 +164,16 @@ fn process_l1_block(
     block_mf: &L1BlockManifest,
     params: &RollupParams,
 ) -> Result<(), TsnError> {
-    let blkid = block_mf.blkid();
-
     // Just iterate through every tx's operation and call out to the handlers for that.
     for tx in block_mf.txs() {
+        let in_blkid = block_mf.blkid();
         for op in tx.protocol_ops() {
             // Try to process it, log a warning if there's an error.
             if let Err(e) = process_proto_op(state, block_mf, op, params) {
-                warn!(?op, in_blkid = %blkid, %e, "invalid protocol operation");
+                warn!(?op, %in_blkid, %e, "invalid protocol operation");
             }
         }
     }
-
-    debug!(%blkid, "processed block manifest");
 
     Ok(())
 }
@@ -187,28 +186,18 @@ fn process_proto_op(
 ) -> Result<(), OpError> {
     match &op {
         ProtocolOperation::Checkpoint(ckpt) => {
-            let epoch = ckpt.checkpoint().batch_info().epoch();
-            debug!(%epoch, "processing checkpoint proto-op");
             process_l1_checkpoint(state, block_mf, ckpt, params)?;
         }
 
         ProtocolOperation::Deposit(info) => {
-            let deposit_idx = info.deposit_idx;
-            debug!(%deposit_idx, "processing deposit proto-op");
             process_l1_deposit(state, block_mf, info)?;
         }
 
         ProtocolOperation::WithdrawalFulfillment(info) => {
-            let deposit_idx = info.deposit_idx;
-            let txid = &info.txid;
-            debug!(%deposit_idx, %txid, "processing withdrawal fulfillment proto-op");
             process_withdrawal_fulfillment(state, info)?;
         }
 
         ProtocolOperation::DepositSpent(info) => {
-            let deposit_idx = info.deposit_idx;
-            let txid = &info.deposit_idx;
-            debug!(%deposit_idx, %txid, "processing reimbursement proto-op");
             process_deposit_spent(state, info)?;
         }
 
@@ -307,10 +296,6 @@ fn process_withdrawal_fulfillment(
     state: &mut StateCache,
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
-    if !state.check_deposit_exists(info.deposit_idx) {
-        return Err(OpError::UnknownDeposit(info.deposit_idx));
-    }
-
     state.mark_deposit_fulfilled(info);
     Ok(())
 }
@@ -318,9 +303,6 @@ fn process_withdrawal_fulfillment(
 /// Locked deposit on L1 has been spent.
 fn process_deposit_spent(state: &mut StateCache, info: &DepositSpendInfo) -> Result<(), OpError> {
     // Currently, we are not tracking how this was spent, only that it was.
-    if !state.check_deposit_exists(info.deposit_idx) {
-        return Err(OpError::UnknownDeposit(info.deposit_idx));
-    }
 
     state.mark_deposit_reimbursed(info.deposit_idx);
     Ok(())
@@ -594,7 +576,7 @@ mod tests {
     use strata_test_utils::{l2::gen_params, ArbitraryGenerator};
 
     use super::{next_rand_op_pos, process_block};
-    use crate::{slot_rng::SlotRng, transition::process_l1_view_update};
+    use crate::{checkin::process_l1_view_update, slot_rng::SlotRng};
 
     #[test]
     // Confirm that operator index sampling is deterministic and in bounds

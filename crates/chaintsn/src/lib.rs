@@ -1,5 +1,6 @@
 //! Rollup chain state transition.
 
+pub mod checkin;
 pub mod context;
 pub mod errors;
 pub mod slot_rng;
