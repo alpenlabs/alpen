@@ -44,6 +44,9 @@ pub enum TsnError {
     /// failure.
     #[error("L1 block verification failed: {0}")]
     L1BlockVerification(#[from] L1VerificationError),
+
+    #[error("provider: {0}")]
+    Provider(#[from] ProviderError),
 }
 
 /// Errors for processing protocol operations.
@@ -70,4 +73,8 @@ pub enum ProviderError {
     /// insufficient witness data.
     #[error("tried to fetch missing entry")]
     EntryMissing,
+
+    /// Tried to fetch an entry that's out of bounds of the allowed range.
+    #[error("entry index out of bounds")]
+    OutOfBounds,
 }
