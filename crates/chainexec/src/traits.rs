@@ -3,7 +3,7 @@
 use strata_primitives::prelude::*;
 use strata_state::{block::L2BlockBundle, chain_state::Chainstate, prelude::*};
 
-use crate::{Error, ExecResult};
+use crate::ExecResult;
 
 /// External context the block executor needs to operate.
 pub trait ExecContext {
@@ -16,10 +16,6 @@ pub trait ExecContext {
     // TODO L1 manifests
 }
 
-/// Context trait used to access and manipulate chainstate a block is being
-/// executed on top of.
-pub trait BlockStateContext {
-    fn toplevel_chainstate(&self) -> Chainstate;
-
+pub trait BlockContext {
     // TODO
 }

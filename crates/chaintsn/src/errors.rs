@@ -59,3 +59,15 @@ pub enum OpError {
     #[error("operation does not advance the finalized epoch")]
     EpochNotExtend,
 }
+
+pub type ProviderResult<T> = Result<T, ProviderError>;
+
+/// Errors produced from provider trait functions.
+#[derive(Debug, Error)]
+pub enum ProviderError {
+    /// This is used when we try to access a entry that is not available but
+    /// (from context) was expected to exist, like in a proof execution with
+    /// insufficient witness data.
+    #[error("tried to fetch missing entry")]
+    EntryMissing,
+}
