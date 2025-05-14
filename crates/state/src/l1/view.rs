@@ -58,6 +58,10 @@ impl L1ViewState {
         &self.header_vs
     }
 
+    pub fn header_vs_mut(&mut self) -> &mut HeaderVerificationState {
+        &mut self.header_vs
+    }
+
     /// Gets the safe block as a [`L1BlockCommitment`].
     pub fn get_safe_block(&self) -> L1BlockCommitment {
         L1BlockCommitment::new(self.safe_height(), *self.safe_blkid())
