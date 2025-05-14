@@ -97,6 +97,10 @@ impl Chainstate {
         &self.l1_state
     }
 
+    pub fn l1_view_mut(&mut self) -> &mut L1ViewState {
+        &mut self.l1_state
+    }
+
     pub fn cur_epoch(&self) -> u64 {
         self.cur_epoch
     }
@@ -134,6 +138,10 @@ impl Chainstate {
         &self.operator_table
     }
 
+    pub fn operator_table_mut(&mut self) -> &mut OperatorTable {
+        &mut self.operator_table
+    }
+
     pub fn deposits_table(&self) -> &DepositsTable {
         &self.deposits_table
     }
@@ -144,6 +152,10 @@ impl Chainstate {
 
     pub fn exec_env_state(&self) -> &ExecEnvState {
         &self.exec_env_state
+    }
+
+    pub fn exec_env_state_mut(&mut self) -> &mut ExecEnvState {
+        &mut self.exec_env_state
     }
 
     pub fn is_epoch_finishing(&self) -> bool {

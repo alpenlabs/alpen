@@ -1,5 +1,8 @@
 mod errors;
 mod handle;
+mod traits;
 mod worker;
 
-use errors::{WorkerError, WorkerResult};
+pub use errors::{WorkerError, WorkerResult};
+pub use handle::{ChainWorkerHandle, WorkerShared};
+pub use traits::WorkerContext;

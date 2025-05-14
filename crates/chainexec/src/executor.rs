@@ -1,20 +1,19 @@
 //! Chain executor.
 
-use strata_chaintsn::transition::process_block;
+use strata_chaintsn::{context::StateAccessor, transition::process_block};
 use strata_primitives::prelude::*;
 use strata_state::{block::L2BlockBundle, header::L2Header, state_op::StateCache};
 use tracing::*;
 
-use crate::{BlockContext, BlockExecutionOutput, Error, ExecContext, ExecResult};
+use crate::{BlockExecContext, BlockExecutionOutput, Error, ExecContext, ExecResult, State};
 
-pub struct ChainExecutor<C: ExecContext> {
-    context: C,
+pub struct ChainExecutor {
     params: RollupParams,
 }
 
 impl<C: ExecContext> ChainExecutor<C> {
-    pub fn new(context: C, params: RollupParams) -> Self {
-        Self { context, params }
+    pub fn new(params: RollupParams) -> Self {
+        Self { params }
     }
 
     /// Tries to process a block.  This only works if it's a next block after
@@ -23,7 +22,7 @@ impl<C: ExecContext> ChainExecutor<C> {
         &self,
         blkid: &L2BlockId,
         block: &L2BlockBundle,
-        ctx: &mut impl BlockContext,
+        state: &mut impl StateAccessor,
     ) -> ExecResult<BlockExecutionOutput> {
         Err(Error::Unimplemented)
     }
