@@ -12,12 +12,12 @@ use strata_primitives::{
 };
 use strata_state::{
     batch::verify_signed_checkpoint_sig, block::L1Segment, bridge_ops::DepositIntent,
-    state_op::StateCache,
 };
 
 use crate::{
-    context::AuxProvider,
+    context::{AuxProvider, StateAccessor},
     errors::{OpError, ProviderError, ProviderResult, TsnError},
+    legacy::FauxStateCache,
     macros::*,
 };
 
@@ -64,8 +64,8 @@ impl<'b> AuxProvider for SegmentAuxData<'b> {
 /// Update our view of the L1 state, playing out downstream changes from that.
 ///
 /// Returns true if there epoch needs to be updated.
-pub fn process_l1_view_update(
-    state: &mut StateCache,
+pub fn process_l1_view_update<'s>(
+    state: &mut FauxStateCache<'s>,
     prov: &impl AuxProvider,
     params: &RollupParams,
 ) -> Result<bool, TsnError> {
@@ -122,8 +122,8 @@ pub fn process_l1_view_update(
     Ok(true)
 }
 
-fn process_l1_block(
-    state: &mut StateCache,
+fn process_l1_block<'s>(
+    state: &mut FauxStateCache<'s>,
     block_mf: &L1BlockManifest,
     params: &RollupParams,
 ) -> Result<(), TsnError> {
@@ -141,8 +141,8 @@ fn process_l1_block(
     Ok(())
 }
 
-fn process_proto_op(
-    state: &mut StateCache,
+fn process_proto_op<'s>(
+    state: &mut FauxStateCache<'s>,
     block_mf: &L1BlockManifest,
     op: &ProtocolOperation,
     params: &RollupParams,
@@ -171,8 +171,8 @@ fn process_proto_op(
     Ok(())
 }
 
-fn process_l1_checkpoint(
-    state: &mut StateCache,
+fn process_l1_checkpoint<'s>(
+    state: &mut FauxStateCache<'s>,
     src_block_mf: &L1BlockManifest,
     signed_ckpt: &SignedCheckpoint,
     params: &RollupParams,
@@ -224,8 +224,8 @@ fn process_l1_checkpoint(
     Ok(())
 }
 
-fn process_l1_deposit(
-    state: &mut StateCache,
+fn process_l1_deposit<'s>(
+    state: &mut FauxStateCache<'s>,
     src_block_mf: &L1BlockManifest,
     info: &DepositInfo,
 ) -> Result<(), OpError> {
@@ -255,8 +255,8 @@ fn process_l1_deposit(
 
 /// Withdrawal Fulfillment with correct metadata is seen.
 /// Mark the withthdrawal as being executed and prevent reassignment to another operator.
-fn process_withdrawal_fulfillment(
-    state: &mut StateCache,
+fn process_withdrawal_fulfillment<'s>(
+    state: &mut FauxStateCache<'s>,
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
     state.mark_deposit_fulfilled(info);
@@ -264,9 +264,11 @@ fn process_withdrawal_fulfillment(
 }
 
 /// Locked deposit on L1 has been spent.
-fn process_deposit_spent(state: &mut StateCache, info: &DepositSpendInfo) -> Result<(), OpError> {
+fn process_deposit_spent<'s>(
+    state: &mut FauxStateCache<'s>,
+    info: &DepositSpendInfo,
+) -> Result<(), OpError> {
     // Currently, we are not tracking how this was spent, only that it was.
-
     state.mark_deposit_reimbursed(info.deposit_idx);
     Ok(())
 }

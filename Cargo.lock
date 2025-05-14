@@ -13646,6 +13646,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "strata-chainexec",
+ "strata-eectl",
  "strata-primitives",
  "strata-state",
  "thiserror 2.0.12",

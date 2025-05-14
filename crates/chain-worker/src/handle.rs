@@ -3,7 +3,7 @@ use std::sync::Arc;
 use strata_primitives::prelude::*;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use crate::WorkerError;
+use crate::WorkerResult;
 
 pub struct ChainWorkerHandle {
     shared: Arc<Mutex<WorkerShared>>,
