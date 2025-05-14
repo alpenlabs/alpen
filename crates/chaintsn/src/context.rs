@@ -1,7 +1,7 @@
 //! Interfaces to expose the context in which a block is being validated.
 
-use strata_primitives::l1::{L1BlockCommitment, L1BlockManifest};
-use strata_state::{header::L2BlockHeader, id::L2BlockId};
+use strata_primitives::prelude::*;
+use strata_state::{chain_state::Chainstate, header::L2BlockHeader, id::L2BlockId};
 
 use crate::errors::{ProviderError, ProviderResult};
 
@@ -23,8 +23,65 @@ pub trait BlockContext {
     fn parent_header(&self) -> &L2BlockHeader;
 }
 
-/// Provider for queries to the backing state we're building on top of.
-pub trait StateProvider {
+/// Accessor for fetch and manipulate the state we're building on top of.
+///
+/// This is supersceding the `StateCache` type.
+pub trait StateAccessor {
+    /// Gets a ref to the state.
+    ///
+    /// This is a transitional accessor that we will deprecate and remove soon.
+    fn state(&self) -> &Chainstate;
+
+    /// Gets a mut ref to the state.
+    ///
+    /// This is a transitional accessor that we will deprecate and remove soon.
+    fn state_mut(&mut self) -> &mut Chainstate;
+
+    // Accessors for toplevel state fields.
+
+    /// Gets the current slot.
+    fn slot(&self) -> u64;
+
+    /// Sets the current slot.
+    fn set_slot(&mut self, slot: u64);
+
+    /// Gets the previous block commitment.
+    fn prev_block(&self) -> L2BlockCommitment;
+
+    /// Sets the previous block commitment.
+    fn set_prev_block(&mut self, block: L2BlockCommitment);
+
+    /// Gets the current epoch.
+    fn cur_epoch(&self) -> u64;
+
+    /// Sets the current epoch index.
+    fn set_cur_epoch(&mut self, epoch: u64);
+
+    /// Gets the previous epoch.
+    fn prev_epoch(&self) -> EpochCommitment;
+
+    /// Sets the previous epoch.
+    fn set_prev_epoch(&mut self, epoch: EpochCommitment);
+
+    /// Gets the finalized epoch commitment.
+    fn finalized_epoch(&self) -> EpochCommitment;
+
+    /// Sets the finalized epoch commitment.
+    fn set_finalized_epoch(&mut self, epoch: EpochCommitment);
+
+    /// Gets the last L1 block commitment.
+    fn last_l1_block(&self) -> L1BlockCommitment;
+
+    /// Sets the safe L1 block.
+    fn set_last_l1_block(&mut self, block: L1BlockCommitment);
+
+    /// Gets the epoch finishing flag.
+    fn epoch_finishing_flag(&self) -> bool;
+
+    /// Sets the epoch finishing flag.
+    fn set_epoch_finishing_flag(&mut self, flag: bool);
+
+    // Accessors for ledger account entries.
     // TODO
 }
 

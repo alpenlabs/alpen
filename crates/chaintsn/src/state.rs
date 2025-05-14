@@ -1,20 +1,20 @@
 use strata_state::chain_state::Chainstate;
 
-use crate::context::StateProvider;
+use crate::context::StateAccessor;
 
 /// Container that tracks writes on top of a database handle for the state we're
 /// building on top of.
-pub struct State<P: StateProvider> {
-    provider: P,
+pub struct State<S: StateAccessor> {
+    accessor: S,
 
     new_chainstate: Chainstate,
 }
 
-impl<P: StateProvider> State<P> {
+impl<S: StateAccessor> State<S> {
     /// Constructs a new instance wrapping a previous state.
-    pub fn new(provider: P, new_chainstate: Chainstate) -> Self {
+    pub fn new(accessor: S, new_chainstate: Chainstate) -> Self {
         Self {
-            provider,
+            accessor,
             new_chainstate,
         }
     }

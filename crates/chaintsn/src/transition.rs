@@ -31,7 +31,9 @@ use tracing::warn;
 
 use crate::{
     checkin::{process_l1_view_update, SegmentAuxData},
+    context::StateAccessor,
     errors::{OpError, TsnError},
+    legacy::FauxStateCache,
     macros::*,
     slot_rng::{self, SlotRng},
 };
@@ -48,17 +50,11 @@ use crate::{
 /// `state_root` in the header for correctness, so that can be unset so it can
 /// be use during block assembly.
 pub fn process_block(
-    state: &mut StateCache,
+    state: &mut impl StateAccessor,
     header: &impl L2Header,
     body: &L2BlockBody,
     params: &RollupParams,
 ) -> Result<(), TsnError> {
-    // We want to fail quickly here because otherwise we don't know what's
-    // happening.
-    if !state.is_empty() {
-        panic!("transition: state cache not fresh");
-    }
-
     let mut rng = compute_init_slot_rng(state);
 
     // Update basic bookkeeping.
@@ -77,6 +73,7 @@ pub fn process_block(
     // Go through each stage and play out the operations it has.
     let cur_l1_height = state.state().l1_view().safe_height();
     let l1_prov = SegmentAuxData::new(cur_l1_height + 1, body.l1_segment());
+    let state = FauxStateCache::new(state.state_mut());
     let has_new_epoch = process_l1_view_update(state, &l1_prov, params)?;
     let ready_withdrawals = process_execution_update(state, body.exec_segment().update())?;
     process_deposit_updates(state, ready_withdrawals, &mut rng, params)?;
@@ -94,15 +91,15 @@ pub fn process_block(
 /// This is meant to be independent of the block's body so that it's less
 /// manipulatable.  Eventually we want to switch to a randao-ish scheme, but
 /// let's not get ahead of ourselves.
-fn compute_init_slot_rng(state: &StateCache) -> SlotRng {
+fn compute_init_slot_rng(state: &impl StateAccessor) -> SlotRng {
     // Just take the last block's slot.
-    let blkid_buf = *state.state().prev_block().blkid().as_ref();
+    let blkid_buf = *state.prev_block().blkid().as_ref();
     SlotRng::from_seed(blkid_buf)
 }
 
 /// Advances the epoch bookkeeping, if this is first slot of new epoch.
-fn advance_epoch_tracking(state: &mut StateCache) -> Result<(), TsnError> {
-    if !state.should_finish_epoch() {
+fn advance_epoch_tracking(state: &mut impl StateAccessor) -> Result<(), TsnError> {
+    if !state.epoch_finishing_flag() {
         return Ok(());
     }
 
@@ -178,7 +175,7 @@ fn check_chain_integrity(
 /// exec update, but really it might need to be a ref into the state cache.
 /// This will probably be substantially refactored in the future though.
 fn process_execution_update<'u>(
-    state: &mut StateCache,
+    state: &mut impl StateAccessor,
     update: &'u exec_update::ExecUpdate,
 ) -> Result<&'u [WithdrawalIntent], TsnError> {
     // for all the ops, corresponding to DepositIntent, remove those DepositIntent the ExecEnvState
@@ -205,8 +202,8 @@ fn process_execution_update<'u>(
 /// * Processes L1 withdrawals that are safe to dispatch to specific deposits.
 /// * Reassigns deposits that have passed their deadling to new operators.
 /// * Cleans up deposits that have been handled and can be removed.
-fn process_deposit_updates(
-    state: &mut StateCache,
+fn process_deposit_updates<'s>(
+    state: &mut FauxStateCache<'s>,
     ready_withdrawals: &[WithdrawalIntent],
     rng: &mut SlotRng,
     params: &RollupParams,

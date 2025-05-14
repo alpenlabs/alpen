@@ -2,6 +2,8 @@
 
 use strata_primitives::prelude::*;
 
+use crate::ChangedState;
+
 /// Container for the output of executing an epoch.
 ///
 /// This is relevant for OL->ASM signalling.
@@ -11,16 +13,28 @@ pub struct EpochExecutionOutput {
 
     /// Collected logs from all of the blocks.
     logs: Vec<LogMessage>,
+
+    /// New state on top of the previous epoch's state.
+    state: ChangedState,
 }
 
 /// Describes the full output of executing a block.
 pub struct BlockExecutionOutput {
     logs: Vec<LogMessage>,
+    changes: ChangedState,
 }
 
 impl BlockExecutionOutput {
-    pub fn new(logs: Vec<LogMessage>) -> Self {
-        Self { logs }
+    pub fn new(logs: Vec<LogMessage>, changes: ChangedState) -> Self {
+        Self { logs, changes }
+    }
+
+    pub fn logs(&self) -> &[LogMessage] {
+        &self.logs
+    }
+
+    pub fn changes(&self) -> &ChangedState {
+        &self.changes
     }
 
     pub fn add_log(&mut self, log: LogMessage) {
