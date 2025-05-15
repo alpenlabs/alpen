@@ -30,12 +30,12 @@ pub trait StateAccessor {
     /// Gets a ref to the state.
     ///
     /// This is a transitional accessor that we will deprecate and remove soon.
-    fn state(&self) -> &Chainstate;
+    fn state_untracked(&self) -> &Chainstate;
 
     /// Gets a mut ref to the state.
     ///
     /// This is a transitional accessor that we will deprecate and remove soon.
-    fn state_mut(&mut self) -> &mut Chainstate;
+    fn state_mut_untracked(&mut self) -> &mut Chainstate;
 
     // Accessors for toplevel state fields.
 

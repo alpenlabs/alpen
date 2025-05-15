@@ -58,25 +58,28 @@ pub fn process_block(
     let mut rng = compute_init_slot_rng(state);
 
     // Update basic bookkeeping.
-    let prev_tip_slot = state.state().chain_tip_slot();
+    let prev_tip_slot = state.state_untracked().chain_tip_slot();
     let prev_tip_blkid = *header.parent();
     state.set_slot(header.slot());
     state.set_prev_block(L2BlockCommitment::new(prev_tip_slot, prev_tip_blkid));
     advance_epoch_tracking(state)?;
-    if state.state().cur_epoch() != header.epoch() {
+    if state.state_untracked().cur_epoch() != header.epoch() {
         return Err(TsnError::MismatchEpoch(
             header.epoch(),
-            state.state().cur_epoch(),
+            state.state_untracked().cur_epoch(),
         ));
     }
 
     // Go through each stage and play out the operations it has.
-    let cur_l1_height = state.state().l1_view().safe_height();
+    //
+    // For now, we have to wrap these calls in some annoying bookkeeping while/
+    // we transition to the new context traits.
+    let cur_l1_height = state.state_untracked().l1_view().safe_height();
     let l1_prov = SegmentAuxData::new(cur_l1_height + 1, body.l1_segment());
-    let state = FauxStateCache::new(state.state_mut());
-    let has_new_epoch = process_l1_view_update(state, &l1_prov, params)?;
-    let ready_withdrawals = process_execution_update(state, body.exec_segment().update())?;
-    process_deposit_updates(state, ready_withdrawals, &mut rng, params)?;
+    let mut faux_sc = FauxStateCache::new(state);
+    let has_new_epoch = process_l1_view_update(&mut faux_sc, &l1_prov, params)?;
+    let ready_withdrawals = process_execution_update(&mut faux_sc, body.exec_segment().update())?;
+    process_deposit_updates(&mut faux_sc, ready_withdrawals, &mut rng, params)?;
 
     // If we checked in with L1, then advance the epoch.
     if has_new_epoch {
@@ -103,8 +106,8 @@ fn advance_epoch_tracking(state: &mut impl StateAccessor) -> Result<(), TsnError
         return Ok(());
     }
 
-    let prev_block = state.state().prev_block();
-    let cur_epoch = state.state().cur_epoch();
+    let prev_block = state.state_untracked().prev_block();
+    let cur_epoch = state.state_untracked().cur_epoch();
     let ended_epoch = EpochCommitment::new(cur_epoch, prev_block.slot(), *prev_block.blkid());
     state.set_prev_epoch(ended_epoch);
     state.set_cur_epoch(cur_epoch + 1);
@@ -174,8 +177,8 @@ fn check_chain_integrity(
 /// Note: Currently this returns a ref to the withdrawal intents passed in the
 /// exec update, but really it might need to be a ref into the state cache.
 /// This will probably be substantially refactored in the future though.
-fn process_execution_update<'u>(
-    state: &mut impl StateAccessor,
+fn process_execution_update<'s, 'u, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     update: &'u exec_update::ExecUpdate,
 ) -> Result<&'u [WithdrawalIntent], TsnError> {
     // for all the ops, corresponding to DepositIntent, remove those DepositIntent the ExecEnvState
@@ -202,8 +205,8 @@ fn process_execution_update<'u>(
 /// * Processes L1 withdrawals that are safe to dispatch to specific deposits.
 /// * Reassigns deposits that have passed their deadling to new operators.
 /// * Cleans up deposits that have been handled and can be removed.
-fn process_deposit_updates<'s>(
-    state: &mut FauxStateCache<'s>,
+fn process_deposit_updates<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     ready_withdrawals: &[WithdrawalIntent],
     rng: &mut SlotRng,
     params: &RollupParams,

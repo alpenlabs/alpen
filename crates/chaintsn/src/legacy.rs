@@ -8,19 +8,31 @@ use strata_primitives::{
 };
 use strata_state::{bridge_ops::DepositIntent, bridge_state::*, chain_state::Chainstate};
 
-use crate::macros::*;
+use crate::{context::StateAccessor, macros::*};
 
-pub struct FauxStateCache<'s> {
-    state: &'s mut Chainstate,
+pub struct FauxStateCache<'s, S> {
+    state: &'s mut S,
 }
 
-impl<'s> FauxStateCache<'s> {
-    pub fn new(state: &'s mut Chainstate) -> Self {
+impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
+    pub fn new(state: &'s mut S) -> Self {
         Self { state }
     }
 
+    pub fn inner(&self) -> &S {
+        &self.state
+    }
+
+    pub fn inner_mut(&mut self) -> &mut S {
+        &mut self.state
+    }
+
     pub fn state(&self) -> &Chainstate {
-        self.state
+        self.state.state_untracked()
+    }
+
+    fn state_mut(&mut self) -> &mut Chainstate {
+        self.state.state_mut_untracked()
     }
 
     /// Update HeaderVerificationState
@@ -29,7 +41,7 @@ impl<'s> FauxStateCache<'s> {
         header: &Header,
         params: &Params,
     ) -> Result<(), L1VerificationError> {
-        self.state
+        self.state_mut()
             .l1_view_mut()
             .header_vs_mut()
             .check_and_update_full(header, params)
@@ -38,7 +50,7 @@ impl<'s> FauxStateCache<'s> {
     /// Writes a deposit intent into an execution environment's input queue.
     pub fn insert_deposit_intent(&mut self, ee_id: u32, intent: DepositIntent) {
         assert_eq!(ee_id, 0, "stateop: only support execution env 0 right now");
-        self.state
+        self.state_mut()
             .exec_env_state_mut()
             .pending_deposits
             .push_back(intent);
@@ -48,7 +60,7 @@ impl<'s> FauxStateCache<'s> {
     ///
     /// This actually removes possibly multiple deposit intents.
     pub fn consume_deposit_intent(&mut self, idx: u64) {
-        let deposits = self.state.exec_env_state_mut().pending_deposits_mut();
+        let deposits = self.state_mut().exec_env_state_mut().pending_deposits_mut();
 
         let front_idx = deposits
             .front_idx()
@@ -67,7 +79,7 @@ impl<'s> FauxStateCache<'s> {
 
     /// Inserts a new operator with the specified pubkeys into the operator table.
     pub fn insert_operator(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
-        self.state
+        self.state_mut()
             .operator_table_mut()
             .insert(signing_pk, wallet_pk);
     }
@@ -80,7 +92,7 @@ impl<'s> FauxStateCache<'s> {
         amt: BitcoinAmount,
         operators: Vec<OperatorIdx>,
     ) -> bool {
-        let dt = self.state.deposits_table_mut();
+        let dt = self.state_mut().deposits_table_mut();
         dt.try_create_deposit_at(idx, tx_ref, operators, amt)
     }
 
@@ -94,7 +106,7 @@ impl<'s> FauxStateCache<'s> {
         withdrawal_txid: Buf32,
     ) {
         let deposit_ent = self
-            .state
+            .state_mut()
             .deposits_table_mut()
             .get_deposit_mut(deposit_idx)
             .expect("stateop: missing deposit idx");
@@ -113,12 +125,12 @@ impl<'s> FauxStateCache<'s> {
         new_exec_height: BitcoinBlockHeight,
     ) {
         let deposit_ent = self
-            .state
+            .state_mut()
             .deposits_table_mut()
             .get_deposit_mut(deposit_idx)
             .expect("stateop: missing deposit idx");
 
-        if let DepositState::Dispatched(dstate) = deposit_ent.deposit_state() {
+        if let DepositState::Dispatched(dstate) = deposit_ent.deposit_state_mut() {
             dstate.set_assignee(operator_idx);
             dstate.set_exec_deadline(new_exec_height);
         } else {
@@ -155,7 +167,7 @@ impl<'s> FauxStateCache<'s> {
     }
 
     fn deposit_entry_mut_expect(&mut self, deposit_idx: u32) -> &mut DepositEntry {
-        self.state
+        self.state_mut()
             .deposits_table_mut()
             .get_deposit_mut(deposit_idx)
             .expect("stateop: missing deposit idx")
