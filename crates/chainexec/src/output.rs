@@ -18,15 +18,33 @@ pub struct EpochExecutionOutput {
     state: ChangedState,
 }
 
-/// Describes the full output of executing a block.
+/// Describes the output of executing a block.
 pub struct BlockExecutionOutput {
+    /// State root as computed by the STF.
+    computed_state_root: Buf32,
+
+    /// Log messages emitted while executing the block.
+    ///
+    /// These will eventually be accumulated to be processed by ASM.
     logs: Vec<LogMessage>,
+
+    /// Changes to the state we store in the database.
+    ///
+    /// This is NOT a state diff, that requires more precise tracking.
     changes: ChangedState,
 }
 
 impl BlockExecutionOutput {
-    pub fn new(logs: Vec<LogMessage>, changes: ChangedState) -> Self {
-        Self { logs, changes }
+    pub fn new(computed_state_root: Buf32, logs: Vec<LogMessage>, changes: ChangedState) -> Self {
+        Self {
+            computed_state_root,
+            logs,
+            changes,
+        }
+    }
+
+    pub fn computed_state_root(&self) -> &Buf32 {
+        &self.computed_state_root
     }
 
     pub fn logs(&self) -> &[LogMessage] {

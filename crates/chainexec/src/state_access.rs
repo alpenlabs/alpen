@@ -8,7 +8,11 @@
 
 use strata_chaintsn::context::StateAccessor;
 use strata_primitives::prelude::*;
-use strata_state::{chain_state::Chainstate, prelude::*, state_op::StateCache};
+use strata_state::{
+    chain_state::Chainstate,
+    prelude::*,
+    state_op::{StateCache, WriteBatch},
+};
 
 /// Accessor for state in memory.
 pub struct MemStateAccessor {
@@ -21,14 +25,19 @@ impl MemStateAccessor {
             state_cache: StateCache::new(chainstate),
         }
     }
+
+    /// Constructs a write batch out of the state changes we've written.
+    pub fn into_write_batch(self) -> WriteBatch {
+        self.state_cache.finalize()
+    }
 }
 
 impl StateAccessor for MemStateAccessor {
-    fn state(&self) -> &Chainstate {
+    fn state_untracked(&self) -> &Chainstate {
         self.state_cache.state()
     }
 
-    fn state_mut(&mut self) -> &mut Chainstate {
+    fn state_mut_untracked(&mut self) -> &mut Chainstate {
         self.state_cache.state_mut()
     }
 
@@ -41,7 +50,7 @@ impl StateAccessor for MemStateAccessor {
     }
 
     fn prev_block(&self) -> L2BlockCommitment {
-        self.state_cache.state().prev_block()
+        *self.state_cache.state().prev_block()
     }
 
     fn set_prev_block(&mut self, block: L2BlockCommitment) {
@@ -57,7 +66,7 @@ impl StateAccessor for MemStateAccessor {
     }
 
     fn prev_epoch(&self) -> EpochCommitment {
-        self.state_cache.state().prev_epoch()
+        *self.state_cache.state().prev_epoch()
     }
 
     fn set_prev_epoch(&mut self, epoch: EpochCommitment) {
@@ -65,7 +74,7 @@ impl StateAccessor for MemStateAccessor {
     }
 
     fn finalized_epoch(&self) -> EpochCommitment {
-        self.state_cache.state().finalized_epoch()
+        *self.state_cache.state().finalized_epoch()
     }
 
     fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
@@ -73,7 +82,8 @@ impl StateAccessor for MemStateAccessor {
     }
 
     fn last_l1_block(&self) -> L1BlockCommitment {
-        self.state_cache.state().l1_view().safe_block()
+        let l1_view = self.state_cache.state().l1_view();
+        L1BlockCommitment::new(l1_view.safe_height(), *l1_view.safe_blkid())
     }
 
     fn set_last_l1_block(&mut self, block: L1BlockCommitment) {
