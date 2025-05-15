@@ -15,8 +15,3 @@ pub trait ExecContext {
 
     // TODO L1 manifests
 }
-
-/// Context for manipulating chain state when processing a block.
-pub trait BlockExecContext {
-    // TODO
-}
