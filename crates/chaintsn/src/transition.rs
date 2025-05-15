@@ -31,7 +31,7 @@ use tracing::warn;
 
 use crate::{
     checkin::{process_l1_view_update, SegmentAuxData},
-    context::StateAccessor,
+    context::{BlockHeaderContext, StateAccessor},
     errors::{OpError, TsnError},
     legacy::FauxStateCache,
     macros::*,
@@ -51,7 +51,7 @@ use crate::{
 /// be use during block assembly.
 pub fn process_block(
     state: &mut impl StateAccessor,
-    header: &impl L2Header,
+    header: &impl BlockHeaderContext,
     body: &L2BlockBody,
     params: &RollupParams,
 ) -> Result<(), TsnError> {
@@ -59,13 +59,13 @@ pub fn process_block(
 
     // Update basic bookkeeping.
     let prev_tip_slot = state.state_untracked().chain_tip_slot();
-    let prev_tip_blkid = *header.parent();
+    let prev_tip_blkid = header.parent_blkid();
     state.set_slot(header.slot());
-    state.set_prev_block(L2BlockCommitment::new(prev_tip_slot, prev_tip_blkid));
+    state.set_prev_block(L2BlockCommitment::new(prev_tip_slot, *prev_tip_blkid));
     advance_epoch_tracking(state)?;
-    if state.state_untracked().cur_epoch() != header.epoch() {
+    if state.state_untracked().cur_epoch() != header.parent_header().epoch() {
         return Err(TsnError::MismatchEpoch(
-            header.epoch(),
+            header.parent_header().epoch(),
             state.state_untracked().cur_epoch(),
         ));
     }

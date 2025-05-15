@@ -22,4 +22,4 @@ pub use executor::ChainExecutor;
 pub use output::{BlockExecutionOutput, EpochExecutionOutput, LogMessage};
 pub use state_access::MemStateAccessor;
 pub use tip_state::TipState;
-pub use traits::{BlockExecContext, ExecContext};
+pub use traits::ExecContext;
