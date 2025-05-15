@@ -1,7 +1,11 @@
 //! Interfaces to expose the context in which a block is being validated.
 
 use strata_primitives::prelude::*;
-use strata_state::{chain_state::Chainstate, header::L2BlockHeader, id::L2BlockId};
+use strata_state::{
+    chain_state::Chainstate,
+    header::{L2BlockHeader, L2Header},
+    id::L2BlockId,
+};
 
 use crate::errors::{ProviderError, ProviderResult};
 
@@ -9,7 +13,7 @@ use crate::errors::{ProviderError, ProviderResult};
 ///
 /// Does NOT provide access to chainstate information.  This is primarily
 /// involving block headers.  It will probably also provide L1 manifests.
-pub trait BlockContext {
+pub trait BlockHeaderContext {
     /// Returns the slot that we're checking.
     fn slot(&self) -> u64;
 
@@ -21,6 +25,50 @@ pub trait BlockContext {
 
     /// Returns the parent block's header.
     fn parent_header(&self) -> &L2BlockHeader;
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct L2HeaderAndParent {
+    header: L2BlockHeader,
+    parent_blkid: L2BlockId,
+    parent: L2BlockHeader,
+}
+
+impl L2HeaderAndParent {
+    pub fn new(header: L2BlockHeader, parent_blkid: L2BlockId, parent: L2BlockHeader) -> Self {
+        Self {
+            header,
+            parent_blkid,
+            parent,
+        }
+    }
+
+    pub fn new_simple(header: L2BlockHeader, parent: L2BlockHeader) -> Self {
+        let parent_blkid = parent.get_blockid();
+        Self {
+            header,
+            parent_blkid,
+            parent,
+        }
+    }
+}
+
+impl BlockHeaderContext for L2HeaderAndParent {
+    fn slot(&self) -> u64 {
+        self.header.slot()
+    }
+
+    fn timestamp(&self) -> u64 {
+        self.header.timestamp()
+    }
+
+    fn parent_blkid(&self) -> &L2BlockId {
+        &self.parent_blkid
+    }
+
+    fn parent_header(&self) -> &L2BlockHeader {
+        &self.parent
+    }
 }
 
 /// Accessor for fetch and manipulate the state we're building on top of.

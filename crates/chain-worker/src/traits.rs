@@ -8,21 +8,18 @@ use crate::WorkerResult;
 
 pub trait WorkerContext {
     /// Fetches a whole block bundle.
-    fn fetch_block(&self, block: &L2BlockCommitment) -> WorkerResult<Option<L2BlockBundle>>;
+    fn fetch_block(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockBundle>>;
 
     /// Fetches a block's header.
-    fn fetch_header(&self, block: &L2BlockCommitment) -> WorkerResult<Option<L2BlockHeader>>;
+    fn fetch_header(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockHeader>>;
 
     /// Fetches a block execution output.
-    fn fetch_block_output(
-        &self,
-        bc: &L2BlockCommitment,
-    ) -> WorkerResult<Option<BlockExecutionOutput>>;
+    fn fetch_block_output(&self, blkid: &L2BlockId) -> WorkerResult<Option<BlockExecutionOutput>>;
 
     /// Stores a block execution's output.
     fn store_block_output(
         &self,
-        bc: &L2BlockCommitment,
+        blkid: &L2BlockId,
         output: BlockExecutionOutput,
     ) -> WorkerResult<()>;
 }
