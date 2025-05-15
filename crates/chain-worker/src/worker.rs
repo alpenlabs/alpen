@@ -3,13 +3,17 @@
 //! Responsible for managing the chainstate database as we receive orders to
 //! apply/rollback blocks, DA, etc.
 
-use strata_chainexec::{ChainExecutor, ExecContext, MemStateAccessor};
+use std::sync::Arc;
+
+use strata_chainexec::{ChainExecutor, ExecContext, ExecResult, MemStateAccessor};
+use strata_chaintsn::context::L2HeaderAndParent;
 use strata_eectl::engine::ExecEngineCtl;
 use strata_primitives::prelude::*;
+use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
 
 use crate::{
     WorkerContext, WorkerError, WorkerResult,
-    handle::{ChainWorkerInput, WorkerMessage},
+    handle::{ChainWorkerInput, WorkerMessage, WorkerShared},
 };
 
 /// `StateAccessor` impl we pass to chaintsn.  Aliased here for convenience.
@@ -47,19 +51,20 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     }
 
     /// Prepares context for a block we're about to execute.
-    fn prepare_block_context(
-        &self,
+    fn prepare_block_context<'w>(
+        &'w self,
         l2bc: &L2BlockCommitment,
-    ) -> WorkerResult<WorkerBlockExecContext> {
-        // TODO more
-        Ok(WorkerBlockExecContext {})
+    ) -> WorkerResult<WorkerExecCtxImpl<'w, W>> {
+        Ok(WorkerExecCtxImpl {
+            worker_context: &self.context,
+        })
     }
 
     /// Prepares a new state accessor for the current tip state.
     fn prepare_cur_state_accessor(&self) -> WorkerResult<AccessorImpl> {
         let output = self
             .context
-            .fetch_block_output(&self.cur_tip)?
+            .fetch_block_output(self.cur_tip.blkid())?
             .ok_or(WorkerError::MissingBlockOutput(self.cur_tip))?;
 
         Ok(MemStateAccessor::new(output.changes().toplevel().clone()))
@@ -77,19 +82,32 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
         // Prepare execution dependencies.
         let bundle = self
             .context
-            .fetch_block(block)?
-            .ok_or(WorkerError::MissingL2Block(*block))?;
+            .fetch_block(block.blkid())?
+            .ok_or(WorkerError::MissingL2Block(*block.blkid()))?;
 
+        let parent_blkid = bundle.header().header().parent();
+        let parent_header = self
+            .context
+            .fetch_header(parent_blkid)?
+            .ok_or(WorkerError::MissingL2Block(*parent_blkid))?;
+
+        let header_ctx = L2HeaderAndParent::new(
+            bundle.header().header().clone(),
+            *parent_blkid,
+            parent_header,
+        );
+
+        let exec_ctx = self.prepare_block_context(block)?;
         let mut state_acc = self.prepare_cur_state_accessor()?;
 
         // Invoke the executor and produce an output.
         let output = self
             .chain_exec
-            .try_process_block(block.blkid(), &bundle, &mut state_acc)?;
+            .execute_block(&header_ctx, bundle.body(), &exec_ctx)?;
         self.context.store_block_output(block.blkid(), output)?;
 
         // Update the tip we've processed.
-        self.update_cur_tip(block)?;
+        self.update_cur_tip(*block)?;
 
         Ok(())
     }
@@ -109,4 +127,29 @@ pub fn worker_task<W: WorkerContext, E: ExecEngineCtl>(
     }
 
     Ok(())
+}
+
+struct WorkerExecCtxImpl<'c, W> {
+    worker_context: &'c W,
+}
+
+impl<'c, W: WorkerContext> ExecContext for WorkerExecCtxImpl<'c, W> {
+    fn fetch_l2_header(&self, blkid: &L2BlockId) -> ExecResult<L2BlockHeader> {
+        self.worker_context
+            .fetch_header(blkid)
+            .map_err(|e| <WorkerError as Into<strata_chainexec::Error>>::into(e))?
+            .ok_or(strata_chainexec::Error::MissingL2Header(*blkid))
+    }
+
+    fn fetch_block_toplevel_post_state(&self, blkid: &L2BlockId) -> ExecResult<Chainstate> {
+        // This impl is suboptimal, we should do some real reconstruction.
+        //
+        // Maybe actually make this return a `StateAccessor` already?
+        let output = self
+            .worker_context
+            .fetch_block_output(blkid)
+            .map_err(|e| <WorkerError as Into<strata_chainexec::Error>>::into(e))?
+            .ok_or(strata_chainexec::Error::MissingBlockPostState(*blkid))?;
+        Ok(output.changes().toplevel().clone())
+    }
 }
