@@ -9,6 +9,7 @@ use strata_primitives::{
         WithdrawalFulfillmentInfo,
     },
     params::RollupParams,
+    prelude::*,
 };
 use strata_state::{
     batch::verify_signed_checkpoint_sig, block::L1Segment, bridge_ops::DepositIntent,
@@ -64,8 +65,8 @@ impl<'b> AuxProvider for SegmentAuxData<'b> {
 /// Update our view of the L1 state, playing out downstream changes from that.
 ///
 /// Returns true if there epoch needs to be updated.
-pub fn process_l1_view_update<'s>(
-    state: &mut FauxStateCache<'s>,
+pub fn process_l1_view_update<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     prov: &impl AuxProvider,
     params: &RollupParams,
 ) -> Result<bool, TsnError> {
@@ -97,7 +98,11 @@ pub fn process_l1_view_update<'s>(
         state.update_header_vs(&header, &Params::new(params.network))?;
 
         process_l1_block(state, &mf, params)?;
-        state.update_safe_block(height, mf.record().clone());
+
+        // FIXME this isn't quite an exact replacement
+        // old: state.update_safe_block(height, mf.record().clone());
+        let bc = L1BlockCommitment::new(height, *mf.blkid());
+        state.inner_mut().set_last_l1_block(bc);
     }
 
     // If prev_finalized_epoch is null, i.e. this is the genesis batch, it is
@@ -122,8 +127,8 @@ pub fn process_l1_view_update<'s>(
     Ok(true)
 }
 
-fn process_l1_block<'s>(
-    state: &mut FauxStateCache<'s>,
+fn process_l1_block<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     block_mf: &L1BlockManifest,
     params: &RollupParams,
 ) -> Result<(), TsnError> {
@@ -141,8 +146,8 @@ fn process_l1_block<'s>(
     Ok(())
 }
 
-fn process_proto_op<'s>(
-    state: &mut FauxStateCache<'s>,
+fn process_proto_op<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     block_mf: &L1BlockManifest,
     op: &ProtocolOperation,
     params: &RollupParams,
@@ -171,8 +176,8 @@ fn process_proto_op<'s>(
     Ok(())
 }
 
-fn process_l1_checkpoint<'s>(
-    state: &mut FauxStateCache<'s>,
+fn process_l1_checkpoint<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     src_block_mf: &L1BlockManifest,
     signed_ckpt: &SignedCheckpoint,
     params: &RollupParams,
@@ -213,19 +218,19 @@ fn process_l1_checkpoint<'s>(
     }
 
     // Copy the epoch commitment and make it finalized.
-    let old_fin_epoch = state.state().finalized_epoch();
+    let _old_fin_epoch = state.state().finalized_epoch();
     let new_fin_epoch = ckpt.batch_info().get_epoch_commitment();
 
     // TODO go through and do whatever stuff we need to do now that's finalized
 
-    state.set_finalized_epoch(new_fin_epoch);
+    state.inner_mut().set_finalized_epoch(new_fin_epoch);
     trace!(?new_fin_epoch, "observed finalized checkpoint");
 
     Ok(())
 }
 
-fn process_l1_deposit<'s>(
-    state: &mut FauxStateCache<'s>,
+fn process_l1_deposit<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     src_block_mf: &L1BlockManifest,
     info: &DepositInfo,
 ) -> Result<(), OpError> {
@@ -255,8 +260,8 @@ fn process_l1_deposit<'s>(
 
 /// Withdrawal Fulfillment with correct metadata is seen.
 /// Mark the withthdrawal as being executed and prevent reassignment to another operator.
-fn process_withdrawal_fulfillment<'s>(
-    state: &mut FauxStateCache<'s>,
+fn process_withdrawal_fulfillment<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
     state.mark_deposit_fulfilled(info);
@@ -264,8 +269,8 @@ fn process_withdrawal_fulfillment<'s>(
 }
 
 /// Locked deposit on L1 has been spent.
-fn process_deposit_spent<'s>(
-    state: &mut FauxStateCache<'s>,
+fn process_deposit_spent<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
     info: &DepositSpendInfo,
 ) -> Result<(), OpError> {
     // Currently, we are not tracking how this was spent, only that it was.
