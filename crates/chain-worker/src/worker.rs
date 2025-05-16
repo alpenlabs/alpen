@@ -98,7 +98,6 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
         );
 
         let exec_ctx = self.prepare_block_context(block)?;
-        let mut state_acc = self.prepare_cur_state_accessor()?;
 
         // Invoke the executor and produce an output.
         let output = self

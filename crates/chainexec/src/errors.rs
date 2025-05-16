@@ -6,6 +6,9 @@ pub type ExecResult<T> = Result<T, Error>;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("missing pre-state for block {0}")]
+    MissingBlockPreState(L2BlockId),
+
     #[error("missing post-state for block {0}")]
     MissingBlockPostState(L2BlockId),
 
@@ -20,4 +23,12 @@ pub enum Error {
 
     #[error("not yet implemented")]
     Unimplemented,
+
+    /// Some unexpected error condition happened.
+    ///
+    /// This only exists as a way to map worker error types that we don't expect
+    /// to be generated in calls that the executor would see, like
+    /// `WorkerExited` or `Exec`.
+    #[error("unexpected failure: {0}")]
+    Unexpected(String),
 }
