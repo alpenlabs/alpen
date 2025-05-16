@@ -13,7 +13,8 @@ use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
 
 use crate::{
     WorkerContext, WorkerError, WorkerResult,
-    handle::{ChainWorkerInput, WorkerMessage, WorkerShared},
+    handle::{ChainWorkerInput, WorkerShared},
+    message::WorkerMessage,
 };
 
 /// `StateAccessor` impl we pass to chaintsn.  Aliased here for convenience.
@@ -110,6 +111,12 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
 
         Ok(())
     }
+
+    fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
+        // TODO apply outputs that haven't been merged, etc.
+        self.engine.update_finalized_block(*epoch.last_blkid())?;
+        Err(WorkerError::Unimplemented)
+    }
 }
 
 pub fn worker_task<W: WorkerContext, E: ExecEngineCtl>(
@@ -120,6 +127,11 @@ pub fn worker_task<W: WorkerContext, E: ExecEngineCtl>(
         match m {
             WorkerMessage::TryExecBlock(l2bc, completion) => {
                 let res = state.try_exec_block(&l2bc);
+                let _ = completion.send(res);
+            }
+
+            WorkerMessage::FinalizeEpoch(epoch, completion) => {
+                let res = state.finalize_epoch(epoch);
                 let _ = completion.send(res);
             }
         }
