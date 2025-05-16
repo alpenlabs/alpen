@@ -11,20 +11,15 @@ use std::{
 
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
-use bitcoin::{
-    base58,
-    bip32::{Xpriv, Xpub},
-    Network,
-};
+use bitcoin::{base58, bip32::Xpriv, Network};
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
-use strata_key_derivation::{
-    operator::{convert_base_xpub_to_message_xpub, convert_base_xpub_to_wallet_xpub, OperatorKeys},
-    sequencer::SequencerKeys,
-};
+use secp256k1::SECP256K1;
+use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_primitives::{
     block_credential,
     buf::Buf32,
+    crypto::EvenSecretKey,
     keys::ZeroizableXpriv,
     operator::OperatorPubkeys,
     params::{ProofPublishMode, RollupParams},
@@ -184,8 +179,7 @@ fn exec_genseqpubkey(cmd: SubcSeqPubkey, _ctx: &mut CmdContext) -> anyhow::Resul
 
     let seq_keys = SequencerKeys::new(&xpriv)?;
     let seq_xpub = seq_keys.derived_xpub();
-    let raw_buf = seq_xpub.to_x_only_pub().serialize();
-    let s = base58::encode_check(&raw_buf);
+    let s = base58::encode_check(&seq_xpub.to_x_only_pub().serialize());
 
     println!("{s}");
 
@@ -224,11 +218,19 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
     };
 
     let op_keys = OperatorKeys::new(&xpriv)?;
-    let op_base_xpub = op_keys.base_xpub();
-    let raw_buf = op_base_xpub.encode();
-    let s = base58::encode_check(&raw_buf);
+    if cmd.p2p {
+        let p2p_pk = EvenSecretKey::from(op_keys.message_xpriv().private_key)
+            .x_only_public_key(SECP256K1)
+            .0;
+        println!("{}", base58::encode_check(&p2p_pk.serialize()));
+    }
 
-    println!("{s}");
+    if cmd.wallet {
+        let wallet_pk = EvenSecretKey::from(op_keys.wallet_xpriv().private_key)
+            .x_only_public_key(SECP256K1)
+            .0;
+        println!("{}", base58::encode_check(&wallet_pk.serialize()));
+    }
 
     Ok(())
 }
@@ -269,12 +271,12 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
                 continue;
             }
 
-            opkeys.push(parse_xpub(l)?);
+            opkeys.push(parse_xpriv(l)?);
         }
     }
 
     for k in cmd.opkey {
-        opkeys.push(parse_xpub(&k)?);
+        opkeys.push(parse_xpriv(&k)?);
     }
 
     // Parse the deposit size str.
@@ -313,7 +315,10 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         evm_genesis_info,
     };
 
-    let params = construct_params(config);
+    let params = match construct_params(config) {
+        Ok(p) => p,
+        Err(e) => anyhow::bail!("failed to construct params: {e}"),
+    };
     let params_buf = serde_json::to_string_pretty(&params)?;
 
     if let Some(out_path) = &cmd.output {
@@ -458,8 +463,8 @@ pub(crate) struct ParamsConfig {
     genesis_trigger: u64,
     /// Sequencer's key.
     seqkey: Option<Buf32>,
-    /// Operators' keys.
-    opkeys: Vec<Xpub>,
+    /// Operators' master keys.
+    opkeys: Vec<Xpriv>,
     /// Verifier's key.
     rollup_vk: RollupVerifyingKey,
     /// Amount of sats to deposit.
@@ -472,7 +477,7 @@ pub(crate) struct ParamsConfig {
 
 /// Constructs the parameters for a Strata network.
 // TODO convert this to also initialize the sync params
-fn construct_params(config: ParamsConfig) -> RollupParams {
+fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
     let cr = config
         .seqkey
         .map(block_credential::CredRule::SchnorrKey)
@@ -480,18 +485,27 @@ fn construct_params(config: ParamsConfig) -> RollupParams {
 
     let opkeys = config
         .opkeys
-        .into_iter()
-        .map(|xpk| {
-            let message_xpub = convert_base_xpub_to_message_xpub(&xpk);
-            let wallet_xpub = convert_base_xpub_to_wallet_xpub(&xpk);
-            let message_key_buf = message_xpub.to_x_only_pub().serialize().into();
-            let wallet_key_buf = wallet_xpub.to_x_only_pub().serialize().into();
-            OperatorPubkeys::new(message_key_buf, wallet_key_buf)
-        })
-        .collect::<Vec<_>>();
+        .iter()
+        .map(OperatorKeys::new)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let pub_opkeys = opkeys.iter().map(|keys| {
+        OperatorPubkeys::new(
+            EvenSecretKey::from(keys.message_xpriv().private_key)
+                .x_only_public_key(SECP256K1)
+                .0
+                .serialize()
+                .into(),
+            EvenSecretKey::from(keys.wallet_xpriv().private_key)
+                .x_only_public_key(SECP256K1)
+                .0
+                .serialize()
+                .into(),
+        )
+    });
 
     // TODO add in bitcoin network
-    RollupParams {
+    Ok(RollupParams {
         rollup_name: config.name,
         block_time: config.block_time_sec * 1000,
         da_tag: config.da_tag,
@@ -500,7 +514,7 @@ fn construct_params(config: ParamsConfig) -> RollupParams {
         // TODO do we want to remove this?
         horizon_l1_height: config.horizon_height,
         genesis_l1_height: config.genesis_trigger,
-        operator_config: strata_primitives::params::OperatorConfig::Static(opkeys),
+        operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
         // TODO make configurable
@@ -518,17 +532,20 @@ fn construct_params(config: ParamsConfig) -> RollupParams {
         // TODO make configurable
         max_deposits_in_block: 16,
         network: config.bitcoin_network,
-    }
+    })
 }
 
 /// Parses an [`Xpub`] from [`&str`], richly generating [`anyhow::Result`]s from
 /// it.
-fn parse_xpub(s: &str) -> anyhow::Result<Xpub> {
+
+/// Parses an [`Xpriv`] from [`&str`], richly generating [`anyhow::Result`]s from
+/// it.
+fn parse_xpriv(s: &str) -> anyhow::Result<Xpriv> {
     let Ok(buf) = base58::decode_check(s) else {
         anyhow::bail!("failed to parse key: {s}");
     };
 
-    let Ok(xpk) = Xpub::decode(&buf) else {
+    let Ok(xpk) = Xpriv::decode(&buf) else {
         anyhow::bail!("failed to decode key: {s}");
     };
 

@@ -2,10 +2,7 @@
 
 use std::sync::LazyLock;
 
-use bitcoin::{
-    bip32::{ChildNumber, DerivationPath},
-    XOnlyPublicKey,
-};
+use bitcoin::{bip32::ChildNumber, XOnlyPublicKey};
 use secp256k1::hashes::{sha256, Hash};
 
 /// The size (in bytes) of a [`musig2::PartialSignature`].
@@ -28,54 +25,36 @@ pub const RECOVER_DELAY: u32 = 1_008;
 
 /// Strata base index for keys.
 ///
-/// These should be _hardened_ [`ChildNumber`].
-///
 /// # Implementation Details
 ///
 /// The base index is set to 20,000 to ensure that it does not conflict with
 /// [BIP-43](https://github.com/bitcoin/bips/blob/master/bip-0043.mediawiki)
 /// reserved ranges.
-pub const STRATA_BASE_IDX: u32 = 20_000;
+pub const STRATA_BASE_IDX: ChildNumber = ChildNumber::Hardened { index: 20_000 };
 
 /// Strata sequencer index for keys.
-///
-/// NOTE: These should be _hardened_.
-pub const STRATA_SEQUENCER_IDX: u32 = 10;
+pub const STRATA_SEQUENCER_IDX: ChildNumber = ChildNumber::Hardened { index: 10 };
 
 /// Strata operator index for keys.
-///
-/// These should be _hardened_ [`ChildNumber`].
-pub const STRATA_OPERATOR_IDX: u32 = 20;
+pub const STRATA_OPERATOR_IDX: ChildNumber = ChildNumber::Hardened { index: 20 };
 
 /// Strata message index for the operator message key.
-///
-/// These should be _hardened_ [`ChildNumber`].
-pub const STRATA_OPERATOR_MESSAGE_IDX: u32 = 100;
+pub const STRATA_OPERATOR_MESSAGE_IDX: ChildNumber = ChildNumber::Hardened { index: 100 };
 
 /// Strata Wallet index for the operator wallet key.
-///
-/// NOTE: These should be _hardened_ [`ChildNumber`].
-pub const STRATA_OPERATOR_WALLET_IDX: u32 = 101;
+pub const STRATA_OPERATOR_WALLET_IDX: ChildNumber = ChildNumber::Hardened { index: 101 };
 
 /// Strata [`DerivationPath`] for sequencer's key.
 ///
 /// This corresponds to the path: `m/20000'/10'`.
-pub static STRATA_SEQUENCER_DERIVATION_PATH: LazyLock<DerivationPath> = LazyLock::new(|| {
-    DerivationPath::master().extend([
-        ChildNumber::from_hardened_idx(STRATA_BASE_IDX).expect("valid hardened child number"),
-        ChildNumber::from_hardened_idx(STRATA_SEQUENCER_IDX).expect("valid hardened child number"),
-    ])
-});
+pub const STRATA_SEQUENCER_DERIVATION_PATH: &[ChildNumber] =
+    &[STRATA_BASE_IDX, STRATA_SEQUENCER_IDX];
 
 /// Strata base [`DerivationPath`] for operator's message key.
 ///
 /// This corresponds to the path: `m/20000'/20'`.
-pub static STRATA_OPERATOR_BASE_DERIVATION_PATH: LazyLock<DerivationPath> = LazyLock::new(|| {
-    DerivationPath::master().extend([
-        ChildNumber::from_hardened_idx(STRATA_BASE_IDX).expect("valid hardened child number"),
-        ChildNumber::from_hardened_idx(STRATA_OPERATOR_IDX).expect("valid hardened child number"),
-    ])
-});
+pub const STRATA_OPERATOR_BASE_DERIVATION_PATH: &[ChildNumber] =
+    &[STRATA_BASE_IDX, STRATA_OPERATOR_IDX];
 
 /// Strata [`DerivationPath`] for operator's key.
 ///
@@ -84,14 +63,11 @@ pub static STRATA_OPERATOR_BASE_DERIVATION_PATH: LazyLock<DerivationPath> = Lazy
 /// # Warning
 ///
 /// The last path should be hardened as in `m/20000'/20'/100'`.
-pub static STRATA_OP_MESSAGE_DERIVATION_PATH: LazyLock<DerivationPath> = LazyLock::new(|| {
-    DerivationPath::master().extend([
-        ChildNumber::from_hardened_idx(STRATA_BASE_IDX).expect("valid hardened child number"),
-        ChildNumber::from_hardened_idx(STRATA_OPERATOR_IDX).expect("valid hardened child number"),
-        ChildNumber::from_normal_idx(STRATA_OPERATOR_MESSAGE_IDX)
-            .expect("valid normal child number"),
-    ])
-});
+pub const STRATA_OP_MESSAGE_DERIVATION_PATH: &[ChildNumber] = &[
+    STRATA_BASE_IDX,
+    STRATA_OPERATOR_IDX,
+    STRATA_OPERATOR_MESSAGE_IDX,
+];
 /// Strata [`DerivationPath`] for operator's wallet key.
 ///
 /// This corresponds to the path: `m/20000'/20'/101`.
@@ -99,14 +75,11 @@ pub static STRATA_OP_MESSAGE_DERIVATION_PATH: LazyLock<DerivationPath> = LazyLoc
 /// # Warning
 ///
 /// The last path should be hardened as in `m/20000'/20'/101'`.
-pub static STRATA_OP_WALLET_DERIVATION_PATH: LazyLock<DerivationPath> = LazyLock::new(|| {
-    DerivationPath::master().extend([
-        ChildNumber::from_hardened_idx(STRATA_BASE_IDX).expect("valid hardened child number"),
-        ChildNumber::from_hardened_idx(STRATA_OPERATOR_IDX).expect("valid hardened child number"),
-        ChildNumber::from_normal_idx(STRATA_OPERATOR_WALLET_IDX)
-            .expect("valid normal child number"),
-    ])
-});
+pub const STRATA_OP_WALLET_DERIVATION_PATH: &[ChildNumber] = &[
+    STRATA_BASE_IDX,
+    STRATA_OPERATOR_IDX,
+    STRATA_OPERATOR_WALLET_IDX,
+];
 /// A verifiably unspendable public key, produced by hashing a fixed string to a curve group
 /// generator.
 ///
@@ -125,30 +98,6 @@ pub static UNSPENDABLE_PUBLIC_KEY: LazyLock<XOnlyPublicKey> = LazyLock::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_sequencer_path() {
-        // Check that construction of the sequencer derivation path succeeds
-        let _ = *STRATA_SEQUENCER_DERIVATION_PATH;
-    }
-
-    #[test]
-    fn test_operator_base_path() {
-        // Check that construction of the operator base derivation path succeeds
-        let _ = *STRATA_OPERATOR_BASE_DERIVATION_PATH;
-    }
-
-    #[test]
-    fn test_operator_message_path() {
-        // Check that construction of the operator message derivation path succeeds
-        let _ = *STRATA_OP_MESSAGE_DERIVATION_PATH;
-    }
-
-    #[test]
-    fn test_operator_wallet_path() {
-        // Check that construction of the operator wallet derivation path succeeds
-        let _ = *STRATA_OP_WALLET_DERIVATION_PATH;
-    }
 
     #[test]
     fn test_unspendable() {
