@@ -7,7 +7,10 @@ use std::sync::Arc;
 
 use strata_chainexec::{ChainExecutor, ExecContext, ExecResult, MemStateAccessor};
 use strata_chaintsn::context::L2HeaderAndParent;
-use strata_eectl::engine::ExecEngineCtl;
+use strata_common::retry::{
+    DEFAULT_ENGINE_CALL_MAX_RETRIES, policies::ExponentialBackoff, retry_with_backoff,
+};
+use strata_eectl::{engine::ExecEngineCtl, errors::EngineError};
 use strata_primitives::prelude::*;
 use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
 
@@ -75,7 +78,9 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     /// in the client's database necessarily.
     fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
         self.cur_tip = tip;
-        self.engine.update_safe_block(*tip.blkid())?;
+        self.call_engine("engine_update_safe", |eng| {
+            eng.update_safe_block(*tip.blkid())
+        })?;
         Ok(())
     }
 
@@ -114,8 +119,27 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
 
     fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
         // TODO apply outputs that haven't been merged, etc.
-        self.engine.update_finalized_block(*epoch.last_blkid())?;
+
+        self.call_engine("engine_update_finalized", |eng| {
+            eng.update_finalized_block(*epoch.last_blkid())
+        })?;
+
         Err(WorkerError::Unimplemented)
+    }
+
+    /// Make a call to the exec engine, using retry and backoff.
+    fn call_engine(
+        &mut self,
+        name: &str,
+        f: impl Fn(&mut E) -> Result<(), EngineError>,
+    ) -> WorkerResult<()> {
+        retry_with_backoff(
+            name,
+            DEFAULT_ENGINE_CALL_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            move || f(&mut self.engine),
+        )?;
+        Ok(())
     }
 }
 
