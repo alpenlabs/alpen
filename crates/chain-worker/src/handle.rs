@@ -3,7 +3,7 @@ use std::sync::Arc;
 use strata_primitives::prelude::*;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use crate::{WorkerError, WorkerResult};
+use crate::{WorkerError, WorkerResult, message::WorkerMessage};
 
 pub struct ChainWorkerHandle {
     shared: Arc<Mutex<WorkerShared>>,
@@ -55,31 +55,36 @@ impl ChainWorkerHandle {
     }
 
     /// Tries to execute a block, returns the result.
-    async fn try_exec_block(&self, block: L2BlockCommitment) -> WorkerResult<()> {
+    pub async fn try_exec_block(&self, block: L2BlockCommitment) -> WorkerResult<()> {
         self.send_and_wait(|tx| WorkerMessage::TryExecBlock(block, tx))
             .await
     }
 
     /// Tries to execute a block, returns the result.
-    fn try_exec_block_blocking(&self, block: L2BlockCommitment) -> WorkerResult<()> {
+    pub fn try_exec_block_blocking(&self, block: L2BlockCommitment) -> WorkerResult<()> {
         self.send_and_wait_blocking(|tx| WorkerMessage::TryExecBlock(block, tx))
+    }
+
+    /// Finalize an epoch, making whatever database changes necessary.
+    pub async fn finalize_epoch(&self, epoch: EpochCommitment) -> WorkerResult<()> {
+        self.send_and_wait(|tx| WorkerMessage::FinalizeEpoch(epoch, tx))
+            .await
+    }
+
+    /// Finalize an epoch, making whatever database changes necessary.
+    pub fn finalize_epoch_blocking(&self, epoch: EpochCommitment) -> WorkerResult<()> {
+        self.send_and_wait_blocking(|tx| WorkerMessage::FinalizeEpoch(epoch, tx))
     }
 }
 
-/// Messages from the handle to the worker to give it work to do.
-pub enum WorkerMessage {
-    /// Try to execute a block.
-    TryExecBlock(L2BlockCommitment, oneshot::Sender<WorkerResult<()>>),
-}
-
 /// Input to the worker, reading inputs from the worker handle.
-pub struct ChainWorkerInput {
+pub(crate) struct ChainWorkerInput {
     shared: Arc<Mutex<WorkerShared>>,
     msg_rx: mpsc::Receiver<WorkerMessage>,
 }
 
 impl ChainWorkerInput {
-    pub fn recv_next(&mut self) -> Option<WorkerMessage> {
+    pub(crate) fn recv_next(&mut self) -> Option<WorkerMessage> {
         self.msg_rx.blocking_recv()
     }
 }
