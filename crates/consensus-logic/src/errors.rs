@@ -75,6 +75,9 @@ pub enum Error {
     #[error("checkpoint invalid: {0}")]
     InvalidCheckpoint(#[from] CheckpointError),
 
+    #[error("tried to finalize epoch {0:?} but epoch {1:?} is already final")]
+    FinalizeOldEpoch(EpochCommitment, EpochCommitment),
+
     #[error("stateroot mismatch")]
     StaterootMismatch,
 
