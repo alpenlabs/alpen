@@ -13821,7 +13821,6 @@ dependencies = [
  "strata-crypto",
  "strata-db",
  "strata-eectl",
- "strata-l1tx",
  "strata-primitives",
  "strata-rocksdb",
  "strata-state",

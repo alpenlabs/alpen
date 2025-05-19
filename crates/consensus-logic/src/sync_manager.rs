@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use strata_chain_worker::ChainWorkerHandle;
 use strata_eectl::engine::ExecEngineCtl;
 use strata_primitives::params::Params;
 use strata_status::StatusChannel;
@@ -97,15 +98,15 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let fcm_params = params.clone();
     let handle = executor.handle().clone();
     let st_ch = status_channel.clone();
+    let cw_handle: Arc<ChainWorkerHandle> = todo!();
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
         // TODO this should be simplified into a builder or something
         fork_choice_manager::tracker_task(
             shutdown,
             handle,
             fcm_storage,
-            fcm_engine,
             fcm_rx,
-            fcm_csm_controller,
+            cw_handle,
             fcm_params,
             st_ch,
         )
