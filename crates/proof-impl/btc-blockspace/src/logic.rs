@@ -63,7 +63,7 @@ pub fn process_blockscan_proof(zkvm: &impl ZkVmEnv) {
         let protocol_ops: Vec<ProtocolOperation> =
             index_block(&block, ProverTxVisitorImpl::new, &tx_filters)
                 .into_iter()
-                .flat_map(|entry| entry.into_contents())
+                .flat_map(|entry| entry.into_item())
                 .collect();
 
         // 5. Create the blockscan result and append to blockscan results

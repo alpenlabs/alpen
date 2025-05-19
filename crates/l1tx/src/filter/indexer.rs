@@ -1,6 +1,7 @@
 use bitcoin::{Block, Transaction};
 use strata_primitives::{
     batch::SignedCheckpoint,
+    indexed::Indexed,
     l1::{DepositInfo, DepositRequestInfo, DepositSpendInfo, WithdrawalFulfillmentInfo},
 };
 
@@ -9,7 +10,6 @@ use super::{
     parse_valid_checkpoint_envelopes, try_parse_tx_as_withdrawal_fulfillment, try_parse_tx_deposit,
     TxFilterConfig,
 };
-use crate::messages::Indexed;
 
 /// Interface to handle storage of extracted information from a transaction.
 pub trait TxVisitor {

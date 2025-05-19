@@ -31,6 +31,7 @@ tracing.workspace = true
 borsh.workspace = true
 strata-common.workspace = true
 strata-rocksdb = { workspace = true, features = ["test_utils"] }
+strata-l1tx = { workspace = true, features = ["test_utils"] }
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true

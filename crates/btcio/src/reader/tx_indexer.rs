@@ -78,19 +78,37 @@ impl TxVisitor for ReaderTxVisitorImpl {
 
 #[cfg(test)]
 mod test {
-    use strata_test_utils::tx_indexer::{
-        test_index_deposit_request_with_visitor, test_index_deposit_with_visitor,
-        test_index_multiple_deposits_with_visitor, test_index_no_deposit_with_visitor,
-        test_index_tx_with_multiple_ops_with_visitor,
-        test_index_withdrawal_fulfillment_with_visitor,
+    use bitcoin::{
+        block::{Header, Version},
+        hashes::Hash,
+        Block, BlockHash, CompactTarget, Transaction, TxMerkleNode,
     };
+    use strata_test_utils::tx_indexer::*;
 
     use crate::reader::tx_indexer::ReaderTxVisitorImpl;
+
+    const TEST_ADDR: &str = "bcrt1q6u6qyya3sryhh42lahtnz2m7zuufe7dlt8j0j5";
+
+    //Helper function to create a test block with given transactions
+    fn create_test_block(transactions: Vec<Transaction>) -> Block {
+        let bhash = BlockHash::from_byte_array([0; 32]);
+        Block {
+            header: Header {
+                version: Version::ONE,
+                prev_blockhash: bhash,
+                merkle_root: TxMerkleNode::from_byte_array(*bhash.as_byte_array()),
+                time: 100,
+                bits: CompactTarget::from_consensus(1),
+                nonce: 1,
+            },
+            txdata: transactions,
+        }
+    }
 
     #[test]
     fn test_index_deposits() {
         let _ = test_index_deposit_with_visitor(ReaderTxVisitorImpl::new, |tx| {
-            tx.contents().protocol_ops().to_vec()
+            tx.item().protocol_ops().to_vec()
         });
     }
 
@@ -98,21 +116,21 @@ mod test {
     #[test]
     fn test_index_txs_deposit_request() {
         let _ = test_index_deposit_request_with_visitor(ReaderTxVisitorImpl::new, |ind_output| {
-            ind_output.contents().protocol_ops().to_vec()
+            ind_output.item().protocol_ops().to_vec()
         });
     }
 
     #[test]
     fn test_index_no_deposit() {
         let _ = test_index_no_deposit_with_visitor(ReaderTxVisitorImpl::new, |ind_output| {
-            ind_output.contents().protocol_ops().to_vec()
+            ind_output.item().protocol_ops().to_vec()
         });
     }
 
     #[test]
     fn test_index_multiple_deposits() {
         let _ = test_index_multiple_deposits_with_visitor(ReaderTxVisitorImpl::new, |ind_output| {
-            ind_output.contents().protocol_ops().to_vec()
+            ind_output.item().protocol_ops().to_vec()
         });
     }
 
@@ -120,7 +138,7 @@ mod test {
     fn test_index_tx_with_multiple_ops() {
         let _ =
             test_index_tx_with_multiple_ops_with_visitor(ReaderTxVisitorImpl::new, |ind_output| {
-                ind_output.contents().protocol_ops().to_vec()
+                ind_output.item().protocol_ops().to_vec()
             });
     }
 
@@ -128,7 +146,7 @@ mod test {
     fn test_index_withdrawal_fulfillment() {
         let _ = test_index_withdrawal_fulfillment_with_visitor(
             ReaderTxVisitorImpl::new,
-            |ind_output| ind_output.contents().protocol_ops().to_vec(),
+            |ind_output| ind_output.item().protocol_ops().to_vec(),
         );
     }
 }
