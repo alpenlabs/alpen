@@ -27,6 +27,10 @@ impl<T> DaRegister<T> {
     pub fn set(&mut self, v: T) {
         self.new_value = Some(v);
     }
+
+    pub fn new_value(&self) -> Option<&T> {
+        self.new_value.as_ref()
+    }
 }
 
 impl<T: Clone + Eq> DaRegister<T> {
