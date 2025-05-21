@@ -17,3 +17,7 @@ mod traits;
 pub use traits::DaWrite;
 
 mod queue;
+pub use queue::{DaQueue, DaQueueTarget};
+
+mod linear_acc;
+pub use linear_acc::{DaLinacc, LinearAccumulator};
