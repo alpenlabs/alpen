@@ -170,7 +170,7 @@ fn exec_genxpriv(cmd: SubcXpriv, ctx: &mut CmdContext) -> anyhow::Result<()> {
 
 /// Executes the `genseqpubkey` subcommand.
 ///
-/// Generates the sequencer [`Xpub`] from the provided [`Xpriv`]
+/// Generates the sequencer [`Xpub`](bitcoin::bip32::Xpub) from the provided [`Xpriv`]
 /// and prints it to stdout.
 fn exec_genseqpubkey(cmd: SubcSeqPubkey, _ctx: &mut CmdContext) -> anyhow::Result<()> {
     let Some(xpriv) = resolve_xpriv(&cmd.key_file, cmd.key_from_env, SEQKEY_ENVVAR)? else {
