@@ -44,19 +44,19 @@ pub const STRATA_OPERATOR_MESSAGE_IDX: ChildNumber = ChildNumber::Hardened { ind
 /// Strata Wallet index for the operator wallet key.
 pub const STRATA_OPERATOR_WALLET_IDX: ChildNumber = ChildNumber::Hardened { index: 101 };
 
-/// Strata [`DerivationPath`] for sequencer's key.
+/// Strata derivation path for sequencer's key.
 ///
 /// This corresponds to the path: `m/20000'/10'`.
 pub const STRATA_SEQUENCER_DERIVATION_PATH: &[ChildNumber] =
     &[STRATA_BASE_IDX, STRATA_SEQUENCER_IDX];
 
-/// Strata base [`DerivationPath`] for operator's message key.
+/// Strata base derivation path for operator's message key.
 ///
 /// This corresponds to the path: `m/20000'/20'`.
 pub const STRATA_OPERATOR_BASE_DERIVATION_PATH: &[ChildNumber] =
     &[STRATA_BASE_IDX, STRATA_OPERATOR_IDX];
 
-/// Strata [`DerivationPath`] for operator's key.
+/// Strata derivation path for operator's key.
 ///
 /// This corresponds to the path: `m/20000'/20'/100`.
 ///
@@ -68,7 +68,7 @@ pub const STRATA_OP_MESSAGE_DERIVATION_PATH: &[ChildNumber] = &[
     STRATA_OPERATOR_IDX,
     STRATA_OPERATOR_MESSAGE_IDX,
 ];
-/// Strata [`DerivationPath`] for operator's wallet key.
+/// Strata derivation path for operator's wallet key.
 ///
 /// This corresponds to the path: `m/20000'/20'/101`.
 ///

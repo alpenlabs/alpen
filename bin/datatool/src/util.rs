@@ -535,9 +535,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
     })
 }
 
-/// Parses an [`Xpub`] from [`&str`], richly generating [`anyhow::Result`]s from
-/// it.
-
 /// Parses an [`Xpriv`] from [`&str`], richly generating [`anyhow::Result`]s from
 /// it.
 fn parse_xpriv(s: &str) -> anyhow::Result<Xpriv> {
