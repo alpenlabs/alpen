@@ -15,3 +15,5 @@ pub use register::DaRegister;
 
 mod traits;
 pub use traits::DaWrite;
+
+mod queue;
