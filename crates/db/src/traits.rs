@@ -50,6 +50,9 @@ pub trait L1Database {
     /// provided out-of-order.
     fn put_block_data(&self, mf: L1BlockManifest) -> DbResult<()>;
 
+    /// Store new block
+    fn put_block(&self, block: L1Block) -> DbResult<()>;
+
     /// Set a specific height, blockid in canonical chain records.
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()>;
 
@@ -63,6 +66,8 @@ pub trait L1Database {
 
     // Gets current chain tip height, blockid
     fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>>;
+
+    fn get_block(&self, blockid: L1BlockId) -> DbResult<Option<L1Block>>;
 
     /// Gets the block manifest for a blockid.
     fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<L1BlockManifest>>;

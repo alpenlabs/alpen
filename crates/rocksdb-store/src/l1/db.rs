@@ -7,10 +7,14 @@ use rockbound::{
     OptimisticTransactionDB, SchemaBatch, SchemaDBOperationsExt,
 };
 use strata_db::{errors::DbError, traits::*, DbResult};
-use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_mmr::CompactMmr;
+use strata_primitives::l1::{L1Block, L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
 use tracing::*;
 
-use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
+use super::schemas::{
+    L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, L1RawBlockSchema, MmrSchema,
+    TxnSchema,
+};
 use crate::DbOpsConfig;
 
 #[derive(Debug)]
@@ -45,6 +49,25 @@ impl L1Database for L1Db {
 
                 txn.put::<L1BlockSchema>(blockid, &mf)?;
                 txn.put::<TxnSchema>(blockid, mf.txs_vec())?;
+                txn.put::<L1BlocksByHeightSchema>(&height, &blocks_at_height)?;
+
+                Ok::<(), DbError>(())
+            })
+            .map_err(|e: rockbound::TransactionError<_>| DbError::TransactionError(e.to_string()))
+    }
+
+    fn put_block(&self, block: L1Block) -> DbResult<()> {
+        let blockid = block.block_id();
+        let height = block.height();
+
+        self.db
+            .with_optimistic_txn(self.ops.txn_retry_count(), |txn| {
+                let mut blocks_at_height = txn
+                    .get_for_update::<L1BlocksByHeightSchema>(&height)?
+                    .unwrap_or_default();
+                blocks_at_height.push(blockid);
+
+                txn.put::<L1RawBlockSchema>(&blockid, &block)?;
                 txn.put::<L1BlocksByHeightSchema>(&height, &blocks_at_height)?;
 
                 Ok::<(), DbError>(())
@@ -169,6 +192,10 @@ impl L1Database for L1Db {
 
     fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<L1BlockManifest>> {
         Ok(self.db.get::<L1BlockSchema>(&blockid)?)
+    }
+
+    fn get_block(&self, blockid: L1BlockId) -> DbResult<Option<L1Block>> {
+        Ok(self.db.get::<L1RawBlockSchema>(&blockid)?)
     }
 }
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_db::{traits::L1Database, DbError, DbResult};
-use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_primitives::l1::{L1Block, L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
 use threadpool::ThreadPool;
 use tracing::error;
 
@@ -12,6 +12,7 @@ use crate::{cache::CacheTable, ops};
 pub struct L1BlockManager {
     ops: ops::l1::L1DataOps,
     manifest_cache: CacheTable<L1BlockId, Option<L1BlockManifest>>,
+    block_cache: CacheTable<L1BlockId, Option<L1Block>>,
     txs_cache: CacheTable<L1BlockId, Option<Vec<L1TxRef>>>,
     blockheight_cache: CacheTable<u64, Option<L1BlockId>>,
 }
@@ -21,11 +22,13 @@ impl L1BlockManager {
     pub fn new<D: L1Database + Sync + Send + 'static>(pool: ThreadPool, db: Arc<D>) -> Self {
         let ops = ops::l1::Context::new(db).into_ops(pool);
         let manifest_cache = CacheTable::new(64.try_into().unwrap());
+        let block_cache = CacheTable::new(64.try_into().unwrap());
         let txs_cache = CacheTable::new(64.try_into().unwrap());
         let blockheight_cache = CacheTable::new(64.try_into().unwrap());
         Self {
             ops,
             manifest_cache,
+            block_cache,
             txs_cache,
             blockheight_cache,
         }
@@ -45,6 +48,18 @@ impl L1BlockManager {
         self.manifest_cache.purge(blockid);
         self.txs_cache.purge(blockid);
         self.ops.put_block_data_async(mf).await
+    }
+
+    pub fn put_block(&self, block: L1Block) -> DbResult<()> {
+        let blockid = &block.block_id();
+        self.block_cache.purge(blockid);
+        self.ops.put_block_blocking(block)
+    }
+
+    pub async fn put_block_async(&self, block: L1Block) -> DbResult<()> {
+        let blockid = &block.block_id();
+        self.block_cache.purge(blockid);
+        self.ops.put_block_async(block).await
     }
 
     /// Append `blockid` to tracked canonical chain.
@@ -199,6 +214,37 @@ impl L1BlockManager {
         };
 
         self.get_block_manifest_async(&blockid).await
+    }
+
+    // Get [`L1Block`] for given `blockid`.
+    pub fn get_block(&self, blockid: &L1BlockId) -> DbResult<Option<L1Block>> {
+        self.block_cache
+            .get_or_fetch_blocking(blockid, || self.ops.get_block_blocking(*blockid))
+    }
+
+    // Get [`L1Block`] for given `blockid`.
+    pub async fn get_block_async(&self, blockid: &L1BlockId) -> DbResult<Option<L1Block>> {
+        self.block_cache
+            .get_or_fetch(blockid, || self.ops.get_block_chan(*blockid))
+            .await
+    }
+
+    // Get [`L1Block`] at `height` in tracked canonical chain.
+    pub fn get_block_at_height(&self, height: u64) -> DbResult<Option<L1Block>> {
+        let Some(blockid) = self.get_canonical_blockid_at_height(height)? else {
+            return Ok(None);
+        };
+
+        self.get_block(&blockid)
+    }
+
+    // Get [`L1Block`] at `height` in tracked canonical chain.
+    pub async fn get_block_at_height_async(&self, height: u64) -> DbResult<Option<L1Block>> {
+        let Some(blockid) = self.get_canonical_blockid_at_height_async(height).await? else {
+            return Ok(None);
+        };
+
+        self.get_block_async(&blockid).await
     }
 
     // Get [`L1BlockId`] at `height` in tracked canonical chain.
