@@ -183,9 +183,10 @@ class StrataSequencerFactory(flexitest.Factory):
 
 # TODO merge with `StrataFactory` to reuse most of the init steps
 class FullNodeFactory(flexitest.Factory):
-    def __init__(self, port_range: list[int]):
+    def __init__(self, port_range: list[int], cli_args: list | None = None):
         super().__init__(port_range)
         self._next_idx = 1
+        self._cli_args = cli_args
 
     def next_idx(self) -> int:
         idx = self._next_idx
@@ -236,7 +237,9 @@ class FullNodeFactory(flexitest.Factory):
             "--rpc-host", rpc_host,
             "--rpc-port", str(rpc_port),
         ]
+
         # fmt: on
+        cmd.extend(self._cli_args or [])
 
         rpc_url = f"ws://localhost:{rpc_port}"
         props = {

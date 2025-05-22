@@ -274,6 +274,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         seq_signer_fac = ctx.get_factory("sequencer_signer")
         reth_fac = ctx.get_factory("reth")
         fn_fac = ctx.get_factory("fullnode")
+        ckpt_fn_fac = ctx.get_factory("fullnode_ckpt")
 
         # set up network params
         initdir = ctx.make_service_dir("_init")
@@ -371,11 +372,16 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
             prover_client_settings,
         )
 
+        fullnode_ckpt = ckpt_fn_fac.create_fullnode(
+            bitcoind_config, fullnode_reth_config, sequencer_rpc, params, name_suffix="ckpt"
+        )
+
         svcs = {
             "bitcoin": bitcoind,
             "seq_node": sequencer,
             "sequencer_signer": sequencer_signer,
             "seq_reth": reth,
+            "fullnode_ckpt": fullnode_ckpt,
             "follower_1_node": fullnode,
             "follower_1_reth": fullnode_reth,
             "prover_client": prover_client,
