@@ -18,6 +18,7 @@ use strata_btcio::{
 use strata_common::logging;
 use strata_config::Config;
 use strata_consensus_logic::{
+    checkpoint_sync::checkpoint_sync_task,
     genesis,
     sync_manager::{self, SyncManager},
 };
@@ -46,7 +47,10 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{args::Args, helpers::*};
+use crate::{
+    args::{Args, SyncMode},
+    helpers::*,
+};
 
 mod args;
 mod el_sync;
@@ -138,6 +142,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         storage.clone(),
         bridge_msg_ops,
         bitcoin_client,
+        args.sync_mode,
     )?;
 
     let mut methods = jsonrpsee::Methods::new();
@@ -165,7 +170,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             broadcast_handle,
             &mut methods,
         )?;
-    } else {
+    } else if args.sync_mode == SyncMode::SequencerSync {
         let sync_endpoint = &config
             .client
             .sync_endpoint
@@ -247,6 +252,7 @@ fn do_startup_checks(
     engine: &impl ExecEngineCtl,
     bitcoin_client: &impl Reader,
     handle: &Handle,
+    check_engine: bool,
 ) -> anyhow::Result<()> {
     let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
         Ok(idx) => idx,
@@ -284,19 +290,23 @@ fn do_startup_checks(
     }
 
     // Check that tip L2 block exists (and engine can be connected to)
-    let chain_tip = tip_blockid;
-    match engine.check_block_exists(chain_tip) {
-        Ok(true) => {
-            info!("startup: last l2 block is synced")
-        }
-        Ok(false) => {
-            // Current chain tip tip block is not known by the EL.
-            warn!(%chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(storage, engine)?;
-        }
-        Err(error) => {
-            // Likely network issue
-            anyhow::bail!("could not connect to exec engine, err = {}", error);
+    if check_engine {
+        // engine is not used in checkpoint sync (find a better way to resolve this, a bit hacky for
+        // now)
+        let chain_tip = tip_blockid;
+        match engine.check_block_exists(chain_tip) {
+            Ok(true) => {
+                info!("startup: last l2 block is synced")
+            }
+            Ok(false) => {
+                // Current chain tip tip block is not known by the EL.
+                warn!(%chain_tip, "missing expected EVM block");
+                sync_chainstate_to_el(storage, engine)?;
+            }
+            Err(error) => {
+                // Likely network issue
+                anyhow::bail!("could not connect to exec engine, err = {}", error);
+            }
         }
     }
 
@@ -315,14 +325,22 @@ fn start_core_tasks(
     storage: Arc<NodeStorage>,
     _bridge_msg_ops: Arc<BridgeMsgOps>,
     bitcoin_client: Arc<Client>,
+    sync_mode: SyncMode,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();
 
     // init status tasks
     let status_channel = init_status_channel(storage.as_ref())?;
 
-    let engine =
-        init_engine_controller(config, params.as_ref(), storage.as_ref(), executor.handle())?;
+    // instantiate execution engine
+    let is_checkpoint_sync = sync_mode == SyncMode::CheckpointSync && !config.client.is_sequencer;
+    let engine = init_engine_controller(
+        config,
+        params.as_ref(),
+        storage.as_ref(),
+        executor.handle(),
+        is_checkpoint_sync,
+    )?;
 
     // do startup checks
     do_startup_checks(
@@ -330,17 +348,27 @@ fn start_core_tasks(
         engine.as_ref(),
         bitcoin_client.as_ref(),
         executor.handle(),
+        !is_checkpoint_sync,
     )?;
 
-    // Start the sync manager.
+    // start the CSM and FCM tasks
     let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
         executor,
         &storage,
         engine.clone(),
         params.clone(),
         status_channel.clone(),
+        !is_checkpoint_sync,
     )?
     .into();
+
+    // start checkpoint sync task
+    if is_checkpoint_sync {
+        executor.spawn_critical_async(
+            "checkpoint_sync_task",
+            checkpoint_sync_task(storage.clone(), status_channel.clone()),
+        );
+    }
 
     // Start the L1 tasks to get that going.
     executor.spawn_critical_async(

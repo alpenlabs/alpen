@@ -30,6 +30,7 @@ pub struct WorkerMessage {
 static PAUSE_CHANNELS: LazyLock<HashMap<WorkerType, PauseChannel>> = LazyLock::new(|| {
     let mut m = HashMap::new();
     m.insert(WorkerType::SyncWorker, PauseChannel::new());
+    m.insert(WorkerType::CheckpointSyncWorker, PauseChannel::new());
     m
 });
 

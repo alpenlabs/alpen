@@ -70,23 +70,7 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
 ) -> anyhow::Result<()> {
     let target_next_block =
         calculate_target_next_block(storage.l1().as_ref(), params.rollup().horizon_l1_height)?;
-
-    let seq_pubkey = match params.rollup.cred_rule {
-        CredRule::Unchecked => None,
-        CredRule::SchnorrKey(buf32) => Some(
-            XOnlyPublicKey::try_from(buf32)
-                .expect("the sequencer pubkey must be valid in the params"),
-        ),
-    };
-
-    let ctx = ReaderContext {
-        client,
-        storage,
-        config,
-        params,
-        status_channel,
-        seq_pubkey,
-    };
+    let ctx = init_reader_context(client, storage, config, params, status_channel);
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
 }
 
@@ -102,6 +86,31 @@ fn calculate_target_next_block(
         .unwrap_or(horz_height);
     assert!(target_next_block >= horz_height);
     Ok(target_next_block)
+}
+
+fn init_reader_context(
+    client: Arc<impl Reader>,
+    storage: Arc<NodeStorage>,
+    config: Arc<ReaderConfig>,
+    params: Arc<Params>,
+    status_channel: StatusChannel,
+) -> ReaderContext<impl Reader> {
+    let seq_pubkey = match params.rollup.cred_rule {
+        CredRule::Unchecked => None,
+        CredRule::SchnorrKey(buf32) => Some(
+            XOnlyPublicKey::try_from(buf32)
+                .expect("the sequencer pubkey must be valid in the params"),
+        ),
+    };
+
+    ReaderContext {
+        client,
+        storage,
+        config,
+        params,
+        status_channel,
+        seq_pubkey,
+    }
 }
 
 /// Inner function that actually does the reading task.
@@ -262,7 +271,7 @@ async fn poll_for_new_blocks<R: Reader>(
 
                 if let Some(checkpt) = find_checkpoint_in_events(&evs) {
                     // if we have a checkpoint in this block, update filterconfig based on this
-                    let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().chainstate())
+                    let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().bytes())
                         .expect("deserialize chainstate");
 
                     state
