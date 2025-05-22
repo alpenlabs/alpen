@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
+use checkpoint_sync::checkpoint_sync_task;
 use el_sync::sync_chainstate_to_el;
 use errors::InitError;
 use jsonrpsee::Methods;
@@ -47,6 +48,7 @@ use tracing::*;
 use crate::{args::Args, helpers::*};
 
 mod args;
+mod checkpoint_sync;
 mod el_sync;
 mod errors;
 mod helpers;
@@ -156,23 +158,25 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             &mut methods,
         )?;
     } else {
-        let sync_endpoint = &config
-            .client
-            .sync_endpoint
-            .clone()
-            .ok_or(InitError::Anyhow(anyhow!("Missing sync_endpoint")))?;
-        info!(?sync_endpoint, "initing fullnode task");
+        if !config.client.checkpoint_sync {
+            let sync_endpoint = &config
+                .client
+                .sync_endpoint
+                .clone()
+                .ok_or(InitError::Anyhow(anyhow!("Missing sync_endpoint")))?;
+            info!(?sync_endpoint, "initing fullnode task");
 
-        let rpc_client = sync_client(sync_endpoint);
-        let sync_peer = RpcSyncPeer::new(rpc_client, 10);
-        let l2_sync_context =
-            L2SyncContext::new(sync_peer, ctx.storage.clone(), ctx.sync_manager.clone());
+            let rpc_client = sync_client(sync_endpoint);
+            let sync_peer = RpcSyncPeer::new(rpc_client, 10);
+            let l2_sync_context =
+                L2SyncContext::new(sync_peer, ctx.storage.clone(), ctx.sync_manager.clone());
 
-        executor.spawn_critical_async("l2-sync-manager", async move {
-            strata_sync::sync_worker(&l2_sync_context)
-                .await
-                .map_err(Into::into)
-        });
+            executor.spawn_critical_async("l2-sync-manager", async move {
+                strata_sync::sync_worker(&l2_sync_context)
+                    .await
+                    .map_err(Into::into)
+            });
+        }
     };
 
     // FIXME we don't have the `CoreContext` anymore after this point
@@ -310,8 +314,15 @@ fn start_core_tasks(
     // init status tasks
     let status_channel = init_status_channel(storage.as_ref())?;
 
-    let engine =
-        init_engine_controller(config, params.as_ref(), storage.as_ref(), executor.handle())?;
+    // instantiate execution engine
+    let checkpoint_sync = config.client.checkpoint_sync && !config.client.is_sequencer;
+    let engine = init_engine_controller(
+        config,
+        params.as_ref(),
+        storage.as_ref(),
+        executor.handle(),
+        checkpoint_sync,
+    )?;
 
     // do startup checks
     do_startup_checks(
@@ -321,28 +332,56 @@ fn start_core_tasks(
         executor.handle(),
     )?;
 
-    // Start the sync manager.
-    let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
-        executor,
-        &storage,
-        engine.clone(),
-        params.clone(),
-        status_channel.clone(),
-    )?
-    .into();
-
-    // Start the L1 tasks to get that going.
-    executor.spawn_critical_async(
-        "bitcoin_data_reader_task",
-        bitcoin_data_reader_task(
-            bitcoin_client.clone(),
-            storage.clone(),
-            Arc::new(config.btcio.reader.clone()),
-            sync_manager.get_params(),
+    let (sync_manager, engine) = if checkpoint_sync {
+        let csm_manager: Arc<_> = sync_manager::start_csm_task(
+            executor,
+            &storage,
+            engine.clone(),
+            params.clone(),
             status_channel.clone(),
-            sync_manager.get_csm_ctl(),
-        ),
-    );
+        )?
+        .into();
+
+        // start checkpoint sync task
+        executor.spawn_critical_async(
+            "checkpoint_sync_task",
+            checkpoint_sync_task(
+                bitcoin_client.clone(),
+                storage.clone(),
+                Arc::new(config.btcio.reader.clone()),
+                params.clone(),
+                status_channel.clone(),
+                csm_manager.get_csm_ctl(),
+            ),
+        );
+
+        (csm_manager, engine)
+    } else {
+        // Start the sync manager.
+        let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
+            executor,
+            &storage,
+            engine.clone(),
+            params.clone(),
+            status_channel.clone(),
+        )?
+        .into();
+
+        // Start the L1 tasks to get that going.
+        executor.spawn_critical_async(
+            "bitcoin_data_reader_task",
+            bitcoin_data_reader_task(
+                bitcoin_client.clone(),
+                storage.clone(),
+                Arc::new(config.btcio.reader.clone()),
+                sync_manager.get_params(),
+                status_channel.clone(),
+                sync_manager.get_csm_ctl(),
+            ),
+        );
+
+        (sync_manager, engine)
+    };
 
     Ok(CoreContext {
         runtime,

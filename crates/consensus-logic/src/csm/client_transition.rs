@@ -11,6 +11,7 @@ use strata_primitives::{
     prelude::*,
 };
 use strata_state::{
+    batch::CheckpointCommitment,
     block::{self, L2BlockBundle},
     chain_state::{Chainstate, ChainstateEntry},
     client_state::*,
@@ -246,9 +247,15 @@ fn process_l1_block(
                     }
 
                     let ckpt = signed_ckpt.checkpoint();
+                    let prev_commitment = checkpoint.clone().map(|l1ckpt| {
+                        return CheckpointCommitment::new(
+                            l1ckpt.batch_info,
+                            l1ckpt.batch_transition,
+                        );
+                    });
 
                     // Now do the more thorough checks
-                    if verify_checkpoint(ckpt, checkpoint.as_ref(), params).is_err() {
+                    if verify_checkpoint(ckpt, prev_commitment.as_ref(), params).is_err() {
                         // If it's invalid then just print a warning and move on.
                         warn!(%height, "ignoring invalid checkpoint in L1 block");
                         continue;

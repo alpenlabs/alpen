@@ -5,7 +5,9 @@ use bitcoin::{Address, Network};
 use bitcoind_async_client::{traits::Wallet, Client};
 use format_serde_error::SerdeError;
 use strata_config::Config;
-use strata_evmexec::{engine::RpcExecEngineCtl, fetch_init_fork_choice_state, EngineRpcClient};
+use strata_evmexec::{
+    engine::RpcExecEngineCtl, evm_genesis_block_hash, fetch_init_fork_choice_state, EngineRpcClient,
+};
 use strata_primitives::{
     l1::L1Status,
     params::{Params, RollupParams, SyncParams},
@@ -169,6 +171,7 @@ pub fn init_engine_controller(
     params: &Params,
     storage: &NodeStorage,
     handle: &Handle,
+    from_genesis: bool,
 ) -> anyhow::Result<Arc<RpcExecEngineCtl<EngineRpcClient>>> {
     let reth_jwtsecret = load_jwtsecret(&config.exec.reth.secret)?;
     let client = EngineRpcClient::from_url_secret(
@@ -176,7 +179,12 @@ pub fn init_engine_controller(
         reth_jwtsecret,
     );
 
-    let initial_fcs = fetch_init_fork_choice_state(storage, params.rollup())?;
+    let initial_fcs = if from_genesis {
+        evm_genesis_block_hash(params.rollup())
+    } else {
+        fetch_init_fork_choice_state(storage, params.rollup())?
+    };
+
     let eng_ctl = strata_evmexec::engine::RpcExecEngineCtl::new(
         client,
         initial_fcs,

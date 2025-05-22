@@ -65,7 +65,7 @@ impl ChainstateDatabase for ChainstateDb {
         // going to be writing from a single thread anyways so it should be fine
         match self.get_last_idx()? {
             Some(last_idx) => {
-                if idx != last_idx + 1 {
+                if idx < last_idx {
                     return Err(DbError::OooInsert("Chainstate", idx));
                 }
             }

@@ -373,6 +373,12 @@ impl StrataApiServer for StrataRpcImpl {
         Ok(summary)
     }
 
+    async fn get_latest_chainstate_slot(&self) -> RpcResult<u64> {
+        let chman = self.storage.chainstate();
+        let idx = chman.get_last_write_idx_async().map_err(Error::Db).await?;
+        Ok(idx)
+    }
+
     async fn get_chainstate_raw(&self, slot: u64) -> RpcResult<Vec<u8>> {
         let chs = self
             .storage

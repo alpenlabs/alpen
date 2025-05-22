@@ -141,6 +141,23 @@ pub struct CheckpointCommitment {
     transition: BatchTransition,
 }
 
+impl CheckpointCommitment {
+    pub fn new(batch_info: BatchInfo, transition: BatchTransition) -> Self {
+        CheckpointCommitment {
+            batch_info,
+            transition,
+        }
+    }
+
+    pub fn batch_info(&self) -> &BatchInfo {
+        &self.batch_info
+    }
+
+    pub fn batch_transition(&self) -> &BatchTransition {
+        &self.transition
+    }
+}
+
 /// Consolidates all information required to describe and verify a batch checkpoint.
 /// This includes metadata about the batch, the state transitions, checkpoint base state,
 /// and the proof itself. The proof verifies that the `transition` is valid.
@@ -230,16 +247,16 @@ impl Checkpoint {
 pub struct CheckpointSidecar {
     /// Chainstate at the end of this checkpoint's epoch.
     /// Note: using `Vec<u8>` instead of Chainstate to avoid circular dependency with strata_state
-    chainstate: Vec<u8>,
+    bytes: Vec<u8>,
 }
 
 impl CheckpointSidecar {
-    pub fn new(chainstate: Vec<u8>) -> Self {
-        Self { chainstate }
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self { bytes }
     }
 
-    pub fn chainstate(&self) -> &[u8] {
-        &self.chainstate
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -328,19 +345,13 @@ impl BatchInfo {
     /// Check is whether the L2 slot is covered by the checkpoint
     pub fn includes_l2_block(&self, slot: u64) -> bool {
         let (_, last_l2_commitment) = self.l2_range;
-        if slot <= last_l2_commitment.slot() {
-            return true;
-        }
-        false
+        slot <= last_l2_commitment.slot()
     }
 
     /// check for whether the L1 height is covered by the checkpoint
     pub fn includes_l1_block(&self, height: u64) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
-        if height <= last_l1_commitment.height() {
-            return true;
-        }
-        false
+        height <= last_l1_commitment.height()
     }
 }
 

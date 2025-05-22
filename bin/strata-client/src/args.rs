@@ -44,6 +44,10 @@ pub struct Args {
     #[argh(switch, description = "is sequencer")]
     pub sequencer: bool,
 
+    /// Switch to using checkpoint sync over sequencer based sync
+    #[argh(switch, description = "run client in checkpoint-sync mode")]
+    pub checkpoint_sync: bool,
+
     /// Rollup params path that will override the params in the config toml.
     #[argh(option, description = "rollup params")]
     pub rollup_params: Option<PathBuf>,
@@ -75,6 +79,9 @@ impl Args {
         let mut overrides = Vec::new();
         if self.sequencer {
             overrides.push("client.is_sequencer=true".to_string());
+        }
+        if self.checkpoint_sync {
+            overrides.push("client.checkpoint_sync=true".to_string());
         }
         if let Some(datadir) = &self.datadir {
             let dd = datadir.to_str().ok_or(anyhow::anyhow!(
@@ -160,6 +167,7 @@ mod test {
                 datadir: "".into(),
                 db_retry_count: 3,
                 is_sequencer: false,
+                checkpoint_sync: false,
             },
             bitcoind: BitcoindConfig {
                 rpc_url: "".to_string(),
@@ -196,6 +204,7 @@ mod test {
             config: "config_path".into(),
             datadir: None,
             sequencer: true,
+            checkpoint_sync: false,
             rollup_params: None,
             rpc_host: None,
             rpc_port: None,

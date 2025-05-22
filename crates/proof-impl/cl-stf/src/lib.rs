@@ -192,7 +192,7 @@ fn get_posted_chainstate_and_post_tx_filter_config(
         })
         .expect("Must include checkpoint for valid epoch");
 
-    let cs: Chainstate = borsh::from_slice(cp.checkpoint().sidecar().chainstate())
+    let cs: Chainstate = borsh::from_slice(cp.checkpoint().sidecar().bytes())
         .expect("valid chainstate needs to be posted on checkpoint");
 
     (
