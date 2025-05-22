@@ -4,7 +4,11 @@
 use std::sync::Arc;
 
 use strata_db::{traits::Database, DbError, DbResult};
-use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
+use strata_state::{
+    client_state::{ClientState, L1ClientState},
+    l1::L1BlockId,
+    operation::ClientUpdateOutput,
+};
 use threadpool::ThreadPool;
 use tokio::sync::Mutex;
 use tracing::*;
@@ -18,6 +22,7 @@ pub struct ClientStateManager {
     // TODO actually use caches
     update_cache: cache::CacheTable<u64, Option<ClientUpdateOutput>>,
     state_cache: cache::CacheTable<u64, Arc<ClientState>>,
+    l1_cs_cache: cache::CacheTable<L1BlockId, Option<L1ClientState>>,
 
     cur_state: Mutex<CurStateTracker>,
 }
@@ -30,6 +35,7 @@ impl ClientStateManager {
         let ops = ops::client_state::Context::new(db.client_state_db().clone()).into_ops(pool);
         let update_cache = cache::CacheTable::new(64.try_into().unwrap());
         let state_cache = cache::CacheTable::new(64.try_into().unwrap());
+        let l1_cs_cache = cache::CacheTable::new(64.try_into().unwrap());
 
         // Figure out the current state so we can access it.
         let mut cur_state = CurStateTracker::new_empty();
@@ -51,6 +57,7 @@ impl ClientStateManager {
             ops,
             update_cache,
             state_cache,
+            l1_cs_cache,
             cur_state: Mutex::new(cur_state),
         })
     }
@@ -113,6 +120,29 @@ impl ClientStateManager {
     pub fn get_most_recent_state_blocking(&self) -> Option<(u64, Arc<ClientState>)> {
         let cur = self.cur_state.blocking_lock();
         cur.get_clone().map(|state| (cur.get_idx(), state))
+    }
+
+    pub async fn get_l1_state(&self, id: &L1BlockId) -> DbResult<Option<L1ClientState>> {
+        self.l1_cs_cache
+            .get_or_fetch(id, || self.ops.get_client_state_chan(*id))
+            .await
+    }
+
+    pub fn get_l1_state_blocking(&self, id: &L1BlockId) -> DbResult<Option<L1ClientState>> {
+        self.l1_cs_cache
+            .get_or_fetch_blocking(id, || self.ops.get_client_state_blocking(*id))
+    }
+
+    pub async fn put_l1_state(&self, id: L1BlockId, state: L1ClientState) -> DbResult<()> {
+        self.ops.put_client_state_async(id, state).await?;
+        self.l1_cs_cache.purge(&id);
+        Ok(())
+    }
+
+    pub fn put_l1_state_blocking(&self, id: L1BlockId, state: L1ClientState) -> DbResult<()> {
+        self.ops.put_client_state_blocking(id, state)?;
+        self.l1_cs_cache.purge(&id);
+        Ok(())
     }
 }
 

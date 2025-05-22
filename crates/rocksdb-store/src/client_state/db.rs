@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use rockbound::{OptimisticTransactionDB, Schema, SchemaDBOperationsExt};
 use strata_db::{errors::*, traits::*, DbResult};
-use strata_state::operation::*;
+use strata_state::{client_state::L1ClientState, l1::L1BlockId, operation::*};
 
-use super::schemas::ClientUpdateOutputSchema;
+use super::schemas::{ClientStateSchema, ClientUpdateOutputSchema};
 use crate::DbOpsConfig;
 
 #[derive(Debug)]
@@ -65,6 +65,14 @@ impl ClientStateDatabase for ClientStateDb {
             Some(idx) => Ok(idx),
             None => Err(DbError::NotBootstrapped),
         }
+    }
+
+    fn put_client_state(&self, block_id: L1BlockId, state: L1ClientState) -> DbResult<()> {
+        Ok(self.db.put::<ClientStateSchema>(&block_id, &state)?)
+    }
+
+    fn get_client_state(&self, block_id: L1BlockId) -> DbResult<Option<L1ClientState>> {
+        Ok(self.db.get::<ClientStateSchema>(&block_id)?)
     }
 }
 

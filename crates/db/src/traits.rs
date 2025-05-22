@@ -11,8 +11,8 @@ use strata_primitives::{
     proof::{ProofContext, ProofKey},
 };
 use strata_state::{
-    block::L2BlockBundle, chain_state::Chainstate, operation::*, state_op::WriteBatchEntry,
-    sync_event::SyncEvent,
+    block::L2BlockBundle, chain_state::Chainstate, client_state::L1ClientState, operation::*,
+    state_op::WriteBatchEntry, sync_event::SyncEvent,
 };
 use zkaleido::ProofReceipt;
 
@@ -126,6 +126,10 @@ pub trait ClientStateDatabase {
     /// Gets the idx of the last written state.  Or returns error if a bootstrap
     /// state has not been written yet.
     fn get_last_state_idx(&self) -> DbResult<u64>;
+
+    fn put_client_state(&self, block_id: L1BlockId, state: L1ClientState) -> DbResult<()>;
+
+    fn get_client_state(&self, block_id: L1BlockId) -> DbResult<Option<L1ClientState>>;
 }
 
 /// L2 data store for CL blocks.  Does not store anything about what we think
