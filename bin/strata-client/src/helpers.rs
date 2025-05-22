@@ -5,13 +5,15 @@ use bitcoin::{Address, Network};
 use bitcoind_async_client::{traits::Wallet, Client};
 use format_serde_error::SerdeError;
 use strata_config::Config;
-use strata_evmexec::{engine::RpcExecEngineCtl, fetch_init_fork_choice_state, EngineRpcClient};
+use strata_evmexec::{
+    engine::RpcExecEngineCtl, evm_genesis_block_hash, fetch_init_fork_choice_state, EngineRpcClient,
+};
 use strata_primitives::{
     l1::L1Status,
     params::{Params, RollupParams, SyncParams},
 };
-use strata_state::csm_status::CsmStatus;
-use strata_status::StatusChannel;
+use strata_state::{client_state::ClientState, csm_status::CsmStatus};
+use strata_status::{ChainSyncStatus, ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
 use tracing::*;
@@ -59,7 +61,9 @@ pub(crate) fn get_config(args: Args) -> Result<Config, InitError> {
 fn validate_config(config: Config) -> Result<Config, InitError> {
     // Check if the client is not running as sequencer then has sync endpoint.
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
-        return Err(InitError::Anyhow(anyhow::anyhow!("Missing sync_endpoint")));
+        return Err(InitError::MalformedConfig(ConfigError::MissingKey(
+            "sync_endpoint".to_string(),
+        )));
     }
     Ok(config)
 }
@@ -139,8 +143,50 @@ pub(crate) fn create_bitcoin_rpc_client(config: &Config) -> anyhow::Result<Arc<C
     Ok(btc_rpc.into())
 }
 
-// initializes the status bundle that we can pass around cheaply for status/metrics
-pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
+/// Init chainsync status update for status channel on startup.
+/// Note: Only handles for checkpoint sync currently.
+fn init_chainsync_status_update(
+    storage: &NodeStorage,
+    cur_state: &ClientState,
+) -> anyhow::Result<Option<ChainSyncStatusUpdate>> {
+    let epoch = match cur_state.get_declared_final_epoch() {
+        Some(e) => e.epoch(),
+        None => return Ok(None),
+    };
+
+    let checkpoint = storage
+        .checkpoint()
+        .get_checkpoint_blocking(epoch)?
+        .map(|entry| entry.into_batch_checkpoint())
+        .ok_or(InitError::MissingExpectedCheckpoint(epoch))?;
+
+    let tip = checkpoint.batch_info().final_l2_block();
+    let slot = checkpoint.batch_info().final_l2_slot();
+
+    let chainstate = storage
+        .chainstate()
+        .get_toplevel_chainstate_blocking(slot)?
+        .map(|entry| entry.to_chainstate())
+        .ok_or(InitError::MissingExpectedChainstate(slot))?;
+
+    let status = ChainSyncStatus::new(
+        *tip,
+        *chainstate.prev_epoch(),
+        *chainstate.finalized_epoch(),
+        chainstate.l1_view().get_safe_block(),
+    );
+
+    Ok(Some(ChainSyncStatusUpdate::new(
+        status,
+        Arc::new(chainstate),
+    )))
+}
+
+/// initializes the status bundle that we can pass around cheaply for status/metrics
+pub(crate) fn init_status_channel(
+    storage: &NodeStorage,
+    is_checkpoint_sync: bool,
+) -> anyhow::Result<StatusChannel> {
     // init client state
     let csman = storage.client_state();
     let (cur_state_idx, cur_state) = csman
@@ -156,11 +202,17 @@ pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<Statu
         ..Default::default()
     };
 
+    let chainsync_status_update = if is_checkpoint_sync {
+        init_chainsync_status_update(storage, &cur_state)?
+    } else {
+        None
+    };
+
     // TODO avoid clone, change status channel to use arc
     Ok(StatusChannel::new(
         cur_state.as_ref().clone(),
         l1_status,
-        None,
+        chainsync_status_update,
     ))
 }
 
@@ -169,6 +221,7 @@ pub(crate) fn init_engine_controller(
     params: &Params,
     storage: &NodeStorage,
     handle: &Handle,
+    from_genesis: bool,
 ) -> anyhow::Result<Arc<RpcExecEngineCtl<EngineRpcClient>>> {
     let reth_jwtsecret = load_jwtsecret(&config.exec.reth.secret)?;
     let client = EngineRpcClient::from_url_secret(
@@ -176,7 +229,12 @@ pub(crate) fn init_engine_controller(
         reth_jwtsecret,
     );
 
-    let initial_fcs = fetch_init_fork_choice_state(storage, params.rollup())?;
+    let initial_fcs = if from_genesis {
+        evm_genesis_block_hash(params.rollup())
+    } else {
+        fetch_init_fork_choice_state(storage, params.rollup())?
+    };
+
     let eng_ctl = strata_evmexec::engine::RpcExecEngineCtl::new(
         client,
         initial_fcs,

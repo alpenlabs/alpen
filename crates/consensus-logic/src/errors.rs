@@ -126,3 +126,18 @@ pub enum CheckpointError {
     #[error("proof validation: {0}")]
     Proof(#[from] ZkVmError),
 }
+
+#[derive(Debug, Error)]
+pub enum CheckpointSyncError {
+    #[error("missing checkpoint for epoch: {0}")]
+    MissingCheckpoint(u64),
+
+    #[error("failed to extract chainstate diff from checkpoint: {0}")]
+    FailedDiffExtraction(String),
+
+    #[error("failed to apply diff to latest chainstate: {0}")]
+    FailedDiffApplication(String),
+
+    #[error("db: {0}")]
+    Db(#[from] strata_db::errors::DbError),
+}

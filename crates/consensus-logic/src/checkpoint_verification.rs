@@ -2,7 +2,7 @@
 
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_primitives::{params::*, proof::RollupVerifyingKey};
-use strata_state::{batch::*, client_state::L1Checkpoint};
+use strata_state::batch::*;
 use tracing::*;
 use zkaleido::{ProofReceipt, ZkVmError, ZkVmResult};
 
@@ -18,7 +18,7 @@ use crate::errors::CheckpointError;
 // need, not like the height
 pub fn verify_checkpoint(
     checkpoint: &Checkpoint,
-    prev_checkpoint: Option<&L1Checkpoint>,
+    prev_checkpoint_commitment: Option<&CheckpointCommitment>,
     params: &RollupParams,
 ) -> Result<(), CheckpointError> {
     // First thing obviously is to verify the proof.  No sense in continuing if
@@ -27,7 +27,7 @@ pub fn verify_checkpoint(
     verify_proof(checkpoint, &proof_receipt, params)?;
 
     // And check that we're building upon the previous state correctly.
-    if let Some(prev) = prev_checkpoint {
+    if let Some(prev) = prev_checkpoint_commitment {
         verify_checkpoint_extends(checkpoint, prev, params)?;
     } else {
         // If it's the first checkpoint we want it to be the initial epoch.
@@ -42,12 +42,12 @@ pub fn verify_checkpoint(
 /// Verifies that the a checkpoint extends the state of a previous checkpoint.
 fn verify_checkpoint_extends(
     checkpoint: &Checkpoint,
-    prev: &L1Checkpoint,
+    prev_commitment: &CheckpointCommitment,
     _params: &RollupParams,
 ) -> Result<(), CheckpointError> {
     let epoch = checkpoint.batch_info().epoch();
-    let prev_epoch = prev.batch_info.epoch();
-    let last_tsn = prev.batch_transition;
+    let prev_epoch = prev_commitment.batch_info().epoch();
+    let last_tsn = prev_commitment.batch_transition();
     let tsn = checkpoint.batch_transition();
 
     // Check that the epoch numbers line up.

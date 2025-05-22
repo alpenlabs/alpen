@@ -24,6 +24,7 @@ pub mod operation;
 pub mod state_op;
 pub mod state_queue;
 pub mod sync_event;
+pub mod traits;
 
 pub mod prelude;
 
