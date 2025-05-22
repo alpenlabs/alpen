@@ -12,10 +12,10 @@ use strata_primitives::l1::{L1Block, L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
 use tracing::*;
 
 use super::schemas::{
-    L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, L1RawBlockSchema, MmrSchema,
-    TxnSchema,
+    L1BlockPowSchema, L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema,
+    L1PendingBlockSchema, L1RawBlockSchema, MmrSchema, TxnSchema,
 };
-use crate::DbOpsConfig;
+use crate::{utils::get_last_idx, DbOpsConfig};
 
 #[derive(Debug)]
 pub struct L1Db {
@@ -56,23 +56,55 @@ impl L1Database for L1Db {
             .map_err(|e: rockbound::TransactionError<_>| DbError::TransactionError(e.to_string()))
     }
 
-    fn put_block(&self, block: L1Block) -> DbResult<()> {
+    fn put_block_pending_validation(&self, block: L1Block) -> DbResult<()> {
         let blockid = block.block_id();
-        let height = block.height();
+        // let height = block.height();
+
+        let mut batch = SchemaBatch::new();
+        batch.put::<L1RawBlockSchema>(&blockid, &block)?;
+        batch.put::<L1PendingBlockSchema>(&blockid, &())?;
+
+        self.db.write_schemas(batch)?;
+
+        Ok(())
+    }
+
+    fn mark_block_valid(&self, block_id: L1BlockId, height: u64, pow: [u8; 32]) -> DbResult<()> {
+        if let Some(current_max_height) = get_last_idx::<L1BlocksByHeightSchema>(self.db.as_ref())?
+        {
+            if height > current_max_height + 1 {
+                warn!(%current_max_height, %height, %block_id, "l1db: tried to mark not contiguous block as valid");
+                return Err(DbError::OooInsert(
+                    L1BlocksByHeightSchema::table_name(),
+                    height,
+                ));
+            }
+        }
 
         self.db
             .with_optimistic_txn(self.ops.txn_retry_count(), |txn| {
                 let mut blocks_at_height = txn
                     .get_for_update::<L1BlocksByHeightSchema>(&height)?
                     .unwrap_or_default();
-                blocks_at_height.push(blockid);
+                blocks_at_height.push(block_id);
 
-                txn.put::<L1RawBlockSchema>(&blockid, &block)?;
                 txn.put::<L1BlocksByHeightSchema>(&height, &blocks_at_height)?;
+                txn.put::<L1BlockPowSchema>(&block_id, &pow)?;
+                txn.delete::<L1PendingBlockSchema>(&block_id)?;
 
                 Ok::<(), DbError>(())
             })
             .map_err(|e: rockbound::TransactionError<_>| DbError::TransactionError(e.to_string()))
+    }
+
+    fn remove_invalid_block(&self, block_id: L1BlockId) -> DbResult<()> {
+        let mut batch = SchemaBatch::new();
+        batch.delete::<L1PendingBlockSchema>(&block_id)?;
+        batch.delete::<L1RawBlockSchema>(&block_id)?;
+
+        self.db.write_schemas(batch)?;
+
+        Ok(())
     }
 
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()> {
@@ -196,6 +228,28 @@ impl L1Database for L1Db {
 
     fn get_block(&self, blockid: L1BlockId) -> DbResult<Option<L1Block>> {
         Ok(self.db.get::<L1RawBlockSchema>(&blockid)?)
+    }
+
+    fn get_best_valid_block_height(&self) -> DbResult<Option<u64>> {
+        get_last_idx::<L1BlocksByHeightSchema>(self.db.as_ref())
+    }
+
+    fn get_block_pow(&self, blockid: L1BlockId) -> DbResult<Option<[u8; 32]>> {
+        Ok(self.db.get::<L1BlockPowSchema>(&blockid)?)
+    }
+
+    fn get_blocks_at_height_range(&self, start: u64, end: u64) -> DbResult<Vec<L1BlockId>> {
+        let mut block_ids = Vec::new();
+
+        for height in start..=end {
+            let Some(blocks) = self.db.get::<L1BlocksByHeightSchema>(&height)? else {
+                continue;
+            };
+
+            block_ids.extend(blocks);
+        }
+
+        Ok(block_ids)
     }
 }
 

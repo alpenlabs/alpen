@@ -11,10 +11,13 @@ use crate::{cache::CacheTable, ops};
 #[expect(missing_debug_implementations)]
 pub struct L1BlockManager {
     ops: ops::l1::L1DataOps,
+    #[deprecated]
     manifest_cache: CacheTable<L1BlockId, Option<L1BlockManifest>>,
-    block_cache: CacheTable<L1BlockId, Option<L1Block>>,
+    #[deprecated]
     txs_cache: CacheTable<L1BlockId, Option<Vec<L1TxRef>>>,
+    #[deprecated]
     blockheight_cache: CacheTable<u64, Option<L1BlockId>>,
+    block_cache: CacheTable<L1BlockId, Option<L1Block>>,
 }
 
 impl L1BlockManager {
@@ -22,8 +25,8 @@ impl L1BlockManager {
     pub fn new<D: L1Database + Sync + Send + 'static>(pool: ThreadPool, db: Arc<D>) -> Self {
         let ops = ops::l1::Context::new(db).into_ops(pool);
         let manifest_cache = CacheTable::new(64.try_into().unwrap());
-        let block_cache = CacheTable::new(64.try_into().unwrap());
         let txs_cache = CacheTable::new(64.try_into().unwrap());
+        let block_cache = CacheTable::new(64.try_into().unwrap());
         let blockheight_cache = CacheTable::new(64.try_into().unwrap());
         Self {
             ops,
@@ -35,6 +38,7 @@ impl L1BlockManager {
     }
 
     /// Save an [`L1BlockManifest`] to database. Does not add block to tracked canonical chain.
+    #[deprecated]
     pub fn put_block_data(&self, mf: L1BlockManifest) -> DbResult<()> {
         let blockid = mf.blkid();
         self.manifest_cache.purge(blockid);
@@ -43,6 +47,7 @@ impl L1BlockManager {
     }
 
     /// Save an [`L1BlockManifest`] to database. Does not add block to tracked canonical chain.
+    #[deprecated]
     pub async fn put_block_data_async(&self, mf: L1BlockManifest) -> DbResult<()> {
         let blockid = mf.blkid();
         self.manifest_cache.purge(blockid);
@@ -50,20 +55,53 @@ impl L1BlockManager {
         self.ops.put_block_data_async(mf).await
     }
 
-    pub fn put_block(&self, block: L1Block) -> DbResult<()> {
+    pub async fn put_block_pending_validation(&self, block: L1Block) -> DbResult<()> {
         let blockid = &block.block_id();
         self.block_cache.purge(blockid);
-        self.ops.put_block_blocking(block)
+        self.ops.put_block_pending_validation_async(block).await
     }
 
-    pub async fn put_block_async(&self, block: L1Block) -> DbResult<()> {
+    pub fn put_block_pending_validation_blocking(&self, block: L1Block) -> DbResult<()> {
         let blockid = &block.block_id();
         self.block_cache.purge(blockid);
-        self.ops.put_block_async(block).await
+        self.ops.put_block_pending_validation_blocking(block)
+    }
+
+    pub async fn mark_block_valid(
+        &self,
+        block_id: &L1BlockId,
+        height: u64,
+        pow: [u8; 32],
+    ) -> DbResult<()> {
+        self.ops
+            .mark_block_valid_async(*block_id, height, pow)
+            .await
+    }
+
+    pub fn mark_block_valid_blocking(
+        &self,
+        block_id: &L1BlockId,
+        height: u64,
+        pow: [u8; 32],
+    ) -> DbResult<()> {
+        self.ops.mark_block_valid_blocking(*block_id, height, pow)
+    }
+
+    pub async fn remove_invalid_block(&self, block_id: &L1BlockId) -> DbResult<()> {
+        self.ops.remove_invalid_block_async(*block_id).await?;
+        self.block_cache.purge(block_id);
+        Ok(())
+    }
+
+    pub fn remove_invalid_block_blocking(&self, block_id: &L1BlockId) -> DbResult<()> {
+        self.ops.remove_invalid_block_blocking(*block_id)?;
+        self.block_cache.purge(block_id);
+        Ok(())
     }
 
     /// Append `blockid` to tracked canonical chain.
     /// [`L1BlockManifest`] for this `blockid` must be present in db.
+    #[deprecated]
     pub fn extend_canonical_chain(&self, blockid: &L1BlockId) -> DbResult<()> {
         let new_block = self
             .get_block_manifest(blockid)?
@@ -87,6 +125,7 @@ impl L1BlockManager {
 
     /// Append `blockid` to tracked canonical chain.
     /// [`L1BlockManifest`] for this `blockid` must be present in db.
+    #[deprecated]
     pub async fn extend_canonical_chain_async(&self, blockid: &L1BlockId) -> DbResult<()> {
         let new_block = self
             .get_block_manifest_async(blockid)
@@ -112,6 +151,7 @@ impl L1BlockManager {
 
     /// Reverts tracked canonical chain to `height`.
     /// `height` must be less than tracked canonical chain height.
+    #[deprecated]
     pub fn revert_canonical_chain(&self, height: u64) -> DbResult<()> {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_blocking()? else {
             // no chain to revert
@@ -134,6 +174,7 @@ impl L1BlockManager {
 
     /// Reverts tracked canonical chain to `height`.
     /// `height` must be less than tracked canonical chain height.
+    #[deprecated]
     pub async fn revert_canonical_chain_async(&self, height: u64) -> DbResult<()> {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_async().await? else {
             // no chain to revert
@@ -157,21 +198,25 @@ impl L1BlockManager {
     }
 
     // Get tracked canonical chain tip height and blockid.
+    #[deprecated]
     pub fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>> {
         self.ops.get_canonical_chain_tip_blocking()
     }
 
     // Get tracked canonical chain tip height and blockid.
+    #[deprecated]
     pub async fn get_canonical_chain_tip_async(&self) -> DbResult<Option<(u64, L1BlockId)>> {
         self.ops.get_canonical_chain_tip_async().await
     }
 
     // Get tracked canonical chain tip height.
+    #[deprecated]
     pub fn get_chain_tip_height(&self) -> DbResult<Option<u64>> {
         Ok(self.get_canonical_chain_tip()?.map(|(height, _)| height))
     }
 
     // Get tracked canonical chain tip height.
+    #[deprecated]
     pub async fn get_chain_tip_height_async(&self) -> DbResult<Option<u64>> {
         Ok(self
             .get_canonical_chain_tip_async()
@@ -180,12 +225,14 @@ impl L1BlockManager {
     }
 
     // Get [`L1BlockManifest`] for given `blockid`.
+    #[deprecated]
     pub fn get_block_manifest(&self, blockid: &L1BlockId) -> DbResult<Option<L1BlockManifest>> {
         self.manifest_cache
             .get_or_fetch_blocking(blockid, || self.ops.get_block_manifest_blocking(*blockid))
     }
 
     // Get [`L1BlockManifest`] for given `blockid`.
+    #[deprecated]
     pub async fn get_block_manifest_async(
         &self,
         blockid: &L1BlockId,
@@ -196,6 +243,7 @@ impl L1BlockManager {
     }
 
     // Get [`L1BlockManifest`] at `height` in tracked canonical chain.
+    #[deprecated]
     pub fn get_block_manifest_at_height(&self, height: u64) -> DbResult<Option<L1BlockManifest>> {
         let Some(blockid) = self.get_canonical_blockid_at_height(height)? else {
             return Ok(None);
@@ -205,6 +253,7 @@ impl L1BlockManager {
     }
 
     // Get [`L1BlockManifest`] at `height` in tracked canonical chain.
+    #[deprecated]
     pub async fn get_block_manifest_at_height_async(
         &self,
         height: u64,
@@ -217,37 +266,36 @@ impl L1BlockManager {
     }
 
     // Get [`L1Block`] for given `blockid`.
-    pub fn get_block(&self, blockid: &L1BlockId) -> DbResult<Option<L1Block>> {
-        self.block_cache
-            .get_or_fetch_blocking(blockid, || self.ops.get_block_blocking(*blockid))
-    }
-
-    // Get [`L1Block`] for given `blockid`.
-    pub async fn get_block_async(&self, blockid: &L1BlockId) -> DbResult<Option<L1Block>> {
+    pub async fn get_block(&self, blockid: &L1BlockId) -> DbResult<Option<L1Block>> {
         self.block_cache
             .get_or_fetch(blockid, || self.ops.get_block_chan(*blockid))
             .await
     }
 
-    // Get [`L1Block`] at `height` in tracked canonical chain.
-    pub fn get_block_at_height(&self, height: u64) -> DbResult<Option<L1Block>> {
-        let Some(blockid) = self.get_canonical_blockid_at_height(height)? else {
-            return Ok(None);
-        };
-
-        self.get_block(&blockid)
+    // Get [`L1Block`] for given `blockid`.
+    pub fn get_block_blocking(&self, blockid: &L1BlockId) -> DbResult<Option<L1Block>> {
+        self.block_cache
+            .get_or_fetch_blocking(blockid, || self.ops.get_block_blocking(*blockid))
     }
 
-    // Get [`L1Block`] at `height` in tracked canonical chain.
-    pub async fn get_block_at_height_async(&self, height: u64) -> DbResult<Option<L1Block>> {
-        let Some(blockid) = self.get_canonical_blockid_at_height_async(height).await? else {
-            return Ok(None);
-        };
+    pub async fn get_block_pow(&self, blockid: &L1BlockId) -> DbResult<Option<[u8; 32]>> {
+        self.ops.get_block_pow_async(*blockid).await
+    }
 
-        self.get_block_async(&blockid).await
+    pub fn get_block_pow_blocking(&self, blockid: &L1BlockId) -> DbResult<Option<[u8; 32]>> {
+        self.ops.get_block_pow_blocking(*blockid)
+    }
+
+    pub async fn get_best_valid_block_height(&self) -> DbResult<Option<u64>> {
+        self.ops.get_best_valid_block_height_async().await
+    }
+
+    pub fn get_best_valid_block_height_blocking(&self) -> DbResult<Option<u64>> {
+        self.ops.get_best_valid_block_height_blocking()
     }
 
     // Get [`L1BlockId`] at `height` in tracked canonical chain.
+    #[deprecated]
     pub fn get_canonical_blockid_at_height(&self, height: u64) -> DbResult<Option<L1BlockId>> {
         self.blockheight_cache.get_or_fetch_blocking(&height, || {
             self.ops.get_canonical_blockid_at_height_blocking(height)
@@ -255,6 +303,7 @@ impl L1BlockManager {
     }
 
     // Get [`L1BlockId`] at `height` in tracked canonical chain.
+    #[deprecated]
     pub async fn get_canonical_blockid_at_height_async(
         &self,
         height: u64,
@@ -266,6 +315,7 @@ impl L1BlockManager {
             .await
     }
 
+    #[deprecated]
     pub fn get_canonical_blockid_range(
         &self,
         start_idx: u64,
@@ -275,6 +325,7 @@ impl L1BlockManager {
             .get_canonical_blockid_range_blocking(start_idx, end_idx)
     }
 
+    #[deprecated]
     pub async fn get_canonical_blockid_range_async(
         &self,
         start_idx: u64,
@@ -286,12 +337,14 @@ impl L1BlockManager {
     }
 
     // Get indexed transasction inside `blockid`.
+    #[deprecated]
     pub fn get_block_txs(&self, blockid: &L1BlockId) -> DbResult<Option<Vec<L1TxRef>>> {
         self.txs_cache
             .get_or_fetch_blocking(blockid, || self.ops.get_block_txs_blocking(*blockid))
     }
 
     // Get indexed transasction inside `blockid`.
+    #[deprecated]
     pub async fn get_block_txs_async(&self, blockid: &L1BlockId) -> DbResult<Option<Vec<L1TxRef>>> {
         self.txs_cache
             .get_or_fetch(blockid, || self.ops.get_block_txs_chan(*blockid))
@@ -299,6 +352,7 @@ impl L1BlockManager {
     }
 
     // Get indexed transasction inside `blockid`.
+    #[deprecated]
     pub fn get_block_txs_at_height(&self, height: u64) -> DbResult<Option<Vec<L1TxRef>>> {
         let Some(blockid) = self.get_canonical_blockid_at_height(height)? else {
             return Ok(None);
@@ -307,6 +361,7 @@ impl L1BlockManager {
     }
 
     // Get indexed transasction inside block at `height` in tracked canonical chain.
+    #[deprecated]
     pub async fn get_block_txs_at_height_async(
         &self,
         height: u64,
@@ -318,12 +373,14 @@ impl L1BlockManager {
     }
 
     // Get indexed transaction identified by `tx_ref`.
+    #[deprecated]
     pub fn get_tx(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>> {
         // TODO: Might need to use a cache here, but let's keep it for when we use it
         self.ops.get_tx_blocking(tx_ref)
     }
 
     // Get indexed transaction identified by `tx_ref`.
+    #[deprecated]
     pub async fn get_tx_async(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>> {
         // TODO: Might need to use a cache here, but let's keep it for when we use it
         self.ops.get_tx_async(tx_ref).await

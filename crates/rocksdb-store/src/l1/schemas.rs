@@ -13,8 +13,18 @@ define_table_with_default_codec!(
 );
 
 define_table_with_default_codec!(
-    /// A table to store L1 Block data. Maps block id to header
+    /// A table to store L1 Block data. Maps block id to block
     (L1RawBlockSchema) L1BlockId => L1Block
+);
+
+define_table_with_default_codec!(
+    /// A table to store L1 Block accumulated pow. Maps block id to accumulated pow.
+    (L1BlockPowSchema) L1BlockId => [u8; 32]
+);
+
+define_table_with_default_codec!(
+    /// A table to keep track of unchecked L1 blocks pending processing.
+    (L1PendingBlockSchema) L1BlockId => ()
 );
 
 define_table_with_seek_key_codec!(
