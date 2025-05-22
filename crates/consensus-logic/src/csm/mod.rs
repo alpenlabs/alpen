@@ -6,6 +6,7 @@
 // TODO clean up this module so that specific items are directly exported and
 // modules don't have to be
 
+pub mod chain_tracker;
 pub mod client_transition;
 pub mod config;
 pub mod ctl;
