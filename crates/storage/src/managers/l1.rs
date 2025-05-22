@@ -18,6 +18,7 @@ pub struct L1BlockManager {
     #[deprecated]
     blockheight_cache: CacheTable<u64, Option<L1BlockId>>,
     block_cache: CacheTable<L1BlockId, Option<L1Block>>,
+    block_pow_cache: CacheTable<L1BlockId, Option<[u8; 32]>>,
 }
 
 impl L1BlockManager {
@@ -26,14 +27,16 @@ impl L1BlockManager {
         let ops = ops::l1::Context::new(db).into_ops(pool);
         let manifest_cache = CacheTable::new(64.try_into().unwrap());
         let txs_cache = CacheTable::new(64.try_into().unwrap());
-        let block_cache = CacheTable::new(64.try_into().unwrap());
         let blockheight_cache = CacheTable::new(64.try_into().unwrap());
+        let block_cache = CacheTable::new(64.try_into().unwrap());
+        let block_pow_cache = CacheTable::new(64.try_into().unwrap());
         Self {
             ops,
             manifest_cache,
-            block_cache,
             txs_cache,
             blockheight_cache,
+            block_cache,
+            block_pow_cache,
         }
     }
 
@@ -279,11 +282,14 @@ impl L1BlockManager {
     }
 
     pub async fn get_block_pow(&self, blockid: &L1BlockId) -> DbResult<Option<[u8; 32]>> {
-        self.ops.get_block_pow_async(*blockid).await
+        self.block_pow_cache
+            .get_or_fetch(blockid, || self.ops.get_block_pow_chan(*blockid))
+            .await
     }
 
     pub fn get_block_pow_blocking(&self, blockid: &L1BlockId) -> DbResult<Option<[u8; 32]>> {
-        self.ops.get_block_pow_blocking(*blockid)
+        self.block_pow_cache
+            .get_or_fetch_blocking(blockid, || self.ops.get_block_pow_blocking(*blockid))
     }
 
     pub async fn get_best_valid_block_height(&self) -> DbResult<Option<u64>> {
