@@ -70,28 +70,6 @@ impl L1Header {
     }
 }
 
-struct L1BlockWithPow {
-    inner: L1Block,
-    accumulated_pow: U256,
-}
-
-impl L1BlockWithPow {
-    pub fn from_block(block: L1Block, accumulated_pow: U256) -> Self {
-        Self {
-            inner: block,
-            accumulated_pow,
-        }
-    }
-
-    pub fn inner(&self) -> &L1Block {
-        &self.inner
-    }
-
-    pub fn accumulated_pow(&self) -> &U256 {
-        &self.accumulated_pow
-    }
-}
-
 #[derive(Debug, Default)]
 struct IndexedBlockTable {
     by_block_id: HashMap<L1BlockId, L1Header>,
@@ -356,12 +334,10 @@ fn process_l1_block(
 
 trait L1ChainContext {
     fn get_block(&self, block_id: &L1BlockId) -> Result<Option<L1Block>, DbError>;
-    fn get_block_with_pow(&self, block_id: &L1BlockId) -> Result<Option<L1BlockWithPow>, DbError>;
     fn get_block_pow(&self, block_id: &L1BlockId) -> Result<Option<U256>, DbError>;
     fn get_client_state(&self, block_id: &L1BlockId) -> Result<Option<L1ClientState>, DbError>;
 
     fn expect_block(&self, block_id: &L1BlockId) -> L1Block;
-    fn expect_block_with_pow(&self, block_id: &L1BlockId) -> L1BlockWithPow;
     fn expect_block_pow(&self, block_id: &L1BlockId) -> U256;
     fn expect_client_state(&self, block_id: &L1BlockId) -> L1ClientState;
 
@@ -388,24 +364,11 @@ impl L1ChainContext for DbL1ChainContext {
         self.storage.l1().get_block_blocking(block_id)
     }
 
-    fn get_block_with_pow(&self, block_id: &L1BlockId) -> Result<Option<L1BlockWithPow>, DbError> {
-        match (self.get_block(block_id), self.get_block_pow(block_id)) {
-            (Ok(Some(block)), Ok(Some(pow))) => Ok(Some(L1BlockWithPow::from_block(block, pow))),
-            (Ok(None), _) => Ok(None),
-            (Ok(Some(_)), Ok(None)) => {
-                error!(%block_id, "csm: missing block pow");
-                Ok(None)
-            }
-            (Err(err), _) => Err(err),
-            (_, Err(err)) => Err(err),
-        }
-    }
-
     fn get_block_pow(&self, block_id: &L1BlockId) -> Result<Option<U256>, DbError> {
         self.storage
             .l1()
             .get_block_pow_blocking(block_id)
-            .map(|maybe_pow| maybe_pow.map(|pow| U256::from_be_bytes(pow)))
+            .map(|maybe_pow| maybe_pow.map(U256::from_be_bytes))
     }
 
     fn get_client_state(&self, block_id: &L1BlockId) -> Result<Option<L1ClientState>, DbError> {
@@ -414,12 +377,6 @@ impl L1ChainContext for DbL1ChainContext {
 
     fn expect_block(&self, block_id: &L1BlockId) -> L1Block {
         self.get_block(block_id)
-            .expect("csm: db error")
-            .expect("csm: missing block")
-    }
-
-    fn expect_block_with_pow(&self, block_id: &L1BlockId) -> L1BlockWithPow {
-        self.get_block_with_pow(block_id)
             .expect("csm: db error")
             .expect("csm: missing block")
     }
