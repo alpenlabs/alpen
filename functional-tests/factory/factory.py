@@ -200,6 +200,7 @@ class FullNodeFactory(flexitest.Factory):
         sequencer_rpc: str,
         rollup_params: str,
         ctx: flexitest.EnvContext,
+        sync_mode: str | None = None,
         name_suffix: str = "",
     ) -> flexitest.Service:
         idx = self.next_idx()
@@ -236,7 +237,10 @@ class FullNodeFactory(flexitest.Factory):
             "--rpc-host", rpc_host,
             "--rpc-port", str(rpc_port),
         ]
+
         # fmt: on
+        if sync_mode:
+            cmd.extend(["--sync-mode", sync_mode])
 
         rpc_url = f"ws://localhost:{rpc_port}"
         props = {

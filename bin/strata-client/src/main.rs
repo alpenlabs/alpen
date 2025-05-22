@@ -3,11 +3,10 @@
 #![feature(slice_pattern)]
 use std::{sync::Arc, time::Duration};
 
-use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
 use el_sync::sync_chainstate_to_el;
-use errors::InitError;
+use errors::{ConfigError, InitError};
 use jsonrpsee::Methods;
 use rpc_client::sync_client;
 use strata_btcio::{
@@ -18,6 +17,7 @@ use strata_btcio::{
 use strata_common::logging;
 use strata_config::Config;
 use strata_consensus_logic::{
+    checkpoint_sync_v2::{checkpoint_sync_task, CheckpointSyncManager},
     genesis,
     sync_manager::{self, SyncManager},
 };
@@ -46,7 +46,10 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{args::Args, helpers::*};
+use crate::{
+    args::{Args, SyncMode},
+    helpers::*,
+};
 
 mod args;
 mod el_sync;
@@ -138,6 +141,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         storage.clone(),
         bridge_msg_ops,
         bitcoin_client,
+        args.sync_mode,
     )?;
 
     let mut methods = jsonrpsee::Methods::new();
@@ -165,12 +169,15 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             broadcast_handle,
             &mut methods,
         )?;
-    } else {
-        let sync_endpoint = &config
-            .client
-            .sync_endpoint
-            .clone()
-            .ok_or(InitError::Anyhow(anyhow!("Missing sync_endpoint")))?;
+    } else if args.sync_mode == SyncMode::Full {
+        let sync_endpoint =
+            &config
+                .client
+                .sync_endpoint
+                .clone()
+                .ok_or(InitError::MalformedConfig(ConfigError::MissingKey(
+                    "Missing sync_endpoint".to_string(),
+                )))?;
         info!(?sync_endpoint, "initing fullnode task");
 
         let rpc_client = sync_client(sync_endpoint);
@@ -247,6 +254,7 @@ fn do_startup_checks(
     engine: &impl ExecEngineCtl,
     bitcoin_client: &impl Reader,
     handle: &Handle,
+    check_engine: bool,
 ) -> anyhow::Result<()> {
     let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
         Ok(idx) => idx,
@@ -262,7 +270,9 @@ fn do_startup_checks(
         .chainstate()
         .get_toplevel_chainstate_blocking(last_state_idx)?
     else {
-        anyhow::bail!("Missing chain state idx: {last_state_idx}");
+        return Err(
+            InitError::MissingData(format!("Missing chain state idx: {}", last_state_idx)).into(),
+        );
     };
 
     let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
@@ -276,27 +286,41 @@ fn do_startup_checks(
             info!("startup: last matured block: {}", block_hash);
         }
         Err(client_error) if client_error.is_block_not_found() => {
-            anyhow::bail!("Missing expected block: {}", block_hash);
+            return Err(
+                InitError::MissingData(format!("Missing expected block: {}", block_hash)).into(),
+            );
         }
         Err(client_error) => {
-            anyhow::bail!("could not connect to bitcoin, err = {}", client_error);
+            return Err(InitError::ServiceUnavailable(format!(
+                "could not connect to bitcoin, err = {}",
+                client_error
+            ))
+            .into());
         }
     }
 
     // Check that tip L2 block exists (and engine can be connected to)
-    let chain_tip = tip_blockid;
-    match engine.check_block_exists(chain_tip) {
-        Ok(true) => {
-            info!("startup: last l2 block is synced")
-        }
-        Ok(false) => {
-            // Current chain tip tip block is not known by the EL.
-            warn!(%chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(storage, engine)?;
-        }
-        Err(error) => {
-            // Likely network issue
-            anyhow::bail!("could not connect to exec engine, err = {}", error);
+    if check_engine {
+        // engine is not used in checkpoint sync (find a better way to resolve this, a bit hacky for
+        // now)
+        let chain_tip = tip_blockid;
+        match engine.check_block_exists(chain_tip) {
+            Ok(true) => {
+                info!("startup: last l2 block is synced")
+            }
+            Ok(false) => {
+                // Current chain tip tip block is not known by the EL.
+                warn!(%chain_tip, "missing expected EVM block");
+                sync_chainstate_to_el(storage, engine)?;
+            }
+            Err(error) => {
+                // Likely network issue
+                return Err(InitError::ServiceUnavailable(format!(
+                    "could not connect to exec engine, err = {}",
+                    error
+                ))
+                .into());
+            }
         }
     }
 
@@ -315,14 +339,22 @@ fn start_core_tasks(
     storage: Arc<NodeStorage>,
     _bridge_msg_ops: Arc<BridgeMsgOps>,
     bitcoin_client: Arc<Client>,
+    sync_mode: SyncMode,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();
 
     // init status tasks
     let status_channel = init_status_channel(storage.as_ref())?;
 
-    let engine =
-        init_engine_controller(config, params.as_ref(), storage.as_ref(), executor.handle())?;
+    // instantiate execution engine
+    let is_checkpoint_sync = sync_mode == SyncMode::Checkpoint && !config.client.is_sequencer;
+    let engine = init_engine_controller(
+        config,
+        params.as_ref(),
+        storage.as_ref(),
+        executor.handle(),
+        is_checkpoint_sync,
+    )?;
 
     // do startup checks
     do_startup_checks(
@@ -330,17 +362,28 @@ fn start_core_tasks(
         engine.as_ref(),
         bitcoin_client.as_ref(),
         executor.handle(),
+        !is_checkpoint_sync,
     )?;
 
-    // Start the sync manager.
+    // start the CSM and FCM tasks
     let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
         executor,
         &storage,
         engine.clone(),
         params.clone(),
         status_channel.clone(),
+        !is_checkpoint_sync,
     )?
     .into();
+
+    // start checkpoint sync task
+    if is_checkpoint_sync {
+        let ckpt_sync_manager = CheckpointSyncManager::new(storage.clone(), status_channel.clone());
+        executor.spawn_critical_async(
+            "checkpoint_sync_task",
+            checkpoint_sync_task(ckpt_sync_manager),
+        );
+    }
 
     // Start the L1 tasks to get that going.
     executor.spawn_critical_async(
