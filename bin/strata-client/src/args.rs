@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use argh::FromArgs;
 use toml::value::Table;
@@ -24,6 +24,24 @@ impl EnvArgs {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SyncMode {
+    Checkpoint,
+    Full,
+}
+
+impl FromStr for SyncMode {
+    type Err = InitError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "checkpoint" => Ok(SyncMode::Checkpoint),
+            "full" => Ok(SyncMode::Full),
+            _ => Err(InitError::InvalidSyncMode),
+        }
+    }
+}
+
 #[derive(Debug, Clone, FromArgs)]
 #[argh(description = "Strata client")]
 pub(crate) struct Args {
@@ -43,6 +61,14 @@ pub(crate) struct Args {
     /// Switch that indicates if the client is running as a sequencer.
     #[argh(switch, description = "is sequencer")]
     pub sequencer: bool,
+
+    /// Choose sync mode for client node operation.
+    #[argh(
+        option,
+        description = "client sync mode: ('full', 'checkpoint')",
+        default = "SyncMode::Full"
+    )]
+    pub sync_mode: SyncMode,
 
     /// Rollup params path that will override the params in the config toml.
     #[argh(option, description = "rollup params")]
@@ -199,6 +225,7 @@ mod test {
             rollup_params: None,
             rpc_host: None,
             rpc_port: None,
+            sync_mode: SyncMode::Full,
             overrides: vec![
                 "btcio.reader.client_poll_dur_ms=50".to_string(),
                 "sync.l1_follow_distance=30".to_string(),

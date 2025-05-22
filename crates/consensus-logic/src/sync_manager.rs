@@ -79,6 +79,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     engine: Arc<E>,
     params: Arc<Params>,
     status_channel: StatusChannel,
+    spawn_fcm_task: bool,
 ) -> anyhow::Result<SyncManager> {
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
@@ -89,27 +90,30 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // not be benefitting from the reduced cloning
     let (cupdate_tx, cupdate_rx) = broadcast::channel::<Arc<ClientUpdateNotif>>(64);
 
-    // Start the fork choice manager thread.  If we haven't done genesis yet
-    // this will just wait until the CSM says we have.
-    let fcm_storage = storage.clone();
-    let fcm_engine = engine.clone();
-    let fcm_csm_controller = csm_controller.clone();
-    let fcm_params = params.clone();
-    let handle = executor.handle().clone();
-    let st_ch = status_channel.clone();
-    executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
-        // TODO this should be simplified into a builder or something
-        fork_choice_manager::tracker_task(
-            shutdown,
-            handle,
-            fcm_storage,
-            fcm_engine,
-            fcm_rx,
-            fcm_csm_controller,
-            fcm_params,
-            st_ch,
-        )
-    });
+    if spawn_fcm_task {
+        // Start the fork choice manager thread.  If we haven't done genesis yet
+        // this will just wait until the CSM says we have.
+        let fcm_storage = storage.clone();
+        let fcm_engine = engine.clone();
+        let fcm_csm_controller = csm_controller.clone();
+        let fcm_params = params.clone();
+        let handle = executor.handle().clone();
+        let st_ch = status_channel.clone();
+
+        executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
+            // TODO this should be simplified into a builder or something
+            fork_choice_manager::tracker_task(
+                shutdown,
+                handle,
+                fcm_storage,
+                fcm_engine,
+                fcm_rx,
+                fcm_csm_controller,
+                fcm_params,
+                st_ch,
+            )
+        });
+    }
 
     // Prepare the client worker state and start the thread for that.
     let client_worker_state = worker::WorkerState::open(

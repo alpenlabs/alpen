@@ -56,7 +56,7 @@ fn validate_checkpoint(
     }
 
     if let Err(err) =
-        borsh::from_slice::<Chainstate>(signed_checkpoint.checkpoint().sidecar().chainstate())
+        borsh::from_slice::<Chainstate>(signed_checkpoint.checkpoint().sidecar().bytes())
     {
         warn!(?err, "invalid chainstate in checkpoint");
         return None;

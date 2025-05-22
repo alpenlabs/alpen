@@ -27,6 +27,7 @@ pub fn check_bail_trigger(_s: &str) {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WorkerType {
     SyncWorker,
+    CheckpointSyncWorker,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
