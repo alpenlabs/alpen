@@ -21,7 +21,11 @@ use strata_primitives::{
     },
     params::Params,
 };
-use strata_state::sync_event::EventSubmitter;
+use strata_state::{
+    da::ChainstateDAScheme,
+    sync_event::EventSubmitter,
+    traits::{ChainstateDA, ChainstateUpdate},
+};
 use strata_status::StatusChannel;
 use strata_storage::{L1BlockManager, NodeStorage};
 use tracing::*;
@@ -70,23 +74,7 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
 ) -> anyhow::Result<()> {
     let target_next_block =
         calculate_target_next_block(storage.l1().as_ref(), params.rollup().horizon_l1_height)?;
-
-    let seq_pubkey = match params.rollup.cred_rule {
-        CredRule::Unchecked => None,
-        CredRule::SchnorrKey(buf32) => Some(
-            XOnlyPublicKey::try_from(buf32)
-                .expect("the sequencer pubkey must be valid in the params"),
-        ),
-    };
-
-    let ctx = ReaderContext {
-        client,
-        storage,
-        config,
-        params,
-        status_channel,
-        seq_pubkey,
-    };
+    let ctx = init_reader_context(client, storage, config, params, status_channel);
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
 }
 
@@ -102,6 +90,31 @@ fn calculate_target_next_block(
         .unwrap_or(horz_height);
     assert!(target_next_block >= horz_height);
     Ok(target_next_block)
+}
+
+fn init_reader_context(
+    client: Arc<impl Reader>,
+    storage: Arc<NodeStorage>,
+    config: Arc<ReaderConfig>,
+    params: Arc<Params>,
+    status_channel: StatusChannel,
+) -> ReaderContext<impl Reader> {
+    let seq_pubkey = match params.rollup.cred_rule {
+        CredRule::Unchecked => None,
+        CredRule::SchnorrKey(buf32) => Some(
+            XOnlyPublicKey::try_from(buf32)
+                .expect("the sequencer pubkey must be valid in the params"),
+        ),
+    };
+
+    ReaderContext {
+        client,
+        storage,
+        config,
+        params,
+        status_channel,
+        seq_pubkey,
+    }
 }
 
 /// Inner function that actually does the reading task.
@@ -261,13 +274,14 @@ async fn poll_for_new_blocks<R: Reader>(
                 events.extend_from_slice(&evs);
 
                 if let Some(checkpt) = find_checkpoint_in_events(&evs) {
-                    // if we have a checkpoint in this block, update filterconfig based on this
-                    let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().chainstate())
-                        .expect("deserialize chainstate");
-
-                    state
-                        .filter_config_mut()
-                        .update_from_chainstate(&chainstate);
+                    if let Ok(chainstate_update) = ChainstateDAScheme::chainstate_update_from_bytes(
+                        checkpt.checkpoint().sidecar().bytes(),
+                    ) {
+                        let chainstate = chainstate_update.apply_to_chainstate(None);
+                        state
+                            .filter_config_mut()
+                            .update_from_chainstate(&chainstate);
+                    }
                 }
 
                 info!(%fetch_height, %blkid, "accepted new block");
