@@ -6,6 +6,8 @@ use strata_storage::NodeStorage;
 use super::event::L1Event;
 
 /// Looks for checkpoints in given `RelevantTxEntry`s.
+/// FIXME: These assumes there will be only one checkpoint in a block or the last checkpoint is the
+/// one cared for. Hence returns `checkpoints.last()`.
 pub(crate) fn find_checkpoint(entries: &[RelevantTxEntry]) -> Option<&SignedCheckpoint> {
     let checkpts: Vec<&SignedCheckpoint> = entries
         .iter()
