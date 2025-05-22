@@ -11,7 +11,7 @@ use strata_primitives::{l1::L1Block, params::Params};
 use strata_state::l1::L1BlockId;
 use strata_storage::{L1BlockManager, NodeStorage};
 use tokio::{pin, select, sync::mpsc, time::sleep, try_join};
-use tracing::{debug, error, warn};
+use tracing::warn;
 
 pub enum ReaderCommand {
     FetchBlockById(L1BlockId),
@@ -26,13 +26,20 @@ pub async fn reader_task(
     block_tx: mpsc::Sender<L1BlockId>,
     mut command_rx: mpsc::Receiver<ReaderCommand>,
 ) -> anyhow::Result<()> {
-    // TODO: replace with zmq block listener
+    // TODO: replace stream with zmq block listener
     let start_height = storage
         .l1()
-        .get_canonical_chain_tip_async()
+        .get_best_valid_block_height()
         .await?
-        .map(|(height, _)| height + 1)
+        .map(|height| height + 1)
         .unwrap_or(params.rollup.genesis_l1_height);
+
+    // TODO: clean db entries of this case during startup checks
+    assert!(
+        start_height >= params.rollup.genesis_l1_height,
+        "btcio: Invalid block reader start height"
+    );
+
     let block_stream = get_block_stream(
         start_height,
         config.client_poll_dur_ms as u64,
@@ -40,20 +47,28 @@ pub async fn reader_task(
     );
     pin!(block_stream);
 
+    let (process_tx, mut process_rx) = mpsc::channel::<L1Block>(8);
+    tokio::spawn(async move {
+        while let Some(block) = process_rx.recv().await {
+            let block_id = block.block_id();
+            if let Err(err) = handle_block(block, storage.l1().as_ref(), &block_tx).await {
+                warn!(%err, %block_id, "btcio: failed to process block");
+            }
+        }
+    });
+
     loop {
         select! {
             block = block_stream.next() => {
                 let (height, block) = block.expect("block must exist");
                 let l1block = L1Block::new(height, block);
 
-                if let Err(err) = handle_block(l1block, storage.l1(), &block_tx).await {
-                    warn!("failed to process block: {:?}", err);
-                }
+                let _ = process_tx.send(l1block).await;
                 continue;
             }
 
             Some(command) = command_rx.recv() => {
-                handle_command(command, client.as_ref(), &block_tx, storage.l1()).await;
+                handle_command(command, client.as_ref(), &process_tx).await;
                 continue;
             }
         }
@@ -70,8 +85,8 @@ fn get_block_stream(
             match client.get_block_at(height).await {
                 Ok(block) => return Some(((height, block), (height + 1, client))),
                 Err(err) => {
-                    dbg!(&err);
-                    // TODO: distinguish recoverable and non-recoverable error
+                    warn!(%err, %height, "btcio: failed to fetch block");
+                    // TODO: distinguish recoverable and non-recoverable error?
                     sleep(Duration::from_millis(poll_interval_ms)).await;
                 }
             };
@@ -82,8 +97,7 @@ fn get_block_stream(
 async fn handle_command(
     command: ReaderCommand,
     client: &impl Reader,
-    block_tx: &mpsc::Sender<L1BlockId>,
-    l1: &L1BlockManager,
+    process_tx: &mpsc::Sender<L1Block>,
 ) {
     match command {
         ReaderCommand::FetchBlockById(block_id) => {
@@ -94,13 +108,11 @@ async fn handle_command(
             ) {
                 Ok((height, block)) => L1Block::new(height, block),
                 Err(err) => {
-                    warn!(%block_id, "failed to fetch block: {:?}", err);
+                    warn!(%err, %block_id, "btcio: failed to fetch block");
                     return;
                 }
             };
-            if let Err(err) = handle_block(block, l1, block_tx).await {
-                warn!(%block_id, "failed to process block: {:?}", err);
-            }
+            let _ = process_tx.send(block).await;
         }
         ReaderCommand::FetchBlockRange(range) => {
             let mut work = FuturesUnordered::new();
@@ -115,13 +127,11 @@ async fn handle_command(
                 let block = match res {
                     Ok(block) => L1Block::new(height as u64, block),
                     Err(err) => {
-                        warn!(%height, "failed to fetch block: {:?}", err);
+                        warn!(%err, %height, "btcio: failed to fetch block");
                         return;
                     }
                 };
-                if let Err(err) = handle_block(block, l1, block_tx).await {
-                    warn!(%height, "failed to process block: {:?}", err);
-                }
+                let _ = process_tx.send(block).await;
             }
         }
     }
@@ -133,7 +143,7 @@ async fn handle_block(
     tx: &mpsc::Sender<L1BlockId>,
 ) -> anyhow::Result<()> {
     let blockid = block.block_id();
-    l1.put_block_async(block).await?;
+    l1.put_block_pending_validation(block).await?;
     let _ = tx.send(blockid).await;
     Ok(())
 }
