@@ -23,13 +23,15 @@ pub fn fetch_init_fork_choice_state(
             info!(%slot, %tip, "preparing EVM initial state from chainstate");
             compute_evm_fc_state_from_chainstate(tip, storage)
         }
-        None => {
-            info!("preparing EVM initial state from genesis");
-            let evm_genesis_block_hash =
-                revm_primitives::FixedBytes(*rollup_params.evm_genesis_block_hash.as_ref());
-            Ok(evm_genesis_block_hash)
-        }
+        None => Ok(evm_genesis_block_hash(rollup_params)),
     }
+}
+
+pub fn evm_genesis_block_hash(rollup_params: &RollupParams) -> revm_primitives::FixedBytes<32> {
+    info!("preparing EVM initial state from genesis");
+    let evm_genesis_block_hash =
+        revm_primitives::FixedBytes(*rollup_params.evm_genesis_block_hash.as_ref());
+    evm_genesis_block_hash
 }
 
 fn compute_evm_fc_state_from_chainstate(

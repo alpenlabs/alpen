@@ -70,6 +70,51 @@ impl SyncManager {
     }
 }
 
+// is there a way to pass a dummy engine? we don't need to initialize the EE, just need the
+// structure since csm doesn't use the EE for now
+#[allow(clippy::too_many_arguments)]
+pub fn start_csm_task<E: ExecEngineCtl + Sync + Send + 'static>(
+    executor: &TaskExecutor,
+    storage: &Arc<NodeStorage>,
+    engine: Arc<E>,
+    params: Arc<Params>,
+    status_channel: StatusChannel,
+) -> anyhow::Result<SyncManager> {
+    // this is just here to return SyncManger structure for now
+    let (fc_manager_tx, _) = mpsc::channel::<ForkChoiceMessage>(64);
+
+    // Create channels.
+    let (csm_tx, csm_rx) = mpsc::channel::<CsmMessage>(64);
+    let csm_controller = Arc::new(CsmController::new(storage.sync_event().clone(), csm_tx));
+
+    // TODO should this be in an `Arc`?  it's already fairly compact so we might
+    // not be benefitting from the reduced cloning
+    let (cupdate_tx, cupdate_rx) = broadcast::channel::<Arc<ClientUpdateNotif>>(64);
+
+    // Prepare the client worker state and start the thread for that.
+    let client_worker_state = worker::WorkerState::open(
+        params.clone(),
+        storage.clone(),
+        cupdate_tx,
+        storage.checkpoint().clone(),
+    )?;
+
+    let csm_engine = engine.clone();
+    let st_ch = status_channel.clone();
+
+    executor.spawn_critical("client_worker_task", move |shutdown| {
+        worker::client_worker_task(shutdown, client_worker_state, csm_engine, csm_rx, st_ch)
+    });
+
+    Ok(SyncManager {
+        params,
+        fc_manager_tx,
+        csm_controller,
+        cupdate_rx,
+        status_channel,
+    })
+}
+
 /// Starts the sync tasks using provided settings.
 #[allow(clippy::too_many_arguments)]
 pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
@@ -96,6 +141,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let fcm_params = params.clone();
     let handle = executor.handle().clone();
     let st_ch = status_channel.clone();
+
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
         // TODO this should be simplified into a builder or something
         fork_choice_manager::tracker_task(

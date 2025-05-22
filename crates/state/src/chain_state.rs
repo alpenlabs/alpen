@@ -13,6 +13,7 @@ use crate::{
     genesis::GenesisStateData,
     l1::{self, L1ViewState},
     prelude::*,
+    traits::ChainstateUpdate,
 };
 
 /// L2 blockchain state.  This is the state computed as a function of a
@@ -214,5 +215,22 @@ impl ChainstateEntry {
 impl From<ChainstateEntry> for Chainstate {
     fn from(value: ChainstateEntry) -> Self {
         value.to_chainstate()
+    }
+}
+
+pub struct ChainstateUpdateImpl {
+    new_chainstate: Chainstate,
+}
+
+impl ChainstateUpdateImpl {
+    pub fn new(new_chainstate: Chainstate) -> Self {
+        ChainstateUpdateImpl { new_chainstate }
+    }
+}
+
+impl ChainstateUpdate for ChainstateUpdateImpl {
+    #[allow(unused)]
+    fn apply_to_chainstate(&self, chainstate: Option<&Chainstate>) -> Chainstate {
+        self.new_chainstate.clone()
     }
 }

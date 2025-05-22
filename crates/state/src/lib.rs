@@ -13,6 +13,7 @@ pub mod bridge_state;
 pub mod chain_state;
 pub mod client_state;
 pub mod csm_status;
+pub mod da;
 pub mod exec_env;
 pub mod exec_update;
 pub mod forced_inclusion;
@@ -24,6 +25,7 @@ pub mod operation;
 pub mod state_op;
 pub mod state_queue;
 pub mod sync_event;
+pub mod traits;
 
 pub mod prelude;
 

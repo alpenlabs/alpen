@@ -326,7 +326,7 @@ fn create_checkpoint_prep_data_from_summary(
         // on the Chainstate that was posted on previous epoch, and included in L1Segment in this
         // epoch.
         let prev_chainstate: Chainstate =
-            borsh::from_slice(prev_checkpoint.checkpoint.sidecar().chainstate())
+            borsh::from_slice(prev_checkpoint.checkpoint.sidecar().bytes())
                 .expect("valid chainstate must be posted");
 
         tx_filters.update_from_chainstate(&prev_chainstate);
