@@ -1149,6 +1149,7 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-rpc-types-eth",
  "alpen-reth-db",
+ "alpen-reth-statediff",
  "bincode",
  "eyre",
 >>>>>>> 3b67491a (bump reth to v1.3.1)
@@ -13061,18 +13062,18 @@ dependencies = [
 
 [[package]]
 name = "sp1-helper"
-version = "4.1.7"
+version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "047067cd503610c1cad9694c4a5afe1b441524ae5f9537913e8115b4081351be"
+checksum = "e5d4b295fc974354f57787f6ae7a14e7206fc6e474d3fba68ffdd0baa928422f"
 dependencies = [
  "sp1-build",
 ]
 
 [[package]]
 name = "sp1-lib"
-version = "4.1.7"
+version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4b2747ae411bca4ba0dd4112779246b101ac7e8f70afc1a33cf8ee003980d7"
+checksum = "e166e94b13146c65de433cf29acc1030f021414fbebfc24cd4eeaeb787ba3443"
 dependencies = [
  "bincode",
  "elliptic-curve",
@@ -13366,23 +13367,25 @@ dependencies = [
 
 [[package]]
 name = "sp1-verifier"
-version = "4.1.7"
+version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4d4609dbb9662e4619e35666ea5fd89ee3dee59c2822b9c9c09dc25f585e3be"
+checksum = "d94a7db4a54984acf4d64c6ba55c4698104f02ef213cc21882e233b4409e7155"
 dependencies = [
+ "blake3",
  "cfg-if",
  "hex",
  "lazy_static",
  "sha2 0.10.8",
+ "sp1-build",
  "substrate-bn-succinct",
  "thiserror 2.0.12",
 ]
 
 [[package]]
 name = "sp1-zkvm"
-version = "4.1.7"
+version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92e382d2a6c183d602393e58881887fe91df32cc65965dd0be1f64e6fd689d73"
+checksum = "4620d2777b49fb825bf4726ef71aad0e56fc1ff2532e5b29677b75914f0d756a"
 dependencies = [
  "cfg-if",
  "getrandom 0.2.15",
@@ -14237,7 +14240,6 @@ dependencies = [
  "musig2",
  "rand 0.8.5",
  "rand_core 0.6.4",
- "revm",
  "serde_json",
  "strata-btcio",
  "strata-chaintsn",
@@ -14343,9 +14345,9 @@ dependencies = [
 
 [[package]]
 name = "substrate-bn-succinct"
-version = "0.6.0-v4-rc.8"
+version = "0.6.0-v4.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b9a33ccd271a0ad4cc5ddef11ca419fe8d22c669920965be1cecbbe7d866ae1"
+checksum = "f8ac8ce0a40e721f790e2ef99beab32b99b3121c58edaaa140ffd8f1795a6af7"
 dependencies = [
  "bytemuck",
  "byteorder",
@@ -16477,7 +16479,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc9#ad17688ad160efda2bd135ed0548d2652374e72d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
 dependencies = [
  "arbitrary",
  "async-trait",
@@ -16490,7 +16492,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc9#ad17688ad160efda2bd135ed0548d2652374e72d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
 dependencies = [
  "bincode",
  "borsh",
@@ -16501,7 +16503,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-risc0-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc9#ad17688ad160efda2bd135ed0548d2652374e72d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
 dependencies = [
  "hex",
  "risc0-binfmt",
@@ -16513,7 +16515,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-risc0-host"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc9#ad17688ad160efda2bd135ed0548d2652374e72d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
 dependencies = [
  "bincode",
  "borsh",
@@ -16526,7 +16528,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc9#ad17688ad160efda2bd135ed0548d2652374e72d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
 dependencies = [
  "hex",
  "sp1-verifier",
@@ -16536,7 +16538,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-guest-env"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc9#ad17688ad160efda2bd135ed0548d2652374e72d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
 dependencies = [
  "bincode",
  "cfg-if",
@@ -16548,7 +16550,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-host"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc9#ad17688ad160efda2bd135ed0548d2652374e72d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
 dependencies = [
  "bincode",
  "borsh",

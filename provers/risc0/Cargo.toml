@@ -5,7 +5,7 @@ version = "0.3.0-alpha.1"
 
 [dependencies]
 risc0-zkvm = "2.0.1"
-zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9" }
+zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
 
 [dev-dependencies]
 bincode.workspace = true

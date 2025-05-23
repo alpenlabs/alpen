@@ -5,15 +5,15 @@ version = "0.3.0-alpha.1"
 
 [dependencies]
 once_cell = "1.20.2"
-zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9" }
+zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
 
 [build-dependencies]
 bincode.workspace = true
 cargo_metadata = "0.19.1"
 cfg-if.workspace = true
 sha2.workspace = true
-sp1-helper = "4.1.7"
-sp1-sdk = "4.1.7"
+sp1-helper = "4.2.0"
+sp1-sdk = "4.2.0"
 
 [features]
 docker-build = []
