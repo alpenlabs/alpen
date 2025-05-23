@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::l1::HeaderVerificationState;
 
-use crate::{AsmError, Subprotocol, SubprotocolId};
+use crate::{AsmError, Mismatched, Subprotocol, SubprotocolId};
 
 /// Anchor state for the Anchor State Machine (ASM), the core of the Strata protocol.
 ///
@@ -69,7 +69,11 @@ impl SectionState {
     /// Tries to deserialize the section data as a particular subprotocol's state.
     pub fn try_to_state<S: Subprotocol>(&self) -> Result<S::State, AsmError> {
         if S::ID != self.id {
-            return Err(AsmError::SubprotoIdMismatch(self.id, S::ID));
+            return Err(Mismatched {
+                expected: S::ID,
+                actual: self.id,
+            }
+            .into());
         }
 
         <S::State as BorshDeserialize>::try_from_slice(&self.data)

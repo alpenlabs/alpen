@@ -54,7 +54,7 @@ impl Subprotocol for OLCoreSubproto {
         todo!()
     }
 
-    fn finalize_state(_state: &mut Self::State, _msgs: &[Self::Msg]) {
+    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
         todo!()
     }
 }

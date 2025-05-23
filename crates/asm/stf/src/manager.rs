@@ -52,8 +52,8 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         S::process_txs(&mut self.state, txs, relayer);
     }
 
-    fn process_msgs(&mut self) {
-        S::finalize_state(&mut self.state, &self.interproto_msg_buf)
+    fn process_buffered_msgs(&mut self) {
+        S::process_msgs(&mut self.state, &self.interproto_msg_buf)
     }
 
     fn to_section(&self) -> SectionState {
@@ -100,7 +100,7 @@ impl SubprotoManager {
         let h = self
             .get_handler_mut(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_msgs()
+        h.process_buffered_msgs()
     }
 
     fn insert_handler(&mut self, handler: Box<dyn SubprotoHandler>) {
