@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [dependencies]
 strata-proofimpl-evm-ee-stf = { path = "../../../crates/proof-impl/evm-ee-stf" }
-zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9" }
+zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
 
 [patch.crates-io]
 bn = { git = "https://github.com/sp1-patches/bn", package = "substrate-bn", tag = "patch-0.6.0-sp1-4.0.0" }

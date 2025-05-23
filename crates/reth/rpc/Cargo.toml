@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 alpen-reth-db.workspace = true
+alpen-reth-statediff.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 strata-rpc-utils.workspace = true
 

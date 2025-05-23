@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [dependencies]
 strata-proofimpl-btc-blockspace = { path = "../../../crates/proof-impl/btc-blockspace" }
-zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9" }
+zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
 
 [patch.crates-io]
 secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.29.1-sp1-4.1.0" }
