@@ -21,7 +21,7 @@ pub(crate) fn try_parse_tx_as_withdrawal_fulfillment(
 
     // 2. Ensure correct OP_RETURN data and check it has expected deposit index.
     let (op_idx, dep_idx, deposit_txid_bytes) =
-        parse_opreturn_metadata(&metadata_txout.script_pubkey)?;
+        parse_opreturn_metadata(&metadata_txout.script_pubkey, filter_conf)?;
 
     let exp_ful = filter_conf.expected_withdrawal_fulfillments.get(&dep_idx)?;
     //eprintln!("exp ful {exp_ful:?}");
@@ -71,27 +71,61 @@ pub(crate) fn try_parse_tx_as_withdrawal_fulfillment(
     })
 }
 
-fn parse_opreturn_metadata(script_buf: &ScriptBuf) -> Option<(u32, u32, [u8; 32])> {
-    let opreturn_data = match script_buf.as_bytes() {
-        [_, _, data @ ..] => data,
-        _ => return None,
-    };
+fn parse_opreturn_metadata(
+    script_buf: &ScriptBuf,
+    config: &TxFilterConfig,
+) -> Option<(u32, u32, [u8; 32])> {
+    // FIXME this needs to ensure that it's actually an OP_RETURN
+    let data = extract_op_return_data(script_buf)?;
 
-    // 4 bytes op idx + 4 bytes dep idx + 32 bytes txid
-    if opreturn_data.len() != 40 {
+    // 4 bytes magic + 4 bytes op idx + 4 bytes dep idx + 32 bytes txid
+    if data.len() != 44 {
         return None;
     }
+
+    // Check the magic bytes.
+    let mut magic_bytes = [0u8; 4];
+    magic_bytes.copy_from_slice(&data[..4]);
+    if magic_bytes != *config.deposit_config.magic_bytes {
+        return None;
+    }
+
+    // Then parse out each of the indexes we're referring to.
     let mut idx_bytes = [0u8; 4];
 
-    idx_bytes.copy_from_slice(&opreturn_data[0..4]);
+    idx_bytes.copy_from_slice(&data[0..8]);
     let opidx: u32 = u32::from_be_bytes(idx_bytes);
 
-    idx_bytes.copy_from_slice(&opreturn_data[4..8]);
+    idx_bytes.copy_from_slice(&data[8..12]);
     let depidx: u32 = u32::from_be_bytes(idx_bytes);
 
-    let deposit_txid_bytes = opreturn_data[8..].try_into().unwrap();
+    let deposit_txid_bytes = data[12..].try_into().unwrap();
 
     Some((opidx, depidx, deposit_txid_bytes))
+}
+
+/// Makes sure the scriptbuf is an OP_RETURN, and then returns the PUSHDATA
+/// bytes.
+fn extract_op_return_data(script: &ScriptBuf) -> Option<&[u8]> {
+    use bitcoin::{
+        opcodes::{Class, ClassifyContext},
+        script::Instruction,
+    };
+
+    let mut isns = script.instructions();
+
+    let first_isn = isns.next()?.ok()?;
+    let isn_class = first_isn.opcode()?.classify(ClassifyContext::Legacy);
+
+    if isn_class != Class::ReturnOp {
+        return None;
+    }
+
+    let second_isn = isns.next()?.ok()?;
+    match second_isn {
+        Instruction::PushBytes(push_bytes) => Some(push_bytes.as_bytes()),
+        Instruction::Op(_) => todo!(),
+    }
 }
 
 #[cfg(test)]
