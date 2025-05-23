@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 const MAX_RETRIES: u8 = 10;
+const BATCH_FETCH_THRESHOLD: u64 = 5;
 
 // TODO: use correct errors instead of anyhow
 #[derive(Debug, Error)]
@@ -299,9 +300,21 @@ pub fn csm_worker(
                 }
                 AttachBlockResult::Orphan => {
                     info!(block_id = %block.block_id(), parent_id = %block.parent_id(), "csm: orphan block");
-                    // try to fetch parent block
+
                     let _ =
                         command_tx.blocking_send(ReaderCommand::FetchBlockById(block.parent_id()));
+
+                    let best_block_height = chain_tracker.best().height();
+                    let block_height = block.height();
+
+                    if block_height.saturating_sub(best_block_height) > BATCH_FETCH_THRESHOLD {
+                        // we are very behind. queue all missing blocks to be fetched.
+                        let _ = command_tx.blocking_send(ReaderCommand::FetchBlockRange(
+                            (best_block_height + 1)..block_height,
+                        ));
+                    }
+
+                    // TODO: orphan is from a side branch
 
                     orphan_tracker.insert(L1Header::from_block(&block, U256::zero()));
                 }

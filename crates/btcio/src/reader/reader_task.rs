@@ -17,7 +17,7 @@ use tracing::{error, info, warn};
 
 pub enum ReaderCommand {
     FetchBlockById(L1BlockId),
-    FetchBlockRange(Range<usize>),
+    FetchBlockRange(Range<u64>),
 }
 
 pub async fn reader_task(
@@ -165,7 +165,7 @@ async fn handle_command(
             let mut work = FuturesUnordered::new();
             for height in range {
                 work.push(async move {
-                    let res = client.get_block_at(height as u64).await;
+                    let res = client.get_block_at(height).await;
                     (height, res)
                 })
             }
@@ -178,7 +178,7 @@ async fn handle_command(
                         continue;
                     }
                 };
-                let l1block = L1Block::new(height as u64, block_content);
+                let l1block = L1Block::new(height, block_content);
                 if process_tx.send(l1block).await.is_err() {
                     error!(%height, "btcio: process_tx channel closed while sending block from range fetch for height. Reader task should exit.");
                     return Err(HandleCommandError::ProcessTxChannelClosed);
