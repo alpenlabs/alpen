@@ -1,13 +1,11 @@
 [package]
 edition = "2021"
 name = "alpen-reth-exex"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 
 [dependencies]
 alpen-reth-db.workspace = true
 alpen-reth-node.workspace = true
-alpen-reth-statediff.workspace = true
-strata-mpt.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
 alloy-consensus.workspace = true
@@ -21,6 +19,7 @@ reth-evm.workspace = true
 reth-exex.workspace = true
 reth-node-api.workspace = true
 reth-primitives.workspace = true
+reth-primitives-traits.workspace = true
 reth-provider.workspace = true
 reth-revm.workspace = true
 reth-rpc-types-compat.workspace = true

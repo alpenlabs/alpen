@@ -112,7 +112,6 @@ impl<DB: SchemaDBOperations> StateDiffStore for WitnessDB<DB> {
 
 #[cfg(test)]
 mod tests {
-
     use alpen_reth_statediff::account::{Account, AccountChanges};
     use revm_primitives::{
         alloy_primitives::{address, map::HashMap},
@@ -165,6 +164,11 @@ mod tests {
         serde_json::from_str(&json_content).expect("Valid json")
     }
 
+    fn setup_db() -> WitnessDB<impl SchemaDBOperations> {
+        let db = get_rocksdb_tmp_instance().unwrap();
+        WitnessDB::new(Arc::new(db))
+    }
+
     fn test_state_diff() -> BlockStateDiff {
         let mut test_diff = BlockStateDiff {
             state: HashMap::default(),
@@ -177,11 +181,6 @@ mod tests {
         );
 
         test_diff
-    }
-
-    fn setup_db() -> WitnessDB<impl SchemaDBOperations> {
-        let db = get_rocksdb_tmp_instance().unwrap();
-        WitnessDB::new(Arc::new(db))
     }
 
     #[test]

@@ -22,16 +22,16 @@ pub fn wei_to_sats(wei: U256) -> (U256, U256) {
     wei.div_rem(WEI_PER_SAT)
 }
 
-/// Tuple of executed transaction and receipt
+// Tuple of executed transaction and receipt
 pub type TxReceiptPair<'a> = (&'a TransactionSigned, &'a Receipt);
 
-/// Collects withdrawal intents from bridge-out events by matching
-/// executed transactions (for txid) and receipts.
-/// Returns a vector of [`WithdrawalIntent`]s.
-///
-/// # Note
-///
-/// A [`Descriptor`], if invalid does not create an [`WithdrawalIntent`].
+// Collects withdrawal intents from bridge-out events by matching
+// executed transactions (for txid) and receipts.
+// Returns a vector of [`WithdrawalIntent`]s.
+//
+// # Note
+//
+// A [`Descriptor`], if invalid does not create an [`WithdrawalIntent`].
 pub fn collect_withdrawal_intents<'a, I>(
     tx_receipt_pairs: I,
 ) -> impl Iterator<Item = WithdrawalIntent> + 'a
@@ -40,22 +40,32 @@ where
 {
     tx_receipt_pairs.flat_map(|(tx, receipt)| {
         receipt.logs.iter().filter_map(move |log| {
+            println!("Abishek log: {:?}", log);
             if log.address != BRIDGEOUT_ADDRESS {
+                println!("Abishek Returning none");
                 return None;
             }
 
             let txid = Buf32(tx.hash().as_slice().try_into().expect("32 bytes"));
-            WithdrawalIntentEvent::decode_log(log, true)
-                .ok()
-                .and_then(|evt| {
-                    Descriptor::from_bytes(&evt.destination)
-                        .ok()
-                        .map(|destination| WithdrawalIntent {
-                            amt: evt.amount,
-                            destination,
-                            withdrawal_txid: txid,
-                        })
-                })
+            println!("Abishek txid: {:?}", txid);
+
+            // WithdrawalIntentEvent::decode_log(log).ok().and_then(|evt| {
+            //     Descriptor::from_bytes(&evt.destination)
+            //         .ok()
+            //         .map(|destination| WithdrawalIntent {
+            //             amt: evt.amount,
+            //             destination,
+            //             withdrawal_txid: txid,
+            //         })
+            // })
+            let evt = WithdrawalIntentEvent::decode_log(log).unwrap();
+            let res = Descriptor::from_bytes(&evt.destination).unwrap();
+            let w = WithdrawalIntent {
+                amt: evt.amount,
+                destination: res,
+                withdrawal_txid: txid,
+            };
+            Some(w)
         })
     })
 }

@@ -9,8 +9,8 @@ use alloy_rpc_types::{
     Withdrawal,
 };
 use alpen_reth_primitives::WithdrawalIntent;
-use reth::rpc::compat::engine::payload::block_to_payload_v2;
-use reth_chain_state::ExecutedBlock;
+use reth_chain_state::ExecutedBlockWithTrieUpdates;
+use reth_engine_local::payload::UnsupportedLocalAttributes;
 use reth_node_api::{BuiltPayload, PayloadAttributes, PayloadBuilderAttributes};
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
 use reth_primitives::{EthPrimitives, SealedBlock};
@@ -25,6 +25,12 @@ pub struct StrataPayloadAttributes {
     // additional custom fields for strata
     /// Optional cumulative gas limit for blocks
     pub batch_gas_limit: Option<u64>,
+}
+
+impl StrataPayloadBuilderAttributes {
+    pub(crate) fn batch_gas_limit(&self) -> Option<u64> {
+        self.batch_gas_limit
+    }
 }
 
 impl StrataPayloadAttributes {
@@ -43,6 +49,8 @@ impl StrataPayloadAttributes {
         }
     }
 }
+
+impl UnsupportedLocalAttributes for StrataPayloadAttributes {}
 
 impl PayloadAttributes for StrataPayloadAttributes {
     fn timestamp(&self) -> u64 {
@@ -63,12 +71,6 @@ impl PayloadAttributes for StrataPayloadAttributes {
 pub struct StrataPayloadBuilderAttributes {
     pub(crate) inner: EthPayloadBuilderAttributes,
     pub(crate) batch_gas_limit: Option<u64>,
-}
-
-impl StrataPayloadBuilderAttributes {
-    pub(crate) fn batch_gas_limit(&self) -> Option<u64> {
-        self.batch_gas_limit
-    }
 }
 
 impl PayloadBuilderAttributes for StrataPayloadBuilderAttributes {
@@ -144,8 +146,8 @@ impl BuiltPayload for StrataBuiltPayload {
         self.inner.fees()
     }
 
-    fn executed_block(&self) -> Option<ExecutedBlock> {
-        self.inner.executed_block()
+    fn executed_block(&self) -> Option<ExecutedBlockWithTrieUpdates<Self::Primitives>> {
+        self.inner.executed_block().clone()
     }
 
     fn requests(&self) -> Option<Requests> {
@@ -202,7 +204,9 @@ impl From<EthBuiltPayload> for ExecutionPayloadEnvelopeV2 {
 
         Self {
             block_value: fees,
-            execution_payload: ExecutionPayloadFieldV2::V2(block_to_payload_v2(block)),
+            execution_payload: ExecutionPayloadFieldV2::V2(
+                ExecutionPayloadV2::from_block_unchecked(block.hash(), &block.into_block()),
+            ),
         }
     }
 }
