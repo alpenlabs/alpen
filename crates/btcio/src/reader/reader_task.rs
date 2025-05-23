@@ -1,17 +1,19 @@
 use std::{ops::Range, sync::Arc, time::Duration};
 
 use bitcoin::{Block, BlockHash};
-use bitcoind_async_client::traits::Reader;
+use bitcoind_async_client::{error::ClientError, traits::Reader};
 use futures::{
     stream::{unfold, FuturesUnordered},
     Stream, StreamExt,
 };
 use strata_config::btcio::ReaderConfig;
+use strata_db::DbError;
 use strata_primitives::{l1::L1Block, params::Params};
 use strata_state::l1::L1BlockId;
 use strata_storage::{L1BlockManager, NodeStorage};
+use thiserror::Error;
 use tokio::{pin, select, sync::mpsc, time::sleep, try_join};
-use tracing::warn;
+use tracing::{error, info, warn};
 
 pub enum ReaderCommand {
     FetchBlockById(L1BlockId),
@@ -53,26 +55,60 @@ pub async fn reader_task(
             let block_id = block.block_id();
             if let Err(err) = handle_block(block, storage.l1().as_ref(), &block_tx).await {
                 warn!(%err, %block_id, "btcio: failed to process block");
+                match err {
+                    HandleBlockError::BlockTxChannelClosed => {
+                        // not recoverable
+                        return;
+                    }
+                    HandleBlockError::Db(_err) => {
+                        // TODO: retry ?
+                    }
+                }
             }
         }
+        info!("btcio: block_processor_handle finished as process_rx channel was closed.");
     });
 
     loop {
         select! {
-            block = block_stream.next() => {
-                let (height, block) = block.expect("block must exist");
-                let l1block = L1Block::new(height, block);
-
-                let _ = process_tx.send(l1block).await;
-                continue;
+            block_result = block_stream.next() => {
+                match block_result {
+                    Some((height, block)) => {
+                        let l1block = L1Block::new(height, block);
+                        if process_tx.send(l1block).await.is_err() {
+                            error!("btcio: process_tx channel closed. Exiting reader_task.");
+                            break;
+                        }
+                    }
+                    None => {
+                        warn!("btcio: block_stream ended unexpectedly. Exiting reader_task.");
+                        break;
+                    }
+                }
             }
 
             Some(command) = command_rx.recv() => {
-                handle_command(command, client.as_ref(), &process_tx).await;
-                continue;
+                if let Err(err) = handle_command(command, client.as_ref(), &process_tx).await {
+                    match err {
+                        HandleCommandError::ProcessTxChannelClosed => {
+                            // not recoverable
+                            break;
+                        }
+                        HandleCommandError::Client(_err) => {
+                            // TODO: retry ?
+                        }
+                    }
+                }
+            }
+
+            else => {
+                info!("btcio: command_rx channel closed. Exiting reader_task.");
+                break;
             }
         }
     }
+
+    Err(anyhow::anyhow!("btcio: reader_task ended unexpectedly"))
 }
 
 fn get_block_stream(
@@ -86,7 +122,7 @@ fn get_block_stream(
                 Ok(block) => return Some(((height, block), (height + 1, client))),
                 Err(err) => {
                     warn!(%err, %height, "btcio: failed to fetch block");
-                    // TODO: distinguish recoverable and non-recoverable error?
+                    // TODO: distinguish unrecoverable errors?
                     sleep(Duration::from_millis(poll_interval_ms)).await;
                 }
             };
@@ -94,11 +130,19 @@ fn get_block_stream(
     })
 }
 
+#[derive(Debug, Error)]
+enum HandleCommandError {
+    #[error("process_tx channel closed")]
+    ProcessTxChannelClosed,
+    #[error(transparent)]
+    Client(#[from] ClientError),
+}
+
 async fn handle_command(
     command: ReaderCommand,
     client: &impl Reader,
     process_tx: &mpsc::Sender<L1Block>,
-) {
+) -> Result<(), HandleCommandError> {
     match command {
         ReaderCommand::FetchBlockById(block_id) => {
             let blockhash = BlockHash::from(block_id);
@@ -109,10 +153,13 @@ async fn handle_command(
                 Ok((height, block)) => L1Block::new(height, block),
                 Err(err) => {
                     warn!(%err, %block_id, "btcio: failed to fetch block");
-                    return;
+                    return Err(HandleCommandError::Client(err));
                 }
             };
-            let _ = process_tx.send(block).await;
+            if process_tx.send(block).await.is_err() {
+                error!("btcio: process_tx channel closed while sending single fetched block. Reader task should exit.");
+                return Err(HandleCommandError::ProcessTxChannelClosed);
+            }
         }
         ReaderCommand::FetchBlockRange(range) => {
             let mut work = FuturesUnordered::new();
@@ -124,26 +171,42 @@ async fn handle_command(
             }
 
             while let Some((height, res)) = work.next().await {
-                let block = match res {
-                    Ok(block) => L1Block::new(height as u64, block),
+                let block_content = match res {
+                    Ok(block_content) => block_content,
                     Err(err) => {
-                        warn!(%err, %height, "btcio: failed to fetch block");
-                        return;
+                        warn!(%err, %height, "btcio: failed to fetch block in range for this height, skipping.");
+                        continue;
                     }
                 };
-                let _ = process_tx.send(block).await;
+                let l1block = L1Block::new(height as u64, block_content);
+                if process_tx.send(l1block).await.is_err() {
+                    error!(%height, "btcio: process_tx channel closed while sending block from range fetch for height. Reader task should exit.");
+                    return Err(HandleCommandError::ProcessTxChannelClosed);
+                }
             }
         }
     }
+    Ok(())
+}
+
+#[derive(Debug, Error)]
+enum HandleBlockError {
+    #[error("block_tx channel closed")]
+    BlockTxChannelClosed,
+    #[error(transparent)]
+    Db(#[from] DbError),
 }
 
 async fn handle_block(
     block: L1Block,
     l1: &L1BlockManager,
     tx: &mpsc::Sender<L1BlockId>,
-) -> anyhow::Result<()> {
-    let blockid = block.block_id();
+) -> Result<(), HandleBlockError> {
+    let block_id = block.block_id();
     l1.put_block_pending_validation(block).await?;
-    let _ = tx.send(blockid).await;
+    if tx.send(block_id).await.is_err() {
+        error!(%block_id, "btcio: failed to send block_id; channel closed");
+        Err(HandleBlockError::BlockTxChannelClosed)?
+    }
     Ok(())
 }
