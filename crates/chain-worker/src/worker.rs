@@ -5,14 +5,17 @@
 
 use std::sync::Arc;
 
-use strata_chainexec::{ChainExecutor, ExecContext, ExecResult, MemStateAccessor};
+use strata_chainexec::{
+    BlockExecutionOutput, ChainExecutor, ExecContext, ExecResult, MemStateAccessor,
+};
 use strata_chaintsn::context::L2HeaderAndParent;
 use strata_common::retry::{
     DEFAULT_ENGINE_CALL_MAX_RETRIES, policies::ExponentialBackoff, retry_with_backoff,
 };
 use strata_eectl::{engine::ExecEngineCtl, errors::EngineError};
-use strata_primitives::prelude::*;
+use strata_primitives::{batch::EpochSummary, prelude::*};
 use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
+use tracing::*;
 
 use crate::{
     WorkerContext, WorkerError, WorkerResult,
@@ -91,6 +94,8 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
             .fetch_block(block.blkid())?
             .ok_or(WorkerError::MissingL2Block(*block.blkid()))?;
 
+        let is_epoch_terminal = !bundle.body().l1_segment().new_manifests().is_empty();
+
         let parent_blkid = bundle.header().header().parent();
         let parent_header = self
             .context
@@ -109,10 +114,72 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
         let output = self
             .chain_exec
             .execute_block(&header_ctx, bundle.body(), &exec_ctx)?;
+
+        // Also, do whatever we have to do to complete the epoch.
+        if is_epoch_terminal {
+            self.handle_complete_epoch(block.blkid(), bundle.block(), &output)?;
+        }
+
         self.context.store_block_output(block.blkid(), output)?;
 
         // Update the tip we've processed.
         self.update_cur_tip(*block)?;
+
+        Ok(())
+    }
+
+    /// Takes the block and post-state and inserts database entries to reflect
+    /// the epoch being finished on-chain.
+    ///
+    /// There's some bookkeeping here that's slightly weird since in the way it
+    /// works now, the last block of an epoch brings the post-state to the new
+    /// epoch.  So the epoch's final state actually has cur_epoch be the *next*
+    /// epoch.  And the index we assign to the summary here actually uses the
+    /// "prev epoch", since that's what the epoch in question is here.
+    ///
+    /// This will be simplified if/when we out the per-block and per-epoch
+    /// processing into two separate stages.
+    fn handle_complete_epoch(
+        &mut self,
+        blkid: &L2BlockId,
+        block: &L2Block,
+        last_block_output: &BlockExecutionOutput,
+    ) -> WorkerResult<()> {
+        // Construct the various parts of the summary
+        // NOTE: epoch update in chainstate happens at first slot of next epoch
+        // this code runs at final slot of current epoch.
+        let output_tl_chs = last_block_output.changes().toplevel();
+
+        let prev_epoch_idx = output_tl_chs.cur_epoch();
+        let prev_terminal = output_tl_chs.prev_epoch().to_block_commitment();
+
+        let slot = block.header().slot();
+        let terminal = L2BlockCommitment::new(slot, *blkid);
+
+        let l1seg = block.l1_segment();
+        assert!(
+            !l1seg.new_manifests().is_empty(),
+            "chainworker: epoch finished without L1 records"
+        );
+        let new_tip_height = l1seg.new_height();
+        let new_tip_blkid = l1seg.new_tip_blkid().expect("fcm: missing l1seg final L1");
+        let new_l1_block = L1BlockCommitment::new(new_tip_height, new_tip_blkid);
+
+        let epoch_final_state = last_block_output.computed_state_root();
+
+        // Actually construct and insert the epoch summary.
+        let summary = EpochSummary::new(
+            prev_epoch_idx,
+            terminal,
+            prev_terminal,
+            new_l1_block,
+            *epoch_final_state,
+        );
+
+        // TODO convert to Display
+        debug!(?summary, "completed chain epoch");
+
+        self.context.store_summary(summary)?;
 
         Ok(())
     }
