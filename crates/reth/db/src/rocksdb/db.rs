@@ -3,7 +3,7 @@ use std::sync::Arc;
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
 use rockbound::{SchemaDBOperations, SchemaDBOperationsExt};
-use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
+use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 
 use super::schema::{BlockHashByNumber, BlockStateDiffSchema, BlockWitnessSchema};
 use crate::{
@@ -119,7 +119,7 @@ mod tests {
     };
     use rockbound::SchemaDBOperations;
     use serde::Deserialize;
-    use strata_proofimpl_evm_ee_stf::{EvmBlockStfInput, EvmBlockStfOutput};
+    use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use tempfile::TempDir;
 
     use super::*;

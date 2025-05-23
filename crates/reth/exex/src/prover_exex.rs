@@ -1,30 +1,26 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
-use alloy_consensus::Header;
-use alloy_rpc_types::{serde_helpers::JsonStorageKey, BlockNumHash, EIP1186AccountProofResponse};
+use alloy_consensus::{BlockHeader, Header};
+use alloy_primitives::map::foldhash::{HashMap, HashMapExt};
+use alloy_rpc_types::BlockNumHash;
 use alpen_reth_db::WitnessStore;
 use eyre::eyre;
 use futures_util::TryStreamExt;
 use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
-use reth_primitives::{Block, EthPrimitives};
-use reth_primitives_traits::block::RecoveredBlock;
-use reth_provider::{BlockReader, Chain, ExecutionOutcome, StateProviderFactory};
+use reth_primitives::{Block, EthPrimitives, TransactionSigned};
+use reth_provider::{BlockReader, Chain, ExecutionOutcome, StateProvider, StateProviderFactory};
 use reth_revm::{db::CacheDB, primitives::FixedBytes};
 use reth_trie::{HashedPostState, TrieInput};
 use reth_trie_common::KeccakKeyHasher;
-use revm_primitives::alloy_primitives::{Address, B256};
-use strata_proofimpl_evm_ee_stf::{mpt::proofs_to_tries, EvmBlockStfInput};
+use revm_primitives::alloy_primitives::B256;
+use rsp_mpt::EthereumState;
+use rsp_primitives::genesis::Genesis;
+use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 use tracing::{debug, error};
 
-use crate::{
-    alloy2reth::IntoReth,
-    cache_db_provider::{AccessedState, CacheDBProvider},
-};
+use crate::cache_db_provider::{AccessedState, CacheDBProvider};
 
 #[expect(missing_debug_implementations)]
 pub struct ProverWitnessGenerator<
@@ -88,156 +84,172 @@ impl<
         Ok(())
     }
 }
+fn build_zkvm_input<P>(
+    provider: P,
+    start_state_root: FixedBytes<32>,
+    block: Block<TransactionSigned>,
+    accessed_states: &AccessedState,
+    exec_outcome: &ExecutionOutcome,
+) -> eyre::Result<EvmBlockStfInput>
+where
+    P: StateProvider,
+{
+    // collect before/after storage proofs per accessed account
+    let (before_proofs, after_proofs) = accessed_states
+        .accessed_accounts()
+        .iter()
+        .map(|(address, slots)| {
+            let keys = slots
+                .iter()
+                .map(|slot| B256::from_slice(&slot.to_be_bytes::<32>()))
+                .collect::<Vec<_>>();
 
-fn get_accessed_states<Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>>(
-    ctx: &ExExContext<Node>,
-    block: &RecoveredBlock<Block>,
-    block_idx: u64,
-) -> eyre::Result<AccessedState> {
-    let executor: <Node as FullNodeComponents>::Executor = ctx.block_executor().clone();
-    let provider = ctx.provider().history_by_block_number(block_idx)?;
+            let root_before = HashedPostState::from_bundle_state::<KeccakKeyHasher>([]);
+            let proof_before =
+                provider.proof(TrieInput::from_state(root_before), *address, &keys)?;
 
-    let cache_db_provider = CacheDBProvider::new(provider);
-    let cache_db = CacheDB::new(&cache_db_provider);
+            let root_after = exec_outcome.hash_state_slow::<KeccakKeyHasher>();
+            let proof_after = provider.proof(TrieInput::from_state(root_after), *address, &keys)?;
 
-    executor.executor(cache_db).execute(block)?;
+            Ok((*address, (proof_before, proof_after)))
+        })
+        .collect::<eyre::Result<Vec<_>>>()?
+        .into_iter()
+        .fold(
+            (HashMap::new(), HashMap::new()),
+            |(mut before_map, mut after_map), (addr, (b, a))| {
+                before_map.insert(addr, b);
+                after_map.insert(addr, a);
+                (before_map, after_map)
+            },
+        );
 
-    let acessed_state = cache_db_provider.get_accessed_state();
-    Ok(acessed_state)
+    let parent_state =
+        EthereumState::from_transition_proofs(start_state_root, &before_proofs, &after_proofs)?;
+
+    let chain_config: &str = include_str!("../../chainspec/src/res/alpen-dev-chain.json");
+    let genesis: Genesis = serde_json::from_str(chain_config)
+        .map_err(|e| eyre!("Failed to parse genesis config: {}", e))?;
+
+    Ok(EvmBlockStfInput {
+        current_block: block,
+        ancestor_headers: Vec::new(),
+        parent_state,
+        state_requests: accessed_states.accessed_accounts().clone(),
+        bytecodes: accessed_states.accessed_contracts().clone(),
+        genesis,
+        custom_beneficiary: None,
+        opcode_tracking: false,
+    })
 }
 
-fn extract_zkvm_input<Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>>(
+fn extract_zkvm_input<Node>(
     block_id: FixedBytes<32>,
     ctx: &ExExContext<Node>,
     exec_outcome: &ExecutionOutcome,
-) -> eyre::Result<EvmBlockStfInput> {
-    let current_block = ctx
+) -> eyre::Result<EvmBlockStfInput>
+where
+    Node: FullNodeComponents,
+    Node::Types: NodeTypes<Primitives = EthPrimitives>,
+{
+    // fetch and recover the current block
+    let header_block = ctx
         .provider()
         .block_by_hash(block_id)?
-        .ok_or(eyre!("Failed to get current block"))?;
-    let current_block_idx = current_block.number;
+        .ok_or_else(|| eyre!("block not found for hash {:?}", block_id))?;
+    let block_number = header_block.number;
 
-    let withdrawals = current_block
-        .body
-        .clone()
-        .withdrawals
-        .unwrap_or_default()
-        .into_iter()
-        .map(|el| el.into_reth())
-        .collect();
-
-    let prev_block_idx = current_block_idx - 1;
-    let previous_provider = ctx.provider().history_by_block_number(prev_block_idx)?;
+    let prev_blocknum = block_number - 1;
     let prev_block = ctx
         .provider()
-        .block_by_number(prev_block_idx)?
-        .ok_or(eyre!("Failed to get prev block"))?;
+        .block_by_number(prev_blocknum)?
+        .ok_or_else(|| eyre!("previous block not found for number {}", prev_blocknum))?;
+    let start_state_root = prev_block.header.state_root;
 
-    // Call the magic function here:
-    let block_execution_input = current_block
+    // execute to collect accessed state
+    let accessed = get_accessed_states(ctx, block_id)?;
+
+    // fetch the full block for proof generation
+    let full_block = ctx
+        .provider()
+        .block_by_number(block_number)?
+        .ok_or_else(|| eyre!("block not found for number {}", block_number))?;
+
+    // build zkVM input and ancestor headers
+    let mut zkvm_input = build_zkvm_input(
+        ctx.provider().history_by_block_number(block_number - 1)?,
+        start_state_root,
+        full_block,
+        &accessed,
+        exec_outcome,
+    )?;
+
+    zkvm_input.ancestor_headers =
+        get_ancestor_headers(ctx, block_number, accessed.accessed_block_idxs())?;
+
+    println!(
+        "Abishek got acnestor headers: {:?}",
+        zkvm_input.ancestor_headers
+    );
+
+    Ok(zkvm_input)
+}
+
+fn get_accessed_states<Node>(
+    ctx: &ExExContext<Node>,
+    block_id: FixedBytes<32>,
+) -> eyre::Result<AccessedState>
+where
+    Node: FullNodeComponents,
+    Node::Types: NodeTypes<Primitives = EthPrimitives>,
+{
+    // fetch the block header by hash
+    let header_block = ctx
+        .provider()
+        .block_by_hash(block_id)?
+        .ok_or_else(|| eyre!("block not found for hash {:?}", block_id))?;
+    let block_number = header_block.number();
+
+    // recover the execution input
+    let recovered = header_block
         .clone()
         .seal_unchecked(block_id)
         .try_recover()?;
 
-    let accessed_states = get_accessed_states(ctx, &block_execution_input, prev_block_idx)?;
-    let prev_state_root = prev_block.state_root;
+    // look up the history provider for the parent block
+    let parent_number = block_number
+        .checked_sub(1)
+        .ok_or_else(|| eyre!("no parent block for block {}", block_number))?;
+    let history_provider = ctx.provider().history_by_block_number(parent_number)?;
 
-    let mut parent_proofs: HashMap<Address, EIP1186AccountProofResponse> = HashMap::new();
-    let mut current_proofs: HashMap<Address, EIP1186AccountProofResponse> = HashMap::new();
-    let contracts = accessed_states.accessed_contracts().clone();
+    // wrap in a cache-backed provider and run the executor
+    let cache_provider = CacheDBProvider::new(history_provider);
+    let cache_db = CacheDB::new(&cache_provider);
+    ctx.block_executor()
+        .clone()
+        .executor(cache_db)
+        .execute(&recovered)?;
 
-    // Accumulate account proof of account in previous block
-    for (accessed_address, accessed_slots) in accessed_states.accessed_accounts().iter() {
-        let slots: Vec<B256> = accessed_slots
-            .iter()
-            .map(|el| B256::from_slice(&el.to_be_bytes::<32>()))
-            .collect();
-
-        // Apply empty bundle state over previous block state.
-        let proof = previous_provider.proof(
-            TrieInput::from_state(HashedPostState::from_bundle_state::<KeccakKeyHasher>([])),
-            *accessed_address,
-            &slots,
-        )?;
-        let proof =
-            proof.into_eip1186_response(slots.into_iter().map(JsonStorageKey::from).collect());
-
-        parent_proofs.insert(*accessed_address, proof);
-    }
-
-    // Accumulate account proof of account in current block
-    for (accessed_address, accessed_slots) in accessed_states.accessed_accounts().iter() {
-        let slots: Vec<B256> = accessed_slots
-            .iter()
-            .map(|el| B256::from_slice(&el.to_be_bytes::<32>()))
-            .collect();
-
-        let proof = previous_provider.proof(
-            TrieInput::from_state(exec_outcome.hash_state_slow::<KeccakKeyHasher>()),
-            *accessed_address,
-            &slots,
-        )?;
-        let proof =
-            proof.into_eip1186_response(slots.into_iter().map(JsonStorageKey::from).collect());
-
-        current_proofs.insert(*accessed_address, proof);
-    }
-
-    let (state_trie, storage) = proofs_to_tries(
-        prev_state_root,
-        parent_proofs.clone(),
-        current_proofs.clone(),
-    )
-    .expect("Proof to tries infallible");
-
-    let ancestor_headers = get_ancestor_headers(
-        ctx,
-        current_block_idx,
-        accessed_states.accessed_block_idxs(),
-    )?;
-
-    let input = EvmBlockStfInput {
-        beneficiary: current_block.header.beneficiary,
-        gas_limit: current_block.gas_limit,
-        timestamp: current_block.header.timestamp,
-        extra_data: current_block.header.extra_data,
-        mix_hash: current_block.header.mix_hash,
-        transactions: current_block.body.transactions,
-        withdrawals,
-        pre_state_trie: state_trie,
-        pre_state_storage: storage,
-        contracts,
-        parent_header: prev_block.header,
-        ancestor_headers,
-    };
-
-    Ok(input)
+    Ok(cache_provider.get_accessed_state())
 }
-
 fn get_ancestor_headers<Node>(
     ctx: &ExExContext<Node>,
-    current_blk_idx: u64,
-    accessed_block_idxs: &HashSet<u64>,
+    current_idx: u64,
+    _accessed_idxs: &HashSet<u64>,
 ) -> eyre::Result<Vec<Header>>
 where
     Node: FullNodeComponents,
     Node::Types: NodeTypes<Primitives = EthPrimitives>,
 {
-    let Some(oldest_parent_idx) = accessed_block_idxs.iter().copied().min_by(|a, b| a.cmp(b))
-    else {
-        return Ok(Vec::new());
-    };
+    let start_idx = current_idx - 1;
 
-    let provider = ctx.provider();
-    let headers = (oldest_parent_idx..current_blk_idx.saturating_sub(1))
+    (start_idx..current_idx)
         .rev()
-        .map(|block_num| {
-            provider
-                .block_by_number(block_num)?
-                .map(|block| block.header)
-                .ok_or_else(|| eyre!("Block not found for block number {block_num}"))
+        .map(|num| {
+            ctx.provider()
+                .block_by_number(num)?
+                .map(|b| b.header)
+                .ok_or_else(|| eyre!("block not found for number {}", num))
         })
-        .collect::<eyre::Result<Vec<_>>>()?;
-
-    Ok(headers)
+        .collect()
 }

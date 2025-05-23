@@ -1,14 +1,12 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-};
+use std::{cell::RefCell, collections::HashSet};
 
+use alloy_primitives::map::foldhash::HashMap;
 use reth_provider::{errors::db::DatabaseError, AccountReader, ProviderError, StateProvider};
 use reth_revm::{
     state::{AccountInfo, Bytecode},
     DatabaseRef,
 };
-use revm_primitives::alloy_primitives::{ruint::Uint, Address, Bytes, B256, U256};
+use revm_primitives::alloy_primitives::{ruint::Uint, Address, B256, U256};
 
 /// `CacheDBProvider` implements a provider for the revm `CacheDB`.
 /// In addition it holds accessed account info, storage values, and bytecodes during
@@ -18,14 +16,14 @@ pub(crate) struct CacheDBProvider {
     provider: Box<dyn StateProvider>,
     accounts: RefCell<HashMap<Address, AccountInfo>>,
     storage: RefCell<HashMap<Address, HashMap<U256, U256>>>,
-    bytecodes: RefCell<HashSet<Bytes>>,
+    bytecodes: RefCell<HashSet<Bytecode>>,
     accessed_blkd_ids: RefCell<HashSet<u64>>,
 }
 
 #[derive(Debug)]
 pub(crate) struct AccessedState {
     accessed_accounts: HashMap<Address, Vec<Uint<256, 4>>>,
-    accessed_contracts: Vec<Bytes>,
+    accessed_contracts: Vec<Bytecode>,
     accessed_block_idxs: HashSet<u64>,
 }
 
@@ -38,7 +36,7 @@ impl AccessedState {
         &self.accessed_accounts
     }
 
-    pub(crate) fn accessed_contracts(&self) -> &Vec<Bytes> {
+    pub fn accessed_contracts(&self) -> &Vec<Bytecode> {
         &self.accessed_contracts
     }
 }
@@ -84,7 +82,7 @@ impl CacheDBProvider {
             .collect()
     }
 
-    fn get_accessed_contracts(&self) -> Vec<Bytes> {
+    fn get_accessed_contracts(&self) -> Vec<Bytecode> {
         self.bytecodes.borrow().iter().cloned().collect()
     }
 }
@@ -121,9 +119,7 @@ impl DatabaseRef for CacheDBProvider {
             })?;
 
         // Record the storage value to the state
-        self.bytecodes
-            .borrow_mut()
-            .insert(bytecode.original_bytes().clone());
+        self.bytecodes.borrow_mut().insert(bytecode.clone());
 
         Ok(bytecode)
     }

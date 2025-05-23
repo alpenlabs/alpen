@@ -30,6 +30,8 @@ revm-primitives.workspace = true
 serde.workspace = true
 serde_with.workspace = true
 
+rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
+
 [dev-dependencies]
 bincode.workspace = true
 serde_json.workspace = true

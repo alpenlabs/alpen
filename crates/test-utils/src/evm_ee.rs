@@ -117,7 +117,7 @@ impl L2Segment {
             let body = L2BlockBody::new(l1_segment, el_proof_out.clone());
 
             let slot = prev_block.header().slot() + 1;
-            let ts = el_proof_in.timestamp;
+            let ts = el_proof_in.current_block.header.timestamp;
             let prev_block_id = prev_block.header().get_blockid();
 
             let fake_header = L2BlockHeader::new(slot, 0, ts, prev_block_id, &body, Buf32::zero());

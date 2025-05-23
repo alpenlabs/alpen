@@ -4,7 +4,7 @@ pub mod rocksdb;
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
 pub use strata_db::{errors, DbResult};
-use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
+use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 
 pub trait WitnessStore {
     fn put_block_witness(&self, block_hash: B256, witness: &EvmBlockStfInput) -> DbResult<()>;
