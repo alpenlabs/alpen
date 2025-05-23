@@ -4,7 +4,7 @@
 
 use std::{collections::VecDeque, sync::Arc};
 
-use strata_chain_worker::ChainWorkerHandle;
+use strata_chain_worker::{ChainWorkerHandle, WorkerError, WorkerResult};
 use strata_chaintsn::transition::process_block;
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
@@ -141,6 +141,11 @@ impl ForkChoiceManager {
             .map(|entry| Arc::new(entry.to_chainstate())))
     }
 
+    /// Tries to execute the block, returning an error if applicable.
+    fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
+        self.chain_worker.try_exec_block_blocking(*block)
+    }
+
     /// Updates the stored current state.
     fn update_tip_block(&mut self, block: L2BlockCommitment, state: Arc<Chainstate>) {
         self.cur_best_block = block;
@@ -165,7 +170,7 @@ impl ForkChoiceManager {
         }
 
         // Do the leg work of applying the finalization.
-        self.chain_worker.finalize_epoch_blocking(*epoch);
+        self.chain_worker.finalize_epoch_blocking(*epoch)?;
 
         // Now update the in memory bookkeeping about it.
         self.chain_tracker.update_finalized_epoch(epoch)?;
@@ -599,8 +604,10 @@ fn handle_new_block(
         return Ok(false);
     }
 
-    // Try to execute the payload, seeing if *that's* valid.
+    // Try to execute the block, to see if it's actually valid.
     //
+
+    /*
     // We don't do this for the genesis block because that block doesn't
     // actually have a well-formed accessory and it gets mad at us.
     if slot > 0 {
@@ -608,21 +615,33 @@ fn handle_new_block(
         debug!(?blkid, ?exec_hash, "submitting execution payload");
         let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
 
-        /*        let res = retry_with_backoff(
+        let res = retry_with_backoff(
             "engine_submit_payload",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || engine.submit_payload(eng_payload.clone()),
-        )?;*/
+        )?;
         //let res = engine.submit_payload(eng_payload)?;
+    */
 
-        // If the payload is invalid then we should write the full block as
-        // being invalid and return too.
-        // TODO verify this is reasonable behavior, especially with regard
-        // to pre-sync
-        /*if res == strata_eectl::engine::BlockStatus::Invalid {
-            return Ok(false);
-        }*/
+    // This stores the block output in the database, which lets us make queries
+    // about it, at least until it gets reorged out by another block being
+    // finalized.
+    let bc = L2BlockCommitment::new(bundle.header().slot(), *blkid);
+    let exec_ok = match fcm_state.try_exec_block(&bc) {
+        Ok(()) => true,
+        Err(err) => {
+            // TODO Need some way to distinguish an invalid block from a exec failure
+            warn!(%err, "try_exec_block failed");
+            false
+        }
+    };
+
+    if exec_ok {
+        fcm_state.set_block_status(&blkid, BlockStatus::Valid)?;
+    } else {
+        fcm_state.set_block_status(&blkid, BlockStatus::Invalid)?;
+        return Ok(false);
     }
 
     // Insert block into pending block tracker and figure out if we
@@ -652,6 +671,10 @@ fn handle_new_block(
 
     let tip_blkid = *tip_update.new_tip();
     debug!(%tip_blkid, "have new tip, applying update");
+
+    // TODO need to re-add this part
+    // Update the tip block in the FCM state.
+    //fcm_state.update_tip_block(last_block, Arc::new(cur_state));
 
     // Apply the reorg.
     match apply_tip_update(tip_update, fcm_state) {
@@ -776,6 +799,7 @@ fn apply_tip_update(update: TipUpdate, fcm_state: &mut ForkChoiceManager) -> any
         // Easy case.
         TipUpdate::ExtendTip(_cur, new) => {
             /* apply_blocks([new].into_iter(), fcm_state) */
+
             Ok(())
         }
 
