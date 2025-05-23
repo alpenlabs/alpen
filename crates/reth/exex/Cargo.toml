@@ -10,6 +10,7 @@ strata-proofimpl-evm-ee-stf.workspace = true
 
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
+alloy-primitives.workspace = true
 alloy-rpc-types.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
@@ -27,6 +28,9 @@ reth-trie.workspace = true
 reth-trie-common.workspace = true
 revm-primitives.workspace = true
 rockbound.workspace = true
+rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
+rsp-mpt = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
+rsp-primitives = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

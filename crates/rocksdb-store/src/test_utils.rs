@@ -31,7 +31,7 @@ fn get_rocksdb_tmp_instance_core(
     let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     let rbdb = rockbound::OptimisticTransactionDB::open(
-        temp_dir.into_path(),
+        temp_dir.keep(),
         dbname,
         cfs.iter().map(|s| s.to_string()),
         &opts,
