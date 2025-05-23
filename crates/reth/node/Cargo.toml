@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "alpen-reth-node"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 
 [lints]
 workspace = true
@@ -14,14 +14,17 @@ alpen-reth-rpc.workspace = true
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
 alloy-rpc-types.workspace = true
+alloy-rpc-types-engine.workspace = true
 eyre.workspace = true
 reth.workspace = true
 reth-basic-payload-builder.workspace = true
 reth-chain-state.workspace = true
 reth-chainspec.workspace = true
 reth-db.workspace = true
+reth-engine-local.workspace = true
 reth-errors.workspace = true
 reth-ethereum-payload-builder.workspace = true
+reth-ethereum-primitives.workspace = true
 reth-evm.workspace = true
 reth-evm-ethereum.workspace = true
 reth-node-api.workspace = true
@@ -30,7 +33,9 @@ reth-node-ethereum.workspace = true
 reth-payload-builder.workspace = true
 reth-payload-validator.workspace = true
 reth-primitives.workspace = true
+reth-primitives-traits.workspace = true
 reth-provider.workspace = true
+reth-rpc-eth-types.workspace = true
 reth-transaction-pool.workspace = true
 reth-trie-db.workspace = true
 revm.workspace = true

@@ -6,7 +6,8 @@ use std::collections::hash_map::Entry;
 
 use account::Account;
 use alloy_primitives::U256;
-use revm_primitives::{Address, Bytecode, HashMap, HashSet};
+use revm::state::Bytecode;
+use revm_primitives::{Address, HashMap, HashSet};
 
 pub mod account;
 pub mod block;
@@ -107,7 +108,7 @@ impl From<BatchStateDiffBuilder> for BatchStateDiff {
 
 #[cfg(test)]
 mod tests {
-    use revm::db::states::StorageSlot;
+    use revm::{database::states::StorageSlot, state::Bytecode};
     use revm_primitives::{
         alloy_primitives::map::HashMap, map::DefaultHashBuilder, Address, HashSet, KECCAK_EMPTY,
         U256,
@@ -295,9 +296,11 @@ mod tests {
             state: HashMap::default(),
             contracts: HashSet::default(),
         };
-        test_diff
-            .contracts
-            .insert(revm_primitives::Bytecode::LegacyRaw(b"123".into()));
+
+        let bytecode = Bytecode::LegacyAnalyzed(Default::default());
+
+        // TODO: Fix this
+        test_diff.contracts.insert(bytecode);
 
         let mut batch_diff = BatchStateDiffBuilder::new();
         batch_diff.apply(test_diff);

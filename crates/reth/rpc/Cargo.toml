@@ -1,14 +1,13 @@
 [package]
 edition = "2021"
 name = "alpen-reth-rpc"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 
 [lints]
 workspace = true
 
 [dependencies]
 alpen-reth-db.workspace = true
-alpen-reth-statediff.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 strata-rpc-utils.workspace = true
 
@@ -28,6 +27,7 @@ reth-network-api.workspace = true
 reth-node-api.workspace = true
 reth-node-builder.workspace = true
 reth-primitives.workspace = true
+reth-primitives-traits.workspace = true
 reth-provider.workspace = true
 reth-revm.workspace = true
 reth-rpc.workspace = true

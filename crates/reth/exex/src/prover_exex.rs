@@ -10,15 +10,15 @@ use eyre::eyre;
 use futures_util::TryStreamExt;
 use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_exex::{ExExContext, ExExEvent};
-use reth_node_api::{FullNodeComponents, NodeTypes};
-use reth_primitives::{BlockExt, BlockWithSenders, EthPrimitives};
+use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
+use reth_primitives::{Block, EthPrimitives};
+use reth_primitives_traits::block::RecoveredBlock;
 use reth_provider::{BlockReader, Chain, ExecutionOutcome, StateProviderFactory};
 use reth_revm::{db::CacheDB, primitives::FixedBytes};
 use reth_trie::{HashedPostState, TrieInput};
 use reth_trie_common::KeccakKeyHasher;
 use revm_primitives::alloy_primitives::{Address, B256};
-use strata_mpt::proofs_to_tries;
-use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
+use strata_proofimpl_evm_ee_stf::{mpt::proofs_to_tries, EvmBlockStfInput};
 use tracing::{debug, error};
 
 use crate::{
@@ -91,7 +91,7 @@ impl<
 
 fn get_accessed_states<Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>>(
     ctx: &ExExContext<Node>,
-    block: &BlockWithSenders,
+    block: &RecoveredBlock<Block>,
     block_idx: u64,
 ) -> eyre::Result<AccessedState> {
     let executor: <Node as FullNodeComponents>::Executor = ctx.block_executor().clone();
@@ -136,8 +136,8 @@ fn extract_zkvm_input<Node: FullNodeComponents<Types: NodeTypes<Primitives = Eth
     // Call the magic function here:
     let block_execution_input = current_block
         .clone()
-        .with_recovered_senders()
-        .ok_or(eyre!("failed to recover senders"))?;
+        .seal_unchecked(block_id)
+        .try_recover()?;
 
     let accessed_states = get_accessed_states(ctx, &block_execution_input, prev_block_idx)?;
     let prev_state_root = prev_block.state_root;

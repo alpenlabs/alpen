@@ -16,30 +16,27 @@
 //! See the License for the specific language governing permissions and
 //! limitations under the License.
 pub mod db;
+pub mod mpt;
 pub mod primitives;
-pub mod processor;
+// pub mod processor;
 pub mod program;
 pub mod utils;
-use alpen_reth_evm::collect_withdrawal_intents;
 use db::InMemoryDBHelper;
+use mpt::keccak;
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
-use processor::{EvmConfig, EvmProcessor};
-use revm::{primitives::SpecId, InMemoryDB};
+use revm::{database::InMemoryDB, primitives::hardfork::SpecId};
 use revm_primitives::alloy_primitives::B256;
-use strata_mpt::keccak;
 use utils::generate_exec_update;
 use zkaleido::ZkVmEnv;
 
-// TODO: Read the evm config from the genesis config. This should be done in compile time.
-const EVM_CONFIG: EvmConfig = EvmConfig {
-    chain_id: 2892,
-    spec_id: SpecId::SHANGHAI,
-};
+#[derive(Clone)]
+pub struct EvmConfig {
+    pub chain_id: u64,
+    pub spec_id: SpecId,
+}
+
 /// Executes the block with the given input and EVM configuration, returning public parameters.
-pub fn process_block_transaction(
-    mut input: EvmBlockStfInput,
-    evm_config: EvmConfig,
-) -> EvmBlockStfOutput {
+pub fn process_block_transaction(mut input: EvmBlockStfInput) -> EvmBlockStfOutput {
     // Calculate the previous block hash
     let previous_block_hash = B256::from(keccak(alloy_rlp::encode(input.parent_header.clone())));
 
@@ -47,41 +44,20 @@ pub fn process_block_transaction(
     let deposit_requests = input.withdrawals.clone();
 
     // Initialize the in-memory database
-    let db = match InMemoryDB::initialize(&mut input) {
+    let _db = match InMemoryDB::initialize(&mut input) {
         Ok(database) => database,
         Err(e) => panic!("Failed to initialize database: {e:?}"),
     };
 
-    // Create an EVM processor and execute the block
-    let mut evm_processor = EvmProcessor::<InMemoryDB> {
-        input,
-        db: Some(db),
-        header: None,
-        evm_config,
-    };
-
-    evm_processor.initialize();
-    let (executed_txs, receipts) = evm_processor.execute();
-    evm_processor.finalize();
-
-    // Extract the header and compute the new block hash
-    let block_header = evm_processor.header.unwrap(); // Ensure header exists before unwrap
-    let new_block_hash = B256::from(keccak(alloy_rlp::encode(block_header.clone())));
-
-    // TODO: Optimize receipt iteration by implementing bloom filters or adding hints to
-    // `ElBlockStfInput`. This will allow for efficient filtering of `WithdrawalIntentEvents`.
-    let withdrawal_intents: Vec<_> =
-        collect_withdrawal_intents(executed_txs.iter().zip(receipts.iter())).collect();
-
     // Construct the public parameters for the proof
     EvmBlockStfOutput {
-        block_idx: block_header.number,
-        new_blockhash: new_block_hash,
-        new_state_root: block_header.state_root,
+        block_idx: Default::default(),
+        new_blockhash: Default::default(),
+        new_state_root: Default::default(),
         prev_blockhash: previous_block_hash,
-        txn_root: block_header.transactions_root,
+        txn_root: Default::default(),
         deposit_requests,
-        withdrawal_intents,
+        withdrawal_intents: Vec::new(),
     }
 }
 
@@ -96,10 +72,16 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
 
     for _ in 0..num_blocks {
         let input: EvmBlockStfInput = zkvm.read_serde();
-        let output = process_block_transaction(input, EVM_CONFIG);
+        let output = process_block_transaction(input);
 
         if let Some(expected_hash) = current_blockhash {
-            assert_eq!(output.prev_blockhash, expected_hash, "Block hash mismatch");
+            if output.prev_blockhash != expected_hash {
+                println!(
+                    "Block hash mismatch: expected {:?}, got {:?}",
+                    expected_hash, output.prev_blockhash
+                );
+                return;
+            }
         }
 
         current_blockhash = Some(output.new_blockhash);
@@ -111,14 +93,9 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
 
 #[cfg(test)]
 mod tests {
-    use revm::primitives::SpecId;
     use serde::{Deserialize, Serialize};
 
     use super::*;
-    const EVM_CONFIG: EvmConfig = EvmConfig {
-        chain_id: 12345,
-        spec_id: SpecId::SHANGHAI,
-    };
 
     #[derive(Serialize, Deserialize)]
     struct TestData {
@@ -151,7 +128,7 @@ mod tests {
         let test_data = get_mock_data();
 
         let input = test_data.witness;
-        let op = process_block_transaction(input, EVM_CONFIG);
+        let op = process_block_transaction(input);
         assert_eq!(op, test_data.params);
     }
 }

@@ -1,92 +1,91 @@
-use std::sync::Arc;
-
-use alpen_reth_evm::set_evm_handles;
+use alpen_reth_evm::evm::StrataEvmPrecompiles;
 use reth_chainspec::ChainSpec;
-use reth_evm::{env::EvmEnv, ConfigureEvm, ConfigureEvmEnv, NextBlockEnvAttributes};
-use reth_node_ethereum::EthEvmConfig;
-use reth_primitives::{Header, TransactionSigned};
-use revm::{inspector_handle_register, Database, Evm, EvmBuilder, GetInspector};
-use revm_primitives::{Address, Bytes, CfgEnvWithHandlerCfg, Env, TxEnv};
+use reth_evm::{eth::EthEvmContext, EthEvm, EvmEnv, EvmFactory};
+use reth_evm_ethereum::EthEvmConfig;
+use reth_node_api::{FullNodeTypes, NodeTypes};
+use reth_node_builder::{components::ExecutorBuilder, BuilderContext};
+use reth_node_ethereum::BasicBlockExecutorProvider;
+use reth_primitives::EthPrimitives;
+use revm::{
+    context::{
+        result::{EVMError, HaltReason},
+        TxEnv,
+    },
+    inspector::NoOpInspector,
+    Context, MainBuilder, MainContext,
+};
+use revm_primitives::hardfork::SpecId;
 
-/// Custom EVM configuration
-#[derive(Debug, Clone)]
+/// Custom EVM configuration.
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub struct StrataEvmConfig {
-    inner: EthEvmConfig,
-}
+pub struct StrataEvmFactory;
 
-impl StrataEvmConfig {
-    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        Self {
-            inner: EthEvmConfig::new(chain_spec),
-        }
-    }
+impl EvmFactory for StrataEvmFactory {
+    type Evm<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>> =
+        EthEvm<DB, I, StrataEvmPrecompiles>;
 
-    pub fn inner(&self) -> &EthEvmConfig {
-        &self.inner
-    }
-}
+    type Context<DB: reth_evm::Database> = EthEvmContext<DB>;
 
-impl ConfigureEvmEnv for StrataEvmConfig {
-    type Header = Header;
-    type Transaction = TransactionSigned;
-    type Error = core::convert::Infallible;
+    type Tx = TxEnv;
+    type Error<DBError: std::error::Error + Send + Sync + 'static> = EVMError<DBError>;
 
-    fn fill_cfg_env(&self, cfg_env: &mut CfgEnvWithHandlerCfg, header: &Self::Header) {
-        self.inner.fill_cfg_env(cfg_env, header);
-    }
+    type HaltReason = HaltReason;
 
-    fn fill_tx_env(&self, tx_env: &mut TxEnv, transaction: &TransactionSigned, sender: Address) {
-        self.inner.fill_tx_env(tx_env, transaction, sender);
-    }
+    type Spec = SpecId;
 
-    fn fill_tx_env_system_contract_call(
+    fn create_evm<DB: reth_evm::Database>(
         &self,
-        env: &mut Env,
-        caller: Address,
-        contract: Address,
-        data: Bytes,
-    ) {
-        self.inner
-            .fill_tx_env_system_contract_call(env, caller, contract, data);
+        db: DB,
+        input: EvmEnv,
+    ) -> Self::Evm<DB, revm::inspector::NoOpInspector> {
+        let evm = Context::mainnet()
+            .with_db(db)
+            .with_cfg(input.cfg_env)
+            .with_block(input.block_env)
+            .build_mainnet_with_inspector(NoOpInspector {})
+            .with_precompiles(StrataEvmPrecompiles::new());
+
+        EthEvm::new(evm, false)
     }
 
-    fn next_cfg_and_block_env(
+    fn create_evm_with_inspector<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>>(
         &self,
-        parent: &Self::Header,
-        attributes: NextBlockEnvAttributes,
-    ) -> Result<EvmEnv, Self::Error> {
-        self.inner.next_cfg_and_block_env(parent, attributes)
+        db: DB,
+        input: reth_evm::EvmEnv<Self::Spec>,
+        inspector: I,
+    ) -> Self::Evm<DB, I> {
+        EthEvm::new(
+            self.create_evm(db, input)
+                .into_inner()
+                .with_inspector(inspector),
+            true,
+        )
     }
 }
 
-impl ConfigureEvm for StrataEvmConfig {
-    type DefaultExternalContext<'a> = ();
+/// Builds a regular ethereum block executor that uses the custom EVM.
+#[derive(Debug, Default, Clone, Copy)]
+#[non_exhaustive]
+pub struct StrataExecutorBuilder;
 
-    fn evm<DB: Database>(&self, db: DB) -> Evm<'_, Self::DefaultExternalContext<'_>, DB> {
-        EvmBuilder::default()
-            .with_db(db)
-            // add additional precompiles
-            .append_handler_register(set_evm_handles)
-            .build()
-    }
+impl<Node> ExecutorBuilder<Node> for StrataExecutorBuilder
+where
+    Node: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec, Primitives = EthPrimitives>>,
+{
+    type EVM = EthEvmConfig<StrataEvmFactory>;
 
-    fn evm_with_inspector<DB, I>(&self, db: DB, inspector: I) -> Evm<'_, I, DB>
-    where
-        DB: Database,
-        I: GetInspector<DB>,
-    {
-        EvmBuilder::default()
-            .with_db(db)
-            .with_external_context(inspector)
-            // add additional precompiles
-            .append_handler_register(set_evm_handles)
-            .append_handler_register(inspector_handle_register)
-            .build()
-    }
+    type Executor = BasicBlockExecutorProvider<Self::EVM>;
 
-    #[doc = " Provides the default external context."]
-    fn default_external_context<'a>(&self) -> Self::DefaultExternalContext<'a> {
-        self.inner.default_external_context()
+    async fn build_evm(
+        self,
+        ctx: &BuilderContext<Node>,
+    ) -> eyre::Result<(Self::EVM, Self::Executor)> {
+        let evm_config =
+            EthEvmConfig::new_with_evm_factory(ctx.chain_spec(), StrataEvmFactory::default());
+        Ok((
+            evm_config.clone(),
+            BasicBlockExecutorProvider::new(evm_config),
+        ))
     }
 }

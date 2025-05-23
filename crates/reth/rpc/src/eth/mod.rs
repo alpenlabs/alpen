@@ -14,21 +14,24 @@ use alloy_primitives::U256;
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_evm::ConfigureEvm;
 use reth_network_api::NetworkInfo;
-use reth_node_api::NodePrimitives;
-use reth_node_builder::EthApiBuilderCtx;
+use reth_node_api::{FullNodeComponents, NodePrimitives};
+use reth_node_builder::rpc::{EthApiBuilder, EthApiCtx};
 use reth_primitives::EthPrimitives;
 use reth_provider::{
     BlockNumReader, BlockReader, BlockReaderIdExt, CanonStateSubscriptions, ChainSpecProvider,
-    NodePrimitivesProvider, ProviderBlock, ProviderHeader, ProviderReceipt, ProviderTx,
-    StageCheckpointReader, StateProviderFactory,
+    ProviderBlock, ProviderHeader, ProviderReceipt, ProviderTx, StageCheckpointReader,
+    StateProviderFactory,
 };
-use reth_rpc::eth::{core::EthApiInner, DevSigner};
+use reth_rpc::eth::{
+    core::{EthApiFor, EthApiInner},
+    DevSigner,
+};
 use reth_rpc_eth_api::{
     helpers::{
         AddDevSigners, EthApiSpec, EthFees, EthSigner, EthState, LoadBlock, LoadFee, LoadState,
         SpawnBlocking, Trace,
     },
-    EthApiTypes, RpcNodeCore, RpcNodeCoreExt,
+    EthApiTypes, FromEvmError, FullEthApiServer, RpcNodeCore, RpcNodeCoreExt,
 };
 use reth_rpc_eth_types::{EthApiError, EthStateCache, FeeHistoryCache, GasPriceOracle};
 use reth_tasks::{
@@ -101,6 +104,7 @@ impl<N> RpcNodeCore for StrataEthApi<N>
 where
     N: StrataNodeCore,
 {
+    type Primitives = N::Primitives;
     type Provider = N::Provider;
     type Pool = N::Pool;
     type Evm = <N as RpcNodeCore>::Evm;
@@ -237,9 +241,12 @@ where
     Self: RpcNodeCore<Provider: BlockReader>
         + LoadState<
             Evm: ConfigureEvm<
-                Header = ProviderHeader<Self::Provider>,
-                Transaction = ProviderTx<Self::Provider>,
+                Primitives: NodePrimitives<
+                    BlockHeader = ProviderHeader<Self::Provider>,
+                    SignedTx = ProviderTx<Self::Provider>,
+                >,
             >,
+            Error: FromEvmError<Self::Evm>,
         >,
     N: StrataNodeCore,
 {
@@ -294,36 +301,26 @@ impl StrataEthApiBuilder {
 
 impl StrataEthApiBuilder {
     /// Builds an instance of [`StrataEthApi`]
-    pub fn build<N>(self, ctx: &EthApiBuilderCtx<N>) -> StrataEthApi<N>
+    pub fn build<N>(self, ctx: EthApiCtx<'_, N>) -> StrataEthApi<N>
     where
-        N: StrataNodeCore<
-            Provider: BlockReaderIdExt<
-                Block = <<N::Provider as NodePrimitivesProvider>::Primitives as NodePrimitives>::Block,
-                Receipt = <<N::Provider as NodePrimitivesProvider>::Primitives as NodePrimitives>::Receipt,
-            > + ChainSpecProvider
-                            + CanonStateSubscriptions
-                            + Clone
-                            + 'static,
-        >,
+        N: FullNodeComponents,
+        StrataEthApi<N>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
     {
-        let blocking_task_pool =
-            BlockingTaskPool::build().expect("failed to build blocking task pool");
-
-        let eth_api = EthApiInner::new(
-            ctx.provider.clone(),
-            ctx.pool.clone(),
-            ctx.network.clone(),
-            ctx.cache.clone(),
-            ctx.new_gas_price_oracle(),
-            ctx.config.rpc_gas_cap,
-            ctx.config.rpc_max_simulate_blocks,
-            ctx.config.eth_proof_window,
-            blocking_task_pool,
-            ctx.new_fee_history_cache(),
-            ctx.evm_config.clone(),
-            ctx.executor.clone(),
-            ctx.config.proof_permits,
-        );
+        let eth_api = reth_rpc::EthApiBuilder::new(
+            ctx.components.provider().clone(),
+            ctx.components.pool().clone(),
+            ctx.components.network().clone(),
+            ctx.components.evm_config().clone(),
+        )
+        .eth_cache(ctx.cache)
+        .task_spawner(ctx.components.task_executor().clone())
+        .gas_cap(ctx.config.rpc_gas_cap.into())
+        .max_simulate_blocks(ctx.config.rpc_max_simulate_blocks)
+        .eth_proof_window(ctx.config.eth_proof_window)
+        .fee_history_cache_config(ctx.config.fee_history_cache)
+        .proof_permits(ctx.config.proof_permits)
+        .gas_oracle_config(ctx.config.gas_oracle)
+        .build_inner();
 
         StrataEthApi {
             inner: Arc::new(StrataEthApiInner {
@@ -331,5 +328,32 @@ impl StrataEthApiBuilder {
                 sequencer_client: self.sequencer_client,
             }),
         }
+    }
+}
+
+impl<N> EthApiBuilder<N> for StrataEthApiBuilder
+where
+    N: FullNodeComponents,
+    EthApiFor<N>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
+{
+    type EthApi = EthApiFor<N>;
+
+    async fn build_eth_api(self, ctx: EthApiCtx<'_, N>) -> eyre::Result<Self::EthApi> {
+        let api = reth_rpc::EthApiBuilder::new(
+            ctx.components.provider().clone(),
+            ctx.components.pool().clone(),
+            ctx.components.network().clone(),
+            ctx.components.evm_config().clone(),
+        )
+        .eth_cache(ctx.cache)
+        .task_spawner(ctx.components.task_executor().clone())
+        .gas_cap(ctx.config.rpc_gas_cap.into())
+        .max_simulate_blocks(ctx.config.rpc_max_simulate_blocks)
+        .eth_proof_window(ctx.config.eth_proof_window)
+        .fee_history_cache_config(ctx.config.fee_history_cache)
+        .proof_permits(ctx.config.proof_permits)
+        .gas_oracle_config(ctx.config.gas_oracle)
+        .build();
+        Ok(api)
     }
 }

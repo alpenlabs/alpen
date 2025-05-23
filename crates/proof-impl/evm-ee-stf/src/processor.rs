@@ -17,29 +17,35 @@
 // limitations under the License.
 use std::{mem, mem::take};
 
-use alloy_consensus::constants::{GWEI_TO_WEI, MAXIMUM_EXTRA_DATA_SIZE};
+use alloy_consensus::{
+    constants::{GWEI_TO_WEI, MAXIMUM_EXTRA_DATA_SIZE},
+    TxReceipt,
+};
 use alloy_eips::{eip1559::BaseFeeParams, eip2718::Encodable2718};
 use alloy_primitives::map::DefaultHashBuilder;
 use alloy_rlp::BufMut;
 use alloy_rpc_types_eth::TransactionTrait;
 use alloy_trie::root::ordered_trie_root_with_encoder;
-use alpen_reth_evm::set_evm_handles;
+use alpen_reth_evm::{
+    constants::{BRIDGEOUT_ADDRESS, SCHNORR_ADDRESS},
+    // set_evm_handles,
+};
 use anyhow::anyhow;
 use reth_primitives::{Header, Receipt, Transaction, TransactionSigned};
 use reth_primitives_traits::{constants::MINIMUM_GAS_LIMIT, SignedTransaction};
 use revm::{
-    db::{AccountState, InMemoryDB},
-    interpreter::Host,
-    primitives::{SpecId, TransactTo, TxEnv},
-    Database, DatabaseCommit, Evm,
+    context::{Evm, TransactTo, TxEnv},
+    database::{AccountState, Database, DatabaseCommit, InMemoryDB},
+    precompile::{PrecompileSpecId, Precompiles},
+    primitives::hardfork::SpecId,
+    state::Account,
 };
-use revm_primitives::{
-    alloy_primitives::{Address, Bloom, TxKind as TransactionKind, U256},
-    Account,
-};
-use strata_mpt::{keccak, RlpBytes, StateAccount};
+use revm_primitives::alloy_primitives::{Address, Bloom, TxKind as TransactionKind, U256};
 
-use crate::EvmBlockStfInput;
+use crate::{
+    mpt::{keccak, RlpBytes, StateAccount},
+    EvmBlockStfInput, EVM_CONFIG,
+};
 
 /// The divisor for the gas limit bound.
 pub const GAS_LIMIT_DIVISOR: u64 = 1024;
@@ -169,105 +175,106 @@ where
         Vec<reth_primitives::TransactionSigned>,
         Vec<reth_primitives::Receipt>,
     ) {
-        let gwei_to_wei: U256 = U256::from(GWEI_TO_WEI);
-        let mut evm = Evm::builder()
-            .with_spec_id(self.evm_config.spec_id)
-            .modify_cfg_env(|cfg_env| {
-                cfg_env.chain_id = self.evm_config.chain_id;
-            })
-            .modify_block_env(|blk_env| {
-                blk_env.number = self.header.as_mut().unwrap().number.try_into().unwrap();
-                blk_env.coinbase = self.input.beneficiary;
-                blk_env.timestamp = U256::from(self.header.as_mut().unwrap().timestamp);
-                blk_env.difficulty = U256::ZERO;
-                blk_env.prevrandao = Some(self.header.as_mut().unwrap().mix_hash);
-                blk_env.basefee =
-                    U256::from(self.header.as_mut().unwrap().base_fee_per_gas.unwrap());
-                blk_env.gas_limit = U256::from(self.header.as_mut().unwrap().gas_limit);
-            })
-            .with_db(self.db.take().unwrap())
-            .append_handler_register(set_evm_handles)
-            .build();
+        todo!()
+        // let gwei_to_wei: U256 = U256::from(GWEI_TO_WEI);
+        // let mut evm = Evm::new()
+        //     .with_spec_id(self.evm_config.spec_id)
+        //     .modify_cfg_env(|cfg_env| {
+        //         cfg_env.chain_id = self.evm_config.chain_id;
+        //     })
+        //     .modify_block_env(|blk_env| {
+        //         blk_env.number = self.header.as_mut().unwrap().number.try_into().unwrap();
+        //         blk_env.coinbase = self.input.beneficiary;
+        //         blk_env.timestamp = U256::from(self.header.as_mut().unwrap().timestamp);
+        //         blk_env.difficulty = U256::ZERO;
+        //         blk_env.prevrandao = Some(self.header.as_mut().unwrap().mix_hash);
+        //         blk_env.basefee =
+        //             U256::from(self.header.as_mut().unwrap().base_fee_per_gas.unwrap());
+        //         blk_env.gas_limit = U256::from(self.header.as_mut().unwrap().gas_limit);
+        //     })
+        //     .with_db(self.db.take().unwrap())
+        //     // .append_handler_register(set_evm_handles)
+        //     .build();
 
-        let mut logs_bloom = Bloom::default();
-        let mut cumulative_gas_used = U256::ZERO;
-        let mut receipts = Vec::new();
-        let mut executed_txs = Vec::new();
+        // let mut logs_bloom = Bloom::default();
+        // let mut cumulative_gas_used = U256::ZERO;
+        // let mut receipts = Vec::new();
+        // let mut executed_txs = Vec::new();
 
-        for (tx_no, tx) in self.input.transactions.iter().enumerate() {
-            // Recover the sender from the transaction signature.
-            let tx_from = tx.recover_signer_unchecked().unwrap();
+        // for (tx_no, tx) in self.input.transactions.iter().enumerate() {
+        //     // Recover the sender from the transaction signature.
+        //     let tx_from = tx.recover_signer_unchecked().unwrap();
 
-            // Validate tx gas.
-            let block_available_gas = U256::from(self.input.gas_limit) - cumulative_gas_used;
-            if block_available_gas < U256::from(tx.transaction.gas_limit()) {
-                panic!("Error at transaction {tx_no}: gas exceeds block limit");
-            }
+        //     // Validate tx gas.
+        //     let block_available_gas = U256::from(self.input.gas_limit) - cumulative_gas_used;
+        //     if block_available_gas < U256::from(tx.gas_limit()) {
+        //         panic!("Error at transaction {}: gas exceeds block limit", tx_no);
+        //     }
 
-            // Setup EVM from tx.
-            fill_eth_tx_env(&mut evm.context.env_mut().tx, &tx.transaction, tx_from);
-            // Execute transaction.
-            let res = evm
-                .transact()
-                .map_err(|e| {
-                    println!("Error at transaction {tx_no}: {e:?}");
-                    e
-                })
-                .unwrap();
+        //     // Setup EVM from tx.
+        //     fill_eth_tx_env(&mut evm.context.env_mut().tx, tx.transaction(), tx_from);
+        //     // Execute transaction.
+        //     let res = evm
+        //         .transact()
+        //         .map_err(|e| {
+        //             println!("Error at transaction {}: {:?}", tx_no, e);
+        //             e
+        //         })
+        //         .unwrap();
 
-            // Update cumulative gas used.
-            let gas_used = res.result.gas_used().try_into().unwrap();
-            cumulative_gas_used = cumulative_gas_used.checked_add(gas_used).unwrap();
+        //     // Update cumulative gas used.
+        //     let gas_used = res.result.gas_used().try_into().unwrap();
+        //     cumulative_gas_used = cumulative_gas_used.checked_add(gas_used).unwrap();
 
-            // Create receipt.
-            let receipt = Receipt {
-                tx_type: tx.transaction.tx_type(),
-                success: res.result.is_success(),
-                cumulative_gas_used: cumulative_gas_used.try_into().unwrap(),
-                logs: res.result.logs().to_vec(),
-            };
+        //     // Create receipt.
+        //     let receipt = Receipt {
+        //         tx_type: tx.tx_type(),
+        //         success: res.result.is_success(),
+        //         cumulative_gas_used: cumulative_gas_used.try_into().unwrap(),
+        //         logs: res.result.logs().to_vec(),
+        //     };
 
-            executed_txs.push(tx.clone());
-            // Update logs bloom.
-            logs_bloom.accrue_bloom(&receipt.bloom_slow());
-            receipts.push(receipt);
+        //     executed_txs.push(tx.clone());
+        //     // Update logs bloom.
+        //     logs_bloom.accrue_bloom(&receipt.bloom());
+        //     receipts.push(receipt);
 
-            // Commit state changes.
-            evm.context.evm.db.commit(res.state);
-        }
+        //     // Commit state changes.
+        //     evm.context.evm.db.commit(res.state);
+        // }
 
-        // Process consensus layer withdrawals.
-        for withdrawal in self.input.withdrawals.iter() {
-            // Convert withdrawal amount (in gwei) to wei.
-            let amount_wei = gwei_to_wei
-                .checked_mul(withdrawal.amount.try_into().unwrap())
-                .unwrap();
+        // // Process consensus layer withdrawals.
+        // for withdrawal in self.input.withdrawals.iter() {
+        //     // Convert withdrawal amount (in gwei) to wei.
+        //     let amount_wei = gwei_to_wei
+        //         .checked_mul(withdrawal.amount.try_into().unwrap())
+        //         .unwrap();
 
-            increase_account_balance(&mut evm.context.evm.db, withdrawal.address, amount_wei)
-                .unwrap();
-        }
+        //     increase_account_balance(&mut evm.context.evm.db, withdrawal.address, amount_wei)
+        //         .unwrap();
+        // }
 
-        // Compute header roots and fill out other header fields.
-        let h = self.header.as_mut().expect("Header not initialized");
-        let txs_signed = take(&mut self.input.transactions)
-            .into_iter()
-            .collect::<Vec<TransactionSigned>>();
-        h.transactions_root = ordered_trie_root_with_encoder(&txs_signed, |tx, buf| {
-            tx.eip2718_encode(&tx.signature, buf);
-        });
-        h.receipts_root = ordered_trie_root_with_encoder(&receipts, |receipt, buf| {
-            receipt.with_bloom_ref().encode_2718(buf);
-        });
-        h.withdrawals_root = Some(ordered_trie_root_with_encoder(
-            &self.input.withdrawals,
-            |withdrawal, buf| buf.put_slice(&withdrawal.to_rlp()),
-        ));
-        h.logs_bloom = logs_bloom;
-        h.gas_used = cumulative_gas_used.try_into().unwrap();
+        // // Compute header roots and fill out other header fields.
+        // let h = self.header.as_mut().expect("Header not initialized");
+        // let txs_signed = take(&mut self.input.transactions)
+        //     .into_iter()
+        //     .collect::<Vec<TransactionSigned>>();
+        // h.transactions_root = ordered_trie_root_with_encoder(&txs_signed, |tx, buf| {
+        //     tx.encode_2718(buf);
+        // });
+        // h.receipts_root = ordered_trie_root_with_encoder(&receipts, |receipt, buf| {
+        //     receipt.with_bloom_ref().encode_2718(buf);
+        // });
+        // h.withdrawals_root = Some(ordered_trie_root_with_encoder(
+        //     &self.input.withdrawals,
+        //     |withdrawal, buf| buf.put_slice(&withdrawal.to_rlp()),
+        // ));
+        // h.logs_bloom = logs_bloom;
+        // h.gas_used = cumulative_gas_used.try_into().unwrap();
 
-        self.db = Some(evm.context.evm.db.clone());
+        // self.db = Some(evm.context.evm.db.clone());
 
-        (executed_txs, receipts)
+        // (executed_txs, receipts)
     }
 }
 
@@ -275,13 +282,25 @@ impl EvmProcessor<InMemoryDB> {
     /// Process all state changes and finalize the header's state root.
     pub fn finalize(&mut self) {
         let db = self.db.take().expect("DB not initialized");
+        let precompiles = Precompiles::new(PrecompileSpecId::from_spec_id(EVM_CONFIG.spec_id));
 
         let mut state_trie = mem::take(&mut self.input.pre_state_trie);
-        for (address, account) in &db.accounts {
+        for (address, account) in &db.cache.accounts {
             // Ignore untouched accounts.
             if account.account_state == AccountState::None {
                 continue;
             }
+
+            // Ignore Ethereum stateless precompiles
+            if precompiles.contains(address) {
+                continue;
+            }
+
+            // Ignore strata stateless precompiles
+            if address == &BRIDGEOUT_ADDRESS || address == &SCHNORR_ADDRESS {
+                continue;
+            }
+
             let state_trie_index = keccak(address);
 
             // Remove from state trie if it has been deleted.
@@ -290,21 +309,9 @@ impl EvmProcessor<InMemoryDB> {
                 continue;
             }
 
-            let mut state_account = StateAccount {
-                nonce: account.info.nonce,
-                balance: account.info.balance,
-                storage_root: Default::default(),
-                code_hash: account.info.code_hash,
-            };
-
-            // Skip insert if the account is empty.
-            if state_account.is_account_empty() {
-                continue;
-            }
-
             // Update storage root for account.
             let state_storage = &account.storage;
-            state_account.storage_root = {
+            let storage_root = {
                 let (storage_trie, _) = self.input.pre_state_storage.get_mut(address).unwrap();
                 // If the account has been cleared, clear the storage trie.
                 if account.account_state == AccountState::StorageCleared {
@@ -326,6 +333,13 @@ impl EvmProcessor<InMemoryDB> {
                 storage_trie.hash()
             };
 
+            let state_account = StateAccount {
+                nonce: account.info.nonce,
+                balance: account.info.balance,
+                storage_root,
+                code_hash: account.info.code_hash,
+            };
+
             state_trie
                 .insert_rlp(&state_trie_index, state_account)
                 .expect("MPT is corrupted");
@@ -338,58 +352,59 @@ impl EvmProcessor<InMemoryDB> {
 }
 
 fn fill_eth_tx_env(tx_env: &mut TxEnv, essence: &Transaction, caller: Address) {
-    match essence {
-        Transaction::Legacy(tx) => {
-            tx_env.caller = caller;
-            tx_env.gas_limit = tx.gas_limit;
-            tx_env.gas_price = U256::from(tx.gas_price);
-            tx_env.gas_priority_fee = None;
-            tx_env.transact_to = if let TransactionKind::Call(to_addr) = tx.to {
-                TransactTo::Call(to_addr)
-            } else {
-                TransactTo::Create
-            };
-            tx_env.value = tx.value;
-            tx_env.data = tx.input.clone();
-            tx_env.chain_id = tx.chain_id;
-            tx_env.nonce = Some(tx.nonce);
-            tx_env.access_list.clear();
-        }
-        Transaction::Eip2930(tx) => {
-            tx_env.caller = caller;
-            tx_env.gas_limit = tx.gas_limit;
-            tx_env.gas_price = U256::from(tx.gas_price);
-            tx_env.gas_priority_fee = None;
-            tx_env.transact_to = if let TransactionKind::Call(to_addr) = tx.to {
-                TransactTo::Call(to_addr)
-            } else {
-                TransactTo::Create
-            };
-            tx_env.value = tx.value;
-            tx_env.data = tx.input.clone();
-            tx_env.chain_id = Some(tx.chain_id);
-            tx_env.nonce = Some(tx.nonce);
-            tx_env.access_list = tx.access_list.to_vec();
-        }
-        Transaction::Eip1559(tx) => {
-            tx_env.caller = caller;
-            tx_env.gas_limit = tx.gas_limit;
-            tx_env.gas_price = U256::from(tx.max_fee_per_gas);
-            tx_env.gas_priority_fee = Some(U256::from(tx.max_priority_fee_per_gas));
-            tx_env.transact_to = if let TransactionKind::Call(to_addr) = tx.to {
-                TransactTo::Call(to_addr)
-            } else {
-                TransactTo::Create
-            };
-            tx_env.value = tx.value;
-            tx_env.data = tx.input.clone();
-            tx_env.chain_id = Some(tx.chain_id);
-            tx_env.nonce = Some(tx.nonce);
-            tx_env.access_list = tx.access_list.to_vec();
-        }
-        Transaction::Eip4844(_) => todo!(),
-        _ => todo!(),
-    };
+    todo!()
+    // match essence {
+    //     Transaction::Legacy(tx) => {
+    //         tx_env.caller = caller;
+    //         tx_env.gas_limit = tx.gas_limit;
+    //         tx_env.gas_price = U256::from(tx.gas_price);
+    //         tx_env.gas_priority_fee = None;
+    //         tx_env.transact_to = if let TransactionKind::Call(to_addr) = tx.to {
+    //             TransactTo::Call(to_addr)
+    //         } else {
+    //             TransactTo::Create
+    //         };
+    //         tx_env.value = tx.value;
+    //         tx_env.data = tx.input.clone();
+    //         tx_env.chain_id = tx.chain_id;
+    //         tx_env.nonce = Some(tx.nonce);
+    //         tx_env.access_list.clear();
+    //     }
+    //     Transaction::Eip2930(tx) => {
+    //         tx_env.caller = caller;
+    //         tx_env.gas_limit = tx.gas_limit;
+    //         tx_env.gas_price = U256::from(tx.gas_price);
+    //         tx_env.gas_priority_fee = None;
+    //         tx_env.transact_to = if let TransactionKind::Call(to_addr) = tx.to {
+    //             TransactTo::Call(to_addr)
+    //         } else {
+    //             TransactTo::Create
+    //         };
+    //         tx_env.value = tx.value;
+    //         tx_env.data = tx.input.clone();
+    //         tx_env.chain_id = Some(tx.chain_id);
+    //         tx_env.nonce = Some(tx.nonce);
+    //         tx_env.access_list = tx.access_list.to_vec();
+    //     }
+    //     Transaction::Eip1559(tx) => {
+    //         tx_env.caller = caller;
+    //         tx_env.gas_limit = tx.gas_limit;
+    //         tx_env.gas_price = U256::from(tx.max_fee_per_gas);
+    //         tx_env.gas_priority_fee = Some(U256::from(tx.max_priority_fee_per_gas));
+    //         tx_env.transact_to = if let TransactionKind::Call(to_addr) = tx.to {
+    //             TransactTo::Call(to_addr)
+    //         } else {
+    //             TransactTo::Create
+    //         };
+    //         tx_env.value = tx.value;
+    //         tx_env.data = tx.input.clone();
+    //         tx_env.chain_id = Some(tx.chain_id);
+    //         tx_env.nonce = Some(tx.nonce);
+    //         tx_env.access_list = Vec::new();
+    //     }
+    //     Transaction::Eip4844(_) => todo!(),
+    //     _ => todo!(),
+    // };
 }
 
 pub fn increase_account_balance<D>(

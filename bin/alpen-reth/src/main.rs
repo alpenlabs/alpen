@@ -137,7 +137,7 @@ where
     let _guard = command.ext.logs.init_tracing()?;
     info!(target: "reth::cli", cmd = %command.ext.logs.log_file_directory, "Initialized tracing, debug log directory");
 
-    let runner = CliRunner::default();
+    let runner = CliRunner::try_default_runtime()?;
     runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))?;
 
     Ok(())

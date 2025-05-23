@@ -212,14 +212,14 @@
                 },
                 "transaction": {
                     "Eip1559": {
-                        "chain_id": 12345,
+                        "chainId": 12345,
                         "nonce": 0,
-                        "gas_limit": 21694,
-                        "max_fee_per_gas": 1041616314,
-                        "max_priority_fee_per_gas": 1000000000,
+                        "gas": 21694,
+                        "maxFeePerGas": 1041616314,
+                        "maxPriorityFeePerGas": 1000000000,
                         "to": "0x5400000000000000000000000000000000000001",
                         "value": "0x8ac7230489e80000",
-                        "access_list": [],
+                        "accessList": [],
                         "input": "0x04be27fa8b1f5278faf82cab8da23e8761f8f9bd5d5ebebbb37e0e12a70d92dd16"
                     }
                 }
