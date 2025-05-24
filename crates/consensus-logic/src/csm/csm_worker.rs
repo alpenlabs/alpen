@@ -14,9 +14,9 @@ use tracing::{error, info, warn};
 
 use super::{
     chain_tracker::{init_chain_tracker, AttachBlockResult},
-    common::IndexedBlockTable,
+    common::{L1Header, U256},
+    orphan_tracker::OrphanTracker,
 };
-use crate::csm::common::{L1Header, U256};
 
 const MAX_RETRIES: u8 = 10;
 const BATCH_FETCH_THRESHOLD: u64 = 5;
@@ -47,7 +47,7 @@ pub fn csm_worker(
 ) -> anyhow::Result<()> {
     let chain_ctx = make_chain_context(storage.clone());
     let mut chain_tracker = init_chain_tracker(storage.as_ref())?;
-    let mut orphan_tracker = IndexedBlockTable::default();
+    let mut orphan_tracker = OrphanTracker::default();
     let mut work_queue = VecDeque::new();
 
     loop {
@@ -115,7 +115,7 @@ pub fn csm_worker(
                     }
 
                     // check if any orphan blocks can be attached to this block
-                    if let Some(children) = orphan_tracker.by_parent_id.get(&block_id).cloned() {
+                    if let Some(children) = orphan_tracker.children(&block_id).cloned() {
                         // add them to processing queue, in same relative order as the blocks were
                         // originally seen.
                         for child in children.iter().rev() {

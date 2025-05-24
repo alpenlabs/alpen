@@ -5,13 +5,13 @@ use strata_state::l1::L1BlockId;
 use super::common::{IndexedBlockTable, L1Header};
 
 #[derive(Debug, Default)]
-struct OrphanTracker {
+pub struct OrphanTracker {
     pub(super) blocks: IndexedBlockTable,
     pub(super) heads: HashSet<L1BlockId>,
 }
 
 impl OrphanTracker {
-    fn insert(&mut self, block: L1Header) {
+    pub fn insert(&mut self, block: L1Header) {
         if self.blocks.by_block_id.contains_key(&block.block_id()) {
             // duplicate
             return;
@@ -32,7 +32,27 @@ impl OrphanTracker {
         }
     }
 
-    fn remove(&mut self, block_id: &L1BlockId) {}
+    pub fn remove(&mut self, block_id: &L1BlockId) {
+        // remove the block from the internal table
+        if self.blocks.remove(block_id).is_none() {
+            // block doesn't exist, there's nothing more to do.
+            return;
+        }
+
+        // block is no longer a head, if it was one.
+        self.heads.remove(block_id);
+
+        // children of the removed block,if they exist, become new heads
+        if let Some(children_ids) = self.blocks.by_parent_id.get(block_id) {
+            for child_id in children_ids {
+                self.heads.insert(*child_id);
+            }
+        }
+    }
+
+    pub fn children(&self, block_id: &L1BlockId) -> Option<&Vec<L1BlockId>> {
+        self.blocks.by_parent_id.get(block_id)
+    }
 }
 
 #[cfg(test)]
@@ -138,6 +158,92 @@ mod tests {
             orphan_tracker.heads,
             HashSet::from([blocks[2].block_id()]),
             "insert connecting orphan"
+        );
+    }
+
+    #[test]
+    fn test_orphan_tracker_remove() {
+        let mut orphan_tracker = OrphanTracker::default();
+
+        let blocks = [
+            make_l1_header(5, 0x40, 0x50, 0),
+            make_l1_header(6, 0x50, 0x60, 0),
+            make_l1_header(2, 0x10, 0x20, 0),
+            make_l1_header(5, 0x40, 0x51, 0),
+            make_l1_header(4, 0x30, 0x40, 0),
+            make_l1_header(3, 0x20, 0x30, 0),
+        ];
+
+        for block in &blocks {
+            orphan_tracker.insert(*block);
+        }
+
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([blocks[2].block_id()]),
+            "initial state"
+        );
+        assert_eq!(orphan_tracker.blocks.by_block_id.len(), 6, "initial count");
+
+        orphan_tracker.remove(&blocks[5].block_id());
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([blocks[2].block_id(), blocks[4].block_id()]),
+            "remove connecting block"
+        );
+
+        orphan_tracker.remove(&blocks[5].block_id());
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([blocks[2].block_id(), blocks[4].block_id()]),
+            "remove same block multiple times should have same result"
+        );
+
+        orphan_tracker.remove(&Buf32(u64_to_u83_32(0x99999)).into());
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([blocks[2].block_id(), blocks[4].block_id()]),
+            "remove unknown block"
+        );
+
+        orphan_tracker.remove(&blocks[4].block_id());
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([
+                blocks[0].block_id(),
+                blocks[2].block_id(),
+                blocks[3].block_id()
+            ]),
+            "remove common parent"
+        );
+
+        orphan_tracker.remove(&blocks[3].block_id());
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([blocks[0].block_id(), blocks[2].block_id()]),
+            "remove unconnected block at same height"
+        );
+
+        orphan_tracker.remove(&blocks[2].block_id());
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([blocks[0].block_id()]),
+            "remove unconnected block"
+        );
+
+        orphan_tracker.remove(&blocks[1].block_id());
+        assert_eq!(
+            orphan_tracker.heads,
+            HashSet::from([blocks[0].block_id()]),
+            "remove child of existing block"
+        );
+
+        orphan_tracker.remove(&blocks[0].block_id());
+        assert_eq!(orphan_tracker.heads.len(), 0, "empty tracker set");
+        assert_eq!(
+            orphan_tracker.blocks.by_block_id.len(),
+            0,
+            "empty tracker table"
         );
     }
 }
