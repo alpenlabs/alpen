@@ -12,7 +12,7 @@
 
 [**Alpen**](https://alpenlabs.io) gives developers the freedom to program nearly
 any locking conditions for BTC imaginable,
-limited only by the Strata block size and gas limits.
+limited only by the Alpen block size and gas limits.
 This enables developers to create new kinds of applications for BTC
 with features such as:
 
@@ -61,9 +61,9 @@ Let's break down what this means:
 To learn more, check our [documentation](https://docs.stratabtc.org).
 
 > [!IMPORTANT]
-> During the devnet phase,
-> Alpen will be running on a private bitcoin signet,
-> and will use signet blocks to store state commitments rather than
+> Currently,
+> Alpen is running on a private bitcoin signet,
+> and uses signet blocks to store state commitments rather than
 > the complete Alpen state data,
 > making Alpen function more like a commit chain than a rollup.
 > Support for full onchain data availability and for running Alpen
