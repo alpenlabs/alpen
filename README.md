@@ -34,7 +34,7 @@ with features such as:
 - **Financial transactions**,
   "if enough BTC is locked as collateral to maintain up
   to `X%` loan-to-value ratio,
-  then up to N of this other asset can be borrowed"
+  then up to `Y` of this other asset can be borrowed"
 
 ... and many more possibilities.
 
