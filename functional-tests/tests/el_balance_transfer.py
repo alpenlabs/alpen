@@ -63,6 +63,7 @@ class ElBalanceTransferTest(testenv.StrataTester):
         beneficiary_balance_change = beneficiary_final_balance - beneficiary_original_balance
         assert beneficiary_balance_change > 0
         source_balance_change = source_final_balance - source_original_balance
+        print("source balance change:", source_balance_change)
         # assert (
         #     source_balance_change
         #     + basefee_balance_change
