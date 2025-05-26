@@ -139,7 +139,7 @@ mod tests {
         let temp_dir = TempDir::new().expect("failed to create temp dir");
 
         let rbdb = rockbound::DB::open(
-            temp_dir.into_path(),
+            temp_dir.keep(),
             dbname,
             cfs.iter().map(|s| s.to_string()),
             &opts,

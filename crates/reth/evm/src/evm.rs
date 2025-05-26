@@ -1,12 +1,18 @@
 use std::sync::OnceLock;
 
+use reth_evm::{eth::EthEvmContext, EthEvm, EvmEnv, EvmFactory};
 use revm::{
-    context::{Cfg, ContextTr},
+    context::{
+        result::{EVMError, HaltReason},
+        Cfg, ContextTr, TxEnv,
+    },
     handler::{EthPrecompiles, PrecompileProvider},
+    inspector::NoOpInspector,
     interpreter::{Gas, InputsImpl, InstructionResult, InterpreterResult},
     precompile::{PrecompileError, PrecompileFn, Precompiles},
+    Context, MainBuilder, MainContext,
 };
-use revm_primitives::{Address, Bytes};
+use revm_primitives::{hardfork::SpecId, Address, Bytes};
 
 use crate::{
     constants::{BRIDGEOUT_ADDRESS, SCHNORR_ADDRESS},
@@ -120,5 +126,53 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for StrataEvmPrecompiles {
 
     fn contains(&self, address: &Address) -> bool {
         self.precompiles.contains(address)
+    }
+}
+
+/// Custom EVM configuration.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct StrataEvmFactory;
+
+impl EvmFactory for StrataEvmFactory {
+    type Evm<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>> =
+        EthEvm<DB, I, StrataEvmPrecompiles>;
+
+    type Context<DB: reth_evm::Database> = EthEvmContext<DB>;
+
+    type Tx = TxEnv;
+    type Error<DBError: std::error::Error + Send + Sync + 'static> = EVMError<DBError>;
+
+    type HaltReason = HaltReason;
+
+    type Spec = SpecId;
+
+    fn create_evm<DB: reth_evm::Database>(
+        &self,
+        db: DB,
+        input: EvmEnv,
+    ) -> Self::Evm<DB, revm::inspector::NoOpInspector> {
+        let evm = Context::mainnet()
+            .with_db(db)
+            .with_cfg(input.cfg_env)
+            .with_block(input.block_env)
+            .build_mainnet_with_inspector(NoOpInspector {})
+            .with_precompiles(StrataEvmPrecompiles::new());
+
+        EthEvm::new(evm, false)
+    }
+
+    fn create_evm_with_inspector<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>>(
+        &self,
+        db: DB,
+        input: reth_evm::EvmEnv<Self::Spec>,
+        inspector: I,
+    ) -> Self::Evm<DB, I> {
+        EthEvm::new(
+            self.create_evm(db, input)
+                .into_inner()
+                .with_inspector(inspector),
+            true,
+        )
     }
 }

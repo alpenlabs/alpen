@@ -1043,6 +1043,8 @@ version = "0.1.0"
 dependencies = [
  "alloy-sol-types",
  "alpen-reth-primitives",
+ "reth",
+ "reth-evm",
  "reth-primitives",
  "revm",
  "revm-primitives",
@@ -12133,7 +12135,7 @@ dependencies = [
 [[package]]
 name = "rsp-client-executor"
 version = "0.1.0"
-source = "git+https://github.com/succinctlabs/rsp?rev=3703a82027157a653327c95cf2e507d05bde174f#3703a82027157a653327c95cf2e507d05bde174f"
+source = "git+https://github.com/alpenlabs/rsp?rev=a386ada51586761058eee16acdab1561f06947c5#a386ada51586761058eee16acdab1561f06947c5"
 dependencies = [
  "alloy-consensus",
  "alloy-evm",
@@ -12164,7 +12166,7 @@ dependencies = [
 [[package]]
 name = "rsp-mpt"
 version = "0.1.0"
-source = "git+https://github.com/succinctlabs/rsp?rev=3703a82027157a653327c95cf2e507d05bde174f#3703a82027157a653327c95cf2e507d05bde174f"
+source = "git+https://github.com/alpenlabs/rsp?rev=a386ada51586761058eee16acdab1561f06947c5#a386ada51586761058eee16acdab1561f06947c5"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -12178,7 +12180,7 @@ dependencies = [
 [[package]]
 name = "rsp-primitives"
 version = "0.1.0"
-source = "git+https://github.com/succinctlabs/rsp?rev=3703a82027157a653327c95cf2e507d05bde174f#3703a82027157a653327c95cf2e507d05bde174f"
+source = "git+https://github.com/alpenlabs/rsp?rev=a386ada51586761058eee16acdab1561f06947c5#a386ada51586761058eee16acdab1561f06947c5"
 dependencies = [
  "alloy-genesis",
  "alloy-rpc-types",
@@ -14214,6 +14216,8 @@ dependencies = [
  "bincode",
  "hex-literal",
  "k256",
+ "reth-chainspec",
+ "reth-evm-ethereum",
  "reth-primitives",
  "reth-primitives-traits",
  "revm",

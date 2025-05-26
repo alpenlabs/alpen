@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_consensus::Transaction;
 use alloy_eips::Typed2718;
-use alpen_reth_evm::collect_withdrawal_intents;
+use alpen_reth_evm::{collect_withdrawal_intents, evm::StrataEvmFactory};
 use alpen_reth_primitives::WithdrawalIntent;
 use reth::{
     builder::BuilderContext, providers::StateProviderFactory, revm::database::StateProviderDatabase,
@@ -33,7 +33,6 @@ use tracing::{debug, trace, warn};
 
 use crate::{
     engine::StrataEngineTypes,
-    evm::StrataEvmFactory,
     payload::{StrataBuiltPayload, StrataPayloadBuilderAttributes},
 };
 

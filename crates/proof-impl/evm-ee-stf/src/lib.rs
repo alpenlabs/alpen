@@ -4,9 +4,12 @@ pub mod utils;
 use std::sync::Arc;
 
 use alloy_consensus::EthBlock;
+use alpen_reth_evm::evm::StrataEvmFactory;
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
+use reth_chainspec::ChainSpec;
+use reth_evm_ethereum::EthEvmConfig;
 use revm::primitives::hardfork::SpecId;
-use rsp_client_executor::{executor::EthClientExecutor, io::EthClientExecutorInput};
+use rsp_client_executor::{executor::ClientExecutor, io::EthClientExecutorInput};
 use utils::generate_exec_update;
 use zkaleido::ZkVmEnv;
 
@@ -16,12 +19,18 @@ pub struct EvmConfig {
     pub spec_id: SpecId,
 }
 
+pub type AlpEthClientExecutor = ClientExecutor<EthEvmConfig<StrataEvmFactory>, ChainSpec>;
+
 pub fn process_block_transaction(input: EthClientExecutorInput) -> EvmBlockStfOutput {
-    // Execute the block.
-    let executor = EthClientExecutor::eth(
-        Arc::new((&input.genesis).try_into().unwrap()),
-        input.custom_beneficiary,
-    );
+    // TODO: Remove this unwrap
+    let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
+    let executor = AlpEthClientExecutor {
+        evm_config: EthEvmConfig::new_with_evm_factory(
+            chain_spec.clone(),
+            StrataEvmFactory::default(),
+        ),
+        chain_spec: chain_spec.clone(),
+    };
 
     let header = executor
         .execute(input.clone())
