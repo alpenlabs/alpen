@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{self, Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{anyhow, bail};
@@ -57,6 +57,9 @@ pub(crate) struct ReaderContext<R: Reader> {
 
     /// Sequencer Pubkey
     pub seq_pubkey: Option<XOnlyPublicKey>,
+
+    /// Checkpoint wait config
+    pub checkpoint_config: Arc<CheckpointWaitConfig>,
 }
 
 /// The main task that initializes the reader state and starts reading from bitcoin.
@@ -79,6 +82,7 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
         ),
     };
 
+    let checkpoint_config = Arc::new(CheckpointWaitConfig::default());
     let ctx = ReaderContext {
         client,
         storage,
@@ -86,6 +90,7 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
         params,
         status_channel,
         seq_pubkey,
+        checkpoint_config,
     };
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
 }
@@ -237,7 +242,7 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
 
             // Handle the revert event and return immediately
             let revert_ev = L1Event::RevertTo(block);
-            return handle_bitcoin_event(revert_ev, &ctx, event_submitter).await;
+            return handle_bitcoin_event(revert_ev, ctx, event_submitter).await;
         }
     } else {
         // TODO make this case a bit more structured
@@ -261,7 +266,15 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
                 // discarded i.e. if it is verified. If it is accepted, update filter config.
                 if let Some(checkpt) = find_checkpoint_in_events(&evs) {
                     // if we have a checkpoint in this block, update filterconfig based on this
-                    let accepted = wait_until_checkpoint_accepted_or_rejected(ctx, checkpt).await?;
+
+                    let batch_info = checkpt.checkpoint().batch_info();
+                    let l2_commt = checkpt.checkpoint().batch_info().l2_range.1;
+                    let ckpt_epoch = batch_info.epoch();
+
+                    let span = info_span!("wait_checkpoint_accepted", %ckpt_epoch, last_blkid=%l2_commt.blkid());
+                    let accepted = wait_until_checkpoint_accepted_or_rejected(ctx, checkpt)
+                        .instrument(span)
+                        .await?;
 
                     if accepted {
                         let chainstate =
@@ -286,6 +299,24 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
     Ok(())
 }
 
+/// Configuration for checkpoint waiting behavior
+#[derive(Debug, Clone)]
+pub struct CheckpointWaitConfig {
+    /// Maximum time to wait for a chainstate update
+    pub chainstate_update_timeout: Duration,
+    /// Maximum total time to wait before giving up
+    pub max_wait_time: Duration,
+}
+
+impl Default for CheckpointWaitConfig {
+    fn default() -> Self {
+        Self {
+            chainstate_update_timeout: Duration::from_secs(30),
+            max_wait_time: Duration::from_secs(300), // 5 minutes
+        }
+    }
+}
+
 /// Watches the status channel for chainstate which has the finalized state matching as referred by
 /// checkpoint. If it is found, returns `true`, otherwise returns `false`. `false` is returned when
 /// there is a different chainstate than indicated by checkpoint for given slot.
@@ -296,17 +327,24 @@ async fn wait_until_checkpoint_accepted_or_rejected<R: Reader>(
     let batch_info = checkpoint.checkpoint().batch_info();
     let l2_commt = checkpoint.checkpoint().batch_info().l2_range.1;
     let ckpt_epoch = batch_info.epoch();
+    let config = &ctx.checkpoint_config;
 
-    let s = info_span!("wait_checkpoint_accepted", %ckpt_epoch, last_blkid=%l2_commt.blkid());
-    let _ = s.enter();
+    let span = info_span!("wait_checkpoint_accepted", %ckpt_epoch, last_blkid=%l2_commt.blkid());
+    let _guard = span.enter();
 
     info!("Waiting for checkpoint to be accepted");
     let mut rx = ctx.status_channel.subscribe_chain_sync();
 
-    let timeout_duration = Duration::from_secs(5); // TODO: better, clear duration
+    let start_time = time::Instant::now();
 
     loop {
-        if let Some(chstate_update) = (*rx.borrow_and_update()).clone() {
+        if start_time.elapsed() > config.max_wait_time {
+            error!("Maximum wait time exceeded waiting for checkpoint acceptance");
+            return Err(anyhow!(
+                "reader:query:wait_for_checkpoint_accept: Maximum wait time of {:?}s exceeded",
+                config.max_wait_time
+            ));
+        } else if let Some(chstate_update) = (*rx.borrow_and_update()).clone() {
             let fin_epoch = chstate_update.new_status().finalized_epoch;
 
             let same_slot = l2_commt.slot() == fin_epoch.last_slot();
@@ -323,13 +361,20 @@ async fn wait_until_checkpoint_accepted_or_rejected<R: Reader>(
                 return Ok(false);
             }
         }
-        // Wait for some change to happen
+        // Wait for chainstate change or timeout
         tokio::select! {
-            _ = rx.changed() => {}
-            // NOTE: what timeout to wait for here?
-            _ = tokio::time::sleep(timeout_duration) => {
-                error!("Timed out waiting for chainstate update.");
-                return Err(anyhow!("reader:query:wait_for_checkpoint_accept: Timed out waiting for chainstate update"));
+            result = rx.changed() => {
+                if let Err(e) = result {
+                    error!("Status channel closed unexpectedly: {}", e);
+                    return Err(anyhow!("reader:query:wait_for_checkpoint_accept: Status channel closed: {}", e));
+                }
+            }
+            _ = tokio::time::sleep(config.chainstate_update_timeout) => {
+                error!("Timed out waiting for chainstate update after {:?}", config.chainstate_update_timeout);
+                return Err(anyhow!(
+                    "reader:query:wait_for_checkpoint_accept: Timed out waiting for chainstate update after {:?}s",
+                    config.chainstate_update_timeout
+                ));
             }
         }
     }
