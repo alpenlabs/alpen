@@ -1,18 +1,21 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use bitcoin::Txid;
 use strata_db::types::L1TxEntry;
+use strata_primitives::indexed::Indexed;
 use strata_storage::BroadcastDbOps;
 use tracing::*;
 
 use super::error::{BroadcasterError, BroadcasterResult};
 
+pub type IndexedEntry = Indexed<L1TxEntry, u64>;
+
 pub(crate) struct BroadcasterState {
     /// Next index from which we should next read the [`L1TxEntry`] to check and process
     pub(crate) next_idx: u64,
 
-    /// Unfinalized [`L1TxEntry`]s which the broadcaster will check for
-    pub(crate) unfinalized_entries: BTreeMap<u64, L1TxEntry>,
+    /// Unfinalized [`L1TxEntry`]s which the broadcaster will check for.
+    pub(crate) unfinalized_entries: Vec<IndexedEntry>,
 }
 
 impl BroadcasterState {
@@ -38,11 +41,16 @@ impl BroadcasterState {
     }
 
     /// Fetches entries from database based on the `next_idx` and updates the broadcaster state
-    pub async fn next(
+    pub async fn update(
         &mut self,
-        updated_entries: BTreeMap<u64, L1TxEntry>,
+        updated_entries: impl Iterator<Item = IndexedEntry>,
         ops: &Arc<BroadcastDbOps>,
     ) -> BroadcasterResult<()> {
+        // Filter out finalized and invalid entries so that we don't have to process them again.
+        let unfinalized_entries: Vec<_> = updated_entries
+            .filter(|entry| !entry.item().is_finalized() && entry.item().is_valid())
+            .collect();
+
         let next_idx = ops.get_next_tx_idx_async().await?;
 
         if next_idx < self.next_idx {
@@ -54,7 +62,7 @@ impl BroadcasterState {
             filter_unfinalized_from_db(ops, self.next_idx, next_idx).await?;
 
         // Update state: include updated entries and new unfinalized entries
-        self.unfinalized_entries.extend(updated_entries);
+        self.unfinalized_entries = unfinalized_entries;
         self.unfinalized_entries.extend(new_unfinalized_entries);
         self.next_idx = next_idx;
         Ok(())
@@ -67,8 +75,8 @@ async fn filter_unfinalized_from_db(
     ops: &Arc<BroadcastDbOps>,
     from: u64,
     to: u64,
-) -> BroadcasterResult<BTreeMap<u64, L1TxEntry>> {
-    let mut unfinalized_entries = BTreeMap::new();
+) -> BroadcasterResult<Vec<IndexedEntry>> {
+    let mut unfinalized_entries = Vec::new();
     for idx in from..to {
         let Some(txentry) = ops.get_tx_entry_async(idx).await? else {
             break;
@@ -79,7 +87,7 @@ async fn filter_unfinalized_from_db(
         debug!(?idx, ?txid, ?status, "TxEntry");
 
         if txentry.is_valid() && !txentry.is_finalized() {
-            unfinalized_entries.insert(idx, txentry);
+            unfinalized_entries.push(IndexedEntry::new(idx, txentry));
         }
     }
     Ok(unfinalized_entries)
@@ -174,12 +182,13 @@ mod test {
         assert_eq!(state.next_idx, i5 + 1);
 
         // state should contain all except reorged, invalid or  finalized entries
-        assert!(state.unfinalized_entries.contains_key(i1));
-        assert!(state.unfinalized_entries.contains_key(i2));
-        assert!(state.unfinalized_entries.contains_key(i4));
+        let unfin_entries = state.unfinalized_entries;
+        assert!(unfin_entries.iter().any(|e| e.index() == i1));
+        assert!(unfin_entries.iter().any(|e| e.index() == i2));
+        assert!(unfin_entries.iter().any(|e| e.index() == i4));
 
-        assert!(!state.unfinalized_entries.contains_key(i3));
-        assert!(!state.unfinalized_entries.contains_key(i5));
+        assert!(!unfin_entries.iter().any(|e| e.index() == i3));
+        assert!(!unfin_entries.iter().any(|e| e.index() == i5));
     }
 
     #[tokio::test]
@@ -187,23 +196,27 @@ mod test {
         // Insert entries to db
         let ops = get_ops();
 
-        let pop = populate_broadcast_db(ops.clone()).await;
-        let [(_i1, _e1), (_i2, _e2), (_i3, _e3), (_i4, _e4), (_i5, _e5)] = pop.as_slice() else {
-            panic!("Invalid initialization");
-        };
+        let entries = populate_broadcast_db(ops.clone()).await;
+        assert_eq!(entries.len(), 5, "test: broadcast db init invalid");
         // Now initialize state
         let mut state = BroadcasterState::initialize(&ops).await.unwrap();
 
-        // Get updated entries where one entry is modified, another is removed
-        let mut updated_entries = state.unfinalized_entries.clone();
-        let entry = gen_entry_with_status(L1TxStatus::InvalidInputs);
-        updated_entries.insert(0, entry);
-        updated_entries.remove(&1);
+        // Check for valid unfinalized entries in state.
+        assert_eq!(
+            state.unfinalized_entries.len(),
+            3,
+            "Total 5 but should omit 2, one finalized and one invalid"
+        );
 
-        // Insert two more items to db, one excluded and one published. Note the new idxs than used
+        // Get unfinalized entries where one entry is modified, another is removed
+        let mut unfinalized_entries = state.unfinalized_entries.clone();
+        let entry = gen_entry_with_status(L1TxStatus::InvalidInputs);
+        unfinalized_entries.push(IndexedEntry::new(0, entry));
+
+        // Insert two more items to db, one invalid and one published. Note the new idxs than used
         // in populate db.
         let e = gen_entry_with_status(L1TxStatus::InvalidInputs);
-        let idx = ops
+        let _ = ops
             .put_tx_entry_async([7; 32].into(), e.clone())
             .await
             .unwrap();
@@ -215,16 +228,18 @@ mod test {
             .unwrap();
         // Compute next state
         //
-        state.next(updated_entries, &ops).await.unwrap();
+        state
+            .update(unfinalized_entries.into_iter(), &ops)
+            .await
+            .unwrap();
 
         assert_eq!(state.next_idx, idx1.unwrap() + 1);
-        assert_eq!(
-            state.unfinalized_entries.get(&0).unwrap().status,
-            L1TxStatus::InvalidInputs
-        );
+        // Original 5, 3 added, 2 invalid, 1 finalized. Ignores finalized and invalid
+        assert_eq!(state.unfinalized_entries.len(), 4);
 
-        // check it does not contain idx of reorged but contains that of published tx
-        assert!(!state.unfinalized_entries.contains_key(&idx.unwrap()));
-        assert!(state.unfinalized_entries.contains_key(&idx1.unwrap()));
+        // Check no invalid and finalized entries in state
+        let unf_entries = state.unfinalized_entries;
+        assert!(!unf_entries.iter().any(|e| e.item().is_finalized()));
+        assert!(unf_entries.iter().all(|e| e.item().is_valid()));
     }
 }

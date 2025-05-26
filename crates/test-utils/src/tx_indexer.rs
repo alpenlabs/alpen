@@ -10,13 +10,15 @@ use strata_l1tx::{
         indexer::{index_block, TxVisitor},
         types::OPERATOR_FEE,
     },
-    messages::Indexed,
     utils::test_utils::{
         create_opreturn_metadata_for_withdrawal_fulfillment, create_tx_filter_config,
         get_filter_config_from_deposit_entries,
     },
 };
-use strata_primitives::l1::{BitcoinAmount, ProtocolOperation, WithdrawalFulfillmentInfo};
+use strata_primitives::{
+    indexed::Indexed,
+    l1::{BitcoinAmount, ProtocolOperation, WithdrawalFulfillmentInfo},
+};
 
 use crate::{
     bitcoin::{

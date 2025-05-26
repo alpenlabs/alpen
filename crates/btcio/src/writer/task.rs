@@ -187,6 +187,9 @@ pub async fn watcher_task<R: Reader + Signer + Wallet>(
     loop {
         interval.as_mut().tick().await;
 
+        let dspan = debug_span!("process payload", idx=%curr_payloadidx);
+        let _ = dspan.enter();
+
         if let Some(payloadentry) = insc_ops
             .get_payload_entry_by_idx_async(curr_payloadidx)
             .await?
@@ -195,7 +198,7 @@ pub async fn watcher_task<R: Reader + Signer + Wallet>(
                 // If unsigned or needs resign, create new signed commit/reveal txs and update the
                 // entry
                 L1BundleStatus::Unsigned | L1BundleStatus::NeedsResign => {
-                    debug!(?payloadentry.status, %curr_payloadidx, "Processing unsigned payloadentry");
+                    debug!(current_status=?payloadentry.status);
                     match create_and_sign_payload_envelopes(
                         &payloadentry,
                         &broadcast_handle,
@@ -212,7 +215,7 @@ pub async fn watcher_task<R: Reader + Signer + Wallet>(
                                 .put_payload_entry_async(curr_payloadidx, updated_entry)
                                 .await?;
 
-                            debug!(%curr_payloadidx, "Signed payload");
+                            debug!("Signed payload");
                         }
                         Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
                             // Just wait till we have enough utxos and let the status be `Unsigned`
@@ -233,7 +236,7 @@ pub async fn watcher_task<R: Reader + Signer + Wallet>(
                 L1BundleStatus::Published
                 | L1BundleStatus::Confirmed
                 | L1BundleStatus::Unpublished => {
-                    debug!(%curr_payloadidx, "Checking payloadentry's broadcast status");
+                    trace!("Checking payloadentry's broadcast status");
                     let commit_tx = broadcast_handle
                         .get_tx_entry_by_id_async(payloadentry.commit_txid)
                         .await?;
@@ -262,7 +265,7 @@ pub async fn watcher_task<R: Reader + Signer + Wallet>(
                             }
                         }
                         _ => {
-                            warn!(%curr_payloadidx, "Corresponding commit/reveal entry for payloadentry not found in broadcast db. Sign and create transactions again.");
+                            warn!("Corresponding commit/reveal entry for payloadentry not found in broadcast db. Sign and create transactions again.");
                             let mut updated_entry = payloadentry.clone();
                             updated_entry.status = L1BundleStatus::Unsigned;
                             insc_ops
@@ -274,7 +277,7 @@ pub async fn watcher_task<R: Reader + Signer + Wallet>(
             }
         } else {
             // No payload exists, just continue the loop to wait for payload's presence in db
-            info!(%curr_payloadidx, "Waiting for payloadentry to be present in db");
+            debug!("Waiting for payloadentry to be present in db");
         }
     }
 }

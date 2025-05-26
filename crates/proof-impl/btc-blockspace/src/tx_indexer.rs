@@ -60,41 +60,28 @@ impl TxVisitor for ProverTxVisitorImpl {
 /// visitor `ProverOpsVisitor` and indexing of deposit requests.
 #[cfg(test)]
 mod test {
-    use strata_test_utils::tx_indexer::{
-        test_index_deposit_request_with_visitor, test_index_deposit_with_visitor,
-        test_index_multiple_deposits_with_visitor, test_index_no_deposit_with_visitor,
-        test_index_tx_with_multiple_ops_with_visitor,
-        test_index_withdrawal_fulfillment_with_visitor,
-    };
+    use strata_test_utils::tx_indexer::*;
 
     use super::ProverTxVisitorImpl;
 
     #[test]
     fn test_index_deposits() {
         let _ = test_index_deposit_with_visitor(ProverTxVisitorImpl::new, |ind_output| {
-            ind_output.contents().clone()
-        });
-    }
-
-    #[ignore = "Ignored because deposit request is not included as ops"]
-    #[test]
-    fn test_index_txs_deposit_request() {
-        let _ = test_index_deposit_request_with_visitor(ProverTxVisitorImpl::new, |ind_output| {
-            ind_output.contents().clone()
+            ind_output.item().clone()
         });
     }
 
     #[test]
     fn test_index_no_deposit() {
         let _ = test_index_no_deposit_with_visitor(ProverTxVisitorImpl::new, |ind_output| {
-            ind_output.contents().clone()
+            ind_output.item().clone()
         });
     }
 
     #[test]
     fn test_index_multiple_deposits() {
         let _ = test_index_multiple_deposits_with_visitor(ProverTxVisitorImpl::new, |op_txs| {
-            op_txs.contents().clone()
+            op_txs.item().clone()
         });
     }
 
@@ -102,7 +89,7 @@ mod test {
     fn test_index_tx_with_multiple_ops() {
         let _ =
             test_index_tx_with_multiple_ops_with_visitor(ProverTxVisitorImpl::new, |ind_output| {
-                ind_output.contents().clone()
+                ind_output.item().clone()
             });
     }
 
@@ -110,7 +97,7 @@ mod test {
     fn test_index_withdrawal_fulfillment() {
         let _ = test_index_withdrawal_fulfillment_with_visitor(
             ProverTxVisitorImpl::new,
-            |ind_output| ind_output.contents().clone(),
+            |ind_output| ind_output.item().clone(),
         );
     }
 }

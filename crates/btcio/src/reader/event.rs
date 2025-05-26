@@ -53,6 +53,6 @@ impl BlockData {
     }
 
     pub fn tx_idxs_iter(&self) -> impl Iterator<Item = u32> + '_ {
-        self.relevant_txs.iter().map(|v| v.index())
+        self.relevant_txs.iter().map(|v| *v.index())
     }
 }
