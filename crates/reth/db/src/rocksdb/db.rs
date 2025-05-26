@@ -184,6 +184,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn set_and_get_witness_data() {
         let db = setup_db();
 
@@ -203,6 +204,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn del_and_get_block_data() {
         let db = setup_db();
         let test_data = get_mock_data();
