@@ -22,8 +22,9 @@ use strata_primitives::{
     params::Params,
 };
 use strata_state::{batch::SignedCheckpoint, sync_event::EventSubmitter};
-use strata_status::StatusChannel;
+use strata_status::{ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::{L1BlockManager, NodeStorage};
+use tokio::sync::watch;
 use tracing::*;
 
 use super::event::L1Event;
@@ -257,7 +258,7 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
     for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, evs)) => {
-                // Frist handle events, i.e. send to csm
+                // First handle events, i.e. send to csm
                 for ev in evs.iter() {
                     handle_bitcoin_event(ev.clone(), ctx, event_submitter).await?;
                 }
@@ -277,7 +278,7 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
                         .await?;
 
                     if accepted {
-                        if let Some(chainstate) = checkpt.checkpoint().as_sidecar() {
+                        if let Some(chainstate) = checkpt.checkpoint().sidecar_as_chainstate() {
                             state
                                 .filter_config_mut()
                                 .update_from_chainstate(&chainstate);
@@ -324,13 +325,8 @@ async fn wait_until_checkpoint_accepted_or_rejected<R: Reader>(
     ctx: &ReaderContext<R>,
     checkpoint: &SignedCheckpoint,
 ) -> anyhow::Result<bool> {
-    let batch_info = checkpoint.checkpoint().batch_info();
     let l2_commt = checkpoint.checkpoint().batch_info().l2_range.1;
-    let ckpt_epoch = batch_info.epoch();
     let config = &ctx.checkpoint_config;
-
-    let span = info_span!("wait_checkpoint_accepted", %ckpt_epoch, last_blkid=%l2_commt.blkid());
-    let _guard = span.enter();
 
     info!("Waiting for checkpoint to be accepted");
     let mut rx = ctx.status_channel.subscribe_chain_sync();
@@ -361,23 +357,32 @@ async fn wait_until_checkpoint_accepted_or_rejected<R: Reader>(
                 return Ok(false);
             }
         }
-        // Wait for chainstate change or timeout
-        tokio::select! {
-            result = rx.changed() => {
-                if let Err(e) = result {
-                    error!("Status channel closed unexpectedly: {}", e);
-                    return Err(anyhow!("reader:query:wait_for_checkpoint_accept: Status channel closed: {}", e));
-                }
-            }
-            _ = tokio::time::sleep(config.chainstate_update_timeout) => {
-                error!("Timed out waiting for chainstate update after {:?}", config.chainstate_update_timeout);
-                return Err(anyhow!(
-                    "reader:query:wait_for_checkpoint_accept: Timed out waiting for chainstate update after {:?}s",
-                    config.chainstate_update_timeout
-                ));
+
+        wait_for_chainstate_change(config, &mut rx).await?;
+    }
+}
+
+async fn wait_for_chainstate_change(
+    config: &CheckpointWaitConfig,
+    rx: &mut watch::Receiver<Option<ChainSyncStatusUpdate>>,
+) -> anyhow::Result<()> {
+    // Wait for chainstate change or timeout
+    tokio::select! {
+        result = rx.changed() => {
+            if let Err(e) = result {
+                error!("Status channel closed unexpectedly: {}", e);
+                return Err(anyhow!("reader:query:wait_for_checkpoint_accept: Status channel closed: {}", e));
             }
         }
+        _ = tokio::time::sleep(config.chainstate_update_timeout) => {
+            error!("Timed out waiting for chainstate update after {:?}", config.chainstate_update_timeout);
+            return Err(anyhow!(
+                "reader:query:wait_for_checkpoint_accept: Timed out waiting for chainstate update after {:?}s",
+                config.chainstate_update_timeout
+            ));
+        }
     }
+    Ok(())
 }
 
 /// Finds the highest block index where we do agree with the node.  If we never

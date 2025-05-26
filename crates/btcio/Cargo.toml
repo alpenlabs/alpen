@@ -15,7 +15,6 @@ strata-tasks.workspace = true
 anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
 rand.workspace = true
@@ -28,7 +27,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-borsh.workspace = true
 strata-common.workspace = true
 strata-rocksdb = { workspace = true, features = ["test_utils"] }
 strata-state = { workspace = true, features = ["test_utils"] }

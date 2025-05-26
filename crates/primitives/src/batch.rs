@@ -223,7 +223,8 @@ impl Checkpoint {
         &self.sidecar
     }
 
-    pub fn as_sidecar<T: BorshDeserialize>(&self) -> Option<T> {
+    /// Deserialize sidecar data as chainstate. Returns `None` if cannot be deserialized.
+    pub fn sidecar_as_chainstate<T: BorshDeserialize>(&self) -> Option<T> {
         borsh::from_slice(self.sidecar().chainstate()).ok()
     }
 }

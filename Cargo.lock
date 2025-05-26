@@ -13644,7 +13644,6 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "corepc-node",
  "hex",
  "mockall",

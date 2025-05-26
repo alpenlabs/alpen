@@ -62,11 +62,7 @@ pub(crate) async fn find_last_checkpoint_chainstate(
         .iter()
         .flat_map(|tx| tx.protocol_ops())
         .find_map(|op| match op {
-            ProtocolOperation::Checkpoint(c) => {
-                let chainstate: Chainstate =
-                    borsh::from_slice(c.checkpoint().sidecar().chainstate()).unwrap();
-                Some(chainstate)
-            }
+            ProtocolOperation::Checkpoint(c) => c.checkpoint().sidecar_as_chainstate(),
             _ => None,
         });
 
