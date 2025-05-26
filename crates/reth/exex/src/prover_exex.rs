@@ -127,9 +127,9 @@ where
     let parent_state =
         EthereumState::from_transition_proofs(start_state_root, &before_proofs, &after_proofs)?;
 
+    // TODO: make this configurable
     let chain_config: &str = include_str!("../../chainspec/src/res/alpen-dev-chain.json");
-    let genesis: Genesis = serde_json::from_str(chain_config)
-        .map_err(|e| eyre!("Failed to parse genesis config: {}", e))?;
+    let genesis = Genesis::Custom(chain_config.to_string());
 
     Ok(EvmBlockStfInput {
         current_block: block,

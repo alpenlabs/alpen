@@ -21,6 +21,8 @@ alloy-primitives.workspace = true
 alloy-rlp.workspace = true
 alloy-rpc-types-eth.workspace = true
 alloy-trie.workspace = true
+reth-chainspec.workspace = true
+reth-evm-ethereum.workspace = true
 
 anyhow.workspace = true
 reth-primitives = { workspace = true, features = ["serde-bincode-compat"] }
@@ -30,7 +32,8 @@ revm-primitives.workspace = true
 serde.workspace = true
 serde_with.workspace = true
 
-rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
+rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+
 
 [dev-dependencies]
 bincode.workspace = true
