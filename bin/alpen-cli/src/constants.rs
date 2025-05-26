@@ -35,7 +35,7 @@ pub const AES_TAG_LEN: usize = 16;
 
 pub const DEFAULT_NETWORK: Network = Network::Signet;
 pub const BRIDGE_ALPEN_ADDRESS: &str = "0x5400000000000000000000000000000000000001";
-pub const SIGNET_BLOCK_TIME: Duration = Duration::from_secs(30);
+pub const SIGNET_BLOCK_TIME: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
 /// Alpen CLI [`DerivationPath`](bdk_wallet::bitcoin::bip32::DerivationPath) for Alpen EVM wallet
 ///
