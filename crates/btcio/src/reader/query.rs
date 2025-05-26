@@ -277,13 +277,13 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
                         .await?;
 
                     if accepted {
-                        let chainstate =
-                            borsh::from_slice(checkpt.checkpoint().sidecar().chainstate())
-                                .expect("deserialize chainstate");
-
-                        state
-                            .filter_config_mut()
-                            .update_from_chainstate(&chainstate);
+                        if let Some(chainstate) = checkpt.checkpoint().as_sidecar() {
+                            state
+                                .filter_config_mut()
+                                .update_from_chainstate(&chainstate);
+                        } else {
+                            anyhow::bail!("Could not extract chainstate from checkpoint");
+                        }
                     }
                 }
 

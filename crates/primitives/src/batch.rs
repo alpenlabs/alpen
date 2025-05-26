@@ -222,6 +222,10 @@ impl Checkpoint {
     pub fn sidecar(&self) -> &CheckpointSidecar {
         &self.sidecar
     }
+
+    pub fn as_sidecar<T: BorshDeserialize>(&self) -> Option<T> {
+        borsh::from_slice(self.sidecar().chainstate()).ok()
+    }
 }
 
 #[derive(
