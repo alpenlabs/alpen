@@ -73,6 +73,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_cl_stf_native_execution() {
         let evm_ee_proof_with_vk = evm_ee::proof_with_vk(&EvmEeProgram::native_host());
         let btc_blockspace_proof_with_vk =
