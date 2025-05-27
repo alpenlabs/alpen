@@ -1,10 +1,10 @@
 use std::{
     collections::VecDeque,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{self, Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use bitcoin::{params::Params as BtcParams, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use secp256k1::XOnlyPublicKey;
@@ -21,9 +21,10 @@ use strata_primitives::{
     },
     params::Params,
 };
-use strata_state::sync_event::EventSubmitter;
-use strata_status::StatusChannel;
+use strata_state::{batch::SignedCheckpoint, sync_event::EventSubmitter};
+use strata_status::{ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::{L1BlockManager, NodeStorage};
+use tokio::sync::watch;
 use tracing::*;
 
 use super::event::L1Event;
@@ -57,6 +58,9 @@ pub(crate) struct ReaderContext<R: Reader> {
 
     /// Sequencer Pubkey
     pub seq_pubkey: Option<XOnlyPublicKey>,
+
+    /// Checkpoint wait config
+    pub checkpoint_config: Arc<CheckpointWaitConfig>,
 }
 
 /// The main task that initializes the reader state and starts reading from bitcoin.
@@ -79,6 +83,7 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
         ),
     };
 
+    let checkpoint_config = Arc::new(CheckpointWaitConfig::default());
     let ctx = ReaderContext {
         client,
         storage,
@@ -86,6 +91,7 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
         params,
         status_channel,
         seq_pubkey,
+        checkpoint_config,
     };
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
 }
@@ -120,16 +126,11 @@ async fn do_reader_task<R: Reader>(
     loop {
         let mut status_updates: Vec<L1StatusUpdate> = Vec::new();
 
-        match poll_for_new_blocks(&ctx, &mut state, &mut status_updates).await {
-            Err(err) => {
-                handle_poll_error(&err, &mut status_updates);
-            }
-            Ok(events) => {
-                // handle events
-                for ev in events {
-                    handle_bitcoin_event(ev, &ctx, event_submitter).await?;
-                }
-            }
+        if let Err(err) =
+            poll_for_and_handle_new_blocks(&ctx, &mut state, &mut status_updates, event_submitter)
+                .await
+        {
+            handle_poll_error(&err, &mut status_updates);
         };
 
         tokio::time::sleep(poll_dur).await;
@@ -217,11 +218,12 @@ async fn init_reader_state<R: Reader>(
 /// Polls the chain to see if there's new blocks to look at, possibly reorging
 /// if there's a mixup and we have to go back. Returns events corresponding to block and
 /// transactions.
-async fn poll_for_new_blocks<R: Reader>(
+async fn poll_for_and_handle_new_blocks<R: Reader>(
     ctx: &ReaderContext<R>,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
-) -> anyhow::Result<Vec<L1Event>> {
+    event_submitter: &impl EventSubmitter,
+) -> anyhow::Result<()> {
     let chain_info = ctx.client.get_blockchain_info().await?;
     status_updates.push(L1StatusUpdate::RpcConnected(true));
     let client_height = chain_info.blocks;
@@ -229,10 +231,8 @@ async fn poll_for_new_blocks<R: Reader>(
 
     if fresh_best_block == *state.best_block() {
         trace!("polled client, nothing to do");
-        return Ok(vec![]);
+        return Ok(());
     }
-
-    let mut events = Vec::new();
 
     // First, check for a reorg if there is one.
     if let Some((pivot_height, pivot_blkid)) = find_pivot_block(ctx.client.as_ref(), state).await? {
@@ -241,9 +241,9 @@ async fn poll_for_new_blocks<R: Reader>(
             let block = L1BlockCommitment::new(pivot_height, L1BlockId::from(pivot_blkid));
             state.rollback_to_height(pivot_height);
 
-            // Return with the revert event immediately
+            // Handle the revert event and return immediately
             let revert_ev = L1Event::RevertTo(block);
-            return Ok(vec![revert_ev]);
+            return handle_bitcoin_event(revert_ev, ctx, event_submitter).await;
         }
     } else {
         // TODO make this case a bit more structured
@@ -258,16 +258,36 @@ async fn poll_for_new_blocks<R: Reader>(
     for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, evs)) => {
-                events.extend_from_slice(&evs);
+                // First handle events, i.e. send to csm
+                for ev in evs.iter() {
+                    handle_bitcoin_event(ev.clone(), ctx, event_submitter).await?;
+                }
 
+                // If there is checkpoint in blocks, then wait until that gets accepted or
+                // discarded i.e. if it is verified. If it is accepted, update filter config.
                 if let Some(checkpt) = find_checkpoint_in_events(&evs) {
                     // if we have a checkpoint in this block, update filterconfig based on this
-                    let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().chainstate())
-                        .expect("deserialize chainstate");
 
-                    state
-                        .filter_config_mut()
-                        .update_from_chainstate(&chainstate);
+                    let batch_info = checkpt.checkpoint().batch_info();
+                    let l2_commt = checkpt.checkpoint().batch_info().l2_range.1;
+                    let ckpt_epoch = batch_info.epoch();
+
+                    let span = info_span!("wait_checkpoint_accepted", %ckpt_epoch, last_blkid=%l2_commt.blkid());
+                    let accepted = wait_until_checkpoint_accepted_or_rejected(ctx, checkpt)
+                        .instrument(span)
+                        .await?;
+
+                    if accepted {
+                        if let Some(chainstate) = checkpt.checkpoint().sidecar_as_chainstate() {
+                            state
+                                .filter_config_mut()
+                                .update_from_chainstate(&chainstate);
+                        } else {
+                            anyhow::bail!("Could not extract chainstate from checkpoint");
+                        }
+                    } else {
+                        warn!("Checkpoint did not get accepted");
+                    }
                 }
 
                 info!(%fetch_height, %blkid, "accepted new block");
@@ -279,7 +299,116 @@ async fn poll_for_new_blocks<R: Reader>(
         };
     }
 
-    Ok(events)
+    Ok(())
+}
+
+/// Configuration for checkpoint waiting behavior
+#[derive(Debug, Clone)]
+pub struct CheckpointWaitConfig {
+    /// Maximum time to wait for a chainstate update
+    chainstate_update_timeout: Duration,
+    /// Maximum total time to wait before giving up
+    max_wait_time: Duration,
+}
+
+impl CheckpointWaitConfig {
+    pub fn new(mut chainstate_update_timeout: Duration, max_wait_time: Duration) -> Self {
+        if max_wait_time < chainstate_update_timeout {
+            warn!(
+                ?max_wait_time,
+                ?chainstate_update_timeout,
+                "checkpointconfig: max_wait_time smaller than chainstate_update_timeout, clamping chainstate_update_tomeout to be the same"
+            );
+            chainstate_update_timeout = max_wait_time;
+        }
+        Self {
+            chainstate_update_timeout,
+            max_wait_time,
+        }
+    }
+
+    pub fn chainstate_update_timeout(&self) -> &Duration {
+        &self.chainstate_update_timeout
+    }
+
+    pub fn max_wait_time(&self) -> &Duration {
+        &self.max_wait_time
+    }
+}
+
+impl Default for CheckpointWaitConfig {
+    fn default() -> Self {
+        Self {
+            chainstate_update_timeout: Duration::from_secs(30),
+            max_wait_time: Duration::from_secs(300), // 5 minutes
+        }
+    }
+}
+
+/// Watches the status channel for chainstate which has the finalized state matching as referred by
+/// checkpoint. If it is found, returns `true`, otherwise returns `false`. `false` is returned when
+/// there is a different chainstate than indicated by checkpoint for given slot.
+async fn wait_until_checkpoint_accepted_or_rejected<R: Reader>(
+    ctx: &ReaderContext<R>,
+    checkpoint: &SignedCheckpoint,
+) -> anyhow::Result<bool> {
+    let l2_commt = checkpoint.checkpoint().batch_info().l2_range.1;
+    let config = &ctx.checkpoint_config;
+
+    info!("Waiting for checkpoint to be accepted");
+    let mut rx = ctx.status_channel.subscribe_chain_sync();
+
+    let start_time = time::Instant::now();
+
+    loop {
+        if start_time.elapsed() > config.max_wait_time {
+            error!("Maximum wait time exceeded waiting for checkpoint acceptance");
+            return Err(anyhow!(
+                "reader:query:wait_for_checkpoint_accept: Maximum wait time of {:?}s exceeded",
+                config.max_wait_time
+            ));
+        } else if let Some(chstate_update) = (*rx.borrow_and_update()).clone() {
+            let tip_commitment = chstate_update.new_status().tip;
+            let same_slot = l2_commt.slot() == tip_commitment.slot();
+            let same_blkid = l2_commt.blkid() == tip_commitment.blkid();
+
+            if same_slot && same_blkid {
+                return Ok(true);
+            } else if same_slot && !same_blkid {
+                warn!("Checkpoint not accepted: different block id for same slot finalized");
+                return Ok(false);
+            } else if l2_commt.slot() < tip_commitment.slot() {
+                // We've been looking for stale checkpoint to be accepted.
+                warn!("Checkpoint not accepted: higher slot finalized than the slot waited for");
+                return Ok(false);
+            }
+        }
+
+        wait_for_chainstate_change(config, &mut rx).await?;
+    }
+}
+
+async fn wait_for_chainstate_change(
+    config: &CheckpointWaitConfig,
+    rx: &mut watch::Receiver<Option<ChainSyncStatusUpdate>>,
+) -> anyhow::Result<()> {
+    // Wait for chainstate change or timeout
+    tokio::select! {
+        result = rx.changed() => {
+            if let Err(e) = result {
+                error!("Status channel closed unexpectedly: {}", e);
+                return Err(anyhow!("reader:query:wait_for_checkpoint_accept: Status channel closed: {}", e));
+            }
+        }
+        _ = tokio::time::sleep(config.chainstate_update_timeout) => {
+            error!("Timed out waiting for chainstate update after {:?}", config.chainstate_update_timeout);
+            return Err(anyhow!(
+                "reader:query:wait_for_checkpoint_accept: Timed out waiting for chainstate update after {:?}s",
+                config.chainstate_update_timeout
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Finds the highest block index where we do agree with the node.  If we never
