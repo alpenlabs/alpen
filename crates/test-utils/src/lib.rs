@@ -10,6 +10,8 @@ pub mod evm_ee;
 pub mod l2;
 pub mod tx_indexer;
 
+pub use bridge::create_opreturn_metadata;
+
 /// The default buffer size for the `ArbitraryGenerator`.
 const ARB_GEN_LEN: usize = 65_536;
 

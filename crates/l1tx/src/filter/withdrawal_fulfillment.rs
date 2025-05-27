@@ -170,14 +170,7 @@ mod test {
         deposit_idx: u32,
         deposit_txid: &[u8; 32],
     ) -> ScriptBuf {
-        let mut metadata = [0u8; 44];
-        metadata[..4].copy_from_slice(&magic);
-        // first 4 bytes = operator idx
-        metadata[4..8].copy_from_slice(&operator_idx.to_be_bytes());
-        // next 4 bytes = deposit idx
-        metadata[8..12].copy_from_slice(&deposit_idx.to_be_bytes());
-        metadata[12..44].copy_from_slice(deposit_txid);
-        Descriptor::new_op_return(&metadata).unwrap().to_script()
+        strata_test_utils::create_opreturn_metadata(magic, operator_idx, deposit_idx, deposit_txid)
     }
 
     fn create_outputref(txid_bytes: &[u8; 32], vout: u32) -> OutputRef {
