@@ -285,6 +285,8 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
                         } else {
                             anyhow::bail!("Could not extract chainstate from checkpoint");
                         }
+                    } else {
+                        warn!("Checkpoint did not get accepted");
                     }
                 }
 
@@ -304,9 +306,34 @@ async fn poll_for_and_handle_new_blocks<R: Reader>(
 #[derive(Debug, Clone)]
 pub struct CheckpointWaitConfig {
     /// Maximum time to wait for a chainstate update
-    pub chainstate_update_timeout: Duration,
+    chainstate_update_timeout: Duration,
     /// Maximum total time to wait before giving up
-    pub max_wait_time: Duration,
+    max_wait_time: Duration,
+}
+
+impl CheckpointWaitConfig {
+    pub fn new(mut chainstate_update_timeout: Duration, max_wait_time: Duration) -> Self {
+        if max_wait_time < chainstate_update_timeout {
+            warn!(
+                ?max_wait_time,
+                ?chainstate_update_timeout,
+                "checkpointconfig: max_wait_time smaller than chainstate_update_timeout, clamping chainstate_update_tomeout to be the same"
+            );
+            chainstate_update_timeout = max_wait_time;
+        }
+        Self {
+            chainstate_update_timeout,
+            max_wait_time,
+        }
+    }
+
+    pub fn chainstate_update_timeout(&self) -> &Duration {
+        &self.chainstate_update_timeout
+    }
+
+    pub fn max_wait_time(&self) -> &Duration {
+        &self.max_wait_time
+    }
 }
 
 impl Default for CheckpointWaitConfig {
@@ -341,19 +368,18 @@ async fn wait_until_checkpoint_accepted_or_rejected<R: Reader>(
                 config.max_wait_time
             ));
         } else if let Some(chstate_update) = (*rx.borrow_and_update()).clone() {
-            let fin_epoch = chstate_update.new_status().finalized_epoch;
-
-            let same_slot = l2_commt.slot() == fin_epoch.last_slot();
-            let same_blkid = l2_commt.blkid() == fin_epoch.last_blkid();
+            let tip_commitment = chstate_update.new_status().tip;
+            let same_slot = l2_commt.slot() == tip_commitment.slot();
+            let same_blkid = l2_commt.blkid() == tip_commitment.blkid();
 
             if same_slot && same_blkid {
                 return Ok(true);
             } else if same_slot && !same_blkid {
-                info!("Checkpoint not accepted: different block id for same slot finalized");
+                warn!("Checkpoint not accepted: different block id for same slot finalized");
                 return Ok(false);
-            } else if l2_commt.slot() < fin_epoch.last_slot() {
+            } else if l2_commt.slot() < tip_commitment.slot() {
                 // We've been looking for stale checkpoint to be accepted.
-                info!("Checkpoint not accepted: higher slot finalized than the slot waited for");
+                warn!("Checkpoint not accepted: higher slot finalized than the slot waited for");
                 return Ok(false);
             }
         }
