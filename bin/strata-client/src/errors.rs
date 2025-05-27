@@ -10,6 +10,9 @@ pub enum InitError {
     #[error("missing init client state")]
     MissingInitClientState,
 
+    #[error("rollup name too long")]
+    InvalidRollupName(String),
+
     #[error("io: {0}")]
     Io(#[from] io::Error),
 
