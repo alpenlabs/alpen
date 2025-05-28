@@ -141,6 +141,15 @@ impl UnfinalizedBlockTracker {
             return Err(ChainTipError::MissingBlock(*blkid));
         }
 
+        if blkid == &self.finalized_tip {
+            // finalizing same tip, nothing to do
+            return Ok(FinalizeReport {
+                prev_tip: self.finalized_tip,
+                finalized: vec![],
+                rejected: vec![],
+            });
+        }
+
         let mut finalized = vec![];
         let mut at = *blkid;
 
@@ -512,6 +521,8 @@ mod tests {
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_prov.as_ref());
 
+        eprintln!("{} {} {} {} {} {} {}", g, a1, c1, a2, b2, a3, b3);
+
         let pool = threadpool::ThreadPool::new(1);
         let blk_manager = L2BlockManager::new(pool, db);
 
@@ -559,5 +570,7 @@ mod tests {
             HashSet::from_iter([a3]),
             &blk_manager,
         );
+
+        check_update_finalized(a3, a3, &[], &[], HashSet::from_iter([a3]), &blk_manager);
     }
 }
