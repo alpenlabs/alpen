@@ -10,6 +10,7 @@ members = [
   "crates/config",
   "crates/consensus-logic",
   "crates/crypto",
+  "crates/da-framework",
   "crates/db",
   "crates/eectl",
   "crates/evmexec",
@@ -56,7 +57,7 @@ members = [
 
   # integration tests
   "tests",
-  "crates/util/python-utils",
+  "crates/util/python-utils", "crates/da-framework",
 ]
 
 default-members = [
@@ -89,6 +90,7 @@ strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-crypto = { path = "crates/crypto", default-features = false }
+strata-da-framework = { path = "crates/da-framework" }
 strata-db = { path = "crates/db" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }

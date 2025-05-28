@@ -13879,6 +13879,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-da-framework"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.11",
+]
+
+[[package]]
 name = "strata-datatool"
 version = "0.3.0-alpha.1"
 dependencies = [
