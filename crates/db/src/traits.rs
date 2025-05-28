@@ -12,8 +12,8 @@ use strata_primitives::{
     proof::{ProofContext, ProofKey},
 };
 use strata_state::{
-    block::L2BlockBundle, chain_state::Chainstate, operation::*, state_op::WriteBatchEntry,
-    sync_event::SyncEvent,
+    block::L2BlockBundle, chain_state::Chainstate, client_state::L1ClientState, operation::*,
+    state_op::WriteBatchEntry, sync_event::SyncEvent,
 };
 use zkaleido::ProofReceipt;
 
@@ -49,7 +49,17 @@ pub trait L1Database {
     /// Atomically extends the chain with a new block, providing the manifest
     /// and a list of transactions we find relevant.  Returns error if
     /// provided out-of-order.
+    #[deprecated]
     fn put_block_data(&self, mf: L1BlockManifest) -> DbResult<()>;
+
+    /// Store new block as pending validation
+    fn put_block_pending_validation(&self, block: L1Block) -> DbResult<()>;
+
+    /// mark new block as valid and store accumulated pow
+    fn mark_block_valid(&self, block_id: L1BlockId, height: u64, pow: [u8; 32]) -> DbResult<()>;
+
+    /// remove invalid block from db
+    fn remove_invalid_block(&self, block_id: L1BlockId) -> DbResult<()>;
 
     /// Stores an MMR checkpoint so we have to query less far back.  If the
     /// provided height does not match the entries in the MMR, will return an
@@ -57,9 +67,11 @@ pub trait L1Database {
     fn put_mmr_checkpoint(&self, blockid: L1BlockId, mmr: CompactMmr) -> DbResult<()>;
 
     /// Set a specific height, blockid in canonical chain records.
+    #[deprecated]
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()>;
 
     /// remove canonical chain records in given range (inclusive)
+    #[deprecated]
     fn remove_canonical_chain_entries(&self, start_height: u64, end_height: u64) -> DbResult<()>;
 
     /// Prune earliest blocks till height
@@ -68,24 +80,37 @@ pub trait L1Database {
     // TODO DA scraping storage
 
     // Gets current chain tip height, blockid
+    #[deprecated]
     fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>>;
+
+    fn get_block(&self, blockid: L1BlockId) -> DbResult<Option<L1Block>>;
+
+    fn get_block_pow(&self, blockid: L1BlockId) -> DbResult<Option<[u8; 32]>>;
+
+    fn get_best_valid_block_height(&self) -> DbResult<Option<u64>>;
+
+    fn get_blocks_at_height_range(&self, start: u64, end: u64) -> DbResult<Vec<L1BlockId>>;
 
     /// Gets the block manifest for a blockid.
     fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<L1BlockManifest>>;
 
     /// Gets the blockid at height for the current chain.
+    #[deprecated]
     fn get_canonical_blockid_at_height(&self, height: u64) -> DbResult<Option<L1BlockId>>;
 
     // TODO: This should not exist in database level and should be handled by downstream manager.
     /// Returns a half-open interval of block hashes, if we have all of them
     /// present.  Otherwise, returns error.
+    #[deprecated]
     fn get_canonical_blockid_range(&self, start_idx: u64, end_idx: u64)
         -> DbResult<Vec<L1BlockId>>;
 
     /// Gets the relevant txs we stored in a block.
+    #[deprecated]
     fn get_block_txs(&self, blockid: L1BlockId) -> DbResult<Option<Vec<L1TxRef>>>;
 
     /// Gets the tx with proof given a tx ref, if present.
+    #[deprecated]
     fn get_tx(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>>;
 
     /// Gets the MMR checkpoint we stored at the given block.
@@ -132,6 +157,10 @@ pub trait ClientStateDatabase {
     /// Gets the idx of the last written state.  Or returns error if a bootstrap
     /// state has not been written yet.
     fn get_last_state_idx(&self) -> DbResult<u64>;
+
+    fn put_client_state(&self, block_id: L1BlockId, state: L1ClientState) -> DbResult<()>;
+
+    fn get_client_state(&self, block_id: L1BlockId) -> DbResult<Option<L1ClientState>>;
 }
 
 /// L2 data store for CL blocks.  Does not store anything about what we think

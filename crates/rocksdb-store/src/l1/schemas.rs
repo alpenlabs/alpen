@@ -1,5 +1,5 @@
 use strata_mmr::CompactMmr;
-use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx};
+use strata_primitives::l1::{L1Block, L1BlockId, L1BlockManifest, L1Tx};
 
 use crate::{
     define_table_with_default_codec, define_table_with_seek_key_codec, define_table_without_codec,
@@ -10,6 +10,21 @@ use crate::{
 define_table_with_default_codec!(
     /// A table to store L1 Block data. Maps block id to header
     (L1BlockSchema) L1BlockId => L1BlockManifest
+);
+
+define_table_with_default_codec!(
+    /// A table to store L1 Block data. Maps block id to block
+    (L1RawBlockSchema) L1BlockId => L1Block
+);
+
+define_table_with_default_codec!(
+    /// A table to store L1 Block accumulated pow. Maps block id to accumulated pow.
+    (L1BlockPowSchema) L1BlockId => [u8; 32]
+);
+
+define_table_with_default_codec!(
+    /// A table to keep track of unchecked L1 blocks pending processing.
+    (L1PendingBlockSchema) L1BlockId => ()
 );
 
 define_table_with_seek_key_codec!(
