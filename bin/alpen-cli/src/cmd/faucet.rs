@@ -18,14 +18,14 @@ use crate::{
     signet::SignetWallet,
 };
 
-/// Request some BTC from the faucet
+/// Requests some BTC from the faucet
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "faucet")]
 pub struct FaucetArgs {
     /// either "signet" or "alpen"
     #[argh(positional)]
     network_type: String,
-    /// address that funds will be sent to. defaults to internal wallet
+    /// address that funds will be sent to. defaults to internal wallet address
     #[argh(positional)]
     address: Option<String>,
 }
