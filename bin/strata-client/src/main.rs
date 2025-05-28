@@ -80,9 +80,9 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let params = resolve_and_validate_params(args.rollup_params.as_deref(), &config)
         .map_err(anyhow::Error::from)?;
 
-    // Sanity check to ensure we don't d
+    // Sanity check to ensure we don't break our assumptions.
     let rollup_name = &params.rollup.rollup_name;
-    if rollup_name.as_bytes().len() > 4 {
+    if rollup_name.as_bytes().len() != 4 {
         error!("aborting due to invalid rollup name, must be 4 bytes!");
         error!("we use this as the bridge tx magic value, this will be fixed in a future version");
         return Err(InitError::InvalidRollupName(rollup_name.to_owned()).into());
