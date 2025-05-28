@@ -10,7 +10,7 @@ workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
 strata-mpt.workspace = true
-strata-primitives = { workspace = true, default-features = false }
+strata-primitives = { workspace = true }
 strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
