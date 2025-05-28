@@ -12,10 +12,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// Default development RPC URL.
-const DEFAULT_DEV_RPC_URL: &str = "0.0.0.0";
+/// Default development RPC host to listen on.
+const DEFAULT_DEV_RPC_HOST: &str = "0.0.0.0";
 
-/// Default development RPC port.
+/// Default development RPC port to listen on.
 const DEFAULT_DEV_RPC_PORT: usize = 4844;
 
 /// Default number of workers for each proving backend.
@@ -136,7 +136,7 @@ mod default_values {
     }
 
     pub(super) fn default_dev_rpc_url() -> String {
-        DEFAULT_DEV_RPC_URL.to_string()
+        DEFAULT_DEV_RPC_HOST.to_string()
     }
 
     pub(super) fn default_workers() -> usize {
@@ -242,7 +242,7 @@ enable_checkpoint_runner = false # Enable automatic checkpoint proving
 
         // Verify the values match expected defaults
         assert_eq!(original_config.rpc.dev_port, DEFAULT_DEV_RPC_PORT);
-        assert_eq!(original_config.rpc.dev_url, DEFAULT_DEV_RPC_URL);
+        assert_eq!(original_config.rpc.dev_url, DEFAULT_DEV_RPC_HOST);
         assert_eq!(original_config.workers.native, DEFAULT_WORKERS);
         assert_eq!(original_config.workers.sp1, DEFAULT_WORKERS);
         assert_eq!(original_config.workers.risc0, DEFAULT_WORKERS);
