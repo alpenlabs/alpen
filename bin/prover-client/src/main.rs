@@ -27,6 +27,7 @@ use zkaleido_sp1_host as _;
 
 mod args;
 mod checkpoint_runner;
+mod config;
 mod db;
 mod errors;
 mod operators;
@@ -53,26 +54,31 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         "strata-prover-client",
     ));
 
-    debug!("Running prover client with args {:?}", args);
+    // Resolve configuration from TOML file and CLI arguments
+    let config = args
+        .resolve_config()
+        .context("Failed to resolve configuration")?;
+
+    debug!("Running prover client with config {:?}", config);
 
     let rollup_params = args
         .resolve_and_validate_rollup_params()
         .context("Failed to resolve and validate rollup parameters")?;
 
     let el_client = HttpClientBuilder::default()
-        .build(args.get_reth_rpc_url())
+        .build(config.get_reth_rpc_url())
         .context("Failed to connect to the Ethereum client")?;
 
     let cl_client = HttpClientBuilder::default()
-        .build(args.get_sequencer_rpc_url())
+        .build(config.get_sequencer_rpc_url())
         .context("Failed to connect to the CL Sequencer client")?;
 
     let btc_client = Client::new(
-        args.get_btc_rpc_url(),
-        args.bitcoind_user.clone(),
-        args.bitcoind_password.clone(),
-        args.bitcoin_retry_count,
-        args.bitcoin_retry_interval,
+        config.get_btc_rpc_url(),
+        config.bitcoind_user.clone(),
+        config.bitcoind_password.clone(),
+        Some(config.bitcoin_retry_count),
+        Some(config.bitcoin_retry_interval),
     )
     .context("Failed to connect to the Bitcoin client")?;
 
@@ -81,12 +87,12 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         el_client,
         cl_client,
         rollup_params,
-        args.enable_checkpoint_runner,
+        config.enable_checkpoint_runner,
     ));
     let task_tracker = Arc::new(Mutex::new(TaskTracker::new()));
 
     let rbdb =
-        open_rocksdb_database(&args.datadir).context("Failed to open the RocksDB database")?;
+        open_rocksdb_database(&config.datadir).context("Failed to open the RocksDB database")?;
     let db_ops = DbOpsConfig { retry_count: 3 };
     let db = Arc::new(ProofDb::new(rbdb, db_ops));
 
@@ -94,8 +100,9 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         task_tracker.clone(),
         operator.clone(),
         db.clone(),
-        args.get_workers(),
-        args.polling_interval,
+        config.get_workers(),
+        config.polling_interval,
+        config.max_retry_counter,
     );
     debug!("Initialized Prover Manager");
 
@@ -104,46 +111,28 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     debug!("Spawn process pending tasks");
 
     // run the checkpoint runner
-    if args.enable_checkpoint_runner {
+    if config.enable_checkpoint_runner {
         let checkpoint_operator = operator.checkpoint_operator().clone();
-        let task_tracker_for_checkpoint = task_tracker.clone();
-        let db_for_checkpoint = db.clone();
-
+        let checkpoint_task_tracker = task_tracker.clone();
+        let checkpoint_poll_interval = config.checkpoint_poll_interval;
+        let checkpoint_db = db.clone();
         spawn(async move {
             checkpoint_proof_runner(
                 checkpoint_operator,
-                task_tracker_for_checkpoint,
-                db_for_checkpoint,
+                checkpoint_poll_interval,
+                checkpoint_task_tracker,
+                checkpoint_db,
             )
-            .await
+            .await;
         });
+        debug!("Spawned checkpoint proof runner");
     }
 
-    // Run the RPC server on dev mode only
-    if args.enable_dev_rpcs {
-        let rpc_url = args.get_dev_rpc_url();
-        run_rpc_server(
-            task_tracker.clone(),
-            operator.clone(),
-            db.clone(),
-            rpc_url,
-            args.enable_dev_rpcs,
-        )
+    let rpc_server = ProverClientRpc::new(task_tracker.clone(), operator, db);
+    rpc_server
+        .start_server(config.get_dev_rpc_url(), config.enable_dev_rpcs)
         .await
-        .context("Failed to run the prover client RPC server")?;
-    }
+        .context("Failed to start the RPC server")?;
 
     Ok(())
-}
-
-async fn run_rpc_server(
-    task_tracker: Arc<Mutex<TaskTracker>>,
-    operator: Arc<ProofOperator>,
-    db: Arc<ProofDb>,
-    rpc_url: String,
-    enable_dev_rpc: bool,
-) -> anyhow::Result<()> {
-    let rpc_impl = ProverClientRpc::new(task_tracker, operator, db);
-    rpc_server::start(&rpc_impl, rpc_url, enable_dev_rpc).await?;
-    anyhow::Ok(())
 }

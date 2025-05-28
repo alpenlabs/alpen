@@ -4,34 +4,23 @@ use argh::FromArgs;
 use serde_json::from_str;
 use strata_primitives::{params::RollupParams, proof::ProofZkVm};
 
-pub(super) const DEV_RPC_PORT: usize = 4844;
-pub(super) const DEV_RPC_URL: &str = "0.0.0.0";
+use crate::config::ProverConfig;
 
 /// Command-line arguments used to configure the prover-client in both development and production
 /// modes.
+///
+/// Values specified here will override the values in the config file.
 #[derive(Debug, FromArgs)]
 pub(crate) struct Args {
     /// The JSON-RPC port used when running in development mode.
-    ///
-    /// This port defaults to `DEV_RPC_PORT` and determines the local endpoint port
-    /// where the client’s RPC interface is exposed for debugging.
-    #[argh(option, description = "JSON-RPC port", default = "DEV_RPC_PORT")]
-    pub rpc_port: usize,
+    #[argh(option, description = "JSON-RPC port")]
+    pub rpc_port: Option<usize>,
 
     /// The base URL for the JSON-RPC endpoint in development mode.
-    ///
-    /// Defaults to `DEV_RPC_URL`. When combined with `rpc_port`, it forms the full
-    /// RPC endpoint URL for debugging during development.
-    #[argh(
-        option,
-        description = "base JSON-RPC URL",
-        default = "DEV_RPC_URL.to_string()"
-    )]
-    pub rpc_url: String,
+    #[argh(option, description = "base JSON-RPC URL")]
+    pub rpc_url: Option<String>,
 
     /// The directory path for storing databases and related data.
-    ///
-    /// This path determines where the client maintains its persistent state.
     #[argh(option, short = 'd', description = "datadir path containing databases")]
     pub datadir: PathBuf,
 
@@ -62,14 +51,11 @@ pub(crate) struct Args {
     pub bitcoind_password: String,
 
     /// Max retries for Bitcoin RPC calls.
-    #[argh(option, description = "max retries for bitcoin RPC (default: 3)")]
+    #[argh(option, description = "max retries for bitcoin RPC")]
     pub bitcoin_retry_count: Option<u8>,
 
-    /// Timeout duration for btc request retries in ms. Defaults to `1000`.
-    #[argh(
-        option,
-        description = "max interval between bitcoin RPC retries in ms (default: 1000)"
-    )]
+    /// Timeout duration for btc request retries in ms.
+    #[argh(option, description = "max interval between bitcoin RPC retries in ms")]
     pub bitcoin_retry_interval: Option<u64>,
 
     /// Path to the custom rollup configuration file.
@@ -79,78 +65,180 @@ pub(crate) struct Args {
     /// The number of Risc0 prover workers to spawn.
     ///
     /// This setting is only available if the `risc0` feature is enabled.
-    /// Defaults to `20`.
     #[cfg(feature = "risc0")]
-    #[argh(
-        option,
-        description = "number of risc0 prover workers to spawn",
-        default = "20"
-    )]
-    pub risc0_workers: usize,
+    #[argh(option, description = "number of risc0 prover workers to spawn")]
+    pub risc0_workers: Option<usize>,
 
     /// The number of SP1 prover workers to spawn.
     ///
     /// This setting is only available if the `sp1` feature is enabled.
-    /// Defaults to `20` to ensure sufficient prover capacity.
-    ///
-    /// Rationale: We produce EVM EE and CL STF blocks approximately every 5 seconds, and proof
-    /// generation for these blocks in SP1 takes roughly 40 seconds. Over a 40-second period, this
-    /// results in the need to generate 16 proofs for 8 EVM EE blocks and 8 CL STF blocks.
-    /// Additionally, 2 BTC blocks are generated in the same timeframe, requiring 2 more proofs.
-    ///
-    /// To handle this workload and account for catching up in cases of backlog, a minimum of 18
-    /// workers is required. Setting the default to `20` provides a small buffer to ensure smooth
-    /// operation under normal and catch-up scenarios.
     #[cfg(feature = "sp1")]
-    #[argh(
-        option,
-        description = "number of sp1 prover workers to spawn",
-        default = "20"
-    )]
-    pub sp1_workers: usize,
+    #[argh(option, description = "number of sp1 prover workers to spawn")]
+    pub sp1_workers: Option<usize>,
 
     /// The number of native prover workers to spawn.
     ///
-    /// Defaults to `20`.
-    #[argh(
-        option,
-        description = "number of native prover workers to spawn",
-        default = "20"
-    )]
-    pub native_workers: usize,
+    /// Overrides the value from the config file if provided.
+    #[argh(option, description = "number of native prover workers to spawn")]
+    pub native_workers: Option<usize>,
 
     /// The wait time, in milliseconds, for the prover manager loop.
     ///
     /// This value determines how frequently the prover manager checks for available jobs.
-    /// Adjust it to balance responsiveness and resource usage. The default value is 1,000
-    /// milliseconds.
+    /// Adjust it to balance responsiveness and resource usage.
     #[argh(
         option,
-        description = "wait time in milliseconds for the prover manager loop",
-        default = "1_000"
+        description = "wait time in milliseconds for the prover manager loop"
     )]
-    pub polling_interval: u64,
+    pub polling_interval: Option<u64>,
 
     /// Enables or disables development RPC endpoints.
     ///
     /// Set this to `true` to expose additional RPC endpoints for debugging during development.
-    /// Defaults to `true`.
-    #[argh(option, description = "enable prover client dev rpc", default = "true")]
-    pub enable_dev_rpcs: bool,
+    #[argh(option, description = "enable prover client dev rpc")]
+    pub enable_dev_rpcs: Option<bool>,
 
     /// Controls the checkpoint proof runner service.
     ///
     /// When enabled, prover will automatically generate and submit proofs for checkpoints.
-    /// Defaults to `false`.
-    #[argh(
-        option,
-        description = "enable prover client checkpoint runner",
-        default = "false"
-    )]
-    pub enable_checkpoint_runner: bool,
+    #[argh(option, description = "enable prover client checkpoint runner")]
+    pub enable_checkpoint_runner: Option<bool>,
 }
 
 impl Args {
+    /// Load and merge configuration from TOML file with command-line arguments.
+    pub fn resolve_config(&self) -> anyhow::Result<ResolvedConfig> {
+        // Load base config from file if provided, otherwise use defaults
+        let base_config = if let Some(config_path) = &self.config {
+            ProverConfig::from_file(config_path)?
+        } else {
+            ProverConfig::default()
+        };
+
+        // Apply command-line overrides
+        let config = ResolvedConfig {
+            // RPC configuration with CLI overrides
+            rpc_port: self.rpc_port.unwrap_or(base_config.rpc.dev_port),
+            rpc_url: self.rpc_url.clone().unwrap_or(base_config.rpc.dev_url),
+
+            // Worker configuration with CLI overrides
+            native_workers: self.native_workers.unwrap_or(base_config.workers.native),
+            #[cfg(feature = "sp1")]
+            sp1_workers: self.sp1_workers.unwrap_or(base_config.workers.sp1),
+            #[cfg(feature = "risc0")]
+            risc0_workers: self.risc0_workers.unwrap_or(base_config.workers.risc0),
+
+            // Timing configuration with CLI overrides
+            polling_interval: self
+                .polling_interval
+                .unwrap_or(base_config.timing.polling_interval_ms),
+            checkpoint_poll_interval: base_config.timing.checkpoint_poll_interval_s,
+
+            // Feature flags with CLI overrides
+            enable_dev_rpcs: self
+                .enable_dev_rpcs
+                .unwrap_or(base_config.features.enable_dev_rpcs),
+            enable_checkpoint_runner: self
+                .enable_checkpoint_runner
+                .unwrap_or(base_config.features.enable_checkpoint_runner),
+
+            // Retry configuration with CLI overrides
+            bitcoin_retry_count: self
+                .bitcoin_retry_count
+                .unwrap_or(base_config.retry.bitcoin_retry_count),
+            bitcoin_retry_interval: self
+                .bitcoin_retry_interval
+                .unwrap_or(base_config.retry.bitcoin_retry_interval_ms),
+            max_retry_counter: base_config.retry.max_retry_counter,
+
+            // Pass through non-configurable args
+            datadir: self.datadir.clone(),
+            sequencer_rpc: self.sequencer_rpc.clone(),
+            reth_rpc: self.reth_rpc.clone(),
+            bitcoind_url: self.bitcoind_url.clone(),
+            bitcoind_user: self.bitcoind_user.clone(),
+            bitcoind_password: self.bitcoind_password.clone(),
+            rollup_params: self.rollup_params.clone(),
+        };
+
+        Ok(config)
+    }
+
+    /// Resolves the rollup params file to use, from a path, and validates
+    /// it to ensure it passes sanity checks.
+    pub fn resolve_and_validate_rollup_params(&self) -> anyhow::Result<RollupParams> {
+        let json = fs::read_to_string(&self.rollup_params)?;
+        let rollup_params = from_str::<RollupParams>(&json)?;
+        rollup_params.check_well_formed()?;
+        Ok(rollup_params)
+    }
+}
+
+/// Resolved configuration that combines TOML config with CLI argument overrides
+#[derive(Debug, Clone)]
+pub struct ResolvedConfig {
+    /// Base URL for the JSON-RPC endpoint in development mode.
+    pub rpc_url: String,
+
+    /// JSON-RPC port used when running in development mode.
+    pub rpc_port: usize,
+
+    /// Number of native prover workers to spawn.
+    pub native_workers: usize,
+
+    /// Number of SP1 prover workers to spawn.
+    #[cfg(feature = "sp1")]
+    pub sp1_workers: usize,
+
+    /// Number of Risc0 prover workers to spawn.
+    #[cfg(feature = "risc0")]
+    pub risc0_workers: usize,
+
+    /// Wait time in milliseconds for the prover manager loop.
+    pub polling_interval: u64,
+
+    /// Checkpoint polling interval in seconds.
+    pub checkpoint_poll_interval: u64,
+
+    /// Enables or disables development RPC endpoints.
+    pub enable_dev_rpcs: bool,
+
+    /// Controls the checkpoint proof runner service.
+    pub enable_checkpoint_runner: bool,
+
+    /// Max retries for Bitcoin RPC calls.
+    pub bitcoin_retry_count: u8,
+
+    /// Timeout duration for btc request retries in ms.
+    pub bitcoin_retry_interval: u64,
+
+    /// Maximum number of retries for transient failures.
+    pub max_retry_counter: u64,
+
+    /// Path to the custom rollup configuration file.
+    pub datadir: PathBuf,
+
+    /// URL of the Sequencer RPC endpoint.
+    pub sequencer_rpc: String,
+
+    /// URL of the Reth RPC endpoint.
+    pub reth_rpc: String,
+
+    /// Host address of the bitcoind RPC endpoint.
+    pub bitcoind_url: String,
+
+    /// Username for the bitcoind RPC authentication.
+    pub bitcoind_user: String,
+
+    /// Password for the bitcoind RPC authentication.
+    pub bitcoind_password: String,
+
+    /// Path to the custom rollup configuration file.
+    #[expect(dead_code)] // Part of public API, may be used in future
+    pub rollup_params: PathBuf,
+}
+
+impl ResolvedConfig {
     /// Constructs the complete development JSON-RPC URL by combining `rpc_url` and `rpc_port`.
     ///
     /// This is used for configuring the client’s RPC interface in development mode.
@@ -172,7 +260,7 @@ impl Args {
         self.reth_rpc.to_string()
     }
 
-    /// Formats and returns the bitcoind RPC URL prefixed with `http://`.
+    /// Formats and returns the `bitcoind` RPC URL prefixed with `http://`.
     ///
     /// Useful for establishing a connection to the bitcoind RPC endpoint.
     pub(crate) fn get_btc_rpc_url(&self) -> String {

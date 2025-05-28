@@ -18,6 +18,7 @@ pub(crate) struct ProverManager {
     db: Arc<ProofDb>,
     workers: HashMap<ProofZkVm, usize>,
     loop_interval: u64,
+    max_retry_counter: u64,
     retry_policy: ExponentialBackoff,
 }
 
@@ -28,6 +29,7 @@ impl ProverManager {
         db: Arc<ProofDb>,
         workers: HashMap<ProofZkVm, usize>,
         loop_interval: u64,
+        max_retry_counter: u64,
     ) -> Self {
         Self {
             task_tracker,
@@ -35,8 +37,9 @@ impl ProverManager {
             db,
             workers,
             loop_interval,
+            max_retry_counter,
             retry_policy: ExponentialBackoff::new(
-                crate::task_tracker::MAX_RETRY_COUNTER,
+                max_retry_counter,
                 3600, /* one hour total time */
                 1.5,
             ),
@@ -81,9 +84,11 @@ impl ProverManager {
                 // next iterations in this loop.
                 {
                     let mut task_tracker = self.task_tracker.lock().await;
-                    if let Err(err) =
-                        task_tracker.update_status(task, ProvingTaskStatus::ProvingInProgress)
-                    {
+                    if let Err(err) = task_tracker.update_status(
+                        task,
+                        ProvingTaskStatus::ProvingInProgress,
+                        self.max_retry_counter,
+                    ) {
                         error!(?err, "Failed to transition task to in progress.")
                     }
                 }
@@ -92,13 +97,21 @@ impl ProverManager {
                 let operator = self.operator.clone();
                 let db = self.db.clone();
                 let task_tracker = self.task_tracker.clone();
+                let max_retry_counter = self.max_retry_counter;
                 // Calculate the delay
                 let retry_delay = self.retry_policy.get_delay(retry);
 
                 // Spawn a new task with delay.
                 spawn(async move {
-                    if let Err(err) =
-                        make_proof(operator, task_tracker, task, db, retry_delay).await
+                    if let Err(err) = make_proof(
+                        operator,
+                        task_tracker,
+                        task,
+                        db,
+                        retry_delay,
+                        max_retry_counter,
+                    )
+                    .await
                     {
                         error!(?err, "Failed to process task");
                     }
@@ -118,6 +131,7 @@ async fn make_proof(
     task: ProofKey,
     db: Arc<ProofDb>,
     delay_seconds: u64,
+    max_retry_counter: u64,
 ) -> Result<(), ProvingTaskError> {
     // Handle the delay (if set) from the TransientFailure retries.
     if delay_seconds > 0 {
@@ -160,7 +174,7 @@ async fn make_proof(
     // Update the task status.
     {
         let mut task_tracker = task_tracker.lock().await;
-        task_tracker.update_status(task, new_status)
+        task_tracker.update_status(task, new_status, max_retry_counter)
     }
 }
 
