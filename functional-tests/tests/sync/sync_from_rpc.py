@@ -4,7 +4,7 @@ import time
 import flexitest
 
 from envs import testenv
-from utils.utils import wait_until_epoch_confirmed
+from utils.utils import wait_until_epoch_confirmed, wait_until_with_value
 
 FOLLOW_DIST = 1
 
@@ -69,8 +69,29 @@ class SyncFromRpcTest(testenv.StrataTester):
         epoch = 1
         wait_until_epoch_confirmed(seqrpc, epoch)
 
-        fn_checkpt_info = fnrpc.strata_getCheckpointInfo(epoch)
-        sq_checkpt_info = seqrpc.strata_getCheckpointInfo(epoch)
+        # Wait for L1 reference to be available (checkpoint published to L1)
+        def get_checkpoint_infos():
+            fn_info = fnrpc.strata_getCheckpointInfo(epoch)
+            sq_info = seqrpc.strata_getCheckpointInfo(epoch)
+            return (fn_info, sq_info)
+
+        def both_have_l1_reference(checkpoint_infos):
+            fn_info, sq_info = checkpoint_infos
+            return (
+                fn_info
+                and fn_info.get("l1_reference") is not None
+                and sq_info
+                and sq_info.get("l1_reference") is not None
+            )
+
+        fn_checkpt_info, sq_checkpt_info = wait_until_with_value(
+            get_checkpoint_infos,
+            both_have_l1_reference,
+            error_with="Checkpoint L1 references not available within timeout",
+            timeout=60,
+            step=2.0,
+            debug=True,
+        )
 
         assert fn_checkpt_info["l1_reference"] == sq_checkpt_info["l1_reference"]
         assert fn_checkpt_info["confirmation_status"] == sq_checkpt_info["confirmation_status"]
