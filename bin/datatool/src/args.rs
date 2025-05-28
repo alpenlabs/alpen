@@ -103,6 +103,12 @@ pub(crate) struct SubcOpXpub {
         short = 'E'
     )]
     pub(crate) key_from_env: bool,
+
+    #[argh(switch, description = "print the p2p key", short = 'p')]
+    pub(crate) p2p: bool,
+
+    #[argh(switch, description = "print the wallet key", short = 'w')]
+    pub(crate) wallet: bool,
 }
 
 /// Generate a network's param file from inputs.
@@ -148,14 +154,14 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
-        description = "add a bridge operator key (must be at least one, appended after file keys)",
+        description = "add a bridge operator key (master xpriv, must be at least one, appended after file keys)",
         short = 'b'
     )]
     pub(crate) opkey: Vec<String>,
 
     #[argh(
         option,
-        description = "read bridge operator keys by line from file",
+        description = "read bridge operator keys (master xpriv) by line from file",
         short = 'B'
     )]
     pub(crate) opkeys: Option<PathBuf>,

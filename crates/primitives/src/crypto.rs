@@ -1,7 +1,9 @@
 //! Logic to check block credentials.
-use secp256k1::{schnorr::Signature, Message, XOnlyPublicKey};
-#[cfg(feature = "rand")]
-use secp256k1::{Keypair, SecretKey, SECP256K1};
+use std::ops::Deref;
+
+use secp256k1::{
+    schnorr::Signature, Keypair, Message, Parity, SecretKey, XOnlyPublicKey, SECP256K1,
+};
 
 use crate::buf::{Buf32, Buf64};
 
@@ -48,6 +50,33 @@ pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
     };
 
     vk.verify_prehash(msg.as_slice(), &sig).is_ok()
+}
+
+/// A secret key that is guaranteed to have a even x-only public key
+#[derive(Debug)]
+pub struct EvenSecretKey(SecretKey);
+
+impl Deref for EvenSecretKey {
+    type Target = SecretKey;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<SecretKey> for EvenSecretKey {
+    fn as_ref(&self) -> &SecretKey {
+        &self.0
+    }
+}
+
+impl From<SecretKey> for EvenSecretKey {
+    fn from(value: SecretKey) -> Self {
+        match value.x_only_public_key(SECP256K1).1 == Parity::Odd {
+            true => Self(value.negate()),
+            false => Self(value),
+        }
+    }
 }
 
 #[cfg(test)]

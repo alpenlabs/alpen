@@ -20,7 +20,7 @@ pub struct SequencerKeys {
 impl SequencerKeys {
     /// Creates a new [`SequencerKeys`] from a master [`Xpriv`].
     pub fn new(master: &Xpriv) -> Result<Self, KeyError> {
-        let derived = master.derive_priv(SECP256K1, &*STRATA_SEQUENCER_DERIVATION_PATH)?;
+        let derived = master.derive_priv(SECP256K1, &STRATA_SEQUENCER_DERIVATION_PATH)?;
 
         Ok(Self {
             master: *master,
