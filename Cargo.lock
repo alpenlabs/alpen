@@ -13662,6 +13662,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "strata-asm-common"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "strata-primitives",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "strata-asm-proto-bridge-v1"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "strata-asm-common",
+]
+
+[[package]]
+name = "strata-asm-proto-core"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "strata-asm-common",
+ "strata-primitives",
+ "zkaleido",
+]
+
+[[package]]
+name = "strata-asm-stf"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "strata-asm-common",
+ "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-core",
+]
+
+[[package]]
 name = "strata-btcio"
 version = "0.3.0-alpha.1"
 dependencies = [
