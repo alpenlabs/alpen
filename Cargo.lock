@@ -1460,6 +1460,7 @@ dependencies = [
  "alpen-reth-db",
  "eyre",
  "futures-util",
+ "reth-chainspec",
  "reth-evm",
  "reth-exex",
  "reth-node-api",

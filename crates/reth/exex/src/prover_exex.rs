@@ -6,6 +6,7 @@ use alloy_rpc_types::BlockNumHash;
 use alpen_reth_db::WitnessStore;
 use eyre::eyre;
 use futures_util::TryStreamExt;
+use reth_chainspec::EthChainSpec;
 use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
@@ -86,6 +87,7 @@ impl<
 }
 fn build_zkvm_input<P>(
     provider: P,
+    genesis_str: String,
     start_state_root: FixedBytes<32>,
     block: Block<TransactionSigned>,
     accessed_states: &AccessedState,
@@ -127,9 +129,7 @@ where
     let parent_state =
         EthereumState::from_transition_proofs(start_state_root, &before_proofs, &after_proofs)?;
 
-    // TODO: make this configurable
-    let chain_config: &str = include_str!("../../chainspec/src/res/alpen-dev-chain.json");
-    let genesis = Genesis::Custom(chain_config.to_string());
+    let genesis = Genesis::Custom(genesis_str);
 
     Ok(EvmBlockStfInput {
         current_block: block,
@@ -152,6 +152,9 @@ where
     Node: FullNodeComponents,
     Node::Types: NodeTypes<Primitives = EthPrimitives>,
 {
+    let genesis = ctx.config.chain.genesis().clone();
+    let genesis_str = serde_json::to_string(&genesis).unwrap();
+
     // fetch and recover the current block
     let header_block = ctx
         .provider()
@@ -178,6 +181,7 @@ where
     // build zkVM input and ancestor headers
     let mut zkvm_input = build_zkvm_input(
         ctx.provider().history_by_block_number(block_number - 1)?,
+        genesis_str,
         start_state_root,
         full_block,
         &accessed,
@@ -187,10 +191,9 @@ where
     zkvm_input.ancestor_headers =
         get_ancestor_headers(ctx, block_number, accessed.accessed_block_idxs())?;
 
-    println!(
-        "Abishek got acnestor headers: {:?}",
-        zkvm_input.ancestor_headers
-    );
+    // save the zkvm_input as json file
+    let json = serde_json::to_string_pretty(&zkvm_input)?;
+    std::fs::write(format!("zkvm_input_{}.json", block_number), json)?;
 
     Ok(zkvm_input)
 }
@@ -235,15 +238,23 @@ where
 fn get_ancestor_headers<Node>(
     ctx: &ExExContext<Node>,
     current_idx: u64,
-    _accessed_idxs: &HashSet<u64>,
+    accessed_idxs: &HashSet<u64>,
 ) -> eyre::Result<Vec<Header>>
 where
     Node: FullNodeComponents,
     Node::Types: NodeTypes<Primitives = EthPrimitives>,
 {
-    let start_idx = current_idx - 1;
+    let mut acc = accessed_idxs.clone();
+    acc.insert(current_idx - 1);
 
-    (start_idx..current_idx)
+    // get vec of all sorted accessed block numbers
+    let oldest_parent = acc
+        .iter()
+        .min_by_key(|&&x| x)
+        .copied()
+        .unwrap_or(current_idx - 1);
+
+    (oldest_parent..current_idx)
         .rev()
         .map(|num| {
             ctx.provider()
