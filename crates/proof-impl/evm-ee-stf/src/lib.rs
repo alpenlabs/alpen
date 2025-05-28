@@ -86,38 +86,42 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
 #[cfg(test)]
 mod tests {
 
-    // #[derive(Serialize, Deserialize)]
-    // struct TestData {
-    //     witness: EvmBlockStfInput,
-    //     params: EvmBlockStfOutput,
-    // }
+    use serde::{Deserialize, Serialize};
 
-    // fn get_mock_data() -> TestData {
-    //     let json_content = std::fs::read_to_string(
-    //         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    //             .join("test_data/witness_params.json"),
-    //     )
-    //     .expect("Failed to read the blob data file");
+    use super::{process_block_transaction, EvmBlockStfInput, EvmBlockStfOutput};
 
-    //     serde_json::from_str(&json_content).expect("Valid json")
-    // }
+    #[derive(Serialize, Deserialize)]
+    struct TestData {
+        witness: EvmBlockStfInput,
+        params: EvmBlockStfOutput,
+    }
 
-    // #[test]
-    // fn basic_serde() {
-    //     // Checks that serialization and deserialization actually works.
-    //     let test_data = get_mock_data();
+    fn get_mock_data() -> TestData {
+        let json_content = std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("test_data/witness_params.json"),
+        )
+        .expect("Failed to read the blob data file");
 
-    //     let s = bincode::serialize(&test_data.witness).unwrap();
-    //     let d: EvmBlockStfInput = bincode::deserialize(&s[..]).unwrap();
-    //     assert_eq!(d, test_data.witness);
-    // }
+        serde_json::from_str(&json_content).expect("Valid json")
+    }
 
-    // #[test]
-    // fn block_stf_test() {
-    //     let test_data = get_mock_data();
+    #[test]
+    fn basic_serde() {
+        // Checks that serialization and deserialization actually works.
+        let test_data = get_mock_data();
 
-    //     let input = test_data.witness;
-    //     let op = process_block_transaction(input);
-    //     assert_eq!(op, test_data.params);
-    // }
+        let s = bincode::serialize(&test_data.witness).unwrap();
+        let d: EvmBlockStfInput = bincode::deserialize(&s[..]).unwrap();
+        assert_eq!(d, test_data.witness);
+    }
+
+    #[test]
+    fn block_stf_test() {
+        let test_data = get_mock_data();
+
+        let input = test_data.witness;
+        let op = process_block_transaction(input);
+        assert_eq!(op, test_data.params);
+    }
 }

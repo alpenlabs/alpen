@@ -169,7 +169,6 @@ mod tests {
     use super::L2Segment;
 
     #[test]
-    #[ignore]
     fn test_chaintsn() {
         let start_height = 1;
         let end_height = 4;

@@ -30,7 +30,6 @@ mod tests {
     use crate::programs::cl_stf;
 
     #[test]
-    #[ignore]
     fn test_checkpoint_native_execution() {
         let (cl_stf_proof, cl_stf_vk) = cl_stf::proof_with_vk(
             &ClStfProgram::native_host(),

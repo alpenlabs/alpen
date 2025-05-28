@@ -35,7 +35,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore]
     fn test_evm_ee_native_execution() {
         let input = prepare_input();
         let output = EvmEeProgram::execute(&input).unwrap();
