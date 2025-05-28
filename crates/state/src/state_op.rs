@@ -6,6 +6,7 @@
 
 use bitcoin::{block::Header, params::Params};
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_da_lib::diff::{ListDiff, RegisterDiff};
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
@@ -20,7 +21,7 @@ use tracing::warn;
 use crate::{
     bridge_ops::DepositIntent,
     bridge_state::{DepositEntry, DepositState, DispatchCommand, DispatchedState, FulfilledState},
-    chain_state::{Chainstate, ChainstateEntry},
+    chain_state::{Chainstate, ChainstateDiff, ChainstateEntry},
 };
 
 #[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
@@ -97,6 +98,14 @@ pub struct StateCache {
 
     /// Write operations we're making to the bulk state, if there are any.
     write_ops: Vec<StateOp>,
+
+    // TODO: For now, we are adding diff as well as updating state. This  is redundant.
+    // In future we might want to just work with the diffs, or if we want to separate out the diff
+    // generation from proving path, we can use a function that abstracts out diff generation in
+    // prover and in client.
+    // This can even replace the `write_ops` above which does not have much at the moment.
+    /// State diff container
+    diff_container: ChainstateDiff,
 }
 
 impl StateCache {
@@ -105,6 +114,7 @@ impl StateCache {
             original_state: state.clone(),
             new_state: state,
             write_ops: Vec::new(),
+            diff_container: ChainstateDiff::default(),
         }
     }
 
@@ -162,39 +172,61 @@ impl StateCache {
         let state = self.state_mut();
         assert!(slot > state.cur_slot, "stateop: decreasing slot");
         state.cur_slot = slot;
+
+        // Add diff
+        self.diff_container.cur_slot_diff = RegisterDiff::Replace(slot);
     }
 
     /// Sets the last block commitment.
     pub fn set_prev_block(&mut self, block: L2BlockCommitment) {
         let state = self.state_mut();
         state.prev_block = block;
+
+        // Add diff
+        self.diff_container.prev_block_diff = RegisterDiff::Replace(block);
     }
 
     /// Sets the current epoch index.
     pub fn set_cur_epoch(&mut self, epoch: u64) {
         self.state_mut().cur_epoch = epoch;
+
+        // Add diff
+        self.diff_container.cur_epoch_diff = RegisterDiff::Replace(epoch);
     }
 
     /// Sets the previous epoch.
     pub fn set_prev_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().prev_epoch = epoch;
+
+        // Add diff
+        self.diff_container.prev_epoch_diff = RegisterDiff::Replace(epoch);
     }
 
     /// Sets the previous epoch.
     pub fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().finalized_epoch = epoch;
+
+        // Add diff
+        self.diff_container.finalized_epoch_diff = RegisterDiff::Replace(epoch);
     }
 
     /// Updates the safe L1 block.
     pub fn update_safe_block(&mut self, height: u64, record: L1HeaderRecord) {
         let state = self.state_mut();
         state.l1_state.safe_block_height = height;
-        state.l1_state.safe_block_header = record;
+        state.l1_state.safe_block_header = record.clone();
+
+        // Add diff
+        self.diff_container.l1_state_diff.safe_block_height_diff = RegisterDiff::Replace(height);
+        self.diff_container.l1_state_diff.safe_block_header_diff = RegisterDiff::Replace(record);
     }
 
     pub fn set_epoch_finishing_flag(&mut self, flag: bool) {
         let state = self.state_mut();
         state.is_epoch_finishing = flag;
+
+        // Add diff
+        self.diff_container.is_epoch_finishing_diff = RegisterDiff::Replace(flag);
     }
 
     pub fn should_finish_epoch(&self) -> bool {
@@ -211,14 +243,37 @@ impl StateCache {
         state
             .l1_state
             .header_vs
-            .check_and_update_full(header, params)
+            .check_and_update_full(header, params)?;
+
+        // Add diff
+        let hvs = state.l1_state.header_vs.clone();
+        self.diff_container.l1_state_diff.header_vs_diff = RegisterDiff::Replace(hvs.clone());
+        Ok(())
     }
 
     /// Writes a deposit intent into an execution environment's input queue.
     pub fn insert_deposit_intent(&mut self, ee_id: u32, intent: DepositIntent) {
         assert_eq!(ee_id, 0, "stateop: only support execution env 0 right now");
         let state = self.state_mut();
-        state.exec_env_state.pending_deposits.push_back(intent);
+        state
+            .exec_env_state
+            .pending_deposits
+            .push_back(intent.clone());
+
+        // Add diff
+        let base_idx = state.exec_env_state.pending_deposits.base_idx();
+
+        // OOO doesn't look very good, need a better interface
+        self.diff_container
+            .exec_env_state_diff
+            .pending_deposits_diff
+            .entries_diff
+            .push(ListDiff::Extend([intent].to_vec()));
+
+        self.diff_container
+            .exec_env_state_diff
+            .pending_deposits_diff
+            .base_idx_diff = RegisterDiff::Replace(base_idx);
     }
 
     /// Remove a deposit intent from the pending deposits queue.
@@ -240,12 +295,34 @@ impl StateCache {
         deposits
             .pop_front_n_vec(to_drop_count as usize) // ensures to_drop_idx < front_idx + len
             .expect("stateop: unable to consume deposit intent");
+
+        // Add diff
+        let new_base = deposits.base_idx();
+        self.diff_container
+            .exec_env_state_diff
+            .pending_deposits_diff
+            .base_idx_diff = RegisterDiff::Replace(new_base); // looks like NumDiff makes more sense
+
+        self.diff_container
+            .exec_env_state_diff
+            .pending_deposits_diff
+            .entries_diff
+            .extend_from_slice(vec![ListDiff::Pop; to_drop_count as usize].as_slice());
     }
 
     /// Inserts a new operator with the specified pubkeys into the operator table.
     pub fn insert_operator(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
         let state = self.state_mut();
-        state.operator_table.insert(signing_pk, wallet_pk);
+        let (next_idx, entry) = state.operator_table.insert(signing_pk, wallet_pk);
+
+        // Add diff
+        self.diff_container
+            .operator_table_diff
+            .entries_diff
+            .push(ListDiff::Extend([entry].to_vec()));
+
+        self.diff_container.operator_table_diff.base_idx_diff =
+            RegisterDiff::Replace(next_idx as u64);
     }
 
     /// Inserts a new deposit with some settings.
@@ -257,7 +334,11 @@ impl StateCache {
         operators: Vec<OperatorIdx>,
     ) -> bool {
         let dt = self.state_mut().deposits_table_mut();
-        dt.try_create_deposit_at(idx, tx_ref, operators, amt)
+        let created = dt.try_create_deposit_at(idx, tx_ref, operators, amt);
+
+        // TODO: add diff
+
+        created
     }
 
     /// Assigns a withdrawal command to a deposit, with an expiration.
@@ -279,6 +360,8 @@ impl StateCache {
             DepositState::Dispatched(DispatchedState::new(cmd.clone(), operator_idx, exec_height));
         deposit_ent.set_state(state);
         deposit_ent.set_withdrawal_request_txid(Some(withdrawal_txid));
+
+        // TODO: Add diff
     }
 
     /// Updates the deposit assignee and expiration date.
@@ -300,6 +383,8 @@ impl StateCache {
         } else {
             panic!("stateop: unexpected deposit state");
         };
+
+        // TODO: Add diff
     }
 
     /// Updates the deposit state to Fulfilled.
@@ -316,6 +401,8 @@ impl StateCache {
             winfo.amt,
             winfo.txid,
         )));
+
+        // TODO: Add diff
     }
 
     // Updates the deposit state as Reimbursed.
@@ -328,6 +415,8 @@ impl StateCache {
         }
 
         deposit_ent.set_state(DepositState::Reimbursed);
+
+        // TODO: Add diff
     }
 
     fn deposit_entry_mut_expect(&mut self, deposit_idx: u32) -> &mut DepositEntry {
