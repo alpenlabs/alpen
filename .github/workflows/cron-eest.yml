@@ -91,7 +91,7 @@ jobs:
         # Build prover
         docker build \
           --build-arg PROVER_FEATURES="default" \
-          -t "prover-client:latest" \
+          -t "strata-prover-client:latest" \
           -f "docker/prover-client/Dockerfile" . 
     
     - name: Start services with Docker Compose

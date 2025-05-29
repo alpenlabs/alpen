@@ -1,15 +1,15 @@
 x-base-client: &base-client
-  image: "strata_client:latest"
+  image: "strata-client:latest"
   networks:
     - strata_network
 
 x-base-reth: &base-reth
-  image: "alpen_reth:latest"
+  image: "alpen-reth:latest"
   networks:
     - strata_network
 
 x-base-prover: &base-prover
-  image: "strata_prover_client:latest"
+  image: "strata-prover-client:latest"
   networks:
     - strata_network
   depends_on:
@@ -72,10 +72,7 @@ services:
       - reth
 
   sequencer-signer:
-    build:
-      context: ../
-      dockerfile: ./docker/strata-sequencer-client/Dockerfile
-    image: "strata_sequencer-signer:0.1.0"
+    image: "strata-sequencer-client:latest"
     networks:
       - strata_network
     container_name: strata_sequencer_signer
