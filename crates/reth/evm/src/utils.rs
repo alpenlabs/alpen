@@ -44,33 +44,20 @@ where
     I: Iterator<Item = TxReceiptPair<'a>> + 'a,
 {
     tx_receipt_pairs.flat_map(|(tx, receipt)| {
+        let txid = Buf32(tx.hash().as_slice().try_into().expect("32 bytes"));
         receipt.logs.iter().filter_map(move |log| {
-            println!("Abishek log: {:?}", log);
             if log.address != BRIDGEOUT_ADDRESS {
-                println!("Abishek Returning none");
                 return None;
             }
 
-            let txid = Buf32(tx.hash().as_slice().try_into().expect("32 bytes"));
-            println!("Abishek txid: {:?}", txid);
+            let event = WithdrawalIntentEvent::decode_log(log).ok()?;
+            let destination = Descriptor::from_bytes(&event.destination).ok()?;
 
-            // WithdrawalIntentEvent::decode_log(log).ok().and_then(|evt| {
-            //     Descriptor::from_bytes(&evt.destination)
-            //         .ok()
-            //         .map(|destination| WithdrawalIntent {
-            //             amt: evt.amount,
-            //             destination,
-            //             withdrawal_txid: txid,
-            //         })
-            // })
-            let evt = WithdrawalIntentEvent::decode_log(log).unwrap();
-            let res = Descriptor::from_bytes(&evt.destination).unwrap();
-            let w = WithdrawalIntent {
-                amt: evt.amount,
-                destination: res,
+            Some(WithdrawalIntent {
+                amt: event.amount,
+                destination,
                 withdrawal_txid: txid,
-            };
-            Some(w)
+            })
         })
     })
 }
