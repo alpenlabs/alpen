@@ -44,9 +44,8 @@ jobs:
       with:
         mask-password: "true"
 
-    - name: Pull latest Docker image
+    - name: Pull latest Docker images from CD pipeline
       id: pull-images
-      # Pull images for all the required binaries.
       env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX }}
@@ -55,7 +54,6 @@ jobs:
           "strata-client"
           "strata-sequencer-client"
           "alpen-reth"
-          "prover-client"
         )
         
         for IMAGE in "${BINARIES[@]}"; do
@@ -69,19 +67,55 @@ jobs:
           docker pull "${IMG_URL}"
           docker tag "${IMG_URL}" "${IMAGE}:latest"
         done
+    
+    - name: List
+      run: |
+        docker image list
 
+    - name: Build Prover Client image in native mode
+      run: |
+        # Install base58
+        pip3 install base58
+
+        # Build datatool with sp1 features
+        cargo build --bin strata-datatool --release
+
+        # Generate parameters and capture the output
+        ./target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1
+
+        cd docker && ./init-keys.sh ../target/release/strata-datatool
+        cd ..
+        pwd
+        mkdir -p docker/prover-client/elfs
+
+        # Build prover
+        docker build \
+          --build-arg PROVER_FEATURES="default" \
+          -t "prover-client:latest" \
+          -f "docker/prover-client/Dockerfile" . 
+    
     - name: Start services with Docker Compose
       run: |
-        docker compose -f ./docker/docker-compose-testing.yml down || true
+        docker image list
         docker compose -f ./docker/docker-compose-testing.yml up -d
 
     - name: Wait for services to be ready
       run: |
-        sleep 10  # Replace with healthcheck logic if needed
+        sleep 30 # Ideally need some healthchecks.
+        docker ps -a
 
     - name: Run tests
       run: |
-        ./docker/run-tests.sh  # Or `pytest`, `curl`, etc.
+        git clone https://github.com/ethereum/execution-spec-tests
+        cd execution-spec-tests
+        pip install uv
+        uv sync --all-extras
+        uv run solc-select use 0.8.24 --always-install
+        uv run execute remote \
+          --fork=Prague \
+          --rpc-endpoint=http://localhost:8545 \
+          --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+          --rpc-chain-id 2892
 
     - name: Tear down services
       if: always()
