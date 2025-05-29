@@ -51,7 +51,12 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX }}
       run: |
-        BINARIES=("strata-client", "strata-sequencer-client", "alpen-reth", "prover-client")
+        BINARIES=(
+          "strata-client"
+          "strata-sequencer-client"
+          "alpen-reth"
+          "prover-client"
+        )
         
         for IMAGE in "${BINARIES[@]}"; do
           ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${IMAGE}"
@@ -59,6 +64,7 @@ jobs:
             --repository-name ${ECR_REPOSITORY} \
             --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
             --output text)
+          echo $TAG
           IMG_URL="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
           docker pull "${IMG_URL}"
           docker tag "${IMG_URL}" "${IMAGE}:latest"
