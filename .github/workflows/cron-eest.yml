@@ -5,6 +5,8 @@ name: Daily EEST
 #    - cron: '0 3 * * *' # runs daily at 3:00 UTC
 #  workflow_dispatch:     # allows manual trigger
 
+
+# TODO: clean this up.
 on:
   pull_request:
   merge_group:
@@ -24,6 +26,8 @@ jobs:
     permissions:
       id-token: write
     runs-on: ubuntu-latest
+    environment:
+      name: development
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       with:
