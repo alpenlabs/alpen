@@ -1,96 +1,81 @@
 use std::sync::Arc;
 
-use bitcoind_async_client::traits::Reader;
-use strata_btcio::reader::query::read_checkpoints;
-use strata_config::btcio::ReaderConfig;
-use strata_consensus_logic::{
-    checkpoint_sync::CheckpointSyncManager, checkpoint_verification::verify_checkpoint,
-};
-use strata_primitives::params::Params;
-use strata_state::{
-    batch::CheckpointCommitment, da::ChainstateDAScheme, sync_event::EventSubmitter,
-    traits::ChainstateDA,
-};
-use strata_status::StatusChannel;
+use strata_consensus_logic::checkpoint_sync::CheckpointSyncManager;
+use strata_state::{da::ChainstateDAScheme, traits::ChainstateDA};
+use strata_status::{ChainSyncStatus, ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
-use tokio::time::Duration;
 use tracing::{info, warn};
 
-pub async fn checkpoint_sync_task<E: EventSubmitter>(
-    client: Arc<impl Reader>,
+pub async fn checkpoint_sync_task(
     storage: Arc<NodeStorage>,
-    config: Arc<ReaderConfig>,
-    params: Arc<Params>,
     status_channel: StatusChannel,
-    event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    // TODO: is there a way for event_receiver to be structured? we might need to wait for CSM to
-    // complete block processing before moving on to fetching previous checkpoint?
-    let poll_dur = Duration::from_millis(config.client_poll_dur_ms as u64);
     let mut csync_manager = CheckpointSyncManager::new(storage.clone());
+    let mut target_epoch = 0;
 
-    loop {
-        while let Some(sc) = read_checkpoints(
-            client.clone(),
-            storage.clone(),
-            config.clone(),
-            params.clone(),
-            status_channel.clone(),
-            event_submitter.as_ref(),
-        )
-        .await?
-        {
-            // verify checkpoint proof and commitments
-            // (signature is already verified by the reader)
-            info!(
-                "checkpoint transaction detected, epoch: {}",
-                sc.checkpoint().batch_info().epoch()
-            );
+    // the only other place where we subscribe to client state is in the FCM
+    // which we have disabled during checkpoint sync
+    let mut rx = status_channel.subscribe_client_state();
 
-            // get previous checkpoint from database
-            let ckpt_db = storage.checkpoint();
-            let prev_checkpoint = if let Some(idx) = ckpt_db.get_last_checkpoint().await? {
-                ckpt_db.get_checkpoint(idx).await?
-            } else {
-                None
-            };
+    // wait for CSM to send msg for change in client state
+    // TODO: should I use has_changed which will not mark the event as read?
+    while rx.changed().await.is_ok() {
+        let state = rx.borrow().clone(); // will this clone be expensive?
+        let Some(ckpt) = state.get_apparent_finalized_checkpoint() else {
+            continue;
+        };
 
-            let prev_commitment = prev_checkpoint.map(|ckpt| {
-                CheckpointCommitment::new(
-                    ckpt.checkpoint.batch_info().clone(),
-                    *ckpt.checkpoint.batch_transition(),
-                )
-            });
-            if let Err(err) =
-                verify_checkpoint(sc.checkpoint(), prev_commitment.as_ref(), &params.rollup)
-            {
-                warn!("failed checkpoint verification: {}", err);
-                continue;
-            }
+        let latest_finalized_epoch = ckpt.batch_info.epoch;
 
-            // extract chainstate update structure using DA scheme
+        // TODO: also check if latest_finalized_epoch is lesser than target epoch
+        // in which case it is a reorg
+        if latest_finalized_epoch != target_epoch {
+            continue;
+        }
+
+        // get checkpoint entry for the latest finalized epoch
+        let checkpoint_entry = storage
+            .checkpoint()
+            .get_checkpoint(latest_finalized_epoch)
+            .await;
+
+        if let Ok(Some(entry)) = checkpoint_entry {
             if let Ok(chainstate_update) =
-                ChainstateDAScheme::chainstate_update_from_bytes(sc.checkpoint().sidecar().bytes())
+                ChainstateDAScheme::chainstate_update_from_bytes(entry.checkpoint.sidecar().bytes())
             {
                 // apply chainstate update
                 let chainstate_result = csync_manager
                     .apply_chainstate_update(chainstate_update)
                     .await;
 
-                // store chainstate result to database
                 if let Ok(cs) = chainstate_result {
                     info!("storing updated chainstate, slot: {}", cs.chain_tip_slot());
 
-                    if let Err(err) = csync_manager.store_chainstate(cs).await {
-                        warn!("failed to store chainstate, aborting sync: {}", err);
-                        continue;
-                    }
+                    // store chainstate to database
+                    let cs = match csync_manager.store_chainstate(cs).await {
+                        Ok(chainstate) => chainstate,
+                        Err(err) => {
+                            warn!("failed to store chainstate, aborting sync: {}", err);
+                            break;
+                        }
+                    };
 
-                    // TODO: use status channel to send chainstate update status to listeners?
+                    // submit event of chainstate update
+                    let status = ChainSyncStatus::new(
+                        *ckpt.batch_info.final_l2_block(),
+                        *cs.prev_epoch(),
+                        *cs.finalized_epoch(),
+                        cs.l1_view().get_safe_block(),
+                    );
+                    let update = ChainSyncStatusUpdate::new(status, Arc::new(cs));
+                    status_channel.update_chain_sync_status(update);
+
+                    // increment target epoch
+                    target_epoch += 1;
                 }
             }
         }
-
-        tokio::time::sleep(poll_dur).await;
     }
+
+    Ok(())
 }

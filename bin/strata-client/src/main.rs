@@ -331,6 +331,7 @@ fn start_core_tasks(
     )?;
 
     let (sync_manager, engine) = if checkpoint_sync {
+        // start only the CSM task
         let csm_manager: Arc<_> = sync_manager::start_csm_task(
             executor,
             &storage,
@@ -343,19 +344,12 @@ fn start_core_tasks(
         // start checkpoint sync task
         executor.spawn_critical_async(
             "checkpoint_sync_task",
-            checkpoint_sync_task(
-                bitcoin_client.clone(),
-                storage.clone(),
-                Arc::new(config.btcio.reader.clone()),
-                params.clone(),
-                status_channel.clone(),
-                csm_manager.get_csm_ctl(),
-            ),
+            checkpoint_sync_task(storage.clone(), status_channel.clone()),
         );
 
         (csm_manager, engine)
     } else {
-        // Start the sync manager.
+        // start the CSM and FCM tasks
         let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
             executor,
             &storage,
@@ -365,21 +359,21 @@ fn start_core_tasks(
         )?
         .into();
 
-        // Start the L1 tasks to get that going.
-        executor.spawn_critical_async(
-            "bitcoin_data_reader_task",
-            bitcoin_data_reader_task(
-                bitcoin_client.clone(),
-                storage.clone(),
-                Arc::new(config.btcio.reader.clone()),
-                sync_manager.get_params(),
-                status_channel.clone(),
-                sync_manager.get_csm_ctl(),
-            ),
-        );
-
         (sync_manager, engine)
     };
+
+    // Start the L1 tasks to get that going.
+    executor.spawn_critical_async(
+        "bitcoin_data_reader_task",
+        bitcoin_data_reader_task(
+            bitcoin_client.clone(),
+            storage.clone(),
+            Arc::new(config.btcio.reader.clone()),
+            sync_manager.get_params(),
+            status_channel.clone(),
+            sync_manager.get_csm_ctl(),
+        ),
+    );
 
     Ok(CoreContext {
         runtime,
