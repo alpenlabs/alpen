@@ -16,3 +16,15 @@ impl IntoReth<RethWithdrawal> for AlloyWithdrawal {
         }
     }
 }
+
+/// A trait to convert from Alloy genesis to RSP genesis.
+pub trait IntoRspGenesis {
+    fn try_into_rsp(self) -> Result<rsp_primitives::genesis::Genesis, serde_json::Error>;
+}
+
+impl IntoRspGenesis for alloy_genesis::Genesis {
+    fn try_into_rsp(self) -> Result<rsp_primitives::genesis::Genesis, serde_json::Error> {
+        let genesis_str = serde_json::to_string(&self)?;
+        Ok(rsp_primitives::genesis::Genesis::Custom(genesis_str))
+    }
+}
