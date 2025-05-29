@@ -80,9 +80,7 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for StrataEvmPrecompiles {
         };
 
         let res = match *address {
-            // handle bridgeout precompile as custome statefull precompile
             BRIDGEOUT_ADDRESS => bridge_context_call(&inputs.input, gas_limit, context),
-            // handle rest of stateless precompiles
             _ => (precompile_fn)(&inputs.input, gas_limit),
         };
 
@@ -116,9 +114,9 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for StrataEvmPrecompiles {
 /// Custom EVM configuration.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub struct StrataEvmFactory;
+pub struct AlpenEvmFactory;
 
-impl EvmFactory for StrataEvmFactory {
+impl EvmFactory for AlpenEvmFactory {
     type Evm<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>> =
         EthEvm<DB, I, StrataEvmPrecompiles>;
 

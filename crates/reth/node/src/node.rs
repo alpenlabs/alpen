@@ -13,37 +13,37 @@ use reth_primitives::EthPrimitives;
 use reth_provider::EthStorage;
 
 use crate::{
-    args::StrataNodeArgs, engine::StrataEngineValidatorBuilder, evm::StrataExecutorBuilder,
-    payload_builder::StrataPayloadBuilderBuilder, StrataEngineTypes,
+    args::StrataNodeArgs, engine::AlpenEngineValidatorBuilder, evm::AlpenExecutorBuilder,
+    payload_builder::AlpenPayloadBuilderBuilder, AlpenEngineTypes,
 };
 
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub struct StrataEthereumNode {
+pub struct AlpenEthereumNode {
     // Strata node args.
     pub args: StrataNodeArgs,
 }
 
-impl StrataEthereumNode {
+impl AlpenEthereumNode {
     /// Creates a new instance of the StrataEthereum node type.
     pub fn new(args: StrataNodeArgs) -> Self {
         Self { args }
     }
 }
 
-impl NodeTypes for StrataEthereumNode {
+impl NodeTypes for AlpenEthereumNode {
     type Primitives = EthPrimitives;
     type ChainSpec = ChainSpec;
     type StateCommitment = reth_trie_db::MerklePatriciaTrie;
     type Storage = EthStorage;
-    type Payload = StrataEngineTypes;
+    type Payload = AlpenEngineTypes;
 }
 
-impl<N> Node<N> for StrataEthereumNode
+impl<N> Node<N> for AlpenEthereumNode
 where
     N: FullNodeTypes<
         Types: NodeTypes<
-            Payload = StrataEngineTypes,
+            Payload = AlpenEngineTypes,
             ChainSpec = ChainSpec,
             Primitives = EthPrimitives,
             Storage = EthStorage,
@@ -53,9 +53,9 @@ where
     type ComponentsBuilder = ComponentsBuilder<
         N,
         EthereumPoolBuilder,
-        BasicPayloadServiceBuilder<StrataPayloadBuilderBuilder>,
+        BasicPayloadServiceBuilder<AlpenPayloadBuilderBuilder>,
         EthereumNetworkBuilder,
-        StrataExecutorBuilder,
+        AlpenExecutorBuilder,
         EthereumConsensusBuilder,
     >;
 
@@ -69,7 +69,7 @@ where
             .pool(EthereumPoolBuilder::default())
             .payload(BasicPayloadServiceBuilder::default())
             .network(EthereumNetworkBuilder::default())
-            .executor(StrataExecutorBuilder::default())
+            .executor(AlpenExecutorBuilder::default())
             .consensus(EthereumConsensusBuilder::default())
     }
 
@@ -79,4 +79,4 @@ where
 }
 
 /// Custom addons configuring RPC types
-pub type StrataNodeAddOns<N> = RpcAddOns<N, EthereumEthApiBuilder, StrataEngineValidatorBuilder>;
+pub type StrataNodeAddOns<N> = RpcAddOns<N, EthereumEthApiBuilder, AlpenEngineValidatorBuilder>;

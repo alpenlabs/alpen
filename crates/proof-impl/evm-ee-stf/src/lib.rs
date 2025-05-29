@@ -4,7 +4,7 @@ pub mod utils;
 use std::sync::Arc;
 
 use alloy_consensus::EthBlock;
-use alpen_reth_evm::evm::StrataEvmFactory;
+use alpen_reth_evm::evm::AlpenEvmFactory;
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
 use reth_chainspec::ChainSpec;
 use reth_evm_ethereum::EthEvmConfig;
@@ -19,7 +19,7 @@ pub struct EvmConfig {
     pub spec_id: SpecId,
 }
 
-pub type AlpEthClientExecutor = ClientExecutor<EthEvmConfig<StrataEvmFactory>, ChainSpec>;
+pub type AlpEthClientExecutor = ClientExecutor<EthEvmConfig<AlpenEvmFactory>, ChainSpec>;
 
 pub fn process_block_transaction(input: EthClientExecutorInput) -> EvmBlockStfOutput {
     // TODO: Remove this unwrap
@@ -27,7 +27,7 @@ pub fn process_block_transaction(input: EthClientExecutorInput) -> EvmBlockStfOu
     let executor = AlpEthClientExecutor {
         evm_config: EthEvmConfig::new_with_evm_factory(
             chain_spec.clone(),
-            StrataEvmFactory::default(),
+            AlpenEvmFactory::default(),
         ),
         chain_spec: chain_spec.clone(),
     };

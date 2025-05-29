@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_consensus::Transaction;
 use alloy_eips::Typed2718;
-use alpen_reth_evm::{collect_withdrawal_intents, evm::StrataEvmFactory};
+use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
 use alpen_reth_primitives::WithdrawalIntent;
 use reth::{
     builder::BuilderContext, providers::StateProviderFactory, revm::database::StateProviderDatabase,
@@ -32,20 +32,20 @@ use revm_primitives::U256;
 use tracing::{debug, trace, warn};
 
 use crate::{
-    engine::StrataEngineTypes,
-    payload::{StrataBuiltPayload, StrataPayloadBuilderAttributes},
+    engine::AlpenEngineTypes,
+    payload::{AlpenBuiltPayload, AlpenPayloadBuilderAttributes},
 };
 
 /// A custom payload service builder that supports the custom engine types
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]
-pub struct StrataPayloadBuilderBuilder;
+pub struct AlpenPayloadBuilderBuilder;
 
-impl<Node, Pool> PayloadBuilderBuilder<Node, Pool> for StrataPayloadBuilderBuilder
+impl<Node, Pool> PayloadBuilderBuilder<Node, Pool> for AlpenPayloadBuilderBuilder
 where
     Node: FullNodeTypes<
         Types: NodeTypes<
-            Payload = StrataEngineTypes,
+            Payload = AlpenEngineTypes,
             ChainSpec = ChainSpec,
             Primitives = EthPrimitives,
         >,
@@ -54,7 +54,7 @@ where
         + Unpin
         + 'static,
 {
-    type PayloadBuilder = StrataPayloadBuilder<Pool, Node::Provider>;
+    type PayloadBuilder = AlpenPayloadBuilder<Pool, Node::Provider>;
 
     async fn build_payload_builder(
         self,
@@ -62,7 +62,7 @@ where
         pool: Pool,
     ) -> eyre::Result<Self::PayloadBuilder> {
         let conf = ctx.payload_builder_config();
-        Ok(StrataPayloadBuilder::new(
+        Ok(AlpenPayloadBuilder::new(
             ctx.provider().clone(),
             pool,
             ctx.chain_spec().clone(),
@@ -74,18 +74,18 @@ where
 /// The type responsible for building custom payloads
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct StrataPayloadBuilder<Pool, Client> {
+pub struct AlpenPayloadBuilder<Pool, Client> {
     /// Client providing access to node state.
     client: Client,
     /// Transaction pool.
     pool: Pool,
     /// The type responsible for creating the evm.
-    evm_config: EthEvmConfig<StrataEvmFactory>,
+    evm_config: EthEvmConfig<AlpenEvmFactory>,
     /// Payload builder configuration.
     builder_config: EthereumBuilderConfig,
 }
 
-impl<Pool, Client> StrataPayloadBuilder<Pool, Client> {
+impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
     /// `StrataPayloadBuilder` constructor.
     pub fn new(
         client: Client,
@@ -96,19 +96,19 @@ impl<Pool, Client> StrataPayloadBuilder<Pool, Client> {
         Self {
             client,
             pool,
-            evm_config: EthEvmConfig::new_with_evm_factory(chain_spec, StrataEvmFactory::default()),
+            evm_config: EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default()),
             builder_config,
         }
     }
 }
 
-impl<Pool, Client> PayloadBuilder for StrataPayloadBuilder<Pool, Client>
+impl<Pool, Client> PayloadBuilder for AlpenPayloadBuilder<Pool, Client>
 where
     Client: StateProviderFactory + ChainSpecProvider<ChainSpec = ChainSpec> + Clone,
     Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TransactionSigned>>,
 {
-    type Attributes = StrataPayloadBuilderAttributes;
-    type BuiltPayload = StrataBuiltPayload;
+    type Attributes = AlpenPayloadBuilderAttributes;
+    type BuiltPayload = AlpenBuiltPayload;
 
     fn try_build(
         &self,
@@ -160,9 +160,9 @@ pub fn try_build_payload<EvmConfig, Pool, Client, F>(
     client: Client,
     pool: Pool,
     builder_config: EthereumBuilderConfig,
-    args: BuildArguments<StrataPayloadBuilderAttributes, StrataBuiltPayload>,
+    args: BuildArguments<AlpenPayloadBuilderAttributes, AlpenBuiltPayload>,
     best_txs: F,
-) -> Result<BuildOutcome<StrataBuiltPayload>, PayloadBuilderError>
+) -> Result<BuildOutcome<AlpenBuiltPayload>, PayloadBuilderError>
 where
     EvmConfig: ConfigureEvm<Primitives = EthPrimitives, NextBlockEnvCtx = NextBlockEnvAttributes>,
     Client: StateProviderFactory + ChainSpecProvider<ChainSpec = ChainSpec>,
@@ -380,7 +380,7 @@ where
     // extend the payload with the blob sidecars from the executed txs
     eth_payload.extend_sidecars(blob_sidecars.into_iter().map(Arc::unwrap_or_clone));
 
-    let strata_payload = StrataBuiltPayload::new(eth_payload, withdrawal_intents);
+    let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
     // let strata_payload = StrataBuiltPayload::new(eth_payload, Default::default());
 
     Ok(BuildOutcome::Better {
