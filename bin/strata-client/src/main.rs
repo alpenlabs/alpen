@@ -238,6 +238,7 @@ fn do_startup_checks(
     engine: &impl ExecEngineCtl,
     bitcoin_client: &impl Reader,
     handle: &Handle,
+    check_engine: bool,
 ) -> anyhow::Result<()> {
     let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
         Ok(idx) => idx,
@@ -275,19 +276,23 @@ fn do_startup_checks(
     }
 
     // Check that tip L2 block exists (and engine can be connected to)
-    let chain_tip = tip_blockid;
-    match engine.check_block_exists(chain_tip) {
-        Ok(true) => {
-            info!("startup: last l2 block is synced")
-        }
-        Ok(false) => {
-            // Current chain tip tip block is not known by the EL.
-            warn!(%chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(storage, engine)?;
-        }
-        Err(error) => {
-            // Likely network issue
-            anyhow::bail!("could not connect to exec engine, err = {}", error);
+    if check_engine {
+        // engine is not used in checkpoint sync (find a better way to resolve this, a bit hacky for
+        // now)
+        let chain_tip = tip_blockid;
+        match engine.check_block_exists(chain_tip) {
+            Ok(true) => {
+                info!("startup: last l2 block is synced")
+            }
+            Ok(false) => {
+                // Current chain tip tip block is not known by the EL.
+                warn!(%chain_tip, "missing expected EVM block");
+                sync_chainstate_to_el(storage, engine)?;
+            }
+            Err(error) => {
+                // Likely network issue
+                anyhow::bail!("could not connect to exec engine, err = {}", error);
+            }
         }
     }
 
@@ -328,6 +333,7 @@ fn start_core_tasks(
         engine.as_ref(),
         bitcoin_client.as_ref(),
         executor.handle(),
+        !checkpoint_sync,
     )?;
 
     let (sync_manager, engine) = if checkpoint_sync {
