@@ -22,7 +22,6 @@ use strata_primitives::{
     params::Params,
 };
 use strata_state::{
-    batch::SignedCheckpoint,
     da::ChainstateDAScheme,
     sync_event::EventSubmitter,
     traits::{ChainstateDA, ChainstateUpdate},
@@ -116,41 +115,6 @@ fn init_reader_context(
         status_channel,
         seq_pubkey,
     }
-}
-
-pub async fn read_checkpoints(
-    client: Arc<impl Reader>,
-    storage: Arc<NodeStorage>,
-    config: Arc<ReaderConfig>,
-    params: Arc<Params>,
-    status_channel: StatusChannel,
-    event_submitter: &impl EventSubmitter,
-) -> anyhow::Result<Option<SignedCheckpoint>> {
-    // initialize relevant structures
-    let ctx = init_reader_context(client, storage, config, params, status_channel);
-    let target_next_block = calculate_target_next_block(
-        ctx.storage.l1().as_ref(),
-        ctx.params.rollup().horizon_l1_height,
-    )?;
-    let mut state = init_reader_state(&ctx, target_next_block).await?;
-    let mut status_updates: Vec<L1StatusUpdate> = Vec::new();
-
-    match get_block_events_and_checkpoint(&ctx, &mut state, &mut status_updates).await {
-        Err(err) => {
-            // TODO: need a different error handling mechanism?
-            handle_poll_error(&err, &mut status_updates);
-        }
-        Ok((events, checkpoint)) => {
-            for ev in events {
-                handle_bitcoin_event(ev, &ctx, event_submitter).await?;
-            }
-            return Ok(checkpoint);
-        }
-    };
-
-    apply_status_updates(&status_updates, &ctx.status_channel).await;
-
-    Ok(None)
 }
 
 /// Inner function that actually does the reading task.
@@ -261,42 +225,6 @@ async fn init_reader_state<R: Reader>(
         epoch,
     );
     Ok(state)
-}
-
-async fn get_block_events_and_checkpoint<R: Reader>(
-    ctx: &ReaderContext<R>,
-    state: &mut ReaderState,
-    status_updates: &mut Vec<L1StatusUpdate>,
-) -> anyhow::Result<(Vec<L1Event>, Option<SignedCheckpoint>)> {
-    let chain_info = ctx.client.get_blockchain_info().await?;
-    let client_height = chain_info.blocks;
-    let fresh_best_block = chain_info.best_block_hash.parse::<BlockHash>()?;
-
-    if fresh_best_block == *state.best_block() {
-        trace!("polled client, nothing to do");
-        return Ok((vec![], None));
-    }
-
-    let mut events = Vec::new();
-
-    let scan_start_height = state.next_height();
-    for fetch_height in scan_start_height..=client_height {
-        match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
-            Ok((_, evs)) => {
-                events.extend_from_slice(&evs);
-
-                if let Some(checkpt) = find_checkpoint_in_events(&evs) {
-                    return Ok((events, Some(checkpt.clone()))); // could probably return reference?
-                }
-            }
-            Err(e) => {
-                warn!(%fetch_height, err = %e, "failed to fetch new block");
-                break;
-            }
-        };
-    }
-
-    Ok((events, None))
 }
 
 /// Polls the chain to see if there's new blocks to look at, possibly reorging

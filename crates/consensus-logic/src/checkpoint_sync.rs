@@ -30,7 +30,10 @@ impl CheckpointSyncManager {
     }
 
     /// Store chainstate to database.
-    pub async fn store_chainstate(&mut self, new_chainstate: Chainstate) -> anyhow::Result<()> {
+    pub async fn store_chainstate(
+        &mut self,
+        new_chainstate: Chainstate,
+    ) -> anyhow::Result<Chainstate> {
         let chsman = self.storage.chainstate();
         let block_commitment = new_chainstate.finalized_epoch().to_block_commitment();
         let wb = WriteBatchEntry::new(
@@ -40,7 +43,7 @@ impl CheckpointSyncManager {
         chsman
             .put_write_batch_async(new_chainstate.chain_tip_slot(), wb)
             .await?;
-        Ok(())
+        Ok(new_chainstate)
     }
 
     /// Get latest stored chainstate.
