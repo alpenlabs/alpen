@@ -63,13 +63,13 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for StrataEvmPrecompiles {
 
     fn run(
         &mut self,
-        _context: &mut CTX,
+        context: &mut CTX,
         address: &Address,
         inputs: &InputsImpl,
         _is_static: bool,
         gas_limit: u64,
     ) -> Result<Option<Self::Output>, String> {
-        let Some(precompile) = self.precompiles.precompiles.get(address) else {
+        let Some(precompile_fn) = self.precompiles.precompiles.get(address) else {
             return Ok(None);
         };
 
@@ -79,32 +79,17 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for StrataEvmPrecompiles {
             output: Bytes::new(),
         };
 
-        if *address == BRIDGEOUT_ADDRESS {
-            let res = bridge_context_call(&inputs.input, gas_limit, _context);
-            match res {
-                Ok(output) => {
-                    let underflow = result.gas.record_cost(output.gas_used);
-                    assert!(underflow, "Gas underflow is not possible");
-                    result.result = InstructionResult::Return;
-                    result.output = output.bytes;
-                }
-                Err(PrecompileError::Fatal(e)) => return Err(e),
-                Err(e) => {
-                    result.result = if e.is_oog() {
-                        InstructionResult::PrecompileOOG
-                    } else {
-                        InstructionResult::PrecompileError
-                    };
-                }
-            }
-            return Ok(Some(result));
-        }
+        let res = match *address {
+            // handle bridgeout precompile as custome statefull precompile
+            BRIDGEOUT_ADDRESS => bridge_context_call(&inputs.input, gas_limit, context),
+            // handle rest of stateless precompiles
+            _ => (precompile_fn)(&inputs.input, gas_limit),
+        };
 
-        match (*precompile)(&inputs.input, gas_limit) {
+        match res {
             Ok(output) => {
                 let underflow = result.gas.record_cost(output.gas_used);
                 assert!(underflow, "Gas underflow is not possible");
-                result.result = InstructionResult::Return;
                 result.output = output.bytes;
             }
             Err(PrecompileError::Fatal(e)) => return Err(e),
@@ -116,7 +101,6 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for StrataEvmPrecompiles {
                 };
             }
         }
-
         Ok(Some(result))
     }
 
