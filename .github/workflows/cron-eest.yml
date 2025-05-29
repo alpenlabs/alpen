@@ -1,4 +1,4 @@
-name: Daily EEST
+name: Daily Ethereum Execution Spec tests
 
 #on:
 #  schedule:
@@ -22,7 +22,7 @@ permissions:
   pull-requests: read
 
 jobs:
-  ecr-pull-and-test:
+  setup-services-and-run-eest:
     permissions:
       id-token: write
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
           docker tag "${IMG_URL}" "${IMAGE}:latest"
         done
     
-    - name: List
+    - name: List pulled Docker images
       run: |
         docker image list
 
