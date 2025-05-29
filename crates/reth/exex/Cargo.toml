@@ -13,6 +13,7 @@ strata-proofimpl-evm-ee-stf.workspace = true
 
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
+alloy-genesis.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types.workspace = true
 eyre.workspace = true
