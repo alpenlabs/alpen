@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-chainspec"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alloy-genesis",
  "eyre",
@@ -1006,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-db"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alpen-reth-statediff",
  "anyhow",
@@ -1024,7 +1024,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-evm"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alloy-sol-types",
  "alpen-reth-primitives",
@@ -1039,7 +1039,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-exex"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1047,6 +1047,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types",
  "alpen-reth-db",
+ "alpen-reth-node",
  "eyre",
  "futures-util",
  "reth-chainspec",
@@ -1054,25 +1055,31 @@ dependencies = [
  "reth-exex",
  "reth-node-api",
  "reth-primitives",
+ "reth-primitives-traits",
  "reth-provider",
  "reth-revm",
  "reth-trie",
  "reth-trie-common",
  "revm-primitives",
+ "rockbound",
+ "rsp-client-executor",
  "rsp-mpt",
  "rsp-primitives",
  "serde_json",
  "strata-proofimpl-evm-ee-stf",
+ "thiserror 2.0.12",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "alpen-reth-node"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
  "alloy-rpc-types",
+ "alloy-rpc-types-engine",
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "alpen-reth-rpc",
@@ -1081,6 +1088,7 @@ dependencies = [
  "reth-basic-payload-builder",
  "reth-chain-state",
  "reth-chainspec",
+ "reth-db",
  "reth-engine-local",
  "reth-errors",
  "reth-ethereum-payload-builder",
@@ -1091,6 +1099,7 @@ dependencies = [
  "reth-node-builder",
  "reth-node-ethereum",
  "reth-payload-builder",
+ "reth-payload-validator",
  "reth-primitives",
  "reth-primitives-traits",
  "reth-provider",
@@ -1105,7 +1114,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-primitives"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alloy-sol-types",
  "serde",
@@ -1114,25 +1123,21 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-rpc"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
  "alloy-network",
  "alloy-primitives",
- "alloy-rpc-types",
  "alloy-rpc-types-eth",
  "alpen-reth-db",
  "alpen-reth-statediff",
- "bincode",
- "eyre",
  "hex",
  "jsonrpsee",
  "jsonrpsee-types",
  "parking_lot 0.12.3",
  "reqwest 0.12.15",
  "reth-chainspec",
- "reth-ethereum-forks",
  "reth-evm",
  "reth-network-api",
  "reth-node-api",
@@ -1144,10 +1149,8 @@ dependencies = [
  "reth-rpc",
  "reth-rpc-eth-api",
  "reth-rpc-eth-types",
- "reth-rpc-server-types",
  "reth-tasks",
  "reth-transaction-pool",
- "revm",
  "revm-primitives",
  "serde",
  "serde_json",
@@ -1160,7 +1163,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-statediff"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "alpen-chainspec",
@@ -13835,6 +13838,7 @@ dependencies = [
 name = "strata-evmexec"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-network",
  "alloy-rpc-types",
  "alpen-reth-evm",
  "alpen-reth-node",
@@ -13989,19 +13993,15 @@ dependencies = [
  "alloy-consensus",
  "alloy-eips",
  "alloy-rlp",
- "alloy-rlp-derive",
- "alloy-rpc-types",
  "alloy-rpc-types-eth",
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "anyhow",
  "bincode",
- "hex-literal",
  "reth-chainspec",
  "reth-evm-ethereum",
  "revm",
  "revm-primitives",
- "rlp",
  "rsp-client-executor",
  "serde",
  "serde_json",
@@ -14026,6 +14026,7 @@ dependencies = [
  "borsh",
  "jsonrpsee",
  "rockbound",
+ "serde",
  "serde_json",
  "strata-common",
  "strata-db",
@@ -14047,6 +14048,7 @@ dependencies = [
  "strata-zkvm-hosts",
  "thiserror 2.0.12",
  "tokio",
+ "toml 0.5.11",
  "tracing",
  "zkaleido",
  "zkaleido-risc0-host",
