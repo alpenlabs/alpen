@@ -6,7 +6,7 @@ use std::{backtrace, panic};
 
 use tracing::*;
 
-fn handle_panic(info: &panic::PanicHookInfo) {
+fn handle_panic(info: &panic::PanicHookInfo<'_>) {
     let bt = backtrace::Backtrace::force_capture();
 
     match info.payload().downcast_ref::<&str>() {

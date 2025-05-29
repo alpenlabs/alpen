@@ -73,7 +73,7 @@ pub(crate) struct ProverClientRpc {
 }
 
 impl ProverClientRpc {
-    pub fn new(
+    pub(crate) const fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDb>,

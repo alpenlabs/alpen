@@ -20,7 +20,7 @@ use crate::{
     signet::{backend::SignetBackend, EsploraClient},
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsFromFile {
     pub esplora: Option<String>,
     pub bitcoind_rpc_user: Option<String>,

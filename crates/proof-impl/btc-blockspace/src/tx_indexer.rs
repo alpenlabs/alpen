@@ -17,7 +17,7 @@ pub(crate) struct ProverTxVisitorImpl {
 }
 
 impl ProverTxVisitorImpl {
-    pub fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self { ops: Vec::new() }
     }
 }

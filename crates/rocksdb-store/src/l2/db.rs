@@ -11,13 +11,14 @@ use strata_state::{block::L2BlockBundle, prelude::*};
 use super::schemas::{L2BlockSchema, L2BlockStatusSchema};
 use crate::{l2::schemas::L2BlockHeightSchema, DbOpsConfig};
 
+#[derive(Debug)]
 pub struct L2Db {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,
 }
 
 impl L2Db {
-    pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 }

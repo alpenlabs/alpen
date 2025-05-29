@@ -2,7 +2,7 @@ use std::{fs, path::Path, sync::Arc};
 
 use rockbound::rocksdb;
 
-pub fn open_rocksdb_database(
+pub(crate) fn open_rocksdb_database(
     database_dir: &Path,
 ) -> anyhow::Result<Arc<rockbound::OptimisticTransactionDB>> {
     let mut database_dir = database_dir.to_path_buf();

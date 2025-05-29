@@ -9,6 +9,7 @@ use threadpool::ThreadPool;
 use crate::{cache, ops};
 
 /// Sync event db manager.
+#[expect(missing_debug_implementations)]
 pub struct SyncEventManager {
     ops: ops::sync_event::SyncEventOps,
 

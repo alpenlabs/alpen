@@ -7,6 +7,7 @@ use strata_state::operation::*;
 use super::schemas::ClientUpdateOutputSchema;
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct ClientStateDb {
     db: Arc<OptimisticTransactionDB>,
     _ops: DbOpsConfig,
@@ -17,7 +18,7 @@ impl ClientStateDb {
     ///
     /// Assumes it was opened with column families as defined in `STORE_COLUMN_FAMILIES`.
     // FIXME Make it better/generic.
-    pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, _ops: ops }
     }
 

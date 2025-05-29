@@ -28,7 +28,7 @@ pub struct L1HeaderRecord {
 }
 
 impl L1HeaderRecord {
-    pub fn new(blkid: L1BlockId, buf: Vec<u8>, wtxs_root: Buf32) -> Self {
+    pub const fn new(blkid: L1BlockId, buf: Vec<u8>, wtxs_root: Buf32) -> Self {
         Self {
             blkid,
             buf,
@@ -43,15 +43,16 @@ impl L1HeaderRecord {
         Self::new(blkid, buf, wtxs_root)
     }
 
-    pub fn blkid(&self) -> &L1BlockId {
+    pub const fn blkid(&self) -> &L1BlockId {
         &self.blkid
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn buf(&self) -> &[u8] {
         &self.buf
     }
 
-    pub fn wtxs_root(&self) -> &Buf32 {
+    pub const fn wtxs_root(&self) -> &Buf32 {
         &self.wtxs_root
     }
 

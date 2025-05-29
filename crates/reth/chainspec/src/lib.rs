@@ -1,3 +1,5 @@
+//! Chain specification for the reth node.
+
 use std::{fs, path::PathBuf, sync::Arc};
 
 use alloy_genesis::Genesis;

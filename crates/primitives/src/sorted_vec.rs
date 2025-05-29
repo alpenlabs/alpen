@@ -26,12 +26,12 @@ impl<T> SortedVec<T> {
     /// Constructs a new instance without validating the contents.
     ///
     /// NOTE: You _must_ ensure that the contents are already sorted.
-    pub fn new_unchecked(inner: Vec<T>) -> Self {
+    pub const fn new_unchecked(inner: Vec<T>) -> Self {
         Self { inner }
     }
 
     /// Creates a new, empty [`SortedVec`].
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self::new_unchecked(Vec::new())
     }
 
@@ -61,6 +61,7 @@ impl<T> SortedVec<T> {
     }
 
     /// Returns a slice of the inner vec.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn as_slice(&self) -> &[T] {
         &self.inner
     }
@@ -251,12 +252,12 @@ pub struct FlatTable<T: TableEntry> {
 impl<T: TableEntry> FlatTable<T> {
     /// Creates a new instance by wrapping a vec without checking that it's
     /// sorted.
-    pub fn new_unchecked(inner: Vec<T>) -> Self {
+    pub const fn new_unchecked(inner: Vec<T>) -> Self {
         Self { inner }
     }
 
     /// Creates a new empty instance.
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self::new_unchecked(Vec::new())
     }
 
@@ -278,6 +279,7 @@ impl<T: TableEntry> FlatTable<T> {
         }
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn as_slice(&self) -> &[T] {
         &self.inner
     }

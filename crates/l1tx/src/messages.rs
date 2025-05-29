@@ -18,7 +18,7 @@ pub struct L1TxMessages {
 }
 
 impl L1TxMessages {
-    pub fn new(
+    pub const fn new(
         protocol_ops: Vec<ProtocolOperation>,
         deposit_reqs: Vec<DepositRequestInfo>,
         da_entries: Vec<DaEntry>,
@@ -30,14 +30,17 @@ impl L1TxMessages {
         }
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn protocol_ops(&self) -> &[ProtocolOperation] {
         &self.protocol_ops
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn deposit_reqs(&self) -> &[DepositRequestInfo] {
         &self.deposit_reqs
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn da_entries(&self) -> &[DaEntry] {
         &self.da_entries
     }
@@ -66,7 +69,7 @@ pub struct DaEntry {
 impl DaEntry {
     /// Creates a new `DaEntry` instance without checking that the commitment
     /// actually corresponds to the blob.
-    pub fn new_unchecked(commitment: DaCommitment, blob_buf: Vec<u8>) -> Self {
+    pub const fn new_unchecked(commitment: DaCommitment, blob_buf: Vec<u8>) -> Self {
         Self {
             commitment,
             blob_buf,
@@ -92,10 +95,11 @@ impl DaEntry {
         Self::new(buf)
     }
 
-    pub fn commitment(&self) -> &DaCommitment {
+    pub const fn commitment(&self) -> &DaCommitment {
         &self.commitment
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn blob_buf(&self) -> &[u8] {
         &self.blob_buf
     }

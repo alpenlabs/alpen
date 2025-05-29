@@ -12,7 +12,7 @@ pub(super) fn prepare_input(
     }
 }
 
-pub fn gen_perf_report(
+pub(crate) fn gen_perf_report(
     host: &impl ZkVmHostPerf,
     cl_stf_proof_with_vk: (ProofReceipt, VerifyingKey),
 ) -> PerformanceReport {

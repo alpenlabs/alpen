@@ -9,13 +9,14 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// A zeroizable on [`Drop`] wrapper around [`Xpriv`].
 #[derive(Clone, PartialEq, Eq)]
+#[expect(missing_debug_implementations)]
 pub struct ZeroizableXpriv(Xpriv);
 
 impl ZeroizableXpriv {
     /// Create a new [`ZeroizableXpriv`] from an [`Xpriv`].
     ///
     /// This should take ownership of the `xpriv` since it is zeroized on drop.
-    pub fn new(xpriv: Xpriv) -> Self {
+    pub const fn new(xpriv: Xpriv) -> Self {
         Self(xpriv)
     }
 }
@@ -52,13 +53,14 @@ impl ZeroizeOnDrop for ZeroizableXpriv {}
 
 /// A zeroizable on [`Drop`] wrapper around [`Keypair`].
 #[derive(Clone, PartialEq, Eq)]
+#[expect(missing_debug_implementations)]
 pub struct ZeroizableKeypair(Keypair);
 
 impl ZeroizableKeypair {
     /// Create a new [`ZeroizableKeypair`] from a [`Keypair`].
     ///
     /// This should take ownership of `keypair` since it is zeroized on drop.
-    pub fn new(keypair: Keypair) -> Self {
+    pub const fn new(keypair: Keypair) -> Self {
         Self(keypair)
     }
 }

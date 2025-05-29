@@ -1,3 +1,5 @@
+//! EVM execution for the Alpen codebase.
+
 mod block;
 mod el_payload;
 mod fork_choice_state;

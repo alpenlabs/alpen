@@ -14,7 +14,10 @@ pub(crate) struct SubprotoLoaderStage<'a> {
 }
 
 impl<'a> SubprotoLoaderStage<'a> {
-    pub(crate) fn new(anchor_state: &'a AnchorState, manager: &'a mut SubprotoManager) -> Self {
+    pub(crate) const fn new(
+        anchor_state: &'a AnchorState,
+        manager: &'a mut SubprotoManager,
+    ) -> Self {
         Self {
             anchor_state,
             manager,
@@ -44,7 +47,7 @@ pub(crate) struct ProcessStage<'b, 'm> {
 }
 
 impl<'b, 'm> ProcessStage<'b, 'm> {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
         manager: &'m mut SubprotoManager,
     ) -> Self {
@@ -69,7 +72,7 @@ pub(crate) struct FinishStage<'m> {
 }
 
 impl<'m> FinishStage<'m> {
-    pub(crate) fn new(manager: &'m mut SubprotoManager) -> Self {
+    pub(crate) const fn new(manager: &'m mut SubprotoManager) -> Self {
         Self { manager }
     }
 }

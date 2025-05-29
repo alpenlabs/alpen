@@ -10,6 +10,7 @@ use crate::{
 
 /// Dummy implementation that isn't really compliant with the spec, but we don't
 /// care because we just want to get something running. :sunglasses:.
+#[derive(Debug)]
 pub struct StubL2Db {
     blocks: Mutex<HashMap<L2BlockId, L2BlockBundle>>,
     statuses: Mutex<HashMap<L2BlockId, BlockStatus>>,

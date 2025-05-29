@@ -33,7 +33,7 @@ pub struct AccountChanges {
 type AccountChangesTuple = (Option<Account>, Option<Account>, StorageWithOriginalValues);
 
 impl Account {
-    pub fn new(balance: U256, nonce: u64, code_hash: B256) -> Self {
+    pub const fn new(balance: U256, nonce: u64, code_hash: B256) -> Self {
         Self {
             balance,
             nonce,
@@ -69,7 +69,7 @@ impl From<AccountTuple> for Account {
 }
 
 impl AccountChanges {
-    pub fn new(
+    pub const fn new(
         original_info: Option<Account>,
         present_info: Option<Account>,
         storage: StorageWithOriginalValues,

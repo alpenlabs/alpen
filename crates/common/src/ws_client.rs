@@ -83,7 +83,7 @@ pub struct ManagedWsClient {
 }
 
 impl ManagedWsClient {
-    pub fn new(pool: Pool<WsClientManager>) -> Self {
+    pub const fn new(pool: Pool<WsClientManager>) -> Self {
         Self { pool }
     }
 

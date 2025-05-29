@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-rocksdb"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-db.workspace = true
 strata-mmr.workspace = true
@@ -11,18 +14,16 @@ strata-state.workspace = true
 zkaleido.workspace = true
 
 anyhow.workspace = true
-arbitrary.workspace = true
 bincode.workspace = true
-bitcoin.workspace = true
 borsh.workspace = true
-reth-db.workspace = true
 rockbound.workspace = true
 tempfile = { workspace = true, optional = true }
-thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+
+bitcoin.workspace = true
 
 [features]
 default = ["test_utils"]

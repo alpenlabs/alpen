@@ -80,7 +80,7 @@ impl Reorg {
         self.down.iter()
     }
 
-    pub fn pivot(&self) -> &L2BlockId {
+    pub const fn pivot(&self) -> &L2BlockId {
         &self.pivot
     }
 

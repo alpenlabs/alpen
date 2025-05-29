@@ -212,7 +212,7 @@ struct CheckpointPrepData {
 }
 
 impl CheckpointPrepData {
-    fn new(info: BatchInfo, tsn: BatchTransition, chainstate: Chainstate) -> Self {
+    const fn new(info: BatchInfo, tsn: BatchTransition, chainstate: Chainstate) -> Self {
         Self {
             info,
             tsn,

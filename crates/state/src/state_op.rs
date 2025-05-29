@@ -42,7 +42,7 @@ pub struct WriteBatch {
 
 impl WriteBatch {
     /// Creates a new instance from the toplevel state and a list of ops.
-    pub fn new(new_toplevel_state: Chainstate, ops: Vec<StateOp>) -> Self {
+    pub const fn new(new_toplevel_state: Chainstate, ops: Vec<StateOp>) -> Self {
         Self {
             new_toplevel_state,
             ops,
@@ -51,11 +51,11 @@ impl WriteBatch {
 
     /// Creates a new instance from the new toplevel state and assumes no
     /// changes to the bulk state.
-    pub fn new_replace(new_state: Chainstate) -> Self {
+    pub const fn new_replace(new_state: Chainstate) -> Self {
         Self::new(new_state, Vec::new())
     }
 
-    pub fn new_toplevel_state(&self) -> &Chainstate {
+    pub const fn new_toplevel_state(&self) -> &Chainstate {
         &self.new_toplevel_state
     }
 
@@ -88,6 +88,7 @@ pub fn apply_write_batch_to_chainstate(_chainstate: Chainstate, batch: &WriteBat
 /// If we ever have a large state that's persisted to disk, this will eventually
 /// be made generic over a state provider that exposes access to that and then
 /// the `WriteBatch` will include writes that can be made to that.
+#[derive(Debug)]
 pub struct StateCache {
     /// Original toplevel state that we started from, in case we need to reference it.
     original_state: Chainstate,
@@ -110,15 +111,15 @@ impl StateCache {
 
     // Basic accessors.
 
-    pub fn state(&self) -> &Chainstate {
+    pub const fn state(&self) -> &Chainstate {
         &self.new_state
     }
 
-    fn state_mut(&mut self) -> &mut Chainstate {
+    pub const fn state_mut(&mut self) -> &mut Chainstate {
         &mut self.new_state
     }
 
-    pub fn original_state(&self) -> &Chainstate {
+    pub const fn original_state(&self) -> &Chainstate {
         &self.original_state
     }
 
@@ -165,23 +166,23 @@ impl StateCache {
     }
 
     /// Sets the last block commitment.
-    pub fn set_prev_block(&mut self, block: L2BlockCommitment) {
+    pub const fn set_prev_block(&mut self, block: L2BlockCommitment) {
         let state = self.state_mut();
         state.prev_block = block;
     }
 
     /// Sets the current epoch index.
-    pub fn set_cur_epoch(&mut self, epoch: u64) {
+    pub const fn set_cur_epoch(&mut self, epoch: u64) {
         self.state_mut().cur_epoch = epoch;
     }
 
     /// Sets the previous epoch.
-    pub fn set_prev_epoch(&mut self, epoch: EpochCommitment) {
+    pub const fn set_prev_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().prev_epoch = epoch;
     }
 
     /// Sets the previous epoch.
-    pub fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
+    pub const fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().finalized_epoch = epoch;
     }
 
@@ -192,12 +193,12 @@ impl StateCache {
         state.l1_state.safe_block_header = record;
     }
 
-    pub fn set_epoch_finishing_flag(&mut self, flag: bool) {
+    pub const fn set_epoch_finishing_flag(&mut self, flag: bool) {
         let state = self.state_mut();
         state.is_epoch_finishing = flag;
     }
 
-    pub fn should_finish_epoch(&self) -> bool {
+    pub const fn should_finish_epoch(&self) -> bool {
         self.state().is_epoch_finishing
     }
 
@@ -347,7 +348,7 @@ pub struct WriteBatchEntry {
 }
 
 impl WriteBatchEntry {
-    pub fn new(wb: WriteBatch, blockid: L2BlockId) -> Self {
+    pub const fn new(wb: WriteBatch, blockid: L2BlockId) -> Self {
         Self { wb, blockid }
     }
 
@@ -355,11 +356,11 @@ impl WriteBatchEntry {
         (self.wb, self.blockid)
     }
 
-    pub fn toplevel_chainstate(&self) -> &Chainstate {
+    pub const fn toplevel_chainstate(&self) -> &Chainstate {
         self.wb.new_toplevel_state()
     }
 
-    pub fn blockid(&self) -> &L2BlockId {
+    pub const fn blockid(&self) -> &L2BlockId {
         &self.blockid
     }
 }

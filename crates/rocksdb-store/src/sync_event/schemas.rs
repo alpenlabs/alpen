@@ -20,11 +20,11 @@ impl SyncEventWithTimestamp {
         SyncEventWithTimestamp { event, timestamp }
     }
 
-    pub fn timestamp(self) -> u64 {
+    pub const fn timestamp(self) -> u64 {
         self.timestamp
     }
 
-    pub fn event(self) -> SyncEvent {
+    pub const fn event(self) -> SyncEvent {
         self.event
     }
 }

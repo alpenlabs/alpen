@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-provers-perf"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 zkaleido.workspace = true
 
@@ -26,18 +29,24 @@ strata-risc0-guest-builder = { path = "../../provers/risc0", optional = true }
 zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9", optional = true }
 
 anyhow.workspace = true
-bincode.workspace = true
-cfg-if.workspace = true
 clap = { workspace = true, features = ["derive"] }
 num-format = "0.4.4"
 reqwest.workspace = true
-serde.workspace = true
 serde_json.workspace = true
-time = "0.3.26"
 tokio.workspace = true
 tracing.workspace = true
 
 [features]
 default = ["sp1"]
-risc0 = ["zkaleido-risc0-host/perf", "strata-zkvm-hosts/risc0-builder"]
-sp1 = ["zkaleido-sp1-host/perf", "strata-zkvm-hosts/sp1-builder"]
+risc0 = [
+    "zkaleido-risc0-host/perf",
+    "strata-zkvm-hosts/risc0-builder",
+    "dep:zkaleido-risc0-host",
+    "dep:strata-risc0-guest-builder",
+]
+sp1 = [
+    "zkaleido-sp1-host/perf",
+    "strata-zkvm-hosts/sp1-builder",
+    "dep:zkaleido-sp1-host",
+    "dep:strata-sp1-guest-builder",
+]

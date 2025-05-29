@@ -4,6 +4,12 @@
 //!
 //! This tool is intended for use in testing and development only. It generates
 //! keys and other data that should not be used in production.
+
+#[cfg(feature = "risc0-builder")]
+use bytemuck as _;
+#[cfg(feature = "risc0-builder")]
+use strata_risc0_guest_builder as _;
+
 mod args;
 mod util;
 

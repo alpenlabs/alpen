@@ -161,18 +161,18 @@ pub struct SignedL2BlockHeader {
 }
 
 impl SignedL2BlockHeader {
-    pub fn new(header: L2BlockHeader, sig: Buf64) -> Self {
+    pub const fn new(header: L2BlockHeader, sig: Buf64) -> Self {
         SignedL2BlockHeader {
             header,
             signature: sig,
         }
     }
 
-    pub fn sig(&self) -> &Buf64 {
+    pub const fn sig(&self) -> &Buf64 {
         &self.signature
     }
 
-    pub fn header(&self) -> &L2BlockHeader {
+    pub const fn header(&self) -> &L2BlockHeader {
         &self.header
     }
 }

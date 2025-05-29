@@ -46,7 +46,7 @@ enum Chain {
 }
 
 impl Chain {
-    fn from_network_type(network_type: NetworkType) -> Result<Self, String> {
+    const fn from_network_type(network_type: NetworkType) -> Result<Self, String> {
         match network_type {
             NetworkType::Signet => Ok(Chain::L1),
             NetworkType::Alpen => Ok(Chain::L2),

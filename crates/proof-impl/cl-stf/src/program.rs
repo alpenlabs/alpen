@@ -14,6 +14,7 @@ use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
 use crate::process_cl_stf;
 
+#[derive(Debug)]
 pub struct ClStfInput {
     pub rollup_params: RollupParams,
     pub chainstate: Chainstate,
@@ -30,6 +31,7 @@ pub struct ClStfOutput {
     pub tx_filters_transition: Option<TxFilterConfigTransition>,
 }
 
+#[derive(Debug)]
 pub struct ClStfProgram;
 
 impl ZkVmProgram for ClStfProgram {

@@ -21,6 +21,7 @@ impl PauseChannel {
     }
 }
 
+#[derive(Debug)]
 pub struct WorkerMessage {
     pub wtype: WorkerType,
     pub action: Action,

@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf, sync::Arc};
 use eyre::{eyre, Context};
 use rockbound::{rocksdb, DB};
 
-pub fn open_rocksdb_database(datadir: PathBuf) -> eyre::Result<Arc<DB>> {
+pub(crate) fn open_rocksdb_database(datadir: PathBuf) -> eyre::Result<Arc<DB>> {
     let mut database_dir = datadir;
     database_dir.push("rocksdb");
 

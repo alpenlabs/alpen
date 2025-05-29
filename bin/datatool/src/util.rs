@@ -82,6 +82,7 @@ pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
 /// # Errors
 ///
 /// Returns an error if the export process fails.
+#[allow(clippy::missing_const_for_fn)]
 fn export_elf(_elf_path: &Path) -> anyhow::Result<()> {
     #[cfg(feature = "sp1-builder")]
     {
@@ -428,7 +429,7 @@ fn resolve_xpriv(
 }
 
 /// Inputs for constructing the network parameters.
-pub struct ParamsConfig {
+pub(crate) struct ParamsConfig {
     /// Name of the network.
     name: String,
     /// Tagname used to identify DA envelopes

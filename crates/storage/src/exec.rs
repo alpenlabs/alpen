@@ -5,11 +5,11 @@
 //! interfaces for database operations. The macros manage the indirection required to spawn async
 //! requests onto a thread pool and execute blocking calls locally.
 
-pub use strata_db::{errors::DbError, DbResult};
-pub use tracing::*;
+pub(crate) use strata_db::{errors::DbError, DbResult};
+pub(crate) use tracing::*;
 
 /// Handle for receiving a result from a database operation on another thread.
-pub type DbRecv<T> = tokio::sync::oneshot::Receiver<DbResult<T>>;
+pub(crate) type DbRecv<T> = tokio::sync::oneshot::Receiver<DbResult<T>>;
 
 /// Macro to generate an `Ops` interface, which provides both asynchronous and synchronous
 /// methods for interacting with the underlying database. This is particularly useful for
@@ -57,6 +57,7 @@ macro_rules! inst_ops {
             $($iname:ident($($aname:ident: $aty:ty),*) => $ret:ty;)*
         }
     } => {
+        #[expect(missing_debug_implementations)]
         pub struct $base {
             pool: threadpool::ThreadPool,
             inner: Arc<dyn ShimTrait>,
@@ -98,6 +99,7 @@ macro_rules! inst_ops {
                 )*
             }
 
+            #[derive(Debug)]
             pub struct Inner $(<$($tparam: $tpconstr + Sync + Send + 'static),+>)? {
                 ctx: Arc<$ctx $(<$($tparam),+>)?>,
             }
@@ -155,12 +157,13 @@ macro_rules! inst_ops_simple {
             $($iname:ident($($aname:ident: $aty:ty),*) => $ret:ty;)*
         }
     } => {
+        #[derive(Debug)]
         pub struct Context<$tparam : $tpconstr> {
             db: Arc<$tparam>,
         }
 
         impl<$tparam : $tpconstr + Sync + Send + 'static> Context<$tparam> {
-            pub fn new(db: Arc<$tparam>) -> Self {
+            pub const fn new(db: Arc<$tparam>) -> Self {
                 Self { db }
             }
 

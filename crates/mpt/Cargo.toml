@@ -4,6 +4,9 @@ edition = "2021"
 name = "strata-mpt"
 version = "0.1.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 alloy-rlp.workspace = true
 alloy-rlp-derive.workspace = true

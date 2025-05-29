@@ -9,7 +9,7 @@ use crate::errors::ProvingTaskError;
 /// data validation problems, and serialization errors. Each variant provides
 /// detailed information about the specific error condition.
 #[derive(Error, Debug)]
-pub enum CheckpointError {
+pub(crate) enum CheckpointError {
     /// Occurs when the RPC request to fetch checkpoint data fails.
     #[error("Failed to fetch checkpoint data: {0}")]
     FetchError(String),
@@ -29,4 +29,4 @@ pub enum CheckpointError {
 }
 
 /// A type alias for results involving checkpoint operations.
-pub type CheckpointResult<T> = Result<T, CheckpointError>;
+pub(crate) type CheckpointResult<T> = Result<T, CheckpointError>;

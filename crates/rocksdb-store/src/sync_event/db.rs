@@ -7,6 +7,7 @@ use strata_state::sync_event::SyncEvent;
 use super::schemas::{SyncEventSchema, SyncEventWithTimestamp};
 use crate::{sequence::get_next_id_opts, DbOpsConfig};
 
+#[derive(Debug)]
 pub struct SyncEventDb {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,
@@ -15,7 +16,7 @@ pub struct SyncEventDb {
 impl SyncEventDb {
     // NOTE: db is expected to open all the column families defined in STORE_COLUMN_FAMILIES.
     // FIXME: Make it better/generic.
-    pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 

@@ -26,7 +26,7 @@ pub struct ExecPayloadData {
 }
 
 impl ExecPayloadData {
-    pub fn new(exec_update: ExecUpdate, accessory_data: Vec<u8>, ops: Vec<Op>) -> Self {
+    pub const fn new(exec_update: ExecUpdate, accessory_data: Vec<u8>, ops: Vec<Op>) -> Self {
         Self {
             exec_update,
             accessory_data,
@@ -48,14 +48,16 @@ impl ExecPayloadData {
         }
     }
 
-    pub fn exec_update(&self) -> &ExecUpdate {
+    pub const fn exec_update(&self) -> &ExecUpdate {
         &self.exec_update
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn accessory_data(&self) -> &[u8] {
         &self.accessory_data
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn ops(&self) -> &[Op] {
         &self.ops
     }
@@ -92,7 +94,7 @@ pub struct PayloadEnv {
 }
 
 impl PayloadEnv {
-    pub fn new(
+    pub const fn new(
         timestamp: u64,
         prev_l2_block_id: L2BlockId,
         _safe_l1_block: Buf32,
@@ -108,19 +110,20 @@ impl PayloadEnv {
         }
     }
 
-    pub fn timestamp(&self) -> u64 {
+    pub const fn timestamp(&self) -> u64 {
         self.timestamp
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn el_ops(&self) -> &[Op] {
         &self.el_ops
     }
 
-    pub fn prev_l2_block_id(&self) -> &L2BlockId {
+    pub const fn prev_l2_block_id(&self) -> &L2BlockId {
         &self.prev_l2_block_id
     }
 
-    pub fn batch_gas_limit(&self) -> Option<u64> {
+    pub const fn batch_gas_limit(&self) -> Option<u64> {
         self.batch_gas_limit
     }
 }

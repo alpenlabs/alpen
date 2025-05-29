@@ -27,7 +27,7 @@ pub struct L1ViewState {
 
 impl L1ViewState {
     /// Creates a new instance with the genesis trigger L1 block already ingested.
-    pub fn new_at_genesis(
+    pub const fn new_at_genesis(
         horizon_height: u64,
         genesis_height: u64,
         genesis_trigger_block: L1HeaderRecord,
@@ -42,29 +42,29 @@ impl L1ViewState {
         }
     }
 
-    pub fn safe_block(&self) -> &L1HeaderRecord {
+    pub const fn safe_block(&self) -> &L1HeaderRecord {
         &self.safe_block_header
     }
 
-    pub fn safe_blkid(&self) -> &L1BlockId {
+    pub const fn safe_blkid(&self) -> &L1BlockId {
         self.safe_block_header.blkid()
     }
 
-    pub fn safe_height(&self) -> u64 {
+    pub const fn safe_height(&self) -> u64 {
         self.safe_block_height
     }
 
-    pub fn header_vs(&self) -> &HeaderVerificationState {
+    pub const fn header_vs(&self) -> &HeaderVerificationState {
         &self.header_vs
     }
 
     /// Gets the safe block as a [`L1BlockCommitment`].
-    pub fn get_safe_block(&self) -> L1BlockCommitment {
+    pub const fn get_safe_block(&self) -> L1BlockCommitment {
         L1BlockCommitment::new(self.safe_height(), *self.safe_blkid())
     }
 
     /// The height of the next block we expect to be added.
-    pub fn next_expected_height(&self) -> u64 {
+    pub const fn next_expected_height(&self) -> u64 {
         self.safe_block_height + 1
     }
 }

@@ -10,7 +10,7 @@ pub(super) const DEV_RPC_URL: &str = "0.0.0.0";
 /// Command-line arguments used to configure the prover-client in both development and production
 /// modes.
 #[derive(Debug, FromArgs)]
-pub struct Args {
+pub(crate) struct Args {
     /// The JSON-RPC port used when running in development mode.
     ///
     /// This port defaults to `DEV_RPC_PORT` and determines the local endpoint port
@@ -154,28 +154,28 @@ impl Args {
     /// Constructs the complete development JSON-RPC URL by combining `rpc_url` and `rpc_port`.
     ///
     /// This is used for configuring the client’s RPC interface in development mode.
-    pub fn get_dev_rpc_url(&self) -> String {
+    pub(crate) fn get_dev_rpc_url(&self) -> String {
         format!("{}:{}", self.rpc_url, self.rpc_port)
     }
 
     /// Returns the Sequencer RPC URL as a `String`.
     ///
     /// Useful for configuring communication with the Sequencer service.
-    pub fn get_sequencer_rpc_url(&self) -> String {
+    pub(crate) fn get_sequencer_rpc_url(&self) -> String {
         self.sequencer_rpc.to_string()
     }
 
     /// Returns the Reth RPC URL as a `String`.
     ///
     /// Useful for configuring communication with the Reth service.
-    pub fn get_reth_rpc_url(&self) -> String {
+    pub(crate) fn get_reth_rpc_url(&self) -> String {
         self.reth_rpc.to_string()
     }
 
     /// Formats and returns the bitcoind RPC URL prefixed with `http://`.
     ///
     /// Useful for establishing a connection to the bitcoind RPC endpoint.
-    pub fn get_btc_rpc_url(&self) -> String {
+    pub(crate) fn get_btc_rpc_url(&self) -> String {
         format!("http://{}", self.bitcoind_url)
     }
 
@@ -185,7 +185,7 @@ impl Args {
     /// This function populates the `HashMap` based on which features are enabled at compile time.
     /// For example, if the `sp1` or `risc0` features are enabled, corresponding entries will be
     /// included with their configured number of worker threads.
-    pub fn get_workers(&self) -> HashMap<ProofZkVm, usize> {
+    pub(crate) fn get_workers(&self) -> HashMap<ProofZkVm, usize> {
         let mut workers = HashMap::new();
         workers.insert(ProofZkVm::Native, self.native_workers);
 
@@ -204,7 +204,7 @@ impl Args {
 
     /// Resolves the rollup params file to use, from a path, and validates
     /// it to ensure it passes sanity checks.
-    pub fn resolve_and_validate_rollup_params(&self) -> anyhow::Result<RollupParams> {
+    pub(crate) fn resolve_and_validate_rollup_params(&self) -> anyhow::Result<RollupParams> {
         let json = fs::read_to_string(&self.rollup_params)?;
         let rollup_params = from_str::<RollupParams>(&json)?;
         rollup_params.check_well_formed()?;

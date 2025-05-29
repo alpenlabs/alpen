@@ -12,13 +12,14 @@ use strata_primitives::relay::types::{BridgeMessage, Scope};
 use super::schemas::{BridgeMsgIdSchema, ScopeMsgIdSchema};
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct BridgeMsgDb {
     db: Arc<DB>,
     ops: DbOpsConfig,
 }
 
 impl BridgeMsgDb {
-    pub fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 

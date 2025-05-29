@@ -22,7 +22,7 @@ impl StrataEvmConfig {
         }
     }
 
-    pub fn inner(&self) -> &EthEvmConfig {
+    pub const fn inner(&self) -> &EthEvmConfig {
         &self.inner
     }
 }

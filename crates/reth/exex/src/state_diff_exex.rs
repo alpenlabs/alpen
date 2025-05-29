@@ -9,6 +9,7 @@ use reth_primitives::EthPrimitives;
 use reth_provider::Chain;
 use tracing::{debug, error};
 
+#[expect(missing_debug_implementations)]
 pub struct StateDiffGenerator<
     Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
     S: StateDiffStore + Clone,
@@ -22,7 +23,7 @@ impl<
         S: StateDiffStore + Clone,
     > StateDiffGenerator<Node, S>
 {
-    pub fn new(ctx: ExExContext<Node>, db: Arc<S>) -> Self {
+    pub const fn new(ctx: ExExContext<Node>, db: Arc<S>) -> Self {
         Self { ctx, db }
     }
 

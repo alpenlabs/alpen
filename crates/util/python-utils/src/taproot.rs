@@ -47,7 +47,7 @@ impl ExtractP2trPubkey for Address {
 ///
 /// This is based on the [`UNSPENDABLE`] public key.
 #[pyfunction]
-pub fn unspendable_address() -> String {
+pub(crate) fn unspendable_address() -> String {
     let address = Address::p2tr(SECP256K1, *UNSPENDABLE_PUBLIC_KEY, None, NETWORK);
     address.to_string()
 }

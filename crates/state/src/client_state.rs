@@ -57,7 +57,7 @@ pub struct ClientState {
 impl ClientState {
     /// Creates the basic genesis client state from the genesis parameters.
     // TODO do we need this or should we load it at run time from the rollup params?
-    pub fn from_genesis_params(params: &Params) -> Self {
+    pub const fn from_genesis_params(params: &Params) -> Self {
         let rparams = params.rollup();
         let genesis_l1_height = rparams.genesis_l1_height;
         Self {
@@ -73,17 +73,17 @@ impl ClientState {
 
     /// If the chain is "active", meaning we are after genesis (although we
     /// don't necessarily know what it is, that's dictated by the `SyncState`).
-    pub fn is_chain_active(&self) -> bool {
+    pub const fn is_chain_active(&self) -> bool {
         self.chain_active
     }
 
     /// Returns a ref to the inner sync state, if it exists.
-    pub fn sync(&self) -> Option<&SyncState> {
+    pub const fn sync(&self) -> Option<&SyncState> {
         self.sync_state.as_ref()
     }
 
     /// Returns if genesis has occurred.
-    pub fn has_genesis_occurred(&self) -> bool {
+    pub const fn has_genesis_occurred(&self) -> bool {
         self.chain_active
     }
 
@@ -94,7 +94,7 @@ impl ClientState {
 
     /// Returns a mut ref to the inner sync state.  Only valid if we've observed
     /// genesis.  Only meant to be called when applying sync writes.
-    pub fn expect_sync_mut(&mut self) -> &mut SyncState {
+    pub const fn expect_sync_mut(&mut self) -> &mut SyncState {
         self.sync_state
             .as_mut()
             .expect("clientstate: missing sync state")
@@ -108,7 +108,7 @@ impl ClientState {
         self.int_states.next_idx()
     }
 
-    pub fn genesis_l1_height(&self) -> u64 {
+    pub const fn genesis_l1_height(&self) -> u64 {
         self.genesis_l1_height
     }
 
@@ -199,7 +199,7 @@ impl ClientState {
     }
 
     /// Gets the final epoch that we've externally declared.
-    pub fn get_declared_final_epoch(&self) -> Option<&EpochCommitment> {
+    pub const fn get_declared_final_epoch(&self) -> Option<&EpochCommitment> {
         self.declared_final_epoch.as_ref()
     }
 }
@@ -251,7 +251,7 @@ pub struct SyncState {
 }
 
 impl SyncState {
-    pub fn from_genesis_blkid(gblkid: L2BlockId) -> Self {
+    pub const fn from_genesis_blkid(gblkid: L2BlockId) -> Self {
         Self {
             genesis_blkid: gblkid,
             confirmed_checkpoint_blocks: Vec::new(),
@@ -259,10 +259,11 @@ impl SyncState {
     }
 
     /// Gets the genesis blkid.
-    pub fn genesis_blkid(&self) -> &L2BlockId {
+    pub const fn genesis_blkid(&self) -> &L2BlockId {
         &self.genesis_blkid
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn confirmed_checkpoint_blocks(&self) -> &[(u64, L2BlockId)] {
         &self.confirmed_checkpoint_blocks
     }
@@ -298,7 +299,7 @@ pub struct InternalState {
 }
 
 impl InternalState {
-    pub fn new(blkid: L1BlockId, last_checkpoint: Option<L1Checkpoint>) -> Self {
+    pub const fn new(blkid: L1BlockId, last_checkpoint: Option<L1Checkpoint>) -> Self {
         Self {
             blkid,
             last_checkpoint,
@@ -306,12 +307,12 @@ impl InternalState {
     }
 
     /// Returns a ref to the L1 block ID that produced this state.
-    pub fn blkid(&self) -> &L1BlockId {
+    pub const fn blkid(&self) -> &L1BlockId {
         &self.blkid
     }
 
     /// Returns the last stored checkpoint, if there was one.
-    pub fn last_checkpoint(&self) -> Option<&L1Checkpoint> {
+    pub const fn last_checkpoint(&self) -> Option<&L1Checkpoint> {
         self.last_checkpoint.as_ref()
     }
 
@@ -354,7 +355,7 @@ pub struct CheckpointL1Ref {
 }
 
 impl CheckpointL1Ref {
-    pub fn new(l1_commitment: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
+    pub const fn new(l1_commitment: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
         Self {
             l1_commitment,
             txid,
@@ -362,11 +363,11 @@ impl CheckpointL1Ref {
         }
     }
 
-    pub fn block_height(&self) -> u64 {
+    pub const fn block_height(&self) -> u64 {
         self.l1_commitment.height()
     }
 
-    pub fn block_id(&self) -> &L1BlockId {
+    pub const fn block_id(&self) -> &L1BlockId {
         self.l1_commitment.blkid()
     }
 }
@@ -386,7 +387,7 @@ pub struct L1Checkpoint {
 }
 
 impl L1Checkpoint {
-    pub fn new(
+    pub const fn new(
         batch_info: BatchInfo,
         batch_transition: BatchTransition,
         l1_reference: CheckpointL1Ref,
@@ -401,20 +402,21 @@ impl L1Checkpoint {
 
 /// Wrapper around [`ClientState`] used for modifying it and producing sync
 /// actions.
+#[derive(Debug)]
 pub struct ClientStateMut {
     state: ClientState,
     actions: Vec<SyncAction>,
 }
 
 impl ClientStateMut {
-    pub fn new(state: ClientState) -> Self {
+    pub const fn new(state: ClientState) -> Self {
         Self {
             state,
             actions: Vec::new(),
         }
     }
 
-    pub fn state(&self) -> &ClientState {
+    pub const fn state(&self) -> &ClientState {
         &self.state
     }
 
@@ -438,7 +440,7 @@ impl ClientStateMut {
         self.state.set_sync_state(ss);
     }
 
-    pub fn activate_chain(&mut self) {
+    pub const fn activate_chain(&mut self) {
         self.state.chain_active = true;
     }
 
@@ -543,7 +545,7 @@ impl ClientStateMut {
     }
 
     /// Sets the declared final epoch.
-    pub fn set_decl_final_epoch(&mut self, epoch: EpochCommitment) {
+    pub const fn set_decl_final_epoch(&mut self, epoch: EpochCommitment) {
         self.state.declared_final_epoch = Some(epoch);
     }
 

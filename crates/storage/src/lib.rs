@@ -1,3 +1,5 @@
+//! Storage for the Alpen codebase.
+
 mod cache;
 mod exec;
 mod managers;
@@ -17,6 +19,7 @@ use strata_db::traits::Database;
 /// A consolidation of database managers.
 // TODO move this to its own module
 #[derive(Clone)]
+#[expect(missing_debug_implementations)]
 pub struct NodeStorage {
     l1_block_manager: Arc<L1BlockManager>,
     l2_block_manager: Arc<L2BlockManager>,
@@ -31,27 +34,27 @@ pub struct NodeStorage {
 }
 
 impl NodeStorage {
-    pub fn l1(&self) -> &Arc<L1BlockManager> {
+    pub const fn l1(&self) -> &Arc<L1BlockManager> {
         &self.l1_block_manager
     }
 
-    pub fn l2(&self) -> &Arc<L2BlockManager> {
+    pub const fn l2(&self) -> &Arc<L2BlockManager> {
         &self.l2_block_manager
     }
 
-    pub fn chainstate(&self) -> &Arc<ChainstateManager> {
+    pub const fn chainstate(&self) -> &Arc<ChainstateManager> {
         &self.chainstate_manager
     }
 
-    pub fn sync_event(&self) -> &Arc<SyncEventManager> {
+    pub const fn sync_event(&self) -> &Arc<SyncEventManager> {
         &self.sync_event_manager
     }
 
-    pub fn client_state(&self) -> &Arc<ClientStateManager> {
+    pub const fn client_state(&self) -> &Arc<ClientStateManager> {
         &self.client_state_manager
     }
 
-    pub fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
+    pub const fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
         &self.checkpoint_manager
     }
 }

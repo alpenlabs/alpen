@@ -12,11 +12,11 @@ impl From<Params> for BtcParams {
 }
 
 impl BtcParams {
-    pub fn into_inner(self) -> Params {
+    pub const fn into_inner(self) -> Params {
         self.0
     }
 
-    pub fn inner(&self) -> &Params {
+    pub const fn inner(&self) -> &Params {
         &self.0
     }
 }

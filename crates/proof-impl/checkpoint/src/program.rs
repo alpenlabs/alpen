@@ -12,11 +12,13 @@ use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
 use crate::process_checkpoint_proof;
 
+#[derive(Debug)]
 pub struct CheckpointProverInput {
     pub cl_stf_proofs: Vec<ProofReceipt>,
     pub cl_stf_vk: VerifyingKey,
 }
 
+#[derive(Debug)]
 pub struct CheckpointProgram;
 
 impl ZkVmProgram for CheckpointProgram {

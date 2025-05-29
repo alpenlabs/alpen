@@ -21,7 +21,11 @@ pub struct FullBlockTemplate {
 
 impl FullBlockTemplate {
     /// Creates a new full block template from its components.
-    pub fn new(header: L2BlockHeader, body: L2BlockBody, accessory: L2BlockAccessory) -> Self {
+    pub const fn new(
+        header: L2BlockHeader,
+        body: L2BlockBody,
+        accessory: L2BlockAccessory,
+    ) -> Self {
         Self {
             header,
             body,
@@ -35,7 +39,7 @@ impl FullBlockTemplate {
     }
 
     /// Returns a reference to the block header.
-    pub fn header(&self) -> &L2BlockHeader {
+    pub const fn header(&self) -> &L2BlockHeader {
         &self.header
     }
 
@@ -69,7 +73,7 @@ impl BlockTemplate {
     }
 
     /// Returns a reference to the L2 block header.
-    pub fn header(&self) -> &L2BlockHeader {
+    pub const fn header(&self) -> &L2BlockHeader {
         &self.header
     }
 
@@ -90,12 +94,12 @@ pub struct BlockCompletionData {
 
 impl BlockCompletionData {
     /// Create from signature.
-    pub fn from_signature(signature: Buf64) -> Self {
+    pub const fn from_signature(signature: Buf64) -> Self {
         Self { signature }
     }
 
     /// Returns a reference to signature.
-    pub fn signature(&self) -> &Buf64 {
+    pub const fn signature(&self) -> &Buf64 {
         &self.signature
     }
 }
@@ -122,23 +126,23 @@ impl BlockGenerationConfig {
     }
 
     /// Update with provided block timestamp.
-    pub fn with_ts(mut self, ts: u64) -> Self {
+    pub const fn with_ts(mut self, ts: u64) -> Self {
         self.ts = Some(ts);
         self
     }
 
     /// Return parent block id.
-    pub fn parent_block_id(&self) -> L2BlockId {
+    pub const fn parent_block_id(&self) -> L2BlockId {
         self.parent_block_id
     }
 
     /// Return block timestamp.
-    pub fn ts(&self) -> Option<u64> {
+    pub const fn ts(&self) -> Option<u64> {
         self.ts
     }
 
     /// Return gas limit.
-    pub fn epoch_gas_limit(&self) -> Option<u64> {
+    pub const fn epoch_gas_limit(&self) -> Option<u64> {
         self.epoch_gas_limit
     }
 }

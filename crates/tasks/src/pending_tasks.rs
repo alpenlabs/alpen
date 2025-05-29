@@ -11,13 +11,13 @@ use std::{
 use futures_util::task::AtomicWaker;
 
 #[derive(Debug)]
-pub struct PendingTasks {
+pub(crate) struct PendingTasks {
     counter: AtomicUsize,
     waker: AtomicWaker,
 }
 
 impl PendingTasks {
-    pub fn new(initial_count: usize) -> Self {
+    pub(crate) const fn new(initial_count: usize) -> Self {
         Self {
             counter: AtomicUsize::new(initial_count),
             waker: AtomicWaker::new(),
@@ -25,15 +25,15 @@ impl PendingTasks {
     }
 
     #[cfg(test)]
-    pub fn current(&self) -> usize {
+    pub(crate) fn current(&self) -> usize {
         self.counter.load(Ordering::SeqCst)
     }
 
-    pub fn increment(&self) {
+    pub(crate) fn increment(&self) {
         self.counter.fetch_add(1, Ordering::SeqCst);
     }
 
-    pub fn decrement(&self) {
+    pub(crate) fn decrement(&self) {
         let prev = self.counter.fetch_sub(1, Ordering::SeqCst);
         if prev == 1 {
             // Counter has reached zero
@@ -41,14 +41,15 @@ impl PendingTasks {
         }
     }
 
-    pub fn wait_for_zero(self: Arc<Self>) -> WaitForZero {
+    pub(crate) const fn wait_for_zero(self: Arc<Self>) -> WaitForZero {
         WaitForZero {
             pending_tasks: self,
         }
     }
 }
 
-pub struct WaitForZero {
+#[derive(Debug)]
+pub(crate) struct WaitForZero {
     pending_tasks: Arc<PendingTasks>,
 }
 

@@ -74,6 +74,7 @@ impl Display for TaskError {
 /// [`TaskManager`] spawns and tracks long running tasks,
 /// watches for task panics and manages graceful shutdown
 /// on critical task panics and external signals.
+#[derive(Debug)]
 pub struct TaskManager {
     /// Tokio's runtime [`Handle`].
     tokio_handle: Handle,
@@ -109,7 +110,7 @@ impl TaskManager {
         )
     }
 
-    pub fn handle(&self) -> &Handle {
+    pub const fn handle(&self) -> &Handle {
         &self.tokio_handle
     }
 
@@ -216,7 +217,7 @@ pub struct TaskExecutor {
 }
 
 impl TaskExecutor {
-    fn new(
+    const fn new(
         tokio_handle: Handle,
         panicked_tasks_tx: mpsc::UnboundedSender<TaskError>,
         shutdown_signal: ShutdownSignal,
@@ -230,7 +231,7 @@ impl TaskExecutor {
         }
     }
 
-    pub fn handle(&self) -> &Handle {
+    pub const fn handle(&self) -> &Handle {
         &self.tokio_handle
     }
 

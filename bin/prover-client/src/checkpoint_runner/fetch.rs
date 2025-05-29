@@ -5,7 +5,7 @@ use super::errors::CheckpointResult;
 use crate::checkpoint_runner::errors::CheckpointError;
 
 /// Fetches the latest checkpoint index from the sequencer client.
-pub async fn fetch_latest_checkpoint_index(cl_client: &HttpClient) -> CheckpointResult<u64> {
+pub(crate) async fn fetch_latest_checkpoint_index(cl_client: &HttpClient) -> CheckpointResult<u64> {
     cl_client
         .get_latest_checkpoint_index(None)
         .await

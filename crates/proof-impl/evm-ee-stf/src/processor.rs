@@ -44,14 +44,14 @@ use crate::EvmBlockStfInput;
 /// The divisor for the gas limit bound.
 pub const GAS_LIMIT_DIVISOR: u64 = 1024;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EvmConfig {
     pub chain_id: u64,
     pub spec_id: SpecId,
 }
 
 /// A processor that executes EVM transactions.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EvmProcessor<D> {
     /// An input containing all necessary data to execute the block.
     pub input: EvmBlockStfInput,

@@ -58,7 +58,7 @@ use tokio::sync::{oneshot, Mutex};
 use tracing::*;
 use zkaleido::ProofReceipt;
 
-pub struct StrataRpcImpl {
+pub(crate) struct StrataRpcImpl {
     status_channel: StatusChannel,
     sync_manager: Arc<SyncManager>,
     storage: Arc<NodeStorage>,
@@ -68,7 +68,7 @@ pub struct StrataRpcImpl {
 
 impl StrataRpcImpl {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) const fn new(
         status_channel: StatusChannel,
         sync_manager: Arc<SyncManager>,
         storage: Arc<NodeStorage>,
@@ -642,12 +642,12 @@ impl StrataApiServer for StrataRpcImpl {
     }
 }
 
-pub struct AdminServerImpl {
+pub(crate) struct AdminServerImpl {
     stop_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl AdminServerImpl {
-    pub fn new(stop_tx: oneshot::Sender<()>) -> Self {
+    pub(crate) fn new(stop_tx: oneshot::Sender<()>) -> Self {
         Self {
             stop_tx: Mutex::new(Some(stop_tx)),
         }
@@ -667,7 +667,7 @@ impl StrataAdminApiServer for AdminServerImpl {
     }
 }
 
-pub struct SequencerServerImpl {
+pub(crate) struct SequencerServerImpl {
     envelope_handle: Arc<EnvelopeHandle>,
     broadcast_handle: Arc<L1BroadcastHandle>,
     checkpoint_handle: Arc<CheckpointHandle>,
@@ -679,7 +679,7 @@ pub struct SequencerServerImpl {
 
 impl SequencerServerImpl {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) const fn new(
         envelope_handle: Arc<EnvelopeHandle>,
         broadcast_handle: Arc<L1BroadcastHandle>,
         params: Arc<Params>,
@@ -894,12 +894,12 @@ impl StrataSequencerApiServer for SequencerServerImpl {
     }
 }
 
-pub struct StrataDebugRpcImpl {
+pub(crate) struct StrataDebugRpcImpl {
     storage: Arc<NodeStorage>,
 }
 
 impl StrataDebugRpcImpl {
-    pub fn new(storage: Arc<NodeStorage>) -> Self {
+    pub(crate) const fn new(storage: Arc<NodeStorage>) -> Self {
         Self { storage }
     }
 }

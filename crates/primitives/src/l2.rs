@@ -58,7 +58,7 @@ pub struct L2BlockCommitment {
 }
 
 impl L2BlockCommitment {
-    pub fn new(slot: u64, blkid: L2BlockId) -> Self {
+    pub const fn new(slot: u64, blkid: L2BlockId) -> Self {
         Self { slot, blkid }
     }
 
@@ -66,11 +66,11 @@ impl L2BlockCommitment {
         Self::new(0, L2BlockId::from(Buf32::zero()))
     }
 
-    pub fn slot(&self) -> u64 {
+    pub const fn slot(&self) -> u64 {
         self.slot
     }
 
-    pub fn blkid(&self) -> &L2BlockId {
+    pub const fn blkid(&self) -> &L2BlockId {
         &self.blkid
     }
 

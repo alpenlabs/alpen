@@ -21,6 +21,7 @@ use crate::{
 };
 
 /// Handle to the core pipeline tasks.
+#[expect(missing_debug_implementations)]
 pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
@@ -30,6 +31,7 @@ pub struct SyncManager {
 }
 
 impl SyncManager {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn params(&self) -> &Params {
         &self.params
     }
@@ -39,6 +41,7 @@ impl SyncManager {
     }
 
     /// Gets a ref to the CSM controller.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn csm_controller(&self) -> &CsmController {
         &self.csm_controller
     }
@@ -55,7 +58,7 @@ impl SyncManager {
         self.cupdate_rx.resubscribe()
     }
 
-    pub fn status_channel(&self) -> &StatusChannel {
+    pub const fn status_channel(&self) -> &StatusChannel {
         &self.status_channel
     }
 

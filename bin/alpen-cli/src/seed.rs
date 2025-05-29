@@ -26,6 +26,7 @@ use crate::constants::{
 #[cfg(not(target_os = "linux"))]
 use crate::errors::{NoStorageAccess, PlatformFailure};
 
+#[expect(missing_debug_implementations)]
 pub struct BaseWallet(LoadParams, CreateParams);
 
 impl BaseWallet {
@@ -35,6 +36,7 @@ impl BaseWallet {
 }
 
 #[derive(Clone)]
+#[expect(missing_debug_implementations)]
 // NOTE: This is not a BIP39 seed, instead random bytes of entropy.
 pub struct Seed(Zeroizing<[u8; SEED_LEN]>);
 
@@ -122,6 +124,7 @@ impl Seed {
     }
 }
 
+#[expect(missing_debug_implementations)]
 pub struct EncryptedSeed([u8; Self::LEN]);
 
 impl EncryptedSeed {

@@ -1,3 +1,5 @@
+//! Reth node for the Alpen codebase.
+
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 mod engine;
