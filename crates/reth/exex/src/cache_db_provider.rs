@@ -14,7 +14,7 @@ use revm_primitives::{
 /// In addition it holds accessed account info, storage values, and bytecodes during
 /// transaction execution, supporting state retrieval for storage proof construction
 /// in EL proof witness generation.
-pub struct CacheDBProvider {
+pub(crate) struct CacheDBProvider {
     provider: Box<dyn StateProvider>,
     accounts: RefCell<HashMap<Address, AccountInfo>>,
     storage: RefCell<HashMap<Address, HashMap<U256, U256>>>,
@@ -23,28 +23,28 @@ pub struct CacheDBProvider {
 }
 
 #[derive(Debug)]
-pub struct AccessedState {
+pub(crate) struct AccessedState {
     accessed_accounts: HashMap<Address, Vec<Uint<256, 4>>>,
     accessed_contracts: Vec<Bytes>,
     accessed_block_idxs: HashSet<u64>,
 }
 
 impl AccessedState {
-    pub fn accessed_block_idxs(&self) -> &HashSet<u64> {
+    pub(crate) const fn accessed_block_idxs(&self) -> &HashSet<u64> {
         &self.accessed_block_idxs
     }
 
-    pub fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
+    pub(crate) const fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
         &self.accessed_accounts
     }
 
-    pub fn accessed_contracts(&self) -> &Vec<Bytes> {
+    pub(crate) const fn accessed_contracts(&self) -> &Vec<Bytes> {
         &self.accessed_contracts
     }
 }
 
 impl CacheDBProvider {
-    pub fn new(provider: Box<dyn StateProvider>) -> Self {
+    pub(crate) fn new(provider: Box<dyn StateProvider>) -> Self {
         Self {
             provider,
             accounts: Default::default(),
@@ -54,7 +54,7 @@ impl CacheDBProvider {
         }
     }
 
-    pub fn get_accessed_state(&self) -> AccessedState {
+    pub(crate) fn get_accessed_state(&self) -> AccessedState {
         let accessed_accounts = self.get_accessed_accounts();
         let accessed_contracts = self.get_accessed_contracts();
 

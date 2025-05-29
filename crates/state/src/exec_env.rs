@@ -37,7 +37,7 @@ pub struct ExecEnvState {
 impl ExecEnvState {
     /// Constructs an env state from a starting input and the a state root,
     /// without producing any blobs, deposits, forced inclusions, etc.
-    pub fn from_base_input(base_input: exec_update::UpdateInput, state: Buf32) -> Self {
+    pub const fn from_base_input(base_input: exec_update::UpdateInput, state: Buf32) -> Self {
         Self {
             last_update_input: base_input,
             cur_state: state,
@@ -47,19 +47,19 @@ impl ExecEnvState {
         }
     }
 
-    pub fn update_idx(&self) -> u64 {
+    pub const fn update_idx(&self) -> u64 {
         self.last_update_input.update_idx()
     }
 
-    pub fn cur_state_root(&self) -> &Buf32 {
+    pub const fn cur_state_root(&self) -> &Buf32 {
         &self.cur_state
     }
 
-    pub fn pending_deposits(&self) -> &StateQueue<bridge_ops::DepositIntent> {
+    pub const fn pending_deposits(&self) -> &StateQueue<bridge_ops::DepositIntent> {
         &self.pending_deposits
     }
 
-    pub fn pending_deposits_mut(&mut self) -> &mut StateQueue<bridge_ops::DepositIntent> {
+    pub const fn pending_deposits_mut(&mut self) -> &mut StateQueue<bridge_ops::DepositIntent> {
         &mut self.pending_deposits
     }
 }

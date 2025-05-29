@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Contains data needed to construct [`BridgeMessage`]s.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MessageSigner {
     operator_idx: u32,
     msg_signing_sk: Buf32,
@@ -28,7 +28,7 @@ impl MessageSigner {
     /// In order to get a [`BridgeMessage`], call [`sign_raw`](Self::sign_raw)
     /// or [`sign_scope`](Self::sign_scope) on this [`MessageSigner`]
     /// depending on the use case.
-    pub fn new(operator_idx: u32, msg_signing_sk: Buf32) -> Self {
+    pub const fn new(operator_idx: u32, msg_signing_sk: Buf32) -> Self {
         Self {
             operator_idx,
             msg_signing_sk,
@@ -36,7 +36,7 @@ impl MessageSigner {
     }
 
     /// Gets the idx of the operator that we are using for signing messages.
-    pub fn operator_idx(&self) -> u32 {
+    pub const fn operator_idx(&self) -> u32 {
         self.operator_idx
     }
 

@@ -28,6 +28,7 @@ type Provider = FillProvider<
     Ethereum,
 >;
 
+#[derive(Debug)]
 pub struct AlpenWallet(Provider);
 
 impl DerefMut for AlpenWallet {

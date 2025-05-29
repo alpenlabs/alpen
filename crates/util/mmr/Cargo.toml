@@ -3,10 +3,14 @@ edition = "2021"
 name = "strata-mmr"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 arbitrary.workspace = true
 borsh.workspace = true
 digest.workspace = true
-hex.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true

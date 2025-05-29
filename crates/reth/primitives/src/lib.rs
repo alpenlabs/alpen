@@ -1,3 +1,5 @@
+//! Primitives for Reth.
+
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 use alloy_sol_types::sol;

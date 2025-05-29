@@ -5,11 +5,12 @@ use zxcvbn::{zxcvbn, Entropy};
 
 use super::PW_SALT_LEN;
 
-#[derive(ZeroizeOnDrop)]
+#[derive(Debug, ZeroizeOnDrop)]
 pub struct Password {
     inner: String,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum HashVersion {
     V0,
 }
@@ -30,7 +31,7 @@ impl HashVersion {
 
 impl Password {
     /// Constructs a password from a string. (The complexity of the password is not checked.)
-    pub fn new(password: String) -> Self {
+    pub const fn new(password: String) -> Self {
         Self { inner: password }
     }
 

@@ -15,7 +15,7 @@ pub struct ProofDb {
 }
 
 impl ProofDb {
-    pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 }

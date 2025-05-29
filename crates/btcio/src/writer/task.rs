@@ -30,13 +30,14 @@ use crate::{
 };
 
 /// A handle to the Envelope task.
+#[expect(missing_debug_implementations)]
 pub struct EnvelopeHandle {
     ops: Arc<EnvelopeDataOps>,
     intent_tx: Sender<IntentEntry>,
 }
 
 impl EnvelopeHandle {
-    pub fn new(ops: Arc<EnvelopeDataOps>, intent_tx: Sender<IntentEntry>) -> Self {
+    pub const fn new(ops: Arc<EnvelopeDataOps>, intent_tx: Sender<IntentEntry>) -> Self {
         Self { ops, intent_tx }
     }
 
@@ -173,7 +174,7 @@ fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow::Result<u6
 ///
 /// The envelope will be monitored until it acquires the status of
 /// [`BlobL1Status::Finalized`]
-pub async fn watcher_task<R: Reader + Signer + Wallet>(
+pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
     next_watch_payload_idx: u64,
     context: Arc<WriterContext<R>>,
     insc_ops: Arc<EnvelopeDataOps>,
@@ -303,7 +304,7 @@ async fn update_l1_status(
 
 /// Determine the status of the `PayloadEntry` based on the status of its commit and reveal
 /// transactions in bitcoin.
-fn determine_payload_next_status(
+const fn determine_payload_next_status(
     commit_status: &L1TxStatus,
     reveal_status: &L1TxStatus,
 ) -> L1BundleStatus {

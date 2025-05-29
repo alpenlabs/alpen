@@ -14,7 +14,7 @@ pub struct FilePersister {
 }
 
 impl FilePersister {
-    pub fn new(file: PathBuf) -> Self {
+    pub const fn new(file: PathBuf) -> Self {
         Self { file }
     }
 }

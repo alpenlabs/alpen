@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-datatool"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "strata-datatool"
 path = "src/main.rs"
@@ -18,19 +21,15 @@ alloy-genesis.workspace = true
 alloy-primitives.workspace = true
 anyhow.workspace = true
 argh.workspace = true
-bech32 = "0.11.0"
 bitcoin = { workspace = true, features = ["std"] }
 bytemuck = { version = "1.21.0", optional = true }
-hex.workspace = true
 rand_core.workspace = true
 reth-chainspec.workspace = true
-secp256k1 = { workspace = true, features = ["global-context", "std"] }
 serde_json.workspace = true
-terrors = "0.3.0"
 zeroize.workspace = true
 
 [features]
 default = []
-risc0-builder = ["strata-risc0-guest-builder", "bytemuck"]
+risc0-builder = ["dep:strata-risc0-guest-builder", "dep:bytemuck"]
 sp1-builder = ["strata-sp1-guest-builder/sp1-dev"]
 sp1-docker-builder = ["sp1-builder", "strata-sp1-guest-builder/docker-build"]

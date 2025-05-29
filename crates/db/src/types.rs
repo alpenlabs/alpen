@@ -26,27 +26,27 @@ pub struct IntentEntry {
 }
 
 impl IntentEntry {
-    pub fn new_unbundled(intent: PayloadIntent) -> Self {
+    pub const fn new_unbundled(intent: PayloadIntent) -> Self {
         Self {
             intent,
             status: IntentStatus::Unbundled,
         }
     }
 
-    pub fn new_bundled(intent: PayloadIntent, bundle_idx: u64) -> Self {
+    pub const fn new_bundled(intent: PayloadIntent, bundle_idx: u64) -> Self {
         Self {
             intent,
             status: IntentStatus::Bundled(bundle_idx),
         }
     }
 
-    pub fn payload(&self) -> &L1Payload {
+    pub const fn payload(&self) -> &L1Payload {
         self.intent.payload()
     }
 }
 
 /// Status of Intent indicating various stages of being bundled to L1 transaction.
-/// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry].
+/// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry`].
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub enum IntentStatus {
     // It is not bundled yet, and thus will be collected and processed by bundler.
@@ -65,7 +65,7 @@ pub struct BundledPayloadEntry {
 }
 
 impl BundledPayloadEntry {
-    pub fn new(
+    pub const fn new(
         payloads: Vec<L1Payload>,
         commit_txid: Buf32,
         reveal_txid: Buf32,
@@ -143,6 +143,7 @@ impl L1TxEntry {
     ///
     /// Whenever possible use [`try_to_tx()`](L1TxEntry::try_to_tx) to deserialize the transaction.
     /// This imposes more strict type checks.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn tx_raw(&self) -> &[u8] {
         &self.tx_raw
     }
@@ -152,11 +153,11 @@ impl L1TxEntry {
         deserialize(&self.tx_raw)
     }
 
-    pub fn is_valid(&self) -> bool {
+    pub const fn is_valid(&self) -> bool {
         !matches!(self.status, L1TxStatus::InvalidInputs)
     }
 
-    pub fn is_finalized(&self) -> bool {
+    pub const fn is_finalized(&self) -> bool {
         matches!(self.status, L1TxStatus::Finalized { .. })
     }
 }
@@ -199,7 +200,7 @@ pub struct CheckpointEntry {
 }
 
 impl CheckpointEntry {
-    pub fn new(
+    pub const fn new(
         checkpoint: Checkpoint,
         proving_status: CheckpointProvingStatus,
         confirmation_status: CheckpointConfStatus,

@@ -3,29 +3,26 @@ edition = "2021"
 name = "strata-state"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 # Note: Since we want to keep the core consensus logic generic, we shouldn't
 # reuse much of reth in this crate so that we can factor it all out eventually.
 
 [dependencies]
 strata-crypto.workspace = true
 strata-primitives.workspace = true
-zkaleido.workspace = true
 
 anyhow.workspace = true
 arbitrary.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
-digest.workspace = true
-ethnum = "1.5.0"
-hex.workspace = true
 serde.workspace = true
-sha2.workspace = true
 tracing.workspace = true     # ideally this shouldn't be in this crate
 
 
 [dev-dependencies]
-rand.workspace = true
 strata-test-utils.workspace = true
 
 [features]

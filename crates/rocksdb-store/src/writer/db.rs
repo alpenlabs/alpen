@@ -12,6 +12,7 @@ use strata_primitives::buf::Buf32;
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 use crate::{sequence::get_next_id, DbOpsConfig};
 
+#[derive(Debug)]
 pub struct RBL1WriterDb {
     db: Arc<DB>,
     ops: DbOpsConfig,
@@ -22,7 +23,7 @@ impl RBL1WriterDb {
     ///
     /// Assumes it was opened with column families as defined in `STORE_COLUMN_FAMILIES`.
     // FIXME Make it better/generic.
-    pub fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 }

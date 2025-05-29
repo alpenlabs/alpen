@@ -84,31 +84,31 @@ impl Chainstate {
     }
 
     /// Returns the slot last processed on the chainstate.
-    pub fn chain_tip_slot(&self) -> u64 {
+    pub const fn chain_tip_slot(&self) -> u64 {
         self.cur_slot
     }
 
     /// Returns the commitment to the previous block.
-    pub fn prev_block(&self) -> &L2BlockCommitment {
+    pub const fn prev_block(&self) -> &L2BlockCommitment {
         &self.prev_block
     }
 
-    pub fn l1_view(&self) -> &L1ViewState {
+    pub const fn l1_view(&self) -> &L1ViewState {
         &self.l1_state
     }
 
-    pub fn cur_epoch(&self) -> u64 {
+    pub const fn cur_epoch(&self) -> u64 {
         self.cur_epoch
     }
 
     /// Gets the commitment to the immediately preceding epoch.
-    pub fn prev_epoch(&self) -> &EpochCommitment {
+    pub const fn prev_epoch(&self) -> &EpochCommitment {
         &self.prev_epoch
     }
 
     /// Gets the commitment to the finalized epoch, which we don't expect to
     /// roll back.
-    pub fn finalized_epoch(&self) -> &EpochCommitment {
+    pub const fn finalized_epoch(&self) -> &EpochCommitment {
         &self.finalized_epoch
     }
 
@@ -130,23 +130,23 @@ impl Chainstate {
         compute_borsh_hash(&hashed_state)
     }
 
-    pub fn operator_table(&self) -> &OperatorTable {
+    pub const fn operator_table(&self) -> &OperatorTable {
         &self.operator_table
     }
 
-    pub fn deposits_table(&self) -> &DepositsTable {
+    pub const fn deposits_table(&self) -> &DepositsTable {
         &self.deposits_table
     }
 
-    pub fn deposits_table_mut(&mut self) -> &mut DepositsTable {
+    pub const fn deposits_table_mut(&mut self) -> &mut DepositsTable {
         &mut self.deposits_table
     }
 
-    pub fn exec_env_state(&self) -> &ExecEnvState {
+    pub const fn exec_env_state(&self) -> &ExecEnvState {
         &self.exec_env_state
     }
 
-    pub fn is_epoch_finishing(&self) -> bool {
+    pub const fn is_epoch_finishing(&self) -> bool {
         self.is_epoch_finishing
     }
 }
@@ -155,7 +155,7 @@ impl Chainstate {
 // TODO: FIXME: Note that this is used as a temporary solution for the state root calculation
 // It should be replaced once we swap out Chainstate's type definitions with SSZ type definitions
 // which defines all of this more rigorously
-#[derive(BorshSerialize, BorshDeserialize, Clone, Copy)]
+#[derive(Debug, BorshSerialize, BorshDeserialize, Clone, Copy)]
 pub struct HashedChainState {
     pub prev_block: Buf32,
     pub cur_epoch: u64,
@@ -172,7 +172,7 @@ pub struct HashedChainState {
 // changes.
 #[cfg(any(test, feature = "test_utils"))]
 impl Chainstate {
-    pub fn set_epoch(&mut self, ep: u64) {
+    pub const fn set_epoch(&mut self, ep: u64) {
         self.cur_epoch = ep;
     }
 }
@@ -184,13 +184,14 @@ impl<'a> Arbitrary<'a> for Chainstate {
     }
 }
 
+#[derive(Debug)]
 pub struct ChainstateEntry {
     state: Chainstate,
     tip: L2BlockId,
 }
 
 impl ChainstateEntry {
-    pub fn new(state: Chainstate, tip: L2BlockId) -> Self {
+    pub const fn new(state: Chainstate, tip: L2BlockId) -> Self {
         Self { state, tip }
     }
 
@@ -202,11 +203,11 @@ impl ChainstateEntry {
         self.state
     }
 
-    pub fn state(&self) -> &Chainstate {
+    pub const fn state(&self) -> &Chainstate {
         &self.state
     }
 
-    pub fn tip_blockid(&self) -> &L2BlockId {
+    pub const fn tip_blockid(&self) -> &L2BlockId {
         &self.tip
     }
 }

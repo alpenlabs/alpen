@@ -4,7 +4,7 @@ name = "strata-test-utils"
 version = "0.3.0-alpha.1"
 
 [lints]
-rust.unused_crate_dependencies = "deny"
+workspace = true
 
 [dependencies]
 strata-btcio.workspace = true

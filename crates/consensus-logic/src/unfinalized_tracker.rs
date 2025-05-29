@@ -59,13 +59,13 @@ impl UnfinalizedBlockTracker {
     }
 
     /// Returns the finalized epoch that we build blocks off of.
-    pub fn finalized_epoch(&self) -> &EpochCommitment {
+    pub const fn finalized_epoch(&self) -> &EpochCommitment {
         &self.finalized_epoch
     }
 
     /// Returns the "finalized tip", which is the terminal block of the
     /// finalized epoch and the base of the unfinalized tree.
-    pub fn finalized_tip(&self) -> &L2BlockId {
+    pub const fn finalized_tip(&self) -> &L2BlockId {
         self.finalized_epoch.last_blkid()
     }
 
@@ -344,7 +344,7 @@ impl UnfinalizedBlockTracker {
     }
 
     #[cfg(test)]
-    pub fn unchecked_set_finalized_tip(&mut self, epoch: EpochCommitment) {
+    pub const fn unchecked_set_finalized_tip(&mut self, epoch: EpochCommitment) {
         self.finalized_epoch = epoch;
     }
 
@@ -377,7 +377,7 @@ pub struct FinalizeReport {
 impl FinalizeReport {
     /// Returns the blkid that was the previously finalized tip.  It's still
     /// finalized, but there's newer blocks that are also finalized now.
-    pub fn prev_tip(&self) -> &L2BlockId {
+    pub const fn prev_tip(&self) -> &L2BlockId {
         self.old_epoch.last_blkid()
     }
 
@@ -391,6 +391,7 @@ impl FinalizeReport {
     }
 
     /// Returns a slice of the blkids that were rejected.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn rejected(&self) -> &[L2BlockId] {
         &self.rejected
     }

@@ -10,13 +10,14 @@ use super::message::CsmMessage;
 
 /// Controller handle for the consensus state machine.  Used to submit new sync
 /// events for persistence and processing.
+#[expect(missing_debug_implementations)]
 pub struct CsmController {
     sync_ev_man: Arc<SyncEventManager>,
     csm_tx: mpsc::Sender<CsmMessage>,
 }
 
 impl CsmController {
-    pub fn new(sync_ev_man: Arc<SyncEventManager>, csm_tx: mpsc::Sender<CsmMessage>) -> Self {
+    pub const fn new(sync_ev_man: Arc<SyncEventManager>, csm_tx: mpsc::Sender<CsmMessage>) -> Self {
         Self {
             sync_ev_man,
             csm_tx,

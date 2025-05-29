@@ -307,7 +307,7 @@ fn process_deposit_spent(state: &mut StateCache, info: &DepositSpendInfo) -> Res
 }
 
 /// Advances the epoch bookkeeping, if this is first slot of new epoch.
-fn advance_epoch_tracking(state: &mut StateCache) -> Result<(), TsnError> {
+const fn advance_epoch_tracking(state: &mut StateCache) -> Result<(), TsnError> {
     if !state.should_finish_epoch() {
         return Ok(());
     }

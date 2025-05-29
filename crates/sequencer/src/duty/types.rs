@@ -41,7 +41,7 @@ pub enum Duty {
 
 impl Duty {
     /// Returns when the duty should expire.
-    pub fn expiry(&self) -> Expiry {
+    pub const fn expiry(&self) -> Expiry {
         match self {
             Self::SignBlock(_) => Expiry::NextBlock,
             Self::CommitBatch(duty) => Expiry::CheckpointIdxFinalized(duty.0.batch_info().epoch()),
@@ -73,7 +73,7 @@ pub struct BlockSigningDuty {
 
 impl BlockSigningDuty {
     /// Create new block signing duty from components.
-    pub fn new_simple(slot: u64, parent: L2BlockId, target_ts: u64) -> Self {
+    pub const fn new_simple(slot: u64, parent: L2BlockId, target_ts: u64) -> Self {
         Self {
             slot,
             parent,
@@ -82,17 +82,17 @@ impl BlockSigningDuty {
     }
 
     /// Returns target slot for block signing duty.
-    pub fn target_slot(&self) -> u64 {
+    pub const fn target_slot(&self) -> u64 {
         self.slot
     }
 
     /// Returns parent block id for block signing duty.
-    pub fn parent(&self) -> L2BlockId {
+    pub const fn parent(&self) -> L2BlockId {
         self.parent
     }
 
     /// Returns target ts for block signing duty.
-    pub fn target_ts(&self) -> u64 {
+    pub const fn target_ts(&self) -> u64 {
         self.target_ts
     }
 }
@@ -105,7 +105,7 @@ pub struct CheckpointDuty(Checkpoint);
 
 impl CheckpointDuty {
     /// Creates a new `CheckpointDuty` from a [`Checkpoint`].
-    pub fn new(batch_checkpoint: Checkpoint) -> Self {
+    pub const fn new(batch_checkpoint: Checkpoint) -> Self {
         Self(batch_checkpoint)
     }
 
@@ -115,7 +115,7 @@ impl CheckpointDuty {
     }
 
     /// Returns a reference to the inner [`Checkpoint`].
-    pub fn inner(&self) -> &Checkpoint {
+    pub const fn inner(&self) -> &Checkpoint {
         &self.0
     }
 }
@@ -149,7 +149,7 @@ pub struct IdentityData {
 
 impl IdentityData {
     /// Create new IdentityData from components.
-    pub fn new(ident: Identity, key: IdentityKey) -> Self {
+    pub const fn new(ident: Identity, key: IdentityKey) -> Self {
         Self { ident, key }
     }
 }

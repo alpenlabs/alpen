@@ -16,20 +16,21 @@ pub enum ClientError {
     Network(String),
 }
 
+#[derive(Debug)]
 pub struct PeerSyncStatus {
     tip_block: L2BlockCommitment,
 }
 
 impl PeerSyncStatus {
-    pub fn tip_block(&self) -> &L2BlockCommitment {
+    pub const fn tip_block(&self) -> &L2BlockCommitment {
         &self.tip_block
     }
 
-    pub fn tip_block_id(&self) -> &L2BlockId {
+    pub const fn tip_block_id(&self) -> &L2BlockId {
         self.tip_block.blkid()
     }
 
-    pub fn tip_height(&self) -> u64 {
+    pub const fn tip_height(&self) -> u64 {
         self.tip_block.slot()
     }
 }
@@ -50,13 +51,14 @@ pub trait SyncClient {
     ) -> Result<Option<L2BlockBundle>, ClientError>;
 }
 
+#[derive(Debug)]
 pub struct RpcSyncPeer<RPC: StrataApiClient + Send + Sync> {
     rpc_client: RPC,
     download_batch_size: usize,
 }
 
 impl<RPC: StrataApiClient + Send + Sync> RpcSyncPeer<RPC> {
-    pub fn new(rpc_client: RPC, download_batch_size: usize) -> Self {
+    pub const fn new(rpc_client: RPC, download_batch_size: usize) -> Self {
         Self {
             rpc_client,
             download_batch_size,

@@ -11,6 +11,7 @@ rust.unused_crate_dependencies = "deny"
 rust.unused_must_use = "deny"
 rust.missing_docs = "warn"
 rustdoc.all = "warn"
+clippy.missing_const_for_fn = "deny"
 
 [dependencies]
 bitcoin.workspace = true

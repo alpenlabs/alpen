@@ -4,13 +4,14 @@
 
 use tokio::{runtime::Handle, sync::watch};
 
+#[derive(Debug)]
 pub struct SyncReceiver<T> {
     rx: watch::Receiver<T>,
     rt: Handle,
 }
 
 impl<T> SyncReceiver<T> {
-    pub fn new(rx: watch::Receiver<T>, rt: Handle) -> Self {
+    pub const fn new(rx: watch::Receiver<T>, rt: Handle) -> Self {
         Self { rx, rt }
     }
 

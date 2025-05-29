@@ -57,21 +57,23 @@ impl<'a> Arbitrary<'a> for BridgeMessage {
 
 impl BridgeMessage {
     /// Source ID.
-    pub fn source_id(&self) -> u32 {
+    pub const fn source_id(&self) -> u32 {
         self.source_id
     }
 
     /// Signature.
-    pub fn signature(&self) -> &Buf64 {
+    pub const fn signature(&self) -> &Buf64 {
         &self.sig
     }
 
     /// Raw scope.
+    #[allow(clippy::missing_const_for_fn)]
     pub fn scope(&self) -> &[u8] {
         &self.scope
     }
 
     /// Raw payload
+    #[allow(clippy::missing_const_for_fn)]
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
@@ -219,11 +221,11 @@ impl TryInto<Box<[u8]>> for Scope {
 pub struct BridgeMsgId(Buf32);
 
 impl BridgeMsgId {
-    pub fn inner(&self) -> &Buf32 {
+    pub const fn inner(&self) -> &Buf32 {
         &self.0
     }
 
-    pub fn into_inner(self) -> Buf32 {
+    pub const fn into_inner(self) -> Buf32 {
         self.0
     }
 }

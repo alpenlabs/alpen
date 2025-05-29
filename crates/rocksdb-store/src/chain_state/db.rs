@@ -13,13 +13,14 @@ use crate::{
     DbOpsConfig,
 };
 
+#[derive(Debug)]
 pub struct ChainstateDb {
     db: Arc<OptimisticTransactionDB>,
     _ops: DbOpsConfig,
 }
 
 impl ChainstateDb {
-    pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, _ops: ops }
     }
 

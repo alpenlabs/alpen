@@ -16,7 +16,7 @@ type CacheSlot<T> = Arc<RwLock<SlotState<T>>>;
 /// Describes a cache entry that may be occupied, reserved for pending database read, or returned an
 /// error from a database read.
 #[derive(Debug)]
-pub enum SlotState<T> {
+pub(crate) enum SlotState<T> {
     /// Authentic database entry.
     Ready(T),
 
@@ -29,7 +29,7 @@ pub enum SlotState<T> {
 
 impl<T: Clone> SlotState<T> {
     /// Tries to read a value from the slot, asynchronously.
-    pub async fn get_async(&self) -> DbResult<T> {
+    pub(crate) async fn get_async(&self) -> DbResult<T> {
         match self {
             Self::Ready(v) => Ok(v.clone()),
             Self::Pending(ch) => {
@@ -48,7 +48,7 @@ impl<T: Clone> SlotState<T> {
     }
 
     /// Tries to read a value from the slot, blockingly.
-    pub fn get_blocking(&self) -> DbResult<T> {
+    pub(crate) fn get_blocking(&self) -> DbResult<T> {
         match self {
             Self::Ready(v) => Ok(v.clone()),
             Self::Pending(ch) => {
@@ -69,7 +69,7 @@ impl<T: Clone> SlotState<T> {
 
 /// Wrapper around a LRU cache that handles cache reservations and asynchronously waiting for
 /// database operations in the background without keeping a global lock on the cache.
-pub struct CacheTable<K, V> {
+pub(crate) struct CacheTable<K, V> {
     cache: Mutex<lru::LruCache<K, CacheSlot<V>>>,
 }
 
@@ -78,7 +78,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     ///
     /// This measures entries by *count* not their (serialized?) size, so ideally entries should
     /// consume similar amounts of memory to helps us best reason about real cache capacity.
-    pub fn new(size: NonZeroUsize) -> Self {
+    pub(crate) fn new(size: NonZeroUsize) -> Self {
         Self {
             cache: Mutex::new(lru::LruCache::new(size)),
         }
@@ -87,13 +87,13 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     /// Gets the number of elements in the cache.
     // TODO replace this with an atomic we update after every op
     #[allow(dead_code)]
-    pub fn get_len(&self) -> usize {
+    pub(crate) fn get_len(&self) -> usize {
         let cache = self.cache.lock();
         cache.len()
     }
 
     /// Removes the entry for a particular cache entry.
-    pub fn purge(&self, k: &K) {
+    pub(crate) fn purge(&self, k: &K) {
         let mut cache = self.cache.lock();
         cache.pop(k);
     }
@@ -107,7 +107,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     ///
     /// This might remove slots that are in the process of being filled.  Those
     /// operations will complete, but we won't retain those values.
-    pub fn purge_if(&self, mut pred: impl FnMut(&K) -> bool) -> usize {
+    pub(crate) fn purge_if(&self, mut pred: impl FnMut(&K) -> bool) -> usize {
         let mut cache = self.cache.lock();
         let keys_to_remove = cache
             .iter()
@@ -127,7 +127,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     /// This might remove slots that are in the process of being filled.  Those
     /// operations will complete, but we won't retain those values.
     #[allow(dead_code)]
-    pub fn clear(&self) -> usize {
+    pub(crate) fn clear(&self) -> usize {
         let mut cache = self.cache.lock();
         let len = cache.len();
         cache.clear();
@@ -136,7 +136,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
     /// Inserts an entry into the table, dropping the previous value.
     #[allow(dead_code)]
-    pub fn insert(&self, k: K, v: V) {
+    pub(crate) fn insert(&self, k: K, v: V) {
         let slot = Arc::new(RwLock::new(SlotState::Ready(v)));
         self.cache.lock().put(k, slot);
     }
@@ -148,7 +148,11 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     /// `exec` module.
     // https://github.com/rust-lang/rust-clippy/issues/6446
     #[allow(clippy::await_holding_lock)]
-    pub async fn get_or_fetch(&self, k: &K, fetch_fn: impl Fn() -> DbRecv<V>) -> DbResult<V> {
+    pub(crate) async fn get_or_fetch(
+        &self,
+        k: &K,
+        fetch_fn: impl Fn() -> DbRecv<V>,
+    ) -> DbResult<V> {
         // See below comment about control flow.
         let (mut slot_lock, complete_tx) = {
             let mut cache = { self.cache.lock() };
@@ -195,7 +199,11 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
     /// Returns a clone of an entry from the cache or invokes some function to load it from
     /// the underlying database.
-    pub fn get_or_fetch_blocking(&self, k: &K, fetch_fn: impl Fn() -> DbResult<V>) -> DbResult<V> {
+    pub(crate) fn get_or_fetch_blocking(
+        &self,
+        k: &K,
+        fetch_fn: impl Fn() -> DbResult<V>,
+    ) -> DbResult<V> {
         // The flow control here is kinda weird, I don't like it.  The key here is that we want to
         // ensure the lock on the whole cache is as short-lived as possible while we check to see if
         // the entry we're looking for is there.  If it's not, then we want to insert a reservation

@@ -36,11 +36,11 @@ impl From<OutPoint> for OutputRef {
 }
 
 impl OutputRef {
-    pub fn new(txid: Txid, vout: u32) -> Self {
+    pub const fn new(txid: Txid, vout: u32) -> Self {
         Self(OutPoint::new(txid, vout))
     }
 
-    pub fn outpoint(&self) -> &OutPoint {
+    pub const fn outpoint(&self) -> &OutPoint {
         &self.0
     }
 }
@@ -137,11 +137,11 @@ impl BitcoinAddress {
 }
 
 impl BitcoinAddress {
-    pub fn address(&self) -> &Address {
+    pub const fn address(&self) -> &Address {
         &self.address
     }
 
-    pub fn network(&self) -> &Network {
+    pub const fn network(&self) -> &Network {
         &self.network
     }
 }
@@ -323,7 +323,7 @@ impl Sum for BitcoinAmount {
 pub struct BitcoinPsbt(Psbt);
 
 impl BitcoinPsbt {
-    pub fn inner(&self) -> &Psbt {
+    pub const fn inner(&self) -> &Psbt {
         &self.0
     }
 
@@ -424,12 +424,12 @@ impl BitcoinTxid {
     /// # Notes
     ///
     /// [`Txid`] is [`Copy`].
-    pub fn new(txid: &Txid) -> Self {
+    pub const fn new(txid: &Txid) -> Self {
         BitcoinTxid(*txid)
     }
 
     /// Gets the inner Bitcoin [`Txid`]
-    pub fn inner(&self) -> Txid {
+    pub const fn inner(&self) -> Txid {
         self.0
     }
 
@@ -486,7 +486,7 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 pub struct BitcoinTxOut(TxOut);
 
 impl BitcoinTxOut {
-    pub fn inner(&self) -> &TxOut {
+    pub const fn inner(&self) -> &TxOut {
         &self.0
     }
 }
@@ -727,7 +727,7 @@ impl XOnlyPk {
     }
 
     /// Get the underlying [`Buf32`].
-    pub fn inner(&self) -> &Buf32 {
+    pub const fn inner(&self) -> &Buf32 {
         &self.0
     }
 
@@ -792,7 +792,7 @@ pub struct RawBitcoinTx(Vec<u8>);
 
 impl RawBitcoinTx {
     /// Creates a new `RawBitcoinTx` from a raw byte vector.
-    pub fn from_raw_bytes(bytes: Vec<u8>) -> Self {
+    pub const fn from_raw_bytes(bytes: Vec<u8>) -> Self {
         RawBitcoinTx(bytes)
     }
 }
@@ -882,7 +882,7 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
 pub struct BitcoinScriptBuf(ScriptBuf);
 
 impl BitcoinScriptBuf {
-    pub fn inner(&self) -> &ScriptBuf {
+    pub const fn inner(&self) -> &ScriptBuf {
         &self.0
     }
 }

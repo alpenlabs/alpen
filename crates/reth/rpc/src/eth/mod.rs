@@ -270,7 +270,7 @@ struct StrataEthApiInner<N: StrataNodeCore> {
     sequencer_client: Option<SequencerClient>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StrataEthApiBuilder {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
     /// network.

@@ -45,7 +45,7 @@ pub struct EpochCommitment {
 }
 
 impl EpochCommitment {
-    pub fn new(epoch: u64, last_slot: u64, last_blkid: L2BlockId) -> Self {
+    pub const fn new(epoch: u64, last_slot: u64, last_blkid: L2BlockId) -> Self {
         Self {
             epoch,
             last_slot,
@@ -55,7 +55,7 @@ impl EpochCommitment {
 
     /// Creates a new instance given the terminal block of an epoch and the
     /// epoch index.
-    pub fn from_terminal(epoch: u64, block: L2BlockCommitment) -> Self {
+    pub const fn from_terminal(epoch: u64, block: L2BlockCommitment) -> Self {
         Self::new(epoch, block.slot(), *block.blkid())
     }
 
@@ -64,20 +64,20 @@ impl EpochCommitment {
         Self::new(0, 0, L2BlockId::from(Buf32::zero()))
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub const fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub fn last_slot(&self) -> u64 {
+    pub const fn last_slot(&self) -> u64 {
         self.last_slot
     }
 
-    pub fn last_blkid(&self) -> &L2BlockId {
+    pub const fn last_blkid(&self) -> &L2BlockId {
         &self.last_blkid
     }
 
     /// Returns a [`L2BlockCommitment`] for the final block of the epoch.
-    pub fn to_block_commitment(&self) -> L2BlockCommitment {
+    pub const fn to_block_commitment(&self) -> L2BlockCommitment {
         L2BlockCommitment::new(self.last_slot, self.last_blkid)
     }
 

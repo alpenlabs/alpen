@@ -17,7 +17,7 @@ pub(crate) struct HandlerImpl<S: Subprotocol, R> {
 }
 
 impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
-    pub(crate) fn new(state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
+    pub(crate) const fn new(state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
         Self {
             state,
             interproto_msg_buf,
@@ -26,7 +26,7 @@ impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
     }
 
     /// Constructs an instance by wrapping a subprotocol's state.
-    pub(crate) fn from_state(state: S::State) -> Self {
+    pub(crate) const fn from_state(state: S::State) -> Self {
         Self::new(state, Vec::new())
     }
 }

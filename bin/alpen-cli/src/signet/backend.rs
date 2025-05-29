@@ -87,6 +87,7 @@ boxed_err!(BroadcastTxError);
 pub struct GetFeeRateError(BoxedErr);
 boxed_err!(GetFeeRateError);
 
+#[derive(Debug)]
 pub enum WalletUpdate {
     SpkSync(SyncResponse),
     SpkScan(FullScanResponse<KeychainKind>),

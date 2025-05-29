@@ -33,7 +33,7 @@ macro_rules! impl_buf_wrapper {
     };
 }
 
-pub mod internal {
+pub(crate) mod internal {
     // Crate-internal impls.
 
     macro_rules! impl_buf_common {
@@ -41,19 +41,19 @@ pub mod internal {
             impl $name {
                 pub const LEN: usize = $len;
 
-                pub fn new(data: [u8; $len]) -> Self {
+                pub const fn new(data: [u8; $len]) -> Self {
                     Self(data)
                 }
 
-                pub fn as_slice(&self) -> &[u8] {
+                pub const fn as_slice(&self) -> &[u8] {
                     &self.0
                 }
 
-                pub fn as_mut_slice(&mut self) -> &mut [u8] {
+                pub const fn as_mut_slice(&mut self) -> &mut [u8] {
                     &mut self.0
                 }
 
-                pub fn as_bytes(&self) -> &[u8] {
+                pub const fn as_bytes(&self) -> &[u8] {
                     self.0.as_slice()
                 }
 
@@ -194,7 +194,7 @@ pub mod internal {
 
                         fn expecting(
                             &self,
-                            formatter: &mut ::std::fmt::Formatter,
+                            formatter: &mut ::std::fmt::Formatter<'_>,
                         ) -> ::std::fmt::Result {
                             write!(
                                 formatter,

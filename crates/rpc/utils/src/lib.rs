@@ -1,3 +1,5 @@
+//! Utilities for JSON-RPC.
+
 use jsonrpsee::types::ErrorObjectOwned;
 
 pub fn to_jsonrpsee_error_object(err: Option<impl ToString>, message: &str) -> ErrorObjectOwned {

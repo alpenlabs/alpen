@@ -34,33 +34,39 @@ use crate::{
     http_client::EngineRpc,
 };
 
+#[allow(dead_code)]
 fn address_from_slice(slice: &[u8]) -> Option<Address> {
     let slice: Option<[u8; 20]> = slice.try_into().ok();
     slice.map(Address::from)
 }
 
+#[allow(dead_code)]
 const fn sats_to_gwei(sats: u64) -> Option<u64> {
     // 1 BTC = 10^8 sats = 10^9 gwei
     sats.checked_mul(10)
 }
 
+#[allow(dead_code)]
 const fn gwei_to_sats(gwei: u64) -> u64 {
     // 1 BTC = 10^8 sats = 10^9 gwei
     gwei / 10
 }
 
+#[derive(Debug)]
 struct StateCache {
     head_block_hash: B256,
     safe_block_hash: B256,
     finalized_block_hash: B256,
 }
 
+#[derive(Debug)]
 struct RpcExecEngineInner<T: EngineRpc> {
     pub client: T,
     pub state_cache: Mutex<StateCache>,
 }
 
 impl<T: EngineRpc> RpcExecEngineInner<T> {
+    #[allow(dead_code)]
     fn new(client: T, head_block_hash: B256) -> Self {
         Self {
             client,
@@ -72,6 +78,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         }
     }
 
+    #[allow(dead_code)]
     async fn update_block_state(
         &self,
         fcs_partial: ForkchoiceStatePartial,
@@ -110,6 +117,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         }
     }
 
+    #[allow(dead_code)]
     async fn build_block_from_mempool(
         &self,
         payload_env: PayloadEnv,
@@ -167,6 +175,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         Ok(u64::from_be_bytes(raw_id))
     }
 
+    #[allow(dead_code)]
     async fn get_payload_status(&self, payload_id: u64) -> EngineResult<PayloadStatus> {
         let pl_id = PayloadId::new(payload_id.to_be_bytes());
         let payload = self
@@ -228,6 +237,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         Ok(PayloadStatus::Ready(execution_payload_data, gas_used))
     }
 
+    #[allow(dead_code)]
     async fn submit_new_payload(&self, payload: ExecPayloadData) -> EngineResult<BlockStatus> {
         let Ok(el_payload) = borsh::from_slice::<ElPayload>(payload.accessory_data()) else {
             // In particular, this happens if we try to call it with for genesis block.
@@ -267,6 +277,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         }
     }
 
+    #[allow(dead_code)]
     async fn check_block_exists(&self, block_hash: B256) -> EngineResult<bool> {
         let block = self
             .client
@@ -277,6 +288,8 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
     }
 }
 
+#[allow(dead_code)]
+#[expect(missing_debug_implementations)]
 pub struct RpcExecEngineCtl<T: EngineRpc> {
     inner: RpcExecEngineInner<T>,
     tokio_handle: Handle,
@@ -299,6 +312,7 @@ impl<T: EngineRpc> RpcExecEngineCtl<T> {
 }
 
 impl<T: EngineRpc> RpcExecEngineCtl<T> {
+    #[allow(dead_code)]
     fn get_l2block(&self, l2_block_id: &L2BlockId) -> EngineResult<L2BlockBundle> {
         self.l2_block_manager
             .get_block_data_blocking(l2_block_id)
@@ -306,12 +320,14 @@ impl<T: EngineRpc> RpcExecEngineCtl<T> {
             .ok_or(EngineError::DbMissingBlock(*l2_block_id))
     }
 
+    #[allow(dead_code)]
     fn get_evm_block_hash(&self, l2_block_id: &L2BlockId) -> EngineResult<B256> {
         self.get_l2block(l2_block_id)
             .and_then(|l2block| self.get_block_info(l2block))
             .map(|evm_block| evm_block.block_hash())
     }
 
+    #[allow(dead_code)]
     fn get_block_info(&self, l2block: L2BlockBundle) -> EngineResult<EVML2Block> {
         EVML2Block::try_extract(&l2block).map_err(|err| EngineError::Other(err.to_string()))
     }

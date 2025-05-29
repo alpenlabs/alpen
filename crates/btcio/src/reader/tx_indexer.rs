@@ -12,14 +12,14 @@ use strata_primitives::{
 
 /// Ops indexer for rollup client. Collects extra info like da blobs and deposit requests
 #[derive(Clone, Debug)]
-pub struct ReaderTxVisitorImpl {
+pub(crate) struct ReaderTxVisitorImpl {
     ops: Vec<ProtocolOperation>,
     deposit_requests: Vec<DepositRequestInfo>,
     da_entries: Vec<DaEntry>,
 }
 
 impl ReaderTxVisitorImpl {
-    pub fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             ops: Vec::new(),
             deposit_requests: Vec::new(),
@@ -27,7 +27,8 @@ impl ReaderTxVisitorImpl {
         }
     }
 
-    fn ops(&self) -> &[ProtocolOperation] {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn ops(&self) -> &[ProtocolOperation] {
         &self.ops
     }
 }

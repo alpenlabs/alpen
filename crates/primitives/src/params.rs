@@ -1,5 +1,6 @@
 //! Global consensus parameters for the rollup.
 
+use bitcoin::Network;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -133,7 +134,7 @@ impl RollupParams {
         crate::hash::raw(&raw_bytes)
     }
 
-    pub fn rollup_vk(&self) -> RollupVerifyingKey {
+    pub const fn rollup_vk(&self) -> RollupVerifyingKey {
         self.rollup_vk
     }
 }
@@ -170,7 +171,7 @@ pub enum ProofPublishMode {
 }
 
 impl ProofPublishMode {
-    pub fn allow_empty(&self) -> bool {
+    pub const fn allow_empty(&self) -> bool {
         !matches!(self, Self::Strict)
     }
 }
@@ -198,15 +199,15 @@ pub struct Params {
 }
 
 impl Params {
-    pub fn rollup(&self) -> &RollupParams {
+    pub const fn rollup(&self) -> &RollupParams {
         &self.rollup
     }
 
-    pub fn run(&self) -> &SyncParams {
+    pub const fn run(&self) -> &SyncParams {
         &self.run
     }
 
-    pub fn network(&self) -> bitcoin::Network {
+    pub const fn network(&self) -> Network {
         self.rollup.network
     }
 }

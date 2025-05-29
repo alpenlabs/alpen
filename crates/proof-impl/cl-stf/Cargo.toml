@@ -3,12 +3,13 @@ edition = "2021"
 name = "strata-proofimpl-cl-stf"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-chaintsn.workspace = true
-strata-crypto.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-btc-blockspace.workspace = true
-strata-proofimpl-evm-ee-stf.workspace = true
 strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
@@ -16,4 +17,3 @@ zkaleido-native-adapter.workspace = true
 borsh.workspace = true
 
 [dev-dependencies]
-strata-test-utils.workspace = true

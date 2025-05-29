@@ -21,6 +21,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::seed::Seed;
 
+#[expect(missing_debug_implementations)]
 pub struct DescriptorRecovery {
     db: sled::Db,
     cipher: Aes256GcmSiv,

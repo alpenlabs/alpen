@@ -3,6 +3,9 @@ edition = "2021"
 name = "alpen-reth"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "alpen-reth"
 path = "src/main.rs"
@@ -14,18 +17,12 @@ alpen-reth-exex.workspace = true
 alpen-reth-node.workspace = true
 alpen-reth-rpc.workspace = true
 
-alloy-rpc-types.workspace = true
-async-trait.workspace = true
 clap.workspace = true
 eyre.workspace = true
-hex.workspace = true
 reth.workspace = true
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true
 reth-cli-util.workspace = true
 reth-db.workspace = true
-reth-primitives.workspace = true
 rockbound.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
 tracing.workspace = true

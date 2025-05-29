@@ -16,7 +16,11 @@ pub struct L1Tx {
 }
 
 impl L1Tx {
-    pub fn new(proof: L1TxProof, tx: RawBitcoinTx, protocol_ops: Vec<ProtocolOperation>) -> Self {
+    pub const fn new(
+        proof: L1TxProof,
+        tx: RawBitcoinTx,
+        protocol_ops: Vec<ProtocolOperation>,
+    ) -> Self {
         Self {
             proof,
             tx,
@@ -24,14 +28,15 @@ impl L1Tx {
         }
     }
 
-    pub fn proof(&self) -> &L1TxProof {
+    pub const fn proof(&self) -> &L1TxProof {
         &self.proof
     }
 
-    pub fn tx_data(&self) -> &RawBitcoinTx {
+    pub const fn tx_data(&self) -> &RawBitcoinTx {
         &self.tx
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn protocol_ops(&self) -> &[ProtocolOperation] {
         &self.protocol_ops
     }
@@ -51,15 +56,15 @@ pub struct DepositUpdateTx {
 }
 
 impl DepositUpdateTx {
-    pub fn new(tx: L1Tx, deposit_idx: u32) -> Self {
+    pub const fn new(tx: L1Tx, deposit_idx: u32) -> Self {
         Self { tx, deposit_idx }
     }
 
-    pub fn tx(&self) -> &L1Tx {
+    pub const fn tx(&self) -> &L1Tx {
         &self.tx
     }
 
-    pub fn deposit_idx(&self) -> u32 {
+    pub const fn deposit_idx(&self) -> u32 {
         self.deposit_idx
     }
 }
@@ -74,11 +79,11 @@ pub struct DaTx {
 }
 
 impl DaTx {
-    pub fn new(tx: L1Tx) -> Self {
+    pub const fn new(tx: L1Tx) -> Self {
         Self { tx }
     }
 
-    pub fn tx(&self) -> &L1Tx {
+    pub const fn tx(&self) -> &L1Tx {
         &self.tx
     }
 }

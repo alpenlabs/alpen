@@ -4,6 +4,7 @@ use strata_primitives::params::DepositTxParams;
 use super::error::DepositParseError;
 use crate::utils::next_bytes;
 
+#[derive(Debug)]
 pub struct DepositRequestScriptInfo {
     pub tap_ctrl_blk_hash: [u8; 32],
     pub ee_bytes: Vec<u8>,
@@ -11,7 +12,7 @@ pub struct DepositRequestScriptInfo {
 
 /// check if magic bytes(unique set of bytes used to identify relevant tx) is present or not
 pub fn check_magic_bytes(
-    instructions: &mut Instructions,
+    instructions: &mut Instructions<'_>,
     config: &DepositTxParams,
 ) -> Result<(), DepositParseError> {
     // magic bytes

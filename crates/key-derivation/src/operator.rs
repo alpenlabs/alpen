@@ -62,7 +62,7 @@ impl OperatorKeys {
     }
 
     /// Operator's master [`Xpriv`].
-    pub fn master_xpriv(&self) -> &Xpriv {
+    pub const fn master_xpriv(&self) -> &Xpriv {
         &self.master
     }
 
@@ -71,17 +71,17 @@ impl OperatorKeys {
     /// # Notes
     ///
     /// This is the [`Xpriv`] that is generated from only hardened paths from the master [`Xpriv`].
-    pub fn base_xpriv(&self) -> &Xpriv {
+    pub const fn base_xpriv(&self) -> &Xpriv {
         &self.base
     }
 
     /// Operator's wallet transaction signing [`Xpriv`].
-    pub fn wallet_xpriv(&self) -> &Xpriv {
+    pub const fn wallet_xpriv(&self) -> &Xpriv {
         &self.wallet
     }
 
     /// Operator's message signing [`Xpriv`].
-    pub fn message_xpriv(&self) -> &Xpriv {
+    pub const fn message_xpriv(&self) -> &Xpriv {
         &self.message
     }
 

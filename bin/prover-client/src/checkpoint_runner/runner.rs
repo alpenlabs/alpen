@@ -23,7 +23,7 @@ struct CheckpointRunnerState {
 
 /// Periodically polls for the latest checkpoint index and updates the current index.
 /// Dispatches tasks when a new checkpoint is detected.
-pub async fn checkpoint_proof_runner(
+pub(crate) async fn checkpoint_proof_runner(
     operator: CheckpointOperator,
     task_tracker: Arc<Mutex<TaskTracker>>,
     db: Arc<ProofDb>,

@@ -48,11 +48,11 @@ pub struct ClientConfig {
     pub is_sequencer: bool,
 }
 
-fn default_p2p_port() -> u16 {
+const fn default_p2p_port() -> u16 {
     DEFAULT_P2P_PORT
 }
 
-fn default_rpc_port() -> u16 {
+const fn default_rpc_port() -> u16 {
     DEFAULT_RPC_PORT
 }
 

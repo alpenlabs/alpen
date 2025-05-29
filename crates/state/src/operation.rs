@@ -22,18 +22,19 @@ pub struct ClientUpdateOutput {
 }
 
 impl ClientUpdateOutput {
-    pub fn new(state: ClientState, actions: Vec<SyncAction>) -> Self {
+    pub const fn new(state: ClientState, actions: Vec<SyncAction>) -> Self {
         Self { state, actions }
     }
 
-    pub fn new_state(state: ClientState) -> Self {
+    pub const fn new_state(state: ClientState) -> Self {
         Self::new(state, Vec::new())
     }
 
-    pub fn state(&self) -> &ClientState {
+    pub const fn state(&self) -> &ClientState {
         &self.state
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn actions(&self) -> &[SyncAction] {
         &self.actions
     }

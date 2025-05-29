@@ -44,17 +44,17 @@ pub struct OperatorEntry {
 }
 
 impl OperatorEntry {
-    pub fn idx(&self) -> OperatorIdx {
+    pub const fn idx(&self) -> OperatorIdx {
         self.idx
     }
 
     /// Get pubkey used to verify signed messages from the operator.
-    pub fn signing_pk(&self) -> &Buf32 {
+    pub const fn signing_pk(&self) -> &Buf32 {
         &self.signing_pk
     }
 
     /// Get wallet pubkey used to compute MuSig2 pubkey from a set of operators.
-    pub fn wallet_pk(&self) -> &Buf32 {
+    pub const fn wallet_pk(&self) -> &Buf32 {
         &self.wallet_pk
     }
 }
@@ -71,7 +71,7 @@ pub struct OperatorTable {
 }
 
 impl OperatorTable {
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self {
             next_idx: 0,
             operators: Vec::new(),
@@ -119,6 +119,7 @@ impl OperatorTable {
         self.operators.is_empty()
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn operators(&self) -> &[OperatorEntry] {
         &self.operators
     }
@@ -199,7 +200,7 @@ pub struct DepositsTable {
 }
 
 impl DepositsTable {
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self {
             next_idx: 0,
             deposits: Vec::new(),
@@ -317,7 +318,7 @@ impl DepositsTable {
         }
     }
 
-    pub fn next_idx(&self) -> u32 {
+    pub const fn next_idx(&self) -> u32 {
         self.next_idx
     }
 
@@ -349,7 +350,7 @@ pub struct DepositEntry {
 }
 
 impl DepositEntry {
-    pub fn new(
+    pub const fn new(
         idx: u32,
         output: OutputRef,
         operators: Vec<OperatorIdx>,
@@ -366,27 +367,28 @@ impl DepositEntry {
         }
     }
 
-    pub fn idx(&self) -> u32 {
+    pub const fn idx(&self) -> u32 {
         self.deposit_idx
     }
 
-    pub fn output(&self) -> &OutputRef {
+    pub const fn output(&self) -> &OutputRef {
         &self.output
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn notary_operators(&self) -> &[OperatorIdx] {
         &self.notary_operators
     }
 
-    pub fn amt(&self) -> BitcoinAmount {
+    pub const fn amt(&self) -> BitcoinAmount {
         self.amt
     }
 
-    pub fn deposit_state(&self) -> &DepositState {
+    pub const fn deposit_state(&self) -> &DepositState {
         &self.state
     }
 
-    pub fn deposit_state_mut(&mut self) -> &mut DepositState {
+    pub const fn deposit_state_mut(&mut self) -> &mut DepositState {
         &mut self.state
     }
 
@@ -394,11 +396,11 @@ impl DepositEntry {
         self.state = new_state;
     }
 
-    pub fn withdrawal_request_txid(&self) -> Option<Buf32> {
+    pub const fn withdrawal_request_txid(&self) -> Option<Buf32> {
         self.withdrawal_request_txid
     }
 
-    pub fn set_withdrawal_request_txid(&mut self, new_wr_txid: Option<Buf32>) {
+    pub const fn set_withdrawal_request_txid(&mut self, new_wr_txid: Option<Buf32>) {
         self.withdrawal_request_txid = new_wr_txid;
     }
 }
@@ -431,7 +433,7 @@ pub enum DepositState {
 }
 
 impl DepositState {
-    pub fn is_dispatched_to(&self, operator_idx: u32) -> bool {
+    pub const fn is_dispatched_to(&self, operator_idx: u32) -> bool {
         matches!(self, DepositState::Dispatched(s) if s.assignee() == operator_idx)
     }
 }
@@ -460,7 +462,7 @@ pub struct DispatchedState {
 }
 
 impl DispatchedState {
-    pub fn new(
+    pub const fn new(
         cmd: DispatchCommand,
         assignee: OperatorIdx,
         exec_deadline: BitcoinBlockHeight,
@@ -472,23 +474,23 @@ impl DispatchedState {
         }
     }
 
-    pub fn cmd(&self) -> &DispatchCommand {
+    pub const fn cmd(&self) -> &DispatchCommand {
         &self.cmd
     }
 
-    pub fn assignee(&self) -> OperatorIdx {
+    pub const fn assignee(&self) -> OperatorIdx {
         self.assignee
     }
 
-    pub fn exec_deadline(&self) -> BitcoinBlockHeight {
+    pub const fn exec_deadline(&self) -> BitcoinBlockHeight {
         self.exec_deadline
     }
 
-    pub fn set_assignee(&mut self, assignee_op_idx: OperatorIdx) {
+    pub const fn set_assignee(&mut self, assignee_op_idx: OperatorIdx) {
         self.assignee = assignee_op_idx;
     }
 
-    pub fn set_exec_deadline(&mut self, exec_deadline: BitcoinBlockHeight) {
+    pub const fn set_exec_deadline(&mut self, exec_deadline: BitcoinBlockHeight) {
         self.exec_deadline = exec_deadline;
     }
 }
@@ -510,10 +512,11 @@ pub struct DispatchCommand {
 }
 
 impl DispatchCommand {
-    pub fn new(withdraw_outputs: Vec<WithdrawOutput>) -> Self {
+    pub const fn new(withdraw_outputs: Vec<WithdrawOutput>) -> Self {
         Self { withdraw_outputs }
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn withdraw_outputs(&self) -> &[WithdrawOutput] {
         &self.withdraw_outputs
     }
@@ -531,15 +534,15 @@ pub struct WithdrawOutput {
 }
 
 impl WithdrawOutput {
-    pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
+    pub const fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
         Self { destination, amt }
     }
 
-    pub fn destination(&self) -> &Descriptor {
+    pub const fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
-    pub fn amt(&self) -> BitcoinAmount {
+    pub const fn amt(&self) -> BitcoinAmount {
         self.amt
     }
 }
@@ -558,7 +561,7 @@ pub struct FulfilledState {
 }
 
 impl FulfilledState {
-    pub fn new(assignee: OperatorIdx, amt: BitcoinAmount, txid: Buf32) -> Self {
+    pub const fn new(assignee: OperatorIdx, amt: BitcoinAmount, txid: Buf32) -> Self {
         Self {
             assignee,
             amt,
@@ -566,11 +569,11 @@ impl FulfilledState {
         }
     }
 
-    pub fn assignee(&self) -> OperatorIdx {
+    pub const fn assignee(&self) -> OperatorIdx {
         self.assignee
     }
 
-    pub fn amt(&self) -> BitcoinAmount {
+    pub const fn amt(&self) -> BitcoinAmount {
         self.amt
     }
 }

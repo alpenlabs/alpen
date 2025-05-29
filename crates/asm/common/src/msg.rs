@@ -45,16 +45,17 @@ pub struct Log {
 
 impl Log {
     /// Constructor
-    pub fn new(ty: u16, body: Vec<u8>) -> Self {
+    pub const fn new(ty: u16, body: Vec<u8>) -> Self {
         Self { ty, body }
     }
 
     /// Returns type identifier
-    pub fn ty(&self) -> u16 {
+    pub const fn ty(&self) -> u16 {
         self.ty
     }
 
     /// Returns slice of body
+    #[expect(clippy::missing_const_for_fn)]
     pub fn body(&self) -> &[u8] {
         &self.body
     }

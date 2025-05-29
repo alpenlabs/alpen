@@ -3,20 +3,20 @@ edition = "2021"
 name = "strata-common"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
-bitcoin.workspace = true
 deadpool.workspace = true
 jsonrpsee = { workspace = true, features = ["client"] }
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
 serde.workspace = true
-strata-primitives.workspace = true
-thiserror = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
 
 [features]
-debug-utils = ["tokio", "thiserror"]
+debug-utils = ["tokio"]

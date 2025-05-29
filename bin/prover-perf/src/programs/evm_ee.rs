@@ -6,25 +6,25 @@ use zkaleido::{
     ZkVmProgramPerf,
 };
 
-pub fn prepare_input() -> EvmEeProofInput {
+pub(crate) fn prepare_input() -> EvmEeProofInput {
     info!("Preparing input for EVM EE STF");
     let segment = EvmSegment::initialize_from_saved_ee_data(1, 3);
     segment.get_inputs().clone()
 }
 
-fn gen_proof(host: &impl ZkVmHost) -> ProofReceipt {
+pub(crate) fn gen_proof(host: &impl ZkVmHost) -> ProofReceipt {
     info!("Generating proof for EVM EE STF");
     let input = prepare_input();
     EvmEeProgram::prove(&input, host).unwrap()
 }
 
-pub fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
+pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
     info!("Generating performance report for EVM EE STF");
     let input = prepare_input();
     EvmEeProgram::perf_report(&input, host).unwrap()
 }
 
-pub fn proof_with_vk(host: &impl ZkVmHost) -> (ProofReceipt, VerifyingKey) {
+pub(crate) fn proof_with_vk(host: &impl ZkVmHost) -> (ProofReceipt, VerifyingKey) {
     let proof = gen_proof(host);
     let vk = host.vk();
     (proof, vk)

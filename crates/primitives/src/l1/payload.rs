@@ -69,17 +69,17 @@ pub struct BlobSpec {
 
 impl BlobSpec {
     /// The target we expect the DA payload to be stored on.
-    pub fn dest(&self) -> PayloadDest {
+    pub const fn dest(&self) -> PayloadDest {
         self.dest
     }
 
     /// Commitment to the payload.
-    pub fn commitment(&self) -> &Buf32 {
+    pub const fn commitment(&self) -> &Buf32 {
         &self.commitment
     }
 
     #[allow(dead_code)]
-    fn new(dest: PayloadDest, commitment: Buf32) -> Self {
+    const fn new(dest: PayloadDest, commitment: Buf32) -> Self {
         Self { dest, commitment }
     }
 }
@@ -110,16 +110,16 @@ pub struct PayloadSpec {
 
 impl PayloadSpec {
     /// The target we expect the DA payload to be stored on.
-    pub fn dest(&self) -> PayloadDest {
+    pub const fn dest(&self) -> PayloadDest {
         self.dest
     }
 
     /// Commitment to the payload.
-    pub fn commitment(&self) -> &Buf32 {
+    pub const fn commitment(&self) -> &Buf32 {
         &self.commitment
     }
 
-    fn new(dest: PayloadDest, commitment: Buf32) -> Self {
+    const fn new(dest: PayloadDest, commitment: Buf32) -> Self {
         Self { dest, commitment }
     }
 }
@@ -132,23 +132,24 @@ pub struct L1Payload {
 }
 
 impl L1Payload {
-    pub fn new(data: Vec<u8>, payload_type: L1PayloadType) -> Self {
+    pub const fn new(data: Vec<u8>, payload_type: L1PayloadType) -> Self {
         Self { data, payload_type }
     }
 
-    pub fn new_checkpoint(data: Vec<u8>) -> Self {
+    pub const fn new_checkpoint(data: Vec<u8>) -> Self {
         Self::new(data, L1PayloadType::Checkpoint)
     }
 
-    pub fn new_da(data: Vec<u8>) -> Self {
+    pub const fn new_da(data: Vec<u8>) -> Self {
         Self::new(data, L1PayloadType::Da)
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
-    pub fn payload_type(&self) -> &L1PayloadType {
+    pub const fn payload_type(&self) -> &L1PayloadType {
         &self.payload_type
     }
 
@@ -184,7 +185,7 @@ pub struct PayloadIntent {
 }
 
 impl PayloadIntent {
-    pub fn new(dest: PayloadDest, commitment: Buf32, payload: L1Payload) -> Self {
+    pub const fn new(dest: PayloadDest, commitment: Buf32, payload: L1Payload) -> Self {
         Self {
             dest,
             commitment,
@@ -193,25 +194,25 @@ impl PayloadIntent {
     }
 
     /// The target we expect the DA payload to be stored on.
-    pub fn dest(&self) -> PayloadDest {
+    pub const fn dest(&self) -> PayloadDest {
         self.dest
     }
 
     /// Commitment to the payload, which might be context-specific. This
     /// is conceptually unrelated to the payload ID that we use for tracking which
     /// payloads we've written in the L1 writer bookkeeping.
-    pub fn commitment(&self) -> &Buf32 {
+    pub const fn commitment(&self) -> &Buf32 {
         &self.commitment
     }
 
     /// The payload that matches the commitment.
-    pub fn payload(&self) -> &L1Payload {
+    pub const fn payload(&self) -> &L1Payload {
         &self.payload
     }
 
     /// Generates the spec from the relevant parts of the payload intent that
     /// uniquely refers to the payload data.
-    pub fn to_spec(&self) -> PayloadSpec {
+    pub const fn to_spec(&self) -> PayloadSpec {
         PayloadSpec::new(self.dest, self.commitment)
     }
 }

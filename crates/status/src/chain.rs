@@ -22,25 +22,25 @@ pub struct ChainSyncStatus {
 }
 
 impl ChainSyncStatus {
-    pub fn tip_slot(&self) -> u64 {
+    pub const fn tip_slot(&self) -> u64 {
         self.tip.slot()
     }
 
-    pub fn tip_blkid(&self) -> &L2BlockId {
+    pub const fn tip_blkid(&self) -> &L2BlockId {
         self.tip.blkid()
     }
 
-    pub fn finalized_blkid(&self) -> &L2BlockId {
+    pub const fn finalized_blkid(&self) -> &L2BlockId {
         self.finalized_epoch.last_blkid()
     }
 
-    pub fn cur_epoch(&self) -> u64 {
+    pub const fn cur_epoch(&self) -> u64 {
         self.prev_epoch.epoch() + 1
     }
 }
 
 impl ChainSyncStatus {
-    pub fn new(
+    pub const fn new(
         tip: L2BlockCommitment,
         prev_epoch: EpochCommitment,
         finalized_epoch: EpochCommitment,
@@ -56,30 +56,30 @@ impl ChainSyncStatus {
 }
 
 /// Published to the FCM status including chainstate.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ChainSyncStatusUpdate {
     new_status: ChainSyncStatus,
     new_tl_chainstate: Arc<Chainstate>,
 }
 
 impl ChainSyncStatusUpdate {
-    pub fn new(new_status: ChainSyncStatus, new_tl_chainstate: Arc<Chainstate>) -> Self {
+    pub const fn new(new_status: ChainSyncStatus, new_tl_chainstate: Arc<Chainstate>) -> Self {
         Self {
             new_status,
             new_tl_chainstate,
         }
     }
 
-    pub fn new_status(&self) -> ChainSyncStatus {
+    pub const fn new_status(&self) -> ChainSyncStatus {
         self.new_status
     }
 
-    pub fn new_tl_chainstate(&self) -> &Arc<Chainstate> {
+    pub const fn new_tl_chainstate(&self) -> &Arc<Chainstate> {
         &self.new_tl_chainstate
     }
 
     /// Returns the current epoch.
-    pub fn cur_epoch(&self) -> u64 {
+    pub const fn cur_epoch(&self) -> u64 {
         self.new_status().cur_epoch()
     }
 }

@@ -3,5 +3,7 @@ edition = "2021"
 name = "strata-jmt"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
-jmt = "0.10.0"

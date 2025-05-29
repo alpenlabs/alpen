@@ -8,6 +8,7 @@ use strata_state::batch::EpochSummary;
 use super::schemas::*;
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct RBCheckpointDB {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,
@@ -18,7 +19,7 @@ impl RBCheckpointDB {
     ///
     /// Assumes it was opened with column families as defined in `STORE_COLUMN_FAMILIES`.
     // FIXME Make it better/generic.
-    pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
+    pub const fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 }

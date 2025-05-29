@@ -1,3 +1,5 @@
+//! Database for Reth.
+
 pub mod rocksdb;
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;

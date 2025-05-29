@@ -1,3 +1,5 @@
+//! Alpen CLI
+
 pub mod alpen;
 pub mod cmd;
 pub mod constants;

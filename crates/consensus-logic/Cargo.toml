@@ -3,16 +3,16 @@ edition = "2021"
 name = "strata-consensus-logic"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
-strata-btcio.workspace = true
 strata-chaintsn.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-crypto = { workspace = true, default-features = true }
 strata-db.workspace = true
 strata-eectl.workspace = true
-strata-l1tx.workspace = true
 strata-primitives.workspace = true
-strata-rpc-types.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
@@ -23,18 +23,17 @@ anyhow.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
-futures.workspace = true
-secp256k1 = { workspace = true, features = ["rand-std"] }
 thiserror.workspace = true
-threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
 strata-db = { workspace = true, features = ["stubs"] }
 strata-rocksdb = { workspace = true, features = ["test_utils"] }
 strata-test-utils.workspace = true
+
+rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
+threadpool.workspace = true
 
 [features]
 debug-utils = ["strata-common/debug-utils"]

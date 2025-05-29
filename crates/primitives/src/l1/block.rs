@@ -68,15 +68,15 @@ pub struct L1BlockCommitment {
 }
 
 impl L1BlockCommitment {
-    pub fn new(height: u64, blkid: L1BlockId) -> Self {
+    pub const fn new(height: u64, blkid: L1BlockId) -> Self {
         Self { height, blkid }
     }
 
-    pub fn height(&self) -> u64 {
+    pub const fn height(&self) -> u64 {
         self.height
     }
 
-    pub fn blkid(&self) -> &L1BlockId {
+    pub const fn blkid(&self) -> &L1BlockId {
         &self.blkid
     }
 }
@@ -101,11 +101,11 @@ impl L1BlockCommitment {
 pub struct L1TxRef(L1BlockId, u32);
 
 impl L1TxRef {
-    pub fn blk_id(&self) -> L1BlockId {
+    pub const fn blk_id(&self) -> L1BlockId {
         self.0
     }
 
-    pub fn position(&self) -> u32 {
+    pub const fn position(&self) -> u32 {
         self.1
     }
 }
@@ -157,7 +157,7 @@ pub struct L1BlockManifest {
 }
 
 impl L1BlockManifest {
-    pub fn new(
+    pub const fn new(
         record: L1HeaderRecord,
         verif_state: Option<HeaderVerificationState>,
         txs: Vec<L1Tx>,
@@ -173,36 +173,37 @@ impl L1BlockManifest {
         }
     }
 
-    pub fn record(&self) -> &L1HeaderRecord {
+    pub const fn record(&self) -> &L1HeaderRecord {
         &self.record
     }
 
-    pub fn header_verification_state(&self) -> &Option<HeaderVerificationState> {
+    pub const fn header_verification_state(&self) -> &Option<HeaderVerificationState> {
         &self.verif_state
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn txs(&self) -> &[L1Tx] {
         &self.txs
     }
 
-    pub fn txs_vec(&self) -> &Vec<L1Tx> {
+    pub const fn txs_vec(&self) -> &Vec<L1Tx> {
         &self.txs
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub const fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub fn blkid(&self) -> &L1BlockId {
+    pub const fn blkid(&self) -> &L1BlockId {
         &self.record.blkid
     }
 
     #[deprecated(note = "use .blkid()")]
-    pub fn block_hash(&self) -> L1BlockId {
+    pub const fn block_hash(&self) -> L1BlockId {
         *self.record.blkid()
     }
 
-    pub fn height(&self) -> u64 {
+    pub const fn height(&self) -> u64 {
         self.height
     }
 
@@ -210,7 +211,7 @@ impl L1BlockManifest {
         self.record.buf()
     }
 
-    pub fn txs_root(&self) -> Buf32 {
+    pub const fn txs_root(&self) -> Buf32 {
         *self.record.wtxs_root()
     }
 

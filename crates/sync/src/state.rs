@@ -10,7 +10,7 @@ use tracing::debug;
 use crate::L2SyncError;
 
 #[derive(Debug)]
-pub struct L2SyncState {
+pub(crate) struct L2SyncState {
     /// Height of highest unfinalized block in tracker
     tip_block: L2BlockCommitment,
 
@@ -49,20 +49,20 @@ impl L2SyncState {
     }
 
     // TODO rename to slot
-    pub(crate) fn finalized_height(&self) -> u64 {
+    pub(crate) const fn finalized_height(&self) -> u64 {
         self.tracker.finalized_epoch().last_slot()
     }
 
-    pub(crate) fn finalized_blockid(&self) -> &L2BlockId {
+    pub(crate) const fn finalized_blockid(&self) -> &L2BlockId {
         self.tracker.finalized_epoch().last_blkid()
     }
 
     // TODO rename to slot
-    pub(crate) fn tip_height(&self) -> u64 {
+    pub(crate) const fn tip_height(&self) -> u64 {
         self.tip_block.slot()
     }
 
-    pub(crate) fn finalized_epoch(&self) -> &EpochCommitment {
+    pub(crate) const fn finalized_epoch(&self) -> &EpochCommitment {
         self.tracker.finalized_epoch()
     }
 }

@@ -133,7 +133,7 @@ impl From<PartialSignature> for Musig2PartialSig {
 }
 
 impl Musig2PartialSig {
-    pub fn inner(&self) -> &PartialSignature {
+    pub const fn inner(&self) -> &PartialSignature {
         &self.0
     }
 }
@@ -204,7 +204,7 @@ pub struct OperatorPartialSig {
 
 impl OperatorPartialSig {
     /// Create a new [`OperatorPartialSig`].
-    pub fn new(partial_sig: Musig2PartialSig, signer_index: OperatorIdx) -> Self {
+    pub const fn new(partial_sig: Musig2PartialSig, signer_index: OperatorIdx) -> Self {
         Self {
             partial_sig,
             signer_index,
@@ -212,12 +212,12 @@ impl OperatorPartialSig {
     }
 
     /// Get the partial Musig2 schnorr signature.
-    pub fn signature(&self) -> &Musig2PartialSig {
+    pub const fn signature(&self) -> &Musig2PartialSig {
         &self.partial_sig
     }
 
     /// Get the index of the signer (operator).
-    pub fn signer_index(&self) -> &OperatorIdx {
+    pub const fn signer_index(&self) -> &OperatorIdx {
         &self.signer_index
     }
 }
@@ -226,7 +226,7 @@ impl OperatorPartialSig {
 pub struct Musig2PubNonce(PubNonce);
 
 impl Musig2PubNonce {
-    pub fn inner(&self) -> &PubNonce {
+    pub const fn inner(&self) -> &PubNonce {
         &self.0
     }
 }
@@ -279,7 +279,7 @@ impl<'a> Arbitrary<'a> for Musig2PubNonce {
 pub struct Musig2SecNonce(SecNonce);
 
 impl Musig2SecNonce {
-    pub fn inner(&self) -> &SecNonce {
+    pub const fn inner(&self) -> &SecNonce {
         &self.0
     }
 }

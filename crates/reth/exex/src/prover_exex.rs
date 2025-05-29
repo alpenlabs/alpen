@@ -26,6 +26,7 @@ use crate::{
     cache_db_provider::{AccessedState, CacheDBProvider},
 };
 
+#[expect(missing_debug_implementations)]
 pub struct ProverWitnessGenerator<
     Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
     S: WitnessStore + Clone,
@@ -39,7 +40,7 @@ impl<
         S: WitnessStore + Clone,
     > ProverWitnessGenerator<Node, S>
 {
-    pub fn new(ctx: ExExContext<Node>, db: Arc<S>) -> Self {
+    pub const fn new(ctx: ExExContext<Node>, db: Arc<S>) -> Self {
         Self { ctx, db }
     }
 

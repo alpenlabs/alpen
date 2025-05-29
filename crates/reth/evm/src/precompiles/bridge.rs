@@ -6,7 +6,7 @@ use revm::{
 use revm_primitives::{Bytes, Log, LogData, U256};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
-pub use crate::constants::BRIDGEOUT_ADDRESS;
+pub(crate) use crate::constants::BRIDGEOUT_ADDRESS;
 use crate::utils::wei_to_sats;
 
 /// Ensure that input is a valid BOSD [`Descriptor`].
@@ -23,12 +23,13 @@ fn try_into_bosd(maybe_bosd: &Bytes) -> Result<Descriptor, PrecompileError> {
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
 /// This precompile validates transaction and burns the bridge out amount.
-pub struct BridgeoutPrecompile {
+#[derive(Debug)]
+pub(crate) struct BridgeoutPrecompile {
     fixed_withdrawal_wei: U256,
 }
 
 impl BridgeoutPrecompile {
-    pub fn new(fixed_withdrawal_wei: U256) -> Self {
+    pub(crate) const fn new(fixed_withdrawal_wei: U256) -> Self {
         Self {
             fixed_withdrawal_wei,
         }

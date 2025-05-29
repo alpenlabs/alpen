@@ -4,6 +4,9 @@ edition = "2021"
 name = "alpen-chainspec"
 version = "0.1.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 alloy-genesis.workspace = true
 eyre.workspace = true

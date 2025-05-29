@@ -29,7 +29,7 @@ use crate::{
 /// fetches the necessary inputs for the [`CheckpointProgram`] by:
 // TODO: update docstring here
 #[derive(Debug, Clone)]
-pub struct CheckpointOperator {
+pub(crate) struct CheckpointOperator {
     cl_client: HttpClient,
     cl_stf_operator: Arc<ClStfOperator>,
     enable_checkpoint_runner: bool,
@@ -37,7 +37,7 @@ pub struct CheckpointOperator {
 
 impl CheckpointOperator {
     /// Creates a new BTC operations instance.
-    pub fn new(
+    pub(crate) const fn new(
         cl_client: HttpClient,
         cl_stf_operator: Arc<ClStfOperator>,
         enable_checkpoint_runner: bool,
@@ -107,7 +107,7 @@ impl CheckpointOperator {
     /// # Returns
     ///
     /// A vector of [`ProofKey`] corresponding to the checkpoint proving operation.
-    pub async fn create_task_raw(
+    pub(crate) async fn create_task_raw(
         &self,
         checkpoint_idx: u64,
         l1_range: (L1BlockCommitment, L1BlockCommitment),
@@ -161,7 +161,7 @@ impl CheckpointOperator {
     }
 
     /// Retrieves the latest checkpoint index
-    pub async fn fetch_latest_ckp_idx(&self) -> Result<u64, ProvingTaskError> {
+    pub(crate) async fn fetch_latest_ckp_idx(&self) -> Result<u64, ProvingTaskError> {
         self.cl_client
             .get_latest_checkpoint_index(None)
             .await
@@ -171,11 +171,11 @@ impl CheckpointOperator {
     }
 
     /// Returns a reference to the internal CL (Consensus Layer) [`HttpClient`].
-    pub fn cl_client(&self) -> &HttpClient {
+    pub(crate) const fn cl_client(&self) -> &HttpClient {
         &self.cl_client
     }
 
-    pub async fn submit_checkpoint_proof(
+    pub(crate) async fn submit_checkpoint_proof(
         &self,
         checkpoint_index: u64,
         proof_key: &ProofKey,
