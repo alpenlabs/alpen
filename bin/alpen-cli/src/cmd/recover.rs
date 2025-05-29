@@ -15,7 +15,7 @@ use crate::{
     signet::{get_fee_rate, log_fee_rate, sync_wallet, SignetWallet},
 };
 
-/// Attempt recovery of old deposit transactions
+/// Attempts a recovery of old deposit transactions
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "recover")]
 pub struct RecoverArgs {
