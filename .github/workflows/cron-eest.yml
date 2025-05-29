@@ -110,6 +110,8 @@ jobs:
         curl -LsSf https://astral.sh/uv/install.sh | sh
         git clone https://github.com/ethereum/execution-spec-tests
         cd execution-spec-tests
+          # workaround for https://github.com/ethereum/execution-spec-tests/issues/1680
+        git checkout 0c3397c6c733252d8d5c0a54feda798b6f165e85
         uv python install 3.11
         uv python pin 3.11
         uv sync --all-extras
