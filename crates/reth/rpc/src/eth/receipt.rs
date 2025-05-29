@@ -32,6 +32,7 @@ where
             .map_err(Self::Error::from_eth_err)?
             .ok_or(EthApiError::HeaderNotFound(hash.into()))?;
 
-        Ok(EthReceiptBuilder::new(&tx, meta, &receipt, &all_receipts)?.build())
+        // TODO: fix blob params
+        Ok(EthReceiptBuilder::new(&tx, meta, &receipt, &all_receipts, None)?.build())
     }
 }

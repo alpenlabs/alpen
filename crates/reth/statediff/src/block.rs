@@ -1,6 +1,6 @@
 use alloy_primitives::U256;
-use revm::db::BundleState;
-use revm_primitives::{Address, Bytecode, HashMap, HashSet};
+use revm::{database::BundleState, state::Bytecode};
+use revm_primitives::{Address, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::account::{Account, AccountChanges};

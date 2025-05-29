@@ -1,6 +1,9 @@
 use alloy_primitives::U256;
-use revm::db::{BundleAccount, StorageWithOriginalValues};
-use revm_primitives::{AccountInfo, B256};
+use revm::{
+    database::{BundleAccount, StorageWithOriginalValues},
+    state::AccountInfo,
+};
+use revm_primitives::B256;
 use serde::{Deserialize, Serialize};
 
 /// An ethereum account representation suitable for state diffs.
@@ -113,7 +116,7 @@ mod tests {
     use std::collections::HashMap;
 
     use alloy_primitives::{B256, U256};
-    use revm::db::states::StorageSlot;
+    use revm::database::states::StorageSlot;
     use revm_primitives::hex;
     use serde_json;
 

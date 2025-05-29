@@ -7,33 +7,29 @@ version = "0.3.0-alpha.1"
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
 strata-mpt.workspace = true
-strata-primitives.workspace = true
+strata-primitives = { workspace = true }
 strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
 alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-eips.workspace = true
-alloy-primitives.workspace = true
 alloy-rlp.workspace = true
 alloy-rlp-derive.workspace = true
 alloy-rpc-types.workspace = true
 alloy-rpc-types-eth.workspace = true
-alloy-trie.workspace = true
+reth-chainspec.workspace = true
+reth-evm-ethereum.workspace = true
 
 anyhow.workspace = true
-k256 = { version = "0.13.4", features = [
-  "std",
-  "ecdsa",
-], default-features = false }
-reth-primitives = { workspace = true, features = ["serde-bincode-compat"] }
-reth-primitives-traits.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
 rlp = "0.5.2"
 serde.workspace = true
 serde_with.workspace = true
-thiserror.workspace = true
+
+rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+
 
 [dev-dependencies]
 bincode.workspace = true

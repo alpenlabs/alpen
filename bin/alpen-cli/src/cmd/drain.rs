@@ -153,9 +153,9 @@ pub async fn drain(
         let gas_price = l2w
             .get_gas_price()
             .await
-            .internal_error("Failed to fetch Alpen gas price.")?;
+            .internal_error("Failed to fetch Alpen gas price.")? as u64;
         let gas_estimate = l2w
-            .estimate_gas(&estimate_tx)
+            .estimate_gas(estimate_tx)
             .await
             .internal_error("Failed to estimate Alpen gas")?;
 
