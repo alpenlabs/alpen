@@ -25,7 +25,7 @@ fn try_into_bosd(maybe_bosd: &Bytes) -> Result<Descriptor, PrecompileError> {
     }
 }
 
-/// Placeholder for the `bridgeout` precompile; reqired for the precompile registry.
+/// Placeholder for the `bridgeout` precompile; required for the precompile registry.
 pub fn bridgeout_precompile(_input: &Bytes, _gas_limit: u64) -> PrecompileResult {
     let gas_cost = 0;
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))

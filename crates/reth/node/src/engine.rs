@@ -17,8 +17,8 @@ use reth_primitives::{Block, EthPrimitives, NodePrimitives, RecoveredBlock, Seal
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    payload::{StrataBuiltPayload, StrataPayloadBuilderAttributes},
-    StrataExecutionPayloadEnvelopeV2, StrataPayloadAttributes,
+    payload::{AlpenBuiltPayload, AlpenPayloadBuilderAttributes},
+    AlpenExecutionPayloadEnvelopeV2, AlpenPayloadAttributes,
 };
 
 // use super::payload::{StrataBuiltPayload, StrataPayloadBuilderAttributes};
@@ -27,13 +27,13 @@ use crate::{
 /// Custom engine types for strata to use custom payload attributes and payload
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
-pub struct StrataEngineTypes {}
+pub struct AlpenEngineTypes {}
 
-impl PayloadTypes for StrataEngineTypes {
-    type BuiltPayload = StrataBuiltPayload;
+impl PayloadTypes for AlpenEngineTypes {
+    type BuiltPayload = AlpenBuiltPayload;
     type ExecutionData = ExecutionData;
-    type PayloadAttributes = StrataPayloadAttributes;
-    type PayloadBuilderAttributes = StrataPayloadBuilderAttributes;
+    type PayloadAttributes = AlpenPayloadAttributes;
+    type PayloadBuilderAttributes = AlpenPayloadBuilderAttributes;
 
     fn block_to_payload(
         block: SealedBlock<
@@ -46,20 +46,20 @@ impl PayloadTypes for StrataEngineTypes {
     }
 }
 
-impl EngineTypes for StrataEngineTypes {
+impl EngineTypes for AlpenEngineTypes {
     type ExecutionPayloadEnvelopeV1 = ExecutionPayloadV1;
-    type ExecutionPayloadEnvelopeV2 = StrataExecutionPayloadEnvelopeV2;
+    type ExecutionPayloadEnvelopeV2 = AlpenExecutionPayloadEnvelopeV2;
     type ExecutionPayloadEnvelopeV3 = ExecutionPayloadEnvelopeV3;
     type ExecutionPayloadEnvelopeV4 = ExecutionPayloadEnvelopeV4;
 }
 
 /// Strata engine validator
 #[derive(Debug, Clone)]
-pub struct StrataEngineValidator {
+pub struct AlpenEngineValidator {
     inner: EthereumExecutionPayloadValidator<ChainSpec>,
 }
 
-impl StrataEngineValidator {
+impl AlpenEngineValidator {
     /// Instantiates a new validator.
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self {
@@ -74,7 +74,7 @@ impl StrataEngineValidator {
     }
 }
 
-impl PayloadValidator for StrataEngineValidator {
+impl PayloadValidator for AlpenEngineValidator {
     type Block = Block;
     type ExecutionData = ExecutionData;
 
@@ -89,9 +89,9 @@ impl PayloadValidator for StrataEngineValidator {
     }
 }
 
-impl<T> EngineValidator<T> for StrataEngineValidator
+impl<T> EngineValidator<T> for AlpenEngineValidator
 where
-    T: EngineTypes<PayloadAttributes = StrataPayloadAttributes, ExecutionData = ExecutionData>,
+    T: EngineTypes<PayloadAttributes = AlpenPayloadAttributes, ExecutionData = ExecutionData>,
 {
     fn validate_version_specific_fields(
         &self,
@@ -130,21 +130,21 @@ where
 /// Custom engine validator builder
 #[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
-pub struct StrataEngineValidatorBuilder;
+pub struct AlpenEngineValidatorBuilder;
 
-impl<N> EngineValidatorBuilder<N> for StrataEngineValidatorBuilder
+impl<N> EngineValidatorBuilder<N> for AlpenEngineValidatorBuilder
 where
     N: FullNodeComponents<
         Types: NodeTypes<
-            Payload = StrataEngineTypes,
+            Payload = AlpenEngineTypes,
             ChainSpec = ChainSpec,
             Primitives = EthPrimitives,
         >,
     >,
 {
-    type Validator = StrataEngineValidator;
+    type Validator = AlpenEngineValidator;
 
     async fn build(self, ctx: &AddOnsContext<'_, N>) -> eyre::Result<Self::Validator> {
-        Ok(StrataEngineValidator::new(ctx.config.chain.clone()))
+        Ok(AlpenEngineValidator::new(ctx.config.chain.clone()))
     }
 }

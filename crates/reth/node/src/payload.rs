@@ -18,7 +18,7 @@ use revm_primitives::alloy_primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct StrataPayloadAttributes {
+pub struct AlpenPayloadAttributes {
     /// Original Ethereum payload attributes
     #[serde(flatten)]
     pub inner: EthPayloadAttributes,
@@ -27,13 +27,13 @@ pub struct StrataPayloadAttributes {
     pub batch_gas_limit: Option<u64>,
 }
 
-impl StrataPayloadBuilderAttributes {
+impl AlpenPayloadBuilderAttributes {
     pub(crate) fn batch_gas_limit(&self) -> Option<u64> {
         self.batch_gas_limit
     }
 }
 
-impl StrataPayloadAttributes {
+impl AlpenPayloadAttributes {
     pub fn new_from_eth(payload_attributes: EthPayloadAttributes) -> Self {
         Self {
             inner: payload_attributes,
@@ -50,9 +50,9 @@ impl StrataPayloadAttributes {
     }
 }
 
-impl UnsupportedLocalAttributes for StrataPayloadAttributes {}
+impl UnsupportedLocalAttributes for AlpenPayloadAttributes {}
 
-impl PayloadAttributes for StrataPayloadAttributes {
+impl PayloadAttributes for AlpenPayloadAttributes {
     fn timestamp(&self) -> u64 {
         self.inner.timestamp()
     }
@@ -68,18 +68,18 @@ impl PayloadAttributes for StrataPayloadAttributes {
 
 /// New type around the payload builder attributes type
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StrataPayloadBuilderAttributes {
+pub struct AlpenPayloadBuilderAttributes {
     pub(crate) inner: EthPayloadBuilderAttributes,
     pub(crate) batch_gas_limit: Option<u64>,
 }
 
-impl PayloadBuilderAttributes for StrataPayloadBuilderAttributes {
-    type RpcPayloadAttributes = StrataPayloadAttributes;
+impl PayloadBuilderAttributes for AlpenPayloadBuilderAttributes {
+    type RpcPayloadAttributes = AlpenPayloadAttributes;
     type Error = Infallible;
 
     fn try_new(
         parent: B256,
-        attributes: StrataPayloadAttributes,
+        attributes: AlpenPayloadAttributes,
         _version: u8,
     ) -> Result<Self, Infallible> {
         Ok(Self {
@@ -118,7 +118,7 @@ impl PayloadBuilderAttributes for StrataPayloadBuilderAttributes {
 }
 
 #[derive(Debug, Clone)]
-pub struct StrataBuiltPayload {
+pub struct AlpenBuiltPayload {
     /// Payload to build ethereum block.
     pub(crate) inner: EthBuiltPayload,
     // additional fields for strata
@@ -126,7 +126,7 @@ pub struct StrataBuiltPayload {
     pub(crate) withdrawal_intents: Vec<WithdrawalIntent>,
 }
 
-impl StrataBuiltPayload {
+impl AlpenBuiltPayload {
     pub(crate) fn new(inner: EthBuiltPayload, withdrawal_intents: Vec<WithdrawalIntent>) -> Self {
         Self {
             inner,
@@ -135,7 +135,7 @@ impl StrataBuiltPayload {
     }
 }
 
-impl BuiltPayload for StrataBuiltPayload {
+impl BuiltPayload for AlpenBuiltPayload {
     type Primitives = EthPrimitives;
 
     fn block(&self) -> &SealedBlock {
@@ -155,8 +155,8 @@ impl BuiltPayload for StrataBuiltPayload {
     }
 }
 
-impl From<StrataBuiltPayload> for ExecutionPayloadV1 {
-    fn from(value: StrataBuiltPayload) -> Self {
+impl From<AlpenBuiltPayload> for ExecutionPayloadV1 {
+    fn from(value: AlpenBuiltPayload) -> Self {
         value.inner.into()
     }
 }
@@ -213,20 +213,20 @@ impl From<EthBuiltPayload> for ExecutionPayloadEnvelopeV2 {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StrataExecutionPayloadEnvelopeV2 {
+pub struct AlpenExecutionPayloadEnvelopeV2 {
     #[serde(flatten)]
     pub inner: ExecutionPayloadEnvelopeV2,
     pub withdrawal_intents: Vec<WithdrawalIntent>,
 }
 
-impl StrataExecutionPayloadEnvelopeV2 {
+impl AlpenExecutionPayloadEnvelopeV2 {
     pub fn inner(&self) -> &ExecutionPayloadEnvelopeV2 {
         &self.inner
     }
 }
 
-impl From<StrataBuiltPayload> for StrataExecutionPayloadEnvelopeV2 {
-    fn from(value: StrataBuiltPayload) -> Self {
+impl From<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV2 {
+    fn from(value: AlpenBuiltPayload) -> Self {
         Self {
             inner: value.inner.into(),
             withdrawal_intents: value.withdrawal_intents,
@@ -234,14 +234,14 @@ impl From<StrataBuiltPayload> for StrataExecutionPayloadEnvelopeV2 {
     }
 }
 
-impl From<StrataBuiltPayload> for ExecutionPayloadEnvelopeV3 {
-    fn from(value: StrataBuiltPayload) -> Self {
+impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV3 {
+    fn from(value: AlpenBuiltPayload) -> Self {
         value.inner.into()
     }
 }
 
-impl From<StrataBuiltPayload> for ExecutionPayloadEnvelopeV4 {
-    fn from(value: StrataBuiltPayload) -> Self {
+impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV4 {
+    fn from(value: AlpenBuiltPayload) -> Self {
         value.inner.into()
     }
 }

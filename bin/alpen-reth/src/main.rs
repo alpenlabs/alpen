@@ -7,7 +7,7 @@ use std::{future::Future, sync::Arc};
 use alpen_chainspec::{chain_value_parser, StrataChainSpecParser};
 use alpen_reth_db::rocksdb::WitnessDB;
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
-use alpen_reth_node::{args::StrataNodeArgs, StrataEthereumNode};
+use alpen_reth_node::{args::StrataNodeArgs, AlpenEthereumNode};
 use alpen_reth_rpc::{StrataRPC, StrataRpcApiServer};
 use clap::Parser;
 use reth::{
@@ -41,7 +41,7 @@ fn main() {
             sequencer_http: ext.sequencer_http.clone(),
         };
 
-        let mut node_builder = builder.node(StrataEthereumNode::new(node_args));
+        let mut node_builder = builder.node(AlpenEthereumNode::new(node_args));
 
         let mut extend_rpc = None;
 

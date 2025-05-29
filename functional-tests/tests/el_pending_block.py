@@ -28,3 +28,4 @@ class ElPendingBlock(testenv.StrataTester):
         )
 
         assert gas is not None, "estimate gas on pending block"
+        print("All good, got gas estimate:", gas)

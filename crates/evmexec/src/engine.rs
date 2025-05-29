@@ -8,7 +8,7 @@ use alloy_rpc_types::{
 };
 use alpen_reth_evm::constants::COINBASE_ADDRESS;
 use alpen_reth_node::{
-    ExecutionPayloadFieldV2, StrataExecutionPayloadEnvelopeV2, StrataPayloadAttributes,
+    AlpenExecutionPayloadEnvelopeV2, AlpenPayloadAttributes, ExecutionPayloadFieldV2,
 };
 use futures::future::TryFutureExt;
 use revm_primitives::{Address, B256};
@@ -140,7 +140,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             })
             .collect::<Result<_, _>>()?;
 
-        let payload_attributes = StrataPayloadAttributes::new(
+        let payload_attributes = AlpenPayloadAttributes::new(
             PayloadAttributes {
                 // evm expects timestamp in seconds
                 timestamp: payload_env.timestamp() / 1000,
@@ -184,7 +184,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             .map_err(|_| EngineError::UnknownPayloadId(payload_id))
             .await?;
 
-        let StrataExecutionPayloadEnvelopeV2 {
+        let AlpenExecutionPayloadEnvelopeV2 {
             inner: execution_payload_v2,
             withdrawal_intents: rpc_withdrawal_intents,
         } = payload;
@@ -595,7 +595,7 @@ mod tests {
         let head_block_hash = B256::random();
 
         mock_client.expect_get_payload_v2().returning(move |_| {
-            Ok(StrataExecutionPayloadEnvelopeV2 {
+            Ok(AlpenExecutionPayloadEnvelopeV2 {
                 inner: ExecutionPayloadEnvelopeV2 {
                     execution_payload: ExecutionPayloadFieldV2::V1(random_execution_payload_v1()),
                     block_value: U256::from(100),

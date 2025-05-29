@@ -7,9 +7,7 @@ use alloy_rpc_types::{
     },
     eth::{Block as RpcBlock, Header, Transaction},
 };
-use alpen_reth_node::{
-    StrataEngineTypes, StrataExecutionPayloadEnvelopeV2, StrataPayloadAttributes,
-};
+use alpen_reth_node::{AlpenEngineTypes, AlpenExecutionPayloadEnvelopeV2, AlpenPayloadAttributes};
 use jsonrpsee::http_client::{transport::HttpBackend, HttpClient, HttpClientBuilder};
 #[cfg(test)]
 use mockall::automock;
@@ -35,13 +33,13 @@ pub trait EngineRpc {
     async fn fork_choice_updated_v2(
         &self,
         fork_choice_state: ForkchoiceState,
-        payload_attributes: Option<StrataPayloadAttributes>,
+        payload_attributes: Option<AlpenPayloadAttributes>,
     ) -> RpcResult<ForkchoiceUpdated>;
 
     async fn get_payload_v2(
         &self,
         payload_id: PayloadId,
-    ) -> RpcResult<StrataExecutionPayloadEnvelopeV2>;
+    ) -> RpcResult<AlpenExecutionPayloadEnvelopeV2>;
 
     async fn new_payload_v2(
         &self,
@@ -78,30 +76,30 @@ impl EngineRpc for EngineRpcClient {
     async fn fork_choice_updated_v2(
         &self,
         fork_choice_state: ForkchoiceState,
-        payload_attributes: Option<StrataPayloadAttributes>,
+        payload_attributes: Option<AlpenPayloadAttributes>,
     ) -> RpcResult<ForkchoiceUpdated> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::fork_choice_updated_v2(&self.client, fork_choice_state, payload_attributes).await
+        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::fork_choice_updated_v2(&self.client, fork_choice_state, payload_attributes).await
     }
 
     async fn get_payload_v2(
         &self,
         payload_id: PayloadId,
-    ) -> RpcResult<StrataExecutionPayloadEnvelopeV2> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::get_payload_v2(&self.client, payload_id).await
+    ) -> RpcResult<AlpenExecutionPayloadEnvelopeV2> {
+        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_v2(&self.client, payload_id).await
     }
 
     async fn new_payload_v2(
         &self,
         payload: ExecutionPayloadInputV2,
     ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::new_payload_v2(&self.client, payload).await
+        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::new_payload_v2(&self.client, payload).await
     }
 
     async fn get_payload_bodies_by_hash_v1(
         &self,
         block_hashes: Vec<BlockHash>,
     ) -> RpcResult<ExecutionPayloadBodiesV1> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::get_payload_bodies_by_hash_v1(&self.client, block_hashes).await
+        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_bodies_by_hash_v1(&self.client, block_hashes).await
     }
 
     async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<Block>> {
