@@ -22,8 +22,7 @@ use crate::{
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Drains the internal wallet to the provided
-/// signet and Alpen addresses
+/// Drains the internal wallet to the provided signet or Alpen address
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "drain")]
 pub struct DrainArgs {

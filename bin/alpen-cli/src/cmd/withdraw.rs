@@ -19,7 +19,7 @@ use crate::{
     signet::SignetWallet,
 };
 
-/// Withdraw 10 BTC from Alpen to signet
+/// Withdraws 10 BTC from Alpen to signet
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "withdraw")]
 pub struct WithdrawArgs {
