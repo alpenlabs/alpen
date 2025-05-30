@@ -191,7 +191,8 @@ pub struct ChainstateEntry {
 }
 
 impl ChainstateEntry {
-    pub const fn new(state: Chainstate, tip: L2BlockId) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(state: Chainstate, tip: L2BlockId) -> Self {
         Self { state, tip }
     }
 

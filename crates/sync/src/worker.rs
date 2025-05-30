@@ -26,7 +26,8 @@ pub struct L2SyncContext<T: SyncClient> {
 }
 
 impl<T: SyncClient> L2SyncContext<T> {
-    pub const fn new(client: T, storage: Arc<NodeStorage>, sync_manager: Arc<SyncManager>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(client: T, storage: Arc<NodeStorage>, sync_manager: Arc<SyncManager>) -> Self {
         Self {
             client,
             storage,

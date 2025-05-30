@@ -45,7 +45,8 @@ pub struct EpochCommitment {
 }
 
 impl EpochCommitment {
-    pub const fn new(epoch: u64, last_slot: u64, last_blkid: L2BlockId) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(epoch: u64, last_slot: u64, last_blkid: L2BlockId) -> Self {
         Self {
             epoch,
             last_slot,
@@ -55,7 +56,7 @@ impl EpochCommitment {
 
     /// Creates a new instance given the terminal block of an epoch and the
     /// epoch index.
-    pub const fn from_terminal(epoch: u64, block: L2BlockCommitment) -> Self {
+    pub fn from_terminal(epoch: u64, block: L2BlockCommitment) -> Self {
         Self::new(epoch, block.slot(), *block.blkid())
     }
 
@@ -77,7 +78,7 @@ impl EpochCommitment {
     }
 
     /// Returns a [`L2BlockCommitment`] for the final block of the epoch.
-    pub const fn to_block_commitment(&self) -> L2BlockCommitment {
+    pub fn to_block_commitment(&self) -> L2BlockCommitment {
         L2BlockCommitment::new(self.last_slot, self.last_blkid)
     }
 

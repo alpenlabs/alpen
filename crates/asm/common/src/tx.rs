@@ -17,7 +17,8 @@ pub struct TagPayload<'p> {
 
 impl<'p> TagPayload<'p> {
     /// Constructs a new `Sps50TagPayload`.
-    pub const fn new(tx_type: u8, auxiliary_data: &'p [u8]) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(tx_type: u8, auxiliary_data: &'p [u8]) -> Self {
         Self {
             tx_type,
             auxiliary_data,
@@ -50,7 +51,8 @@ pub struct TxInput<'t> {
 
 impl<'t> TxInput<'t> {
     /// Create a new `TxInput` referencing the given `Transaction`.
-    pub const fn new(tx: &'t Transaction, sps_50_info: TagPayload<'t>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(tx: &'t Transaction, sps_50_info: TagPayload<'t>) -> Self {
         TxInput {
             tx,
             tag: sps_50_info,

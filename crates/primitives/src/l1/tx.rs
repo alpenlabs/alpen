@@ -16,11 +16,8 @@ pub struct L1Tx {
 }
 
 impl L1Tx {
-    pub const fn new(
-        proof: L1TxProof,
-        tx: RawBitcoinTx,
-        protocol_ops: Vec<ProtocolOperation>,
-    ) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(proof: L1TxProof, tx: RawBitcoinTx, protocol_ops: Vec<ProtocolOperation>) -> Self {
         Self {
             proof,
             tx,
@@ -56,7 +53,8 @@ pub struct DepositUpdateTx {
 }
 
 impl DepositUpdateTx {
-    pub const fn new(tx: L1Tx, deposit_idx: u32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(tx: L1Tx, deposit_idx: u32) -> Self {
         Self { tx, deposit_idx }
     }
 
@@ -79,7 +77,8 @@ pub struct DaTx {
 }
 
 impl DaTx {
-    pub const fn new(tx: L1Tx) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(tx: L1Tx) -> Self {
         Self { tx }
     }
 

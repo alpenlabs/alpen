@@ -79,7 +79,8 @@ impl BlobSpec {
     }
 
     #[allow(dead_code)]
-    const fn new(dest: PayloadDest, commitment: Buf32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    fn new(dest: PayloadDest, commitment: Buf32) -> Self {
         Self { dest, commitment }
     }
 }
@@ -119,7 +120,8 @@ impl PayloadSpec {
         &self.commitment
     }
 
-    const fn new(dest: PayloadDest, commitment: Buf32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    fn new(dest: PayloadDest, commitment: Buf32) -> Self {
         Self { dest, commitment }
     }
 }
@@ -132,15 +134,16 @@ pub struct L1Payload {
 }
 
 impl L1Payload {
-    pub const fn new(data: Vec<u8>, payload_type: L1PayloadType) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(data: Vec<u8>, payload_type: L1PayloadType) -> Self {
         Self { data, payload_type }
     }
 
-    pub const fn new_checkpoint(data: Vec<u8>) -> Self {
+    pub fn new_checkpoint(data: Vec<u8>) -> Self {
         Self::new(data, L1PayloadType::Checkpoint)
     }
 
-    pub const fn new_da(data: Vec<u8>) -> Self {
+    pub fn new_da(data: Vec<u8>) -> Self {
         Self::new(data, L1PayloadType::Da)
     }
 
@@ -185,7 +188,8 @@ pub struct PayloadIntent {
 }
 
 impl PayloadIntent {
-    pub const fn new(dest: PayloadDest, commitment: Buf32, payload: L1Payload) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(dest: PayloadDest, commitment: Buf32, payload: L1Payload) -> Self {
         Self {
             dest,
             commitment,
@@ -212,7 +216,7 @@ impl PayloadIntent {
 
     /// Generates the spec from the relevant parts of the payload intent that
     /// uniquely refers to the payload data.
-    pub const fn to_spec(&self) -> PayloadSpec {
+    pub fn to_spec(&self) -> PayloadSpec {
         PayloadSpec::new(self.dest, self.commitment)
     }
 }

@@ -17,7 +17,8 @@ pub(crate) struct PendingTasks {
 }
 
 impl PendingTasks {
-    pub(crate) const fn new(initial_count: usize) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new(initial_count: usize) -> Self {
         Self {
             counter: AtomicUsize::new(initial_count),
             waker: AtomicWaker::new(),

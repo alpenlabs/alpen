@@ -40,7 +40,8 @@ pub struct WorkerContext<D, E> {
 
 impl<D, E> WorkerContext<D, E> {
     /// Create new worker context.
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         params: Arc<Params>,
         database: Arc<D>,
         storage: Arc<NodeStorage>,

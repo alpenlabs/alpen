@@ -83,7 +83,8 @@ pub struct ManagedWsClient {
 }
 
 impl ManagedWsClient {
-    pub const fn new(pool: Pool<WsClientManager>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(pool: Pool<WsClientManager>) -> Self {
         Self { pool }
     }
 

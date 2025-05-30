@@ -16,7 +16,8 @@ impl ZeroizableXpriv {
     /// Create a new [`ZeroizableXpriv`] from an [`Xpriv`].
     ///
     /// This should take ownership of the `xpriv` since it is zeroized on drop.
-    pub const fn new(xpriv: Xpriv) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(xpriv: Xpriv) -> Self {
         Self(xpriv)
     }
 }
@@ -60,7 +61,8 @@ impl ZeroizableKeypair {
     /// Create a new [`ZeroizableKeypair`] from a [`Keypair`].
     ///
     /// This should take ownership of `keypair` since it is zeroized on drop.
-    pub const fn new(keypair: Keypair) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(keypair: Keypair) -> Self {
         Self(keypair)
     }
 }

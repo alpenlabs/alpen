@@ -14,7 +14,8 @@ pub struct Context<D: BridgeMessageDb> {
 }
 
 impl<D: BridgeMessageDb + Sync + Send + 'static> Context<D> {
-    pub const fn new(db: Arc<D>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(db: Arc<D>) -> Self {
         Self { db }
     }
 

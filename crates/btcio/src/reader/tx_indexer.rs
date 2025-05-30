@@ -19,7 +19,8 @@ pub(crate) struct ReaderTxVisitorImpl {
 }
 
 impl ReaderTxVisitorImpl {
-    pub(crate) const fn new() -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
             deposit_requests: Vec::new(),

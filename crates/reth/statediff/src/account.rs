@@ -33,7 +33,8 @@ pub struct AccountChanges {
 type AccountChangesTuple = (Option<Account>, Option<Account>, StorageWithOriginalValues);
 
 impl Account {
-    pub const fn new(balance: U256, nonce: u64, code_hash: B256) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(balance: U256, nonce: u64, code_hash: B256) -> Self {
         Self {
             balance,
             nonce,
@@ -69,7 +70,8 @@ impl From<AccountTuple> for Account {
 }
 
 impl AccountChanges {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         original_info: Option<Account>,
         present_info: Option<Account>,
         storage: StorageWithOriginalValues,

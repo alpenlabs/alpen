@@ -21,7 +21,8 @@ pub struct L2Block {
 }
 
 impl L2Block {
-    pub const fn new(header: SignedL2BlockHeader, body: L2BlockBody) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(header: SignedL2BlockHeader, body: L2BlockBody) -> Self {
         Self { header, body }
     }
 
@@ -74,7 +75,8 @@ pub struct L2BlockBody {
 }
 
 impl L2BlockBody {
-    pub const fn new(l1_segment: L1Segment, exec_segment: ExecSegment) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(l1_segment: L1Segment, exec_segment: ExecSegment) -> Self {
         Self {
             l1_segment,
             exec_segment,
@@ -117,14 +119,15 @@ pub struct L1Segment {
 impl L1Segment {
     /// Constructs a new instance.  These new manifests MUST be sorted in order
     /// of block height.
-    pub const fn new(new_height: u64, new_manifests: Vec<L1BlockManifest>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(new_height: u64, new_manifests: Vec<L1BlockManifest>) -> Self {
         Self {
             new_height,
             new_manifests,
         }
     }
 
-    pub const fn new_empty(cur_height: u64) -> Self {
+    pub fn new_empty(cur_height: u64) -> Self {
         Self::new(cur_height, Vec::new())
     }
 
@@ -157,7 +160,8 @@ pub struct ExecSegment {
 }
 
 impl ExecSegment {
-    pub const fn new(update: exec_update::ExecUpdate) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(update: exec_update::ExecUpdate) -> Self {
         Self { update }
     }
 
@@ -177,7 +181,8 @@ pub struct L2BlockAccessory {
 }
 
 impl L2BlockAccessory {
-    pub const fn new(exec_payload: Vec<u8>, gas_used: u64) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(exec_payload: Vec<u8>, gas_used: u64) -> Self {
         Self {
             exec_payload,
             gas_used,
@@ -201,7 +206,8 @@ pub struct L2BlockBundle {
 }
 
 impl L2BlockBundle {
-    pub const fn new(block: L2Block, accessory: L2BlockAccessory) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(block: L2Block, accessory: L2BlockAccessory) -> Self {
         Self { block, accessory }
     }
 

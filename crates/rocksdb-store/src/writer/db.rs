@@ -23,7 +23,8 @@ impl RBL1WriterDb {
     ///
     /// Assumes it was opened with column families as defined in `STORE_COLUMN_FAMILIES`.
     // FIXME Make it better/generic.
-    pub const fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 }

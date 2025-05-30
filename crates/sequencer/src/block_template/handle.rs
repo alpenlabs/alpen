@@ -39,7 +39,8 @@ pub struct TemplateManagerHandle {
 impl TemplateManagerHandle {
     /// Create new instance.
     // TODO make this not pub
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         tx: mpsc::Sender<TemplateManagerRequest>,
         shared: SharedState,
         l2_block_manager: Arc<L2BlockManager>,

@@ -16,7 +16,8 @@ pub struct SyncEventDb {
 impl SyncEventDb {
     // NOTE: db is expected to open all the column families defined in STORE_COLUMN_FAMILIES.
     // FIXME: Make it better/generic.
-    pub const fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 

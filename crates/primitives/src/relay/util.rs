@@ -28,7 +28,8 @@ impl MessageSigner {
     /// In order to get a [`BridgeMessage`], call [`sign_raw`](Self::sign_raw)
     /// or [`sign_scope`](Self::sign_scope) on this [`MessageSigner`]
     /// depending on the use case.
-    pub const fn new(operator_idx: u32, msg_signing_sk: Buf32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(operator_idx: u32, msg_signing_sk: Buf32) -> Self {
         Self {
             operator_idx,
             msg_signing_sk,

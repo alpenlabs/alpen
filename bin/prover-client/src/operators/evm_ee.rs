@@ -26,7 +26,8 @@ pub(crate) struct EvmEeOperator {
 
 impl EvmEeOperator {
     /// Creates a new EL operations instance.
-    pub(crate) const fn new(el_client: HttpClient) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new(el_client: HttpClient) -> Self {
         Self { el_client }
     }
 

@@ -32,11 +32,8 @@ pub(crate) struct BlockData {
 }
 
 impl BlockData {
-    pub(crate) const fn new(
-        block_num: u64,
-        block: Block,
-        relevant_txs: Vec<RelevantTxEntry>,
-    ) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new(block_num: u64, block: Block, relevant_txs: Vec<RelevantTxEntry>) -> Self {
         Self {
             block_num,
             block,

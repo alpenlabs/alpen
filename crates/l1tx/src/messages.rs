@@ -18,7 +18,8 @@ pub struct L1TxMessages {
 }
 
 impl L1TxMessages {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         protocol_ops: Vec<ProtocolOperation>,
         deposit_reqs: Vec<DepositRequestInfo>,
         da_entries: Vec<DaEntry>,

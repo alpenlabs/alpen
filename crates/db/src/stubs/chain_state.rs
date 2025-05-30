@@ -13,7 +13,8 @@ struct InnerState {
 }
 
 impl InnerState {
-    pub(crate) const fn new() -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new() -> Self {
         Self {
             write_batches: BTreeMap::new(),
             toplevels: BTreeMap::new(),
@@ -40,7 +41,7 @@ impl Default for StubChainstateDb {
 }
 
 impl StubChainstateDb {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             state: Mutex::new(InnerState::new()),
         }

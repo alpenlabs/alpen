@@ -41,7 +41,8 @@ pub(crate) mod internal {
             impl $name {
                 pub const LEN: usize = $len;
 
-                pub const fn new(data: [u8; $len]) -> Self {
+                #[allow(clippy::missing_const_for_fn)]
+                pub fn new(data: [u8; $len]) -> Self {
                     Self(data)
                 }
 

@@ -65,7 +65,8 @@ pub struct BundledPayloadEntry {
 }
 
 impl BundledPayloadEntry {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         payloads: Vec<L1Payload>,
         commit_txid: Buf32,
         reveal_txid: Buf32,
@@ -200,7 +201,8 @@ pub struct CheckpointEntry {
 }
 
 impl CheckpointEntry {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         checkpoint: Checkpoint,
         proving_status: CheckpointProvingStatus,
         confirmation_status: CheckpointConfStatus,

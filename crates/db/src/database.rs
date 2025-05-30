@@ -35,7 +35,8 @@ where
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         l1_db: Arc<L1DB>,
         l2_db: Arc<L2DB>,
         sync_event_db: Arc<SyncEventDB>,

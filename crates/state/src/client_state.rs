@@ -299,7 +299,8 @@ pub struct InternalState {
 }
 
 impl InternalState {
-    pub const fn new(blkid: L1BlockId, last_checkpoint: Option<L1Checkpoint>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(blkid: L1BlockId, last_checkpoint: Option<L1Checkpoint>) -> Self {
         Self {
             blkid,
             last_checkpoint,
@@ -355,7 +356,8 @@ pub struct CheckpointL1Ref {
 }
 
 impl CheckpointL1Ref {
-    pub const fn new(l1_commitment: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(l1_commitment: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
         Self {
             l1_commitment,
             txid,
@@ -387,7 +389,8 @@ pub struct L1Checkpoint {
 }
 
 impl L1Checkpoint {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         batch_info: BatchInfo,
         batch_transition: BatchTransition,
         l1_reference: CheckpointL1Ref,
@@ -409,7 +412,8 @@ pub struct ClientStateMut {
 }
 
 impl ClientStateMut {
-    pub const fn new(state: ClientState) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(state: ClientState) -> Self {
         Self {
             state,
             actions: Vec::new(),
