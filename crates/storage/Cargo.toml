@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-storage"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-db.workspace = true
 strata-primitives.workspace = true
@@ -10,7 +13,6 @@ strata-state.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
-bitcoin.workspace = true
 lru.workspace = true
 parking_lot.workspace = true
 paste.workspace = true

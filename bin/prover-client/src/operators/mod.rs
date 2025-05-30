@@ -26,20 +26,20 @@ use zkaleido::{ZkVmHost, ZkVmProgram};
 
 use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
 
-pub mod btc;
-pub mod checkpoint;
-pub mod cl_stf;
-pub mod evm_ee;
-pub mod operator;
+pub(crate) mod btc;
+pub(crate) mod checkpoint;
+pub(crate) mod cl_stf;
+pub(crate) mod evm_ee;
+pub(crate) mod operator;
 
-pub use operator::ProofOperator;
+pub(crate) use operator::ProofOperator;
 
 /// A trait defining the operations required for proof generation.
 ///
 /// This trait outlines the steps for proof generation tasks, including fetching proof dependencies,
 /// creating tasks, fetching inputs for the prover, and executing the proof computation using
 /// supported ZKVMs.
-pub trait ProvingOp {
+pub(crate) trait ProvingOp {
     /// The program type associated with this operation, implementing the [`ZkVmProgram`] trait.
     type Program: ZkVmProgram;
 

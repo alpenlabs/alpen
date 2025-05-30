@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-sequencer"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-chaintsn.workspace = true
 strata-common.workspace = true
@@ -27,14 +30,6 @@ zeroize.workspace = true
 [dev-dependencies]
 bitcoin.workspace = true
 strata-key-derivation.workspace = true
-
-[lints]
-rust.missing_docs = "warn"
-rust.rust_2018_idioms = { level = "deny", priority = -1 }
-rust.unreachable_pub = "warn"
-rust.unused_crate_dependencies = "deny"
-rust.unused_must_use = "deny"
-rustdoc.all = "warn"
 
 [features]
 debug-utils = ["strata-common/debug-utils"]

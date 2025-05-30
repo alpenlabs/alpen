@@ -90,6 +90,7 @@ fn index_tx<V: TxVisitor>(
 
 /// Generic no-op tx indexer that emits nothing for every tx but could
 /// substitute for any type of visitor.
+#[derive(Debug)]
 pub struct NopTxVisitorImpl<T>(::std::marker::PhantomData<T>);
 
 impl<T> TxVisitor for NopTxVisitorImpl<T> {

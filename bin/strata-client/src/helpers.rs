@@ -22,7 +22,7 @@ use crate::{
     network,
 };
 
-pub fn get_config(args: Args) -> Result<Config, InitError> {
+pub(crate) fn get_config(args: Args) -> Result<Config, InitError> {
     // First load from config file.
     let mut config_toml = load_configuration(args.config.as_ref())?;
 
@@ -69,14 +69,14 @@ fn load_configuration(path: &Path) -> Result<toml::Value, InitError> {
     toml::from_str(&config_str).map_err(|e| InitError::Anyhow(e.into()))
 }
 
-pub fn load_jwtsecret(path: &Path) -> Result<JwtSecret, InitError> {
+pub(crate) fn load_jwtsecret(path: &Path) -> Result<JwtSecret, InitError> {
     let secret = fs::read_to_string(path)?;
     Ok(JwtSecret::from_hex(secret)?)
 }
 
 /// Resolves the rollup params file to use, possibly from a path, and validates
 /// it to ensure it passes sanity checks.
-pub fn resolve_and_validate_params(
+pub(crate) fn resolve_and_validate_params(
     path: Option<&Path>,
     config: &Config,
 ) -> Result<Arc<Params>, InitError> {
@@ -97,7 +97,7 @@ pub fn resolve_and_validate_params(
 }
 
 /// Resolves the rollup params file to use, possibly from a path.
-pub fn resolve_rollup_params(path: Option<&Path>) -> Result<RollupParams, InitError> {
+pub(crate) fn resolve_rollup_params(path: Option<&Path>) -> Result<RollupParams, InitError> {
     // If a path is set from arg load that.
     if let Some(p) = path {
         return load_rollup_params(p);
@@ -120,7 +120,7 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
 }
 
 // TODO: remove this after builder is done
-pub fn create_bitcoin_rpc_client(config: &Config) -> anyhow::Result<Arc<Client>> {
+pub(crate) fn create_bitcoin_rpc_client(config: &Config) -> anyhow::Result<Arc<Client>> {
     // Set up Bitcoin client RPC.
     let bitcoind_url = format!("http://{}", config.bitcoind.rpc_url);
     let btc_rpc = Client::new(
@@ -140,7 +140,7 @@ pub fn create_bitcoin_rpc_client(config: &Config) -> anyhow::Result<Arc<Client>>
 }
 
 // initializes the status bundle that we can pass around cheaply for status/metrics
-pub fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
+pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
     // init client state
     let csman = storage.client_state();
     let (cur_state_idx, cur_state) = csman
@@ -164,7 +164,7 @@ pub fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChanne
     ))
 }
 
-pub fn init_engine_controller(
+pub(crate) fn init_engine_controller(
     config: &Config,
     params: &Params,
     storage: &NodeStorage,
@@ -188,7 +188,7 @@ pub fn init_engine_controller(
 }
 
 /// Get an address controlled by sequencer's bitcoin wallet
-pub async fn generate_sequencer_address(
+pub(crate) async fn generate_sequencer_address(
     bitcoin_client: &Client,
     timeout: u64,
     poll_interval: u64,

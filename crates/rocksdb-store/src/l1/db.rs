@@ -16,6 +16,7 @@ use super::schemas::{
 };
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct L1Db {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,
@@ -24,6 +25,7 @@ pub struct L1Db {
 impl L1Db {
     // NOTE: db is expected to open all the column families defined in STORE_COLUMN_FAMILIES.
     // FIXME: Make it better/generic.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }

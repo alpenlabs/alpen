@@ -8,7 +8,7 @@ use tracing::debug;
 use crate::filter::types::TxFilterConfig;
 
 /// Parse transaction and search for a Withdrawal Fulfillment transaction to an expected address.
-pub fn try_parse_tx_as_withdrawal_fulfillment(
+pub(crate) fn try_parse_tx_as_withdrawal_fulfillment(
     tx: &Transaction,
     filter_conf: &TxFilterConfig,
 ) -> Option<WithdrawalFulfillmentInfo> {

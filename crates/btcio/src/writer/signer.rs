@@ -20,7 +20,7 @@ type BlobIdx = u64;
 /// 1. A new payload intent needs to be signed
 /// 2. A signed intent needs to be resigned because somehow its inputs were spent/missing
 /// 3. A confirmed block that includes the tx gets reorged
-pub async fn create_and_sign_payload_envelopes<R: Reader + Signer + Wallet>(
+pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Wallet>(
     payloadentry: &BundledPayloadEntry,
     broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<WriterContext<R>>,

@@ -1,3 +1,5 @@
+//! RocksDB store for the Alpen codebase.
+
 pub mod bridge_relay;
 pub mod broadcaster;
 pub mod chain_state;
@@ -102,11 +104,12 @@ pub struct DbOpsConfig {
 }
 
 impl DbOpsConfig {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(retry_count: u16) -> Self {
         Self { retry_count }
     }
 
-    pub fn txn_retry_count(&self) -> TransactionRetry {
+    pub const fn txn_retry_count(&self) -> TransactionRetry {
         TransactionRetry::Count(self.retry_count)
     }
 }

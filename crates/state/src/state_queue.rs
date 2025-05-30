@@ -23,7 +23,7 @@ pub struct StateQueue<T> {
 
 impl<T> StateQueue<T> {
     /// Creates a new empty fresh queue.
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self {
             base_idx: 0,
             entries: Vec::new(),
@@ -31,7 +31,7 @@ impl<T> StateQueue<T> {
     }
 
     /// Creates a new empty queue with a particular base offset.
-    pub fn new_at_index(base_idx: u64) -> Self {
+    pub const fn new_at_index(base_idx: u64) -> Self {
         Self {
             base_idx,
             entries: Vec::new(),
@@ -40,13 +40,14 @@ impl<T> StateQueue<T> {
 
     /// Returns the "base index", which is the absolute position of the front of
     /// the queue, even if there is no element at the front of the queue.
-    pub fn base_idx(&self) -> u64 {
+    pub const fn base_idx(&self) -> u64 {
         self.base_idx
     }
 
     /// Returns a slice over the entries in the queue, without their positioning
     /// information.  Consider if `.iter_entries` is more well-suited.
     // TODO is it bad to expose this?
+    #[expect(clippy::missing_const_for_fn)]
     pub fn entries(&self) -> &[T] {
         &self.entries
     }
@@ -66,7 +67,7 @@ impl<T> StateQueue<T> {
     ///
     /// Not meant for public consumption, the backing entries array is meant to
     /// be internal.
-    fn get_off_for_abs(&self, idx: u64) -> u64 {
+    const fn get_off_for_abs(&self, idx: u64) -> u64 {
         idx - self.base_idx
     }
 
@@ -88,11 +89,13 @@ impl<T> StateQueue<T> {
     }
 
     /// Returns a reference to the front entry of the queue, if it exists.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn front(&self) -> Option<&T> {
         self.entries.first()
     }
 
     /// Returns a mut ref to the front entry in the queue, if it exists.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn front_mut(&mut self) -> Option<&mut T> {
         self.entries.last_mut()
     }
@@ -111,11 +114,13 @@ impl<T> StateQueue<T> {
     }
 
     /// Returns a reference to the back entry in the queue, if it exists.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn back(&self) -> Option<&T> {
         self.entries.last()
     }
 
     /// Returns a mut ref to the back entry in the queue, if it exists.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn back_mut(&mut self) -> Option<&mut T> {
         self.entries.last_mut()
     }

@@ -15,6 +15,7 @@ pub struct ProofDb {
 }
 
 impl ProofDb {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }

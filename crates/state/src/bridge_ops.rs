@@ -21,6 +21,7 @@ pub struct WithdrawalIntent {
 }
 
 impl WithdrawalIntent {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(amt: BitcoinAmount, destination: Descriptor, withdrawal_txid: Buf32) -> Self {
         Self {
             amt,
@@ -29,19 +30,19 @@ impl WithdrawalIntent {
         }
     }
 
-    pub fn as_parts(&self) -> (u64, &Descriptor) {
+    pub const fn as_parts(&self) -> (u64, &Descriptor) {
         (self.amt.to_sat(), &self.destination)
     }
 
-    pub fn amt(&self) -> &BitcoinAmount {
+    pub const fn amt(&self) -> &BitcoinAmount {
         &self.amt
     }
 
-    pub fn destination(&self) -> &Descriptor {
+    pub const fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
-    pub fn withdrawal_txid(&self) -> &Buf32 {
+    pub const fn withdrawal_txid(&self) -> &Buf32 {
         &self.withdrawal_txid
     }
 }
@@ -55,6 +56,7 @@ pub struct WithdrawalBatch {
 
 impl WithdrawalBatch {
     /// Creates a new instance.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(intents: Vec<WithdrawalIntent>) -> Self {
         Self { intents }
     }
@@ -82,14 +84,16 @@ pub struct DepositIntent {
 }
 
 impl DepositIntent {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(amt: BitcoinAmount, dest_ident: Vec<u8>) -> Self {
         Self { amt, dest_ident }
     }
 
-    pub fn amt(&self) -> u64 {
+    pub const fn amt(&self) -> u64 {
         self.amt.to_sat()
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn dest_ident(&self) -> &[u8] {
         &self.dest_ident
     }

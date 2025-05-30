@@ -26,7 +26,7 @@ impl<DB> Clone for WitnessDB<DB> {
 }
 
 impl<DB> WitnessDB<DB> {
-    pub fn new(db: Arc<DB>) -> Self {
+    pub const fn new(db: Arc<DB>) -> Self {
         Self { db }
     }
 }
@@ -125,9 +125,9 @@ mod tests {
 
     use super::*;
 
-    pub const BLOCK_HASH_ONE: FixedBytes<32> =
+    const BLOCK_HASH_ONE: FixedBytes<32> =
         fixed_bytes!("000000000000000000000000f529c70db0800449ebd81fbc6e4221523a989f05");
-    pub const BLOCK_HASH_TWO: FixedBytes<32> =
+    const BLOCK_HASH_TWO: FixedBytes<32> =
         fixed_bytes!("0000000000000000000000000a743ba7304efcc9e384ece9be7631e2470e401e");
 
     fn get_rocksdb_tmp_instance() -> anyhow::Result<impl SchemaDBOperations> {

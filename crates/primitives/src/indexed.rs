@@ -12,17 +12,18 @@ pub struct Indexed<T, Idx = u32> {
 
 impl<T, Idx> Indexed<T, Idx> {
     /// Creates a new instance.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(index: Idx, item: T) -> Self {
         Self { index, item }
     }
 
     /// Returns the index of the item
-    pub fn index(&self) -> &Idx {
+    pub const fn index(&self) -> &Idx {
         &self.index
     }
 
     /// Returns a reference to the item.
-    pub fn item(&self) -> &T {
+    pub const fn item(&self) -> &T {
         &self.item
     }
 

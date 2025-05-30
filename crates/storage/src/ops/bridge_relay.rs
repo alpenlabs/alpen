@@ -8,11 +8,13 @@ use strata_primitives::relay::types::BridgeMessage;
 use crate::exec::*;
 
 /// Database context for an database operation interface.
+#[derive(Debug)]
 pub struct Context<D: BridgeMessageDb> {
     db: Arc<D>,
 }
 
 impl<D: BridgeMessageDb + Sync + Send + 'static> Context<D> {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(db: Arc<D>) -> Self {
         Self { db }
     }

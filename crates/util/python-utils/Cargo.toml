@@ -4,7 +4,7 @@ name = "strata-python-utils"
 version = "0.3.0-alpha.1"
 
 [lints]
-rust.unused_crate_dependencies = "deny"
+workspace = true
 
 [lib]
 name = "strata_utils"
@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 shrex = { version = "0.3.0-alpha.1", path = "../shrex", features = ["serde"] }
-strata-crypto = { workspace = true, features = ["rand"] }
+strata-crypto.workspace = true
 strata-primitives.workspace = true
 
 bdk_bitcoind_rpc.workspace = true

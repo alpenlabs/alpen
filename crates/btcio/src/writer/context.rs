@@ -7,7 +7,7 @@ use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 
 /// All the items that writer tasks need as context.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WriterContext<R: Reader + Signer + Wallet> {
     /// Params for rollup.
     pub params: Arc<Params>,
@@ -26,6 +26,7 @@ pub struct WriterContext<R: Reader + Signer + Wallet> {
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         params: Arc<Params>,
         config: Arc<WriterConfig>,

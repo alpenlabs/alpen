@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use bdk_wallet::bitcoin::{Amount, Network};
 
 /// Magic bytes to add to the metadata output in transactions to help identify them.
-pub const MAGIC_BYTES: &[u8; 11] = b"alpenstrata";
+pub(crate) const MAGIC_BYTES: &[u8; 11] = b"alpenstrata";
 
 /// 10 BTC + 0.01 to cover fees in the following transaction where the operator spends it into the
 /// federation.

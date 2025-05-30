@@ -13,7 +13,7 @@ use crate::status::ProvingTaskStatus;
 /// provides specific information about the encountered error, making
 /// it easier to diagnose and handle failures.
 #[derive(Error, Debug)]
-pub enum ProvingTaskError {
+pub(crate) enum ProvingTaskError {
     /// Occurs when the serialization of the EL block prover input fails.
     #[error("Failed to serialize the EL block prover input")]
     Serialization(#[from] bincode::Error),

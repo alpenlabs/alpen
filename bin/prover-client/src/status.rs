@@ -9,7 +9,7 @@ use crate::errors::ProvingTaskError;
 /// - `ProvingInProgress` -> `Completed`: When the proving task completes successfully.
 /// - Any state -> `Failed`: If the task fails at any point.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ProvingTaskStatus {
+pub(crate) enum ProvingTaskStatus {
     /// Waiting for dependencies to be resolved.
     WaitingForDependencies,
     /// Ready to be started
@@ -31,7 +31,10 @@ impl ProvingTaskStatus {
     /// # Returns
     /// * `Ok(())` if the transition is valid
     /// * `Err(ProvingTaskError::InvalidStatusTransition)` if the transition is not allowed
-    pub fn transition(&mut self, target_status: ProvingTaskStatus) -> Result<(), ProvingTaskError> {
+    pub(crate) fn transition(
+        &mut self,
+        target_status: ProvingTaskStatus,
+    ) -> Result<(), ProvingTaskError> {
         let is_transition_valid = match (self.clone(), &target_status) {
             // Always allow transitioning to Failed
             (_, &ProvingTaskStatus::Failed) => true,

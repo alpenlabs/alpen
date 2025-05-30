@@ -11,6 +11,7 @@ use tracing::*;
 
 use crate::{cache, ops};
 
+#[expect(missing_debug_implementations)]
 pub struct ClientStateManager {
     ops: ops::client_state::ClientStateOps,
 
@@ -116,37 +117,38 @@ impl ClientStateManager {
 }
 
 /// Internally tracks the current state so we can fetch it as needed.
+#[derive(Debug)]
 struct CurStateTracker {
     last_idx: Option<u64>,
     state: Option<Arc<ClientState>>,
 }
 
 impl CurStateTracker {
-    pub fn new_empty() -> Self {
+    const fn new_empty() -> Self {
         Self {
             last_idx: None,
             state: None,
         }
     }
 
-    pub fn get_idx(&self) -> u64 {
+    fn get_idx(&self) -> u64 {
         self.last_idx.unwrap_or_default()
     }
 
-    pub fn get_clone(&self) -> Option<Arc<ClientState>> {
+    fn get_clone(&self) -> Option<Arc<ClientState>> {
         self.state.clone()
     }
 
-    pub fn set(&mut self, idx: u64, state: Arc<ClientState>) {
+    fn set(&mut self, idx: u64, state: Arc<ClientState>) {
         self.last_idx = Some(idx);
         self.state = Some(state);
     }
 
-    pub fn is_idx_better(&self, idx: u64) -> bool {
+    fn is_idx_better(&self, idx: u64) -> bool {
         self.last_idx.is_none_or(|v| idx >= v)
     }
 
-    pub fn maybe_update(&mut self, idx: u64, state: &Arc<ClientState>) -> bool {
+    fn maybe_update(&mut self, idx: u64, state: &Arc<ClientState>) -> bool {
         let should = self.is_idx_better(idx);
         if should {
             self.set(idx, state.clone());

@@ -1,3 +1,5 @@
+//! Strata client for the Alpen codebase.
+
 #![feature(slice_pattern)]
 use std::{sync::Arc, time::Duration};
 
@@ -219,6 +221,7 @@ fn init_logging(rt: &Handle) {
 
 /// Shared low-level services that secondary services depend on.
 #[derive(Clone)]
+#[expect(missing_debug_implementations)]
 pub struct CoreContext {
     pub runtime: Handle,
     pub database: Arc<CommonDb>,

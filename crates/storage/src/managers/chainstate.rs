@@ -12,6 +12,7 @@ use threadpool::ThreadPool;
 
 use crate::{cache, ops};
 
+#[expect(missing_debug_implementations)]
 pub struct ChainstateManager {
     ops: ops::chainstate::ChainstateOps,
     wb_cache: cache::CacheTable<u64, Option<WriteBatchEntry>>,

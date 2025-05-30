@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-rpc-types"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-db.workspace = true
 strata-primitives.workspace = true
@@ -13,5 +16,4 @@ hex.workspace = true
 jsonrpsee = { workspace = true, features = ["server"] }
 serde.workspace = true
 serde_json.workspace = true
-serde_with.workspace = true
 thiserror.workspace = true

@@ -3,5 +3,8 @@ edition = "2021"
 name = "strata-rpc-utils"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 jsonrpsee = { workspace = true, features = ["server", "macros"] }

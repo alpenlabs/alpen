@@ -3,10 +3,13 @@ edition = "2021"
 name = "shrex"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 axum = { version = "0.7.5", optional = true, default-features = false }
 serde = { workspace = true, optional = true }
-terrors = "0.3.0"
+terrors.workspace = true
 
 [features]
 # Implements serde {de,}serialization of the Hex wrapper

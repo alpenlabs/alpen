@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-proofimpl-evm-ee-stf"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
@@ -16,26 +19,17 @@ alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-eips.workspace = true
 alloy-primitives.workspace = true
 alloy-rlp.workspace = true
-alloy-rlp-derive.workspace = true
-alloy-rpc-types.workspace = true
 alloy-rpc-types-eth.workspace = true
 alloy-trie.workspace = true
 
 anyhow.workspace = true
-k256 = { version = "0.13.4", features = [
-  "std",
-  "ecdsa",
-], default-features = false }
 reth-primitives = { workspace = true, features = ["serde-bincode-compat"] }
 reth-primitives-traits.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
-rlp = "0.5.2"
 serde.workspace = true
 serde_with.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
 bincode.workspace = true
-hex-literal = "0.4"
 serde_json.workspace = true

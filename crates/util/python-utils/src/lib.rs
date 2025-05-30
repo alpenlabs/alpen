@@ -1,3 +1,5 @@
+//! Python utilities for the Alpen codebase.
+
 use pyo3::prelude::*;
 
 mod constants;

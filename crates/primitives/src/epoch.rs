@@ -45,6 +45,7 @@ pub struct EpochCommitment {
 }
 
 impl EpochCommitment {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(epoch: u64, last_slot: u64, last_blkid: L2BlockId) -> Self {
         Self {
             epoch,
@@ -64,15 +65,15 @@ impl EpochCommitment {
         Self::new(0, 0, L2BlockId::from(Buf32::zero()))
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub const fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub fn last_slot(&self) -> u64 {
+    pub const fn last_slot(&self) -> u64 {
         self.last_slot
     }
 
-    pub fn last_blkid(&self) -> &L2BlockId {
+    pub const fn last_blkid(&self) -> &L2BlockId {
         &self.last_blkid
     }
 

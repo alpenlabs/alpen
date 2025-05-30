@@ -56,6 +56,7 @@ pub struct EpochSummary {
 
 impl EpochSummary {
     /// Creates a new instance.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         epoch: u64,
         terminal: L2BlockCommitment,
@@ -72,23 +73,23 @@ impl EpochSummary {
         }
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub const fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub fn terminal(&self) -> &L2BlockCommitment {
+    pub const fn terminal(&self) -> &L2BlockCommitment {
         &self.terminal
     }
 
-    pub fn prev_terminal(&self) -> &L2BlockCommitment {
+    pub const fn prev_terminal(&self) -> &L2BlockCommitment {
         &self.prev_terminal
     }
 
-    pub fn new_l1(&self) -> &L1BlockCommitment {
+    pub const fn new_l1(&self) -> &L1BlockCommitment {
         &self.new_l1
     }
 
-    pub fn final_state(&self) -> &Buf32 {
+    pub const fn final_state(&self) -> &Buf32 {
         &self.final_state
     }
 
@@ -159,6 +160,7 @@ pub struct Checkpoint {
 }
 
 impl Checkpoint {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         batch_info: BatchInfo,
         transition: BatchTransition,
@@ -175,19 +177,19 @@ impl Checkpoint {
         }
     }
 
-    pub fn batch_info(&self) -> &BatchInfo {
+    pub const fn batch_info(&self) -> &BatchInfo {
         &self.commitment.batch_info
     }
 
-    pub fn batch_transition(&self) -> &BatchTransition {
+    pub const fn batch_transition(&self) -> &BatchTransition {
         &self.commitment.transition
     }
 
-    pub fn commitment(&self) -> &CheckpointCommitment {
+    pub const fn commitment(&self) -> &CheckpointCommitment {
         &self.commitment
     }
 
-    pub fn proof(&self) -> &Proof {
+    pub const fn proof(&self) -> &Proof {
         &self.proof
     }
 
@@ -219,7 +221,7 @@ impl Checkpoint {
         hash::raw(&buf)
     }
 
-    pub fn sidecar(&self) -> &CheckpointSidecar {
+    pub const fn sidecar(&self) -> &CheckpointSidecar {
         &self.sidecar
     }
 }
@@ -234,10 +236,12 @@ pub struct CheckpointSidecar {
 }
 
 impl CheckpointSidecar {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(chainstate: Vec<u8>) -> Self {
         Self { chainstate }
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn chainstate(&self) -> &[u8] {
         &self.chainstate
     }
@@ -252,15 +256,16 @@ pub struct SignedCheckpoint {
 }
 
 impl SignedCheckpoint {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(inner: Checkpoint, signature: Buf64) -> Self {
         Self { inner, signature }
     }
 
-    pub fn checkpoint(&self) -> &Checkpoint {
+    pub const fn checkpoint(&self) -> &Checkpoint {
         &self.inner
     }
 
-    pub fn signature(&self) -> &Buf64 {
+    pub const fn signature(&self) -> &Buf64 {
         &self.signature
     }
 }
@@ -288,6 +293,7 @@ pub struct BatchInfo {
 }
 
 impl BatchInfo {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         checkpoint_idx: u64,
         l1_range: (L1BlockCommitment, L1BlockCommitment),
@@ -301,7 +307,7 @@ impl BatchInfo {
     }
 
     /// Geets the epoch index.
-    pub fn epoch(&self) -> u64 {
+    pub const fn epoch(&self) -> u64 {
         self.epoch
     }
 
@@ -311,22 +317,22 @@ impl BatchInfo {
     }
 
     /// Gets the final L2 block commitment in the batch's L2 range.
-    pub fn final_l2_block(&self) -> &L2BlockCommitment {
+    pub const fn final_l2_block(&self) -> &L2BlockCommitment {
         &self.l2_range.1
     }
 
     /// Gets the final L2 blkid in the batch's L2 range.
-    pub fn final_l2_blockid(&self) -> &L2BlockId {
+    pub const fn final_l2_blockid(&self) -> &L2BlockId {
         self.l2_range.1.blkid()
     }
 
     /// Gets the final L1 block commitment in the batch's L1 range.
-    pub fn final_l1_block(&self) -> &L1BlockCommitment {
+    pub const fn final_l1_block(&self) -> &L1BlockCommitment {
         &self.l1_range.1
     }
 
     /// Check is whether the L2 slot is covered by the checkpoint
-    pub fn includes_l2_block(&self, slot: u64) -> bool {
+    pub const fn includes_l2_block(&self, slot: u64) -> bool {
         let (_, last_l2_commitment) = self.l2_range;
         if slot <= last_l2_commitment.slot() {
             return true;
@@ -335,7 +341,7 @@ impl BatchInfo {
     }
 
     /// check for whether the L1 height is covered by the checkpoint
-    pub fn includes_l1_block(&self, height: u64) -> bool {
+    pub const fn includes_l1_block(&self, height: u64) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
         if height <= last_l1_commitment.height() {
             return true;
@@ -472,6 +478,7 @@ pub struct CommitmentInfo {
 }
 
 impl CommitmentInfo {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         blockhash: Buf32,
         txid: Buf32,
@@ -501,6 +508,7 @@ pub struct L1CommittedCheckpoint {
 }
 
 impl L1CommittedCheckpoint {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(checkpoint: Checkpoint, commitment: CommitmentInfo) -> Self {
         Self {
             checkpoint,

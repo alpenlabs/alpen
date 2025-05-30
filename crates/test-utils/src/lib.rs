@@ -1,3 +1,5 @@
+//! Test utilities for the Alpen codebase.
+
 use arbitrary::{Arbitrary, Unstructured};
 use rand_core::{CryptoRngCore, OsRng};
 
@@ -11,6 +13,7 @@ pub mod tx_indexer;
 /// The default buffer size for the `ArbitraryGenerator`.
 const ARB_GEN_LEN: usize = 65_536;
 
+#[derive(Debug)]
 pub struct ArbitraryGenerator {
     buf: Vec<u8>, // Persistent buffer
 }

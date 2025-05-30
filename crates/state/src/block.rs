@@ -21,23 +21,24 @@ pub struct L2Block {
 }
 
 impl L2Block {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(header: SignedL2BlockHeader, body: L2BlockBody) -> Self {
         Self { header, body }
     }
 
-    pub fn header(&self) -> &SignedL2BlockHeader {
+    pub const fn header(&self) -> &SignedL2BlockHeader {
         &self.header
     }
 
-    pub fn body(&self) -> &L2BlockBody {
+    pub const fn body(&self) -> &L2BlockBody {
         &self.body
     }
 
-    pub fn l1_segment(&self) -> &L1Segment {
+    pub const fn l1_segment(&self) -> &L1Segment {
         &self.body.l1_segment
     }
 
-    pub fn exec_segment(&self) -> &ExecSegment {
+    pub const fn exec_segment(&self) -> &ExecSegment {
         &self.body.exec_segment
     }
 
@@ -74,6 +75,7 @@ pub struct L2BlockBody {
 }
 
 impl L2BlockBody {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(l1_segment: L1Segment, exec_segment: ExecSegment) -> Self {
         Self {
             l1_segment,
@@ -81,11 +83,11 @@ impl L2BlockBody {
         }
     }
 
-    pub fn l1_segment(&self) -> &L1Segment {
+    pub const fn l1_segment(&self) -> &L1Segment {
         &self.l1_segment
     }
 
-    pub fn exec_segment(&self) -> &ExecSegment {
+    pub const fn exec_segment(&self) -> &ExecSegment {
         &self.exec_segment
     }
 }
@@ -117,6 +119,7 @@ pub struct L1Segment {
 impl L1Segment {
     /// Constructs a new instance.  These new manifests MUST be sorted in order
     /// of block height.
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(new_height: u64, new_manifests: Vec<L1BlockManifest>) -> Self {
         Self {
             new_height,
@@ -128,10 +131,11 @@ impl L1Segment {
         Self::new(cur_height, Vec::new())
     }
 
-    pub fn new_height(&self) -> u64 {
+    pub const fn new_height(&self) -> u64 {
         self.new_height
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new_manifests(&self) -> &[L1BlockManifest] {
         &self.new_manifests
     }
@@ -156,6 +160,7 @@ pub struct ExecSegment {
 }
 
 impl ExecSegment {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(update: exec_update::ExecUpdate) -> Self {
         Self { update }
     }
@@ -164,7 +169,7 @@ impl ExecSegment {
     ///
     /// This might be replaced with a totally different scheme if we have
     /// multiple EEs.
-    pub fn update(&self) -> &exec_update::ExecUpdate {
+    pub const fn update(&self) -> &exec_update::ExecUpdate {
         &self.update
     }
 }
@@ -176,6 +181,7 @@ pub struct L2BlockAccessory {
 }
 
 impl L2BlockAccessory {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(exec_payload: Vec<u8>, gas_used: u64) -> Self {
         Self {
             exec_payload,
@@ -183,11 +189,12 @@ impl L2BlockAccessory {
         }
     }
 
+    #[expect(clippy::missing_const_for_fn)]
     pub fn exec_payload(&self) -> &[u8] {
         &self.exec_payload
     }
 
-    pub fn gas_used(&self) -> u64 {
+    pub const fn gas_used(&self) -> u64 {
         self.gas_used
     }
 }
@@ -199,31 +206,32 @@ pub struct L2BlockBundle {
 }
 
 impl L2BlockBundle {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(block: L2Block, accessory: L2BlockAccessory) -> Self {
         Self { block, accessory }
     }
 
-    pub fn block(&self) -> &L2Block {
+    pub const fn block(&self) -> &L2Block {
         &self.block
     }
 
-    pub fn accessory(&self) -> &L2BlockAccessory {
+    pub const fn accessory(&self) -> &L2BlockAccessory {
         &self.accessory
     }
 
-    pub fn header(&self) -> &SignedL2BlockHeader {
+    pub const fn header(&self) -> &SignedL2BlockHeader {
         self.block.header()
     }
 
-    pub fn body(&self) -> &L2BlockBody {
+    pub const fn body(&self) -> &L2BlockBody {
         self.block.body()
     }
 
-    pub fn l1_segment(&self) -> &L1Segment {
+    pub const fn l1_segment(&self) -> &L1Segment {
         self.block.l1_segment()
     }
 
-    pub fn exec_segment(&self) -> &ExecSegment {
+    pub const fn exec_segment(&self) -> &ExecSegment {
         self.block.exec_segment()
     }
 

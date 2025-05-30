@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-btcio"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-config.workspace = true
 strata-db.workspace = true
@@ -16,8 +19,8 @@ anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 borsh.workspace = true
-hex.workspace = true
-musig2 = { workspace = true, features = ["serde"] }
+hex = { workspace = true, optional = true }
+musig2 = { workspace = true, features = ["serde"], optional = true }
 rand.workspace = true
 reqwest.workspace = true
 secp256k1 = { workspace = true, features = ["rand-std"] }
@@ -29,16 +32,13 @@ tracing.workspace = true
 
 [dev-dependencies]
 borsh.workspace = true
-strata-common.workspace = true
 strata-rocksdb = { workspace = true, features = ["test_utils"] }
 strata-l1tx = { workspace = true, features = ["test_utils"] }
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true
 
-arbitrary.workspace = true
 corepc-node = { version = "0.7.1", features = ["28_0", "download"] }
-mockall.workspace = true
 
 [features]
-test_utils = []
+test_utils = ["dep:hex", "dep:musig2"]

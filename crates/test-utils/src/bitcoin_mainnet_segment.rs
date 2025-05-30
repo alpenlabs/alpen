@@ -20,6 +20,8 @@ use strata_primitives::{
     buf::Buf32,
     l1::{HeaderVerificationState, L1BlockManifest, L1HeaderRecord},
 };
+
+#[derive(Debug)]
 pub struct BtcChainSegment {
     pub headers: Vec<Header>,
     pub start: u64,

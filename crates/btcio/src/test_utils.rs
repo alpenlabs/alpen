@@ -40,6 +40,7 @@ pub struct TestBitcoinClient {
 }
 
 impl TestBitcoinClient {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(confs: u64) -> Self {
         Self {
             confs,
@@ -450,7 +451,7 @@ pub(crate) mod test_context {
 
     use crate::{test_utils::TestBitcoinClient, writer::context::WriterContext};
 
-    pub fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
+    pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
         let client = Arc::new(TestBitcoinClient::new(1));
         let addr = "bcrt1q6u6qyya3sryhh42lahtnz2m7zuufe7dlt8j0j5"
             .parse::<Address<_>>()

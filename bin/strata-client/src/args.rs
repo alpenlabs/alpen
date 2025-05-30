@@ -7,18 +7,18 @@ use crate::errors::{ConfigError, InitError};
 
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
-pub struct EnvArgs {
+pub(crate) struct EnvArgs {
     // TODO: relevant items that will be populated from env vars
 }
 
 impl EnvArgs {
-    pub fn from_env() -> Self {
+    pub(crate) const fn from_env() -> Self {
         // Here we load particular env vars that should probably override the config.
         Self {}
     }
 
     /// Get strings of overrides gathered from env.
-    pub fn get_overrides(&self) -> Vec<String> {
+    pub(crate) const fn get_overrides(&self) -> Vec<String> {
         // TODO: add stuffs as necessary
         Vec::new()
     }
@@ -26,7 +26,7 @@ impl EnvArgs {
 
 #[derive(Debug, Clone, FromArgs)]
 #[argh(description = "Strata client")]
-pub struct Args {
+pub(crate) struct Args {
     // Config non-overriding args
     #[argh(option, short = 'c', description = "path to configuration")]
     pub config: PathBuf,
@@ -64,7 +64,7 @@ pub struct Args {
 
 impl Args {
     /// Get strings of overrides gathered from args.
-    pub fn get_overrides(&self) -> Result<Vec<String>, InitError> {
+    pub(crate) fn get_overrides(&self) -> Result<Vec<String>, InitError> {
         let mut overrides = self.overrides.clone();
         overrides.extend_from_slice(&self.get_direct_overrides()?);
         Ok(overrides)
@@ -98,7 +98,7 @@ type Override = (String, toml::Value);
 
 /// Parses an overrides This first splits the string by '=' to get key and value and then splits
 /// the key by '.' which is the update path.
-pub fn parse_override(override_str: &str) -> Result<Override, ConfigError> {
+pub(crate) fn parse_override(override_str: &str) -> Result<Override, ConfigError> {
     let (key, value_str) = override_str
         .split_once("=")
         .ok_or(ConfigError::InvalidOverride(override_str.to_string()))?;
@@ -106,7 +106,7 @@ pub fn parse_override(override_str: &str) -> Result<Override, ConfigError> {
 }
 
 /// Apply override to config.
-pub fn apply_override(
+pub(crate) fn apply_override(
     path: &str,
     value: toml::Value,
     table: &mut Table,

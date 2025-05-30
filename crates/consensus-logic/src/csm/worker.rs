@@ -31,7 +31,7 @@ use crate::{errors::Error, genesis};
 ///
 /// Unable to be shared across threads.  Any data we want to export we'll do
 /// through another handle.
-#[allow(unused)]
+#[expect(missing_debug_implementations)]
 pub struct WorkerState {
     /// Consensus parameters.
     params: Arc<Params>,
@@ -90,12 +90,12 @@ impl WorkerState {
     }
 
     /// Gets the index of the current state.
-    pub fn cur_event_idx(&self) -> u64 {
+    pub const fn cur_event_idx(&self) -> u64 {
         self.cur_state_idx
     }
 
     /// Gets a ref to the consensus state from the inner state tracker.
-    pub fn cur_state(&self) -> &Arc<ClientState> {
+    pub const fn cur_state(&self) -> &Arc<ClientState> {
         &self.cur_state
     }
 

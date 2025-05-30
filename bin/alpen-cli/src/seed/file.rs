@@ -14,6 +14,7 @@ pub struct FilePersister {
 }
 
 impl FilePersister {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(file: PathBuf) -> Self {
         Self { file }
     }

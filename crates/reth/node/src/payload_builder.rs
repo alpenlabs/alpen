@@ -51,7 +51,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct StrataPayloadBuilder {
+pub(crate) struct StrataPayloadBuilder {
     /// The type responsible for creating the evm.
     evm_config: StrataEvmConfig,
     /// Payload builder configuration.
@@ -61,7 +61,7 @@ pub struct StrataPayloadBuilder {
 impl StrataPayloadBuilder {
     /// Returns the configured [`CfgEnvWithHandlerCfg`] and [`BlockEnv`] for the targeted payload
     /// (that has the `parent` as its parent).
-    pub fn cfg_and_block_env(
+    pub(crate) fn cfg_and_block_env(
         &self,
         attributes: &StrataPayloadBuilderAttributes,
         parent: &Header,
@@ -219,7 +219,7 @@ where
 /// Adapted from
 /// [default_ethereum_payload](reth_ethereum_payload_builder::default_ethereum_payload)
 #[inline]
-pub fn try_build_payload<EvmConfig, Pool, Client>(
+pub(crate) fn try_build_payload<EvmConfig, Pool, Client>(
     evm_config: EvmConfig,
     builder_config: EthereumBuilderConfig,
     args: BuildArguments<Pool, Client, StrataPayloadBuilderAttributes, StrataBuiltPayload>,

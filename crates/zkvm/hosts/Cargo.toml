@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-zkvm-hosts"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
@@ -20,11 +23,6 @@ strata-proofimpl-btc-blockspace.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-cl-stf.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
-
-bincode.workspace = true
-borsh.workspace = true
-serde.workspace = true
-thiserror.workspace = true
 
 [features]
 default = []

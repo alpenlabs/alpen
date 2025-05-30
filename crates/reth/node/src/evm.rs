@@ -16,13 +16,14 @@ pub struct StrataEvmConfig {
 }
 
 impl StrataEvmConfig {
-    pub const fn new(chain_spec: Arc<ChainSpec>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self {
             inner: EthEvmConfig::new(chain_spec),
         }
     }
 
-    pub fn inner(&self) -> &EthEvmConfig {
+    pub const fn inner(&self) -> &EthEvmConfig {
         &self.inner
     }
 }

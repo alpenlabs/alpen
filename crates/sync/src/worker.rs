@@ -18,6 +18,7 @@ use crate::{
     L2SyncError, SyncClient,
 };
 
+#[expect(missing_debug_implementations)]
 pub struct L2SyncContext<T: SyncClient> {
     client: T,
     storage: Arc<NodeStorage>,
@@ -25,6 +26,7 @@ pub struct L2SyncContext<T: SyncClient> {
 }
 
 impl<T: SyncClient> L2SyncContext<T> {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(client: T, storage: Arc<NodeStorage>, sync_manager: Arc<SyncManager>) -> Self {
         Self {
             client,

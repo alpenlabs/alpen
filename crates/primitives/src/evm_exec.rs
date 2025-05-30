@@ -11,6 +11,7 @@ pub struct EVMExtraPayload {
 }
 
 impl EVMExtraPayload {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(block_hash: [u8; 32]) -> Self {
         Self { block_hash }
     }
@@ -49,6 +50,7 @@ pub struct EvmEeBlockCommitment {
 }
 
 impl EvmEeBlockCommitment {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(slot: u64, blkid: Buf32) -> Self {
         Self { slot, blkid }
     }
@@ -57,11 +59,11 @@ impl EvmEeBlockCommitment {
         Self::new(0, Buf32::zero())
     }
 
-    pub fn slot(&self) -> u64 {
+    pub const fn slot(&self) -> u64 {
         self.slot
     }
 
-    pub fn blkid(&self) -> &Buf32 {
+    pub const fn blkid(&self) -> &Buf32 {
         &self.blkid
     }
 

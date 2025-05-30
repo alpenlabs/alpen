@@ -13,7 +13,7 @@ define_table_with_default_codec!(
 /// Should NEVER be updated directly outside of this method.
 /// Id starts from 0, increments by 1
 pub(crate) fn get_next_id<S: Schema, DB: TransactionDBMarker>(
-    txn: &TransactionCtx<DB>,
+    txn: &TransactionCtx<'_, DB>,
 ) -> anyhow::Result<u64> {
     get_next_id_opts::<S, DB>(txn, |last_idx| last_idx + 1, 0)
 }
@@ -24,7 +24,7 @@ pub(crate) fn get_next_id<S: Schema, DB: TransactionDBMarker>(
 /// Should NEVER be updated directly outside of this method.
 /// index starts from `starting_index` and updated by `update(last_idx)`
 pub(crate) fn get_next_id_opts<S: Schema, DB: TransactionDBMarker>(
-    txn: &TransactionCtx<DB>,
+    txn: &TransactionCtx<'_, DB>,
     update: impl Fn(u64) -> u64,
     starting_index: u64,
 ) -> anyhow::Result<u64> {

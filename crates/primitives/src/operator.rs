@@ -11,12 +11,14 @@ pub trait OperatorKeyProvider {
 }
 
 /// Stub key provider that can be used for testing.
+#[derive(Debug)]
 pub struct StubOpKeyProv {
     expected_idx: OperatorIdx,
     pk: Buf32,
 }
 
 impl StubOpKeyProv {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(expected_idx: OperatorIdx, pk: Buf32) -> Self {
         Self { expected_idx, pk }
     }
@@ -40,6 +42,7 @@ pub struct OperatorPubkeys {
 }
 
 impl OperatorPubkeys {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(signing_pk: Buf32, wallet_pk: Buf32) -> Self {
         Self {
             signing_pk,
@@ -47,11 +50,11 @@ impl OperatorPubkeys {
         }
     }
 
-    pub fn signing_pk(&self) -> &Buf32 {
+    pub const fn signing_pk(&self) -> &Buf32 {
         &self.signing_pk
     }
 
-    pub fn wallet_pk(&self) -> &Buf32 {
+    pub const fn wallet_pk(&self) -> &Buf32 {
         &self.wallet_pk
     }
 }

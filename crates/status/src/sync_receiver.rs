@@ -4,12 +4,14 @@
 
 use tokio::{runtime::Handle, sync::watch};
 
+#[derive(Debug)]
 pub struct SyncReceiver<T> {
     rx: watch::Receiver<T>,
     rt: Handle,
 }
 
 impl<T> SyncReceiver<T> {
+    #[expect(clippy::missing_const_for_fn)]
     pub fn new(rx: watch::Receiver<T>, rt: Handle) -> Self {
         Self { rx, rt }
     }

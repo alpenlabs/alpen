@@ -1,3 +1,5 @@
+//! State diff for the reth node.
+
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 use std::collections::hash_map::Entry;

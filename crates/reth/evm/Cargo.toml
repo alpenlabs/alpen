@@ -3,6 +3,9 @@ edition = "2021"
 name = "alpen-reth-evm"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 alpen-reth-primitives.workspace = true
 strata-crypto.workspace = true
@@ -15,4 +18,4 @@ revm-primitives.workspace = true
 
 [dev-dependencies]
 secp256k1.workspace = true
-strata-crypto = { workspace = true, features = ["rand"] }
+strata-crypto.workspace = true
