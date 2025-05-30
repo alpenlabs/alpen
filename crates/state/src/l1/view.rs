@@ -59,7 +59,7 @@ impl L1ViewState {
     }
 
     /// Gets the safe block as a [`L1BlockCommitment`].
-    pub const fn get_safe_block(&self) -> L1BlockCommitment {
+    pub fn get_safe_block(&self) -> L1BlockCommitment {
         L1BlockCommitment::new(self.safe_height(), *self.safe_blkid())
     }
 

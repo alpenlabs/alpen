@@ -78,7 +78,7 @@ where
     >,
 {
     /// Build a [`StrataEthApi`] using [`StrataEthApiBuilder`].
-    pub const fn builder() -> StrataEthApiBuilder {
+    pub fn builder() -> StrataEthApiBuilder {
         StrataEthApiBuilder::new()
     }
 }
@@ -279,7 +279,8 @@ pub struct StrataEthApiBuilder {
 
 impl StrataEthApiBuilder {
     /// Creates a [`StrataEthApiBuilder`] instance.
-    pub const fn new() -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new() -> Self {
         Self {
             sequencer_client: None,
         }

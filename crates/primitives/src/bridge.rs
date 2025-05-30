@@ -204,7 +204,8 @@ pub struct OperatorPartialSig {
 
 impl OperatorPartialSig {
     /// Create a new [`OperatorPartialSig`].
-    pub const fn new(partial_sig: Musig2PartialSig, signer_index: OperatorIdx) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(partial_sig: Musig2PartialSig, signer_index: OperatorIdx) -> Self {
         Self {
             partial_sig,
             signer_index,

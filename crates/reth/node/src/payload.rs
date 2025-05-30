@@ -36,10 +36,8 @@ impl StrataPayloadAttributes {
         }
     }
 
-    pub const fn new(
-        payload_attributes: EthPayloadAttributes,
-        batch_gas_limit: Option<u64>,
-    ) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(payload_attributes: EthPayloadAttributes, batch_gas_limit: Option<u64>) -> Self {
         Self {
             inner: payload_attributes,
             batch_gas_limit,
@@ -128,10 +126,8 @@ pub struct StrataBuiltPayload {
 }
 
 impl StrataBuiltPayload {
-    pub(crate) const fn new(
-        inner: EthBuiltPayload,
-        withdrawal_intents: Vec<WithdrawalIntent>,
-    ) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new(inner: EthBuiltPayload, withdrawal_intents: Vec<WithdrawalIntent>) -> Self {
         Self {
             inner,
             withdrawal_intents,

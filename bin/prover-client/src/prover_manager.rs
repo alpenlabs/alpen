@@ -22,7 +22,7 @@ pub(crate) struct ProverManager {
 }
 
 impl ProverManager {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDb>,

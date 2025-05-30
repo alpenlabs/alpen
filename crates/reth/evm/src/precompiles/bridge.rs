@@ -29,7 +29,8 @@ pub(crate) struct BridgeoutPrecompile {
 }
 
 impl BridgeoutPrecompile {
-    pub(crate) const fn new(fixed_withdrawal_wei: U256) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new(fixed_withdrawal_wei: U256) -> Self {
         Self {
             fixed_withdrawal_wei,
         }

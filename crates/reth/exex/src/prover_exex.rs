@@ -40,7 +40,8 @@ impl<
         S: WitnessStore + Clone,
     > ProverWitnessGenerator<Node, S>
 {
-    pub const fn new(ctx: ExExContext<Node>, db: Arc<S>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(ctx: ExExContext<Node>, db: Arc<S>) -> Self {
         Self { ctx, db }
     }
 

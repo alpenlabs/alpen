@@ -19,7 +19,8 @@ pub struct BridgeMsgDb {
 }
 
 impl BridgeMsgDb {
-    pub const fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 

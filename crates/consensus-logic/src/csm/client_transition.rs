@@ -41,7 +41,8 @@ pub struct StorageEventContext<'c> {
 }
 
 impl<'c> StorageEventContext<'c> {
-    pub const fn new(storage: &'c NodeStorage) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(storage: &'c NodeStorage) -> Self {
         Self { storage }
     }
 }
@@ -216,7 +217,7 @@ fn handle_block(
     Ok(())
 }
 
-const fn process_genesis_trigger_block(
+fn process_genesis_trigger_block(
     block_mf: &L1BlockManifest,
     params: &RollupParams,
 ) -> Result<InternalState, Error> {

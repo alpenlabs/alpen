@@ -16,7 +16,8 @@ pub struct StrataRPC<DB: Clone + Sized> {
 
 impl<DB: Clone + Sized> StrataRPC<DB> {
     /// Create new instance
-    pub const fn new(db: Arc<DB>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(db: Arc<DB>) -> Self {
         Self { db }
     }
 }

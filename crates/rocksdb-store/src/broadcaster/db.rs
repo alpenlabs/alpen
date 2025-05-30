@@ -21,7 +21,8 @@ pub struct L1BroadcastDb {
 }
 
 impl L1BroadcastDb {
-    pub const fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(db: Arc<DB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
 }
@@ -99,7 +100,8 @@ pub struct BroadcastDb {
 }
 
 impl BroadcastDb {
-    pub const fn new(l1_broadcast_db: Arc<L1BroadcastDb>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(l1_broadcast_db: Arc<L1BroadcastDb>) -> Self {
         Self { l1_broadcast_db }
     }
 }

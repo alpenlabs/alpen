@@ -26,7 +26,8 @@ pub struct ExecPayloadData {
 }
 
 impl ExecPayloadData {
-    pub const fn new(exec_update: ExecUpdate, accessory_data: Vec<u8>, ops: Vec<Op>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(exec_update: ExecUpdate, accessory_data: Vec<u8>, ops: Vec<Op>) -> Self {
         Self {
             exec_update,
             accessory_data,
@@ -94,7 +95,8 @@ pub struct PayloadEnv {
 }
 
 impl PayloadEnv {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         timestamp: u64,
         prev_l2_block_id: L2BlockId,
         _safe_l1_block: Buf32,

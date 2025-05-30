@@ -17,7 +17,8 @@ pub(crate) struct ProverTxVisitorImpl {
 }
 
 impl ProverTxVisitorImpl {
-    pub(crate) const fn new() -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new() -> Self {
         Self { ops: Vec::new() }
     }
 }

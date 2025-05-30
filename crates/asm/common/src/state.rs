@@ -55,7 +55,8 @@ pub struct SectionState {
 
 impl SectionState {
     /// Constructs a new instance.
-    pub const fn new(id: SubprotocolId, data: Vec<u8>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(id: SubprotocolId, data: Vec<u8>) -> Self {
         Self { id, data }
     }
 

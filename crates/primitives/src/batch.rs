@@ -56,7 +56,8 @@ pub struct EpochSummary {
 
 impl EpochSummary {
     /// Creates a new instance.
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         epoch: u64,
         terminal: L2BlockCommitment,
         prev_terminal: L2BlockCommitment,
@@ -94,13 +95,13 @@ impl EpochSummary {
 
     /// Generates an epoch commitent for this epoch using the data in the
     /// summary.
-    pub const fn get_epoch_commitment(&self) -> EpochCommitment {
+    pub fn get_epoch_commitment(&self) -> EpochCommitment {
         EpochCommitment::new(self.epoch, self.terminal.slot(), *self.terminal.blkid())
     }
 
     /// Gets the epoch commitment for the previous epoch, using the terminal
     /// block reference the header stores.
-    pub const fn get_prev_epoch_commitment(self) -> Option<EpochCommitment> {
+    pub fn get_prev_epoch_commitment(self) -> Option<EpochCommitment> {
         if self.epoch == 0 {
             None
         } else {
@@ -113,7 +114,7 @@ impl EpochSummary {
     }
 
     /// Create the summary for the next epoch based on this one.
-    pub const fn create_next_epoch_summary(
+    pub fn create_next_epoch_summary(
         &self,
         new_terminal: L2BlockCommitment,
         new_l1: L1BlockCommitment,
@@ -159,7 +160,8 @@ pub struct Checkpoint {
 }
 
 impl Checkpoint {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         batch_info: BatchInfo,
         transition: BatchTransition,
         proof: Proof,
@@ -234,7 +236,8 @@ pub struct CheckpointSidecar {
 }
 
 impl CheckpointSidecar {
-    pub const fn new(chainstate: Vec<u8>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(chainstate: Vec<u8>) -> Self {
         Self { chainstate }
     }
 
@@ -253,7 +256,8 @@ pub struct SignedCheckpoint {
 }
 
 impl SignedCheckpoint {
-    pub const fn new(inner: Checkpoint, signature: Buf64) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(inner: Checkpoint, signature: Buf64) -> Self {
         Self { inner, signature }
     }
 
@@ -289,7 +293,8 @@ pub struct BatchInfo {
 }
 
 impl BatchInfo {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         checkpoint_idx: u64,
         l1_range: (L1BlockCommitment, L1BlockCommitment),
         l2_range: (L2BlockCommitment, L2BlockCommitment),
@@ -307,7 +312,7 @@ impl BatchInfo {
     }
 
     /// Gets the epoch commitment for this batch.
-    pub const fn get_epoch_commitment(&self) -> EpochCommitment {
+    pub fn get_epoch_commitment(&self) -> EpochCommitment {
         EpochCommitment::from_terminal(self.epoch(), *self.final_l2_block())
     }
 
@@ -473,7 +478,8 @@ pub struct CommitmentInfo {
 }
 
 impl CommitmentInfo {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         blockhash: Buf32,
         txid: Buf32,
         wtxid: Buf32,
@@ -502,7 +508,8 @@ pub struct L1CommittedCheckpoint {
 }
 
 impl L1CommittedCheckpoint {
-    pub const fn new(checkpoint: Checkpoint, commitment: CommitmentInfo) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(checkpoint: Checkpoint, commitment: CommitmentInfo) -> Self {
         Self {
             checkpoint,
             commitment,

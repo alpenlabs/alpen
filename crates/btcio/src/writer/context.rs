@@ -26,7 +26,8 @@ pub struct WriterContext<R: Reader + Signer + Wallet> {
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         params: Arc<Params>,
         config: Arc<WriterConfig>,
         sequencer_address: Address,

@@ -42,7 +42,8 @@ pub struct WriteBatch {
 
 impl WriteBatch {
     /// Creates a new instance from the toplevel state and a list of ops.
-    pub const fn new(new_toplevel_state: Chainstate, ops: Vec<StateOp>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(new_toplevel_state: Chainstate, ops: Vec<StateOp>) -> Self {
         Self {
             new_toplevel_state,
             ops,
@@ -51,7 +52,7 @@ impl WriteBatch {
 
     /// Creates a new instance from the new toplevel state and assumes no
     /// changes to the bulk state.
-    pub const fn new_replace(new_state: Chainstate) -> Self {
+    pub fn new_replace(new_state: Chainstate) -> Self {
         Self::new(new_state, Vec::new())
     }
 
@@ -348,7 +349,8 @@ pub struct WriteBatchEntry {
 }
 
 impl WriteBatchEntry {
-    pub const fn new(wb: WriteBatch, blockid: L2BlockId) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(wb: WriteBatch, blockid: L2BlockId) -> Self {
         Self { wb, blockid }
     }
 

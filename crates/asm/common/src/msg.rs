@@ -45,7 +45,8 @@ pub struct Log {
 
 impl Log {
     /// Constructor
-    pub const fn new(ty: u16, body: Vec<u8>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(ty: u16, body: Vec<u8>) -> Self {
         Self { ty, body }
     }
 

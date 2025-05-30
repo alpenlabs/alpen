@@ -31,7 +31,8 @@ impl HashVersion {
 
 impl Password {
     /// Constructs a password from a string. (The complexity of the password is not checked.)
-    pub const fn new(password: String) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(password: String) -> Self {
         Self { inner: password }
     }
 

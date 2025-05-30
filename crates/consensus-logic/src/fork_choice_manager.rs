@@ -66,7 +66,8 @@ pub struct ForkChoiceManager {
 
 impl ForkChoiceManager {
     /// Constructs a new instance we can run the tracker with.
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         params: Arc<Params>,
         storage: Arc<NodeStorage>,
         cur_csm_state: Arc<ClientState>,

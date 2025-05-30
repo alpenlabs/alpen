@@ -47,7 +47,8 @@ pub(crate) struct ClStfOperator {
 
 impl ClStfOperator {
     /// Creates a new CL operations instance.
-    pub(crate) const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub(crate) fn new(
         cl_client: HttpClient,
         evm_ee_operator: Arc<EvmEeOperator>,
         btc_blockspace_operator: Arc<BtcBlockspaceOperator>,

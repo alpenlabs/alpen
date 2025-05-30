@@ -100,7 +100,8 @@ pub struct StrataEthereumNode {
 }
 
 impl StrataEthereumNode {
-    pub const fn new(args: StrataNodeArgs) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(args: StrataNodeArgs) -> Self {
         Self { args }
     }
 

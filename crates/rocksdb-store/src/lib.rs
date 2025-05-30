@@ -104,7 +104,8 @@ pub struct DbOpsConfig {
 }
 
 impl DbOpsConfig {
-    pub const fn new(retry_count: u16) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(retry_count: u16) -> Self {
         Self { retry_count }
     }
 

@@ -350,7 +350,8 @@ pub struct DepositEntry {
 }
 
 impl DepositEntry {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         idx: u32,
         output: OutputRef,
         operators: Vec<OperatorIdx>,
@@ -462,7 +463,8 @@ pub struct DispatchedState {
 }
 
 impl DispatchedState {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         cmd: DispatchCommand,
         assignee: OperatorIdx,
         exec_deadline: BitcoinBlockHeight,
@@ -512,7 +514,8 @@ pub struct DispatchCommand {
 }
 
 impl DispatchCommand {
-    pub const fn new(withdraw_outputs: Vec<WithdrawOutput>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(withdraw_outputs: Vec<WithdrawOutput>) -> Self {
         Self { withdraw_outputs }
     }
 
@@ -534,7 +537,8 @@ pub struct WithdrawOutput {
 }
 
 impl WithdrawOutput {
-    pub const fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
         Self { destination, amt }
     }
 
@@ -561,7 +565,8 @@ pub struct FulfilledState {
 }
 
 impl FulfilledState {
-    pub const fn new(assignee: OperatorIdx, amt: BitcoinAmount, txid: Buf32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(assignee: OperatorIdx, amt: BitcoinAmount, txid: Buf32) -> Self {
         Self {
             assignee,
             amt,

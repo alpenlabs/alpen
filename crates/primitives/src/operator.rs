@@ -18,7 +18,8 @@ pub struct StubOpKeyProv {
 }
 
 impl StubOpKeyProv {
-    pub const fn new(expected_idx: OperatorIdx, pk: Buf32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(expected_idx: OperatorIdx, pk: Buf32) -> Self {
         Self { expected_idx, pk }
     }
 }
@@ -41,7 +42,8 @@ pub struct OperatorPubkeys {
 }
 
 impl OperatorPubkeys {
-    pub const fn new(signing_pk: Buf32, wallet_pk: Buf32) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(signing_pk: Buf32, wallet_pk: Buf32) -> Self {
         Self {
             signing_pk,
             wallet_pk,

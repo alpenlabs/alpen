@@ -13,7 +13,8 @@ pub struct GenesisStateData {
 }
 
 impl GenesisStateData {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         l1_state: l1::L1ViewState,
         operator_table: bridge_state::OperatorTable,
         exec_state: exec_env::ExecEnvState,

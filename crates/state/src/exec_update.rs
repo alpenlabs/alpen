@@ -28,7 +28,8 @@ pub struct ExecUpdate {
 }
 
 impl ExecUpdate {
-    pub const fn new(input: UpdateInput, output: UpdateOutput) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(input: UpdateInput, output: UpdateOutput) -> Self {
         Self { input, output }
     }
 
@@ -80,7 +81,8 @@ impl<'a> Arbitrary<'a> for UpdateInput {
 }
 
 impl UpdateInput {
-    pub const fn new(
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(
         update_idx: u64,
         applied_ops: Vec<Op>,
         entries_root: Buf32,
@@ -208,7 +210,8 @@ pub struct ELDepositData {
 }
 
 impl ELDepositData {
-    pub const fn new(intent_idx: u64, amt: u64, dest_addr: Vec<u8>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(intent_idx: u64, amt: u64, dest_addr: Vec<u8>) -> Self {
         Self {
             intent_idx,
             amt,

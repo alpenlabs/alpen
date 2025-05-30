@@ -71,7 +71,8 @@ pub struct StrataEngineValidator {
 
 impl StrataEngineValidator {
     /// Instantiates a new validator.
-    pub const fn new(chain_spec: Arc<ChainSpec>) -> Self {
+    #[expect(clippy::missing_const_for_fn)]
+    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self {
             inner: ExecutionPayloadValidator::new(chain_spec),
         }
