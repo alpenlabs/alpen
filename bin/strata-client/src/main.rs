@@ -19,7 +19,7 @@ use strata_consensus_logic::{
     sync_manager::{self, SyncManager},
 };
 use strata_db::{
-    traits::{ChainstateProvider, Database},
+    traits::{ChainstateProvider, Database, L2DataProvider, L2DataStore},
     DbError,
 };
 use strata_eectl::engine::ExecEngineCtl;
@@ -307,6 +307,28 @@ fn do_startup_checks(
             // Likely network issue
             anyhow::bail!("could not connect to exec engine, err = {}", error);
         }
+    }
+
+    // remove any extra L2 blocks beyond latest state idx
+    // this will resolve block production issue due to block already being in L2 db
+    let l2_prov = database.l2_provider();
+    let l2_store = database.l2_store();
+    let mut extra_blockids = Vec::new();
+    let mut blockidx = last_state_idx + 1;
+    loop {
+        info!(?blockidx, "check for extra blocks beyond latest state idx");
+        let mut blockids = l2_prov.get_blocks_at_height(blockidx)?;
+        if blockids.is_empty() {
+            break;
+        }
+        info!(?blockidx, ?blockids, "found extra blocks");
+        extra_blockids.append(&mut blockids);
+        blockidx += 1;
+    }
+    info!(count = extra_blockids.len(), "total extra blocks found");
+    for blockid in extra_blockids {
+        info!(?blockid, "removing extra block");
+        l2_store.del_block_data(blockid)?;
     }
 
     // everything looks ok
