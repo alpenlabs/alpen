@@ -102,25 +102,24 @@ jobs:
 
     - name: Wait for services to be ready
       run: |
-        sleep 30 # Ideally need some healthchecks.
+        sleep 60 # Ideally need some healthchecks.
         docker ps -a
 
     - name: Run tests
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
-        git clone https://github.com/ethereum/execution-spec-tests
+        git clone https://github.com/alpenlabs/execution-spec-tests
         cd execution-spec-tests
-          # workaround for https://github.com/ethereum/execution-spec-tests/issues/1680
-        git checkout 0c3397c6c733252d8d5c0a54feda798b6f165e85
         uv python install 3.11
         uv python pin 3.11
         uv sync --all-extras
         uv run solc-select use 0.8.24 --always-install
         uv run execute remote \
-          --fork=Prague \
+          --fork=Shanghai \
           --rpc-endpoint=http://localhost:8545 \
           --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
           --rpc-chain-id 2892
+          --tx-wait-timeout 30
 
     - name: Tear down services
       if: always()
