@@ -22,10 +22,7 @@ use reth_provider::{
     ProviderBlock, ProviderHeader, ProviderReceipt, ProviderTx, StageCheckpointReader,
     StateProviderFactory,
 };
-use reth_rpc::eth::{
-    core::{EthApiFor, EthApiInner},
-    DevSigner,
-};
+use reth_rpc::eth::{core::EthApiInner, DevSigner};
 use reth_rpc_eth_api::{
     helpers::{
         AddDevSigners, EthApiSpec, EthFees, EthSigner, EthState, LoadBlock, LoadFee, LoadState,
@@ -80,6 +77,16 @@ where
                       + 'static,
     >,
 {
+    /// Returns a reference to the [`EthApiNodeBackend`].
+    pub fn eth_api(&self) -> &EthApiNodeBackend<N> {
+        self.inner.eth_api()
+    }
+
+    /// Returns the configured sequencer client, if any.
+    pub fn sequencer_client(&self) -> Option<&SequencerClient> {
+        self.inner.sequencer_client()
+    }
+
     /// Build a [`StrataEthApi`] using [`StrataEthApiBuilder`].
     pub fn builder() -> StrataEthApiBuilder {
         StrataEthApiBuilder::new()
@@ -104,7 +111,7 @@ impl<N> RpcNodeCore for StrataEthApi<N>
 where
     N: StrataNodeCore,
 {
-    type Primitives = N::Primitives;
+    type Primitives = EthPrimitives;
     type Provider = N::Provider;
     type Pool = N::Pool;
     type Evm = <N as RpcNodeCore>::Evm;
@@ -277,7 +284,19 @@ struct StrataEthApiInner<N: StrataNodeCore> {
     sequencer_client: Option<SequencerClient>,
 }
 
-#[derive(Debug, Default)]
+impl<N: StrataNodeCore> StrataEthApiInner<N> {
+    /// Returns a reference to the [`EthApiNodeBackend`].
+    const fn eth_api(&self) -> &EthApiNodeBackend<N> {
+        &self.eth_api
+    }
+
+    /// Returns the configured sequencer client, if any.
+    const fn sequencer_client(&self) -> Option<&SequencerClient> {
+        self.sequencer_client.as_ref()
+    }
+}
+
+#[derive(Default)]
 pub struct StrataEthApiBuilder {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
     /// network.
@@ -299,13 +318,15 @@ impl StrataEthApiBuilder {
     }
 }
 
-impl StrataEthApiBuilder {
-    /// Builds an instance of [`StrataEthApi`]
-    pub fn build<N>(self, ctx: EthApiCtx<'_, N>) -> StrataEthApi<N>
-    where
-        N: FullNodeComponents,
-        StrataEthApi<N>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
-    {
+impl<N> EthApiBuilder<N> for StrataEthApiBuilder
+where
+    N: FullNodeComponents,
+    StrataEthApi<N>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
+{
+    type EthApi = StrataEthApi<N>;
+
+    async fn build_eth_api(self, ctx: EthApiCtx<'_, N>) -> eyre::Result<Self::EthApi> {
+        let Self { sequencer_client } = self;
         let eth_api = reth_rpc::EthApiBuilder::new(
             ctx.components.provider().clone(),
             ctx.components.pool().clone(),
@@ -322,38 +343,11 @@ impl StrataEthApiBuilder {
         .gas_oracle_config(ctx.config.gas_oracle)
         .build_inner();
 
-        StrataEthApi {
+        Ok(StrataEthApi {
             inner: Arc::new(StrataEthApiInner {
                 eth_api,
-                sequencer_client: self.sequencer_client,
+                sequencer_client,
             }),
-        }
-    }
-}
-
-impl<N> EthApiBuilder<N> for StrataEthApiBuilder
-where
-    N: FullNodeComponents,
-    EthApiFor<N>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
-{
-    type EthApi = EthApiFor<N>;
-
-    async fn build_eth_api(self, ctx: EthApiCtx<'_, N>) -> eyre::Result<Self::EthApi> {
-        let api = reth_rpc::EthApiBuilder::new(
-            ctx.components.provider().clone(),
-            ctx.components.pool().clone(),
-            ctx.components.network().clone(),
-            ctx.components.evm_config().clone(),
-        )
-        .eth_cache(ctx.cache)
-        .task_spawner(ctx.components.task_executor().clone())
-        .gas_cap(ctx.config.rpc_gas_cap.into())
-        .max_simulate_blocks(ctx.config.rpc_max_simulate_blocks)
-        .eth_proof_window(ctx.config.eth_proof_window)
-        .fee_history_cache_config(ctx.config.fee_history_cache)
-        .proof_permits(ctx.config.proof_permits)
-        .gas_oracle_config(ctx.config.gas_oracle)
-        .build();
-        Ok(api)
+        })
     }
 }

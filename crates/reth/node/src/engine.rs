@@ -21,9 +21,6 @@ use crate::{
     AlpenExecutionPayloadEnvelopeV2, AlpenPayloadAttributes,
 };
 
-// use super::payload::{StrataBuiltPayload, StrataPayloadBuilderAttributes};
-// use crate::PayloadAttributes;
-
 /// Custom engine types for strata to use custom payload attributes and payload
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]

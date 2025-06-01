@@ -41,7 +41,6 @@ where
                     tracing::debug!(target: "rpc::eth", %err, hash=% *pool_transaction.hash(), "failed to forward raw transaction");
                 });
         }
-
         // submit the transaction to the pool with a `Local` origin
         let hash = self
             .pool()
