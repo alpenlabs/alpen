@@ -372,8 +372,10 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
             prover_client_settings,
         )
 
+        # wait a minute, are we using the same reth config for both fullnode and checkpoint sync node?
+        # TODO: does checkpoint sync node even need reth?
         fullnode_ckpt = ckpt_fn_fac.create_fullnode(
-            bitcoind_config, fullnode_reth_config, sequencer_rpc, params, name_suffix="ckpt"
+            bitcoind_config, fullnode_reth_config, sequencer_rpc, params, checkpoint_sync=True, name_suffix="ckpt"
         )
 
         svcs = {
