@@ -70,51 +70,6 @@ impl SyncManager {
     }
 }
 
-// is there a way to pass a dummy engine? we don't need to initialize the EE, just need the
-// structure since csm doesn't use the EE for now
-#[allow(clippy::too_many_arguments)]
-pub fn start_csm_task<E: ExecEngineCtl + Sync + Send + 'static>(
-    executor: &TaskExecutor,
-    storage: &Arc<NodeStorage>,
-    engine: Arc<E>,
-    params: Arc<Params>,
-    status_channel: StatusChannel,
-) -> anyhow::Result<SyncManager> {
-    // this is just here to return SyncManger structure for now
-    let (fc_manager_tx, _) = mpsc::channel::<ForkChoiceMessage>(64);
-
-    // Create channels.
-    let (csm_tx, csm_rx) = mpsc::channel::<CsmMessage>(64);
-    let csm_controller = Arc::new(CsmController::new(storage.sync_event().clone(), csm_tx));
-
-    // TODO should this be in an `Arc`?  it's already fairly compact so we might
-    // not be benefitting from the reduced cloning
-    let (cupdate_tx, cupdate_rx) = broadcast::channel::<Arc<ClientUpdateNotif>>(64);
-
-    // Prepare the client worker state and start the thread for that.
-    let client_worker_state = worker::WorkerState::open(
-        params.clone(),
-        storage.clone(),
-        cupdate_tx,
-        storage.checkpoint().clone(),
-    )?;
-
-    let csm_engine = engine.clone();
-    let st_ch = status_channel.clone();
-
-    executor.spawn_critical("client_worker_task", move |shutdown| {
-        worker::client_worker_task(shutdown, client_worker_state, csm_engine, csm_rx, st_ch)
-    });
-
-    Ok(SyncManager {
-        params,
-        fc_manager_tx,
-        csm_controller,
-        cupdate_rx,
-        status_channel,
-    })
-}
-
 /// Starts the sync tasks using provided settings.
 #[allow(clippy::too_many_arguments)]
 pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
@@ -123,6 +78,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     engine: Arc<E>,
     params: Arc<Params>,
     status_channel: StatusChannel,
+    spawn_fcm_task: bool,
 ) -> anyhow::Result<SyncManager> {
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
@@ -133,28 +89,30 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // not be benefitting from the reduced cloning
     let (cupdate_tx, cupdate_rx) = broadcast::channel::<Arc<ClientUpdateNotif>>(64);
 
-    // Start the fork choice manager thread.  If we haven't done genesis yet
-    // this will just wait until the CSM says we have.
-    let fcm_storage = storage.clone();
-    let fcm_engine = engine.clone();
-    let fcm_csm_controller = csm_controller.clone();
-    let fcm_params = params.clone();
-    let handle = executor.handle().clone();
-    let st_ch = status_channel.clone();
+    if spawn_fcm_task {
+        // Start the fork choice manager thread.  If we haven't done genesis yet
+        // this will just wait until the CSM says we have.
+        let fcm_storage = storage.clone();
+        let fcm_engine = engine.clone();
+        let fcm_csm_controller = csm_controller.clone();
+        let fcm_params = params.clone();
+        let handle = executor.handle().clone();
+        let st_ch = status_channel.clone();
 
-    executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
-        // TODO this should be simplified into a builder or something
-        fork_choice_manager::tracker_task(
-            shutdown,
-            handle,
-            fcm_storage,
-            fcm_engine,
-            fcm_rx,
-            fcm_csm_controller,
-            fcm_params,
-            st_ch,
-        )
-    });
+        executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
+            // TODO this should be simplified into a builder or something
+            fork_choice_manager::tracker_task(
+                shutdown,
+                handle,
+                fcm_storage,
+                fcm_engine,
+                fcm_rx,
+                fcm_csm_controller,
+                fcm_params,
+                st_ch,
+            )
+        });
+    }
 
     // Prepare the client worker state and start the thread for that.
     let client_worker_state = worker::WorkerState::open(

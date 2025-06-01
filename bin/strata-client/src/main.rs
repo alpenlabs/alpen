@@ -318,13 +318,13 @@ fn start_core_tasks(
     let status_channel = init_status_channel(storage.as_ref())?;
 
     // instantiate execution engine
-    let checkpoint_sync = config.client.checkpoint_sync && !config.client.is_sequencer;
+    let is_checkpoint_sync = config.client.checkpoint_sync && !config.client.is_sequencer;
     let engine = init_engine_controller(
         config,
         params.as_ref(),
         storage.as_ref(),
         executor.handle(),
-        checkpoint_sync,
+        is_checkpoint_sync,
     )?;
 
     // do startup checks
@@ -333,40 +333,27 @@ fn start_core_tasks(
         engine.as_ref(),
         bitcoin_client.as_ref(),
         executor.handle(),
-        !checkpoint_sync,
+        !is_checkpoint_sync,
     )?;
 
-    let (sync_manager, engine) = if checkpoint_sync {
-        // start only the CSM task
-        let csm_manager: Arc<_> = sync_manager::start_csm_task(
-            executor,
-            &storage,
-            engine.clone(),
-            params.clone(),
-            status_channel.clone(),
-        )?
-        .into();
+    // start the CSM and FCM tasks
+    let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
+        executor,
+        &storage,
+        engine.clone(),
+        params.clone(),
+        status_channel.clone(),
+        !is_checkpoint_sync,
+    )?
+    .into();
 
-        // start checkpoint sync task
+    // start checkpoint sync task
+    if is_checkpoint_sync {
         executor.spawn_critical_async(
             "checkpoint_sync_task",
             checkpoint_sync_task(storage.clone(), status_channel.clone()),
         );
-
-        (csm_manager, engine)
-    } else {
-        // start the CSM and FCM tasks
-        let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
-            executor,
-            &storage,
-            engine.clone(),
-            params.clone(),
-            status_channel.clone(),
-        )?
-        .into();
-
-        (sync_manager, engine)
-    };
+    }
 
     // Start the L1 tasks to get that going.
     executor.spawn_critical_async(

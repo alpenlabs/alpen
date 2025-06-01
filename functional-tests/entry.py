@@ -85,7 +85,7 @@ def main(argv):
     btc_fac = factory.BitcoinFactory([12300 + i for i in range(100)])
     seq_fac = factory.StrataFactory([12400 + i for i in range(100)])
     fullnode_fac = factory.FullNodeFactory([12500 + i for i in range(100)])
-    ckpt_sync_fullnode_fac = factory.FullNodeFactory([12800 + i for i in range(100)], ["--checkpoint-sync"])
+    ckpt_sync_fullnode_fac = factory.FullNodeFactory([12800 + i for i in range(100)])
     reth_fac = factory.RethFactory([12600 + i for i in range(100 * 3)])
     prover_client_fac = factory.ProverClientFactory([12900 + i for i in range(100 * 3)])
     load_gen_fac = factory.LoadGeneratorFactory([13300 + i for i in range(100)])
