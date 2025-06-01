@@ -40,7 +40,6 @@ class ELSyncFromChainstateTest(testenv.StrataTester):
 
         seqrpc = seq.create_rpc()
         rethrpc = reth.create_rpc()
-        return True
 
         wait_for_genesis(seqrpc, timeout=20)
 

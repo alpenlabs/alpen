@@ -6,7 +6,7 @@ use futures_util::TryStreamExt;
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
-use reth_provider::Chain;
+use reth_provider::{BlockReaderIdExt, Chain};
 use tracing::{debug, error};
 
 #[expect(missing_debug_implementations)]
@@ -40,19 +40,26 @@ impl<
         for (block_hash, outcome) in bundles {
             #[cfg(debug_assertions)]
             assert!(outcome.len() == 1, "should only contain single block");
-            let block_number = outcome.first_block();
             let state_diff = outcome.bundle.into();
+
+            // fetch current block
+            let current_block = self
+                .ctx
+                .provider()
+                .header_by_id(block_hash.into())?
+                .ok_or_else(|| eyre::eyre!("block not found for hash {:?}", block_hash))?;
+            let current_block_idx: u64 = current_block.number;
 
             // TODO: maybe put db writes in another thread
             if let Err(err) = self
                 .db
-                .put_state_diff(block_hash, block_number, &state_diff)
+                .put_state_diff(block_hash, current_block_idx, &state_diff)
             {
                 error!(?err, ?block_hash);
                 break;
             }
 
-            finished_height = Some(BlockNumHash::new(block_number, block_hash))
+            finished_height = Some(BlockNumHash::new(current_block_idx, block_hash))
         }
 
         Ok(finished_height)
