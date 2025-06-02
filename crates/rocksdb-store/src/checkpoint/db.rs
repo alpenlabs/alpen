@@ -6,6 +6,7 @@ use strata_db::{
     types::CheckpointEntry,
     DbError, DbResult,
 };
+use strata_state::batch;
 
 use super::schemas::{BatchCheckpointIndexedSchema, BatchCheckpointSchema};
 use crate::DbOpsConfig;
@@ -24,10 +25,6 @@ impl RBCheckpointDB {
     pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }
-
-    fn get_batch_checkpoint_old(&self, batchidx: u64) -> DbResult<Option<CheckpointEntry>> {
-        Ok(self.db.get::<BatchCheckpointSchema>(&batchidx)?)
-    }
 }
 
 impl CheckpointStore for RBCheckpointDB {
@@ -42,37 +39,52 @@ impl CheckpointStore for RBCheckpointDB {
     }
 
     fn migrate_checkpoint_data(&self) -> DbResult<(u64, u64)> {
-        // only check for sequential entries
-        let mut batchidx = 0;
-        let mut migrated_count = 0;
-        while let Some(checkpoint) = self.get_batch_checkpoint_old(batchidx)? {
-            if self.get_batch_checkpoint(batchidx)?.is_none() {
-                self.put_batch_checkpoint(batchidx, checkpoint)?;
+        let mut examined_count = 0u64;
+        let mut migrated_count = 0u64;
+        let mut max_idx_found_in_old: Option<u64> = None;
+
+        let iter = self.db.iter::<BatchCheckpointSchema>()?;
+        for item_result in iter {
+            let (old_batchidx, checkpoint) = item_result?.into_tuple();
+            examined_count += 1;
+
+            max_idx_found_in_old = Some(
+                max_idx_found_in_old
+                    .map_or(old_batchidx, |current_max| current_max.max(old_batchidx)),
+            );
+
+            if self.get_batch_checkpoint(old_batchidx)?.is_none() {
+                self.put_batch_checkpoint(old_batchidx, checkpoint)?;
                 migrated_count += 1;
             }
-
-            batchidx += 1;
         }
 
-        // check migration is completed
-        // if old schema has data, ensure new schema is caught up to it
-        if let Some(last_batch_idx_old) = batchidx.checked_sub(1) {
+        // Verification logic:
+        // If the old schema contained any data, check if the new schema's last known index
+        // is at least as high as the maximum index found in the old schema.
+        if let Some(last_batch_idx_old_actual) = max_idx_found_in_old {
             match self.get_last_batch_idx()? {
-                Some(last_batch_idx) if last_batch_idx >= last_batch_idx_old => {
+                // last_batch_idx from new schema
+                Some(last_batch_idx_new) if last_batch_idx_new >= last_batch_idx_old_actual => {
                     // OK
                 }
-                Some(last_batch_idx) => {
+                Some(last_batch_idx_new) => {
+                    // New schema's max index is less than what was found in the old schema.
                     return Err(DbError::CheckpointMigrationError(
-                        last_batch_idx_old,
-                        Some(last_batch_idx),
+                        last_batch_idx_old_actual,
+                        Some(last_batch_idx_new),
                     ));
                 }
                 None => {
-                    return Err(DbError::CheckpointMigrationError(last_batch_idx_old, None));
+                    return Err(DbError::CheckpointMigrationError(
+                        last_batch_idx_old_actual,
+                        None,
+                    ));
                 }
             }
         }
-        Ok((batchidx, migrated_count))
+
+        Ok((examined_count, migrated_count))
     }
 }
 
