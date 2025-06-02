@@ -24,11 +24,11 @@ impl L1Tx {
         }
     }
 
-    pub const fn proof(&self) -> &L1TxProof {
+    pub fn proof(&self) -> &L1TxProof {
         &self.proof
     }
 
-    pub const fn tx_data(&self) -> &RawBitcoinTx {
+    pub fn tx_data(&self) -> &RawBitcoinTx {
         &self.tx
     }
 
@@ -56,11 +56,11 @@ impl DepositUpdateTx {
         Self { tx, deposit_idx }
     }
 
-    pub const fn tx(&self) -> &L1Tx {
+    pub fn tx(&self) -> &L1Tx {
         &self.tx
     }
 
-    pub const fn deposit_idx(&self) -> u32 {
+    pub fn deposit_idx(&self) -> u32 {
         self.deposit_idx
     }
 }
@@ -79,7 +79,7 @@ impl DaTx {
         Self { tx }
     }
 
-    pub const fn tx(&self) -> &L1Tx {
+    pub fn tx(&self) -> &L1Tx {
         &self.tx
     }
 }

@@ -83,7 +83,7 @@ pub enum RpcServerError {
 }
 
 impl RpcServerError {
-    pub const fn code(&self) -> i32 {
+    pub fn code(&self) -> i32 {
         match self {
             Self::Unsupported => -32600,
             Self::Unimplemented => -32601,

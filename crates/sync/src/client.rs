@@ -22,15 +22,15 @@ pub struct PeerSyncStatus {
 }
 
 impl PeerSyncStatus {
-    pub const fn tip_block(&self) -> &L2BlockCommitment {
+    pub fn tip_block(&self) -> &L2BlockCommitment {
         &self.tip_block
     }
 
-    pub const fn tip_block_id(&self) -> &L2BlockId {
+    pub fn tip_block_id(&self) -> &L2BlockId {
         self.tip_block.blkid()
     }
 
-    pub const fn tip_height(&self) -> u64 {
+    pub fn tip_height(&self) -> u64 {
         self.tip_block.slot()
     }
 }

@@ -40,11 +40,11 @@ impl BlockData {
         }
     }
 
-    pub(crate) const fn block_num(&self) -> u64 {
+    pub(crate) fn block_num(&self) -> u64 {
         self.block_num
     }
 
-    pub(crate) const fn block(&self) -> &Block {
+    pub(crate) fn block(&self) -> &Block {
         &self.block
     }
 

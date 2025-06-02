@@ -44,17 +44,17 @@ pub struct OperatorEntry {
 }
 
 impl OperatorEntry {
-    pub const fn idx(&self) -> OperatorIdx {
+    pub fn idx(&self) -> OperatorIdx {
         self.idx
     }
 
     /// Get pubkey used to verify signed messages from the operator.
-    pub const fn signing_pk(&self) -> &Buf32 {
+    pub fn signing_pk(&self) -> &Buf32 {
         &self.signing_pk
     }
 
     /// Get wallet pubkey used to compute MuSig2 pubkey from a set of operators.
-    pub const fn wallet_pk(&self) -> &Buf32 {
+    pub fn wallet_pk(&self) -> &Buf32 {
         &self.wallet_pk
     }
 }
@@ -71,7 +71,7 @@ pub struct OperatorTable {
 }
 
 impl OperatorTable {
-    pub const fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
         Self {
             next_idx: 0,
             operators: Vec::new(),
@@ -199,7 +199,7 @@ pub struct DepositsTable {
 }
 
 impl DepositsTable {
-    pub const fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
         Self {
             next_idx: 0,
             deposits: Vec::new(),
@@ -317,7 +317,7 @@ impl DepositsTable {
         }
     }
 
-    pub const fn next_idx(&self) -> u32 {
+    pub fn next_idx(&self) -> u32 {
         self.next_idx
     }
 
@@ -366,11 +366,11 @@ impl DepositEntry {
         }
     }
 
-    pub const fn idx(&self) -> u32 {
+    pub fn idx(&self) -> u32 {
         self.deposit_idx
     }
 
-    pub const fn output(&self) -> &OutputRef {
+    pub fn output(&self) -> &OutputRef {
         &self.output
     }
 
@@ -378,15 +378,15 @@ impl DepositEntry {
         &self.notary_operators
     }
 
-    pub const fn amt(&self) -> BitcoinAmount {
+    pub fn amt(&self) -> BitcoinAmount {
         self.amt
     }
 
-    pub const fn deposit_state(&self) -> &DepositState {
+    pub fn deposit_state(&self) -> &DepositState {
         &self.state
     }
 
-    pub const fn deposit_state_mut(&mut self) -> &mut DepositState {
+    pub fn deposit_state_mut(&mut self) -> &mut DepositState {
         &mut self.state
     }
 
@@ -394,11 +394,11 @@ impl DepositEntry {
         self.state = new_state;
     }
 
-    pub const fn withdrawal_request_txid(&self) -> Option<Buf32> {
+    pub fn withdrawal_request_txid(&self) -> Option<Buf32> {
         self.withdrawal_request_txid
     }
 
-    pub const fn set_withdrawal_request_txid(&mut self, new_wr_txid: Option<Buf32>) {
+    pub fn set_withdrawal_request_txid(&mut self, new_wr_txid: Option<Buf32>) {
         self.withdrawal_request_txid = new_wr_txid;
     }
 }
@@ -431,7 +431,7 @@ pub enum DepositState {
 }
 
 impl DepositState {
-    pub const fn is_dispatched_to(&self, operator_idx: u32) -> bool {
+    pub fn is_dispatched_to(&self, operator_idx: u32) -> bool {
         matches!(self, DepositState::Dispatched(s) if s.assignee() == operator_idx)
     }
 }
@@ -472,23 +472,23 @@ impl DispatchedState {
         }
     }
 
-    pub const fn cmd(&self) -> &DispatchCommand {
+    pub fn cmd(&self) -> &DispatchCommand {
         &self.cmd
     }
 
-    pub const fn assignee(&self) -> OperatorIdx {
+    pub fn assignee(&self) -> OperatorIdx {
         self.assignee
     }
 
-    pub const fn exec_deadline(&self) -> BitcoinBlockHeight {
+    pub fn exec_deadline(&self) -> BitcoinBlockHeight {
         self.exec_deadline
     }
 
-    pub const fn set_assignee(&mut self, assignee_op_idx: OperatorIdx) {
+    pub fn set_assignee(&mut self, assignee_op_idx: OperatorIdx) {
         self.assignee = assignee_op_idx;
     }
 
-    pub const fn set_exec_deadline(&mut self, exec_deadline: BitcoinBlockHeight) {
+    pub fn set_exec_deadline(&mut self, exec_deadline: BitcoinBlockHeight) {
         self.exec_deadline = exec_deadline;
     }
 }
@@ -535,11 +535,11 @@ impl WithdrawOutput {
         Self { destination, amt }
     }
 
-    pub const fn destination(&self) -> &Descriptor {
+    pub fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
-    pub const fn amt(&self) -> BitcoinAmount {
+    pub fn amt(&self) -> BitcoinAmount {
         self.amt
     }
 }
@@ -566,11 +566,11 @@ impl FulfilledState {
         }
     }
 
-    pub const fn assignee(&self) -> OperatorIdx {
+    pub fn assignee(&self) -> OperatorIdx {
         self.assignee
     }
 
-    pub const fn amt(&self) -> BitcoinAmount {
+    pub fn amt(&self) -> BitcoinAmount {
         self.amt
     }
 }

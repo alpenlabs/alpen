@@ -36,7 +36,7 @@ impl MessageSigner {
     }
 
     /// Gets the idx of the operator that we are using for signing messages.
-    pub const fn operator_idx(&self) -> u32 {
+    pub fn operator_idx(&self) -> u32 {
         self.operator_idx
     }
 

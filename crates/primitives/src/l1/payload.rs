@@ -69,12 +69,12 @@ pub struct BlobSpec {
 
 impl BlobSpec {
     /// The target we expect the DA payload to be stored on.
-    pub const fn dest(&self) -> PayloadDest {
+    pub fn dest(&self) -> PayloadDest {
         self.dest
     }
 
     /// Commitment to the payload.
-    pub const fn commitment(&self) -> &Buf32 {
+    pub fn commitment(&self) -> &Buf32 {
         &self.commitment
     }
 
@@ -110,12 +110,12 @@ pub struct PayloadSpec {
 
 impl PayloadSpec {
     /// The target we expect the DA payload to be stored on.
-    pub const fn dest(&self) -> PayloadDest {
+    pub fn dest(&self) -> PayloadDest {
         self.dest
     }
 
     /// Commitment to the payload.
-    pub const fn commitment(&self) -> &Buf32 {
+    pub fn commitment(&self) -> &Buf32 {
         &self.commitment
     }
 
@@ -149,7 +149,7 @@ impl L1Payload {
         &self.data
     }
 
-    pub const fn payload_type(&self) -> &L1PayloadType {
+    pub fn payload_type(&self) -> &L1PayloadType {
         &self.payload_type
     }
 
@@ -194,19 +194,19 @@ impl PayloadIntent {
     }
 
     /// The target we expect the DA payload to be stored on.
-    pub const fn dest(&self) -> PayloadDest {
+    pub fn dest(&self) -> PayloadDest {
         self.dest
     }
 
     /// Commitment to the payload, which might be context-specific. This
     /// is conceptually unrelated to the payload ID that we use for tracking which
     /// payloads we've written in the L1 writer bookkeeping.
-    pub const fn commitment(&self) -> &Buf32 {
+    pub fn commitment(&self) -> &Buf32 {
         &self.commitment
     }
 
     /// The payload that matches the commitment.
-    pub const fn payload(&self) -> &L1Payload {
+    pub fn payload(&self) -> &L1Payload {
         &self.payload
     }
 

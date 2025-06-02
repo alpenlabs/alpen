@@ -48,11 +48,11 @@ impl OperatorPubkeys {
         }
     }
 
-    pub const fn signing_pk(&self) -> &Buf32 {
+    pub fn signing_pk(&self) -> &Buf32 {
         &self.signing_pk
     }
 
-    pub const fn wallet_pk(&self) -> &Buf32 {
+    pub fn wallet_pk(&self) -> &Buf32 {
         &self.wallet_pk
     }
 }

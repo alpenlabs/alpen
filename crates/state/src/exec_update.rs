@@ -32,11 +32,11 @@ impl ExecUpdate {
         Self { input, output }
     }
 
-    pub const fn input(&self) -> &UpdateInput {
+    pub fn input(&self) -> &UpdateInput {
         &self.input
     }
 
-    pub const fn output(&self) -> &UpdateOutput {
+    pub fn output(&self) -> &UpdateOutput {
         &self.output
     }
 }
@@ -94,11 +94,11 @@ impl UpdateInput {
         }
     }
 
-    pub const fn update_idx(&self) -> u64 {
+    pub fn update_idx(&self) -> u64 {
         self.update_idx
     }
 
-    pub const fn entries_root(&self) -> &Buf32 {
+    pub fn entries_root(&self) -> &Buf32 {
         &self.entries_root
     }
 
@@ -129,7 +129,7 @@ pub struct UpdateOutput {
 }
 
 impl UpdateOutput {
-    pub const fn new_from_state(state: Buf32) -> Self {
+    pub fn new_from_state(state: Buf32) -> Self {
         Self {
             new_state: state,
             da_blobs: Vec::new(),
@@ -142,7 +142,7 @@ impl UpdateOutput {
         self
     }
 
-    pub const fn new_state(&self) -> &Buf32 {
+    pub fn new_state(&self) -> &Buf32 {
         &self.new_state
     }
 
@@ -212,7 +212,7 @@ impl ELDepositData {
         }
     }
 
-    pub const fn amt(&self) -> u64 {
+    pub fn amt(&self) -> u64 {
         self.amt
     }
 
@@ -220,7 +220,7 @@ impl ELDepositData {
         &self.dest_addr
     }
 
-    pub const fn intent_idx(&self) -> u64 {
+    pub fn intent_idx(&self) -> u64 {
         self.intent_idx
     }
 }

@@ -34,27 +34,27 @@ pub struct NodeStorage {
 }
 
 impl NodeStorage {
-    pub const fn l1(&self) -> &Arc<L1BlockManager> {
+    pub fn l1(&self) -> &Arc<L1BlockManager> {
         &self.l1_block_manager
     }
 
-    pub const fn l2(&self) -> &Arc<L2BlockManager> {
+    pub fn l2(&self) -> &Arc<L2BlockManager> {
         &self.l2_block_manager
     }
 
-    pub const fn chainstate(&self) -> &Arc<ChainstateManager> {
+    pub fn chainstate(&self) -> &Arc<ChainstateManager> {
         &self.chainstate_manager
     }
 
-    pub const fn sync_event(&self) -> &Arc<SyncEventManager> {
+    pub fn sync_event(&self) -> &Arc<SyncEventManager> {
         &self.sync_event_manager
     }
 
-    pub const fn client_state(&self) -> &Arc<ClientStateManager> {
+    pub fn client_state(&self) -> &Arc<ClientStateManager> {
         &self.client_state_manager
     }
 
-    pub const fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
+    pub fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
         &self.checkpoint_manager
     }
 }

@@ -87,7 +87,7 @@ impl ForkChoiceManager {
 
     // TODO is this right?
     #[expect(unused)]
-    const fn finalized_tip(&self) -> &L2BlockId {
+    fn finalized_tip(&self) -> &L2BlockId {
         self.chain_tracker.finalized_tip()
     }
 

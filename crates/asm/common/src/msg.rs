@@ -50,7 +50,7 @@ impl Log {
     }
 
     /// Returns type identifier
-    pub const fn ty(&self) -> u16 {
+    pub fn ty(&self) -> u16 {
         self.ty
     }
 

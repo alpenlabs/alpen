@@ -43,7 +43,7 @@ impl L1HeaderRecord {
         Self::new(blkid, buf, wtxs_root)
     }
 
-    pub const fn blkid(&self) -> &L1BlockId {
+    pub fn blkid(&self) -> &L1BlockId {
         &self.blkid
     }
 
@@ -52,7 +52,7 @@ impl L1HeaderRecord {
         &self.buf
     }
 
-    pub const fn wtxs_root(&self) -> &Buf32 {
+    pub fn wtxs_root(&self) -> &Buf32 {
         &self.wtxs_root
     }
 

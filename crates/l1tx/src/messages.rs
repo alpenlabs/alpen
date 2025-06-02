@@ -66,7 +66,7 @@ pub struct DaEntry {
 impl DaEntry {
     /// Creates a new `DaEntry` instance without checking that the commitment
     /// actually corresponds to the blob.
-    pub const fn new_unchecked(commitment: DaCommitment, blob_buf: Vec<u8>) -> Self {
+    pub fn new_unchecked(commitment: DaCommitment, blob_buf: Vec<u8>) -> Self {
         Self {
             commitment,
             blob_buf,
@@ -92,7 +92,7 @@ impl DaEntry {
         Self::new(buf)
     }
 
-    pub const fn commitment(&self) -> &DaCommitment {
+    pub fn commitment(&self) -> &DaCommitment {
         &self.commitment
     }
 

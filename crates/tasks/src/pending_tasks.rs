@@ -41,7 +41,7 @@ impl PendingTasks {
         }
     }
 
-    pub(crate) const fn wait_for_zero(self: Arc<Self>) -> WaitForZero {
+    pub(crate) fn wait_for_zero(self: Arc<Self>) -> WaitForZero {
         WaitForZero {
             pending_tasks: self,
         }

@@ -42,7 +42,7 @@ impl ReaderState {
         }
     }
 
-    pub(crate) const fn next_height(&self) -> u64 {
+    pub(crate) fn next_height(&self) -> u64 {
         self.next_height
     }
 
@@ -50,11 +50,11 @@ impl ReaderState {
         self.recent_blocks.iter()
     }
 
-    pub(crate) const fn epoch(&self) -> u64 {
+    pub(crate) fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub(crate) const fn set_epoch(&mut self, epoch: u64) {
+    pub(crate) fn set_epoch(&mut self, epoch: u64) {
         self.epoch = epoch;
     }
 
@@ -62,15 +62,15 @@ impl ReaderState {
         self.recent_blocks.back().unwrap()
     }
 
-    pub(crate) const fn best_block_idx(&self) -> u64 {
+    pub(crate) fn best_block_idx(&self) -> u64 {
         self.next_height - 1
     }
 
-    pub(crate) const fn filter_config(&self) -> &TxFilterConfig {
+    pub(crate) fn filter_config(&self) -> &TxFilterConfig {
         &self.filter_config
     }
 
-    pub(crate) const fn filter_config_mut(&mut self) -> &mut TxFilterConfig {
+    pub(crate) fn filter_config_mut(&mut self) -> &mut TxFilterConfig {
         &mut self.filter_config
     }
 

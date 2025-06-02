@@ -22,19 +22,19 @@ pub struct ChainSyncStatus {
 }
 
 impl ChainSyncStatus {
-    pub const fn tip_slot(&self) -> u64 {
+    pub fn tip_slot(&self) -> u64 {
         self.tip.slot()
     }
 
-    pub const fn tip_blkid(&self) -> &L2BlockId {
+    pub fn tip_blkid(&self) -> &L2BlockId {
         self.tip.blkid()
     }
 
-    pub const fn finalized_blkid(&self) -> &L2BlockId {
+    pub fn finalized_blkid(&self) -> &L2BlockId {
         self.finalized_epoch.last_blkid()
     }
 
-    pub const fn cur_epoch(&self) -> u64 {
+    pub fn cur_epoch(&self) -> u64 {
         self.prev_epoch.epoch() + 1
     }
 }
@@ -70,16 +70,16 @@ impl ChainSyncStatusUpdate {
         }
     }
 
-    pub const fn new_status(&self) -> ChainSyncStatus {
+    pub fn new_status(&self) -> ChainSyncStatus {
         self.new_status
     }
 
-    pub const fn new_tl_chainstate(&self) -> &Arc<Chainstate> {
+    pub fn new_tl_chainstate(&self) -> &Arc<Chainstate> {
         &self.new_tl_chainstate
     }
 
     /// Returns the current epoch.
-    pub const fn cur_epoch(&self) -> u64 {
+    pub fn cur_epoch(&self) -> u64 {
         self.new_status().cur_epoch()
     }
 }

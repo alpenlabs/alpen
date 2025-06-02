@@ -40,7 +40,7 @@ impl OutputRef {
         Self(OutPoint::new(txid, vout))
     }
 
-    pub const fn outpoint(&self) -> &OutPoint {
+    pub fn outpoint(&self) -> &OutPoint {
         &self.0
     }
 }
@@ -137,11 +137,11 @@ impl BitcoinAddress {
 }
 
 impl BitcoinAddress {
-    pub const fn address(&self) -> &Address {
+    pub fn address(&self) -> &Address {
         &self.address
     }
 
-    pub const fn network(&self) -> &Network {
+    pub fn network(&self) -> &Network {
         &self.network
     }
 }
@@ -278,7 +278,7 @@ impl BitcoinAmount {
     pub const SATS_FACTOR: u64 = 100_000_000;
 
     /// Get the number of sats in this [`BitcoinAmount`].
-    pub const fn to_sat(&self) -> u64 {
+    pub fn to_sat(&self) -> u64 {
         self.0
     }
 
@@ -323,7 +323,7 @@ impl Sum for BitcoinAmount {
 pub struct BitcoinPsbt(Psbt);
 
 impl BitcoinPsbt {
-    pub const fn inner(&self) -> &Psbt {
+    pub fn inner(&self) -> &Psbt {
         &self.0
     }
 
@@ -429,7 +429,7 @@ impl BitcoinTxid {
     }
 
     /// Gets the inner Bitcoin [`Txid`]
-    pub const fn inner(&self) -> Txid {
+    pub fn inner(&self) -> Txid {
         self.0
     }
 
@@ -486,7 +486,7 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 pub struct BitcoinTxOut(TxOut);
 
 impl BitcoinTxOut {
-    pub const fn inner(&self) -> &TxOut {
+    pub fn inner(&self) -> &TxOut {
         &self.0
     }
 }
@@ -727,7 +727,7 @@ impl XOnlyPk {
     }
 
     /// Get the underlying [`Buf32`].
-    pub const fn inner(&self) -> &Buf32 {
+    pub fn inner(&self) -> &Buf32 {
         &self.0
     }
 
@@ -792,7 +792,7 @@ pub struct RawBitcoinTx(Vec<u8>);
 
 impl RawBitcoinTx {
     /// Creates a new `RawBitcoinTx` from a raw byte vector.
-    pub const fn from_raw_bytes(bytes: Vec<u8>) -> Self {
+    pub fn from_raw_bytes(bytes: Vec<u8>) -> Self {
         RawBitcoinTx(bytes)
     }
 }
@@ -882,7 +882,7 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
 pub struct BitcoinScriptBuf(ScriptBuf);
 
 impl BitcoinScriptBuf {
-    pub const fn inner(&self) -> &ScriptBuf {
+    pub fn inner(&self) -> &ScriptBuf {
         &self.0
     }
 }

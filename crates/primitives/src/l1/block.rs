@@ -72,11 +72,11 @@ impl L1BlockCommitment {
         Self { height, blkid }
     }
 
-    pub const fn height(&self) -> u64 {
+    pub fn height(&self) -> u64 {
         self.height
     }
 
-    pub const fn blkid(&self) -> &L1BlockId {
+    pub fn blkid(&self) -> &L1BlockId {
         &self.blkid
     }
 }
@@ -101,11 +101,11 @@ impl L1BlockCommitment {
 pub struct L1TxRef(L1BlockId, u32);
 
 impl L1TxRef {
-    pub const fn blk_id(&self) -> L1BlockId {
+    pub fn blk_id(&self) -> L1BlockId {
         self.0
     }
 
-    pub const fn position(&self) -> u32 {
+    pub fn position(&self) -> u32 {
         self.1
     }
 }
@@ -173,11 +173,11 @@ impl L1BlockManifest {
         }
     }
 
-    pub const fn record(&self) -> &L1HeaderRecord {
+    pub fn record(&self) -> &L1HeaderRecord {
         &self.record
     }
 
-    pub const fn header_verification_state(&self) -> &Option<HeaderVerificationState> {
+    pub fn header_verification_state(&self) -> &Option<HeaderVerificationState> {
         &self.verif_state
     }
 
@@ -186,24 +186,24 @@ impl L1BlockManifest {
         &self.txs
     }
 
-    pub const fn txs_vec(&self) -> &Vec<L1Tx> {
+    pub fn txs_vec(&self) -> &Vec<L1Tx> {
         &self.txs
     }
 
-    pub const fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub const fn blkid(&self) -> &L1BlockId {
+    pub fn blkid(&self) -> &L1BlockId {
         &self.record.blkid
     }
 
     #[deprecated(note = "use .blkid()")]
-    pub const fn block_hash(&self) -> L1BlockId {
+    pub fn block_hash(&self) -> L1BlockId {
         *self.record.blkid()
     }
 
-    pub const fn height(&self) -> u64 {
+    pub fn height(&self) -> u64 {
         self.height
     }
 
@@ -211,7 +211,7 @@ impl L1BlockManifest {
         self.record.buf()
     }
 
-    pub const fn txs_root(&self) -> Buf32 {
+    pub fn txs_root(&self) -> Buf32 {
         *self.record.wtxs_root()
     }
 

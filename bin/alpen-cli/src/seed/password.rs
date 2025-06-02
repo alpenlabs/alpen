@@ -17,7 +17,7 @@ pub enum HashVersion {
 }
 
 impl HashVersion {
-    const fn params(&self) -> (Algorithm, Version, Result<Params, argon2::Error>) {
+    fn params(&self) -> (Algorithm, Version, Result<Params, argon2::Error>) {
         match self {
             HashVersion::V0 => (
                 Algorithm::Argon2id,

@@ -25,19 +25,19 @@ impl L2Block {
         Self { header, body }
     }
 
-    pub const fn header(&self) -> &SignedL2BlockHeader {
+    pub fn header(&self) -> &SignedL2BlockHeader {
         &self.header
     }
 
-    pub const fn body(&self) -> &L2BlockBody {
+    pub fn body(&self) -> &L2BlockBody {
         &self.body
     }
 
-    pub const fn l1_segment(&self) -> &L1Segment {
+    pub fn l1_segment(&self) -> &L1Segment {
         &self.body.l1_segment
     }
 
-    pub const fn exec_segment(&self) -> &ExecSegment {
+    pub fn exec_segment(&self) -> &ExecSegment {
         &self.body.exec_segment
     }
 
@@ -81,11 +81,11 @@ impl L2BlockBody {
         }
     }
 
-    pub const fn l1_segment(&self) -> &L1Segment {
+    pub fn l1_segment(&self) -> &L1Segment {
         &self.l1_segment
     }
 
-    pub const fn exec_segment(&self) -> &ExecSegment {
+    pub fn exec_segment(&self) -> &ExecSegment {
         &self.exec_segment
     }
 }
@@ -128,7 +128,7 @@ impl L1Segment {
         Self::new(cur_height, Vec::new())
     }
 
-    pub const fn new_height(&self) -> u64 {
+    pub fn new_height(&self) -> u64 {
         self.new_height
     }
 
@@ -164,7 +164,7 @@ impl ExecSegment {
     ///
     /// This might be replaced with a totally different scheme if we have
     /// multiple EEs.
-    pub const fn update(&self) -> &exec_update::ExecUpdate {
+    pub fn update(&self) -> &exec_update::ExecUpdate {
         &self.update
     }
 }
@@ -187,7 +187,7 @@ impl L2BlockAccessory {
         &self.exec_payload
     }
 
-    pub const fn gas_used(&self) -> u64 {
+    pub fn gas_used(&self) -> u64 {
         self.gas_used
     }
 }
@@ -203,27 +203,27 @@ impl L2BlockBundle {
         Self { block, accessory }
     }
 
-    pub const fn block(&self) -> &L2Block {
+    pub fn block(&self) -> &L2Block {
         &self.block
     }
 
-    pub const fn accessory(&self) -> &L2BlockAccessory {
+    pub fn accessory(&self) -> &L2BlockAccessory {
         &self.accessory
     }
 
-    pub const fn header(&self) -> &SignedL2BlockHeader {
+    pub fn header(&self) -> &SignedL2BlockHeader {
         self.block.header()
     }
 
-    pub const fn body(&self) -> &L2BlockBody {
+    pub fn body(&self) -> &L2BlockBody {
         self.block.body()
     }
 
-    pub const fn l1_segment(&self) -> &L1Segment {
+    pub fn l1_segment(&self) -> &L1Segment {
         self.block.l1_segment()
     }
 
-    pub const fn exec_segment(&self) -> &ExecSegment {
+    pub fn exec_segment(&self) -> &ExecSegment {
         self.block.exec_segment()
     }
 

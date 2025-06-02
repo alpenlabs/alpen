@@ -30,7 +30,7 @@ impl ClientUpdateOutput {
         Self::new(state, Vec::new())
     }
 
-    pub const fn state(&self) -> &ClientState {
+    pub fn state(&self) -> &ClientState {
         &self.state
     }
 

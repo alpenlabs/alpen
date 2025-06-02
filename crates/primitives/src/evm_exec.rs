@@ -57,11 +57,11 @@ impl EvmEeBlockCommitment {
         Self::new(0, Buf32::zero())
     }
 
-    pub const fn slot(&self) -> u64 {
+    pub fn slot(&self) -> u64 {
         self.slot
     }
 
-    pub const fn blkid(&self) -> &Buf32 {
+    pub fn blkid(&self) -> &Buf32 {
         &self.blkid
     }
 

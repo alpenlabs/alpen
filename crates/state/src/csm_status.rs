@@ -17,7 +17,7 @@ pub struct CsmStatus {
 }
 
 impl CsmStatus {
-    pub const fn set_last_sync_ev_idx(&mut self, idx: u64) {
+    pub fn set_last_sync_ev_idx(&mut self, idx: u64) {
         self.last_sync_ev_idx = idx;
     }
 

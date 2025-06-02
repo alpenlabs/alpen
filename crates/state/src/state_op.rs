@@ -55,7 +55,7 @@ impl WriteBatch {
         Self::new(new_state, Vec::new())
     }
 
-    pub const fn new_toplevel_state(&self) -> &Chainstate {
+    pub fn new_toplevel_state(&self) -> &Chainstate {
         &self.new_toplevel_state
     }
 
@@ -111,15 +111,15 @@ impl StateCache {
 
     // Basic accessors.
 
-    pub const fn state(&self) -> &Chainstate {
+    pub fn state(&self) -> &Chainstate {
         &self.new_state
     }
 
-    pub const fn state_mut(&mut self) -> &mut Chainstate {
+    pub fn state_mut(&mut self) -> &mut Chainstate {
         &mut self.new_state
     }
 
-    pub const fn original_state(&self) -> &Chainstate {
+    pub fn original_state(&self) -> &Chainstate {
         &self.original_state
     }
 
@@ -166,23 +166,23 @@ impl StateCache {
     }
 
     /// Sets the last block commitment.
-    pub const fn set_prev_block(&mut self, block: L2BlockCommitment) {
+    pub fn set_prev_block(&mut self, block: L2BlockCommitment) {
         let state = self.state_mut();
         state.prev_block = block;
     }
 
     /// Sets the current epoch index.
-    pub const fn set_cur_epoch(&mut self, epoch: u64) {
+    pub fn set_cur_epoch(&mut self, epoch: u64) {
         self.state_mut().cur_epoch = epoch;
     }
 
     /// Sets the previous epoch.
-    pub const fn set_prev_epoch(&mut self, epoch: EpochCommitment) {
+    pub fn set_prev_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().prev_epoch = epoch;
     }
 
     /// Sets the previous epoch.
-    pub const fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
+    pub fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().finalized_epoch = epoch;
     }
 
@@ -193,12 +193,12 @@ impl StateCache {
         state.l1_state.safe_block_header = record;
     }
 
-    pub const fn set_epoch_finishing_flag(&mut self, flag: bool) {
+    pub fn set_epoch_finishing_flag(&mut self, flag: bool) {
         let state = self.state_mut();
         state.is_epoch_finishing = flag;
     }
 
-    pub const fn should_finish_epoch(&self) -> bool {
+    pub fn should_finish_epoch(&self) -> bool {
         self.state().is_epoch_finishing
     }
 
@@ -356,11 +356,11 @@ impl WriteBatchEntry {
         (self.wb, self.blockid)
     }
 
-    pub const fn toplevel_chainstate(&self) -> &Chainstate {
+    pub fn toplevel_chainstate(&self) -> &Chainstate {
         self.wb.new_toplevel_state()
     }
 
-    pub const fn blockid(&self) -> &L2BlockId {
+    pub fn blockid(&self) -> &L2BlockId {
         &self.blockid
     }
 }

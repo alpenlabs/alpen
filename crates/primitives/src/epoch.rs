@@ -64,15 +64,15 @@ impl EpochCommitment {
         Self::new(0, 0, L2BlockId::from(Buf32::zero()))
     }
 
-    pub const fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub const fn last_slot(&self) -> u64 {
+    pub fn last_slot(&self) -> u64 {
         self.last_slot
     }
 
-    pub const fn last_blkid(&self) -> &L2BlockId {
+    pub fn last_blkid(&self) -> &L2BlockId {
         &self.last_blkid
     }
 

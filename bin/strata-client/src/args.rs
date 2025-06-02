@@ -12,13 +12,13 @@ pub(crate) struct EnvArgs {
 }
 
 impl EnvArgs {
-    pub(crate) const fn from_env() -> Self {
+    pub(crate) fn from_env() -> Self {
         // Here we load particular env vars that should probably override the config.
         Self {}
     }
 
     /// Get strings of overrides gathered from env.
-    pub(crate) const fn get_overrides(&self) -> Vec<String> {
+    pub(crate) fn get_overrides(&self) -> Vec<String> {
         // TODO: add stuffs as necessary
         Vec::new()
     }

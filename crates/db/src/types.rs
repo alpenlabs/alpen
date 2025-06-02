@@ -26,21 +26,21 @@ pub struct IntentEntry {
 }
 
 impl IntentEntry {
-    pub const fn new_unbundled(intent: PayloadIntent) -> Self {
+    pub fn new_unbundled(intent: PayloadIntent) -> Self {
         Self {
             intent,
             status: IntentStatus::Unbundled,
         }
     }
 
-    pub const fn new_bundled(intent: PayloadIntent, bundle_idx: u64) -> Self {
+    pub fn new_bundled(intent: PayloadIntent, bundle_idx: u64) -> Self {
         Self {
             intent,
             status: IntentStatus::Bundled(bundle_idx),
         }
     }
 
-    pub const fn payload(&self) -> &L1Payload {
+    pub fn payload(&self) -> &L1Payload {
         self.intent.payload()
     }
 }
@@ -152,11 +152,11 @@ impl L1TxEntry {
         deserialize(&self.tx_raw)
     }
 
-    pub const fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         !matches!(self.status, L1TxStatus::InvalidInputs)
     }
 
-    pub const fn is_finalized(&self) -> bool {
+    pub fn is_finalized(&self) -> bool {
         matches!(self.status, L1TxStatus::Finalized { .. })
     }
 }

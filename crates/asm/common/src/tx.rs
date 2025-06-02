@@ -25,12 +25,12 @@ impl<'p> TagPayload<'p> {
     }
 
     /// Returns the subprotocol-defined transaction type.
-    pub const fn tx_type(&self) -> u8 {
+    pub fn tx_type(&self) -> u8 {
         self.tx_type
     }
 
     /// Returns the auxiliary data slice associated with this tag.
-    pub const fn aux_data(&self) -> &[u8] {
+    pub fn aux_data(&self) -> &[u8] {
         self.auxiliary_data
     }
 }
@@ -58,13 +58,13 @@ impl<'t> TxInput<'t> {
     }
 
     /// Gets the inner transaction.
-    pub const fn tx(&self) -> &Transaction {
+    pub fn tx(&self) -> &Transaction {
         self.tx
     }
 
     /// Returns a reference to the parsed SPS-50 tag payload for this transaction,
     /// which contains the subprotocol-specific transaction type and auxiliary data.
-    pub const fn tag(&self) -> &TagPayload<'t> {
+    pub fn tag(&self) -> &TagPayload<'t> {
         &self.tag
     }
 }

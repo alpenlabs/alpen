@@ -16,11 +16,11 @@ use crate::checkpoint::CheckpointHandle;
 struct CheckpointExpiry(u64, Instant);
 
 impl CheckpointExpiry {
-    const fn expiry(&self) -> Instant {
+    fn expiry(&self) -> Instant {
         self.1
     }
 
-    const fn checkpoint_idx(&self) -> u64 {
+    fn checkpoint_idx(&self) -> u64 {
         self.0
     }
 }

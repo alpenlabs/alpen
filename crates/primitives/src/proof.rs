@@ -37,7 +37,7 @@ pub enum RollupVerifyingKey {
 }
 
 impl RollupVerifyingKey {
-    pub const fn key(&self) -> &Buf32 {
+    pub fn key(&self) -> &Buf32 {
         match self {
             RollupVerifyingKey::SP1VerifyingKey(sp1_vk) => sp1_vk,
             RollupVerifyingKey::Risc0VerifyingKey(risc0_vk) => risc0_vk,
@@ -133,11 +133,11 @@ impl ProofKey {
         Self { context, host }
     }
 
-    pub const fn context(&self) -> &ProofContext {
+    pub fn context(&self) -> &ProofContext {
         &self.context
     }
 
-    pub const fn host(&self) -> &ProofZkVm {
+    pub fn host(&self) -> &ProofZkVm {
         &self.host
     }
 }

@@ -65,12 +65,12 @@ impl EvmSegment {
     }
 
     /// Retrieves the [`EvmEeProofInput`]
-    pub const fn get_inputs(&self) -> &EvmEeProofInput {
+    pub fn get_inputs(&self) -> &EvmEeProofInput {
         &self.inputs
     }
 
     /// Retrieves the [`EvmEeProofOutput`]
-    pub const fn get_outputs(&self) -> &EvmEeProofOutput {
+    pub fn get_outputs(&self) -> &EvmEeProofOutput {
         &self.outputs
     }
 }

@@ -72,23 +72,23 @@ impl EpochSummary {
         }
     }
 
-    pub const fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
-    pub const fn terminal(&self) -> &L2BlockCommitment {
+    pub fn terminal(&self) -> &L2BlockCommitment {
         &self.terminal
     }
 
-    pub const fn prev_terminal(&self) -> &L2BlockCommitment {
+    pub fn prev_terminal(&self) -> &L2BlockCommitment {
         &self.prev_terminal
     }
 
-    pub const fn new_l1(&self) -> &L1BlockCommitment {
+    pub fn new_l1(&self) -> &L1BlockCommitment {
         &self.new_l1
     }
 
-    pub const fn final_state(&self) -> &Buf32 {
+    pub fn final_state(&self) -> &Buf32 {
         &self.final_state
     }
 
@@ -175,19 +175,19 @@ impl Checkpoint {
         }
     }
 
-    pub const fn batch_info(&self) -> &BatchInfo {
+    pub fn batch_info(&self) -> &BatchInfo {
         &self.commitment.batch_info
     }
 
-    pub const fn batch_transition(&self) -> &BatchTransition {
+    pub fn batch_transition(&self) -> &BatchTransition {
         &self.commitment.transition
     }
 
-    pub const fn commitment(&self) -> &CheckpointCommitment {
+    pub fn commitment(&self) -> &CheckpointCommitment {
         &self.commitment
     }
 
-    pub const fn proof(&self) -> &Proof {
+    pub fn proof(&self) -> &Proof {
         &self.proof
     }
 
@@ -219,7 +219,7 @@ impl Checkpoint {
         hash::raw(&buf)
     }
 
-    pub const fn sidecar(&self) -> &CheckpointSidecar {
+    pub fn sidecar(&self) -> &CheckpointSidecar {
         &self.sidecar
     }
 }
@@ -256,11 +256,11 @@ impl SignedCheckpoint {
         Self { inner, signature }
     }
 
-    pub const fn checkpoint(&self) -> &Checkpoint {
+    pub fn checkpoint(&self) -> &Checkpoint {
         &self.inner
     }
 
-    pub const fn signature(&self) -> &Buf64 {
+    pub fn signature(&self) -> &Buf64 {
         &self.signature
     }
 }
@@ -301,7 +301,7 @@ impl BatchInfo {
     }
 
     /// Geets the epoch index.
-    pub const fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
@@ -311,22 +311,22 @@ impl BatchInfo {
     }
 
     /// Gets the final L2 block commitment in the batch's L2 range.
-    pub const fn final_l2_block(&self) -> &L2BlockCommitment {
+    pub fn final_l2_block(&self) -> &L2BlockCommitment {
         &self.l2_range.1
     }
 
     /// Gets the final L2 blkid in the batch's L2 range.
-    pub const fn final_l2_blockid(&self) -> &L2BlockId {
+    pub fn final_l2_blockid(&self) -> &L2BlockId {
         self.l2_range.1.blkid()
     }
 
     /// Gets the final L1 block commitment in the batch's L1 range.
-    pub const fn final_l1_block(&self) -> &L1BlockCommitment {
+    pub fn final_l1_block(&self) -> &L1BlockCommitment {
         &self.l1_range.1
     }
 
     /// Check is whether the L2 slot is covered by the checkpoint
-    pub const fn includes_l2_block(&self, slot: u64) -> bool {
+    pub fn includes_l2_block(&self, slot: u64) -> bool {
         let (_, last_l2_commitment) = self.l2_range;
         if slot <= last_l2_commitment.slot() {
             return true;
@@ -335,7 +335,7 @@ impl BatchInfo {
     }
 
     /// check for whether the L1 height is covered by the checkpoint
-    pub const fn includes_l1_block(&self, height: u64) -> bool {
+    pub fn includes_l1_block(&self, height: u64) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
         if height <= last_l1_commitment.height() {
             return true;

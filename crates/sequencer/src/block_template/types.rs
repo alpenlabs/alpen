@@ -35,7 +35,7 @@ impl FullBlockTemplate {
     }
 
     /// Returns a reference to the block header.
-    pub const fn header(&self) -> &L2BlockHeader {
+    pub fn header(&self) -> &L2BlockHeader {
         &self.header
     }
 
@@ -69,7 +69,7 @@ impl BlockTemplate {
     }
 
     /// Returns a reference to the L2 block header.
-    pub const fn header(&self) -> &L2BlockHeader {
+    pub fn header(&self) -> &L2BlockHeader {
         &self.header
     }
 
@@ -90,12 +90,12 @@ pub struct BlockCompletionData {
 
 impl BlockCompletionData {
     /// Create from signature.
-    pub const fn from_signature(signature: Buf64) -> Self {
+    pub fn from_signature(signature: Buf64) -> Self {
         Self { signature }
     }
 
     /// Returns a reference to signature.
-    pub const fn signature(&self) -> &Buf64 {
+    pub fn signature(&self) -> &Buf64 {
         &self.signature
     }
 }
@@ -122,23 +122,23 @@ impl BlockGenerationConfig {
     }
 
     /// Update with provided block timestamp.
-    pub const fn with_ts(mut self, ts: u64) -> Self {
+    pub fn with_ts(mut self, ts: u64) -> Self {
         self.ts = Some(ts);
         self
     }
 
     /// Return parent block id.
-    pub const fn parent_block_id(&self) -> L2BlockId {
+    pub fn parent_block_id(&self) -> L2BlockId {
         self.parent_block_id
     }
 
     /// Return block timestamp.
-    pub const fn ts(&self) -> Option<u64> {
+    pub fn ts(&self) -> Option<u64> {
         self.ts
     }
 
     /// Return gas limit.
-    pub const fn epoch_gas_limit(&self) -> Option<u64> {
+    pub fn epoch_gas_limit(&self) -> Option<u64> {
         self.epoch_gas_limit
     }
 }

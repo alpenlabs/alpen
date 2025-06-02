@@ -57,12 +57,12 @@ impl<'a> Arbitrary<'a> for BridgeMessage {
 
 impl BridgeMessage {
     /// Source ID.
-    pub const fn source_id(&self) -> u32 {
+    pub fn source_id(&self) -> u32 {
         self.source_id
     }
 
     /// Signature.
-    pub const fn signature(&self) -> &Buf64 {
+    pub fn signature(&self) -> &Buf64 {
         &self.sig
     }
 
@@ -221,11 +221,11 @@ impl TryInto<Box<[u8]>> for Scope {
 pub struct BridgeMsgId(Buf32);
 
 impl BridgeMsgId {
-    pub const fn inner(&self) -> &Buf32 {
+    pub fn inner(&self) -> &Buf32 {
         &self.0
     }
 
-    pub const fn into_inner(self) -> Buf32 {
+    pub fn into_inner(self) -> Buf32 {
         self.0
     }
 }

@@ -31,7 +31,7 @@ impl ClientUpdateNotif {
         }
     }
 
-    pub const fn sync_event_idx(&self) -> u64 {
+    pub fn sync_event_idx(&self) -> u64 {
         self.sync_event_idx
     }
 

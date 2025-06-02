@@ -56,7 +56,7 @@ impl SyncManager {
         self.cupdate_rx.resubscribe()
     }
 
-    pub const fn status_channel(&self) -> &StatusChannel {
+    pub fn status_channel(&self) -> &StatusChannel {
         &self.status_channel
     }
 

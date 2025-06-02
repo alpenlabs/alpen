@@ -23,7 +23,7 @@ pub struct StateQueue<T> {
 
 impl<T> StateQueue<T> {
     /// Creates a new empty fresh queue.
-    pub const fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
         Self {
             base_idx: 0,
             entries: Vec::new(),
@@ -31,7 +31,7 @@ impl<T> StateQueue<T> {
     }
 
     /// Creates a new empty queue with a particular base offset.
-    pub const fn new_at_index(base_idx: u64) -> Self {
+    pub fn new_at_index(base_idx: u64) -> Self {
         Self {
             base_idx,
             entries: Vec::new(),
@@ -40,7 +40,7 @@ impl<T> StateQueue<T> {
 
     /// Returns the "base index", which is the absolute position of the front of
     /// the queue, even if there is no element at the front of the queue.
-    pub const fn base_idx(&self) -> u64 {
+    pub fn base_idx(&self) -> u64 {
         self.base_idx
     }
 
@@ -66,7 +66,7 @@ impl<T> StateQueue<T> {
     ///
     /// Not meant for public consumption, the backing entries array is meant to
     /// be internal.
-    const fn get_off_for_abs(&self, idx: u64) -> u64 {
+    fn get_off_for_abs(&self, idx: u64) -> u64 {
         idx - self.base_idx
     }
 

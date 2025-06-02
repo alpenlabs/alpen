@@ -20,7 +20,7 @@ pub mod ws_client;
 // Stub for when we don't actually want to do anything.
 #[cfg(not(feature = "debug-utils"))]
 #[inline(always)]
-pub const fn check_bail_trigger(_s: &str) {
+pub fn check_bail_trigger(_s: &str) {
     // nothing
 }
 

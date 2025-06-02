@@ -371,7 +371,7 @@ impl MptNode {
     /// This method provides a reference to the node's data, allowing for inspection and
     /// manipulation.
     #[inline]
-    pub const fn as_data(&self) -> &MptNodeData {
+    pub fn as_data(&self) -> &MptNodeData {
         &self.data
     }
 
@@ -455,7 +455,7 @@ impl MptNode {
     /// This method checks if the node represents an empty trie, i.e., it doesn't contain
     /// any key-value pairs.
     #[inline]
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         matches!(&self.data, MptNodeData::Null)
     }
 
@@ -463,7 +463,7 @@ impl MptNode {
     ///
     /// A digest is a compact representation of a sub-trie, represented by its hash.
     #[inline]
-    pub const fn is_digest(&self) -> bool {
+    pub fn is_digest(&self) -> bool {
         matches!(&self.data, MptNodeData::Digest(_))
     }
 

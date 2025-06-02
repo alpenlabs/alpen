@@ -119,11 +119,11 @@ mod tests {
         BatchStateDiffBuilder,
     };
 
-    const fn acc_addr1() -> Address {
+    fn acc_addr1() -> Address {
         Address::new([0x60; 20])
     }
 
-    const fn acc_addr2() -> Address {
+    fn acc_addr2() -> Address {
         Address::new([0x61; 20])
     }
 

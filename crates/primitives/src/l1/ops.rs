@@ -47,11 +47,11 @@ impl DaCommitment {
         Self(Buf32(hash))
     }
 
-    pub const fn as_hash(&self) -> &Buf32 {
+    pub fn as_hash(&self) -> &Buf32 {
         &self.0
     }
 
-    pub const fn to_hash(&self) -> Buf32 {
+    pub fn to_hash(&self) -> Buf32 {
         self.0
     }
 }

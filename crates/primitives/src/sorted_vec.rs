@@ -26,12 +26,12 @@ impl<T> SortedVec<T> {
     /// Constructs a new instance without validating the contents.
     ///
     /// NOTE: You _must_ ensure that the contents are already sorted.
-    pub const fn new_unchecked(inner: Vec<T>) -> Self {
+    pub fn new_unchecked(inner: Vec<T>) -> Self {
         Self { inner }
     }
 
     /// Creates a new, empty [`SortedVec`].
-    pub const fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
         Self::new_unchecked(Vec::new())
     }
 
@@ -251,12 +251,12 @@ pub struct FlatTable<T: TableEntry> {
 impl<T: TableEntry> FlatTable<T> {
     /// Creates a new instance by wrapping a vec without checking that it's
     /// sorted.
-    pub const fn new_unchecked(inner: Vec<T>) -> Self {
+    pub fn new_unchecked(inner: Vec<T>) -> Self {
         Self { inner }
     }
 
     /// Creates a new empty instance.
-    pub const fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
         Self::new_unchecked(Vec::new())
     }
 

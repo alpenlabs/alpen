@@ -38,7 +38,7 @@ impl<'a> OnchainObject<'a> {
     /// Should be of the form `http{s}://{domain}`.
     ///
     /// Example: `https://mempool.space`
-    pub(crate) const fn with_explorer<'b>(self, explorer: &'b str) -> Link<'a, 'b> {
+    pub(crate) fn with_explorer<'b>(self, explorer: &'b str) -> Link<'a, 'b> {
         Link {
             object: self,
             explorer_ep: explorer,
@@ -51,10 +51,7 @@ impl<'a> OnchainObject<'a> {
     /// If `explorer` is `None`, the object will be represented as-is.
     ///
     /// This is primarily a helper for displaying an [`OnchainObject`] in a user-facing context.
-    pub(crate) const fn with_maybe_explorer<'b>(
-        self,
-        explorer: Option<&'b str>,
-    ) -> MaybeLink<'a, 'b> {
+    pub(crate) fn with_maybe_explorer<'b>(self, explorer: Option<&'b str>) -> MaybeLink<'a, 'b> {
         match explorer {
             Some(dmn) => MaybeLink::Link(self.with_explorer(dmn)),
             None => MaybeLink::Object(self),

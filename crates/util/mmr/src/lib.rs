@@ -9,7 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use error::MerkleError;
 use hasher::{Hash, MerkleHasher};
 
-const fn zero() -> Hash {
+fn zero() -> Hash {
     [0; 32]
 }
 
@@ -302,7 +302,7 @@ where
 
 impl<H: MerkleHasher + Clone> MerkleProof<H> {
     /// builds the new MerkleProof from the provided Data
-    pub const fn from_cohashes(cohashes: Vec<Hash>, index: u64) -> Self {
+    pub fn from_cohashes(cohashes: Vec<Hash>, index: u64) -> Self {
         Self {
             cohashes,
             index,

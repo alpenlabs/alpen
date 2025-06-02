@@ -54,7 +54,7 @@ impl TaskTracker {
         }
     }
 
-    pub(crate) const fn get_in_progress_tasks(&self) -> &HashMap<ProofZkVm, usize> {
+    pub(crate) fn get_in_progress_tasks(&self) -> &HashMap<ProofZkVm, usize> {
         &self.in_progress_tasks
     }
 

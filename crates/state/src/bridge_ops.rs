@@ -29,19 +29,19 @@ impl WithdrawalIntent {
         }
     }
 
-    pub const fn as_parts(&self) -> (u64, &Descriptor) {
+    pub fn as_parts(&self) -> (u64, &Descriptor) {
         (self.amt.to_sat(), &self.destination)
     }
 
-    pub const fn amt(&self) -> &BitcoinAmount {
+    pub fn amt(&self) -> &BitcoinAmount {
         &self.amt
     }
 
-    pub const fn destination(&self) -> &Descriptor {
+    pub fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
-    pub const fn withdrawal_txid(&self) -> &Buf32 {
+    pub fn withdrawal_txid(&self) -> &Buf32 {
         &self.withdrawal_txid
     }
 }
@@ -86,7 +86,7 @@ impl DepositIntent {
         Self { amt, dest_ident }
     }
 
-    pub const fn amt(&self) -> u64 {
+    pub fn amt(&self) -> u64 {
         self.amt.to_sat()
     }
 

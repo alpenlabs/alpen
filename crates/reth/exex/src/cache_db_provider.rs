@@ -30,15 +30,15 @@ pub(crate) struct AccessedState {
 }
 
 impl AccessedState {
-    pub(crate) const fn accessed_block_idxs(&self) -> &HashSet<u64> {
+    pub(crate) fn accessed_block_idxs(&self) -> &HashSet<u64> {
         &self.accessed_block_idxs
     }
 
-    pub(crate) const fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
+    pub(crate) fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
         &self.accessed_accounts
     }
 
-    pub(crate) const fn accessed_contracts(&self) -> &Vec<Bytes> {
+    pub(crate) fn accessed_contracts(&self) -> &Vec<Bytes> {
         &self.accessed_contracts
     }
 }

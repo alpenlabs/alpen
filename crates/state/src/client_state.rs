@@ -57,7 +57,7 @@ pub struct ClientState {
 impl ClientState {
     /// Creates the basic genesis client state from the genesis parameters.
     // TODO do we need this or should we load it at run time from the rollup params?
-    pub const fn from_genesis_params(params: &Params) -> Self {
+    pub fn from_genesis_params(params: &Params) -> Self {
         let rparams = params.rollup();
         let genesis_l1_height = rparams.genesis_l1_height;
         Self {
@@ -73,17 +73,17 @@ impl ClientState {
 
     /// If the chain is "active", meaning we are after genesis (although we
     /// don't necessarily know what it is, that's dictated by the `SyncState`).
-    pub const fn is_chain_active(&self) -> bool {
+    pub fn is_chain_active(&self) -> bool {
         self.chain_active
     }
 
     /// Returns a ref to the inner sync state, if it exists.
-    pub const fn sync(&self) -> Option<&SyncState> {
+    pub fn sync(&self) -> Option<&SyncState> {
         self.sync_state.as_ref()
     }
 
     /// Returns if genesis has occurred.
-    pub const fn has_genesis_occurred(&self) -> bool {
+    pub fn has_genesis_occurred(&self) -> bool {
         self.chain_active
     }
 
@@ -94,7 +94,7 @@ impl ClientState {
 
     /// Returns a mut ref to the inner sync state.  Only valid if we've observed
     /// genesis.  Only meant to be called when applying sync writes.
-    pub const fn expect_sync_mut(&mut self) -> &mut SyncState {
+    pub fn expect_sync_mut(&mut self) -> &mut SyncState {
         self.sync_state
             .as_mut()
             .expect("clientstate: missing sync state")
@@ -108,7 +108,7 @@ impl ClientState {
         self.int_states.next_idx()
     }
 
-    pub const fn genesis_l1_height(&self) -> u64 {
+    pub fn genesis_l1_height(&self) -> u64 {
         self.genesis_l1_height
     }
 
@@ -199,7 +199,7 @@ impl ClientState {
     }
 
     /// Gets the final epoch that we've externally declared.
-    pub const fn get_declared_final_epoch(&self) -> Option<&EpochCommitment> {
+    pub fn get_declared_final_epoch(&self) -> Option<&EpochCommitment> {
         self.declared_final_epoch.as_ref()
     }
 }
@@ -251,7 +251,7 @@ pub struct SyncState {
 }
 
 impl SyncState {
-    pub const fn from_genesis_blkid(gblkid: L2BlockId) -> Self {
+    pub fn from_genesis_blkid(gblkid: L2BlockId) -> Self {
         Self {
             genesis_blkid: gblkid,
             confirmed_checkpoint_blocks: Vec::new(),
@@ -259,7 +259,7 @@ impl SyncState {
     }
 
     /// Gets the genesis blkid.
-    pub const fn genesis_blkid(&self) -> &L2BlockId {
+    pub fn genesis_blkid(&self) -> &L2BlockId {
         &self.genesis_blkid
     }
 
@@ -306,12 +306,12 @@ impl InternalState {
     }
 
     /// Returns a ref to the L1 block ID that produced this state.
-    pub const fn blkid(&self) -> &L1BlockId {
+    pub fn blkid(&self) -> &L1BlockId {
         &self.blkid
     }
 
     /// Returns the last stored checkpoint, if there was one.
-    pub const fn last_checkpoint(&self) -> Option<&L1Checkpoint> {
+    pub fn last_checkpoint(&self) -> Option<&L1Checkpoint> {
         self.last_checkpoint.as_ref()
     }
 
@@ -362,11 +362,11 @@ impl CheckpointL1Ref {
         }
     }
 
-    pub const fn block_height(&self) -> u64 {
+    pub fn block_height(&self) -> u64 {
         self.l1_commitment.height()
     }
 
-    pub const fn block_id(&self) -> &L1BlockId {
+    pub fn block_id(&self) -> &L1BlockId {
         self.l1_commitment.blkid()
     }
 }
@@ -415,7 +415,7 @@ impl ClientStateMut {
         }
     }
 
-    pub const fn state(&self) -> &ClientState {
+    pub fn state(&self) -> &ClientState {
         &self.state
     }
 
@@ -439,7 +439,7 @@ impl ClientStateMut {
         self.state.set_sync_state(ss);
     }
 
-    pub const fn activate_chain(&mut self) {
+    pub fn activate_chain(&mut self) {
         self.state.chain_active = true;
     }
 
@@ -544,7 +544,7 @@ impl ClientStateMut {
     }
 
     /// Sets the declared final epoch.
-    pub const fn set_decl_final_epoch(&mut self, epoch: EpochCommitment) {
+    pub fn set_decl_final_epoch(&mut self, epoch: EpochCommitment) {
         self.state.declared_final_epoch = Some(epoch);
     }
 

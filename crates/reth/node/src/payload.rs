@@ -28,7 +28,7 @@ pub struct StrataPayloadAttributes {
 }
 
 impl StrataPayloadAttributes {
-    pub const fn new_from_eth(payload_attributes: EthPayloadAttributes) -> Self {
+    pub fn new_from_eth(payload_attributes: EthPayloadAttributes) -> Self {
         Self {
             inner: payload_attributes,
             // more fields here
@@ -66,7 +66,7 @@ pub struct StrataPayloadBuilderAttributes {
 }
 
 impl StrataPayloadBuilderAttributes {
-    pub(crate) const fn batch_gas_limit(&self) -> Option<u64> {
+    pub(crate) fn batch_gas_limit(&self) -> Option<u64> {
         self.batch_gas_limit
     }
 }
@@ -216,7 +216,7 @@ pub struct StrataExecutionPayloadEnvelopeV2 {
 }
 
 impl StrataExecutionPayloadEnvelopeV2 {
-    pub const fn inner(&self) -> &ExecutionPayloadEnvelopeV2 {
+    pub fn inner(&self) -> &ExecutionPayloadEnvelopeV2 {
         &self.inner
     }
 }

@@ -108,7 +108,7 @@ impl DbOpsConfig {
         Self { retry_count }
     }
 
-    pub const fn txn_retry_count(&self) -> TransactionRetry {
+    pub fn txn_retry_count(&self) -> TransactionRetry {
         TransactionRetry::Count(self.retry_count)
     }
 }

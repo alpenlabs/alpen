@@ -69,12 +69,12 @@ impl BridgeTxState {
     }
 
     /// Get the [`Psbt`](bitcoin::Psbt) that this state is associated with.
-    pub const fn psbt(&self) -> &BitcoinPsbt {
+    pub fn psbt(&self) -> &BitcoinPsbt {
         &self.psbt
     }
 
     /// Get the spend info associated with each input in the [`Psbt`](bitcoin::Psbt).
-    pub const fn spend_path(&self) -> &TaprootSpendPath {
+    pub fn spend_path(&self) -> &TaprootSpendPath {
         &self.spend_path
     }
 
@@ -101,18 +101,18 @@ impl BridgeTxState {
     }
 
     /// Get the private nonce for the transaction being tracked in this state.
-    pub const fn secnonce(&self) -> &Musig2SecNonce {
+    pub fn secnonce(&self) -> &Musig2SecNonce {
         &self.secnonce
     }
 
     /// Get the [`PublickeyTable`] that maps [`OperatorIdx`] to the corresponding `PublicKey`
     /// correspondng to the multisig.
-    pub const fn pubkeys(&self) -> &PublickeyTable {
+    pub fn pubkeys(&self) -> &PublickeyTable {
         &self.pubkey_table
     }
 
     /// Get the unsigned transaction from the [`Psbt`](bitcoin::Psbt).
-    pub const fn unsigned_tx(&self) -> &Transaction {
+    pub fn unsigned_tx(&self) -> &Transaction {
         &self.psbt().inner().unsigned_tx
     }
 
@@ -122,12 +122,12 @@ impl BridgeTxState {
     }
 
     /// Get the map of collected nonces.
-    pub const fn collected_nonces(&self) -> &BTreeMap<OperatorIdx, Musig2PubNonce> {
+    pub fn collected_nonces(&self) -> &BTreeMap<OperatorIdx, Musig2PubNonce> {
         &self.collected_nonces
     }
 
     /// Get table of signatures collected so far per input in the transaction.
-    pub const fn collected_sigs(&self) -> &BTreeMap<OperatorIdx, Musig2PartialSig> {
+    pub fn collected_sigs(&self) -> &BTreeMap<OperatorIdx, Musig2PartialSig> {
         &self.collected_sigs
     }
 

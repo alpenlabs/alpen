@@ -41,7 +41,7 @@ pub enum Duty {
 
 impl Duty {
     /// Returns when the duty should expire.
-    pub const fn expiry(&self) -> Expiry {
+    pub fn expiry(&self) -> Expiry {
         match self {
             Self::SignBlock(_) => Expiry::NextBlock,
             Self::CommitBatch(duty) => Expiry::CheckpointIdxFinalized(duty.0.batch_info().epoch()),
@@ -73,7 +73,7 @@ pub struct BlockSigningDuty {
 
 impl BlockSigningDuty {
     /// Create new block signing duty from components.
-    pub const fn new_simple(slot: u64, parent: L2BlockId, target_ts: u64) -> Self {
+    pub fn new_simple(slot: u64, parent: L2BlockId, target_ts: u64) -> Self {
         Self {
             slot,
             parent,
@@ -82,17 +82,17 @@ impl BlockSigningDuty {
     }
 
     /// Returns target slot for block signing duty.
-    pub const fn target_slot(&self) -> u64 {
+    pub fn target_slot(&self) -> u64 {
         self.slot
     }
 
     /// Returns parent block id for block signing duty.
-    pub const fn parent(&self) -> L2BlockId {
+    pub fn parent(&self) -> L2BlockId {
         self.parent
     }
 
     /// Returns target ts for block signing duty.
-    pub const fn target_ts(&self) -> u64 {
+    pub fn target_ts(&self) -> u64 {
         self.target_ts
     }
 }
@@ -115,7 +115,7 @@ impl CheckpointDuty {
     }
 
     /// Returns a reference to the inner [`Checkpoint`].
-    pub const fn inner(&self) -> &Checkpoint {
+    pub fn inner(&self) -> &Checkpoint {
         &self.0
     }
 }

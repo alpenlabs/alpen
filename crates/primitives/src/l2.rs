@@ -66,11 +66,11 @@ impl L2BlockCommitment {
         Self::new(0, L2BlockId::from(Buf32::zero()))
     }
 
-    pub const fn slot(&self) -> u64 {
+    pub fn slot(&self) -> u64 {
         self.slot
     }
 
-    pub const fn blkid(&self) -> &L2BlockId {
+    pub fn blkid(&self) -> &L2BlockId {
         &self.blkid
     }
 

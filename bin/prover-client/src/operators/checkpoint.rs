@@ -171,7 +171,7 @@ impl CheckpointOperator {
     }
 
     /// Returns a reference to the internal CL (Consensus Layer) [`HttpClient`].
-    pub(crate) const fn cl_client(&self) -> &HttpClient {
+    pub(crate) fn cl_client(&self) -> &HttpClient {
         &self.cl_client
     }
 

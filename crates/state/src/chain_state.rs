@@ -84,31 +84,31 @@ impl Chainstate {
     }
 
     /// Returns the slot last processed on the chainstate.
-    pub const fn chain_tip_slot(&self) -> u64 {
+    pub fn chain_tip_slot(&self) -> u64 {
         self.cur_slot
     }
 
     /// Returns the commitment to the previous block.
-    pub const fn prev_block(&self) -> &L2BlockCommitment {
+    pub fn prev_block(&self) -> &L2BlockCommitment {
         &self.prev_block
     }
 
-    pub const fn l1_view(&self) -> &L1ViewState {
+    pub fn l1_view(&self) -> &L1ViewState {
         &self.l1_state
     }
 
-    pub const fn cur_epoch(&self) -> u64 {
+    pub fn cur_epoch(&self) -> u64 {
         self.cur_epoch
     }
 
     /// Gets the commitment to the immediately preceding epoch.
-    pub const fn prev_epoch(&self) -> &EpochCommitment {
+    pub fn prev_epoch(&self) -> &EpochCommitment {
         &self.prev_epoch
     }
 
     /// Gets the commitment to the finalized epoch, which we don't expect to
     /// roll back.
-    pub const fn finalized_epoch(&self) -> &EpochCommitment {
+    pub fn finalized_epoch(&self) -> &EpochCommitment {
         &self.finalized_epoch
     }
 
@@ -130,23 +130,23 @@ impl Chainstate {
         compute_borsh_hash(&hashed_state)
     }
 
-    pub const fn operator_table(&self) -> &OperatorTable {
+    pub fn operator_table(&self) -> &OperatorTable {
         &self.operator_table
     }
 
-    pub const fn deposits_table(&self) -> &DepositsTable {
+    pub fn deposits_table(&self) -> &DepositsTable {
         &self.deposits_table
     }
 
-    pub const fn deposits_table_mut(&mut self) -> &mut DepositsTable {
+    pub fn deposits_table_mut(&mut self) -> &mut DepositsTable {
         &mut self.deposits_table
     }
 
-    pub const fn exec_env_state(&self) -> &ExecEnvState {
+    pub fn exec_env_state(&self) -> &ExecEnvState {
         &self.exec_env_state
     }
 
-    pub const fn is_epoch_finishing(&self) -> bool {
+    pub fn is_epoch_finishing(&self) -> bool {
         self.is_epoch_finishing
     }
 }
@@ -172,7 +172,7 @@ pub struct HashedChainState {
 // changes.
 #[cfg(any(test, feature = "test_utils"))]
 impl Chainstate {
-    pub const fn set_epoch(&mut self, ep: u64) {
+    pub fn set_epoch(&mut self, ep: u64) {
         self.cur_epoch = ep;
     }
 }
@@ -203,11 +203,11 @@ impl ChainstateEntry {
         self.state
     }
 
-    pub const fn state(&self) -> &Chainstate {
+    pub fn state(&self) -> &Chainstate {
         &self.state
     }
 
-    pub const fn tip_blockid(&self) -> &L2BlockId {
+    pub fn tip_blockid(&self) -> &L2BlockId {
         &self.tip
     }
 }

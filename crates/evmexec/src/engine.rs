@@ -41,13 +41,13 @@ fn address_from_slice(slice: &[u8]) -> Option<Address> {
 }
 
 #[allow(dead_code)]
-const fn sats_to_gwei(sats: u64) -> Option<u64> {
+fn sats_to_gwei(sats: u64) -> Option<u64> {
     // 1 BTC = 10^8 sats = 10^9 gwei
     sats.checked_mul(10)
 }
 
 #[allow(dead_code)]
-const fn gwei_to_sats(gwei: u64) -> u64 {
+fn gwei_to_sats(gwei: u64) -> u64 {
     // 1 BTC = 10^8 sats = 10^9 gwei
     gwei / 10
 }

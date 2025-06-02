@@ -29,12 +29,12 @@ impl SequencerKeys {
     }
 
     /// Sequencer's master [`Xpriv`].
-    pub const fn master_xpriv(&self) -> &Xpriv {
+    pub fn master_xpriv(&self) -> &Xpriv {
         &self.master
     }
 
     /// Sequencer's derived [`Xpriv`].
-    pub const fn derived_xpriv(&self) -> &Xpriv {
+    pub fn derived_xpriv(&self) -> &Xpriv {
         &self.derived
     }
 

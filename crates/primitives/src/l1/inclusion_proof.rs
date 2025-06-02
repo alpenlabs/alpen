@@ -50,7 +50,7 @@ impl<T> L1TxInclusionProof<T> {
         &self.cohashes
     }
 
-    pub const fn position(&self) -> u32 {
+    pub fn position(&self) -> u32 {
         self.position
     }
 }

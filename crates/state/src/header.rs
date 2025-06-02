@@ -168,11 +168,11 @@ impl SignedL2BlockHeader {
         }
     }
 
-    pub const fn sig(&self) -> &Buf64 {
+    pub fn sig(&self) -> &Buf64 {
         &self.signature
     }
 
-    pub const fn header(&self) -> &L2BlockHeader {
+    pub fn header(&self) -> &L2BlockHeader {
         &self.header
     }
 }

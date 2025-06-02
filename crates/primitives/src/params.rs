@@ -134,7 +134,7 @@ impl RollupParams {
         crate::hash::raw(&raw_bytes)
     }
 
-    pub const fn rollup_vk(&self) -> RollupVerifyingKey {
+    pub fn rollup_vk(&self) -> RollupVerifyingKey {
         self.rollup_vk
     }
 }
@@ -171,7 +171,7 @@ pub enum ProofPublishMode {
 }
 
 impl ProofPublishMode {
-    pub const fn allow_empty(&self) -> bool {
+    pub fn allow_empty(&self) -> bool {
         !matches!(self, Self::Strict)
     }
 }
@@ -199,15 +199,15 @@ pub struct Params {
 }
 
 impl Params {
-    pub const fn rollup(&self) -> &RollupParams {
+    pub fn rollup(&self) -> &RollupParams {
         &self.rollup
     }
 
-    pub const fn run(&self) -> &SyncParams {
+    pub fn run(&self) -> &SyncParams {
         &self.run
     }
 
-    pub const fn network(&self) -> Network {
+    pub fn network(&self) -> Network {
         self.rollup.network
     }
 }

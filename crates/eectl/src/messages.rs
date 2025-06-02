@@ -48,7 +48,7 @@ impl ExecPayloadData {
         }
     }
 
-    pub const fn exec_update(&self) -> &ExecUpdate {
+    pub fn exec_update(&self) -> &ExecUpdate {
         &self.exec_update
     }
 
@@ -108,7 +108,7 @@ impl PayloadEnv {
         }
     }
 
-    pub const fn timestamp(&self) -> u64 {
+    pub fn timestamp(&self) -> u64 {
         self.timestamp
     }
 
@@ -116,11 +116,11 @@ impl PayloadEnv {
         &self.el_ops
     }
 
-    pub const fn prev_l2_block_id(&self) -> &L2BlockId {
+    pub fn prev_l2_block_id(&self) -> &L2BlockId {
         &self.prev_l2_block_id
     }
 
-    pub const fn batch_gas_limit(&self) -> Option<u64> {
+    pub fn batch_gas_limit(&self) -> Option<u64> {
         self.batch_gas_limit
     }
 }

@@ -126,22 +126,22 @@ impl ProofOperator {
     }
 
     /// Returns a reference to the [`BtcBlockspaceOperator`].
-    pub(crate) const fn btc_operator(&self) -> &BtcBlockspaceOperator {
+    pub(crate) fn btc_operator(&self) -> &BtcBlockspaceOperator {
         &self.btc_blockspace_operator
     }
 
     /// Returns a reference to the [`EvmEeOperator`].
-    pub(crate) const fn evm_ee_operator(&self) -> &EvmEeOperator {
+    pub(crate) fn evm_ee_operator(&self) -> &EvmEeOperator {
         &self.evm_ee_operator
     }
 
     /// Returns a reference to the [`ClStfOperator`].
-    pub(crate) const fn cl_stf_operator(&self) -> &ClStfOperator {
+    pub(crate) fn cl_stf_operator(&self) -> &ClStfOperator {
         &self.cl_stf_operator
     }
 
     /// Returns a reference to the [`CheckpointOperator`].
-    pub(crate) const fn checkpoint_operator(&self) -> &CheckpointOperator {
+    pub(crate) fn checkpoint_operator(&self) -> &CheckpointOperator {
         &self.checkpoint_operator
     }
 }

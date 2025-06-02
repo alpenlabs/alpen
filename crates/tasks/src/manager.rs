@@ -110,7 +110,7 @@ impl TaskManager {
         )
     }
 
-    pub const fn handle(&self) -> &Handle {
+    pub fn handle(&self) -> &Handle {
         &self.tokio_handle
     }
 
@@ -231,7 +231,7 @@ impl TaskExecutor {
         }
     }
 
-    pub const fn handle(&self) -> &Handle {
+    pub fn handle(&self) -> &Handle {
         &self.tokio_handle
     }
 

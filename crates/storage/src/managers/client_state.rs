@@ -124,7 +124,7 @@ struct CurStateTracker {
 }
 
 impl CurStateTracker {
-    const fn new_empty() -> Self {
+    fn new_empty() -> Self {
         Self {
             last_idx: None,
             state: None,

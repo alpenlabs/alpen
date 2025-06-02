@@ -90,12 +90,12 @@ impl WorkerState {
     }
 
     /// Gets the index of the current state.
-    pub const fn cur_event_idx(&self) -> u64 {
+    pub fn cur_event_idx(&self) -> u64 {
         self.cur_state_idx
     }
 
     /// Gets a ref to the consensus state from the inner state tracker.
-    pub const fn cur_state(&self) -> &Arc<ClientState> {
+    pub fn cur_state(&self) -> &Arc<ClientState> {
         &self.cur_state
     }
 

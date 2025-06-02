@@ -304,7 +304,7 @@ async fn update_l1_status(
 
 /// Determine the status of the `PayloadEntry` based on the status of its commit and reveal
 /// transactions in bitcoin.
-const fn determine_payload_next_status(
+fn determine_payload_next_status(
     commit_status: &L1TxStatus,
     reveal_status: &L1TxStatus,
 ) -> L1BundleStatus {

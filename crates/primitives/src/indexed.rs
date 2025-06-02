@@ -17,12 +17,12 @@ impl<T, Idx> Indexed<T, Idx> {
     }
 
     /// Returns the index of the item
-    pub const fn index(&self) -> &Idx {
+    pub fn index(&self) -> &Idx {
         &self.index
     }
 
     /// Returns a reference to the item.
-    pub const fn item(&self) -> &T {
+    pub fn item(&self) -> &T {
         &self.item
     }
 
