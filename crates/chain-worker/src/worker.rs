@@ -146,7 +146,10 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
         // it gets back to us, which kinda sucks, but we're working on it!
         let exec_hash = bundle.header().exec_payload_hash();
         let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
-        let res = self.engine.submit_payload(eng_payload)?;
+        let res = self.call_engine("engine_submit_payload", move |eng| {
+            // annoying that we're cloning this each time, maybe make it take a ref?
+            eng.submit_payload(eng_payload.clone())
+        })?;
 
         if res == strata_eectl::engine::BlockStatus::Invalid {
             let block = L2BlockCommitment::new(bundle.header().slot(), *blkid);
@@ -223,18 +226,18 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     }
 
     /// Make a call to the exec engine, using retry and backoff.
-    fn call_engine(
+    fn call_engine<T>(
         &mut self,
         name: &str,
-        f: impl Fn(&mut E) -> Result<(), EngineError>,
-    ) -> WorkerResult<()> {
-        retry_with_backoff(
+        f: impl Fn(&mut E) -> Result<T, EngineError>,
+    ) -> WorkerResult<T> {
+        let res = retry_with_backoff(
             name,
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             move || f(&mut self.engine),
         )?;
-        Ok(())
+        Ok(res)
     }
 }
 
