@@ -28,7 +28,7 @@ impl FromStr for GuestProgram {
             "cl-stf" => Ok(GuestProgram::ClStf),
             "checkpoint" => Ok(GuestProgram::Checkpoint),
             // Add more matches
-            _ => Err(format!("unknown program: {}", s)),
+            _ => Err(format!("unknown program: {s}")),
         }
     }
 }

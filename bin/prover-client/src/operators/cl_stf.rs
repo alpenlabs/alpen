@@ -73,7 +73,7 @@ impl ClStfOperator {
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?
             .ok_or_else(|| {
                 error!(%blkid, "L2 Block not found");
-                ProvingTaskError::InvalidWitness(format!("L2 Block {} not found", blkid))
+                ProvingTaskError::InvalidWitness(format!("L2 Block {blkid} not found"))
             })?;
 
         Ok(header)

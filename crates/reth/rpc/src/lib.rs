@@ -36,6 +36,7 @@ pub trait StrataRpcApi {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
+#[expect(clippy::large_enum_variant)]
 pub enum BlockWitness {
     Raw(#[serde(with = "hex::serde")] Vec<u8>),
     Json(EvmBlockStfInput),

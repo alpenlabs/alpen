@@ -130,7 +130,7 @@ pub async fn drain(
                 .with_maybe_explorer(settings.mempool_space_endpoint.as_deref())
                 .pretty()
         );
-        println!("Drained signet wallet to {}", address,);
+        println!("Drained signet wallet to {address}",);
     }
 
     if let Some(address) = alpen_address {

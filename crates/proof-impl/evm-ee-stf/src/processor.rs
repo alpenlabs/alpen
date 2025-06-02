@@ -201,7 +201,7 @@ where
             // Validate tx gas.
             let block_available_gas = U256::from(self.input.gas_limit) - cumulative_gas_used;
             if block_available_gas < U256::from(tx.transaction.gas_limit()) {
-                panic!("Error at transaction {}: gas exceeds block limit", tx_no);
+                panic!("Error at transaction {tx_no}: gas exceeds block limit");
             }
 
             // Setup EVM from tx.
@@ -210,7 +210,7 @@ where
             let res = evm
                 .transact()
                 .map_err(|e| {
-                    println!("Error at transaction {}: {:?}", tx_no, e);
+                    println!("Error at transaction {tx_no}: {e:?}");
                     e
                 })
                 .unwrap();
