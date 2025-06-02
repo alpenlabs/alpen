@@ -205,7 +205,7 @@ impl BorshDeserialize for BitcoinAddress {
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Invalid network byte: {}", network_byte),
+                    format!("Invalid network byte: {network_byte}"),
                 ));
             }
         };
@@ -459,7 +459,7 @@ impl BorshDeserialize for BitcoinTxid {
         if len != HASH_SIZE {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Invalid Txid size, expected: {}, got: {}", HASH_SIZE, len),
+                format!("Invalid Txid size, expected: {HASH_SIZE}, got: {len}"),
             ));
         }
 
@@ -993,8 +993,7 @@ mod tests {
             assert!(
                 BitcoinAddress::parse(&address_str, invalid_network)
                     .is_err_and(|e| matches!(e, ParseError::InvalidAddress(_))),
-                "should error with ParseError::InvalidAddress if parse is passed an invalid address/network pair: {}, {}",
-                address_str, invalid_network
+                "should error with ParseError::InvalidAddress if parse is passed an invalid address/network pair: {address_str}, {invalid_network}"
             );
         }
     }

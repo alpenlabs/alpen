@@ -98,8 +98,7 @@ impl BtcChainSegment {
             Ok(block.clone())
         } else {
             Err(ClientError::Body(format!(
-                "Block at height {} not available",
-                height
+                "Block at height {height} not available"
             )))
         }
     }
@@ -112,8 +111,7 @@ impl BtcChainSegment {
 
         if !(self.start..self.end).contains(&height) {
             return Err(ClientError::Body(format!(
-                "Block header at height {} not available",
-                height
+                "Block header at height {height} not available"
             )));
         }
         let idx = height - self.start;
@@ -155,8 +153,7 @@ impl Reader for BtcChainSegment {
             }
         }
         Err(ClientError::Body(format!(
-            "Block with hash {:?} not found",
-            hash
+            "Block with hash {hash:?} not found"
         )))
     }
 
@@ -172,8 +169,7 @@ impl Reader for BtcChainSegment {
             }
         }
         Err(ClientError::Body(format!(
-            "Block with hash {:?} not found",
-            hash
+            "Block with hash {hash:?} not found"
         )))
     }
 

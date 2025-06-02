@@ -116,8 +116,7 @@ impl DatabaseRef for CacheDBProvider {
             .map(|code| Bytecode::new_raw(code.original_bytes()))
             .ok_or_else(|| {
                 ProviderError::Database(DatabaseError::Other(format!(
-                    "Bytecode for the given {:?} not found",
-                    code_hash,
+                    "Bytecode for the given {code_hash:?} not found",
                 )))
             })?;
 

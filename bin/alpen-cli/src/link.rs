@@ -88,8 +88,8 @@ impl PrettyPrint for MaybeLink<'_, '_> {
 impl PrettyPrint for OnchainObject<'_> {
     fn pretty(&self) -> String {
         match self {
-            OnchainObject::Transaction(txid) => format!("Transaction ID: {}", txid),
-            OnchainObject::Address(address) => format!("Address: {}", address),
+            OnchainObject::Transaction(txid) => format!("Transaction ID: {txid}"),
+            OnchainObject::Address(address) => format!("Address: {address}"),
         }
     }
 }

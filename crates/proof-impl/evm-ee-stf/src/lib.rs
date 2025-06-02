@@ -49,7 +49,7 @@ pub fn process_block_transaction(
     // Initialize the in-memory database
     let db = match InMemoryDB::initialize(&mut input) {
         Ok(database) => database,
-        Err(e) => panic!("Failed to initialize database: {:?}", e),
+        Err(e) => panic!("Failed to initialize database: {e:?}"),
     };
 
     // Create an EVM processor and execute the block

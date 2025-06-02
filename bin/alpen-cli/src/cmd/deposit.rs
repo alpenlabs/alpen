@@ -216,8 +216,7 @@ fn bridge_in_descriptor(
     // i have tried to extract it directly from the desc above
     // it is a massive pita
     let recovery_script = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
-        "and_v(v:pk({}),older({}))",
-        recovery_xonly_pubkey, RECOVER_DELAY
+        "and_v(v:pk({recovery_xonly_pubkey}),older({RECOVER_DELAY}))"
     ))
     .expect("valid recovery script")
     .encode();

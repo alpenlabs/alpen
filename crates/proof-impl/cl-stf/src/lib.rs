@@ -79,8 +79,7 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
             assert_eq!(
                 &l1_updates[blockscan_result_idx].raw_header,
                 manifest.header(),
-                "mismatch headers at idx: {:?}",
-                blockscan_result_idx
+                "mismatch headers at idx: {blockscan_result_idx:?}"
             );
 
             // OPTIMIZE: if there's a way to compare things without additional cloned
@@ -94,8 +93,8 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
             assert_eq!(
                 &l1_updates[blockscan_result_idx].protocol_ops,
                 &protocol_ops,
-                "mismatch between protocol ops for {}",
-                manifest.blkid()
+                "mismatch between protocol ops for {blkid}",
+                blkid = manifest.blkid()
             );
 
             // Increase the blockscan result idx
