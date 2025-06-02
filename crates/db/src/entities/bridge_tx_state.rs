@@ -270,7 +270,7 @@ mod tests {
 
             let result = tx_state.add_nonce(&(i as OperatorIdx), random_nonce);
 
-            assert!(result.is_ok(), "operator {} should exist", i);
+            assert!(result.is_ok(), "operator {i} should exist");
 
             if (i + 1) < num_operators {
                 assert!(!result.unwrap(), "should not have all nonces");
@@ -312,7 +312,7 @@ mod tests {
             nonce_table.insert(operator_idx, random_nonce.inner().clone());
             let result = tx_state.add_nonce(&operator_idx, random_nonce);
 
-            assert!(result.is_ok(), "operator {} should exist", operator_idx);
+            assert!(result.is_ok(), "operator {operator_idx} should exist");
         }
 
         let ordered_nonces = tx_state
@@ -332,8 +332,7 @@ mod tests {
                     .unwrap()
                     .inner()
                     .clone(),
-                "nonces not ordered, mismatch for index: {}",
-                i
+                "nonces not ordered, mismatch for index: {i}"
             );
         }
     }
@@ -462,8 +461,7 @@ mod tests {
                     .get(&(i as OperatorIdx))
                     .expect("signature for operator must exist in the collection")
                     .inner(),
-                "ordered sigs should be... ordered, mismatch for ({})",
-                i
+                "ordered sigs should be... ordered, mismatch for ({i})"
             );
         }
     }

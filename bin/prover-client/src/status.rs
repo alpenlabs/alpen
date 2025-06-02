@@ -84,14 +84,12 @@ mod tests {
 
             assert!(
                 result.is_ok(),
-                "Failed to transition {:?} to Failed",
-                original_status
+                "Failed to transition {original_status:?} to Failed"
             );
             assert_eq!(
                 current_status,
                 ProvingTaskStatus::Failed,
-                "Status should be Failed after transition from {:?}",
-                original_status
+                "Status should be Failed after transition from {original_status:?}"
             );
         }
     }
@@ -171,9 +169,7 @@ mod tests {
 
             assert!(
                 result.is_err(),
-                "Transition from {:?} to {:?} should be invalid",
-                current_status,
-                target_status
+                "Transition from {current_status:?} to {target_status:?} should be invalid"
             );
         }
     }

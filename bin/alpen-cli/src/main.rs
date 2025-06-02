@@ -33,7 +33,7 @@ async fn main() {
     }
 
     let settings = Settings::load().unwrap_or_else(|e| {
-        eprintln!("Configuration error: {:?}", e);
+        eprintln!("Configuration error: {e:?}");
         std::process::exit(1);
     });
 
@@ -53,7 +53,7 @@ async fn main() {
     assert!(set_data_dir(settings.data_dir.clone()));
 
     let seed = seed::load_or_create(&persister).unwrap_or_else(|e| {
-        eprintln!("{:?}", e);
+        eprintln!("{e:?}");
         std::process::exit(1);
     });
 

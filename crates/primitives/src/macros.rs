@@ -328,7 +328,7 @@ mod tests {
     fn test_deserialize_hex_without_prefix() {
         let data = [2u8; 20];
         let hex_str = hex::encode(data);
-        let json = format!("\"{}\"", hex_str);
+        let json = format!("\"{hex_str}\"");
         let buf: TestBuf20 = serde_json::from_str(&json).unwrap();
         assert_eq!(buf, TestBuf20(data));
     }
@@ -337,7 +337,7 @@ mod tests {
     fn test_deserialize_hex_with_prefix() {
         let data = [3u8; 20];
         let hex_str = hex::encode(data);
-        let json = format!("\"0x{}\"", hex_str);
+        let json = format!("\"0x{hex_str}\"");
         let buf: TestBuf20 = serde_json::from_str(&json).unwrap();
         assert_eq!(buf, TestBuf20(data));
     }
