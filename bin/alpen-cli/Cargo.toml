@@ -10,8 +10,6 @@ workspace = true
 name = "alpen"
 path = "src/main.rs"
 
-lints.workspace = true
-
 [dependencies]
 strata-primitives.workspace = true
 
