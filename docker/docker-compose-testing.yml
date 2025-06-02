@@ -93,7 +93,8 @@ services:
       - ./configs/params.json:/app/params.json
       - ./.data/prover-client:/app/.data
       - ./prover-client/elfs:/app/elfs
-
+    ports:
+      - 9851:9851
     command: [
       "--rollup-params", "params.json",
       "--datadir", ".data",
