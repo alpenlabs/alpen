@@ -13,7 +13,6 @@ struct InnerState {
 }
 
 impl InnerState {
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new() -> Self {
         Self {
             write_batches: BTreeMap::new(),

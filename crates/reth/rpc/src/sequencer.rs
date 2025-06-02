@@ -55,13 +55,11 @@ impl SequencerClient {
     }
 
     /// Returns the network of the client
-    #[expect(clippy::missing_const_for_fn)]
     pub fn endpoint(&self) -> &str {
         &self.inner.sequencer_endpoint
     }
 
     /// Returns the client
-    #[expect(clippy::missing_const_for_fn)]
     pub fn http_client(&self) -> &Client {
         &self.inner.http_client
     }

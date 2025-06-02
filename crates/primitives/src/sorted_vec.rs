@@ -61,7 +61,6 @@ impl<T> SortedVec<T> {
     }
 
     /// Returns a slice of the inner vec.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn as_slice(&self) -> &[T] {
         &self.inner
     }
@@ -279,7 +278,6 @@ impl<T: TableEntry> FlatTable<T> {
         }
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn as_slice(&self) -> &[T] {
         &self.inner
     }

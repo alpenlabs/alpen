@@ -11,7 +11,6 @@ pub struct SyncReceiver<T> {
 }
 
 impl<T> SyncReceiver<T> {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(rx: watch::Receiver<T>, rt: Handle) -> Self {
         Self { rx, rt }
     }

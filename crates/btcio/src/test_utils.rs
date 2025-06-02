@@ -40,7 +40,6 @@ pub struct TestBitcoinClient {
 }
 
 impl TestBitcoinClient {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(confs: u64) -> Self {
         Self {
             confs,

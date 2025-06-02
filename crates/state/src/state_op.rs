@@ -42,7 +42,6 @@ pub struct WriteBatch {
 
 impl WriteBatch {
     /// Creates a new instance from the toplevel state and a list of ops.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(new_toplevel_state: Chainstate, ops: Vec<StateOp>) -> Self {
         Self {
             new_toplevel_state,
@@ -349,7 +348,6 @@ pub struct WriteBatchEntry {
 }
 
 impl WriteBatchEntry {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(wb: WriteBatch, blockid: L2BlockId) -> Self {
         Self { wb, blockid }
     }

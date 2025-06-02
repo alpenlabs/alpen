@@ -31,7 +31,6 @@ pub struct SyncManager {
 }
 
 impl SyncManager {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn params(&self) -> &Params {
         &self.params
     }
@@ -41,7 +40,6 @@ impl SyncManager {
     }
 
     /// Gets a ref to the CSM controller.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn csm_controller(&self) -> &CsmController {
         &self.csm_controller
     }

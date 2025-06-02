@@ -19,7 +19,6 @@ impl RBCheckpointDB {
     ///
     /// Assumes it was opened with column families as defined in `STORE_COLUMN_FAMILIES`.
     // FIXME Make it better/generic.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, ops }
     }

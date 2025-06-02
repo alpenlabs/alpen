@@ -30,7 +30,6 @@ pub(crate) struct BtcBlockspaceOperator {
 
 impl BtcBlockspaceOperator {
     /// Creates a new BTC operations instance.
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(
         btc_client: Arc<Client>,
         cl_client: HttpClient,

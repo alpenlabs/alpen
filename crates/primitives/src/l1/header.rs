@@ -28,7 +28,6 @@ pub struct L1HeaderRecord {
 }
 
 impl L1HeaderRecord {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(blkid: L1BlockId, buf: Vec<u8>, wtxs_root: Buf32) -> Self {
         Self {
             blkid,

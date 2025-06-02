@@ -37,7 +37,6 @@ pub struct EnvelopeHandle {
 }
 
 impl EnvelopeHandle {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(ops: Arc<EnvelopeDataOps>, intent_tx: Sender<IntentEntry>) -> Self {
         Self { ops, intent_tx }
     }

@@ -17,7 +17,6 @@ pub struct LoggerConfig {
 
 impl LoggerConfig {
     /// Creates a new empty instance with whoami set.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(whoami: String) -> Self {
         Self {
             whoami,

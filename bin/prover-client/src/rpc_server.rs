@@ -73,7 +73,6 @@ pub(crate) struct ProverClientRpc {
 }
 
 impl ProverClientRpc {
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,

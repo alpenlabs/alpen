@@ -391,7 +391,6 @@ impl FinalizeReport {
     }
 
     /// Returns a slice of the blkids that were rejected.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn rejected(&self) -> &[L2BlockId] {
         &self.rejected
     }

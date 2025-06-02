@@ -9,7 +9,6 @@ pub(crate) struct ExponentialBackoff {
 }
 
 impl ExponentialBackoff {
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(max_retries: u64, total_time: u64, base: f64) -> Self {
         Self {
             max_retries,

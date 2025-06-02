@@ -24,7 +24,6 @@ pub struct ClientUpdateNotif {
 }
 
 impl ClientUpdateNotif {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(sync_event_idx: u64, new_state: Arc<ClientState>) -> Self {
         Self {
             sync_event_idx,
@@ -36,7 +35,6 @@ impl ClientUpdateNotif {
         self.sync_event_idx
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new_state(&self) -> &ClientState {
         &self.new_state
     }

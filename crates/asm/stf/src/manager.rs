@@ -17,7 +17,6 @@ pub(crate) struct HandlerImpl<S: Subprotocol, R> {
 }
 
 impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
         Self {
             state,

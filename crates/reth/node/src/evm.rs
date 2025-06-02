@@ -16,7 +16,6 @@ pub struct StrataEvmConfig {
 }
 
 impl StrataEvmConfig {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self {
             inner: EthEvmConfig::new(chain_spec),

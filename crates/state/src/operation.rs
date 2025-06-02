@@ -22,7 +22,6 @@ pub struct ClientUpdateOutput {
 }
 
 impl ClientUpdateOutput {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(state: ClientState, actions: Vec<SyncAction>) -> Self {
         Self { state, actions }
     }

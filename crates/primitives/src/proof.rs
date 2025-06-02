@@ -129,7 +129,6 @@ pub struct ProofKey {
 }
 
 impl ProofKey {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(context: ProofContext, host: ProofZkVm) -> Self {
         Self { context, host }
     }

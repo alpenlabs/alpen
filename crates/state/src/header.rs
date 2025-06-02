@@ -161,7 +161,6 @@ pub struct SignedL2BlockHeader {
 }
 
 impl SignedL2BlockHeader {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(header: L2BlockHeader, sig: Buf64) -> Self {
         SignedL2BlockHeader {
             header,

@@ -66,7 +66,6 @@ impl EngineRpcClient {
         }
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn inner(&self) -> &HttpClient<AuthClientService<HttpBackend>> {
         &self.client
     }

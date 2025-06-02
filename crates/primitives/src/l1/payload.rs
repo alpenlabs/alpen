@@ -79,7 +79,6 @@ impl BlobSpec {
     }
 
     #[allow(dead_code)]
-    #[expect(clippy::missing_const_for_fn)]
     fn new(dest: PayloadDest, commitment: Buf32) -> Self {
         Self { dest, commitment }
     }
@@ -120,7 +119,6 @@ impl PayloadSpec {
         &self.commitment
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     fn new(dest: PayloadDest, commitment: Buf32) -> Self {
         Self { dest, commitment }
     }
@@ -134,7 +132,6 @@ pub struct L1Payload {
 }
 
 impl L1Payload {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(data: Vec<u8>, payload_type: L1PayloadType) -> Self {
         Self { data, payload_type }
     }
@@ -188,7 +185,6 @@ pub struct PayloadIntent {
 }
 
 impl PayloadIntent {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(dest: PayloadDest, commitment: Buf32, payload: L1Payload) -> Self {
         Self {
             dest,

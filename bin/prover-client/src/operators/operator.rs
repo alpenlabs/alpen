@@ -29,7 +29,6 @@ pub(crate) struct ProofOperator {
 
 impl ProofOperator {
     /// Creates a new instance of `ProofOperator` with the provided proof operators.
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(
         btc_blockspace_operator: BtcBlockspaceOperator,
         evm_ee_operator: EvmEeOperator,

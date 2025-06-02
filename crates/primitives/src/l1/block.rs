@@ -68,7 +68,6 @@ pub struct L1BlockCommitment {
 }
 
 impl L1BlockCommitment {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(height: u64, blkid: L1BlockId) -> Self {
         Self { height, blkid }
     }
@@ -158,7 +157,6 @@ pub struct L1BlockManifest {
 }
 
 impl L1BlockManifest {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         record: L1HeaderRecord,
         verif_state: Option<HeaderVerificationState>,

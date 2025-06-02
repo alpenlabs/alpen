@@ -105,7 +105,6 @@ pub struct CheckpointDuty(Checkpoint);
 
 impl CheckpointDuty {
     /// Creates a new `CheckpointDuty` from a [`Checkpoint`].
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(batch_checkpoint: Checkpoint) -> Self {
         Self(batch_checkpoint)
     }
@@ -150,7 +149,6 @@ pub struct IdentityData {
 
 impl IdentityData {
     /// Create new IdentityData from components.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(ident: Identity, key: IdentityKey) -> Self {
         Self { ident, key }
     }

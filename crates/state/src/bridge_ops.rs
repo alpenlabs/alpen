@@ -21,7 +21,6 @@ pub struct WithdrawalIntent {
 }
 
 impl WithdrawalIntent {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(amt: BitcoinAmount, destination: Descriptor, withdrawal_txid: Buf32) -> Self {
         Self {
             amt,
@@ -56,7 +55,6 @@ pub struct WithdrawalBatch {
 
 impl WithdrawalBatch {
     /// Creates a new instance.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(intents: Vec<WithdrawalIntent>) -> Self {
         Self { intents }
     }
@@ -84,7 +82,6 @@ pub struct DepositIntent {
 }
 
 impl DepositIntent {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(amt: BitcoinAmount, dest_ident: Vec<u8>) -> Self {
         Self { amt, dest_ident }
     }
@@ -93,7 +90,6 @@ impl DepositIntent {
         self.amt.to_sat()
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn dest_ident(&self) -> &[u8] {
         &self.dest_ident
     }

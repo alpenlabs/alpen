@@ -217,7 +217,6 @@ pub struct TaskExecutor {
 }
 
 impl TaskExecutor {
-    #[expect(clippy::missing_const_for_fn)]
     fn new(
         tokio_handle: Handle,
         panicked_tasks_tx: mpsc::UnboundedSender<TaskError>,

@@ -28,7 +28,6 @@ pub struct ExecUpdate {
 }
 
 impl ExecUpdate {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(input: UpdateInput, output: UpdateOutput) -> Self {
         Self { input, output }
     }
@@ -81,7 +80,6 @@ impl<'a> Arbitrary<'a> for UpdateInput {
 }
 
 impl UpdateInput {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         update_idx: u64,
         applied_ops: Vec<Op>,
@@ -104,12 +102,10 @@ impl UpdateInput {
         &self.entries_root
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn applied_ops(&self) -> &[Op] {
         &self.applied_ops
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn extra_payload(&self) -> &[u8] {
         &self.extra_payload
     }
@@ -150,12 +146,10 @@ impl UpdateOutput {
         &self.new_state
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn withdrawals(&self) -> &[bridge_ops::WithdrawalIntent] {
         &self.withdrawals
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn da_blobs(&self) -> &[BlobSpec] {
         &self.da_blobs
     }
@@ -210,7 +204,6 @@ pub struct ELDepositData {
 }
 
 impl ELDepositData {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(intent_idx: u64, amt: u64, dest_addr: Vec<u8>) -> Self {
         Self {
             intent_idx,
@@ -223,7 +216,6 @@ impl ELDepositData {
         self.amt
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn dest_addr(&self) -> &[u8] {
         &self.dest_addr
     }

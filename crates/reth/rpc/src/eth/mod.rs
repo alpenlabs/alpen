@@ -279,7 +279,6 @@ pub struct StrataEthApiBuilder {
 
 impl StrataEthApiBuilder {
     /// Creates a [`StrataEthApiBuilder`] instance.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new() -> Self {
         Self {
             sequencer_client: None,

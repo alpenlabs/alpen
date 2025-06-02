@@ -36,7 +36,6 @@ impl From<OutPoint> for OutputRef {
 }
 
 impl OutputRef {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(txid: Txid, vout: u32) -> Self {
         Self(OutPoint::new(txid, vout))
     }
@@ -425,7 +424,6 @@ impl BitcoinTxid {
     /// # Notes
     ///
     /// [`Txid`] is [`Copy`].
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(txid: &Txid) -> Self {
         BitcoinTxid(*txid)
     }

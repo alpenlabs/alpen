@@ -66,7 +66,6 @@ pub struct ForkChoiceManager {
 
 impl ForkChoiceManager {
     /// Constructs a new instance we can run the tracker with.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         params: Arc<Params>,
         storage: Arc<NodeStorage>,
@@ -152,18 +151,15 @@ impl ForkChoiceManager {
     }
 
     #[expect(unused)]
-    #[expect(clippy::missing_const_for_fn)]
     fn get_chainstate_cur_epoch(&self) -> u64 {
         self.cur_chainstate.cur_epoch()
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     fn get_chainstate_prev_epoch(&self) -> &EpochCommitment {
         self.cur_chainstate.prev_epoch()
     }
 
     #[expect(unused)]
-    #[expect(clippy::missing_const_for_fn)]
     fn get_chainstate_finalized_epoch(&self) -> &EpochCommitment {
         self.cur_chainstate.finalized_epoch()
     }

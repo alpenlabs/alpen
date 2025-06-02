@@ -17,7 +17,6 @@ pub struct CsmController {
 }
 
 impl CsmController {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(sync_ev_man: Arc<SyncEventManager>, csm_tx: mpsc::Sender<CsmMessage>) -> Self {
         Self {
             sync_ev_man,

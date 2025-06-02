@@ -19,7 +19,6 @@ pub(crate) struct ReaderTxVisitorImpl {
 }
 
 impl ReaderTxVisitorImpl {
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
@@ -28,7 +27,6 @@ impl ReaderTxVisitorImpl {
         }
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn ops(&self) -> &[ProtocolOperation] {
         &self.ops
     }

@@ -45,7 +45,6 @@ pub struct Log {
 
 impl Log {
     /// Constructor
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(ty: u16, body: Vec<u8>) -> Self {
         Self { ty, body }
     }
@@ -56,7 +55,6 @@ impl Log {
     }
 
     /// Returns slice of body
-    #[expect(clippy::missing_const_for_fn)]
     pub fn body(&self) -> &[u8] {
         &self.body
     }

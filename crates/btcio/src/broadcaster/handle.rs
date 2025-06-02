@@ -20,7 +20,6 @@ pub struct L1BroadcastHandle {
 }
 
 impl L1BroadcastHandle {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(sender: mpsc::Sender<(u64, L1TxEntry)>, ops: Arc<BroadcastDbOps>) -> Self {
         Self { ops, sender }
     }

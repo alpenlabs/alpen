@@ -212,7 +212,6 @@ struct CheckpointPrepData {
 }
 
 impl CheckpointPrepData {
-    #[expect(clippy::missing_const_for_fn)]
     fn new(info: BatchInfo, tsn: BatchTransition, chainstate: Chainstate) -> Self {
         Self {
             info,

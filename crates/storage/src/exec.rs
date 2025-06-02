@@ -163,7 +163,6 @@ macro_rules! inst_ops_simple {
         }
 
         impl<$tparam : $tpconstr + Sync + Send + 'static> Context<$tparam> {
-            #[expect(clippy::missing_const_for_fn)]
 pub fn new(db: Arc<$tparam>) -> Self {
                 Self { db }
             }

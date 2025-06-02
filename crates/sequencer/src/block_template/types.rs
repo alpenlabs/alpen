@@ -21,7 +21,6 @@ pub struct FullBlockTemplate {
 
 impl FullBlockTemplate {
     /// Creates a new full block template from its components.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(header: L2BlockHeader, body: L2BlockBody, accessory: L2BlockAccessory) -> Self {
         Self {
             header,

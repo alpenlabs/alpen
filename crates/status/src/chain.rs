@@ -40,7 +40,6 @@ impl ChainSyncStatus {
 }
 
 impl ChainSyncStatus {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         tip: L2BlockCommitment,
         prev_epoch: EpochCommitment,
@@ -64,7 +63,6 @@ pub struct ChainSyncStatusUpdate {
 }
 
 impl ChainSyncStatusUpdate {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(new_status: ChainSyncStatus, new_tl_chainstate: Arc<Chainstate>) -> Self {
         Self {
             new_status,

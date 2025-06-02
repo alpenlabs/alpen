@@ -68,7 +68,6 @@ pub(crate) struct StrataRpcImpl {
 
 impl StrataRpcImpl {
     #[allow(clippy::too_many_arguments)]
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(
         status_channel: StatusChannel,
         sync_manager: Arc<SyncManager>,
@@ -680,7 +679,6 @@ pub(crate) struct SequencerServerImpl {
 
 impl SequencerServerImpl {
     #[allow(clippy::too_many_arguments)]
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(
         envelope_handle: Arc<EnvelopeHandle>,
         broadcast_handle: Arc<L1BroadcastHandle>,
@@ -901,7 +899,6 @@ pub(crate) struct StrataDebugRpcImpl {
 }
 
 impl StrataDebugRpcImpl {
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
         Self { storage }
     }

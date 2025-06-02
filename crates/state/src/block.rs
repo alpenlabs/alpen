@@ -21,7 +21,6 @@ pub struct L2Block {
 }
 
 impl L2Block {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(header: SignedL2BlockHeader, body: L2BlockBody) -> Self {
         Self { header, body }
     }
@@ -75,7 +74,6 @@ pub struct L2BlockBody {
 }
 
 impl L2BlockBody {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(l1_segment: L1Segment, exec_segment: ExecSegment) -> Self {
         Self {
             l1_segment,
@@ -119,7 +117,6 @@ pub struct L1Segment {
 impl L1Segment {
     /// Constructs a new instance.  These new manifests MUST be sorted in order
     /// of block height.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(new_height: u64, new_manifests: Vec<L1BlockManifest>) -> Self {
         Self {
             new_height,
@@ -135,7 +132,6 @@ impl L1Segment {
         self.new_height
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new_manifests(&self) -> &[L1BlockManifest] {
         &self.new_manifests
     }
@@ -160,7 +156,6 @@ pub struct ExecSegment {
 }
 
 impl ExecSegment {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(update: exec_update::ExecUpdate) -> Self {
         Self { update }
     }
@@ -181,7 +176,6 @@ pub struct L2BlockAccessory {
 }
 
 impl L2BlockAccessory {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(exec_payload: Vec<u8>, gas_used: u64) -> Self {
         Self {
             exec_payload,
@@ -189,7 +183,6 @@ impl L2BlockAccessory {
         }
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn exec_payload(&self) -> &[u8] {
         &self.exec_payload
     }
@@ -206,7 +199,6 @@ pub struct L2BlockBundle {
 }
 
 impl L2BlockBundle {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(block: L2Block, accessory: L2BlockAccessory) -> Self {
         Self { block, accessory }
     }

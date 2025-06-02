@@ -263,7 +263,6 @@ impl SyncState {
         &self.genesis_blkid
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn confirmed_checkpoint_blocks(&self) -> &[(u64, L2BlockId)] {
         &self.confirmed_checkpoint_blocks
     }
@@ -299,7 +298,6 @@ pub struct InternalState {
 }
 
 impl InternalState {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(blkid: L1BlockId, last_checkpoint: Option<L1Checkpoint>) -> Self {
         Self {
             blkid,
@@ -356,7 +354,6 @@ pub struct CheckpointL1Ref {
 }
 
 impl CheckpointL1Ref {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(l1_commitment: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
         Self {
             l1_commitment,
@@ -389,7 +386,6 @@ pub struct L1Checkpoint {
 }
 
 impl L1Checkpoint {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         batch_info: BatchInfo,
         batch_transition: BatchTransition,
@@ -412,7 +408,6 @@ pub struct ClientStateMut {
 }
 
 impl ClientStateMut {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(state: ClientState) -> Self {
         Self {
             state,

@@ -58,7 +58,6 @@ pub struct L2BlockCommitment {
 }
 
 impl L2BlockCommitment {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(slot: u64, blkid: L2BlockId) -> Self {
         Self { slot, blkid }
     }

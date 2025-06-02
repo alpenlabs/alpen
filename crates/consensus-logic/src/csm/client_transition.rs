@@ -41,7 +41,6 @@ pub struct StorageEventContext<'c> {
 }
 
 impl<'c> StorageEventContext<'c> {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(storage: &'c NodeStorage) -> Self {
         Self { storage }
     }

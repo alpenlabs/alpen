@@ -37,7 +37,6 @@ pub(crate) struct CheckpointOperator {
 
 impl CheckpointOperator {
     /// Creates a new BTC operations instance.
-    #[expect(clippy::missing_const_for_fn)]
     pub(crate) fn new(
         cl_client: HttpClient,
         cl_stf_operator: Arc<ClStfOperator>,

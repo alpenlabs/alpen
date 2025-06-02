@@ -45,7 +45,6 @@ pub struct EpochCommitment {
 }
 
 impl EpochCommitment {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(epoch: u64, last_slot: u64, last_blkid: L2BlockId) -> Self {
         Self {
             epoch,

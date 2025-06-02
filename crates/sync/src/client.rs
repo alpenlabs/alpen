@@ -58,7 +58,6 @@ pub struct RpcSyncPeer<RPC: StrataApiClient + Send + Sync> {
 }
 
 impl<RPC: StrataApiClient + Send + Sync> RpcSyncPeer<RPC> {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(rpc_client: RPC, download_batch_size: usize) -> Self {
         Self {
             rpc_client,

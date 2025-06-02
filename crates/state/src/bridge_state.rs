@@ -119,7 +119,6 @@ impl OperatorTable {
         self.operators.is_empty()
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn operators(&self) -> &[OperatorEntry] {
         &self.operators
     }
@@ -350,7 +349,6 @@ pub struct DepositEntry {
 }
 
 impl DepositEntry {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         idx: u32,
         output: OutputRef,
@@ -376,7 +374,6 @@ impl DepositEntry {
         &self.output
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn notary_operators(&self) -> &[OperatorIdx] {
         &self.notary_operators
     }
@@ -463,7 +460,6 @@ pub struct DispatchedState {
 }
 
 impl DispatchedState {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         cmd: DispatchCommand,
         assignee: OperatorIdx,
@@ -514,12 +510,10 @@ pub struct DispatchCommand {
 }
 
 impl DispatchCommand {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(withdraw_outputs: Vec<WithdrawOutput>) -> Self {
         Self { withdraw_outputs }
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn withdraw_outputs(&self) -> &[WithdrawOutput] {
         &self.withdraw_outputs
     }
@@ -537,7 +531,6 @@ pub struct WithdrawOutput {
 }
 
 impl WithdrawOutput {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
         Self { destination, amt }
     }
@@ -565,7 +558,6 @@ pub struct FulfilledState {
 }
 
 impl FulfilledState {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(assignee: OperatorIdx, amt: BitcoinAmount, txid: Buf32) -> Self {
         Self {
             assignee,

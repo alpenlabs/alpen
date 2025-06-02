@@ -47,7 +47,6 @@ impl<T> StateQueue<T> {
     /// Returns a slice over the entries in the queue, without their positioning
     /// information.  Consider if `.iter_entries` is more well-suited.
     // TODO is it bad to expose this?
-    #[expect(clippy::missing_const_for_fn)]
     pub fn entries(&self) -> &[T] {
         &self.entries
     }
@@ -89,13 +88,11 @@ impl<T> StateQueue<T> {
     }
 
     /// Returns a reference to the front entry of the queue, if it exists.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn front(&self) -> Option<&T> {
         self.entries.first()
     }
 
     /// Returns a mut ref to the front entry in the queue, if it exists.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn front_mut(&mut self) -> Option<&mut T> {
         self.entries.last_mut()
     }
@@ -114,13 +111,11 @@ impl<T> StateQueue<T> {
     }
 
     /// Returns a reference to the back entry in the queue, if it exists.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn back(&self) -> Option<&T> {
         self.entries.last()
     }
 
     /// Returns a mut ref to the back entry in the queue, if it exists.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn back_mut(&mut self) -> Option<&mut T> {
         self.entries.last_mut()
     }

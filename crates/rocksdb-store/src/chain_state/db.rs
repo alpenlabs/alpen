@@ -20,7 +20,6 @@ pub struct ChainstateDb {
 }
 
 impl ChainstateDb {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, _ops: ops }
     }

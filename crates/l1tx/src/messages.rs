@@ -18,7 +18,6 @@ pub struct L1TxMessages {
 }
 
 impl L1TxMessages {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         protocol_ops: Vec<ProtocolOperation>,
         deposit_reqs: Vec<DepositRequestInfo>,
@@ -31,17 +30,14 @@ impl L1TxMessages {
         }
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn protocol_ops(&self) -> &[ProtocolOperation] {
         &self.protocol_ops
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn deposit_reqs(&self) -> &[DepositRequestInfo] {
         &self.deposit_reqs
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn da_entries(&self) -> &[DaEntry] {
         &self.da_entries
     }
@@ -100,7 +96,6 @@ impl DaEntry {
         &self.commitment
     }
 
-    #[expect(clippy::missing_const_for_fn)]
     pub fn blob_buf(&self) -> &[u8] {
         &self.blob_buf
     }

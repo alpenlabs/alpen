@@ -37,7 +37,6 @@ pub struct L1TxInclusionProof<T> {
 }
 
 impl<T> L1TxInclusionProof<T> {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(position: u32, cohashes: Vec<Buf32>) -> Self {
         Self {
             position,

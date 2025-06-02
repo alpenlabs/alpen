@@ -65,7 +65,6 @@ pub struct BundledPayloadEntry {
 }
 
 impl BundledPayloadEntry {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         payloads: Vec<L1Payload>,
         commit_txid: Buf32,
@@ -144,7 +143,6 @@ impl L1TxEntry {
     ///
     /// Whenever possible use [`try_to_tx()`](L1TxEntry::try_to_tx) to deserialize the transaction.
     /// This imposes more strict type checks.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn tx_raw(&self) -> &[u8] {
         &self.tx_raw
     }
@@ -201,7 +199,6 @@ pub struct CheckpointEntry {
 }
 
 impl CheckpointEntry {
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(
         checkpoint: Checkpoint,
         proving_status: CheckpointProvingStatus,

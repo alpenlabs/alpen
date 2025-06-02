@@ -78,7 +78,6 @@ rust.unused_crate_dependencies = "deny"
 rust.unused_must_use = "deny"
 # rust.missing_docs = "warn" # TODO: we need to enable this in the near future
 rustdoc.all = "warn"
-clippy.missing_const_for_fn = "deny"
 
 [workspace.dependencies]
 alpen-chainspec = { path = "crates/reth/chainspec" }

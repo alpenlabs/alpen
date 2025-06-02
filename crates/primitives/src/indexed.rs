@@ -12,7 +12,6 @@ pub struct Indexed<T, Idx = u32> {
 
 impl<T, Idx> Indexed<T, Idx> {
     /// Creates a new instance.
-    #[expect(clippy::missing_const_for_fn)]
     pub fn new(index: Idx, item: T) -> Self {
         Self { index, item }
     }
