@@ -377,7 +377,7 @@ mod tests {
         // Extract the transaction and serialize it
         let signed_tx = psbt.extract_tx().expect("valid transaction");
         let serialized_signed_tx = consensus::encode::serialize_hex(&signed_tx);
-        println!("serialized_signed_tx: {}", serialized_signed_tx);
+        println!("serialized_signed_tx: {serialized_signed_tx}");
     }
 
     #[test]

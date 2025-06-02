@@ -76,16 +76,15 @@ use std::fs;
             .to_str()
             .expect("Failed to convert path to string");
 
-        let full_path_str = format!("{}/cache/{}", base_path_str, program_name);
+        let full_path_str = format!("{base_path_str}/cache/{program_name}");
         methods_file_content.push_str(&format!(
             r#"
-pub static {0}_ELF: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{1}.elf").expect("Cannot find ELF") }});
-pub static {0}_PK: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{1}.pk").expect("Cannot find PK") }});
-pub static {0}_VK: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{1}.vk").expect("Cannot find VK") }});
-pub const {0}_VK_HASH_U32: &[u32] = &{2:?};
-pub const {0}_VK_HASH_STR: &str = "{3}";
-"#,
-            program_name_upper, full_path_str, vk_hash_u32, vk_hash_str
+pub static {program_name_upper}_ELF: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{full_path_str}.elf").expect("Cannot find ELF") }});
+pub static {program_name_upper}_PK: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{full_path_str}.pk").expect("Cannot find PK") }});
+pub static {program_name_upper}_VK: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{full_path_str}.vk").expect("Cannot find VK") }});
+pub const {program_name_upper}_VK_HASH_U32: &[u32] = &{vk_hash_u32:?};
+pub const {program_name_upper}_VK_HASH_STR: &str = "{vk_hash_str}";
+"#
         ));
     }
 
@@ -125,10 +124,9 @@ fn build_program_with_dependencies(
         for dep in deps {
             if let Some(vk_hash) = vk_hashes.get(*dep) {
                 let elf_name = format!("{}_ELF", dep.to_uppercase().replace("-", "_"));
-                let elf_name_id = format!("{}_ID", elf_name);
+                let elf_name_id = format!("{elf_name}_ID");
                 vks_content.push_str(&format!(
-                    "pub const {}: &[u32; 8] = &{:?};\n",
-                    elf_name_id, vk_hash
+                    "pub const {elf_name_id}: &[u32; 8] = &{vk_hash:?};\n"
                 ));
             }
         }
@@ -137,7 +135,7 @@ fn build_program_with_dependencies(
         if !vks_content.is_empty() {
             let vks_path = Path::new(program).join("src").join("vks.rs");
             fs::write(&vks_path, vks_content)
-                .unwrap_or_else(|e| panic!("Failed to write vks.rs for {}: {}", program, e));
+                .unwrap_or_else(|e| panic!("Failed to write vks.rs for {program}: {e}"));
         }
     }
 
@@ -248,7 +246,7 @@ fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String) {
         vec!["zkvm-verify".to_string()]
     };
 
-    // In the Docker build, override the guest program’s Cargo workspace root with the Strata
+    // In the Docker build, override the guest program's Cargo workspace root with the Strata
     // workspace root so Docker mounts the entire Strata workspace, enabling the guest program
     // to import Strata crates relatively.
     #[cfg(feature = "docker-build")]

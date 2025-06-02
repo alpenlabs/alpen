@@ -1,7 +1,4 @@
-use std::{
-    io::{Error, ErrorKind},
-    path::Path,
-};
+use std::{io::Error, path::Path};
 
 include!(concat!(env!("OUT_DIR"), "/methods.rs"));
 
@@ -60,7 +57,7 @@ fn migrate_elf(source_file: &Path, destination_dir: &Path) -> Result<(), Error> 
     {
         let file_name = source_file
             .file_name()
-            .ok_or_else(|| Error::new(ErrorKind::Other, "Invalid file name"))?;
+            .ok_or_else(|| Error::other("Invalid file name"))?;
         let destination_file = destination_dir.join(file_name);
         fs::copy(source_file, &destination_file)?;
     }

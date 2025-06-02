@@ -118,7 +118,7 @@ impl From<RpcServerError> for ErrorObjectOwned {
             RpcServerError::OtherEx(m, b) => {
                 ErrorObjectOwned::owned::<_>(code, m.to_string(), Some(b))
             }
-            _ => ErrorObjectOwned::owned::<serde_json::Value>(code, format!("{}", val), None),
+            _ => ErrorObjectOwned::owned::<serde_json::Value>(code, format!("{val}"), None),
         }
     }
 }
