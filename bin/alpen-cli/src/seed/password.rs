@@ -5,7 +5,8 @@ use zxcvbn::{zxcvbn, Entropy};
 
 use super::PW_SALT_LEN;
 
-#[derive(Debug, ZeroizeOnDrop)]
+#[derive(ZeroizeOnDrop)]
+#[expect(missing_debug_implementations)]
 pub struct Password {
     inner: String,
 }
