@@ -1,5 +1,6 @@
 //! Consensus validation logic and core state machine
 
+pub mod chain_worker_context;
 pub mod checkpoint_verification;
 pub mod csm;
 pub mod fork_choice_manager;
