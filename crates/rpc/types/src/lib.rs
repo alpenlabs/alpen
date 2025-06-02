@@ -1,3 +1,5 @@
+//! Types for the JSON-RPC API.
+
 pub mod errors;
 pub mod types;
 

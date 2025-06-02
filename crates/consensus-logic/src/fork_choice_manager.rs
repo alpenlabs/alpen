@@ -37,6 +37,7 @@ use crate::{
 };
 
 /// Tracks the parts of the chain that haven't been finalized on-chain yet.
+#[expect(missing_debug_implementations)]
 pub struct ForkChoiceManager {
     /// Consensus parameters.
     params: Arc<Params>,
@@ -85,6 +86,7 @@ impl ForkChoiceManager {
     }
 
     // TODO is this right?
+    #[expect(unused)]
     fn finalized_tip(&self) -> &L2BlockId {
         self.chain_tracker.finalized_tip()
     }
@@ -116,6 +118,7 @@ impl ForkChoiceManager {
         Ok(block.header().slot())
     }
 
+    #[expect(unused)]
     fn get_block_chainstate(
         &self,
         block: &L2BlockCommitment,
@@ -147,6 +150,7 @@ impl ForkChoiceManager {
         Ok(new_tip)
     }
 
+    #[expect(unused)]
     fn get_chainstate_cur_epoch(&self) -> u64 {
         self.cur_chainstate.cur_epoch()
     }
@@ -155,6 +159,7 @@ impl ForkChoiceManager {
         self.cur_chainstate.prev_epoch()
     }
 
+    #[expect(unused)]
     fn get_chainstate_finalized_epoch(&self) -> &EpochCommitment {
         self.cur_chainstate.finalized_epoch()
     }

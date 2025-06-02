@@ -12,10 +12,18 @@ use operators::ProofOperator;
 use prover_manager::ProverManager;
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
+#[cfg(feature = "risc0-builder")]
+use strata_risc0_guest_builder as _;
 use strata_rocksdb::{prover::db::ProofDb, DbOpsConfig};
+#[cfg(feature = "sp1-builder")]
+use strata_sp1_guest_builder as _;
 use task_tracker::TaskTracker;
 use tokio::{spawn, sync::Mutex};
 use tracing::debug;
+#[cfg(feature = "risc0")]
+use zkaleido_risc0_host as _;
+#[cfg(feature = "sp1")]
+use zkaleido_sp1_host as _;
 
 mod args;
 mod checkpoint_runner;

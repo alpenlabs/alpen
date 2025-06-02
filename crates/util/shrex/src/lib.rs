@@ -222,7 +222,7 @@ impl TryFrom<&u8> for HexCharKind {
 }
 
 impl HexCharKind {
-    const fn offset(&self) -> u8 {
+    fn offset(&self) -> u8 {
         match self {
             HexCharKind::Uppercase => b'A' - 0xA,
             HexCharKind::Lowercase => b'a' - 0xa,

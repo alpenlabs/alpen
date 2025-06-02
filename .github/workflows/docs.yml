@@ -29,4 +29,4 @@ jobs:
       - name: Check docs leaving the dependencies out
         env:
           RUSTDOCFLAGS: --show-type-layout --enable-index-page -Zunstable-options -A rustdoc::private-doc-tests -D warnings
-        run: cargo doc --workspace --no-deps
+        run: cargo doc --workspace --all-features --no-deps

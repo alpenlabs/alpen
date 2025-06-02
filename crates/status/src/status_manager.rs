@@ -30,7 +30,7 @@ pub enum StatusError {
 // This structure is actually kinda problematic since it means that there's
 // hidden dataflows that could be hard to reason about.  I am not sure of a
 // better standalone solution at this time.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct StatusChannel {
     /// Shared reference to the status sender.
     sender: Arc<StatusSender>,
@@ -217,7 +217,7 @@ impl StatusChannel {
 }
 
 /// Wrapper for watch status receivers
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct StatusReceiver {
     cl: watch::Receiver<ClientState>,
     l1: watch::Receiver<L1Status>,
@@ -225,7 +225,7 @@ struct StatusReceiver {
 }
 
 /// Wrapper for watch status senders
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct StatusSender {
     cl: watch::Sender<ClientState>,
     l1: watch::Sender<L1Status>,

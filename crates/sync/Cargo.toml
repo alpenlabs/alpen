@@ -3,29 +3,29 @@ edition = "2021"
 name = "strata-sync"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
-strata-common.workspace = true
+strata-common = { workspace = true, optional = true }
 strata-consensus-logic.workspace = true
 strata-db.workspace = true
 strata-primitives.workspace = true
 strata-rpc-api = { workspace = true, features = ["client"] }
-strata-rpc-types.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 
-anyhow.workspace = true
 async-trait.workspace = true
 borsh.workspace = true
 futures.workspace = true
-futures-util.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 
 [dev-dependencies]
-arbitrary.workspace = true
+
 
 [features]
-debug-utils = ["strata-common/debug-utils"]
+debug-utils = ["strata-common/debug-utils", "dep:strata-common"]

@@ -22,7 +22,7 @@ use crate::errors::ProvingTaskError;
 /// It interfaces with the Bitcoin blockchain via a [`Client`] to fetch the necessary data
 /// required by the [`BtcBlockspaceProgram`] for the proof generation.
 #[derive(Debug, Clone)]
-pub struct BtcBlockspaceOperator {
+pub(crate) struct BtcBlockspaceOperator {
     pub btc_client: Arc<Client>,
     cl_client: HttpClient,
     rollup_params: Arc<RollupParams>,
@@ -30,7 +30,7 @@ pub struct BtcBlockspaceOperator {
 
 impl BtcBlockspaceOperator {
     /// Creates a new BTC operations instance.
-    pub fn new(
+    pub(crate) fn new(
         btc_client: Arc<Client>,
         cl_client: HttpClient,
         rollup_params: Arc<RollupParams>,
@@ -83,7 +83,7 @@ impl BtcBlockspaceOperator {
     }
 }
 
-pub struct BtcBlockscanParams {
+pub(crate) struct BtcBlockscanParams {
     pub range: (L1BlockCommitment, L1BlockCommitment),
     pub epoch: Epoch,
 }

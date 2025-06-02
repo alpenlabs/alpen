@@ -7,7 +7,7 @@ use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 
 /// All the items that writer tasks need as context.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WriterContext<R: Reader + Signer + Wallet> {
     /// Params for rollup.
     pub params: Arc<Params>,

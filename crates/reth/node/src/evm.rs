@@ -16,7 +16,7 @@ pub struct StrataEvmConfig {
 }
 
 impl StrataEvmConfig {
-    pub const fn new(chain_spec: Arc<ChainSpec>) -> Self {
+    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self {
             inner: EthEvmConfig::new(chain_spec),
         }

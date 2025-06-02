@@ -30,6 +30,7 @@ use crate::{
 };
 
 /// A handle to the Envelope task.
+#[expect(missing_debug_implementations)]
 pub struct EnvelopeHandle {
     ops: Arc<EnvelopeDataOps>,
     intent_tx: Sender<IntentEntry>,
@@ -173,7 +174,7 @@ fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow::Result<u6
 ///
 /// The envelope will be monitored until it acquires the status of
 /// [`BlobL1Status::Finalized`]
-pub async fn watcher_task<R: Reader + Signer + Wallet>(
+pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
     next_watch_payload_idx: u64,
     context: Arc<WriterContext<R>>,
     insc_ops: Arc<EnvelopeDataOps>,

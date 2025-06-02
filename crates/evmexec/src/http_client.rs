@@ -45,6 +45,7 @@ pub trait EngineRpc {
         payload: ExecutionPayloadInputV2,
     ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus>;
 
+    #[allow(dead_code)]
     async fn get_payload_bodies_by_hash_v1(
         &self,
         block_hashes: Vec<BlockHash>,

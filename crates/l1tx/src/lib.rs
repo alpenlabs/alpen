@@ -1,3 +1,5 @@
+//! L1 transaction processing.
+
 pub mod deposit;
 pub mod envelope;
 pub mod filter;

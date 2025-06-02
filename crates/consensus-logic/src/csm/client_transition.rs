@@ -34,6 +34,8 @@ pub trait EventContext {
 }
 
 /// Event context using the main node storage interfaace.
+#[derive(Clone)]
+#[expect(missing_debug_implementations)]
 pub struct StorageEventContext<'c> {
     storage: &'c NodeStorage,
 }
@@ -311,12 +313,13 @@ mod tests {
     use super::*;
     use crate::genesis;
 
-    pub struct DummyEventContext {
+    #[derive(Debug)]
+    pub(crate) struct DummyEventContext {
         chainseg: BtcChainSegment,
     }
 
     impl DummyEventContext {
-        pub fn new() -> Self {
+        pub(crate) fn new() -> Self {
             Self {
                 chainseg: BtcChainSegment::load(),
             }
@@ -357,7 +360,7 @@ mod tests {
         state_assertions: Box<dyn Fn(&ClientState)>, // Closure to verify state after all events
     }
 
-    fn run_test_cases(test_cases: &[TestCase], state: &mut ClientState, params: &Params) {
+    fn run_test_cases(test_cases: &[TestCase<'_>], state: &mut ClientState, params: &Params) {
         let context = DummyEventContext::new();
 
         for case in test_cases {

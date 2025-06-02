@@ -7,14 +7,14 @@ use crate::error::Error;
 
 /// Validates if a given string is a valid BOSD.
 #[pyfunction]
-pub fn is_valid_bosd(s: &str) -> bool {
+pub(crate) fn is_valid_bosd(s: &str) -> bool {
     let result = s.parse::<Descriptor>();
     result.is_ok()
 }
 
 /// Converts an [`Address`] to a BOSD [`Descriptor`].
 #[pyfunction]
-pub fn address_to_descriptor(address: &str) -> Result<String, Error> {
+pub(crate) fn address_to_descriptor(address: &str) -> Result<String, Error> {
     // parse the address
     let address = address
         .parse::<Address<_>>()
@@ -27,7 +27,7 @@ pub fn address_to_descriptor(address: &str) -> Result<String, Error> {
 
 /// Converts a [`XOnlyPublicKey`] to a BOSD [`Descriptor`].
 #[pyfunction]
-pub fn xonlypk_to_descriptor(xonly: &str) -> Result<String, Error> {
+pub(crate) fn xonlypk_to_descriptor(xonly: &str) -> Result<String, Error> {
     // convert the hex-string into bytes
     let xonly_bytes = decode_alloc(xonly).map_err(|_| Error::XOnlyPublicKey)?;
     // parse the xonly public key
@@ -39,7 +39,7 @@ pub fn xonlypk_to_descriptor(xonly: &str) -> Result<String, Error> {
 
 /// Converts a string to an `OP_RETURN` BOSD [`Descriptor`].
 #[pyfunction]
-pub fn string_to_opreturn_descriptor(s: &str) -> Result<String, Error> {
+pub(crate) fn string_to_opreturn_descriptor(s: &str) -> Result<String, Error> {
     let payload = s.as_bytes().to_vec();
     let descriptor = Descriptor::new_op_return(&payload).map_err(|_| Error::OpReturnTooLong)?;
     Ok(descriptor.to_string())
@@ -47,7 +47,7 @@ pub fn string_to_opreturn_descriptor(s: &str) -> Result<String, Error> {
 
 /// Converts an `OP_RETURN` scriptPubKey to a string.
 #[pyfunction]
-pub fn opreturn_to_string(s: &str) -> Result<String, Error> {
+pub(crate) fn opreturn_to_string(s: &str) -> Result<String, Error> {
     // Remove the first 4 chars since we want the data
     // OP_RETURN <LEN> <DATA>
     let data = s.chars().skip(4).collect::<String>();

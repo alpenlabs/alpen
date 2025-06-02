@@ -42,4 +42,3 @@ cargo install --locked samply
 - Ensure you have `Cargo` and the necessary dependencies installed to use this tool.
 
 For any issues or contributions, please open an issue or submit a pull request to the repository.
-

@@ -8,7 +8,7 @@ use tracing::*;
 
 use super::error::{BroadcasterError, BroadcasterResult};
 
-pub type IndexedEntry = Indexed<L1TxEntry, u64>;
+pub(crate) type IndexedEntry = Indexed<L1TxEntry, u64>;
 
 pub(crate) struct BroadcasterState {
     /// Next index from which we should next read the [`L1TxEntry`] to check and process
@@ -20,13 +20,13 @@ pub(crate) struct BroadcasterState {
 
 impl BroadcasterState {
     /// Initialize the `[BroadcasterState]` by looking at all [`L1TxEntry`]s in database
-    pub async fn initialize(ops: &Arc<BroadcastDbOps>) -> BroadcasterResult<Self> {
+    pub(crate) async fn initialize(ops: &Arc<BroadcastDbOps>) -> BroadcasterResult<Self> {
         Self::initialize_from_idx(ops, 0).await
     }
 
     /// Initialize the [`BroadcasterState`] by looking at [`L1TxEntry`]s in database starting from
     /// given `start_idx`
-    pub async fn initialize_from_idx(
+    pub(crate) async fn initialize_from_idx(
         ops: &Arc<BroadcastDbOps>,
         start_idx: u64,
     ) -> BroadcasterResult<Self> {
@@ -41,7 +41,7 @@ impl BroadcasterState {
     }
 
     /// Fetches entries from database based on the `next_idx` and updates the broadcaster state
-    pub async fn update(
+    pub(crate) async fn update(
         &mut self,
         updated_entries: impl Iterator<Item = IndexedEntry>,
         ops: &Arc<BroadcastDbOps>,

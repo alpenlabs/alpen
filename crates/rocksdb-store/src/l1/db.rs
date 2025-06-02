@@ -16,6 +16,7 @@ use super::schemas::{
 };
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct L1Db {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,

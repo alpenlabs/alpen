@@ -6,16 +6,18 @@ use zxcvbn::{zxcvbn, Entropy};
 use super::PW_SALT_LEN;
 
 #[derive(ZeroizeOnDrop)]
+#[expect(missing_debug_implementations)]
 pub struct Password {
     inner: String,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum HashVersion {
     V0,
 }
 
 impl HashVersion {
-    const fn params(&self) -> (Algorithm, Version, Result<Params, argon2::Error>) {
+    fn params(&self) -> (Algorithm, Version, Result<Params, argon2::Error>) {
         match self {
             HashVersion::V0 => (
                 Algorithm::Argon2id,

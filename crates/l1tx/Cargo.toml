@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-l1tx"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-primitives.workspace = true
 strata-state.workspace = true
@@ -19,9 +22,6 @@ tracing.workspace = true
 strata-btcio = { workspace = true, features = ["test_utils"] }
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-test-utils.workspace = true
-
-[lints]
-rust.unused_crate_dependencies = "deny"
 
 [features]
 test_utils = []

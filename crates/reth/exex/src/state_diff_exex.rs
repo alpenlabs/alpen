@@ -9,6 +9,7 @@ use reth_primitives::EthPrimitives;
 use reth_provider::Chain;
 use tracing::{debug, error};
 
+#[expect(missing_debug_implementations)]
 pub struct StateDiffGenerator<
     Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
     S: StateDiffStore + Clone,

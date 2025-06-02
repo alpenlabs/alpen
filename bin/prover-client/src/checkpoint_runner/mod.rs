@@ -1,5 +1,5 @@
 //! A module defining operations for the checkpoint proof generation
-pub mod errors;
-pub mod fetch;
-pub mod runner;
-pub mod submit;
+pub(crate) mod errors;
+pub(crate) mod fetch;
+pub(crate) mod runner;
+pub(crate) mod submit;

@@ -3,6 +3,9 @@ edition = "2021"
 name = "alpen-cli"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "alpen"
 path = "src/main.rs"
@@ -33,7 +36,6 @@ config = { version = "0.14.0", default-features = false, features = ["toml"] }
 dialoguer = "0.11.0"
 directories = "5.0.1"
 indicatif = { version = "0.17.8", features = ["improved_unicode", "tokio"] }
-make_buf = { git = "https://github.com/alpenlabs/make_buf.git", rev = "903dbe1d4068712ee046c54fe2906ba04e72c905" }
 rand_core.workspace = true
 reqwest.workspace = true
 serde.workspace = true

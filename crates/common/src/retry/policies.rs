@@ -13,6 +13,7 @@ use super::Backoff;
 ///   `multiplier_base = 100` represents a 1.5× multiplier.
 /// - `multiplier_base`: The denominator of the backoff multiplier. Used in conjunction with
 ///   `multiplier` to scale the delay after each retry.
+#[derive(Debug)]
 pub struct ExponentialBackoff {
     /// Initial delay before the first retry, in milliseconds.
     base_delay_ms: u64,

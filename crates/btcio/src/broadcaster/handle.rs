@@ -13,6 +13,7 @@ use tracing::*;
 
 use super::task::broadcaster_task;
 
+#[expect(missing_debug_implementations)]
 pub struct L1BroadcastHandle {
     ops: Arc<BroadcastDbOps>,
     sender: mpsc::Sender<(u64, L1TxEntry)>,

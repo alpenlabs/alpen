@@ -1,3 +1,5 @@
+//! Storage for the Alpen codebase.
+
 mod cache;
 mod exec;
 mod managers;
@@ -17,6 +19,7 @@ use strata_db::traits::Database;
 /// A consolidation of database managers.
 // TODO move this to its own module
 #[derive(Clone)]
+#[expect(missing_debug_implementations)]
 pub struct NodeStorage {
     l1_block_manager: Arc<L1BlockManager>,
     l2_block_manager: Arc<L2BlockManager>,

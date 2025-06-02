@@ -5,7 +5,7 @@ use strata_l1tx::filter::types::TxFilterConfig;
 
 /// State we use in various parts of the reader.
 #[derive(Debug)]
-pub struct ReaderState {
+pub(crate) struct ReaderState {
     /// The highest block in the chain, at `.back()` of queue + 1.
     next_height: u64,
 
@@ -25,7 +25,7 @@ pub struct ReaderState {
 impl ReaderState {
     /// Constructs a new reader state instance using some context about how we
     /// want to manage it.
-    pub fn new(
+    pub(crate) fn new(
         next_height: u64,
         max_depth: usize,
         recent_blocks: VecDeque<BlockHash>,
@@ -42,15 +42,15 @@ impl ReaderState {
         }
     }
 
-    pub fn next_height(&self) -> u64 {
+    pub(crate) fn next_height(&self) -> u64 {
         self.next_height
     }
 
-    pub fn recent_blocks(&self) -> impl Iterator<Item = &BlockHash> {
+    pub(crate) fn recent_blocks(&self) -> impl Iterator<Item = &BlockHash> {
         self.recent_blocks.iter()
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub(crate) fn epoch(&self) -> u64 {
         self.epoch
     }
 
@@ -58,19 +58,19 @@ impl ReaderState {
         self.epoch = epoch;
     }
 
-    pub fn best_block(&self) -> &BlockHash {
+    pub(crate) fn best_block(&self) -> &BlockHash {
         self.recent_blocks.back().unwrap()
     }
 
-    pub fn best_block_idx(&self) -> u64 {
+    pub(crate) fn best_block_idx(&self) -> u64 {
         self.next_height - 1
     }
 
-    pub fn filter_config(&self) -> &TxFilterConfig {
+    pub(crate) fn filter_config(&self) -> &TxFilterConfig {
         &self.filter_config
     }
 
-    pub fn filter_config_mut(&mut self) -> &mut TxFilterConfig {
+    pub(crate) fn filter_config_mut(&mut self) -> &mut TxFilterConfig {
         &mut self.filter_config
     }
 
@@ -85,7 +85,7 @@ impl ReaderState {
     }
 
     /// Accepts a new block and possibly purges a buried one.
-    pub fn accept_new_block(&mut self, blkhash: BlockHash) -> Option<BlockHash> {
+    pub(crate) fn accept_new_block(&mut self, blkhash: BlockHash) -> Option<BlockHash> {
         let ret = if self.recent_blocks.len() > self.max_depth {
             Some(self.recent_blocks.pop_front().unwrap())
         } else {
@@ -99,7 +99,7 @@ impl ReaderState {
 
     /// Gets the blockhash of the given height, if we have it.
     #[allow(unused)]
-    pub fn get_height_blkid(&self, height: u64) -> Option<&BlockHash> {
+    pub(crate) fn get_height_blkid(&self, height: u64) -> Option<&BlockHash> {
         if height >= self.next_height {
             return None;
         }
@@ -112,7 +112,7 @@ impl ReaderState {
         Some(&self.recent_blocks[off as usize])
     }
 
-    fn revert_tip(&mut self) -> Option<BlockHash> {
+    pub(crate) fn revert_tip(&mut self) -> Option<BlockHash> {
         if !self.recent_blocks.is_empty() {
             let back = self.recent_blocks.pop_back().unwrap();
             self.next_height -= 1;
@@ -122,7 +122,7 @@ impl ReaderState {
         }
     }
 
-    pub fn rollback_to_height(&mut self, new_height: u64) -> Vec<BlockHash> {
+    pub(crate) fn rollback_to_height(&mut self, new_height: u64) -> Vec<BlockHash> {
         if new_height > self.next_height {
             panic!(
                 "reader: new height {new_height} greater than cur height {}",
@@ -150,7 +150,7 @@ impl ReaderState {
 
     /// Iterates over the blocks back from the tip, giving both the height and
     /// the blockhash to compare against the chain.
-    pub fn iter_blocks_back(&self) -> impl Iterator<Item = (u64, &BlockHash)> {
+    pub(crate) fn iter_blocks_back(&self) -> impl Iterator<Item = (u64, &BlockHash)> {
         let best_blk_idx = self.best_block_idx();
         self.recent_blocks
             .iter()

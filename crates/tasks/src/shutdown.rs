@@ -30,12 +30,13 @@ impl ShutdownSignal {
         self.0.load(Ordering::Relaxed)
     }
 
-    fn notified(&self) -> Notified {
+    fn notified(&self) -> Notified<'_> {
         self.1.notified()
     }
 }
 
 /// Receiver for shutdown signal
+#[derive(Debug)]
 pub(crate) struct Shutdown(ShutdownSignal);
 
 impl Shutdown {
@@ -52,6 +53,7 @@ impl Shutdown {
 
 /// Receiver for shutdown signal.
 /// Also manages an atomic counter to keep track of live tasks.
+#[derive(Debug)]
 pub struct ShutdownGuard(Shutdown, Arc<PendingTasks>);
 
 impl ShutdownGuard {

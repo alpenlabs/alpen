@@ -7,6 +7,7 @@ use threadpool::ThreadPool;
 
 use crate::{cache, ops};
 
+#[expect(missing_debug_implementations)]
 pub struct CheckpointDbManager {
     ops: ops::checkpoint::CheckpointDataOps,
     summary_cache: cache::CacheTable<EpochCommitment, Option<EpochSummary>>,

@@ -401,6 +401,7 @@ impl L1Checkpoint {
 
 /// Wrapper around [`ClientState`] used for modifying it and producing sync
 /// actions.
+#[derive(Debug)]
 pub struct ClientStateMut {
     state: ClientState,
     actions: Vec<SyncAction>,

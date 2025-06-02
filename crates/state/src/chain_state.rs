@@ -155,7 +155,7 @@ impl Chainstate {
 // TODO: FIXME: Note that this is used as a temporary solution for the state root calculation
 // It should be replaced once we swap out Chainstate's type definitions with SSZ type definitions
 // which defines all of this more rigorously
-#[derive(BorshSerialize, BorshDeserialize, Clone, Copy)]
+#[derive(Debug, BorshSerialize, BorshDeserialize, Clone, Copy)]
 pub struct HashedChainState {
     pub prev_block: Buf32,
     pub cur_epoch: u64,
@@ -184,6 +184,7 @@ impl<'a> Arbitrary<'a> for Chainstate {
     }
 }
 
+#[derive(Debug)]
 pub struct ChainstateEntry {
     state: Chainstate,
     tip: L2BlockId,

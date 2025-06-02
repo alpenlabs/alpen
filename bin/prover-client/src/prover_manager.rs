@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct ProverManager {
+pub(crate) struct ProverManager {
     task_tracker: Arc<Mutex<TaskTracker>>,
     operator: Arc<ProofOperator>,
     db: Arc<ProofDb>,
@@ -22,7 +22,7 @@ pub struct ProverManager {
 }
 
 impl ProverManager {
-    pub fn new(
+    pub(crate) fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDb>,
@@ -43,7 +43,7 @@ impl ProverManager {
         }
     }
 
-    pub async fn process_pending_tasks(&self) {
+    pub(crate) async fn process_pending_tasks(&self) {
         loop {
             // Step 1: Fetch tasks data without holding the lock
             let (pending_tasks, _, retriable_tasks, mut in_progress_tasks) = {

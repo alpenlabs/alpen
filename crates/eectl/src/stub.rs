@@ -15,6 +15,7 @@ use strata_state::{
 
 use crate::{engine::*, errors::*, messages::*};
 
+#[derive(Debug)]
 struct State {
     next_idx: u64,
     payload_jobs: HashMap<u64, time::Instant>,
@@ -29,6 +30,7 @@ impl State {
     }
 }
 
+#[derive(Debug)]
 pub struct StubController {
     payload_prep_dur: time::Duration,
     state: Mutex<State>,

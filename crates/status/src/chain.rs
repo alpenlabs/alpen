@@ -56,7 +56,7 @@ impl ChainSyncStatus {
 }
 
 /// Published to the FCM status including chainstate.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ChainSyncStatusUpdate {
     new_status: ChainSyncStatus,
     new_tl_chainstate: Arc<Chainstate>,

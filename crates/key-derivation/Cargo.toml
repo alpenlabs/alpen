@@ -4,9 +4,7 @@ name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 
 [lints]
-rust.rust_2018_idioms = { level = "deny", priority = -1 }
-rust.unused_crate_dependencies = "deny"
-rust.unused_must_use = "deny"
+workspace = true
 
 [dependencies]
 strata-primitives.workspace = true

@@ -38,7 +38,7 @@ use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
 /// - Interfacing with the CL Client to fetch additional required information for CL state
 ///   transition proofs.
 #[derive(Debug, Clone)]
-pub struct ClStfOperator {
+pub(crate) struct ClStfOperator {
     pub cl_client: HttpClient,
     evm_ee_operator: Arc<EvmEeOperator>,
     btc_blockspace_operator: Arc<BtcBlockspaceOperator>,
@@ -47,7 +47,7 @@ pub struct ClStfOperator {
 
 impl ClStfOperator {
     /// Creates a new CL operations instance.
-    pub fn new(
+    pub(crate) fn new(
         cl_client: HttpClient,
         evm_ee_operator: Arc<EvmEeOperator>,
         btc_blockspace_operator: Arc<BtcBlockspaceOperator>,
@@ -80,7 +80,7 @@ impl ClStfOperator {
     }
 
     /// Retrieves the evm_ee block commitment corresponding to the given L2 block ID
-    pub async fn get_exec_commitment(
+    pub(crate) async fn get_exec_commitment(
         &self,
         cl_block_id: L2BlockId,
     ) -> Result<EvmEeBlockCommitment, ProvingTaskError> {
@@ -94,7 +94,7 @@ impl ClStfOperator {
     }
 
     /// Retrieves the [`Chainstate`] before the given blocks is applied
-    pub async fn get_chainstate_before(
+    pub(crate) async fn get_chainstate_before(
         &self,
         blkid: L2BlockId,
     ) -> Result<Chainstate, ProvingTaskError> {
@@ -109,7 +109,7 @@ impl ClStfOperator {
     }
 
     /// Retrieves the [`L2Block`] for the given id
-    pub async fn get_block(&self, blkid: &L2BlockId) -> Result<L2Block, ProvingTaskError> {
+    pub(crate) async fn get_block(&self, blkid: &L2BlockId) -> Result<L2Block, ProvingTaskError> {
         let raw_witness: Vec<u8> = self
             .cl_client
             .get_cl_block_witness_raw(*blkid)
@@ -121,7 +121,8 @@ impl ClStfOperator {
     }
 }
 
-pub struct ClStfParams {
+#[derive(Debug)]
+pub(crate) struct ClStfParams {
     pub epoch: u64,
     pub l2_range: (L2BlockCommitment, L2BlockCommitment),
     pub l1_range: Option<(L1BlockCommitment, L1BlockCommitment)>,

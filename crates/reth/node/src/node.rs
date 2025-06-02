@@ -100,7 +100,7 @@ pub struct StrataEthereumNode {
 }
 
 impl StrataEthereumNode {
-    pub const fn new(args: StrataNodeArgs) -> Self {
+    pub fn new(args: StrataNodeArgs) -> Self {
         Self { args }
     }
 

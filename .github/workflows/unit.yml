@@ -81,7 +81,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run doctests
-        run: cargo test --doc --workspace
+        run: cargo test --doc --workspace --all-features
 
   unit-success:
     name: Check that unit tests pass

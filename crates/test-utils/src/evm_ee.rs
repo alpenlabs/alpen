@@ -78,6 +78,7 @@ impl EvmSegment {
 /// Represents a segment of L2 blocks and their associated state transitions.
 /// This struct stores L2 blocks, pre-state, and post-state data, simulating
 /// the block processing for testing STF proofs.
+#[derive(Debug)]
 pub struct L2Segment {
     pub blocks: Vec<L2Block>,
     pub pre_states: Vec<Chainstate>,

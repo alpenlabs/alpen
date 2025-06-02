@@ -5,7 +5,7 @@ use strata_primitives::l1::{HeaderVerificationState, L1BlockCommitment};
 /// L1 events that we observe and want the persistence task to work on.
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum L1Event {
+pub(crate) enum L1Event {
     /// Data that contains block number, block and relevant transactions, and also the epoch whose
     /// rules are applied to. In most cases, the [`HeaderVerificationState`] is `None`, with a
     /// meaningful state provided only under during genesis
@@ -19,7 +19,7 @@ pub enum L1Event {
 /// Stores the bitcoin block and interpretations of relevant transactions within
 /// the block.
 #[derive(Clone, Debug)]
-pub struct BlockData {
+pub(crate) struct BlockData {
     /// Block number.
     block_num: u64,
 
@@ -32,7 +32,7 @@ pub struct BlockData {
 }
 
 impl BlockData {
-    pub fn new(block_num: u64, block: Block, relevant_txs: Vec<RelevantTxEntry>) -> Self {
+    pub(crate) fn new(block_num: u64, block: Block, relevant_txs: Vec<RelevantTxEntry>) -> Self {
         Self {
             block_num,
             block,
@@ -40,19 +40,19 @@ impl BlockData {
         }
     }
 
-    pub fn block_num(&self) -> u64 {
+    pub(crate) fn block_num(&self) -> u64 {
         self.block_num
     }
 
-    pub fn block(&self) -> &Block {
+    pub(crate) fn block(&self) -> &Block {
         &self.block
     }
 
-    pub fn relevant_txs(&self) -> &[RelevantTxEntry] {
+    pub(crate) fn relevant_txs(&self) -> &[RelevantTxEntry] {
         &self.relevant_txs
     }
 
-    pub fn tx_idxs_iter(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(crate) fn tx_idxs_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.relevant_txs.iter().map(|v| *v.index())
     }
 }

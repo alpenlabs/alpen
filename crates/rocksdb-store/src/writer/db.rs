@@ -12,6 +12,7 @@ use strata_primitives::buf::Buf32;
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 use crate::{sequence::get_next_id, DbOpsConfig};
 
+#[derive(Debug)]
 pub struct RBL1WriterDb {
     db: Arc<DB>,
     ops: DbOpsConfig,

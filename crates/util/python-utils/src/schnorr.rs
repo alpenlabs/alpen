@@ -22,7 +22,7 @@ use strata_primitives::buf::{Buf32, Buf64};
 /// * The public key
 #[pyfunction]
 pub(crate) fn sign_schnorr_sig(
-    py: Python,
+    py: Python<'_>,
     message: &str,
     secret_key: &str,
 ) -> PyResult<(Py<PyBytes>, Py<PyBytes>)> {
@@ -59,7 +59,7 @@ pub(crate) fn sign_schnorr_sig(
 ///
 /// A boolean indicating whether the signature is valid (`true`) or invalid (`false`).
 #[pyfunction]
-pub fn verify_schnorr_sig(sig: &str, msg: &str, pk: &str) -> bool {
+pub(crate) fn verify_schnorr_sig(sig: &str, msg: &str, pk: &str) -> bool {
     let msg = Buf32::from_str(msg).expect("invalid message hash");
     let pk = Buf32::from_str(pk).expect("invalid public key");
     let sig = Buf64::from(Signature::from_str(sig).expect("invalid signature"));

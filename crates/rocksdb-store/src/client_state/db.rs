@@ -7,6 +7,7 @@ use strata_state::operation::*;
 use super::schemas::ClientUpdateOutputSchema;
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct ClientStateDb {
     db: Arc<OptimisticTransactionDB>,
     _ops: DbOpsConfig,

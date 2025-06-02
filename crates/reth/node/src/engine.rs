@@ -71,7 +71,7 @@ pub struct StrataEngineValidator {
 
 impl StrataEngineValidator {
     /// Instantiates a new validator.
-    pub const fn new(chain_spec: Arc<ChainSpec>) -> Self {
+    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self {
             inner: ExecutionPayloadValidator::new(chain_spec),
         }

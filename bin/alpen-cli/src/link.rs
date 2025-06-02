@@ -4,7 +4,7 @@ use alloy::primitives::{Address as AlpenAddress, TxHash};
 use bdk_wallet::bitcoin;
 
 /// Represents something that can be represented on-chain.
-pub enum OnchainObject<'a> {
+pub(crate) enum OnchainObject<'a> {
     Transaction(Txid<'a>),
     Address(Address<'a>),
 }
@@ -38,7 +38,7 @@ impl<'a> OnchainObject<'a> {
     /// Should be of the form `http{s}://{domain}`.
     ///
     /// Example: `https://mempool.space`
-    pub fn with_explorer<'b>(self, explorer: &'b str) -> Link<'a, 'b> {
+    pub(crate) fn with_explorer<'b>(self, explorer: &'b str) -> Link<'a, 'b> {
         Link {
             object: self,
             explorer_ep: explorer,
@@ -51,7 +51,7 @@ impl<'a> OnchainObject<'a> {
     /// If `explorer` is `None`, the object will be represented as-is.
     ///
     /// This is primarily a helper for displaying an [`OnchainObject`] in a user-facing context.
-    pub fn with_maybe_explorer<'b>(self, explorer: Option<&'b str>) -> MaybeLink<'a, 'b> {
+    pub(crate) fn with_maybe_explorer<'b>(self, explorer: Option<&'b str>) -> MaybeLink<'a, 'b> {
         match explorer {
             Some(dmn) => MaybeLink::Link(self.with_explorer(dmn)),
             None => MaybeLink::Object(self),
@@ -64,12 +64,12 @@ impl<'a> OnchainObject<'a> {
 /// the string representation of `self`.
 ///
 /// E.g. a transaction might be prefixed with "Transaction: " or "Tx: ".
-pub trait PrettyPrint {
+pub(crate) trait PrettyPrint {
     fn pretty(&self) -> String;
 }
 
 /// A helper enum for pretty printing something that might be a link or an object.
-pub enum MaybeLink<'a, 'b> {
+pub(crate) enum MaybeLink<'a, 'b> {
     /// A link to some explorer web page representing the object.
     Link(Link<'a, 'b>),
     /// Only an onchain object.
@@ -105,7 +105,7 @@ impl Display for OnchainObject<'_> {
 
 /// A wrapper around a bitcoin transaction ID or a Alpen transaction ID.
 #[derive(Clone, Copy)]
-pub enum Txid<'a> {
+pub(crate) enum Txid<'a> {
     /// A transaction ID for a Bitcoin transaction.
     Bitcoin(&'a bitcoin::Txid),
     /// A transaction ID for a Alpen transaction.
@@ -135,7 +135,7 @@ impl Display for Txid<'_> {
 
 /// A wrapper address that wraps either a bitcoin address or a alpen address.
 #[derive(Clone, Copy)]
-pub enum Address<'a> {
+pub(crate) enum Address<'a> {
     Bitcoin(&'a bitcoin::Address),
     Alpen(&'a AlpenAddress),
 }
@@ -153,7 +153,7 @@ impl Display for Address<'_> {
 ///
 /// This is primarily a helper for displaying an [`OnchainObject`] in a
 /// user-facing context when a explorer URL is known.
-pub struct Link<'a, 'b> {
+pub(crate) struct Link<'a, 'b> {
     /// Object of the link (Transaction or Address)
     object: OnchainObject<'a>,
     /// Endpoint of the explorer (will be used to build the URL)

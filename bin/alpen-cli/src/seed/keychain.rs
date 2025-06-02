@@ -3,7 +3,7 @@ use terrors::OneOf;
 
 use super::{EncryptedSeed, EncryptedSeedPersister, PersisterErr};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct KeychainPersister;
 
 impl KeychainPersister {

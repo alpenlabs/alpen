@@ -50,7 +50,7 @@ pub fn parse_envelope_payloads(
 }
 
 fn parse_l1_payload(
-    instructions: &mut Instructions,
+    instructions: &mut Instructions<'_>,
     filter_conf: &TxFilterConfig,
 ) -> Result<L1Payload, EnvelopeParseError> {
     enter_envelope(instructions)?;
@@ -76,7 +76,7 @@ fn parse_payload_type(tag_bytes: &[u8], filter_conf: &TxFilterConfig) -> Option<
 }
 
 /// Check for consecutive `OP_FALSE` and `OP_IF` that marks the beginning of an envelope
-fn enter_envelope(instructions: &mut Instructions) -> Result<(), EnvelopeParseError> {
+fn enter_envelope(instructions: &mut Instructions<'_>) -> Result<(), EnvelopeParseError> {
     // loop until OP_FALSE is found
     loop {
         let next = instructions.next();
@@ -105,7 +105,9 @@ fn enter_envelope(instructions: &mut Instructions) -> Result<(), EnvelopeParseEr
 }
 
 /// Extract bytes of `size` from the remaining instructions
-fn extract_until_op_endif(instructions: &mut Instructions) -> Result<Vec<u8>, EnvelopeParseError> {
+fn extract_until_op_endif(
+    instructions: &mut Instructions<'_>,
+) -> Result<Vec<u8>, EnvelopeParseError> {
     let mut data = vec![];
     for elem in instructions {
         match elem {

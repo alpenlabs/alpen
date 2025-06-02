@@ -1,3 +1,5 @@
+//! Reth node for the Alpen codebase.
+
 mod db;
 
 use std::{future::Future, sync::Arc};

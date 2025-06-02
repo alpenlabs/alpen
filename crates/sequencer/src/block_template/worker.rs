@@ -28,6 +28,7 @@ use super::{
 use crate::utils::now_millis;
 
 /// Container to pass context to worker
+#[expect(missing_debug_implementations)]
 pub struct WorkerContext<D, E> {
     params: Arc<Params>,
     // TODO remove

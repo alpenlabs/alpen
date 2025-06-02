@@ -278,7 +278,7 @@ impl BitcoinAmount {
     pub const SATS_FACTOR: u64 = 100_000_000;
 
     /// Get the number of sats in this [`BitcoinAmount`].
-    pub const fn to_sat(&self) -> u64 {
+    pub fn to_sat(&self) -> u64 {
         self.0
     }
 

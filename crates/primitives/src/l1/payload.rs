@@ -144,6 +144,7 @@ impl L1Payload {
         Self::new(data, L1PayloadType::Da)
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn data(&self) -> &[u8] {
         &self.data
     }

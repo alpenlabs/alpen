@@ -3,6 +3,9 @@ edition = "2021"
 name = "alpen-reth-statediff"
 version = "0.1.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 alloy-primitives.workspace = true
 alpen-chainspec.workspace = true

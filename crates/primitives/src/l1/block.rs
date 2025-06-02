@@ -181,6 +181,7 @@ impl L1BlockManifest {
         &self.verif_state
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn txs(&self) -> &[L1Tx] {
         &self.txs
     }

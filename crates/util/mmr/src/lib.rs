@@ -26,17 +26,19 @@ pub struct CompactMmr {
 }
 
 #[derive(Clone)]
-pub struct MerkleMr<H: MerkleHasher + Clone> {
+pub(crate) struct MerkleMr<H: MerkleHasher + Clone> {
     // number of elements inserted into mmr
-    pub num: u64,
+    #[allow(unused)]
+    pub(crate) num: u64,
     // Buffer of all possible peaks in mmr. only some of them will be valid at a time
-    pub peaks: Box<[Hash]>,
+    pub(crate) peaks: Box<[Hash]>,
     // phantom data for hasher
-    pub hasher: PhantomData<H>,
+    pub(crate) hasher: PhantomData<H>,
 }
 
 impl<H: MerkleHasher + Clone> MerkleMr<H> {
-    pub fn new(cap_log2: usize) -> Self {
+    #[allow(unused)]
+    pub(crate) fn new(cap_log2: usize) -> Self {
         Self {
             num: 0,
             peaks: vec![[0; 32]; cap_log2].into_boxed_slice(),
@@ -44,7 +46,8 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         }
     }
 
-    pub fn from_compact(compact: &CompactMmr) -> Self {
+    #[allow(unused)]
+    pub(crate) fn from_compact(compact: &CompactMmr) -> Self {
         // FIXME this is somewhat inefficient, we could consume the vec and just
         // slice out its elements, but this is fine for now
         let mut roots = vec![zero(); compact.cap_log2 as usize];
@@ -63,7 +66,8 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         }
     }
 
-    pub fn to_compact(&self) -> CompactMmr {
+    #[allow(unused)]
+    pub(crate) fn to_compact(&self) -> CompactMmr {
         CompactMmr {
             entries: self.num,
             cap_log2: self.peaks.len() as u8,
@@ -76,7 +80,7 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         }
     }
 
-    pub fn add_leaf(&mut self, hash_arr: Hash) {
+    pub(crate) fn add_leaf(&mut self, hash_arr: Hash) {
         if self.num == 0 {
             self.peaks[0] = hash_arr;
             self.num += 1;
@@ -104,7 +108,8 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         self.num += 1;
     }
 
-    pub fn get_single_root(&self) -> Result<Hash, MerkleError> {
+    #[allow(unused)]
+    pub(crate) fn get_single_root(&self) -> Result<Hash, MerkleError> {
         if self.num == 0 {
             return Err(MerkleError::NoElements);
         }
@@ -115,7 +120,8 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         Ok(self.peaks[(self.num.ilog2()) as usize])
     }
 
-    pub fn add_leaf_updating_proof(
+    #[allow(unused)]
+    pub(crate) fn add_leaf_updating_proof(
         &mut self,
         next: Hash,
         proof: &MerkleProof<H>,
@@ -157,6 +163,7 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         updated_proof
     }
 
+    #[allow(unused)]
     fn update_single_proof(
         &mut self,
         proof: &mut MerkleProof<H>,
@@ -179,7 +186,8 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         }
     }
 
-    pub fn add_leaf_updating_proof_list(
+    #[allow(unused)]
+    pub(crate) fn add_leaf_updating_proof_list(
         &mut self,
         next: Hash,
         proof_list: &mut [MerkleProof<H>],
@@ -235,7 +243,8 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         new_proof
     }
 
-    pub fn verify(&self, proof: &MerkleProof<H>, leaf: &Hash) -> bool {
+    #[allow(unused)]
+    pub(crate) fn verify(&self, proof: &MerkleProof<H>, leaf: &Hash) -> bool {
         self.verify_raw(&proof.cohashes, proof.index, leaf)
     }
 
@@ -262,7 +271,8 @@ impl<H: MerkleHasher + Clone> MerkleMr<H> {
         cur_hash == root
     }
 
-    pub fn gen_proof(
+    #[allow(unused)]
+    pub(crate) fn gen_proof(
         &self,
         proof_list: &[MerkleProof<H>],
         index: u64,
@@ -301,7 +311,8 @@ impl<H: MerkleHasher + Clone> MerkleProof<H> {
     }
 
     /// verifies the hash against the current proof for given mmr
-    pub fn verify_against_mmr(&self, mmr: &MerkleMr<H>, leaf_hash: Hash) -> bool {
+    #[allow(unused)]
+    fn verify_against_mmr(&self, mmr: &MerkleMr<H>, leaf_hash: Hash) -> bool {
         mmr.verify(self, &leaf_hash)
     }
 }

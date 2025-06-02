@@ -3,18 +3,17 @@ edition = "2021"
 name = "alpen-reth-exex"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 alpen-reth-db.workspace = true
-alpen-reth-node.workspace = true
-alpen-reth-statediff.workspace = true
 strata-mpt.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
 alloy-rpc-types.workspace = true
-anyhow.workspace = true
-bincode.workspace = true
 eyre.workspace = true
 futures-util.workspace = true
 reth-evm.workspace = true
@@ -23,16 +22,9 @@ reth-node-api.workspace = true
 reth-primitives.workspace = true
 reth-provider.workspace = true
 reth-revm.workspace = true
-reth-rpc-types-compat.workspace = true
 reth-trie.workspace = true
-reth-trie-common.workspace = true
+reth-trie-common = { workspace = true, features = ["eip1186"] }
 revm-primitives.workspace = true
-rockbound.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
-tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-serde.workspace = true
-tempfile.workspace = true

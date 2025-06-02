@@ -13,6 +13,7 @@ use crate::{
     DbOpsConfig,
 };
 
+#[derive(Debug)]
 pub struct ChainstateDb {
     db: Arc<OptimisticTransactionDB>,
     _ops: DbOpsConfig,

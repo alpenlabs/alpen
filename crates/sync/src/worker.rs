@@ -18,6 +18,7 @@ use crate::{
     L2SyncError, SyncClient,
 };
 
+#[expect(missing_debug_implementations)]
 pub struct L2SyncContext<T: SyncClient> {
     client: T,
     storage: Arc<NodeStorage>,

@@ -1,3 +1,5 @@
+//! Task management.
+
 mod manager;
 mod pending_tasks;
 mod print_panic;

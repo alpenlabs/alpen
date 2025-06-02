@@ -16,6 +16,7 @@ pub enum ClientError {
     Network(String),
 }
 
+#[derive(Debug)]
 pub struct PeerSyncStatus {
     tip_block: L2BlockCommitment,
 }
@@ -50,6 +51,7 @@ pub trait SyncClient {
     ) -> Result<Option<L2BlockBundle>, ClientError>;
 }
 
+#[derive(Debug)]
 pub struct RpcSyncPeer<RPC: StrataApiClient + Send + Sync> {
     rpc_client: RPC,
     download_batch_size: usize,

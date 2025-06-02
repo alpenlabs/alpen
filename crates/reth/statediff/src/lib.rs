@@ -1,3 +1,5 @@
+//! State diff for the reth node.
+
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 use std::collections::hash_map::Entry;
@@ -117,11 +119,11 @@ mod tests {
         BatchStateDiffBuilder,
     };
 
-    const fn acc_addr1() -> Address {
+    fn acc_addr1() -> Address {
         Address::new([0x60; 20])
     }
 
-    const fn acc_addr2() -> Address {
+    fn acc_addr2() -> Address {
         Address::new([0x61; 20])
     }
 

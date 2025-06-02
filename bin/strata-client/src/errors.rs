@@ -6,7 +6,7 @@ use strata_primitives::params::ParamsError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum InitError {
+pub(crate) enum InitError {
     #[error("missing init client state")]
     MissingInitClientState,
 
@@ -30,7 +30,7 @@ pub enum InitError {
 }
 
 #[derive(Debug, Error)]
-pub enum ConfigError {
+pub(crate) enum ConfigError {
     /// Missing key in table.
     #[error("missing key: {0}")]
     MissingKey(String),

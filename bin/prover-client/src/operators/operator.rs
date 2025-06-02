@@ -20,7 +20,7 @@ use crate::errors::ProvingTaskError;
 /// implementing the `ProvingOp` trait while handling the trait's lack of object safety
 /// by organizing operations through this struct.
 #[derive(Debug, Clone)]
-pub struct ProofOperator {
+pub(crate) struct ProofOperator {
     btc_blockspace_operator: BtcBlockspaceOperator,
     evm_ee_operator: EvmEeOperator,
     cl_stf_operator: ClStfOperator,
@@ -29,7 +29,7 @@ pub struct ProofOperator {
 
 impl ProofOperator {
     /// Creates a new instance of `ProofOperator` with the provided proof operators.
-    pub fn new(
+    pub(crate) fn new(
         btc_blockspace_operator: BtcBlockspaceOperator,
         evm_ee_operator: EvmEeOperator,
         cl_stf_operator: ClStfOperator,
@@ -44,7 +44,7 @@ impl ProofOperator {
     }
 
     /// Initializes a `ProofOperator` by creating and configuring the underlying proof operators.
-    pub fn init(
+    pub(crate) fn init(
         btc_client: Client,
         evm_ee_client: HttpClient,
         cl_client: HttpClient,
@@ -82,7 +82,7 @@ impl ProofOperator {
     }
 
     /// Asynchronously generates a proof using the specified operator and host environment.
-    pub async fn prove(
+    pub(crate) async fn prove(
         operator: &impl ProvingOp,
         proof_key: &ProofKey,
         db: &ProofDb,
@@ -102,7 +102,7 @@ impl ProofOperator {
     }
 
     /// Processes a proof generation task by delegating to the appropriate proof operator.
-    pub async fn process_proof(
+    pub(crate) async fn process_proof(
         &self,
         proof_key: &ProofKey,
         db: &ProofDb,
@@ -126,22 +126,22 @@ impl ProofOperator {
     }
 
     /// Returns a reference to the [`BtcBlockspaceOperator`].
-    pub fn btc_operator(&self) -> &BtcBlockspaceOperator {
+    pub(crate) fn btc_operator(&self) -> &BtcBlockspaceOperator {
         &self.btc_blockspace_operator
     }
 
     /// Returns a reference to the [`EvmEeOperator`].
-    pub fn evm_ee_operator(&self) -> &EvmEeOperator {
+    pub(crate) fn evm_ee_operator(&self) -> &EvmEeOperator {
         &self.evm_ee_operator
     }
 
     /// Returns a reference to the [`ClStfOperator`].
-    pub fn cl_stf_operator(&self) -> &ClStfOperator {
+    pub(crate) fn cl_stf_operator(&self) -> &ClStfOperator {
         &self.cl_stf_operator
     }
 
     /// Returns a reference to the [`CheckpointOperator`].
-    pub fn checkpoint_operator(&self) -> &CheckpointOperator {
+    pub(crate) fn checkpoint_operator(&self) -> &CheckpointOperator {
         &self.checkpoint_operator
     }
 }

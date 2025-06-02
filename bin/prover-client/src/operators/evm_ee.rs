@@ -20,18 +20,18 @@ use crate::errors::ProvingTaskError;
 /// It is responsible for interfacing with the `Reth` client and fetching necessary data required by
 /// the [`EvmEeProgram`] for the proof generation.
 #[derive(Debug, Clone)]
-pub struct EvmEeOperator {
+pub(crate) struct EvmEeOperator {
     el_client: HttpClient,
 }
 
 impl EvmEeOperator {
     /// Creates a new EL operations instance.
-    pub fn new(el_client: HttpClient) -> Self {
+    pub(crate) fn new(el_client: HttpClient) -> Self {
         Self { el_client }
     }
 
     /// Retrieves the EVM EE [`Block`] for a given block number.
-    pub async fn get_block(&self, block_num: u64) -> Result<Block, ProvingTaskError> {
+    pub(crate) async fn get_block(&self, block_num: u64) -> Result<Block, ProvingTaskError> {
         self.el_client
             .request(
                 "eth_getBlockByNumber",

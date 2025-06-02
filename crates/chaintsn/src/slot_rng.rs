@@ -7,6 +7,7 @@ use rand_core::{CryptoRng, RngCore, SeedableRng};
 
 /// Deterministic CSPRNG used within the scope of a block's slot processing.
 /// WARNING: This is _not_ suitable for use cases like key generation!
+#[derive(Debug)]
 pub struct SlotRng {
     rng: rand_chacha::ChaCha12Rng,
 }

@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-rpc-api"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-common.workspace = true
 strata-db.workspace = true
@@ -13,11 +16,7 @@ strata-state.workspace = true
 zkaleido.workspace = true
 
 bitcoin.workspace = true
-hex.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
-serde.workspace = true
-serde_with = { workspace = true, features = ["hex"] }
-thiserror.workspace = true
 
 [features]
 client = ["jsonrpsee/client"]

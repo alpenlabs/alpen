@@ -11,7 +11,7 @@ pub(crate) const MAX_RETRY_COUNTER: u64 = 15;
 
 /// Manages tasks and their states for proving operations.
 #[derive(Debug, Clone)]
-pub struct TaskTracker {
+pub(crate) struct TaskTracker {
     /// A map of task IDs to their statuses.
     tasks: HashMap<ProofKey, ProvingTaskStatus>,
     /// A map of task IDs that have failed (transiently) to their retry counter.
@@ -27,7 +27,7 @@ pub struct TaskTracker {
 
 impl TaskTracker {
     /// Creates a new `TaskTracker` instance.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut vms = vec![];
 
         #[cfg(feature = "sp1")]
@@ -54,11 +54,11 @@ impl TaskTracker {
         }
     }
 
-    pub fn get_in_progress_tasks(&self) -> &HashMap<ProofZkVm, usize> {
+    pub(crate) fn get_in_progress_tasks(&self) -> &HashMap<ProofZkVm, usize> {
         &self.in_progress_tasks
     }
 
-    pub fn get_retriable_tasks(&self) -> HashMap<ProofKey, u64> {
+    pub(crate) fn get_retriable_tasks(&self) -> HashMap<ProofKey, u64> {
         let transient_failures = self
             .get_tasks_by_status(|status| matches!(status, ProvingTaskStatus::TransientFailure));
 
@@ -70,13 +70,13 @@ impl TaskTracker {
         retriable_tasks
     }
 
-    pub fn get_waiting_for_dependencies_tasks(&self) -> Vec<ProofKey> {
+    pub(crate) fn get_waiting_for_dependencies_tasks(&self) -> Vec<ProofKey> {
         self.get_tasks_by_status(|status| {
             matches!(status, ProvingTaskStatus::WaitingForDependencies)
         })
     }
 
-    pub fn create_tasks(
+    pub(crate) fn create_tasks(
         &mut self,
         proof_id: ProofContext,
         deps: Vec<ProofContext>,
@@ -102,7 +102,7 @@ impl TaskTracker {
     /// - If dependencies are provided, the task is marked as `WaitingForDependencies`.
     ///
     /// Returns an error if the task already exists.
-    pub fn insert_task(
+    pub(crate) fn insert_task(
         &mut self,
         id: ProofKey,
         deps: &[ProofKey],
@@ -141,7 +141,7 @@ impl TaskTracker {
     /// Retrieves the status of a task by its ID.
     ///
     /// Returns an error if the task does not exist.
-    pub fn get_task(&self, id: ProofKey) -> Result<&ProvingTaskStatus, ProvingTaskError> {
+    pub(crate) fn get_task(&self, id: ProofKey) -> Result<&ProvingTaskStatus, ProvingTaskError> {
         self.tasks
             .get(&id)
             .ok_or(ProvingTaskError::TaskNotFound(id))
@@ -154,7 +154,7 @@ impl TaskTracker {
     /// - Handles transient failures with the limit.
     ///
     /// Returns an error for invalid transitions or if the task does not exist.
-    pub fn update_status(
+    pub(crate) fn update_status(
         &mut self,
         id: ProofKey,
         new_status: ProvingTaskStatus,
@@ -251,7 +251,7 @@ impl TaskTracker {
     /// let pending_tasks =
     ///     task_tracker.get_tasks_by_status(|status| matches!(status, ProvingTaskStatus::Pending));
     /// ```
-    pub fn get_tasks_by_status<F>(&self, filter_fn: F) -> Vec<ProofKey>
+    pub(crate) fn get_tasks_by_status<F>(&self, filter_fn: F) -> Vec<ProofKey>
     where
         F: Fn(&ProvingTaskStatus) -> bool,
     {
@@ -268,7 +268,7 @@ impl TaskTracker {
     }
 
     /// Generates a report of task statuses and their counts across all tasks.
-    pub fn generate_report(&self) -> HashMap<String, usize> {
+    pub(crate) fn generate_report(&self) -> HashMap<String, usize> {
         let mut report: HashMap<String, usize> = HashMap::new();
 
         for status in self.tasks.values() {
@@ -280,7 +280,7 @@ impl TaskTracker {
 
     /// Clears the internal state of the [`TaskTracker`], should be used only in testing.
     #[cfg(test)]
-    pub fn clear_state(&mut self) {
+    pub(crate) fn clear_state(&mut self) {
         self.tasks.clear();
         self.in_progress_tasks.clear();
         self.pending_dependencies.clear();

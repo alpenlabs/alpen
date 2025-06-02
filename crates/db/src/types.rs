@@ -46,7 +46,7 @@ impl IntentEntry {
 }
 
 /// Status of Intent indicating various stages of being bundled to L1 transaction.
-/// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry].
+/// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry`].
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub enum IntentStatus {
     // It is not bundled yet, and thus will be collected and processed by bundler.

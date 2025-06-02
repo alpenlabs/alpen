@@ -8,7 +8,7 @@ use zkaleido::{
 
 use super::{btc_blockscan, evm_ee};
 
-pub fn prepare_input(
+pub(crate) fn prepare_input(
     evm_ee_proof_with_vk: (ProofReceipt, VerifyingKey),
     btc_blockspace_proof_with_vk: Option<(ProofReceipt, VerifyingKey)>,
 ) -> ClStfInput {
@@ -29,7 +29,7 @@ pub fn prepare_input(
     }
 }
 
-pub fn gen_perf_report(
+pub(crate) fn gen_perf_report(
     host: &impl ZkVmHostPerf,
     evm_ee_proof_with_vk: (ProofReceipt, VerifyingKey),
     btc_blockspace_proof_with_vk: Option<(ProofReceipt, VerifyingKey)>,
@@ -39,7 +39,7 @@ pub fn gen_perf_report(
     ClStfProgram::perf_report(&input, host).unwrap()
 }
 
-pub fn gen_proof(
+pub(crate) fn gen_proof(
     host: &impl ZkVmHost,
     evm_ee_proof_with_vk: (ProofReceipt, VerifyingKey),
     btc_blockspace_proof_with_vk: Option<(ProofReceipt, VerifyingKey)>,
@@ -49,7 +49,7 @@ pub fn gen_proof(
     ClStfProgram::prove(&input, host).unwrap()
 }
 
-pub fn proof_with_vk(
+pub(crate) fn proof_with_vk(
     cl_stf_host: &impl ZkVmHost,
     evm_ee_host: &impl ZkVmHost,
     btc_blockspace_host: &impl ZkVmHost,

@@ -49,7 +49,7 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
     ExecSegment::new(exec_update)
 }
 
-const fn gwei_to_sats(gwei: u64) -> u64 {
+fn gwei_to_sats(gwei: u64) -> u64 {
     // 1 BTC = 10^8 sats = 10^9 gwei
     gwei / 10
 }

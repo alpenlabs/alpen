@@ -1,4 +1,6 @@
 [workspace]
+resolver = "2"
+
 members = [
   "crates/asm/common",
   "crates/asm/stf",
@@ -68,7 +70,14 @@ default-members = [
   "crates/util/python-utils",
 ]
 
-resolver = "2"
+[workspace.lints]
+rust.missing_debug_implementations = "warn"
+rust.rust_2018_idioms = { level = "deny", priority = -1 }
+rust.unreachable_pub = "warn"
+rust.unused_crate_dependencies = "deny"
+rust.unused_must_use = "deny"
+# rust.missing_docs = "warn" # TODO: we need to enable this in the near future
+rustdoc.all = "warn"
 
 [workspace.dependencies]
 alpen-chainspec = { path = "crates/reth/chainspec" }

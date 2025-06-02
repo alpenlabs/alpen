@@ -7,6 +7,7 @@ use super::traits::*;
 /// It assumes that all the database impls are wrapped in `Arc`s and that
 /// the provider and stores are actually the same types. We might actually
 /// use this in practice, it's just for testing.
+#[derive(Debug)]
 pub struct CommonDatabase<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
 where
     L1DB: L1Database + Sync + Send + 'static,

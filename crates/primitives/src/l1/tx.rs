@@ -32,6 +32,7 @@ impl L1Tx {
         &self.tx
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn protocol_ops(&self) -> &[ProtocolOperation] {
         &self.protocol_ops
     }

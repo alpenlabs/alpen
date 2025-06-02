@@ -88,6 +88,7 @@ pub fn apply_write_batch_to_chainstate(_chainstate: Chainstate, batch: &WriteBat
 /// If we ever have a large state that's persisted to disk, this will eventually
 /// be made generic over a state provider that exposes access to that and then
 /// the `WriteBatch` will include writes that can be made to that.
+#[derive(Debug)]
 pub struct StateCache {
     /// Original toplevel state that we started from, in case we need to reference it.
     original_state: Chainstate,
@@ -114,7 +115,7 @@ impl StateCache {
         &self.new_state
     }
 
-    fn state_mut(&mut self) -> &mut Chainstate {
+    pub fn state_mut(&mut self) -> &mut Chainstate {
         &mut self.new_state
     }
 

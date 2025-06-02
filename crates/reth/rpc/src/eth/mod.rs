@@ -78,7 +78,7 @@ where
     >,
 {
     /// Build a [`StrataEthApi`] using [`StrataEthApiBuilder`].
-    pub const fn builder() -> StrataEthApiBuilder {
+    pub fn builder() -> StrataEthApiBuilder {
         StrataEthApiBuilder::new()
     }
 }
@@ -270,7 +270,7 @@ struct StrataEthApiInner<N: StrataNodeCore> {
     sequencer_client: Option<SequencerClient>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StrataEthApiBuilder {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
     /// network.
@@ -279,7 +279,7 @@ pub struct StrataEthApiBuilder {
 
 impl StrataEthApiBuilder {
     /// Creates a [`StrataEthApiBuilder`] instance.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             sequencer_client: None,
         }

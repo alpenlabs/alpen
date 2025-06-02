@@ -33,7 +33,7 @@ macro_rules! impl_buf_wrapper {
     };
 }
 
-pub mod internal {
+pub(crate) mod internal {
     // Crate-internal impls.
 
     macro_rules! impl_buf_common {
@@ -41,6 +41,7 @@ pub mod internal {
             impl $name {
                 pub const LEN: usize = $len;
 
+                #[allow(clippy::missing_const_for_fn)]
                 pub fn new(data: [u8; $len]) -> Self {
                     Self(data)
                 }
@@ -194,7 +195,7 @@ pub mod internal {
 
                         fn expecting(
                             &self,
-                            formatter: &mut ::std::fmt::Formatter,
+                            formatter: &mut ::std::fmt::Formatter<'_>,
                         ) -> ::std::fmt::Result {
                             write!(
                                 formatter,

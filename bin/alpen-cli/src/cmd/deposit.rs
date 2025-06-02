@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn bridge_in_descriptor_script() {
-        pub const BRIDGE_MUSIG2_PUBKEY: &str =
+        pub(crate) const BRIDGE_MUSIG2_PUBKEY: &str =
             "14ced579c6a92533fa68ccc16da93b41073993cfc6cc982320645d8e9a63ee65";
 
         let bridge_musig2_pubkey = BRIDGE_MUSIG2_PUBKEY.parse::<XOnlyPublicKey>().unwrap();

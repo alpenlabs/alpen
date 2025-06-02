@@ -67,11 +67,13 @@ impl BridgeMessage {
     }
 
     /// Raw scope.
+    #[allow(clippy::missing_const_for_fn)]
     pub fn scope(&self) -> &[u8] {
         &self.scope
     }
 
     /// Raw payload
+    #[allow(clippy::missing_const_for_fn)]
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }

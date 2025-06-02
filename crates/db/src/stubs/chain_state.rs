@@ -6,13 +6,14 @@ use tracing::*;
 
 use crate::{errors::DbError, traits::*, DbResult};
 
+#[derive(Debug)]
 struct InnerState {
     write_batches: BTreeMap<u64, WriteBatchEntry>,
     toplevels: BTreeMap<u64, Chainstate>,
 }
 
 impl InnerState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             write_batches: BTreeMap::new(),
             toplevels: BTreeMap::new(),
@@ -27,6 +28,7 @@ impl InnerState {
     }
 }
 
+#[derive(Debug)]
 pub struct StubChainstateDb {
     state: Mutex<InnerState>,
 }

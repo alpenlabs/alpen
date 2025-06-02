@@ -7,6 +7,7 @@ use strata_state::sync_event::SyncEvent;
 use super::schemas::{SyncEventSchema, SyncEventWithTimestamp};
 use crate::{sequence::get_next_id_opts, DbOpsConfig};
 
+#[derive(Debug)]
 pub struct SyncEventDb {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,
