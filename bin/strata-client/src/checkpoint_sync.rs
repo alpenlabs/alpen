@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+#[cfg(feature = "debug-utils")]
+use strata_common::{check_and_pause_debug_async, WorkerType};
 use strata_consensus_logic::checkpoint_sync::CheckpointSyncManager;
-use strata_db::types::CheckpointEntry;
+use strata_db::{types::CheckpointEntry, DbError};
 use strata_primitives::l2::L2BlockCommitment;
 use strata_state::{
     batch::Checkpoint, chain_state::Chainstate, client_state::L1Checkpoint, da::ChainstateDAScheme,
@@ -25,7 +27,7 @@ pub async fn checkpoint_sync_task(
     // with checkpoint stored in db first?
     let ckpt_db = storage.checkpoint();
     let mut target_epoch = ckpt_db
-        .get_last_checkpoint()
+        .get_last_checkpoint() // this should be the last finalized checkpoint?
         .await?
         .map_or(0, |epoch| epoch + 1);
 
@@ -37,13 +39,18 @@ pub async fn checkpoint_sync_task(
     // TODO: should I use has_changed which will not mark the event as read?
     while rx.changed().await.is_ok() {
         let state = rx.borrow().clone(); // will this clone be expensive?
+
+        #[cfg(feature = "debug-utils")]
+        check_and_pause_debug_async(WorkerType::CheckpointSyncWorker).await;
+
         let Some(l1_checkpoint) = state.get_apparent_finalized_checkpoint() else {
             continue;
         };
         let csm_finalized_epoch = l1_checkpoint.batch_info.epoch;
-        let current_epoch = target_epoch.saturating_sub(1);
 
-        if csm_finalized_epoch < current_epoch {
+        if csm_finalized_epoch < target_epoch {
+            // is there no viable means to test this yet? since we can not reorg behind finalization
+            // depth, this branch is unlikely to be executed?
             handle_reorg(
                 l1_checkpoint,
                 &mut target_epoch,
@@ -157,11 +164,15 @@ async fn handle_reorg(
     storage: &NodeStorage,
     status_channel: &StatusChannel,
 ) -> Result<(), anyhow::Error> {
-    let ckpt_db = storage.checkpoint();
+    warn!(
+        "epoch finalized {}: less than target epoch {}",
+        csm_finalized_epoch, target_epoch,
+    );
 
-    // will this be the last entry stored into the database or simply the checkpoint with the
-    // greatest epoch? DO NOT unwrap here!!!
-    let latest_epoch_from_db = ckpt_db.get_last_checkpoint().await?.unwrap();
+    let ckpt_db = storage.checkpoint();
+    let Some(latest_epoch_from_db) = ckpt_db.get_last_checkpoint().await? else {
+        return Err(DbError::NotBootstrapped.into());
+    };
 
     Ok(for epoch in csm_finalized_epoch..=latest_epoch_from_db {
         let Some(entry) = ckpt_db.get_checkpoint(epoch).await? else {
