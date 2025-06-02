@@ -12,6 +12,10 @@ use crate::config::ProverConfig;
 /// Values specified here will override the values in the config file.
 #[derive(Debug, FromArgs)]
 pub(crate) struct Args {
+    /// Path to the TOML configuration file
+    #[argh(option, short = 'c', description = "path to TOML configuration file")]
+    pub config: Option<PathBuf>,
+
     /// The JSON-RPC port used when running in development mode.
     #[argh(option, description = "JSON-RPC port")]
     pub rpc_port: Option<usize>,
@@ -107,7 +111,7 @@ pub(crate) struct Args {
 
 impl Args {
     /// Load and merge configuration from TOML file with command-line arguments.
-    pub fn resolve_config(&self) -> anyhow::Result<ResolvedConfig> {
+    pub(crate) fn resolve_config(&self) -> anyhow::Result<ResolvedConfig> {
         // Load base config from file if provided, otherwise use defaults
         let base_config = if let Some(config_path) = &self.config {
             ProverConfig::from_file(config_path)?
@@ -166,7 +170,7 @@ impl Args {
 
     /// Resolves the rollup params file to use, from a path, and validates
     /// it to ensure it passes sanity checks.
-    pub fn resolve_and_validate_rollup_params(&self) -> anyhow::Result<RollupParams> {
+    pub(crate) fn resolve_and_validate_rollup_params(&self) -> anyhow::Result<RollupParams> {
         let json = fs::read_to_string(&self.rollup_params)?;
         let rollup_params = from_str::<RollupParams>(&json)?;
         rollup_params.check_well_formed()?;
@@ -176,66 +180,66 @@ impl Args {
 
 /// Resolved configuration that combines TOML config with CLI argument overrides
 #[derive(Debug, Clone)]
-pub struct ResolvedConfig {
+pub(crate) struct ResolvedConfig {
     /// Base URL for the JSON-RPC endpoint in development mode.
-    pub rpc_url: String,
+    pub(crate) rpc_url: String,
 
     /// JSON-RPC port used when running in development mode.
-    pub rpc_port: usize,
+    pub(crate) rpc_port: usize,
 
     /// Number of native prover workers to spawn.
-    pub native_workers: usize,
+    pub(crate) native_workers: usize,
 
     /// Number of SP1 prover workers to spawn.
     #[cfg(feature = "sp1")]
-    pub sp1_workers: usize,
+    pub(crate) sp1_workers: usize,
 
     /// Number of Risc0 prover workers to spawn.
     #[cfg(feature = "risc0")]
-    pub risc0_workers: usize,
+    pub(crate) risc0_workers: usize,
 
     /// Wait time in milliseconds for the prover manager loop.
-    pub polling_interval: u64,
+    pub(crate) polling_interval: u64,
 
     /// Checkpoint polling interval in seconds.
-    pub checkpoint_poll_interval: u64,
+    pub(crate) checkpoint_poll_interval: u64,
 
     /// Enables or disables development RPC endpoints.
-    pub enable_dev_rpcs: bool,
+    pub(crate) enable_dev_rpcs: bool,
 
     /// Controls the checkpoint proof runner service.
-    pub enable_checkpoint_runner: bool,
+    pub(crate) enable_checkpoint_runner: bool,
 
     /// Max retries for Bitcoin RPC calls.
-    pub bitcoin_retry_count: u8,
+    pub(crate) bitcoin_retry_count: u8,
 
     /// Timeout duration for btc request retries in ms.
-    pub bitcoin_retry_interval: u64,
+    pub(crate) bitcoin_retry_interval: u64,
 
     /// Maximum number of retries for transient failures.
-    pub max_retry_counter: u64,
+    pub(crate) max_retry_counter: u64,
 
     /// Path to the custom rollup configuration file.
-    pub datadir: PathBuf,
+    pub(crate) datadir: PathBuf,
 
     /// URL of the Sequencer RPC endpoint.
-    pub sequencer_rpc: String,
+    pub(crate) sequencer_rpc: String,
 
     /// URL of the Reth RPC endpoint.
-    pub reth_rpc: String,
+    pub(crate) reth_rpc: String,
 
     /// Host address of the bitcoind RPC endpoint.
-    pub bitcoind_url: String,
+    pub(crate) bitcoind_url: String,
 
     /// Username for the bitcoind RPC authentication.
-    pub bitcoind_user: String,
+    pub(crate) bitcoind_user: String,
 
     /// Password for the bitcoind RPC authentication.
-    pub bitcoind_password: String,
+    pub(crate) bitcoind_password: String,
 
     /// Path to the custom rollup configuration file.
     #[expect(dead_code)] // Part of public API, may be used in future
-    pub rollup_params: PathBuf,
+    pub(crate) rollup_params: PathBuf,
 }
 
 impl ResolvedConfig {
@@ -288,14 +292,5 @@ impl ResolvedConfig {
         }
 
         workers
-    }
-
-    /// Resolves the rollup params file to use, from a path, and validates
-    /// it to ensure it passes sanity checks.
-    pub(crate) fn resolve_and_validate_rollup_params(&self) -> anyhow::Result<RollupParams> {
-        let json = fs::read_to_string(&self.rollup_params)?;
-        let rollup_params = from_str::<RollupParams>(&json)?;
-        rollup_params.check_well_formed()?;
-        Ok(rollup_params)
     }
 }

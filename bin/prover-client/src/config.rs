@@ -38,31 +38,31 @@ const DEFAULT_BITCOIN_RETRY_INTERVAL_MS: u64 = 1000;
 
 /// Prover client configuration loaded from TOML file.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProverConfig {
+pub(crate) struct ProverConfig {
     /// RPC configuration
     #[serde(default)]
-    pub rpc: RpcConfig,
+    pub(crate) rpc: RpcConfig,
 
     /// Worker configuration for different proving backends.
     #[serde(default)]
-    pub workers: WorkerConfig,
+    pub(crate) workers: WorkerConfig,
 
     /// Polling and timing configuration.
     #[serde(default)]
-    pub timing: TimingConfig,
+    pub(crate) timing: TimingConfig,
 
     /// Retry policy configuration.
     #[serde(default)]
-    pub retry: RetryConfig,
+    pub(crate) retry: RetryConfig,
 
     /// Feature flags.  
     #[serde(default)]
-    pub features: FeatureConfig,
+    pub(crate) features: FeatureConfig,
 }
 
 /// RPC configuration for the prover client.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RpcConfig {
+pub(crate) struct RpcConfig {
     /// The JSON-RPC port for development mode.
     #[serde(default = "default_values::default_dev_rpc_port")]
     pub dev_port: usize,
@@ -74,56 +74,56 @@ pub struct RpcConfig {
 
 /// Worker configuration for the prover client.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct WorkerConfig {
+pub(crate) struct WorkerConfig {
     /// Number of native prover workers.
     #[serde(default = "default_values::default_workers")]
-    pub native: usize,
+    pub(crate) native: usize,
 
     /// Number of SP1 prover workers.
     #[serde(default = "default_values::default_workers")]
-    pub sp1: usize,
+    pub(crate) sp1: usize,
 
     /// Number of Risc0 prover workers.
     #[serde(default = "default_values::default_workers")]
-    pub risc0: usize,
+    pub(crate) risc0: usize,
 }
 
 /// Timing configuration for the prover client.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TimingConfig {
+pub(crate) struct TimingConfig {
     /// Polling interval for prover manager loop in milliseconds.
     #[serde(default = "default_values::default_polling_interval_ms")]
-    pub polling_interval_ms: u64,
+    pub(crate) polling_interval_ms: u64,
 
     /// Checkpoint polling interval in seconds.
     #[serde(default = "default_values::default_checkpoint_poll_interval_s")]
-    pub checkpoint_poll_interval_s: u64,
+    pub(crate) checkpoint_poll_interval_s: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RetryConfig {
+pub(crate) struct RetryConfig {
     /// Maximum number of retries for transient failures.
     #[serde(default = "default_values::default_max_retry_counter")]
-    pub max_retry_counter: u64,
+    pub(crate) max_retry_counter: u64,
 
     /// Default number of Bitcoin RPC retries.
     #[serde(default = "default_values::default_bitcoin_retry_count")]
-    pub bitcoin_retry_count: u8,
+    pub(crate) bitcoin_retry_count: u8,
 
     /// Default Bitcoin RPC retry interval in milliseconds.
     #[serde(default = "default_values::default_bitcoin_retry_interval_ms")]
-    pub bitcoin_retry_interval_ms: u64,
+    pub(crate) bitcoin_retry_interval_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct FeatureConfig {
+pub(crate) struct FeatureConfig {
     /// Enable development RPC endpoints.
     #[serde(default = "default_values::default_enable_dev_rpcs")]
-    pub enable_dev_rpcs: bool,
+    pub(crate) enable_dev_rpcs: bool,
 
     /// Enable checkpoint proof runner.
     #[serde(default = "default_values::default_enable_checkpoint_runner")]
-    pub enable_checkpoint_runner: bool,
+    pub(crate) enable_checkpoint_runner: bool,
 }
 
 /// Default value functions to make [`serde`] happy and make the bloody [`super`] code mess easy to
@@ -174,7 +174,7 @@ mod default_values {
 
 impl ProverConfig {
     /// Loads configuration from a TOML file.
-    pub fn from_file(path: &PathBuf) -> anyhow::Result<Self> {
+    pub(crate) fn from_file(path: &PathBuf) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         let config = toml::from_str(&content)?;
         Ok(config)
@@ -235,8 +235,8 @@ enable_checkpoint_runner = false # Enable automatic checkpoint proving
 
         // Compare original and roundtrip configs - they should be identical
         assert_eq!(
-            format!("{:?}", original_config),
-            format!("{:?}", roundtrip_config),
+            format!("{original_config:?}"),
+            format!("{roundtrip_config:?}"),
             "Roundtrip serialization failed: configs differ"
         );
 
