@@ -19,7 +19,7 @@ use strata_consensus_logic::{
     sync_manager::{self, SyncManager},
 };
 use strata_db::{
-    traits::{ChainstateProvider, Database, L2DataProvider, L2DataStore},
+    traits::{ChainstateProvider, CheckpointStore, Database, L2DataProvider, L2DataStore},
     DbError,
 };
 use strata_eectl::engine::ExecEngineCtl;
@@ -265,6 +265,14 @@ fn do_startup_checks(
             anyhow::bail!("could not connect to bitcoin, err = {}", client_error);
         }
     }
+
+    // handle checkpoint db migration
+    let (old_checkpoint_count, migrated_count) =
+        database.checkpoint_store().migrate_checkpoint_data()?;
+    info!(
+        "checkpoint migration: checked {}, migrated {}",
+        old_checkpoint_count, migrated_count
+    );
 
     // Check that tip L2 block exists (and engine can be connected to)
     let chain_tip = last_chain_state.chain_tip_blockid();
