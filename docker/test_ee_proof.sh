@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # An utility script that requests EE proof from the prover and wait for the result.
+# P.S. the URLs are configured to be used with docker-compose-testing.yml
 
 # Ethereum node RPC URL
 RPC_URL="http://localhost:8545"
