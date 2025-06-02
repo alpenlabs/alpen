@@ -13734,6 +13734,7 @@ dependencies = [
  "borsh",
  "rand 0.8.5",
  "strata-chain-worker",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-common",
  "strata-db",
