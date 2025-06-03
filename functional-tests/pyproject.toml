@@ -10,7 +10,7 @@ flexitest = { git = "https://codeberg.org/treyd/flexitest.git" }
 strata_utils = { path = "../crates/util/python-utils", develop = true }
 bitcoinlib = "^0.7.3"
 websockets = "^15.0"
-web3 = "^7.11.0"
+web3 = "^7.12.0"
 py-solc-x = "^2.0.3"
 locust = "^2.36.0"
 toml = "^0.10.2"
