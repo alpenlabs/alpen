@@ -22,7 +22,7 @@ const DEFAULT_DEV_RPC_PORT: usize = 4844;
 const DEFAULT_WORKERS: usize = 20;
 
 /// Default polling interval for the prover manager loop.
-const DEFAULT_POLLING_INTERVAL_MS: u64 = 1000;
+const DEFAULT_POLLING_INTERVAL_MS: u64 = 1_000;
 
 /// Default checkpoint polling interval in seconds.
 const DEFAULT_CHECKPOINT_POLL_INTERVAL_S: u64 = 10;
@@ -34,7 +34,7 @@ const DEFAULT_MAX_RETRY_COUNTER: u64 = 15;
 const DEFAULT_BITCOIN_RETRY_COUNT: u8 = 3;
 
 /// Default Bitcoin RPC retry interval in milliseconds.
-const DEFAULT_BITCOIN_RETRY_INTERVAL_MS: u64 = 1000;
+const DEFAULT_BITCOIN_RETRY_INTERVAL_MS: u64 = 1_000;
 
 /// Prover client configuration loaded from TOML file.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -9,7 +9,7 @@ use checkpoint_runner::runner::checkpoint_proof_runner;
 use db::open_rocksdb_database;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::ProofOperator;
-use prover_manager::ProverManager;
+use prover_manager::{ProverManager, ProverManagerConfig};
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
 #[cfg(feature = "risc0-builder")]
@@ -96,13 +96,16 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     let db_ops = DbOpsConfig { retry_count: 3 };
     let db = Arc::new(ProofDb::new(rbdb, db_ops));
 
+    let prover_config = ProverManagerConfig::new(
+        config.get_workers(),
+        config.polling_interval,
+        config.max_retry_counter,
+    );
     let manager = ProverManager::new(
         task_tracker.clone(),
         operator.clone(),
         db.clone(),
-        config.get_workers(),
-        config.polling_interval,
-        config.max_retry_counter,
+        prover_config,
     );
     debug!("Initialized Prover Manager");
 
