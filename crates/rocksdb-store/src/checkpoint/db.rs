@@ -6,7 +6,6 @@ use strata_db::{
     types::CheckpointEntry,
     DbError, DbResult,
 };
-use strata_state::batch;
 
 use super::schemas::{BatchCheckpointIndexedSchema, BatchCheckpointSchema};
 use crate::DbOpsConfig;
