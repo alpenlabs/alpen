@@ -2,9 +2,8 @@ name: Daily Ethereum Execution Spec tests
 
 #on:
 #  schedule:
-#    - cron: '0 3 * * *' # runs daily at 3:00 UTC
-#  workflow_dispatch:     # allows manual trigger
-
+#    - cron: '0 3 * * 0'  # Weekly: Sunday 03:00 UTC
+#  workflow_dispatch:      # Manual trigger (optional)
 
 # TODO: clean this up.
 on:
