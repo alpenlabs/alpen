@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 strata-crypto.workspace = true
+strata-da-lib.workspace = true
 strata-primitives.workspace = true
 
 anyhow.workspace = true

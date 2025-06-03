@@ -9,15 +9,26 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_da_lib::{diff::ListDiff, ApplyError, DaDiff, Diff};
 
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
+    Deserialize,
+    Serialize,
+    DaDiff,
 )]
 pub struct StateQueue<T> {
     /// The front of the queue that we take entries out of.
     base_idx: u64,
 
     /// The entries in the queue.
+    #[diff_override(Vec<ListDiff<T>>)]
     entries: Vec<T>,
 }
 
@@ -277,6 +288,34 @@ impl<T> StateQueue<T> {
             .iter()
             .enumerate()
             .map(|(i, e)| (i as u64 + self.base_idx, e))
+    }
+}
+
+impl<T> Default for StateQueueDiff<T> {
+    fn default() -> Self {
+        Self {
+            entries_diff: Vec::new(),
+            base_idx_diff: Default::default(),
+        }
+    }
+}
+
+impl<T: Clone> Diff for StateQueueDiff<T> {
+    type Target = StateQueue<T>;
+
+    fn is_default(&self) -> bool {
+        self.entries_diff.is_empty() && self.base_idx_diff.is_default()
+    }
+
+    fn apply(&self, source: &mut Self::Target) -> Result<(), ApplyError> {
+        if self.is_default() {
+            return Ok(());
+        }
+        self.base_idx_diff.apply(&mut source.base_idx)?;
+        for diff in &self.entries_diff {
+            diff.apply(&mut source.entries)?;
+        }
+        Ok(())
     }
 }
 

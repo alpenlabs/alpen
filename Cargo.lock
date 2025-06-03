@@ -13705,6 +13705,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-da-lib"
+version = "0.1.0"
+dependencies = [
+ "strata-diff-derive",
+]
+
+[[package]]
 name = "strata-datatool"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -13745,6 +13752,15 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "zkaleido",
+]
+
+[[package]]
+name = "strata-diff-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.97",
 ]
 
 [[package]]
@@ -14188,6 +14204,7 @@ dependencies = [
  "borsh",
  "serde",
  "strata-crypto",
+ "strata-da-lib",
  "strata-primitives",
  "strata-test-utils",
  "tracing",

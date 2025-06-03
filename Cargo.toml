@@ -12,7 +12,9 @@ members = [
   "crates/config",
   "crates/consensus-logic",
   "crates/crypto",
+  "crates/da-lib",
   "crates/db",
+  "crates/diff-derive",
   "crates/eectl",
   "crates/evmexec",
   "crates/key-derivation",
@@ -98,7 +100,9 @@ strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-crypto = { path = "crates/crypto", default-features = false }
+strata-da-lib = { path = "crates/da-lib" }
 strata-db = { path = "crates/db" }
+strata-diff-derive = { path = "crates/diff-derive" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
 strata-key-derivation = { path = "crates/key-derivation" }
