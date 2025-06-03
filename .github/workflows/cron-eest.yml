@@ -60,10 +60,10 @@ jobs:
         for IMAGE in "${BINARIES[@]}"; do
           ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${IMAGE}"
           TAG=$(aws ecr describe-images \
-            --repository-name ${ECR_REPOSITORY} \
+            --repository-name "${ECR_REPOSITORY}" \
             --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
             --output text)
-          echo $TAG
+          echo "$TAG"
           IMG_URL="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
           docker pull "${IMG_URL}"
           docker tag "${IMG_URL}" "${IMAGE}:latest"
