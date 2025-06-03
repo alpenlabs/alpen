@@ -64,11 +64,11 @@ pub(crate) struct ProverConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct RpcConfig {
     /// The JSON-RPC port for development mode.
-    #[serde(default = "default_values::default_dev_rpc_port")]
+    #[serde(default = "default_values::dev_rpc_port")]
     pub dev_port: usize,
 
     /// The base URL for JSON-RPC endpoint in development mode
-    #[serde(default = "default_values::default_dev_rpc_url")]
+    #[serde(default = "default_values::dev_rpc_url")]
     pub dev_url: String,
 }
 
@@ -76,15 +76,15 @@ pub(crate) struct RpcConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct WorkerConfig {
     /// Number of native prover workers.
-    #[serde(default = "default_values::default_workers")]
+    #[serde(default = "default_values::workers")]
     pub(crate) native: usize,
 
     /// Number of SP1 prover workers.
-    #[serde(default = "default_values::default_workers")]
+    #[serde(default = "default_values::workers")]
     pub(crate) sp1: usize,
 
     /// Number of Risc0 prover workers.
-    #[serde(default = "default_values::default_workers")]
+    #[serde(default = "default_values::workers")]
     pub(crate) risc0: usize,
 }
 
@@ -92,37 +92,37 @@ pub(crate) struct WorkerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct TimingConfig {
     /// Polling interval for prover manager loop in milliseconds.
-    #[serde(default = "default_values::default_polling_interval_ms")]
+    #[serde(default = "default_values::polling_interval_ms")]
     pub(crate) polling_interval_ms: u64,
 
     /// Checkpoint polling interval in seconds.
-    #[serde(default = "default_values::default_checkpoint_poll_interval_s")]
+    #[serde(default = "default_values::checkpoint_poll_interval_s")]
     pub(crate) checkpoint_poll_interval_s: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct RetryConfig {
     /// Maximum number of retries for transient failures.
-    #[serde(default = "default_values::default_max_retry_counter")]
+    #[serde(default = "default_values::max_retry_counter")]
     pub(crate) max_retry_counter: u64,
 
     /// Default number of Bitcoin RPC retries.
-    #[serde(default = "default_values::default_bitcoin_retry_count")]
+    #[serde(default = "default_values::bitcoin_retry_count")]
     pub(crate) bitcoin_retry_count: u8,
 
     /// Default Bitcoin RPC retry interval in milliseconds.
-    #[serde(default = "default_values::default_bitcoin_retry_interval_ms")]
+    #[serde(default = "default_values::bitcoin_retry_interval_ms")]
     pub(crate) bitcoin_retry_interval_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct FeatureConfig {
     /// Enable development RPC endpoints.
-    #[serde(default = "default_values::default_enable_dev_rpcs")]
+    #[serde(default = "default_values::enable_dev_rpcs")]
     pub(crate) enable_dev_rpcs: bool,
 
     /// Enable checkpoint proof runner.
-    #[serde(default = "default_values::default_enable_checkpoint_runner")]
+    #[serde(default = "default_values::enable_checkpoint_runner")]
     pub(crate) enable_checkpoint_runner: bool,
 }
 
@@ -131,43 +131,43 @@ pub(crate) struct FeatureConfig {
 mod default_values {
     use super::*;
 
-    pub(super) fn default_dev_rpc_port() -> usize {
+    pub(super) fn dev_rpc_port() -> usize {
         DEFAULT_DEV_RPC_PORT
     }
 
-    pub(super) fn default_dev_rpc_url() -> String {
+    pub(super) fn dev_rpc_url() -> String {
         DEFAULT_DEV_RPC_HOST.to_string()
     }
 
-    pub(super) fn default_workers() -> usize {
+    pub(super) fn workers() -> usize {
         DEFAULT_WORKERS
     }
 
-    pub(super) fn default_polling_interval_ms() -> u64 {
+    pub(super) fn polling_interval_ms() -> u64 {
         DEFAULT_POLLING_INTERVAL_MS
     }
 
-    pub(super) fn default_checkpoint_poll_interval_s() -> u64 {
+    pub(super) fn checkpoint_poll_interval_s() -> u64 {
         DEFAULT_CHECKPOINT_POLL_INTERVAL_S
     }
 
-    pub(super) fn default_max_retry_counter() -> u64 {
+    pub(super) fn max_retry_counter() -> u64 {
         DEFAULT_MAX_RETRY_COUNTER
     }
 
-    pub(super) fn default_bitcoin_retry_count() -> u8 {
+    pub(super) fn bitcoin_retry_count() -> u8 {
         DEFAULT_BITCOIN_RETRY_COUNT
     }
 
-    pub(super) fn default_bitcoin_retry_interval_ms() -> u64 {
+    pub(super) fn bitcoin_retry_interval_ms() -> u64 {
         DEFAULT_BITCOIN_RETRY_INTERVAL_MS
     }
 
-    pub(super) fn default_enable_dev_rpcs() -> bool {
+    pub(super) fn enable_dev_rpcs() -> bool {
         true
     }
 
-    pub(super) fn default_enable_checkpoint_runner() -> bool {
+    pub(super) fn enable_checkpoint_runner() -> bool {
         false
     }
 }
