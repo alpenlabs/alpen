@@ -7,7 +7,7 @@ pub mod checkpoint;
 pub mod client_state;
 pub mod l1;
 pub mod l2;
-pub mod newchs;
+mod newchs;
 pub mod prover;
 pub mod sync_event;
 pub mod writer;
@@ -47,6 +47,7 @@ use l2::{
     db::L2Db,
     schemas::{L2BlockHeightSchema, L2BlockSchema, L2BlockStatusSchema},
 };
+pub use newchs::{RocksNewChainstateDb, StateInstanceEntry};
 use rockbound::{schema::ColumnFamilyName, Schema, TransactionRetry};
 pub use sync_event::db::SyncEventDb;
 pub use writer::db::RBL1WriterDb;
@@ -56,6 +57,7 @@ use crate::{
     chain_state::schemas::WriteBatchSchema,
     client_state::schemas::ClientUpdateOutputSchema,
     l1::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema},
+    newchs::schemas::{NewWriteBatchSchema, StateInstanceSchema},
     sequence::SequenceSchema,
     sync_event::schemas::SyncEventSchema,
 };
@@ -93,6 +95,10 @@ pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
     // Checkpoint schemas
     CheckpointSchema::COLUMN_FAMILY_NAME,
     EpochSummarySchema::COLUMN_FAMILY_NAME,
+
+    // New chainstate schemas
+    NewWriteBatchSchema::COLUMN_FAMILY_NAME,
+    StateInstanceSchema::COLUMN_FAMILY_NAME,
 ];
 
 /// database operations configuration

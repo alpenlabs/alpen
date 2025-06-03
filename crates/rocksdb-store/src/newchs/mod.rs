@@ -1,5 +1,5 @@
 mod db;
-mod schemas;
+pub(crate) mod schemas;
 mod types;
 
 pub use db::RocksNewChainstateDb;
