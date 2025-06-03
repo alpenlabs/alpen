@@ -7,6 +7,7 @@ pub mod checkpoint;
 pub mod client_state;
 pub mod l1;
 pub mod l2;
+pub mod newchs;
 pub mod prover;
 pub mod sync_event;
 pub mod writer;

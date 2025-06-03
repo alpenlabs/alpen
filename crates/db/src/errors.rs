@@ -43,6 +43,12 @@ pub enum DbError {
     #[error("missing L2 state (slot {0})")]
     MissingL2State(u64),
 
+    #[error("missing state instance")]
+    MissingStateInstance,
+
+    #[error("missing write batch")]
+    MissingWriteBatch,
+
     #[error("not yet bootstrapped")]
     NotBootstrapped,
 
