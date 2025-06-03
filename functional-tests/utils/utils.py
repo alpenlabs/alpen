@@ -324,6 +324,7 @@ class ProverClientSettings:
     native_workers: int
     polling_interval: int
     enable_checkpoint_proving: bool
+    max_retry_counter: int
 
     @staticmethod
     def new_default():
@@ -331,6 +332,7 @@ class ProverClientSettings:
             native_workers=DEFAULT_PROVER_NATIVE_WORKERS,
             polling_interval=DEFAULT_PROVER_POLLING_INTERVAL,
             enable_checkpoint_proving=DEFAULT_PROVER_ENABLE_CHECKPOINT_PROVING,
+            max_retry_counter=DEFAULT_PROVER_MAX_RETRY_COUNTER,
         )
 
     @staticmethod
@@ -339,6 +341,7 @@ class ProverClientSettings:
             native_workers=DEFAULT_PROVER_NATIVE_WORKERS,
             polling_interval=DEFAULT_PROVER_POLLING_INTERVAL,
             enable_checkpoint_proving=True,
+            max_retry_counter=DEFAULT_PROVER_MAX_RETRY_COUNTER,
         )
 
 

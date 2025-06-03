@@ -388,7 +388,7 @@ checkpoint_poll_interval_s = 10
 
 [retry]
 # Retry policy configuration
-max_retry_counter = 15
+max_retry_counter = {settings.max_retry_counter}
 bitcoin_retry_count = 3
 bitcoin_retry_interval_ms = 1000
 
