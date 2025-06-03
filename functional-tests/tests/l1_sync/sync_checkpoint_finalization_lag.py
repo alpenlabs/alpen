@@ -28,7 +28,7 @@ class SyncCheckpointLagTest(testenv.StrataTester):
         cs_node_rpc = checkpoint_sync_node.create_rpc()
 
         # wait until the nodes start
-        wait_until(cs_node_rpc.strata_protocolVersion, timeout=5)
+        wait_until(cs_node_rpc.strata_protocolVersion, timeout=15)
 
         # wait for an epoch to be confirmed
         wait_until_epoch_confirmed(cs_node_rpc, 1, timeout=30)
@@ -43,12 +43,8 @@ class SyncCheckpointLagTest(testenv.StrataTester):
         # restart cs node
         logging.info("restarting checkpoint sync node")
         checkpoint_sync_node.start()
-        wait_until(cs_node_rpc.strata_protocolVersion, timeout=5)
+        wait_until(cs_node_rpc.strata_protocolVersion, timeout=15)
 
-        # this should trigger the reorg logic of the checkpoint sync node since,
-        # target epoch = 2
-        # csm finalized epoch = 1
-        # csm finalized epoch < target epoch (reorg condition)
         logging.info("waiting for CSM of checkpoint sync to finalize epoch")
         wait_until_epoch_finalized(cs_node_rpc, 1, timeout=60)
 

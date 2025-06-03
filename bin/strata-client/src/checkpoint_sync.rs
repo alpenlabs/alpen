@@ -23,13 +23,7 @@ pub async fn checkpoint_sync_task(
     let mut csync_manager = CheckpointSyncManager::new(storage.clone());
 
     // initialize target epoch from db
-    // some checkpoints might have remained unprocessed - do I need to compare latest chainstate
-    // with checkpoint stored in db first?
-    let ckpt_db = storage.checkpoint();
-    let mut target_epoch = ckpt_db
-        .get_last_checkpoint() // this should be the last finalized checkpoint?
-        .await?
-        .map_or(0, |epoch| epoch + 1);
+    let mut target_epoch = get_target_epoch(&storage).await?;
 
     // the only other place where we subscribe to client state is in the FCM
     // which we have disabled during checkpoint sync
@@ -38,21 +32,20 @@ pub async fn checkpoint_sync_task(
     // wait for CSM to send msg for change in client state
     // TODO: should I use has_changed which will not mark the event as read?
     while rx.changed().await.is_ok() {
-        let state = rx.borrow().clone(); // will this clone be expensive?
-
         #[cfg(feature = "debug-utils")]
         check_and_pause_debug_async(WorkerType::CheckpointSyncWorker).await;
 
+        let state = rx.borrow().clone(); // will this clone be expensive?
         let Some(l1_checkpoint) = state.get_apparent_finalized_checkpoint() else {
             continue;
         };
         let csm_finalized_epoch = l1_checkpoint.batch_info.epoch;
+        let current_epoch = target_epoch.saturating_sub(1);
 
-        if csm_finalized_epoch < target_epoch {
+        if csm_finalized_epoch < current_epoch {
             // is there no viable means to test this yet? since we can not reorg behind finalization
-            // depth, this branch is unlikely to be executed?
+            // depth, this branch is unlikely to be executed
             handle_reorg(
-                l1_checkpoint,
                 &mut target_epoch,
                 csm_finalized_epoch,
                 &mut csync_manager,
@@ -62,7 +55,6 @@ pub async fn checkpoint_sync_task(
             .await?;
         } else if csm_finalized_epoch > target_epoch {
             handle_missed_checkpoints(
-                l1_checkpoint,
                 &mut target_epoch,
                 csm_finalized_epoch,
                 &mut csync_manager,
@@ -70,7 +62,7 @@ pub async fn checkpoint_sync_task(
                 &status_channel,
             )
             .await?;
-        } else {
+        } else if csm_finalized_epoch == target_epoch {
             handle_l1_checkpoint(
                 l1_checkpoint,
                 &mut target_epoch,
@@ -79,15 +71,33 @@ pub async fn checkpoint_sync_task(
                 &storage,
                 &status_channel,
             )
-            .await;
+            .await?;
         }
     }
 
     Ok(())
 }
 
+/// Get the epoch of the latest chainstate available in the database.
+async fn get_target_epoch(storage: &Arc<NodeStorage>) -> Result<u64, anyhow::Error> {
+    let chsman = storage.chainstate();
+    let Some(slot) = chsman.get_last_write_idx_async().await.ok() else {
+        return Ok(0);
+    };
+
+    match chsman.get_toplevel_chainstate_async(slot).await {
+        Ok(Some(entry)) => Ok(entry.state().cur_epoch() + 1),
+        Ok(None) | Err(DbError::NotBootstrapped) => Ok(0),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Handle chainstate update when the epoch finalized by CSM is greater than the target epoch.
+/// This means we must have missed processing previously finalized epochs for chainstate update.
+/// ```
+/// csm_finalized_epoch > target_epoch
+/// ```
 async fn handle_missed_checkpoints(
-    l1_checkpoint: &L1Checkpoint,
     target_epoch: &mut u64,
     csm_finalized_epoch: u64,
     csync_manager: &mut CheckpointSyncManager,
@@ -113,20 +123,20 @@ async fn handle_missed_checkpoints(
             break; // only break the inner for loop
         };
 
-        if process_checkpoint_entry(
-            entry,
-            l1_checkpoint.batch_info.final_l2_block(),
-            status_channel,
-            csync_manager,
-        )
-        .await
-        .is_ok()
+        let tip = entry.checkpoint.batch_info().final_l2_block();
+        if process_checkpoint_entry(entry.clone(), tip, status_channel, csync_manager) // unnecessary clone?
+            .await
+            .is_ok()
         {
             *target_epoch += 1; // increment target epoch
         }
     })
 }
 
+/// Handle chainstate update when target epoch is the same as the epoch finalized by CSM.
+/// ```
+/// csm_finalized_epoch == target_epoch
+/// ```
 async fn handle_l1_checkpoint(
     l1_checkpoint: &L1Checkpoint,
     target_epoch: &mut u64,
@@ -134,30 +144,45 @@ async fn handle_l1_checkpoint(
     csync_manager: &mut CheckpointSyncManager,
     storage: &Arc<NodeStorage>,
     status_channel: &StatusChannel,
-) {
+) -> Result<(), anyhow::Error> {
     // get checkpoint entry for the latest finalized epoch
     let checkpoint_entry = storage
         .checkpoint()
         .get_checkpoint(csm_finalized_epoch)
-        .await;
+        .await?;
 
-    if let Ok(Some(entry)) = checkpoint_entry {
-        if process_checkpoint_entry(
+    if let Some(entry) = checkpoint_entry {
+        process_checkpoint_entry(
             entry,
             l1_checkpoint.batch_info.final_l2_block(),
             status_channel,
             csync_manager,
         )
-        .await
-        .is_ok()
-        {
-            *target_epoch += 1; // increment target epoch
-        }
+        .await?;
+        *target_epoch += 1; // increment target epoch
+    } else {
+        // this is a failure branch - if we can't find checkpoint at all in the db there is no way
+        // for us to reconstruct it again
+        // TODO: add custom error here
+        warn!("Didn't find checkpoint entry for CSM finalized epoch");
     }
+
+    Ok(())
 }
 
+/// Handle chainstate update when the epoch finalized by CSM is lesser than the current epoch.
+/// This means there has been a possible reorg where the latest finalized checkpoint has been rolled
+/// back.
+///
+/// Although this scenario is highly unlikely (since we work within finalization depth limits), and
+/// the client also panics if a finalized checkpoint is indeed rolled back (undefined behaviour for
+/// a rollup system).
+///
+/// ```
+/// current_epoch = target_epoch.saturating_sub(1)
+/// csm_finalized_epoch < current_epoch
+/// ```
 async fn handle_reorg(
-    l1_checkpoint: &L1Checkpoint,
     target_epoch: &mut u64,
     csm_finalized_epoch: u64,
     csync_manager: &mut CheckpointSyncManager,
@@ -171,11 +196,13 @@ async fn handle_reorg(
 
     let ckpt_db = storage.checkpoint();
     let Some(latest_epoch_from_db) = ckpt_db.get_last_checkpoint().await? else {
+        // CSM hasn't stored any checkpoint to db yet - invalid state!
         return Err(DbError::NotBootstrapped.into());
     };
 
     Ok(for epoch in csm_finalized_epoch..=latest_epoch_from_db {
         let Some(entry) = ckpt_db.get_checkpoint(epoch).await? else {
+            // missing checkpoints in the database for finalized epochs - invalid state!
             error!(
                 "no checkpoint found for epoch : {}, chainstate not rolled back",
                 epoch
@@ -184,23 +211,15 @@ async fn handle_reorg(
         };
 
         // checkpoint confirmation status must be finalized to be processed
-        // if entry.confirmation_status
+        // if entry.confirmation_status ?
 
         // delete chainstate from previous slot? rollback directly might raise errors!
         // rollback_writes_to function iteratively deletes chainstate from slots -
         // we don't have contiguous range of chainstate!
 
-        if process_checkpoint_entry(
-            entry,
-            l1_checkpoint.batch_info.final_l2_block(),
-            status_channel,
-            csync_manager,
-        )
-        .await
-        .is_ok()
-        {
-            *target_epoch = epoch + 1;
-        }
+        let tip = entry.checkpoint.batch_info().final_l2_block();
+        process_checkpoint_entry(entry.clone(), tip, status_channel, csync_manager).await?;
+        *target_epoch = epoch + 1;
     })
 }
 
@@ -246,6 +265,7 @@ async fn process_and_store_checkpoint(
     Ok(csync_manager.store_chainstate(new_chainstate).await?)
 }
 
+/// Send `ChainSyncStatusUpdate` message to (potential) listeners through status channel.
 fn send_sync_status_update(
     latest_chainstate: Chainstate,
     tip: &L2BlockCommitment,
