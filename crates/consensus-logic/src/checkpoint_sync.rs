@@ -61,3 +61,17 @@ impl CheckpointSyncManager {
         Ok(None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_state::{da::ChainstateDAScheme, traits::ChainstateDA};
+    use strata_test_utils::l2::get_test_signed_checkpoint;
+
+    #[test]
+    fn test_chainstate_update_from_checkpoint() {
+        let sc = get_test_signed_checkpoint();
+        let ckpt = sc.checkpoint();
+        let result = ChainstateDAScheme::chainstate_update_from_bytes(ckpt.sidecar().bytes());
+        assert!(result.is_ok());
+    }
+}
