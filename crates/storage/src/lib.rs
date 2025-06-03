@@ -11,7 +11,7 @@ use anyhow::Context;
 pub use managers::{
     chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
     client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
-    sync_event::SyncEventManager,
+    newchs::NewChainstateManager, sync_event::SyncEventManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db::traits::Database;
