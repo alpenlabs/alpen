@@ -27,7 +27,7 @@ pub(crate) async fn checkpoint_proof_runner(
     task_tracker: Arc<Mutex<TaskTracker>>,
     db: Arc<ProofDb>,
 ) {
-    info!(?poll_interval_s, "Checkpoint runner started");
+    info!(%poll_interval_s, "Checkpoint runner started");
     let mut ticker = interval(Duration::from_secs(poll_interval_s));
     let mut runner_state = CheckpointRunnerState::default();
 
