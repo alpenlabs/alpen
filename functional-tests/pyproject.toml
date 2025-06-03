@@ -8,7 +8,7 @@ authors = []
 python = "^3.10"
 flexitest = { git = "https://codeberg.org/treyd/flexitest.git" }
 strata_utils = { path = "../crates/util/python-utils", develop = true }
-bitcoinlib = "^0.7.3"
+bitcoinlib = "^0.7.4"
 websockets = "^15.0"
 web3 = "^7.12.0"
 py-solc-x = "^2.0.3"
