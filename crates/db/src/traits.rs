@@ -422,4 +422,14 @@ pub trait CheckpointStore {
     /// `batchidx` for the Checkpoint is expected to increase monotonically and
     /// correspond to the value of [`strata_state::chain_state::ChainState::epoch`].
     fn put_batch_checkpoint(&self, batchidx: u64, entry: CheckpointEntry) -> DbResult<()>;
+
+    /// Handles checkpoint DB migration, typically for schema or encoding changes.
+    ///
+    /// # Returns
+    /// A `DbResult` containing a tuple `(examined_count, migrated_count)` where:
+    /// - `examined_count`: The number of checkpoint entries from the source/old storage that were
+    ///   examined.
+    /// - `migrated_count`: The number of those examined entries that were successfully migrated to
+    ///   the destination/new storage.
+    fn migrate_checkpoint_data(&self) -> DbResult<(u64, u64)>;
 }

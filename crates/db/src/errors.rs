@@ -81,6 +81,9 @@ pub enum DbError {
     #[error(" rocksdb {0}")]
     RocksDb(String),
 
+    #[error("checkpoint migration: expected: {0}; found: {1:#?}")]
+    CheckpointMigrationError(u64, Option<u64>),
+
     #[error("not yet implemented")]
     Unimplemented,
 

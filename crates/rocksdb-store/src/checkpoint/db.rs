@@ -4,10 +4,10 @@ use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt};
 use strata_db::{
     traits::{CheckpointProvider, CheckpointStore},
     types::CheckpointEntry,
-    DbResult,
+    DbError, DbResult,
 };
 
-use super::schemas::BatchCheckpointSchema;
+use super::schemas::{BatchCheckpointIndexedSchema, BatchCheckpointSchema};
 use crate::DbOpsConfig;
 
 pub struct RBCheckpointDB {
@@ -34,17 +34,66 @@ impl CheckpointStore for RBCheckpointDB {
     ) -> DbResult<()> {
         Ok(self
             .db
-            .put::<BatchCheckpointSchema>(&batchidx, &batch_checkpoint)?)
+            .put::<BatchCheckpointIndexedSchema>(&batchidx, &batch_checkpoint)?)
+    }
+
+    fn migrate_checkpoint_data(&self) -> DbResult<(u64, u64)> {
+        let mut examined_count = 0u64;
+        let mut migrated_count = 0u64;
+        let mut max_idx_found_in_old: Option<u64> = None;
+
+        let iter = self.db.iter::<BatchCheckpointSchema>()?;
+        for item_result in iter {
+            let (old_batchidx, checkpoint) = item_result?.into_tuple();
+            examined_count += 1;
+
+            max_idx_found_in_old = Some(
+                max_idx_found_in_old
+                    .map_or(old_batchidx, |current_max| current_max.max(old_batchidx)),
+            );
+
+            if self.get_batch_checkpoint(old_batchidx)?.is_none() {
+                self.put_batch_checkpoint(old_batchidx, checkpoint)?;
+                migrated_count += 1;
+            }
+        }
+
+        // Verification logic:
+        // If the old schema contained any data, check if the new schema's last known index
+        // is at least as high as the maximum index found in the old schema.
+        if let Some(last_batch_idx_old_actual) = max_idx_found_in_old {
+            match self.get_last_batch_idx()? {
+                // last_batch_idx from new schema
+                Some(last_batch_idx_new) if last_batch_idx_new >= last_batch_idx_old_actual => {
+                    // OK
+                }
+                Some(last_batch_idx_new) => {
+                    // New schema's max index is less than what was found in the old schema.
+                    return Err(DbError::CheckpointMigrationError(
+                        last_batch_idx_old_actual,
+                        Some(last_batch_idx_new),
+                    ));
+                }
+                None => {
+                    return Err(DbError::CheckpointMigrationError(
+                        last_batch_idx_old_actual,
+                        None,
+                    ));
+                }
+            }
+        }
+
+        Ok((examined_count, migrated_count))
     }
 }
 
 impl CheckpointProvider for RBCheckpointDB {
     fn get_batch_checkpoint(&self, batchidx: u64) -> DbResult<Option<CheckpointEntry>> {
-        Ok(self.db.get::<BatchCheckpointSchema>(&batchidx)?)
+        Ok(self.db.get::<BatchCheckpointIndexedSchema>(&batchidx)?)
     }
 
     fn get_last_batch_idx(&self) -> DbResult<Option<u64>> {
-        Ok(rockbound::utils::get_last::<BatchCheckpointSchema>(&*self.db)?.map(|(x, _)| x))
+        Ok(rockbound::utils::get_last::<BatchCheckpointIndexedSchema>(&*self.db)?.map(|(x, _)| x))
     }
 }
 
