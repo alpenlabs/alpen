@@ -3136,14 +3136,14 @@ zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
 name = "web3"
-version = "7.11.0"
+version = "7.12.0"
 description = "web3: A Python library for interacting with Ethereum"
 optional = false
 python-versions = "<4,>=3.8"
 groups = ["main"]
 files = [
-    {file = "web3-7.11.0-py3-none-any.whl", hash = "sha256:bbc844e4ea8d5769aa7be28cd737693cab41c4c52dc3d28c32d91718bfddfb91"},
-    {file = "web3-7.11.0.tar.gz", hash = "sha256:5e65f43aed028fc9a2e094e95499e66b18d7878d829ff8ff13f1a825141ab747"},
+    {file = "web3-7.12.0-py3-none-any.whl", hash = "sha256:c7e2b9c1db5a379ef53b45fe8a19bdc2d47ad262039fbf6675794bc40f74bf06"},
+    {file = "web3-7.12.0.tar.gz", hash = "sha256:08fbe79a2e2503c9820132ebad24ba0372831588cabac5f467999c97ace7dda3"},
 ]
 
 [package.dependencies]
@@ -3471,4 +3471,4 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "4351cde4c35ed22d6a8755a5063570a7937cc33fd178ddeeeff219b7456650ba"
+content-hash = "85c66841b0aa40e9de588ce4d4cfb0989db9103e4fae964c66c3d81018d5206c"
