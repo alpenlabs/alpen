@@ -27,11 +27,10 @@ impl NewChainstateDatabase for RocksNewChainstateDb {
         let res = self
             .db
             .with_optimistic_txn(self.ops.txn_retry_count(), |txn| {
-                let mut inst_iter = txn.iter::<StateInstanceSchema>()?;
-                inst_iter.seek_to_last();
-
                 // Get the next ID.  It doesn't really matter what the numbers
                 // are, since we treat them opaquely.
+                let mut inst_iter = txn.iter::<StateInstanceSchema>()?;
+                inst_iter.seek_to_last();
                 let id = match inst_iter.rev().next() {
                     Some(res) => {
                         let (id, _) = res?.into_tuple();
@@ -54,9 +53,6 @@ impl NewChainstateDatabase for RocksNewChainstateDb {
         let res = self
             .db
             .with_optimistic_txn(self.ops.txn_retry_count(), |txn| {
-                let mut inst_iter = txn.iter::<StateInstanceSchema>()?;
-                inst_iter.seek_to_last();
-
                 // Fetch the data we're cloning.
                 let entry = txn
                     .get::<StateInstanceSchema>(&source_id)?
@@ -64,14 +60,17 @@ impl NewChainstateDatabase for RocksNewChainstateDb {
 
                 // Get the next ID.  It doesn't really matter what the numbers
                 // are, since we treat them opaquely.
+                let mut inst_iter = txn.iter::<StateInstanceSchema>()?;
+                inst_iter.seek_to_last();
                 let new_id = match inst_iter.rev().next() {
                     Some(res) => {
                         let (id, _) = res?.into_tuple();
                         id + 1
                     }
 
-                    // this should be unreachable but whatever
-                    None => 0,
+                    // (this should be unreachable but whatever, let's error
+                    // here anyways)
+                    None => return Err(DbError::MissingStateInstance),
                 };
 
                 // Actually insert the new state instance.
