@@ -72,7 +72,7 @@ jobs:
       run: |
         docker image list
 
-    - name: Build Prover Client image in native mode
+    - name: Build params
       run: |
         # Install base58
         pip3 install base58
@@ -82,10 +82,14 @@ jobs:
 
         # Generate parameters and capture the output
         ./target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1
-
         cd docker && ./init-keys.sh ../target/release/strata-datatool
-        cd ..
-        pwd
+        cd configs
+
+        # Overwrite the block time for faster blocks.
+        jq '.block_time = 1000' params.json > tmp.json && mv tmp.json params.json
+
+    - name: Build Prover Client image in native mode
+      run: |
         mkdir -p docker/prover-client/elfs
 
         # Build prover
