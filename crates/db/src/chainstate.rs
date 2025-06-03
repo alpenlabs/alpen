@@ -54,6 +54,9 @@ pub trait NewChainstateDatabase {
     /// This is likely to be a block ID, but can be something else.
     fn put_write_batch(&self, _id: WriteBatchId, _wb: WriteBatch) -> DbResult<()>;
 
+    /// Gets a write batch associated with some ID, if it exists.
+    fn get_write_batch(&self, _id: WriteBatchId) -> DbResult<Option<WriteBatch>>;
+
     /// Deletes a write batch.
     fn del_write_batch(&self, _id: WriteBatchId) -> DbResult<()>;
 

@@ -48,7 +48,7 @@ impl ChainstateDatabase for ChainstateDb {
 
         let mut batch = SchemaBatch::new();
 
-        let genesis_wb = WriteBatch::new_replace(toplevel);
+        let genesis_wb = WriteBatch::new_replace_toplevel(toplevel);
         batch.put::<WriteBatchSchema>(&genesis_key, &WriteBatchEntry::new(genesis_wb, blockid))?;
 
         self.db.write_schemas(batch)?;
@@ -191,7 +191,7 @@ mod tests {
         let db = setup_db();
         let genesis_state: Chainstate = generator.generate();
         let genesis_blockid: L2BlockId = generator.generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
+        let batch = WriteBatch::new_replace_toplevel(genesis_state.clone());
 
         let res = db.put_write_batch(1, WriteBatchEntry::new(batch.clone(), genesis_blockid));
         assert!(res.is_err_and(|x| matches!(x, DbError::NotBootstrapped)));
@@ -219,7 +219,7 @@ mod tests {
         let genesis_state: Chainstate = generator.generate();
         let genesis_blockid: L2BlockId = generator.generate();
 
-        let batch = WriteBatch::new_replace(genesis_state.clone());
+        let batch = WriteBatch::new_replace_toplevel(genesis_state.clone());
 
         db.write_genesis_state(genesis_state, genesis_blockid)
             .unwrap();
@@ -237,7 +237,7 @@ mod tests {
         let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
         let genesis_state: Chainstate = ArbitraryGenerator::new().generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
+        let batch = WriteBatch::new_replace_toplevel(genesis_state.clone());
 
         db.write_genesis_state(genesis_state, generator.generate())
             .unwrap();
@@ -276,7 +276,7 @@ mod tests {
         let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
         let genesis_state: Chainstate = generator.generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
+        let batch = WriteBatch::new_replace_toplevel(genesis_state.clone());
 
         db.write_genesis_state(genesis_state, generator.generate())
             .unwrap();
@@ -320,7 +320,7 @@ mod tests {
         let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
         let genesis_state: Chainstate = generator.generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
+        let batch = WriteBatch::new_replace_toplevel(genesis_state.clone());
 
         db.write_genesis_state(genesis_state, generator.generate())
             .unwrap();
