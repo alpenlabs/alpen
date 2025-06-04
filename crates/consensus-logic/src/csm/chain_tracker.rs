@@ -8,21 +8,14 @@ use tracing::{error, warn};
 
 use super::common::{IndexedBlockTable, L1Header};
 
-// TODO: use correct errors instead of anyhow
-#[derive(Debug, Error)]
-pub enum ChainTrackerError {
-    #[error("other")]
-    Other,
-}
-
-pub enum AttachBlockResult {
+pub(crate) enum AttachBlockResult {
     Attachable,
     Orphan,
     Duplicate,
     BelowSafeHeight,
 }
 
-pub struct ChainTracker {
+pub(crate) struct ChainTracker {
     // currently tracked tip blocks
     chain_tips: HashSet<L1BlockId>,
     // blocks > safe_height
@@ -34,8 +27,12 @@ pub struct ChainTracker {
 
 impl ChainTracker {
     /// Gets current best block
-    pub fn best(&self) -> &L1Header {
+    pub(crate) fn best(&self) -> &L1Header {
         &self.best
+    }
+
+    pub(crate) fn safe_height(&self) -> u64 {
+        self.safe_height
     }
 
     /// Tests whether a given L1 block can be attached to the chain tracker.
@@ -44,7 +41,7 @@ impl ChainTracker {
     /// * `block`: A reference to the `L1Block` to test.
     /// # Returns
     /// An `AttachBlockResult` indicating the status of the block relative to the chain tracker.
-    pub fn test_attach_block(&self, block: &L1Block) -> AttachBlockResult {
+    pub(crate) fn test_attach_block(&self, block: &L1Block) -> AttachBlockResult {
         if block.height() < self.safe_height {
             return AttachBlockResult::BelowSafeHeight;
         }
@@ -74,7 +71,7 @@ impl ChainTracker {
     /// # Returns
     /// * `true` if the attached block becomes the new best block.
     /// * `false` if the attached block does not change the current best block.
-    pub fn attach_block_unchecked(&mut self, block: L1Header) -> bool {
+    pub(crate) fn attach_block_unchecked(&mut self, block: L1Header) -> bool {
         self.chain_tips.remove(&block.parent_id());
         self.chain_tips.insert(block.block_id());
         self.chain.insert(block);
@@ -95,7 +92,7 @@ impl ChainTracker {
     ///   removed.
     /// # Returns
     /// The number of blocks that were pruned from the chain.
-    pub fn prune(&mut self, min_height: u64) -> usize {
+    pub(crate) fn prune(&mut self, min_height: u64) -> usize {
         // ensure best block is never pruned
         if min_height > self.best.height() {
             warn!(best_height = %self.best.height(), prune_height = %min_height, "csm: attempt to purge above best block");
@@ -112,6 +109,7 @@ impl ChainTracker {
         pruned.len()
     }
 
+    /// Find block with highest accumulated POW among tracked blocks
     fn find_best_block(&self) -> &L1Header {
         let best = self.chain_tips.iter().fold(&self.best, |best, current_id| {
             let current = &self.chain.by_block_id[current_id];

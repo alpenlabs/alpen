@@ -67,7 +67,8 @@ pub fn csm_worker(
 
             match chain_tracker.test_attach_block(&block) {
                 AttachBlockResult::BelowSafeHeight => {
-                    warn!(block_id = %block.block_id(), "csm: block below safe height");
+                    // could indicate a reorg larger than our configured safety depth
+                    warn!(block_id = %block.block_id(), height = %block.height(), safe_height = %chain_tracker.safe_height(), "csm: block below safe height");
                     continue;
                 }
                 AttachBlockResult::Duplicate => {
@@ -77,6 +78,8 @@ pub fn csm_worker(
                 AttachBlockResult::Orphan => {
                     info!(block_id = %block.block_id(), parent_id = %block.parent_id(), "csm: orphan block");
 
+                    // try to fetch parent block. this will eventually reach a block in the known
+                    // chain to attach the orphans to, or end at `BelowSafeHeight`
                     let _ =
                         command_tx.blocking_send(ReaderCommand::FetchBlockById(block.parent_id()));
 
@@ -84,15 +87,13 @@ pub fn csm_worker(
                     let block_height = block.height();
 
                     if block_height.saturating_sub(best_block_height) > BATCH_FETCH_THRESHOLD {
-                        // we are very behind. queue all missing blocks to be fetched.
+                        // we are very behind. queue all missing blocks to be fetched by height.
                         let _ = command_tx.blocking_send(ReaderCommand::FetchBlockRange(
                             (best_block_height + 1)..block_height,
                         ));
                     }
 
-                    // TODO: orphan is from a side branch
-
-                    orphan_tracker.insert(L1Header::from_block(&block, U256::zero()));
+                    orphan_tracker.insert(&block);
                 }
                 AttachBlockResult::Attachable => {
                     work_queue.push_back(WorkItem::new(block.block_id()));
@@ -116,7 +117,7 @@ pub fn csm_worker(
 
                     // check if any orphan blocks can be attached to this block
                     if let Some(children) = orphan_tracker.children(&block_id).cloned() {
-                        // add them to processing queue, in same relative order as the blocks were
+                        // add them to be processed next, in same relative order as the blocks were
                         // originally seen.
                         for child in children.iter().rev() {
                             orphan_tracker.remove(child);
@@ -260,7 +261,7 @@ impl L1ChainContext for DbL1ChainContext {
 }
 
 enum BlockStatus {
-    Valid(L1ClientState),
+    Valid(L1ClientState /* , additional fields to save */),
     Invalid, // TODO: reason ?
 }
 
