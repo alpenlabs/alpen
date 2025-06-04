@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-btcio.workspace = true
 strata-chaintsn.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-crypto = { workspace = true, default-features = true }

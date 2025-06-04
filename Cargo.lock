@@ -13709,6 +13709,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "rand 0.8.5",
+ "strata-btcio",
  "strata-chaintsn",
  "strata-common",
  "strata-crypto",
