@@ -126,8 +126,7 @@ pub(crate) struct FeatureConfig {
     pub(crate) enable_checkpoint_runner: bool,
 }
 
-/// Default value functions to make [`serde`] happy and make the bloody [`super`] code mess easy to
-/// read.
+/// Default value functions to make [`serde`] happy and make the [`super`] code mess easy to read.
 mod default_values {
     use super::*;
 
