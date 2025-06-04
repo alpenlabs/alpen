@@ -11,7 +11,7 @@ use alpen_reth_node::{AlpenEngineTypes, AlpenExecutionPayloadEnvelopeV2, AlpenPa
 use jsonrpsee::http_client::{transport::HttpBackend, HttpClient, HttpClientBuilder};
 #[cfg(test)]
 use mockall::automock;
-use reth_primitives::{Block, Receipt};
+use reth_primitives::Receipt;
 use reth_rpc_api::{EngineApiClient, EthApiClient};
 use reth_rpc_layer::{AuthClientLayer, AuthClientService};
 use revm_primitives::alloy_primitives::BlockHash;
@@ -52,7 +52,7 @@ pub trait EngineRpc {
         block_hashes: Vec<BlockHash>,
     ) -> RpcResult<ExecutionPayloadBodiesV1>;
 
-    async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<Block>>;
+    async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<RpcBlock>>;
 }
 
 #[derive(Debug, Clone)]
@@ -102,15 +102,13 @@ impl EngineRpc for EngineRpcClient {
         <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_bodies_by_hash_v1(&self.client, block_hashes).await
     }
 
-    async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<Block>> {
-        let block = <HttpClient<AuthClientService<HttpBackend>> as EthApiClient<
+    async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<RpcBlock>> {
+        <HttpClient<AuthClientService<HttpBackend>> as EthApiClient<
             Transaction,
-            RpcBlock<reth_primitives::TransactionSigned>,
+            RpcBlock<alloy_rpc_types::Transaction>,
             Receipt,
             Header,
-        >>::block_by_hash(&self.client, block_hash, true)
-        .await?;
-
-        Ok(block.map(|b| b.into_consensus()))
+        >>::block_by_hash(&self.client, block_hash, false)
+        .await
     }
 }
