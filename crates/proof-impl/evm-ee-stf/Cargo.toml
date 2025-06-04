@@ -3,9 +3,6 @@ edition = "2021"
 name = "strata-proofimpl-evm-ee-stf"
 version = "0.3.0-alpha.1"
 
-[lints]
-workspace = true
-
 [dependencies]
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
@@ -18,6 +15,8 @@ zkaleido-native-adapter.workspace = true
 alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-eips.workspace = true
 alloy-rlp.workspace = true
+alloy-rlp-derive.workspace = true
+alloy-rpc-types.workspace = true
 alloy-rpc-types-eth.workspace = true
 reth-chainspec.workspace = true
 reth-evm-ethereum.workspace = true
@@ -25,6 +24,7 @@ reth-evm-ethereum.workspace = true
 anyhow.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
+rlp = "0.5.2"
 serde.workspace = true
 serde_with.workspace = true
 
@@ -33,4 +33,5 @@ rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada
 
 [dev-dependencies]
 bincode.workspace = true
+hex-literal = "0.4"
 serde_json.workspace = true

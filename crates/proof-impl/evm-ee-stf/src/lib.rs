@@ -8,16 +8,9 @@ use alpen_reth_evm::evm::AlpenEvmFactory;
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
 use reth_chainspec::ChainSpec;
 use reth_evm_ethereum::EthEvmConfig;
-use revm::primitives::hardfork::SpecId;
 use rsp_client_executor::{executor::ClientExecutor, io::EthClientExecutorInput};
 use utils::generate_exec_update;
 use zkaleido::ZkVmEnv;
-
-#[derive(Clone)]
-pub struct EvmConfig {
-    pub chain_id: u64,
-    pub spec_id: SpecId,
-}
 
 pub type AlpEthClientExecutor = ClientExecutor<EthEvmConfig<AlpenEvmFactory>, ChainSpec>;
 

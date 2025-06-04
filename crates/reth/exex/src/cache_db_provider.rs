@@ -36,7 +36,7 @@ impl AccessedState {
         &self.accessed_accounts
     }
 
-    pub fn accessed_contracts(&self) -> &Vec<Bytecode> {
+    pub(crate) fn accessed_contracts(&self) -> &Vec<Bytecode> {
         &self.accessed_contracts
     }
 }

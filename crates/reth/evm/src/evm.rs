@@ -23,6 +23,7 @@ use crate::{
 };
 
 /// A custom precompile that contains static precompiles.
+#[allow(missing_debug_implementations)]
 #[derive(Clone, Default)]
 pub struct StrataEvmPrecompiles {
     pub precompiles: EthPrecompiles,

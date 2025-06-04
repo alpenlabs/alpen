@@ -1,3 +1,4 @@
+//! Reth node implementation for the Alpen EE.
 mod engine;
 mod evm;
 mod node;

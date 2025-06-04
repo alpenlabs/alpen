@@ -14,7 +14,7 @@ pub(crate) const fn u256_from(val: u128) -> U256 {
 pub(crate) const WEI_PER_BTC: u128 = 1_000_000_000_000_000_000u128;
 
 /// Number of wei per satoshi (1e10).
-const WEI_PER_SAT: U256 = u256_from(10_000_000_000u128);
+pub(crate) const WEI_PER_SAT: U256 = u256_from(10_000_000_000u128);
 
 /// Converts wei to satoshis.
 /// Returns a tuple of (satoshis, remainder_in_wei).
@@ -22,13 +22,8 @@ pub(crate) fn wei_to_sats(wei: U256) -> (U256, U256) {
     wei.div_rem(WEI_PER_SAT)
 }
 
-<<<<<<< HEAD
-/// Tuple of executed transaction and receipt
-pub(crate) type TxReceiptPair<'a> = (&'a TransactionSigned, &'a Receipt);
-=======
 // Tuple of executed transaction and receipt
-pub type TxReceiptPair<'a> = (&'a TransactionSigned, &'a Receipt);
->>>>>>> 3b67491a (bump reth to v1.3.1)
+pub(crate) type TxReceiptPair<'a> = (&'a TransactionSigned, &'a Receipt);
 
 // Collects withdrawal intents from bridge-out events by matching
 // executed transactions (for txid) and receipts.

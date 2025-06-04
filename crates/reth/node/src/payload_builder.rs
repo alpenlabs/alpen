@@ -74,48 +74,18 @@ where
 /// The type responsible for building custom payloads
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-<<<<<<< HEAD
-<<<<<<< HEAD
-pub(crate) struct StrataPayloadBuilder {
-=======
-pub struct StrataPayloadBuilder<Pool, Client> {
-=======
 pub struct AlpenPayloadBuilder<Pool, Client> {
->>>>>>> 1ff20d52 (ee strata -> alpen renames)
     /// Client providing access to node state.
     client: Client,
     /// Transaction pool.
     pool: Pool,
->>>>>>> 3b67491a (bump reth to v1.3.1)
     /// The type responsible for creating the evm.
     evm_config: EthEvmConfig<AlpenEvmFactory>,
     /// Payload builder configuration.
     builder_config: EthereumBuilderConfig,
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-impl StrataPayloadBuilder {
-    /// Returns the configured [`CfgEnvWithHandlerCfg`] and [`BlockEnv`] for the targeted payload
-    /// (that has the `parent` as its parent).
-    pub(crate) fn cfg_and_block_env(
-        &self,
-        attributes: &StrataPayloadBuilderAttributes,
-        parent: &Header,
-    ) -> Result<EvmEnv, <StrataEvmConfig as ConfigureEvmEnv>::Error> {
-        let next_attributes = NextBlockEnvAttributes {
-            timestamp: attributes.timestamp(),
-            suggested_fee_recipient: attributes.suggested_fee_recipient(),
-            prev_randao: attributes.prev_randao(),
-            gas_limit: parent.gas_limit,
-        };
-        self.evm_config
-            .next_cfg_and_block_env(parent, next_attributes)
-=======
-impl<Pool, Client> StrataPayloadBuilder<Pool, Client> {
-=======
 impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
->>>>>>> 1ff20d52 (ee strata -> alpen renames)
     /// `StrataPayloadBuilder` constructor.
     pub fn new(
         client: Client,
@@ -129,7 +99,6 @@ impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
             evm_config: EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default()),
             builder_config,
         }
->>>>>>> 3b67491a (bump reth to v1.3.1)
     }
 }
 
@@ -186,7 +155,7 @@ type BestTransactionsIter<Pool> = Box<
 /// Adapted from
 /// [default_ethereum_payload](reth_ethereum_payload_builder::default_ethereum_payload)
 #[inline]
-pub fn try_build_payload<EvmConfig, Pool, Client, F>(
+fn try_build_payload<EvmConfig, Pool, Client, F>(
     evm_config: EvmConfig,
     client: Client,
     pool: Pool,

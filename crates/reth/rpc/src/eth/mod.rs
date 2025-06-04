@@ -88,7 +88,7 @@ where
     }
 
     /// Build a [`StrataEthApi`] using [`StrataEthApiBuilder`].
-    pub fn builder() -> StrataEthApiBuilder {
+    pub const fn builder() -> StrataEthApiBuilder {
         StrataEthApiBuilder::new()
     }
 }
@@ -305,7 +305,7 @@ pub struct StrataEthApiBuilder {
 
 impl StrataEthApiBuilder {
     /// Creates a [`StrataEthApiBuilder`] instance.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             sequencer_client: None,
         }

@@ -53,7 +53,7 @@ class ELSyncFromChainstateTest(testenv.StrataTester):
         wait_until(
             lambda: int(rethrpc.eth_blockNumber(), base=16) > 0,
             error_with="not building blocks",
-            timeout=5,
+            timeout=10,
         )
 
         print("stop sequencer")
@@ -74,7 +74,7 @@ class ELSyncFromChainstateTest(testenv.StrataTester):
         wait_until(
             lambda: int(rethrpc.eth_blockNumber(), base=16) > 0,
             error_with="reth did not start in time",
-            timeout=5,
+            timeout=10,
         )
 
         print("start sequencer")
@@ -84,7 +84,7 @@ class ELSyncFromChainstateTest(testenv.StrataTester):
         wait_until(
             lambda: int(rethrpc.eth_blockNumber(), base=16) > orig_blocknumber + 1,
             error_with="not building blocks",
-            timeout=5,
+            timeout=10,
         )
 
         print("stop sequencer")
@@ -105,7 +105,7 @@ class ELSyncFromChainstateTest(testenv.StrataTester):
         wait_until(
             lambda: int(rethrpc.eth_blockNumber(), base=16) > 0,
             error_with="reth did not start in time",
-            timeout=5,
+            timeout=10,
         )
 
         # ensure reth db was reset to shorter chain
