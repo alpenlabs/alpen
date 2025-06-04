@@ -1,6 +1,6 @@
 //! Register DA type.
 
-use crate::{Codec, CodecError, CodecResult, DaWrite, Decoder, Encoder};
+use crate::{BuilderError, Codec, CodecError, CodecResult, DaBuilder, DaWrite, Decoder, Encoder};
 
 /// A register value.
 ///
@@ -94,6 +94,41 @@ impl<T: Clone> DaWrite for DaRegister<T> {
     fn apply(&self, target: &mut Self::Target) {
         if let Some(v) = self.new_value.clone() {
             *target = v;
+        }
+    }
+}
+
+/// Builder for [`DaRegister`].
+pub struct DaRegisterBuilder<T> {
+    original: T,
+    new: T,
+}
+
+impl<T> DaRegisterBuilder<T> {
+    pub fn value(&self) -> &T {
+        &self.new
+    }
+
+    pub fn set(&mut self, t: T) {
+        self.new = t;
+    }
+}
+
+impl<T: Clone + Eq> DaBuilder<T> for DaRegisterBuilder<T> {
+    type Write = DaRegister<T>;
+
+    fn from_source(t: T) -> Self {
+        Self {
+            original: t.clone(),
+            new: t,
+        }
+    }
+
+    fn into_write(self) -> Result<Self::Write, BuilderError> {
+        if self.new == self.original {
+            Ok(DaRegister::new_unset())
+        } else {
+            Ok(DaRegister::new_set(self.new))
         }
     }
 }

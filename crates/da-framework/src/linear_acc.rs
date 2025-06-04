@@ -5,7 +5,10 @@
 
 use std::default::Default;
 
-use crate::{Codec, CodecError, CodecResult, CompoundMember, DaWrite, Decoder, Encoder};
+use crate::{
+    BuilderError, Codec, CodecError, CodecResult, CompoundMember, DaBuilder, DaWrite, Decoder,
+    Encoder,
+};
 
 /// Describes an accumulator we can insert entries into the back of.
 pub trait LinearAccumulator {
@@ -36,6 +39,11 @@ impl<A: LinearAccumulator> DaLinacc<A> {
     /// Constructs a new instance.
     pub fn new() -> Self {
         <Self as Default>::default()
+    }
+
+    /// Gets the slice of new entries.
+    pub fn new_entries(&self) -> &[A::EntryData] {
+        &self.new_entries
     }
 
     /// Returns if the write is full and cannot accept new entries
@@ -120,5 +128,34 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
         }
 
         Ok(())
+    }
+}
+
+/// Builder for [`DaLinaccc`].
+///
+/// Arguably this is redundant and we can use the DA type directly.
+pub struct DaLinaccBuilder<A: LinearAccumulator> {
+    new_entries: Vec<A::EntryData>,
+}
+
+impl<A: LinearAccumulator> DaLinaccBuilder<A> {
+    pub fn append_entry(&mut self, v: A::EntryData) {
+        self.new_entries.push(v);
+    }
+}
+
+impl<A: LinearAccumulator> DaBuilder<A> for DaLinaccBuilder<A> {
+    type Write = DaLinacc<A>;
+
+    fn from_source(_t: A) -> Self {
+        Self {
+            new_entries: Vec::new(),
+        }
+    }
+
+    fn into_write(self) -> Result<Self::Write, BuilderError> {
+        Ok(DaLinacc {
+            new_entries: self.new_entries,
+        })
     }
 }
