@@ -30,6 +30,10 @@ impl Stage for SubprotoLoaderStage<'_> {
             Some(sec) => sec
                 .try_to_state::<S>()
                 .expect("asm: invalid section subproto state"),
+            // There are two cases where this can happen:
+            // 1. Genesis block, where the subprotocol state is not yet initialized.
+            // 2. Newly created subprotocol, where the state is not yet initialized.
+            // In both cases, we need to initialize the state.
             None => S::init(),
         };
 
