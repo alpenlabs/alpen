@@ -387,7 +387,7 @@ fn fill_eth_tx_env(tx_env: &mut TxEnv, essence: &Transaction, caller: Address) {
             tx_env.data = tx.input.clone();
             tx_env.chain_id = Some(tx.chain_id);
             tx_env.nonce = Some(tx.nonce);
-            tx_env.access_list = Vec::new();
+            tx_env.access_list = tx.access_list.to_vec();
         }
         Transaction::Eip4844(_) => todo!(),
         _ => todo!(),
