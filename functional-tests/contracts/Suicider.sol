@@ -14,6 +14,12 @@ contract Suicider {
 
     // Suicide method - anyone can call this to selfdestruct
     function suicide() external {
+        // make call to delegator
+        // (bool success, ) = delegator.call(
+        //     abi.encodeWithSignature("increment()")
+        // );
+        // require(success, "Call to increment failed");
+
         selfdestruct(delegator);
     }
 }

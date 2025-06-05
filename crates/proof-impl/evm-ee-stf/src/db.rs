@@ -25,7 +25,10 @@ use revm::{
     db::{AccountState, DbAccount, InMemoryDB},
     primitives::{AccountInfo, Bytecode},
 };
-use revm_primitives::alloy_primitives::{Address, Bytes, B256, U256};
+use revm_primitives::{
+    alloy_primitives::{Address, Bytes, B256, U256},
+    hex,
+};
 use strata_mpt::{keccak, StateAccount, KECCAK_EMPTY};
 
 use crate::EvmBlockStfInput;
@@ -82,7 +85,10 @@ impl InMemoryDBHelper for InMemoryDB {
             let bytecode = if state_account.code_hash.0 == KECCAK_EMPTY.0 {
                 Bytecode::new()
             } else {
-                let bytes = contracts.get(&state_account.code_hash).unwrap().clone();
+                let bytes = contracts
+                    .get(&state_account.code_hash)
+                    .unwrap_or_default()
+                    .clone();
                 Bytecode::new_raw(bytes)
             };
 

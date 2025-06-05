@@ -110,6 +110,7 @@ impl DatabaseRef for CacheDBProvider {
 
     /// Get account code by its hash.
     fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
+        println!("###Fetching bytecode for code hash: {code_hash:?}");
         let bytecode = self
             .provider
             .bytecode_by_hash(&code_hash)?

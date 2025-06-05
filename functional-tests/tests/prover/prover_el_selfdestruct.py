@@ -55,10 +55,18 @@ class ElSelfDestructContractTest(testenv.StrataTester):
         )
         suicider_address = suicider_deploy_tx_receipt["contractAddress"]
 
+        # Print the balance of the delegator contract before suicide
+        balance_before = web3.eth.get_balance(delegator_address)
+        print(f"Delegator contract balance before suicide: {balance_before}")
+
         # STEP 3: Call the Suicide::suicide() contract function and invoke EL prove.
         contract_instance = web3.eth.contract(abi=suicider_abi, address=suicider_address)
         tx_hash = contract_instance.functions.suicide().transact()
         suicide_call_tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+
+        # Print the balance of the delegator contract after suicide
+        balance_after = web3.eth.get_balance(delegator_address)
+        print(f"Delegator contract balance after suicide: {balance_after}")
 
         # Prove the corresponding EE block
         ee_prover_params = {
@@ -72,6 +80,10 @@ class ElSelfDestructContractTest(testenv.StrataTester):
             lambda height: height >= ee_prover_params["end_block"],
             error_with="EE blocks not generated",
         )
+
+        # Print the contract addresses
+        print(f"Delegator contract address: {delegator_address}")
+        print(f"Suicider contract address: {suicider_address}")
 
         start_block = el_slot_to_block_commitment(reth_rpc, ee_prover_params["start_block"])
         end_block = el_slot_to_block_commitment(reth_rpc, ee_prover_params["end_block"])
