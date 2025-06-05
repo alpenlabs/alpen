@@ -1,4 +1,4 @@
-use alpen_reth_rpc::{eth::StrataEthApiBuilder, SequencerClient, StrataEthApi};
+use alpen_reth_rpc::{eth::AlpenEthApiBuilder, AlpenEthApi, SequencerClient};
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmFactory, EvmFactoryFor, NextBlockEnvAttributes};
 use reth_node_api::{FullNodeComponents, NodeAddOns};
@@ -20,7 +20,7 @@ use reth_rpc_eth_types::{error::FromEvmError, EthApiError};
 use revm::context::TxEnv;
 
 use crate::{
-    args::StrataNodeArgs, engine::AlpenEngineValidatorBuilder, evm::AlpenExecutorBuilder,
+    args::AlpenNodeArgs, engine::AlpenEngineValidatorBuilder, evm::AlpenExecutorBuilder,
     payload_builder::AlpenPayloadBuilderBuilder, AlpenEngineTypes, AlpenEngineValidator,
 };
 
@@ -28,12 +28,12 @@ use crate::{
 #[non_exhaustive]
 pub struct AlpenEthereumNode {
     // Strata node args.
-    pub args: StrataNodeArgs,
+    pub args: AlpenNodeArgs,
 }
 
 impl AlpenEthereumNode {
     /// Creates a new instance of the StrataEthereum node type.
-    pub fn new(args: StrataNodeArgs) -> Self {
+    pub fn new(args: AlpenNodeArgs) -> Self {
         Self { args }
     }
 }
@@ -66,7 +66,7 @@ where
         EthereumConsensusBuilder,
     >;
 
-    type AddOns = StrataNodeAddOns<
+    type AddOns = AlpenRethNodeAddOns<
         NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
     >;
 
@@ -89,13 +89,13 @@ where
 
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]
-pub struct StrataAddOnsBuilder {
+pub struct AlpenRethAddOnsBuilder {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
     /// network.
     sequencer_client: Option<SequencerClient>,
 }
 
-impl StrataAddOnsBuilder {
+impl AlpenRethAddOnsBuilder {
     /// With a [`SequencerClient`].
     pub fn with_sequencer(mut self, sequencer_client: Option<String>) -> Self {
         self.sequencer_client = sequencer_client.map(SequencerClient::new);
@@ -103,19 +103,19 @@ impl StrataAddOnsBuilder {
     }
 }
 
-impl StrataAddOnsBuilder {
+impl AlpenRethAddOnsBuilder {
     /// Builds an instance of [`StrataAddOns`].
-    pub fn build<N>(self) -> StrataNodeAddOns<N>
+    pub fn build<N>(self) -> AlpenRethNodeAddOns<N>
     where
         N: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
-        StrataEthApiBuilder: EthApiBuilder<N>,
+        AlpenEthApiBuilder: EthApiBuilder<N>,
     {
         let Self { sequencer_client } = self;
 
         let sequencer_client_clone = sequencer_client.clone();
-        StrataNodeAddOns {
+        AlpenRethNodeAddOns {
             rpc_add_ons: RpcAddOns::new(
-                StrataEthApiBuilder::default().with_sequencer(sequencer_client_clone),
+                AlpenEthApiBuilder::default().with_sequencer(sequencer_client_clone),
                 AlpenEngineValidatorBuilder::default(),
                 BasicEngineApiBuilder::default(),
             ),
@@ -125,43 +125,43 @@ impl StrataAddOnsBuilder {
 
 /// Add-ons for Strata.
 #[derive(Debug)]
-pub struct StrataNodeAddOns<N>
+pub struct AlpenRethNodeAddOns<N>
 where
     N: FullNodeComponents,
-    StrataEthApiBuilder: EthApiBuilder<N>,
+    AlpenEthApiBuilder: EthApiBuilder<N>,
 {
     /// Rpc add-ons responsible for launching the RPC servers and instantiating the RPC handlers
     /// and eth-api.
     pub rpc_add_ons: RpcAddOns<
         N,
-        StrataEthApiBuilder,
+        AlpenEthApiBuilder,
         AlpenEngineValidatorBuilder,
         BasicEngineApiBuilder<AlpenEngineValidatorBuilder>,
     >,
 }
 
-impl<N> Default for StrataNodeAddOns<N>
+impl<N> Default for AlpenRethNodeAddOns<N>
 where
     N: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
-    StrataEthApiBuilder: EthApiBuilder<N>,
+    AlpenEthApiBuilder: EthApiBuilder<N>,
 {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl<N> StrataNodeAddOns<N>
+impl<N> AlpenRethNodeAddOns<N>
 where
     N: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
-    StrataEthApiBuilder: EthApiBuilder<N>,
+    AlpenEthApiBuilder: EthApiBuilder<N>,
 {
     /// Build a [`OpAddOns`] using [`OpAddOnsBuilder`].
-    pub fn builder() -> StrataAddOnsBuilder {
-        StrataAddOnsBuilder::default()
+    pub fn builder() -> AlpenRethAddOnsBuilder {
+        AlpenRethAddOnsBuilder::default()
     }
 }
 
-impl<N> NodeAddOns<N> for StrataNodeAddOns<N>
+impl<N> NodeAddOns<N> for AlpenRethNodeAddOns<N>
 where
     N: FullNodeComponents<
         Types: NodeTypes<
@@ -175,7 +175,7 @@ where
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type Handle = RpcHandle<N, StrataEthApi<N>>;
+    type Handle = RpcHandle<N, AlpenEthApi<N>>;
 
     async fn launch_add_ons(
         self,
@@ -189,7 +189,7 @@ where
     }
 }
 
-impl<N> RethRpcAddOns<N> for StrataNodeAddOns<N>
+impl<N> RethRpcAddOns<N> for AlpenRethNodeAddOns<N>
 where
     N: FullNodeComponents<
         Types: NodeTypes<
@@ -203,14 +203,14 @@ where
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type EthApi = StrataEthApi<N>;
+    type EthApi = AlpenEthApi<N>;
 
     fn hooks_mut(&mut self) -> &mut reth_node_builder::rpc::RpcHooks<N, Self::EthApi> {
         self.rpc_add_ons.hooks_mut()
     }
 }
 
-impl<N> EngineValidatorAddOn<N> for StrataNodeAddOns<N>
+impl<N> EngineValidatorAddOn<N> for AlpenRethNodeAddOns<N>
 where
     N: FullNodeComponents<
         Types: NodeTypes<
@@ -219,7 +219,7 @@ where
             Payload = AlpenEngineTypes,
         >,
     >,
-    StrataEthApiBuilder: EthApiBuilder<N>,
+    AlpenEthApiBuilder: EthApiBuilder<N>,
 {
     type Validator = AlpenEngineValidator;
     async fn engine_validator(

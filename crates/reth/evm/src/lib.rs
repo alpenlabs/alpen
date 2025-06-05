@@ -3,7 +3,7 @@
 pub mod constants;
 mod utils;
 
-pub use evm::StrataEvmPrecompiles;
+pub use evm::AlpenEvmPrecompiles;
 pub use utils::collect_withdrawal_intents;
 
 pub mod evm;

@@ -20,9 +20,9 @@ use reth_rpc_eth_api::{
 use reth_rpc_eth_types::{EthApiError, PendingBlock};
 use reth_transaction_pool::{PoolTransaction, TransactionPool};
 
-use crate::StrataEthApi;
+use crate::AlpenEthApi;
 
-impl<N> LoadPendingBlock for StrataEthApi<N>
+impl<N> LoadPendingBlock for AlpenEthApi<N>
 where
     Self: SpawnBlocking
         + EthApiTypes<

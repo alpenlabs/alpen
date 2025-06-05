@@ -941,12 +941,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "ethnum"
-version = "1.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
-
-[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1971,12 +1965,10 @@ dependencies = [
 name = "strata-chaintsn"
 version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "bitcoin",
  "rand_chacha",
  "rand_core",
  "strata-crypto",
- "strata-eectl",
  "strata-primitives",
  "strata-state",
  "thiserror 2.0.12",
@@ -1987,21 +1979,10 @@ dependencies = [
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
- "secp256k1",
- "sha2",
  "strata-primitives",
  "zkaleido",
  "zkaleido-risc0-groth16-verifier",
  "zkaleido-sp1-groth16-verifier",
-]
-
-[[package]]
-name = "strata-eectl"
-version = "0.3.0-alpha.1"
-dependencies = [
- "strata-primitives",
- "strata-state",
- "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -2023,7 +2004,6 @@ dependencies = [
 name = "strata-primitives"
 version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "arbitrary",
  "bincode",
  "bitcoin",
@@ -2038,10 +2018,8 @@ dependencies = [
  "rand",
  "secp256k1",
  "serde",
- "serde_json",
  "sha2",
  "thiserror 2.0.12",
- "tracing",
  "zeroize",
  "zkaleido",
 ]
@@ -2052,12 +2030,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "borsh",
- "digest",
- "serde",
- "sha2",
  "strata-l1tx",
  "strata-primitives",
- "strata-state",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
@@ -2068,7 +2042,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
  "strata-chaintsn",
- "strata-crypto",
  "strata-primitives",
  "strata-proofimpl-btc-blockspace",
  "strata-state",
@@ -2085,15 +2058,10 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "borsh",
- "digest",
- "ethnum",
- "hex",
  "serde",
- "sha2",
  "strata-crypto",
  "strata-primitives",
  "tracing",
- "zkaleido",
 ]
 
 [[package]]

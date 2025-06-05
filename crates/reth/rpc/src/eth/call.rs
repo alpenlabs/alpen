@@ -12,16 +12,16 @@ use reth_rpc_eth_api::{
 use reth_rpc_eth_types::{revm_utils::CallFees, EthApiError, RpcInvalidTransactionError};
 use revm::context::Block;
 
-use crate::{StrataEthApi, StrataNodeCore};
+use crate::{AlpenEthApi, StrataNodeCore};
 
-impl<N> EthCall for StrataEthApi<N>
+impl<N> EthCall for AlpenEthApi<N>
 where
     Self: EstimateCall + LoadBlock + FullEthApiTypes,
     N: StrataNodeCore,
 {
 }
 
-impl<N> EstimateCall for StrataEthApi<N>
+impl<N> EstimateCall for AlpenEthApi<N>
 where
     Self: Call,
     Self::Error: From<EthApiError>,
@@ -29,7 +29,7 @@ where
 {
 }
 
-impl<N> Call for StrataEthApi<N>
+impl<N> Call for AlpenEthApi<N>
 where
     Self: LoadState<
             Evm: ConfigureEvm<

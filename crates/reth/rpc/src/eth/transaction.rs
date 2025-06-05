@@ -15,9 +15,9 @@ use reth_rpc_eth_api::{
 use reth_rpc_eth_types::{utils::recover_raw_transaction, EthApiError};
 use reth_transaction_pool::{PoolTransaction, TransactionOrigin, TransactionPool};
 
-use crate::{SequencerClient, StrataEthApi, StrataNodeCore};
+use crate::{AlpenEthApi, SequencerClient, StrataNodeCore};
 
-impl<N> EthTransactions for StrataEthApi<N>
+impl<N> EthTransactions for AlpenEthApi<N>
 where
     Self: LoadTransaction<Provider: BlockReaderIdExt>,
     N: StrataNodeCore<Provider: BlockReader<Transaction = ProviderTx<Self::Provider>>>,
@@ -52,7 +52,7 @@ where
     }
 }
 
-impl<N> LoadTransaction for StrataEthApi<N>
+impl<N> LoadTransaction for AlpenEthApi<N>
 where
     Self: SpawnBlocking + FullEthApiTypes + RpcNodeCoreExt,
     N: StrataNodeCore<Provider: TransactionsProvider, Pool: TransactionPool>,
@@ -60,7 +60,7 @@ where
 {
 }
 
-impl<N> StrataEthApi<N>
+impl<N> AlpenEthApi<N>
 where
     N: StrataNodeCore,
 {
@@ -70,7 +70,7 @@ where
     }
 }
 
-impl<N> TransactionCompat<TransactionSigned> for StrataEthApi<N>
+impl<N> TransactionCompat<TransactionSigned> for AlpenEthApi<N>
 where
     N: FullNodeComponents<Provider: ReceiptProvider<Receipt = reth_primitives::Receipt>>,
 {

@@ -4,11 +4,11 @@ mod db;
 
 use std::{future::Future, sync::Arc};
 
-use alpen_chainspec::{chain_value_parser, StrataChainSpecParser};
+use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_reth_db::rocksdb::WitnessDB;
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
-use alpen_reth_node::{args::StrataNodeArgs, AlpenEthereumNode};
-use alpen_reth_rpc::{StrataRPC, StrataRpcApiServer};
+use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
+use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
 use reth::{
     args::LogArgs,
@@ -27,7 +27,7 @@ fn main() {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
 
-    let mut command = NodeCommand::<StrataChainSpecParser, AdditionalConfig>::parse();
+    let mut command = NodeCommand::<AlpenChainSpecParser, AdditionalConfig>::parse();
 
     // use provided alpen chain spec
     command.chain = command.ext.custom_chain.clone();
@@ -37,7 +37,7 @@ fn main() {
     if let Err(err) = run(command, |builder, ext| async move {
         let datadir = builder.config().datadir().data_dir().to_path_buf();
 
-        let node_args = StrataNodeArgs {
+        let node_args = AlpenNodeArgs {
             sequencer_http: ext.sequencer_http.clone(),
         };
 
@@ -49,7 +49,7 @@ fn main() {
             let rbdb = db::open_rocksdb_database(datadir.clone()).expect("open rocksdb");
             let db = Arc::new(WitnessDB::new(rbdb));
             // Add RPC for querying block witness and state diffs.
-            extend_rpc.replace(StrataRPC::new(db.clone()));
+            extend_rpc.replace(AlpenRPC::new(db.clone()));
 
             // Install Prover Input ExEx and persist to DB
             if ext.enable_witness_gen {
@@ -118,7 +118,7 @@ pub struct AdditionalConfig {
 /// Run node with logging
 /// based on reth::cli::Cli::run
 fn run<L, Fut>(
-    mut command: NodeCommand<StrataChainSpecParser, AdditionalConfig>,
+    mut command: NodeCommand<AlpenChainSpecParser, AdditionalConfig>,
     launcher: L,
 ) -> eyre::Result<()>
 where

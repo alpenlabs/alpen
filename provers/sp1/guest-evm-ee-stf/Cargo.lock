@@ -1874,12 +1874,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ethnum"
-version = "1.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
-
-[[package]]
 name = "eyre"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4782,8 +4776,6 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
- "secp256k1 0.29.1",
- "sha2 0.10.8",
  "strata-primitives",
  "zkaleido",
  "zkaleido-risc0-groth16-verifier",
@@ -4808,7 +4800,6 @@ dependencies = [
 name = "strata-primitives"
 version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "arbitrary",
  "bincode",
  "bitcoin",
@@ -4823,10 +4814,8 @@ dependencies = [
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
- "serde_json",
  "sha2 0.10.8",
  "thiserror 2.0.12",
- "tracing",
  "zeroize",
  "zkaleido",
 ]
@@ -4868,15 +4857,10 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "borsh",
- "digest 0.10.7",
- "ethnum",
- "hex",
  "serde",
- "sha2 0.10.8",
  "strata-crypto",
  "strata-primitives",
  "tracing",
- "zkaleido",
 ]
 
 [[package]]

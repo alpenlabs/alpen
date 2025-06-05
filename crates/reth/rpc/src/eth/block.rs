@@ -13,9 +13,9 @@ use reth_rpc_eth_api::{
 };
 use reth_rpc_eth_types::{EthApiError, EthReceiptBuilder};
 
-use crate::{StrataEthApi, StrataNodeCore};
+use crate::{AlpenEthApi, StrataNodeCore};
 
-impl<N> EthBlocks for StrataEthApi<N>
+impl<N> EthBlocks for AlpenEthApi<N>
 where
     Self: LoadBlock<
         Error = EthApiError,
@@ -70,7 +70,7 @@ where
     }
 }
 
-impl<N> LoadBlock for StrataEthApi<N>
+impl<N> LoadBlock for AlpenEthApi<N>
 where
     Self: LoadPendingBlock + SpawnBlocking,
     N: StrataNodeCore,

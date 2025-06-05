@@ -10,7 +10,6 @@ workspace = true
 strata-chaintsn.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-btc-blockspace.workspace = true
-# strata-proofimpl-evm-ee-stf.workspace = true
 strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true

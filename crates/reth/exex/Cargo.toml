@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "alpen-reth-exex"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 
 [lints]
 workspace = true
@@ -27,8 +27,8 @@ reth-revm.workspace = true
 reth-trie.workspace = true
 reth-trie-common = { workspace = true, features = ["eip1186"] }
 revm-primitives.workspace = true
-rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
-rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+rsp-mpt.workspace = true
+rsp-primitives.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 

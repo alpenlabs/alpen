@@ -218,6 +218,11 @@ reth-trie = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10", default-features = false }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 
+rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+
+
 anyhow = "1.0.86"
 arbitrary = { version = "1.3.2", features = ["derive"] }
 argh = "0.1"

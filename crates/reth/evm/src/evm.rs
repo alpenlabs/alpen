@@ -25,11 +25,11 @@ use crate::{
 /// A custom precompile that contains static precompiles.
 #[allow(missing_debug_implementations)]
 #[derive(Clone, Default)]
-pub struct StrataEvmPrecompiles {
+pub struct AlpenEvmPrecompiles {
     pub precompiles: EthPrecompiles,
 }
 
-impl StrataEvmPrecompiles {
+impl AlpenEvmPrecompiles {
     /// Given a [`PrecompileProvider`] and cache for a specific precompiles, create a
     /// wrapper that can be used inside Evm.
     pub fn new() -> Self {
@@ -51,7 +51,7 @@ pub fn load_precompiles() -> &'static Precompiles {
     })
 }
 
-impl<CTX: ContextTr> PrecompileProvider<CTX> for StrataEvmPrecompiles {
+impl<CTX: ContextTr> PrecompileProvider<CTX> for AlpenEvmPrecompiles {
     type Output = InterpreterResult;
 
     fn set_spec(&mut self, spec: <CTX::Cfg as Cfg>::Spec) -> bool {
@@ -119,7 +119,7 @@ pub struct AlpenEvmFactory;
 
 impl EvmFactory for AlpenEvmFactory {
     type Evm<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>> =
-        EthEvm<DB, I, StrataEvmPrecompiles>;
+        EthEvm<DB, I, AlpenEvmPrecompiles>;
 
     type Context<DB: reth_evm::Database> = EthEvmContext<DB>;
 
@@ -140,7 +140,7 @@ impl EvmFactory for AlpenEvmFactory {
             .with_cfg(input.cfg_env)
             .with_block(input.block_env)
             .build_mainnet_with_inspector(NoOpInspector {})
-            .with_precompiles(StrataEvmPrecompiles::new());
+            .with_precompiles(AlpenEvmPrecompiles::new());
 
         EthEvm::new(evm, false)
     }

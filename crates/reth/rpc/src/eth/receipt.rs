@@ -6,9 +6,9 @@ use reth_provider::{ReceiptProvider, TransactionsProvider};
 use reth_rpc_eth_api::{helpers::LoadReceipt, FromEthApiError, RpcReceipt};
 use reth_rpc_eth_types::{EthApiError, EthReceiptBuilder};
 
-use crate::StrataEthApi;
+use crate::AlpenEthApi;
 
-impl<N> LoadReceipt for StrataEthApi<N>
+impl<N> LoadReceipt for AlpenEthApi<N>
 where
     Self: Send + Sync,
     N: FullNodeComponents<Types: NodeTypes<ChainSpec = reth_chainspec::ChainSpec>>,

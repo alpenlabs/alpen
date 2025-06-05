@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "alpen-reth-rpc"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 
 [dependencies]
 alpen-reth-db.workspace = true

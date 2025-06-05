@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-chainspec"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-genesis",
  "eyre",
@@ -1006,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-db"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
  "anyhow",
@@ -1024,7 +1024,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-evm"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-sol-types",
  "alpen-reth-primitives",
@@ -1039,7 +1039,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-exex"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1068,7 +1068,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-node"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1105,7 +1105,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-primitives"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-sol-types",
  "serde",
@@ -1114,7 +1114,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-rpc"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1160,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-statediff"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-chainspec",
