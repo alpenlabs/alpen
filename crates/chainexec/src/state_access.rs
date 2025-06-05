@@ -10,7 +10,6 @@ use strata_chaintsn::context::StateAccessor;
 use strata_primitives::prelude::*;
 use strata_state::{
     chain_state::Chainstate,
-    prelude::*,
     state_op::{StateCache, WriteBatch},
 };
 

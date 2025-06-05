@@ -2,12 +2,14 @@
 
 use std::sync::Arc;
 
+use futures::TryFutureExt;
 use strata_db::{
     chainstate::{NewChainstateDatabase, StateInstanceId, WriteBatchId},
     DbResult,
 };
 use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 use threadpool::ThreadPool;
+use tracing::*;
 
 use crate::{cache, ops};
 
@@ -79,6 +81,33 @@ impl NewChainstateManager {
     /// Gets the list of state instances.
     pub fn get_insts_blocking(&self) -> DbResult<Vec<StateInstanceId>> {
         Ok(self.ops.get_insts_blocking()?)
+    }
+
+    /// Gets the state instance's toplevel state.
+    ///
+    /// Note: This currently ignores the toplevel chainstate cache.
+    pub async fn get_inst_toplevel_state_async(
+        &self,
+        id: StateInstanceId,
+    ) -> DbResult<Arc<Chainstate>> {
+        // TODO this is slow, but we need to do it, we need to do it because we
+        // didn't have async fns until recently
+        warn!("fetching instnace toplevel state via async fn, bypassing cache due to limitations");
+        Ok(self
+            .ops
+            .get_inst_toplevel_state_async(id)
+            .map_ok(Arc::new)
+            .await?)
+    }
+
+    /// Gets the state instance's toplevel state.
+    pub fn get_inst_toplevel_state_blocking(
+        &self,
+        id: StateInstanceId,
+    ) -> DbResult<Arc<Chainstate>> {
+        Ok(self.tl_cache.get_or_fetch_blocking(&id, || {
+            self.ops.get_inst_toplevel_state_blocking(id).map(Arc::new)
+        })?)
     }
 
     /// Puts a new write batch with some ID.

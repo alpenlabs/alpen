@@ -69,12 +69,12 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
 
     /// Prepares a new state accessor for the current tip state.
     fn prepare_cur_state_accessor(&self) -> WorkerResult<AccessorImpl> {
-        let output = self
+        let wb = self
             .context
-            .fetch_block_output(self.cur_tip.blkid())?
+            .fetch_block_write_batch(self.cur_tip.blkid())?
             .ok_or(WorkerError::MissingBlockOutput(self.cur_tip))?;
 
-        Ok(MemStateAccessor::new(output.changes().toplevel().clone()))
+        Ok(MemStateAccessor::new(wb.into_toplevel()))
     }
 
     /// Updates the current tip as managed by the worker.  This does not persist
@@ -275,14 +275,14 @@ impl<'c, W: WorkerContext> ExecContext for WorkerExecCtxImpl<'c, W> {
     }
 
     fn fetch_block_toplevel_post_state(&self, blkid: &L2BlockId) -> ExecResult<Chainstate> {
-        // This impl is suboptimal, we should do some real reconstruction.
+        // This impl might be suboptimal, should we do real reconstruction?
         //
         // Maybe actually make this return a `StateAccessor` already?
-        let output = self
+        let wb = self
             .worker_context
-            .fetch_block_output(blkid)
+            .fetch_block_write_batch(blkid)
             .map_err(|e| <WorkerError as Into<strata_chainexec::Error>>::into(e))?
             .ok_or(strata_chainexec::Error::MissingBlockPostState(*blkid))?;
-        Ok(output.changes().toplevel().clone())
+        Ok(wb.into_toplevel())
     }
 }

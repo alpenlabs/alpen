@@ -1,6 +1,7 @@
 use strata_eectl::errors::EngineError;
 use strata_primitives::prelude::*;
 use thiserror::Error;
+use tracing::*;
 
 /// Return type for worker messages.
 pub type WorkerResult<T> = Result<T, WorkerError>;
@@ -58,6 +59,11 @@ impl Into<strata_chainexec::Error> for WorkerError {
             }
             WorkerError::MissingEpochInnerPostState(_, block) => {
                 ExecError::MissingBlockPostState(*block.blkid())
+            }
+            WorkerError::MissingEpochSummary(epoch) => {
+                // not really sure what to do here
+                warn!(?epoch, "worker error: missing epoch summary");
+                ExecError::Unimplemented
             }
 
             WorkerError::Exec(e) => e, // passthrough self
