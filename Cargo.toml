@@ -9,6 +9,7 @@ members = [
   "crates/asm/spec",
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
+  "crates/asm/subprotocols/upgrade",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
