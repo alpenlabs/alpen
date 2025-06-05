@@ -13,7 +13,7 @@ use crate::{
 
 pub const SEQUENCER_UPDATE_TX_TYPE: u8 = 4;
 
-const SEQUENCER_UPDATE_ENACTMENT_DELAY: u64 = 2016;
+pub const SEQUENCER_UPDATE_ENACTMENT_DELAY: u64 = 2016;
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct SequencerUpdate {
