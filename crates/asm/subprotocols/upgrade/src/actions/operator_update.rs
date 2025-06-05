@@ -42,7 +42,7 @@ pub fn handle_operator_update(
     tx: &TxInput<'_>,
     _relayer: &mut impl MsgRelayer,
 ) -> Result<(), UpgradeError> {
-    // Extract multisig config update and vote
+    // Extract operator update and vote
     let (update, vote) = extract_operator_update(tx)?;
 
     // BridgeAdmin has the exclusive authority to update bridge operators
