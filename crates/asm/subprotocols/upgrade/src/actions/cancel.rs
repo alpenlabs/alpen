@@ -1,10 +1,13 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{MsgRelayer, TxInput};
-use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
+use strata_primitives::buf::Buf32;
 
 use super::ActionId;
 use crate::{
-    crypto::Signature, error::UpgradeError, state::UpgradeSubprotoState, vote::AggregatedVote,
+    crypto::{Signature, tagged_hash},
+    error::UpgradeError,
+    state::UpgradeSubprotoState,
+    vote::AggregatedVote,
 };
 
 pub const CANCEL_TX_TYPE: u8 = 5;
@@ -24,7 +27,8 @@ impl CancelAction {
     }
 
     pub fn compute_action_id(&self) -> ActionId {
-        compute_borsh_hash(&self).into()
+        const PREFIX: &[u8] = b"CANCEL";
+        tagged_hash(PREFIX, self).into()
     }
 }
 
