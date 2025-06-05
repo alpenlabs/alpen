@@ -30,6 +30,14 @@ impl UpgradeSubprotoState {
     pub fn add_pending_action(&mut self, id: ActionId, action: PendingUpgradeAction) {
         self.pending_actions.insert(id, action);
     }
+
+    pub fn get_pending_action(&self, id: &ActionId) -> Option<&PendingUpgradeAction> {
+        self.pending_actions.get(id)
+    }
+
+    pub fn remove_pending_action(&mut self, id: &ActionId) {
+        self.pending_actions.remove(id);
+    }
 }
 
 /// Configuration for a multisignature authority: who the signers are, and
