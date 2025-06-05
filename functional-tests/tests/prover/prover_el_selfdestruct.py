@@ -28,26 +28,42 @@ class ElSelfDestructContractTest(testenv.StrataTester):
         web3: Web3 = reth.create_web3()
         web3.eth.default_account = web3.address
 
-        # Deploy the contract
-        abi, bytecode = SmartContracts.compile_contract("SelfDestruct.sol", "SelfDestruct")
-        contract = web3.eth.contract(abi=abi, bytecode=bytecode)
-        tx_hash = contract.constructor().transact()
-        tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        # Deploy the contracts
+        # The setup is a simple two contacts relation:
+        #  - Delegator is a receiver of the SELFDESTRUCT opcode.
+        #  - Suicider's only purpose is to be constructed with delegator's address
+        #       and suicide itself.
+        # Later on, the Suicider is called to be destructed and reproduce the bug.
 
-        # Call the contract function
-        contract_instance = web3.eth.contract(abi=abi, address=tx_receipt.contractAddress)
-        tx_hash = contract_instance.functions.updateState().transact()
-        web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        # STEP 1: deploy delegator and fetch its address
+        delegator_abi, delegator_bytecode = SmartContracts.compile_contract(
+            "Delegator.sol", "Delegator"
+        )
+        delegator_contract = web3.eth.contract(abi=delegator_abi, bytecode=delegator_bytecode)
+        delegator_tx_hash = delegator_contract.constructor().transact()
+        tx_receipt_delegator = web3.eth.wait_for_transaction_receipt(delegator_tx_hash, timeout=30)
+        delegator_address = tx_receipt_delegator["contractAddress"]
 
-        # Call the contract function
-        contract_instance = web3.eth.contract(abi=abi, address=tx_receipt.contractAddress)
-        tx_hash = contract_instance.functions.destroyContract().transact()
-        tx_receipt_2 = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        # STEP 2: deploy suicider with delegator's address and fetch its address.
+        suicider_abi, suicider_bytecode = SmartContracts.compile_contract(
+            "Suicider.sol", "Suicider"
+        )
+        suicider_contract = web3.eth.contract(abi=suicider_abi, bytecode=suicider_bytecode)
+        suicider_deploy_tx_hash = suicider_contract.constructor(delegator_address).transact()
+        suicider_deploy_tx_receipt = web3.eth.wait_for_transaction_receipt(
+            suicider_deploy_tx_hash, timeout=30
+        )
+        suicider_address = suicider_deploy_tx_receipt["contractAddress"]
+
+        # STEP 3: Call the Suicide::suicide() contract function and invoke EL prove.
+        contract_instance = web3.eth.contract(abi=suicider_abi, address=suicider_address)
+        tx_hash = contract_instance.functions.suicide().transact()
+        suicide_call_tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
 
         # Prove the corresponding EE block
         ee_prover_params = {
-            "start_block": tx_receipt["blockNumber"] - 1,
-            "end_block": tx_receipt_2["blockNumber"] + 1,
+            "start_block": suicide_call_tx_receipt["blockNumber"] - 1,
+            "end_block": suicide_call_tx_receipt["blockNumber"] + 1,
         }
 
         # Wait until the end EE block is generated.
