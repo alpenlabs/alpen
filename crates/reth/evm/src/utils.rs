@@ -22,16 +22,16 @@ pub(crate) fn wei_to_sats(wei: U256) -> (U256, U256) {
     wei.div_rem(WEI_PER_SAT)
 }
 
-// Tuple of executed transaction and receipt
+/// Tuple of executed transaction and receipt
 pub(crate) type TxReceiptPair<'a> = (&'a TransactionSigned, &'a Receipt);
 
-// Collects withdrawal intents from bridge-out events by matching
-// executed transactions (for txid) and receipts.
-// Returns a vector of [`WithdrawalIntent`]s.
-//
-// # Note
-//
-// A [`Descriptor`], if invalid does not create an [`WithdrawalIntent`].
+/// Collects withdrawal intents from bridge-out events by matching
+/// executed transactions (for txid) and receipts.
+/// Returns a vector of [`WithdrawalIntent`]s.
+///
+/// # Note
+///
+/// A [`Descriptor`], if invalid does not create an [`WithdrawalIntent`].
 pub fn collect_withdrawal_intents<'a, I>(
     tx_receipt_pairs: I,
 ) -> impl Iterator<Item = WithdrawalIntent> + 'a
@@ -39,7 +39,7 @@ where
     I: Iterator<Item = TxReceiptPair<'a>> + 'a,
 {
     tx_receipt_pairs.flat_map(|(tx, receipt)| {
-        let txid = Buf32(tx.hash().as_slice().try_into().expect("32 bytes"));
+        let txid = Buf32((*tx.hash()).into());
         receipt.logs.iter().filter_map(move |log| {
             if log.address != BRIDGEOUT_ADDRESS {
                 return None;

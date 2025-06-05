@@ -107,11 +107,11 @@ where
     let current_block_idx = current_block.number;
 
     // fetch previous block
-    let prev_block_idx = current_block_idx - 1;
+    let prev_block_id = current_block.header.parent_hash;
     let prev_block = ctx
         .provider()
-        .block_by_number(prev_block_idx)?
-        .ok_or_else(|| eyre!("previous block not found for number {}", prev_block_idx))?;
+        .block_by_hash(prev_block_id)?
+        .ok_or_else(|| eyre!("previous block not found for block id {}", prev_block_id))?;
     let prev_block_stateroot = prev_block.header.state_root;
 
     // execute to collect accessed state
@@ -191,19 +191,16 @@ where
         .provider()
         .block_by_hash(block_id)?
         .ok_or_else(|| eyre!("block not found for hash {:?}", block_id))?;
-    let block_number = header_block.number();
 
     // recover the execution input
-    let recovered = header_block
+    let current_block = header_block
         .clone()
         .seal_unchecked(block_id)
         .try_recover()?;
+    let prev_block_id = current_block.parent_hash();
 
     // look up the history provider for the parent block
-    let parent_number = block_number
-        .checked_sub(1)
-        .ok_or_else(|| eyre!("no parent block for block {}", block_number))?;
-    let history_provider = ctx.provider().history_by_block_number(parent_number)?;
+    let history_provider = ctx.provider().history_by_block_hash(prev_block_id)?;
 
     // wrap in a cache-backed provider and run the executor
     let cache_provider = CacheDBProvider::new(history_provider);
@@ -211,7 +208,7 @@ where
     ctx.block_executor()
         .clone()
         .executor(cache_db)
-        .execute(&recovered)?;
+        .execute(&current_block)?;
 
     Ok(cache_provider.get_accessed_state())
 }

@@ -60,13 +60,7 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
         let output = process_block_transaction(input);
 
         if let Some(expected_hash) = current_blockhash {
-            if output.prev_blockhash != expected_hash {
-                println!(
-                    "Block hash mismatch: expected {:?}, got {:?}",
-                    expected_hash, output.prev_blockhash
-                );
-                return;
-            }
+            assert_eq!(output.prev_blockhash, expected_hash, "Block hash mismatch");
         }
 
         current_blockhash = Some(output.new_blockhash);
