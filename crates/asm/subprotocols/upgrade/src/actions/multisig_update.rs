@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_common::{MsgRelayer, TxInput};
 
-use crate::roles::Role;
-
+use crate::{error::UpgradeError, roles::Role, state::UpgradeSubprotoState};
 /// Represents a change to the multisig configuration for the given `role`:
 /// * removes the specified `old_members` from the set,
 /// * adds the specified `new_members`
@@ -12,4 +12,12 @@ pub struct MultisigConfigUpdate<T: BorshSerialize + BorshDeserialize> {
     old_members: Vec<T>,
     new_threshold: u8,
     role: Role,
+}
+
+pub fn handle_multisig_config_update(
+    state: &mut UpgradeSubprotoState,
+    tx: &TxInput<'_>,
+    relayer: &mut impl MsgRelayer,
+) -> Result<(), UpgradeError> {
+    Ok(())
 }
