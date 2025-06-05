@@ -25,22 +25,31 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
+
       - name: Relative diff
         run: |
           git branch -av
           git diff "origin/$DEFAULT_BRANCH" | tee git.diff
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
-      - uses: taiki-e/install-action@9903ab6feadaec33945de535fe9d181b91802a55 # v2
-        name: Install `cargo-mutants`
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+        with:
+          cache-on-failure: true
+
+      - name: Install `cargo-mutants`
+        uses: taiki-e/install-action@9903ab6feadaec33945de535fe9d181b91802a55 # v2
         with:
           tool: cargo-mutants
+
       - name: Run `cargo-mutants`
         run: |
           cargo mutants --no-shuffle -vV --in-diff git.diff --shard ${{ matrix.shard }}/8 --timeout 300
+
       - name: Archive mutants.out
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
