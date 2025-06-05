@@ -1,8 +1,8 @@
-mod cancel;
-mod multisig_update;
-mod operator_update;
-mod seq_update;
-mod vk_update;
+pub mod cancel;
+pub mod multisig_update;
+pub mod operator_update;
+pub mod seq_update;
+pub mod vk_update;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use cancel::CancelAction;

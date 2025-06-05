@@ -13585,6 +13585,8 @@ name = "strata-asm-proto-upgrade"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "strata-asm-common",
+ "thiserror 2.0.12",
  "zkaleido",
 ]
 
