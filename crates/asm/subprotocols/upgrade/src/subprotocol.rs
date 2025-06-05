@@ -2,20 +2,16 @@ use strata_asm_common::{MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput
 
 use crate::{
     actions::{
-        cancel::handle_cancel_action, multisig_update::handle_multisig_config_update,
-        operator_update::handle_operator_update, seq_update::handle_sequencer_update,
-        vk_update::handle_vk_update,
+        cancel::{CANCEL_TX_TYPE, handle_cancel_action},
+        multisig_update::{MULTISIG_CONFIG_UPDATE_TX_TYPE, handle_multisig_config_update},
+        operator_update::{OPERATOR_UPDATE_TX_TYPE, handle_operator_update},
+        seq_update::{SEQUENCER_UPDATE_TX_TYPE, handle_sequencer_update},
+        vk_update::{VK_UPDATE_TX_TYPE, handle_vk_update},
     },
     state::UpgradeSubprotoState,
 };
 
 pub const UPGRADE_SUBPROTOCOL_ID: u8 = 0;
-
-pub const MULTISIG_CONFIG_UPDATE_TX_TYPE: u8 = 1;
-pub const VK_UPDATE_TX_TYPE: u8 = 2;
-pub const OPERATOR_UPDATE_TX_TYPE: u8 = 3;
-pub const SEQUENCER_UPDATE_TX_TYPE: u8 = 4;
-pub const CANCEL_TX_TYPE: u8 = 5;
 
 #[derive(Debug)]
 pub struct UpgradeSubprotocol;
