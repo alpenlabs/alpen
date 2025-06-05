@@ -1,6 +1,7 @@
 mod errors;
 mod handle;
 mod message;
+mod state;
 mod traits;
 mod worker;
 

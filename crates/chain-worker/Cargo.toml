@@ -10,6 +10,7 @@ strata-common.workspace = true
 strata-eectl.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
+strata-storage.workspace = true
 
 anyhow.workspace = true
 thiserror.workspace = true
