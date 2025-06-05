@@ -1,6 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize)]
+/// Roles with authority in the upgrade subprotocol.
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize,
+)]
 pub enum Role {
     /// The multisig authority that has the exclusive ability to update
     /// (add/remove) bridge operators.
