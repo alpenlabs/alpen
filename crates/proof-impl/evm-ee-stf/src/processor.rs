@@ -24,7 +24,6 @@ use alloy_rlp::BufMut;
 use alloy_rpc_types_eth::TransactionTrait;
 use alloy_trie::root::ordered_trie_root_with_encoder;
 use alpen_reth_evm::set_evm_handles;
-use anyhow::anyhow;
 use reth_primitives::{Header, Receipt, Transaction, TransactionSigned};
 use reth_primitives_traits::{constants::MINIMUM_GAS_LIMIT, SignedTransaction};
 use revm::{
@@ -39,7 +38,10 @@ use revm_primitives::{
 };
 use strata_mpt::{keccak, RlpBytes, StateAccount};
 
-use crate::EvmBlockStfInput;
+use crate::{
+    error::{AccountError, AccountResult},
+    EvmBlockStfInput,
+};
 
 /// The divisor for the gas limit bound.
 pub const GAS_LIMIT_DIVISOR: u64 = 1024;
@@ -396,7 +398,7 @@ pub fn increase_account_balance<D>(
     db: &mut D,
     address: Address,
     amount_wei: U256,
-) -> anyhow::Result<()>
+) -> AccountResult<()>
 where
     D: Database + DatabaseCommit,
     <D as Database>::Error: core::fmt::Debug,
@@ -404,12 +406,9 @@ where
     // Read account from database
     let mut account: Account = db
         .basic(address)
-        .map_err(|db_err| {
-            anyhow!(
-                "Error increasing account balance for {}: {:?}",
-                address,
-                db_err
-            )
+        .map_err(|db_err| AccountError::BalanceIncreaseFailed {
+            address,
+            message: format!("Database error: {db_err:?}"),
         })?
         .unwrap_or_default()
         .into();

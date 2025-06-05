@@ -20,7 +20,6 @@ use std::collections::hash_map::Entry;
 
 // use hashbrown::hash_map::Entry;
 use alloy_primitives::map::{DefaultHashBuilder, HashMap};
-use anyhow::{anyhow, Result};
 use revm::{
     db::{AccountState, DbAccount, InMemoryDB},
     primitives::{AccountInfo, Bytecode},
@@ -28,20 +27,23 @@ use revm::{
 use revm_primitives::alloy_primitives::{Address, Bytes, B256, U256};
 use strata_mpt::{keccak, StateAccount, KECCAK_EMPTY};
 
-use crate::EvmBlockStfInput;
+use crate::{
+    error::{DatabaseError, DatabaseResult, EvmEeStfResult},
+    EvmBlockStfInput,
+};
 
 /// A helper trait to extend [`InMemoryDB`] with additional functionality.
 pub trait InMemoryDBHelper {
     /// Create an [`InMemoryDB`] from a given [`EvmBlockStfInput`].
-    fn initialize(input: &mut EvmBlockStfInput) -> Result<Self>
+    fn initialize(input: &mut EvmBlockStfInput) -> EvmEeStfResult<Self>
     where
         Self: Sized;
 
     /// Get the account info for a given address.
-    fn get_account_info(&self, address: Address) -> Result<Option<AccountInfo>>;
+    fn get_account_info(&self, address: Address) -> DatabaseResult<Option<AccountInfo>>;
 
     /// Get the storage value of an address at an index.
-    fn get_storage_slot(&self, address: Address, index: U256) -> Result<U256>;
+    fn get_storage_slot(&self, address: Address, index: U256) -> DatabaseResult<U256>;
 
     /// Get the storage keys for all accounts in the database.
     fn storage_keys(&self) -> HashMap<Address, Vec<U256>>;
@@ -51,7 +53,7 @@ pub trait InMemoryDBHelper {
 }
 
 impl InMemoryDBHelper for InMemoryDB {
-    fn initialize(input: &mut EvmBlockStfInput) -> Result<Self> {
+    fn initialize(input: &mut EvmBlockStfInput) -> EvmEeStfResult<Self> {
         // For each contract's byte code, hash it and store it in a map.
         let contracts: HashMap<B256, Bytes> = input
             .contracts
@@ -146,24 +148,24 @@ impl InMemoryDBHelper for InMemoryDB {
         })
     }
 
-    fn get_account_info(&self, address: Address) -> Result<Option<AccountInfo>> {
+    fn get_account_info(&self, address: Address) -> DatabaseResult<Option<AccountInfo>> {
         match self.accounts.get(&address) {
             Some(db_account) => Ok(db_account.info()),
-            None => Err(anyhow!("Account not found.")),
+            None => Err(DatabaseError::AccountNotFound { address }),
         }
     }
 
-    fn get_storage_slot(&self, address: Address, index: U256) -> Result<U256> {
+    fn get_storage_slot(&self, address: Address, index: U256) -> DatabaseResult<U256> {
         match self.accounts.get(&address) {
             Some(account) => match account.storage.get(&index) {
                 Some(value) => Ok(*value),
                 None => match account.account_state {
                     AccountState::NotExisting => unreachable!(),
                     AccountState::StorageCleared => Ok(U256::ZERO),
-                    _ => Err(anyhow!("Storage slot not found.")),
+                    _ => Err(DatabaseError::StorageSlotNotFound { address, index }),
                 },
             },
-            None => Err(anyhow!("Account not found.")),
+            None => Err(DatabaseError::AccountNotFound { address }),
         }
     }
 

@@ -13920,7 +13920,6 @@ dependencies = [
  "alloy-trie",
  "alpen-reth-evm",
  "alpen-reth-primitives",
- "anyhow",
  "bincode",
  "reth-primitives",
  "reth-primitives-traits",
@@ -13932,6 +13931,7 @@ dependencies = [
  "strata-mpt",
  "strata-primitives",
  "strata-state",
+ "thiserror 2.0.12",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
