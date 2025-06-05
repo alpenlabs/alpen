@@ -8,23 +8,23 @@ use thiserror::Error;
 /// EVM EE-STF proof implementation operations errors.
 #[derive(Error, Debug)]
 pub enum EvmEeStfError {
-    /// Database operations error.
+    /// Conversion from [`DatabaseError`].
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
 
-    /// Merkle Patricia Trie operations error.
+    /// Conversion from [`strata_mpt::Error`].
     #[error("MPT error: {0}")]
     Mpt(#[from] strata_mpt::Error),
 
-    /// Account operations error.
+    /// Conversion from [`AccountError`].
     #[error("Account error: {0}")]
     Account(#[from] AccountError),
 
-    /// Validation error.
+    /// Something went wrong during validation.
     #[error("Validation error: {message}")]
     Validation { message: String },
 
-    /// Block processing error.
+    /// Something went wrong during block processing.
     #[error("Block processing error: {message}")]
     BlockProcessing { message: String },
 }
@@ -33,11 +33,11 @@ pub enum EvmEeStfError {
 #[derive(Error, Debug)]
 pub enum DatabaseError {
     /// Account not found.
-    #[error("Account not found: {address}")]
+    #[error("Account \"{address}\" not found")]
     AccountNotFound { address: Address },
 
     /// Storage slot not found for the specified account and index.
-    #[error("Storage slot not found for account {address} at index {index}")]
+    #[error("Storage slot for account \"{address}\" at index \"{index}\" not found")]
     StorageSlotNotFound { address: Address, index: U256 },
 
     /// Database operation failed.
@@ -53,15 +53,15 @@ pub enum DatabaseError {
 #[derive(Error, Debug)]
 pub enum AccountError {
     /// Failed to increase account balance.
-    #[error("Failed to increase balance for account {address}: {message}")]
+    #[error("Failed to increase balance for account \"{address}\": {message}")]
     BalanceIncreaseFailed { address: Address, message: String },
 
     /// Inconsistent account state.
-    #[error("Inconsistent account state for {address}: {message}")]
+    #[error("Inconsistent account state for \"{address}\": {message}")]
     InconsistentState { address: Address, message: String },
 
     /// Invalid account data.
-    #[error("Invalid account data for {address}: {message}")]
+    #[error("Invalid account data for \"{address}\": {message}")]
     InvalidData { address: Address, message: String },
 }
 
