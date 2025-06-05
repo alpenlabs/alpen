@@ -9,7 +9,7 @@ use crate::{
 
 /// Holds the state for the upgrade subprotocol, including the various
 /// multisignature authorities and any actions still pending execution.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, BorshSerialize, BorshDeserialize)]
 pub struct UpgradeSubprotoState {
     /// Role-specific configuration for a multisignature authority: who the
     /// signers are, and how many signatures are required to approve an action.
