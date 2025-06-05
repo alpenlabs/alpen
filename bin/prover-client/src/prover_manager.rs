@@ -11,38 +11,76 @@ use crate::{
     retry_policy::ExponentialBackoff, status::ProvingTaskStatus, task_tracker::TaskTracker,
 };
 
+/// Configuration for the [`ProverManager`].
+#[derive(Debug, Clone)]
+pub(crate) struct ProverManagerConfig {
+    /// Worker configuration for different proving backends.
+    pub(crate) workers: HashMap<ProofZkVm, usize>,
+
+    /// Polling interval for the prover manager loop in milliseconds.
+    pub(crate) loop_interval: u64,
+
+    /// Maximum number of retries for transient failures.
+    pub(crate) max_retry_counter: u64,
+}
+
+impl ProverManagerConfig {
+    /// Creates a new [`ProverManagerConfig`] with the given parameters.
+    pub(crate) fn new(
+        workers: HashMap<ProofZkVm, usize>,
+        loop_interval: u64,
+        max_retry_counter: u64,
+    ) -> Self {
+        Self {
+            workers,
+            loop_interval,
+            max_retry_counter,
+        }
+    }
+}
+
+/// The prover manager is responsible for managing the proving tasks and dispatching them to the
+/// appropriate proving backends.
 #[derive(Debug, Clone)]
 pub(crate) struct ProverManager {
-    task_tracker: Arc<Mutex<TaskTracker>>,
-    operator: Arc<ProofOperator>,
-    db: Arc<ProofDb>,
-    workers: HashMap<ProofZkVm, usize>,
-    loop_interval: u64,
-    retry_policy: ExponentialBackoff,
+    /// Task tracker for the prover manager.
+    pub(crate) task_tracker: Arc<Mutex<TaskTracker>>,
+
+    /// Operator for the prover manager.
+    pub(crate) operator: Arc<ProofOperator>,
+
+    /// Database for the prover manager.
+    pub(crate) db: Arc<ProofDb>,
+
+    /// Configuration for the prover manager.
+    pub(crate) config: ProverManagerConfig,
+
+    /// Retry policy for the prover manager.
+    pub(crate) retry_policy: ExponentialBackoff,
 }
 
 impl ProverManager {
+    /// Creates a new [`ProverManager`] with the given parameters.
     pub(crate) fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDb>,
-        workers: HashMap<ProofZkVm, usize>,
-        loop_interval: u64,
+        config: ProverManagerConfig,
     ) -> Self {
         Self {
             task_tracker,
             operator,
             db,
-            workers,
-            loop_interval,
             retry_policy: ExponentialBackoff::new(
-                crate::task_tracker::MAX_RETRY_COUNTER,
-                3600, /* one hour total time */
+                config.max_retry_counter,
+                3_600, /* one hour total time */
                 1.5,
             ),
+            config,
         }
     }
 
+    /// Processes the pending tasks.
     pub(crate) async fn process_pending_tasks(&self) {
         loop {
             // Step 1: Fetch tasks data without holding the lock
@@ -67,7 +105,7 @@ impl ProverManager {
                 .map(|task| (task, 0))
                 .chain(retriable_tasks.into_iter())
             {
-                let total_workers = self.workers.get(task.host()).unwrap_or(&0);
+                let total_workers = self.config.workers.get(task.host()).unwrap_or(&0);
                 let in_progress_workers = in_progress_tasks.get(task.host()).unwrap_or(&0);
 
                 // Skip tasks if worker limit is reached
@@ -81,9 +119,11 @@ impl ProverManager {
                 // next iterations in this loop.
                 {
                     let mut task_tracker = self.task_tracker.lock().await;
-                    if let Err(err) =
-                        task_tracker.update_status(task, ProvingTaskStatus::ProvingInProgress)
-                    {
+                    if let Err(err) = task_tracker.update_status(
+                        task,
+                        ProvingTaskStatus::ProvingInProgress,
+                        self.config.max_retry_counter,
+                    ) {
                         error!(?err, "Failed to transition task to in progress.")
                     }
                 }
@@ -92,13 +132,21 @@ impl ProverManager {
                 let operator = self.operator.clone();
                 let db = self.db.clone();
                 let task_tracker = self.task_tracker.clone();
+                let max_retry_counter = self.config.max_retry_counter;
                 // Calculate the delay
                 let retry_delay = self.retry_policy.get_delay(retry);
 
                 // Spawn a new task with delay.
                 spawn(async move {
-                    if let Err(err) =
-                        make_proof(operator, task_tracker, task, db, retry_delay).await
+                    if let Err(err) = make_proof(
+                        operator,
+                        task_tracker,
+                        task,
+                        db,
+                        retry_delay,
+                        max_retry_counter,
+                    )
+                    .await
                     {
                         error!(?err, "Failed to process task");
                     }
@@ -106,7 +154,7 @@ impl ProverManager {
             }
 
             // Step 3: Sleep before the next loop iteration
-            sleep(Duration::from_millis(self.loop_interval)).await;
+            sleep(Duration::from_millis(self.config.loop_interval)).await;
         }
     }
 }
@@ -118,6 +166,7 @@ async fn make_proof(
     task: ProofKey,
     db: Arc<ProofDb>,
     delay_seconds: u64,
+    max_retry_counter: u64,
 ) -> Result<(), ProvingTaskError> {
     // Handle the delay (if set) from the TransientFailure retries.
     if delay_seconds > 0 {
@@ -160,7 +209,7 @@ async fn make_proof(
     // Update the task status.
     {
         let mut task_tracker = task_tracker.lock().await;
-        task_tracker.update_status(task, new_status)
+        task_tracker.update_status(task, new_status, max_retry_counter)
     }
 }
 
@@ -206,10 +255,29 @@ fn handle_checkpoint_error(chkpt_err: CheckpointError) -> ProvingTaskError {
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::proof::ProofContext;
+    use std::collections::HashMap;
+
+    use strata_primitives::proof::{ProofContext, ProofZkVm};
     use strata_rpc_types::ProofKey;
 
-    use super::{handle_task_error, ProvingTaskError, ProvingTaskStatus};
+    use super::{handle_task_error, ProverManagerConfig, ProvingTaskError, ProvingTaskStatus};
+
+    #[test]
+    fn test_prover_manager_config_creation() {
+        let mut workers = HashMap::new();
+        workers.insert(ProofZkVm::Native, 5);
+        workers.insert(ProofZkVm::SP1, 10);
+
+        let config = ProverManagerConfig::new(
+            workers.clone(),
+            1_000, // 1 second polling interval
+            15,    // max retry counter
+        );
+
+        assert_eq!(config.workers, workers);
+        assert_eq!(config.loop_interval, 1_000);
+        assert_eq!(config.max_retry_counter, 15);
+    }
 
     #[test]
     fn test_transient_retry_rpc_error() {

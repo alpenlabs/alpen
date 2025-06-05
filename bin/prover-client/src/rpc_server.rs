@@ -84,6 +84,15 @@ impl ProverClientRpc {
             db,
         }
     }
+
+    /// Start the RPC server with the given URL and dev RPC enablement
+    pub(crate) async fn start_server(
+        &self,
+        rpc_url: String,
+        enable_dev_rpc: bool,
+    ) -> anyhow::Result<()> {
+        start(self, rpc_url, enable_dev_rpc).await
+    }
 }
 
 #[async_trait]

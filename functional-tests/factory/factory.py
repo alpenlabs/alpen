@@ -365,10 +365,46 @@ class ProverClientFactory(flexitest.Factory):
         with open(rollup_params_file, "w") as f:
             f.write(rollup_params)
 
+        # Create TOML configuration file for prover-client
+        config_file = os.path.join(datadir, "prover-client.toml")
+        config_content = f"""# Prover Client Configuration for functional test
+# Generated automatically by functional test factory
+
+[rpc]
+# RPC server configuration for development mode
+dev_port = {rpc_port}
+dev_url = "0.0.0.0"
+
+[workers]
+# Number of worker threads for different proving backends
+native = {settings.native_workers}
+sp1 = 20
+risc0 = 20
+
+[timing]
+# Polling and timing configuration (in milliseconds and seconds)
+polling_interval_ms = {settings.polling_interval}
+checkpoint_poll_interval_s = 10
+
+[retry]
+# Retry policy configuration
+max_retry_counter = {settings.max_retry_counter}
+bitcoin_retry_count = 3
+bitcoin_retry_interval_ms = 1000
+
+[features]
+# Feature flags to enable/disable functionality
+enable_dev_rpcs = true
+enable_checkpoint_runner = {str(settings.enable_checkpoint_proving).lower()}
+"""
+
+        with open(config_file, "w") as f:
+            f.write(config_content)
+
         # fmt: off
         cmd = [
             "strata-prover-client",
-            "--rpc-port", str(rpc_port),
+            "--config", config_file,
             "--sequencer-rpc", sequencer_url,
             "--reth-rpc", reth_url,
             "--rollup-params", rollup_params_file,
@@ -376,9 +412,6 @@ class ProverClientFactory(flexitest.Factory):
             "--bitcoind-user", bitcoind_config.rpc_user,
             "--bitcoind-password", bitcoind_config.rpc_password,
             "--datadir", datadir,
-            "--native-workers", str(settings.native_workers),
-            "--polling-interval", str(settings.polling_interval),
-            "--enable-checkpoint-runner", "true" if settings.enable_checkpoint_proving else "false"
         ]
         # fmt: on
 
