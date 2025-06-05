@@ -14,7 +14,7 @@ pub enum Role {
     BridgeConsensusManager,
     /// The multisig authority that has the exclusive abiltity to change the
     /// public key of the OL batch producer.
-    StrataAdministrator,
+    StrataAdmin,
     /// The multisig authority that has the exclusive ability to change the
     /// VerifyingKey of the OL STF.
     StrataConsensusManager,
