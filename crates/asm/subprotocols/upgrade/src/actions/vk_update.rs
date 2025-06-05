@@ -3,7 +3,7 @@ use strata_asm_common::{MsgRelayer, TxInput};
 use zkaleido::VerifyingKey;
 
 use crate::{
-    error::UpgradeError, roles::StrataProof, state::UpgradeSubprotoState, types::Signature,
+    error::UpgradeError, roles::StrataProof, state::UpgradeSubprotoState, crypto::Signature,
     vote::AggregatedVote,
 };
 

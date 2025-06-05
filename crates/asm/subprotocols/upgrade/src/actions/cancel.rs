@@ -1,9 +1,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{MsgRelayer, TxInput};
+use strata_primitives::buf::Buf32;
 
 use super::ActionId;
 use crate::{
-    error::UpgradeError, state::UpgradeSubprotoState, types::Signature, vote::AggregatedVote,
+    crypto::Signature, error::UpgradeError, state::UpgradeSubprotoState, vote::AggregatedVote,
 };
 
 pub const CANCEL_TX_TYPE: u8 = 5;
@@ -22,8 +23,10 @@ impl CancelAction {
 pub fn handle_cancel_action(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
-    relayer: &mut impl MsgRelayer,
+    _relayer: &mut impl MsgRelayer,
 ) -> Result<(), UpgradeError> {
+    let (update, vote) = extract_cancel_action(tx)?;
+
     Ok(())
 }
 
@@ -32,7 +35,7 @@ fn extract_cancel_action(tx: &TxInput<'_>) -> Result<(CancelAction, AggregatedVo
     // sanity check
     assert_eq!(tx.tag().tx_type(), CANCEL_TX_TYPE);
 
-    let id = ActionId([0u8; 32]);
+    let id = Buf32::zero().into();
     let action = CancelAction::new(id);
     let vote = AggregatedVote::new(vec![0u8; 15], Signature::default());
     Ok((action, vote))

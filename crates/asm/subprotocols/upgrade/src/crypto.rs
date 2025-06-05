@@ -1,4 +1,9 @@
+//! FIXME: All of the code here is only meant as placeholder for now. This needs to based on the
+//! strata-crypto crate
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_primitives::buf::Buf32;
+
+use crate::error::VoteValidationError;
 
 /// Macro to define a newtype wrapper around `Vec<u8>` with common implementations.
 macro_rules! define_byte_wrapper {
@@ -51,6 +56,15 @@ macro_rules! define_byte_wrapper {
 }
 
 // Use the macro to define the specific types.
-// FIXME: This is only meant as placeholder for now. This needs to based on the strata-crypto crate
 define_byte_wrapper!(PubKey);
 define_byte_wrapper!(Signature);
+
+// FIXME: handle
+pub fn aggregate_pubkeys(_keys: &[PubKey]) -> Result<PubKey, VoteValidationError> {
+    Ok(PubKey::default())
+}
+
+// FIXME: handle
+pub fn verify_sig(_pk: &PubKey, _msg_hash: &Buf32, _sig: &Signature) -> bool {
+    true
+}
