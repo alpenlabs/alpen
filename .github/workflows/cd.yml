@@ -44,29 +44,35 @@ jobs:
       program: ${{ matrix.program }}
       sp1_value: ${{ steps.extract-sp1-value.outputs.sp1_value }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           persist-credentials: false
+
       - name: Configure AWS ECR Details
         uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4
         with:
           role-to-assume: ${{ secrets.AWS_ECR_ROLE }}
           aws-region: us-east-1
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
         with:
           mask-password: "true"
+
       - name: Set up Clang
         uses: egor-tensin/setup-clang@ef434b41eb33a70396fb336b1bae39c76d740c3d # v1
         with:
           version: latest
           platform: x64
+
       - name: Install SP1 Toolchain
         run: |
           curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash && ~/.sp1/bin/sp1up
           export PATH=~/.sp1/bin:$PATH
           cargo prove --version
+
       - name: Build and push Docker image
         id: build-and-push
         # build and push the Docker image for every program
@@ -107,6 +113,7 @@ jobs:
 
           # Push the image to ECR
           docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}"
+
       - name: Extract SP1 Value
         id: extract-sp1-value
         env:
@@ -133,6 +140,7 @@ jobs:
         uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
         with:
           ssh-private-key: ${{ secrets.DEPLOYMENTS_REPO_WRITE }}
+
       - name: Clone deployments repo (specific branch)
         env:
           BRANCH_OF_DEPLOYMENT_REPO: ${{ vars.BRANCH_OF_DEPLOYMENT_REPO }}
