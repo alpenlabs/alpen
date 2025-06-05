@@ -14,15 +14,14 @@ use vk_update::VerifyingKeyUpdate;
 use crate::roles::Role;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize)]
-pub struct ActionId([u8; 32]);
+pub struct ActionId(pub [u8; 32]);
 
-// FIXME: Fix <T> to appropriate PubKey
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum UpgradeAction {
     Cancel(CancelAction),
-    Multisig(MultisigConfigUpdate<u32>),
-    OperatorSet(OperatorSetUpdate<u32>),
-    Sequencer(SequencerUpdate<u32>),
+    Multisig(MultisigConfigUpdate),
+    OperatorSet(OperatorSetUpdate),
+    Sequencer(SequencerUpdate),
     VerifyingKey(VerifyingKeyUpdate),
 }
 
