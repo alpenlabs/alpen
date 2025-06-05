@@ -1,10 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{MsgRelayer, TxInput};
-use strata_primitives::hash::compute_borsh_hash;
 
 use crate::{
     actions::{ActionId, PendingUpgradeAction},
-    crypto::{PubKey, Signature},
+    crypto::{PubKey, Signature, tagged_hash},
     error::UpgradeError,
     roles::Role,
     state::UpgradeSubprotoState,
@@ -59,7 +58,8 @@ impl MultisigConfigUpdate {
     }
 
     pub fn compute_action_id(&self) -> ActionId {
-        compute_borsh_hash(&self).into()
+        const PREFIX: &[u8] = b"MULTISIG_CONFIG";
+        tagged_hash(PREFIX, self).into()
     }
 }
 
