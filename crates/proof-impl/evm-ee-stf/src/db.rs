@@ -82,7 +82,15 @@ impl InMemoryDBHelper for InMemoryDB {
             let bytecode = if state_account.code_hash.0 == KECCAK_EMPTY.0 {
                 Bytecode::new()
             } else {
-                let bytes = contracts.get(&state_account.code_hash).unwrap().clone();
+                // N.B. It can happen that contract's code isn't present in the witness,
+                // but it's *only* possible (as a special case) for SELFDESTRUCT opcode.
+                // For such a case the code is not required because the contract's
+                // balance is modified directly (without fallback or receive methods).
+                // So it's ok to fallback to default code in such a case.
+                let bytes = contracts
+                    .get(&state_account.code_hash)
+                    .unwrap_or_default()
+                    .clone();
                 Bytecode::new_raw(bytes)
             };
 
