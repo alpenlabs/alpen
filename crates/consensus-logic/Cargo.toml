@@ -7,11 +7,13 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-crypto = { workspace = true, default-features = true }
 strata-db.workspace = true
 strata-eectl.workspace = true
+strata-chain-worker.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true
