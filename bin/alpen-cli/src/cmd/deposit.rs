@@ -30,7 +30,7 @@ use crate::{
     taproot::{ExtractP2trPubkey, NotTaprootAddress},
 };
 
-/// Deposits 10 BTC from signet to Alpen
+/// Deposits 10 BTC from signet into Alpen
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {

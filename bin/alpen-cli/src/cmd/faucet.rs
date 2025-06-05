@@ -18,7 +18,7 @@ use crate::{
     signet::SignetWallet,
 };
 
-/// Requests some BTC from the faucet
+/// Requests BTC from the faucet
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "faucet")]
 pub struct FaucetArgs {
