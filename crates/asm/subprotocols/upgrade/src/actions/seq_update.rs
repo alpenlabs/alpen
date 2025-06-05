@@ -1,10 +1,12 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{MsgRelayer, TxInput};
+use strata_primitives::hash::compute_borsh_hash;
 
 use crate::{
+    actions::ActionId,
+    crypto::{PubKey, Signature},
     error::UpgradeError,
     state::UpgradeSubprotoState,
-    crypto::{PubKey, Signature},
     vote::AggregatedVote,
 };
 
@@ -20,6 +22,10 @@ impl SequencerUpdate {
         Self {
             new_sequencer_pub_key,
         }
+    }
+
+    pub fn compute_action_id(&self) -> ActionId {
+        compute_borsh_hash(&self).into()
     }
 }
 
