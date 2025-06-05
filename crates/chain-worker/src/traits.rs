@@ -2,7 +2,7 @@
 
 use strata_chainexec::BlockExecutionOutput;
 use strata_primitives::{batch::EpochSummary, prelude::*};
-use strata_state::{block::L2BlockBundle, header::L2BlockHeader};
+use strata_state::{block::L2BlockBundle, header::L2BlockHeader, state_op::WriteBatch};
 
 use crate::WorkerResult;
 
@@ -14,10 +14,11 @@ pub trait WorkerContext {
     /// Fetches a block's header.
     fn fetch_header(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockHeader>>;
 
-    /// Fetches a block execution output.
-    fn fetch_block_output(&self, blkid: &L2BlockId) -> WorkerResult<Option<BlockExecutionOutput>>;
+    /// Fetches a block's write batch.
+    fn fetch_block_write_batch(&self, blkid: &L2BlockId) -> WorkerResult<Option<WriteBatch>>;
 
-    /// Stores a block execution's output.
+    /// Stores a block execution's output.  This MAY be broken up into multiple
+    /// separate pieces.
     fn store_block_output(
         &self,
         blkid: &L2BlockId,
