@@ -12,25 +12,47 @@ env:
 permissions: {}
 
 jobs:
+  extract-rust-version:
+    name: Extract Rust toolchain version
+    runs-on: ubuntu-latest
+    outputs:
+      rust-version: ${{ steps.extract.outputs.rust-version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Extract Rust toolchain version
+        id: extract
+        uses: ./.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
+
   clippy:
     name: Run clippy on crates
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@22a6a5b0f9f487c5f5587025ae9d4a1caf2a8a78 # clippy
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+      
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@22a6a5b0f9f487c5f5587025ae9d4a1caf2a8a78 # clippy
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
         with:
           cache-on-failure: true
-      - run: cargo clippy --workspace --lib --examples --tests --benches --all-features --all-targets --locked
+      - name: Run clippy
+        run: cargo clippy --workspace --lib --examples --tests --benches --all-features --all-targets --locked
         env:
           RUSTFLAGS: -D warnings
 
   crate-checks:
     name: Check that crates compile on their own
     runs-on: ubuntu-latest
+    needs: extract-rust-version
     timeout-minutes: 90 # cold run takes a lot of time as each crate is compiled separately
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -42,7 +64,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
         with:
-          toolchain: nightly-2024-07-27
+          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
       - uses: taiki-e/install-action@1b0e852a3465a29cd0b17876f2de42a88d145e91 # cargo-hack
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
         with:
@@ -61,15 +83,17 @@ jobs:
   fmt:
     name: Check code formatting
     runs-on: ubuntu-latest
+    needs: extract-rust-version
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           persist-credentials: false
+
       - uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
         with:
           components: rustfmt
-          toolchain: nightly-2024-07-27
+          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
       - run: cargo fmt --all --check
 
   codespell:

@@ -1,0 +1,17 @@
+name: Extract Rust toolchain version
+description: "Extracts the Rust toolchain version from rust-toolchain.toml"
+inputs: {}
+outputs:
+  rust-version:
+    description: "The Rust toolchain version from rust-toolchain.toml"
+    value: ${{ steps.extract.outputs.rust-version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Extract Rust toolchain version
+      id: extract
+      shell: bash
+      run: |
+        VERSION="$(grep '^channel = ' rust-toolchain.toml | sed 's/channel = "\(.*\)"/\1/')"
+        echo "rust-version=$VERSION" >> "$GITHUB_OUTPUT" 
