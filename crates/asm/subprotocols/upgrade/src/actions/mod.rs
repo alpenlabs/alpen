@@ -9,12 +9,33 @@ use cancel::CancelAction;
 use multisig_update::MultisigConfigUpdate;
 use operator_update::OperatorSetUpdate;
 use seq_update::SequencerUpdate;
+use strata_primitives::buf::Buf32;
 use vk_update::VerifyingKeyUpdate;
 
 use crate::roles::Role;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize)]
-pub struct ActionId(pub [u8; 32]);
+pub struct ActionId(Buf32);
+
+// Convert from Buf32 into ActionId
+impl From<Buf32> for ActionId {
+    fn from(bytes: Buf32) -> Self {
+        ActionId(bytes)
+    }
+}
+
+// Convert from ActionId back into Buf32
+impl From<ActionId> for Buf32 {
+    fn from(action_id: ActionId) -> Self {
+        action_id.0
+    }
+}
+
+impl ActionId {
+    pub fn as_buf32(&self) -> &Buf32 {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum UpgradeAction {
@@ -23,6 +44,36 @@ pub enum UpgradeAction {
     OperatorSet(OperatorSetUpdate),
     Sequencer(SequencerUpdate),
     VerifyingKey(VerifyingKeyUpdate),
+}
+
+impl From<CancelAction> for UpgradeAction {
+    fn from(action: CancelAction) -> Self {
+        UpgradeAction::Cancel(action)
+    }
+}
+
+impl From<MultisigConfigUpdate> for UpgradeAction {
+    fn from(m: MultisigConfigUpdate) -> Self {
+        UpgradeAction::Multisig(m)
+    }
+}
+
+impl From<OperatorSetUpdate> for UpgradeAction {
+    fn from(o: OperatorSetUpdate) -> Self {
+        UpgradeAction::OperatorSet(o)
+    }
+}
+
+impl From<SequencerUpdate> for UpgradeAction {
+    fn from(s: SequencerUpdate) -> Self {
+        UpgradeAction::Sequencer(s)
+    }
+}
+
+impl From<VerifyingKeyUpdate> for UpgradeAction {
+    fn from(v: VerifyingKeyUpdate) -> Self {
+        UpgradeAction::VerifyingKey(v)
+    }
 }
 
 /// A pending upgrade action that will be triggered after a specified number
@@ -36,4 +87,14 @@ pub struct PendingUpgradeAction {
     upgrade: UpgradeAction,
     blocks_remaining: u64,
     role: Role,
+}
+
+impl PendingUpgradeAction {
+    pub fn new(upgrade: UpgradeAction, blocks_remaining: u64, role: Role) -> Self {
+        Self {
+            upgrade,
+            blocks_remaining,
+            role,
+        }
+    }
 }

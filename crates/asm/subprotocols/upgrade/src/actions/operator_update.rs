@@ -4,7 +4,7 @@ use strata_asm_common::{MsgRelayer, TxInput};
 use crate::{
     error::UpgradeError,
     state::UpgradeSubprotoState,
-    types::{PubKey, Signature},
+    crypto::{PubKey, Signature},
     vote::AggregatedVote,
 };
 
