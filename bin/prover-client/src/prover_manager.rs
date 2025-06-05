@@ -233,6 +233,11 @@ fn handle_task_error(task: ProofKey, e: ProvingTaskError) -> ProvingTaskStatus {
                 ProvingTaskStatus::Failed
             }
         }
+        ProvingTaskError::ProofAlreadyExists => {
+            // Proof already exists, which is a success case
+            warn!(?task, "Proof already exists, marking as completed");
+            ProvingTaskStatus::Completed
+        }
         _ => {
             // Other errors are treated as non-retryable, so the task is failed permanently.
             error!(?task, ?e, "proving task failed");
@@ -245,8 +250,13 @@ fn handle_task_error(task: ProofKey, e: ProvingTaskError) -> ProvingTaskStatus {
 /// Then, the [`ProvingTaskError`] is handled as usual.
 fn handle_checkpoint_error(chkpt_err: CheckpointError) -> ProvingTaskError {
     match chkpt_err {
-        CheckpointError::FetchError(error) | CheckpointError::SubmitProofError { error, .. } => {
-            ProvingTaskError::RpcError(error)
+        CheckpointError::FetchError(error) => ProvingTaskError::RpcError(error),
+        CheckpointError::SubmitProofError { error, .. } => {
+            if error.to_lowercase().contains("proof already created") {
+                ProvingTaskError::ProofAlreadyExists
+            } else {
+                ProvingTaskError::RpcError(error)
+            }
         }
         CheckpointError::CheckpointNotFound(_) => ProvingTaskError::WitnessNotFound,
         CheckpointError::ProofErr(proving_task_error) => proving_task_error,
@@ -260,7 +270,7 @@ mod tests {
     use strata_primitives::proof::{ProofContext, ProofZkVm};
     use strata_rpc_types::ProofKey;
 
-    use super::{handle_task_error, ProverManagerConfig, ProvingTaskError, ProvingTaskStatus};
+    use super::*;
 
     #[test]
     fn test_prover_manager_config_creation() {
@@ -320,5 +330,67 @@ mod tests {
         ));
 
         assert_eq!(handle_task_error(mock_key, err), ProvingTaskStatus::Failed);
+    }
+
+    #[test]
+    fn test_proof_already_exists_completed() {
+        let mock_key = ProofKey::new(
+            ProofContext::Checkpoint(0),
+            strata_primitives::proof::ProofZkVm::SP1,
+        );
+        let err = ProvingTaskError::ProofAlreadyExists;
+
+        assert_eq!(
+            handle_task_error(mock_key, err),
+            ProvingTaskStatus::Completed
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_error_proof_already_created() {
+        use crate::checkpoint_runner::errors::CheckpointError;
+
+        let err = CheckpointError::SubmitProofError {
+            index: 0,
+            error: "Proof already created for checkpoint 0".to_string(),
+        };
+
+        match handle_checkpoint_error(err) {
+            ProvingTaskError::ProofAlreadyExists => {
+                // Expected case
+            }
+            other => panic!("Expected ProofAlreadyExists, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_error_other_submit_errors() {
+        use crate::checkpoint_runner::errors::CheckpointError;
+
+        let err = CheckpointError::SubmitProofError {
+            index: 0,
+            error: "Network timeout".to_string(),
+        };
+
+        match handle_checkpoint_error(err) {
+            ProvingTaskError::RpcError(msg) => {
+                assert_eq!(msg, "Network timeout");
+            }
+            other => panic!("Expected RpcError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_error_fetch_error() {
+        use crate::checkpoint_runner::errors::CheckpointError;
+
+        let err = CheckpointError::FetchError("Connection failed".to_string());
+
+        match handle_checkpoint_error(err) {
+            ProvingTaskError::RpcError(msg) => {
+                assert_eq!(msg, "Connection failed");
+            }
+            other => panic!("Expected RpcError, got {other:?}"),
+        }
     }
 }

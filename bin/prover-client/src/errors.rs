@@ -69,4 +69,8 @@ pub(crate) enum ProvingTaskError {
     /// Represents an error returned by the ZKVM.
     #[error("{0:?}")]
     ZkVmError(ZkVmError),
+
+    /// Occurs when a proof already exists.
+    #[error("Proof already exists")]
+    ProofAlreadyExists,
 }
