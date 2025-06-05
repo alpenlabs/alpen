@@ -14,7 +14,9 @@ use vk_update::VerifyingKeyUpdate;
 
 use crate::roles::Role;
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize,
+)]
 pub struct ActionId(Buf32);
 
 // Convert from Buf32 into ActionId
@@ -96,5 +98,9 @@ impl PendingUpgradeAction {
             blocks_remaining,
             role,
         }
+    }
+
+    pub fn role(&self) -> &Role {
+        &self.role
     }
 }

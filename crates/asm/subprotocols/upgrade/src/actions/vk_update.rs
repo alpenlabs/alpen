@@ -49,14 +49,14 @@ pub fn handle_vk_update(
         StrataProof::OlStf => (Role::StrataConsensusManager, OL_STF_VK_ENACTMENT_DELAY),
     };
 
-    // Fetch current multisig configuration
-    let existing_config = state
+    // Fetch multisig configuration
+    let config = state
         .get_multisig_authority_config(&role)
         .ok_or(UpgradeError::UnknownRole)?; // TODO: better error name
 
     // Compute ActionId and validate the vote for the action
     let update_action_id = update.compute_action_id();
-    vote.validate_action(&existing_config.keys, &update_action_id)?;
+    vote.validate_action(&config.keys, &update_action_id)?;
 
     // Create the pending action and enqueue it
     let pending_action = PendingUpgradeAction::new(update.into(), delay, role);
