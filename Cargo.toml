@@ -6,6 +6,7 @@ members = [
   "crates/asm/stf",
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
+  "crates/asm/subprotocols/upgrade",
   "crates/btcio",
   "crates/chaintsn",
   "crates/common",
