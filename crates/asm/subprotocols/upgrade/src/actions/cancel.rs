@@ -10,7 +10,7 @@ use crate::{
     state::UpgradeSubprotoState,
 };
 
-pub const CANCEL_TX_TYPE: u8 = 5;
+pub const CANCEL_TX_TYPE: u8 = 0;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
 pub struct CancelAction {

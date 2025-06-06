@@ -28,9 +28,9 @@ pub const ASM_VK_ENACTMENT_DELAY: u64 = 12_960;
 pub const OL_STF_VK_ENACTMENT_DELAY: u64 = 4_320;
 
 pub const MULTISIG_CONFIG_UPDATE_TX_TYPE: u8 = 1;
-pub const VK_UPDATE_TX_TYPE: u8 = 2;
-pub const OPERATOR_UPDATE_TX_TYPE: u8 = 3;
-pub const SEQUENCER_UPDATE_TX_TYPE: u8 = 4;
+pub const OPERATOR_UPDATE_TX_TYPE: u8 = 2;
+pub const SEQUENCER_UPDATE_TX_TYPE: u8 = 3;
+pub const VK_UPDATE_TX_TYPE: u8 = 4;
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum UpgradeAction {
@@ -61,7 +61,7 @@ impl UpgradeAction {
     /// Role which has the authority to enact this action.
     pub fn role(&self) -> Role {
         match self {
-            UpgradeAction::Multisig(_) => Role::BridgeAdmin,
+            UpgradeAction::Multisig(m) => m.role(),
             UpgradeAction::OperatorSet(_) => Role::BridgeAdmin,
             UpgradeAction::Sequencer(_) => Role::StrataAdmin,
             UpgradeAction::VerifyingKey(v) => match v.proof_kind() {
