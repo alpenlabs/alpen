@@ -4,7 +4,8 @@ use strata_primitives::buf::Buf32;
 
 use super::ActionId;
 use crate::{
-    crypto::Signature, error::UpgradeError, state::UpgradeSubprotoState, vote::AggregatedVote,
+    crypto::Signature, error::UpgradeError, multisig::vote::AggregatedVote,
+    state::UpgradeSubprotoState,
 };
 
 pub const CANCEL_TX_TYPE: u8 = 5;

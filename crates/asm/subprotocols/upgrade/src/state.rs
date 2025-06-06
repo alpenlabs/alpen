@@ -2,8 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     actions::{PendingUpgradeAction, id::ActionId, multisig_update::MultisigConfigUpdate},
-    authority::MultisigAuthority,
-    multisig_config::MultisigConfig,
+    multisig::{authority::MultisigAuthority, config::MultisigConfig},
     roles::Role,
 };
 
