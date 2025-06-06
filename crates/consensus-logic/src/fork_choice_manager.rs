@@ -193,6 +193,9 @@ impl ForkChoiceManager {
 
     fn find_latest_finalizable_epoch(&self) -> Option<(usize, &EpochCommitment)> {
         // the latest epoch which we have processed and is safe to finalize
+        if self.cur_chainstate.prev_epoch().is_null() {
+            return None;
+        }
         let prev_epoch = self.cur_chainstate.prev_epoch().epoch();
         self.epochs_pending_finalization
             .iter()
