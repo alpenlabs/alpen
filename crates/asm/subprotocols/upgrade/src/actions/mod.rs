@@ -18,22 +18,21 @@ use crate::{
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct PendingUpgradeAction {
     id: ActionId,
-    upgrade: UpgradeAction,
+    action: UpgradeAction,
     blocks_remaining: u64,
-    role: Role,
 }
 
 impl PendingUpgradeAction {
-    pub fn role(&self) -> &Role {
-        &self.role
-    }
-
     pub fn id(&self) -> &ActionId {
         &self.id
     }
 
-    pub fn upgrade(&self) -> &UpgradeAction {
-        &self.upgrade
+    pub fn action(&self) -> &UpgradeAction {
+        &self.action
+    }
+
+    pub fn role(&self) -> Role {
+        self.action.role()
     }
 
     pub fn blocks_remaining(&self) -> u64 {
@@ -47,16 +46,14 @@ impl PendingUpgradeAction {
 }
 
 impl From<UpgradeAction> for PendingUpgradeAction {
-    fn from(upgrade: UpgradeAction) -> Self {
-        let id = upgrade.compute_id();
-        let role = upgrade.role();
-        let blocks_remaining = upgrade.enactment_delay();
+    fn from(action: UpgradeAction) -> Self {
+        let id = action.compute_id();
+        let blocks_remaining = action.enactment_delay();
 
         Self {
             id,
-            upgrade,
+            action,
             blocks_remaining,
-            role,
         }
     }
 }
