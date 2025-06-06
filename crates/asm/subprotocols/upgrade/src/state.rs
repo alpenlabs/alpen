@@ -14,7 +14,7 @@ pub struct UpgradeSubprotoState {
     /// List of configurations for multisignature authorities.
     /// Each entry specifies who the signers are and how many signatures
     /// are required to approve an action.
-    multisig_authority: Vec<MultisigConfig>,
+    multisig_authorities: Vec<MultisigAuthority>,
 
     /// List of upgrade actions awaiting execution.
     /// Each element contains a `PendingUpgradeAction`, which carries its
@@ -24,15 +24,18 @@ pub struct UpgradeSubprotoState {
 
 impl UpgradeSubprotoState {
     pub fn get_multisig_config(&self, role: &Role) -> Option<&MultisigConfig> {
-        self.multisig_authority.get((*role as u8) as usize)
+        if let Some(authority) = self.multisig_authorities.get((*role as u8) as usize) {
+            return Some(authority.config());
+        }
+        None
     }
 
     pub fn update_multisig_config(&mut self, update: &MultisigConfigUpdate) {
-        if let Some(config) = self
-            .multisig_authority
+        if let Some(authority) = self
+            .multisig_authorities
             .get_mut((*update.role() as u8) as usize)
         {
-            config.update(update);
+            authority.config_mut().update(update);
         }
     }
 
@@ -77,11 +80,36 @@ impl UpgradeSubprotoState {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct MultisigAuthority {
+    /// The role of this multisignature authority.
+    pub role: Role,
+    /// The public keys of all grant-holders authorized to sign.
+    pub config: MultisigConfig,
+}
+
+impl MultisigAuthority {
+    pub fn new(role: Role, config: MultisigConfig) -> Self {
+        Self { role, config }
+    }
+
+    pub fn role(&self) -> &Role {
+        &self.role
+    }
+
+    pub fn config(&self) -> &MultisigConfig {
+        &self.config
+    }
+
+    pub fn config_mut(&mut self) -> &mut MultisigConfig {
+        &mut self.config
+    }
+}
+
 /// Configuration for a multisignature authority: who the signers are, and
 /// how many signatures are required to approve an action.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigConfig {
-    pub role: Role,
     /// The public keys of all grant-holders authorized to sign.
     pub keys: Vec<PubKey>,
     /// The minimum number of keys that must sign to approve an action.
@@ -147,7 +175,6 @@ mod tests {
         let k1 = make_key(1);
         let k2 = make_key(2);
         let base = MultisigConfig {
-            role,
             keys: vec![k1.clone(), k2.clone()],
             threshold: 2,
         };
@@ -166,7 +193,6 @@ mod tests {
         let k2 = make_key(2);
         let k3 = make_key(3);
         let base = MultisigConfig {
-            role,
             keys: vec![k1.clone(), k2.clone()],
             threshold: 2,
         };
@@ -187,7 +213,6 @@ mod tests {
         let k4 = make_key(4);
 
         let base = MultisigConfig {
-            role,
             keys: vec![k1.clone(), k2.clone(), k3.clone(), k4.clone()],
             threshold: 3,
         };
@@ -220,7 +245,6 @@ mod tests {
 
         let role = Role::BridgeAdmin;
         let mut config = MultisigConfig {
-            role,
             keys: vec![k1.clone(), k2.clone(), k3.clone()],
             threshold: 2,
         };
