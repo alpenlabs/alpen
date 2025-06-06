@@ -43,6 +43,7 @@ impl UpgradeSubprotoState {
     }
 
     pub fn add_pending_action(&mut self, action: PendingUpgradeAction) {
+        self.multisig_authorities[action.role() as usize].increment_nonce();
         self.pending_actions.push(action);
     }
 

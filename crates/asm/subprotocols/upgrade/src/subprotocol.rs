@@ -54,7 +54,7 @@ fn handle_pending_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl 
     let actions_to_enact = state.tick_and_collect_ready_actions();
 
     for action in actions_to_enact {
-        match action.upgrade() {
+        match action.action() {
             UpgradeAction::Multisig(update) => {
                 state.update_multisig_config(update.role(), update.config_update());
             }
