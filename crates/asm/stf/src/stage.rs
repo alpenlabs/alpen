@@ -11,13 +11,19 @@ use crate::manager::SubprotoManager;
 pub(crate) struct SubprotoLoaderStage<'a> {
     anchor_state: &'a AnchorState,
     manager: &'a mut SubprotoManager,
+    genesis_registry: &'a strata_asm_common::GenesisConfigRegistry,
 }
 
 impl<'a> SubprotoLoaderStage<'a> {
-    pub(crate) fn new(anchor_state: &'a AnchorState, manager: &'a mut SubprotoManager) -> Self {
+    pub(crate) fn new(
+        anchor_state: &'a AnchorState,
+        manager: &'a mut SubprotoManager,
+        genesis_registry: &'a strata_asm_common::GenesisConfigRegistry,
+    ) -> Self {
         Self {
             anchor_state,
             manager,
+            genesis_registry,
         }
     }
 }
@@ -34,7 +40,13 @@ impl Stage for SubprotoLoaderStage<'_> {
             // 1. Genesis block, where the subprotocol state is not yet initialized.
             // 2. Newly created subprotocol, where the state is not yet initialized.
             // In both cases, we need to initialize the state.
-            None => S::init(),
+            None => {
+                // Try to get genesis config from registry, otherwise use default
+                let genesis_config = self.genesis_registry
+                    .get::<S::GenesisConfig>(S::ID)
+                    .unwrap_or_default();
+                S::init(genesis_config)
+            }
         };
 
         self.manager.insert_subproto::<S>(state);

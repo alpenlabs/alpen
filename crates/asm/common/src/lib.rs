@@ -2,6 +2,7 @@
 //! and interacting with subprotocols in an ASM (Anchor State Machine) framework.
 
 mod error;
+mod genesis;
 mod msg;
 mod spec;
 mod state;
@@ -9,6 +10,7 @@ mod subprotocol;
 mod tx;
 
 pub use error::*;
+pub use genesis::*;
 pub use msg::*;
 pub use spec::*;
 pub use state::*;

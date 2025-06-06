@@ -44,4 +44,8 @@ pub enum AsmError {
     /// L1Header do not follow consensus rules.
     #[error("L1Header do not follow consensus rules")]
     InvalidL1Header(#[source] L1VerificationError),
+
+    /// Failed to serialize data.
+    #[error("serialization error: {0}")]
+    SerializationError(String),
 }

@@ -18,6 +18,12 @@ pub struct BridgeV1State {
 #[derive(Copy, Clone, Debug)]
 pub struct BridgeV1Subproto;
 
+/// Genesis configuration for the BridgeV1 subprotocol.
+#[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
+pub struct BridgeV1GenesisConfig {
+    // TODO: Add bridge-specific genesis parameters when implementing
+}
+
 impl Subprotocol for BridgeV1Subproto {
     const ID: SubprotocolId = BRIDGE_V1_SUBPROTOCOL_ID;
 
@@ -25,8 +31,11 @@ impl Subprotocol for BridgeV1Subproto {
 
     type Msg = NullMsg<BRIDGE_V1_SUBPROTOCOL_ID>;
 
-    fn init() -> Self::State {
-        todo!()
+    type GenesisConfig = BridgeV1GenesisConfig;
+
+    fn init(_genesis_config: Self::GenesisConfig) -> Self::State {
+        // TODO: Initialize with proper genesis config when implementing
+        BridgeV1State {}
     }
 
     fn process_txs(
