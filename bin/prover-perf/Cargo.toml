@@ -20,7 +20,7 @@ strata-test-utils.workspace = true
 strata-zkvm-hosts.workspace = true
 
 # sp1
-sp1-sdk = "4.2.0"
+sp1-sdk.workspace = true
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10", optional = true }
 

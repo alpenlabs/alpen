@@ -19,6 +19,12 @@ k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k2
 p256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-p256-13.2-sp1-4.1.0" }
 
 
+[patch."https://github.com/succinctlabs/rsp"]
+rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+
+
 [features]
 mock-verify = ["zkaleido-sp1-guest-env/mock-verify"]
 zkvm-verify = ["zkaleido-sp1-guest-env/zkvm-verify"]

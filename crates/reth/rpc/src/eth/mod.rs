@@ -296,6 +296,7 @@ impl<N: StrataNodeCore> AlpenEthApiInner<N> {
     }
 }
 
+#[allow(missing_debug_implementations)]
 #[derive(Default)]
 pub struct AlpenEthApiBuilder {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP

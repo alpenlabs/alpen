@@ -1,3 +1,5 @@
+//! EVM Execution Environment STF for Alpen prover, using RSP for EVM execution. Provides primitives
+//! and utilities to process Ethereum block transactions and state transitions in a zkVM.
 pub mod primitives;
 pub mod program;
 pub mod utils;

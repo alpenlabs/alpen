@@ -1120,11 +1120,9 @@ dependencies = [
  "alloy-eips",
  "alloy-network",
  "alloy-primitives",
- "alloy-rpc-types",
  "alloy-rpc-types-eth",
  "alpen-reth-db",
  "alpen-reth-statediff",
- "bincode",
  "eyre",
  "hex",
  "jsonrpsee",
@@ -1132,7 +1130,6 @@ dependencies = [
  "parking_lot 0.12.3",
  "reqwest 0.12.15",
  "reth-chainspec",
- "reth-ethereum-forks",
  "reth-evm",
  "reth-network-api",
  "reth-node-api",
@@ -1144,7 +1141,6 @@ dependencies = [
  "reth-rpc",
  "reth-rpc-eth-api",
  "reth-rpc-eth-types",
- "reth-rpc-server-types",
  "reth-tasks",
  "reth-transaction-pool",
  "revm",
@@ -5297,7 +5293,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -13515,22 +13511,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp1-zkvm"
-version = "4.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4620d2777b49fb825bf4726ef71aad0e56fc1ff2532e5b29677b75914f0d756a"
-dependencies = [
- "cfg-if",
- "getrandom 0.2.16",
- "lazy_static",
- "libm",
- "rand 0.8.5",
- "sha2 0.10.9",
- "sp1-lib",
- "sp1-primitives",
-]
-
-[[package]]
 name = "sp1_bls12_381"
 version = "0.8.0-sp1-4.0.0-v2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13988,25 +13968,15 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
- "alloy-rlp",
- "alloy-rlp-derive",
- "alloy-rpc-types",
- "alloy-rpc-types-eth",
  "alpen-reth-evm",
  "alpen-reth-primitives",
- "anyhow",
  "bincode",
- "hex-literal",
  "reth-chainspec",
  "reth-evm-ethereum",
- "revm",
  "revm-primitives",
- "rlp",
  "rsp-client-executor",
  "serde",
  "serde_json",
- "serde_with",
- "strata-mpt",
  "strata-primitives",
  "strata-state",
  "zkaleido",
@@ -14133,7 +14103,6 @@ dependencies = [
  "strata-state",
  "strata-test-utils",
  "zkaleido",
- "zkaleido-risc0-host",
 ]
 
 [[package]]
@@ -14253,7 +14222,6 @@ dependencies = [
  "sha2 0.10.9",
  "sp1-helper",
  "sp1-sdk",
- "zkaleido-sp1-guest-env",
 ]
 
 [[package]]
@@ -16788,18 +16756,6 @@ source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f
 dependencies = [
  "hex",
  "sp1-verifier",
- "zkaleido",
-]
-
-[[package]]
-name = "zkaleido-sp1-guest-env"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc10#efec0f317ed1b747cc8f49284165e70fa7b31306"
-dependencies = [
- "bincode",
- "cfg-if",
- "serde",
- "sp1-zkvm",
  "zkaleido",
 ]
 
