@@ -2,8 +2,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{MsgRelayer, TxInput};
 
 use crate::{
-    actions::{ActionId, PendingUpgradeAction},
-    crypto::{PubKey, Signature, tagged_hash},
+    actions::PendingUpgradeAction,
+    crypto::{PubKey, Signature},
     error::UpgradeError,
     roles::Role,
     state::UpgradeSubprotoState,
@@ -56,11 +56,6 @@ impl MultisigConfigUpdate {
     pub fn role(&self) -> &Role {
         &self.role
     }
-
-    pub fn compute_action_id(&self) -> ActionId {
-        const PREFIX: &[u8] = b"MULTISIG_CONFIG";
-        tagged_hash(PREFIX, self).into()
-    }
 }
 
 pub fn handle_multisig_config_update(
@@ -80,14 +75,14 @@ pub fn handle_multisig_config_update(
     // validate config update
     existing_config.validate_update(&update)?;
 
-    // Compute ActionId and validate the vote for the action
-    let update_action_id = update.compute_action_id();
-    vote.validate_action(&existing_config.keys, &update_action_id)?;
+    // Validate the vote for the action
+    let action = update.into();
+    vote.validate_action(&existing_config.keys, &action)?;
 
     // Create the pending action and enqueue it
     let pending_action =
-        PendingUpgradeAction::new(update.into(), MULTISIG_CONFIG_UPDATE_ENACTMENT_DELAY, role);
-    state.add_pending_action(update_action_id, pending_action);
+        PendingUpgradeAction::new(action, MULTISIG_CONFIG_UPDATE_ENACTMENT_DELAY, role);
+    state.add_pending_action(pending_action);
 
     Ok(())
 }

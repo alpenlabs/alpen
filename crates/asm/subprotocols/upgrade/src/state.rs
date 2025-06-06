@@ -19,7 +19,7 @@ pub struct UpgradeSubprotoState {
 
     /// A map from each action’s unique identifier to its corresponding
     /// upgrade action awaiting execution.
-    pending_actions: HashMap<ActionId, PendingUpgradeAction>,
+    pending_actions: Vec<PendingUpgradeAction>,
 }
 
 impl UpgradeSubprotoState {
@@ -27,16 +27,24 @@ impl UpgradeSubprotoState {
         self.multisig_authority.get(role)
     }
 
-    pub fn add_pending_action(&mut self, id: ActionId, action: PendingUpgradeAction) {
-        self.pending_actions.insert(id, action);
+    pub fn add_pending_action(&mut self, action: PendingUpgradeAction) {
+        self.pending_actions.push(action);
     }
 
     pub fn get_pending_action(&self, id: &ActionId) -> Option<&PendingUpgradeAction> {
-        self.pending_actions.get(id)
+        self.pending_actions.iter().find(|action| action.id() == id)
     }
 
-    pub fn remove_pending_action(&mut self, id: &ActionId) {
-        self.pending_actions.remove(id);
+    /// Removes pending action by its ID. Returns error if not found.
+    pub fn remove_pending_action(&mut self, target_id: &ActionId) {
+        if let Some(idx) = self
+            .pending_actions
+            .iter()
+            .position(|action| action.id() == target_id)
+        {
+            // swap the last element into `idx`, then pop
+            self.pending_actions.swap_remove(idx);
+        }
     }
 }
 
