@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "alpen-dbtool"
+version = "0.3.0-alpha.1"
+
+[[bin]]
+name = "alpen-dbtool"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+rockbound.workspace = true
+serde.workspace = true
+tracing-subscriber.workspace = true
+
+strata-db.workspace = true
+strata-primitives.workspace = true
+strata-rocksdb.workspace = true
