@@ -3,13 +3,7 @@ use strata_asm_common::{MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput
 use crate::{
     actions::{
         cancel::{CANCEL_TX_TYPE, handle_cancel_tx},
-        upgrades::{
-            UpgradeAction,
-            multisig::{MULTISIG_CONFIG_UPDATE_TX_TYPE, handle_multisig_config_update_tx},
-            operator::{OPERATOR_UPDATE_TX_TYPE, handle_operator_update_tx},
-            seq::{SEQUENCER_UPDATE_TX_TYPE, handle_sequencer_update_tx},
-            vk::{VK_UPDATE_TX_TYPE, handle_vk_update_tx},
-        },
+        upgrades::{UpgradeAction, handle_update_tx},
     },
     roles::StrataProof,
     state::UpgradeSubprotoState,
@@ -42,22 +36,12 @@ impl Subprotocol for UpgradeSubprotocol {
         // Process each transaction based on its type
         for tx in txs {
             match tx.tag().tx_type() {
-                MULTISIG_CONFIG_UPDATE_TX_TYPE => {
-                    let _ = handle_multisig_config_update_tx(state, tx, relayer);
-                }
-                VK_UPDATE_TX_TYPE => {
-                    let _ = handle_vk_update_tx(state, tx, relayer);
-                }
-                OPERATOR_UPDATE_TX_TYPE => {
-                    let _ = handle_operator_update_tx(state, tx, relayer);
-                }
-                SEQUENCER_UPDATE_TX_TYPE => {
-                    let _ = handle_sequencer_update_tx(state, tx, relayer);
-                }
                 CANCEL_TX_TYPE => {
-                    let _ = handle_cancel_tx(state, tx, relayer);
+                    let _ = handle_cancel_tx(state, tx);
                 }
-                _ => {}
+                _ => {
+                    let _ = handle_update_tx(state, tx);
+                }
             }
         }
     }
