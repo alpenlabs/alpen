@@ -14,7 +14,7 @@ pub(crate) const fn u256_from(val: u128) -> U256 {
 pub(crate) const WEI_PER_BTC: u128 = 1_000_000_000_000_000_000u128;
 
 /// Number of wei per satoshi (1e10).
-const WEI_PER_SAT: U256 = u256_from(10_000_000_000u128);
+pub(crate) const WEI_PER_SAT: U256 = u256_from(10_000_000_000u128);
 
 /// Converts wei to satoshis.
 /// Returns a tuple of (satoshis, remainder_in_wei).
@@ -39,23 +39,20 @@ where
     I: Iterator<Item = TxReceiptPair<'a>> + 'a,
 {
     tx_receipt_pairs.flat_map(|(tx, receipt)| {
+        let txid = Buf32((*tx.hash()).into());
         receipt.logs.iter().filter_map(move |log| {
             if log.address != BRIDGEOUT_ADDRESS {
                 return None;
             }
 
-            let txid = Buf32(tx.hash().as_slice().try_into().expect("32 bytes"));
-            WithdrawalIntentEvent::decode_log(log, true)
-                .ok()
-                .and_then(|evt| {
-                    Descriptor::from_bytes(&evt.destination)
-                        .ok()
-                        .map(|destination| WithdrawalIntent {
-                            amt: evt.amount,
-                            destination,
-                            withdrawal_txid: txid,
-                        })
-                })
+            let event = WithdrawalIntentEvent::decode_log(log).ok()?;
+            let destination = Descriptor::from_bytes(&event.destination).ok()?;
+
+            Some(WithdrawalIntent {
+                amt: event.amount,
+                destination,
+                withdrawal_txid: txid,
+            })
         })
     })
 }

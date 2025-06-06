@@ -3,7 +3,7 @@ use std::sync::Arc;
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
 use rockbound::{SchemaDBOperations, SchemaDBOperationsExt};
-use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
+use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 
 use super::schema::{BlockHashByNumber, BlockStateDiffSchema, BlockWitnessSchema};
 use crate::{
@@ -112,7 +112,6 @@ impl<DB: SchemaDBOperations> StateDiffStore for WitnessDB<DB> {
 
 #[cfg(test)]
 mod tests {
-
     use alpen_reth_statediff::account::{Account, AccountChanges};
     use revm_primitives::{
         alloy_primitives::{address, map::HashMap},
@@ -120,7 +119,7 @@ mod tests {
     };
     use rockbound::SchemaDBOperations;
     use serde::Deserialize;
-    use strata_proofimpl_evm_ee_stf::{EvmBlockStfInput, EvmBlockStfOutput};
+    use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use tempfile::TempDir;
 
     use super::*;
@@ -140,7 +139,7 @@ mod tests {
         let temp_dir = TempDir::new().expect("failed to create temp dir");
 
         let rbdb = rockbound::DB::open(
-            temp_dir.into_path(),
+            temp_dir.keep(),
             dbname,
             cfs.iter().map(|s| s.to_string()),
             &opts,
@@ -165,6 +164,11 @@ mod tests {
         serde_json::from_str(&json_content).expect("Valid json")
     }
 
+    fn setup_db() -> WitnessDB<impl SchemaDBOperations> {
+        let db = get_rocksdb_tmp_instance().unwrap();
+        WitnessDB::new(Arc::new(db))
+    }
+
     fn test_state_diff() -> BlockStateDiff {
         let mut test_diff = BlockStateDiff {
             state: HashMap::default(),
@@ -177,11 +181,6 @@ mod tests {
         );
 
         test_diff
-    }
-
-    fn setup_db() -> WitnessDB<impl SchemaDBOperations> {
-        let db = get_rocksdb_tmp_instance().unwrap();
-        WitnessDB::new(Arc::new(db))
     }
 
     #[test]

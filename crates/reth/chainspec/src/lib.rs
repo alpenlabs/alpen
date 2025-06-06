@@ -12,9 +12,9 @@ pub const DEV_CHAIN_SPEC: &str = include_str!("res/alpen-dev-chain.json");
 
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub struct StrataChainSpecParser;
+pub struct AlpenChainSpecParser;
 
-impl ChainSpecParser for StrataChainSpecParser {
+impl ChainSpecParser for AlpenChainSpecParser {
     type ChainSpec = ChainSpec;
 
     const SUPPORTED_CHAINS: &'static [&'static str] = &["dev", "devnet", "testnet"];
