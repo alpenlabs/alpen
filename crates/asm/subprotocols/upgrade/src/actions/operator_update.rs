@@ -14,7 +14,7 @@ pub const OPERATOR_UPDATE_TX_TYPE: u8 = 3;
 
 pub const OPERATOR_UPDATE_ENACTMENT_DELAY: u64 = 2016;
 
-/// Represents a change to the Bridge Operator Set`
+/// Represents a change to the Bridge Operator Set
 /// * removes the specified `old_members` from the set
 /// * adds the specified `new_members`
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
