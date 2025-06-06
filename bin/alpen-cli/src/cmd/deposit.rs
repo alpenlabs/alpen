@@ -30,11 +30,12 @@ use crate::{
     taproot::{ExtractP2trPubkey, NotTaprootAddress},
 };
 
-/// Deposit 10 BTC from signet to Alpen. If an address is not provided, the wallet's internal
-/// Alpen address will be used.
+/// Deposits 10 BTC from signet into Alpen
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {
+    /// the Alpen address to deposit the funds into. defaults to the
+    /// wallet's internal address.
     #[argh(positional)]
     alpen_address: Option<String>,
 
