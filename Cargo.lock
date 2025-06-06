@@ -13539,10 +13539,17 @@ dependencies = [
 name = "strata-asm-proto-core"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "borsh",
+ "sha2 0.10.8",
  "strata-asm-common",
  "strata-primitives",
+ "strata-state",
+ "thiserror 2.0.12",
+ "tracing",
  "zkaleido",
+ "zkaleido-risc0-groth16-verifier",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
