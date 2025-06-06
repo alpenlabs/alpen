@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    actions::UpgradeAction,
+    actions::upgrades::UpgradeAction,
     crypto::{PubKey, Signature, aggregate_pubkeys, verify_sig},
     error::VoteValidationError,
 };

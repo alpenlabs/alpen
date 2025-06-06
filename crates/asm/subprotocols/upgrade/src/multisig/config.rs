@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    actions::multisig_update::MultisigConfigUpdate, crypto::PubKey, error::MultisigConfigError,
+    actions::upgrades::multisig::MultisigConfigUpdate, crypto::PubKey, error::MultisigConfigError,
     roles::Role,
 };
 
