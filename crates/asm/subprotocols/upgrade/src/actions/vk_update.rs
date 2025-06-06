@@ -6,9 +6,9 @@ use crate::{
     actions::PendingUpgradeAction,
     crypto::Signature,
     error::UpgradeError,
+    multisig::vote::AggregatedVote,
     roles::{Role, StrataProof},
     state::UpgradeSubprotoState,
-    vote::AggregatedVote,
 };
 
 pub const VK_UPDATE_TX_TYPE: u8 = 2;
