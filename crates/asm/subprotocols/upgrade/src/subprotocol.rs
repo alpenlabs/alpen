@@ -86,7 +86,6 @@ fn handle_pending_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl 
             UpgradeAction::Sequencer(_update) => {
                 // Send a InterprotoMsg to the Sequencer subprotocol
             }
-            UpgradeAction::Cancel(_) => {}
         }
     }
 }

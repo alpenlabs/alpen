@@ -6,7 +6,6 @@ pub mod seq_update;
 pub mod vk_update;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use cancel::CancelAction;
 use multisig_update::MultisigConfigUpdate;
 use operator_update::OperatorSetUpdate;
 use seq_update::SequencerUpdate;
@@ -26,7 +25,6 @@ pub const OL_STF_VK_ENACTMENT_DELAY: u64 = 4_320;
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum UpgradeAction {
-    Cancel(CancelAction),
     Multisig(MultisigConfigUpdate),
     OperatorSet(OperatorSetUpdate),
     Sequencer(SequencerUpdate),
@@ -41,7 +39,6 @@ impl UpgradeAction {
     /// Enactment delay for the action
     pub fn enactment_delay(&self) -> u64 {
         match self {
-            UpgradeAction::Cancel(_) => 0,
             UpgradeAction::Multisig(_) => MULTISIG_CONFIG_UPDATE_ENACTMENT_DELAY,
             UpgradeAction::OperatorSet(_) => OPERATOR_UPDATE_ENACTMENT_DELAY,
             UpgradeAction::Sequencer(_) => SEQUENCER_UPDATE_ENACTMENT_DELAY,
@@ -55,7 +52,6 @@ impl UpgradeAction {
     /// Role which has the authority to enact this action.
     pub fn role(&self) -> Role {
         match self {
-            UpgradeAction::Cancel(_) => Role::BridgeConsensusManager, // FIXME:
             UpgradeAction::Multisig(_) => Role::BridgeAdmin,
             UpgradeAction::OperatorSet(_) => Role::BridgeAdmin,
             UpgradeAction::Sequencer(_) => Role::StrataAdmin,
@@ -64,12 +60,6 @@ impl UpgradeAction {
                 StrataProof::OlStf => Role::StrataConsensusManager,
             },
         }
-    }
-}
-
-impl From<CancelAction> for UpgradeAction {
-    fn from(action: CancelAction) -> Self {
-        UpgradeAction::Cancel(action)
     }
 }
 
