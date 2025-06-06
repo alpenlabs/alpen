@@ -1,12 +1,12 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::actions::{UpgradeAction, id::ActionId};
+use crate::actions::{UpgradeAction, cancel::CancelAction};
 
 /// A high‐level multisig operation that participants can propose.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum MultisigOp {
-    /// Cancel a pending action (identified by its `ActionId`).
-    Cancel(ActionId),
+    /// Cancel a pending action
+    Cancel(CancelAction),
     /// Propose an upgrade.
     Upgrade(UpgradeAction),
 }
@@ -24,5 +24,16 @@ impl MultisigPayload {
     /// Creates a new multisig payload with the given operation and nonce.
     pub fn new(op: MultisigOp, nonce: u64) -> Self {
         Self { op, nonce }
+    }
+}
+
+impl From<UpgradeAction> for MultisigOp {
+    fn from(upgrade: UpgradeAction) -> Self {
+        MultisigOp::Upgrade(upgrade)
+    }
+}
+impl From<CancelAction> for MultisigOp {
+    fn from(cancel: CancelAction) -> Self {
+        MultisigOp::Cancel(cancel)
     }
 }

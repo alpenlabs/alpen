@@ -46,8 +46,8 @@ impl MultisigAuthority {
 
     pub fn validate_op(
         &self,
+        op: &MultisigOp,
         vote: &AggregatedVote,
-        op: MultisigOp,
     ) -> Result<(), VoteValidationError> {
         // 1. Collect each public key by index; error if out of bounds.
         let signer_keys: Vec<_> = vote
@@ -66,7 +66,7 @@ impl MultisigAuthority {
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
         // 3. Compute the msg from the UpgradeAction
-        let msg = MultisigPayload::new(op, self.nonce);
+        let msg = MultisigPayload::new(op.clone(), self.nonce);
         let msg_hash = compute_borsh_hash(&msg);
 
         // 4. Verify the aggregated signature against the aggregated pubkey
