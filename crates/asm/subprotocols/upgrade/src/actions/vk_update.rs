@@ -3,8 +3,8 @@ use strata_asm_common::{MsgRelayer, TxInput};
 use zkaleido::VerifyingKey;
 
 use crate::{
-    actions::{ActionId, PendingUpgradeAction},
-    crypto::{Signature, tagged_hash},
+    actions::PendingUpgradeAction,
+    crypto::Signature,
     error::UpgradeError,
     roles::{Role, StrataProof},
     state::UpgradeSubprotoState,
@@ -28,11 +28,6 @@ impl VerifyingKeyUpdate {
     fn new(new_vk: VerifyingKey, kind: StrataProof) -> Self {
         Self { new_vk, kind }
     }
-
-    pub fn compute_action_id(&self) -> ActionId {
-        const PREFIX: &[u8] = b"VK_UPDATE";
-        tagged_hash(PREFIX, self).into()
-    }
 }
 
 pub fn handle_vk_update(
@@ -54,13 +49,13 @@ pub fn handle_vk_update(
         .get_multisig_authority_config(&role)
         .ok_or(UpgradeError::UnknownRole)?; // TODO: better error name
 
-    // Compute ActionId and validate the vote for the action
-    let update_action_id = update.compute_action_id();
-    vote.validate_action(&config.keys, &update_action_id)?;
+    // Validate the vote for the action
+    let action = update.into();
+    vote.validate_action(&config.keys, &action)?;
 
     // Create the pending action and enqueue it
-    let pending_action = PendingUpgradeAction::new(update.into(), delay, role);
-    state.add_pending_action(update_action_id, pending_action);
+    let pending_action = PendingUpgradeAction::new(action, delay, role);
+    state.add_pending_action(pending_action);
     Ok(())
 }
 

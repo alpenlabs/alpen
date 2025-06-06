@@ -2,8 +2,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{MsgRelayer, TxInput};
 
 use crate::{
-    actions::{ActionId, PendingUpgradeAction},
-    crypto::{PubKey, Signature, tagged_hash},
+    actions::PendingUpgradeAction,
+    crypto::{PubKey, Signature},
     error::UpgradeError,
     roles::Role,
     state::UpgradeSubprotoState,
@@ -30,11 +30,6 @@ impl OperatorSetUpdate {
             old_members,
         }
     }
-
-    pub fn compute_action_id(&self) -> ActionId {
-        const PREFIX: &[u8] = b"OPERATOR_SET_UPDATE";
-        tagged_hash(PREFIX, self).into()
-    }
 }
 
 pub fn handle_operator_update(
@@ -54,13 +49,12 @@ pub fn handle_operator_update(
         .ok_or(UpgradeError::UnknownRole)?; // TODO: better error name
 
     // Compute ActionId and validate the vote for the action
-    let update_action_id = update.compute_action_id();
-    vote.validate_action(&config.keys, &update_action_id)?;
+    let action = update.into();
+    vote.validate_action(&config.keys, &action)?;
 
     // Create the pending action and enqueue it
-    let pending_action =
-        PendingUpgradeAction::new(update.into(), OPERATOR_UPDATE_ENACTMENT_DELAY, role);
-    state.add_pending_action(update_action_id, pending_action);
+    let pending_action = PendingUpgradeAction::new(action, OPERATOR_UPDATE_ENACTMENT_DELAY, role);
+    state.add_pending_action(pending_action);
 
     Ok(())
 }

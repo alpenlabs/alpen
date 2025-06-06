@@ -1,7 +1,7 @@
 //! FIXME: All of the code here is only meant as placeholder for now. This needs to based on the
 //! strata-crypto crate
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::{buf::Buf32, hash};
+use strata_primitives::buf::Buf32;
 
 use crate::error::VoteValidationError;
 
@@ -67,17 +67,4 @@ pub fn aggregate_pubkeys(_keys: &[PubKey]) -> Result<PubKey, VoteValidationError
 // FIXME: handle
 pub fn verify_sig(_pk: &PubKey, _msg_hash: &Buf32, _sig: &Signature) -> bool {
     true
-}
-
-/// Compute a “tagged” SHA-256 digest of any Borsh‐serializable object.
-pub fn tagged_hash<T: BorshSerialize>(tag_bytes: &[u8], value: &T) -> Buf32 {
-    let serialized = borsh::to_vec(value).expect("borsh serialization failed");
-
-    // Allocate a Vec just large enough for tag + data:
-    let mut buf = Vec::with_capacity(tag_bytes.len() + serialized.len());
-    buf.extend_from_slice(tag_bytes);
-    buf.extend_from_slice(&serialized);
-
-    // Perform raw SHA-256
-    hash::raw(&buf)
 }
