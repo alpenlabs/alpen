@@ -10,6 +10,7 @@
 pub mod actions;
 pub mod crypto;
 pub mod error;
+pub mod multisig_config;
 pub mod roles;
 pub mod state;
 pub mod subprotocol;
