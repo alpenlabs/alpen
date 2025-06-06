@@ -1,8 +1,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    actions::{PendingUpgradeAction, id::ActionId, upgrades::multisig::MultisigConfigUpdate},
-    multisig::{authority::MultisigAuthority, config::MultisigConfig},
+    actions::{PendingUpgradeAction, id::ActionId},
+    multisig::{
+        authority::MultisigAuthority,
+        config::{MultisigConfig, MultisigConfigUpdate},
+    },
     roles::Role,
 };
 
@@ -33,11 +36,8 @@ impl UpgradeSubprotoState {
         self.multisig_authorities.get((*role as u8) as usize)
     }
 
-    pub fn update_multisig_config(&mut self, update: &MultisigConfigUpdate) {
-        if let Some(authority) = self
-            .multisig_authorities
-            .get_mut((*update.role() as u8) as usize)
-        {
+    pub fn update_multisig_config(&mut self, role: Role, update: &MultisigConfigUpdate) {
+        if let Some(authority) = self.multisig_authorities.get_mut(role as usize) {
             authority.config_mut().update(update);
         }
     }
