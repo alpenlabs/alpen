@@ -6,6 +6,7 @@ use strata_state::chain_state::Chainstate;
 ///
 /// This is NOT meant to be a full DA diff.  There may be redundant information
 /// in here that a proper DA diff does not need.
+// This is kinda redundant compared to `WriteBatch`, so it's being removed.
 #[derive(Clone, Debug)]
 pub struct ChangedState {
     toplevel: Chainstate,
