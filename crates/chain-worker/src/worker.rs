@@ -123,7 +123,7 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
             self.handle_complete_epoch(block.blkid(), bundle.block(), &output)?;
         }
 
-        self.context.store_block_output(block.blkid(), output)?;
+        self.context.store_block_output(block.blkid(), &output)?;
 
         // Update the tip we've processed.
         self.update_cur_tip(*block)?;
@@ -179,7 +179,7 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
         // Construct the various parts of the summary
         // NOTE: epoch update in chainstate happens at first slot of next epoch
         // this code runs at final slot of current epoch.
-        let output_tl_chs = last_block_output.changes().toplevel();
+        let output_tl_chs = last_block_output.write_batch().new_toplevel_state();
 
         let prev_epoch_idx = output_tl_chs.cur_epoch();
         let prev_terminal = output_tl_chs.prev_epoch().to_block_commitment();

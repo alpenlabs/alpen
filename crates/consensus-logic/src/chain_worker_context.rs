@@ -56,11 +56,18 @@ impl WorkerContext for ChainWorkerCtx {
     fn store_block_output(
         &self,
         blkid: &L2BlockId,
-        output: BlockExecutionOutput,
+        output: &BlockExecutionOutput,
     ) -> WorkerResult<()> {
-        // TODO we really do have to change how the database works to implement
-        // this, don't we?
-        todo!()
+        // TODO how much more of this do we really have to write?
+
+        let wbid = conv_blkid_to_slot_wb_id(*blkid);
+
+        // Store the write batch from the exec output.
+        self.chsman
+            .put_write_batch_blocking(wbid, output.write_batch().clone())
+            .map_err(conv_db_err)?;
+
+        Ok(())
     }
 
     fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {

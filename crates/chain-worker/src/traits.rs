@@ -22,7 +22,7 @@ pub trait WorkerContext {
     fn store_block_output(
         &self,
         blkid: &L2BlockId,
-        output: BlockExecutionOutput,
+        output: &BlockExecutionOutput,
     ) -> WorkerResult<()>;
 
     /// Fetches all summaries for an epoch index.
