@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{actions::ActionId, crypto::PubKey};
+use crate::{actions::id::ActionId, crypto::PubKey};
 
 /// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
