@@ -4,8 +4,6 @@ use zkaleido::VerifyingKey;
 
 use crate::{error::DeserializeError, roles::StrataProof};
 
-pub const VK_UPDATE_TX_TYPE: u8 = 2;
-
 /// Represents an update to the verifying key used for a particular Strata
 /// proof layer.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
@@ -25,6 +23,7 @@ impl VerifyingKeyUpdate {
 }
 
 impl VerifyingKeyUpdate {
+    // Placeholder for actual extraction logic
     pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, DeserializeError> {
         let action = VerifyingKeyUpdate::new(VerifyingKey::default(), StrataProof::OlStf);
         Ok(action)

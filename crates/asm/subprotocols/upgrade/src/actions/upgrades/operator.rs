@@ -22,8 +22,8 @@ impl OperatorSetUpdate {
 }
 
 impl OperatorSetUpdate {
+    // Placeholder for actual extraction logic
     pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeError> {
-        // Placeholder for actual extraction logic
         let action = OperatorSetUpdate::new(vec![], vec![]);
         Ok(action)
     }
