@@ -27,7 +27,7 @@ impl SequencerUpdate {
     }
 }
 
-pub fn handle_sequencer_update(
+pub fn handle_sequencer_update_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
     _relayer: &mut impl MsgRelayer,
@@ -40,7 +40,7 @@ pub fn handle_sequencer_update(
 
     // Fetch multisig configuration
     let config = state
-        .get_multisig_authority_config(&role)
+        .get_multisig_config(&role)
         .ok_or(UpgradeError::UnknownRole)?; // TODO: better error name
 
     // Compute ActionId and validate the vote for the action
