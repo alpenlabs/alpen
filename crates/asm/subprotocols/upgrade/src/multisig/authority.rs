@@ -1,10 +1,14 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_primitives::hash::compute_borsh_hash;
 
 use crate::{
-    actions::UpgradeAction,
     crypto::{aggregate_pubkeys, verify_sig},
     error::VoteValidationError,
-    multisig::{config::MultisigConfig, vote::AggregatedVote},
+    multisig::{
+        config::MultisigConfig,
+        msg::{MultisigOp, MultisigPayload},
+        vote::AggregatedVote,
+    },
     roles::Role,
 };
 
@@ -14,11 +18,18 @@ pub struct MultisigAuthority {
     pub role: Role,
     /// The public keys of all grant-holders authorized to sign.
     pub config: MultisigConfig,
+    /// Nonce for the multisig configuration.
+    /// This is used to prevent replay attacks
+    pub nonce: u64,
 }
 
 impl MultisigAuthority {
     pub fn new(role: Role, config: MultisigConfig) -> Self {
-        Self { role, config }
+        Self {
+            role,
+            config,
+            nonce: 0,
+        }
     }
 
     pub fn role(&self) -> Role {
@@ -33,14 +44,11 @@ impl MultisigAuthority {
         &mut self.config
     }
 
-    pub fn validate_action(
+    pub fn validate_op(
         &self,
         vote: &AggregatedVote,
-        action: &UpgradeAction,
+        op: MultisigOp,
     ) -> Result<(), VoteValidationError> {
-        // sanity check: ensure the action matches the authority's role
-        assert_eq!(action.role(), self.role());
-
         // 1. Collect each public key by index; error if out of bounds.
         let signer_keys: Vec<_> = vote
             .voter_indices()
@@ -58,7 +66,8 @@ impl MultisigAuthority {
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
         // 3. Compute the msg from the UpgradeAction
-        let msg_hash = action.compute_id().into();
+        let msg = MultisigPayload::new(op, self.nonce);
+        let msg_hash = compute_borsh_hash(&msg);
 
         // 4. Verify the aggregated signature against the aggregated pubkey
         if !verify_sig(&aggregated_key, &msg_hash, vote.signature()) {
