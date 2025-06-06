@@ -24,16 +24,6 @@ pub struct PendingUpgradeAction {
 }
 
 impl PendingUpgradeAction {
-    pub fn new(upgrade: UpgradeAction, blocks_remaining: u64, role: Role) -> Self {
-        let id = upgrade.compute_id();
-        Self {
-            id,
-            upgrade,
-            blocks_remaining,
-            role,
-        }
-    }
-
     pub fn role(&self) -> &Role {
         &self.role
     }
@@ -52,6 +42,21 @@ impl PendingUpgradeAction {
     pub fn decrement_blocks_remaining(&mut self) {
         if self.blocks_remaining > 0 {
             self.blocks_remaining -= 1;
+        }
+    }
+}
+
+impl From<UpgradeAction> for PendingUpgradeAction {
+    fn from(upgrade: UpgradeAction) -> Self {
+        let id = upgrade.compute_id();
+        let role = upgrade.role();
+        let blocks_remaining = upgrade.enactment_delay();
+
+        Self {
+            id,
+            upgrade,
+            blocks_remaining,
+            role,
         }
     }
 }

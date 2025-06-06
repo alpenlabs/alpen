@@ -1,9 +1,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_common::TxInput;
 
 use crate::{
     actions::upgrades::UpgradeAction,
     crypto::{PubKey, Signature, aggregate_pubkeys, verify_sig},
-    error::VoteValidationError,
+    error::{DeserializeError, VoteValidationError},
 };
 
 /// An aggregated signature over a subset of signers in a MultisigConfig,
@@ -66,5 +67,13 @@ impl AggregatedVote {
         }
 
         Ok(())
+    }
+}
+
+impl AggregatedVote {
+    // FIXME:
+    pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, DeserializeError> {
+        let vote = AggregatedVote::new(vec![0u8; 15], Signature::default());
+        Ok(vote)
     }
 }
