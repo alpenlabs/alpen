@@ -39,14 +39,14 @@ tracing.workspace = true
 [features]
 default = ["sp1"]
 risc0 = [
-    "zkaleido-risc0-host/perf",
-    "strata-zkvm-hosts/risc0-builder",
-    "dep:zkaleido-risc0-host",
-    "dep:strata-risc0-guest-builder",
+  "zkaleido-risc0-host/perf",
+  "strata-zkvm-hosts/risc0-builder",
+  "dep:zkaleido-risc0-host",
+  "dep:strata-risc0-guest-builder",
 ]
 sp1 = [
-    "zkaleido-sp1-host/perf",
-    "strata-zkvm-hosts/sp1-builder",
-    "dep:zkaleido-sp1-host",
-    "dep:strata-sp1-guest-builder",
+  "zkaleido-sp1-host/perf",
+  "strata-zkvm-hosts/sp1-builder",
+  "dep:zkaleido-sp1-host",
+  "dep:strata-sp1-guest-builder",
 ]
