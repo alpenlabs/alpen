@@ -72,7 +72,7 @@ fn handle_pending_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl 
     for action in actions_to_enact {
         match action.upgrade() {
             UpgradeAction::Multisig(update) => {
-                state.update_multisig_config(update);
+                state.update_multisig_config(update.role(), update.config_update());
             }
             UpgradeAction::VerifyingKey(update) => match update.proof_kind() {
                 StrataProof::ASM => {
