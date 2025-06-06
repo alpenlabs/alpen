@@ -1,6 +1,7 @@
 //! Execution outputs.
 
 use strata_primitives::prelude::*;
+use strata_state::state_op::WriteBatch;
 
 use crate::ChangedState;
 
@@ -14,8 +15,8 @@ pub struct EpochExecutionOutput {
     /// Collected logs from all of the blocks.
     logs: Vec<LogMessage>,
 
-    /// New state on top of the previous epoch's state.
-    state: ChangedState,
+    /// New writes on top of the previous epoch's state.
+    write_batch: WriteBatch,
 }
 
 /// Describes the output of executing a block.
@@ -31,15 +32,15 @@ pub struct BlockExecutionOutput {
     /// Changes to the state we store in the database.
     ///
     /// This is NOT a state diff, that requires more precise tracking.
-    changes: ChangedState,
+    write_batch: WriteBatch,
 }
 
 impl BlockExecutionOutput {
-    pub fn new(computed_state_root: Buf32, logs: Vec<LogMessage>, changes: ChangedState) -> Self {
+    pub fn new(computed_state_root: Buf32, logs: Vec<LogMessage>, write_batch: WriteBatch) -> Self {
         Self {
             computed_state_root,
             logs,
-            changes,
+            write_batch,
         }
     }
 
@@ -51,8 +52,8 @@ impl BlockExecutionOutput {
         &self.logs
     }
 
-    pub fn changes(&self) -> &ChangedState {
-        &self.changes
+    pub fn write_batch(&self) -> &WriteBatch {
+        &self.write_batch
     }
 
     pub fn add_log(&mut self, log: LogMessage) {

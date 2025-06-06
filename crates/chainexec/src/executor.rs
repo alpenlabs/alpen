@@ -50,11 +50,8 @@ impl ChainExecutor {
         let wb = acc.into_write_batch();
         let computed_sr = wb.new_toplevel_state().compute_state_root();
 
-        // Bodge the post state into a `ChangedState` that we can emit.
-        let changes = ChangedState::new(wb.into_toplevel());
-
         // Construct the output.
-        let exec_output = BlockExecutionOutput::new(computed_sr, Vec::new(), changes);
+        let exec_output = BlockExecutionOutput::new(computed_sr, Vec::new(), wb);
         Ok(exec_output)
     }
 }
