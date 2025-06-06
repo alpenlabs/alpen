@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    actions::ActionId,
+    actions::UpgradeAction,
     crypto::{PubKey, Signature, aggregate_pubkeys, verify_sig},
     error::VoteValidationError,
 };
@@ -32,7 +32,7 @@ impl AggregatedVote {
     pub fn validate_action(
         &self,
         signers: &[PubKey],
-        action_id: &ActionId,
+        action: &UpgradeAction,
     ) -> Result<(), VoteValidationError> {
         // 1. Collect each public key by index; error if out of bounds.
         let signer_keys: Vec<PubKey> = self
@@ -49,8 +49,11 @@ impl AggregatedVote {
         // 2. Aggregate those public keys into one.
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
+        // 3. Compute the action ID from the UpgradeAction
+        let msg_hash = action.compute_id().into();
+
         // 3. Verify the aggregated signature against the aggregated pubkey
-        if !verify_sig(&aggregated_key, action_id.as_buf32(), &self.agg_signature) {
+        if !verify_sig(&aggregated_key, &msg_hash, &self.agg_signature) {
             return Err(VoteValidationError::InvalidVoteSignature);
         }
 

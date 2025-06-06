@@ -9,7 +9,7 @@ use cancel::CancelAction;
 use multisig_update::MultisigConfigUpdate;
 use operator_update::OperatorSetUpdate;
 use seq_update::SequencerUpdate;
-use strata_primitives::buf::Buf32;
+use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
 use vk_update::VerifyingKeyUpdate;
 
 use crate::roles::Role;
@@ -78,6 +78,12 @@ impl From<VerifyingKeyUpdate> for UpgradeAction {
     }
 }
 
+impl UpgradeAction {
+    pub fn compute_id(&self) -> ActionId {
+        compute_borsh_hash(&self).into()
+    }
+}
+
 /// A pending upgrade action that will be triggered after a specified number
 /// of Bitcoin blocks unless cancelled by a CancelTx.
 ///
@@ -86,6 +92,7 @@ impl From<VerifyingKeyUpdate> for UpgradeAction {
 /// enacted.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct PendingUpgradeAction {
+    id: ActionId,
     upgrade: UpgradeAction,
     blocks_remaining: u64,
     role: Role,
@@ -93,7 +100,9 @@ pub struct PendingUpgradeAction {
 
 impl PendingUpgradeAction {
     pub fn new(upgrade: UpgradeAction, blocks_remaining: u64, role: Role) -> Self {
+        let id = upgrade.compute_id();
         Self {
+            id,
             upgrade,
             blocks_remaining,
             role,
@@ -102,5 +111,22 @@ impl PendingUpgradeAction {
 
     pub fn role(&self) -> &Role {
         &self.role
+    }
+
+    pub fn id(&self) -> &ActionId {
+        &self.id
+    }
+
+    pub fn upgrade(&self) -> &UpgradeAction {
+        &self.upgrade
+    }
+
+    pub fn blocks_remaining(&self) -> u64 {
+        self.blocks_remaining
+    }
+    pub fn decrement_blocks_remaining(&mut self) {
+        if self.blocks_remaining > 0 {
+            self.blocks_remaining -= 1;
+        }
     }
 }
