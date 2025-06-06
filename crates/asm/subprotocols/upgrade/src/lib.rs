@@ -8,11 +8,9 @@
 //! enactment delay (time-locked period), and final enactment or cancellation.
 
 pub mod actions;
-pub mod authority;
 pub mod crypto;
 pub mod error;
-pub mod multisig_config;
+pub mod multisig;
 pub mod roles;
 pub mod state;
 pub mod subprotocol;
-pub mod vote;

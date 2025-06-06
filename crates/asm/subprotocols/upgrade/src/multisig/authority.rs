@@ -4,9 +4,8 @@ use crate::{
     actions::UpgradeAction,
     crypto::{aggregate_pubkeys, verify_sig},
     error::VoteValidationError,
-    multisig_config::MultisigConfig,
+    multisig::{config::MultisigConfig, vote::AggregatedVote},
     roles::Role,
-    vote::AggregatedVote,
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
@@ -69,4 +68,3 @@ impl MultisigAuthority {
         Ok(())
     }
 }
-
