@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::actions::{UpgradeAction, cancel::CancelAction};
+use crate::actions::{cancel::CancelAction, upgrades::UpgradeAction};
 
 /// A high‐level multisig operation that participants can propose.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
