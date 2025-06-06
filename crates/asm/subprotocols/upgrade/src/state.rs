@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
@@ -15,7 +13,7 @@ use crate::{
 pub struct UpgradeSubprotoState {
     /// Role-specific configuration for a multisignature authority: who the
     /// signers are, and how many signatures are required to approve an action.
-    multisig_authority: HashMap<Role, MultisigConfig>,
+    multisig_authority: Vec<MultisigConfig>,
 
     /// A map from each action’s unique identifier to its corresponding
     /// upgrade action awaiting execution.
@@ -24,11 +22,14 @@ pub struct UpgradeSubprotoState {
 
 impl UpgradeSubprotoState {
     pub fn get_multisig_config(&self, role: &Role) -> Option<&MultisigConfig> {
-        self.multisig_authority.get(role)
+        self.multisig_authority.get((*role as u8) as usize)
     }
 
     pub fn update_multisig_config(&mut self, update: &MultisigConfigUpdate) {
-        if let Some(config) = self.multisig_authority.get_mut(update.role()) {
+        if let Some(config) = self
+            .multisig_authority
+            .get_mut((*update.role() as u8) as usize)
+        {
             config.update(update);
         }
     }
@@ -78,6 +79,7 @@ impl UpgradeSubprotoState {
 /// how many signatures are required to approve an action.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigConfig {
+    pub role: Role,
     /// The public keys of all grant-holders authorized to sign.
     pub keys: Vec<PubKey>,
     /// The minimum number of keys that must sign to approve an action.
@@ -127,6 +129,7 @@ impl MultisigConfig {
         new_keys.extend_from_slice(update.new_members());
 
         Self {
+            role: self.role,
             keys: new_keys,
             threshold: update.new_threshold(),
         }
