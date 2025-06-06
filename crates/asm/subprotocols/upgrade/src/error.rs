@@ -3,7 +3,7 @@ use thiserror::Error;
 use crate::{actions::ActionId, crypto::PubKey};
 
 /// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum UpgradeError {
     /// Indicates a deserialization/parse failure.
     #[error(transparent)]
@@ -27,7 +27,7 @@ pub enum UpgradeError {
 }
 
 /// Errors related to multisig configuration updates and thresholds.
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum MultisigConfigError {
     /// A new member to be added already exists in the multisig configuration.
     #[error("cannot add member {0:?}: already exists in multisig configuration")]
@@ -50,7 +50,7 @@ pub enum MultisigConfigError {
 }
 
 /// Errors related to failing to parse incoming transactions.
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum DeserializeError {
     /// Failed to deserialize the transaction payload for the given transaction type.
     #[error("failed to deserialize transaction for tx_type = {0}")]
@@ -58,7 +58,7 @@ pub enum DeserializeError {
 }
 
 /// Errors related to validating a multisig vote (aggregation or signature check).
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum VoteValidationError {
     /// Failed to aggregate public keys for multisig vote.
     #[error("failed to aggregate public keys for multisig vote")]
