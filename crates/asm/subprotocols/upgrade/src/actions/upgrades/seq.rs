@@ -17,8 +17,8 @@ impl SequencerUpdate {
 }
 
 impl SequencerUpdate {
+    // Placeholder for actual extraction logic
     pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeError> {
-        // Placeholder for actual extraction logic
         let action = SequencerUpdate::new(PubKey::default());
         Ok(action)
     }

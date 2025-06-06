@@ -28,8 +28,8 @@ impl MultisigUpdate {
 }
 
 impl MultisigUpdate {
+    // Placeholder for actual extraction logic
     pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeError> {
-        // Placeholder for actual extraction logic
         let action = MultisigUpdate::new(
             MultisigConfigUpdate::new(vec![], vec![], 0),
             Role::BridgeAdmin,
