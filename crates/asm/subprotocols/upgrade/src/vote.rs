@@ -22,6 +22,14 @@ impl AggregatedVote {
         }
     }
 
+    pub fn signature(&self) -> &Signature {
+        &self.agg_signature
+    }
+
+    pub fn voter_indices(&self) -> &[u8] {
+        &self.voter_indices
+    }
+
     /// Validates this aggregated vote against the provided signer public keys for the given
     /// `action_id`.
     ///

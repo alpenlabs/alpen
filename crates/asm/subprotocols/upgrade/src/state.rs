@@ -2,6 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     actions::{PendingUpgradeAction, id::ActionId, multisig_update::MultisigConfigUpdate},
+    authority::MultisigAuthority,
     multisig_config::MultisigConfig,
     roles::Role,
 };
@@ -76,31 +77,5 @@ impl UpgradeSubprotoState {
 
         self.pending_actions = pending;
         ready
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-pub struct MultisigAuthority {
-    /// The role of this multisignature authority.
-    pub role: Role,
-    /// The public keys of all grant-holders authorized to sign.
-    pub config: MultisigConfig,
-}
-
-impl MultisigAuthority {
-    pub fn new(role: Role, config: MultisigConfig) -> Self {
-        Self { role, config }
-    }
-
-    pub fn role(&self) -> &Role {
-        &self.role
-    }
-
-    pub fn config(&self) -> &MultisigConfig {
-        &self.config
-    }
-
-    pub fn config_mut(&mut self) -> &mut MultisigConfig {
-        &mut self.config
     }
 }
