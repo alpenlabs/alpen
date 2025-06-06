@@ -4,7 +4,6 @@ use strata_primitives::buf::Buf32;
 
 use super::ActionId;
 use crate::{
-    crypto::Signature,
     error::UpgradeError,
     multisig::{msg::MultisigOp, vote::AggregatedVote},
     state::UpgradeSubprotoState,
@@ -27,14 +26,27 @@ impl CancelAction {
     }
 }
 
+impl CancelAction {
+    /// Extracts a CancelAction from a transaction input.
+    /// This is a placeholder function and should be replaced with actual logic.
+    pub fn extract_from_tx(tx: &TxInput<'_>) -> Result<Self, UpgradeError> {
+        // sanity check
+        assert_eq!(tx.tag().tx_type(), CANCEL_TX_TYPE);
+
+        let id = Buf32::zero().into();
+        Ok(CancelAction::new(id))
+    }
+}
+
 /// Handles a CancelAction transaction. It validates the vote on the cancellation
 /// and, if valid, removes the specified pending action from the state.
 pub fn handle_cancel_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
 ) -> Result<(), UpgradeError> {
-    // Extract the CancelAction and its accompanying vote from the transaction
-    let (cancel_action, vote) = extract_cancel_action(tx)?;
+    // Extract the aggregated vote and CancelAction from the transaction payload
+    let vote = AggregatedVote::extract_from_tx(tx)?;
+    let cancel_action = CancelAction::extract_from_tx(tx)?;
 
     // Determine the ID of the pending action that should be canceled
     let target_action_id = *cancel_action.id();
@@ -42,12 +54,13 @@ pub fn handle_cancel_tx(
         .get_pending_action(&target_action_id)
         .ok_or(UpgradeError::UnknownAction(target_action_id))?;
 
-    // Get the authority for the pending action
+    // Get the authority that can cancel the pending action
     let role = pending_action.role();
     let authority = state
         .get_authority(&role)
         .ok_or(UpgradeError::UnknownRole)?;
 
+    // Convert the cancel action into a multisig operation and validate it against the vote
     let op = MultisigOp::from(cancel_action);
     authority.validate_op(&op, &vote)?;
 
@@ -55,15 +68,4 @@ pub fn handle_cancel_tx(
     state.remove_pending_action(&target_action_id);
 
     Ok(())
-}
-
-// FIXME: This is a placeholder for now
-fn extract_cancel_action(tx: &TxInput<'_>) -> Result<(CancelAction, AggregatedVote), UpgradeError> {
-    // sanity check
-    assert_eq!(tx.tag().tx_type(), CANCEL_TX_TYPE);
-
-    let id = Buf32::zero().into();
-    let action = CancelAction::new(id);
-    let vote = AggregatedVote::new(vec![0u8; 15], Signature::default());
-    Ok((action, vote))
 }
