@@ -1,9 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{
-    actions::upgrades::multisig::MultisigConfigUpdate, crypto::PubKey, error::MultisigConfigError,
-    roles::Role,
-};
+use crate::{crypto::PubKey, error::MultisigConfigError};
 
 /// Configuration for a multisignature authority: who the signers are, and
 /// how many signatures are required to approve an action.
@@ -27,7 +24,42 @@ impl MultisigConfig {
     pub fn threshold(&self) -> u8 {
         self.threshold
     }
+}
 
+/// Represents a change to the multisig configuration:
+/// * removes the specified `old_members` from the set,
+/// * adds the specified `new_members`
+/// * updates the threshold.
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct MultisigConfigUpdate {
+    new_members: Vec<PubKey>,
+    old_members: Vec<PubKey>,
+    new_threshold: u8,
+}
+
+impl MultisigConfigUpdate {
+    pub fn new(new_members: Vec<PubKey>, old_members: Vec<PubKey>, new_threshold: u8) -> Self {
+        Self {
+            new_members,
+            old_members,
+            new_threshold,
+        }
+    }
+
+    pub fn old_members(&self) -> &[PubKey] {
+        &self.old_members
+    }
+
+    pub fn new_members(&self) -> &[PubKey] {
+        &self.new_members
+    }
+
+    pub fn new_threshold(&self) -> u8 {
+        self.new_threshold
+    }
+}
+
+impl MultisigConfig {
     pub fn validate_update(
         &self,
         update: &MultisigConfigUpdate,
@@ -80,14 +112,13 @@ mod tests {
 
     #[test]
     fn test_validate_update_duplicate_new_member() {
-        let role = Role::BridgeAdmin;
         // Initial config: keys = [k1, k2], threshold = 2
         let k1 = make_key(1);
         let k2 = make_key(2);
         let base = MultisigConfig::new(vec![k1.clone(), k2.clone()], 2);
 
         // Try to add k2 again → should error MemberAlreadyExists(k2)
-        let update = MultisigConfigUpdate::new(vec![k2.clone()], vec![], 2, role);
+        let update = MultisigConfigUpdate::new(vec![k2.clone()], vec![], 2);
         let err = base.validate_update(&update).unwrap_err();
         assert_eq!(err, MultisigConfigError::MemberAlreadyExists(k2.clone()));
     }
@@ -95,14 +126,13 @@ mod tests {
     #[test]
     fn test_validate_update_missing_old_member() {
         // Initial config: keys = [k1, k2], threshold = 2
-        let role = Role::BridgeAdmin;
         let k1 = make_key(1);
         let k2 = make_key(2);
         let k3 = make_key(3);
         let base = MultisigConfig::new(vec![k1.clone(), k2.clone()], 2);
 
         // Try to remove k3 (which is not in base.keys) → should error MemberNotFound(k3)
-        let update = MultisigConfigUpdate::new(vec![], vec![k3.clone()], 2, role);
+        let update = MultisigConfigUpdate::new(vec![], vec![k3.clone()], 2);
         let err = base.validate_update(&update).unwrap_err();
         assert_eq!(err, MultisigConfigError::MemberNotFound(k3.clone()));
     }
@@ -110,7 +140,6 @@ mod tests {
     #[test]
     fn test_validate_update_invalid_threshold() {
         // Initial config: keys = [k1, k2, k3, k4], threshold = 3
-        let role = Role::BridgeAdmin;
         let k1 = make_key(1);
         let k2 = make_key(2);
         let k3 = make_key(3);
@@ -125,8 +154,7 @@ mod tests {
         let k6 = make_key(6);
 
         // new_threshold = 2  (invalid, must be > 2)
-        let update =
-            MultisigConfigUpdate::new(vec![k5.clone(), k6.clone()], vec![k4.clone()], 2, role);
+        let update = MultisigConfigUpdate::new(vec![k5.clone(), k6.clone()], vec![k4.clone()], 2);
         let err = base.validate_update(&update).unwrap_err();
         assert_eq!(
             err,
@@ -144,15 +172,13 @@ mod tests {
         let k2 = make_key(2);
         let k3 = make_key(3);
 
-        let role = Role::BridgeAdmin;
         let mut config = MultisigConfig::new(vec![k1.clone(), k2.clone(), k3.clone()], 2);
 
         // Remove k3, add k4 and k5 → updated_size = 4 (3 - 1 + 2)
         // min_required = 4 / 2 = 2, so new_threshold must be > 2 (e.g. 3)
         let k4 = make_key(4);
         let k5 = make_key(5);
-        let update =
-            MultisigConfigUpdate::new(vec![k4.clone(), k5.clone()], vec![k3.clone()], 3, role);
+        let update = MultisigConfigUpdate::new(vec![k4.clone(), k5.clone()], vec![k3.clone()], 3);
 
         // First: validate_update should return Ok(())
         assert!(config.validate_update(&update).is_ok());

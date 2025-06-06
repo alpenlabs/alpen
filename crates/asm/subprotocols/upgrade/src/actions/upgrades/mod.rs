@@ -5,7 +5,7 @@ use crate::{
     actions::{
         id::ActionId,
         upgrades::{
-            multisig::MultisigConfigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
+            multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
             vk::VerifyingKeyUpdate,
         },
     },
@@ -25,7 +25,7 @@ pub const OL_STF_VK_ENACTMENT_DELAY: u64 = 4_320;
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum UpgradeAction {
-    Multisig(MultisigConfigUpdate),
+    Multisig(MultisigUpdate),
     OperatorSet(OperatorSetUpdate),
     Sequencer(SequencerUpdate),
     VerifyingKey(VerifyingKeyUpdate),
@@ -62,8 +62,8 @@ impl UpgradeAction {
         }
     }
 }
-impl From<MultisigConfigUpdate> for UpgradeAction {
-    fn from(m: MultisigConfigUpdate) -> Self {
+impl From<MultisigUpdate> for UpgradeAction {
+    fn from(m: MultisigUpdate) -> Self {
         UpgradeAction::Multisig(m)
     }
 }
