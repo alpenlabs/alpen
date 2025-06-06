@@ -13,19 +13,11 @@ pub struct MultisigConfig {
     pub keys: Vec<PubKey>,
     /// The minimum number of keys that must sign to approve an action.
     pub threshold: u8,
-    /// Nonce for the multisig configuration.
-    /// This is used to prevent replay attacks
-    pub nonce: u64,
 }
 
 impl MultisigConfig {
     pub fn new(keys: Vec<PubKey>, threshold: u8) -> Self {
-        let nonce = 0;
-        Self {
-            keys,
-            threshold,
-            nonce,
-        }
+        Self { keys, threshold }
     }
 
     pub fn keys(&self) -> &[PubKey] {
