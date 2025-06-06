@@ -4,7 +4,9 @@ use strata_primitives::buf::Buf32;
 
 use super::ActionId;
 use crate::{
-    crypto::Signature, error::UpgradeError, multisig::vote::AggregatedVote,
+    crypto::Signature,
+    error::UpgradeError,
+    multisig::{msg::MultisigOp, vote::AggregatedVote},
     state::UpgradeSubprotoState,
 };
 
@@ -41,14 +43,14 @@ pub fn handle_cancel_tx(
         .get_pending_action(&target_action_id)
         .ok_or(UpgradeError::UnknownAction(target_action_id))?;
 
-    // Fetch the multisig authority configuration for the role associated with the pending action
+    // Get the authority for the pending action
     let role = *pending_action.role();
-    let multisig_config = state
-        .get_multisig_config(&role)
+    let authority = state
+        .get_authority(&role)
         .ok_or(UpgradeError::UnknownRole)?;
 
-    // Validate the cancel action
-    // vote.validate_action(&multisig_config.keys, &cancel_action.into())?; // FIXME:
+    let op = MultisigOp::from(cancel_action);
+    authority.validate_op(&op, &vote)?;
 
     // All checks passed—remove the pending action from the state
     state.remove_pending_action(&target_action_id);
