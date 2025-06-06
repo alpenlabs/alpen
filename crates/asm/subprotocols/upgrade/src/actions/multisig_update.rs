@@ -5,9 +5,9 @@ use crate::{
     actions::PendingUpgradeAction,
     crypto::{PubKey, Signature},
     error::UpgradeError,
+    multisig::vote::AggregatedVote,
     roles::Role,
     state::UpgradeSubprotoState,
-    vote::AggregatedVote,
 };
 
 pub const MULTISIG_CONFIG_UPDATE_TX_TYPE: u8 = 1;
