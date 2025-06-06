@@ -76,4 +76,8 @@ impl MultisigAuthority {
 
         Ok(())
     }
+
+    pub fn increment_nonce(&mut self) {
+        self.nonce += 1;
+    }
 }

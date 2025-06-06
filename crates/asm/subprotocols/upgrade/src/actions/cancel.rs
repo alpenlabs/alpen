@@ -43,7 +43,7 @@ pub fn handle_cancel_tx(
         .ok_or(UpgradeError::UnknownAction(target_action_id))?;
 
     // Get the authority for the pending action
-    let role = *pending_action.role();
+    let role = pending_action.role();
     let authority = state
         .get_authority(&role)
         .ok_or(UpgradeError::UnknownRole)?;
