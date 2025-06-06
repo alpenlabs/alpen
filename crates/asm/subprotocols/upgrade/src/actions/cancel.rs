@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::{MsgRelayer, TxInput};
+use strata_asm_common::TxInput;
 use strata_primitives::buf::Buf32;
 
 use super::ActionId;
@@ -32,7 +32,6 @@ impl CancelAction {
 pub fn handle_cancel_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
-    _relayer: &mut impl MsgRelayer,
 ) -> Result<(), UpgradeError> {
     // Extract the CancelAction and its accompanying vote from the transaction
     let (cancel_action, vote) = extract_cancel_action(tx)?;
