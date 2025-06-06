@@ -29,6 +29,10 @@ impl UpgradeSubprotoState {
         None
     }
 
+    pub fn get_authority(&self, role: &Role) -> Option<&MultisigAuthority> {
+        self.multisig_authorities.get((*role as u8) as usize)
+    }
+
     pub fn update_multisig_config(&mut self, update: &MultisigConfigUpdate) {
         if let Some(authority) = self
             .multisig_authorities
