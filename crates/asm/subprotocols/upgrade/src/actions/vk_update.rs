@@ -25,12 +25,16 @@ pub struct VerifyingKeyUpdate {
 }
 
 impl VerifyingKeyUpdate {
-    fn new(new_vk: VerifyingKey, kind: StrataProof) -> Self {
+    pub fn new(new_vk: VerifyingKey, kind: StrataProof) -> Self {
         Self { new_vk, kind }
+    }
+
+    pub fn proof_kind(&self) -> &StrataProof {
+        &self.kind
     }
 }
 
-pub fn handle_vk_update(
+pub fn handle_vk_update_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
     _relayer: &mut impl MsgRelayer,
@@ -46,7 +50,7 @@ pub fn handle_vk_update(
 
     // Fetch multisig configuration
     let config = state
-        .get_multisig_authority_config(&role)
+        .get_multisig_config(&role)
         .ok_or(UpgradeError::UnknownRole)?; // TODO: better error name
 
     // Validate the vote for the action

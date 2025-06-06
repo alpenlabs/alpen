@@ -2,12 +2,14 @@ use strata_asm_common::{MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput
 
 use crate::{
     actions::{
-        cancel::{CANCEL_TX_TYPE, handle_cancel_action},
-        multisig_update::{MULTISIG_CONFIG_UPDATE_TX_TYPE, handle_multisig_config_update},
-        operator_update::{OPERATOR_UPDATE_TX_TYPE, handle_operator_update},
-        seq_update::{SEQUENCER_UPDATE_TX_TYPE, handle_sequencer_update},
-        vk_update::{VK_UPDATE_TX_TYPE, handle_vk_update},
+        UpgradeAction,
+        cancel::{CANCEL_TX_TYPE, handle_cancel_tx},
+        multisig_update::{MULTISIG_CONFIG_UPDATE_TX_TYPE, handle_multisig_config_update_tx},
+        operator_update::{OPERATOR_UPDATE_TX_TYPE, handle_operator_update_tx},
+        seq_update::{SEQUENCER_UPDATE_TX_TYPE, handle_sequencer_update_tx},
+        vk_update::{VK_UPDATE_TX_TYPE, handle_vk_update_tx},
     },
+    roles::StrataProof,
     state::UpgradeSubprotoState,
 };
 
@@ -32,27 +34,59 @@ impl Subprotocol for UpgradeSubprotocol {
         txs: &[TxInput<'_>],
         relayer: &mut impl MsgRelayer,
     ) {
+        // Before processing the transactions, we handle any pending actions
+        handle_pending_actions(state, relayer);
+
+        // Process each transaction based on its type
         for tx in txs {
             match tx.tag().tx_type() {
                 MULTISIG_CONFIG_UPDATE_TX_TYPE => {
-                    let _ = handle_multisig_config_update(state, tx, relayer);
+                    let _ = handle_multisig_config_update_tx(state, tx, relayer);
                 }
                 VK_UPDATE_TX_TYPE => {
-                    let _ = handle_vk_update(state, tx, relayer);
+                    let _ = handle_vk_update_tx(state, tx, relayer);
                 }
                 OPERATOR_UPDATE_TX_TYPE => {
-                    let _ = handle_operator_update(state, tx, relayer);
+                    let _ = handle_operator_update_tx(state, tx, relayer);
                 }
                 SEQUENCER_UPDATE_TX_TYPE => {
-                    let _ = handle_sequencer_update(state, tx, relayer);
+                    let _ = handle_sequencer_update_tx(state, tx, relayer);
                 }
                 CANCEL_TX_TYPE => {
-                    let _ = handle_cancel_action(state, tx, relayer);
+                    let _ = handle_cancel_tx(state, tx, relayer);
                 }
                 _ => {}
             }
         }
     }
 
-    fn process_msgs(state: &mut UpgradeSubprotoState, msgs: &[Self::Msg]) {}
+    fn process_msgs(_state: &mut UpgradeSubprotoState, _msgs: &[Self::Msg]) {}
+}
+
+fn handle_pending_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl MsgRelayer) {
+    // Decrement the blocks_remaining for each pending action
+    let actions_to_enact = state.tick_and_collect_ready_actions();
+
+    for action in actions_to_enact {
+        match action.upgrade() {
+            UpgradeAction::Multisig(update) => {
+                state.update_multisig_config(update);
+            }
+            UpgradeAction::VerifyingKey(update) => match update.proof_kind() {
+                StrataProof::ASM => {
+                    // Emit Log
+                }
+                StrataProof::OlStf => {
+                    // Send a InterprotoMsg to OL Core subprotocol
+                }
+            },
+            UpgradeAction::OperatorSet(_update) => {
+                // Set an InterProtoMsg to the Bridge Subprotocol;
+            }
+            UpgradeAction::Sequencer(_update) => {
+                // Send a InterprotoMsg to the Sequencer subprotocol
+            }
+            UpgradeAction::Cancel(_) => {}
+        }
+    }
 }

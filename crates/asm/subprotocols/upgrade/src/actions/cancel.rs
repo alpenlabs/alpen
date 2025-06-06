@@ -26,7 +26,7 @@ impl CancelAction {
 
 /// Handles a CancelAction transaction. It validates the vote on the cancellation
 /// and, if valid, removes the specified pending action from the state.
-pub fn handle_cancel_action(
+pub fn handle_cancel_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
     _relayer: &mut impl MsgRelayer,
@@ -43,7 +43,7 @@ pub fn handle_cancel_action(
     // Fetch the multisig authority configuration for the role associated with the pending action
     let role = *pending_action.role();
     let multisig_config = state
-        .get_multisig_authority_config(&role)
+        .get_multisig_config(&role)
         .ok_or(UpgradeError::UnknownRole)?;
 
     // Validate the cancel action

@@ -58,7 +58,7 @@ impl MultisigConfigUpdate {
     }
 }
 
-pub fn handle_multisig_config_update(
+pub fn handle_multisig_config_update_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
     _relayer: &mut impl MsgRelayer,
@@ -69,7 +69,7 @@ pub fn handle_multisig_config_update(
     // Fetch current multisig configuration
     let role = *update.role();
     let existing_config = state
-        .get_multisig_authority_config(&role)
+        .get_multisig_config(&role)
         .ok_or(UpgradeError::UnknownRole)?; // TODO: better error name
 
     // validate config update

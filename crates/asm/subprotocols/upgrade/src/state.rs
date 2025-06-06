@@ -23,8 +23,14 @@ pub struct UpgradeSubprotoState {
 }
 
 impl UpgradeSubprotoState {
-    pub fn get_multisig_authority_config(&self, role: &Role) -> Option<&MultisigConfig> {
+    pub fn get_multisig_config(&self, role: &Role) -> Option<&MultisigConfig> {
         self.multisig_authority.get(role)
+    }
+
+    pub fn update_multisig_config(&mut self, update: &MultisigConfigUpdate) {
+        if let Some(config) = self.multisig_authority.get_mut(update.role()) {
+            config.update(update);
+        }
     }
 
     pub fn add_pending_action(&mut self, action: PendingUpgradeAction) {
@@ -45,6 +51,26 @@ impl UpgradeSubprotoState {
             // swap the last element into `idx`, then pop
             self.pending_actions.swap_remove(idx);
         }
+    }
+
+    /// Decrements the block countdown for all pending actions and returns any actions
+    /// that are now ready for execution (blocks_remaining == 0).
+    ///
+    /// Ready actions are removed from the pending list and returned to the caller
+    /// for processing. This should typically be called once per block to advance
+    /// the countdown timers and collect executable actions.
+    pub fn tick_and_collect_ready_actions(&mut self) -> Vec<PendingUpgradeAction> {
+        self.pending_actions
+            .iter_mut()
+            .for_each(|action| action.decrement_blocks_remaining());
+
+        // Partition actions: extract ready ones, keep pending ones
+        let (ready, pending): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending_actions)
+            .into_iter()
+            .partition(|action| action.blocks_remaining() == 0);
+
+        self.pending_actions = pending;
+        ready
     }
 }
 
@@ -93,5 +119,16 @@ impl MultisigConfig {
         }
 
         Ok(())
+    }
+
+    pub fn update(&self, update: &MultisigConfigUpdate) -> Self {
+        let mut new_keys = self.keys.clone();
+        new_keys.retain(|key| !update.old_members().contains(key));
+        new_keys.extend_from_slice(update.new_members());
+
+        Self {
+            keys: new_keys,
+            threshold: update.new_threshold(),
+        }
     }
 }
