@@ -12,6 +12,7 @@ use crate::{
             seq::SequencerUpdate, vk::VerifyingKeyUpdate,
         },
     },
+    upgrades::queued::QueuedUpgrade,
 };
 
 /// Handles an incoming upgrade transaction:
@@ -61,8 +62,8 @@ pub fn handle_update_tx(
     authority.validate_op(&op, &vote)?;
 
     // Create a pending upgrade action and enqueue it for later enactment
-    let pending_action = super::PendingUpgradeAction::from(action);
-    state.add_pending_action(pending_action);
+    let pending_action = QueuedUpgrade::from(action);
+    state.add_queued_upgrade(pending_action);
 
     Ok(())
 }
