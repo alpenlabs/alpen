@@ -22,10 +22,6 @@ pub struct AlpenEvmInner<
 impl<CTX: ContextTr, INSP>
     AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, AlpenEvmPrecompiles>
 {
-    pub fn new() -> Self {
-        todo!()
-    }
-
     /// Consumes self and returns a new Evm type with given Precompiles.
     pub fn with_precompiles<OP>(
         self,

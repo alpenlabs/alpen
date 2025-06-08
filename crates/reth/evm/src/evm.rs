@@ -139,7 +139,7 @@ impl EvmFactory for AlpenEvmFactory {
         db: DB,
         input: EvmEnv,
     ) -> Self::Evm<DB, revm::inspector::NoOpInspector> {
-        let evm = Context::mainnet()
+        let evm_ctx = Context::mainnet()
             .with_db(db)
             .with_cfg(input.cfg_env)
             .with_block(input.block_env)
@@ -147,7 +147,7 @@ impl EvmFactory for AlpenEvmFactory {
             .with_precompiles(AlpenEvmPrecompiles::new());
 
         AlpenEvm {
-            inner: AlpenEvmInner::new(),
+            inner: AlpenEvmInner(evm_ctx),
             inspect: false,
         }
     }
@@ -158,9 +158,16 @@ impl EvmFactory for AlpenEvmFactory {
         input: reth_evm::EvmEnv<Self::Spec>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
+        let evm_ctx = Context::mainnet()
+            .with_db(db)
+            .with_cfg(input.cfg_env)
+            .with_block(input.block_env)
+            .build_mainnet_with_inspector(inspector)
+            .with_precompiles(AlpenEvmPrecompiles::new());
+
         AlpenEvm {
-            inner: AlpenEvmInner::new(),
-            inspect: false,
+            inner: AlpenEvmInner(evm_ctx),
+            inspect: true,
         }
     }
 }

@@ -39,14 +39,14 @@ where
     type Frame = FRAME;
     type HaltReason = HaltReason;
 
-    fn reward_beneficiary(
-        &self,
-        evm: &mut Self::Evm,
-        exec_result: &mut <Self::Frame as Frame>::FrameResult,
-    ) -> Result<(), Self::Error> {
-        // Skip beneficiary reward
-        Ok(())
-    }
+    // fn reward_beneficiary(
+    //     &self,
+    //     evm: &mut Self::Evm,
+    //     exec_result: &mut <Self::Frame as Frame>::FrameResult,
+    // ) -> Result<(), Self::Error> {
+    //     // Skip beneficiary reward
+    //     Ok(())
+    // }
 }
 
 impl<EVM, ERROR, FRAME> InspectorHandler for AlpenRevmHandler<EVM, ERROR, FRAME>
