@@ -1,12 +1,10 @@
 use strata_asm_common::{MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput};
 
 use crate::{
-    actions::{
-        cancel::{CANCEL_TX_TYPE, handle_cancel_tx},
-        upgrades::{UpgradeAction, handle_update_tx},
-    },
+    actions::{cancel::handle_cancel_tx, enact::handle_enactment_tx, update::handle_update_tx},
     roles::StrataProof,
     state::UpgradeSubprotoState,
+    txs::{CANCEL_TX_TYPE, ENACT_TX_TYPE, updates::UpgradeAction},
 };
 
 pub const UPGRADE_SUBPROTOCOL_ID: u8 = 0;
@@ -38,6 +36,9 @@ impl Subprotocol for UpgradeSubprotocol {
             match tx.tag().tx_type() {
                 CANCEL_TX_TYPE => {
                     let _ = handle_cancel_tx(state, tx);
+                }
+                ENACT_TX_TYPE => {
+                    let _ = handle_enactment_tx(state, tx);
                 }
                 _ => {
                     let _ = handle_update_tx(state, tx);
