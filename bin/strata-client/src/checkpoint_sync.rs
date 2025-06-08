@@ -78,7 +78,8 @@ pub async fn checkpoint_sync_task(
     Ok(())
 }
 
-/// Get the epoch of the latest chainstate available in the database.
+/// Get the epoch one more than that of the latest chainstate available in the database.
+/// This is the epoch which will be committed to by the next checkpoint.
 async fn get_target_epoch(storage: &Arc<NodeStorage>) -> Result<u64, anyhow::Error> {
     let chsman = storage.chainstate();
     let Some(slot) = chsman.get_last_write_idx_async().await.ok() else {

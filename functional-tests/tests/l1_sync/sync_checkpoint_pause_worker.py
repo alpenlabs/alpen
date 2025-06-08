@@ -2,7 +2,7 @@ import flexitest
 import logging
 from envs import net_settings, testenv
 
-from tests.l1_sync.common import assert_ckpt_and_seq_sync
+from tests.l1_sync.common import assert_ckpt_and_seq_sync, get_latest_slot
 from utils import *
 
 
@@ -32,7 +32,7 @@ class SyncCheckpointPauseWorkerTest(testenv.StrataTester):
 
         # wait for an epoch to be confirmed
         wait_until_epoch_finalized(cs_node_rpc, 0, timeout=30)
-        ckpt_sync_slot_before_pause = cs_node_rpc.strata_getLatestChainstateSlot()
+        ckpt_sync_slot_before_pause = get_latest_slot(cs_node_rpc)
         logging.info(
             f"checkpoint sync worker chainstate latest slot: {ckpt_sync_slot_before_pause}"
         )
@@ -48,7 +48,7 @@ class SyncCheckpointPauseWorkerTest(testenv.StrataTester):
         wait_until_epoch_finalized(ss_node_rpc, 2, timeout=60)
 
         logging.info("Assert that checkpoint sync worker is paused")
-        ckpt_sync_paused_at_slot = cs_node_rpc.strata_getLatestChainstateSlot()
+        ckpt_sync_paused_at_slot = get_latest_slot(cs_node_rpc)
         assert ckpt_sync_paused_at_slot == ckpt_sync_slot_before_pause, (
             "Failed to pause checkpoint sync worker"
         )

@@ -5,7 +5,6 @@ WORKDIR /app
 # remove TARGET?
 ENV CARGO_INCREMENTAL=0 \
     CARGO_TERM_COLOR=always \
-    TARGET=x86_64-unknown-linux-musl 
 
 # Install system dependencies
 RUN apt-get update && apt-get -y upgrade && apt-get install -y \
