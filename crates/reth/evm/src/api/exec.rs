@@ -1,15 +1,19 @@
 use revm::{
     context::{
-        result::{EVMError, ExecutionResult, ResultAndState},
+        result::{EVMError, ExecutionResult, InvalidTransaction, ResultAndState},
         ContextSetters, ContextTr, JournalOutput, JournalTr,
     },
-    handler::{instructions::EthInstructions, EthFrame, PrecompileProvider},
-    inspector::JournalExt,
+    handler::{instructions::EthInstructions, EvmTr, Handler, PrecompileProvider},
+    inspector::{InspectorHandler, JournalExt},
     interpreter::{interpreter::EthInterpreter, InterpreterResult},
-    DatabaseCommit, ExecuteCommitEvm, ExecuteEvm, InspectCommitEvm, InspectEvm, Inspector,
+    Database, DatabaseCommit, ExecuteCommitEvm, ExecuteEvm, InspectCommitEvm, InspectEvm,
+    Inspector,
 };
 
 use crate::api::{evm::AlpenEvmInner, handler::AlpenRevmHandler};
+
+/// Type alias for the error type of the AlpenEvm.
+type AlpenEvmError<CTX> = EVMError<<<CTX as ContextTr>::Db as Database>::Error, InvalidTransaction>;
 
 impl<CTX, INSP, PRECOMPILE> ExecuteEvm
     for AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
@@ -17,7 +21,7 @@ where
     CTX: ContextSetters<Journal: JournalTr<FinalOutput = JournalOutput>>,
     PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    type Output = Result<ResultAndState, EVMError<CTX>>;
+    type Output = Result<ResultAndState, AlpenEvmError<CTX>>;
 
     type Tx = <CTX as ContextTr>::Tx;
 
@@ -30,11 +34,8 @@ where
     fn set_block(&mut self, block: Self::Block) {
         self.0.data.ctx.set_block(block);
     }
-
     fn replay(&mut self) -> Self::Output {
-        // let mut h = AlpenRevmHandler::<_, _, EthFrame<_, _, _>>::new();
-        // h.run(self)
-        todo!()
+        AlpenRevmHandler::default().run(self)
     }
 }
 
@@ -44,13 +45,12 @@ where
     CTX: ContextSetters<Db: DatabaseCommit, Journal: JournalTr<FinalOutput = JournalOutput>>,
     PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    type CommitOutput = Result<ExecutionResult, EVMError<CTX>>;
+    type CommitOutput = Result<ExecutionResult, AlpenEvmError<CTX>>;
 
     fn replay_commit(&mut self) -> Self::CommitOutput {
         self.replay().map(|r| {
-            // self.ctx().db().commit(r.state);
-            // r.result
-            todo!()
+            self.0.ctx().db().commit(r.state);
+            r.result
         })
     }
 }
@@ -69,9 +69,7 @@ where
     }
 
     fn inspect_replay(&mut self) -> Self::Output {
-        // let mut h = AlpenRevmHandler::<_, _, EthFrame<_, _, _>>::new();
-        // h.inspect_run(self)
-        todo!()
+        AlpenRevmHandler::default().inspect_run(self)
     }
 }
 
@@ -87,9 +85,8 @@ where
 {
     fn inspect_replay_commit(&mut self) -> Self::CommitOutput {
         self.inspect_replay().map(|r| {
-            // self.ctx().db().commit(r.state);
-            // r.result
-            todo!()
+            self.0.ctx().db().commit(r.state);
+            r.result
         })
     }
 }

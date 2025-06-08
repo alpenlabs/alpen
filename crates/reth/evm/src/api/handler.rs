@@ -1,63 +1,71 @@
 use revm::{
     context::{
-        result::{ExecutionResult, HaltReason, ResultAndState},
+        result::{EVMError, HaltReason, InvalidTransaction},
         ContextTr, JournalOutput, JournalTr,
     },
-    handler::{EvmTr, EvmTrError, Frame, FrameResult, Handler, MainnetHandler},
-    inspector::{InspectorEvmTr, InspectorFrame, InspectorHandler},
-    interpreter::{interpreter::EthInterpreter, FrameInput, InitialAndFloorGas, SuccessOrHalt},
-    Inspector,
+    handler::{
+        instructions::InstructionProvider, EthFrame, EvmTr, FrameResult, Handler,
+        PrecompileProvider,
+    },
+    inspector::{InspectorEvmTr, InspectorHandler},
+    interpreter::{interpreter::EthInterpreter, InterpreterResult},
+    Database, Inspector,
 };
 
 #[allow(missing_debug_implementations)]
-pub struct AlpenRevmHandler<EVM, ERROR, FRAME> {
-    pub mainnet: MainnetHandler<EVM, ERROR, FRAME>,
+pub struct AlpenRevmHandler<EVM> {
+    pub _phantom: core::marker::PhantomData<EVM>,
 }
 
-impl<EVM, ERROR, FRAME> AlpenRevmHandler<EVM, ERROR, FRAME> {
-    pub fn new() -> Self {
+impl<EVM> Default for AlpenRevmHandler<EVM> {
+    fn default() -> Self {
         Self {
-            mainnet: MainnetHandler::default(),
+            _phantom: core::marker::PhantomData,
         }
     }
 }
 
-impl<EVM, ERROR, FRAME> Default for AlpenRevmHandler<EVM, ERROR, FRAME> {
-    fn default() -> Self {
-        Self::new()
+impl<EVM> Handler for AlpenRevmHandler<EVM>
+where
+    EVM: EvmTr<
+        Context: ContextTr<Journal: JournalTr<FinalOutput = JournalOutput>>,
+        Precompiles: PrecompileProvider<EVM::Context, Output = InterpreterResult>,
+        Instructions: InstructionProvider<
+            Context = EVM::Context,
+            InterpreterTypes = EthInterpreter,
+        >,
+    >,
+{
+    type Evm = EVM;
+    type Error = EVMError<<<EVM::Context as ContextTr>::Db as Database>::Error, InvalidTransaction>;
+    type Frame = EthFrame<
+        EVM,
+        EVMError<<<EVM::Context as ContextTr>::Db as Database>::Error, InvalidTransaction>,
+        <EVM::Instructions as InstructionProvider>::InterpreterTypes,
+    >;
+    type HaltReason = HaltReason;
+
+    fn reward_beneficiary(
+        &self,
+        _evm: &mut Self::Evm,
+        _exec_result: &mut FrameResult,
+    ) -> Result<(), Self::Error> {
+        // Skip beneficiary reward
+        Ok(())
     }
 }
 
-impl<EVM, ERROR, FRAME> Handler for AlpenRevmHandler<EVM, ERROR, FRAME>
-where
-    EVM: EvmTr<Context: ContextTr<Journal: JournalTr<FinalOutput = JournalOutput>>>,
-    ERROR: EvmTrError<EVM>,
-    FRAME: Frame<Evm = EVM, Error = ERROR, FrameResult = FrameResult, FrameInit = FrameInput>,
-{
-    type Evm = EVM;
-    type Error = ERROR;
-    type Frame = FRAME;
-    type HaltReason = HaltReason;
-
-    // fn reward_beneficiary(
-    //     &self,
-    //     evm: &mut Self::Evm,
-    //     exec_result: &mut <Self::Frame as Frame>::FrameResult,
-    // ) -> Result<(), Self::Error> {
-    //     // Skip beneficiary reward
-    //     Ok(())
-    // }
-}
-
-impl<EVM, ERROR, FRAME> InspectorHandler for AlpenRevmHandler<EVM, ERROR, FRAME>
+impl<EVM> InspectorHandler for AlpenRevmHandler<EVM>
 where
     EVM: InspectorEvmTr<
-        Context: ContextTr<Journal: JournalTr<FinalOutput = JournalOutput>>,
         Inspector: Inspector<<<Self as Handler>::Evm as EvmTr>::Context, EthInterpreter>,
+        Context: ContextTr<Journal: JournalTr<FinalOutput = JournalOutput>>,
+        Precompiles: PrecompileProvider<EVM::Context, Output = InterpreterResult>,
+        Instructions: InstructionProvider<
+            Context = EVM::Context,
+            InterpreterTypes = EthInterpreter,
+        >,
     >,
-    ERROR: EvmTrError<EVM>,
-    FRAME: Frame<Evm = EVM, Error = ERROR, FrameResult = FrameResult, FrameInit = FrameInput>
-        + InspectorFrame<IT = EthInterpreter>,
 {
     type IT = EthInterpreter;
 }

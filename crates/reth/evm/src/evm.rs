@@ -3,7 +3,7 @@ use std::{
     sync::OnceLock,
 };
 
-use reth_evm::{eth::EthEvmContext, Database, EthEvm, Evm, EvmEnv, EvmFactory};
+use reth_evm::{eth::EthEvmContext, Database, Evm, EvmEnv, EvmFactory};
 use revm::{
     context::{BlockEnv, Cfg, ContextTr, TxEnv},
     context_interface::result::{EVMError, HaltReason, ResultAndState},
@@ -227,13 +227,12 @@ where
     }
 
     fn transact_raw(&mut self, tx: Self::Tx) -> Result<ResultAndState, Self::Error> {
-        // if self.inspect {
-        //     self.inner.set_tx(tx);
-        //     self.inner.inspect_replay()
-        // } else {
-        //     self.inner.transact(tx)
-        // }
-        todo!("Implement transact_raw for AlpenEvm");
+        if self.inspect {
+            self.inner.set_tx(tx);
+            self.inner.inspect_replay()
+        } else {
+            self.inner.transact(tx)
+        }
     }
 
     fn transact_system_call(
