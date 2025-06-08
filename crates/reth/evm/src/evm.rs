@@ -6,15 +6,18 @@ use revm::{
         result::{EVMError, HaltReason},
         Cfg, ContextTr, TxEnv,
     },
-    handler::{EthPrecompiles, PrecompileProvider},
+    handler::{instructions::EthInstructions, EthPrecompiles, PrecompileProvider},
     inspector::NoOpInspector,
-    interpreter::{Gas, InputsImpl, InstructionResult, InterpreterResult},
+    interpreter::{
+        interpreter::EthInterpreter, Gas, InputsImpl, InstructionResult, InterpreterResult,
+    },
     precompile::{PrecompileError, PrecompileFn, Precompiles},
-    Context, MainBuilder, MainContext,
+    Context, Database, MainBuilder, MainContext,
 };
 use revm_primitives::{hardfork::SpecId, Address, Bytes};
 
 use crate::{
+    api::evm::AlpenEvmInner,
     constants::{BRIDGEOUT_ADDRESS, SCHNORR_ADDRESS},
     precompiles::{
         bridge::{bridge_context_call, bridgeout_precompile},
@@ -158,4 +161,15 @@ impl EvmFactory for AlpenEvmFactory {
             true,
         )
     }
+}
+
+/// BSC EVM implementation.
+///
+/// This is a wrapper type around the `revm` evm with optional [`Inspector`] (tracing)
+/// support. [`Inspector`] support is configurable at runtime because it's part of the underlying
+#[allow(missing_debug_implementations)]
+pub struct AlpenEvm<DB: Database, I, P = AlpenEvmPrecompiles> {
+    pub inner:
+        AlpenEvmInner<EthEvmContext<DB>, I, EthInstructions<EthInterpreter, EthEvmContext<DB>>, P>,
+    pub inspect: bool,
 }
