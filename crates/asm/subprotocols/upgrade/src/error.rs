@@ -24,6 +24,22 @@ pub enum UpgradeError {
     /// Indicates a failure when validating a vote.
     #[error(transparent)]
     Vote(#[from] VoteValidationError),
+
+    /// Indicates a failure when validating a vote.
+    #[error(transparent)]
+    Actino(#[from] UpgradeActionError),
+}
+
+/// Errors related to upgrade action.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum UpgradeActionError {
+    /// The upgrade action cannot be queued.
+    #[error("upgrade action cannot be queued")]
+    CannotQueue,
+
+    /// The upgrade action cannot be directly scheduled.
+    #[error("upgrade action cannot be directly scheduled")]
+    CannotSchedule,
 }
 
 /// Errors related to multisig configuration updates and thresholds.

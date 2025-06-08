@@ -23,18 +23,24 @@ pub fn handle_enactment_tx(
         .get_scheduled_upgrade(&target_action_id)
         .ok_or(UpgradeError::UnknownAction(target_action_id))?;
 
-    // Get the authority that can cancel the pending action
+    // Get the authority that can enact the committed action
     let role = pending_action.action().role();
     let authority = state
         .get_authority(&role)
         .ok_or(UpgradeError::UnknownRole)?;
 
-    // Convert the cancel action into a multisig operation and validate it against the vote
+    // Convert the enact action into a multisig operation and validate it against the vote
     let op = MultisigOp::from(enact_action);
     authority.validate_op(&op, &vote)?;
 
     // All checks passed—remove the pending action from the state
     state.remove_queued_upgrade(&target_action_id);
+
+    // Increase the nonce
+    let authority = state
+        .get_authority_mut(&role)
+        .ok_or(UpgradeError::UnknownRole)?;
+    authority.increment_nonce();
 
     Ok(())
 }
