@@ -2,19 +2,22 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 use strata_primitives::buf::Buf32;
 
-use crate::{actions::id::ActionId, error::UpgradeError, txs::ENACT_TX_TYPE};
+use crate::{
+    error::UpgradeError,
+    txs::{ENACT_TX_TYPE, updates::id::UpdateId},
+};
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
 pub struct EnactAction {
-    id: ActionId,
+    id: UpdateId,
 }
 
 impl EnactAction {
-    pub fn new(id: ActionId) -> Self {
+    pub fn new(id: UpdateId) -> Self {
         EnactAction { id }
     }
 
-    pub fn id(&self) -> &ActionId {
+    pub fn id(&self) -> &UpdateId {
         &self.id
     }
 }

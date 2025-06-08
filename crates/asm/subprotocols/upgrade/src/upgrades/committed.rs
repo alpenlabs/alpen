@@ -1,22 +1,25 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{actions::id::ActionId, txs::updates::UpgradeAction, upgrades::queued::QueuedUpgrade};
+use crate::{
+    txs::updates::{UpgradeAction, id::UpdateId},
+    upgrades::queued::QueuedUpgrade,
+};
 
 /// A committed upgrade action ready for manual execution via EnactmentTx.
 /// Cannot be cancelled once in this state.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct CommittedUpgrade {
-    id: ActionId,
+    id: UpdateId,
     action: UpgradeAction,
 }
 
 impl CommittedUpgrade {
-    pub fn new(id: ActionId, action: UpgradeAction) -> Self {
+    pub fn new(id: UpdateId, action: UpgradeAction) -> Self {
         Self { id, action }
     }
 
     // Getters
-    pub fn id(&self) -> &ActionId {
+    pub fn id(&self) -> &UpdateId {
         &self.id
     }
 
@@ -24,7 +27,7 @@ impl CommittedUpgrade {
         &self.action
     }
 
-    pub fn into_id_and_action(self) -> (ActionId, UpgradeAction) {
+    pub fn into_id_and_action(self) -> (UpdateId, UpgradeAction) {
         (self.id, self.action)
     }
 }
