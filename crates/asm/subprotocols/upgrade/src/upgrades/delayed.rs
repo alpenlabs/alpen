@@ -40,4 +40,8 @@ impl<T> DelayedUpgrade<T> {
     pub fn blocks_remaining(&self) -> u64 {
         self.blocks_remaining
     }
+
+    pub fn into_id_and_action(self) -> (ActionId, UpgradeAction) {
+        (self.id, self.action)
+    }
 }

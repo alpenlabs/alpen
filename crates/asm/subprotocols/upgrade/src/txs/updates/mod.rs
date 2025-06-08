@@ -15,14 +15,6 @@ pub mod operator;
 pub mod seq;
 pub mod vk;
 
-pub const MULTISIG_CONFIG_UPDATE_ENACTMENT_DELAY: u64 = 2_016;
-pub const OPERATOR_UPDATE_ENACTMENT_DELAY: u64 = 2_016;
-pub const SEQUENCER_UPDATE_ENACTMENT_DELAY: u64 = 2_016;
-pub const VK_ENACTMENT_DELAY: u64 = 144;
-
-pub const ASM_VK_QUEUE_DELAY: u64 = 12_960;
-pub const OL_STF_VK_QUEUE_DELAY: u64 = 4_320;
-
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum UpgradeAction {
     Multisig(MultisigUpdate),
@@ -34,27 +26,6 @@ pub enum UpgradeAction {
 impl UpgradeAction {
     pub fn compute_id(&self) -> ActionId {
         compute_borsh_hash(&self).into()
-    }
-
-    /// Queue delay for the action, in Bitcoin blocks.
-    pub fn queue_delay(&self) -> u64 {
-        match self {
-            UpgradeAction::VerifyingKey(v) => match v.proof_kind() {
-                StrataProof::ASM => ASM_VK_QUEUE_DELAY,
-                StrataProof::OlStf => OL_STF_VK_QUEUE_DELAY,
-            },
-            _ => 0, // No queue delay for other actions
-        }
-    }
-
-    /// Enactment delay for the action
-    pub fn enactment_delay(&self) -> u64 {
-        match self {
-            UpgradeAction::Multisig(_) => MULTISIG_CONFIG_UPDATE_ENACTMENT_DELAY,
-            UpgradeAction::OperatorSet(_) => OPERATOR_UPDATE_ENACTMENT_DELAY,
-            UpgradeAction::Sequencer(_) => SEQUENCER_UPDATE_ENACTMENT_DELAY,
-            UpgradeAction::VerifyingKey(_) => VK_ENACTMENT_DELAY,
-        }
     }
 
     /// Role which has the authority to enact this action.
