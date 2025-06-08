@@ -28,11 +28,17 @@ pub trait Subprotocol: 'static {
     /// State type serialized into the ASM state structure.
     type State: Any + BorshDeserialize + BorshSerialize;
 
+    /// Genesis configuration type for initializing the subprotocol state.
+    /// This should contain all necessary parameters for proper subprotocol initialization.
+    type GenesisConfig: Any + BorshDeserialize + BorshSerialize;
+
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + Any;
 
     /// Constructs a new state to use if the ASM does not have an instance of it.
-    fn init() -> Self::State;
+    /// # Arguments
+    /// * `genesis_config` - Configuration parameters for initializing the state
+    fn init(genesis_config: Self::GenesisConfig) -> Self::State;
 
     /// Processes a batch of L1 transactions, extracting all relevant information for this
     /// subprotocol.

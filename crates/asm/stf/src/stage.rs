@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use strata_asm_common::{AnchorState, Stage, Subprotocol, SubprotocolId, TxInput};
+use strata_asm_common::{
+    AnchorState, GenesisConfigRegistry, Stage, Subprotocol, SubprotocolId, TxInput,
+};
 
 use crate::manager::SubprotoManager;
 
@@ -11,13 +13,19 @@ use crate::manager::SubprotoManager;
 pub(crate) struct SubprotoLoaderStage<'a> {
     anchor_state: &'a AnchorState,
     manager: &'a mut SubprotoManager,
+    genesis_registry: Option<&'a GenesisConfigRegistry>,
 }
 
 impl<'a> SubprotoLoaderStage<'a> {
-    pub(crate) fn new(anchor_state: &'a AnchorState, manager: &'a mut SubprotoManager) -> Self {
+    pub(crate) fn new(
+        anchor_state: &'a AnchorState,
+        manager: &'a mut SubprotoManager,
+        genesis_registry: Option<&'a GenesisConfigRegistry>,
+    ) -> Self {
         Self {
             anchor_state,
             manager,
+            genesis_registry,
         }
     }
 }
@@ -30,7 +38,25 @@ impl Stage for SubprotoLoaderStage<'_> {
             Some(sec) => sec
                 .try_to_state::<S>()
                 .expect("asm: invalid section subproto state"),
-            None => S::init(),
+            // State not found in the anchor state, which occurs in two scenarios:
+            // 1. During genesis block processing, before any state initialization
+            // 2. When introducing a new subprotocol to an existing chain
+            // In either case, we must initialize a fresh state from the provided configuration in
+            // genesis_registry
+            None => {
+                // Try to get genesis config from registry, otherwise fail
+                let genesis_config = self
+                    .genesis_registry
+                    .ok_or("asm: genesis registry not available for state init")
+                    .and_then(|registry| {
+                        registry
+                            .get::<S::GenesisConfig>(S::ID)
+                            .ok_or("asm: missing specific config for subprotocol")
+                    })
+                    .expect("asm: cannot initialize subprotocol state");
+
+                S::init(genesis_config)
+            }
         };
 
         self.manager.insert_subproto::<S>(state);

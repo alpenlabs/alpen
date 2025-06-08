@@ -30,6 +30,28 @@ pub struct CoreOLState {
     sequencer_pubkey: Buf32,
 }
 
+/// Genesis configuration for the Core subprotocol.
+///
+/// This structure contains all necessary parameters to properly initialize
+/// the Core subprotocol state.
+///
+/// This struct sharing the same fields as CoreOLState but i create this
+/// separately to avoid confusion (for now).
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+pub struct CoreGenesisConfig {
+    /// The initial checkpoint verifying key for zk-SNARK proof verification
+    pub checkpoint_vk: VerifyingKey,
+
+    /// The initial verified checkpoint state (usually genesis checkpoint)
+    pub initial_checkpoint: EpochSummary,
+
+    /// The initial L1 block reference for the checkpoint
+    pub initial_l1_ref: L1BlockId,
+
+    /// The authorized sequencer's public key for checkpoint submission
+    pub sequencer_pubkey: Buf32,
+}
+
 /// OL Core subprotocol.
 ///
 /// The OL Core subprotocol ensures that each zk‐SNARK proof of a new checkpoint
@@ -43,11 +65,18 @@ impl Subprotocol for OLCoreSubproto {
     const ID: SubprotocolId = CORE_SUBPROTOCOL_ID;
 
     type State = CoreOLState;
+    type GenesisConfig = CoreGenesisConfig;
 
     type Msg = NullMsg<CORE_SUBPROTOCOL_ID>;
 
-    fn init() -> Self::State {
-        todo!()
+    fn init(genesis_config: Self::GenesisConfig) -> Self::State {
+        // Initialize the Core subprotocol state from genesis configuration
+        CoreOLState {
+            checkpoint_vk: genesis_config.checkpoint_vk,
+            verified_checkpoint: genesis_config.initial_checkpoint,
+            last_checkpoint_ref: genesis_config.initial_l1_ref,
+            sequencer_pubkey: genesis_config.sequencer_pubkey,
+        }
     }
 
     fn process_txs(_state: &mut Self::State, _txs: &[TxInput<'_>], _relayer: &mut impl MsgRelayer) {
