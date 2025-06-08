@@ -20,11 +20,11 @@ pub fn handle_enactment_tx(
     // Determine the ID of the pending action that should be canceled
     let target_action_id = *enact_action.id();
     let pending_action = state
-        .get_pending_action(&target_action_id)
+        .get_scheduled_upgrade(&target_action_id)
         .ok_or(UpgradeError::UnknownAction(target_action_id))?;
 
     // Get the authority that can cancel the pending action
-    let role = pending_action.role();
+    let role = pending_action.action().role();
     let authority = state
         .get_authority(&role)
         .ok_or(UpgradeError::UnknownRole)?;
@@ -34,7 +34,7 @@ pub fn handle_enactment_tx(
     authority.validate_op(&op, &vote)?;
 
     // All checks passed—remove the pending action from the state
-    state.remove_pending_action(&target_action_id);
+    state.remove_queued_upgrade(&target_action_id);
 
     Ok(())
 }
