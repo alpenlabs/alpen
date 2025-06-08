@@ -22,7 +22,7 @@ pub struct AlpenEvmInner<
 impl<CTX: ContextTr, INSP>
     AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, AlpenEvmPrecompiles>
 {
-    pub fn new(ctx: CTX, inspector: INSP) -> Self {
+    pub fn new() -> Self {
         todo!()
     }
 
