@@ -28,8 +28,8 @@ impl Subprotocol for UpgradeSubprotocol {
         txs: &[TxInput<'_>],
         relayer: &mut impl MsgRelayer,
     ) {
-        // Before processing the transactions, we handle any pending actions
-        handle_pending_actions(state, relayer);
+        // Before processing the transactions, we handle any queued actions
+        state.tick_and_move_queued_to_committed();
 
         // Process each transaction based on its type
         for tx in txs {
@@ -45,12 +45,14 @@ impl Subprotocol for UpgradeSubprotocol {
                 }
             }
         }
+
+        handle_scheduled_actions(state, relayer);
     }
 
     fn process_msgs(_state: &mut UpgradeSubprotoState, _msgs: &[Self::Msg]) {}
 }
 
-fn handle_pending_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl MsgRelayer) {
+fn handle_scheduled_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl MsgRelayer) {
     // Decrement the blocks_remaining for each pending action
     let actions_to_enact = state.tick_and_collect_ready_actions();
 

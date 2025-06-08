@@ -34,7 +34,7 @@ pub fn handle_enactment_tx(
     authority.validate_op(&op, &vote)?;
 
     // All checks passed—remove the pending action from the state
-    state.remove_queued_upgrade(&target_action_id);
+    state.move_committed_upgrade_to_scheduled(&target_action_id);
 
     // Increase the nonce
     let authority = state
