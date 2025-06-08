@@ -16,6 +16,11 @@ use crate::{
 };
 
 /// Handles an incoming upgrade transaction:
+/// 1. Extracts vote and action
+/// 2. Validates multisig config if needed
+/// 3. Verifies vote signature
+/// 4. Queues or schedules the action
+/// 5. Advances the authority nonce
 pub fn handle_update_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
@@ -47,39 +52,36 @@ pub fn handle_update_tx(
         _ => Err(UpgradeError::UnknownRole),
     }?;
 
-    let role = action.role();
+    let role = action.required_role();
 
     // Retrieve the authority entity responsible for this action's role
-    let authority = state
-        .get_authority_mut(&role)
-        .ok_or(UpgradeError::UnknownRole)?;
+    let authority = state.authority_mut(role).ok_or(UpgradeError::UnknownRole)?;
 
     // If this is a multisig configuration update, ensure the new config is valid
     if let UpgradeAction::Multisig(update) = &action {
-        authority.config().validate_update(update.config_update())?;
+        authority.config().validate_update(update.config())?;
     }
 
     // Convert the action into a multisig operation and validate it against the vote
     let op = MultisigOp::from(action.clone());
     authority.validate_op(&op, &vote)?;
 
+    // Queue or schedule the upgrade
     match action {
         // If the action is a VerifyingKeyUpdate, queue it so support cancellation
         UpgradeAction::VerifyingKey(_) => {
             let queued_upgrade: QueuedUpgrade = action.try_into()?;
-            state.add_queued_upgrade(queued_upgrade);
+            state.enqueue(queued_upgrade);
         }
         // For all other actions, directly schedule them for execution
         _ => {
             let scheduled_upgrade: ScheduledUpgrade = action.try_into()?;
-            state.add_scheduled_upgrade(scheduled_upgrade);
+            state.schedule(scheduled_upgrade);
         }
     }
 
     // Increase the nonce
-    let authority = state
-        .get_authority_mut(&role)
-        .ok_or(UpgradeError::UnknownRole)?;
+    let authority = state.authority_mut(role).ok_or(UpgradeError::UnknownRole)?;
     authority.increment_nonce();
 
     Ok(())

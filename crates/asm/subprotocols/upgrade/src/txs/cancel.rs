@@ -7,7 +7,7 @@ use crate::{
     txs::{CANCEL_TX_TYPE, updates::id::UpdateId},
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct CancelAction {
     id: UpdateId,
 }

@@ -3,37 +3,45 @@ use strata_asm_common::TxInput;
 
 use crate::{error::UpgradeError, multisig::config::MultisigConfigUpdate, roles::Role};
 
-/// Represents a change to the multisig configuration for the given `role`:
-/// * removes the specified `old_members` from the set,
-/// * adds the specified `new_members`
-/// * updates the threshold.
+/// An update to a multisig configuration for a specific role:
+/// - adds new members
+/// - removes old members
+/// - updates the threshold
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigUpdate {
-    update: MultisigConfigUpdate,
+    config: MultisigConfigUpdate,
     role: Role,
 }
 
 impl MultisigUpdate {
-    pub fn new(update: MultisigConfigUpdate, role: Role) -> Self {
-        Self { update, role }
+    /// Create a `MultisigUpdate` with given config and role.
+    pub fn new(config: MultisigConfigUpdate, role: Role) -> Self {
+        Self { config, role }
     }
 
-    pub fn config_update(&self) -> &MultisigConfigUpdate {
-        &self.update
+    /// Borrow the multisig config update.
+    pub fn config(&self) -> &MultisigConfigUpdate {
+        &self.config
     }
 
+    /// Get the role this update applies to.
     pub fn role(&self) -> Role {
         self.role
     }
-}
 
-impl MultisigUpdate {
-    // Placeholder for actual extraction logic
+    /// Consume and return the inner config and role.
+    pub fn into_inner(self) -> (MultisigConfigUpdate, Role) {
+        (self.config, self.role)
+    }
+
+    /// Extract a `MultisigUpdate` from a transaction input.
+    ///
+    /// Placeholder: replace with actual parsing logic.
     pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeError> {
-        let action = MultisigUpdate::new(
+        // TODO: parse TxInput to build MultisigConfigUpdate and determine Role
+        Ok(Self::new(
             MultisigConfigUpdate::new(vec![], vec![], 0),
             Role::BridgeAdmin,
-        );
-        Ok(action)
+        ))
     }
 }
