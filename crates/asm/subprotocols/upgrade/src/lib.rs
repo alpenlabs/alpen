@@ -15,3 +15,4 @@ pub mod roles;
 pub mod state;
 pub mod subprotocol;
 pub mod txs;
+pub mod upgrades;

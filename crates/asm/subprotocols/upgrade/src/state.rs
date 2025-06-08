@@ -1,12 +1,13 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    actions::{PendingUpgradeAction, id::ActionId},
+    actions::id::ActionId,
     multisig::{
         authority::MultisigAuthority,
         config::{MultisigConfig, MultisigConfigUpdate},
     },
     roles::Role,
+    upgrades::{committed::CommittedUpgrade, queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 
 /// Holds the state for the upgrade subprotocol, including the various
@@ -18,10 +19,17 @@ pub struct UpgradeSubprotoState {
     /// are required to approve an action.
     multisig_authorities: Vec<MultisigAuthority>,
 
-    /// List of upgrade actions awaiting execution.
-    /// Each element contains a `PendingUpgradeAction`, which carries its
-    /// unique identifier and the details of the action to be executed.
-    pending_actions: Vec<PendingUpgradeAction>,
+    /// Actions that can still be cancelled by CancelTx while waiting
+    /// for their block countdown to complete.
+    queued_upgrades: Vec<QueuedUpgrade>,
+
+    /// Actions that have completed their waiting period and can be
+    /// enacted by EnactmentTx, but can no longer be cancelled.
+    committed_upgrades: Vec<CommittedUpgrade>,
+
+    /// Actions that will be executed automatically without requiring
+    /// an EnactmentTx transaction.
+    scheduled_upgrades: Vec<ScheduledUpgrade>,
 }
 
 impl UpgradeSubprotoState {
@@ -42,44 +50,54 @@ impl UpgradeSubprotoState {
         }
     }
 
-    pub fn add_pending_action(&mut self, action: PendingUpgradeAction) {
-        self.multisig_authorities[action.role() as usize].increment_nonce();
-        self.pending_actions.push(action);
+    pub fn get_queued_upgrade(&self, target_id: &ActionId) -> Option<&QueuedUpgrade> {
+        self.queued_upgrades
+            .iter()
+            .find(|action| action.id() == target_id)
     }
 
-    pub fn get_pending_action(&self, id: &ActionId) -> Option<&PendingUpgradeAction> {
-        self.pending_actions.iter().find(|action| action.id() == id)
+    pub fn get_scheduled_upgrade(&self, target_id: &ActionId) -> Option<&ScheduledUpgrade> {
+        self.scheduled_upgrades
+            .iter()
+            .find(|action| action.id() == target_id)
     }
 
-    /// Removes pending action by its ID. Returns error if not found.
-    pub fn remove_pending_action(&mut self, target_id: &ActionId) {
+    pub fn add_queued_upgrade(&mut self, upgrade: QueuedUpgrade) {
+        self.queued_upgrades.push(upgrade);
+    }
+
+    pub fn add_scheduled_upgrade(&mut self, upgrade: ScheduledUpgrade) {
+        self.scheduled_upgrades.push(upgrade);
+    }
+
+    pub fn remove_queued_upgrade(&mut self, target_id: &ActionId) {
         if let Some(idx) = self
-            .pending_actions
+            .queued_upgrades
             .iter()
             .position(|action| action.id() == target_id)
         {
             // swap the last element into `idx`, then pop
-            self.pending_actions.swap_remove(idx);
+            self.queued_upgrades.swap_remove(idx);
         }
     }
 
-    /// Decrements the block countdown for all pending actions and returns any actions
+    /// Decrements the block countdown for all scheduled actions and returns any actions
     /// that are now ready for execution (blocks_remaining == 0).
     ///
-    /// Ready actions are removed from the pending list and returned to the caller
+    /// Ready actions are removed from the scheduled list and returned to the caller
     /// for processing. This should typically be called once per block to advance
     /// the countdown timers and collect executable actions.
-    pub fn tick_and_collect_ready_actions(&mut self) -> Vec<PendingUpgradeAction> {
-        self.pending_actions
+    pub fn tick_and_collect_ready_actions(&mut self) -> Vec<ScheduledUpgrade> {
+        self.scheduled_upgrades
             .iter_mut()
             .for_each(|action| action.decrement_blocks_remaining());
 
-        // Partition actions: extract ready ones, keep pending ones
-        let (ready, pending): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending_actions)
+        // Partition actions: extract ready ones, keep scheduled ones
+        let (ready, scheduled): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled_upgrades)
             .into_iter()
             .partition(|action| action.blocks_remaining() == 0);
 
-        self.pending_actions = pending;
+        self.scheduled_upgrades = scheduled;
         ready
     }
 }
