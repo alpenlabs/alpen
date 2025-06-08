@@ -85,19 +85,6 @@ impl UpgradeSubprotoState {
         }
     }
 
-    pub fn move_queued_upgrade_to_committed(&mut self, target_id: &ActionId) {
-        if let Some(idx) = self
-            .queued_upgrades
-            .iter()
-            .position(|action| action.id() == target_id)
-        {
-            // swap the last element into `idx`, then pop
-            let upgrade = self.queued_upgrades.swap_remove(idx);
-            let committed_upgrade = upgrade.into();
-            self.committed_upgrades.push(committed_upgrade);
-        }
-    }
-
     pub fn move_committed_upgrade_to_scheduled(&mut self, target_id: &ActionId) {
         if let Some(idx) = self
             .committed_upgrades
@@ -108,6 +95,24 @@ impl UpgradeSubprotoState {
             let upgrade = self.committed_upgrades.swap_remove(idx);
             let scheduled_upgrade: ScheduledUpgrade = upgrade.into();
             self.scheduled_upgrades.push(scheduled_upgrade);
+        }
+    }
+
+    pub fn tick_and_move_queued_to_committed(&mut self) {
+        self.queued_upgrades.iter_mut().for_each(|action| {
+            action.decrement_blocks_remaining();
+        });
+
+        // Partition actions: extract actions ready to be committed, keep scheduled ones
+        let (ready_to_commit, queued): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued_upgrades)
+            .into_iter()
+            .partition(|action| action.blocks_remaining() == 0);
+
+        self.queued_upgrades = queued;
+
+        for action in ready_to_commit {
+            let committed_upgrade: CommittedUpgrade = action.into();
+            self.committed_upgrades.push(committed_upgrade);
         }
     }
 
