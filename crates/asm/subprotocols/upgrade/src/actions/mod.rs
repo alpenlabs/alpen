@@ -1,13 +1,11 @@
 pub mod cancel;
+pub mod enact;
 pub mod id;
-pub mod upgrades;
+pub mod update;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{
-    actions::{id::ActionId, upgrades::UpgradeAction},
-    roles::Role,
-};
+use crate::{actions::id::ActionId, roles::Role, txs::updates::UpgradeAction};
 
 /// A pending upgrade action that will be triggered after a specified number
 /// of Bitcoin blocks unless cancelled by a CancelTx.
