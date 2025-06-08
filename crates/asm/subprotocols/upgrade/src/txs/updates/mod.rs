@@ -15,6 +15,7 @@ pub mod operator;
 pub mod seq;
 pub mod vk;
 
+/// An action that upgrades some part of the ASM
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum UpgradeAction {
     Multisig(MultisigUpdate),
@@ -24,17 +25,18 @@ pub enum UpgradeAction {
 }
 
 impl UpgradeAction {
+    /// Compute a deterministic identifier for this upgrade action.
     pub fn compute_id(&self) -> UpdateId {
         compute_borsh_hash(&self).into()
     }
 
-    /// Role which has the authority to enact this action.
-    pub fn role(&self) -> Role {
+    /// The role authorized to enact this upgrade.
+    pub fn required_role(&self) -> Role {
         match self {
             UpgradeAction::Multisig(m) => m.role(),
             UpgradeAction::OperatorSet(_) => Role::BridgeAdmin,
             UpgradeAction::Sequencer(_) => Role::StrataAdmin,
-            UpgradeAction::VerifyingKey(v) => match v.proof_kind() {
+            UpgradeAction::VerifyingKey(v) => match v.kind() {
                 StrataProof::ASM => Role::BridgeConsensusManager,
                 StrataProof::OlStf => Role::StrataConsensusManager,
             },
@@ -42,26 +44,27 @@ impl UpgradeAction {
     }
 }
 
+// Allow easy conversion from each update type into a unified `UpgradeAction`.
 impl From<MultisigUpdate> for UpgradeAction {
-    fn from(m: MultisigUpdate) -> Self {
-        UpgradeAction::Multisig(m)
+    fn from(update: MultisigUpdate) -> Self {
+        UpgradeAction::Multisig(update)
     }
 }
 
 impl From<OperatorSetUpdate> for UpgradeAction {
-    fn from(o: OperatorSetUpdate) -> Self {
-        UpgradeAction::OperatorSet(o)
+    fn from(update: OperatorSetUpdate) -> Self {
+        UpgradeAction::OperatorSet(update)
     }
 }
 
 impl From<SequencerUpdate> for UpgradeAction {
-    fn from(s: SequencerUpdate) -> Self {
-        UpgradeAction::Sequencer(s)
+    fn from(update: SequencerUpdate) -> Self {
+        UpgradeAction::Sequencer(update)
     }
 }
 
 impl From<VerifyingKeyUpdate> for UpgradeAction {
-    fn from(v: VerifyingKeyUpdate) -> Self {
-        UpgradeAction::VerifyingKey(v)
+    fn from(update: VerifyingKeyUpdate) -> Self {
+        UpgradeAction::VerifyingKey(update)
     }
 }

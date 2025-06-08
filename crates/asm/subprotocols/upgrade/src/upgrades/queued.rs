@@ -18,7 +18,7 @@ impl TryFrom<UpgradeAction> for QueuedUpgrade {
 
     fn try_from(action: UpgradeAction) -> Result<Self, Self::Error> {
         let delay = match &action {
-            UpgradeAction::VerifyingKey(vk) => match vk.proof_kind() {
+            UpgradeAction::VerifyingKey(vk) => match vk.kind() {
                 StrataProof::ASM => ASM_VK_QUEUE_DELAY,
                 StrataProof::OlStf => OL_STF_VK_QUEUE_DELAY,
             },

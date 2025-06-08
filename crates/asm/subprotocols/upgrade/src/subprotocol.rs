@@ -29,7 +29,7 @@ impl Subprotocol for UpgradeSubprotocol {
         relayer: &mut impl MsgRelayer,
     ) {
         // Before processing the transactions, we handle any queued actions
-        state.tick_and_move_queued_to_committed();
+        state.tick_queued();
 
         // Process each transaction based on its type
         for tx in txs {
@@ -53,15 +53,15 @@ impl Subprotocol for UpgradeSubprotocol {
 }
 
 fn handle_scheduled_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl MsgRelayer) {
-    // Decrement the blocks_remaining for each pending action
-    let actions_to_enact = state.tick_and_collect_ready_actions();
+    // Get all the update actions that are ready to be enacted
+    let actions_to_enact = state.tick_scheduled();
 
     for action in actions_to_enact {
         match action.action() {
             UpgradeAction::Multisig(update) => {
-                state.update_multisig_config(update.role(), update.config_update());
+                state.apply_multisig_update(update.role(), update.config());
             }
-            UpgradeAction::VerifyingKey(update) => match update.proof_kind() {
+            UpgradeAction::VerifyingKey(update) => match update.kind() {
                 StrataProof::ASM => {
                     // Emit Log
                 }

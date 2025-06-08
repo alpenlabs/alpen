@@ -7,8 +7,11 @@ use crate::{
     txs::enact::EnactAction,
 };
 
-/// Handles a CancelAction transaction. It validates the vote on the cancellation
-/// and, if valid, removes the specified pending action from the state.
+/// Handles an enactment transaction:
+/// 1. Extracts vote and enact action
+/// 2. Validates the vote against the target committed upgrade
+/// 3. Moves the upgrade from committed to scheduled
+/// 4. Advances the authority nonce
 pub fn handle_enactment_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
@@ -19,27 +22,23 @@ pub fn handle_enactment_tx(
 
     // Determine the ID of the pending action that should be canceled
     let target_action_id = *enact_action.id();
-    let pending_action = state
-        .get_scheduled_upgrade(&target_action_id)
+    let upgrade = state
+        .find_committed(&target_action_id)
         .ok_or(UpgradeError::UnknownAction(target_action_id))?;
 
     // Get the authority that can enact the committed action
-    let role = pending_action.action().role();
-    let authority = state
-        .get_authority(&role)
-        .ok_or(UpgradeError::UnknownRole)?;
+    let role = upgrade.action().required_role();
+    let authority = state.authority(role).ok_or(UpgradeError::UnknownRole)?;
 
     // Convert the enact action into a multisig operation and validate it against the vote
     let op = MultisigOp::from(enact_action);
     authority.validate_op(&op, &vote)?;
 
-    // All checks passed—remove the pending action from the state
-    state.move_committed_upgrade_to_scheduled(&target_action_id);
+    // All checks passed - commit to schedule
+    state.commit_to_schedule(&target_action_id);
 
     // Increase the nonce
-    let authority = state
-        .get_authority_mut(&role)
-        .ok_or(UpgradeError::UnknownRole)?;
+    let authority = state.authority_mut(role).ok_or(UpgradeError::UnknownRole)?;
     authority.increment_nonce();
 
     Ok(())
