@@ -1,11 +1,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{actions::id::ActionId, txs::updates::UpgradeAction};
+use crate::txs::updates::{UpgradeAction, id::UpdateId};
 
 /// A time-delayed upgrade action with different delay semantics
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct DelayedUpgrade<T> {
-    id: ActionId,
+    id: UpdateId,
     action: UpgradeAction,
     blocks_remaining: u64,
     _marker: std::marker::PhantomData<T>,
@@ -13,7 +13,7 @@ pub struct DelayedUpgrade<T> {
 
 /// Shared implementation
 impl<T> DelayedUpgrade<T> {
-    pub fn new(id: ActionId, action: UpgradeAction, blocks_remaining: u64) -> Self {
+    pub fn new(id: UpdateId, action: UpgradeAction, blocks_remaining: u64) -> Self {
         Self {
             id,
             action,
@@ -31,7 +31,7 @@ impl<T> DelayedUpgrade<T> {
     }
 
     // Getters
-    pub fn id(&self) -> &ActionId {
+    pub fn id(&self) -> &UpdateId {
         &self.id
     }
     pub fn action(&self) -> &UpgradeAction {
@@ -41,7 +41,7 @@ impl<T> DelayedUpgrade<T> {
         self.blocks_remaining
     }
 
-    pub fn into_id_and_action(self) -> (ActionId, UpgradeAction) {
+    pub fn into_id_and_action(self) -> (UpdateId, UpgradeAction) {
         (self.id, self.action)
     }
 }
