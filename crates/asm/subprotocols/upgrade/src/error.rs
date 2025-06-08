@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{actions::id::ActionId, crypto::PubKey};
+use crate::{crypto::PubKey, txs::updates::id::UpdateId};
 
 /// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -15,7 +15,7 @@ pub enum UpgradeError {
 
     /// The specified action ID does not correspond to any pending upgrade.
     #[error("no pending upgrade found for action_id = {0:?}")]
-    UnknownAction(ActionId),
+    UnknownAction(UpdateId),
 
     /// Indicates a validation failure on multisig configuration or threshold.
     #[error(transparent)]

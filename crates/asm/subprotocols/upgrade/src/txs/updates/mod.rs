@@ -2,14 +2,14 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::hash::compute_borsh_hash;
 
 use crate::{
-    actions::id::ActionId,
     roles::{Role, StrataProof},
     txs::updates::{
-        multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
+        id::UpdateId, multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
         vk::VerifyingKeyUpdate,
     },
 };
 
+pub mod id;
 pub mod multisig;
 pub mod operator;
 pub mod seq;
@@ -24,7 +24,7 @@ pub enum UpgradeAction {
 }
 
 impl UpgradeAction {
-    pub fn compute_id(&self) -> ActionId {
+    pub fn compute_id(&self) -> UpdateId {
         compute_borsh_hash(&self).into()
     }
 

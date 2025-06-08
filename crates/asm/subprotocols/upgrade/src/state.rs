@@ -1,12 +1,12 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    actions::id::ActionId,
     multisig::{
         authority::MultisigAuthority,
         config::{MultisigConfig, MultisigConfigUpdate},
     },
     roles::Role,
+    txs::updates::id::UpdateId,
     upgrades::{committed::CommittedUpgrade, queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 
@@ -54,13 +54,13 @@ impl UpgradeSubprotoState {
         }
     }
 
-    pub fn get_queued_upgrade(&self, target_id: &ActionId) -> Option<&QueuedUpgrade> {
+    pub fn get_queued_upgrade(&self, target_id: &UpdateId) -> Option<&QueuedUpgrade> {
         self.queued_upgrades
             .iter()
             .find(|action| action.id() == target_id)
     }
 
-    pub fn get_scheduled_upgrade(&self, target_id: &ActionId) -> Option<&ScheduledUpgrade> {
+    pub fn get_scheduled_upgrade(&self, target_id: &UpdateId) -> Option<&ScheduledUpgrade> {
         self.scheduled_upgrades
             .iter()
             .find(|action| action.id() == target_id)
@@ -74,7 +74,7 @@ impl UpgradeSubprotoState {
         self.scheduled_upgrades.push(upgrade);
     }
 
-    pub fn remove_queued_upgrade(&mut self, target_id: &ActionId) {
+    pub fn remove_queued_upgrade(&mut self, target_id: &UpdateId) {
         if let Some(idx) = self
             .queued_upgrades
             .iter()
@@ -85,7 +85,7 @@ impl UpgradeSubprotoState {
         }
     }
 
-    pub fn move_committed_upgrade_to_scheduled(&mut self, target_id: &ActionId) {
+    pub fn move_committed_upgrade_to_scheduled(&mut self, target_id: &UpdateId) {
         if let Some(idx) = self
             .committed_upgrades
             .iter()
