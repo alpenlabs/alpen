@@ -1,10 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    multisig::{
-        authority::MultisigAuthority,
-        config::{MultisigConfig, MultisigConfigUpdate},
-    },
+    multisig::{authority::MultisigAuthority, config::MultisigConfigUpdate},
     roles::Role,
     txs::updates::id::UpdateId,
     upgrades::{committed::CommittedUpgrade, queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
@@ -17,122 +14,100 @@ pub struct UpgradeSubprotoState {
     /// List of configurations for multisignature authorities.
     /// Each entry specifies who the signers are and how many signatures
     /// are required to approve an action.
-    multisig_authorities: Vec<MultisigAuthority>,
+    authorities: Vec<MultisigAuthority>,
 
     /// Actions that can still be cancelled by CancelTx while waiting
     /// for their block countdown to complete.
-    queued_upgrades: Vec<QueuedUpgrade>,
+    queued: Vec<QueuedUpgrade>,
 
     /// Actions that have completed their waiting period and can be
     /// enacted by EnactmentTx, but can no longer be cancelled.
-    committed_upgrades: Vec<CommittedUpgrade>,
+    committed: Vec<CommittedUpgrade>,
 
     /// Actions that will be executed automatically without requiring
     /// an EnactmentTx transaction.
-    scheduled_upgrades: Vec<ScheduledUpgrade>,
+    scheduled: Vec<ScheduledUpgrade>,
 }
 
 impl UpgradeSubprotoState {
-    pub fn get_multisig_config(&self, role: &Role) -> Option<&MultisigConfig> {
-        if let Some(authority) = self.multisig_authorities.get((*role as u8) as usize) {
-            return Some(authority.config());
-        }
-        None
+    /// Get a reference to the authority for the given role.
+    pub fn authority(&self, role: Role) -> Option<&MultisigAuthority> {
+        self.authorities.get(role as usize)
     }
 
-    pub fn get_authority(&self, role: &Role) -> Option<&MultisigAuthority> {
-        self.multisig_authorities.get((*role as u8) as usize)
+    /// Get a mutable reference to the authority for the given role.
+    pub fn authority_mut(&mut self, role: Role) -> Option<&mut MultisigAuthority> {
+        self.authorities.get_mut(role as usize)
     }
 
-    pub fn get_authority_mut(&mut self, role: &Role) -> Option<&mut MultisigAuthority> {
-        self.multisig_authorities.get_mut((*role as u8) as usize)
-    }
-
-    pub fn update_multisig_config(&mut self, role: Role, update: &MultisigConfigUpdate) {
-        if let Some(authority) = self.multisig_authorities.get_mut(role as usize) {
-            authority.config_mut().update(update);
+    /// Apply a multisig config update for the specified role.
+    pub fn apply_multisig_update(&mut self, role: Role, update: &MultisigConfigUpdate) {
+        if let Some(auth) = self.authority_mut(role) {
+            auth.config_mut().apply(update);
         }
     }
 
-    pub fn get_queued_upgrade(&self, target_id: &UpdateId) -> Option<&QueuedUpgrade> {
-        self.queued_upgrades
-            .iter()
-            .find(|action| action.id() == target_id)
+    /// Find a queued upgrade by its ID.
+    pub fn find_queued(&self, id: &UpdateId) -> Option<&QueuedUpgrade> {
+        self.queued.iter().find(|u| u.id() == id)
     }
 
-    pub fn get_scheduled_upgrade(&self, target_id: &UpdateId) -> Option<&ScheduledUpgrade> {
-        self.scheduled_upgrades
-            .iter()
-            .find(|action| action.id() == target_id)
+    /// Find a committed upgrade by its ID.
+    pub fn find_committed(&self, id: &UpdateId) -> Option<&CommittedUpgrade> {
+        self.committed.iter().find(|u| u.id() == id)
     }
 
-    pub fn add_queued_upgrade(&mut self, upgrade: QueuedUpgrade) {
-        self.queued_upgrades.push(upgrade);
+    /// Find a scheduled upgrade by its ID.
+    pub fn find_scheduled(&self, id: &UpdateId) -> Option<&ScheduledUpgrade> {
+        self.scheduled.iter().find(|u| u.id() == id)
     }
 
-    pub fn add_scheduled_upgrade(&mut self, upgrade: ScheduledUpgrade) {
-        self.scheduled_upgrades.push(upgrade);
+    /// Queue a new upgrade.
+    pub fn enqueue(&mut self, upgrade: QueuedUpgrade) {
+        self.queued.push(upgrade);
     }
 
-    pub fn remove_queued_upgrade(&mut self, target_id: &UpdateId) {
-        if let Some(idx) = self
-            .queued_upgrades
-            .iter()
-            .position(|action| action.id() == target_id)
-        {
-            // swap the last element into `idx`, then pop
-            self.queued_upgrades.swap_remove(idx);
+    /// Schedule an upgrade to run without enactment.
+    pub fn schedule(&mut self, upgrade: ScheduledUpgrade) {
+        self.scheduled.push(upgrade);
+    }
+
+    /// Remove a queued upgrade by swapping it out.
+    pub fn remove_queued(&mut self, id: &UpdateId) {
+        if let Some(i) = self.queued.iter().position(|u| u.id() == id) {
+            self.queued.swap_remove(i);
         }
     }
 
-    pub fn move_committed_upgrade_to_scheduled(&mut self, target_id: &UpdateId) {
-        if let Some(idx) = self
-            .committed_upgrades
-            .iter()
-            .position(|action| action.id() == target_id)
-        {
-            // swap the last element into `idx`, then pop
-            let upgrade = self.committed_upgrades.swap_remove(idx);
-            let scheduled_upgrade: ScheduledUpgrade = upgrade.into();
-            self.scheduled_upgrades.push(scheduled_upgrade);
+    /// Commit a scheduled upgrade: move from committed to scheduled.
+    pub fn commit_to_schedule(&mut self, id: &UpdateId) {
+        if let Some(i) = self.committed.iter().position(|u| u.id() == id) {
+            let up = self.committed.swap_remove(i);
+            self.scheduled.push(up.into());
         }
     }
 
-    pub fn tick_and_move_queued_to_committed(&mut self) {
-        self.queued_upgrades.iter_mut().for_each(|action| {
-            action.decrement_blocks_remaining();
-        });
-
-        // Partition actions: extract actions ready to be committed, keep scheduled ones
-        let (ready_to_commit, queued): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued_upgrades)
+    /// Advance queued upgrades: decrement block counters and move ready ones to committed.
+    pub fn tick_queued(&mut self) {
+        for q in &mut self.queued {
+            q.decrement_blocks_remaining();
+        }
+        let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued)
             .into_iter()
-            .partition(|action| action.blocks_remaining() == 0);
-
-        self.queued_upgrades = queued;
-
-        for action in ready_to_commit {
-            let committed_upgrade: CommittedUpgrade = action.into();
-            self.committed_upgrades.push(committed_upgrade);
-        }
+            .partition(|u| u.blocks_remaining() == 0);
+        self.queued = rest;
+        self.committed.extend(ready.into_iter().map(Into::into));
     }
 
-    /// Decrements the block countdown for all scheduled actions and returns any actions
-    /// that are now ready for execution (blocks_remaining == 0).
-    ///
-    /// Ready actions are removed from the scheduled list and returned to the caller
-    /// for processing. This should typically be called once per block to advance
-    /// the countdown timers and collect executable actions.
-    pub fn tick_and_collect_ready_actions(&mut self) -> Vec<ScheduledUpgrade> {
-        self.scheduled_upgrades
-            .iter_mut()
-            .for_each(|action| action.decrement_blocks_remaining());
-
-        // Partition actions: extract ready ones, keep scheduled ones
-        let (ready, scheduled): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled_upgrades)
+    /// Advance scheduled upgrades: decrement block counters and collect those ready to execute.
+    pub fn tick_scheduled(&mut self) -> Vec<ScheduledUpgrade> {
+        for s in &mut self.scheduled {
+            s.decrement_blocks_remaining();
+        }
+        let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled)
             .into_iter()
-            .partition(|action| action.blocks_remaining() == 0);
-
-        self.scheduled_upgrades = scheduled;
+            .partition(|u| u.blocks_remaining() == 0);
+        self.scheduled = rest;
         ready
     }
 }

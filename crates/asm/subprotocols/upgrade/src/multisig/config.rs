@@ -2,8 +2,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{crypto::PubKey, error::MultisigConfigError};
 
-/// Configuration for a multisignature authority: who the signers are, and
-/// how many signatures are required to approve an action.
+/// Configuration for a multisignature authority:
+/// who can sign (`keys`) and how many of them must sign (`threshold`).
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigConfig {
     /// The public keys of all grant-holders authorized to sign.
@@ -13,7 +13,14 @@ pub struct MultisigConfig {
 }
 
 impl MultisigConfig {
+    /// Create a new config; panics if threshold == 0 or > keys.len().
     pub fn new(keys: Vec<PubKey>, threshold: u8) -> Self {
+        assert!(!keys.is_empty(), "keys cannot be empty");
+        let max = keys.len() as u8;
+        assert!(
+            (1..=max).contains(&threshold),
+            "threshold must be between 1 and number of keys"
+        );
         Self { keys, threshold }
     }
 
@@ -95,9 +102,12 @@ impl MultisigConfig {
         Ok(())
     }
 
-    pub fn update(&mut self, update: &MultisigConfigUpdate) {
+    pub fn apply(&mut self, update: &MultisigConfigUpdate) {
+        // Remove specified old members
         self.keys.retain(|key| !update.old_members().contains(key));
+        // Add new members
         self.keys.extend_from_slice(update.new_members());
+        // Update threshold
         self.threshold = update.new_threshold();
     }
 }
@@ -188,7 +198,7 @@ mod tests {
         //   - Remove k3 from the keys
         //   - Add k4 and k5
         //   - Have threshold = 3
-        config.update(&update);
+        config.apply(&update);
 
         // The “new” key‐set should be exactly [k1, k2, k4, k5] (order may matter if you rely on it)
         let expected_keys = vec![k1, k2, k4, k5];

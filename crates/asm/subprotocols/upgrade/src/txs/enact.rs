@@ -7,7 +7,7 @@ use crate::{
     txs::{ENACT_TX_TYPE, updates::id::UpdateId},
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct EnactAction {
     id: UpdateId,
 }

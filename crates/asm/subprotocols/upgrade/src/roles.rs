@@ -22,7 +22,7 @@ pub enum Role {
     StrataConsensusManager,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum StrataProof {
     ASM,
     OlStf,

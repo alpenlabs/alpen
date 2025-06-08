@@ -12,15 +12,17 @@ use crate::{
     roles::Role,
 };
 
+/// Manages multisignature operations for a given role and key set, with replay protection via a
+/// nonce.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigAuthority {
     /// The role of this multisignature authority.
-    pub role: Role,
+    role: Role,
     /// The public keys of all grant-holders authorized to sign.
-    pub config: MultisigConfig,
+    config: MultisigConfig,
     /// Nonce for the multisig configuration.
     /// This is used to prevent replay attacks
-    pub nonce: u64,
+    nonce: u64,
 }
 
 impl MultisigAuthority {
@@ -32,18 +34,27 @@ impl MultisigAuthority {
         }
     }
 
+    /// The role authorized to perform multisig operations.
     pub fn role(&self) -> Role {
         self.role
     }
 
+    /// Borrow the current multisig configuration.
     pub fn config(&self) -> &MultisigConfig {
         &self.config
     }
 
+    /// Mutably borrow the multisig configuration.
     pub fn config_mut(&mut self) -> &mut MultisigConfig {
         &mut self.config
     }
 
+    /// Validate that `vote` approves `op` under the current config and nonce.
+    ///
+    /// Steps:
+    /// 1. Map voter indices to pubkeys (error if out of bounds).
+    /// 2. Aggregate pubkeys and compute payload hash.
+    /// 3. Verify aggregated signature.
     pub fn validate_op(
         &self,
         op: &MultisigOp,
@@ -77,6 +88,7 @@ impl MultisigAuthority {
         Ok(())
     }
 
+    /// Increments the nonce.
     pub fn increment_nonce(&mut self) {
         self.nonce += 1;
     }
