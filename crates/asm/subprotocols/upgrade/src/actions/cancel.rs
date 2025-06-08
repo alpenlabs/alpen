@@ -20,7 +20,7 @@ pub fn handle_cancel_tx(
     // Determine the ID of the pending action that should be canceled
     let target_action_id = *cancel_action.id();
     let pending_action = state
-        .get_scheduled_upgrade(&target_action_id)
+        .get_queued_upgrade(&target_action_id)
         .ok_or(UpgradeError::UnknownAction(target_action_id))?;
 
     // Get the authority that can cancel the pending action
@@ -35,6 +35,12 @@ pub fn handle_cancel_tx(
 
     // All checks passed—remove the pending action from the state
     state.remove_queued_upgrade(&target_action_id);
+
+    // Increase the nonce
+    let authority = state
+        .get_authority_mut(&role)
+        .ok_or(UpgradeError::UnknownRole)?;
+    authority.increment_nonce();
 
     Ok(())
 }

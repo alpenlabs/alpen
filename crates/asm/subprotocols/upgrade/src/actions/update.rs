@@ -12,7 +12,7 @@ use crate::{
             seq::SequencerUpdate, vk::VerifyingKeyUpdate,
         },
     },
-    upgrades::queued::QueuedUpgrade,
+    upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 
 /// Handles an incoming upgrade transaction:
@@ -47,9 +47,11 @@ pub fn handle_update_tx(
         _ => Err(UpgradeError::UnknownRole),
     }?;
 
+    let role = action.role();
+
     // Retrieve the authority entity responsible for this action's role
     let authority = state
-        .get_authority(&action.role())
+        .get_authority_mut(&role)
         .ok_or(UpgradeError::UnknownRole)?;
 
     // If this is a multisig configuration update, ensure the new config is valid
@@ -61,9 +63,24 @@ pub fn handle_update_tx(
     let op = MultisigOp::from(action.clone());
     authority.validate_op(&op, &vote)?;
 
-    // Create a pending upgrade action and enqueue it for later enactment
-    let pending_action = QueuedUpgrade::from(action);
-    state.add_queued_upgrade(pending_action);
+    match action {
+        // If the action is a VerifyingKeyUpdate, queue it so support cancellation
+        UpgradeAction::VerifyingKey(_) => {
+            let queued_upgrade: QueuedUpgrade = action.try_into()?;
+            state.add_queued_upgrade(queued_upgrade);
+        }
+        // For all other actions, directly schedule them for execution
+        _ => {
+            let scheduled_upgrade: ScheduledUpgrade = action.try_into()?;
+            state.add_scheduled_upgrade(scheduled_upgrade);
+        }
+    }
+
+    // Increase the nonce
+    let authority = state
+        .get_authority_mut(&role)
+        .ok_or(UpgradeError::UnknownRole)?;
+    authority.increment_nonce();
 
     Ok(())
 }

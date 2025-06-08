@@ -44,6 +44,10 @@ impl UpgradeSubprotoState {
         self.multisig_authorities.get((*role as u8) as usize)
     }
 
+    pub fn get_authority_mut(&mut self, role: &Role) -> Option<&mut MultisigAuthority> {
+        self.multisig_authorities.get_mut((*role as u8) as usize)
+    }
+
     pub fn update_multisig_config(&mut self, role: Role, update: &MultisigConfigUpdate) {
         if let Some(authority) = self.multisig_authorities.get_mut(role as usize) {
             authority.config_mut().update(update);
@@ -78,6 +82,32 @@ impl UpgradeSubprotoState {
         {
             // swap the last element into `idx`, then pop
             self.queued_upgrades.swap_remove(idx);
+        }
+    }
+
+    pub fn move_queued_upgrade_to_committed(&mut self, target_id: &ActionId) {
+        if let Some(idx) = self
+            .queued_upgrades
+            .iter()
+            .position(|action| action.id() == target_id)
+        {
+            // swap the last element into `idx`, then pop
+            let upgrade = self.queued_upgrades.swap_remove(idx);
+            let committed_upgrade = upgrade.into();
+            self.committed_upgrades.push(committed_upgrade);
+        }
+    }
+
+    pub fn move_committed_upgrade_to_scheduled(&mut self, target_id: &ActionId) {
+        if let Some(idx) = self
+            .committed_upgrades
+            .iter()
+            .position(|action| action.id() == target_id)
+        {
+            // swap the last element into `idx`, then pop
+            let upgrade = self.committed_upgrades.swap_remove(idx);
+            let scheduled_upgrade: ScheduledUpgrade = upgrade.into();
+            self.scheduled_upgrades.push(scheduled_upgrade);
         }
     }
 

@@ -10,15 +10,6 @@ pub struct CommittedUpgrade {
     action: UpgradeAction,
 }
 
-impl From<QueuedUpgrade> for CommittedUpgrade {
-    fn from(queued: QueuedUpgrade) -> Self {
-        Self {
-            id: *queued.id(),
-            action: queued.action().clone(),
-        }
-    }
-}
-
 impl CommittedUpgrade {
     pub fn new(id: ActionId, action: UpgradeAction) -> Self {
         Self { id, action }
@@ -31,5 +22,16 @@ impl CommittedUpgrade {
 
     pub fn action(&self) -> &UpgradeAction {
         &self.action
+    }
+
+    pub fn into_id_and_action(self) -> (ActionId, UpgradeAction) {
+        (self.id, self.action)
+    }
+}
+
+impl From<QueuedUpgrade> for CommittedUpgrade {
+    fn from(queued: QueuedUpgrade) -> Self {
+        let (id, action) = queued.into_id_and_action();
+        Self::new(id, action)
     }
 }
