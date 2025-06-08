@@ -379,7 +379,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
             fullnode_reth_config,
             sequencer_rpc,
             params,
-            checkpoint_sync=True,
+            sync_mode="checkpoint",
             name_suffix="ckpt",
         )
 

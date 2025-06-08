@@ -13,7 +13,7 @@ use crate::{
     genesis::GenesisStateData,
     l1::{self, L1ViewState},
     prelude::*,
-    traits::ChainstateUpdate,
+    traits::ChainstateDiff,
 };
 
 /// L2 blockchain state.  This is the state computed as a function of a
@@ -219,19 +219,28 @@ impl From<ChainstateEntry> for Chainstate {
     }
 }
 
-pub struct ChainstateUpdateImpl {
+#[derive(Debug)]
+pub struct FullStateUpdate {
     new_chainstate: Chainstate,
 }
 
-impl ChainstateUpdateImpl {
+impl FullStateUpdate {
     pub fn new(new_chainstate: Chainstate) -> Self {
-        ChainstateUpdateImpl { new_chainstate }
+        FullStateUpdate { new_chainstate }
     }
 }
 
-impl ChainstateUpdate for ChainstateUpdateImpl {
+impl ChainstateDiff for FullStateUpdate {
     #[allow(unused)]
-    fn apply_to_chainstate(&self, chainstate: Option<&Chainstate>) -> Chainstate {
+    fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> Chainstate {
         self.new_chainstate.clone()
+    }
+
+    fn from_buf(buf: &[u8]) -> std::io::Result<Self>
+    where
+        Self: Sized,
+    {
+        let new_chainstate = borsh::from_slice::<Chainstate>(buf)?;
+        Ok(Self::new(new_chainstate))
     }
 }

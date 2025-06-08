@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use argh::FromArgs;
 use toml::value::Table;
@@ -24,6 +24,24 @@ impl EnvArgs {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SyncMode {
+    Checkpoint,
+    Full,
+}
+
+impl FromStr for SyncMode {
+    type Err = InitError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "checkpoint" => Ok(SyncMode::Checkpoint),
+            "full" => Ok(SyncMode::Full),
+            _ => Err(InitError::InvalidSyncMode),
+        }
+    }
+}
+
 #[derive(Debug, Clone, FromArgs)]
 #[argh(description = "Strata client")]
 pub(crate) struct Args {
@@ -44,9 +62,13 @@ pub(crate) struct Args {
     #[argh(switch, description = "is sequencer")]
     pub sequencer: bool,
 
-    /// Switch to using checkpoint sync over sequencer based sync
-    #[argh(switch, description = "run client in checkpoint-sync mode")]
-    pub checkpoint_sync: bool,
+    /// Choose sync mode for client node operation.
+    #[argh(
+        option,
+        description = "client sync mode: ('full', 'checkpoint')",
+        default = "SyncMode::Full"
+    )]
+    pub sync_mode: SyncMode,
 
     /// Rollup params path that will override the params in the config toml.
     #[argh(option, description = "rollup params")]
@@ -79,9 +101,6 @@ impl Args {
         let mut overrides = Vec::new();
         if self.sequencer {
             overrides.push("client.is_sequencer=true".to_string());
-        }
-        if self.checkpoint_sync {
-            overrides.push("client.checkpoint_sync=true".to_string());
         }
         if let Some(datadir) = &self.datadir {
             let dd = datadir.to_str().ok_or(anyhow::anyhow!(
@@ -167,7 +186,6 @@ mod test {
                 datadir: "".into(),
                 db_retry_count: 3,
                 is_sequencer: false,
-                checkpoint_sync: false,
             },
             bitcoind: BitcoindConfig {
                 rpc_url: "".to_string(),
@@ -204,10 +222,10 @@ mod test {
             config: "config_path".into(),
             datadir: None,
             sequencer: true,
-            checkpoint_sync: false,
             rollup_params: None,
             rpc_host: None,
             rpc_port: None,
+            sync_mode: SyncMode::Full,
             overrides: vec![
                 "btcio.reader.client_poll_dur_ms=50".to_string(),
                 "sync.l1_follow_distance=30".to_string(),

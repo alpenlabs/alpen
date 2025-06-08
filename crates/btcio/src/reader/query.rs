@@ -21,11 +21,7 @@ use strata_primitives::{
     },
     params::Params,
 };
-use strata_state::{
-    da::ChainstateDAScheme,
-    sync_event::EventSubmitter,
-    traits::{ChainstateDA, ChainstateUpdate},
-};
+use strata_state::sync_event::EventSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::{L1BlockManager, NodeStorage};
 use tracing::*;
@@ -103,7 +99,7 @@ fn init_reader_context(
         CredRule::Unchecked => None,
         CredRule::SchnorrKey(buf32) => Some(
             XOnlyPublicKey::try_from(buf32)
-                .expect("the sequencer pubkey must be valid in the params"),
+                .expect("init: invalid sequencer pubkey specified in config file"),
         ),
     };
 
@@ -274,14 +270,13 @@ async fn poll_for_new_blocks<R: Reader>(
                 events.extend_from_slice(&evs);
 
                 if let Some(checkpt) = find_checkpoint_in_events(&evs) {
-                    if let Ok(chainstate_update) = ChainstateDAScheme::chainstate_update_from_bytes(
-                        checkpt.checkpoint().sidecar().bytes(),
-                    ) {
-                        let chainstate = chainstate_update.apply_to_chainstate(None);
-                        state
-                            .filter_config_mut()
-                            .update_from_chainstate(&chainstate);
-                    }
+                    // if we have a checkpoint in this block, update filterconfig based on this
+                    let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().bytes())
+                        .expect("deserialize chainstate");
+
+                    state
+                        .filter_config_mut()
+                        .update_from_chainstate(&chainstate);
                 }
 
                 info!(%fetch_height, %blkid, "accepted new block");

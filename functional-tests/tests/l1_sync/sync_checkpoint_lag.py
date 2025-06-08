@@ -33,12 +33,12 @@ class SyncCheckpointLagTest(testenv.StrataTester):
         # wait for an epoch to be finalized
         wait_until_epoch_finalized(cs_node_rpc, 0, timeout=30)
 
-        # stop checkpoint sync node - does this even work??
+        # stop checkpoint sync node
         logging.info("stopping checkpoint sync node")
         checkpoint_sync_node.stop()
 
-        logging.info("waiting for epoch 2 to be finalized for sequencer sync node")
-        wait_until_epoch_finalized(ss_node_rpc, 2, timeout=60)
+        logging.info("waiting for epoch 5 to be finalized for sequencer sync node")
+        wait_until_epoch_finalized(ss_node_rpc, 5, timeout=60)
 
         # restart cs node
         logging.info("restarting checkpoint sync node")
@@ -46,6 +46,6 @@ class SyncCheckpointLagTest(testenv.StrataTester):
         wait_until(cs_node_rpc.strata_protocolVersion, timeout=5)
 
         logging.info("waiting for checkpoint sync node to catch up to sequencer sync node")
-        wait_until_epoch_finalized(cs_node_rpc, 2, timeout=60)
+        wait_until_epoch_finalized(cs_node_rpc, 5, timeout=60)
 
         assert_ckpt_and_seq_sync(cs_node_rpc=cs_node_rpc, ss_node_rpc=ss_node_rpc)

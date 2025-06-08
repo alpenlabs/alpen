@@ -3,12 +3,10 @@
 #![feature(slice_pattern)]
 use std::{sync::Arc, time::Duration};
 
-use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
-use checkpoint_sync::checkpoint_sync_task;
 use el_sync::sync_chainstate_to_el;
-use errors::InitError;
+use errors::{ConfigError, InitError};
 use jsonrpsee::Methods;
 use rpc_client::sync_client;
 use strata_btcio::{
@@ -19,6 +17,7 @@ use strata_btcio::{
 use strata_common::logging;
 use strata_config::Config;
 use strata_consensus_logic::{
+    checkpoint_sync::checkpoint_sync_task,
     genesis,
     sync_manager::{self, SyncManager},
 };
@@ -47,10 +46,12 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{args::Args, helpers::*};
+use crate::{
+    args::{Args, SyncMode},
+    helpers::*,
+};
 
 mod args;
-mod checkpoint_sync;
 mod el_sync;
 mod errors;
 mod helpers;
@@ -140,6 +141,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         storage.clone(),
         bridge_msg_ops,
         bitcoin_client,
+        args.sync_mode,
     )?;
 
     let mut methods = jsonrpsee::Methods::new();
@@ -167,12 +169,15 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             broadcast_handle,
             &mut methods,
         )?;
-    } else if !config.client.checkpoint_sync {
-        let sync_endpoint = &config
-            .client
-            .sync_endpoint
-            .clone()
-            .ok_or(InitError::Anyhow(anyhow!("Missing sync_endpoint")))?;
+    } else if args.sync_mode == SyncMode::Full {
+        let sync_endpoint =
+            &config
+                .client
+                .sync_endpoint
+                .clone()
+                .ok_or(InitError::MalformedConfig(ConfigError::MissingKey(
+                    "Missing sync_endpoint".to_string(),
+                )))?;
         info!(?sync_endpoint, "initing fullnode task");
 
         let rpc_client = sync_client(sync_endpoint);
@@ -265,7 +270,9 @@ fn do_startup_checks(
         .chainstate()
         .get_toplevel_chainstate_blocking(last_state_idx)?
     else {
-        anyhow::bail!("Missing chain state idx: {last_state_idx}");
+        return Err(
+            InitError::MissingData(format!("Missing chain state idx: {}", last_state_idx)).into(),
+        );
     };
 
     let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
@@ -279,10 +286,16 @@ fn do_startup_checks(
             info!("startup: last matured block: {}", block_hash);
         }
         Err(client_error) if client_error.is_block_not_found() => {
-            anyhow::bail!("Missing expected block: {}", block_hash);
+            return Err(
+                InitError::MissingData(format!("Missing expected block: {}", block_hash)).into(),
+            );
         }
         Err(client_error) => {
-            anyhow::bail!("could not connect to bitcoin, err = {}", client_error);
+            return Err(InitError::ServiceUnavailable(format!(
+                "could not connect to bitcoin, err = {}",
+                client_error
+            ))
+            .into());
         }
     }
 
@@ -302,7 +315,11 @@ fn do_startup_checks(
             }
             Err(error) => {
                 // Likely network issue
-                anyhow::bail!("could not connect to exec engine, err = {}", error);
+                return Err(InitError::ServiceUnavailable(format!(
+                    "could not connect to exec engine, err = {}",
+                    error
+                ))
+                .into());
             }
         }
     }
@@ -322,6 +339,7 @@ fn start_core_tasks(
     storage: Arc<NodeStorage>,
     _bridge_msg_ops: Arc<BridgeMsgOps>,
     bitcoin_client: Arc<Client>,
+    sync_mode: SyncMode,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();
 
@@ -329,7 +347,7 @@ fn start_core_tasks(
     let status_channel = init_status_channel(storage.as_ref())?;
 
     // instantiate execution engine
-    let is_checkpoint_sync = config.client.checkpoint_sync && !config.client.is_sequencer;
+    let is_checkpoint_sync = sync_mode == SyncMode::Checkpoint && !config.client.is_sequencer;
     let engine = init_engine_controller(
         config,
         params.as_ref(),
