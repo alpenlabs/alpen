@@ -21,8 +21,8 @@ pub enum CoreError {
     #[error("Invalid l2 block slot in checkpoint")]
     InvalidL2BlockSlot,
 
-    /// Invalid L1 Block hight
-    #[error("Invalid l1 block hight")]
+    /// Invalid L1 Block height
+    #[error("Invalid l1 block height")]
     InvalidL1BlockHeight,
 
     /// Missing required field in L2 to L1 message
