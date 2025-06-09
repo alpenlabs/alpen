@@ -1,6 +1,6 @@
 use bitcoin::Transaction;
 
-/// A parsed SPS-50 tag payload (excluding the “ALPN” magic and subprotocol ID),
+/// A parsed SPS-50 tag payload (excluding the "ALPN" magic and subprotocol ID),
 /// containing the subprotocol-specific transaction type and any auxiliary data.
 ///
 /// This struct represents everything in the OP_RETURN after the first 6 bytes:

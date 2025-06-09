@@ -138,21 +138,26 @@ fn extract_op_return_data(script: &ScriptBuf) -> Option<&[u8]> {
 
 #[cfg(test)]
 mod test {
-    use bitcoin::{absolute::LockTime, transaction::Version, Amount, Transaction, TxOut};
-    use strata_primitives::params::Params;
-    use strata_test_utils::{bitcoin::generate_withdrawal_fulfillment_data, l2::gen_params};
+    use bitcoin::{
+        absolute::LockTime, consensus, transaction::Version, Amount, OutPoint, Transaction, TxOut,
+    };
+    use strata_primitives::{
+        bitcoin_bosd::Descriptor, l1::OutputRef, params::Params, sorted_vec::FlatTable,
+    };
+    use strata_state::bridge_state::{
+        DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
+    };
+    use strata_test_utils::{
+        bitcoin::generate_withdrawal_fulfillment_data, l2::gen_params, ArbitraryGenerator,
+    };
 
     use super::*;
     use crate::{
-        filter::types::OPERATOR_FEE,
-        utils::test_utils::{
-            create_opreturn_metadata_for_withdrawal_fulfillment,
-            get_filter_config_from_deposit_entries,
-        },
+        filter::types::{conv_deposit_to_fulfillment, OPERATOR_FEE},
+        utils::test_utils::get_filter_config_from_deposit_entries,
     };
 
-    // First 4 bytes of "strata"?  I am not sure what this is supposed to be.
-    const MAGIC: [u8; 4] = [b's', b't', b'r', b'a'];
+    const MAGIC: [u8; 4] = *b"ALPN";
 
     const DEPOSIT_AMT: Amount = Amount::from_int_btc(10);
 
@@ -177,6 +182,7 @@ mod test {
         OutPoint::new(consensus::deserialize(txid_bytes).unwrap(), vout).into()
     }
 
+    #[expect(unused)]
     fn generate_data() -> (Vec<Descriptor>, Vec<[u8; 32]>, TxFilterConfig) {
         let params: Params = gen_params();
         let mut gen = ArbitraryGenerator::new();
