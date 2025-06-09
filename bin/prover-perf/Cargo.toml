@@ -20,13 +20,13 @@ strata-test-utils.workspace = true
 strata-zkvm-hosts.workspace = true
 
 # sp1
-sp1-sdk = "4.1.0"
+sp1-sdk.workspace = true
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9", optional = true }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10", optional = true }
 
 # risc0
 strata-risc0-guest-builder = { path = "../../provers/risc0", optional = true }
-zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9", optional = true }
+zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10", optional = true }
 
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }
@@ -39,14 +39,14 @@ tracing.workspace = true
 [features]
 default = ["sp1"]
 risc0 = [
-    "zkaleido-risc0-host/perf",
-    "strata-zkvm-hosts/risc0-builder",
-    "dep:zkaleido-risc0-host",
-    "dep:strata-risc0-guest-builder",
+  "zkaleido-risc0-host/perf",
+  "strata-zkvm-hosts/risc0-builder",
+  "dep:zkaleido-risc0-host",
+  "dep:strata-risc0-guest-builder",
 ]
 sp1 = [
-    "zkaleido-sp1-host/perf",
-    "strata-zkvm-hosts/sp1-builder",
-    "dep:zkaleido-sp1-host",
-    "dep:strata-sp1-guest-builder",
+  "zkaleido-sp1-host/perf",
+  "strata-zkvm-hosts/sp1-builder",
+  "dep:zkaleido-sp1-host",
+  "dep:strata-sp1-guest-builder",
 ]

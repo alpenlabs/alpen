@@ -14,7 +14,7 @@ path = "src/main.rs"
 strata-primitives.workspace = true
 
 aes-gcm-siv = "0.11.1"
-alloy = { version = "0.3.5", features = [
+alloy = { workspace = true, features = [
   "std",
   "rpc-client-ws",
   "network",

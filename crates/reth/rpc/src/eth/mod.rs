@@ -14,13 +14,13 @@ use alloy_primitives::U256;
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_evm::ConfigureEvm;
 use reth_network_api::NetworkInfo;
-use reth_node_api::NodePrimitives;
-use reth_node_builder::EthApiBuilderCtx;
+use reth_node_api::{FullNodeComponents, NodePrimitives};
+use reth_node_builder::rpc::{EthApiBuilder, EthApiCtx};
 use reth_primitives::EthPrimitives;
 use reth_provider::{
     BlockNumReader, BlockReader, BlockReaderIdExt, CanonStateSubscriptions, ChainSpecProvider,
-    NodePrimitivesProvider, ProviderBlock, ProviderHeader, ProviderReceipt, ProviderTx,
-    StageCheckpointReader, StateProviderFactory,
+    ProviderBlock, ProviderHeader, ProviderReceipt, ProviderTx, StageCheckpointReader,
+    StateProviderFactory,
 };
 use reth_rpc::eth::{core::EthApiInner, DevSigner};
 use reth_rpc_eth_api::{
@@ -28,7 +28,7 @@ use reth_rpc_eth_api::{
         AddDevSigners, EthApiSpec, EthFees, EthSigner, EthState, LoadBlock, LoadFee, LoadState,
         SpawnBlocking, Trace,
     },
-    EthApiTypes, RpcNodeCore, RpcNodeCoreExt,
+    EthApiTypes, FromEvmError, FullEthApiServer, RpcNodeCore, RpcNodeCoreExt,
 };
 use reth_rpc_eth_types::{EthApiError, EthStateCache, FeeHistoryCache, GasPriceOracle};
 use reth_tasks::{
@@ -47,7 +47,7 @@ pub type EthApiNodeBackend<N> = EthApiInner<
     <N as RpcNodeCore>::Evm,
 >;
 
-/// A helper trait with requirements for [`RpcNodeCore`] to be used in [`StrataEthApi`].
+/// A helper trait with requirements for [`RpcNodeCore`] to be used in [`AlpenEthApi`].
 pub trait StrataNodeCore: RpcNodeCore<Provider: BlockReader> {}
 impl<T> StrataNodeCore for T where T: RpcNodeCore<Provider: BlockReader> {}
 
@@ -62,12 +62,12 @@ impl<T> StrataNodeCore for T where T: RpcNodeCore<Provider: BlockReader> {}
 /// This type implements the [`FullEthApi`](reth_rpc_eth_api::helpers::FullEthApi) by implemented
 /// all the `Eth` helper traits and prerequisite traits.
 #[derive(Clone)]
-pub struct StrataEthApi<N: StrataNodeCore> {
+pub struct AlpenEthApi<N: StrataNodeCore> {
     /// Gateway to node's core components.
-    inner: Arc<StrataEthApiInner<N>>,
+    inner: Arc<AlpenEthApiInner<N>>,
 }
 
-impl<N> StrataEthApi<N>
+impl<N> AlpenEthApi<N>
 where
     N: StrataNodeCore<
         Provider: BlockReaderIdExt
@@ -77,13 +77,23 @@ where
                       + 'static,
     >,
 {
-    /// Build a [`StrataEthApi`] using [`StrataEthApiBuilder`].
-    pub fn builder() -> StrataEthApiBuilder {
-        StrataEthApiBuilder::new()
+    /// Returns a reference to the [`EthApiNodeBackend`].
+    pub fn eth_api(&self) -> &EthApiNodeBackend<N> {
+        self.inner.eth_api()
+    }
+
+    /// Returns the configured sequencer client, if any.
+    pub fn sequencer_client(&self) -> Option<&SequencerClient> {
+        self.inner.sequencer_client()
+    }
+
+    /// Build a [`AlpenEthApi`] using [`AlpenEthApiBuilder`].
+    pub const fn builder() -> AlpenEthApiBuilder {
+        AlpenEthApiBuilder::new()
     }
 }
 
-impl<N> EthApiTypes for StrataEthApi<N>
+impl<N> EthApiTypes for AlpenEthApi<N>
 where
     Self: Send + Sync,
     N: StrataNodeCore,
@@ -97,10 +107,11 @@ where
     }
 }
 
-impl<N> RpcNodeCore for StrataEthApi<N>
+impl<N> RpcNodeCore for AlpenEthApi<N>
 where
     N: StrataNodeCore,
 {
+    type Primitives = EthPrimitives;
     type Provider = N::Provider;
     type Pool = N::Pool;
     type Evm = <N as RpcNodeCore>::Evm;
@@ -133,7 +144,7 @@ where
     }
 }
 
-impl<N> RpcNodeCoreExt for StrataEthApi<N>
+impl<N> RpcNodeCoreExt for AlpenEthApi<N>
 where
     N: StrataNodeCore,
 {
@@ -143,7 +154,7 @@ where
     }
 }
 
-impl<N> EthApiSpec for StrataEthApi<N>
+impl<N> EthApiSpec for AlpenEthApi<N>
 where
     N: StrataNodeCore<
         Provider: ChainSpecProvider<ChainSpec: EthereumHardforks>
@@ -165,7 +176,7 @@ where
     }
 }
 
-impl<N> SpawnBlocking for StrataEthApi<N>
+impl<N> SpawnBlocking for AlpenEthApi<N>
 where
     Self: Send + Sync + Clone + 'static,
     N: StrataNodeCore,
@@ -186,7 +197,7 @@ where
     }
 }
 
-impl<N> LoadFee for StrataEthApi<N>
+impl<N> LoadFee for AlpenEthApi<N>
 where
     Self: LoadBlock<Provider = N::Provider>,
     N: StrataNodeCore<
@@ -206,7 +217,7 @@ where
     }
 }
 
-impl<N> LoadState for StrataEthApi<N> where
+impl<N> LoadState for AlpenEthApi<N> where
     N: StrataNodeCore<
         Provider: StateProviderFactory + ChainSpecProvider<ChainSpec: EthereumHardforks>,
         Pool: TransactionPool,
@@ -214,7 +225,7 @@ impl<N> LoadState for StrataEthApi<N> where
 {
 }
 
-impl<N> EthState for StrataEthApi<N>
+impl<N> EthState for AlpenEthApi<N>
 where
     Self: LoadState + SpawnBlocking,
     N: StrataNodeCore,
@@ -225,27 +236,30 @@ where
     }
 }
 
-impl<N> EthFees for StrataEthApi<N>
+impl<N> EthFees for AlpenEthApi<N>
 where
     Self: LoadFee,
     N: StrataNodeCore,
 {
 }
 
-impl<N> Trace for StrataEthApi<N>
+impl<N> Trace for AlpenEthApi<N>
 where
     Self: RpcNodeCore<Provider: BlockReader>
         + LoadState<
             Evm: ConfigureEvm<
-                Header = ProviderHeader<Self::Provider>,
-                Transaction = ProviderTx<Self::Provider>,
+                Primitives: NodePrimitives<
+                    BlockHeader = ProviderHeader<Self::Provider>,
+                    SignedTx = ProviderTx<Self::Provider>,
+                >,
             >,
+            Error: FromEvmError<Self::Evm>,
         >,
     N: StrataNodeCore,
 {
 }
 
-impl<N> AddDevSigners for StrataEthApi<N>
+impl<N> AddDevSigners for AlpenEthApi<N>
 where
     N: StrataNodeCore,
 {
@@ -254,15 +268,15 @@ where
     }
 }
 
-impl<N: StrataNodeCore> fmt::Debug for StrataEthApi<N> {
+impl<N: StrataNodeCore> fmt::Debug for AlpenEthApi<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StrataEthApi").finish_non_exhaustive()
+        f.debug_struct("AlpenEthApi").finish_non_exhaustive()
     }
 }
 
-/// Container type for [`StrataEthApi`]
+/// Container type for [`AlpenEthApi`]
 #[allow(missing_debug_implementations)]
-struct StrataEthApiInner<N: StrataNodeCore> {
+struct AlpenEthApiInner<N: StrataNodeCore> {
     /// Gateway to node's core components.
     eth_api: EthApiNodeBackend<N>,
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
@@ -270,16 +284,29 @@ struct StrataEthApiInner<N: StrataNodeCore> {
     sequencer_client: Option<SequencerClient>,
 }
 
-#[derive(Debug, Default)]
-pub struct StrataEthApiBuilder {
+impl<N: StrataNodeCore> AlpenEthApiInner<N> {
+    /// Returns a reference to the [`EthApiNodeBackend`].
+    const fn eth_api(&self) -> &EthApiNodeBackend<N> {
+        &self.eth_api
+    }
+
+    /// Returns the configured sequencer client, if any.
+    const fn sequencer_client(&self) -> Option<&SequencerClient> {
+        self.sequencer_client.as_ref()
+    }
+}
+
+#[allow(missing_debug_implementations)]
+#[derive(Default)]
+pub struct AlpenEthApiBuilder {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
     /// network.
     sequencer_client: Option<SequencerClient>,
 }
 
-impl StrataEthApiBuilder {
-    /// Creates a [`StrataEthApiBuilder`] instance.
-    pub fn new() -> Self {
+impl AlpenEthApiBuilder {
+    /// Creates a [`AlpenEthApiBuilder`] instance.
+    pub const fn new() -> Self {
         Self {
             sequencer_client: None,
         }
@@ -292,44 +319,36 @@ impl StrataEthApiBuilder {
     }
 }
 
-impl StrataEthApiBuilder {
-    /// Builds an instance of [`StrataEthApi`]
-    pub fn build<N>(self, ctx: &EthApiBuilderCtx<N>) -> StrataEthApi<N>
-    where
-        N: StrataNodeCore<
-            Provider: BlockReaderIdExt<
-                Block = <<N::Provider as NodePrimitivesProvider>::Primitives as NodePrimitives>::Block,
-                Receipt = <<N::Provider as NodePrimitivesProvider>::Primitives as NodePrimitives>::Receipt,
-            > + ChainSpecProvider
-                            + CanonStateSubscriptions
-                            + Clone
-                            + 'static,
-        >,
-    {
-        let blocking_task_pool =
-            BlockingTaskPool::build().expect("failed to build blocking task pool");
+impl<N> EthApiBuilder<N> for AlpenEthApiBuilder
+where
+    N: FullNodeComponents,
+    AlpenEthApi<N>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
+{
+    type EthApi = AlpenEthApi<N>;
 
-        let eth_api = EthApiInner::new(
-            ctx.provider.clone(),
-            ctx.pool.clone(),
-            ctx.network.clone(),
-            ctx.cache.clone(),
-            ctx.new_gas_price_oracle(),
-            ctx.config.rpc_gas_cap,
-            ctx.config.rpc_max_simulate_blocks,
-            ctx.config.eth_proof_window,
-            blocking_task_pool,
-            ctx.new_fee_history_cache(),
-            ctx.evm_config.clone(),
-            ctx.executor.clone(),
-            ctx.config.proof_permits,
-        );
+    async fn build_eth_api(self, ctx: EthApiCtx<'_, N>) -> eyre::Result<Self::EthApi> {
+        let Self { sequencer_client } = self;
+        let eth_api = reth_rpc::EthApiBuilder::new(
+            ctx.components.provider().clone(),
+            ctx.components.pool().clone(),
+            ctx.components.network().clone(),
+            ctx.components.evm_config().clone(),
+        )
+        .eth_cache(ctx.cache)
+        .task_spawner(ctx.components.task_executor().clone())
+        .gas_cap(ctx.config.rpc_gas_cap.into())
+        .max_simulate_blocks(ctx.config.rpc_max_simulate_blocks)
+        .eth_proof_window(ctx.config.eth_proof_window)
+        .fee_history_cache_config(ctx.config.fee_history_cache)
+        .proof_permits(ctx.config.proof_permits)
+        .gas_oracle_config(ctx.config.gas_oracle)
+        .build_inner();
 
-        StrataEthApi {
-            inner: Arc::new(StrataEthApiInner {
+        Ok(AlpenEthApi {
+            inner: Arc::new(AlpenEthApiInner {
                 eth_api,
-                sequencer_client: self.sequencer_client,
+                sequencer_client,
             }),
-        }
+        })
     }
 }

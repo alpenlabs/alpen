@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [dependencies]
 strata-proofimpl-btc-blockspace = { path = "../../../crates/proof-impl/btc-blockspace" }
-zkaleido-risc0-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9" }
+zkaleido-risc0-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
 
 [patch.crates-io]
 secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", branch = "patch-secp256k1-v0.29.1" } # This has been used because on riscv32, we need to build C libraries using the riscv-gnu-toolchain and clang for compiling C code. sp1-patches does this. This works for risc0 as well because the `target_vendor` is not `succinct`, so this does not try to use the succinct precompile.

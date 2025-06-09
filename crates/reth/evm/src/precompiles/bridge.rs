@@ -1,13 +1,15 @@
 use alpen_reth_primitives::WithdrawalIntentEvent;
 use revm::{
-    primitives::{PrecompileError, PrecompileErrors, PrecompileOutput, PrecompileResult},
-    ContextStatefulPrecompile, Database,
+    context::{ContextTr, JournalTr, Transaction},
+    precompile::{PrecompileError, PrecompileOutput, PrecompileResult},
 };
 use revm_primitives::{Bytes, Log, LogData, U256};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
-pub(crate) use crate::constants::BRIDGEOUT_ADDRESS;
-use crate::utils::wei_to_sats;
+use crate::{
+    constants::{BRIDGEOUT_ADDRESS, FIXED_WITHDRAWAL_WEI},
+    utils::wei_to_sats,
+};
 
 /// Ensure that input is a valid BOSD [`Descriptor`].
 fn try_into_bosd(maybe_bosd: &Bytes) -> Result<Descriptor, PrecompileError> {
@@ -20,79 +22,65 @@ fn try_into_bosd(maybe_bosd: &Bytes) -> Result<Descriptor, PrecompileError> {
     }
 }
 
+/// Placeholder for the `bridgeout` precompile; required for the precompile registry.
+pub(crate) fn bridgeout_precompile(_input: &Bytes, _gas_limit: u64) -> PrecompileResult {
+    let gas_cost = 0;
+    Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
+}
+
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
 /// This precompile validates transaction and burns the bridge out amount.
-#[derive(Debug)]
-pub(crate) struct BridgeoutPrecompile {
-    fixed_withdrawal_wei: U256,
-}
+pub(crate) fn bridge_context_call<CTX>(
+    destination: &Bytes,
+    _gas_limit: u64,
+    evmctx: &mut CTX,
+) -> PrecompileResult
+where
+    CTX: ContextTr,
+{
+    // Validate that this is a valid BOSD
+    let _ = try_into_bosd(destination)?;
 
-impl BridgeoutPrecompile {
-    pub(crate) fn new(fixed_withdrawal_wei: U256) -> Self {
-        Self {
-            fixed_withdrawal_wei,
-        }
+    let withdrawal_amount = evmctx.tx().value();
+
+    // Verify that the transaction value matches the required withdrawal amount
+    if withdrawal_amount < FIXED_WITHDRAWAL_WEI {
+        return Err(PrecompileError::other(
+            "Invalid withdrawal value: must have 10 BTC in wei",
+        ));
     }
-}
 
-impl<DB: Database> ContextStatefulPrecompile<DB> for BridgeoutPrecompile {
-    fn call(
-        &self,
-        destination: &Bytes,
-        _gas_limit: u64,
-        evmctx: &mut revm::InnerEvmContext<DB>,
-    ) -> PrecompileResult {
-        // Validate that this is a valid BOSD
-        let _ = try_into_bosd(destination)?;
+    // Convert wei to satoshis
+    let (sats, _) = wei_to_sats(withdrawal_amount);
 
-        let withdrawal_amount = evmctx
-            .balance(BRIDGEOUT_ADDRESS)
-            .map_err(|_| PrecompileError::other("Could not read balance"))?
-            .data;
+    // Try converting sats (U256) into u64 amount
+    let amount: u64 = sats.try_into().map_err(|_| {
+        PrecompileError::Fatal("Withdrawal amount exceeds maximum allowed value".into())
+    })?;
 
-        // Verify that the transaction value matches the required withdrawal amount
-        if withdrawal_amount < self.fixed_withdrawal_wei {
-            return Err(PrecompileError::other(
-                "Invalid withdrawal value: must have 10 BTC in wei",
-            )
-            .into());
-        }
+    // Log the bridge withdrawal intent
+    let evt = WithdrawalIntentEvent {
+        amount,
+        destination: destination.clone(),
+    };
+    let logdata = LogData::from(&evt);
 
-        // Convert wei to satoshis
-        let (sats, _) = wei_to_sats(withdrawal_amount);
+    evmctx.journal().log(Log {
+        address: BRIDGEOUT_ADDRESS,
+        data: logdata,
+    });
 
-        // Try converting sats (U256) into u64 amount
-        let amount: u64 = sats.try_into().map_err(|_| PrecompileErrors::Fatal {
-            msg: "Withdrawal amount exceeds maximum allowed value".into(),
-        })?;
+    let mut account = evmctx
+        .journal()
+        .load_account(BRIDGEOUT_ADDRESS) // Error case should never occur
+        .map_err(|_| PrecompileError::Fatal("Failed to load BRIDGEOUT_ADDRESS account".into()))?;
 
-        // Log the bridge withdrawal intent
-        let evt = WithdrawalIntentEvent {
-            amount,
-            // PERF: This may be improved by avoiding the allocation.
-            destination: destination.clone(),
-        };
-        let logdata = LogData::from(&evt);
+    // Burn value sent to bridge by adjusting the account balance of bridge precompile
+    account.info.balance = U256::ZERO;
 
-        evmctx.journaled_state.log(Log {
-            address: BRIDGEOUT_ADDRESS,
-            data: logdata,
-        });
+    // TODO: Properly calculate and deduct gas for the bridge out operation
+    let gas_cost = 0;
 
-        // Burn value sent to bridge by adjusting the account balance of bridge precompile
-        let mut account = evmctx
-            .load_account(BRIDGEOUT_ADDRESS)
-            // Error case should never occur
-            .map_err(|_| PrecompileErrors::Fatal {
-                msg: "Failed to load BRIDGEOUT_ADDRESS account".into(),
-            })?;
-
-        account.info.balance = U256::ZERO;
-
-        // TODO: Properly calculate and deduct gas for the bridge out operation
-        let gas_cost = 0;
-
-        Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
-    }
+    Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
 }

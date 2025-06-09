@@ -1,10 +1,10 @@
 //! Loads and formats Strata transaction RPC response.
 
-use alloy_consensus::{Signed, Transaction as _, TxEnvelope};
-use alloy_primitives::{Bytes, PrimitiveSignature as Signature, B256};
+use alloy_consensus::{Transaction as _, TxEip4844Variant, TxEnvelope};
+use alloy_primitives::{Bytes, Signature, B256};
 use alloy_rpc_types_eth::{Transaction, TransactionInfo, TransactionRequest};
 use reth_node_api::FullNodeComponents;
-use reth_primitives::{RecoveredTx, TransactionSigned};
+use reth_primitives::{Recovered, TransactionSigned};
 use reth_provider::{
     BlockReader, BlockReaderIdExt, ProviderTx, ReceiptProvider, TransactionsProvider,
 };
@@ -15,9 +15,9 @@ use reth_rpc_eth_api::{
 use reth_rpc_eth_types::{utils::recover_raw_transaction, EthApiError};
 use reth_transaction_pool::{PoolTransaction, TransactionOrigin, TransactionPool};
 
-use crate::{SequencerClient, StrataEthApi, StrataNodeCore};
+use crate::{AlpenEthApi, SequencerClient, StrataNodeCore};
 
-impl<N> EthTransactions for StrataEthApi<N>
+impl<N> EthTransactions for AlpenEthApi<N>
 where
     Self: LoadTransaction<Provider: BlockReaderIdExt>,
     N: StrataNodeCore<Provider: BlockReader<Transaction = ProviderTx<Self::Provider>>>,
@@ -41,7 +41,6 @@ where
                     tracing::debug!(target: "rpc::eth", %err, hash=% *pool_transaction.hash(), "failed to forward raw transaction");
                 });
         }
-
         // submit the transaction to the pool with a `Local` origin
         let hash = self
             .pool()
@@ -53,7 +52,7 @@ where
     }
 }
 
-impl<N> LoadTransaction for StrataEthApi<N>
+impl<N> LoadTransaction for AlpenEthApi<N>
 where
     Self: SpawnBlocking + FullEthApiTypes + RpcNodeCoreExt,
     N: StrataNodeCore<Provider: TransactionsProvider, Pool: TransactionPool>,
@@ -61,7 +60,7 @@ where
 {
 }
 
-impl<N> StrataEthApi<N>
+impl<N> AlpenEthApi<N>
 where
     N: StrataNodeCore,
 {
@@ -71,7 +70,7 @@ where
     }
 }
 
-impl<N> TransactionCompat<TransactionSigned> for StrataEthApi<N>
+impl<N> TransactionCompat<TransactionSigned> for AlpenEthApi<N>
 where
     N: FullNodeComponents<Provider: ReceiptProvider<Receipt = reth_primitives::Receipt>>,
 {
@@ -80,32 +79,10 @@ where
 
     fn fill(
         &self,
-        tx: RecoveredTx<TransactionSigned>,
+        tx: Recovered<TransactionSigned>,
         tx_info: TransactionInfo,
     ) -> Result<Self::Transaction, Self::Error> {
-        let from = tx.signer();
-        let hash = tx.hash();
-        let TransactionSigned {
-            transaction,
-            signature,
-            ..
-        } = tx.into_tx();
-
-        let inner = match transaction {
-            reth_primitives::Transaction::Legacy(tx) => {
-                TxEnvelope::Legacy(Signed::new_unchecked(tx, signature, hash))
-            }
-            reth_primitives::Transaction::Eip2930(tx) => {
-                TxEnvelope::Eip2930(Signed::new_unchecked(tx, signature, hash))
-            }
-            reth_primitives::Transaction::Eip1559(tx) => {
-                TxEnvelope::Eip1559(Signed::new_unchecked(tx, signature, hash))
-            }
-            reth_primitives::Transaction::Eip4844(_) => unreachable!(),
-            reth_primitives::Transaction::Eip7702(tx) => {
-                TxEnvelope::Eip7702(Signed::new_unchecked(tx, signature, hash))
-            }
-        };
+        let tx = tx.convert::<TxEnvelope>();
 
         let TransactionInfo {
             block_hash,
@@ -117,19 +94,15 @@ where
 
         let effective_gas_price = base_fee
             .map(|base_fee| {
-                inner
-                    .effective_tip_per_gas(base_fee as u64)
-                    .unwrap_or_default()
-                    + base_fee
+                tx.effective_tip_per_gas(base_fee).unwrap_or_default() + base_fee as u128
             })
-            .unwrap_or_else(|| inner.max_fee_per_gas());
+            .unwrap_or_else(|| tx.max_fee_per_gas());
 
         Ok(Transaction {
-            inner,
+            inner: tx,
             block_hash,
             block_number,
             transaction_index,
-            from,
             effective_gas_price: Some(effective_gas_price),
         })
     }
@@ -148,12 +121,15 @@ where
     }
 
     fn otterscan_api_truncate_input(tx: &mut Self::Transaction) {
-        let input = match &mut tx.inner {
+        let input = match tx.inner.inner_mut() {
             TxEnvelope::Eip1559(tx) => &mut tx.tx_mut().input,
             TxEnvelope::Eip2930(tx) => &mut tx.tx_mut().input,
             TxEnvelope::Legacy(tx) => &mut tx.tx_mut().input,
+            TxEnvelope::Eip4844(tx) => match tx.tx_mut() {
+                TxEip4844Variant::TxEip4844(tx) => &mut tx.input,
+                TxEip4844Variant::TxEip4844WithSidecar(tx) => &mut tx.tx.input,
+            },
             TxEnvelope::Eip7702(tx) => &mut tx.tx_mut().input,
-            _ => return,
         };
         *input = input.slice(..4);
     }

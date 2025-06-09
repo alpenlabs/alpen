@@ -1,87 +1,50 @@
-//! This code is modified from the original implementation of Zeth.
-//!
-//! Reference: <https://github.com/risc0/zeth>
-//!
-//! Copyright 2023 RISC Zero, Inc.
-//!
-//! Licensed under the Apache License, Version 2.0 (the "License");
-//! you may not use this file except in compliance with the License.
-//! You may obtain a copy of the License at
-//!
-//! <http://www.apache.org/licenses/LICENSE-2.0>
-//!
-//! Unless required by applicable law or agreed to in writing, software
-//! distributed under the License is distributed on an "AS IS" BASIS,
-//! WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either strata or implied.
-//! See the License for the specific language governing permissions and
-//! limitations under the License.
-pub mod db;
+//! EVM Execution Environment STF for Alpen prover, using RSP for EVM execution. Provides primitives
+//! and utilities to process Ethereum block transactions and state transitions in a zkVM.
 pub mod primitives;
-pub mod processor;
 pub mod program;
 pub mod utils;
-use alpen_reth_evm::collect_withdrawal_intents;
-use db::InMemoryDBHelper;
+use std::sync::Arc;
+
+use alloy_consensus::EthBlock;
+use alpen_reth_evm::evm::AlpenEvmFactory;
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
-use processor::{EvmConfig, EvmProcessor};
-use revm::{primitives::SpecId, InMemoryDB};
-use revm_primitives::alloy_primitives::B256;
-use strata_mpt::keccak;
+use reth_chainspec::ChainSpec;
+use reth_evm_ethereum::EthEvmConfig;
+use rsp_client_executor::{executor::ClientExecutor, io::EthClientExecutorInput};
 use utils::generate_exec_update;
 use zkaleido::ZkVmEnv;
 
-// TODO: Read the evm config from the genesis config. This should be done in compile time.
-const EVM_CONFIG: EvmConfig = EvmConfig {
-    chain_id: 2892,
-    spec_id: SpecId::SHANGHAI,
-};
-/// Executes the block with the given input and EVM configuration, returning public parameters.
-pub fn process_block_transaction(
-    mut input: EvmBlockStfInput,
-    evm_config: EvmConfig,
-) -> EvmBlockStfOutput {
-    // Calculate the previous block hash
-    let previous_block_hash = B256::from(keccak(alloy_rlp::encode(input.parent_header.clone())));
+pub type AlpEthClientExecutor = ClientExecutor<EthEvmConfig<AlpenEvmFactory>, ChainSpec>;
 
-    // Deposit requests are processed and forwarded as public parameters for verification on the CL
-    let deposit_requests = input.withdrawals.clone();
-
-    // Initialize the in-memory database
-    let db = match InMemoryDB::initialize(&mut input) {
-        Ok(database) => database,
-        Err(e) => panic!("Failed to initialize database: {e:?}"),
+pub fn process_block_transaction(input: EthClientExecutorInput) -> EvmBlockStfOutput {
+    // TODO: Remove this unwrap
+    let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
+    let executor = AlpEthClientExecutor {
+        evm_config: EthEvmConfig::new_with_evm_factory(
+            chain_spec.clone(),
+            AlpenEvmFactory::default(),
+        ),
+        chain_spec: chain_spec.clone(),
     };
 
-    // Create an EVM processor and execute the block
-    let mut evm_processor = EvmProcessor::<InMemoryDB> {
-        input,
-        db: Some(db),
-        header: None,
-        evm_config,
-    };
+    let header = executor
+        .execute(input.clone())
+        .expect("failed to execute client");
 
-    evm_processor.initialize();
-    let (executed_txs, receipts) = evm_processor.execute();
-    evm_processor.finalize();
+    let deposit_requests = input
+        .current_block
+        .withdrawals()
+        .map(|w| w.to_vec())
+        .unwrap_or_default();
 
-    // Extract the header and compute the new block hash
-    let block_header = evm_processor.header.unwrap(); // Ensure header exists before unwrap
-    let new_block_hash = B256::from(keccak(alloy_rlp::encode(block_header.clone())));
-
-    // TODO: Optimize receipt iteration by implementing bloom filters or adding hints to
-    // `ElBlockStfInput`. This will allow for efficient filtering of `WithdrawalIntentEvents`.
-    let withdrawal_intents: Vec<_> =
-        collect_withdrawal_intents(executed_txs.iter().zip(receipts.iter())).collect();
-
-    // Construct the public parameters for the proof
     EvmBlockStfOutput {
-        block_idx: block_header.number,
-        new_blockhash: new_block_hash,
-        new_state_root: block_header.state_root,
-        prev_blockhash: previous_block_hash,
-        txn_root: block_header.transactions_root,
+        block_idx: header.number,
+        new_blockhash: header.hash_slow(),
+        new_state_root: header.state_root,
+        prev_blockhash: header.parent_hash,
+        txn_root: header.transactions_root,
         deposit_requests,
-        withdrawal_intents,
+        withdrawal_intents: Vec::new(),
     }
 }
 
@@ -95,8 +58,8 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
     let mut current_blockhash = None;
 
     for _ in 0..num_blocks {
-        let input: EvmBlockStfInput = zkvm.read_serde();
-        let output = process_block_transaction(input, EVM_CONFIG);
+        let input: EthClientExecutorInput = zkvm.read_serde();
+        let output = process_block_transaction(input);
 
         if let Some(expected_hash) = current_blockhash {
             assert_eq!(output.prev_blockhash, expected_hash, "Block hash mismatch");
@@ -111,14 +74,10 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
 
 #[cfg(test)]
 mod tests {
-    use revm::primitives::SpecId;
+
     use serde::{Deserialize, Serialize};
 
-    use super::*;
-    const EVM_CONFIG: EvmConfig = EvmConfig {
-        chain_id: 12345,
-        spec_id: SpecId::SHANGHAI,
-    };
+    use super::{process_block_transaction, EvmBlockStfInput, EvmBlockStfOutput};
 
     #[derive(Serialize, Deserialize)]
     struct TestData {
@@ -151,7 +110,7 @@ mod tests {
         let test_data = get_mock_data();
 
         let input = test_data.witness;
-        let op = process_block_transaction(input, EVM_CONFIG);
+        let op = process_block_transaction(input);
         assert_eq!(op, test_data.params);
     }
 }

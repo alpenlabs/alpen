@@ -15,7 +15,6 @@ strata-primitives.workspace = true
 strata-state.workspace = true
 strata-storage.workspace = true
 
-alloy-network.workspace = true
 alloy-rpc-types.workspace = true
 anyhow.workspace = true
 arbitrary.workspace = true

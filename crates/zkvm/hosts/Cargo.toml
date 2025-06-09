@@ -12,11 +12,11 @@ zkaleido-native-adapter.workspace = true
 
 # sp1
 strata-sp1-guest-builder = { path = "../../../provers/sp1", optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9", optional = true }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10", optional = true }
 
 # risc0
 strata-risc0-guest-builder = { path = "../../../provers/risc0", optional = true }
-zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9", optional = true }
+zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10", optional = true }
 
 strata-primitives.workspace = true
 strata-proofimpl-btc-blockspace.workspace = true
