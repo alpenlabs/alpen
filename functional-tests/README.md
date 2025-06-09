@@ -110,3 +110,25 @@ PROVER_TEST=1 ./run_test.sh -g prover
 ```
 
 The test harness script will be extended with more functionality as we need it.
+
+
+## Keep-alive env setup
+
+During development it's quite handy to have local services spin up quickly,
+instead of bothering with Docker's (build time is heavy if built from scratch).
+
+To do that, you can use the following command:
+```bash
+./run_test.sh -e <env_name>
+```
+
+For instance:
+```bash
+./run_test.sh -e basic
+```
+
+As a result, services will be kept alive, so you can send RPCs and play around.
+
+To see the full list of supported envs as well as insights of each of them,
+navigate to `entry.py` and follow along.
+
