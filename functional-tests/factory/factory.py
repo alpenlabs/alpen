@@ -240,7 +240,7 @@ class FullNodeFactory(flexitest.Factory):
 
         # fmt: on
         if checkpoint_sync:
-            cmd.append("--checkpoint-sync")
+            cmd.extend(["--sync-mode", "checkpoint"])
 
         rpc_url = f"ws://localhost:{rpc_port}"
         props = {

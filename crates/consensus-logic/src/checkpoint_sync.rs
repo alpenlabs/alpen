@@ -9,12 +9,12 @@ use strata_state::{
 use strata_storage::NodeStorage;
 
 // should we maintain an in-memory structure for this?
-pub struct CheckpointSyncManager {
+pub struct ChainstateSyncManager {
     /// Common node storage interface.
     storage: Arc<NodeStorage>,
 }
 
-impl CheckpointSyncManager {
+impl ChainstateSyncManager {
     pub fn new(storage: Arc<NodeStorage>) -> Self {
         Self { storage }
     }

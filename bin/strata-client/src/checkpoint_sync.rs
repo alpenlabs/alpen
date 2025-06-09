@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "debug-utils")]
 use strata_common::{check_and_pause_debug_async, WorkerType};
-use strata_consensus_logic::checkpoint_sync::CheckpointSyncManager;
+use strata_consensus_logic::checkpoint_sync::ChainstateSyncManager;
 use strata_db::{types::CheckpointEntry, DbError};
 use strata_primitives::l2::L2BlockCommitment;
 use strata_state::{
@@ -20,7 +20,7 @@ pub async fn checkpoint_sync_task(
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
-    let mut csync_manager = CheckpointSyncManager::new(storage.clone());
+    let mut csync_manager = ChainstateSyncManager::new(storage.clone());
 
     // initialize target epoch from db
     let mut target_epoch = get_target_epoch(&storage).await?;
@@ -101,7 +101,7 @@ async fn get_target_epoch(storage: &Arc<NodeStorage>) -> Result<u64, anyhow::Err
 async fn handle_missed_checkpoints(
     target_epoch: &mut u64,
     csm_finalized_epoch: u64,
-    csync_manager: &mut CheckpointSyncManager,
+    csync_manager: &mut ChainstateSyncManager,
     storage: &NodeStorage,
     status_channel: &StatusChannel,
 ) -> Result<(), anyhow::Error> {
@@ -142,7 +142,7 @@ async fn handle_l1_checkpoint(
     l1_checkpoint: &L1Checkpoint,
     target_epoch: &mut u64,
     csm_finalized_epoch: u64,
-    csync_manager: &mut CheckpointSyncManager,
+    csync_manager: &mut ChainstateSyncManager,
     storage: &Arc<NodeStorage>,
     status_channel: &StatusChannel,
 ) -> Result<(), anyhow::Error> {
@@ -186,7 +186,7 @@ async fn handle_l1_checkpoint(
 async fn handle_reorg(
     target_epoch: &mut u64,
     csm_finalized_epoch: u64,
-    csync_manager: &mut CheckpointSyncManager,
+    csync_manager: &mut ChainstateSyncManager,
     storage: &NodeStorage,
     status_channel: &StatusChannel,
 ) -> Result<(), anyhow::Error> {
@@ -229,7 +229,7 @@ async fn process_checkpoint_entry(
     entry: CheckpointEntry,
     tip: &L2BlockCommitment,
     status_channel: &StatusChannel,
-    csync_manager: &mut CheckpointSyncManager,
+    csync_manager: &mut ChainstateSyncManager,
 ) -> anyhow::Result<()> {
     let latest_chainstate =
         process_and_store_checkpoint(entry.into_batch_checkpoint(), csync_manager).await?;
@@ -247,7 +247,7 @@ async fn process_checkpoint_entry(
 /// 4. Notify status channel receivers through `ChainSyncStatusUpdate`.
 async fn process_and_store_checkpoint(
     checkpoint: Checkpoint,
-    csync_manager: &mut CheckpointSyncManager,
+    csync_manager: &mut ChainstateSyncManager,
 ) -> anyhow::Result<Chainstate> {
     let chainstate_update =
         ChainstateDAScheme::chainstate_update_from_bytes(checkpoint.sidecar().bytes())?;

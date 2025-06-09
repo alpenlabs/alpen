@@ -46,10 +46,6 @@ pub struct ClientConfig {
     /// If sequencer tasks should run or not. Default to false.
     #[serde(default)]
     pub is_sequencer: bool,
-
-    /// If client should start in checkpoint sync mode or not. Default to false.
-    #[serde(default)]
-    pub checkpoint_sync: bool,
 }
 
 fn default_p2p_port() -> u16 {

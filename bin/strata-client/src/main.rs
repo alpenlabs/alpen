@@ -47,7 +47,10 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{args::Args, helpers::*};
+use crate::{
+    args::{Args, SyncMode},
+    helpers::*,
+};
 
 mod args;
 mod checkpoint_sync;
@@ -140,6 +143,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         storage.clone(),
         bridge_msg_ops,
         bitcoin_client,
+        args.sync_mode,
     )?;
 
     let mut methods = jsonrpsee::Methods::new();
@@ -167,7 +171,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             broadcast_handle,
             &mut methods,
         )?;
-    } else if !config.client.checkpoint_sync {
+    } else if args.sync_mode == SyncMode::SequencerSync {
         let sync_endpoint = &config
             .client
             .sync_endpoint
@@ -322,6 +326,7 @@ fn start_core_tasks(
     storage: Arc<NodeStorage>,
     _bridge_msg_ops: Arc<BridgeMsgOps>,
     bitcoin_client: Arc<Client>,
+    sync_mode: SyncMode,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();
 
@@ -329,7 +334,7 @@ fn start_core_tasks(
     let status_channel = init_status_channel(storage.as_ref())?;
 
     // instantiate execution engine
-    let is_checkpoint_sync = config.client.checkpoint_sync && !config.client.is_sequencer;
+    let is_checkpoint_sync = sync_mode == SyncMode::CheckpointSync && !config.client.is_sequencer;
     let engine = init_engine_controller(
         config,
         params.as_ref(),
