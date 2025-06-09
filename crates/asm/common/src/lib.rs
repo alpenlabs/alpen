@@ -1,6 +1,7 @@
 //! The crate provides common types and traits for building blocks for defining
 //! and interacting with subprotocols in an ASM (Anchor State Machine) framework.
 
+mod constants;
 mod error;
 mod msg;
 mod spec;
@@ -9,6 +10,7 @@ mod subprotocol;
 mod subprotocol_genesis;
 mod tx;
 
+pub use constants::*;
 pub use error::*;
 pub use msg::*;
 pub use spec::*;

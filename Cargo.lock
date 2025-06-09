@@ -13542,6 +13542,7 @@ dependencies = [
  "borsh",
  "strata-asm-common",
  "strata-primitives",
+ "thiserror 2.0.12",
  "zkaleido",
 ]
 

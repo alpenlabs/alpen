@@ -10,4 +10,5 @@ workspace = true
 borsh.workspace = true
 strata-asm-common.workspace = true
 strata-primitives.workspace = true
+thiserror.workspace = true
 zkaleido.workspace = true
