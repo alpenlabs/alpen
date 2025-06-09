@@ -13,7 +13,7 @@ use revm::{
 };
 use revm_primitives::{hardfork::SpecId, U256};
 
-use crate::constants::BASEFEE_ADDRESS;
+use crate::{api::validation, constants::BASEFEE_ADDRESS};
 
 #[allow(missing_debug_implementations)]
 pub struct AlpenRevmHandler<EVM> {
@@ -94,6 +94,11 @@ where
             .saturating_add(U256::from(coinbase_reward));
 
         Ok(())
+    }
+
+    fn validate_env(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
+        // uses the validation module to validate the environment with disables the 4844 transaction
+        validation::validate_env(evm.ctx())
     }
 }
 
