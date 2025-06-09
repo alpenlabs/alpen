@@ -147,6 +147,8 @@ impl Subprotocol for OLCoreSubproto {
     }
 
     fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
+        // TODO: Implement message processing from upgrade subprotocol messages
+        // to update verifying key and sequencer key.
         todo!()
     }
 }
