@@ -1,3 +1,5 @@
+use strata_db::DbError;
+
 /// Unified error type wrapping library errors and CLI‑specific issues.
 #[derive(Debug)]
 pub enum DbtoolError {
@@ -27,6 +29,12 @@ impl std::error::Error for DbtoolError {
             Self::Io(e) => Some(e),
             Self::Db(_) => None,
         }
+    }
+}
+
+impl From<DbError> for DbtoolError {
+    fn from(e: DbError) -> Self {
+        DbtoolError::Db(e.to_string())
     }
 }
 

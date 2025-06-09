@@ -1,9 +1,16 @@
-pub mod get_syncinfo;
-pub mod reset_chainstate;
+pub mod alpen;
+pub mod chainstate;
+pub mod checkpoint;
+pub mod syncinfo;
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
+
+use crate::cmd::{
+    alpen::GetAlpenBlockArgs, chainstate::ResetChainstateArgs, checkpoint::GetCheckpointDataArgs,
+    syncinfo::GetSyncinfoArgs,
+};
 
 /// Alpen DB tool – offline database & chain‑maintenance utility.
 #[derive(Parser, Debug)]
@@ -30,27 +37,15 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Show node’s sync progress on L1 and L2.
-    GetSyncinfo(GetSyncinfo),
+    /// Show Alpen block header.
+    GetAlpenBlock(GetAlpenBlockArgs),
 
-    /// Roll back chainstate to a particular L2 block (epoch‑terminal by default).
-    ResetChainstate(ResetChainstate),
-}
+    /// Show checkpoint data.
+    GetCheckpointData(GetCheckpointDataArgs),
 
-#[derive(Args, Debug)]
-pub struct GetSyncinfo {
-    /// Emit structured JSON instead of human‑readable output.
-    #[arg(short = 'p', long = "porcelain")]
-    porcelain: bool,
-}
+    /// Show node’s sync progress on Alpen and Signet.
+    GetSyncinfo(GetSyncinfoArgs),
 
-#[derive(Args, Debug)]
-pub struct ResetChainstate {
-    /// Target L2 block hash or number to roll back to.
-    #[arg(value_name = "L2_BLOCK_ID")]
-    pub block_id: String,
-
-    /// Allow resetting to a non‑epoch‑terminal block (dangerous).
-    #[arg(long = "allow-non-terminal")]
-    pub allow_nterm: bool,
+    /// Roll back chainstate to a particular Alpen block (epoch‑terminal by default).
+    ResetChainstate(ResetChainstateArgs),
 }
