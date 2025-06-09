@@ -35,7 +35,10 @@
 //! - State validation ensures proper progression of epochs and block heights
 //! - Rolling hash verification prevents L1→L2 message manipulation
 
+mod checkpoint_zk_verifier;
 mod error;
+mod logic;
+mod utils;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 pub use error::*;
@@ -149,11 +152,11 @@ impl Subprotocol for OLCoreSubproto {
 }
 
 fn handle_ol_stf_checkpoint(
-    _state: &mut CoreOLState,
-    _tx: &TxInput<'_>,
-    _relayer: &mut impl MsgRelayer,
+    state: &mut CoreOLState,
+    tx: &TxInput<'_>,
+    relayer: &mut impl MsgRelayer,
 ) -> Result<()> {
-    Ok(())
+    logic::ol_stf_checkpoint_handler(state, tx, relayer)
 }
 
 fn handle_forced_inclusion(

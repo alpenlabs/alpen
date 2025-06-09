@@ -6,8 +6,9 @@ use crate::SubprotocolId;
 /// and must match the `subprotocol_id` checked in `SectionState::subprotocol()`.
 pub const CORE_SUBPROTOCOL_ID: SubprotocolId = 1;
 
+pub const BRIDGE_SUBPROTOCOL_ID: SubprotocolId = 2;
+
 /// Transaction type identifiers
 pub const OL_STF_CHECKPOINT_TX_TYPE: u8 = 1;
 pub const FORCED_INCLUSION_TX_TYPE: u8 = 2;
 pub const EE_UPGRADE_TX_TYPE: u8 = 3;
-

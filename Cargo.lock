@@ -13541,6 +13541,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "strata-asm-common",
+ "strata-crypto",
  "strata-primitives",
  "thiserror 2.0.12",
  "zkaleido",

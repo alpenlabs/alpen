@@ -2,7 +2,9 @@
 
 use std::any::Any;
 
-use crate::SubprotocolId;
+use borsh::{BorshDeserialize, BorshSerialize};
+
+use crate::{BRIDGE_SUBPROTOCOL_ID, SubprotocolId};
 
 /// Generic wrapper around a inter-proto msg.
 pub trait InterprotoMsg: Any + 'static {
@@ -25,6 +27,36 @@ pub struct NullMsg<const ID: SubprotocolId>;
 impl<const ID: SubprotocolId> InterprotoMsg for NullMsg<ID> {
     fn id(&self) -> SubprotocolId {
         ID
+    }
+
+    fn as_dyn_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// L2 to L1 message type representing withdrawal requests
+/// TODO: Double check the fields and their types.
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+pub struct L2ToL1Msg {
+    /// Destination address on L1 (Bitcoin)
+    pub dest_address: Vec<u8>,
+    /// Amount to withdraw in satoshis
+    pub amount: u64,
+    /// Additional data payload for the withdrawal
+    pub data: Vec<u8>,
+    /// Nonce to prevent replay attacks?
+    pub nonce: u64,
+}
+
+/// Withdrawal messages to be sent to Bridge subprotocol
+#[derive(Clone, Debug)]
+pub struct WithdrawalMsg {
+    pub withdrawals: Vec<L2ToL1Msg>,
+}
+
+impl InterprotoMsg for WithdrawalMsg {
+    fn id(&self) -> SubprotocolId {
+        BRIDGE_SUBPROTOCOL_ID
     }
 
     fn as_dyn_any(&self) -> &dyn Any {
