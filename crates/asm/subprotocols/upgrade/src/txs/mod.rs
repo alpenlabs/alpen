@@ -15,7 +15,9 @@ mod updates;
 pub use cancel::CancelAction;
 pub use enact::EnactAction;
 use strata_asm_common::TxInput;
-pub use updates::{UpgradeAction, id::UpdateId};
+pub use updates::UpgradeAction;
+
+pub type UpdateId = u32;
 
 use crate::{
     error::{DeserializeError, UpgradeError},

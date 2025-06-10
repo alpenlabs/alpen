@@ -1,15 +1,13 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::hash::compute_borsh_hash;
 
 use crate::{
     roles::{ProofType, Role},
     txs::updates::{
-        id::UpdateId, multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
+        multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
         vk::VerifyingKeyUpdate,
     },
 };
 
-pub(super) mod id;
 pub(super) mod multisig;
 pub(super) mod operator;
 pub(super) mod seq;
@@ -25,11 +23,6 @@ pub enum UpgradeAction {
 }
 
 impl UpgradeAction {
-    /// Compute a deterministic identifier for this upgrade action.
-    pub fn compute_id(&self) -> UpdateId {
-        compute_borsh_hash(&self).into()
-    }
-
     /// The role authorized to enact this upgrade.
     pub fn required_role(&self) -> Role {
         match self {
