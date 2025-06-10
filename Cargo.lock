@@ -13549,6 +13549,7 @@ dependencies = [
 name = "strata-asm-proto-upgrade"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "borsh",
  "strata-asm-common",
  "strata-asm-proto-upgrade-txs",
@@ -13560,6 +13561,7 @@ dependencies = [
 name = "strata-asm-proto-upgrade-txs"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "borsh",
  "strata-asm-common",
  "strata-primitives",

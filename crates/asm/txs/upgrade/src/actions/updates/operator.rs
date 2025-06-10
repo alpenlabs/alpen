@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 use strata_primitives::buf::Buf32;
@@ -7,7 +8,7 @@ use crate::error::UpgradeTxParseError;
 /// An update to the Bridge Operator Set:
 /// - removes the specified `old_members`
 /// - adds the specified `new_members`
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct OperatorSetUpdate {
     new_members: Vec<Buf32>,
     old_members: Vec<Buf32>,
