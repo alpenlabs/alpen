@@ -1,25 +1,24 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
-use strata_primitives::buf::Buf64;
 
-use crate::error::UpgradeTxParseError;
+use crate::{crypto::Signature, error::UpgradeTxParseError};
 
 /// An aggregated signature over a subset of signers in a MultisigConfig,
 /// identified by their positions in the config’s key list.
 #[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize)]
 pub struct AggregatedVote {
     indices: Vec<u8>,
-    signature: Buf64,
+    signature: Signature,
 }
 
 impl AggregatedVote {
     /// Create a new `AggregatedVote` with given voter indices and aggregated signature.
-    pub fn new(indices: Vec<u8>, signature: Buf64) -> Self {
+    pub fn new(indices: Vec<u8>, signature: Signature) -> Self {
         Self { indices, signature }
     }
 
     /// Borrow the aggregated signature.
-    pub fn signature(&self) -> &Buf64 {
+    pub fn signature(&self) -> &Signature {
         &self.signature
     }
 
@@ -29,7 +28,7 @@ impl AggregatedVote {
     }
 
     /// Consume and return the inner `(indices, signature)`.
-    pub fn into_inner(self) -> (Vec<u8>, Buf64) {
+    pub fn into_inner(self) -> (Vec<u8>, Signature) {
         (self.indices, self.signature)
     }
 
@@ -38,6 +37,6 @@ impl AggregatedVote {
     /// FIXME: replace with actual deserialization logic.
     pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeTxParseError> {
         // TODO: parse TxInput to obtain indices and aggregated signature
-        Ok(Self::new(vec![0u8; 15], Buf64::default()))
+        Ok(Self::new(vec![0u8; 15], Signature::default()))
     }
 }

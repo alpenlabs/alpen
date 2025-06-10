@@ -1,11 +1,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-
-use crate::{
-    error::UpgradeActionError,
+use strata_asm_proto_upgrade_txs::{
+    actions::{UpdateId, UpgradeAction},
     roles::ProofType,
-    txs::{UpdateId, UpgradeAction},
-    upgrades::delayed::DelayedUpgrade,
 };
+
+use crate::{error::UpgradeActionError, upgrades::delayed::DelayedUpgrade};
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct QueueDelay;

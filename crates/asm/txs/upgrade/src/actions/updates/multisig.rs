@@ -1,7 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 
-use crate::{crypto::MultisigConfigUpdate, error::UpgradeTxParseError, roles::Role};
+use crate::{
+    crypto::multisig_config::MultisigConfigUpdate, error::UpgradeTxParseError, roles::Role,
+};
 
 /// An update to a multisig configuration for a specific role:
 /// - adds new members

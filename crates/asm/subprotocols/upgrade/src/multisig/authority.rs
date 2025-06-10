@@ -1,13 +1,14 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::hash::compute_borsh_hash;
-
-use crate::{
-    crypto::{aggregate_pubkeys, verify_sig},
+use strata_asm_proto_upgrade_txs::{
+    actions::MultisigAction,
+    crypto::{
+        aggregate_pubkeys, msg::MultisigPayload, multisig_config::MultisigConfig, verify_sig,
+        vote::AggregatedVote,
+    },
     error::VoteValidationError,
-    multisig::{config::MultisigConfig, msg::MultisigPayload, vote::AggregatedVote},
     roles::Role,
-    txs::MultisigAction,
 };
+use strata_primitives::hash::compute_borsh_hash;
 
 /// Manages multisignature operations for a given role and key set, with replay protection via a
 /// nonce.
