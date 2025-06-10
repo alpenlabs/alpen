@@ -1,9 +1,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_proto_upgrade_txs::{
+    actions::UpdateId, crypto::multisig_config::MultisigConfigUpdate, roles::Role,
+};
 
 use crate::{
-    multisig::{authority::MultisigAuthority, config::MultisigConfigUpdate},
-    roles::Role,
-    txs::UpdateId,
+    multisig::authority::MultisigAuthority,
     upgrades::{committed::CommittedUpgrade, queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 

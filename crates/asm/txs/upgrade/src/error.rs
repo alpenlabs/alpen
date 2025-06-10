@@ -1,5 +1,6 @@
-use strata_primitives::buf::Buf32;
 use thiserror::Error;
+
+use crate::crypto::PubKey;
 
 /// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -18,11 +19,11 @@ pub enum UpgradeTxParseError {
 pub enum MultisigConfigError {
     /// A new member to be added already exists in the multisig configuration.
     #[error("cannot add member {0:?}: already exists in multisig configuration")]
-    MemberAlreadyExists(Buf32),
+    MemberAlreadyExists(PubKey),
 
     /// An old member to be removed was not found in the multisig configuration.
     #[error("cannot remove member {0:?}: not found in multisig configuration")]
-    MemberNotFound(Buf32),
+    MemberNotFound(PubKey),
 
     /// The provided threshold is invalid (must be strictly greater than half of the multisig size).
     #[error(
@@ -34,4 +35,16 @@ pub enum MultisigConfigError {
         /// The minimum valid threshold for this multisig (computed as `size / 2 + 1`).
         min_required: usize,
     },
+}
+
+/// Errors related to validating a multisig vote (aggregation or signature check).
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum VoteValidationError {
+    /// Failed to aggregate public keys for multisig vote.
+    #[error("failed to aggregate public keys for multisig vote")]
+    AggregationError,
+
+    /// The aggregated vote signature is invalid.
+    #[error("invalid vote signature")]
+    InvalidVoteSignature,
 }

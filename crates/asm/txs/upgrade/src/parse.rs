@@ -12,7 +12,7 @@ use crate::{
         CANCEL_TX_TYPE, ENACT_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
         SEQUENCER_UPDATE_TX_TYPE, VK_UPDATE_TX_TYPE,
     },
-    crypto::AggregatedVote,
+    crypto::vote::AggregatedVote,
     error::UpgradeTxParseError,
 };
 
