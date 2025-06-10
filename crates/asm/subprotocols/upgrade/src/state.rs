@@ -4,7 +4,7 @@ use strata_asm_proto_upgrade_txs::{
 };
 
 use crate::{
-    multisig::authority::MultisigAuthority,
+    authority::MultisigAuthority,
     upgrades::{committed::CommittedUpgrade, queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 
