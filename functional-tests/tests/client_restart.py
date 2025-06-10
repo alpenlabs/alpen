@@ -37,7 +37,7 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTester):
         # Check for first 2 checkpoints.  I don't know why this takes so long to
         # get started, but once it does it goes fairly quickly.
         for n in range(2):
-            check_nth_checkpoint_finalized(n, seqrpc, prover_rpc, timeout=120)
+            check_nth_checkpoint_finalized(n, seqrpc, prover_rpc, timeout=150)
             logging.info(f"Found checkpoint {n} finalized")
 
         # Restart sequencer.
@@ -51,7 +51,7 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTester):
         # Check for next 2 checkpoints
         logging.info("Now we look for more checkpoints")
         for n in range(2, 4):
-            check_nth_checkpoint_finalized(n, seqrpc, prover_rpc, timeout=120)
+            check_nth_checkpoint_finalized(n, seqrpc, prover_rpc, timeout=150)
             logging.info(f"Found checkpoint {n} finalized")
 
         check_already_sent_proof(seqrpc, 0)

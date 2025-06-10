@@ -6,5 +6,6 @@ mod utils;
 pub use evm::AlpenEvmPrecompiles;
 pub use utils::collect_withdrawal_intents;
 
+pub mod api;
 pub mod evm;
 mod precompiles;
