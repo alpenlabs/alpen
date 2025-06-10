@@ -17,9 +17,9 @@ pub struct MultisigAuthority {
     role: Role,
     /// The public keys of all grant-holders authorized to sign.
     config: MultisigConfig,
-    /// Nonce for the multisig configuration.
+    /// Sequence number for the multisig configuration. It increases on each valid action.
     /// This is used to prevent replay attacks
-    nonce: u64,
+    seqno: u64,
 }
 
 impl MultisigAuthority {
@@ -27,7 +27,7 @@ impl MultisigAuthority {
         Self {
             role,
             config,
-            nonce: 0,
+            seqno: 0,
         }
     }
 
@@ -74,7 +74,7 @@ impl MultisigAuthority {
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
         // 3. Compute the msg from the UpgradeAction
-        let msg = MultisigPayload::new(action.clone(), self.nonce);
+        let msg = MultisigPayload::new(action.clone(), self.seqno);
         let msg_hash = compute_borsh_hash(&msg);
 
         // 4. Verify the aggregated signature against the aggregated pubkey
@@ -86,7 +86,7 @@ impl MultisigAuthority {
     }
 
     /// Increments the nonce.
-    pub fn increment_nonce(&mut self) {
-        self.nonce += 1;
+    pub fn increment_seqno(&mut self) {
+        self.seqno += 1;
     }
 }
