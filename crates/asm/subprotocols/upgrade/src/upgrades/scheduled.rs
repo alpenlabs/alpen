@@ -2,6 +2,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpgradeAction};
 
 use crate::{
+    constants::{
+        MULTISIG_CONFIG_UPDATE_ENACTMENT_DELAY, OPERATOR_UPDATE_ENACTMENT_DELAY,
+        SEQUENCER_UPDATE_ENACTMENT_DELAY, VK_UPDATE_ENACTMENT_DELAY,
+    },
     error::UpgradeActionError,
     upgrades::{committed::CommittedUpgrade, delayed::DelayedUpgrade},
 };
@@ -10,11 +14,6 @@ use crate::{
 pub struct ExecutionDelay;
 
 pub type ScheduledUpgrade = DelayedUpgrade<ExecutionDelay>;
-
-pub const MULTISIG_CONFIG_UPDATE_ENACTMENT_DELAY: u64 = 2_016;
-pub const OPERATOR_UPDATE_ENACTMENT_DELAY: u64 = 2_016;
-pub const SEQUENCER_UPDATE_ENACTMENT_DELAY: u64 = 2_016;
-pub const VK_UPDATE_ENACTMENT_DELAY: u64 = 144;
 
 impl ScheduledUpgrade {
     pub fn try_new(
