@@ -109,18 +109,20 @@ fn handle_action(
 
     match action {
         MultisigAction::Upgrade(upgrade) => {
+            let id = state.next_update_id();
             match upgrade {
                 // If the action is a VerifyingKeyUpdate, queue it to support cancellation
                 UpgradeAction::VerifyingKey(_) => {
-                    let queued_upgrade = QueuedUpgrade::try_new(upgrade, current_height)?;
+                    let queued_upgrade = QueuedUpgrade::try_new(id, upgrade, current_height)?;
                     state.enqueue(queued_upgrade);
                 }
                 // For all other actions, directly schedule them for execution
                 _ => {
-                    let scheduled_upgrade = ScheduledUpgrade::try_new(upgrade, current_height)?;
+                    let scheduled_upgrade = ScheduledUpgrade::try_new(id, upgrade, current_height)?;
                     state.schedule(scheduled_upgrade);
                 }
             }
+            state.increment_next_update_id();
         }
         MultisigAction::Cancel(cancel) => {
             state.remove_queued(cancel.target_id());

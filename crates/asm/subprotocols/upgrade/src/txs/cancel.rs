@@ -1,6 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
-use strata_primitives::buf::Buf32;
 
 use crate::{
     error::UpgradeError,
@@ -30,7 +29,7 @@ impl CancelAction {
         // sanity check
         assert_eq!(tx.tag().tx_type(), CANCEL_TX_TYPE);
 
-        let id = Buf32::zero().into();
+        let id = 0;
         Ok(CancelAction::new(id))
     }
 }
