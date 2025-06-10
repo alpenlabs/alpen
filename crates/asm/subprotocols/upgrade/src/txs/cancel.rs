@@ -4,21 +4,22 @@ use strata_primitives::buf::Buf32;
 
 use crate::{
     error::UpgradeError,
-    txs::{CANCEL_TX_TYPE, updates::id::UpdateId},
+    txs::{CANCEL_TX_TYPE, UpdateId},
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct CancelAction {
-    id: UpdateId,
+    /// ID of the update that needs to be cancelled
+    target_id: UpdateId,
 }
 
 impl CancelAction {
     pub fn new(id: UpdateId) -> Self {
-        CancelAction { id }
+        CancelAction { target_id: id }
     }
 
-    pub fn id(&self) -> &UpdateId {
-        &self.id
+    pub fn target_id(&self) -> &UpdateId {
+        &self.target_id
     }
 }
 

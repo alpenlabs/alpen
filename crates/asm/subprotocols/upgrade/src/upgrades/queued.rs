@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    error::UpgradeActionError, roles::StrataProof, txs::updates::UpgradeAction,
+    error::UpgradeActionError, roles::StrataProof, txs::UpgradeAction,
     upgrades::delayed::DelayedUpgrade,
 };
 
