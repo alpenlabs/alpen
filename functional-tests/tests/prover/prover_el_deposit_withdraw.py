@@ -35,7 +35,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         self.warning("SKIPPING TEST prover_el_deposit_withdraw")
         return True
 
-        evm_addr = self.eth_account.address
+        evm_addr = self.bridge_eth_account.address
         bridge_pk = get_bridge_pubkey(self.seqrpc)
 
         # Init RPCs.

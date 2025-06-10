@@ -21,7 +21,7 @@ class ContractBridgeOutWithSenderValueTest(BridgePrecompileMixin):
         return
 
         # deposit once
-        self.deposit(ctx, self.el_address, self.bridge_pk)
+        self.deposit(ctx, self.bridge_eth_account.address, self.bridge_pk)
 
         cfg: RollupConfig = ctx.env.rollup_cfg()
         deposit_amount = cfg.deposit_amount

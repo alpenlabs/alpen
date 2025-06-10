@@ -15,7 +15,6 @@ class BridgePrecompileMixin(bridge_mixin.BridgeMixin):
         set_solc_version("0.8.16")
 
         self.withdraw_address = ctx.env.gen_ext_btc_address()
-        self.el_address = self.eth_account.address
         self.bridge_pk = get_bridge_pubkey(self.seqrpc)
         self.web3.eth.default_account = self.web3.address
         self.contract = self._deploy_contract()
