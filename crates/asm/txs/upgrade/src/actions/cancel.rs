@@ -1,9 +1,10 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 
 use crate::{actions::UpdateId, constants::CANCEL_TX_TYPE, error::UpgradeTxParseError};
 
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct CancelAction {
     /// ID of the update that needs to be cancelled
     target_id: UpdateId,

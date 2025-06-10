@@ -3,6 +3,7 @@ pub mod operator;
 pub mod seq;
 pub mod vk;
 
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
 };
 
 /// An action that upgrades some part of the ASM
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub enum UpgradeAction {
     Multisig(MultisigUpdate),
     OperatorSet(OperatorSetUpdate),

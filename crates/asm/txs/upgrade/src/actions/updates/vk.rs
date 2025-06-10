@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 use zkaleido::VerifyingKey;
@@ -5,7 +6,7 @@ use zkaleido::VerifyingKey;
 use crate::{error::UpgradeTxParseError, roles::ProofType};
 
 /// An update to the verifying key for a given Strata proof layer.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct VerifyingKeyUpdate {
     vk: VerifyingKey,
     kind: ProofType,

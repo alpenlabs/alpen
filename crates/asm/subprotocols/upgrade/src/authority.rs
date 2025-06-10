@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_upgrade_txs::{
     actions::MultisigAction,
@@ -12,7 +13,7 @@ use strata_primitives::hash::compute_borsh_hash;
 
 /// Manages multisignature operations for a given role and key set, with replay protection via a
 /// nonce.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct MultisigAuthority {
     /// The role of this multisignature authority.
     role: Role,

@@ -8,6 +8,7 @@ strata-asm-common.workspace = true
 strata-primitives.workspace = true
 zkaleido.workspace = true
 
+arbitrary.workspace = true
 borsh.workspace = true
 thiserror.workspace = true
 
