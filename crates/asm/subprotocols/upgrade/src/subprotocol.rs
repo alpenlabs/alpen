@@ -1,10 +1,12 @@
 use strata_asm_common::{AnchorState, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput};
 
 use crate::{
-    actions::{cancel::handle_cancel_tx, enact::handle_enactment_tx, update::handle_update_tx},
+    error::UpgradeError,
+    multisig::vote::AggregatedVote,
     roles::StrataProof,
     state::UpgradeSubprotoState,
-    txs::{CANCEL_TX_TYPE, ENACT_TX_TYPE, updates::UpgradeAction},
+    txs::{MultisigAction, UpgradeAction},
+    upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 
 pub const UPGRADE_SUBPROTOCOL_ID: u8 = 0;
@@ -33,21 +35,6 @@ impl Subprotocol for UpgradeSubprotocol {
 
         // Before processing the transactions, we process any queued actions
         state.process_queued(current_height);
-
-        // Process each transaction based on its type
-        for tx in txs {
-            match tx.tag().tx_type() {
-                CANCEL_TX_TYPE => {
-                    let _ = handle_cancel_tx(state, tx);
-                }
-                ENACT_TX_TYPE => {
-                    let _ = handle_enactment_tx(state, tx);
-                }
-                _ => {
-                    let _ = handle_update_tx(state, tx, current_height);
-                }
-            }
-        }
 
         handle_scheduled_actions(state, relayer, current_height);
     }
@@ -84,4 +71,61 @@ fn handle_scheduled_actions(
             }
         }
     }
+}
+
+pub fn handle_action(
+    state: &mut UpgradeSubprotoState,
+    action: MultisigAction,
+    vote: AggregatedVote,
+    current_height: u64,
+) -> Result<(), UpgradeError> {
+    let role = match &action {
+        MultisigAction::Upgrade(upgrade) => upgrade.required_role(),
+        MultisigAction::Cancel(cancel) => {
+            let target_action_id = cancel.target_id();
+            let queued = state
+                .find_queued(target_action_id)
+                .ok_or(UpgradeError::UnknownAction(*target_action_id))?;
+            queued.action().required_role()
+        }
+        MultisigAction::Enact(enact) => {
+            let target_action_id = enact.target_id();
+            let queued = state
+                .find_committed(target_action_id)
+                .ok_or(UpgradeError::UnknownAction(*target_action_id))?;
+            queued.action().required_role()
+        }
+    };
+
+    let authority = state.authority(role).ok_or(UpgradeError::UnknownRole)?;
+    authority.validate_action(&action, &vote)?;
+
+    match action {
+        MultisigAction::Upgrade(upgrade) => {
+            match upgrade {
+                // If the action is a VerifyingKeyUpdate, queue it to support cancellation
+                UpgradeAction::VerifyingKey(_) => {
+                    let queued_upgrade = QueuedUpgrade::try_new(upgrade, current_height)?;
+                    state.enqueue(queued_upgrade);
+                }
+                // For all other actions, directly schedule them for execution
+                _ => {
+                    let scheduled_upgrade = ScheduledUpgrade::try_new(upgrade, current_height)?;
+                    state.schedule(scheduled_upgrade);
+                }
+            }
+        }
+        MultisigAction::Cancel(cancel) => {
+            state.remove_queued(cancel.target_id());
+        }
+        MultisigAction::Enact(enact) => {
+            state.commit_to_schedule(enact.target_id());
+        }
+    }
+
+    // Increase the nonce
+    let authority = state.authority_mut(role).ok_or(UpgradeError::UnknownRole)?;
+    authority.increment_nonce();
+
+    Ok(())
 }

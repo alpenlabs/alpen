@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    txs::updates::{UpgradeAction, id::UpdateId},
+    txs::{UpdateId, UpgradeAction},
     upgrades::queued::QueuedUpgrade,
 };
 

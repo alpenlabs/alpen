@@ -3,7 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use crate::{
     multisig::{authority::MultisigAuthority, config::MultisigConfigUpdate},
     roles::Role,
-    txs::updates::id::UpdateId,
+    txs::UpdateId,
     upgrades::{committed::CommittedUpgrade, queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 
