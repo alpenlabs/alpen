@@ -1,24 +1,11 @@
 import os
 
 import flexitest
-import gevent
 from locust import events
 from locust.env import Environment, LocalRunner
 from locust.log import setup_logging
-from locust.stats import print_stats, stats_history
 
 from load.cfg import LoadConfig
-
-
-def _console_stats_printer(stats, timeout=5):
-    """A helper that just prints current env stats to the console with timeout."""
-
-    def stats_printer_func() -> None:
-        while True:
-            print_stats(stats)
-            gevent.sleep(timeout)
-
-    return stats_printer_func
 
 
 # TODO(load): enhance it to be able to increase/decrease the load dynamically from test runtime.
@@ -59,8 +46,6 @@ class LoadGeneratorService(flexitest.Service):
     def start(self):
         self.env.events.init.fire(environment=self.env, runner=self.runner)
 
-        gevent.spawn(_console_stats_printer(self.env.stats))
-        gevent.spawn(stats_history, self.env.runner)
         self.runner.start(len(self.cfg.jobs), spawn_rate=self.cfg.spawn_rate)
         self._is_started = True
 
