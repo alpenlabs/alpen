@@ -132,7 +132,7 @@ fn handle_action(
 
     // Increase the nonce
     let authority = state.authority_mut(role).ok_or(UpgradeError::UnknownRole)?;
-    authority.increment_nonce();
+    authority.increment_seqno();
 
     Ok(())
 }
