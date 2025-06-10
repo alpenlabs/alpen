@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 strata-asm-common.workspace = true
+strata-asm-proto-upgrade-txs.workspace = true
 strata-primitives.workspace = true
-zkaleido.workspace = true
 
 borsh.workspace = true
 thiserror.workspace = true

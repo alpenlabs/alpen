@@ -1,9 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpgradeAction};
 
-use crate::{
-    txs::{UpdateId, UpgradeAction},
-    upgrades::queued::QueuedUpgrade,
-};
+use crate::upgrades::queued::QueuedUpgrade;
 
 /// A committed upgrade action ready for manual execution via EnactmentTx.
 /// Cannot be cancelled once in this state.

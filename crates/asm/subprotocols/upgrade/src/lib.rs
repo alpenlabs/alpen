@@ -5,11 +5,8 @@
 //! configuration changes, verifying key updates, operator set changes,
 //! sequencer updates, and cancellations.
 
-pub mod crypto;
 pub mod error;
 pub mod multisig;
-pub mod roles;
 pub mod state;
 pub mod subprotocol;
-pub mod txs;
 pub mod upgrades;

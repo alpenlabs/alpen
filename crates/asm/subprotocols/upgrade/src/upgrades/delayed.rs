@@ -1,6 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-
-use crate::txs::{UpdateId, UpgradeAction};
+use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpgradeAction};
 
 /// A time-delayed upgrade action with different delay semantics
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]

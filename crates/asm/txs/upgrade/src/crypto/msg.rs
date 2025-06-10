@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::txs::MultisigAction;
+use crate::actions::MultisigAction;
 
 /// A multisig payload comprising an operation plus a nonce, ready for hashing and signing.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
