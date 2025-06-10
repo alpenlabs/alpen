@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 
@@ -5,7 +6,7 @@ use crate::{crypto::Signature, error::UpgradeTxParseError};
 
 /// An aggregated signature over a subset of signers in a MultisigConfig,
 /// identified by their positions in the config’s key list.
-#[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct AggregatedVote {
     indices: Vec<u8>,
     signature: Signature,

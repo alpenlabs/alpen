@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 use strata_primitives::buf::Buf32;
@@ -5,7 +6,7 @@ use strata_primitives::buf::Buf32;
 use crate::error::UpgradeTxParseError;
 
 /// An update to the public key of the sequencer
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct SequencerUpdate {
     pub_key: Buf32,
 }
