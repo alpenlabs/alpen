@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::hash::compute_borsh_hash;
 
 use crate::{
-    roles::{Role, StrataProof},
+    roles::{ProofType, Role},
     txs::updates::{
         id::UpdateId, multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
         vk::VerifyingKeyUpdate,
@@ -37,8 +37,8 @@ impl UpgradeAction {
             UpgradeAction::OperatorSet(_) => Role::BridgeAdmin,
             UpgradeAction::Sequencer(_) => Role::StrataAdmin,
             UpgradeAction::VerifyingKey(v) => match v.kind() {
-                StrataProof::ASM => Role::BridgeConsensusManager,
-                StrataProof::OlStf => Role::StrataConsensusManager,
+                ProofType::Asm => Role::BridgeConsensusManager,
+                ProofType::OlStf => Role::StrataConsensusManager,
             },
         }
     }

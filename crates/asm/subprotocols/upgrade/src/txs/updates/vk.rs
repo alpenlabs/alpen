@@ -2,18 +2,18 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 use zkaleido::VerifyingKey;
 
-use crate::{error::DeserializeError, roles::StrataProof};
+use crate::{error::DeserializeError, roles::ProofType};
 
 /// An update to the verifying key for a given Strata proof layer.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct VerifyingKeyUpdate {
     vk: VerifyingKey,
-    kind: StrataProof,
+    kind: ProofType,
 }
 
 impl VerifyingKeyUpdate {
     /// Create a new `VerifyingKeyUpdate`.
-    pub fn new(vk: VerifyingKey, kind: StrataProof) -> Self {
+    pub fn new(vk: VerifyingKey, kind: ProofType) -> Self {
         Self { vk, kind }
     }
 
@@ -23,12 +23,12 @@ impl VerifyingKeyUpdate {
     }
 
     /// Get the associated proof kind.
-    pub fn kind(&self) -> StrataProof {
+    pub fn kind(&self) -> ProofType {
         self.kind
     }
 
     /// Consume and return the inner values.
-    pub fn into_inner(self) -> (VerifyingKey, StrataProof) {
+    pub fn into_inner(self) -> (VerifyingKey, ProofType) {
         (self.vk, self.kind)
     }
 
@@ -37,7 +37,7 @@ impl VerifyingKeyUpdate {
     /// Placeholder logic: replace with actual deserialization.
     pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, DeserializeError> {
         // TODO: parse `TxInput` to obtain vk bytes and proof kind
-        Ok(Self::new(VerifyingKey::default(), StrataProof::OlStf))
+        Ok(Self::new(VerifyingKey::default(), ProofType::OlStf))
     }
 }
 

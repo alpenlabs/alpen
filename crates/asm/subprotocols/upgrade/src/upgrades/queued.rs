@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    error::UpgradeActionError, roles::StrataProof, txs::UpgradeAction,
+    error::UpgradeActionError, roles::ProofType, txs::UpgradeAction,
     upgrades::delayed::DelayedUpgrade,
 };
 
@@ -17,8 +17,8 @@ impl QueuedUpgrade {
     pub fn try_new(action: UpgradeAction, current_height: u64) -> Result<Self, UpgradeActionError> {
         let delay = match &action {
             UpgradeAction::VerifyingKey(vk) => match vk.kind() {
-                StrataProof::ASM => ASM_VK_QUEUE_DELAY,
-                StrataProof::OlStf => OL_STF_VK_QUEUE_DELAY,
+                ProofType::Asm => ASM_VK_QUEUE_DELAY,
+                ProofType::OlStf => OL_STF_VK_QUEUE_DELAY,
             },
             _ => Err(UpgradeActionError::CannotQueue)?,
         };
