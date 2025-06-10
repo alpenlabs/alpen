@@ -23,38 +23,48 @@ class ElBalanceTransferTest(testenv.StrataTester):
 
         source = web3.address
         dest = web3.to_checksum_address(NATIVE_TOKEN_TRANSFER_PARAMS["DEST_ADDRESS"])
+        basefee_address = web3.to_checksum_address(NATIVE_TOKEN_TRANSFER_PARAMS["BASEFEE_ADDRESS"])
+        beneficiary_address = web3.to_checksum_address(
+            NATIVE_TOKEN_TRANSFER_PARAMS["BENEFICIARY_ADDRESS"]
+        )
 
         self.debug(f"{web3.is_connected()}")
         original_block_no = web3.eth.block_number
         dest_original_balance = web3.eth.get_balance(dest)
         source_original_balance = web3.eth.get_balance(source)
+        basefee_original_balance = web3.eth.get_balance(basefee_address)
+        beneficiary_original_balance = web3.eth.get_balance(beneficiary_address)
 
         self.debug(f"{original_block_no}, {dest_original_balance}")
 
         transfer_amount = NATIVE_TOKEN_TRANSFER_PARAMS["TRANSFER_AMOUNT"]
         _tx_receipt = make_native_token_transfer(web3, transfer_amount, dest)
 
-        self.debug(f"Got txn receipt: {_tx_receipt}")
-
         final_block_no = web3.eth.block_number
         dest_final_balance = web3.eth.get_balance(dest)
         source_final_balance = web3.eth.get_balance(source)
+        basefee_final_balance = web3.eth.get_balance(basefee_address)
+        beneficiary_final_balance = web3.eth.get_balance(beneficiary_address)
 
         self.debug(f"{final_block_no}, {dest_final_balance}")
 
-        assert original_block_no < final_block_no, (
-            f"Expected final block number ({final_block_no}) "
-            f"to be greater than original ({original_block_no})"
+        assert original_block_no < final_block_no
+        assert dest_original_balance + transfer_amount == dest_final_balance
+
+        basefee_balance_change = basefee_final_balance - basefee_original_balance
+        self.debug(
+            f"basefee balance change: {basefee_balance_change} "
+            f"before: {basefee_original_balance} "
+            f"after: {basefee_final_balance}"
         )
-        assert dest_original_balance + transfer_amount == dest_final_balance, (
-            f"Expected dest_final_balance ({dest_final_balance}) to equal "
-            f"dest_original_balance ({dest_original_balance}) + transfer_amount ({transfer_amount})"
-        )
-        assert dest_final_balance == transfer_amount, (
-            f"Expected dest_final_balance ({dest_final_balance}) to equal "
-            f"transfer_amount ({transfer_amount})"
-        )
-        assert source_original_balance > source_final_balance + transfer_amount, (
-            f"Expected source_original_balance ({source_original_balance}) to be greater than "
-            f"source_final_balance ({source_final_balance}) + transfer_amount ({transfer_amount})"
-        )
+        assert basefee_balance_change > 0
+        beneficiary_balance_change = beneficiary_final_balance - beneficiary_original_balance
+        assert beneficiary_balance_change > 0
+        source_balance_change = source_final_balance - source_original_balance
+        assert (
+            source_balance_change
+            + basefee_balance_change
+            + beneficiary_balance_change
+            + transfer_amount
+            == 0
+        ), "total balance change is not balanced"
