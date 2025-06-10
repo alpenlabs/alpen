@@ -19,7 +19,7 @@ mod validation_util;
 pub use diff::ChangedState;
 pub use errors::{Error, ExecResult};
 pub use executor::ChainExecutor;
-pub use output::{BlockExecutionOutput, EpochExecutionOutput, LogMessage};
+pub use output::{BlockExecutionOutput, CheckinExecutionOutput, EpochExecutionOutput, LogMessage};
 pub use state_access::MemStateAccessor;
 pub use tip_state::TipState;
 pub use traits::ExecContext;
