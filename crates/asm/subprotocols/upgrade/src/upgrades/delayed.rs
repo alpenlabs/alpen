@@ -7,7 +7,7 @@ use crate::txs::updates::{UpgradeAction, id::UpdateId};
 pub struct DelayedUpgrade<T> {
     id: UpdateId,
     action: UpgradeAction,
-    blocks_remaining: u64,
+    activation_height: u64,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -17,17 +17,9 @@ impl<T> DelayedUpgrade<T> {
         Self {
             id,
             action,
-            blocks_remaining,
+            activation_height: blocks_remaining,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    pub fn decrement_blocks_remaining(&mut self) {
-        self.blocks_remaining = self.blocks_remaining.saturating_sub(1);
-    }
-
-    pub fn is_ready(&self) -> bool {
-        self.blocks_remaining == 0
     }
 
     // Getters
@@ -37,8 +29,8 @@ impl<T> DelayedUpgrade<T> {
     pub fn action(&self) -> &UpgradeAction {
         &self.action
     }
-    pub fn blocks_remaining(&self) -> u64 {
-        self.blocks_remaining
+    pub fn activation_height(&self) -> u64 {
+        self.activation_height
     }
 
     pub fn into_id_and_action(self) -> (UpdateId, UpgradeAction) {

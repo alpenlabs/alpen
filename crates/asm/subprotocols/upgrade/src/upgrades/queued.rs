@@ -13,10 +13,8 @@ pub type QueuedUpgrade = DelayedUpgrade<QueueDelay>;
 pub const ASM_VK_QUEUE_DELAY: u64 = 12_960;
 pub const OL_STF_VK_QUEUE_DELAY: u64 = 4_320;
 
-impl TryFrom<UpgradeAction> for QueuedUpgrade {
-    type Error = UpgradeActionError;
-
-    fn try_from(action: UpgradeAction) -> Result<Self, Self::Error> {
+impl QueuedUpgrade {
+    pub fn try_new(action: UpgradeAction, current_height: u64) -> Result<Self, UpgradeActionError> {
         let delay = match &action {
             UpgradeAction::VerifyingKey(vk) => match vk.kind() {
                 StrataProof::ASM => ASM_VK_QUEUE_DELAY,
@@ -25,6 +23,7 @@ impl TryFrom<UpgradeAction> for QueuedUpgrade {
             _ => Err(UpgradeActionError::CannotQueue)?,
         };
         let id = action.compute_id();
-        Ok(Self::new(id, action, delay))
+        let activation_height = current_height + delay;
+        Ok(Self::new(id, action, activation_height))
     }
 }
