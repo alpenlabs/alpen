@@ -7,7 +7,6 @@
 //! a three-stage lifecycle: initialization (proposal + quorum voting),
 //! enactment delay (time-locked period), and final enactment or cancellation.
 
-pub mod actions;
 pub mod crypto;
 pub mod error;
 pub mod multisig;

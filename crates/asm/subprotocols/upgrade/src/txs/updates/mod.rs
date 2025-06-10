@@ -9,11 +9,11 @@ use crate::{
     },
 };
 
-pub mod id;
-pub mod multisig;
-pub mod operator;
-pub mod seq;
-pub mod vk;
+pub(super) mod id;
+pub(super) mod multisig;
+pub(super) mod operator;
+pub(super) mod seq;
+pub(super) mod vk;
 
 /// An action that upgrades some part of the ASM
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{crypto::PubKey, txs::updates::id::UpdateId};
+use crate::{crypto::PubKey, txs::UpdateId};
 
 /// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub enum UpgradeError {
 
     /// Indicates a failure when validating a vote.
     #[error(transparent)]
-    Actino(#[from] UpgradeActionError),
+    Action(#[from] UpgradeActionError),
 }
 
 /// Errors related to upgrade action.

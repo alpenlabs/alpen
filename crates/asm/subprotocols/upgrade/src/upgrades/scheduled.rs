@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     error::UpgradeActionError,
-    txs::updates::UpgradeAction,
+    txs::UpgradeAction,
     upgrades::{committed::CommittedUpgrade, delayed::DelayedUpgrade},
 };
 
