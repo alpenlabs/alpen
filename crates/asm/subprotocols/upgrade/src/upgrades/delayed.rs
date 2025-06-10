@@ -22,13 +22,14 @@ impl<T> DelayedUpgrade<T> {
         }
     }
 
-    // Getters
     pub fn id(&self) -> &UpdateId {
         &self.id
     }
+
     pub fn action(&self) -> &UpgradeAction {
         &self.action
     }
+
     pub fn activation_height(&self) -> u64 {
         self.activation_height
     }
