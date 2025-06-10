@@ -1,21 +1,20 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::buf::Buf32;
 
-use crate::error::MultisigConfigError;
+use crate::{crypto::PubKey, error::MultisigConfigError};
 
 /// Configuration for a multisignature authority:
 /// who can sign (`keys`) and how many of them must sign (`threshold`).
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigConfig {
     /// The public keys of all grant-holders authorized to sign.
-    pub keys: Vec<Buf32>,
+    pub keys: Vec<PubKey>,
     /// The minimum number of keys that must sign to approve an action.
     pub threshold: u8,
 }
 
 impl MultisigConfig {
     /// Create a new config; panics if threshold == 0 or > keys.len().
-    pub fn new(keys: Vec<Buf32>, threshold: u8) -> Self {
+    pub fn new(keys: Vec<PubKey>, threshold: u8) -> Self {
         assert!(!keys.is_empty(), "keys cannot be empty");
         let max = keys.len() as u8;
         assert!(
@@ -25,7 +24,7 @@ impl MultisigConfig {
         Self { keys, threshold }
     }
 
-    pub fn keys(&self) -> &[Buf32] {
+    pub fn keys(&self) -> &[PubKey] {
         &self.keys
     }
 
@@ -40,13 +39,13 @@ impl MultisigConfig {
 /// * updates the threshold.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigConfigUpdate {
-    new_members: Vec<Buf32>,
-    old_members: Vec<Buf32>,
+    new_members: Vec<PubKey>,
+    old_members: Vec<PubKey>,
     new_threshold: u8,
 }
 
 impl MultisigConfigUpdate {
-    pub fn new(new_members: Vec<Buf32>, old_members: Vec<Buf32>, new_threshold: u8) -> Self {
+    pub fn new(new_members: Vec<PubKey>, old_members: Vec<PubKey>, new_threshold: u8) -> Self {
         Self {
             new_members,
             old_members,
@@ -54,11 +53,11 @@ impl MultisigConfigUpdate {
         }
     }
 
-    pub fn old_members(&self) -> &[Buf32] {
+    pub fn old_members(&self) -> &[PubKey] {
         &self.old_members
     }
 
-    pub fn new_members(&self) -> &[Buf32] {
+    pub fn new_members(&self) -> &[PubKey] {
         &self.new_members
     }
 
@@ -117,8 +116,8 @@ impl MultisigConfig {
 mod tests {
     use super::*;
 
-    fn make_key(id: u8) -> Buf32 {
-        Buf32::new([id; 32])
+    fn make_key(id: u8) -> PubKey {
+        PubKey::new([id; 32])
     }
 
     #[test]

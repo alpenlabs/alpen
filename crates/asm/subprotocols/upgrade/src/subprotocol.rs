@@ -1,11 +1,14 @@
 use strata_asm_common::{AnchorState, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput};
+use strata_asm_proto_upgrade_txs::{
+    actions::{MultisigAction, UpgradeAction},
+    crypto::vote::AggregatedVote,
+    parse::parse_tx_multisig_action_and_vote,
+    roles::ProofType,
+};
 
 use crate::{
     error::UpgradeError,
-    multisig::vote::AggregatedVote,
-    roles::ProofType,
     state::UpgradeSubprotoState,
-    txs::{MultisigAction, UpgradeAction, parse_tx_multisig_action_and_vote},
     upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 

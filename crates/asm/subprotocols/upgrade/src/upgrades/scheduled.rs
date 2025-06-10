@@ -1,8 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpgradeAction};
 
 use crate::{
     error::UpgradeActionError,
-    txs::{UpdateId, UpgradeAction},
     upgrades::{committed::CommittedUpgrade, delayed::DelayedUpgrade},
 };
 
