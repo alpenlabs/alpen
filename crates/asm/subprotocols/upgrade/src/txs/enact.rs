@@ -4,21 +4,21 @@ use strata_primitives::buf::Buf32;
 
 use crate::{
     error::UpgradeError,
-    txs::{ENACT_TX_TYPE, updates::id::UpdateId},
+    txs::{ENACT_TX_TYPE, UpdateId},
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct EnactAction {
-    id: UpdateId,
+    target_id: UpdateId,
 }
 
 impl EnactAction {
-    pub fn new(id: UpdateId) -> Self {
-        EnactAction { id }
+    pub fn new(target_id: UpdateId) -> Self {
+        EnactAction { target_id }
     }
 
-    pub fn id(&self) -> &UpdateId {
-        &self.id
+    pub fn target_id(&self) -> &UpdateId {
+        &self.target_id
     }
 }
 

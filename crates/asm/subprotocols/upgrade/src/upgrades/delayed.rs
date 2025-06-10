@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::txs::updates::{UpgradeAction, id::UpdateId};
+use crate::txs::{UpdateId, UpgradeAction};
 
 /// A time-delayed upgrade action with different delay semantics
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]

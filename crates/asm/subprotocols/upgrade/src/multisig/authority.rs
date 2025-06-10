@@ -4,12 +4,9 @@ use strata_primitives::hash::compute_borsh_hash;
 use crate::{
     crypto::{aggregate_pubkeys, verify_sig},
     error::VoteValidationError,
-    multisig::{
-        config::MultisigConfig,
-        msg::{MultisigOp, MultisigPayload},
-        vote::AggregatedVote,
-    },
+    multisig::{config::MultisigConfig, msg::MultisigPayload, vote::AggregatedVote},
     roles::Role,
+    txs::MultisigAction,
 };
 
 /// Manages multisignature operations for a given role and key set, with replay protection via a
@@ -49,15 +46,15 @@ impl MultisigAuthority {
         &mut self.config
     }
 
-    /// Validate that `vote` approves `op` under the current config and nonce.
+    /// Validate that `vote` approves `action` under the current config and nonce.
     ///
     /// Steps:
     /// 1. Map voter indices to pubkeys (error if out of bounds).
     /// 2. Aggregate pubkeys and compute payload hash.
     /// 3. Verify aggregated signature.
-    pub fn validate_op(
+    pub fn validate_action(
         &self,
-        op: &MultisigOp,
+        action: &MultisigAction,
         vote: &AggregatedVote,
     ) -> Result<(), VoteValidationError> {
         // 1. Collect each public key by index; error if out of bounds.
@@ -77,7 +74,7 @@ impl MultisigAuthority {
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
         // 3. Compute the msg from the UpgradeAction
-        let msg = MultisigPayload::new(op.clone(), self.nonce);
+        let msg = MultisigPayload::new(action.clone(), self.nonce);
         let msg_hash = compute_borsh_hash(&msg);
 
         // 4. Verify the aggregated signature against the aggregated pubkey
