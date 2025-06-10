@@ -3,8 +3,8 @@
 use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
-    AsmError, InterprotoMsg, Log, MsgRelayer, SectionState, SubprotoHandler, Subprotocol,
-    SubprotocolId, TxInput,
+    AnchorState, AsmError, InterprotoMsg, Log, MsgRelayer, SectionState, SubprotoHandler,
+    Subprotocol, SubprotocolId, TxInput,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -44,12 +44,17 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         self.interproto_msg_buf.push(m.clone());
     }
 
-    fn process_txs(&mut self, txs: &[TxInput<'_>], relayer: &mut dyn MsgRelayer) {
+    fn process_txs(
+        &mut self,
+        txs: &[TxInput<'_>],
+        relayer: &mut dyn MsgRelayer,
+        anchor_pre: &AnchorState,
+    ) {
         let relayer = relayer
             .as_mut_any()
             .downcast_mut::<R>()
             .expect("asm: handler");
-        S::process_txs(&mut self.state, txs, relayer);
+        S::process_txs(&mut self.state, txs, relayer, anchor_pre);
     }
 
     fn process_buffered_msgs(&mut self) {
@@ -84,14 +89,18 @@ impl SubprotoManager {
     /// This default implementation temporarily removes the handler to satisfy
     /// borrow-checker constraints, invokes `process_txs` with `self` as the relayer,
     /// and then reinserts the handler.
-    pub(crate) fn invoke_process_txs<S: Subprotocol>(&mut self, txs: &[TxInput<'_>]) {
+    pub(crate) fn invoke_process_txs<S: Subprotocol>(
+        &mut self,
+        txs: &[TxInput<'_>],
+        anchor_pre: &AnchorState,
+    ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
         // borrow checker.
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_txs(txs, self);
+        h.process_txs(txs, self, anchor_pre);
         self.insert_handler(h);
     }
 
