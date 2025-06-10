@@ -207,6 +207,11 @@ impl<DB: Database, I, P> DerefMut for AlpenEvm<DB, I, P> {
     }
 }
 
+/// Implements the AlloyEvm EVM trait for AlpenEvm.
+///
+/// This implementation closely follows the Alloy EVM implementation for Ethereum mainnet,
+/// adapting it for AlpenEvm with custom precompiles and configuration.
+/// <https://github.com/alloy-rs/evm/blob/65bdb46726a4cdb265f13e4ea663a57ecf0f8d6c/crates/evm/src/eth/mod.rs#L104>
 impl<DB, I, P> Evm for AlpenEvm<DB, I, P>
 where
     DB: Database,

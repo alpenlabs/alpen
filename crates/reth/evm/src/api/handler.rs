@@ -28,6 +28,10 @@ impl<EVM> Default for AlpenRevmHandler<EVM> {
     }
 }
 
+/// Revm handler implementation for Alpen EVM.
+///
+/// Note: The `reward_beneficiary` implementation here differs from Ethereum mainnet.
+/// Instead of burning the base fee, the base fee is transferred to the `BASEFEE_ADDRESS`.
 impl<EVM> Handler for AlpenRevmHandler<EVM>
 where
     EVM: EvmTr<
