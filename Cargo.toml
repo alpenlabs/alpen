@@ -10,6 +10,7 @@ members = [
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
   "crates/asm/subprotocols/upgrade",
+  "crates/asm/txs/upgrade",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -111,6 +112,7 @@ strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-proto-upgrade = { path = "crates/asm/subprotocols/upgrade" }
 strata-asm-spec = { path = "crates/asm/spec" }
+strata-asm-proto-upgrade-txs = { path = "crates/asm/txs/upgrade" }
 strata-asm-stf = { path = "crates/asm/stf" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
