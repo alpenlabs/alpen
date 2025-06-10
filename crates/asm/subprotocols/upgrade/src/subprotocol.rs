@@ -3,7 +3,7 @@ use strata_asm_common::{AnchorState, MsgRelayer, NullMsg, Subprotocol, Subprotoc
 use crate::{
     error::UpgradeError,
     multisig::vote::AggregatedVote,
-    roles::StrataProof,
+    roles::ProofType,
     state::UpgradeSubprotoState,
     txs::{MultisigAction, UpgradeAction, parse_tx_multisig_action_and_vote},
     upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
@@ -63,10 +63,10 @@ fn handle_scheduled_actions(
                 state.apply_multisig_update(update.role(), update.config());
             }
             UpgradeAction::VerifyingKey(update) => match update.kind() {
-                StrataProof::ASM => {
+                ProofType::Asm => {
                     // Emit Log
                 }
-                StrataProof::OlStf => {
+                ProofType::OlStf => {
                     // Send a InterprotoMsg to OL Core subprotocol
                 }
             },
