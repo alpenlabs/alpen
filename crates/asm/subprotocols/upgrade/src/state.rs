@@ -87,26 +87,22 @@ impl UpgradeSubprotoState {
         }
     }
 
-    /// Advance queued upgrades: decrement block counters and move ready ones to committed.
-    pub fn tick_queued(&mut self) {
-        for q in &mut self.queued {
-            q.decrement_blocks_remaining();
-        }
+    /// Process all queued upgrades and move any whose `activation_height` equals `current_height`
+    /// from `queued` into `committed`.
+    pub fn process_queued(&mut self, current_height: u64) {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued)
             .into_iter()
-            .partition(|u| u.blocks_remaining() == 0);
+            .partition(|u| u.activation_height() == current_height);
         self.queued = rest;
         self.committed.extend(ready.into_iter().map(Into::into));
     }
 
-    /// Advance scheduled upgrades: decrement block counters and collect those ready to execute.
-    pub fn tick_scheduled(&mut self) -> Vec<ScheduledUpgrade> {
-        for s in &mut self.scheduled {
-            s.decrement_blocks_remaining();
-        }
+    /// Process all queued upgrades and collect those whose `activation_height` equals
+    /// `current_height`
+    pub fn process_scheduled(&mut self, current_height: u64) -> Vec<ScheduledUpgrade> {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled)
             .into_iter()
-            .partition(|u| u.blocks_remaining() == 0);
+            .partition(|u| u.activation_height() == current_height);
         self.scheduled = rest;
         ready
     }
