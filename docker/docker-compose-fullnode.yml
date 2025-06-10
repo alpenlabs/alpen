@@ -1,8 +1,5 @@
 services:
   reth:
-    build:
-      context: ../
-      dockerfile: ./docker/alpen-reth/Dockerfile
     platform: linux/amd64
     image: public.ecr.aws/r1l9t0r6/testnet1/alpen-reth:latest
     environment:
@@ -22,9 +19,6 @@ services:
       - strata_network
 
   client:
-    build:
-      context: ../
-      dockerfile: ./docker/strata-client/Dockerfile
     platform: linux/amd64
     image: public.ecr.aws/r1l9t0r6/testnet1/strata-client:latest
     environment:
@@ -44,9 +38,6 @@ services:
       - strata_network
 
   bitcoind:
-    build:
-      context: ../
-      dockerfile: ./bitcoind/Dockerfile
     image: public.ecr.aws/s6b4k6i9/strata/signet:latest
     environment:
       MINERENABLED: 0
