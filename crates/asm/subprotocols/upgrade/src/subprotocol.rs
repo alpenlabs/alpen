@@ -27,10 +27,12 @@ impl Subprotocol for UpgradeSubprotocol {
         state: &mut UpgradeSubprotoState,
         txs: &[TxInput<'_>],
         relayer: &mut impl MsgRelayer,
-        _anchor_pre: &AnchorState,
+        anchor_pre: &AnchorState,
     ) {
-        // Before processing the transactions, we handle any queued actions
-        state.tick_queued();
+        let current_height = anchor_pre.chain_view.pow_state.last_verified_block.height() + 1;
+
+        // Before processing the transactions, we process any queued actions
+        state.process_queued(current_height);
 
         // Process each transaction based on its type
         for tx in txs {
@@ -42,20 +44,24 @@ impl Subprotocol for UpgradeSubprotocol {
                     let _ = handle_enactment_tx(state, tx);
                 }
                 _ => {
-                    let _ = handle_update_tx(state, tx);
+                    let _ = handle_update_tx(state, tx, current_height);
                 }
             }
         }
 
-        handle_scheduled_actions(state, relayer);
+        handle_scheduled_actions(state, relayer, current_height);
     }
 
     fn process_msgs(_state: &mut UpgradeSubprotoState, _msgs: &[Self::Msg]) {}
 }
 
-fn handle_scheduled_actions(state: &mut UpgradeSubprotoState, _relayer: &mut impl MsgRelayer) {
+fn handle_scheduled_actions(
+    state: &mut UpgradeSubprotoState,
+    _relayer: &mut impl MsgRelayer,
+    current_height: u64,
+) {
     // Get all the update actions that are ready to be enacted
-    let actions_to_enact = state.tick_scheduled();
+    let actions_to_enact = state.process_scheduled(current_height);
 
     for action in actions_to_enact {
         match action.action() {

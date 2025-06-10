@@ -24,6 +24,7 @@ use crate::{
 pub fn handle_update_tx(
     state: &mut UpgradeSubprotoState,
     tx: &TxInput<'_>,
+    current_height: u64,
 ) -> Result<(), UpgradeError> {
     // Extract the aggregated vote from the transaction payload
     let vote = AggregatedVote::extract_from_tx(tx)?;
@@ -68,14 +69,14 @@ pub fn handle_update_tx(
 
     // Queue or schedule the upgrade
     match action {
-        // If the action is a VerifyingKeyUpdate, queue it so support cancellation
+        // If the action is a VerifyingKeyUpdate, queue it to support cancellation
         UpgradeAction::VerifyingKey(_) => {
-            let queued_upgrade: QueuedUpgrade = action.try_into()?;
+            let queued_upgrade = QueuedUpgrade::try_new(action, current_height)?;
             state.enqueue(queued_upgrade);
         }
         // For all other actions, directly schedule them for execution
         _ => {
-            let scheduled_upgrade: ScheduledUpgrade = action.try_into()?;
+            let scheduled_upgrade = ScheduledUpgrade::try_new(action, current_height)?;
             state.schedule(scheduled_upgrade);
         }
     }
