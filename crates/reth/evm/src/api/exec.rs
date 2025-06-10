@@ -28,11 +28,11 @@ where
     type Block = <CTX as ContextTr>::Block;
 
     fn set_tx(&mut self, tx: Self::Tx) {
-        self.0.data.ctx.set_tx(tx);
+        self.evm_ctx.data.ctx.set_tx(tx);
     }
 
     fn set_block(&mut self, block: Self::Block) {
-        self.0.data.ctx.set_block(block);
+        self.evm_ctx.data.ctx.set_block(block);
     }
     fn replay(&mut self) -> Self::Output {
         AlpenRevmHandler::default().run(self)
@@ -49,7 +49,7 @@ where
 
     fn replay_commit(&mut self) -> Self::CommitOutput {
         self.replay().map(|r| {
-            self.0.ctx().db().commit(r.state);
+            self.evm_ctx.ctx().db().commit(r.state);
             r.result
         })
     }
@@ -65,7 +65,7 @@ where
     type Inspector = INSP;
 
     fn set_inspector(&mut self, inspector: Self::Inspector) {
-        self.0.data.inspector = inspector;
+        self.evm_ctx.data.inspector = inspector;
     }
 
     fn inspect_replay(&mut self) -> Self::Output {
@@ -85,7 +85,7 @@ where
 {
     fn inspect_replay_commit(&mut self) -> Self::CommitOutput {
         self.inspect_replay().map(|r| {
-            self.0.ctx().db().commit(r.state);
+            self.evm_ctx.ctx().db().commit(r.state);
             r.result
         })
     }

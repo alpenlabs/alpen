@@ -17,17 +17,23 @@ pub struct AlpenEvmInner<
     INSP,
     I = EthInstructions<EthInterpreter, CTX>,
     P = AlpenEvmPrecompiles,
->(pub EvmCtx<CTX, INSP, I, P>);
+> {
+    pub evm_ctx: EvmCtx<CTX, INSP, I, P>,
+}
 
-impl<CTX: ContextTr, INSP>
-    AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, AlpenEvmPrecompiles>
+impl<CTX, INSP, I, P> AlpenEvmInner<CTX, INSP, I, P>
+where
+    CTX: ContextTr,
+    INSP: Inspector<CTX, I::InterpreterTypes>,
+    I: InstructionProvider<
+        Context = CTX,
+        InterpreterTypes: InterpreterTypes<Output = InterpreterAction>,
+    >,
+    P: PrecompileProvider<CTX>,
 {
-    /// Consumes self and returns a new Evm type with given Precompiles.
-    pub fn with_precompiles<OP>(
-        self,
-        precompiles: OP,
-    ) -> AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, OP> {
-        AlpenEvmInner(self.0.with_precompiles(precompiles))
+    /// Creates a new instance of `AlpenEvmInner`.
+    pub fn new(evm_ctx: EvmCtx<CTX, INSP, I, P>) -> Self {
+        AlpenEvmInner { evm_ctx }
     }
 }
 
@@ -44,11 +50,11 @@ where
     type Inspector = INSP;
 
     fn inspector(&mut self) -> &mut Self::Inspector {
-        &mut self.0.data.inspector
+        &mut self.evm_ctx.data.inspector
     }
 
     fn ctx_inspector(&mut self) -> (&mut Self::Context, &mut Self::Inspector) {
-        (&mut self.0.data.ctx, &mut self.0.data.inspector)
+        (&mut self.evm_ctx.data.ctx, &mut self.evm_ctx.data.inspector)
     }
 
     fn run_inspect_interpreter(
@@ -58,7 +64,7 @@ where
         >,
     ) -> <<Self::Instructions as InstructionProvider>::InterpreterTypes as InterpreterTypes>::Output
     {
-        self.0.run_inspect_interpreter(interpreter)
+        self.evm_ctx.run_inspect_interpreter(interpreter)
     }
 }
 
@@ -82,24 +88,24 @@ where
         >,
     ) -> <<Self::Instructions as InstructionProvider>::InterpreterTypes as InterpreterTypes>::Output
     {
-        let context = &mut self.0.data.ctx;
-        let instructions = &mut self.0.instruction;
+        let context = &mut self.evm_ctx.data.ctx;
+        let instructions = &mut self.evm_ctx.instruction;
         interpreter.run_plain(instructions.instruction_table(), context)
     }
 
     fn ctx(&mut self) -> &mut Self::Context {
-        &mut self.0.data.ctx
+        &mut self.evm_ctx.data.ctx
     }
 
     fn ctx_ref(&self) -> &Self::Context {
-        &self.0.data.ctx
+        &self.evm_ctx.data.ctx
     }
 
     fn ctx_instructions(&mut self) -> (&mut Self::Context, &mut Self::Instructions) {
-        (&mut self.0.data.ctx, &mut self.0.instruction)
+        (&mut self.evm_ctx.data.ctx, &mut self.evm_ctx.instruction)
     }
 
     fn ctx_precompiles(&mut self) -> (&mut Self::Context, &mut Self::Precompiles) {
-        (&mut self.0.data.ctx, &mut self.0.precompiles)
+        (&mut self.evm_ctx.data.ctx, &mut self.evm_ctx.precompiles)
     }
 }

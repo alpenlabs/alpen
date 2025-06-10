@@ -147,7 +147,7 @@ impl EvmFactory for AlpenEvmFactory {
             .with_precompiles(AlpenEvmPrecompiles::new());
 
         AlpenEvm {
-            inner: AlpenEvmInner(evm_ctx),
+            inner: AlpenEvmInner::new(evm_ctx),
             inspect: false,
         }
     }
@@ -166,16 +166,13 @@ impl EvmFactory for AlpenEvmFactory {
             .with_precompiles(AlpenEvmPrecompiles::new());
 
         AlpenEvm {
-            inner: AlpenEvmInner(evm_ctx),
+            inner: AlpenEvmInner::new(evm_ctx),
             inspect: true,
         }
     }
 }
 
-/// BSC EVM implementation.
-///
-/// This is a wrapper type around the `revm` evm with optional [`Inspector`] (tracing)
-/// support. [`Inspector`] support is configurable at runtime because it's part of the underlying
+/// Alpen EVM implementation.
 #[allow(missing_debug_implementations)]
 pub struct AlpenEvm<DB: Database, I, P = AlpenEvmPrecompiles> {
     pub inner:
@@ -185,12 +182,12 @@ pub struct AlpenEvm<DB: Database, I, P = AlpenEvmPrecompiles> {
 impl<DB: Database, I, P> AlpenEvm<DB, I, P> {
     /// Provides a reference to the EVM context.
     pub const fn ctx(&self) -> &EthEvmContext<DB> {
-        &self.inner.0.data.ctx
+        &self.inner.evm_ctx.data.ctx
     }
 
     /// Provides a mutable reference to the EVM context.
     pub fn ctx_mut(&mut self) -> &mut EthEvmContext<DB> {
-        &mut self.inner.0.data.ctx
+        &mut self.inner.evm_ctx.data.ctx
     }
 }
 
@@ -308,7 +305,7 @@ where
             cfg: cfg_env,
             journaled_state,
             ..
-        } = self.inner.0.data.ctx;
+        } = self.inner.evm_ctx.data.ctx;
 
         (journaled_state.database, EvmEnv { block_env, cfg_env })
     }
