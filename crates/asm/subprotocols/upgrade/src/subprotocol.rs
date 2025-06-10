@@ -1,4 +1,4 @@
-use strata_asm_common::{MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput};
+use strata_asm_common::{AnchorState, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput};
 
 use crate::{
     actions::{cancel::handle_cancel_tx, enact::handle_enactment_tx, update::handle_update_tx},
@@ -27,6 +27,7 @@ impl Subprotocol for UpgradeSubprotocol {
         state: &mut UpgradeSubprotoState,
         txs: &[TxInput<'_>],
         relayer: &mut impl MsgRelayer,
+        _anchor_pre: &AnchorState,
     ) {
         // Before processing the transactions, we handle any queued actions
         state.tick_queued();
