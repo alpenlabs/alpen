@@ -1,6 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
-use strata_primitives::buf::Buf32;
 
 use crate::{
     error::UpgradeError,
@@ -29,7 +28,7 @@ impl EnactAction {
         // sanity check
         assert_eq!(tx.tag().tx_type(), ENACT_TX_TYPE);
 
-        let id = Buf32::zero().into();
+        let id = 0;
         Ok(EnactAction::new(id))
     }
 }

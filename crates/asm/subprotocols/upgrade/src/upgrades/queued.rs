@@ -1,7 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
-    error::UpgradeActionError, roles::ProofType, txs::UpgradeAction,
+    error::UpgradeActionError,
+    roles::ProofType,
+    txs::{UpdateId, UpgradeAction},
     upgrades::delayed::DelayedUpgrade,
 };
 
@@ -14,7 +16,11 @@ pub const ASM_VK_QUEUE_DELAY: u64 = 12_960;
 pub const OL_STF_VK_QUEUE_DELAY: u64 = 4_320;
 
 impl QueuedUpgrade {
-    pub fn try_new(action: UpgradeAction, current_height: u64) -> Result<Self, UpgradeActionError> {
+    pub fn try_new(
+        id: UpdateId,
+        action: UpgradeAction,
+        current_height: u64,
+    ) -> Result<Self, UpgradeActionError> {
         let delay = match &action {
             UpgradeAction::VerifyingKey(vk) => match vk.kind() {
                 ProofType::Asm => ASM_VK_QUEUE_DELAY,
@@ -22,7 +28,6 @@ impl QueuedUpgrade {
             },
             _ => Err(UpgradeActionError::CannotQueue)?,
         };
-        let id = action.compute_id();
         let activation_height = current_height + delay;
         Ok(Self::new(id, action, activation_height))
     }

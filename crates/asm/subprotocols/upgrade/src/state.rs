@@ -27,6 +27,9 @@ pub struct UpgradeSubprotoState {
     /// Actions that will be executed automatically without requiring
     /// an EnactmentTx transaction.
     scheduled: Vec<ScheduledUpgrade>,
+
+    /// UpdateId for the next update
+    next_update_id: UpdateId,
 }
 
 impl UpgradeSubprotoState {
@@ -85,6 +88,16 @@ impl UpgradeSubprotoState {
             let up = self.committed.swap_remove(i);
             self.scheduled.push(up.into());
         }
+    }
+
+    /// Get a reference to the next global update id
+    pub fn next_update_id(&self) -> UpdateId {
+        self.next_update_id
+    }
+
+    /// Increment the next global update id
+    pub fn increment_next_update_id(&mut self) {
+        self.next_update_id += 1;
     }
 
     /// Process all queued upgrades and move any whose `activation_height` equals `current_height`
