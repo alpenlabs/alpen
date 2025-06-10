@@ -1,9 +1,20 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 /// Roles with authority in the upgrade subprotocol.
 #[repr(u8)]
 #[derive(
-    Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, BorshSerialize, BorshDeserialize,
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+    Arbitrary,
 )]
 #[borsh(use_discriminant = false)]
 pub enum Role {
@@ -22,7 +33,7 @@ pub enum Role {
     StrataConsensusManager,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub enum ProofType {
     Asm,
     OlStf,

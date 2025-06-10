@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpgradeAction};
 
@@ -5,7 +6,7 @@ use crate::upgrades::queued::QueuedUpgrade;
 
 /// A committed upgrade action ready for manual execution via EnactmentTx.
 /// Cannot be cancelled once in this state.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct CommittedUpgrade {
     id: UpdateId,
     action: UpgradeAction,

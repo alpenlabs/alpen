@@ -1,9 +1,10 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::actions::MultisigAction;
 
 /// A multisig payload comprising an operation plus a nonce, ready for hashing and signing.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct MultisigPayload {
     op: MultisigAction,
     nonce: u64,

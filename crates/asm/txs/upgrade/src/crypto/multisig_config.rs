@@ -1,10 +1,11 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{crypto::PubKey, error::MultisigConfigError};
 
 /// Configuration for a multisignature authority:
 /// who can sign (`keys`) and how many of them must sign (`threshold`).
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct MultisigConfig {
     /// The public keys of all grant-holders authorized to sign.
     pub keys: Vec<PubKey>,
@@ -37,7 +38,7 @@ impl MultisigConfig {
 /// * removes the specified `old_members` from the set,
 /// * adds the specified `new_members`
 /// * updates the threshold.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct MultisigConfigUpdate {
     new_members: Vec<PubKey>,
     old_members: Vec<PubKey>,

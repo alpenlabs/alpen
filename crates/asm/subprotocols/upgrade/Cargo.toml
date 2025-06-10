@@ -8,6 +8,7 @@ strata-asm-common.workspace = true
 strata-asm-proto-upgrade-txs.workspace = true
 strata-primitives.workspace = true
 
+arbitrary.workspace = true
 borsh.workspace = true
 thiserror.workspace = true
 

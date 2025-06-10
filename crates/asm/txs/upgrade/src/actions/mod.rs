@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 mod cancel;
@@ -11,7 +12,7 @@ pub use updates::UpgradeAction;
 pub type UpdateId = u32;
 
 /// A high‐level multisig operation that participants can propose.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub enum MultisigAction {
     /// Cancel a pending action
     Cancel(CancelAction),

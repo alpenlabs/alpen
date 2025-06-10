@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInput;
 
@@ -9,7 +10,7 @@ use crate::{
 /// - adds new members
 /// - removes old members
 /// - updates the threshold
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct MultisigUpdate {
     config: MultisigConfigUpdate,
     role: Role,
