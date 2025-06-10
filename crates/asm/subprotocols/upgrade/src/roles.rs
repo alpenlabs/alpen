@@ -23,8 +23,8 @@ pub enum Role {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-pub enum StrataProof {
-    ASM,
+pub enum ProofType {
+    Asm,
     OlStf,
 }
 
