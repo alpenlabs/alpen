@@ -13589,6 +13589,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-proto-upgrade-txs",
  "strata-primitives",
+ "strata-test-utils",
  "thiserror 2.0.12",
 ]
 

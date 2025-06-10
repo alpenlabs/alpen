@@ -106,7 +106,7 @@ impl UpgradeSubprotoState {
     pub fn process_queued(&mut self, current_height: u64) {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued)
             .into_iter()
-            .partition(|u| u.activation_height() == current_height);
+            .partition(|u| u.activation_height() <= current_height);
         self.queued = rest;
         self.committed.extend(ready.into_iter().map(Into::into));
     }
@@ -116,8 +116,193 @@ impl UpgradeSubprotoState {
     pub fn process_scheduled(&mut self, current_height: u64) -> Vec<ScheduledUpgrade> {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled)
             .into_iter()
-            .partition(|u| u.activation_height() == current_height);
+            .partition(|u| u.activation_height() <= current_height);
         self.scheduled = rest;
         ready
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_asm_proto_upgrade_txs::actions::UpgradeAction;
+    use strata_test_utils::ArbitraryGenerator;
+
+    use crate::{
+        state::UpgradeSubprotoState,
+        upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
+    };
+
+    #[test]
+    fn test_enqueue_find_and_remove_queued() {
+        let mut arb = ArbitraryGenerator::new();
+        let mut state = UpgradeSubprotoState::default();
+
+        let id = 1;
+        let update: UpgradeAction = arb.generate();
+        let upgrade = QueuedUpgrade::new(id, update, 100);
+        state.enqueue(upgrade.clone());
+
+        assert_eq!(state.find_queued(&id), Some(&upgrade));
+        assert_eq!(state.find_queued(&2), None);
+
+        state.remove_queued(&id);
+        assert_eq!(state.find_queued(&id), None);
+    }
+
+    /// Helper to seed queued upgrades
+    fn seed_queued(ids: &[u32], heights: &[u64]) -> UpgradeSubprotoState {
+        let mut arb = ArbitraryGenerator::new();
+        let mut state = UpgradeSubprotoState::default();
+        for (&id, &h) in ids.iter().zip(heights.iter()) {
+            let action: UpgradeAction = arb.generate();
+            state.enqueue(QueuedUpgrade::new(id, action, h));
+        }
+        state
+    }
+
+    /// Helper to seed scheduled upgrades
+    fn seed_scheduled(
+        ids: &[u32],
+        heights: &[u64],
+    ) -> (UpgradeSubprotoState, Vec<ScheduledUpgrade>) {
+        let mut arb = ArbitraryGenerator::new();
+        let mut state = UpgradeSubprotoState::default();
+        let mut upgrades = Vec::with_capacity(ids.len());
+        for (&id, &h) in ids.iter().zip(heights.iter()) {
+            let action: UpgradeAction = arb.generate();
+            let upgrade = ScheduledUpgrade::new(id, action, h);
+            state.schedule(upgrade.clone());
+            upgrades.push(upgrade);
+        }
+        (state, upgrades)
+    }
+
+    #[test]
+    fn test_process_queued_table() {
+        struct Case {
+            current: u64,
+            want_q: Vec<u32>,
+            want_c: Vec<u32>,
+        }
+
+        let ids = &[1, 2, 3];
+        let heights = &[5, 10, 15];
+
+        let cases = vec![
+            Case {
+                current: 4,
+                want_q: vec![1, 2, 3],
+                want_c: vec![],
+            },
+            Case {
+                current: 20,
+                want_q: vec![],
+                want_c: vec![1, 2, 3],
+            },
+            Case {
+                current: 10,
+                want_q: vec![3],
+                want_c: vec![1, 2],
+            },
+        ];
+
+        for case in cases {
+            let mut state = seed_queued(ids, heights);
+            state.process_queued(case.current);
+
+            let queued: Vec<_> = state.queued.iter().map(|u| *u.id()).collect();
+            let mut committed: Vec<_> = state.committed.iter().map(|u| *u.id()).collect();
+            committed.sort_unstable();
+
+            assert_eq!(
+                queued, case.want_q,
+                "at height {} queued mismatch",
+                case.current
+            );
+            assert_eq!(
+                committed, case.want_c,
+                "at height {} committed mismatch",
+                case.current
+            );
+        }
+    }
+
+    #[test]
+    fn test_process_scheduled_table() {
+        struct Case {
+            current: u64,
+            want_rem: Vec<u32>,
+            want_ret: Vec<u32>,
+        }
+        let ids = &[1, 2, 3];
+        let heights = &[5, 10, 15];
+
+        let cases = vec![
+            Case {
+                current: 4,
+                want_rem: vec![1, 2, 3],
+                want_ret: vec![],
+            },
+            Case {
+                current: 5,
+                want_rem: vec![2, 3],
+                want_ret: vec![1],
+            },
+            Case {
+                current: 10,
+                want_rem: vec![3],
+                want_ret: vec![1, 2],
+            },
+            Case {
+                current: 15,
+                want_rem: vec![],
+                want_ret: vec![1, 2, 3],
+            },
+        ];
+
+        for case in cases {
+            let (mut state, _) = seed_scheduled(ids, heights);
+            let returned: Vec<_> = state
+                .process_scheduled(case.current)
+                .into_iter()
+                .map(|u| *u.id())
+                .collect();
+            let mut remaining: Vec<_> = state.scheduled.iter().map(|u| *u.id()).collect();
+            remaining.sort_unstable();
+
+            assert_eq!(
+                returned, case.want_ret,
+                "at height {} returned mismatch",
+                case.current
+            );
+            assert_eq!(
+                remaining, case.want_rem,
+                "at height {} remaining mismatch",
+                case.current
+            );
+        }
+    }
+
+    #[test]
+    fn test_commit_to_schedule() {
+        let ids = &[1, 2, 3];
+        let heights = &[5, 10, 15];
+        let mut state = seed_queued(ids, heights);
+
+        state.process_queued(15);
+        assert_eq!(state.queued, &[]);
+        assert_eq!(state.committed.len(), 3);
+        assert_eq!(state.scheduled.len(), 0);
+
+        state.commit_to_schedule(&2);
+
+        // now committed should no longer contain 2, but still 1 & 3
+        let mut remaining: Vec<_> = state.committed.iter().map(|c| *c.id()).collect();
+        remaining.sort_unstable();
+        assert_eq!(remaining, vec![1, 3]);
+
+        // scheduled should now contain exactly 2
+        let scheduled_ids: Vec<_> = state.scheduled.iter().map(|s| *s.id()).collect();
+        assert_eq!(scheduled_ids, vec![2]);
     }
 }
