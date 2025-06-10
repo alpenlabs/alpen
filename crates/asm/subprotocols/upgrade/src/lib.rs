@@ -6,6 +6,7 @@
 //! sequencer updates, and cancellations.
 
 pub mod authority;
+pub mod constants;
 pub mod error;
 pub mod state;
 pub mod subprotocol;
