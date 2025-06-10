@@ -10,10 +10,7 @@ use strata_l1tx::{
         indexer::{index_block, TxVisitor},
         types::OPERATOR_FEE,
     },
-    utils::test_utils::{
-        create_opreturn_metadata_for_withdrawal_fulfillment, create_tx_filter_config,
-        get_filter_config_from_deposit_entries,
-    },
+    utils::test_utils::{create_tx_filter_config, get_filter_config_from_deposit_entries},
 };
 use strata_primitives::{
     indexed::Indexed,
@@ -25,6 +22,7 @@ use crate::{
         build_test_deposit_request_script, build_test_deposit_script, create_test_deposit_tx,
         generate_withdrawal_fulfillment_data, test_taproot_addr,
     },
+    create_opreturn_metadata,
     l2::gen_params,
 };
 
@@ -274,7 +272,7 @@ where
             },
             // metadata with operator index
             TxOut {
-                script_pubkey: create_opreturn_metadata_for_withdrawal_fulfillment(1, 2, &txids[0]),
+                script_pubkey: create_opreturn_metadata(*b"ALPN", 1, 2, &txids[0]),
                 value: Amount::from_sat(0),
             },
             // change

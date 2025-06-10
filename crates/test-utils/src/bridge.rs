@@ -186,6 +186,7 @@ pub fn permute<T: Clone>(list: &mut [T]) {
     list.shuffle(&mut OsRng);
 }
 
+/// Creates an OP_RETURN metadata script.
 pub fn create_opreturn_metadata(
     magic: [u8; 4],
     operator_idx: u32,
