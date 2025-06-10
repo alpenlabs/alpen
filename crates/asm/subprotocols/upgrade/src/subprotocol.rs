@@ -5,7 +5,7 @@ use crate::{
     multisig::vote::AggregatedVote,
     roles::StrataProof,
     state::UpgradeSubprotoState,
-    txs::{MultisigAction, UpgradeAction},
+    txs::{MultisigAction, UpgradeAction, parse_tx_multisig_action_and_vote},
     upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
 };
 
@@ -31,10 +31,17 @@ impl Subprotocol for UpgradeSubprotocol {
         relayer: &mut impl MsgRelayer,
         anchor_pre: &AnchorState,
     ) {
+        // Get the current height
         let current_height = anchor_pre.chain_view.pow_state.last_verified_block.height() + 1;
 
         // Before processing the transactions, we process any queued actions
         state.process_queued(current_height);
+
+        for tx in txs {
+            if let Ok((action, vote)) = parse_tx_multisig_action_and_vote(tx) {
+                let _ = handle_action(state, action, vote, current_height);
+            }
+        }
 
         handle_scheduled_actions(state, relayer, current_height);
     }
@@ -73,7 +80,7 @@ fn handle_scheduled_actions(
     }
 }
 
-pub fn handle_action(
+fn handle_action(
     state: &mut UpgradeSubprotoState,
     action: MultisigAction,
     vote: AggregatedVote,
