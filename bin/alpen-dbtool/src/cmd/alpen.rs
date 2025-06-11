@@ -1,47 +1,50 @@
 use std::sync::Arc;
 
 use clap::Args;
-use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L2BlockDatabase};
+use hex::FromHex;
+use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
+use strata_primitives::{buf::Buf32, l2::L2BlockId};
 use strata_rocksdb::CommonDb;
 
-use crate::errors::{DbtoolError, Result};
+use crate::errors::{DisplayableError, DisplayedError};
 
 #[derive(Args, Debug)]
 pub struct GetAlpenBlockArgs {
     /// Block height; defaults to the chain tip
-    #[arg(value_name = "ALPEN_BLOCK_HEIGHT")]
-    pub block_height: Option<u64>,
+    #[arg(value_name = "ALPEN_BLOCK_ID")]
+    pub block_id: String,
 }
 
-pub fn get_alpen_block(db: Arc<CommonDb>, args: GetAlpenBlockArgs) -> Result<()> {
-    // Determine block height
-    let height = args
-        .block_height
-        .unwrap_or_else(|| db.chain_state_db().get_last_write_idx().unwrap_or(0));
-
-    // Fetch all block-ids at that height
-    let block_ids = db.l2_db().get_blocks_at_height(height)?;
-
-    if block_ids.is_empty() {
-        println!("No block found at height {height}");
-        return Ok(());
+pub fn get_alpen_block(db: Arc<CommonDb>, args: GetAlpenBlockArgs) -> Result<(), DisplayedError> {
+    let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
+    if hex_str.len() != 64 {
+        return Err(DisplayedError::UserError(
+            "Block-id must be 32-byte / 64-char hex".into(),
+            Box::new(hex_str.to_owned()),
+        ));
     }
 
-    // Print each block header and status
-    for blk_id in block_ids {
-        let status = db
-            .l2_db()
-            .get_block_status(blk_id)?
-            .unwrap_or(BlockStatus::Unchecked);
+    let bytes: [u8; 32] =
+        <[u8; 32]>::from_hex(hex_str).user_error(format!("Invalid 32-byte hex {hex_str}"))?;
+    let block_id = L2BlockId::from(Buf32::from(bytes));
 
-        let bundle = db
-            .l2_db()
-            .get_block_data(blk_id)?
-            .ok_or_else(|| DbtoolError::Db(format!("missing data for block {blk_id}")))?;
+    // Print block header and status
+    let status = db
+        .l2_db()
+        .get_block_status(block_id)
+        .internal_error("Failed to read block status")?
+        .unwrap_or(BlockStatus::Unchecked);
 
-        println!("Alpen block {blk_id} – status: {status:?}");
-        println!("{:#?}", bundle.block().header());
-    }
+    let bundle = db
+        .l2_db()
+        .get_block_data(block_id)
+        .internal_error("Failed to read block data")?
+        .ok_or_else(|| {
+            DisplayedError::UserError(format!("block {block_id} not found"), Box::new(()))
+        })?;
+
+    println!("Alpen block {block_id} – status: {status:?}");
+    println!("{:#?}", bundle.block().header());
 
     Ok(())
 }

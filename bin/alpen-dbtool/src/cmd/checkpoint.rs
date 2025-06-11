@@ -4,7 +4,7 @@ use clap::Args;
 use strata_db::traits::{CheckpointDatabase, Database};
 use strata_rocksdb::CommonDb;
 
-use crate::errors::{DbtoolError, Result};
+use crate::errors::{DisplayableError, DisplayedError};
 
 #[derive(Args, Debug)]
 pub struct GetCheckpointDataArgs {
@@ -12,22 +12,36 @@ pub struct GetCheckpointDataArgs {
     checkpoint_idx: Option<u64>,
 }
 
-pub fn get_checkpoint_data(db: Arc<CommonDb>, args: GetCheckpointDataArgs) -> Result<()> {
+pub fn get_checkpoint_data(
+    db: Arc<CommonDb>,
+    args: GetCheckpointDataArgs,
+) -> Result<(), DisplayedError> {
     // Determine checkpoint index
     let checkpoint_idx = match args.checkpoint_idx {
         Some(i) => i,
         None => db
             .checkpoint_db()
             .get_last_checkpoint_idx()
-            .map_err(DbtoolError::from)? // convert DB error → DbtoolError
-            .ok_or_else(|| DbtoolError::Db("no checkpoints found".into()))?,
+            .internal_error("Failed to fetch last checkpoint index")?
+            .ok_or_else(|| {
+                DisplayedError::InternalError(
+                    "no checkpoints found".into(),
+                    Box::new(()), // debug payload
+                )
+            })?,
     };
 
     // Fetch checkpoint data
     let entry = db
         .checkpoint_db()
-        .get_checkpoint(checkpoint_idx)? // -> Option<CheckpointEntry>
-        .ok_or_else(|| DbtoolError::Db(format!("checkpoint {checkpoint_idx} not found")))?;
+        .get_checkpoint(checkpoint_idx)
+        .internal_error("Failed to fetch checkpoint data")?
+        .ok_or_else(|| {
+            DisplayedError::InternalError(
+                format!("checkpoint {checkpoint_idx} not found"),
+                Box::new(()),
+            )
+        })?;
 
     let checkpoint_commitment = entry.checkpoint.commitment();
 

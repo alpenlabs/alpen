@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+hex.workspace = true
 rockbound.workspace = true
 serde.workspace = true
 tracing-subscriber.workspace = true

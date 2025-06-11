@@ -4,7 +4,7 @@ use clap::Args;
 use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L1Database, L2BlockDatabase};
 use strata_rocksdb::CommonDb;
 
-use crate::errors::Result;
+use crate::errors::{DisplayableError, DisplayedError};
 
 #[derive(Args, Debug)]
 pub struct GetSyncinfoArgs {
@@ -13,13 +13,18 @@ pub struct GetSyncinfoArgs {
     porcelain: bool,
 }
 
-pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<()> {
+pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<(), DisplayedError> {
     let (l1_block_height, l1_block_id) = db
         .l1_db()
-        .get_canonical_chain_tip()? // DbError → DbtoolError via From<…>
-        .unwrap_or_default(); // if the chain is empty, (0, default())
+        .get_canonical_chain_tip()
+        .internal_error("Failed to read L1 tip")?
+        .unwrap_or_default();
 
-    let l2_block_height = db.chain_state_db().get_last_write_idx().ok(); // treat error as “unknown”
+    let l2_block_height = db
+        .chain_state_db()
+        .get_last_write_idx()
+        .internal_error("Failed to read L2 height")
+        .ok();
 
     let l2_block_id = l2_block_height
         .and_then(|h| db.l2_db().get_blocks_at_height(h).ok())

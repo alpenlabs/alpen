@@ -1,41 +1,57 @@
-use strata_db::DbError;
-
-/// Unified error type wrapping library errors and CLI‑specific issues.
+/// Errors displayed to the user when using the Alpen CLI
 #[derive(Debug)]
-pub enum DbtoolError {
-    Io(std::io::Error),
-    Db(String),
+pub enum DisplayedError {
+    /// Errors the use can address by updating configuration or providing expected input
+    UserError(String, Box<dyn std::fmt::Debug>),
+    /// Internal errors encountered when servicing user's request.
+    InternalError(String, Box<dyn std::fmt::Debug>),
 }
 
-impl From<std::io::Error> for DbtoolError {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
+#[inline]
+pub(crate) fn user_error<E>(msg: impl Into<String>) -> impl FnOnce(E) -> DisplayedError
+where
+    E: std::fmt::Debug + 'static,
+{
+    move |e| DisplayedError::UserError(msg.into(), Box::new(e))
+}
+
+#[inline]
+pub(crate) fn internal_error<E>(msg: impl Into<String>) -> impl FnOnce(E) -> DisplayedError
+where
+    E: std::fmt::Debug + 'static,
+{
+    move |e| DisplayedError::InternalError(msg.into(), Box::new(e))
+}
+
+pub(crate) trait DisplayableError {
+    type Output;
+    fn user_error(self, msg: impl Into<String>) -> Result<Self::Output, DisplayedError>;
+    fn internal_error(self, msg: impl Into<String>) -> Result<Self::Output, DisplayedError>;
+}
+
+impl<T, E: std::fmt::Debug + 'static> DisplayableError for Result<T, E> {
+    type Output = T;
+
+    #[inline]
+    fn user_error(self, msg: impl Into<String>) -> Result<Self::Output, DisplayedError> {
+        self.map_err(user_error(msg))
+    }
+
+    #[inline]
+    fn internal_error(self, msg: impl Into<String>) -> Result<Self::Output, DisplayedError> {
+        self.map_err(internal_error(msg))
     }
 }
 
-impl std::fmt::Display for DbtoolError {
+impl std::fmt::Display for DisplayedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            // <- we *use* the inner error here, so the field is no longer “dead”
-            Self::Io(e) => write!(f, "I/O error: {e}"),
-            Self::Db(s) => write!(f, "DB error: {s}"),
+            DisplayedError::UserError(msg, e) => {
+                f.write_fmt(format_args!("User error: {msg}: {e:?}"))
+            }
+            DisplayedError::InternalError(msg, e) => {
+                f.write_fmt(format_args!("Internal error: {msg}: {e:?}"))
+            }
         }
     }
 }
-
-impl std::error::Error for DbtoolError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            Self::Db(_) => None,
-        }
-    }
-}
-
-impl From<DbError> for DbtoolError {
-    fn from(e: DbError) -> Self {
-        DbtoolError::Db(e.to_string())
-    }
-}
-
-pub type Result<T> = std::result::Result<T, DbtoolError>;
