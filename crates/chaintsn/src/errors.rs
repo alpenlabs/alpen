@@ -55,6 +55,9 @@ pub enum OpError {
     #[error("invalid proof")]
     InvalidProof,
 
+    #[error("op referenced non-existent deposit {0}")]
+    UnknownDeposit(u32),
+
     /// Used to discard checkpoints we aren't looking for.
     #[error("operation does not advance the finalized epoch")]
     EpochNotExtend,
