@@ -6,7 +6,6 @@ use std::{sync::Arc, time::Duration};
 use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
-use checkpoint_sync::checkpoint_sync_task;
 use el_sync::sync_chainstate_to_el;
 use errors::InitError;
 use jsonrpsee::Methods;
@@ -19,6 +18,7 @@ use strata_btcio::{
 use strata_common::logging;
 use strata_config::Config;
 use strata_consensus_logic::{
+    checkpoint_sync::checkpoint_sync_task,
     genesis,
     sync_manager::{self, SyncManager},
 };
@@ -53,7 +53,6 @@ use crate::{
 };
 
 mod args;
-mod checkpoint_sync;
 mod el_sync;
 mod errors;
 mod helpers;
