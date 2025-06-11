@@ -697,8 +697,8 @@ def setup_test_logger(datadir_root: str, test_name: str) -> logging.Logger:
     logger.addHandler(stream_handler)
 
     # Set level to something sensible.
-    # TODO make this fetch from user input
-    logger.setLevel(logging.INFO)
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logger.setLevel(log_level)
 
     return logger
 

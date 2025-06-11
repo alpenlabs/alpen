@@ -1,21 +1,20 @@
 import flexitest
-from solcx import install_solc, set_solc_version
 from web3 import Web3
 
-from envs import testenv
+from mixins import BaseMixin
 from utils import (
     el_slot_to_block_commitment,
     wait_for_proof_with_time_out,
     wait_until_with_value,
 )
-from utils.transaction import SmartContracts
+
+# An identifier of PrecompileTestContract to work with.
+PRECOMPILE_CTR_ID = "precompile_contract"
 
 
 @flexitest.register
-class ElPrecompileTest(testenv.StrataTester):
+class ElPrecompileTest(BaseMixin):
     def __init__(self, ctx: flexitest.InitContext):
-        install_solc(version="0.8.16")
-        set_solc_version("0.8.16")
         ctx.set_env("prover")
 
     def main(self, ctx: flexitest.RunContext):
@@ -28,18 +27,11 @@ class ElPrecompileTest(testenv.StrataTester):
         web3: Web3 = reth.create_web3()
         web3.eth.default_account = web3.address
 
-        # Deploy the contract
-        abi, bytecode = SmartContracts.compile_contract(
-            "PrecompileTestContract.sol", "PrecompileTestContract"
+        # Deploy and call the contract.
+        self.txs.deploy_contract(
+            "PrecompileTestContract.sol", "PrecompileTestContract", PRECOMPILE_CTR_ID
         )
-        contract = web3.eth.contract(abi=abi, bytecode=bytecode)
-        tx_hash = contract.constructor().transact()
-        tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
-
-        # Call the contract function
-        contract_instance = web3.eth.contract(abi=abi, address=tx_receipt.contractAddress)
-        tx_hash = contract_instance.functions.testPrecompiles().transact()
-        tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        tx_receipt = self.txs.call_contract(PRECOMPILE_CTR_ID, "testPrecompiles")
 
         # Prove the corresponding EE block
         ee_prover_params = {

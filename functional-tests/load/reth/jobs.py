@@ -12,15 +12,14 @@ class BasicRethBlockJob(BaseRethLoadJob):
 
     def before_start(self):
         super().before_start()
-        self._acc = self.new_account()
         self._block_number = 0
 
     @task
     def get_block(self):
-        block_number = self._acc.w3.eth.get_block_number()
+        block_number = self.w3.eth.get_block_number()
         for i in range(self._block_number + 1, block_number + 1):
             try:
-                block = self._acc.w3.eth.get_block(hex(i))
+                block = self.w3.eth.get_block(hex(i))
             except Exception:
                 break
             self._logger.info(f"NEW BLOCK: num={i} => tx_count={len(block['transactions'])}")
@@ -37,8 +36,8 @@ class BasicRethTxJob(BaseRethLoadJob):
 
         self._acc = self.new_account()
 
-        self.tx = EthTransactions(self._acc, self._logger)
-        self.transfer = TransferTransaction(self._acc, self._logger)
+        self.tx = EthTransactions(self._acc, self._logger.info)
+        self.transfer = TransferTransaction(self._acc, self._logger.info)
 
     def after_start(self):
         super().after_start()

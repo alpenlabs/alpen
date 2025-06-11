@@ -1,21 +1,16 @@
 import flexitest
-from solcx import install_solc, set_solc_version
-from web3 import Web3
 
-from envs import testenv
+from mixins import BaseMixin
 from utils import (
     el_slot_to_block_commitment,
     wait_for_proof_with_time_out,
     wait_until_with_value,
 )
-from utils.transaction import SmartContracts
 
 
 @flexitest.register
-class ElSelfDestructContractTest(testenv.StrataTester):
+class ElSelfDestructContractTest(BaseMixin):
     def __init__(self, ctx: flexitest.InitContext):
-        install_solc(version="0.8.16")
-        set_solc_version("0.8.16")
         ctx.set_env("prover")
 
     def main(self, ctx: flexitest.RunContext):
@@ -24,30 +19,23 @@ class ElSelfDestructContractTest(testenv.StrataTester):
 
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
+        web3 = self.web3
 
-        web3: Web3 = reth.create_web3()
-        web3.eth.default_account = web3.address
+        SELFDESTRUCT_ID = "selfdestruct_contract"
+        # Fix the block before deploy.
+        start_block_number = int(reth_rpc.eth_getBlockByNumber("latest", False)["number"], 16)
 
         # Deploy the contract
-        abi, bytecode = SmartContracts.compile_contract("SelfDestruct.sol", "SelfDestruct")
-        contract = web3.eth.contract(abi=abi, bytecode=bytecode)
-        tx_hash = contract.constructor().transact()
-        tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        self.txs.deploy_contract("SelfDestruct.sol", "SelfDestruct", SELFDESTRUCT_ID)
 
         # Call the contract function
-        contract_instance = web3.eth.contract(abi=abi, address=tx_receipt.contractAddress)
-        tx_hash = contract_instance.functions.updateState().transact()
-        web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
-
-        # Call the contract function
-        contract_instance = web3.eth.contract(abi=abi, address=tx_receipt.contractAddress)
-        tx_hash = contract_instance.functions.destroyContract().transact()
-        tx_receipt_2 = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        self.txs.call_contract(SELFDESTRUCT_ID, "updateState")
+        last_tx_receipt = self.txs.call_contract(SELFDESTRUCT_ID, "destroyContract")
 
         # Prove the corresponding EE block
         ee_prover_params = {
-            "start_block": tx_receipt["blockNumber"] - 1,
-            "end_block": tx_receipt_2["blockNumber"] + 1,
+            "start_block": start_block_number,
+            "end_block": last_tx_receipt["blockNumber"] + 1,
         }
 
         # Wait until the end EE block is generated.

@@ -1,6 +1,5 @@
 from enum import Enum
-from logging import Logger
-from typing import TypeAlias
+from typing import Callable, TypeAlias
 
 import solcx
 import web3
@@ -32,7 +31,7 @@ class _TransactionFaucet:
 
     def __init__(self, acc: AbstractAccount, logger=None):
         self._acc: AbstractAccount = acc
-        self._logger: Logger = logger
+        self._logger: Callable[[str], None] | None = logger
 
     @property
     def w3(self) -> web3.Web3:
@@ -40,7 +39,7 @@ class _TransactionFaucet:
 
     def log(self, msg):
         if self._logger is not None:
-            self._logger.info(msg)
+            self._logger(msg)
 
 
 class TransactionBuilder(_TransactionFaucet):
@@ -236,6 +235,11 @@ class SmartContracts(TransactionSender):
 
     def get_contract_address(self, contract_id):
         return self.w3.to_checksum_address(self._contract_address(contract_id))
+
+    def get_contract_instance(self, contract_id):
+        return self.w3.eth.contract(
+            address=self._contract_address(contract_id), abi=self._contract_abi(contract_id)
+        )
 
 
 class ERC20(SmartContracts):
