@@ -152,7 +152,9 @@ class TransferTransaction(TransactionSender):
     """
 
     @tx_caller("TRANSFERRING [2] TO [1]")
-    def transfer(self, to, value, tx_type: TransactionType) -> HexStr | None:
+    def transfer(
+        self, to, value, tx_type: TransactionType, wait=False
+    ) -> TxReceipt | HexStr | None:
         tx: Tx = TransactionBuilder.new_with_gas(25000)
         tx.update(
             {
@@ -160,6 +162,9 @@ class TransferTransaction(TransactionSender):
                 "value": self.w3.to_wei(value, "ether"),
             }
         )
+
+        if wait:
+            return self.send_ensured_tx_and_wait(tx, tx_type)
         return self.send_ensured_tx(tx, tx_type)
 
 

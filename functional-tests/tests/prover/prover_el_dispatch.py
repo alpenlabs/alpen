@@ -1,23 +1,23 @@
 import flexitest
 from web3 import Web3
 
-from envs import testenv
+from mixins import BaseMixin
 from utils import (
     el_slot_to_block_commitment,
     wait_for_proof_with_time_out,
     wait_until_with_value,
 )
-from utils.eth import make_native_token_transfer
+from utils.transaction import TransactionType
 
 # Constants for native token transfer
 NATIVE_TOKEN_TRANSFER_PARAMS = {
-    "TRANSFER_AMOUNT": Web3.to_wei(1, "ether"),
+    "TRANSFER_AMOUNT": 1,
     "RECIPIENT": "0x5400000000000000000000000000000000000011",
 }
 
 
 @flexitest.register
-class ProverClientTest(testenv.StrataTester):
+class ProverClientTest(BaseMixin):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("prover")
 
@@ -38,7 +38,9 @@ class ProverClientTest(testenv.StrataTester):
 
         transfer_amount = NATIVE_TOKEN_TRANSFER_PARAMS["TRANSFER_AMOUNT"]
         recipient = NATIVE_TOKEN_TRANSFER_PARAMS["RECIPIENT"]
-        tx_receipt = make_native_token_transfer(web3, transfer_amount, recipient)
+        tx_receipt = self.txs.transfer(
+            recipient, transfer_amount, TransactionType.LEGACY, wait=True
+        )
 
         ee_prover_params = {
             "start_block": tx_receipt["blockNumber"] - 1,

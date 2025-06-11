@@ -1,25 +1,24 @@
 import flexitest
 from web3 import Web3
 
-from envs import testenv
-from utils.eth import make_native_token_transfer
+from mixins import BaseMixin
+from utils.transaction import TransactionType
 
 NATIVE_TOKEN_TRANSFER_PARAMS = {
     "DEST_ADDRESS": "0x0000000000000000000000000000000000000001",
     "BASEFEE_ADDRESS": "5400000000000000000000000000000000000010",
     "BENEFICIARY_ADDRESS": "5400000000000000000000000000000000000011",
-    "TRANSFER_AMOUNT": Web3.to_wei(1, "ether"),
+    "TRANSFER_AMOUNT": 1,  # 1 ETH
 }
 
 
 @flexitest.register
-class ElBalanceTransferTest(testenv.StrataTester):
+class ElBalanceTransferTest(BaseMixin):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 
-    def main(self, ctx: flexitest.RunContext):
-        reth = ctx.get_service("reth")
-        web3: Web3 = reth.create_web3()
+    def main(self, _ctx: flexitest.RunContext):
+        web3: Web3 = self.w3
 
         source = web3.address
         dest = web3.to_checksum_address(NATIVE_TOKEN_TRANSFER_PARAMS["DEST_ADDRESS"])
@@ -38,7 +37,11 @@ class ElBalanceTransferTest(testenv.StrataTester):
         self.debug(f"{original_block_no}, {dest_original_balance}")
 
         transfer_amount = NATIVE_TOKEN_TRANSFER_PARAMS["TRANSFER_AMOUNT"]
-        _tx_receipt = make_native_token_transfer(web3, transfer_amount, dest)
+        self.txs.transfer(dest, transfer_amount, TransactionType.LEGACY, wait=True)
+
+        # Original value is in eth (conversion happens under the hood in `txs.transfer`,
+        # so convert to wei to perform exact checks on balances.
+        transfer_amount = Web3.to_wei(transfer_amount, "ether")
 
         final_block_no = web3.eth.block_number
         dest_final_balance = web3.eth.get_balance(dest)

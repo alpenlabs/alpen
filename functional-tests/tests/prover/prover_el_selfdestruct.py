@@ -19,11 +19,11 @@ class ElSelfDestructContractTest(BaseMixin):
 
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
-        web3 = self.web3
+        web3 = self.w3
 
         SELFDESTRUCT_ID = "selfdestruct_contract"
         # Fix the block before deploy.
-        start_block_number = int(reth_rpc.eth_getBlockByNumber("latest", False)["number"], 16)
+        start_block_number = web3.eth.get_block("latest")["number"]
 
         # Deploy the contract
         self.txs.deploy_contract("SelfDestruct.sol", "SelfDestruct", SELFDESTRUCT_ID)

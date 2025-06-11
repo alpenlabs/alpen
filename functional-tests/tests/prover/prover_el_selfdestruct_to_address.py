@@ -19,7 +19,7 @@ class ElSelfDestructToAddressContractTest(BaseMixin):
 
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
-        web3 = self.web3
+        web3 = self.w3
 
         # Deploy the contracts
         # The setup is a simple two contacts relation:

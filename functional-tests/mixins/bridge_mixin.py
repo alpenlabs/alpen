@@ -27,7 +27,7 @@ class BridgeMixin(BaseMixin):
     def premain(self, ctx: flexitest.RunContext):
         super().premain(ctx)
 
-        self.bridge_eth_account = self.web3.eth.account.from_key(ETH_PRIVATE_KEY)
+        self.bridge_eth_account = self.w3.eth.account.from_key(ETH_PRIVATE_KEY)
 
     def deposit(self, ctx: flexitest.RunContext, el_address, bridge_pk) -> str:
         """

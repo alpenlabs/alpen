@@ -19,22 +19,31 @@ class BaseMixin(testenv.StrataTester):
         self.seqrpc = self.seq.create_rpc()
         self.btcrpc = self.btc.create_rpc()
         self.rethrpc = self.reth.create_rpc()
-        self.web3: Web3 = self.reth.create_web3()
 
         # Genesis account is from the genesis alloc.
         # It's only used to distribute funds to other accounts.
         genesis_account = GenesisAccount(self._new_w3())
         # Funded account is a fresh account with funds from genesis acc.
         # It's an account on behalf of which all the transactions are done.
-        funded_acc = FundedAccount(self._new_w3())
+        w3 = self._new_w3()
+        funded_acc = FundedAccount(w3)
         funded_acc.fund_me(genesis_account)
         # Setting transactions api with default DEBUG level.
         self._txs = EthTransactions(funded_acc, self.debug)
+        self._w3 = w3
 
-    # The main API to spawn various ETH transactions.
     @property
     def txs(self) -> EthTransactions:
+        """The main API to spawn various ETH transactions."""
         return self._txs
+
+    @property
+    def w3(self) -> Web3:
+        """
+        Web3 instance with the signing middleware configured for freshly funded acc.
+        Corresponds to @property `txs`.
+        """
+        return self._w3
 
     def _new_w3(self):
         ethrpc_http_port = self.reth.get_prop("eth_rpc_http_port")
