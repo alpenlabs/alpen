@@ -38,6 +38,6 @@ strata-common.workspace = true
 
 anyhow.workspace = true
 bitcoind-async-client.workspace = true
-corepc-node = { version = "0.7.1", features = ["28_0", "download"] }
+corepc-node = { version = "0.8.0", features = ["29_0", "download"] }
 tokio.workspace = true
 tracing.workspace = true

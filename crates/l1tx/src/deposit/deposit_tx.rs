@@ -234,10 +234,12 @@ mod tests {
         },
         error::DepositParseError,
     };
-    const MAGIC_BYTES: &[u8] = &[1, 2, 3, 4, 5];
+
+    const MAGIC_BYTES: &[u8] = &[1, 2, 3, 4];
     const ADDRESS: &str = "bcrt1p729l9680ht3zf7uhl6pgdrlhfp9r29cwajr5jk3k05fer62763fscz0w4s";
 
     fn dummy_config() -> DepositTxParams {
+        assert_eq!(MAGIC_BYTES.len(), 4, "test: magic not 4 bytes");
         let addr = BitcoinAddress::parse(ADDRESS, Network::Regtest).unwrap();
         DepositTxParams {
             magic_bytes: MAGIC_BYTES.to_vec(),
