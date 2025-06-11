@@ -303,7 +303,20 @@ impl StateCache {
         };
     }
 
-    /// Updates the deposit state to Fulfilled.
+    /// Returns if the deposit with some idx exists or not.
+    pub fn check_deposit_exists(&self, deposit_idx: u32) -> bool {
+        self.state()
+            .deposits_table()
+            .get_deposit(deposit_idx)
+            .is_some()
+    }
+
+    /// Updates the deposit state to `Fulfilled`.
+    ///
+    /// # Panics
+    ///
+    /// If the deposit idx being referenced by the withdrawal fulfillment info
+    /// does not exist.
     pub fn mark_deposit_fulfilled(&mut self, winfo: &WithdrawalFulfillmentInfo) {
         let deposit_ent = self.deposit_entry_mut_expect(winfo.deposit_idx);
 
@@ -319,7 +332,12 @@ impl StateCache {
         )));
     }
 
-    // Updates the deposit state as Reimbursed.
+    /// Updates the deposit state as `Reimbursed`.
+    ///
+    /// # Panics
+    ///
+    /// If the deposit idx being referenced by the withdrawal fulfillment info
+    /// does not exist.
     pub fn mark_deposit_reimbursed(&mut self, deposit_idx: u32) {
         let deposit_ent = self.deposit_entry_mut_expect(deposit_idx);
 

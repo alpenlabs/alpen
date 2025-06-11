@@ -38,7 +38,7 @@ strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true
 
-corepc-node = { version = "0.7.1", features = ["28_0", "download"] }
+corepc-node = { version = "0.8.0", features = ["29_0", "download"] }
 
 [features]
 test_utils = ["dep:hex", "dep:musig2"]

@@ -55,6 +55,15 @@ impl TxFilterConfig {
             generate_taproot_address(&operator_wallet_pks, rollup_params.network)?;
 
         let rollup_name = rollup_params.rollup_name.clone();
+
+        // Make sure the magic bytes is always of length 4.
+        // TODO replace this with a more generic system
+        let magic_bytes = rollup_name
+            .bytes()
+            .chain(std::iter::repeat(0))
+            .take(4)
+            .collect::<Vec<_>>();
+
         let expected_addrs = SortedVec::new_unchecked(vec![address.clone()]);
         let sequencer_cred_rule = rollup_params.cred_rule.clone();
 
@@ -65,8 +74,9 @@ impl TxFilterConfig {
 
         let operators_pubkey =
             XOnlyPk::new(int_pubkey.serialize().into()).expect("Aggregated pubkey should be valid");
+
         let deposit_config = DepositTxParams {
-            magic_bytes: rollup_name.clone().into_bytes(),
+            magic_bytes,
             address_length: rollup_params.address_length,
             deposit_amount: rollup_params.deposit_amount,
             address,

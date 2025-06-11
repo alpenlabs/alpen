@@ -551,7 +551,7 @@ def generate_params(settings: RollupParamsSettings, seqpubkey: str, oppubkeys: l
         "strata-datatool",
         "-b", "regtest",
         "genparams",
-        "--name", "alpenstrata",
+        "--name", "ALPN",
         "--block-time", str(settings.block_time_sec),
         "--epoch-slots", str(settings.epoch_slots),
         "--horizon-height", str(settings.horizon_height),
