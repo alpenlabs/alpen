@@ -16,11 +16,10 @@ import flexitest
 from envs import testenv
 from factory import factory
 from utils import *
-from utils.constants import *
+from utils.constants import TEST_DIR, DD_ROOT
 from load.cfg import RethLoadConfigBuilder
 from load.reth import BasicRethBlockJob, BasicRethTxJob
 
-TEST_DIR: str = "tests"
 KEEP_ALIVE_TEST_FILE: str = "keepalive_stub_test"
 KEEP_ALIVE_TEST_NAME: str = "KeepAliveEnvMockTest"
 
