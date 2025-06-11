@@ -13641,13 +13641,11 @@ name = "strata-btcio"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "arbitrary",
  "bitcoin",
  "bitcoind-async-client",
  "borsh",
  "corepc-node",
  "hex",
- "mockall",
  "musig2",
  "rand 0.8.5",
  "reqwest 0.12.15",
