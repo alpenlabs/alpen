@@ -173,7 +173,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         // Make the fetch.
         let fetch_res = fetch_fn().await;
 
-        // Some error logging before we try to aquire locks.
+        // Some error logging before we try to acquire locks.
         if fetch_res.is_err() {
             error!("database fetch aborted");
         }
