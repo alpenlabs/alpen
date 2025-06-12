@@ -20,7 +20,7 @@ use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{BRIDGE_IN_AMOUNT, MAGIC_BYTES_LEN, RECOVER_AT_DELAY, SIGNET_BLOCK_TIME},
+    constants::{BRIDGE_IN_AMOUNT, RECOVER_AT_DELAY, SIGNET_BLOCK_TIME},
     errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
@@ -43,10 +43,6 @@ pub struct DepositArgs {
     #[argh(option)]
     fee_rate: Option<u64>,
 }
-
-/// Invalid magic bytes
-#[derive(Clone, Copy, Debug)]
-pub struct InvalidMagicBytesLength;
 
 pub async fn deposit(
     DepositArgs {
@@ -129,16 +125,6 @@ pub async fn deposit(
     // <recovery_address_pk>
     // <alpen_address>
     let magic_bytes = settings.magic_bytes.as_bytes();
-    // magic_bytes must be 4 bytes
-    if magic_bytes.len() != MAGIC_BYTES_LEN {
-        return Err(DisplayedError::UserError(
-            format!(
-                "Length of magic bytes '{}' is not {MAGIC_BYTES_LEN}. Check configuration",
-                settings.magic_bytes
-            ),
-            Box::new(InvalidMagicBytesLength),
-        ));
-    }
 
     let recovery_address_pk_bytes = recovery_address_pk.serialize();
     let alpen_address_bytes = alpen_address.as_slice();

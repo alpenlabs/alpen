@@ -16,7 +16,7 @@ use shrex::Hex;
 use terrors::OneOf;
 
 use crate::{
-    constants::{BRIDGE_ALPEN_ADDRESS, DEFAULT_NETWORK},
+    constants::{BRIDGE_ALPEN_ADDRESS, DEFAULT_NETWORK, MAGIC_BYTES_LEN},
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -104,6 +104,14 @@ impl Settings {
             )),
             _ => panic!("invalid config for signet - configure for esplora or bitcoind"),
         };
+
+        // magic_bytes must be 4 bytes
+        if from_file.magic_bytes.len() != MAGIC_BYTES_LEN {
+            return Err(OneOf::new(config::ConfigError::Message(format!(
+                "The length of magic bytes '{}' is not {MAGIC_BYTES_LEN}. Check configuration",
+                from_file.magic_bytes
+            ))));
+        }
 
         Ok(Settings {
             esplora: from_file.esplora,
