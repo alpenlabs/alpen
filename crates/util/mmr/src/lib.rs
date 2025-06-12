@@ -75,21 +75,44 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         }
     }
 
+    /// Returns the total number of elements we're allowed to insert into the
+    /// MMR, based on the roots size.
+    pub fn max_capacity(&self) -> u64 {
+        let peaks_len = self.peaks.len() as u64;
+
+        // To prevent overflow in this case.
+        if peaks_len == u64::BITS as u64 {
+            return u64::MAX;
+        }
+
+        // There's probably some bithacky thing to make this simpler.
+        (1 << peaks_len) - 1
+    }
+
+    /// Checks if we can insert a new element.  Returns error if not.
+    fn check_capacity(&self) -> Result<(), MerkleError> {
+        if self.num == self.max_capacity() {
+            return Err(MerkleError::MaxCapacity);
+        }
+        Ok(())
+    }
+
     /// Adds a new leaf to the MMR.
-    pub fn add_leaf(&mut self, leaf: MH::Hash) {
+    pub fn add_leaf(&mut self, leaf: MH::Hash) -> Result<(), MerkleError> {
+        self.check_capacity()?;
+
         if self.num == 0 {
             self.peaks[0] = leaf;
             self.num += 1;
-            return;
+            return Ok(());
         }
 
         // the number of elements in MMR is also the mask of peaks
         let peak_mask = self.num;
 
+        // Iterate through the height.
         let mut current_node = leaf;
-        // we iterate through the height
         let mut current_height = 0;
-
         while (peak_mask >> current_height) & 1 == 1 {
             let next_node = MH::hash_node(self.peaks[current_height], current_node);
 
@@ -102,6 +125,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
         self.peaks[current_height] = current_node;
         self.num += 1;
+
+        Ok(())
     }
 
     /// If the MMR has a power-of-2 number of elements, then this extracts the
@@ -110,6 +135,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         if self.num == 0 {
             return Err(MerkleError::NoElements);
         }
+
         if !self.num.is_power_of_two() && self.num != 1 {
             return Err(MerkleError::NotPowerOfTwo);
         }
@@ -123,11 +149,14 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         &mut self,
         next: MH::Hash,
         proof: &MerkleProof<MH::Hash>,
-    ) -> MerkleProof<MH::Hash> {
+    ) -> Result<MerkleProof<MH::Hash>, MerkleError> {
+        self.check_capacity()?;
+
         if self.num == 0 {
-            self.add_leaf(next);
-            return MerkleProof::new_zero();
+            self.add_leaf(next)?;
+            return Ok(MerkleProof::new_zero());
         }
+
         let mut updated_proof = proof.clone();
 
         let new_leaf_index = self.num;
@@ -154,7 +183,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         self.peaks[current_height] = current_node;
         self.num += 1;
 
-        updated_proof
+        Ok(updated_proof)
     }
 
     fn update_single_proof(
@@ -183,11 +212,14 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         &mut self,
         next: MH::Hash,
         proof_list: &mut [MerkleProof<MH::Hash>],
-    ) -> MerkleProof<MH::Hash> {
+    ) -> Result<MerkleProof<MH::Hash>, MerkleError> {
+        self.check_capacity()?;
+
         if self.num == 0 {
-            self.add_leaf(next);
-            return MerkleProof::new_zero();
+            self.add_leaf(next)?;
+            return Ok(MerkleProof::new_zero());
         }
+
         let mut new_proof = MerkleProof::<MH::Hash>::new_empty(self.num);
 
         let new_leaf_index = self.num;
@@ -226,7 +258,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         self.peaks[current_height] = current_node;
         self.num += 1;
 
-        new_proof
+        Ok(new_proof)
     }
 
     /// Verifies a single proof for a leaf against the current MMR state.
@@ -331,7 +363,9 @@ mod test {
         let list_of_hashes = generate_hashes_for_n_integers(n);
 
         (0..n).for_each(|i| {
-            let new_proof = mmr.add_leaf_updating_proof_list(list_of_hashes[i], &mut proof);
+            let new_proof = mmr
+                .add_leaf_updating_proof_list(list_of_hashes[i], &mut proof)
+                .expect("test: add leaf");
             proof.push(new_proof);
         });
         (mmr, proof)
@@ -394,7 +428,7 @@ mod test {
     }
 
     #[test]
-    fn check_five_hundred_elements() {
+    fn check_500_elements() {
         mmr_proof_for_specific_nodes(500, vec![0, 456]);
     }
 
@@ -403,7 +437,7 @@ mod test {
         let hashed1: Hash32 = Sha256::digest(b"first").into();
 
         let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
-        mmr.add_leaf(hashed1);
+        mmr.add_leaf(hashed1).expect("test: add leaf");
 
         assert_eq!(
             mmr.get_single_root(),
@@ -419,9 +453,9 @@ mod test {
         let hashed1: Hash32 = Sha256::digest(b"first").into();
 
         let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
-        mmr.add_leaf(hashed1);
-        mmr.add_leaf(hashed1);
-        mmr.add_leaf(hashed1);
+        mmr.add_leaf(hashed1).expect("test: add leaf");
+        mmr.add_leaf(hashed1).expect("test: add leaf");
+        mmr.add_leaf(hashed1).expect("test: add leaf");
 
         assert_eq!(mmr.get_single_root(), Err(MerkleError::NotPowerOfTwo));
     }
@@ -431,10 +465,10 @@ mod test {
         let hashed1: Hash32 = Sha256::digest(b"first").into();
 
         let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
-        mmr.add_leaf(hashed1);
-        mmr.add_leaf(hashed1);
-        mmr.add_leaf(hashed1);
-        mmr.add_leaf(hashed1);
+        mmr.add_leaf(hashed1).expect("test: add leaf");
+        mmr.add_leaf(hashed1).expect("test: add leaf");
+        mmr.add_leaf(hashed1).expect("test: add leaf");
+        mmr.add_leaf(hashed1).expect("test: add leaf");
 
         assert_eq!(
             mmr.get_single_root(),
@@ -464,19 +498,29 @@ mod test {
         let hashed3: Hash32 = Sha256::digest(b"fourth").into();
         let hashed4: Hash32 = Sha256::digest(b"fifth").into();
 
-        let new_proof = mmr.add_leaf_updating_proof_list(hashed0, &mut proof_list);
+        let new_proof = mmr
+            .add_leaf_updating_proof_list(hashed0, &mut proof_list)
+            .expect("test: add leaf");
         proof_list.push(new_proof);
 
-        let new_proof = mmr.add_leaf_updating_proof_list(hashed1, &mut proof_list);
+        let new_proof = mmr
+            .add_leaf_updating_proof_list(hashed1, &mut proof_list)
+            .expect("test: add leaf");
         proof_list.push(new_proof);
 
-        let new_proof = mmr.add_leaf_updating_proof_list(hashed2, &mut proof_list);
+        let new_proof = mmr
+            .add_leaf_updating_proof_list(hashed2, &mut proof_list)
+            .expect("test: add leaf");
         proof_list.push(new_proof);
 
-        let new_proof = mmr.add_leaf_updating_proof_list(hashed3, &mut proof_list);
+        let new_proof = mmr
+            .add_leaf_updating_proof_list(hashed3, &mut proof_list)
+            .expect("test: add leaf");
         proof_list.push(new_proof);
 
-        let new_proof = mmr.add_leaf_updating_proof_list(hashed4, &mut proof_list);
+        let new_proof = mmr
+            .add_leaf_updating_proof_list(hashed4, &mut proof_list)
+            .expect("test: add leaf");
         proof_list.push(new_proof);
 
         assert!(mmr.verify(&proof_list[0], &hashed0));
@@ -508,7 +552,9 @@ mod test {
         let num_hash = generate_hashes_for_n_integers(num_elems);
 
         for elem in num_hash.iter().take(num_elems) {
-            let new_proof = mmr.add_leaf_updating_proof(*elem, &proof);
+            let new_proof = mmr
+                .add_leaf_updating_proof(*elem, &proof)
+                .expect("test: add leaf");
             proof = new_proof;
         }
 
@@ -526,7 +572,9 @@ mod test {
         let num_hash = generate_hashes_for_n_integers(num_elems);
 
         for elem in num_hash.iter().take(num_elems) {
-            let new_proof = mmr.add_leaf_updating_proof_list(*elem, &mut proof_list);
+            let new_proof = mmr
+                .add_leaf_updating_proof_list(*elem, &mut proof_list)
+                .expect("test: add leaf");
             proof_list.push(new_proof);
         }
 

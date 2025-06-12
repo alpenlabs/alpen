@@ -13877,7 +13877,6 @@ dependencies = [
 name = "strata-mmr"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
  "borsh",
  "digest 0.10.7",
  "sha2 0.10.9",
