@@ -1409,6 +1409,7 @@ dependencies = [
  "strata-db",
  "strata-primitives",
  "strata-rocksdb",
+ "tracing",
  "tracing-subscriber 0.3.19",
 ]
 
