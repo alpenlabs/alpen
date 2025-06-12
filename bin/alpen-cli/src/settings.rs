@@ -131,6 +131,28 @@ mod tests {
     use toml;
 
     use super::*;
+    use crate::constants::MAGIC_BYTES_LEN;
+
+    #[test]
+    fn test_magic_bytes_length() {
+        let config = r#"
+            esplora = "https://esplora.testnet.alpenlabs.io"
+            bitcoind_rpc_user = "user"
+            bitcoind_rpc_pw = "pass"
+            bitcoind_rpc_endpoint = "http://127.0.0.1:38332"
+            alpen_endpoint = "https://rpc.testnet.alpenlabs.io"
+            faucet_endpoint = "https://faucet-api.testnet.alpenlabs.io"
+            mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
+            blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
+            bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
+            magic_bytes = "alpn"
+            network = "signet"
+        "#;
+
+        let parsed: SettingsFromFile =
+            toml::from_str(config).expect("failed to parse SettingsFromFile from TOML");
+        assert!(parsed.magic_bytes.as_bytes().len() == MAGIC_BYTES_LEN);
+    }
 
     #[test]
     fn test_settings_from_file_serde_roundtrip() {
@@ -144,7 +166,7 @@ mod tests {
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
-            magic_bytes = "alpenstrata"
+            magic_bytes = "alpn"
             network = "signet"
         "#;
 
