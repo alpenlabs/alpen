@@ -3,11 +3,20 @@
 # An utility script that requests EE proof from the prover and wait for the result.
 # P.S. the URLs are configured to be used with docker-compose-testing.yml
 
-# Ethereum node RPC URL
-RPC_URL="http://localhost:8545"
+# --- CONFIGURATION PROFILES ---
+MODE=${1:-local}  # default to 'local' if not specified
 
-# Prover client RPC URL
-PROVER_URL="http://localhost:9851"
+if [[ "$MODE" == "local" ]]; then
+    RPC_URL="http://localhost:12603"
+    PROVER_URL="http://localhost:12900"
+elif [[ "$MODE" == "docker" ]]; then
+    RPC_URL="http://localhost:8545"
+    PROVER_URL="http://localhost:9851"
+else
+    echo "❌ Unknown mode: $MODE"
+    echo "Usage: $0 [local|docker]"
+    exit 1
+fi
 
 set -e  # stop on first error
 
