@@ -243,7 +243,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         // Load the entry and insert it into the slot we've already reserved.
         let fetch_res = fetch_fn();
 
-        // Some error logging before we try to aquire locks.
+        // Some error logging before we try to acquire locks.
         if let Err(e) = fetch_res.as_ref() {
             warn!(?e, "failed to make database fetch");
         }
