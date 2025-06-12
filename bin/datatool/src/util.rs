@@ -15,6 +15,7 @@ use bitcoin::{base58, bip32::Xpriv, Network};
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use secp256k1::SECP256K1;
+use shrex::Hex;
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_primitives::{
     block_credential,
@@ -222,14 +223,14 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
         let p2p_pk = EvenSecretKey::from(op_keys.message_xpriv().private_key)
             .x_only_public_key(SECP256K1)
             .0;
-        println!("{}", base58::encode_check(&p2p_pk.serialize()));
+        println!("{:?}", Hex(p2p_pk.serialize()));
     }
 
     if cmd.wallet {
         let wallet_pk = EvenSecretKey::from(op_keys.wallet_xpriv().private_key)
             .x_only_public_key(SECP256K1)
             .0;
-        println!("{}", base58::encode_check(&wallet_pk.serialize()));
+        println!("{:?}", Hex(wallet_pk.serialize()));
     }
 
     Ok(())

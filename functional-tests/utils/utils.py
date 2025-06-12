@@ -335,13 +335,13 @@ def generate_seqpubkey_from_seed(path: str) -> str:
 
 
 def generate_opxpub_from_seed(path: str) -> str:
-    """Generates operate pubkey from seed at file path."""
+    """Generates operator Musig2 pubkey from xprv at file path."""
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genopxpub",
-        "-f", path
+        "-f", path,
+        "-w"
     ]
     # fmt: on
 
