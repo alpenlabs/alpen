@@ -8,7 +8,7 @@ from utils import *
 
 
 @flexitest.register
-class SyncGenesisTest(testenv.StrataTester):
+class SyncGenesisTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(testenv.BasicEnvConfig(101))
 

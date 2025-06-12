@@ -11,7 +11,7 @@ from utils import *
 
 
 @flexitest.register
-class BitcoinReorgChecksTest(testenv.StrataTester):
+class BitcoinReorgChecksTest(testenv.StrataTestBase):
     """This tests finalization when there is reorg on L1"""
 
     def __init__(self, ctx: flexitest.InitContext):

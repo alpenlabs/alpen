@@ -12,7 +12,7 @@ REORG_DEPTH = 3
 
 
 @flexitest.register
-class L1ReadReorgTest(testenv.StrataTester):
+class L1ReadReorgTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         # standalone env for this test as it involves mutating the blockchain via invalidation
         ctx.set_env(BasicEnvConfig(110))

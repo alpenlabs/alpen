@@ -6,7 +6,7 @@ from envs import testenv
 
 
 @flexitest.register
-class ElBlockStateDiffDataGenerationTest(testenv.StrataTester):
+class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("load_reth")
 

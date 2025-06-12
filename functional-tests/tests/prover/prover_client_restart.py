@@ -11,7 +11,7 @@ from utils import (
 
 
 @flexitest.register
-class ProverClientRestartTest(testenv.StrataTester):
+class ProverClientRestartTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         # A separate standalone env for this test as it involves a restart
         # and the rollup settings are non-standard.

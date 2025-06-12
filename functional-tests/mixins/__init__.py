@@ -6,7 +6,7 @@ from utils.evm_account import FundedAccount, GenesisAccount
 from utils.transaction import EthTransactions
 
 
-class BaseMixin(testenv.StrataTester):
+class BaseMixin(testenv.StrataTestBase):
     def premain(self, ctx: flexitest.RunContext):
         super().premain(ctx)
         self._ctx = ctx

@@ -8,7 +8,7 @@ from utils import wait_for_genesis
 
 
 @flexitest.register
-class ElBlockGenerationTest(testenv.StrataTester):
+class ElBlockGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(testenv.BasicEnvConfig(110))
 

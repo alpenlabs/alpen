@@ -9,7 +9,7 @@ BLOCK_NUMBER = 4
 
 
 @flexitest.register
-class RecentBlocksTest(testenv.StrataTester):
+class RecentBlocksTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

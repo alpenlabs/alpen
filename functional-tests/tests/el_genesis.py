@@ -4,7 +4,7 @@ from envs import testenv
 
 
 @flexitest.register
-class ElGenesisTest(testenv.StrataTester):
+class ElGenesisTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

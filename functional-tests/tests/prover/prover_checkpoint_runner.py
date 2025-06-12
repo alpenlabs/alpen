@@ -15,7 +15,7 @@ PROVER_CHECKPOINT_SETTINGS = {
 
 
 @flexitest.register
-class ProverCheckpointRunnerTest(testenv.StrataTester):
+class ProverCheckpointRunnerTest(testenv.StrataTestBase):
     """This tests the prover's checkpoint runner with an unreliable sequencer service."""
 
     def __init__(self, ctx: flexitest.InitContext):
