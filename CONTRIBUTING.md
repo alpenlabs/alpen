@@ -82,6 +82,7 @@ you can run the basic CI checks in your local environment:
   modern test runner for Rust.
 - [`cargo-audit`](https://docs.rs/cargo-audit/latest/cargo_audit/):
   tool to check `Cargo.lock` files for security vulnerabilities.
+- [`bitcoind`](https://bitcoin.org/en/download): to run the unit and functional tests.
 - Functional test runner:
   to run functional tests, see instructions in its
   [`README.md`](./functional-tests/README.md).
