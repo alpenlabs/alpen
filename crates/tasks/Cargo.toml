@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-tasks"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow.workspace = true
 futures-util.workspace = true
@@ -11,4 +14,3 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-arbitrary.workspace = true

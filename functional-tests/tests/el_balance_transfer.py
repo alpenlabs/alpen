@@ -52,6 +52,11 @@ class ElBalanceTransferTest(testenv.StrataTester):
         assert dest_original_balance + transfer_amount == dest_final_balance
 
         basefee_balance_change = basefee_final_balance - basefee_original_balance
+        self.debug(
+            f"basefee balance change: {basefee_balance_change} "
+            f"before: {basefee_original_balance} "
+            f"after: {basefee_final_balance}"
+        )
         assert basefee_balance_change > 0
         beneficiary_balance_change = beneficiary_final_balance - beneficiary_original_balance
         assert beneficiary_balance_change > 0

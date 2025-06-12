@@ -7,15 +7,13 @@ use tracing::{info, warn};
 
 use crate::{errors::ProvingTaskError, status::ProvingTaskStatus};
 
-pub(crate) const MAX_RETRY_COUNTER: u64 = 15;
-
 /// Manages tasks and their states for proving operations.
 #[derive(Debug, Clone)]
-pub struct TaskTracker {
+pub(crate) struct TaskTracker {
     /// A map of task IDs to their statuses.
     tasks: HashMap<ProofKey, ProvingTaskStatus>,
     /// A map of task IDs that have failed (transiently) to their retry counter.
-    /// Such a task will be retried for up to [`MAX_RETRY_COUNTER`] times.
+    /// Such a task will be retried for up to the configured max retry counter times.
     transient_failed_tasks: HashMap<ProofKey, u64>,
     /// A map of task IDs to their dependencies that have not yet been proven.
     pending_dependencies: HashMap<ProofKey, HashSet<ProofKey>>,
@@ -27,7 +25,7 @@ pub struct TaskTracker {
 
 impl TaskTracker {
     /// Creates a new `TaskTracker` instance.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut vms = vec![];
 
         #[cfg(feature = "sp1")]
@@ -54,11 +52,11 @@ impl TaskTracker {
         }
     }
 
-    pub fn get_in_progress_tasks(&self) -> &HashMap<ProofZkVm, usize> {
+    pub(crate) fn get_in_progress_tasks(&self) -> &HashMap<ProofZkVm, usize> {
         &self.in_progress_tasks
     }
 
-    pub fn get_retriable_tasks(&self) -> HashMap<ProofKey, u64> {
+    pub(crate) fn get_retriable_tasks(&self) -> HashMap<ProofKey, u64> {
         let transient_failures = self
             .get_tasks_by_status(|status| matches!(status, ProvingTaskStatus::TransientFailure));
 
@@ -70,13 +68,13 @@ impl TaskTracker {
         retriable_tasks
     }
 
-    pub fn get_waiting_for_dependencies_tasks(&self) -> Vec<ProofKey> {
+    pub(crate) fn get_waiting_for_dependencies_tasks(&self) -> Vec<ProofKey> {
         self.get_tasks_by_status(|status| {
             matches!(status, ProvingTaskStatus::WaitingForDependencies)
         })
     }
 
-    pub fn create_tasks(
+    pub(crate) fn create_tasks(
         &mut self,
         proof_id: ProofContext,
         deps: Vec<ProofContext>,
@@ -102,7 +100,7 @@ impl TaskTracker {
     /// - If dependencies are provided, the task is marked as `WaitingForDependencies`.
     ///
     /// Returns an error if the task already exists.
-    pub fn insert_task(
+    pub(crate) fn insert_task(
         &mut self,
         id: ProofKey,
         deps: &[ProofKey],
@@ -141,7 +139,7 @@ impl TaskTracker {
     /// Retrieves the status of a task by its ID.
     ///
     /// Returns an error if the task does not exist.
-    pub fn get_task(&self, id: ProofKey) -> Result<&ProvingTaskStatus, ProvingTaskError> {
+    pub(crate) fn get_task(&self, id: ProofKey) -> Result<&ProvingTaskStatus, ProvingTaskError> {
         self.tasks
             .get(&id)
             .ok_or(ProvingTaskError::TaskNotFound(id))
@@ -151,13 +149,14 @@ impl TaskTracker {
     ///
     /// - Allows valid transitions as per the state machine.
     /// - Automatically resolves dependencies if a task is completed.
-    /// - Handles transient failures with the limit.
+    /// - Handles transient failures with the configurable limit.
     ///
     /// Returns an error for invalid transitions or if the task does not exist.
-    pub fn update_status(
+    pub(crate) fn update_status(
         &mut self,
         id: ProofKey,
         new_status: ProvingTaskStatus,
+        max_retry_counter: u64,
     ) -> Result<(), ProvingTaskError> {
         if let Some(status) = self.tasks.get_mut(&id) {
             // Check for valid status transitions
@@ -202,7 +201,7 @@ impl TaskTracker {
                     let retry_counter = self.transient_failed_tasks.entry(id);
                     match retry_counter {
                         Entry::Occupied(mut entry) => {
-                            if *entry.get() >= MAX_RETRY_COUNTER {
+                            if *entry.get() >= max_retry_counter {
                                 // If the task has reached the retry limit, transition to Failed.
                                 status.transition(ProvingTaskStatus::Failed)?;
                                 self.transient_failed_tasks.remove(&id);
@@ -251,7 +250,7 @@ impl TaskTracker {
     /// let pending_tasks =
     ///     task_tracker.get_tasks_by_status(|status| matches!(status, ProvingTaskStatus::Pending));
     /// ```
-    pub fn get_tasks_by_status<F>(&self, filter_fn: F) -> Vec<ProofKey>
+    pub(crate) fn get_tasks_by_status<F>(&self, filter_fn: F) -> Vec<ProofKey>
     where
         F: Fn(&ProvingTaskStatus) -> bool,
     {
@@ -268,11 +267,11 @@ impl TaskTracker {
     }
 
     /// Generates a report of task statuses and their counts across all tasks.
-    pub fn generate_report(&self) -> HashMap<String, usize> {
+    pub(crate) fn generate_report(&self) -> HashMap<String, usize> {
         let mut report: HashMap<String, usize> = HashMap::new();
 
         for status in self.tasks.values() {
-            *report.entry(format!("{:?}", status)).or_insert(0) += 1;
+            *report.entry(format!("{status:?}")).or_insert(0) += 1;
         }
 
         report
@@ -280,7 +279,7 @@ impl TaskTracker {
 
     /// Clears the internal state of the [`TaskTracker`], should be used only in testing.
     #[cfg(test)]
-    pub fn clear_state(&mut self) {
+    pub(crate) fn clear_state(&mut self) {
         self.tasks.clear();
         self.in_progress_tasks.clear();
         self.pending_dependencies.clear();
@@ -361,8 +360,9 @@ mod tests {
     fn test_task_not_found_error() {
         let mut tracker = TaskTracker::new();
         let (id, _) = gen_task_with_deps(0);
+        let max_retry_counter = 15u64;
 
-        let result = tracker.update_status(id, ProvingTaskStatus::Pending);
+        let result = tracker.update_status(id, ProvingTaskStatus::Pending, max_retry_counter);
         assert!(matches!(result, Err(ProvingTaskError::TaskNotFound(_))));
     }
 
@@ -371,6 +371,7 @@ mod tests {
         let mut tracker = TaskTracker::new();
         let (id, deps) = gen_task_with_deps(2);
         let db = setup_db();
+        let max_retry_counter = 15u64;
 
         for dep in &deps {
             tracker.insert_task(*dep, &[], &db).unwrap();
@@ -379,8 +380,14 @@ mod tests {
 
         for dep in &deps {
             tracker
-                .update_status(*dep, ProvingTaskStatus::ProvingInProgress)
-                .and_then(|_| tracker.update_status(*dep, ProvingTaskStatus::Completed))
+                .update_status(
+                    *dep,
+                    ProvingTaskStatus::ProvingInProgress,
+                    max_retry_counter,
+                )
+                .and_then(|_| {
+                    tracker.update_status(*dep, ProvingTaskStatus::Completed, max_retry_counter)
+                })
                 .unwrap();
         }
         assert!(
@@ -394,17 +401,18 @@ mod tests {
         let mut tracker = TaskTracker::new();
         let (id, _) = gen_task_with_deps(0);
         let db = setup_db();
+        let max_retry_counter = 15u64; // Use a specific test value
 
         // Insert task and mark it as in progress.
         tracker.insert_task(id, &[], &db).unwrap();
         tracker
-            .update_status(id, ProvingTaskStatus::ProvingInProgress)
+            .update_status(id, ProvingTaskStatus::ProvingInProgress, max_retry_counter)
             .unwrap();
 
-        // Check transient failures up to MAX_RETRY_COUNTER.
-        for _ in 0..MAX_RETRY_COUNTER {
+        // Check transient failures up to max_retry_counter.
+        for _ in 0..max_retry_counter {
             tracker
-                .update_status(id, ProvingTaskStatus::TransientFailure)
+                .update_status(id, ProvingTaskStatus::TransientFailure, max_retry_counter)
                 .unwrap();
             assert!(matches!(
                 tracker.get_task(id),
@@ -413,13 +421,13 @@ mod tests {
 
             // Update back to in progress.
             tracker
-                .update_status(id, ProvingTaskStatus::ProvingInProgress)
+                .update_status(id, ProvingTaskStatus::ProvingInProgress, max_retry_counter)
                 .unwrap();
         }
 
         // Check the final transient failure that results in permanent failure.
         tracker
-            .update_status(id, ProvingTaskStatus::TransientFailure)
+            .update_status(id, ProvingTaskStatus::TransientFailure, max_retry_counter)
             .unwrap();
         assert!(matches!(
             tracker.get_task(id),

@@ -31,7 +31,7 @@ use crate::{errors::Error, genesis};
 ///
 /// Unable to be shared across threads.  Any data we want to export we'll do
 /// through another handle.
-#[allow(unused)]
+#[expect(missing_debug_implementations)]
 pub struct WorkerState {
     /// Consensus parameters.
     params: Arc<Params>,

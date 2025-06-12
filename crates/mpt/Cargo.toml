@@ -1,0 +1,22 @@
+[package]
+description = "Implementation of the Merkle-Patricia Trie"
+edition = "2021"
+name = "strata-mpt"
+version = "0.1.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-rlp.workspace = true
+alloy-rlp-derive.workspace = true
+alloy-rpc-types-eth.workspace = true
+
+anyhow.workspace = true
+revm-primitives.workspace = true
+rlp = "0.5.2"
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hex-literal = "0.4"

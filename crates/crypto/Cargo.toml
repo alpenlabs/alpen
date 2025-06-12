@@ -3,19 +3,12 @@ edition = "2021"
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-primitives.workspace = true
-
-secp256k1.workspace = true
-sha2.workspace = true
 
 zkaleido.workspace = true
 zkaleido-risc0-groth16-verifier.workspace = true
 zkaleido-sp1-groth16-verifier.workspace = true
-
-[dev-dependencies]
-rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
-
-[features]
-default = ["rand"]
-rand = ["secp256k1/rand-std"]

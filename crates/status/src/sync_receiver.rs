@@ -4,6 +4,7 @@
 
 use tokio::{runtime::Handle, sync::watch};
 
+#[derive(Debug)]
 pub struct SyncReceiver<T> {
     rx: watch::Receiver<T>,
     rt: Handle,

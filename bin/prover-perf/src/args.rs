@@ -3,7 +3,7 @@ use clap::{command, Parser};
 use crate::programs::GuestProgram;
 
 /// Flags for CLI invocation being parsed.
-#[derive(Parser, Clone)]
+#[derive(Debug, Clone, Parser)]
 #[command(about = "Evaluate the performance of SP1 on programs.")]
 pub struct EvalArgs {
     /// Whether to post on github or run locally and only log the results.

@@ -112,8 +112,8 @@ fn generate_l1txs(blockdata: &BlockData) -> Vec<L1Tx> {
         .map(|tx_entry| {
             generate_l1_tx(
                 blockdata.block(),
-                tx_entry.index(),
-                tx_entry.contents().protocol_ops().to_vec(),
+                *tx_entry.index(),
+                tx_entry.item().protocol_ops().to_vec(),
             )
         })
         .collect()

@@ -3,8 +3,10 @@ edition = "2021"
 name = "strata-primitives"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
-anyhow.workspace = true
 arbitrary.workspace = true
 bincode.workspace = true
 bitcoin = { workspace = true, features = ["serde", "rand-std"] }
@@ -18,21 +20,23 @@ borsh.workspace = true
 const-hex = "1.14"
 digest.workspace = true
 hex.workspace = true
-k256 = { version = "0.13.4", features = ["schnorr"] }
 musig2 = { workspace = true, features = ["serde"] }
 num_enum.workspace = true
 rand = { workspace = true, optional = true }
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
-serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 zeroize.workspace = true
 zkaleido.workspace = true
 
+[target.'cfg(target_os = "zkvm")'.dependencies]
+k256 = { version = "0.13.4", features = ["schnorr"] }
+
 [dev-dependencies]
 strata-test-utils.workspace = true
+
+serde_json.workspace = true
 
 [features]
 default = ["std", "rand"]

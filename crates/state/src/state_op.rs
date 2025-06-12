@@ -88,6 +88,7 @@ pub fn apply_write_batch_to_chainstate(_chainstate: Chainstate, batch: &WriteBat
 /// If we ever have a large state that's persisted to disk, this will eventually
 /// be made generic over a state provider that exposes access to that and then
 /// the `WriteBatch` will include writes that can be made to that.
+#[derive(Debug)]
 pub struct StateCache {
     /// Original toplevel state that we started from, in case we need to reference it.
     original_state: Chainstate,
@@ -114,7 +115,7 @@ impl StateCache {
         &self.new_state
     }
 
-    fn state_mut(&mut self) -> &mut Chainstate {
+    pub fn state_mut(&mut self) -> &mut Chainstate {
         &mut self.new_state
     }
 
@@ -302,7 +303,20 @@ impl StateCache {
         };
     }
 
-    /// Updates the deposit state to Fulfilled.
+    /// Returns if the deposit with some idx exists or not.
+    pub fn check_deposit_exists(&self, deposit_idx: u32) -> bool {
+        self.state()
+            .deposits_table()
+            .get_deposit(deposit_idx)
+            .is_some()
+    }
+
+    /// Updates the deposit state to `Fulfilled`.
+    ///
+    /// # Panics
+    ///
+    /// If the deposit idx being referenced by the withdrawal fulfillment info
+    /// does not exist.
     pub fn mark_deposit_fulfilled(&mut self, winfo: &WithdrawalFulfillmentInfo) {
         let deposit_ent = self.deposit_entry_mut_expect(winfo.deposit_idx);
 
@@ -318,7 +332,12 @@ impl StateCache {
         )));
     }
 
-    // Updates the deposit state as Reimbursed.
+    /// Updates the deposit state as `Reimbursed`.
+    ///
+    /// # Panics
+    ///
+    /// If the deposit idx being referenced by the withdrawal fulfillment info
+    /// does not exist.
     pub fn mark_deposit_reimbursed(&mut self, deposit_idx: u32) {
         let deposit_ent = self.deposit_entry_mut_expect(deposit_idx);
 

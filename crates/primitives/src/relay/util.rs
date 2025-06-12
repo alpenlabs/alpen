@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Contains data needed to construct [`BridgeMessage`]s.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MessageSigner {
     operator_idx: u32,
     msg_signing_sk: Buf32,

@@ -11,6 +11,7 @@ pub trait OperatorKeyProvider {
 }
 
 /// Stub key provider that can be used for testing.
+#[derive(Debug)]
 pub struct StubOpKeyProv {
     expected_idx: OperatorIdx,
     pk: Buf32,

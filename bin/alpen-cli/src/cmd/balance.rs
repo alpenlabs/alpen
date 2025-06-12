@@ -63,7 +63,7 @@ pub async fn balance(
             .expect("to fit into u64");
         let balance = Amount::from_sat(sats);
 
-        println!("\nTotal: {}", balance);
+        println!("\nTotal: {balance}");
     }
     Ok(())
 }

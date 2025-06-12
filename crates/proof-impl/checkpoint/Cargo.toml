@@ -3,19 +3,13 @@ edition = "2021"
 name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
-bitcoin.workspace = true
-borsh.workspace = true
-ethnum = "1.5.0"
-serde.workspace = true
-serde_json = "1.0.127"
-strata-primitives.workspace = true
-strata-proofimpl-btc-blockspace.workspace = true
 strata-proofimpl-cl-stf.workspace = true
 strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
 [dev-dependencies]
-rand.workspace = true
-strata-test-utils.workspace = true

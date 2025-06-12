@@ -3,22 +3,19 @@ edition = "2021"
 name = "strata-proofimpl-btc-blockspace"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-l1tx.workspace = true
 strata-primitives.workspace = true
-strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
 bitcoin = { workspace = true, features = ["serde"] }
 borsh.workspace = true
-digest.workspace = true
-serde = { workspace = true, features = ["derive"] }
-sha2.workspace = true
 
 [dev-dependencies]
-hex.workspace = true
 rand.workspace = true
-strata-btcio.workspace = true
 strata-l1tx = { workspace = true, features = ["test_utils"] }
 strata-test-utils = { workspace = true }

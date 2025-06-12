@@ -1,3 +1,5 @@
+//! Sync for the Alpen codebase.
+
 mod client;
 mod error;
 mod state;

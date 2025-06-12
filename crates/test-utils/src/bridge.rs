@@ -13,6 +13,7 @@ use bitcoin::{
 use musig2::{KeyAggContext, SecNonce};
 use rand::{rngs::OsRng, seq::SliceRandom, RngCore};
 use strata_primitives::{
+    bitcoin_bosd,
     bridge::{OperatorIdx, PublickeyTable, TxSigningData},
     l1::{BitcoinPsbt, BitcoinTxOut, OutputRef, TaprootSpendPath},
 };
@@ -183,4 +184,23 @@ pub fn generate_sec_nonce(
 /// It only exists to simplify imports and allow for easier refactoring.
 pub fn permute<T: Clone>(list: &mut [T]) {
     list.shuffle(&mut OsRng);
+}
+
+/// Creates an OP_RETURN metadata script.
+pub fn create_opreturn_metadata(
+    magic: [u8; 4],
+    operator_idx: u32,
+    deposit_idx: u32,
+    deposit_txid: &[u8; 32],
+) -> ScriptBuf {
+    let mut metadata = [0u8; 44];
+    metadata[..4].copy_from_slice(&magic);
+    // first 4 bytes = operator idx
+    metadata[4..8].copy_from_slice(&operator_idx.to_be_bytes());
+    // next 4 bytes = deposit idx
+    metadata[8..12].copy_from_slice(&deposit_idx.to_be_bytes());
+    metadata[12..44].copy_from_slice(deposit_txid);
+    bitcoin_bosd::Descriptor::new_op_return(&metadata)
+        .unwrap()
+        .to_script()
 }

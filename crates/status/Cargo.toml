@@ -3,9 +3,11 @@ edition = "2021"
 name = "strata-status"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-primitives.workspace = true
-strata-rpc-types.workspace = true
 strata-state.workspace = true
 
 thiserror.workspace = true

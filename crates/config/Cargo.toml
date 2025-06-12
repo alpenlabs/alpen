@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-config"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 bitcoin.workspace = true
 serde.workspace = true

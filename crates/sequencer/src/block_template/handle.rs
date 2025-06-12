@@ -28,6 +28,7 @@ pub enum TemplateManagerRequest {
 }
 
 /// Handle for communication with the template manager worker.
+#[expect(missing_debug_implementations)]
 pub struct TemplateManagerHandle {
     tx: mpsc::Sender<TemplateManagerRequest>,
     shared: SharedState,

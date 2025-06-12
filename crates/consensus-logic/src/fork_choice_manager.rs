@@ -3,8 +3,11 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use strata_chaintsn::transition::process_block;
+use strata_common::retry::{
+    policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
+};
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
-use strata_eectl::{engine::ExecEngineCtl, messages::ExecPayloadData};
+use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
 use strata_primitives::{
     epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, params::Params,
 };
@@ -34,6 +37,7 @@ use crate::{
 };
 
 /// Tracks the parts of the chain that haven't been finalized on-chain yet.
+#[expect(missing_debug_implementations)]
 pub struct ForkChoiceManager {
     /// Consensus parameters.
     params: Arc<Params>,
@@ -82,6 +86,7 @@ impl ForkChoiceManager {
     }
 
     // TODO is this right?
+    #[expect(unused)]
     fn finalized_tip(&self) -> &L2BlockId {
         self.chain_tracker.finalized_tip()
     }
@@ -113,6 +118,7 @@ impl ForkChoiceManager {
         Ok(block.header().slot())
     }
 
+    #[expect(unused)]
     fn get_block_chainstate(
         &self,
         block: &L2BlockCommitment,
@@ -144,6 +150,7 @@ impl ForkChoiceManager {
         Ok(new_tip)
     }
 
+    #[expect(unused)]
     fn get_chainstate_cur_epoch(&self) -> u64 {
         self.cur_chainstate.cur_epoch()
     }
@@ -152,6 +159,7 @@ impl ForkChoiceManager {
         self.cur_chainstate.prev_epoch()
     }
 
+    #[expect(unused)]
     fn get_chainstate_finalized_epoch(&self) -> &EpochCommitment {
         self.cur_chainstate.finalized_epoch()
     }
@@ -190,6 +198,9 @@ impl ForkChoiceManager {
 
     fn find_latest_finalizable_epoch(&self) -> Option<(usize, &EpochCommitment)> {
         // the latest epoch which we have processed and is safe to finalize
+        if self.cur_chainstate.prev_epoch().is_null() {
+            return None;
+        }
         let prev_epoch = self.cur_chainstate.prev_epoch().epoch();
         self.epochs_pending_finalization
             .iter()
@@ -506,6 +517,9 @@ fn process_fc_message(
             let ok = match handle_new_block(fcm_state, &blkid, &block_bundle, engine) {
                 Ok(v) => v,
                 Err(e) => {
+                    if let Some(EngineError::Other(_)) = e.downcast_ref() {
+                        return Err(e);
+                    }
                     // Really we shouldn't emit this error unless there's a
                     // problem checking the block in general and it could be
                     // valid or invalid, but we're kinda sloppy with errors
@@ -519,6 +533,9 @@ fn process_fc_message(
                 // check if any pending blocks can be finalized
                 if let Err(err) = handle_epoch_finalization(fcm_state, engine) {
                     error!(%err, "failed to finalize epoch");
+                    if let Some(EngineError::Other(_)) = err.downcast_ref() {
+                        return Err(err);
+                    }
                 }
 
                 // Update status.
@@ -571,9 +588,15 @@ fn handle_new_block(
     // actually have a well-formed accessory and it gets mad at us.
     if slot > 0 {
         let exec_hash = bundle.header().exec_payload_hash();
-        let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
         debug!(?blkid, ?exec_hash, "submitting execution payload");
-        let res = engine.submit_payload(eng_payload)?;
+        let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
+
+        let res = retry_with_backoff(
+            "engine_submit_payload",
+            DEFAULT_ENGINE_CALL_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            || engine.submit_payload(eng_payload.clone()),
+        )?;
 
         // If the payload is invalid then we should write the full block as
         // being invalid and return too.
@@ -620,7 +643,12 @@ fn handle_new_block(
             // Also this is the point at which we update the engine head and
             // safe blocks.  We only have to actually call this one, it counts
             // for both.
-            engine.update_safe_block(tip_blkid)?;
+            retry_with_backoff(
+                "engine_update_safe_block",
+                DEFAULT_ENGINE_CALL_MAX_RETRIES,
+                &ExponentialBackoff::default(),
+                || engine.update_safe_block(tip_blkid),
+            )?;
 
             Ok(true)
         }
@@ -971,6 +999,9 @@ fn handle_new_client_state(
     match handle_epoch_finalization(fcm_state, engine) {
         Err(err) => {
             error!(%err, "failed to finalize epoch");
+            if let Some(EngineError::Other(_)) = err.downcast_ref() {
+                return Err(err);
+            }
         }
         Ok(Some(finalized_epoch)) if finalized_epoch == new_fin_epoch => {
             debug!(?finalized_epoch, "finalized latest epoch");
@@ -1016,8 +1047,13 @@ fn handle_epoch_finalization(
         "got new CSM state, updating finalized block"
     );
 
-    // TODO error checking here ?
-    engine.update_finalized_block(*next_finalizable_epoch.last_blkid())?;
+    // Try calling engine with retries.
+    retry_with_backoff(
+        "engine_update_finalized",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || engine.update_finalized_block(*next_finalizable_epoch.last_blkid()),
+    )?;
 
     let fin_report = fcm_state
         .chain_tracker

@@ -1,0 +1,13 @@
+[package]
+name = "strata-asm-proto-core"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+borsh.workspace = true
+strata-asm-common.workspace = true
+strata-primitives.workspace = true
+zkaleido.workspace = true

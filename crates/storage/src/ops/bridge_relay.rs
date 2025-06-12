@@ -8,6 +8,7 @@ use strata_primitives::relay::types::BridgeMessage;
 use crate::exec::*;
 
 /// Database context for an database operation interface.
+#[derive(Debug)]
 pub struct Context<D: BridgeMessageDb> {
     db: Arc<D>,
 }

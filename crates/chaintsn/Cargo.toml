@@ -3,13 +3,14 @@ edition = "2021"
 name = "strata-chaintsn"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-crypto.workspace = true
-strata-eectl.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 
-anyhow.workspace = true
 bitcoin.workspace = true
 rand_chacha.workspace = true
 rand_core.workspace = true
@@ -17,7 +18,6 @@ thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
-arbitrary.workspace = true
 strata-test-utils.workspace = true
 
 

@@ -73,7 +73,7 @@ pub(crate) struct ProverClientRpc {
 }
 
 impl ProverClientRpc {
-    pub fn new(
+    pub(crate) fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDb>,
@@ -83,6 +83,15 @@ impl ProverClientRpc {
             operator,
             db,
         }
+    }
+
+    /// Start the RPC server with the given URL and dev RPC enablement
+    pub(crate) async fn start_server(
+        &self,
+        rpc_url: String,
+        enable_dev_rpc: bool,
+    ) -> anyhow::Result<()> {
+        start(self, rpc_url, enable_dev_rpc).await
     }
 }
 

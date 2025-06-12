@@ -60,7 +60,7 @@ pub async fn post_to_github_pr(
 // Helper function to apply common GitHub headers
 fn set_github_headers(builder: RequestBuilder, token: &str) -> RequestBuilder {
     builder
-        .header("Authorization", format!("Bearer {}", token))
+        .header("Authorization", format!("Bearer {token}"))
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "zkaleido-perf-bot")
 }

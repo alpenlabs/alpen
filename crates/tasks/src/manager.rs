@@ -74,6 +74,7 @@ impl Display for TaskError {
 /// [`TaskManager`] spawns and tracks long running tasks,
 /// watches for task panics and manages graceful shutdown
 /// on critical task panics and external signals.
+#[derive(Debug)]
 pub struct TaskManager {
     /// Tokio's runtime [`Handle`].
     tokio_handle: Handle,

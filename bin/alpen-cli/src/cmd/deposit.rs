@@ -3,7 +3,9 @@ use std::{str::FromStr, time::Duration};
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
 use argh::FromArgs;
 use bdk_wallet::{
-    bitcoin::{taproot::LeafVersion, Address, ScriptBuf, TapNodeHash, XOnlyPublicKey},
+    bitcoin::{
+        script::PushBytesBuf, taproot::LeafVersion, Address, ScriptBuf, TapNodeHash, XOnlyPublicKey,
+    },
     chain::ChainOracle,
     coin_selection::InsufficientFunds,
     descriptor::IntoWalletDescriptor,
@@ -14,7 +16,6 @@ use bdk_wallet::{
 };
 use colored::Colorize;
 use indicatif::ProgressBar;
-use make_buf::make_buf;
 use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
@@ -29,14 +30,12 @@ use crate::{
     taproot::{ExtractP2trPubkey, NotTaprootAddress},
 };
 
-/// Magic bytes to attach to the deposit request.
-pub const MAGIC_BYTES: &[u8] = r"alpen".as_bytes();
-
-/// Deposit 10 BTC from signet to Alpen. If an address is not provided, the wallet's internal
-/// Alpen address will be used.
+/// Deposits 10 BTC from signet into Alpen
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "deposit")]
 pub struct DepositArgs {
+    /// the Alpen address to deposit the funds into. defaults to the
+    /// wallet's internal address.
     #[argh(positional)]
     alpen_address: Option<String>,
 
@@ -125,21 +124,27 @@ pub async fn deposit(
     // <magic_bytes>
     // <recovery_address_pk>
     // <alpen_address>
-    const MBL: usize = MAGIC_BYTES.len();
-    const XONLYPK: usize = 32; // X-only PKs are 32-bytes in P2TR SegWit v1 addresses
-    const ALPEN_ADDRESS_LEN: usize = 20; // EVM addresses are 20 bytes long
-    let op_return_data = make_buf! {
-        (MAGIC_BYTES, MBL),
-        (&recovery_address_pk.serialize(), XONLYPK),
-        (alpen_address.as_slice(), ALPEN_ADDRESS_LEN)
-    };
+    let magic_bytes = settings.magic_bytes.as_bytes();
+    let recovery_address_pk_bytes = recovery_address_pk.serialize();
+    let alpen_address_bytes = alpen_address.as_slice();
+    let mut op_return_data = Vec::with_capacity(
+        magic_bytes.len() + recovery_address_pk_bytes.len() + alpen_address_bytes.len(),
+    );
+
+    op_return_data.extend_from_slice(magic_bytes);
+    op_return_data.extend_from_slice(&recovery_address_pk_bytes);
+    op_return_data.extend_from_slice(alpen_address_bytes);
+
+    // Convert to PushBytes (ensures length ≤ 80 bytes)
+    let push_bytes = PushBytesBuf::try_from(op_return_data)
+        .expect("conversion should succeed after length check");
 
     let mut psbt = {
         let mut builder = l1w.build_tx();
         // Important: the deposit won't be found by the sequencer if the order isn't correct.
         builder.ordering(TxOrdering::Untouched);
         builder.add_recipient(bridge_in_address.script_pubkey(), BRIDGE_IN_AMOUNT);
-        builder.add_data(&op_return_data);
+        builder.add_data(&push_bytes);
         builder.fee_rate(fee_rate);
         match builder.finish() {
             Ok(psbt) => psbt,
@@ -212,8 +217,7 @@ fn bridge_in_descriptor(
     // i have tried to extract it directly from the desc above
     // it is a massive pita
     let recovery_script = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
-        "and_v(v:pk({}),older({}))",
-        recovery_xonly_pubkey, RECOVER_DELAY
+        "and_v(v:pk({recovery_xonly_pubkey}),older({RECOVER_DELAY}))"
     ))
     .expect("valid recovery script")
     .encode();
@@ -231,7 +235,7 @@ mod tests {
 
     #[test]
     fn bridge_in_descriptor_script() {
-        pub const BRIDGE_MUSIG2_PUBKEY: &str =
+        pub(crate) const BRIDGE_MUSIG2_PUBKEY: &str =
             "14ced579c6a92533fa68ccc16da93b41073993cfc6cc982320645d8e9a63ee65";
 
         let bridge_musig2_pubkey = BRIDGE_MUSIG2_PUBKEY.parse::<XOnlyPublicKey>().unwrap();

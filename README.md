@@ -1,18 +1,18 @@
-# Strata
+# Alpen
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-blue.svg)](https://opensource.org/licenses/apache-2-0)
-[![codecov](https://codecov.io/gh/alpenlabs/strata/branch/main/graph/badge.svg?token=Q3ZYY44GN7)](https://codecov.io/gh/alpenlabs/strata)
-[![ci](https://github.com/alpenlabs/strata/actions/workflows/lint.yml/badge.svg?event=push)](https://github.com/alpenlabs/strata/actions)
+[![codecov](https://codecov.io/gh/alpenlabs/alpen/branch/main/graph/badge.svg?token=Q3ZYY44GN7)](https://codecov.io/gh/alpenlabs/strata)
+[![ci](https://github.com/alpenlabs/alpen/actions/workflows/lint.yml/badge.svg?event=push)](https://github.com/alpenlabs/alpen/actions)
 [![docs](https://img.shields.io/badge/docs-strata-orange)](https://docs.stratabtc.org)
 
 <p align="center">
-  <img src="https://docs.stratabtc.org/images/Strata_Small.png" alt="Strata Logo" width="21%">
+  <img src="https://raw.githubusercontent.com/alpenlabs/.github/76e8490215c5c1e21d98ad28380bdd88b1bf6e4d/profile/images/logo.png" alt="Alpen Labs Logo" width="21%">
 </p>
 
-[**Strata**](https://stratabtc.org) gives developers the freedom to program nearly
+[**Alpen**](https://alpenlabs.io) gives developers the freedom to program nearly
 any locking conditions for BTC imaginable,
-limited only by the Strata block size and gas limits.
+limited only by the Alpen block size and gas limits.
 This enables developers to create new kinds of applications for BTC
 with features such as:
 
@@ -34,39 +34,39 @@ with features such as:
 - **Financial transactions**,
   "if enough BTC is locked as collateral to maintain up
   to `X%` loan-to-value ratio,
-  then up to N of this other asset can be borrowed"
+  then up to `Y` of this other asset can be borrowed"
 
 ... and many more possibilities.
 
 Technically speaking,
-**Strata is a work-in-progress EVM-compatible validity rollup on bitcoin**.
+**Alpen is a work-in-progress EVM-compatible validity rollup on bitcoin**.
 Let's break down what this means:
 
-- **EVM-compatible**: The Strata block producer runs a client that is based on
+- **EVM-compatible**: The Alpen block producer runs a client that is based on
   [Reth](https://github.com/paradigmxyz/reth),
   an Ethereum execution client.
   So far, no changes have been made that affect compatibility with the EVM spec.
   If you can deploy a smart contract to Ethereum,
-  you can deploy it to Strata with no changes.
+  you can deploy it to Alpen with no changes.
 
-- **Validity rollup**: Every Strata state transition is proven to
+- **Validity rollup**: Every Alpen state transition is proven to
   be valid using cryptographic validity proofs,
   which clients can use for fast, low-cost verification.
 
-- **On bitcoin**: Strata uses bitcoin for consensus and data availability.
-  When a Strata block gets confirmed on bitcoin,
+- **On bitcoin**: Alpen uses bitcoin for consensus and data availability.
+  When an Alpen block gets confirmed on bitcoin,
   the only way to reorganize this block is to reorganize
-  the bitcoin block that the Strata block was confirmed in.
+  the bitcoin block that the Alpen block was confirmed in.
 
 To learn more, check our [documentation](https://docs.stratabtc.org).
 
 > [!IMPORTANT]
-> During the devnet phase,
-> Strata will be running on a private bitcoin signet,
-> and will use signet blocks to store state commitments rather than
-> the complete Strata state data,
-> making Strata function more like a commit chain than a rollup.
-> Support for full onchain data availability and for running Strata
+> Currently,
+> Alpen is running on a private bitcoin signet,
+> and uses signet blocks to store state commitments rather than
+> the complete Alpen state data,
+> making Alpen function more like a commit chain than a rollup.
+> Support for full onchain data availability and for running Alpen
 > on bitcoin mainnet are planned for future releases.
 
 ## Repository structure

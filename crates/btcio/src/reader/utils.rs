@@ -11,7 +11,7 @@ pub(crate) fn find_checkpoint(entries: &[RelevantTxEntry]) -> Option<&SignedChec
         .iter()
         .flat_map(|txentry| {
             txentry
-                .contents()
+                .item()
                 .protocol_ops()
                 .iter()
                 .filter_map(|op| match op {

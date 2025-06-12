@@ -26,6 +26,7 @@ use crate::constants::{
 #[cfg(not(target_os = "linux"))]
 use crate::errors::{NoStorageAccess, PlatformFailure};
 
+#[expect(missing_debug_implementations)]
 pub struct BaseWallet(LoadParams, CreateParams);
 
 impl BaseWallet {
@@ -35,6 +36,7 @@ impl BaseWallet {
 }
 
 #[derive(Clone)]
+#[expect(missing_debug_implementations)]
 // NOTE: This is not a BIP39 seed, instead random bytes of entropy.
 pub struct Seed(Zeroizing<[u8; SEED_LEN]>);
 
@@ -88,7 +90,7 @@ impl Seed {
 
     pub fn signet_wallet(&self) -> BaseWallet {
         let rootpriv = Xpriv::new_master(Network::Signet, self.0.as_ref()).expect("valid xpriv");
-        let base_desc = format!("tr({}/86h/0h/0h", rootpriv);
+        let base_desc = format!("tr({rootpriv}/86h/0h/0h");
         let external_desc = format!("{base_desc}/0/*)");
         let internal_desc = format!("{base_desc}/1/*)");
         BaseWallet(
@@ -122,6 +124,7 @@ impl Seed {
     }
 }
 
+#[expect(missing_debug_implementations)]
 pub struct EncryptedSeed([u8; Self::LEN]);
 
 impl EncryptedSeed {
@@ -215,7 +218,7 @@ pub fn load_or_create(
         let mut password = Password::read(true).map_err(OneOf::new)?;
         let password_validation: Result<(), String> = password.validate();
         if let Err(feedback) = password_validation {
-            println!("Password is weak. {}", feedback);
+            println!("Password is weak. {feedback}");
         };
         let encrypted_seed = match seed.encrypt(&mut password, &mut OsRng) {
             Ok(es) => es,

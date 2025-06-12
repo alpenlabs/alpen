@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// Add rollup specific customizations to EVM
-pub fn set_evm_handles<EXT, DB>(handler: &mut EvmHandler<EXT, DB>)
+pub fn set_evm_handles<EXT, DB>(handler: &mut EvmHandler<'_, EXT, DB>)
 where
     DB: Database,
 {

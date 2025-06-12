@@ -44,7 +44,7 @@ const OPKEY_ENVVAR: &str = "STRATA_OP_KEY";
 const DEFAULT_NETWORK: Network = Network::Signet;
 
 /// The default evm chainspec to use in params.
-const DEFAULT_CHAIN_SPEC: &str = include_str!("../../alpen-reth/res/alpen-dev-chain.json");
+const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;
 
 /// Resolves a [`Network`] from a string.
 pub(super) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
@@ -78,6 +78,7 @@ pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
 /// # Errors
 ///
 /// Returns an error if the export process fails.
+#[allow(clippy::missing_const_for_fn)]
 fn export_elf(_elf_path: &Path) -> anyhow::Result<()> {
     #[cfg(feature = "sp1-builder")]
     {
@@ -434,7 +435,7 @@ fn resolve_xpriv(
 }
 
 /// Inputs for constructing the network parameters.
-pub struct ParamsConfig {
+pub(crate) struct ParamsConfig {
     /// Name of the network.
     name: String,
     /// Tagname used to identify DA envelopes

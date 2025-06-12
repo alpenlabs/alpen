@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use bitcoin::{hashes::Hash, Txid};
 use bitcoind_async_client::traits::{Broadcaster, Wallet};
@@ -10,7 +10,7 @@ use tracing::*;
 
 use crate::broadcaster::{
     error::{BroadcasterError, BroadcasterResult},
-    state::BroadcasterState,
+    state::{BroadcasterState, IndexedEntry},
 };
 
 /// Broadcasts the next blob to be sent
@@ -33,146 +33,150 @@ pub async fn broadcaster_task(
             _ = interval.tick() => {}
 
             Some((idx, txentry)) = entry_receiver.recv() => {
-                let txid: Option<Txid> = ops.get_txid_async(idx).await?.map(Into::into);
-                info!(%idx, ?txid, "Received txentry");
-
-                // Insert into state's unfinalized entries. Need not update next_idx because that
-                // will be handled in state.next() call
-                state.unfinalized_entries.insert(idx, txentry);
+                let txid: Txid = ops.get_txid_async(idx).await?.
+                    ok_or(BroadcasterError::TxNotFound(idx))
+                    .map(Into::into)?;
+                info!(%idx, %txid, "Received txentry");
+                state.unfinalized_entries.push(IndexedEntry::new(idx, txentry));
             }
         }
 
-        let (updated_entries, to_remove) = process_unfinalized_entries(
-            &state.unfinalized_entries,
+        // Process any unfinalized entries
+        let updated_entries = process_unfinalized_entries(
+            state.unfinalized_entries.iter(),
             ops.clone(),
             rpc_client.as_ref(),
             params.as_ref(),
         )
         .await
-        .map_err(|e| {
+        .inspect_err(|e| {
             error!(%e, "broadcaster exiting");
-            e
         })?;
 
-        for idx in to_remove {
-            _ = state.unfinalized_entries.remove(&idx);
+        // Update in db
+        for entry in updated_entries.iter() {
+            ops.put_tx_entry_by_idx_async(*entry.index(), entry.item().clone())
+                .await?;
         }
 
-        state.next(updated_entries, &ops).await?;
+        // Update the state.
+        state.update(updated_entries.into_iter(), &ops).await?;
     }
 }
 
-/// Processes unfinalized entries and returns entries idxs that are finalized
+/// Processes unfinalized entries and returns entries idxs that are updated.
 async fn process_unfinalized_entries(
-    unfinalized_entries: &BTreeMap<u64, L1TxEntry>,
+    unfinalized_entries: impl Iterator<Item = &IndexedEntry>,
     ops: Arc<BroadcastDbOps>,
     rpc_client: &(impl Broadcaster + Wallet),
     params: &Params,
-) -> BroadcasterResult<(BTreeMap<u64, L1TxEntry>, Vec<u64>)> {
-    let mut to_remove = Vec::new();
-    let mut updated_entries = BTreeMap::new();
+) -> BroadcasterResult<Vec<IndexedEntry>> {
+    let mut updated_entries = Vec::new();
 
-    for (idx, txentry) in unfinalized_entries.iter() {
-        debug!(?txentry.status, %idx, "processing txentry");
-        let updated_status = handle_entry(rpc_client, txentry, *idx, ops.as_ref(), params).await?;
-        debug!(?updated_status, %idx, "updated status handled");
+    for entry in unfinalized_entries {
+        let idx = *entry.index();
+        let txentry = entry.item();
+        let txid_raw = ops
+            .get_txid_async(idx)
+            .await?
+            .ok_or(BroadcasterError::TxNotFound(idx))?;
+
+        let txid = Txid::from_slice(txid_raw.0.as_slice())
+            .map_err(|e| BroadcasterError::Other(e.to_string()))?;
+
+        let span = debug_span!("process txentry", %idx, %txid);
+
+        let _ = span.enter();
+        debug!(current_status=?txentry.status);
+
+        let updated_status = process_entry(rpc_client, txentry, &txid, params).await?;
+        debug!(?updated_status);
 
         if let Some(status) = updated_status {
             let mut new_txentry = txentry.clone();
             new_txentry.status = status.clone();
-
-            // update in db, maybe this should be moved out of this fn to separate concerns??
-            ops.put_tx_entry_by_idx_async(*idx, new_txentry.clone())
-                .await?;
-
-            // Remove if finalized or has invalid inputs
-            if matches!(status, L1TxStatus::Finalized { confirmations: _ })
-                || matches!(status, L1TxStatus::InvalidInputs)
-            {
-                to_remove.push(*idx);
-            }
-
-            updated_entries.insert(*idx, new_txentry);
-        } else {
-            updated_entries.insert(*idx, txentry.clone());
+            updated_entries.push(IndexedEntry::new(idx, new_txentry.clone()));
         }
     }
-    Ok((updated_entries, to_remove))
+    Ok(updated_entries)
 }
 
 /// Takes in `[L1TxEntry]`, checks status and then either publishes or checks for confirmations and
-/// returns its updated status. Returns None if status is not changed
-async fn handle_entry(
+/// returns its new status. Returns [`None`] if status is not changed.
+async fn process_entry(
     rpc_client: &(impl Broadcaster + Wallet),
     txentry: &L1TxEntry,
-    idx: u64,
-    ops: &BroadcastDbOps,
+    txid: &Txid,
     params: &Params,
 ) -> BroadcasterResult<Option<L1TxStatus>> {
-    let txid = ops
-        .get_txid_async(idx)
-        .await?
-        .ok_or(BroadcasterError::TxNotFound(idx))?;
     match txentry.status {
-        L1TxStatus::Unpublished => {
-            // Try to publish
-            let tx = txentry.try_to_tx().expect("could not deserialize tx");
-            trace!(%idx, ?tx, "Publishing tx");
-            match rpc_client.send_raw_transaction(&tx).await {
-                Ok(_) => {
-                    info!(%idx, %txid, "Successfully published tx");
-                    Ok(Some(L1TxStatus::Published))
-                }
-                Err(err) if err.is_missing_or_invalid_input() => {
-                    warn!(?err, %idx, %txid, "tx excluded due to invalid inputs");
+        L1TxStatus::Unpublished => publish_tx(rpc_client, txentry).await.map(Some),
+        L1TxStatus::Published | L1TxStatus::Confirmed { confirmations: _ } => {
+            check_tx_confirmations(rpc_client, txentry, txid, params)
+                .await
+                .map(Some)
+        }
+        L1TxStatus::Finalized { .. } => Ok(None),
+        L1TxStatus::InvalidInputs => Ok(None),
+    }
+}
 
-                    Ok(Some(L1TxStatus::InvalidInputs))
-                }
-                Err(err) => {
-                    warn!(%idx, ?err, %txid, "errored while broadcasting");
-                    Err(BroadcasterError::Other(err.to_string()))
-                }
+async fn check_tx_confirmations(
+    rpc_client: &impl Wallet,
+    txentry: &L1TxEntry,
+    txid: &Txid,
+    params: &Params,
+) -> BroadcasterResult<L1TxStatus> {
+    let txinfo_res = rpc_client.get_transaction(txid).await;
+    debug!(?txentry.status, ?txinfo_res, "check get transaction");
+
+    let reorg_safe_depth = params.rollup().l1_reorg_safe_depth.into();
+    match txinfo_res {
+        Ok(info) => match (info.confirmations, &txentry.status) {
+            // If it was published and still 0 confirmations, set it to published
+            (0, L1TxStatus::Published) => Ok(L1TxStatus::Published),
+
+            // If it was confirmed before and now it is 0, L1 reorged.
+            // So set it to Unpublished.
+            (0, _) => Ok(L1TxStatus::Unpublished),
+
+            (confirmations, _) if confirmations >= reorg_safe_depth => {
+                Ok(L1TxStatus::Finalized { confirmations })
+            }
+            (confirmations, _) => Ok(L1TxStatus::Confirmed { confirmations }),
+        },
+        Err(e) => {
+            // If for some reasons tx is not found even if it was already
+            // published/confirmed, set it to unpublished.
+            if e.is_tx_not_found() {
+                Ok(L1TxStatus::Unpublished)
+            } else {
+                Err(BroadcasterError::Other(e.to_string()))
             }
         }
-        L1TxStatus::Published | L1TxStatus::Confirmed { confirmations: _ } => {
-            // Check for confirmations
-            let txid = Txid::from_slice(txid.0.as_slice())
-                .map_err(|e| BroadcasterError::Other(e.to_string()))?;
-            let txinfo_res = rpc_client.get_transaction(&txid).await;
+    }
+}
 
-            debug!(?txentry.status, ?txinfo_res, ?txid, "check get transaction");
-            let new_status = match txinfo_res {
-                Ok(info) => {
-                    if info.confirmations == 0 && txentry.status == L1TxStatus::Published {
-                        L1TxStatus::Published
-                    } else if info.confirmations == 0 {
-                        // If it was confirmed before and now it is 0, L1 reorged.
-                        // So, set it to Unpublished
-                        L1TxStatus::Unpublished
-                    } else if info.confirmations >= params.rollup().l1_reorg_safe_depth.into() {
-                        L1TxStatus::Finalized {
-                            confirmations: info.confirmations,
-                        }
-                    } else {
-                        L1TxStatus::Confirmed {
-                            confirmations: info.confirmations,
-                        }
-                    }
-                }
-                Err(e) => {
-                    // If for some reasons tx is not found even if it was already
-                    // published/confirmed, set it to unpublished.
-                    if e.is_tx_not_found() {
-                        L1TxStatus::Unpublished
-                    } else {
-                        return Err(BroadcasterError::Other(e.to_string()));
-                    }
-                }
-            };
-            Ok(Some(new_status))
+async fn publish_tx(
+    rpc_client: &impl Broadcaster,
+    txentry: &L1TxEntry,
+) -> BroadcasterResult<L1TxStatus> {
+    let tx = txentry.try_to_tx().expect("could not deserialize tx");
+    debug!("Publishing tx");
+    match rpc_client.send_raw_transaction(&tx).await {
+        Ok(_) => {
+            info!("Successfully published tx");
+            Ok(L1TxStatus::Published)
         }
-        L1TxStatus::Finalized { confirmations: _ } => Ok(None),
-        L1TxStatus::InvalidInputs => Ok(None),
+        Err(err) if err.is_missing_or_invalid_input() => {
+            warn!(?err, "tx excluded due to invalid inputs");
+
+            Ok(L1TxStatus::InvalidInputs)
+        }
+        Err(err) => {
+            warn!(?err, "errored while broadcasting");
+            Err(BroadcasterError::Other(err.to_string()))
+        }
     }
 }
 
@@ -228,7 +232,8 @@ mod test {
         let client = TestBitcoinClient::new(0);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), get_params().as_ref())
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+        let res = process_entry(cl.as_ref(), &e, &txid, get_params().as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -253,7 +258,8 @@ mod test {
         let cl = Arc::new(client);
         let params = get_params();
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -267,7 +273,7 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth - 1);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -282,7 +288,7 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -309,7 +315,8 @@ mod test {
         let cl = Arc::new(client);
 
         let params = get_params();
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -323,7 +330,7 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth - 1);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -338,7 +345,7 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -350,6 +357,7 @@ mod test {
         );
     }
 
+    /// The updated status should be Finalized for a finalized tx.
     #[tokio::test]
     async fn test_handle_finalized_entry() {
         let ops = get_ops();
@@ -366,7 +374,8 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -379,7 +388,7 @@ mod test {
         let client = TestBitcoinClient::new(0);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -404,7 +413,8 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -417,7 +427,7 @@ mod test {
         let client = TestBitcoinClient::new(0);
         let cl = Arc::new(client);
 
-        let res = handle_entry(cl.as_ref(), &e, 0, ops.as_ref(), params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
             .await
             .unwrap();
         assert_eq!(
@@ -446,8 +456,8 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
-        let (new_entries, to_remove) = process_unfinalized_entries(
-            &state.unfinalized_entries,
+        let updated_entries = process_unfinalized_entries(
+            state.unfinalized_entries.iter(),
             ops,
             cl.as_ref(),
             params.as_ref(),
@@ -455,20 +465,21 @@ mod test {
         .await
         .unwrap();
 
-        // The published tx which got finalized should be removed
         assert_eq!(
-            to_remove,
-            vec![i3.unwrap()],
-            "Finalized tx should be in to_remove list"
-        );
-
-        assert_eq!(
-            new_entries.get(&i1.unwrap()).unwrap().status,
+            updated_entries
+                .iter()
+                .find(|e| *e.index() == i1.unwrap())
+                .map(|e| e.item().status.clone())
+                .unwrap(),
             L1TxStatus::Published,
             "unpublished tx should be published"
         );
         assert_eq!(
-            new_entries.get(&i3.unwrap()).unwrap().status,
+            updated_entries
+                .iter()
+                .find(|e| *e.index() == i3.unwrap())
+                .map(|e| e.item().status.clone())
+                .unwrap(),
             L1TxStatus::Finalized {
                 confirmations: cl.confs
             },

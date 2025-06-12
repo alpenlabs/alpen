@@ -1,3 +1,5 @@
+//! RocksDB store for the Alpen codebase.
+
 pub mod bridge_relay;
 pub mod broadcaster;
 pub mod chain_state;

@@ -9,7 +9,7 @@ use super::errors::{CheckpointError, CheckpointResult};
 use crate::errors::ProvingTaskError::{DatabaseError, ProofNotFound};
 
 /// Submits checkpoint proof to the sequencer.
-pub async fn submit_checkpoint_proof(
+pub(crate) async fn submit_checkpoint_proof(
     checkpoint_index: u64,
     sequencer_client: &HttpClient,
     proof_key: &ProofKey,

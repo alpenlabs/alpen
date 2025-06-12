@@ -14,9 +14,6 @@ pub enum EngineError {
     #[error("invalid address {0:?}")]
     InvalidAddress(Vec<u8>),
 
-    #[error("payload malformed")]
-    PayloadMalformed,
-
     #[error("missing block in db {0}")]
     DbMissingBlock(L2BlockId),
 

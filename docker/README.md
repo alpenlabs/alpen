@@ -44,25 +44,30 @@ docker start strata_sequencer
 docker start alpen_reth_fn # if you want to test the full node
 ```
 
-
 ## Prover Client
+
 > Before proceeding, make sure that all of the prerequisites listed above have been met.
 
-1. Build the datatool in sp1 mode
+1. Build the datatool in `sp1` mode:
+
     ```bash
     cargo build --bin strata-datatool -F "sp1-builder" --release
     ```
+
 2. Export the generated ELF
+
     ```bash
     target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1 
     ```
 
 3. Generate configs
+
     ```bash
     cd docker && ./init-keys.sh ../target/release/strata-datatool
     ```
 
 4. Run the prover-client
+
     ```bash
     rm -rf .data && docker compose up prover-client
     ```

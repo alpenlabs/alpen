@@ -16,6 +16,7 @@ use crate::{
     logic::{process_blockscan_proof, BlockScanProofInput, BlockscanProofOutput},
 };
 
+#[derive(Debug)]
 pub struct BtcBlockspaceProgram;
 
 impl ZkVmProgram for BtcBlockspaceProgram {

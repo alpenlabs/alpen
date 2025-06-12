@@ -1,7 +1,4 @@
-use revm::{
-    precompile::utilities::right_pad,
-    primitives::{PrecompileOutput, PrecompileResult},
-};
+use revm::precompile::{utilities::right_pad, PrecompileOutput, PrecompileResult};
 use revm_primitives::Bytes;
 use strata_crypto::verify_schnorr_sig;
 use strata_primitives::buf::{Buf32, Buf64};
@@ -26,7 +23,7 @@ fn parse_schnorr_input(input: &Bytes) -> SchnorrInput {
     }
 }
 
-pub fn verify_schnorr_precompile(input: &Bytes, _gas_limit: u64) -> PrecompileResult {
+pub(crate) fn verify_schnorr_precompile(input: &Bytes, _gas_limit: u64) -> PrecompileResult {
     let schnorr_input = parse_schnorr_input(input);
 
     let result = verify_schnorr_sig(

@@ -1,5 +1,6 @@
 //! Global consensus parameters for the rollup.
 
+use bitcoin::Network;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -206,7 +207,7 @@ impl Params {
         &self.run
     }
 
-    pub fn network(&self) -> bitcoin::Network {
+    pub fn network(&self) -> Network {
         self.rollup.network
     }
 }

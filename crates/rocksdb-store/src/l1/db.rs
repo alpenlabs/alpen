@@ -16,6 +16,7 @@ use super::schemas::{
 };
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct L1Db {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,
@@ -349,7 +350,7 @@ mod tests {
                 .get_tx((blockid, i as u32).into())
                 .expect("Can't fetch from db")
                 .unwrap();
-            assert_eq!(*tx, tx_from_db, "Txns should match at index {}", i);
+            assert_eq!(*tx, tx_from_db, "Txns should match at index {i}");
         }
     }
 

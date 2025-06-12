@@ -67,11 +67,13 @@ impl BridgeMessage {
     }
 
     /// Raw scope.
+    #[allow(clippy::missing_const_for_fn)]
     pub fn scope(&self) -> &[u8] {
         &self.scope
     }
 
     /// Raw payload
+    #[allow(clippy::missing_const_for_fn)]
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
@@ -110,8 +112,7 @@ impl TryInto<Vec<u8>> for BridgeMessage {
     type Error = io::Error;
 
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        borsh::to_vec(&self)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Serialization error"))
+        borsh::to_vec(&self).map_err(|_| io::Error::other("Serialization error"))
     }
 }
 
@@ -137,8 +138,8 @@ impl TryInto<Box<[u8]>> for BridgeMessage {
     type Error = io::Error;
 
     fn try_into(self) -> Result<Box<[u8]>, Self::Error> {
-        let serialized_vec = borsh::to_vec(&self)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Serialization error"))?;
+        let serialized_vec =
+            borsh::to_vec(&self).map_err(|_| io::Error::other("Serialization error"))?;
         Ok(serialized_vec.into_boxed_slice()) // Convert Vec<u8> to Box<[u8]>
     }
 }
@@ -181,8 +182,7 @@ impl TryInto<Vec<u8>> for Scope {
     type Error = io::Error;
 
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        borsh::to_vec(&self)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Serialization error"))
+        borsh::to_vec(&self).map_err(|_| io::Error::other("Serialization error"))
     }
 }
 
@@ -208,8 +208,8 @@ impl TryInto<Box<[u8]>> for Scope {
     type Error = io::Error;
 
     fn try_into(self) -> Result<Box<[u8]>, Self::Error> {
-        let serialized_vec = borsh::to_vec(&self)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Serialization error"))?;
+        let serialized_vec =
+            borsh::to_vec(&self).map_err(|_| io::Error::other("Serialization error"))?;
         Ok(serialized_vec.into_boxed_slice()) // Convert Vec<u8> to Box<[u8]>
     }
 }

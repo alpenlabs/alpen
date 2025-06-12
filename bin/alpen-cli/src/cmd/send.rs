@@ -23,7 +23,7 @@ use crate::{
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Send some bitcoin from the internal wallet.
+/// Sends BTC from the internal wallet
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "send")]
 pub struct SendArgs {

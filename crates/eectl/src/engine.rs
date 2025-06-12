@@ -51,7 +51,7 @@ pub trait ExecEngineCtl {
 
 /// The status of a block that we've just set chain fork.
 ///
-/// Corresponds to `Forkchoice
+/// Corresponds to `Forkchoice`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BlockStatus {
     /// The block tip is valid.

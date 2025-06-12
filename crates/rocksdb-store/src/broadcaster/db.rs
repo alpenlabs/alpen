@@ -14,6 +14,7 @@ use strata_primitives::buf::Buf32;
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 use crate::{sequence::get_next_id, DbOpsConfig};
 
+#[derive(Debug)]
 pub struct L1BroadcastDb {
     db: Arc<DB>,
     ops: DbOpsConfig,
@@ -92,6 +93,7 @@ impl L1BroadcastDatabase for L1BroadcastDb {
     }
 }
 
+#[derive(Debug)]
 pub struct BroadcastDb {
     l1_broadcast_db: Arc<L1BroadcastDb>,
 }

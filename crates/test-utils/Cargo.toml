@@ -4,16 +4,16 @@ name = "strata-test-utils"
 version = "0.3.0-alpha.1"
 
 [lints]
-rust.unused_crate_dependencies = "deny"
+workspace = true
 
 [dependencies]
 strata-btcio.workspace = true
 strata-chaintsn.workspace = true
 strata-consensus-logic.workspace = true
-strata-l1tx.workspace = true
+strata-l1tx = { workspace = true, features = ["test_utils"] }
 strata-primitives.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
-strata-state.workspace = true
+strata-state = { workspace = true, features = ["test_utils"] }
 
 anyhow.workspace = true
 arbitrary.workspace = true
@@ -24,6 +24,5 @@ hex.workspace = true
 musig2.workspace = true
 rand.workspace = true
 rand_core.workspace = true
-revm.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

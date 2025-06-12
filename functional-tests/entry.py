@@ -9,10 +9,11 @@ monkey.patch_all()
 import argparse
 import os
 import sys
+import types
 
 import flexitest
 
-from envs import net_settings, testenv
+from envs import testenv
 from factory import factory
 from utils import *
 from utils.constants import *
@@ -20,11 +21,22 @@ from load.cfg import RethLoadConfigBuilder
 from load.reth import BasicRethBlockJob, BasicRethTxJob
 
 TEST_DIR: str = "tests"
+KEEP_ALIVE_TEST_FILE: str = "keepalive_stub_test"
+KEEP_ALIVE_TEST_NAME: str = "KeepAliveEnvMockTest"
 
 # Initialize the parser with arguments.
 parser = argparse.ArgumentParser(prog="entry.py")
 parser.add_argument("-g", "--groups", nargs="*", help="Define the test groups to execute")
 parser.add_argument("-t", "--tests", nargs="*", help="Define individual tests to execute")
+parser.add_argument(
+    "-e",
+    "--env",
+    nargs="?",
+    help="""Special keep-alive mode.
+Spins up the whole environment as defined by the `env_name` passed as a parameter.
+Keeps alive all the services in the specified env until the execution is interrupted.
+Internally runs against a mock test that does nothing and just hangs.
+This mechanism can be used for local setup, fast prototyping and testing.""")
 
 
 def disabled_tests() -> list[str]:
@@ -32,13 +44,30 @@ def disabled_tests() -> list[str]:
     Helper to disable some tests.
     Useful during debugging or when the test becomes flaky.
     """
-    return frozenset(["basic_load"])
+    return frozenset(["basic_load", KEEP_ALIVE_TEST_FILE])
+
+def load_keepalive_mock_test(env_name):
+    # Read the test file as string.
+    with open(f"{TEST_DIR}/{KEEP_ALIVE_TEST_FILE}.py", "r") as f:
+        code_str = f.read()
+
+    # Dynamically replace with the passed `env_name`.
+    code_str = code_str.replace("{ENV}", env_name)
+
+    # Construct and load as a module.
+    module_name = "__keep_alive_dynamic_test_module__"
+    mod = types.ModuleType(module_name)
+    exec(code_str, mod.__dict__)
+    sys.modules[module_name] = mod
+
+    # Return the class object so it can be loaded by the runtime directly.
+    return getattr(mod, KEEP_ALIVE_TEST_NAME)
+
 
 def filter_tests(parsed_args, modules):
     """
     Filters test modules against parsed args supplied from the command line.
     """
-
     arg_groups = frozenset(parsed_args.groups or [])
     # Extract filenames from the tests paths.
     arg_tests = frozenset(
@@ -78,9 +107,18 @@ def main(argv):
     parsed_args = parser.parse_args(argv[1:])
 
     root_dir = os.path.dirname(os.path.abspath(__file__))
-    test_dir = os.path.join(root_dir, TEST_DIR)
-    modules = filter_tests(parsed_args, flexitest.runtime.scan_dir_for_modules(test_dir))
-    tests = flexitest.runtime.load_candidate_modules(modules)
+    
+    # Handle args and prepare tests accordingly.
+    is_keep_alive_execution = parsed_args.env is not None
+    if is_keep_alive_execution:
+        # In case of env option, we load the dynamically constructed keep-alive test
+        # and prepare it in the runtime manually.
+        # `Tests` will contain test class object (instead of test name). 
+        tests = load_keepalive_mock_test(parsed_args.env)
+    else:
+        test_dir = os.path.join(root_dir, TEST_DIR)
+        modules = filter_tests(parsed_args, flexitest.runtime.scan_dir_for_modules(test_dir))
+        tests = flexitest.runtime.load_candidate_modules(modules)
 
     btc_fac = factory.BitcoinFactory([12300 + i for i in range(100)])
     seq_fac = factory.StrataFactory([12400 + i for i in range(100)])
@@ -125,7 +163,16 @@ def main(argv):
     setup_root_logger()
     datadir_root = flexitest.create_datadir_in_workspace(os.path.join(root_dir, DD_ROOT))
     rt = testenv.StrataTestRuntime(global_envs, datadir_root, factories)
-    rt.prepare_registered_tests()
+
+    if not is_keep_alive_execution:
+        rt.prepare_registered_tests()
+    else:
+        # Little hack.
+        # In the keep-alive execution, the `tests` actually contains the dynamically constructed
+        # test class object.
+        # So, we manually load it into the runtime and set the `tests` to run.
+        rt.prepare_test(KEEP_ALIVE_TEST_NAME, tests)
+        tests = [KEEP_ALIVE_TEST_NAME]
 
     results = rt.run_tests(tests)
     rt.save_json_file("results.json", results)

@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-client"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "strata-client"
 path = "src/main.rs"
@@ -15,8 +18,6 @@ strata-consensus-logic = { workspace = true, default-features = true }
 strata-db.workspace = true
 strata-eectl.workspace = true
 strata-evmexec.workspace = true
-strata-key-derivation.workspace = true
-strata-l1tx.workspace = true
 strata-primitives.workspace = true
 strata-rocksdb.workspace = true
 strata-rpc-api = { workspace = true, default-features = true }
@@ -39,26 +40,16 @@ bitcoind-async-client.workspace = true
 borsh.workspace = true
 format_serde_error.workspace = true
 futures.workspace = true
-hex = { workspace = true, features = ["serde"] }
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
-parking_lot.workspace = true
-reth-ipc.workspace = true
-reth-primitives.workspace = true
-reth-rpc-api.workspace = true
-rockbound.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
-zeroize.workspace = true
 
 [dev-dependencies]
-arbitrary.workspace = true
-strata-mmr.workspace = true
-strata-test-utils.workspace = true
+
 
 [features]
 debug-utils = [

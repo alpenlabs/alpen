@@ -27,7 +27,7 @@ pub mod scan;
 pub mod send;
 pub mod withdraw;
 
-/// A CLI for interacting with Alpen and Alpen Labs' bitcoin signet
+/// A CLI for interacting with Alpen and the underlying bitcoin (signet) network
 #[derive(FromArgs, PartialEq, Debug)]
 pub struct TopLevel {
     #[argh(subcommand)]

@@ -16,7 +16,7 @@ macro_rules! define_table_without_codec {
 
         impl $table_name {
             #[doc=concat!("Return ", stringify!($table_name), " as it is present inside the database.")]
-            pub const fn table_name() -> &'static str {
+            pub(crate) const fn table_name() -> &'static str {
                 ::core::stringify!($table_name)
             }
         }

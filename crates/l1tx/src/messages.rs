@@ -1,39 +1,7 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::l1::{DaCommitment, DepositRequestInfo, ProtocolOperation};
-
-/// Indexed transaction entry taken from a block.
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
-pub struct Indexed<T> {
-    /// Index of the transaction in the block
-    index: u32,
-
-    /// Contents emitted from the visitor that was ran on this tx.
-    ///
-    /// This is probably a list of protocol operations.
-    contents: T,
-}
-
-impl<T> Indexed<T> {
-    /// Creates a new instance.
-    pub fn new(index: u32, contents: T) -> Self {
-        Self { index, contents }
-    }
-
-    /// Returns the position of the transaction within the block.
-    pub fn index(&self) -> u32 {
-        self.index
-    }
-
-    /// Returns a reference to the contents.
-    pub fn contents(&self) -> &T {
-        &self.contents
-    }
-
-    /// "Unwraps" the entry into its contents.
-    pub fn into_contents(self) -> T {
-        self.contents
-    }
-}
+use strata_primitives::{
+    indexed::Indexed,
+    l1::{DaCommitment, DepositRequestInfo, ProtocolOperation},
+};
 
 /// Container for the different kinds of messages that we could extract from a L1 tx.
 #[derive(Clone, Debug)]

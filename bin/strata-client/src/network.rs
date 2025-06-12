@@ -15,14 +15,14 @@ use strata_primitives::{
 use tracing::warn;
 
 /// Rollup params we initialize with if not overridden.  Optionally set at compile time.
-pub const DEFAULT_NETWORK_ROLLUP_PARAMS: Option<&str> = option_env!("STRATA_NETWORK_PARAMS");
+pub(crate) const DEFAULT_NETWORK_ROLLUP_PARAMS: Option<&str> = option_env!("STRATA_NETWORK_PARAMS");
 
 /// Envvar we can load params from at run time.
-pub const NETWORK_PARAMS_ENVVAR: &str = "STRATA_NETWORK_PARAMS";
+pub(crate) const NETWORK_PARAMS_ENVVAR: &str = "STRATA_NETWORK_PARAMS";
 
 /// Parses the default network rollup params from the hardcoded string.  Does
 /// not validate them, but caller should.
-pub fn get_default_rollup_params() -> anyhow::Result<RollupParams> {
+pub(crate) fn get_default_rollup_params() -> anyhow::Result<RollupParams> {
     if let Some(s) = DEFAULT_NETWORK_ROLLUP_PARAMS {
         Ok(serde_json::from_str(s)?)
     } else {
@@ -74,7 +74,7 @@ fn get_deprecated_fallback() -> RollupParams {
 
 /// Loads the network params from the envvar, if set.  If the envvar starts with
 /// `@`, then we load the file at the following path and use that instead.
-pub fn get_envvar_params() -> anyhow::Result<Option<RollupParams>> {
+pub(crate) fn get_envvar_params() -> anyhow::Result<Option<RollupParams>> {
     match env::var(NETWORK_PARAMS_ENVVAR) {
         Ok(v) => {
             let buf = if let Some(path) = v.strip_prefix("@") {

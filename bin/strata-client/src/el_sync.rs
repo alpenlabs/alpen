@@ -6,7 +6,7 @@ use thiserror::Error;
 use tracing::{debug, info};
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub(crate) enum Error {
     #[error("missing chainstate for slot {0}")]
     MissingChainstate(u64),
     #[error("missing l2block {0}")]
@@ -20,7 +20,7 @@ pub enum Error {
 /// Sync missing blocks in EL using payloads stored in L2 block database.
 ///
 /// TODO: retry on network errors
-pub fn sync_chainstate_to_el(
+pub(crate) fn sync_chainstate_to_el(
     storage: &NodeStorage,
     engine: &impl ExecEngineCtl,
 ) -> Result<(), Error> {

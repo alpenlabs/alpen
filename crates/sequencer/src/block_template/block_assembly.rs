@@ -1,5 +1,8 @@
 use std::{thread, time};
 
+use strata_common::retry::{
+    policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
+};
 use strata_consensus_logic::checkpoint_verification;
 use strata_db::DbError;
 use strata_eectl::{
@@ -311,7 +314,15 @@ fn prepare_exec_data<E: ExecEngineCtl>(
         remaining_gas_limit,
     );
 
-    let key = engine.prepare_payload(payload_env)?;
+    // If the payload preparation fails, we can safely retry in the next iteration.
+    // The fork-choice manager includes graceful shutdown logic to handle any
+    // persistent issues that may arise.
+    let key = retry_with_backoff(
+        "engine_prepare_payload",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || engine.prepare_payload(payload_env.clone()),
+    )?;
     trace!("submitted EL payload job, waiting for completion");
 
     // Wait 2 seconds for the block to be finished.
@@ -349,7 +360,14 @@ fn poll_status_loop<E: ExecEngineCtl>(
 
         // Check the payload for the result.
         trace!(%job, "polling engine for completed payload");
-        let payload = engine.get_payload_status(job)?;
+
+        let payload = retry_with_backoff(
+            "engine_get_payload_status",
+            DEFAULT_ENGINE_CALL_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            || engine.get_payload_status(job),
+        )?;
+
         if let PayloadStatus::Ready(pl, gas_used) = payload {
             return Ok(Some((pl, gas_used)));
         }

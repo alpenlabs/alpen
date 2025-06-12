@@ -6,9 +6,12 @@ use strata_primitives::params::ParamsError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum InitError {
+pub(crate) enum InitError {
     #[error("missing init client state")]
     MissingInitClientState,
+
+    #[error("rollup name too long")]
+    InvalidRollupName(String),
 
     #[error("io: {0}")]
     Io(#[from] io::Error),
@@ -30,7 +33,7 @@ pub enum InitError {
 }
 
 #[derive(Debug, Error)]
-pub enum ConfigError {
+pub(crate) enum ConfigError {
     /// Missing key in table.
     #[error("missing key: {0}")]
     MissingKey(String),

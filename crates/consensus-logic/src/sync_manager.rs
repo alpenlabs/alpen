@@ -21,6 +21,7 @@ use crate::{
 };
 
 /// Handle to the core pipeline tasks.
+#[expect(missing_debug_implementations)]
 pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,

@@ -8,6 +8,7 @@ use strata_state::batch::EpochSummary;
 use super::schemas::*;
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct RBCheckpointDB {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,

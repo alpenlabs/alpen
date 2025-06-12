@@ -6,13 +6,14 @@ use tracing::*;
 
 use crate::{errors::DbError, traits::*, DbResult};
 
+#[derive(Debug)]
 struct InnerState {
     write_batches: BTreeMap<u64, WriteBatchEntry>,
     toplevels: BTreeMap<u64, Chainstate>,
 }
 
 impl InnerState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             write_batches: BTreeMap::new(),
             toplevels: BTreeMap::new(),
@@ -27,6 +28,7 @@ impl InnerState {
     }
 }
 
+#[derive(Debug)]
 pub struct StubChainstateDb {
     state: Mutex<InnerState>,
 }
@@ -88,10 +90,10 @@ impl ChainstateDatabase for StubChainstateDb {
 
         // Remove from the two tables.  This does have to touch every state in
         // the table but it's fine because this will never be used in production.
-        let states_removed = st.toplevels.extract_if(|idx, _| *idx < before_idx).count();
+        let states_removed = st.toplevels.extract_if(0..before_idx, |_, _| true).count();
         let writes_removed = st
             .write_batches
-            .extract_if(|idx, _| *idx < before_idx)
+            .extract_if(0..before_idx, |_, _| true)
             .count();
 
         // In case it screws up we should remember it.

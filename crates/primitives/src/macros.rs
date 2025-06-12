@@ -33,7 +33,7 @@ macro_rules! impl_buf_wrapper {
     };
 }
 
-pub mod internal {
+pub(crate) mod internal {
     // Crate-internal impls.
 
     macro_rules! impl_buf_common {
@@ -41,6 +41,7 @@ pub mod internal {
             impl $name {
                 pub const LEN: usize = $len;
 
+                #[allow(clippy::missing_const_for_fn)]
                 pub fn new(data: [u8; $len]) -> Self {
                     Self(data)
                 }
@@ -194,7 +195,7 @@ pub mod internal {
 
                         fn expecting(
                             &self,
-                            formatter: &mut ::std::fmt::Formatter,
+                            formatter: &mut ::std::fmt::Formatter<'_>,
                         ) -> ::std::fmt::Result {
                             write!(
                                 formatter,
@@ -328,7 +329,7 @@ mod tests {
     fn test_deserialize_hex_without_prefix() {
         let data = [2u8; 20];
         let hex_str = hex::encode(data);
-        let json = format!("\"{}\"", hex_str);
+        let json = format!("\"{hex_str}\"");
         let buf: TestBuf20 = serde_json::from_str(&json).unwrap();
         assert_eq!(buf, TestBuf20(data));
     }
@@ -337,7 +338,7 @@ mod tests {
     fn test_deserialize_hex_with_prefix() {
         let data = [3u8; 20];
         let hex_str = hex::encode(data);
-        let json = format!("\"0x{}\"", hex_str);
+        let json = format!("\"0x{hex_str}\"");
         let buf: TestBuf20 = serde_json::from_str(&json).unwrap();
         assert_eq!(buf, TestBuf20(data));
     }

@@ -7,8 +7,8 @@ use crate::{errors::DisplayedError, seed::Seed};
 #[argh(subcommand, name = "backup")]
 /// Prints a BIP39 mnemonic encoding the internal wallet's seed bytes
 pub struct BackupArgs {
-    /// select a language for the BIP39 mnemonic. Defaults to English.
-    /// Options:
+    /// select a language for the BIP39 mnemonic. defaults to English.
+    /// options:
     /// en, cn, cn-trad,
     /// cz, fr, it, jp, kr or es
     #[argh(option)]

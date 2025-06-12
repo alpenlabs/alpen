@@ -4,29 +4,11 @@ name = "integration-tests"
 version = "0.3.0-alpha.1"
 
 [lints]
-rust.missing_debug_implementations = "warn"
-rust.missing_docs = "warn"
-rust.rust_2018_idioms = { level = "deny", priority = -1 }
-rust.unreachable_pub = "warn"
-rust.unused_crate_dependencies = "deny"
-rust.unused_must_use = "deny"
-rustdoc.all = "warn"
+workspace = true
 
 [dependencies]
-#strata-common.workspace = true
-#strata-primitives.workspace = true
-#strata-rocksdb.workspace = true
-#strata-storage.workspace = true
-
-#anyhow.workspace = true                                  # anyhow should be fine for tests
-#bitcoincore-rpc = "0.19.0"
-#corepc-node = { version = "0.7.1", features = ["28_0", "download"] }
-#threadpool.workspace = true
-#tokio.workspace = true
-#tracing.workspace = true
 
 [dev-dependencies]
-#strata-test-utils.workspace = true
 
 [[test]]
 name = "stub"

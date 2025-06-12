@@ -34,6 +34,7 @@ impl ClientUpdateOutput {
         &self.state
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn actions(&self) -> &[SyncAction] {
         &self.actions
     }

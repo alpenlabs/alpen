@@ -10,7 +10,7 @@ use tracing::debug;
 use crate::L2SyncError;
 
 #[derive(Debug)]
-pub struct L2SyncState {
+pub(crate) struct L2SyncState {
     /// Height of highest unfinalized block in tracker
     tip_block: L2BlockCommitment,
 

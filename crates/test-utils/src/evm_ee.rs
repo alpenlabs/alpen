@@ -4,7 +4,6 @@ use strata_primitives::buf::{Buf32, Buf64};
 use strata_proofimpl_evm_ee_stf::{
     primitives::{EvmEeProofInput, EvmEeProofOutput},
     process_block_transaction,
-    processor::EvmConfig,
     utils::generate_exec_update,
     EvmBlockStfInput,
 };
@@ -38,25 +37,18 @@ impl EvmSegment {
     ///
     /// Note: This assumes all the l1 segment is empty
     pub fn initialize_from_saved_ee_data(start_height: u64, end_height: u64) -> Self {
-        use revm::primitives::SpecId;
-
-        const EVM_CONFIG: EvmConfig = EvmConfig {
-            chain_id: 2892,
-            spec_id: SpecId::SHANGHAI,
-        };
-
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
 
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evm_ee/");
         for height in start_height..=end_height {
-            let witness_path = dir.join(format!("witness_{}.json", height));
+            let witness_path = dir.join(format!("witness_{height}.json"));
             let json_file = std::fs::read_to_string(witness_path).expect("Expected JSON file");
             let el_proof_input: EvmBlockStfInput =
                 serde_json::from_str(&json_file).expect("Invalid JSON file");
             inputs.push(el_proof_input.clone());
 
-            let block_stf_output = process_block_transaction(el_proof_input, EVM_CONFIG);
+            let block_stf_output = process_block_transaction(el_proof_input);
             let exec_output = generate_exec_update(&block_stf_output);
             outputs.push(exec_output);
         }
@@ -78,6 +70,7 @@ impl EvmSegment {
 /// Represents a segment of L2 blocks and their associated state transitions.
 /// This struct stores L2 blocks, pre-state, and post-state data, simulating
 /// the block processing for testing STF proofs.
+#[derive(Debug)]
 pub struct L2Segment {
     pub blocks: Vec<L2Block>,
     pub pre_states: Vec<Chainstate>,
@@ -124,7 +117,7 @@ impl L2Segment {
             let body = L2BlockBody::new(l1_segment, el_proof_out.clone());
 
             let slot = prev_block.header().slot() + 1;
-            let ts = el_proof_in.timestamp;
+            let ts = el_proof_in.current_block.header.timestamp;
             let prev_block_id = prev_block.header().get_blockid();
 
             let fake_header = L2BlockHeader::new(slot, 0, ts, prev_block_id, &body, Buf32::zero());

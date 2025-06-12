@@ -1,20 +1,20 @@
-// This code is modified from the original implementation of Zeth.
-//
-// Reference: https://github.com/risc0/zeth
-//
-// Copyright 2023 RISC Zero, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either strata or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//! This code is modified from the original implementation of Zeth.
+//!
+//! Reference: <https://github.com/risc0/zeth>
+//!
+//! Copyright 2023 RISC Zero, Inc.
+//!
+//! Licensed under the Apache License, Version 2.0 (the "License");
+//! you may not use this file except in compliance with the License.
+//! You may obtain a copy of the License at
+//!
+//! <http://www.apache.org/licenses/LICENSE-2.0>
+//!
+//! Unless required by applicable law or agreed to in writing, software
+//! distributed under the License is distributed on an "AS IS" BASIS,
+//! WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either strata or implied.
+//! See the License for the specific language governing permissions and
+//! limitations under the License.
 
 use alloc::boxed::Box;
 use core::{
@@ -303,7 +303,7 @@ impl Decodable for MptNode {
     /// The method handles different RLP prototypes and reconstructs the `MptNode` based
     /// on the encoded data. If the RLP data does not match any known prototype or if
     /// there's an error during decoding, an error is returned.
-    fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
+    fn decode(rlp: &Rlp<'_>) -> Result<Self, DecoderError> {
         match rlp.prototype()? {
             Prototype::Null | Prototype::Data(0) => Ok(MptNodeData::Null.into()),
             Prototype::List(2) => {
@@ -810,7 +810,7 @@ impl MptNode {
     pub fn debug_rlp<T: alloy_rlp::Decodable + Debug>(&self) -> Vec<String> {
         // convert the nibs to hex
         let nibs: String = self.nibs().iter().fold(String::new(), |mut output, n| {
-            let _ = write!(output, "{:x}", n);
+            let _ = write!(output, "{n:x}");
             output
         });
 
@@ -825,7 +825,7 @@ impl MptNode {
                         None => vec!["None".to_string()],
                     }
                     .into_iter()
-                    .map(move |s| format!("{:x} {}", i, s))
+                    .map(move |s| format!("{i:x} {s}"))
                 })
                 .collect(),
             MptNodeData::Leaf(_, data) => {
@@ -838,7 +838,7 @@ impl MptNode {
             MptNodeData::Extension(_, node) => node
                 .debug_rlp::<T>()
                 .into_iter()
-                .map(|s| format!("{} {}", nibs, s))
+                .map(|s| format!("{nibs} {s}"))
                 .collect(),
             MptNodeData::Digest(digest) => vec![format!("#{:#}", digest)],
         }
@@ -957,18 +957,18 @@ pub fn mpt_from_proof(proof_nodes: &[MptNode]) -> Result<MptNode> {
                 ) {
                     *child = Box::new(replacement);
                 } else {
-                    panic!("node {} does not reference the successor", i);
+                    panic!("node {i} does not reference the successor");
                 }
                 MptNodeData::Branch(children).into()
             }
             MptNodeData::Extension(prefix, child) => {
                 if !matches!(child.as_data(), MptNodeData::Digest(d) if d == child_ref) {
-                    panic!("node {} does not reference the successor", i);
+                    panic!("node {i} does not reference the successor");
                 }
                 MptNodeData::Extension(prefix, Box::new(replacement)).into()
             }
             MptNodeData::Null | MptNodeData::Leaf(_, _) | MptNodeData::Digest(_) => {
-                panic!("node {} has no children to replace", i);
+                panic!("node {i} has no children to replace");
             }
         };
 
@@ -1165,7 +1165,7 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn test_trie_pointer_no_keccak() {
+    fn test_trie_pointer_no_keccak() {
         let cases = [
             ("do", "verb"),
             ("dog", "puppy"),
@@ -1182,7 +1182,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_to_encoded_path() {
+    fn test_to_encoded_path() {
         // extension node with an even path length
         let nibbles = vec![0x0a, 0x0b, 0x0c, 0x0d];
         assert_eq!(to_encoded_path(&nibbles, false), vec![0x00, 0xab, 0xcd]);
@@ -1198,7 +1198,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_lcp() {
+    fn test_lcp() {
         let cases = [
             (vec![], vec![], 0),
             (vec![0xa], vec![0xa], 1),
@@ -1215,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_empty() {
+    fn test_empty() {
         let trie = MptNode::default();
 
         assert!(trie.is_empty());
@@ -1233,7 +1233,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_empty_key() {
+    fn test_empty_key() {
         let mut trie = MptNode::default();
 
         trie.insert(&[], b"empty".to_vec()).unwrap();
@@ -1242,7 +1242,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_clear() {
+    fn test_clear() {
         let mut trie = MptNode::default();
         trie.insert(b"dog", b"puppy".to_vec()).unwrap();
         assert!(!trie.is_empty());
@@ -1254,7 +1254,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_tiny() {
+    fn test_tiny() {
         // trie consisting of an extension, a branch and two leafs
         let mut trie = MptNode::default();
         trie.insert_rlp(b"a", 0u8).unwrap();
@@ -1276,7 +1276,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_partial() {
+    fn test_partial() {
         let mut trie = MptNode::default();
         trie.insert_rlp(b"aa", 0u8).unwrap();
         trie.insert_rlp(b"ab", 1u8).unwrap();
@@ -1300,7 +1300,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_branch_value() {
+    fn test_branch_value() {
         let mut trie = MptNode::default();
         trie.insert(b"do", b"verb".to_vec()).unwrap();
         // leads to a branch with value which is not supported
@@ -1308,7 +1308,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_insert() {
+    fn test_insert() {
         let mut trie = MptNode::default();
         let vals = vec![
             ("painting", "place"),
@@ -1345,7 +1345,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_keccak_trie() {
+    fn test_keccak_trie() {
         const N: usize = 512;
 
         // insert
@@ -1384,7 +1384,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_index_trie() {
+    fn test_index_trie() {
         const N: usize = 512;
 
         // insert

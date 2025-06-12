@@ -9,6 +9,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 pub const OTLP_URL_ENVVAR: &str = "STRATA_OTLP_URL";
 pub const SVC_LABEL_ENVVAR: &str = "STRATA_SVC_LABEL";
 
+#[derive(Debug)]
 pub struct LoggerConfig {
     whoami: String,
     otel_url: Option<String>,

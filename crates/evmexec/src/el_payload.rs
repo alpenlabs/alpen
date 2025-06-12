@@ -43,12 +43,14 @@ pub(crate) struct ElPayload {
 }
 
 #[derive(Debug, Error)]
-pub enum ElPayloadError {
+#[allow(dead_code)]
+pub(crate) enum ElPayloadError {
     #[error("Failed to extract evm block from payload: {0}")]
     BlockConversionError(String),
 }
 
-pub fn make_update_input_from_payload_and_ops(
+#[allow(dead_code)]
+pub(crate) fn make_update_input_from_payload_and_ops(
     el_payload: ElPayload,
     ops: &[Op],
 ) -> Result<UpdateInput, ElPayloadError> {

@@ -12,6 +12,7 @@ use strata_primitives::relay::types::{BridgeMessage, Scope};
 use super::schemas::{BridgeMsgIdSchema, ScopeMsgIdSchema};
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct BridgeMsgDb {
     db: Arc<DB>,
     ops: DbOpsConfig,

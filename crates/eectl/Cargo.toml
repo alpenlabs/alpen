@@ -3,6 +3,9 @@ edition = "2021"
 name = "strata-eectl"
 version = "0.3.0-alpha.1"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-primitives.workspace = true
 strata-state.workspace = true

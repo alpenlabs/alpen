@@ -1,4 +1,4 @@
 #[derive(Debug, Clone, Default)]
-pub struct StrataNodeArgs {
+pub struct AlpenNodeArgs {
     pub sequencer_http: Option<String>,
 }

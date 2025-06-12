@@ -51,7 +51,7 @@ pub struct BroadcasterConfig {
 impl Default for WriterConfig {
     fn default() -> Self {
         Self {
-            write_poll_dur_ms: 1_000,
+            write_poll_dur_ms: 5_000,
             fee_policy: FeePolicy::Smart,
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
@@ -70,7 +70,7 @@ impl Default for ReaderConfig {
 impl Default for BroadcasterConfig {
     fn default() -> Self {
         Self {
-            poll_interval_ms: 1_000,
+            poll_interval_ms: 5_000,
         }
     }
 }

@@ -13,8 +13,6 @@ use crate::{
     task_tracker::TaskTracker,
 };
 
-const CHECKPOINT_POLL_INTERVAL: u64 = 10;
-
 /// Holds the current checkpoint index for the runner to track progress.
 #[derive(Default)]
 struct CheckpointRunnerState {
@@ -23,13 +21,14 @@ struct CheckpointRunnerState {
 
 /// Periodically polls for the latest checkpoint index and updates the current index.
 /// Dispatches tasks when a new checkpoint is detected.
-pub async fn checkpoint_proof_runner(
+pub(crate) async fn checkpoint_proof_runner(
     operator: CheckpointOperator,
+    poll_interval_s: u64,
     task_tracker: Arc<Mutex<TaskTracker>>,
     db: Arc<ProofDb>,
 ) {
-    info!("Checkpoint runner started");
-    let mut ticker = interval(Duration::from_secs(CHECKPOINT_POLL_INTERVAL));
+    info!(%poll_interval_s, "Checkpoint runner started");
+    let mut ticker = interval(Duration::from_secs(poll_interval_s));
     let mut runner_state = CheckpointRunnerState::default();
 
     loop {

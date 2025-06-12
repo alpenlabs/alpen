@@ -22,8 +22,7 @@ use crate::{
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
 };
 
-/// Drains the internal wallet to the provided
-/// signet and Alpen addresses
+/// Drains the internal wallet to the provided signet or Alpen address
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "drain")]
 pub struct DrainArgs {
@@ -130,7 +129,7 @@ pub async fn drain(
                 .with_maybe_explorer(settings.mempool_space_endpoint.as_deref())
                 .pretty()
         );
-        println!("Drained signet wallet to {}", address,);
+        println!("Drained signet wallet to {address}",);
     }
 
     if let Some(address) = alpen_address {
@@ -153,9 +152,9 @@ pub async fn drain(
         let gas_price = l2w
             .get_gas_price()
             .await
-            .internal_error("Failed to fetch Alpen gas price.")?;
+            .internal_error("Failed to fetch Alpen gas price.")? as u64;
         let gas_estimate = l2w
-            .estimate_gas(&estimate_tx)
+            .estimate_gas(estimate_tx)
             .await
             .internal_error("Failed to estimate Alpen gas")?;
 
