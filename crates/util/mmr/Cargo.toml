@@ -7,7 +7,6 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-arbitrary.workspace = true
 borsh.workspace = true
 digest.workspace = true
 thiserror.workspace = true
