@@ -7,13 +7,10 @@ use rockbound::{
     OptimisticTransactionDB, SchemaBatch, SchemaDBOperationsExt,
 };
 use strata_db::{errors::DbError, traits::*, DbResult};
-use strata_mmr::CompactMmr;
 use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
 use tracing::*;
 
-use super::schemas::{
-    L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, MmrSchema, TxnSchema,
-};
+use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
 use crate::DbOpsConfig;
 
 #[derive(Debug)]
@@ -55,11 +52,6 @@ impl L1Database for L1Db {
             .map_err(|e: rockbound::TransactionError<_>| DbError::TransactionError(e.to_string()))
     }
 
-    fn put_mmr_checkpoint(&self, blockid: L1BlockId, mmr: CompactMmr) -> DbResult<()> {
-        self.db.put::<MmrSchema>(&blockid, &mmr)?;
-        Ok(())
-    }
-
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()> {
         self.db.put::<L1CanonicalBlockSchema>(&height, &blockid)?;
         Ok(())
@@ -94,7 +86,6 @@ impl L1Database for L1Db {
                     for blockid in blocks.unwrap_or_default() {
                         txn.delete::<L1BlockSchema>(&blockid)?;
                         txn.delete::<TxnSchema>(&blockid)?;
-                        txn.delete::<MmrSchema>(&blockid)?;
                     }
 
                     Ok::<(), DbError>(())
@@ -145,10 +136,6 @@ impl L1Database for L1Db {
             .collect::<Vec<L1TxRef>>();
 
         Ok(Some(txs_refs))
-    }
-
-    fn get_mmr(&self, blockid: L1BlockId) -> DbResult<Option<CompactMmr>> {
-        Ok(self.db.get::<MmrSchema>(&blockid)?)
     }
 
     // TODO: This should not exist in database level and should be handled by downstream manager
@@ -222,16 +209,11 @@ mod tests {
             arb.generate(),
         );
 
-        let mmr: CompactMmr = arb.generate();
-
         // Insert block data
         let res = db.put_block_data(mf.clone());
         assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
         let res = db.set_canonical_chain_entry(height, *mf.blkid());
         assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
-
-        // Insert mmr data
-        db.put_mmr_checkpoint(*mf.blkid(), mmr.clone()).unwrap();
 
         (mf, txs, mmr)
     }
@@ -306,15 +288,6 @@ mod tests {
         for h in start_height..remove_start_height {
             assert!(matches!(db.get_canonical_blockid_at_height(h), Ok(Some(_))));
         }
-    }
-
-    #[test]
-    fn test_put_mmr_checkpoint_valid() {
-        let db = setup_db();
-        let (mf, _, _) = insert_block_data(1, &db, 10);
-        let mmr: CompactMmr = ArbitraryGenerator::new().generate();
-        let res = db.put_mmr_checkpoint(*mf.blkid(), mmr);
-        assert!(res.is_ok());
     }
 
     // TEST PROVIDER METHODS
@@ -445,15 +418,6 @@ mod tests {
         for (exp, obt) in vec![mf1, mf2, mf3].iter().zip(range) {
             assert_eq!(*exp.blkid(), obt);
         }
-    }
-
-    #[test]
-    fn test_get_mmr() {
-        let db = setup_db();
-
-        let (mf, _, mmr) = insert_block_data(1, &db, 10);
-        let observed_mmr = db.get_mmr(*mf.blkid()).unwrap();
-        assert_eq!(Some(mmr), observed_mmr);
     }
 
     #[test]

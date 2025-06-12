@@ -4,7 +4,6 @@
 use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_mmr::CompactMmr;
 use strata_primitives::{
     batch::EpochSummary,
     l1::{L1Tx, *},
@@ -51,11 +50,6 @@ pub trait L1Database {
     /// provided out-of-order.
     fn put_block_data(&self, mf: L1BlockManifest) -> DbResult<()>;
 
-    /// Stores an MMR checkpoint so we have to query less far back.  If the
-    /// provided height does not match the entries in the MMR, will return an
-    /// error.
-    fn put_mmr_checkpoint(&self, blockid: L1BlockId, mmr: CompactMmr) -> DbResult<()>;
-
     /// Set a specific height, blockid in canonical chain records.
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()>;
 
@@ -87,11 +81,6 @@ pub trait L1Database {
 
     /// Gets the tx with proof given a tx ref, if present.
     fn get_tx(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>>;
-
-    /// Gets the MMR checkpoint we stored at the given block.
-    /// Up to the caller to advance the MMR the rest of the way to the desired
-    /// state.
-    fn get_mmr(&self, blockid: L1BlockId) -> DbResult<Option<CompactMmr>>;
 
     // TODO DA queries
 }
