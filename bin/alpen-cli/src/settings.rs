@@ -16,7 +16,7 @@ use shrex::Hex;
 use terrors::OneOf;
 
 use crate::{
-    constants::{BRIDGE_ALPEN_ADDRESS, DEFAULT_NETWORK},
+    constants::{BRIDGE_ALPEN_ADDRESS, DEFAULT_NETWORK, MAGIC_BYTES_LEN},
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -105,6 +105,14 @@ impl Settings {
             _ => panic!("invalid config for signet - configure for esplora or bitcoind"),
         };
 
+        // magic_bytes must be 4 bytes
+        if from_file.magic_bytes.len() != MAGIC_BYTES_LEN {
+            return Err(OneOf::new(config::ConfigError::Message(format!(
+                "The length of magic bytes '{}' is not {MAGIC_BYTES_LEN}. Check configuration",
+                from_file.magic_bytes
+            ))));
+        }
+
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
@@ -131,6 +139,28 @@ mod tests {
     use toml;
 
     use super::*;
+    use crate::constants::MAGIC_BYTES_LEN;
+
+    #[test]
+    fn test_magic_bytes_length() {
+        let config = r#"
+            esplora = "https://esplora.testnet.alpenlabs.io"
+            bitcoind_rpc_user = "user"
+            bitcoind_rpc_pw = "pass"
+            bitcoind_rpc_endpoint = "http://127.0.0.1:38332"
+            alpen_endpoint = "https://rpc.testnet.alpenlabs.io"
+            faucet_endpoint = "https://faucet-api.testnet.alpenlabs.io"
+            mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
+            blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
+            bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
+            magic_bytes = "alpn"
+            network = "signet"
+        "#;
+
+        let parsed: SettingsFromFile =
+            toml::from_str(config).expect("failed to parse SettingsFromFile from TOML");
+        assert!(parsed.magic_bytes.len() == MAGIC_BYTES_LEN);
+    }
 
     #[test]
     fn test_settings_from_file_serde_roundtrip() {
@@ -144,7 +174,7 @@ mod tests {
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
-            magic_bytes = "alpenstrata"
+            magic_bytes = "alpn"
             network = "signet"
         "#;
 
