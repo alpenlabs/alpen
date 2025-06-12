@@ -154,7 +154,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         fetch_fn: impl Fn() -> DbRecv<V>,
     ) -> DbResult<V> {
         // See below comment about control flow.
-        let (mut slot_lock, complete_tx) = {
+        let (slot, complete_tx) = {
             let mut cache = { self.cache.lock() };
             if let Some(entry_lock) = cache.get(k).cloned() {
                 drop(cache);
@@ -166,35 +166,58 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
             let (complete_tx, complete_rx) = broadcast::channel(1);
             let slot = Arc::new(RwLock::new(SlotState::Pending(complete_rx)));
             cache.push(k.clone(), slot.clone());
-            let lock = slot
-                .try_write_owned()
-                .expect("cache: lock fresh cache entry");
 
-            (lock, complete_tx)
+            (slot, complete_tx)
         };
 
-        let res = match fetch_fn().await {
-            Ok(Ok(v)) => v,
-            Ok(Err(e)) => {
-                error!(?e, "failed to make database fetch");
-                *slot_lock = SlotState::Error;
-                self.purge(k);
-                return Err(e);
-            }
-            Err(_) => {
-                error!("database fetch aborted");
-                self.purge(k);
-                return Err(DbError::WorkerFailedStrangely);
-            }
-        };
+        // Make the fetch.
+        let fetch_res = fetch_fn().await;
 
-        // Fill in the lock state and send down the complete tx.
-        *slot_lock = SlotState::Ready(res.clone());
-        if complete_tx.send(res.clone()).is_err() {
-            warn!("failed to notify waiting cache readers");
+        // Some error logging before we try to aquire locks.
+        if fetch_res.is_err() {
+            error!("database fetch aborted");
         }
 
-        Ok(res)
+        if let Ok(Err(e)) = fetch_res.as_ref() {
+            error!(?e, "failed to make database fetch");
+        }
+
+        // And then re-acquire the lock on the slot before handling the result.
+        let mut slot_lock = slot.write().await;
+        trace!("re-acquired slot lock");
+        match fetch_res {
+            Ok(Ok(v)) => {
+                // Fill in the lock state and send down the complete tx.
+                *slot_lock = SlotState::Ready(v.clone());
+                if complete_tx.send(v.clone()).is_err() {
+                    // This happens if there was no waiters, which is normal, leaving it
+                    // here if we need to debug it.
+                    //warn!("failed to notify waiting cache readers");
+                }
+
+                Ok(v)
+            }
+
+            Ok(Err(e)) => {
+                // Important ordering for the locks.
+                let mut cache_lock = self.cache.lock();
+                trace!("re-acquired cache lock");
+                *slot_lock = SlotState::Error;
+                cache_lock.pop(k);
+
+                Err(e)
+            }
+
+            Err(_) => {
+                // Important ordering for the locks.
+                let mut cache_lock = self.cache.lock();
+                trace!("re-acquired cache lock");
+                *slot_lock = SlotState::Error;
+                cache_lock.pop(k);
+
+                Err(DbError::WorkerFailedStrangely)
+            }
+        }
     }
 
     /// Returns a clone of an entry from the cache or invokes some function to load it from
@@ -208,7 +231,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         // ensure the lock on the whole cache is as short-lived as possible while we check to see if
         // the entry we're looking for is there.  If it's not, then we want to insert a reservation
         // that we hold a lock to and then release the cache-level lock.
-        let (mut slot_lock, complete_tx) = {
+        let (slot, complete_tx) = {
             let mut cache = self.cache.lock();
             if let Some(entry_lock) = cache.get(k).cloned() {
                 drop(cache);
@@ -220,33 +243,44 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
             let (complete_tx, complete_rx) = broadcast::channel(1);
             let slot = Arc::new(RwLock::new(SlotState::Pending(complete_rx)));
             cache.push(k.clone(), slot.clone());
-            let lock = slot
-                .try_write_owned()
-                .expect("cache: lock fresh cache entry");
 
-            (lock, complete_tx)
+            (slot, complete_tx)
         };
 
         // Load the entry and insert it into the slot we've already reserved.
-        let res = match fetch_fn() {
-            Ok(v) => v,
-            Err(e) => {
-                warn!(?e, "failed to make database fetch");
-                *slot_lock = SlotState::Error;
-                self.purge(k);
-                return Err(e);
-            }
-        };
+        let fetch_res = fetch_fn();
 
-        // Fill in the lock state and send down the complete tx.
-        *slot_lock = SlotState::Ready(res.clone());
-        if complete_tx.send(res.clone()).is_err() {
-            // This happens if there was no waiters, which is normal, leaving it
-            // here if we need to debug it.
-            //warn!("failed to notify waiting cache readers");
+        // Some error logging before we try to aquire locks.
+        if let Err(e) = fetch_res.as_ref() {
+            warn!(?e, "failed to make database fetch");
         }
 
-        Ok(res)
+        // And then re-acquire the lock on the slot before handling the result.
+        let mut slot_lock = slot.blocking_write();
+        trace!("re-acquired slot lock");
+        match fetch_res {
+            Ok(v) => {
+                // Fill in the lock state and send down the complete tx.
+                *slot_lock = SlotState::Ready(v.clone());
+                if complete_tx.send(v.clone()).is_err() {
+                    // This happens if there was no waiters, which is normal, leaving it
+                    // here if we need to debug it.
+                    //warn!("failed to notify waiting cache readers");
+                }
+
+                Ok(v)
+            }
+
+            Err(e) => {
+                // Important ordering for the locks.
+                let mut cache_lock = self.cache.lock();
+                trace!("re-acquired cache lock");
+                *slot_lock = SlotState::Error;
+                cache_lock.pop(k);
+
+                Err(e)
+            }
+        }
     }
 }
 
