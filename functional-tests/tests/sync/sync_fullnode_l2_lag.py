@@ -24,12 +24,11 @@ class SyncFullNodeL2LagTest(testenv.StrataTestBase):
         fnrpc = fullnode.create_rpc()
 
         # Wait until sequencer and fullnode start
-        wait_until(seqrpc.strata_protocolVersion, timeout=60)
-        wait_until(fnrpc.strata_protocolVersion, timeout=60)
+        wait_until_strata_client_ready(seqrpc)
+        wait_until_strata_client_ready(fnrpc)
 
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()
-        time.sleep(5)
 
         # Now pause the sync worker so that we can have finalized epoch on L1,
         # but not corresponding block on L2 in full node

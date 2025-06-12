@@ -2,6 +2,7 @@ import time
 
 import flexitest
 
+from utils import wait_until
 from envs import testenv
 
 NUM_BLOCKS_TO_RECEIVE = 10
@@ -18,14 +19,11 @@ class RecentBlocksTest(testenv.StrataTestBase):
 
         # create both btc and sequencer RPC
         seqrpc = seq.create_rpc()
-        counter = 0
-        while counter <= 20:
-            blk = seqrpc.strata_getHeadersAtIdx(NUM_BLOCKS_TO_RECEIVE)
-            if blk is None:
-                counter += 1
-                time.sleep(1)
-            else:
-                break
+        wait_until(
+            lambda: seqrpc.strata_getHeadersAtIdx(NUM_BLOCKS_TO_RECEIVE) is not None,
+            error_with=f"Expected block {NUM_BLOCKS_TO_RECEIVE} not generated",
+            timeout=20,
+        )
 
         recent_blks = seqrpc.strata_getRecentBlockHeaders(NUM_BLOCKS_TO_RECEIVE)
         assert len(recent_blks) == NUM_BLOCKS_TO_RECEIVE

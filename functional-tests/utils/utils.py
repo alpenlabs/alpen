@@ -220,6 +220,17 @@ def wait_until_epoch_finalized(rpc, epoch: int, **kwargs):
     wait_until(_check, **kwargs)
 
 
+def wait_until_strata_client_ready(client_rpc, timeout=5):
+    """
+    Waits until the strata client is ready to serve rpc
+    """
+    wait_until(
+        lambda: client_rpc.strata_protocolVersion() is not None,
+        error_with="Strata client did not start on time",
+        timeout=timeout,
+    )
+
+
 def wait_until_epoch_observed_final(rpc, epoch: int, **kwargs):
     """
     Waits until at least the given epoch is observed as final on L2, according
@@ -483,7 +494,6 @@ def wait_for_proof_with_time_out(prover_client_rpc, task_id, time_out=3600) -> b
             logging.info(f"Proof generatoin failed for {task_id}")
             return False
 
-        time.sleep(2)
         elapsed_time = time.time() - start_time  # Calculate elapsed time
         if elapsed_time >= time_out:
             raise TimeoutError(f"Operation timed out after {time_out} seconds.")

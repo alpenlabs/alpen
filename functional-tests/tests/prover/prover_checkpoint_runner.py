@@ -41,7 +41,6 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
 
         # Wait until the prover client reports readiness
         # TODO this should be done in the env init
-        time.sleep(1)
         wait_until(
             lambda: prover_rpc.dev_strata_getReport() is not None,
             error_with="Prover did not start on time",

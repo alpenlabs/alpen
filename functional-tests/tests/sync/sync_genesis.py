@@ -25,12 +25,14 @@ class SyncGenesisTest(testenv.StrataTestBase):
         stat = None
         last_slot = 0
         for _ in range(5):
-            time.sleep(3)
-            stat = seqrpc.strata_syncStatus()
+            stat = wait_until_with_value(
+                lambda: seqrpc.strata_syncStatus(),
+                lambda value: value["tip_height"] > last_slot,
+                error_with="seem not to be making progress",
+                timeout=3,
+            )
             tip_slot = stat["tip_height"]
             tip_blkid = stat["tip_block_id"]
             cur_epoch = stat["cur_epoch"]
             logging.info(f"cur tip slot {tip_slot}, blkid {tip_blkid}, epoch {cur_epoch}")
-            assert tip_slot >= last_slot, "cur slot went backwards"
-            assert tip_slot > last_slot, "seem to not be making progress"
             last_slot = tip_slot
