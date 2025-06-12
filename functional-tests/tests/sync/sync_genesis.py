@@ -1,5 +1,4 @@
 import logging
-import time
 
 import flexitest
 
@@ -27,7 +26,7 @@ class SyncGenesisTest(testenv.StrataTestBase):
         for _ in range(5):
             stat = wait_until_with_value(
                 lambda: seqrpc.strata_syncStatus(),
-                lambda value: value["tip_height"] > last_slot,
+                lambda value, last_slt=last_slot: value["tip_height"] > last_slt,
                 error_with="seem not to be making progress",
                 timeout=3,
             )

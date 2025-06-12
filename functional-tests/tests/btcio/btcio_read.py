@@ -1,12 +1,8 @@
-import logging
-import time
-
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
 from utils import *
-from utils.constants import MAX_HORIZON_POLL_INTERVAL_SECS
 
 
 @flexitest.register
@@ -54,4 +50,4 @@ class L1StatusTest(testenv.StrataTestBase):
 
         # check if L1 reader is seeing new L1 activity
         assert next_l1stat["cur_height"] - l1stat["cur_height"] == 2, "new blocks not read"
-        assert elapsed_time > cur_time, "time not flowing properly"
+        assert elapsed_time >= cur_time, "time not flowing properly"

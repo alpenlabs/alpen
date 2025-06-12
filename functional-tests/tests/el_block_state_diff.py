@@ -1,11 +1,9 @@
-import time
-
 import flexitest
 from solcx import compile_source, install_solc, set_solc_version
-from utils.utils import wait_until_with_value
 from web3 import Web3
 
 from envs import testenv
+from utils.utils import wait_until_with_value
 
 
 @flexitest.register

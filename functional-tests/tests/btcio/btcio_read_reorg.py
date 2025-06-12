@@ -1,11 +1,8 @@
-import time
-
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
 from envs.testenv import BasicEnvConfig
-from utils.constants import BLOCK_GENERATION_INTERVAL_SECS, SEQ_SLACK_TIME_SECS
 from utils.utils import wait_until_with_value
 
 REORG_DEPTH = 3
