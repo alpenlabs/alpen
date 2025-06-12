@@ -1,9 +1,7 @@
-import time
-
 import flexitest
 
-from utils import wait_until
 from envs import testenv
+from utils import wait_until
 
 NUM_BLOCKS_TO_RECEIVE = 10
 BLOCK_NUMBER = 4
