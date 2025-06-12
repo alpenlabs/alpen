@@ -170,7 +170,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             broadcast_handle,
             &mut methods,
         )?;
-    } else if args.sync_mode == SyncMode::SequencerSync {
+    } else if args.sync_mode == SyncMode::Full {
         let sync_endpoint = &config
             .client
             .sync_endpoint
@@ -333,7 +333,7 @@ fn start_core_tasks(
     let status_channel = init_status_channel(storage.as_ref())?;
 
     // instantiate execution engine
-    let is_checkpoint_sync = sync_mode == SyncMode::CheckpointSync && !config.client.is_sequencer;
+    let is_checkpoint_sync = sync_mode == SyncMode::Checkpoint && !config.client.is_sequencer;
     let engine = init_engine_controller(
         config,
         params.as_ref(),

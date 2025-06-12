@@ -219,6 +219,7 @@ impl From<ChainstateEntry> for Chainstate {
     }
 }
 
+#[derive(Debug)]
 pub struct FullStateUpdate {
     new_chainstate: Chainstate,
 }
