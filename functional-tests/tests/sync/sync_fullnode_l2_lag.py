@@ -10,7 +10,7 @@ FOLLOW_DIST = 1
 
 
 @flexitest.register
-class SyncFullNodeL2LagTest(testenv.StrataTester):
+class SyncFullNodeL2LagTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         env = testenv.HubNetworkEnvConfig(
             110, rollup_settings=RollupParamsSettings.new_default().fast_batch()

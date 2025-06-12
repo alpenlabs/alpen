@@ -8,14 +8,16 @@ workspace = true
 
 [dependencies]
 alpen-reth-db.workspace = true
-strata-mpt.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
+alloy-genesis.workspace = true
+alloy-primitives.workspace = true
 alloy-rpc-types.workspace = true
 eyre.workspace = true
 futures-util.workspace = true
+reth-chainspec.workspace = true
 reth-evm.workspace = true
 reth-exex.workspace = true
 reth-node-api.workspace = true
@@ -25,6 +27,9 @@ reth-revm.workspace = true
 reth-trie.workspace = true
 reth-trie-common = { workspace = true, features = ["eip1186"] }
 revm-primitives.workspace = true
+rsp-mpt.workspace = true
+rsp-primitives.workspace = true
+serde_json.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

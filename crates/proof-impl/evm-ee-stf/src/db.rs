@@ -22,13 +22,16 @@ use std::collections::hash_map::Entry;
 use alloy_primitives::map::{DefaultHashBuilder, HashMap};
 use anyhow::{anyhow, Result};
 use revm::{
-    db::{AccountState, DbAccount, InMemoryDB},
-    primitives::{AccountInfo, Bytecode},
+    bytecode::Bytecode,
+    database::{AccountState, Cache, DbAccount, InMemoryDB},
+    state::AccountInfo,
 };
 use revm_primitives::alloy_primitives::{Address, Bytes, B256, U256};
-use strata_mpt::{keccak, StateAccount, KECCAK_EMPTY};
 
-use crate::EvmBlockStfInput;
+use crate::{
+    mpt::{keccak, StateAccount, KECCAK_EMPTY},
+    EvmBlockStfInput,
+};
 
 /// A helper trait to extend [`InMemoryDB`] with additional functionality.
 pub trait InMemoryDBHelper {
@@ -80,7 +83,7 @@ impl InMemoryDBHelper for InMemoryDB {
             }
 
             let bytecode = if state_account.code_hash.0 == KECCAK_EMPTY.0 {
-                Bytecode::new()
+                Bytecode::default()
             } else {
                 // N.B. It can happen that contract's code isn't present in the witness,
                 // but it's *only* possible (as a special case) for SELFDESTRUCT opcode.
@@ -148,21 +151,24 @@ impl InMemoryDBHelper for InMemoryDB {
 
         // Return the DB.
         Ok(InMemoryDB {
-            accounts,
-            block_hashes,
+            cache: Cache {
+                accounts: accounts.clone(),
+                block_hashes: block_hashes.clone(),
+                ..Default::default()
+            },
             ..Default::default()
         })
     }
 
     fn get_account_info(&self, address: Address) -> Result<Option<AccountInfo>> {
-        match self.accounts.get(&address) {
+        match self.cache.accounts.get(&address) {
             Some(db_account) => Ok(db_account.info()),
             None => Err(anyhow!("Account not found.")),
         }
     }
 
     fn get_storage_slot(&self, address: Address, index: U256) -> Result<U256> {
-        match self.accounts.get(&address) {
+        match self.cache.accounts.get(&address) {
             Some(account) => match account.storage.get(&index) {
                 Some(value) => Ok(*value),
                 None => match account.account_state {
@@ -177,14 +183,14 @@ impl InMemoryDBHelper for InMemoryDB {
 
     fn storage_keys(&self) -> HashMap<Address, Vec<U256>> {
         let mut out = HashMap::with_hasher(alloy_primitives::map::DefaultHashBuilder::default());
-        for (address, account) in &self.accounts {
+        for (address, account) in &self.cache.accounts {
             out.insert(*address, account.storage.keys().cloned().collect());
         }
         out
     }
 
     fn insert_block_hash(&mut self, block_number: U256, block_hash: B256) {
-        match self.block_hashes.entry(block_number) {
+        match self.cache.block_hashes.entry(block_number) {
             Entry::Occupied(entry) => assert_eq!(&block_hash, entry.get()),
             Entry::Vacant(entry) => {
                 entry.insert(block_hash);

@@ -8,7 +8,7 @@ from utils import *
 
 
 @flexitest.register
-class BlockFinalizationTest(testenv.StrataTester):
+class BlockFinalizationTest(testenv.StrataTestBase):
     """ """
 
     def __init__(self, ctx: flexitest.InitContext):

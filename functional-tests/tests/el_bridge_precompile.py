@@ -21,7 +21,7 @@ event_signature_text = "WithdrawalIntentEvent(uint64,bytes32)"
 
 
 @flexitest.register
-class ElBridgePrecompileTest(testenv.StrataTester):
+class ElBridgePrecompileTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

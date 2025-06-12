@@ -6,7 +6,7 @@ from utils import generate_n_blocks, submit_da_blob, wait_until
 
 
 @flexitest.register
-class L1WriterTest(testenv.StrataTester):
+class L1WriterTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

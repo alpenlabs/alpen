@@ -1,6 +1,5 @@
 from enum import Enum
-from logging import Logger
-from typing import TypeAlias
+from typing import Callable, TypeAlias
 
 import solcx
 import web3
@@ -32,7 +31,7 @@ class _TransactionFaucet:
 
     def __init__(self, acc: AbstractAccount, logger=None):
         self._acc: AbstractAccount = acc
-        self._logger: Logger = logger
+        self._logger: Callable[[str], None] | None = logger
 
     @property
     def w3(self) -> web3.Web3:
@@ -40,7 +39,7 @@ class _TransactionFaucet:
 
     def log(self, msg):
         if self._logger is not None:
-            self._logger.info(msg)
+            self._logger(msg)
 
 
 class TransactionBuilder(_TransactionFaucet):
@@ -153,7 +152,9 @@ class TransferTransaction(TransactionSender):
     """
 
     @tx_caller("TRANSFERRING [2] TO [1]")
-    def transfer(self, to, value, tx_type: TransactionType) -> HexStr | None:
+    def transfer(
+        self, to, value, tx_type: TransactionType, wait=False
+    ) -> TxReceipt | HexStr | None:
         tx: Tx = TransactionBuilder.new_with_gas(25000)
         tx.update(
             {
@@ -161,6 +162,9 @@ class TransferTransaction(TransactionSender):
                 "value": self.w3.to_wei(value, "ether"),
             }
         )
+
+        if wait:
+            return self.send_ensured_tx_and_wait(tx, tx_type)
         return self.send_ensured_tx(tx, tx_type)
 
 
@@ -236,6 +240,11 @@ class SmartContracts(TransactionSender):
 
     def get_contract_address(self, contract_id):
         return self.w3.to_checksum_address(self._contract_address(contract_id))
+
+    def get_contract_instance(self, contract_id):
+        return self.w3.eth.contract(
+            address=self._contract_address(contract_id), abi=self._contract_abi(contract_id)
+        )
 
 
 class ERC20(SmartContracts):

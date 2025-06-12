@@ -13,7 +13,7 @@ PROVER_CHECKPOINT_SETTINGS = {
 
 
 @flexitest.register
-class ProverCheckpointEmptyProofRunnerTest(testenv.StrataTester):
+class ProverCheckpointEmptyProofRunnerTest(testenv.StrataTestBase):
     """This tests the epoch increments with empty proofs."""
 
     def __init__(self, ctx: flexitest.InitContext):

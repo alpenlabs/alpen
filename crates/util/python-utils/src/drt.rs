@@ -88,7 +88,7 @@ fn deposit_request_transaction_inner(
     let mut wallet = taproot_wallet()?;
     let recovery_address = wallet.reveal_next_address(KeychainKind::External).address;
     let (_, recovery_script_hash) = bridge_in_descriptor(musig_bridge_pk, recovery_address.clone())
-        .expect("valid bridge in descriptor");
+        .expect("drt: invalid bridge in descriptor");
 
     let mut bridge_wallet = bridge_wallet(musig_bridge_pk, recovery_address)?;
     let bridge_in_address = bridge_wallet
@@ -117,11 +117,11 @@ fn deposit_request_transaction_inner(
         builder.add_recipient(bridge_in_address.script_pubkey(), BRIDGE_IN_AMOUNT);
         builder.add_data(&op_return_data);
         builder.fee_rate(fee_rate);
-        builder.finish().expect("valid psbt")
+        builder.finish().expect("drt: invalid psbt")
     };
     wallet.sign(&mut psbt, Default::default()).unwrap();
 
-    let tx = psbt.extract_tx().expect("valid tx");
+    let tx = psbt.extract_tx().expect("drt: invalid tx");
     Ok(tx)
 }
 

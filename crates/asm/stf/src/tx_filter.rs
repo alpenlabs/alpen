@@ -9,7 +9,7 @@ use strata_asm_common::{SubprotocolId, TagPayload, TxInput};
 ///
 /// The SPS-50 header MUST be encoded as an `OP_RETURN` in output index 0, with payload:
 /// ```text
-/// [0..4]   ASCII magic “ALPN”
+/// [0..4]   ASCII magic "ALPN"
 /// [4]      subprotocol type (u8)
 /// [5]      tx type (u8)
 /// [6..]    auxiliary data (ignored here)

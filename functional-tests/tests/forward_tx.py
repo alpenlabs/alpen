@@ -6,7 +6,7 @@ from utils import wait_until
 
 
 @flexitest.register
-class FullnodeElBlockGenerationTest(testenv.StrataTester):
+class FullnodeElBlockGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("hub1")
 

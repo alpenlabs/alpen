@@ -10,7 +10,7 @@ FOLLOW_DIST = 1
 
 
 @flexitest.register
-class SyncFromRpcTest(testenv.StrataTester):
+class SyncFromRpcTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("hub1")
 

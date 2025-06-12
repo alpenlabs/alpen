@@ -7,7 +7,7 @@ from utils import wait_for_proof_with_time_out
 
 
 @flexitest.register
-class BasicLoadGenerationTest(testenv.StrataTester):
+class BasicLoadGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("load_reth")
 

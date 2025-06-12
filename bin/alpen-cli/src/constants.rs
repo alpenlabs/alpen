@@ -32,6 +32,8 @@ pub const AES_NONCE_LEN: usize = 12;
 pub const SEED_LEN: usize = 16;
 /// AES-256-GCM-SIV tag len
 pub const AES_TAG_LEN: usize = 16;
+/// OP_RETURN magic bytes len
+pub const MAGIC_BYTES_LEN: usize = 4;
 
 pub const DEFAULT_NETWORK: Network = Network::Signet;
 pub const BRIDGE_ALPEN_ADDRESS: &str = "0x5400000000000000000000000000000000000001";

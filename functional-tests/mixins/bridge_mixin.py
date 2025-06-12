@@ -5,7 +5,6 @@ from strata_utils import (
     deposit_request_transaction,
     is_valid_bosd,
 )
-from web3 import middleware
 
 from envs.rollup_params_cfg import RollupConfig
 from utils import *
@@ -28,13 +27,7 @@ class BridgeMixin(BaseMixin):
     def premain(self, ctx: flexitest.RunContext):
         super().premain(ctx)
 
-        self.eth_account = self.web3.eth.account.from_key(ETH_PRIVATE_KEY)
-
-        # Inject signing middleware
-        self.web3.middleware_onion.inject(
-            middleware.SignAndSendRawMiddlewareBuilder.build(self.eth_account),
-            layer=0,
-        )
+        self.bridge_eth_account = self.w3.eth.account.from_key(ETH_PRIVATE_KEY)
 
     def deposit(self, ctx: flexitest.RunContext, el_address, bridge_pk) -> str:
         """

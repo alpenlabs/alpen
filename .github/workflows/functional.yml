@@ -125,7 +125,7 @@ jobs:
         uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
         with:
           toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
-        
+
       - name: Rust cache
         uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
         with:

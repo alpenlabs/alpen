@@ -6,7 +6,7 @@ from envs import testenv
 
 
 @flexitest.register
-class ExecUpdateTest(testenv.StrataTester):
+class ExecUpdateTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

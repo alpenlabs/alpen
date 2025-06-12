@@ -15,7 +15,7 @@ PROVER_CHECKPOINT_SETTINGS = {
 
 
 @flexitest.register
-class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTester):
+class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
             testenv.DualSequencerMixedPolicyEnvConfig(

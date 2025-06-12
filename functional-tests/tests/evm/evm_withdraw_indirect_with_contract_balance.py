@@ -22,12 +22,13 @@ class ContractBridgeOutWithContractBalanceTest(BridgePrecompileMixin):
         self.deposit(ctx, self.deployed_contract_receipt.contractAddress, self.bridge_pk)
 
         # withdraw
-        contract_instance = self.web3.eth.contract(
+        # TODO: use self.txs.deploy and self.txs.call
+        contract_instance = self.w3.eth.contract(
             abi=self.abi, address=self.deployed_contract_receipt.contractAddress
         )
         tx_hash = contract_instance.functions.withdrawWithOwnBalance(self.bosd).transact(
             {"gas": 5_000_000}
         )
 
-        tx_receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
         assert tx_receipt.status == 1

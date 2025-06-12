@@ -15,7 +15,7 @@ from utils import (
 
 
 @flexitest.register
-class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTester):
+class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(testenv.DualSequencerMixedPolicyEnvConfig(pre_generate_blocks=110))
 

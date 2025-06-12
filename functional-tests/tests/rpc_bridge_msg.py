@@ -9,7 +9,7 @@ WAIT_TIME = 2
 
 
 @flexitest.register
-class BridgeMsgTest(testenv.StrataTester):
+class BridgeMsgTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

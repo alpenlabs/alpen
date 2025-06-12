@@ -10,7 +10,7 @@ from utils.schnorr import (
 
 
 @flexitest.register
-class SchnorrPrecompileTest(testenv.StrataTester):
+class SchnorrPrecompileTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

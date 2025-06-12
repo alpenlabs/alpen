@@ -13,7 +13,7 @@ CL_PROVER_PARAMS = {
 
 
 @flexitest.register
-class ProverClientTest(testenv.StrataTester):
+class ProverClientTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("prover")
 

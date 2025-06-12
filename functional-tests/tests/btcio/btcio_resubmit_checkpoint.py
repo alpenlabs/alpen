@@ -14,7 +14,7 @@ from utils import (
 
 
 @flexitest.register
-class ResubmitCheckpointTest(testenv.StrataTester):
+class ResubmitCheckpointTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         settings = RollupParamsSettings.new_default()
         settings.proof_timeout = 5

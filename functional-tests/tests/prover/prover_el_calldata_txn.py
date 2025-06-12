@@ -10,7 +10,7 @@ from utils import (
 
 
 @flexitest.register
-class ElCalldataTransactionProofTest(testenv.StrataTester):
+class ElCalldataTransactionProofTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("prover")
 
