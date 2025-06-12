@@ -186,11 +186,7 @@ mod tests {
         L1Db::new(db, db_ops)
     }
 
-    fn insert_block_data(
-        height: u64,
-        db: &L1Db,
-        num_txs: usize,
-    ) -> (L1BlockManifest, Vec<L1Tx>, CompactMmr) {
+    fn insert_block_data(height: u64, db: &L1Db, num_txs: usize) -> (L1BlockManifest, Vec<L1Tx>) {
         let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
 
         // TODO maybe tweak this to make it a bit more realistic?
@@ -215,7 +211,7 @@ mod tests {
         let res = db.set_canonical_chain_entry(height, *mf.blkid());
         assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
 
-        (mf, txs, mmr)
+        (mf, txs)
     }
 
     // TEST STORE METHODS
@@ -298,7 +294,7 @@ mod tests {
         let idx = 1;
 
         // insert
-        let (mf, txs, _) = insert_block_data(idx, &db, 10);
+        let (mf, txs) = insert_block_data(idx, &db, 10);
 
         // fetch non existent block
         let non_idx = 200;
@@ -332,7 +328,7 @@ mod tests {
         let db = setup_db();
         let idx = 1; // block number
                      // Insert a block
-        let (mf, txns, _) = insert_block_data(idx, &db, 10);
+        let (mf, txns) = insert_block_data(idx, &db, 10);
         let blockid = mf.blkid();
         let txidx: u32 = 3; // some tx index
         assert!(txns.len() > txidx as usize);
@@ -409,9 +405,9 @@ mod tests {
         let db = setup_db();
 
         let num_txs = 10;
-        let (mf1, _, _) = insert_block_data(1, &db, num_txs);
-        let (mf2, _, _) = insert_block_data(2, &db, num_txs);
-        let (mf3, _, _) = insert_block_data(3, &db, num_txs);
+        let (mf1, _) = insert_block_data(1, &db, num_txs);
+        let (mf2, _) = insert_block_data(2, &db, num_txs);
+        let (mf3, _) = insert_block_data(3, &db, num_txs);
 
         let range = db.get_canonical_blockid_range(1, 4).unwrap();
         assert_eq!(range.len(), 3);
@@ -429,7 +425,7 @@ mod tests {
 
         let mut l1_txs = Vec::with_capacity(total_num_blocks);
         for i in 0..total_num_blocks {
-            let (mf, block_txs, _) = insert_block_data(i as u64, &db, num_txs);
+            let (mf, block_txs) = insert_block_data(i as u64, &db, num_txs);
             l1_txs.push((*mf.blkid(), block_txs));
         }
 
