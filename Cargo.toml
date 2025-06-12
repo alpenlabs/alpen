@@ -258,6 +258,7 @@ http = "1.0.0"
 hyper = "0.14.25"
 jsonrpsee = "0.24"
 jsonrpsee-types = "0.24"
+lazy_static = "1.5"
 lru = "0.12"
 mockall = "0.11"
 musig2 = { version = "0.1.0", features = ["serde"] }

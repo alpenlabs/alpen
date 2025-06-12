@@ -9,7 +9,6 @@ workspace = true
 [dependencies]
 borsh.workspace = true
 digest.workspace = true
+lazy_static.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
 sha2.workspace = true
