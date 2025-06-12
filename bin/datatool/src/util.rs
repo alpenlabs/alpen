@@ -11,10 +11,9 @@ use std::{
 
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
-use bitcoin::{base58, bip32::Xpriv, Network};
+use bitcoin::{base58, bip32::Xpriv, secp256k1::SECP256K1, Network};
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
-use secp256k1::SECP256K1;
 use shrex::Hex;
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_primitives::{
