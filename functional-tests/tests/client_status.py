@@ -5,7 +5,7 @@ from utils import wait_until
 
 
 @flexitest.register
-class L1ClientStatusTest(testenv.StrataTester):
+class L1ClientStatusTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

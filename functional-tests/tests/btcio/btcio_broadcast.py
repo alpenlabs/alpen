@@ -6,7 +6,7 @@ from utils import wait_until
 
 
 @flexitest.register
-class BroadcastTest(testenv.StrataTester):
+class BroadcastTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

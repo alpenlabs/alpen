@@ -8,7 +8,7 @@ from envs import testenv
 
 
 @flexitest.register
-class ElBlockStateDiffDataGenerationTest(testenv.StrataTester):
+class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         install_solc(version="0.8.16")
         set_solc_version("0.8.16")

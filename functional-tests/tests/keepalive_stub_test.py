@@ -6,7 +6,7 @@ from envs import testenv
 
 
 @flexitest.register
-class KeepAliveEnvMockTest(testenv.StrataTester):
+class KeepAliveEnvMockTest(testenv.StrataTestBase):
     """
     A dynamically populated mock test for the keep-alive mode.
     """

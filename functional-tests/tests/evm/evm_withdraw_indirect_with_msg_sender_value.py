@@ -21,18 +21,19 @@ class ContractBridgeOutWithSenderValueTest(BridgePrecompileMixin):
         return
 
         # deposit once
-        self.deposit(ctx, self.el_address, self.bridge_pk)
+        self.deposit(ctx, self.bridge_eth_account.address, self.bridge_pk)
 
         cfg: RollupConfig = ctx.env.rollup_cfg()
         deposit_amount = cfg.deposit_amount
 
         # Call the contract function
-        contract_instance = self.web3.eth.contract(
+        # TODO: use self.txs.deploy and self.txs.call
+        contract_instance = self.w3.eth.contract(
             abi=self.abi, address=self.deployed_contract_receipt.contractAddress
         )
         tx_hash = contract_instance.functions.withdraw(self.bosd).transact(
             {"gas": 5_000_000, "value": deposit_amount * SATS_TO_WEI}
         )
 
-        tx_receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
+        tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
         assert tx_receipt.status == 1

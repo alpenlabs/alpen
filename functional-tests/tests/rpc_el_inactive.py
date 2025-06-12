@@ -8,7 +8,7 @@ from utils import wait_until
 
 
 @flexitest.register
-class SeqStatusElInactiveTest(testenv.StrataTester):
+class SeqStatusElInactiveTest(testenv.StrataTestBase):
     """
     Test that checks the behavior of client RPC when reth is down and ability to produce blocks
     when reth is up again

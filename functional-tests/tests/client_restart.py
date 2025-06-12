@@ -5,7 +5,7 @@ from utils import *
 
 
 @flexitest.register
-class BlockFinalizationSeqRestartTest(testenv.StrataTester):
+class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
     """This tests finalization when sequencer client restarts"""
 
     def __init__(self, ctx: flexitest.InitContext):

@@ -9,7 +9,7 @@ REORG_DEPTH = 3
 
 
 @flexitest.register
-class CLBlockWitnessDataGenerationTest(testenv.StrataTester):
+class CLBlockWitnessDataGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

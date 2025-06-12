@@ -16,7 +16,7 @@ from utils import *
 from utils.constants import *
 
 
-class StrataTester(flexitest.Test):
+class StrataTestBase(flexitest.Test):
     """
     Class to be used instead of flexitest.Test for accessing logger
     """

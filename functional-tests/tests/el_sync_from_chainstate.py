@@ -21,7 +21,7 @@ def send_tx(web3: Web3):
 
 
 @flexitest.register
-class ELSyncFromChainstateTest(testenv.StrataTester):
+class ELSyncFromChainstateTest(testenv.StrataTestBase):
     """This tests sync when el is missing blocks"""
 
     def __init__(self, ctx: flexitest.InitContext):

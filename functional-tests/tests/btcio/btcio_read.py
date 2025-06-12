@@ -10,7 +10,7 @@ from utils.constants import MAX_HORIZON_POLL_INTERVAL_SECS
 
 
 @flexitest.register
-class L1StatusTest(testenv.StrataTester):
+class L1StatusTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         rollup_params = RollupParamsSettings.new_default()
         rollup_params.horizon_height = 2
