@@ -20,7 +20,7 @@ pub fn get_alpen_block(db: Arc<CommonDb>, args: GetAlpenBlockArgs) -> Result<(),
     if hex_str.len() != 64 {
         return Err(DisplayedError::UserError(
             "Block-id must be 32-byte / 64-char hex".into(),
-            Box::new(hex_str.to_owned()),
+            Box::new(args.block_id.to_owned()),
         ));
     }
 
@@ -40,7 +40,7 @@ pub fn get_alpen_block(db: Arc<CommonDb>, args: GetAlpenBlockArgs) -> Result<(),
         .get_block_data(block_id)
         .internal_error("Failed to read block data")?
         .ok_or_else(|| {
-            DisplayedError::UserError(format!("block {block_id} not found"), Box::new(()))
+            DisplayedError::UserError(format!("block with id not found"), Box::new(block_id))
         })?;
 
     println!("Alpen block {block_id} – status: {status:?}");

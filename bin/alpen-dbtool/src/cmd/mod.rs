@@ -1,6 +1,7 @@
 pub mod alpen;
 pub mod chainstate;
 pub mod checkpoint;
+pub mod epoch;
 pub mod syncinfo;
 
 use std::path::PathBuf;
@@ -9,7 +10,7 @@ use clap::{Parser, Subcommand};
 
 use crate::cmd::{
     alpen::GetAlpenBlockArgs, chainstate::ResetChainstateArgs, checkpoint::GetCheckpointDataArgs,
-    syncinfo::GetSyncinfoArgs,
+    epoch::GetEpochSummaryArgs, syncinfo::GetSyncinfoArgs,
 };
 
 /// Alpen DB tool – offline database & chain‑maintenance utility.
@@ -42,6 +43,9 @@ pub enum Command {
 
     /// Show checkpoint data.
     GetCheckpointData(GetCheckpointDataArgs),
+
+    /// Show epoch summary.
+    GetEpochSummary(GetEpochSummaryArgs),
 
     /// Show node’s sync progress on Alpen and Signet.
     GetSyncinfo(GetSyncinfoArgs),

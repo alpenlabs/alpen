@@ -12,6 +12,7 @@ clap.workspace = true
 hex.workspace = true
 rockbound.workspace = true
 serde.workspace = true
+tracing.workspace = true
 tracing-subscriber.workspace = true
 
 strata-db.workspace = true

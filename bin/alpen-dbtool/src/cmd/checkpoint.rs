@@ -23,12 +23,7 @@ pub fn get_checkpoint_data(
             .checkpoint_db()
             .get_last_checkpoint_idx()
             .internal_error("Failed to fetch last checkpoint index")?
-            .ok_or_else(|| {
-                DisplayedError::InternalError(
-                    "no checkpoints found".into(),
-                    Box::new(()), // debug payload
-                )
-            })?,
+            .expect("a valid checkpoint index"),
     };
 
     // Fetch checkpoint data
@@ -36,12 +31,7 @@ pub fn get_checkpoint_data(
         .checkpoint_db()
         .get_checkpoint(checkpoint_idx)
         .internal_error("Failed to fetch checkpoint data")?
-        .ok_or_else(|| {
-            DisplayedError::InternalError(
-                format!("checkpoint {checkpoint_idx} not found"),
-                Box::new(()),
-            )
-        })?;
+        .expect("a valid checkpoint entry");
 
     let checkpoint_commitment = entry.checkpoint.commitment();
 
