@@ -85,6 +85,12 @@ PROOF_ID=$(echo "$RESPONSE" | jq -r '.result[0]')
 
 echo "Got proof handle: $PROOF_ID"
 
+# TODO change to 60
+MAX_RETRIES=6000
+# 5 minutes should be more than enough to proof a range of blocks in native mode.
+#MAX_RETRIES=60
+RETRY_COUNT=0
+
 # Poll dev_strata_getProof
 while true; do
     echo "Polling prover for proof result..."
@@ -105,10 +111,16 @@ while true; do
     if [[ "$READY" == "true" ]]; then
         echo "✅ Proof is ready!"
         break
-    else
-        echo "⏳ Proof not ready yet, waiting 5 seconds..."
-        sleep 5
     fi
+
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if (( RETRY_COUNT >= MAX_RETRIES )); then
+        echo "❌ Error: Proof was not ready after $MAX_RETRIES attempts."
+        exit 1
+    fi
+
+    echo "⏳ Proof not ready yet, waiting 5 seconds..."
+    sleep 5
 done
 
 # Cleanup
