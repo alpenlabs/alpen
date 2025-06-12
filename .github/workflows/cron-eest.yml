@@ -124,7 +124,7 @@ jobs:
       working-directory: docker
       run: |
         chmod +x test_ee_proof.sh
-        ./test_ee_proof.sh
+        ./test_ee_proof.sh docker
 
     - name: Tear down services
       if: always()
