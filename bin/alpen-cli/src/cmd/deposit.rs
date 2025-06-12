@@ -133,7 +133,7 @@ pub async fn deposit(
     if magic_bytes.len() != MAGIC_BYTES_LEN {
         return Err(DisplayedError::UserError(
             format!(
-                "Length of magic bytes '{}' is not {MAGIC_BYTES_LEN}",
+                "Length of magic bytes '{}' is not {MAGIC_BYTES_LEN}. Check configuration",
                 settings.magic_bytes
             ),
             Box::new(InvalidMagicBytesLength),
