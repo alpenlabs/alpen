@@ -219,14 +219,14 @@ fn handle_task_error(task: ProofKey, e: ProvingTaskError) -> ProvingTaskStatus {
         ProvingTaskError::RpcError(_) => {
             // RpcError is retryable as it usually indicates the downstream services may
             // currently be unavailable.
-            error!(?task, ?e, "proving task failed transiently");
+            info!(?task, ?e, "proving task failed transiently");
             ProvingTaskStatus::TransientFailure
         }
         ProvingTaskError::ZkVmError(zkaleido::ZkVmError::ProofGenerationError(ref message)) => {
             if message.to_lowercase().contains("unavailable") {
                 // This type of error with status:Unavailable indicates network error on SP1 side.
                 // See STR-1410 for details.
-                error!(?task, ?e, "proving task failed transiently");
+                info!(?task, ?e, "proving task failed transiently");
                 ProvingTaskStatus::TransientFailure
             } else {
                 error!(?task, ?e, "proving task failed");
