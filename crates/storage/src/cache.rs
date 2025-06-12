@@ -4,7 +4,7 @@ use std::{hash::Hash, num::NonZeroUsize, sync::Arc};
 
 use parking_lot::Mutex;
 use strata_db::{DbError, DbResult};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, broadcast::error::SendError, RwLock, RwLockWriteGuard};
 use tracing::*;
 
 use crate::exec::DbRecv;
@@ -187,14 +187,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         trace!("re-acquired slot lock");
         match fetch_res {
             Ok(Ok(v)) => {
-                // Fill in the lock state and send down the complete tx.
-                *slot_lock = SlotState::Ready(v.clone());
-                if complete_tx.send(v.clone()).is_err() {
-                    // This happens if there was no waiters, which is normal, leaving it
-                    // here if we need to debug it.
-                    //warn!("failed to notify waiting cache readers");
-                }
-
+                send_completion_and_assign_slot_ready(&v, &mut slot_lock, complete_tx);
                 Ok(v)
             }
 
@@ -261,13 +254,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         match fetch_res {
             Ok(v) => {
                 // Fill in the lock state and send down the complete tx.
-                *slot_lock = SlotState::Ready(v.clone());
-                if complete_tx.send(v.clone()).is_err() {
-                    // This happens if there was no waiters, which is normal, leaving it
-                    // here if we need to debug it.
-                    //warn!("failed to notify waiting cache readers");
-                }
-
+                send_completion_and_assign_slot_ready(&v, &mut slot_lock, complete_tx);
                 Ok(v)
             }
 
@@ -280,6 +267,31 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
                 Err(e)
             }
+        }
+    }
+}
+
+/// Convenience function to cafefully avoid making extra clones when sending on
+/// a channel and updating a cache slot.
+fn send_completion_and_assign_slot_ready<T: Clone>(
+    v: &T,
+    slot_lock: &mut RwLockWriteGuard<'_, SlotState<T>>,
+    tx: broadcast::Sender<T>,
+) {
+    // Try sending it on the channel first with a new clone.
+    match tx.send(v.clone()) {
+        Ok(waiter_cnt) => {
+            trace!(%waiter_cnt, "notified cache waiters");
+
+            // If it's consumed, then we do have to make another clone to store
+            // in the lock.
+            **slot_lock = SlotState::Ready(v.clone());
+        }
+
+        Err(SendError(vv)) => {
+            // In this (likely) case, there's no readers, so we can keep the
+            // value and avoid making an additional clone.
+            **slot_lock = SlotState::Ready(vv);
         }
     }
 }
