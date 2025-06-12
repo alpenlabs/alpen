@@ -200,7 +200,7 @@ class FullNodeFactory(flexitest.Factory):
         sequencer_rpc: str,
         rollup_params: str,
         ctx: flexitest.EnvContext,
-        checkpoint_sync: bool = False,
+        sync_mode: str | None = None,
         name_suffix: str = "",
     ) -> flexitest.Service:
         idx = self.next_idx()
@@ -239,8 +239,8 @@ class FullNodeFactory(flexitest.Factory):
         ]
 
         # fmt: on
-        if checkpoint_sync:
-            cmd.extend(["--sync-mode", "checkpoint"])
+        if sync_mode:
+            cmd.extend(["--sync-mode", sync_mode])
 
         rpc_url = f"ws://localhost:{rpc_port}"
         props = {

@@ -25,9 +25,9 @@ impl EnvArgs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SyncMode {
-    CheckpointSync,
-    SequencerSync,
+pub(crate) enum SyncMode {
+    Checkpoint,
+    Full,
 }
 
 impl FromStr for SyncMode {
@@ -35,9 +35,9 @@ impl FromStr for SyncMode {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "checkpoint" => Ok(SyncMode::CheckpointSync),
-            "sequencer" => Ok(SyncMode::SequencerSync),
-            _ => Err(anyhow::anyhow!("invalid sync mode provided: {}", s).into()),
+            "checkpoint" => Ok(SyncMode::Checkpoint),
+            "full" => Ok(SyncMode::Full),
+            _ => InitError::InvalidSyncMode,
         }
     }
 }
@@ -65,8 +65,8 @@ pub(crate) struct Args {
     /// Choose sync mode for client node operation.
     #[argh(
         option,
-        description = "run client in sync mode of choice: 'checkpoint', 'sequencer'.",
-        default = "SyncMode::SequencerSync"
+        description = "client sync mode: ('full', 'checkpoint')",
+        default = "SyncMode::Full"
     )]
     pub sync_mode: SyncMode,
 
@@ -225,7 +225,7 @@ mod test {
             rollup_params: None,
             rpc_host: None,
             rpc_port: None,
-            sync_mode: SyncMode::SequencerSync,
+            sync_mode: SyncMode::Full,
             overrides: vec![
                 "btcio.reader.client_poll_dur_ms=50".to_string(),
                 "sync.l1_follow_distance=30".to_string(),

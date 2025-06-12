@@ -22,12 +22,12 @@ struct ChainstateStorageInterface {
 }
 
 impl ChainstateStorageInterface {
-    pub fn new(storage: Arc<NodeStorage>) -> Self {
+    pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
         Self { storage }
     }
 
     /// Apply chainstate diff to latest chainstate.
-    pub async fn apply_diff_to_latest_chainstate(
+    pub(crate) async fn apply_diff_to_latest_chainstate(
         &mut self,
         chainstate_diff: impl ChainstateDiff,
     ) -> anyhow::Result<Chainstate> {
@@ -36,13 +36,13 @@ impl ChainstateStorageInterface {
         let mut latest_chainstate = self
             .get_latest_chainstate()
             .await?
-            .ok_or_else(|| DbError::NotBootstrapped)?;
+            .ok_or(DbError::NotBootstrapped)?;
         let new_chainstate = chainstate_diff.apply_to_chainstate(&mut latest_chainstate);
         Ok(new_chainstate)
     }
 
     /// Store chainstate to database.
-    pub async fn store_chainstate(
+    pub(crate) async fn store_chainstate(
         &mut self,
         new_chainstate: Chainstate,
     ) -> anyhow::Result<Chainstate> {
@@ -112,7 +112,7 @@ pub async fn checkpoint_sync_task(
             )
             .await?;
         } else if csm_finalized_epoch > target_epoch {
-            handle_missed_checkpoints(
+            handle_missed_epochs(
                 &mut target_epoch,
                 csm_finalized_epoch,
                 &mut csync_manager,
@@ -121,7 +121,7 @@ pub async fn checkpoint_sync_task(
             )
             .await?;
         } else if csm_finalized_epoch == target_epoch {
-            handle_l1_checkpoint(
+            handle_target_epoch(
                 l1_checkpoint,
                 &mut target_epoch,
                 csm_finalized_epoch,
@@ -156,18 +156,15 @@ async fn get_target_epoch(storage: &Arc<NodeStorage>) -> Result<u64, anyhow::Err
 /// ```
 /// csm_finalized_epoch > target_epoch
 /// ```
-async fn handle_missed_checkpoints(
+async fn handle_missed_epochs(
     target_epoch: &mut u64,
     csm_finalized_epoch: u64,
     csync_manager: &mut ChainstateStorageInterface,
     storage: &NodeStorage,
     status_channel: &StatusChannel,
 ) -> Result<(), anyhow::Error> {
-    // TODO how do I test this branch?
-    // something went wrong and we missed processing checkpoint transaction for target epoch
     warn!(
-        "out of order checkpoint finalized: no message received for target epoch: {}",
-        target_epoch,
+        %target_epoch, "out-of-order checkpoint finalized: no message received for target epoch",
     );
 
     // check if checkpoint with target epoch is already present in the database and
@@ -176,19 +173,14 @@ async fn handle_missed_checkpoints(
     Ok(for epoch in *target_epoch..=csm_finalized_epoch {
         let Some(entry) = storage.checkpoint().get_checkpoint(epoch).await? else {
             error!(
-                "no checkpoint found for epoch : {}, chainstate not advanced",
-                epoch
+                %epoch, "no checkpoint found for epoch, chainstate not advanced",
             );
             break; // only break the inner for loop
         };
 
-        let tip = entry.checkpoint.batch_info().final_l2_block();
-        if process_checkpoint_entry(entry.clone(), tip, status_channel, csync_manager) // unnecessary clone?
-            .await
-            .is_ok()
-        {
-            *target_epoch += 1; // increment target epoch
-        }
+        let tip = entry.checkpoint.batch_info().final_l2_block().clone();
+        process_checkpoint_entry(entry, &tip, status_channel, csync_manager).await?;
+        *target_epoch += 1; // increment target epoch
     })
 }
 
@@ -196,7 +188,7 @@ async fn handle_missed_checkpoints(
 /// ```
 /// csm_finalized_epoch == target_epoch
 /// ```
-async fn handle_l1_checkpoint(
+async fn handle_target_epoch(
     l1_checkpoint: &L1Checkpoint,
     target_epoch: &mut u64,
     csm_finalized_epoch: u64,
@@ -249,8 +241,7 @@ async fn handle_reorg(
     status_channel: &StatusChannel,
 ) -> Result<(), anyhow::Error> {
     warn!(
-        "epoch finalized {}: less than target epoch {}",
-        csm_finalized_epoch, target_epoch,
+        %csm_finalized_epoch, %target_epoch, "csm finalized epoch is less than target epoch",
     );
 
     let ckpt_db = storage.checkpoint();
@@ -263,8 +254,7 @@ async fn handle_reorg(
         let Some(entry) = ckpt_db.get_checkpoint(epoch).await? else {
             // missing checkpoints in the database for finalized epochs - invalid state!
             error!(
-                "no checkpoint found for epoch : {}, chainstate not rolled back",
-                epoch
+                %epoch, "no checkpoint found for epoch, chainstate not rolled back",
             );
             break; // only break the inner for loop
         };
@@ -314,10 +304,11 @@ async fn process_and_store_checkpoint(
         .apply_diff_to_latest_chainstate(chainstate_diff)
         .await?;
 
-    info!(
-        "storing updated chainstate, slot: {}",
-        new_chainstate.chain_tip_slot()
-    );
+    let slot = new_chainstate.chain_tip_slot();
+    // let epoch = checkpoint.batch_info().epoch;
+    // let blkid = new_chainstate.
+    // info!(%epoch, %slot, %blkid, "storing updated chainstate");
+    info!(%slot, "storing updated chainstate");
 
     // TODO this might raise an error if we try to overwrite existing chainstate during rollback???
     Ok(csync_manager.store_chainstate(new_chainstate).await?)

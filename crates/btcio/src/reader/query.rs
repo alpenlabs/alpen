@@ -99,7 +99,7 @@ fn init_reader_context(
         CredRule::Unchecked => None,
         CredRule::SchnorrKey(buf32) => Some(
             XOnlyPublicKey::try_from(buf32)
-                .expect("the sequencer pubkey must be valid in the params"),
+                .expect("init: invalid sequencer pubkey specified in config file"),
         ),
     };
 
