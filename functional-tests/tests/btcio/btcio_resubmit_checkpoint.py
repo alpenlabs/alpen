@@ -11,6 +11,7 @@ from utils import (
     wait_until,
     wait_until_with_value,
 )
+from utils.utils import wait_until_strata_client_ready
 
 
 @flexitest.register
@@ -36,10 +37,7 @@ class ResubmitCheckpointTest(testenv.StrataTestBase):
         generate_n_blocks(btcrpc, 5)
 
         # Wait for seq
-        wait_until(
-            lambda: seqrpc.strata_protocolVersion() is not None,
-            error_with="Sequencer did not start on time",
-        )
+        wait_until_strata_client_ready(seqrpc)
 
         verified_on = wait_until_with_value(
             lambda: seqrpc.strata_getL2BlockStatus(1),

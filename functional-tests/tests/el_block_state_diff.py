@@ -2,6 +2,7 @@ import time
 
 import flexitest
 from solcx import compile_source, install_solc, set_solc_version
+from utils.utils import wait_until_with_value
 from web3 import Web3
 
 from envs import testenv
@@ -33,12 +34,12 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
         blockhash = rethrpc.eth_getBlockByNumber(hex(blocknum), False)["hash"]
 
         # wait for witness data generation
-        time.sleep(1)
-
-        # Get the state diff data
-        state_diff_data = rethrpc.strataee_getBlockStateDiff(blockhash)
-        assert state_diff_data is not None, "non empty state diff"
-
+        state_diff_data = wait_until_with_value(
+            lambda: rethrpc.strataee_getBlockStateDiff(blockhash),
+            lambda value: value is not None,
+            error_with="Finding non empty statediff for blockhash {blockhash} timed out",
+            timeout=2,
+        )
         self.info(state_diff_data)
 
 

@@ -43,8 +43,11 @@ class L1ReadReorgTest(testenv.StrataTestBase):
 
         to_be_invalid_block = seqrpc.strata_getL1blockHash(invalidate_height)
         # Wait for at least 1 block to be added after invalidating `REORG_DEPTH` blocks.
-        time.sleep(BLOCK_GENERATION_INTERVAL_SECS * 1 + SEQ_SLACK_TIME_SECS)
-        block_from_invalidated_height = seqrpc.strata_getL1blockHash(invalidate_height + 1)
+        block_from_invalidated_height = wait_until_with_value(
+            lambda: seqrpc.strata_getL1blockHash(invalidate_height + 1),
+            lambda value: value is not None,
+            error_with="L1 Block not produced in time",
+        )
 
         self.info(f"now have block {block_from_invalidated_height}")
 

@@ -28,6 +28,7 @@ class SeqCrashMixin(BaseMixin):
 
         Returns the chain_tip_slot before the bailout.
         """
+        # FIXME: what are we waiting for here?
         time.sleep(2)
         cur_chain_tip = self.seqrpc.strata_syncStatus()["tip_height"]
 

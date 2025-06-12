@@ -13,6 +13,7 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
     def main(self, ctx: flexitest.RunContext):
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
+        # FIXME: what is this waiting for?
         time.sleep(20)
 
         block = int(rethrpc.eth_blockNumber(), base=16)
