@@ -3,7 +3,7 @@ services:
     build:
       context: ../
       dockerfile: ./docker/alpen-reth/Dockerfile
-    # platform: linux/arm64/v8 # commented out because local platform can differ
+    platform: linux/arm64/v8
     image: public.ecr.aws/r1l9t0r6/testnet1/alpen-reth:latest
     environment:
       BUILD_PROFILE: ${BUILD_PROFILE:-release}
@@ -24,12 +24,13 @@ services:
   ckpt-client:
     build:
       context: ../
-      dockerfile: ./docker/checkpoint-sync-client/Dockerfile
+      dockerfile: ./docker/strata-client/Dockerfile
     environment:
       CONFIG_PATH: /app/configs/config.fn.toml
       PARAM_PATH: /app/configs/params.json
       RUST_LOG: ${RUST_LOG:-info}
     container_name: checkpoint_sync_client
+    command: --sync-mode checkpoint
     ports:
       - "8432:8432"
     volumes:
