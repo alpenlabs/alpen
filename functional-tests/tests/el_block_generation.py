@@ -1,5 +1,4 @@
 import logging
-import time
 
 import flexitest
 
@@ -26,10 +25,9 @@ class ElBlockGenerationTest(testenv.StrataTestBase):
         for _ in range(5):
             cur_blocknum = wait_until_with_value(
                 lambda: int(rethrpc.eth_blockNumber(), 16),
-                lambda value: value >= last_blocknum,
-                error_with="Timeout: Current block seems to go backwards",
+                lambda value, last_blk=last_blocknum: value > last_blk,
+                error_with="Timeout: seem to not be making progress",
                 timeout=3,
             )
             logging.info(f"current EL blocknum is {cur_blocknum}")
-            assert cur_blocknum > last_blocknum, "seem to not be making progress"
             last_blocknum = cur_blocknum

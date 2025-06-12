@@ -1,5 +1,3 @@
-import time
-
 import flexitest
 
 from envs import testenv
