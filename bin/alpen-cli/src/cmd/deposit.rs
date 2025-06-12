@@ -125,7 +125,6 @@ pub async fn deposit(
     // <recovery_address_pk>
     // <alpen_address>
     let magic_bytes = settings.magic_bytes.as_bytes();
-
     let recovery_address_pk_bytes = recovery_address_pk.serialize();
     let alpen_address_bytes = alpen_address.as_slice();
     let mut op_return_data = Vec::with_capacity(
