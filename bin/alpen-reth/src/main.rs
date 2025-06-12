@@ -31,6 +31,7 @@ fn main() {
 
     // use provided alpen chain spec
     command.chain = command.ext.custom_chain.clone();
+    command.engine.accept_execution_requests_hash = true;
     // disable peer discovery
     command.network.discovery.disable_discovery = true;
 

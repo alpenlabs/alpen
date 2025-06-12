@@ -381,7 +381,6 @@ where
     eth_payload.extend_sidecars(blob_sidecars.into_iter().map(Arc::unwrap_or_clone));
 
     let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
-    // let strata_payload = StrataBuiltPayload::new(eth_payload, Default::default());
 
     Ok(BuildOutcome::Better {
         payload: strata_payload,

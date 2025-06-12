@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use alloy_eips::eip7685::RequestsOrHash;
 use alloy_rpc_types::{
     engine::{
-        ExecutionPayloadBodiesV1, ExecutionPayloadInputV2, ForkchoiceState, ForkchoiceUpdated,
-        JwtSecret, PayloadId,
+        ExecutionPayloadBodiesV1, ExecutionPayloadEnvelopeV4, ExecutionPayloadInputV2,
+        ExecutionPayloadV2, ExecutionPayloadV3, ForkchoiceState, ForkchoiceUpdated, JwtSecret,
+        PayloadId,
     },
     eth::{Block as RpcBlock, Header, Transaction},
 };
@@ -36,21 +38,12 @@ pub trait EngineRpc {
         payload_attributes: Option<AlpenPayloadAttributes>,
     ) -> RpcResult<ForkchoiceUpdated>;
 
-    async fn get_payload_v2(
-        &self,
-        payload_id: PayloadId,
-    ) -> RpcResult<AlpenExecutionPayloadEnvelopeV2>;
+    async fn get_payload_v4(&self, payload_id: PayloadId) -> RpcResult<ExecutionPayloadEnvelopeV4>;
 
-    async fn new_payload_v2(
+    async fn new_payload_v4(
         &self,
         payload: ExecutionPayloadInputV2,
     ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus>;
-
-    #[allow(dead_code)]
-    async fn get_payload_bodies_by_hash_v1(
-        &self,
-        block_hashes: Vec<BlockHash>,
-    ) -> RpcResult<ExecutionPayloadBodiesV1>;
 
     async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<RpcBlock>>;
 }
@@ -78,28 +71,35 @@ impl EngineRpc for EngineRpcClient {
         fork_choice_state: ForkchoiceState,
         payload_attributes: Option<AlpenPayloadAttributes>,
     ) -> RpcResult<ForkchoiceUpdated> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::fork_choice_updated_v2(&self.client, fork_choice_state, payload_attributes).await
+        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::fork_choice_updated_v3(&self.client, fork_choice_state, payload_attributes).await
     }
 
-    async fn get_payload_v2(
-        &self,
-        payload_id: PayloadId,
-    ) -> RpcResult<AlpenExecutionPayloadEnvelopeV2> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_v2(&self.client, payload_id).await
+    async fn get_payload_v4(&self, payload_id: PayloadId) -> RpcResult<ExecutionPayloadEnvelopeV4> {
+        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_v4(&self.client, payload_id).await
     }
 
-    async fn new_payload_v2(
+    async fn new_payload_v4(
         &self,
         payload: ExecutionPayloadInputV2,
     ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::new_payload_v2(&self.client, payload).await
-    }
-
-    async fn get_payload_bodies_by_hash_v1(
-        &self,
-        block_hashes: Vec<BlockHash>,
-    ) -> RpcResult<ExecutionPayloadBodiesV1> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_bodies_by_hash_v1(&self.client, block_hashes).await
+        let payload_v3 = ExecutionPayloadV3 {
+            blob_gas_used: Default::default(),
+            excess_blob_gas: Default::default(),
+            payload_inner: ExecutionPayloadV2 {
+                payload_inner: payload.execution_payload,
+                withdrawals: payload.withdrawals.unwrap_or_default(),
+            },
+        };
+        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<
+            AlpenEngineTypes,
+        >>::new_payload_v4(
+            &self.client,
+            payload_v3,
+            Default::default(),
+            Default::default(),
+            RequestsOrHash::empty(),
+        )
+        .await
     }
 
     async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<RpcBlock>> {
