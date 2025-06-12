@@ -151,7 +151,7 @@ mod tests {
 
         let parsed: SettingsFromFile =
             toml::from_str(config).expect("failed to parse SettingsFromFile from TOML");
-        assert!(parsed.magic_bytes.as_bytes().len() == MAGIC_BYTES_LEN);
+        assert!(parsed.magic_bytes.len() == MAGIC_BYTES_LEN);
     }
 
     #[test]
