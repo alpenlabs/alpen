@@ -25,11 +25,14 @@ fn make_tag(s: &[u8]) -> Tag {
 }
 
 /// Hash wrapper trait.
-pub trait MerkleHash: Copy + Clone + Eq {
+pub trait MerkleHash: Copy + Clone {
     const HASH_LEN: usize;
 
     /// Returns a zero hash.
     fn zero() -> Self;
+
+    /// Checks if two hashes are equal, attempting to do it in constant time.
+    fn eq_ct(a: &Self, b: &Self) -> bool;
 
     /// Returns if a hash is the zero hash.
     fn is_zero(h: &Self) -> bool;
@@ -42,10 +45,27 @@ impl<const LEN: usize> MerkleHash for [u8; LEN] {
         [0; LEN]
     }
 
+    fn eq_ct(a: &Self, b: &Self) -> bool {
+        // Attempt to constant-time comparison.  This is *really hard* to do in
+        // Rust, because LLVM likes to obliterate unnecessary instructions.
+        //
+        // I could use some of the more advanced libraries for this, but this
+        // isn't actually relevant for security at all, it's just good practice,
+        // so we can avoid pulling in additional dependencies.  This is
+        // primarily used when verifying a root computed from a proof against a
+        // trusted one, and presumably the party that might be probing us
+        // already knows what the known-good root is if they're giving us a
+        // proof against it.
+        let mut acc: u32 = 0;
+        for i in 0..LEN {
+            acc += (a[i] ^ b[i]) as u32;
+        }
+
+        acc == 0
+    }
+
     fn is_zero(h: &Self) -> bool {
-        // Attempt to constant-time eval.
-        let sum: u32 = h.iter().map(|v| *v as u32).sum();
-        sum == 0
+        Self::eq_ct(h, &Self::zero())
     }
 }
 

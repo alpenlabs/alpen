@@ -267,10 +267,10 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     }
 
     fn verify_raw(&self, cohashes: &[MH::Hash], leaf_index: u64, leaf_hash: &MH::Hash) -> bool {
-        let root = self.peaks[cohashes.len()];
+        let root = &self.peaks[cohashes.len()];
 
         if cohashes.is_empty() {
-            return root == *leaf_hash;
+            return <MH::Hash as MerkleHash>::eq_ct(root, leaf_hash);
         }
 
         let mut cur_hash = *leaf_hash;
@@ -286,7 +286,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
             side_flags >>= 1;
             cur_hash = node_hash;
         }
-        cur_hash == root
+
+        <MH::Hash as MerkleHash>::eq_ct(&cur_hash, root)
     }
 
     // FIXME what is this function for?
