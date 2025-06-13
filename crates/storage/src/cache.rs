@@ -4,7 +4,7 @@ use std::{hash::Hash, num::NonZeroUsize, sync::Arc};
 
 use parking_lot::Mutex;
 use strata_db::{DbError, DbResult};
-use tokio::sync::{broadcast, broadcast::error::SendError, RwLock, RwLockWriteGuard};
+use tokio::sync::{broadcast, broadcast::error::SendError, RwLock};
 use tracing::*;
 
 use crate::exec::DbRecv;
@@ -155,17 +155,17 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     ) -> DbResult<V> {
         // See below comment about control flow.
         let (slot, complete_tx) = {
-            let mut cache = { self.cache.lock() };
-            if let Some(entry_lock) = cache.get(k).cloned() {
-                drop(cache);
-                let entry = entry_lock.read().await;
-                return entry.get_async().await;
+            let mut cache_guard = self.cache.lock();
+            if let Some(entry_guard) = cache_guard.get(k).cloned() {
+                drop(cache_guard);
+                let entry_guard = entry_guard.read().await;
+                return entry_guard.get_async().await;
             }
 
             // Create a new cache slot and insert and lock it.
             let (complete_tx, complete_rx) = broadcast::channel(1);
             let slot = Arc::new(RwLock::new(SlotState::Pending(complete_rx)));
-            cache.push(k.clone(), slot.clone());
+            cache_guard.push(k.clone(), slot.clone());
 
             (slot, complete_tx)
         };
@@ -179,34 +179,34 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         }
 
         if let Ok(Err(e)) = fetch_res.as_ref() {
-            error!(?e, "failed to make database fetch");
+            error!(%e, "failed to make database fetch");
         }
 
         // And then re-acquire the lock on the slot before handling the result.
-        let mut slot_lock = slot.write().await;
+        let mut slot_guard = slot.write().await;
         trace!("re-acquired slot lock");
         match fetch_res {
             Ok(Ok(v)) => {
-                send_completion_and_assign_slot_ready(&v, &mut slot_lock, complete_tx);
+                send_completion_and_assign_slot_ready(&v, &mut slot_guard, complete_tx);
                 Ok(v)
             }
 
             Ok(Err(e)) => {
                 // Important ordering for the locks.
-                let mut cache_lock = self.cache.lock();
+                let mut cache_guard = self.cache.lock();
                 trace!("re-acquired cache lock");
-                *slot_lock = SlotState::Error;
-                cache_lock.pop(k);
+                *slot_guard = SlotState::Error;
+                safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
                 Err(e)
             }
 
             Err(_) => {
                 // Important ordering for the locks.
-                let mut cache_lock = self.cache.lock();
+                let mut cache_guard = self.cache.lock();
                 trace!("re-acquired cache lock");
-                *slot_lock = SlotState::Error;
-                cache_lock.pop(k);
+                *slot_guard = SlotState::Error;
+                safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
                 Err(DbError::WorkerFailedStrangely)
             }
@@ -225,17 +225,17 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         // the entry we're looking for is there.  If it's not, then we want to insert a reservation
         // that we hold a lock to and then release the cache-level lock.
         let (slot, complete_tx) = {
-            let mut cache = self.cache.lock();
-            if let Some(entry_lock) = cache.get(k).cloned() {
-                drop(cache);
-                let entry = entry_lock.blocking_read();
-                return entry.get_blocking();
+            let mut cache_guard = self.cache.lock();
+            if let Some(entry_guard) = cache_guard.get(k).cloned() {
+                drop(cache_guard);
+                let entry_guard = entry_guard.blocking_read();
+                return entry_guard.get_blocking();
             }
 
             // Create a new cache slot and insert and lock it.
             let (complete_tx, complete_rx) = broadcast::channel(1);
             let slot = Arc::new(RwLock::new(SlotState::Pending(complete_rx)));
-            cache.push(k.clone(), slot.clone());
+            cache_guard.push(k.clone(), slot.clone());
 
             (slot, complete_tx)
         };
@@ -245,25 +245,25 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
         // Some error logging before we try to acquire locks.
         if let Err(e) = fetch_res.as_ref() {
-            warn!(?e, "failed to make database fetch");
+            warn!(%e, "failed to make database fetch");
         }
 
         // And then re-acquire the lock on the slot before handling the result.
-        let mut slot_lock = slot.blocking_write();
+        let mut slot_guard = slot.blocking_write();
         trace!("re-acquired slot lock");
         match fetch_res {
             Ok(v) => {
                 // Fill in the lock state and send down the complete tx.
-                send_completion_and_assign_slot_ready(&v, &mut slot_lock, complete_tx);
+                send_completion_and_assign_slot_ready(&v, &mut slot_guard, complete_tx);
                 Ok(v)
             }
 
             Err(e) => {
                 // Important ordering for the locks.
-                let mut cache_lock = self.cache.lock();
+                let mut cache_guard = self.cache.lock();
                 trace!("re-acquired cache lock");
-                *slot_lock = SlotState::Error;
-                cache_lock.pop(k);
+                *slot_guard = SlotState::Error;
+                safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
                 Err(e)
             }
@@ -275,7 +275,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 /// a channel and updating a cache slot.
 fn send_completion_and_assign_slot_ready<T: Clone>(
     v: &T,
-    slot_lock: &mut RwLockWriteGuard<'_, SlotState<T>>,
+    slot_state: &mut SlotState<T>,
     tx: broadcast::Sender<T>,
 ) {
     // Try sending it on the channel first with a new clone.
@@ -285,15 +285,29 @@ fn send_completion_and_assign_slot_ready<T: Clone>(
 
             // If it's consumed, then we do have to make another clone to store
             // in the lock.
-            **slot_lock = SlotState::Ready(v.clone());
+            *slot_state = SlotState::Ready(v.clone());
         }
 
         Err(SendError(vv)) => {
             // In this (likely) case, there's no readers, so we can keep the
             // value and avoid making an additional clone.
-            **slot_lock = SlotState::Ready(vv);
+            *slot_state = SlotState::Ready(vv);
         }
     }
+}
+
+/// Convenience function to safely remove a cache slot key from the cache, iff
+/// it matches an expected value.  Returns if it did the removal.
+fn safely_remove_cache_slot<K: Eq + Hash, V>(
+    cache: &mut lru::LruCache<K, CacheSlot<V>>,
+    key: &K,
+    slot: &CacheSlot<V>,
+) -> bool {
+    let is_eq = Arc::ptr_eq(cache.peek(key).unwrap(), slot);
+    if is_eq {
+        cache.pop(key);
+    }
+    is_eq
 }
 
 #[cfg(test)]
