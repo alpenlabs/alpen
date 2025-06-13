@@ -511,7 +511,7 @@ mod tests {
     async fn drt_mempool_accept() {
         init_logging("drt-tests");
 
-        let bitcoind = Node::from_downloaded().unwrap();
+        let bitcoind = Node::new("bitcoind").unwrap();
         let url = bitcoind.rpc_url();
         let (user, password) = get_auth(&bitcoind);
         let client = Client::new(url.clone(), user.clone(), password.clone(), None, None).unwrap();
@@ -539,7 +539,7 @@ mod tests {
     async fn recovery_path_mempool_accept() {
         init_logging("recovery-path-tests");
 
-        let bitcoind = Node::from_downloaded().unwrap();
+        let bitcoind = Node::new("bitcoind").unwrap();
         let url = bitcoind.rpc_url();
         let (user, password) = get_auth(&bitcoind);
         let client = Client::new(url.clone(), user.clone(), password.clone(), None, None).unwrap();
@@ -626,7 +626,7 @@ mod tests {
     async fn get_balance() {
         init_logging("balance-tests");
 
-        let bitcoind = Node::from_downloaded().unwrap();
+        let bitcoind = Node::new("bitcoind").unwrap();
         let url = bitcoind.rpc_url();
         let (user, password) = get_auth(&bitcoind);
         let client = Client::new(url.clone(), user.clone(), password.clone(), None, None).unwrap();
@@ -699,7 +699,7 @@ mod tests {
     async fn get_balance_recovery() {
         init_logging("recovery-balance-tests");
 
-        let bitcoind = Node::from_downloaded().unwrap();
+        let bitcoind = Node::new("bitcoind").unwrap();
         let url = bitcoind.rpc_url();
         let (user, password) = get_auth(&bitcoind);
         let client = Client::new(url.clone(), user.clone(), password.clone(), None, None).unwrap();

@@ -44,6 +44,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install bitcoind
+        env:
+          BITCOIND_VERSION: "29.0"
+          BITCOIND_ARCH: "x86_64-linux-gnu"
+        run: |
+          curl -fsSLO --proto "=https" --tlsv1.2 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          curl -fsSLO --proto "=https" --tlsv1.2 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/SHA256SUMS"
+          sha256sum --ignore-missing --check SHA256SUMS
+          tar xzf "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          sudo install -m 0755 -t /usr/local/bin bitcoin-"$BITCOIND_VERSION"/bin/*
+          bitcoind --version
+          rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+
       - name: Cleanup space
         uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 

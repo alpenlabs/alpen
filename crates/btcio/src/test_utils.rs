@@ -389,7 +389,7 @@ pub mod corepc_node_helpers {
     pub fn get_bitcoind_and_client() -> (Node, Client) {
         // setting the ENV variable `BITCOIN_XPRIV_RETRIEVABLE` to retrieve the xpriv
         env::set_var("BITCOIN_XPRIV_RETRIEVABLE", "true");
-        let bitcoind = Node::from_downloaded().unwrap();
+        let bitcoind = Node::new("bitcoind").unwrap();
         let url = bitcoind.rpc_url();
         let (user, password) = get_auth(&bitcoind);
         let client = Client::new(url, user, password, None, None).unwrap();
