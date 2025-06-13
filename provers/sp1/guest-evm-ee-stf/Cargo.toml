@@ -7,22 +7,21 @@ version = "0.1.0"
 
 [dependencies]
 strata-proofimpl-evm-ee-stf = { path = "../../../crates/proof-impl/evm-ee-stf" }
-zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
+zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc11" }
 
 [patch.crates-io]
-secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-4.1.0" }
-secp256k1-sys = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-4.1.0" }
+secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-5.0.0" }
+secp256k1-sys = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-5.0.0" }
 sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", tag = "patch-sha2-0.10.8-sp1-4.0.0", package = "sha2" }
-bn = { git = "https://github.com/sp1-patches/bn", tag = "patch-0.6.0-sp1-4.0.0", package = "substrate-bn" }
+bn = { git = "https://github.com/sp1-patches/bn", tag = "patch-0.6.0-sp1-5.0.0", package = "substrate-bn" }
 sha3 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", tag = "patch-sha3-0.10.8-sp1-4.0.0" }
-k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-4.1.0" }
-p256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-p256-13.2-sp1-4.1.0" }
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-5.0.0" }
 
 
 [patch."https://github.com/succinctlabs/rsp"]
-rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
-rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
-rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
+rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
+rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
 
 
 [features]
