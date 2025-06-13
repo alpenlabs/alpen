@@ -2,7 +2,7 @@ import flexitest
 
 from envs import testenv
 from mixins import seq_crash_mixin
-from utils import wait_until
+from utils import wait_until, wait_until_strata_client_ready
 
 
 @flexitest.register
@@ -11,6 +11,8 @@ class CrashFcmNewBlockTest(seq_crash_mixin.SeqCrashMixin):
         ctx.set_env(testenv.BasicEnvConfig(101))
 
     def main(self, ctx: flexitest.RunContext):
+        wait_until_strata_client_ready(self.seqrpc)
+
         cur_chain_tip = self.handle_bail(lambda: "fcm_new_block")
 
         wait_until(

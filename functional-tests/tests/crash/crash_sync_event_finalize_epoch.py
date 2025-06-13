@@ -2,7 +2,7 @@ import flexitest
 
 from envs import net_settings, testenv
 from mixins import seq_crash_mixin
-from utils import ProverClientSettings, wait_until
+from utils import ProverClientSettings, wait_until, wait_until_strata_client_ready
 
 
 @flexitest.register
@@ -17,6 +17,8 @@ class CrashSyncEventFinalizeEpochTest(seq_crash_mixin.SeqCrashMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
+        wait_until_strata_client_ready(self.seqrpc)
+
         cur_chain_tip = self.handle_bail(lambda: "sync_event_finalize_epoch", timeout=60)
 
         wait_until(
