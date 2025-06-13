@@ -236,7 +236,7 @@ impl ChainstateDiff for FullStateUpdate {
         self.new_chainstate.clone()
     }
 
-    fn from_buffer(buf: &[u8]) -> std::io::Result<Self>
+    fn from_buf(buf: &[u8]) -> std::io::Result<Self>
     where
         Self: Sized,
     {

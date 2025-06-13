@@ -37,7 +37,7 @@ impl FromStr for SyncMode {
         match s {
             "checkpoint" => Ok(SyncMode::Checkpoint),
             "full" => Ok(SyncMode::Full),
-            _ => InitError::InvalidSyncMode,
+            _ => Err(InitError::InvalidSyncMode),
         }
     }
 }

@@ -3,11 +3,10 @@
 #![feature(slice_pattern)]
 use std::{sync::Arc, time::Duration};
 
-use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
 use el_sync::sync_chainstate_to_el;
-use errors::InitError;
+use errors::{ConfigError, InitError};
 use jsonrpsee::Methods;
 use rpc_client::sync_client;
 use strata_btcio::{
@@ -171,11 +170,14 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             &mut methods,
         )?;
     } else if args.sync_mode == SyncMode::Full {
-        let sync_endpoint = &config
-            .client
-            .sync_endpoint
-            .clone()
-            .ok_or(InitError::Anyhow(anyhow!("Missing sync_endpoint")))?;
+        let sync_endpoint =
+            &config
+                .client
+                .sync_endpoint
+                .clone()
+                .ok_or(InitError::MalformedConfig(ConfigError::MissingKey(
+                    "Missing sync_endpoint".to_string(),
+                )))?;
         info!(?sync_endpoint, "initing fullnode task");
 
         let rpc_client = sync_client(sync_endpoint);
@@ -268,7 +270,9 @@ fn do_startup_checks(
         .chainstate()
         .get_toplevel_chainstate_blocking(last_state_idx)?
     else {
-        anyhow::bail!("Missing chain state idx: {last_state_idx}");
+        return Err(
+            InitError::MissingData(format!("Missing chain state idx: {}", last_state_idx)).into(),
+        );
     };
 
     let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
@@ -282,10 +286,16 @@ fn do_startup_checks(
             info!("startup: last matured block: {}", block_hash);
         }
         Err(client_error) if client_error.is_block_not_found() => {
-            anyhow::bail!("Missing expected block: {}", block_hash);
+            return Err(
+                InitError::MissingData(format!("Missing expected block: {}", block_hash)).into(),
+            );
         }
         Err(client_error) => {
-            anyhow::bail!("could not connect to bitcoin, err = {}", client_error);
+            return Err(InitError::ServiceUnavailable(format!(
+                "could not connect to bitcoin, err = {}",
+                client_error
+            ))
+            .into());
         }
     }
 
@@ -305,7 +315,11 @@ fn do_startup_checks(
             }
             Err(error) => {
                 // Likely network issue
-                anyhow::bail!("could not connect to exec engine, err = {}", error);
+                return Err(InitError::ServiceUnavailable(format!(
+                    "could not connect to exec engine, err = {}",
+                    error
+                ))
+                .into());
             }
         }
     }

@@ -8,7 +8,7 @@ pub trait ChainstateDiff {
     fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> Chainstate;
 
     /// Extract diff structure from buffer.
-    fn from_buffer(buf: &[u8]) -> std::io::Result<Self>
+    fn from_buf(buf: &[u8]) -> std::io::Result<Self>
     where
         Self: Sized;
 }
