@@ -3,7 +3,10 @@
 
 pub mod program;
 
+use std::os::macos::raw::stat;
+
 use program::ClStfOutput;
+use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::transition::process_block;
 use strata_primitives::{
     buf::Buf32, hash::compute_borsh_hash, l1::ProtocolOperation, params::RollupParams,
@@ -14,6 +17,7 @@ use strata_state::{
     block::{ExecSegment, L2Block},
     block_validation::{check_block_credential, validate_block_segments},
     chain_state::Chainstate,
+    context::StateAccessor,
     header::L2Header,
     state_op::StateCache,
 };
@@ -26,7 +30,7 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
     // 2. Read the initial chainstate from which we start the transition and create the state cache
     let initial_chainstate: Chainstate = zkvm.read_borsh();
     let initial_chainstate_root = initial_chainstate.compute_state_root();
-    let mut state_cache = StateCache::new(initial_chainstate);
+    let mut state_accessor = MemStateAccessor::new(initial_chainstate);
 
     // 3. Read L2 blocks
     let l2_blocks: Vec<L2Block> = zkvm.read_borsh();
@@ -113,8 +117,8 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
 
         // 10. Apply the state transition
         process_block(
-            &mut state_cache,
-            l2_block.header(),
+            &mut state_accessor,
+            l2_block.header().header(),
             l2_block.body(),
             &rollup_params,
         )
@@ -122,8 +126,7 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
     }
 
     // 11. Get the final chainstate and construct the output
-    let wb = state_cache.finalize();
-    let final_chain_state = wb.into_toplevel();
+    let final_chain_state = state_accessor.state_untracked();
     let final_chainstate_root = final_chain_state.compute_state_root();
     // NOTE: block range in cl-stf must not cross epoch boundaries
     let epoch = final_chain_state.cur_epoch();

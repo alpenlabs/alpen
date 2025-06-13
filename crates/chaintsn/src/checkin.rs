@@ -12,12 +12,15 @@ use strata_primitives::{
     prelude::*,
 };
 use strata_state::{
-    batch::verify_signed_checkpoint_sig, block::L1Segment, bridge_ops::DepositIntent,
+    batch::verify_signed_checkpoint_sig,
+    block::L1Segment,
+    bridge_ops::DepositIntent,
+    context::{ProviderError, ProviderResult},
 };
 
 use crate::{
     context::{AuxProvider, StateAccessor},
-    errors::{OpError, ProviderError, ProviderResult, TsnError},
+    errors::{OpError, TsnError},
     legacy::FauxStateCache,
     macros::*,
 };

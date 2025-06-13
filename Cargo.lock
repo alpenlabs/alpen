@@ -13676,6 +13676,7 @@ dependencies = [
  "bitcoin",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "strata-chainexec",
  "strata-crypto",
  "strata-primitives",
  "strata-state",
@@ -13985,6 +13986,7 @@ name = "strata-proofimpl-cl-stf"
 version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-primitives",
  "strata-proofimpl-btc-blockspace",
@@ -14200,6 +14202,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-common",
  "strata-consensus-logic",
@@ -14268,6 +14271,7 @@ dependencies = [
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
+ "thiserror 2.0.12",
  "tracing",
 ]
 
@@ -14346,6 +14350,7 @@ dependencies = [
  "rand_core 0.6.4",
  "serde_json",
  "strata-btcio",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-consensus-logic",
  "strata-l1tx",

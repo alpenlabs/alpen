@@ -85,7 +85,8 @@ impl StateAccessor for MemStateAccessor {
         L1BlockCommitment::new(l1_view.safe_height(), *l1_view.safe_blkid())
     }
 
-    fn set_last_l1_block(&mut self, block: L1BlockCommitment) {
+    fn set_last_l1_block(&mut self, _block: L1BlockCommitment) {
+        // FIXME: This is causing test failures
         panic!("chainexec/state_access: set_last_l1_block unsupported");
     }
 
