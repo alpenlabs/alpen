@@ -68,7 +68,7 @@ fn try_execute_block_inner(
     let pre_state_epoch = state_acc.cur_epoch();
 
     // Apply the state transition.
-    process_block(state_acc, header_ctx, block_body, params)?;
+    process_block(state_acc, header_ctx.header(), block_body, params)?;
 
     // Extract the write batch with the output state, then extract fields we
     // need after.
