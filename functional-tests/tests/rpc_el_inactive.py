@@ -55,7 +55,7 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         )
 
         cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
-        # wait for 2 seconds
+        # wait for 2 seconds to allow block production if any
         time.sleep(2)
         new_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
 
@@ -71,7 +71,7 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
 
         # stop the sequencer
         seq.stop()
-        time.sleep(2)
+        time.sleep(2)  # Give time for sequencer to properly shut down.
 
         # start reth again
         reth.start()

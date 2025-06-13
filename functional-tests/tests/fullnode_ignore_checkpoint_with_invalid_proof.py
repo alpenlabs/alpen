@@ -1,5 +1,4 @@
 import logging
-import time
 
 import flexitest
 
@@ -48,9 +47,6 @@ class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
 
         seq_fast_rpc = seq_fast.create_rpc()
         fullnode_rpc = fullnode.create_rpc()
-
-        # Sleep for 3 seconds to ensure that the sequencer has time to start
-        time.sleep(3)
 
         # Wait for seq_fast to start
         wait_until(
