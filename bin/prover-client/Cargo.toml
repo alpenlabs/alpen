@@ -41,11 +41,11 @@ tracing.workspace = true
 
 # sp1
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9", optional = true }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc11", optional = true }
 
 # risc0
 strata-risc0-guest-builder = { path = "../../provers/risc0", optional = true }
-zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc9", optional = true }
+zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc11", optional = true }
 
 [dev-dependencies]
 strata-test-utils.workspace = true
