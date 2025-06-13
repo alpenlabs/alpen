@@ -312,9 +312,16 @@ fn safely_remove_cache_slot<K: Eq + Hash, V>(
 
 #[cfg(test)]
 mod tests {
-    use strata_db::DbError;
+    use std::{
+        sync::atomic::{AtomicU32, Ordering},
+        thread,
+        time::Duration,
+    };
 
-    use super::CacheTable;
+    use strata_db::DbError;
+    use tokio::sync::oneshot;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_basic_async() {
@@ -383,5 +390,150 @@ mod tests {
         cache.purge(&42);
         let len = cache.get_len();
         assert_eq!(len, 0);
+    }
+
+    /// This test validates the [`Arc::ptr_eq`] fix for the race condition where:
+    /// 1. A cache slot is created and fails
+    /// 2. Error handling tries to remove the slot
+    /// 3. The removal should only happen if it's the same slot ([`Arc::ptr_eq`] check)
+    #[tokio::test]
+    async fn test_concurrent_race_condition() {
+        let cache = CacheTable::<u64, u64>::new(10.try_into().unwrap());
+        let fetch_count = Arc::new(AtomicU32::new(0));
+
+        let key = 42u64;
+        let success_value = 100u64;
+
+        // First, populate the cache with a successful value
+        let count1 = Arc::clone(&fetch_count);
+        let result1 = cache
+            .get_or_fetch(&key, || {
+                count1.fetch_add(1, Ordering::SeqCst);
+                let (tx, rx) = oneshot::channel();
+                tx.send(Ok(success_value)).expect("send success");
+                rx
+            })
+            .await;
+
+        assert!(result1.is_ok());
+        assert_eq!(result1.unwrap(), success_value);
+        assert_eq!(cache.get_len(), 1);
+
+        // Now try to fetch the same key again - this should hit the cache
+        let count2 = Arc::clone(&fetch_count);
+        let result2 = cache
+            .get_or_fetch(&key, || {
+                count2.fetch_add(1, Ordering::SeqCst);
+                let (tx, rx) = oneshot::channel();
+                // This should not be called since we have a cache hit
+                tx.send(Err(DbError::Busy)).expect("should not be called");
+                rx
+            })
+            .await;
+
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap(), success_value);
+
+        // Critical test: Verify the successful value is still cached and not removed
+        // This validates that the `Arc::ptr_eq` check prevents wrong slot removal
+        let final_count = fetch_count.load(Ordering::SeqCst);
+        assert_eq!(
+            final_count, 1,
+            "Only the first fetch should have been executed"
+        );
+        assert_eq!(cache.get_len(), 1, "Cache should still contain the entry");
+    }
+
+    /// This test specifically validates that error slots are properly removed
+    /// without affecting other cache entries
+    #[tokio::test]
+    async fn test_error_slot_removal() {
+        let cache = CacheTable::<u64, u64>::new(10.try_into().unwrap());
+
+        // Try to fetch a key that will fail
+        let result = cache
+            .get_or_fetch(&42, || {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                tx.send(Err(DbError::Busy)).expect("send error");
+                rx
+            })
+            .await;
+
+        assert!(result.is_err());
+
+        // The failed slot should be removed from cache
+        assert_eq!(
+            cache.get_len(),
+            0,
+            "Failed slot should be removed from cache"
+        );
+
+        // Now add a successful entry
+        let success_result = cache
+            .get_or_fetch(&42, || {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                tx.send(Ok(100u64)).expect("send success");
+                rx
+            })
+            .await;
+
+        assert!(success_result.is_ok());
+        assert_eq!(success_result.unwrap(), 100u64);
+        assert_eq!(cache.get_len(), 1, "Successful entry should be cached");
+    }
+
+    #[test]
+    fn test_race_condition_blocking() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(3.try_into().unwrap()));
+        let fetch_count = Arc::new(AtomicU32::new(0));
+        let key = 99u64;
+        let expected_value = 200u64;
+
+        let cache1 = Arc::clone(&cache);
+        let cache2 = Arc::clone(&cache);
+        let count1 = Arc::clone(&fetch_count);
+        let count2 = Arc::clone(&fetch_count);
+
+        // Spawn two threads that will race to fetch the same key
+        let handle1 = thread::spawn(move || {
+            cache1.get_or_fetch_blocking(&key, || {
+                count1.fetch_add(1, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(10));
+                Ok(expected_value)
+            })
+        });
+
+        let handle2 = thread::spawn(move || {
+            cache2.get_or_fetch_blocking(&key, || {
+                count2.fetch_add(1, Ordering::SeqCst);
+                Err(DbError::Busy)
+            })
+        });
+
+        let result1 = handle1.join().expect("thread1 should not panic");
+        let result2 = handle2.join().expect("thread2 should not panic");
+
+        // One should succeed, one should fail
+        let success_count = [&result1, &result2].iter().filter(|r| r.is_ok()).count();
+        let error_count = [&result1, &result2].iter().filter(|r| r.is_err()).count();
+
+        assert_eq!(success_count, 1, "Exactly one task should succeed");
+        assert_eq!(error_count, 1, "Exactly one task should fail");
+
+        // The successful value should be cached
+        let cached_result = cache
+            .get_or_fetch_blocking(&key, || {
+                panic!("Should not fetch - value should be cached!")
+            })
+            .expect("cached value should be available");
+
+        assert_eq!(cached_result, expected_value);
+
+        // Both fetch functions should have been called
+        let final_count = fetch_count.load(Ordering::SeqCst);
+        assert_eq!(
+            final_count, 2,
+            "Both fetch functions should have been called"
+        );
     }
 }
