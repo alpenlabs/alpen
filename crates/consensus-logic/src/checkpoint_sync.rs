@@ -297,7 +297,7 @@ async fn process_and_store_checkpoint(
     checkpoint: Checkpoint,
     csync_manager: &mut ChainstateStorageInterface,
 ) -> anyhow::Result<Chainstate> {
-    let chainstate_diff = FullStateUpdate::from_buffer(checkpoint.sidecar().bytes())?;
+    let chainstate_diff = FullStateUpdate::from_buf(checkpoint.sidecar().bytes())?;
 
     // apply chainstate update
     let new_chainstate = csync_manager
@@ -339,7 +339,7 @@ mod tests {
     fn test_extract_chainstate_diff_from_checkpoint() {
         let sc = get_test_signed_checkpoint();
         let ckpt = sc.checkpoint();
-        let result = FullStateUpdate::from_buffer(ckpt.sidecar().bytes());
+        let result = FullStateUpdate::from_buf(ckpt.sidecar().bytes());
         assert!(result.is_ok());
     }
 }

@@ -28,8 +28,14 @@ pub(crate) enum InitError {
     #[error("params: {0}")]
     MalformedParams(#[from] ParamsError),
 
+    #[error("{0}")]
+    MissingData(String),
+
     #[error("invalid sync mode")]
     InvalidSyncMode,
+
+    #[error("{0}")]
+    ServiceUnavailable(String),
 
     #[error("{0}")]
     Anyhow(#[from] anyhow::Error),

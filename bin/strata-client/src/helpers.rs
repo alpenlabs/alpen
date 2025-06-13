@@ -61,7 +61,9 @@ pub(crate) fn get_config(args: Args) -> Result<Config, InitError> {
 fn validate_config(config: Config) -> Result<Config, InitError> {
     // Check if the client is not running as sequencer then has sync endpoint.
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
-        return Err(InitError::Anyhow(anyhow::anyhow!("Missing sync_endpoint")));
+        return Err(InitError::MalformedConfig(ConfigError::MissingKey(
+            "Missing sync_endpoint".to_string(),
+        )));
     }
     Ok(config)
 }
