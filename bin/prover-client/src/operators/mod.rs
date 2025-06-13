@@ -158,10 +158,13 @@ pub trait ProvingOp {
     ) -> Result<(), ProvingTaskError> {
         info!("Starting proof generation");
 
+        // Failing to fetch_input is somewhat expected -
+        // exex sometimes lags behind the block production.
+        // Logs with info to not pollute the logs with false positives.
         let input = self
             .fetch_input(task_id, db)
             .await
-            .inspect_err(|e| error!(?e, "Failed to fetch input"))?;
+            .inspect_err(|e| info!(?e, "Failed to fetch input"))?;
 
         let proof_res = <Self::Program as ZkVmProgram>::prove(&input, host);
 
