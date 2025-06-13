@@ -2,14 +2,21 @@ use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum MerkleError {
-    #[error("No Elements present in MerkleTree")]
+    #[error("no element present in merkle tree")]
     NoElements,
-    #[error("Not power of two")]
+
+    #[error("not power-of-2 size")]
     NotPowerOfTwo,
-    #[error("Index provided exceeds the bounds")]
+
+    #[error("index provided out of bounds")]
     IndexOutOfBounds,
-    #[error("Provided Chunk size is too Big")]
+
+    #[error("provided chunk size too big")]
     ChunkSizeTooBig,
-    #[error("Generic Error for unimplmented error")]
+
+    #[error("MMR has reached max capacity")]
+    MaxCapacity,
+
+    #[error("unknown error")]
     Unknown,
 }
