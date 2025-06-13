@@ -125,10 +125,10 @@ strata-tasks = { path = "crates/tasks" }
 strata-test-utils = { path = "crates/test-utils" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
-zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc10" }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc11" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc11" }
+zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc11" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc11" }
 
 # IMPORTANT: ensure alloy-* and revm packages are of the same version as inside reth dependency
 # reth dependencies:
@@ -222,8 +222,8 @@ reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
 rsp-mpt = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
 rsp-primitives = { git = "https://github.com/succinctlabs/rsp", rev = "3703a82027157a653327c95cf2e507d05bde174f" }
-sp1-helper = "4.2.0"
-sp1-sdk = "4.2.0"
+sp1-helper = "5.0.0"
+sp1-sdk = "5.0.0"
 
 anyhow = "1.0.86"
 arbitrary = { version = "1.3.2", features = ["derive"] }
@@ -311,6 +311,6 @@ strip = true
 
 # Patch RSP dependencies to use AlpenLabs forks for rsp-client-executor, rsp-mpt, and rsp-primitives.
 [patch."https://github.com/succinctlabs/rsp"]
-rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
-rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
-rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "a386ada51586761058eee16acdab1561f06947c5" }
+rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
+rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
+rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
