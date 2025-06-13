@@ -176,9 +176,11 @@ class BridgeMixin(BaseMixin):
 
         # time to mature DRT
         self.btcrpc.proxy.generatetoaddress(6, seq_addr)
+        # FIXME: use wait_until
         time.sleep(3)
 
         # time to mature DT
         self.btcrpc.proxy.generatetoaddress(6, seq_addr)
+        # FIXME: use wait_until
         time.sleep(3)
         return drt_tx_id

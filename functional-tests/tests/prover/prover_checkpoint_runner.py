@@ -51,14 +51,14 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         epoch = wait_until_next_chain_epoch(sequencer_rpc, timeout=60)
         logging.info(f"it's now epoch {epoch}")
 
-        def _ck1():
+        def consecutive_checkpoints_verified():
             ckpt_idx = sequencer_rpc.strata_getLatestCheckpointIndex(True)
             logging.info(f"cur checkpoint idx: {ckpt_idx}")
             return ckpt_idx == PROVER_CHECKPOINT_SETTINGS["CONSECUTIVE_PROOFS_REQUIRED"]
 
         # Wait until the required number of consecutive checkpoint proofs are generated and verified
         wait_until(
-            _ck1,
+            consecutive_checkpoints_verified,
             timeout=PROVER_CHECKPOINT_SETTINGS["PROVER_TIMEOUT_SECONDS"],
         )
 
