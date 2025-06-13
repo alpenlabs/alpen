@@ -18,3 +18,4 @@ tracing-subscriber.workspace = true
 strata-db.workspace = true
 strata-primitives.workspace = true
 strata-rocksdb.workspace = true
+strata-state.workspace = true
