@@ -39,22 +39,31 @@ pub(crate) fn construct_expected_public_parameters(
     // Validate epoch progression
     let expected_epoch = (prev_epoch_summary.epoch() + 1) as u32;
     if epoch != expected_epoch {
-        return Err(CoreError::InvalidEpoch);
+        return Err(CoreError::InvalidEpoch {
+            expected: expected_epoch,
+            actual: epoch,
+        });
     }
 
     let new_l2_terminal = *new_batch_info.final_l2_block();
 
     // Validate L2 block slot progression
     let prev_slot = prev_epoch_summary.terminal().slot();
-    if new_l2_terminal.slot() <= prev_slot {
-        return Err(CoreError::InvalidL2BlockSlot);
+    let new_slot = new_l2_terminal.slot();
+    if new_slot <= prev_slot {
+        return Err(CoreError::InvalidL2BlockSlot {
+            prev_slot,
+            new_slot,
+        });
     }
 
     // Validate L1 block height progression
     let prev_l1_height = prev_epoch_summary.new_l1().height();
     let new_l1_hight = new_batch_info.final_l1_block().height();
     if new_l1_hight <= prev_l1_height {
-        return Err(CoreError::InvalidL1BlockHeight);
+        return Err(CoreError::InvalidL1BlockHeight {
+            reason: format!("new L1 height {new_l1_hight} must be greater than previous height {prev_l1_height}"),
+        });
     }
 
     // TODO: What is the algorithm for calculating the state_diff_hash?

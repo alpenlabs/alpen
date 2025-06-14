@@ -14,48 +14,28 @@ pub enum CoreError {
     InvalidSignature,
 
     /// Invalid epoch number
-    #[error("Invalid epoch number in checkpoint")]
-    InvalidEpoch,
+    #[error("Invalid epoch number in checkpoint: expected {expected}, got {actual}")]
+    InvalidEpoch { expected: u32, actual: u32 },
 
     /// Invalid L2 Block slot
-    #[error("Invalid l2 block slot in checkpoint")]
-    InvalidL2BlockSlot,
+    #[error("Invalid L2 block slot: new slot {new_slot} must be greater than previous slot {prev_slot}")]
+    InvalidL2BlockSlot { prev_slot: u64, new_slot: u64 },
 
     /// Invalid L1 Block height
-    #[error("Invalid l1 block height")]
-    InvalidL1BlockHeight,
+    #[error("Invalid L1 block height: {reason}")]
+    InvalidL1BlockHeight { reason: String },
 
     /// Missing required field in L2 to L1 message
     #[error("Missing required field '{field}' in L2 to L1 message at index {index}")]
     MissingRequiredFieldInL2ToL1Msg { index: usize, field: String },
 
-    /// State diff hash mismatch
-    #[error("State diff hash does not match the one in public parameters")]
-    StateDiffMismatch,
-
-    /// Unexpected previous L2 terminal
-    #[error("Previous L2 terminal does not match expected value")]
-    UnexpectedPrevTerminal,
-
-    /// Unexpected previous L1 reference
-    #[error("Previous L1 reference does not match expected value")]
-    UnexpectedPrevL1Ref,
-
     /// L1 to L2 message range mismatch
     #[error("L1 to L2 message range commitment does not match")]
     L1ToL2RangeMismatch,
 
-    /// Proof verification failed
-    #[error("ZK-SNARK proof verification failed")]
-    ProofVerificationFailed,
-
     /// Malformed signed checkpoint
-    #[error("Failed to extract signed checkpoint from transaction")]
-    MalformedSignedCheckpoint,
-
-    /// Malformed public parameters
-    #[error("Failed to deserialize public parameters from proof")]
-    MalformedPublicParams,
+    #[error("Failed to extract signed checkpoint from transaction: {reason}")]
+    MalformedSignedCheckpoint { reason: String },
 
     /// Serialization error
     #[error("Failed to serialize data")]
@@ -68,10 +48,8 @@ pub enum CoreError {
     /// Invalid ZK proof
     #[error("Invalid ZK Proof")]
     InvalidProof,
-}
 
-impl From<borsh::io::Error> for CoreError {
-    fn from(e: borsh::io::Error) -> Self {
-        CoreError::TxParsingError(e.to_string())
-    }
+    /// Invalid verifying key format
+    #[error("Invalid verifying key format: {0}")]
+    InvalidVerifyingKeyFormat(String),
 }

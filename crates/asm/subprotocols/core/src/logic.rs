@@ -57,7 +57,8 @@ pub(crate) fn ol_stf_checkpoint_handler(
     // TODO: Replace with Rollup Verifying Key Framework when available
     // Current implementation is a placeholder that only supports SP1 verifying keys.
     // This should be updated to handle multiple proof systems and key formats.
-    let vk_inner = Buf32::try_from_slice(state.checkpoint_vk.as_bytes())?;
+    let vk_inner = Buf32::try_from_slice(state.checkpoint_vk.as_bytes())
+        .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))?;
     let rollup_vk = RollupVerifyingKey::SP1VerifyingKey(vk_inner);
 
     // Proof Verification
@@ -87,7 +88,8 @@ pub(crate) fn ol_stf_checkpoint_handler(
     // Emit Log of the Summary
     // TODO: Emit required log for core subprotocol
     // this is a placeholder implementation
-    let summary_body = borsh::to_vec(&public_params.epoch_summary)?;
+    let summary_body =
+        borsh::to_vec(&public_params.epoch_summary).map_err(|_| CoreError::SerializationError)?;
     let log = Log::new(1, summary_body);
     relayer.emit_log(log);
 
@@ -109,9 +111,13 @@ fn extract_signed_checkpoint(tx: &TxInput<'_>) -> Result<SignedCheckpoint> {
     let witness_data = tx.tx().input[0].script_sig.as_bytes();
 
     if witness_data.is_empty() {
-        return Err(CoreError::MalformedSignedCheckpoint);
+        return Err(CoreError::MalformedSignedCheckpoint {
+            reason: "witness data is empty".to_string(),
+        });
     }
 
     // The auxiliary data should contain the borsh-serialized SignedCheckpoint
-    borsh::from_slice(witness_data).map_err(|_| CoreError::MalformedSignedCheckpoint)
+    borsh::from_slice(witness_data).map_err(|e| CoreError::MalformedSignedCheckpoint {
+        reason: format!("failed to deserialize SignedCheckpoint: {e}"),
+    })
 }

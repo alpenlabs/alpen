@@ -23,7 +23,9 @@ pub(crate) fn compute_rolling_hash(
 ) -> Result<Buf32> {
     // Validate height range
     if start_height > end_height {
-        return Err(CoreError::InvalidL1BlockHeight);
+        return Err(CoreError::InvalidL1BlockHeight {
+            reason: format!("start height {start_height} cannot be greater than end height {end_height}"),
+        });
     }
 
     // Validate range consistency
