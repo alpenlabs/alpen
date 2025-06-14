@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
+use alloy_eips::eip7685::RequestsOrHash;
 use alloy_rpc_types::{
     engine::{
-        ExecutionPayloadInputV2, ForkchoiceState, PayloadAttributes, PayloadId, PayloadStatusEnum,
+        ExecutionPayloadV2, ExecutionPayloadV3, ForkchoiceState, PayloadAttributes, PayloadId,
+        PayloadStatusEnum,
     },
     Withdrawal,
 };
 use alpen_reth_evm::constants::COINBASE_ADDRESS;
-use alpen_reth_node::{
-    AlpenExecutionPayloadEnvelopeV2, AlpenPayloadAttributes, ExecutionPayloadFieldV2,
-};
-use futures::future::TryFutureExt;
+use alpen_reth_node::AlpenPayloadAttributes;
 use revm_primitives::{Address, B256};
 use strata_eectl::{
     engine::{BlockStatus, ExecEngineCtl, PayloadStatus},
@@ -97,7 +96,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
 
         let fork_choice_result = self
             .client
-            .fork_choice_updated_v2(fork_choice_state, None)
+            .fork_choice_updated_v3(fork_choice_state, None)
             .await;
 
         let update_status =
@@ -146,7 +145,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
                 timestamp: payload_env.timestamp() / 1000,
                 prev_randao: B256::ZERO,
                 withdrawals: Some(withdrawals),
-                parent_beacon_block_root: None,
+                parent_beacon_block_root: Some(Default::default()),
                 suggested_fee_recipient: COINBASE_ADDRESS,
             },
             payload_env.batch_gas_limit(),
@@ -160,7 +159,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
 
         let forkchoice_result = self
             .client
-            .fork_choice_updated_v2(fcs, Some(payload_attributes))
+            .fork_choice_updated_v3(fcs, Some(payload_attributes))
             .await;
 
         // TODO: correct error type
@@ -177,64 +176,51 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
 
     #[allow(dead_code)]
     async fn get_payload_status(&self, payload_id: u64) -> EngineResult<PayloadStatus> {
-        let pl_id = PayloadId::new(payload_id.to_be_bytes());
         let payload = self
             .client
-            .get_payload_v2(pl_id)
-            .map_err(|_| EngineError::UnknownPayloadId(payload_id))
-            .await?;
+            .get_payload_v4(PayloadId::new(payload_id.to_be_bytes()))
+            .await
+            .map_err(|_| EngineError::UnknownPayloadId(payload_id))?;
 
-        let AlpenExecutionPayloadEnvelopeV2 {
-            inner: execution_payload_v2,
-            withdrawal_intents: rpc_withdrawal_intents,
-        } = payload;
+        let execution_payload = &payload.inner().execution_payload;
 
-        let (el_payload, ops) = match execution_payload_v2.execution_payload {
-            ExecutionPayloadFieldV2::V1(payload) => {
-                let el_payload: ElPayload = payload.into();
+        let ops = execution_payload
+            .withdrawals()
+            .iter()
+            .map(|withdrawal| {
+                Op::Deposit(ELDepositData::new(
+                    withdrawal.index,
+                    gwei_to_sats(withdrawal.amount),
+                    withdrawal.address.as_slice().to_vec(),
+                ))
+            })
+            .collect::<Vec<_>>();
 
-                (el_payload, vec![])
-            }
-            ExecutionPayloadFieldV2::V2(payload) => {
-                let ops = payload
-                    .withdrawals
-                    .iter()
-                    .map(|withdrawal| {
-                        Op::Deposit(ELDepositData::new(
-                            withdrawal.index,
-                            gwei_to_sats(withdrawal.amount),
-                            withdrawal.address.as_slice().to_vec(),
-                        ))
-                    })
-                    .collect();
+        let withdrawal_intents = payload
+            .withdrawal_intents
+            .iter()
+            .cloned()
+            .map(to_bridge_withdrawal_intent)
+            .collect::<Vec<_>>();
 
-                let el_payload: ElPayload = payload.payload_inner.into();
+        let el_payload: ElPayload = execution_payload.payload_inner.payload_inner.clone().into();
 
-                (el_payload, ops)
-            }
-        };
-
-        let el_state_root = el_payload.state_root;
-        let accessory_data = borsh::to_vec(&el_payload).unwrap();
-        let gas_used = el_payload.gas_used;
-        let update_input = make_update_input_from_payload_and_ops(el_payload, &ops)
+        let update_input = make_update_input_from_payload_and_ops(el_payload.clone(), &ops)
             .map_err(|err| EngineError::Other(err.to_string()))?;
 
-        let withdrawal_intents = rpc_withdrawal_intents
-            .into_iter()
-            .map(to_bridge_withdrawal_intent)
-            .collect();
-
-        let update_output =
-            UpdateOutput::new_from_state(el_state_root).with_withdrawals(withdrawal_intents);
+        let update_output = UpdateOutput::new_from_state(el_payload.state_root)
+            .with_withdrawals(withdrawal_intents);
 
         let execution_payload_data = ExecPayloadData::new(
             ExecUpdate::new(update_input, update_output),
-            accessory_data,
+            borsh::to_vec(&el_payload).unwrap(),
             ops,
         );
 
-        Ok(PayloadStatus::Ready(execution_payload_data, gas_used))
+        Ok(PayloadStatus::Ready(
+            execution_payload_data,
+            el_payload.gas_used,
+        ))
     }
 
     #[allow(dead_code)]
@@ -259,12 +245,25 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             })
             .collect();
 
-        let v2_payload = ExecutionPayloadInputV2 {
-            execution_payload: el_payload.into(),
-            withdrawals: Some(withdrawals),
+        let payload_inner = ExecutionPayloadV2 {
+            payload_inner: el_payload.into(),
+            withdrawals,
         };
 
-        let payload_status_result = self.client.new_payload_v2(v2_payload).await;
+        let v3_payload = ExecutionPayloadV3 {
+            payload_inner,
+            blob_gas_used: 0,
+            excess_blob_gas: 0,
+        };
+        let payload_status_result = self
+            .client
+            .new_payload_v4(
+                v3_payload,
+                Default::default(),
+                Default::default(),
+                RequestsOrHash::empty(),
+            )
+            .await;
 
         let payload_status =
             payload_status_result.map_err(|err| EngineError::Other(err.to_string()))?;
@@ -441,8 +440,11 @@ fn to_bridge_withdrawal_intent(
 
 #[cfg(test)]
 mod tests {
-    use alloy_rpc_types::engine::{ExecutionPayloadV1, ForkchoiceUpdated};
-    use alpen_reth_node::{ExecutionPayloadEnvelopeV2, ExecutionPayloadFieldV2};
+    use alloy_rpc_types::engine::{
+        ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4, ExecutionPayloadV1,
+        ExecutionPayloadV2, ExecutionPayloadV3, ForkchoiceUpdated,
+    };
+    use alpen_reth_node::AlpenExecutionPayloadEnvelopeV4;
     use rand::{rngs::OsRng, Rng};
     use revm_primitives::{alloy_primitives::Bloom, Bytes, FixedBytes, U256};
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
@@ -475,12 +477,38 @@ mod tests {
         }
     }
 
+    fn random_execution_payload_v3() -> ExecutionPayloadEnvelopeV3 {
+        ExecutionPayloadEnvelopeV3 {
+            blobs_bundle: Default::default(),
+            block_value: Default::default(),
+            execution_payload: ExecutionPayloadV3 {
+                blob_gas_used: Default::default(),
+                excess_blob_gas: Default::default(),
+                payload_inner: ExecutionPayloadV2 {
+                    payload_inner: random_execution_payload_v1(),
+                    withdrawals: vec![],
+                },
+            },
+            should_override_builder: false,
+        }
+    }
+
+    fn random_execution_payload_v4() -> AlpenExecutionPayloadEnvelopeV4 {
+        AlpenExecutionPayloadEnvelopeV4 {
+            inner: ExecutionPayloadEnvelopeV4 {
+                envelope_inner: random_execution_payload_v3(),
+                execution_requests: Default::default(),
+            },
+            withdrawal_intents: vec![],
+        }
+    }
+
     #[tokio::test]
     async fn test_update_block_state_success() {
         let mut mock_client = MockEngineRpc::new();
 
         mock_client
-            .expect_fork_choice_updated_v2()
+            .expect_fork_choice_updated_v3()
             .returning(move |_, _| Ok(ForkchoiceUpdated::from_status(PayloadStatusEnum::Valid)));
 
         let initial_head_block_hash = B256::random();
@@ -512,7 +540,7 @@ mod tests {
         let mut mock_client = MockEngineRpc::new();
 
         mock_client
-            .expect_fork_choice_updated_v2()
+            .expect_fork_choice_updated_v3()
             .returning(move |_, _| {
                 Ok(ForkchoiceUpdated::from_status(PayloadStatusEnum::Invalid {
                     validation_error: "foo".to_string(),
@@ -549,7 +577,7 @@ mod tests {
         let head_block_hash = B256::random();
 
         mock_client
-            .expect_fork_choice_updated_v2()
+            .expect_fork_choice_updated_v3()
             .returning(move |_, _| {
                 Ok(ForkchoiceUpdated::from_status(PayloadStatusEnum::Valid)
                     .with_payload_id(PayloadId::new([1u8; 8])))
@@ -594,15 +622,9 @@ mod tests {
         let mut mock_client = MockEngineRpc::new();
         let head_block_hash = B256::random();
 
-        mock_client.expect_get_payload_v2().returning(move |_| {
-            Ok(AlpenExecutionPayloadEnvelopeV2 {
-                inner: ExecutionPayloadEnvelopeV2 {
-                    execution_payload: ExecutionPayloadFieldV2::V1(random_execution_payload_v1()),
-                    block_value: U256::from(100),
-                },
-                withdrawal_intents: vec![],
-            })
-        });
+        mock_client
+            .expect_get_payload_v4()
+            .returning(move |_| Ok(random_execution_payload_v4()));
 
         let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
 
@@ -643,12 +665,14 @@ mod tests {
             vec![],
         );
 
-        mock_client.expect_new_payload_v2().returning(move |_| {
-            Ok(alloy_rpc_types::engine::PayloadStatus {
-                status: PayloadStatusEnum::Valid,
-                latest_valid_hash: None,
-            })
-        });
+        mock_client
+            .expect_new_payload_v4()
+            .returning(move |_, _, _, _| {
+                Ok(alloy_rpc_types::engine::PayloadStatus {
+                    status: PayloadStatusEnum::Valid,
+                    latest_valid_hash: None,
+                })
+            });
 
         let rpc_exec_engine_inner = RpcExecEngineInner::new(mock_client, head_block_hash);
 
