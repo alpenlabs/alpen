@@ -8,7 +8,7 @@ use std::any::Any;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{Log, SectionState, TxInput, msg::InterprotoMsg};
+use crate::{AsmError, Log, SectionState, TxInput, msg::InterprotoMsg};
 
 /// Identifier for a subprotocol.
 pub type SubprotocolId = u8;
@@ -36,9 +36,14 @@ pub trait Subprotocol: 'static {
     type Msg: Clone + Any;
 
     /// Constructs a new state to use if the ASM does not have an instance of it.
+    /// 
     /// # Arguments
-    /// * `genesis_config` - Configuration parameters for initializing the state
-    fn init(genesis_config: Self::GenesisConfig) -> Self::State;
+    /// * `genesis_config_data` - Serialized genesis configuration data that should be
+    ///   deserialized into Self::GenesisConfig before use
+    /// 
+    /// # Returns
+    /// The initialized state or an error if deserialization fails
+    fn init(genesis_config_data: &[u8]) -> Result<Self::State, AsmError>;
 
     /// Processes a batch of L1 transactions, extracting all relevant information for this
     /// subprotocol.

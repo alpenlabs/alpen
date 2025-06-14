@@ -44,18 +44,19 @@ impl Stage for SubprotoLoaderStage<'_> {
             // In either case, we must initialize a fresh state from the provided configuration in
             // genesis_registry
             None => {
-                // Try to get genesis config from registry, otherwise fail
-                let genesis_config = self
+                // Try to get genesis config data from registry, otherwise fail
+                let genesis_config_data = self
                     .genesis_registry
                     .ok_or("asm: genesis registry not available for state init")
                     .and_then(|registry| {
                         registry
-                            .get::<S::GenesisConfig>(S::ID)
+                            .get_raw(S::ID)
                             .ok_or("asm: missing specific config for subprotocol")
                     })
-                    .expect("asm: cannot initialize subprotocol state");
+                    .expect("asm: cannot get genesis config data for subprotocol");
 
-                S::init(genesis_config)
+                S::init(genesis_config_data)
+                    .expect("asm: failed to initialize subprotocol state")
             }
         };
 

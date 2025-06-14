@@ -40,7 +40,7 @@ mod error;
 mod logic;
 mod utils;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSerialize, from_slice};
 pub use error::*;
 use strata_asm_common::{
     CORE_SUBPROTOCOL_ID, EE_UPGRADE_TX_TYPE, FORCED_INCLUSION_TX_TYPE, MsgRelayer, NullMsg,
@@ -107,14 +107,18 @@ impl Subprotocol for OLCoreSubproto {
 
     type Msg = NullMsg<CORE_SUBPROTOCOL_ID>;
 
-    fn init(genesis_config: Self::GenesisConfig) -> Self::State {
+    fn init(genesis_config_data: &[u8]) -> std::result::Result<Self::State, strata_asm_common::AsmError> {
+        // Deserialize the genesis configuration
+        let genesis_config: Self::GenesisConfig = from_slice(genesis_config_data)
+            .map_err(|e| strata_asm_common::AsmError::Deserialization(Self::ID, e))?;
+
         // Initialize the Core subprotocol state from genesis configuration
-        CoreOLState {
+        Ok(CoreOLState {
             checkpoint_vk: genesis_config.checkpoint_vk,
             verified_checkpoint: genesis_config.initial_checkpoint,
             last_checkpoint_ref: genesis_config.initial_l1_ref,
             sequencer_pubkey: genesis_config.sequencer_pubkey,
-        }
+        })
     }
 
     // Transactions come from L1 and can be submitted by anyone, so we handle failures gracefully.

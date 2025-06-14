@@ -56,6 +56,17 @@ impl GenesisConfigRegistry {
             .and_then(|data| borsh::from_slice(data).ok())
     }
 
+    /// Retrieves the raw serialized genesis configuration data for a subprotocol.
+    ///
+    /// # Arguments
+    /// * `id` - The subprotocol ID
+    ///
+    /// # Returns
+    /// A reference to the serialized configuration data or None if not found
+    pub fn get_raw(&self, id: SubprotocolId) -> Option<&[u8]> {
+        self.configs.get(&id).map(|v| v.as_slice())
+    }
+
     /// Checks if a genesis configuration exists for a subprotocol.
     pub fn contains(&self, id: SubprotocolId) -> bool {
         self.configs.contains_key(&id)

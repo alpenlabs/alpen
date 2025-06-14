@@ -1,5 +1,7 @@
 use borsh::BorshDeserialize;
-use strata_asm_common::{Log, MsgRelayer, TxInput, WithdrawalMsg};
+use strata_asm_common::{
+    BRIDGE_SUBPROTOCOL_ID, Log, MessagesContainer, MsgRelayer, TxInput,
+};
 use strata_primitives::{
     batch::{SignedCheckpoint, verify_signed_checkpoint_sig},
     block_credential::CredRule,
@@ -75,14 +77,22 @@ pub(crate) fn ol_stf_checkpoint_handler(
     state.last_checkpoint_ref = *checkpoint.batch_info().final_l1_block().blkid();
 
     // Send inter subprotocol messages
-    // Validate and Pass WithdrawalRequests to Bridge Subprotocol
+    // Validate and forward OL→ASM messages to appropriate subprotocols
     utils::validate_l2_to_l1_messages(&public_params.l2_to_l1_msgs)?;
 
     if !public_params.l2_to_l1_msgs.is_empty() {
-        let withdrawal_msg = WithdrawalMsg {
-            withdrawals: public_params.l2_to_l1_msgs.clone(),
-        };
-        relayer.relay_msg(&withdrawal_msg);
+        // Convert OLToASMMessage to Message format and send to bridge
+        let mut messages = Vec::new();
+        for ol_msg in &public_params.l2_to_l1_msgs {
+            if let Ok(decoded) = ol_msg.decode() {
+                messages.push(decoded);
+            }
+        }
+        
+        if !messages.is_empty() {
+            let container = MessagesContainer::with_messages(BRIDGE_SUBPROTOCOL_ID, messages);
+            relayer.relay_msg(&container);
+        }
     }
 
     // Emit Log of the Summary
@@ -90,7 +100,7 @@ pub(crate) fn ol_stf_checkpoint_handler(
     // this is a placeholder implementation
     let summary_body =
         borsh::to_vec(&public_params.epoch_summary).map_err(|_| CoreError::SerializationError)?;
-    let log = Log::new(1, summary_body);
+    let log = Log::new(1, summary_body).map_err(|_| CoreError::SerializationError)?;
     relayer.emit_log(log);
 
     Ok(())

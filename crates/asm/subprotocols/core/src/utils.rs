@@ -1,4 +1,4 @@
-use strata_asm_common::L2ToL1Msg;
+use strata_asm_common::{L2ToL1Msg, Message};
 use strata_primitives::{buf::Buf32, hash};
 
 use crate::error::*;
@@ -73,37 +73,39 @@ fn compute_rolling_hash_from_range(
     Ok(current_hash)
 }
 
-/// Validates the structure and content of L2→L1 messages
+/// Validates the structure and content of OL→ASM messages
 ///
 /// # Arguments
-/// * `messages` - Vector of L2ToL1Msg to validate
+/// * `messages` - Vector of OLToASMMessage to validate
 ///
 /// # Returns
 /// Result indicating validation success or specific error
 pub(crate) fn validate_l2_to_l1_messages(messages: &[L2ToL1Msg]) -> Result<()> {
     for (idx, msg) in messages.iter().enumerate() {
-        // Validate destination address is not empty
-        if msg.dest_address.is_empty() {
-            return Err(CoreError::MissingRequiredFieldInL2ToL1Msg {
-                index: idx,
-                field: "dest_address".into(),
-            });
+        // Validate that the message can be decoded
+        match msg.decode() {
+            Ok(decoded) => {
+                // Validate message type is within expected range
+                if decoded.ty() > Message::MAX_TYPE {
+                    return Err(CoreError::MissingRequiredFieldInL2ToL1Msg {
+                        index: idx,
+                        field: "valid message type".into(),
+                    });
+                }
+                
+                // TODO: Add message type-specific validation once message types are defined
+                // For example:
+                // - Type 0x01 might be withdrawal messages
+                // - Type 0x02 might be upgrade messages
+                // Each type would have its own validation logic
+            }
+            Err(_) => {
+                return Err(CoreError::MissingRequiredFieldInL2ToL1Msg {
+                    index: idx,
+                    field: "valid message encoding".into(),
+                });
+            }
         }
-
-        // Validate amount is non-zero for actual withdrawals
-        if msg.amount == 0 {
-            return Err(CoreError::MissingRequiredFieldInL2ToL1Msg {
-                index: idx,
-                field: "amount".into(),
-            });
-        }
-
-        // TODO: Additional validation could include:
-        // - Address format validation
-        // - Amount range checks
-        // - Data payload size limits
-        // - Nonce uniqueness checks
-        // Waiting on spec finalization
     }
 
     Ok(())
