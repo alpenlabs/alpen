@@ -1,11 +1,11 @@
 //! Fork choice manager. Used to talk to the EL and pick the new fork choice.
 
+#![allow(unused)]
+
 use std::{collections::VecDeque, sync::Arc};
 
+use strata_chain_worker::{ChainWorkerHandle, WorkerError, WorkerResult};
 use strata_chaintsn::transition::process_block;
-use strata_common::retry::{
-    policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
-};
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
 use strata_primitives::{
@@ -51,6 +51,9 @@ pub struct ForkChoiceManager {
     /// Tracks unfinalized block tips.
     chain_tracker: unfinalized_tracker::UnfinalizedBlockTracker,
 
+    /// Handle to the chain worker thread.
+    chain_worker: Arc<ChainWorkerHandle>,
+
     /// Current best block.
     // TODO make sure we actually want to have this
     cur_best_block: L2BlockCommitment,
@@ -71,6 +74,7 @@ impl ForkChoiceManager {
         storage: Arc<NodeStorage>,
         cur_csm_state: Arc<ClientState>,
         chain_tracker: unfinalized_tracker::UnfinalizedBlockTracker,
+        chain_worker: Arc<ChainWorkerHandle>,
         cur_best_block: L2BlockCommitment,
         cur_chainstate: Arc<Chainstate>,
     ) -> Self {
@@ -79,6 +83,7 @@ impl ForkChoiceManager {
             storage,
             cur_csm_state,
             chain_tracker,
+            chain_worker,
             cur_best_block,
             cur_chainstate,
             epochs_pending_finalization: VecDeque::new(),
@@ -136,6 +141,11 @@ impl ForkChoiceManager {
             .map(|entry| Arc::new(entry.to_chainstate())))
     }
 
+    /// Tries to execute the block, returning an error if applicable.
+    fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
+        self.chain_worker.try_exec_block_blocking(*block)
+    }
+
     /// Updates the stored current state.
     fn update_tip_block(&mut self, block: L2BlockCommitment, state: Arc<Chainstate>) {
         self.cur_best_block = block;
@@ -150,7 +160,27 @@ impl ForkChoiceManager {
         Ok(new_tip)
     }
 
-    #[expect(unused)]
+    /// Updates the bookkeeping to finalize and epoch.
+    fn finalize_epoch(&mut self, epoch: &EpochCommitment) -> anyhow::Result<()> {
+        // Safety check.
+        if epoch.epoch() < self.get_chainstate_finalized_epoch().epoch() {
+            return Err(
+                Error::FinalizeOldEpoch(*epoch, *self.get_chainstate_finalized_epoch()).into(),
+            );
+        }
+
+        // Do the leg work of applying the finalization.
+        self.chain_worker.finalize_epoch_blocking(*epoch)?;
+
+        // Now update the in memory bookkeeping about it.
+        self.chain_tracker.update_finalized_epoch(epoch)?;
+
+        // Clear out old pending entries.
+        self.clear_pending_epochs(epoch);
+
+        Ok(())
+    }
+
     fn get_chainstate_cur_epoch(&self) -> u64 {
         self.cur_chainstate.cur_epoch()
     }
@@ -172,7 +202,7 @@ impl ForkChoiceManager {
             .unwrap_or(self.chain_tracker.finalized_epoch())
     }
 
-    /// Does handling to accept a new un
+    /// Does handling to accept an epoch as finalized before we've actually validated it.
     fn attach_epoch_pending_finalization(&mut self, epoch: EpochCommitment) -> bool {
         let last_finalized_epoch = self.get_most_recently_finalized_epoch();
 
@@ -196,7 +226,7 @@ impl ForkChoiceManager {
         true
     }
 
-    fn find_latest_finalizable_epoch(&self) -> Option<(usize, &EpochCommitment)> {
+    fn find_latest_pending_finalizable_epoch(&self) -> Option<(usize, EpochCommitment)> {
         // the latest epoch which we have processed and is safe to finalize
         if self.cur_chainstate.prev_epoch().is_null() {
             return None;
@@ -207,10 +237,19 @@ impl ForkChoiceManager {
             .enumerate()
             .rev()
             .find(|(_, epoch)| epoch.epoch() <= prev_epoch)
+            .map(|(a, b)| (a, *b))
     }
 
-    fn drain_pending_finalizable_epochs(&mut self, until: usize) {
-        self.epochs_pending_finalization.drain(..until);
+    fn clear_pending_epochs(&mut self, cur_fin_epoch: &EpochCommitment) {
+        while self
+            .epochs_pending_finalization
+            .front()
+            .is_some_and(|e| e.epoch() <= cur_fin_epoch.epoch())
+        {
+            self.epochs_pending_finalization
+                .pop_front()
+                .expect("fcm: pop epochs_pending_finalization");
+        }
     }
 }
 
@@ -219,6 +258,7 @@ pub fn init_forkchoice_manager(
     storage: &Arc<NodeStorage>,
     params: &Arc<Params>,
     init_csm_state: Arc<ClientState>,
+    chain_worker: Arc<ChainWorkerHandle>,
 ) -> anyhow::Result<ForkChoiceManager> {
     // Load data about the last finalized block so we can use that to initialize
     // the finalized tracker.
@@ -274,6 +314,7 @@ pub fn init_forkchoice_manager(
         storage.clone(),
         init_csm_state,
         chain_tracker,
+        chain_worker,
         cur_tip_block,
         Arc::new(chainstate),
     );
@@ -336,13 +377,12 @@ fn determine_start_tip(
 
 /// Main tracker task that takes a ready fork choice manager and some IO stuff.
 #[allow(clippy::too_many_arguments)]
-pub fn tracker_task<E: ExecEngineCtl>(
+pub fn tracker_task(
     shutdown: ShutdownGuard,
     handle: Handle,
     storage: Arc<NodeStorage>,
-    engine: Arc<E>,
     fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
-    _csm_ctl: Arc<CsmController>,
+    chain_worker: Arc<ChainWorkerHandle>,
     params: Arc<Params>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
@@ -355,7 +395,7 @@ pub fn tracker_task<E: ExecEngineCtl>(
 
     // Now that we have the database state in order, we can actually init the
     // FCM.
-    let mut fcm = match init_forkchoice_manager(&storage, &params, init_state) {
+    let mut fcm = match init_forkchoice_manager(&storage, &params, init_state, chain_worker) {
         Ok(fcm) => fcm,
         Err(e) => {
             error!(err = %e, "failed to init forkchoice manager!");
@@ -363,16 +403,9 @@ pub fn tracker_task<E: ExecEngineCtl>(
         }
     };
 
-    handle_unprocessed_blocks(&mut fcm, &storage, engine.as_ref(), &status_channel)?;
+    handle_unprocessed_blocks(&mut fcm, &storage, &status_channel)?;
 
-    if let Err(e) = forkchoice_manager_task_inner(
-        &shutdown,
-        handle,
-        fcm,
-        engine.as_ref(),
-        fcm_rx,
-        status_channel,
-    ) {
+    if let Err(e) = forkchoice_manager_task_inner(&shutdown, handle, fcm, fcm_rx, status_channel) {
         error!(err = ?e, "tracker aborted");
         return Err(e);
     }
@@ -385,7 +418,6 @@ pub fn tracker_task<E: ExecEngineCtl>(
 fn handle_unprocessed_blocks(
     fcm: &mut ForkChoiceManager,
     storage: &NodeStorage,
-    engine: &impl ExecEngineCtl,
     status_channel: &StatusChannel,
 ) -> anyhow::Result<()> {
     info!("checking for unprocessed L2 blocks");
@@ -405,12 +437,7 @@ fn handle_unprocessed_blocks(
                 continue;
             }
 
-            process_fc_message(
-                ForkChoiceMessage::NewBlock(blockid),
-                fcm,
-                engine,
-                status_channel,
-            )?;
+            process_fc_message(ForkChoiceMessage::NewBlock(blockid), fcm, status_channel)?;
         }
         slot += 1;
     }
@@ -427,11 +454,10 @@ enum FcmEvent {
     Abort,
 }
 
-fn forkchoice_manager_task_inner<E: ExecEngineCtl>(
+fn forkchoice_manager_task_inner(
     shutdown: &ShutdownGuard,
     handle: Handle,
     mut fcm_state: ForkChoiceManager,
-    engine: &E,
     mut fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
@@ -452,10 +478,8 @@ fn forkchoice_manager_task_inner<E: ExecEngineCtl>(
         }
 
         match fcm_ev {
-            FcmEvent::NewFcmMsg(m) => {
-                process_fc_message(m, &mut fcm_state, engine, &status_channel)
-            }
-            FcmEvent::NewStateUpdate(st) => handle_new_client_state(&mut fcm_state, st, engine),
+            FcmEvent::NewFcmMsg(m) => process_fc_message(m, &mut fcm_state, &status_channel),
+            FcmEvent::NewStateUpdate(st) => handle_new_client_state(&mut fcm_state, st),
             FcmEvent::Abort => break,
         }?;
     }
@@ -500,7 +524,6 @@ async fn wait_for_client_change(
 fn process_fc_message(
     msg: ForkChoiceMessage,
     fcm_state: &mut ForkChoiceManager,
-    engine: &impl ExecEngineCtl,
     status_channel: &StatusChannel,
 ) -> anyhow::Result<()> {
     match msg {
@@ -514,7 +537,7 @@ fn process_fc_message(
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
 
-            let ok = match handle_new_block(fcm_state, &blkid, &block_bundle, engine) {
+            let ok = match handle_new_block(fcm_state, &blkid, &block_bundle) {
                 Ok(v) => v,
                 Err(e) => {
                     if let Some(EngineError::Other(_)) = e.downcast_ref() {
@@ -531,7 +554,7 @@ fn process_fc_message(
 
             let status = if ok {
                 // check if any pending blocks can be finalized
-                if let Err(err) = handle_epoch_finalization(fcm_state, engine) {
+                if let Err(err) = handle_epoch_finalization(fcm_state) {
                     error!(%err, "failed to finalize epoch");
                     if let Some(EngineError::Other(_)) = err.downcast_ref() {
                         return Err(err);
@@ -569,7 +592,6 @@ fn handle_new_block(
     fcm_state: &mut ForkChoiceManager,
     blkid: &L2BlockId,
     bundle: &L2BlockBundle,
-    engine: &impl ExecEngineCtl,
 ) -> anyhow::Result<bool> {
     let slot = bundle.header().slot();
 
@@ -582,8 +604,10 @@ fn handle_new_block(
         return Ok(false);
     }
 
-    // Try to execute the payload, seeing if *that's* valid.
+    // Try to execute the block, to see if it's actually valid.
     //
+
+    /*
     // We don't do this for the genesis block because that block doesn't
     // actually have a well-formed accessory and it gets mad at us.
     if slot > 0 {
@@ -597,14 +621,27 @@ fn handle_new_block(
             &ExponentialBackoff::default(),
             || engine.submit_payload(eng_payload.clone()),
         )?;
+        //let res = engine.submit_payload(eng_payload)?;
+    */
 
-        // If the payload is invalid then we should write the full block as
-        // being invalid and return too.
-        // TODO verify this is reasonable behavior, especially with regard
-        // to pre-sync
-        if res == strata_eectl::engine::BlockStatus::Invalid {
-            return Ok(false);
+    // This stores the block output in the database, which lets us make queries
+    // about it, at least until it gets reorged out by another block being
+    // finalized.
+    let bc = L2BlockCommitment::new(bundle.header().slot(), *blkid);
+    let exec_ok = match fcm_state.try_exec_block(&bc) {
+        Ok(()) => true,
+        Err(err) => {
+            // TODO Need some way to distinguish an invalid block from a exec failure
+            warn!(%err, "try_exec_block failed");
+            false
         }
+    };
+
+    if exec_ok {
+        fcm_state.set_block_status(&blkid, BlockStatus::Valid)?;
+    } else {
+        fcm_state.set_block_status(&blkid, BlockStatus::Invalid)?;
+        return Ok(false);
     }
 
     // Insert block into pending block tracker and figure out if we
@@ -635,6 +672,10 @@ fn handle_new_block(
     let tip_blkid = *tip_update.new_tip();
     debug!(%tip_blkid, "have new tip, applying update");
 
+    // TODO need to re-add this part
+    // Update the tip block in the FCM state.
+    //fcm_state.update_tip_block(last_block, Arc::new(cur_state));
+
     // Apply the reorg.
     match apply_tip_update(tip_update, fcm_state) {
         Ok(()) => {
@@ -643,12 +684,15 @@ fn handle_new_block(
             // Also this is the point at which we update the engine head and
             // safe blocks.  We only have to actually call this one, it counts
             // for both.
+
+            /*
             retry_with_backoff(
                 "engine_update_safe_block",
                 DEFAULT_ENGINE_CALL_MAX_RETRIES,
                 &ExponentialBackoff::default(),
                 || engine.update_safe_block(tip_blkid),
-            )?;
+            )?;*/
+            //engine.update_safe_block(tip_blkid)?;
 
             Ok(true)
         }
@@ -679,6 +723,7 @@ fn handle_new_block(
 /// pending unfinalized blocks tree.  The block is assumed to already be
 /// structurally consistent.
 // TODO remove FCM arg from this
+// TODO remove from this module, exists in chainexec
 fn check_new_block(
     blkid: &L2BlockId,
     block: &L2Block,
@@ -752,7 +797,11 @@ fn pick_best_block<'t>(
 fn apply_tip_update(update: TipUpdate, fcm_state: &mut ForkChoiceManager) -> anyhow::Result<()> {
     match update {
         // Easy case.
-        TipUpdate::ExtendTip(_cur, new) => apply_blocks([new].into_iter(), fcm_state),
+        TipUpdate::ExtendTip(_cur, new) => {
+            /* apply_blocks([new].into_iter(), fcm_state) */
+
+            Ok(())
+        }
 
         // Weird case that shouldn't normally happen.
         TipUpdate::LongExtend(_cur, mut intermediate, new) => {
@@ -764,7 +813,8 @@ fn apply_tip_update(update: TipUpdate, fcm_state: &mut ForkChoiceManager) -> any
             // blocks we're applying.
             intermediate.push(new);
 
-            apply_blocks(intermediate.into_iter(), fcm_state)
+            //apply_blocks(intermediate.into_iter(), fcm_state)
+            Ok(())
         }
 
         TipUpdate::Reorg(reorg) => {
@@ -784,7 +834,7 @@ fn apply_tip_update(update: TipUpdate, fcm_state: &mut ForkChoiceManager) -> any
 
             // Now actually apply the new blocks in order.  This handles all of
             // the normal logic involves in extending the chain.
-            apply_blocks(reorg.apply_iter().copied(), fcm_state)?;
+            //apply_blocks(reorg.apply_iter().copied(), fcm_state)?;
 
             // TODO any cleanup?
 
@@ -826,6 +876,7 @@ fn revert_chainstate_to_block(
     Ok(())
 }
 
+/*
 /// Applies one or more blocks, updating the FCM state and persisting write
 /// batches to disk.  The block's parent must be the current tip in the FCM.
 ///
@@ -979,11 +1030,11 @@ fn handle_finish_epoch(
 
     Ok(())
 }
+*/
 
 fn handle_new_client_state(
     fcm_state: &mut ForkChoiceManager,
     cs: ClientState,
-    engine: &impl ExecEngineCtl,
 ) -> anyhow::Result<()> {
     let Some(new_fin_epoch) = cs.get_declared_final_epoch().copied() else {
         debug!("got new CSM state, but finalized epoch still unset, ignoring");
@@ -996,7 +1047,7 @@ fn handle_new_client_state(
     // Update the new state.
     fcm_state.cur_csm_state = Arc::new(cs);
 
-    match handle_epoch_finalization(fcm_state, engine) {
+    match handle_epoch_finalization(fcm_state) {
         Err(err) => {
             error!(%err, "failed to finalize epoch");
             if let Some(EngineError::Other(_)) = err.downcast_ref() {
@@ -1030,11 +1081,8 @@ fn handle_new_client_state(
 /// Return commitment to epoch that was finalized, if any.
 fn handle_epoch_finalization(
     fcm_state: &mut ForkChoiceManager,
-    engine: &impl ExecEngineCtl,
 ) -> anyhow::Result<Option<EpochCommitment>> {
-    let Some((idx, next_finalizable_epoch)) = fcm_state
-        .find_latest_finalizable_epoch()
-        .map(|(idx, epoch)| (idx, *epoch))
+    let Some((idx, next_finalizable_epoch)) = fcm_state.find_latest_pending_finalizable_epoch()
     else {
         // no new blocks to finalize
         return Ok(None);
@@ -1047,22 +1095,10 @@ fn handle_epoch_finalization(
         "got new CSM state, updating finalized block"
     );
 
-    // Try calling engine with retries.
-    retry_with_backoff(
-        "engine_update_finalized",
-        DEFAULT_ENGINE_CALL_MAX_RETRIES,
-        &ExponentialBackoff::default(),
-        || engine.update_finalized_block(*next_finalizable_epoch.last_blkid()),
-    )?;
-
-    let fin_report = fcm_state
-        .chain_tracker
-        .update_finalized_epoch(&next_finalizable_epoch)?;
-
-    fcm_state.drain_pending_finalizable_epochs(idx);
+    fcm_state.finalize_epoch(&next_finalizable_epoch)?;
 
     info!(?next_finalizable_epoch, "updated finalized tip");
-    trace!(?fin_report, "finalization report");
+    //trace!(?fin_report, "finalization report");
     // TODO do something with the finalization report?
 
     Ok(Some(next_finalizable_epoch))

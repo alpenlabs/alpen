@@ -19,6 +19,7 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+strata-chainexec.workspace = true
 
 
 [features]

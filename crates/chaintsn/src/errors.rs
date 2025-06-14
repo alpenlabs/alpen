@@ -1,5 +1,5 @@
 use strata_primitives::l1::L1VerificationError;
-use strata_state::prelude::*;
+use strata_state::{context::ProviderError, prelude::*};
 use thiserror::Error;
 
 /// Errors for block state transition.
@@ -44,6 +44,9 @@ pub enum TsnError {
     /// failure.
     #[error("L1 block verification failed: {0}")]
     L1BlockVerification(#[from] L1VerificationError),
+
+    #[error("provider: {0}")]
+    Provider(#[from] ProviderError),
 }
 
 /// Errors for processing protocol operations.
