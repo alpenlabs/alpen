@@ -5,7 +5,7 @@ use crate::chain_state::Chainstate;
 /// other than checkpoint.
 pub trait ChainstateDiff {
     /// Apply state update to chainstate to get new chainstate.
-    fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> Chainstate;
+    fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> anyhow::Result<()>;
 
     /// Extract diff structure from buffer.
     fn from_buf(buf: &[u8]) -> std::io::Result<Self>

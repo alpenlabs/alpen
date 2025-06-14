@@ -126,3 +126,9 @@ pub enum CheckpointError {
     #[error("proof validation: {0}")]
     Proof(#[from] ZkVmError),
 }
+
+#[derive(Debug, Error)]
+pub enum CheckpointSyncError {
+    #[error("missing checkpoint for epoch: {0}")]
+    MissingCheckpoint(u64),
+}

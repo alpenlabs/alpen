@@ -18,6 +18,7 @@ use strata_common::logging;
 use strata_config::Config;
 use strata_consensus_logic::{
     checkpoint_sync::checkpoint_sync_task,
+    checkpoint_sync_v2::{checkpoint_sync_task_v2, CheckpointSyncManagerImpl},
     genesis,
     sync_manager::{self, SyncManager},
 };
@@ -378,9 +379,11 @@ fn start_core_tasks(
 
     // start checkpoint sync task
     if is_checkpoint_sync {
+        let ckpt_sync_manager =
+            CheckpointSyncManagerImpl::new(storage.clone(), status_channel.clone());
         executor.spawn_critical_async(
             "checkpoint_sync_task",
-            checkpoint_sync_task(storage.clone(), status_channel.clone()),
+            checkpoint_sync_task_v2(ckpt_sync_manager),
         );
     }
 
