@@ -494,7 +494,6 @@ def generate_seed_at(path: str):
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genxpriv",
         "-f", path
     ]
@@ -509,7 +508,6 @@ def generate_seqpubkey_from_seed(path: str) -> str:
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genseqpubkey",
         "-f", path
     ]
@@ -527,13 +525,13 @@ def generate_seqpubkey_from_seed(path: str) -> str:
 
 
 def generate_opxpub_from_seed(path: str) -> str:
-    """Generates operate pubkey from seed at file path."""
+    """Generates operator Musig2 pubkey from xprv at file path."""
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genopxpub",
-        "-f", path
+        "-f", path,
+        "-w"
     ]
     # fmt: on
 
@@ -549,7 +547,6 @@ def generate_params(settings: RollupParamsSettings, seqpubkey: str, oppubkeys: l
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genparams",
         "--name", "ALPN",
         "--block-time", str(settings.block_time_sec),
