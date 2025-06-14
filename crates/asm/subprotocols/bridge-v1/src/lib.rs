@@ -1,5 +1,5 @@
 //! BridgeV1 Subprotocol
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSerialize, from_slice};
 use strata_asm_common::{NullMsg, Subprotocol, SubprotocolId};
 
 /// The unique identifier for the BridgeV1 subprotocol within the Anchor State Machine.
@@ -18,6 +18,12 @@ pub struct BridgeV1State {
 #[derive(Copy, Clone, Debug)]
 pub struct BridgeV1Subproto;
 
+/// Genesis configuration for the BridgeV1 subprotocol.
+#[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
+pub struct BridgeV1GenesisConfig {
+    // TODO: Add bridge-specific genesis parameters when implementing
+}
+
 impl Subprotocol for BridgeV1Subproto {
     const ID: SubprotocolId = BRIDGE_V1_SUBPROTOCOL_ID;
 
@@ -25,8 +31,17 @@ impl Subprotocol for BridgeV1Subproto {
 
     type Msg = NullMsg<BRIDGE_V1_SUBPROTOCOL_ID>;
 
-    fn init() -> Self::State {
-        todo!()
+    type GenesisConfig = BridgeV1GenesisConfig;
+
+    fn init(
+        genesis_config_data: &[u8],
+    ) -> std::result::Result<Self::State, strata_asm_common::AsmError> {
+        // Deserialize the genesis configuration
+        let _genesis_config: Self::GenesisConfig = from_slice(genesis_config_data)
+            .map_err(|e| strata_asm_common::AsmError::Deserialization(Self::ID, e))?;
+
+        // TODO: Initialize with proper genesis config when implementing
+        Ok(BridgeV1State {})
     }
 
     fn process_txs(
