@@ -37,8 +37,8 @@ impl ChainstateStorageInterface {
             .get_latest_chainstate()
             .await?
             .ok_or(DbError::NotBootstrapped)?;
-        let new_chainstate = chainstate_diff.apply_to_chainstate(&mut latest_chainstate);
-        Ok(new_chainstate)
+        chainstate_diff.apply_to_chainstate(&mut latest_chainstate)?;
+        Ok(latest_chainstate)
     }
 
     /// Store chainstate to database.
