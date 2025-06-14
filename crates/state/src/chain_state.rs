@@ -232,8 +232,9 @@ impl FullStateUpdate {
 
 impl ChainstateDiff for FullStateUpdate {
     #[allow(unused)]
-    fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> Chainstate {
-        self.new_chainstate.clone()
+    fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> anyhow::Result<()> {
+        *chainstate = self.new_chainstate.clone();
+        Ok(())
     }
 
     fn from_buf(buf: &[u8]) -> std::io::Result<Self>
