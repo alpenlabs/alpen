@@ -107,7 +107,9 @@ impl Subprotocol for OLCoreSubproto {
 
     type Msg = NullMsg<CORE_SUBPROTOCOL_ID>;
 
-    fn init(genesis_config_data: &[u8]) -> std::result::Result<Self::State, strata_asm_common::AsmError> {
+    fn init(
+        genesis_config_data: &[u8],
+    ) -> std::result::Result<Self::State, strata_asm_common::AsmError> {
         // Deserialize the genesis configuration
         let genesis_config: Self::GenesisConfig = from_slice(genesis_config_data)
             .map_err(|e| strata_asm_common::AsmError::Deserialization(Self::ID, e))?;

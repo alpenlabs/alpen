@@ -1,7 +1,5 @@
 use borsh::BorshDeserialize;
-use strata_asm_common::{
-    BRIDGE_SUBPROTOCOL_ID, Log, MessagesContainer, MsgRelayer, TxInput,
-};
+use strata_asm_common::{BRIDGE_SUBPROTOCOL_ID, Log, MessagesContainer, MsgRelayer, TxInput};
 use strata_primitives::{
     batch::{SignedCheckpoint, verify_signed_checkpoint_sig},
     block_credential::CredRule,
@@ -88,7 +86,7 @@ pub(crate) fn ol_stf_checkpoint_handler(
                 messages.push(decoded);
             }
         }
-        
+
         if !messages.is_empty() {
             let container = MessagesContainer::with_messages(BRIDGE_SUBPROTOCOL_ID, messages);
             relayer.relay_msg(&container);

@@ -36,11 +36,11 @@ pub trait Subprotocol: 'static {
     type Msg: Clone + Any;
 
     /// Constructs a new state to use if the ASM does not have an instance of it.
-    /// 
+    ///
     /// # Arguments
-    /// * `genesis_config_data` - Serialized genesis configuration data that should be
-    ///   deserialized into Self::GenesisConfig before use
-    /// 
+    /// * `genesis_config_data` - Serialized genesis configuration data that should be deserialized
+    ///   into Self::GenesisConfig before use
+    ///
     /// # Returns
     /// The initialized state or an error if deserialization fails
     fn init(genesis_config_data: &[u8]) -> Result<Self::State, AsmError>;

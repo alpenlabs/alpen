@@ -62,7 +62,9 @@ pub(crate) fn construct_expected_public_parameters(
     let new_l1_hight = new_batch_info.final_l1_block().height();
     if new_l1_hight <= prev_l1_height {
         return Err(CoreError::InvalidL1BlockHeight {
-            reason: format!("new L1 height {new_l1_hight} must be greater than previous height {prev_l1_height}"),
+            reason: format!(
+                "new L1 height {new_l1_hight} must be greater than previous height {prev_l1_height}"
+            ),
         });
     }
 

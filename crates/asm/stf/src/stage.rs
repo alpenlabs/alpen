@@ -55,8 +55,7 @@ impl Stage for SubprotoLoaderStage<'_> {
                     })
                     .expect("asm: cannot get genesis config data for subprotocol");
 
-                S::init(genesis_config_data)
-                    .expect("asm: failed to initialize subprotocol state")
+                S::init(genesis_config_data).expect("asm: failed to initialize subprotocol state")
             }
         };
 

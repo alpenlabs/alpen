@@ -33,11 +33,13 @@ impl Subprotocol for BridgeV1Subproto {
 
     type GenesisConfig = BridgeV1GenesisConfig;
 
-    fn init(genesis_config_data: &[u8]) -> std::result::Result<Self::State, strata_asm_common::AsmError> {
+    fn init(
+        genesis_config_data: &[u8],
+    ) -> std::result::Result<Self::State, strata_asm_common::AsmError> {
         // Deserialize the genesis configuration
         let _genesis_config: Self::GenesisConfig = from_slice(genesis_config_data)
             .map_err(|e| strata_asm_common::AsmError::Deserialization(Self::ID, e))?;
-        
+
         // TODO: Initialize with proper genesis config when implementing
         Ok(BridgeV1State {})
     }

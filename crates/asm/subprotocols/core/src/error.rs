@@ -18,7 +18,9 @@ pub enum CoreError {
     InvalidEpoch { expected: u32, actual: u32 },
 
     /// Invalid L2 Block slot
-    #[error("Invalid L2 block slot: new slot {new_slot} must be greater than previous slot {prev_slot}")]
+    #[error(
+        "Invalid L2 block slot: new slot {new_slot} must be greater than previous slot {prev_slot}"
+    )]
     InvalidL2BlockSlot { prev_slot: u64, new_slot: u64 },
 
     /// Invalid L1 Block height

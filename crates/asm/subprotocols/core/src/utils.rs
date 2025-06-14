@@ -24,7 +24,9 @@ pub(crate) fn compute_rolling_hash(
     // Validate height range
     if start_height > end_height {
         return Err(CoreError::InvalidL1BlockHeight {
-            reason: format!("start height {start_height} cannot be greater than end height {end_height}"),
+            reason: format!(
+                "start height {start_height} cannot be greater than end height {end_height}"
+            ),
         });
     }
 
@@ -92,7 +94,7 @@ pub(crate) fn validate_l2_to_l1_messages(messages: &[L2ToL1Msg]) -> Result<()> {
                         field: "valid message type".into(),
                     });
                 }
-                
+
                 // TODO: Add message type-specific validation once message types are defined
                 // For example:
                 // - Type 0x01 might be withdrawal messages

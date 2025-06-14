@@ -34,7 +34,7 @@ impl<const ID: SubprotocolId> InterprotoMsg for NullMsg<ID> {
     }
 }
 
-/// Generic message from OL to ASM 
+/// Generic message from OL to ASM
 ///
 /// This type wraps messages in the SPS-msg-fmt format, allowing for
 /// different message types to be sent from OL to ASM (e.g., withdrawals,
@@ -157,7 +157,10 @@ impl Message {
     /// Decodes a message from bytes following SPS-msg-fmt
     pub fn decode(buf: &[u8]) -> Result<Self, MessageError> {
         let (ty, body) = decode_message(buf)?;
-        Ok(Self { ty, body: body.to_vec() })
+        Ok(Self {
+            ty,
+            body: body.to_vec(),
+        })
     }
 }
 
@@ -177,7 +180,9 @@ impl std::fmt::Display for MessageError {
         match self {
             MessageError::BufferTooShort => write!(f, "buffer too short"),
             MessageError::TypeOutOfBounds(ty) => write!(f, "type {ty:#x} out of bounds"),
-            MessageError::NonMinimalEncoding(ty) => write!(f, "non-minimal encoding for type {ty:#x}"),
+            MessageError::NonMinimalEncoding(ty) => {
+                write!(f, "non-minimal encoding for type {ty:#x}")
+            }
         }
     }
 }
@@ -327,10 +332,16 @@ mod tests {
         assert_eq!(decode_message(&[0x80]), Err(MessageError::BufferTooShort));
 
         // 8000 - non-minimal encoding
-        assert_eq!(decode_message(&[0x80, 0x00]), Err(MessageError::NonMinimalEncoding(0)));
+        assert_eq!(
+            decode_message(&[0x80, 0x00]),
+            Err(MessageError::NonMinimalEncoding(0))
+        );
 
         // 807f - non-minimal encoding
-        assert_eq!(decode_message(&[0x80, 0x7f]), Err(MessageError::NonMinimalEncoding(0x7f)));
+        assert_eq!(
+            decode_message(&[0x80, 0x7f]),
+            Err(MessageError::NonMinimalEncoding(0x7f))
+        );
     }
 
     #[test]
