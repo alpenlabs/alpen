@@ -13,7 +13,7 @@ use revm::{
 };
 use revm_primitives::{hardfork::SpecId, U256};
 
-use crate::constants::BASEFEE_ADDRESS;
+use crate::{api::validation, constants::BASEFEE_ADDRESS};
 
 #[allow(missing_debug_implementations)]
 pub struct AlpenRevmHandler<EVM> {
@@ -28,10 +28,6 @@ impl<EVM> Default for AlpenRevmHandler<EVM> {
     }
 }
 
-/// Revm handler implementation for Alpen EVM.
-///
-/// Note: The `reward_beneficiary` implementation here differs from Ethereum mainnet.
-/// Instead of burning the base fee, the base fee is transferred to the `BASEFEE_ADDRESS`.
 impl<EVM> Handler for AlpenRevmHandler<EVM>
 where
     EVM: EvmTr<
@@ -98,6 +94,11 @@ where
             .saturating_add(U256::from(coinbase_reward));
 
         Ok(())
+    }
+
+    fn validate_env(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
+        // uses the validation module to validate the environment with disables the 4844 transaction
+        validation::validate_env(evm.ctx())
     }
 }
 
