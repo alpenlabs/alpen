@@ -5,8 +5,8 @@ pub mod program;
 pub mod utils;
 use std::{panic, sync::Arc};
 
-use alloy_consensus::{BlockHeader, Header, TxReceipt};
-use alpen_reth_evm::evm::AlpenEvmFactory;
+use alloy_consensus::{BlockHeader, EthBlock, Header, TxReceipt};
+use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
 use reth_chainspec::ChainSpec;
 use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome, Executor};
@@ -55,6 +55,16 @@ pub fn process_block_transaction(mut input: EthClientExecutorInput) -> EvmBlockS
     execution_output.result.receipts.iter().for_each(|r| {
         logs_bloom.accrue_bloom(&r.bloom());
     });
+
+    // Accumulate withdrawal intents from the executed transactions.
+    let withdrawal_intents = {
+        let transactions = block.into_transactions();
+        let executed_txns = transactions.iter();
+        let receipts_vec = execution_output.receipts.clone();
+        let receipts = receipts_vec.iter();
+        let tx_receipt_pairs = executed_txns.zip(receipts);
+        collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>()
+    };
 
     // Convert the output to an execution outcome.
     let executor_outcome = ExecutionOutcome::new(
@@ -106,14 +116,20 @@ pub fn process_block_transaction(mut input: EthClientExecutorInput) -> EvmBlockS
         requests_hash: input.current_block.header().requests_hash(),
     };
 
+    let deposit_requests = input
+        .current_block
+        .withdrawals()
+        .map(|w| w.to_vec())
+        .unwrap_or_default();
+
     EvmBlockStfOutput {
         block_idx: header.number,
         new_blockhash: header.hash_slow(),
         new_state_root: header.state_root,
         prev_blockhash: header.parent_hash,
         txn_root: header.transactions_root,
-        deposit_requests: vec![],
-        withdrawal_intents: Vec::new(),
+        deposit_requests,
+        withdrawal_intents,
     }
 }
 
