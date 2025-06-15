@@ -308,9 +308,3 @@ inherits = "release"
 lto = "off"
 opt-level = 0
 strip = true
-
-# Patch RSP dependencies to use AlpenLabs forks for rsp-client-executor, rsp-mpt, and rsp-primitives.
-[patch."https://github.com/succinctlabs/rsp"]
-rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
-rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
-rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "cdd032a7abac27edfd87dc1331b8d69c105d5af9" }
