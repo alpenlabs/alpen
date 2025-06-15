@@ -1,6 +1,5 @@
 //! Consensus validation logic and core state machine
 
-pub mod checkpoint_sync;
 pub mod checkpoint_sync_v2;
 pub mod checkpoint_verification;
 pub mod csm;

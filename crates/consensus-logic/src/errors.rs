@@ -131,4 +131,16 @@ pub enum CheckpointError {
 pub enum CheckpointSyncError {
     #[error("missing checkpoint for epoch: {0}")]
     MissingCheckpoint(u64),
+
+    #[error("failed to extract chainstate diff from checkpoint: {0}")]
+    FailedDiffExtraction(String),
+
+    #[error("failed to apply diff to latest chainstate: {0}")]
+    FailedDiffApplication(String),
+
+    #[error("db: {0}")]
+    Db(#[from] strata_db::errors::DbError),
+
+    #[error("failed to receive messages from CSM: {0}")]
+    CSMDisconnected(#[from] tokio::sync::watch::error::RecvError),
 }
