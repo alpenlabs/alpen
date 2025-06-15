@@ -248,9 +248,14 @@ fn process_l1_block(
                 }
 
                 let ckpt = signed_ckpt.checkpoint();
-                let prev_commitment = checkpoint.clone().map(|l1ckpt| {
-                    CheckpointCommitment::new(l1ckpt.batch_info, l1ckpt.batch_transition)
-                });
+                let prev_commitment = if let Some(l1ckpt) = checkpoint.as_ref() {
+                    Some(CheckpointCommitment::new(
+                        l1ckpt.batch_info.clone(),
+                        l1ckpt.batch_transition.clone(),
+                    ))
+                } else {
+                    None
+                };
 
                 // Now do the more thorough checks
                 if verify_checkpoint(ckpt, prev_commitment.as_ref(), params).is_err() {

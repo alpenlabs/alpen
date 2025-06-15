@@ -17,8 +17,7 @@ use strata_btcio::{
 use strata_common::logging;
 use strata_config::Config;
 use strata_consensus_logic::{
-    checkpoint_sync::checkpoint_sync_task,
-    checkpoint_sync_v2::{checkpoint_sync_task_v2, CheckpointSyncManagerImpl},
+    checkpoint_sync::{checkpoint_sync_task, CheckpointSyncManager},
     genesis,
     sync_manager::{self, SyncManager},
 };
@@ -177,7 +176,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
                 .sync_endpoint
                 .clone()
                 .ok_or(InitError::MalformedConfig(ConfigError::MissingKey(
-                    "Missing sync_endpoint".to_string(),
+                    "sync_endpoint".to_string(),
                 )))?;
         info!(?sync_endpoint, "initing fullnode task");
 
@@ -271,9 +270,7 @@ fn do_startup_checks(
         .chainstate()
         .get_toplevel_chainstate_blocking(last_state_idx)?
     else {
-        return Err(
-            InitError::MissingData(format!("Missing chain state idx: {}", last_state_idx)).into(),
-        );
+        return Err(InitError::MissingExpectedChainstate(last_state_idx).into());
     };
 
     let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
@@ -287,12 +284,10 @@ fn do_startup_checks(
             info!("startup: last matured block: {}", block_hash);
         }
         Err(client_error) if client_error.is_block_not_found() => {
-            return Err(
-                InitError::MissingData(format!("Missing expected block: {}", block_hash)).into(),
-            );
+            return Err(InitError::MissingExpectedL1Block(block_hash).into());
         }
         Err(client_error) => {
-            return Err(InitError::ServiceUnavailable(format!(
+            return Err(InitError::ConnectionFailed(format!(
                 "could not connect to bitcoin, err = {}",
                 client_error
             ))
@@ -316,7 +311,7 @@ fn do_startup_checks(
             }
             Err(error) => {
                 // Likely network issue
-                return Err(InitError::ServiceUnavailable(format!(
+                return Err(InitError::ConnectionFailed(format!(
                     "could not connect to exec engine, err = {}",
                     error
                 ))
@@ -379,11 +374,10 @@ fn start_core_tasks(
 
     // start checkpoint sync task
     if is_checkpoint_sync {
-        let ckpt_sync_manager =
-            CheckpointSyncManagerImpl::new(storage.clone(), status_channel.clone());
+        let ckpt_sync_manager = CheckpointSyncManager::new(storage.clone(), status_channel.clone());
         executor.spawn_critical_async(
             "checkpoint_sync_task",
-            checkpoint_sync_task_v2(ckpt_sync_manager),
+            checkpoint_sync_task(ckpt_sync_manager),
         );
     }
 

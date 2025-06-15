@@ -1,6 +1,7 @@
 use std::io;
 
 use alloy_rpc_types::engine::JwtError;
+use bitcoin::BlockHash;
 use format_serde_error::SerdeError;
 use strata_primitives::params::ParamsError;
 use thiserror::Error;
@@ -28,14 +29,17 @@ pub(crate) enum InitError {
     #[error("params: {0}")]
     MalformedParams(#[from] ParamsError),
 
-    #[error("{0}")]
-    MissingData(String),
+    #[error("missing chain state at slot: {0}")]
+    MissingExpectedChainstate(u64),
+
+    #[error("missing expected l1 block: {0}")]
+    MissingExpectedL1Block(BlockHash),
 
     #[error("invalid sync mode")]
     InvalidSyncMode,
 
-    #[error("{0}")]
-    ServiceUnavailable(String),
+    #[error("failed to connect to service: {0}")]
+    ConnectionFailed(String),
 
     #[error("{0}")]
     Anyhow(#[from] anyhow::Error),
