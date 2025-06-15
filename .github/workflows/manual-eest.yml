@@ -1,8 +1,9 @@
 name: Run functional tests against local basic fntests env
 
 on:
-  pull_request: # TODO remove, only for testing until merged.
-  workflow_dispatch:
+  schedule:
+    - cron: '30 1 * * *' # every day at 1:30 AM UTC
+  workflow_dispatch:     # manual run
 
 env:
   CARGO_TERM_COLOR: always
