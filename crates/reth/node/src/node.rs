@@ -11,9 +11,7 @@ use reth_node_builder::{
     },
     Node, NodeAdapter, NodeComponentsBuilder,
 };
-use reth_node_ethereum::node::{
-    EthereumConsensusBuilder, EthereumNetworkBuilder, EthereumPoolBuilder,
-};
+use reth_node_ethereum::node::{EthereumConsensusBuilder, EthereumNetworkBuilder};
 use reth_primitives::EthPrimitives;
 use reth_provider::EthStorage;
 use reth_rpc_eth_types::{error::FromEvmError, EthApiError};
@@ -21,7 +19,8 @@ use revm::context::TxEnv;
 
 use crate::{
     args::AlpenNodeArgs, engine::AlpenEngineValidatorBuilder, evm::AlpenExecutorBuilder,
-    payload_builder::AlpenPayloadBuilderBuilder, AlpenEngineTypes, AlpenEngineValidator,
+    payload_builder::AlpenPayloadBuilderBuilder, pool::AlpenEthereumPoolBuilder, AlpenEngineTypes,
+    AlpenEngineValidator,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -59,7 +58,7 @@ where
 {
     type ComponentsBuilder = ComponentsBuilder<
         N,
-        EthereumPoolBuilder,
+        AlpenEthereumPoolBuilder,
         BasicPayloadServiceBuilder<AlpenPayloadBuilderBuilder>,
         EthereumNetworkBuilder,
         AlpenExecutorBuilder,
@@ -73,7 +72,7 @@ where
     fn components_builder(&self) -> Self::ComponentsBuilder {
         ComponentsBuilder::default()
             .node_types::<N>()
-            .pool(EthereumPoolBuilder::default())
+            .pool(AlpenEthereumPoolBuilder::default())
             .payload(BasicPayloadServiceBuilder::default())
             .network(EthereumNetworkBuilder::default())
             .executor(AlpenExecutorBuilder::default())

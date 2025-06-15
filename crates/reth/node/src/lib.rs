@@ -4,6 +4,7 @@ mod evm;
 mod node;
 mod payload;
 mod payload_builder;
+mod pool;
 
 pub mod args;
 pub use alpen_reth_primitives::WithdrawalIntent;
