@@ -1,9 +1,11 @@
-import flexitest
 import random
-from web3 import Web3
+
+import flexitest
 from eth_abi import abi
-from mixins import BaseMixin
+from web3 import Web3
 from web3.exceptions import Web3RPCError
+
+from mixins import BaseMixin
 
 # EIP-4844 blob transaction configuration
 TRANSACTION_CONFIG = {
