@@ -17,7 +17,7 @@ use strata_btcio::{
 use strata_common::logging;
 use strata_config::Config;
 use strata_consensus_logic::{
-    checkpoint_sync_v2::{checkpoint_sync_task, CheckpointSyncManager},
+    checkpoint_sync::{checkpoint_sync_task, CheckpointSyncManager},
     genesis,
     sync_manager::{self, SyncManager},
 };
