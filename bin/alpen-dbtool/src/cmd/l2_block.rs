@@ -45,8 +45,18 @@ pub fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<(), Displ
         })?;
 
     // Print status and header
-    println!("L2 block {block_id} – status: {status:?}");
-    println!("{:#?}", bundle.block().header());
+    println!("L2 block id: {block_id:?}, status: {status:?}");
+    println!("Block header: {:#?}", bundle.block().header());
+    println!("L1 segment");
+    for l1_manifest in bundle.block().body().l1_segment().new_manifests().iter() {
+        println!(
+            "L1 blkid {:?}, height {}, epoch {}, txs {}",
+            l1_manifest.blkid(),
+            l1_manifest.height(),
+            l1_manifest.epoch(),
+            l1_manifest.txs().len()
+        );
+    }
 
     Ok(())
 }
