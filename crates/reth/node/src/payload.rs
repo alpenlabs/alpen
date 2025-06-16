@@ -213,6 +213,29 @@ impl From<EthBuiltPayload> for ExecutionPayloadEnvelopeV2 {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AlpenExecutionPayloadEnvelopeV4 {
+    #[serde(flatten)]
+    pub inner: ExecutionPayloadEnvelopeV4,
+    pub withdrawal_intents: Vec<WithdrawalIntent>,
+}
+
+impl AlpenExecutionPayloadEnvelopeV4 {
+    pub fn inner(&self) -> &ExecutionPayloadEnvelopeV4 {
+        &self.inner
+    }
+}
+
+impl From<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV4 {
+    fn from(value: AlpenBuiltPayload) -> Self {
+        Self {
+            inner: value.inner.into(),
+            withdrawal_intents: value.withdrawal_intents,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AlpenExecutionPayloadEnvelopeV2 {
     #[serde(flatten)]
     pub inner: ExecutionPayloadEnvelopeV2,

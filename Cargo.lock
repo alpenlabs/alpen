@@ -13793,13 +13793,13 @@ dependencies = [
 name = "strata-evmexec"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-eips",
  "alloy-rpc-types",
  "alpen-reth-evm",
  "alpen-reth-node",
  "anyhow",
  "arbitrary",
  "borsh",
- "futures",
  "jsonrpsee",
  "mockall",
  "rand 0.8.5",
