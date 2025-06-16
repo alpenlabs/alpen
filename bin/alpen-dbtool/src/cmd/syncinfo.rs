@@ -28,7 +28,7 @@ pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<(), Dis
     let chainstate_entry = db
         .chain_state_db()
         .get_write_batch(last_l2_write_idx)
-        .internal_error("Failed to fetch latest chainstate write index")?
+        .internal_error("Failed to fetch chainstate entry")?
         .expect("valid entry");
     let (batch_info, l2_block_id) = chainstate_entry.to_parts();
 
@@ -36,7 +36,7 @@ pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<(), Dis
     let l2_block_height = batch_info.new_toplevel_state().chain_tip_slot();
 
     // Show sync information
-    println!("L1 tip: {}, {}", l1_block_height, l1_block_id);
+    println!("L1 tip: {}, {:?}", l1_block_height, l1_block_id);
     println!(
         "L2 height: {}, tip: {:?} ({:?})",
         l2_block_height,

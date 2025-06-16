@@ -9,13 +9,13 @@ use strata_rocksdb::CommonDb;
 use crate::errors::{DisplayableError, DisplayedError};
 
 #[derive(Args, Debug)]
-pub struct GetAlpenBlockArgs {
+pub struct GetL2BlockArgs {
     /// Block height; defaults to the chain tip
-    #[arg(value_name = "ALPEN_BLOCK_ID")]
+    #[arg(value_name = "L2_BLOCK_ID")]
     pub block_id: String,
 }
 
-pub fn get_alpen_block(db: Arc<CommonDb>, args: GetAlpenBlockArgs) -> Result<(), DisplayedError> {
+pub fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<(), DisplayedError> {
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
     if hex_str.len() != 64 {
         return Err(DisplayedError::UserError(
@@ -43,7 +43,7 @@ pub fn get_alpen_block(db: Arc<CommonDb>, args: GetAlpenBlockArgs) -> Result<(),
             DisplayedError::UserError(format!("block with id not found"), Box::new(block_id))
         })?;
 
-    println!("Alpen block {block_id} – status: {status:?}");
+    println!("L2 block {block_id} – status: {status:?}");
     println!("{:#?}", bundle.block().header());
 
     Ok(())

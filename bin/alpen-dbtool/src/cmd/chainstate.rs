@@ -25,9 +25,6 @@ pub fn reset_chainstate(
     db: Arc<CommonDb>,
     args: ResetChainstateArgs,
 ) -> Result<(), DisplayedError> {
-    // lib::ops::reset_chainstate(db, &args.block_id, args.allow_nterm)?;
-    println!("Chainstate reset to {}", args.block_id);
-
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
     if hex_str.len() != 64 {
         return Err(DisplayedError::UserError(
@@ -59,7 +56,7 @@ pub fn reset_chainstate(
     let chainstate_entry = db
         .chain_state_db()
         .get_write_batch(last_l2_write_idx)
-        .internal_error("Failed to fetch latest chainstate write index")?
+        .internal_error("Failed to fetch chainstate entry")?
         .expect("valid entry");
     let (batch_info, _) = chainstate_entry.to_parts();
 

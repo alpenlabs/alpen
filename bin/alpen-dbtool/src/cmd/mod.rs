@@ -1,7 +1,8 @@
-pub mod alpen;
 pub mod chainstate;
 pub mod checkpoint;
 pub mod epoch;
+pub mod l1_manifest;
+pub mod l2_block;
 pub mod syncinfo;
 
 use std::path::PathBuf;
@@ -9,8 +10,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use crate::cmd::{
-    alpen::GetAlpenBlockArgs, chainstate::ResetChainstateArgs, checkpoint::GetCheckpointDataArgs,
-    epoch::GetEpochSummaryArgs, syncinfo::GetSyncinfoArgs,
+    chainstate::ResetChainstateArgs, checkpoint::GetCheckpointDataArgs, epoch::GetEpochSummaryArgs,
+    l1_manifest::GetL1ManifestArgs, l2_block::GetL2BlockArgs, syncinfo::GetSyncinfoArgs,
 };
 
 /// Alpen DB tool – offline database & chain‑maintenance utility.
@@ -38,8 +39,11 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Show Alpen block header.
-    GetAlpenBlock(GetAlpenBlockArgs),
+    /// Show L1 block manifest.
+    GetL1Manifest(GetL1ManifestArgs),
+
+    /// Show L2 block.
+    GetL2Block(GetL2BlockArgs),
 
     /// Show checkpoint data.
     GetCheckpointData(GetCheckpointDataArgs),
