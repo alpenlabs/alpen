@@ -19,6 +19,7 @@ pub struct GetL1ManifestArgs {
 }
 
 pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(), DisplayedError> {
+    // Convert String to L1BlockId
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
     if hex_str.len() != 64 {
         return Err(DisplayedError::UserError(
@@ -38,6 +39,7 @@ pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(),
         .internal_error("Failed to get block txs")?
         .unwrap();
 
+    // Print relevant transactions
     for tx in l1_block_manifest.txs().iter() {
         for proto_op in tx.protocol_ops().iter() {
             match proto_op {
@@ -46,6 +48,12 @@ pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(),
                         "checkpoint commitment: {:?}",
                         signed_checkpoint.checkpoint().commitment()
                     );
+                }
+                ProtocolOperation::DaCommitment(da_commitment) => {
+                    println!("DA commitment: {:?}", da_commitment);
+                }
+                ProtocolOperation::WithdrawalFulfillment(wf_info) => {
+                    println!("checkpoint commitment: {:?}", wf_info);
                 }
                 _ => continue,
             }

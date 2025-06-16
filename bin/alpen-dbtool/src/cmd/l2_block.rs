@@ -10,12 +10,13 @@ use crate::errors::{DisplayableError, DisplayedError};
 
 #[derive(Args, Debug)]
 pub struct GetL2BlockArgs {
-    /// Block height; defaults to the chain tip
+    /// L2 Block id
     #[arg(value_name = "L2_BLOCK_ID")]
     pub block_id: String,
 }
 
 pub fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<(), DisplayedError> {
+    // Convert String to L2BlockId
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
     if hex_str.len() != 64 {
         return Err(DisplayedError::UserError(
@@ -28,7 +29,7 @@ pub fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<(), Displ
         <[u8; 32]>::from_hex(hex_str).user_error(format!("Invalid 32-byte hex {hex_str}"))?;
     let block_id = L2BlockId::from(Buf32::from(bytes));
 
-    // Print block header and status
+    // Fetch block status and data
     let status = db
         .l2_db()
         .get_block_status(block_id)
@@ -43,6 +44,7 @@ pub fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<(), Displ
             DisplayedError::UserError(format!("block with id not found"), Box::new(block_id))
         })?;
 
+    // Print status and header
     println!("L2 block {block_id} – status: {status:?}");
     println!("{:#?}", bundle.block().header());
 

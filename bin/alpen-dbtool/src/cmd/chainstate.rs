@@ -13,7 +13,7 @@ use crate::errors::{DisplayableError, DisplayedError};
 #[derive(Args, Debug)]
 pub struct ResetChainstateArgs {
     /// Target L2 block hash or number to roll back to.
-    #[arg(value_name = "ALPEN_BLOCK_ID")]
+    #[arg(value_name = "L2_BLOCK_ID")]
     pub block_id: String,
 
     /// Allow resetting to a non‑epoch‑terminal block (dangerous).

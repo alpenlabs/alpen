@@ -47,7 +47,7 @@ pub fn get_epoch_summary(
         .internal_error("Failed to fetch epoch summary")?
         .expect("a valid epoch summary");
 
-    // Print checkpoint information
+    // Print epoch summary
     println!("Epoch idx:  {epoch_idx}");
     println!("Epoch summary: {epoch_summary:#?}");
     Ok(())
