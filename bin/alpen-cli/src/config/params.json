@@ -1,0 +1,7 @@
+{
+  "bridge_recover_delay": 1008,
+  "bridge_finality_depth": 6,
+  "bridge_in_amount": 1000001000,
+  "bridge_out_amount": 1000000000,
+  "recovery_desc_cleanup_delay": 100
+}

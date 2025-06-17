@@ -16,7 +16,8 @@ use shrex::Hex;
 use terrors::OneOf;
 
 use crate::{
-    constants::{BRIDGE_ALPEN_ADDRESS, DEFAULT_NETWORK, MAGIC_BYTES_LEN},
+    constants::{BRIDGE_ALPEN_ADDRESS, MAGIC_BYTES_LEN},
+    params::{load_protocol_params, CliProtocolParams},
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -54,6 +55,7 @@ pub struct Settings {
     pub network: Network,
     pub config_file: PathBuf,
     pub signet_backend: Arc<dyn SignetBackend>,
+    pub protocol_params: CliProtocolParams,
 }
 
 pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
@@ -68,6 +70,12 @@ pub static CONFIG_FILE: LazyLock<PathBuf> =
 
 impl Settings {
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
+        Self::load_with_protocol_params(None)
+    }
+
+    pub fn load_with_protocol_params(
+        protocol_params_path: Option<&std::path::Path>,
+    ) -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
         let proj_dirs = &PROJ_DIRS;
         let config_file = CONFIG_FILE.as_path();
         let descriptor_file = proj_dirs.data_dir().to_owned().join("descriptors");
@@ -113,6 +121,18 @@ impl Settings {
             ))));
         }
 
+        // First, load protocol parameters with default network to get the actual network
+        let default_network = Network::Signet; // Default network constant moved here
+        let initial_network = from_file.network.unwrap_or(default_network);
+        
+        // Load protocol parameters
+        let protocol_params = load_protocol_params(protocol_params_path, initial_network)
+            .map_err(|_| config::ConfigError::Message("Failed to load protocol parameters".to_string()))
+            .map_err(OneOf::new)?;
+        
+        // Use network from protocol parameters (allows params file to override config file)
+        let network = protocol_params.network;
+
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
@@ -127,9 +147,10 @@ impl Settings {
                 .expect("valid Alpen address"),
             magic_bytes: from_file.magic_bytes,
             linux_seed_file,
-            network: from_file.network.unwrap_or(DEFAULT_NETWORK),
+            network,
             config_file: CONFIG_FILE.clone(),
             signet_backend: sync_backend,
+            protocol_params,
         })
     }
 }

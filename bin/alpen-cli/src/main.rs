@@ -7,6 +7,7 @@ pub mod constants;
 pub mod errors;
 mod link;
 pub mod net_type;
+pub mod params;
 pub mod recovery;
 pub mod seed;
 pub mod settings;
@@ -15,7 +16,7 @@ pub mod taproot;
 
 use cmd::{
     backup::backup, balance::balance, change_pwd::change_pwd, config::config, deposit::deposit,
-    drain::drain, faucet::faucet, receive::receive, recover::recover, reset::reset, scan::scan,
+    drain::drain, faucet::faucet, generate_params::generate_params, receive::receive, recover::recover, reset::reset, scan::scan,
     send::send, withdraw::withdraw, Commands, TopLevel,
 };
 #[cfg(target_os = "linux")]
@@ -27,14 +28,14 @@ use signet::persist::set_data_dir;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let TopLevel { cmd } = argh::from_env();
+    let TopLevel { cmd, protocol_params } = argh::from_env();
 
     if let Commands::Config(args) = cmd {
         config(args).await;
         return;
     }
 
-    let settings = Settings::load().unwrap_or_else(|e| {
+    let settings = Settings::load_with_protocol_params(protocol_params.as_deref()).unwrap_or_else(|e| {
         eprintln!("Configuration error: {e:?}");
         std::process::exit(1);
     });
@@ -71,7 +72,9 @@ async fn main() {
         Commands::Receive(args) => receive(args, seed, settings).await,
         Commands::ChangePwd(args) => change_pwd(args, seed, persister).await,
         Commands::Scan(args) => scan(args, seed, settings).await,
-        _ => Ok(()),
+        Commands::Reset(args) => reset(args, persister, settings).await,
+        Commands::GenerateParams(args) => generate_params(args, settings).await,
+        Commands::Config(_) => unreachable!("Config command should exit early"),
     };
 
     if let Err(err) = result {
