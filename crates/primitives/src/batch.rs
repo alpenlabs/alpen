@@ -337,6 +337,11 @@ impl BatchInfo {
         self.l2_range.1.blkid()
     }
 
+    /// Gets the final L2 slot in the batch's L2 range.
+    pub fn final_l2_slot(&self) -> u64 {
+        self.l2_range.1.slot()
+    }
+
     /// Gets the final L1 block commitment in the batch's L1 range.
     pub fn final_l1_block(&self) -> &L1BlockCommitment {
         &self.l1_range.1

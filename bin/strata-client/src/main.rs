@@ -338,12 +338,12 @@ fn start_core_tasks(
     sync_mode: SyncMode,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();
+    let is_checkpoint_sync = sync_mode == SyncMode::Checkpoint && !config.client.is_sequencer;
 
     // init status tasks
-    let status_channel = init_status_channel(storage.as_ref())?;
+    let status_channel = init_status_channel(storage.as_ref(), is_checkpoint_sync)?;
 
     // instantiate execution engine
-    let is_checkpoint_sync = sync_mode == SyncMode::Checkpoint && !config.client.is_sequencer;
     let engine = init_engine_controller(
         config,
         params.as_ref(),

@@ -12,7 +12,6 @@ use strata_state::{
 };
 use strata_status::{ChainSyncStatus, ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
-use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 use crate::errors::CheckpointSyncError;
@@ -21,7 +20,7 @@ type SyncResult<T> = std::result::Result<T, CheckpointSyncError>;
 #[async_trait]
 pub trait CheckpointSync {
     /// Wait until an epoch (i.e. corresponding checkpoint transaction) is finalized
-    async fn wait_for_epoch_finalization(&self) -> SyncResult<Option<u64>>;
+    async fn wait_for_epoch_finalization(&self, target_epoch: u64) -> u64;
 
     /// Extract chainstate diff from checkpoint.
     fn get_chainstate_diff_from_checkpoint(
@@ -61,11 +60,25 @@ impl CheckpointSyncManager {
 
 #[async_trait]
 impl CheckpointSync for CheckpointSyncManager {
-    async fn wait_for_epoch_finalization(&self) -> SyncResult<Option<u64>> {
-        let mut rx = self.status_channel.subscribe_client_state();
-        rx.changed().await?;
-        let finalized_epoch = rx.borrow().get_declared_final_epoch().map(|ec| ec.epoch());
-        Ok(finalized_epoch)
+    async fn wait_for_epoch_finalization(&self, target_epoch: u64) -> u64 {
+        let mut rx = self.status_channel.subscribe_client_state(); // TODO: should this be created outside the function?
+        while rx.changed().await.is_ok() {
+            #[cfg(feature = "debug-utils")]
+            check_and_pause_debug_async(WorkerType::CheckpointSyncWorker).await;
+
+            if let Some(finalized_epoch) =
+                rx.borrow().get_declared_final_epoch().map(|ec| ec.epoch())
+            {
+                let current_epoch = target_epoch.saturating_sub(1);
+                if finalized_epoch < current_epoch {
+                    unimplemented!("reorg beyond finalization depth is undefined!");
+                } else if finalized_epoch >= target_epoch {
+                    return finalized_epoch;
+                }
+            }
+        }
+
+        unimplemented!("connection to CSM dropped: not handled.")
     }
 
     async fn get_target_epoch(&self) -> SyncResult<u64> {
@@ -131,20 +144,12 @@ pub async fn checkpoint_sync_task(mut csync_manager: impl CheckpointSync) -> any
     let mut target_epoch = csync_manager.get_target_epoch().await?;
 
     loop {
-        #[cfg(feature = "debug-utils")]
-        check_and_pause_debug_async(WorkerType::CheckpointSyncWorker).await;
-
-        if let Some(finalized_epoch) = csync_manager.wait_for_epoch_finalization().await? {
-            target_epoch = sync_checkpoint_for_finalized_epochs(
-                target_epoch,
-                finalized_epoch,
-                &mut csync_manager,
-            )
-            .await?;
-        } else {
-            // avoid tight loops if no epoch is finalized yet
-            sleep(Duration::from_secs(1)).await;
-        }
+        let finalized_epoch = csync_manager
+            .wait_for_epoch_finalization(target_epoch)
+            .await;
+        target_epoch =
+            sync_checkpoint_for_finalized_epochs(target_epoch, finalized_epoch, &mut csync_manager)
+                .await?;
     }
 }
 
@@ -154,20 +159,20 @@ async fn sync_checkpoint_for_finalized_epochs(
     finalized_epoch: u64,
     csync_manager: &mut impl CheckpointSync,
 ) -> SyncResult<u64> {
-    let current_epoch = target_epoch.saturating_sub(1);
-    if finalized_epoch < current_epoch {
-        unimplemented!("reorg beyond finalization depth is undefined for strata client!");
-    }
-
     let mut next_target_epoch = target_epoch;
+
+    // target epoch can lag behind finalized epoch, range should be target epoch..=finalized epoch
     for epoch in target_epoch..=finalized_epoch {
         let checkpoint = csync_manager.get_checkpoint_by_epoch(epoch).await?;
         if let Err(err) = process_checkpoint(&checkpoint, csync_manager).await {
             warn!(%epoch, %err, "Failed to process malformed checkpoint; returning early");
             return Ok(next_target_epoch);
         }
+
+        // update value for next target epoch
         next_target_epoch += 1;
     }
+
     Ok(next_target_epoch)
 }
 

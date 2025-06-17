@@ -29,6 +29,9 @@ pub(crate) enum InitError {
     #[error("params: {0}")]
     MalformedParams(#[from] ParamsError),
 
+    #[error("missing checkpoint at epoch: {0}")]
+    MissingExpectedCheckpoint(u64),
+
     #[error("missing chain state at slot: {0}")]
     MissingExpectedChainstate(u64),
 

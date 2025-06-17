@@ -12,8 +12,8 @@ use strata_primitives::{
     l1::L1Status,
     params::{Params, RollupParams, SyncParams},
 };
-use strata_state::csm_status::CsmStatus;
-use strata_status::StatusChannel;
+use strata_state::{client_state::ClientState, csm_status::CsmStatus};
+use strata_status::{ChainSyncStatus, ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
 use tracing::*;
@@ -143,8 +143,50 @@ pub(crate) fn create_bitcoin_rpc_client(config: &Config) -> anyhow::Result<Arc<C
     Ok(btc_rpc.into())
 }
 
-// initializes the status bundle that we can pass around cheaply for status/metrics
-pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
+/// Init chainsync status update for status channel on startup.
+/// Note: Only handles for checkpoint sync currently.
+fn init_chainsync_status_update(
+    storage: &NodeStorage,
+    cur_state: &ClientState,
+) -> anyhow::Result<Option<ChainSyncStatusUpdate>> {
+    let epoch = match cur_state.get_declared_final_epoch() {
+        Some(e) => e.epoch(),
+        None => return Ok(None),
+    };
+
+    let checkpoint = storage
+        .checkpoint()
+        .get_checkpoint_blocking(epoch)?
+        .map(|entry| entry.into_batch_checkpoint())
+        .ok_or(InitError::MissingExpectedCheckpoint(epoch))?;
+
+    let tip = checkpoint.batch_info().final_l2_block();
+    let slot = checkpoint.batch_info().final_l2_slot();
+
+    let chainstate = storage
+        .chainstate()
+        .get_toplevel_chainstate_blocking(slot)?
+        .map(|entry| entry.to_chainstate())
+        .ok_or(InitError::MissingExpectedChainstate(slot))?;
+
+    let status = ChainSyncStatus::new(
+        *tip,
+        *chainstate.prev_epoch(),
+        *chainstate.finalized_epoch(),
+        chainstate.l1_view().get_safe_block(),
+    );
+
+    Ok(Some(ChainSyncStatusUpdate::new(
+        status,
+        Arc::new(chainstate),
+    )))
+}
+
+/// initializes the status bundle that we can pass around cheaply for status/metrics
+pub(crate) fn init_status_channel(
+    storage: &NodeStorage,
+    is_checkpoint_sync: bool,
+) -> anyhow::Result<StatusChannel> {
     // init client state
     let csman = storage.client_state();
     let (cur_state_idx, cur_state) = csman
@@ -160,11 +202,17 @@ pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<Statu
         ..Default::default()
     };
 
+    let chainsync_status_update = if is_checkpoint_sync {
+        init_chainsync_status_update(storage, &cur_state)?
+    } else {
+        None
+    };
+
     // TODO avoid clone, change status channel to use arc
     Ok(StatusChannel::new(
         cur_state.as_ref().clone(),
         l1_status,
-        None,
+        chainsync_status_update,
     ))
 }
 
