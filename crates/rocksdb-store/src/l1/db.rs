@@ -7,13 +7,10 @@ use rockbound::{
     OptimisticTransactionDB, SchemaBatch, SchemaDBOperationsExt,
 };
 use strata_db::{errors::DbError, traits::*, DbResult};
-use strata_mmr::CompactMmr;
 use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
 use tracing::*;
 
-use super::schemas::{
-    L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, MmrSchema, TxnSchema,
-};
+use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
 use crate::DbOpsConfig;
 
 #[derive(Debug)]
@@ -55,11 +52,6 @@ impl L1Database for L1Db {
             .map_err(|e: rockbound::TransactionError<_>| DbError::TransactionError(e.to_string()))
     }
 
-    fn put_mmr_checkpoint(&self, blockid: L1BlockId, mmr: CompactMmr) -> DbResult<()> {
-        self.db.put::<MmrSchema>(&blockid, &mmr)?;
-        Ok(())
-    }
-
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()> {
         self.db.put::<L1CanonicalBlockSchema>(&height, &blockid)?;
         Ok(())
@@ -94,7 +86,6 @@ impl L1Database for L1Db {
                     for blockid in blocks.unwrap_or_default() {
                         txn.delete::<L1BlockSchema>(&blockid)?;
                         txn.delete::<TxnSchema>(&blockid)?;
-                        txn.delete::<MmrSchema>(&blockid)?;
                     }
 
                     Ok::<(), DbError>(())
@@ -147,10 +138,6 @@ impl L1Database for L1Db {
         Ok(Some(txs_refs))
     }
 
-    fn get_mmr(&self, blockid: L1BlockId) -> DbResult<Option<CompactMmr>> {
-        Ok(self.db.get::<MmrSchema>(&blockid)?)
-    }
-
     // TODO: This should not exist in database level and should be handled by downstream manager
     fn get_canonical_blockid_range(
         &self,
@@ -199,11 +186,7 @@ mod tests {
         L1Db::new(db, db_ops)
     }
 
-    fn insert_block_data(
-        height: u64,
-        db: &L1Db,
-        num_txs: usize,
-    ) -> (L1BlockManifest, Vec<L1Tx>, CompactMmr) {
+    fn insert_block_data(height: u64, db: &L1Db, num_txs: usize) -> (L1BlockManifest, Vec<L1Tx>) {
         let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
 
         // TODO maybe tweak this to make it a bit more realistic?
@@ -222,18 +205,13 @@ mod tests {
             arb.generate(),
         );
 
-        let mmr: CompactMmr = arb.generate();
-
         // Insert block data
         let res = db.put_block_data(mf.clone());
         assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
         let res = db.set_canonical_chain_entry(height, *mf.blkid());
         assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
 
-        // Insert mmr data
-        db.put_mmr_checkpoint(*mf.blkid(), mmr.clone()).unwrap();
-
-        (mf, txs, mmr)
+        (mf, txs)
     }
 
     // TEST STORE METHODS
@@ -308,15 +286,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_put_mmr_checkpoint_valid() {
-        let db = setup_db();
-        let (mf, _, _) = insert_block_data(1, &db, 10);
-        let mmr: CompactMmr = ArbitraryGenerator::new().generate();
-        let res = db.put_mmr_checkpoint(*mf.blkid(), mmr);
-        assert!(res.is_ok());
-    }
-
     // TEST PROVIDER METHODS
 
     #[test]
@@ -325,7 +294,7 @@ mod tests {
         let idx = 1;
 
         // insert
-        let (mf, txs, _) = insert_block_data(idx, &db, 10);
+        let (mf, txs) = insert_block_data(idx, &db, 10);
 
         // fetch non existent block
         let non_idx = 200;
@@ -359,7 +328,7 @@ mod tests {
         let db = setup_db();
         let idx = 1; // block number
                      // Insert a block
-        let (mf, txns, _) = insert_block_data(idx, &db, 10);
+        let (mf, txns) = insert_block_data(idx, &db, 10);
         let blockid = mf.blkid();
         let txidx: u32 = 3; // some tx index
         assert!(txns.len() > txidx as usize);
@@ -436,24 +405,15 @@ mod tests {
         let db = setup_db();
 
         let num_txs = 10;
-        let (mf1, _, _) = insert_block_data(1, &db, num_txs);
-        let (mf2, _, _) = insert_block_data(2, &db, num_txs);
-        let (mf3, _, _) = insert_block_data(3, &db, num_txs);
+        let (mf1, _) = insert_block_data(1, &db, num_txs);
+        let (mf2, _) = insert_block_data(2, &db, num_txs);
+        let (mf3, _) = insert_block_data(3, &db, num_txs);
 
         let range = db.get_canonical_blockid_range(1, 4).unwrap();
         assert_eq!(range.len(), 3);
         for (exp, obt) in vec![mf1, mf2, mf3].iter().zip(range) {
             assert_eq!(*exp.blkid(), obt);
         }
-    }
-
-    #[test]
-    fn test_get_mmr() {
-        let db = setup_db();
-
-        let (mf, _, mmr) = insert_block_data(1, &db, 10);
-        let observed_mmr = db.get_mmr(*mf.blkid()).unwrap();
-        assert_eq!(Some(mmr), observed_mmr);
     }
 
     #[test]
@@ -465,7 +425,7 @@ mod tests {
 
         let mut l1_txs = Vec::with_capacity(total_num_blocks);
         for i in 0..total_num_blocks {
-            let (mf, block_txs, _) = insert_block_data(i as u64, &db, num_txs);
+            let (mf, block_txs) = insert_block_data(i as u64, &db, num_txs);
             l1_txs.push((*mf.blkid(), block_txs));
         }
 
