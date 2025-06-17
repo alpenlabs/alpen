@@ -45,27 +45,27 @@ services:
       - 8545:8545
       - 8546:8546
 
-  reth-fn:
-    <<: *base-reth
-    container_name: alpen_reth_fn
-    environment:
-      JWTSECRET: "configs/jwt.fn.hex"
-    command:
-      - "--sequencer-http"
-      - "http://alpen_reth:8545"
-      # FIXME: datatool should not default to dev chain
-      - "--custom-chain"
-      - "dev"
-    volumes:
-      - ./.data/data-reth-fn:/app/reth
-      - ./configs:/app/configs
-    ports:
-      - 8561:8551
-      - 8555:8545
-      - 8556:8546
-    profiles:
-      - fullnode
-
+  # reth-fn:
+  #   <<: *base-reth
+  #   container_name: alpen_reth_fn
+  #   environment:
+  #     JWTSECRET: "configs/jwt.fn.hex"
+  #   command:
+  #     - "--sequencer-http"
+  #     - "http://alpen_reth:8545"
+  #     # FIXME: datatool should not default to dev chain
+  #     - "--custom-chain"
+  #     - "dev"
+  #   volumes:
+  #     - ./.data/data-reth-fn:/app/reth
+  #     - ./configs:/app/configs
+  #   ports:
+  #     - 8561:8551
+  #     - 8555:8545
+  #     - 8556:8546
+  #   profiles:
+  #     - fullnode
+  #
   sequencer:
     <<: *base-client
     container_name: strata_sequencer
@@ -100,64 +100,75 @@ services:
     depends_on:
       - sequencer
 
-  prover-client:
-    <<: *base-prover
-    container_name: strata_prover_client
-    volumes:
-      - ./configs/params.json:/app/params.json
-      - ./.data/prover-client:/app/.data
-      - ./prover-client/elfs:/app/elfs
-    env_file:
-      - prover-client/prover-client.env
+  # prover-client:
+  #   <<: *base-prover
+  #   container_name: strata_prover_client
+  #   volumes:
+  #     - ./configs/params.json:/app/params.json
+  #     - ./.data/prover-client:/app/.data
+  #     - ./prover-client/elfs:/app/elfs
+  #   env_file:
+  #     - prover-client/prover-client.env
+  #
+  #   command: [
+  #     "--rollup-params", "params.json",
+  #     "--datadir", ".data",
+  #     "--sequencer-rpc", "http://sequencer:8432",
+  #     "--reth-rpc", "http://reth:8545",
+  #     "--bitcoind-url", "bitcoind:18443",
+  #     "--bitcoind-user", "rpcuser",
+  #     "--bitcoind-password","rpcpassword",
+  #     "--enable-checkpoint-runner", "true"
+  #   ]
 
-    command: [
-      "--rollup-params", "params.json",
-      "--datadir", ".data",
-      "--sequencer-rpc", "http://sequencer:8432",
-      "--reth-rpc", "http://reth:8545",
-      "--bitcoind-url", "bitcoind:18443",
-      "--bitcoind-user", "rpcuser",
-      "--bitcoind-password","rpcpassword",
-      "--enable-checkpoint-runner", "true"
-    ]
-
-  fullnode:
-    <<: *base-client
-    container_name: strata_fullnode
-    ports:
-      - 8433:8432
-    environment:
-      CONFIG_PATH: "configs/config.fn.toml"
-      PARAM_PATH: "configs/params.json"
-    volumes:
-      - ./.data/data-fullnode:/app/data
-      - ./configs:/app/configs
-      # need to wait for sequencer to start
-    entrypoint: /bin/sh -c "sleep 10 && /app/entrypoint.sh \"$@\"" --
-    command: ["--reth-jwtsecret", "configs/jwt.fn.hex"]
-    depends_on:
-      - bitcoind
-      - reth-fn
-      - sequencer
-    profiles:
-      - fullnode
+  # fullnode:
+  #   <<: *base-client
+  #   container_name: strata_fullnode
+  #   ports:
+  #     - 8433:8432
+  #   environment:
+  #     CONFIG_PATH: "configs/config.fn.toml"
+  #     PARAM_PATH: "configs/params.json"
+  #   volumes:
+  #     - ./.data/data-fullnode:/app/data
+  #     - ./configs:/app/configs
+  #     # need to wait for sequencer to start
+  #   entrypoint: /bin/sh -c "sleep 10 && /app/entrypoint.sh \"$@\"" --
+  #   command: ["--reth-jwtsecret", "configs/jwt.fn.hex"]
+  #   depends_on:
+  #     - bitcoind
+  #     - reth-fn
+  #     - sequencer
+  #   profiles:
+  #     - fullnode
 
   bitcoind:
-    build:
-      context: ./bitcoind/
-    image: "strata_bitcoind:v0.1.2"
+    image: bitcoin/bitcoin:28.1
     environment:
       RPC_ALLOW_IP: "0.0.0.0/0"
-      BITCOIND_RPC_USER: rpcuser
-      BITCOIND_RPC_PASSWORD: rpcpassword
+      BITCOIND_RPC_USER: user
+      BITCOIND_RPC_PASSWORD: password
       BITCOIND_WALLET: default
-      GENERATE_BLOCKS: 4 # if env is set then blocks are generated. the number is number of seconds between L1 blocks / 4
+      GENERAL_WALLET_1: $GENERAL_WALLET_1
+      STAKE_CHAIN_WALLET_1: $STAKE_CHAIN_WALLET_1
+      GENERAL_WALLET_2: $GENERAL_WALLET_2
+      STAKE_CHAIN_WALLET_2: $STAKE_CHAIN_WALLET_2
+      GENERAL_WALLET_3: $GENERAL_WALLET_3
+      STAKE_CHAIN_WALLET_3: $STAKE_CHAIN_WALLET_3
+      CLAIM_FUNDING_AMOUNT: $CLAIM_FUNDING_AMOUNT
+      GENERATE_BLOCKS: 10 # if env is set then blocks are generated. the number is number of seconds between L1 blocks
     container_name: strata_bitcoind
     volumes:
-      - ./.data/data-bitcoind:/root/.bitcoin/
-      - ./bitcoind/entrypoint.sh:/app/entrypoint.sh
+      - ./.data/data-bitcoind:/home/bitcoin/
+      - ./bitcoind/entrypoint.sh:/entrypoint.sh
     ports:
-      - "18443:18443"
+      - 18443:18443
+      - 18444:18444
+      - 28332:28332
+      - 28333:28333
+      - 28334:28334
+      - 28335:28335
+      - 28336:28336
     networks:
       - strata_network
 

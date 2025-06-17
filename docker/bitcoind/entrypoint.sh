@@ -1,7 +1,8 @@
 #! /bin/bash -x
+BITCOIND_CONF_DIR=/home/bitcoin
 
 # Generate bitcoin.conf
-cat <<EOF > /root/.bitcoin/bitcoin.conf
+cat <<EOF > ${BITCOIND_CONF_DIR}/bitcoin.conf
 regtest=1
 
 [regtest]
@@ -10,10 +11,23 @@ rpcpassword=${BITCOIND_RPC_PASSWORD}
 rpcbind=0.0.0.0
 rpcallowip=${RPC_ALLOW_IP}
 fallbackfee=0.00001
+maxtxfee=10000
+maxfeerate=1000000
 maxburnamount=1
 server=1
 txindex=1
 acceptnonstdtxn=1
+printtoconsole=1
+acceptnonstdtxn=1
+minrelaytxfee=0.0
+blockmintxfee=0.0
+dustRelayFee=0.0
+debug=zmq
+zmqpubhashblock=tcp://0.0.0.0:28332
+zmqpubhashtx=tcp://0.0.0.0:28333
+zmqpubrawblock=tcp://0.0.0.0:28334
+zmqpubrawtx=tcp://0.0.0.0:28335
+zmqpubsequence=tcp://0.0.0.0:28336
 EOF
 
 echo "Bitcoin RPC User: $BITCOIND_RPC_USER"
@@ -23,7 +37,7 @@ bcli() {
 }
 
 # Start bitcoind in the background
-bitcoind -conf=/root/.bitcoin/bitcoin.conf -regtest $@ &
+bitcoind -conf=$BITCOIND_CONF_DIR/bitcoin.conf -regtest &
 
 # Function to check if a wallet exists and is loaded, mainly for docker cache
 check_wallet_exists() {
@@ -72,41 +86,35 @@ fi
 
 # create wallet
 check_wallet_exists $BITCOIND_WALLET
-check_wallet_exists $BRIDGE_WALLET_1
-check_wallet_exists $BRIDGE_WALLET_2
-check_wallet_exists $BRIDGE_WALLET_3
 
 VAL=$(bitcoin-cli getblockcount)
+
+bcli generatetoaddress 1 $GENERAL_WALLET_1
+bcli generatetoaddress 1 $GENERAL_WALLET_2
+bcli generatetoaddress 1 $GENERAL_WALLET_3
 
 if [[ $VAL -eq 0 ]]; then
     # Get a new Bitcoin address from the wallet
     ADDRESS=$(bcli -rpcwallet="${BITCOIND_WALLET}" getnewaddress)
 
-    BRIDGE_ADDRESS_1=$(bcli -rpcwallet="${BRIDGE_WALLET_1}" getnewaddress)
-    BRIDGE_ADDRESS_2=$(bcli -rpcwallet="${BRIDGE_WALLET_2}" getnewaddress)
-    BRIDGE_ADDRESS_3=$(bcli -rpcwallet="${BRIDGE_WALLET_3}" getnewaddress)
-
     echo "Generated new address: $ADDRESS"
-    echo $ADDRESS > /root/.bitcoin/bitcoin-address
+    echo $ADDRESS > $BITCOIND_CONF_DIR/bitcoin-address
 
-    # Generate 120 blocks to the new address
-    # (101 to mature the coinbase transactions and a few more for rollup genesis)
+    # Generate 101 blocks to the new address
+    # to mature coinbase funds
     echo "Generating 120 blocks..."
-    bcli generatetoaddress 120 "$ADDRESS"
-
-    bcli generatetoaddress 101 "$BRIDGE_ADDRESS_1"
-    bcli generatetoaddress 101 "$BRIDGE_ADDRESS_2"
-    bcli generatetoaddress 101 "$BRIDGE_ADDRESS_3"
+    bcli generatetoaddress 105 "$ADDRESS"
 fi
+
+bcli sendtoaddress $STAKE_CHAIN_WALLET_1 $CLAIM_FUNDING_AMOUNT
+bcli sendtoaddress $STAKE_CHAIN_WALLET_2 $CLAIM_FUNDING_AMOUNT
+bcli sendtoaddress $STAKE_CHAIN_WALLET_3 $CLAIM_FUNDING_AMOUNT
 
 # generate single blocks
 if [ ! -z $GENERATE_BLOCKS ];then
 while :
 do
     bcli generatetoaddress 1 "$ADDRESS"
-    bcli generatetoaddress 1 "$BRIDGE_ADDRESS_1"
-    bcli generatetoaddress 1 "$BRIDGE_ADDRESS_2"
-    bcli generatetoaddress 1 "$BRIDGE_ADDRESS_3"
     sleep $GENERATE_BLOCKS
 done
 else
