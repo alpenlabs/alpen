@@ -6,7 +6,11 @@ use std::marker::PhantomData;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use error::MerkleError;
-use hasher::{MerkleHash, MerkleHasher};
+use hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
+use sha2::Sha256;
+
+/// Merkle hash impl for SHA-256 `Digest` impl.
+pub type Sha256Hasher = DigestMerkleHasher<Sha256, 32>;
 
 /// Compact representation of the MMR that should be borsh serializable easily.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
@@ -32,7 +36,8 @@ pub struct MerkleMr64<MH: MerkleHasher + Clone> {
 }
 
 impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
-    /// Constructs a new MMR with some capacity.
+    /// Constructs a new MMR with some scale.  This is the number of peaks we
+    /// will keep in the MMR.
     pub fn new(cap_log2: usize) -> Self {
         Self {
             num: 0,
@@ -78,15 +83,11 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     /// Returns the total number of elements we're allowed to insert into the
     /// MMR, based on the roots size.
     pub fn max_capacity(&self) -> u64 {
-        let peaks_len = self.peaks.len() as u64;
-
-        // To prevent overflow in this case.
-        if peaks_len == u64::BITS as u64 {
-            return u64::MAX;
+        // Very clean bit manipulation.
+        match self.peaks.len() as u64 {
+            0 => 0,
+            peaks => u64::MAX >> (64 - peaks),
         }
-
-        // There's probably some bithacky thing to make this simpler.
-        (1 << peaks_len) - 1
     }
 
     /// Checks if we can insert a new element.  Returns error if not.
@@ -143,8 +144,10 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         Ok(self.peaks[(self.num.ilog2()) as usize])
     }
 
-    /// Adds a new leaf, consuming a proof and returning an updated copy of the
-    /// provided proof.
+    /// Adds a new leaf, returning an updated version of the proof passed.  If
+    /// the proof passed does not match the accumulator, then the returned proof
+    /// will be nonsensical.
+    // TODO make a version of this that doesn't alloc?
     pub fn add_leaf_updating_proof(
         &mut self,
         next: MH::Hash,
@@ -152,6 +155,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     ) -> Result<MerkleProof<MH::Hash>, MerkleError> {
         self.check_capacity()?;
 
+        // FIXME this is a weird function to call if this is true, since how
+        // could a valid proof have been passed?
         if self.num == 0 {
             self.add_leaf(next)?;
             return Ok(MerkleProof::new_zero());
@@ -208,6 +213,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         }
     }
 
+    /// Adds a leaf to the accumulator, updating the proofs in a provided list
+    /// of proofs in-place, and returning a proof to the new leaf.
     pub fn add_leaf_updating_proof_list(
         &mut self,
         next: MH::Hash,
@@ -290,7 +297,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         <MH::Hash as MerkleHash>::eq_ct(&cur_hash, root)
     }
 
-    // FIXME what is this function for?
+    // FIXME what is this function for?  it does not generate a proof
     #[allow(unused)]
     pub(crate) fn gen_proof(
         &self,
@@ -354,11 +361,13 @@ impl<H: MerkleHash> MerkleProof<H> {
 mod test {
     use sha2::{Digest, Sha256};
 
-    use super::{hasher::Hash32, MerkleMr64, MerkleProof};
+    use super::{MerkleMr64, MerkleProof, Sha256Hasher};
     use crate::error::MerkleError;
 
-    fn generate_for_n_integers(n: usize) -> (MerkleMr64<Sha256>, Vec<MerkleProof<Hash32>>) {
-        let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
+    type Hash32 = [u8; 32];
+
+    fn generate_for_n_integers(n: usize) -> (MerkleMr64<Sha256Hasher>, Vec<MerkleProof<Hash32>>) {
+        let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
 
         let mut proof = Vec::new();
         let list_of_hashes = generate_hashes_for_n_integers(n);
@@ -437,7 +446,7 @@ mod test {
     fn check_peak_for_mmr_single_leaf() {
         let hashed1: Hash32 = Sha256::digest(b"first").into();
 
-        let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
+        let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
         mmr.add_leaf(hashed1).expect("test: add leaf");
 
         assert_eq!(
@@ -453,7 +462,7 @@ mod test {
     fn check_peak_for_mmr_three_leaves() {
         let hashed1: Hash32 = Sha256::digest(b"first").into();
 
-        let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
+        let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
         mmr.add_leaf(hashed1).expect("test: add leaf");
         mmr.add_leaf(hashed1).expect("test: add leaf");
         mmr.add_leaf(hashed1).expect("test: add leaf");
@@ -465,7 +474,7 @@ mod test {
     fn check_peak_for_mmr_four_leaves() {
         let hashed1: Hash32 = Sha256::digest(b"first").into();
 
-        let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
+        let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
         mmr.add_leaf(hashed1).expect("test: add leaf");
         mmr.add_leaf(hashed1).expect("test: add leaf");
         mmr.add_leaf(hashed1).expect("test: add leaf");
@@ -490,7 +499,7 @@ mod test {
 
     #[test]
     fn check_add_node_and_update() {
-        let mut mmr: MerkleMr64<Sha256> = MerkleMr64::new(14);
+        let mut mmr: MerkleMr64<Sha256Hasher> = MerkleMr64::new(14);
         let mut proof_list = Vec::new();
 
         let hashed0: Hash32 = Sha256::digest(b"first").into();
@@ -536,7 +545,7 @@ mod test {
         let (mmr, _) = generate_for_n_integers(5);
 
         let compact_mmr = mmr.to_compact();
-        let deserialized_mmr = MerkleMr64::<Sha256>::from_compact(&compact_mmr);
+        let deserialized_mmr = MerkleMr64::<Sha256Hasher>::from_compact(&compact_mmr);
 
         assert_eq!(mmr.num, deserialized_mmr.num);
         assert_eq!(mmr.peaks, deserialized_mmr.peaks);

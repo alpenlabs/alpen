@@ -1,19 +1,12 @@
+use std::cell::LazyCell;
+
 use digest::{generic_array::GenericArray, Digest};
-use lazy_static::lazy_static;
 use sha2::Sha256;
-
-/// 20 byte hash.
-pub type Hash20 = [u8; 20];
-
-/// 32 byte hash.
-pub type Hash32 = [u8; 32];
 
 type Tag = [u8; 64];
 
-lazy_static! {
-    static ref NODE_TAG_PREFIX: Tag = make_tag(b"node");
-    static ref LEAF_TAG_PREFIX: Tag = make_tag(b"leaf");
-}
+const NODE_TAG_PREFIX: LazyCell<Tag> = LazyCell::new(|| make_tag(b"node"));
+const LEAF_TAG_PREFIX: LazyCell<Tag> = LazyCell::new(|| make_tag(b"leaf"));
 
 /// Makes a 64 byte tag from a slice, which ideally contains a ASCII string.
 fn make_tag(s: &[u8]) -> Tag {
@@ -87,10 +80,13 @@ pub trait MerkleHasher {
     }
 }
 
+/// Merkle hash for arbitrary digest impl.
+#[derive(Copy, Clone, Debug)]
+pub struct DigestMerkleHasher<D: Digest, const N: usize>(std::marker::PhantomData<D>);
+
 /// Generic impl over [`Digest`] impls, where hash is `[u8; 32]`.
-// TODO make this generic over other hash types
-impl<D: Digest> MerkleHasher for D {
-    type Hash = Hash32;
+impl<D: Digest, const N: usize> MerkleHasher for DigestMerkleHasher<D, N> {
+    type Hash = [u8; N];
 
     fn hash_leaf(buf: &[u8]) -> Self::Hash {
         // This is technically vulnerable to length-extension, but in MMRs that
