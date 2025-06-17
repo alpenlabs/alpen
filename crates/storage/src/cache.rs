@@ -385,3 +385,392 @@ mod tests {
         assert_eq!(len, 0);
     }
 }
+
+#[cfg(test)]
+mod ai_tests {
+    use std::{
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
+
+    use tokio::{sync::Barrier, time::sleep};
+
+    use super::*;
+
+    // Helper to create a test cache
+    fn make_cache_table() -> CacheTable<u64, String> {
+        CacheTable::new(10.try_into().unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_same_key_fetch() {
+        let cache = Arc::new(make_cache_table());
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        // Spawn multiple tasks trying to fetch the same key
+        let mut handles = vec![];
+        for i in 0..10 {
+            let cache_clone = cache.clone();
+            let fetch_count_clone = fetch_count.clone();
+
+            let handle = tokio::task::spawn_local(async move {
+                let result = cache_clone
+                    .get_or_fetch(&42, || {
+                        let count = fetch_count_clone.fetch_add(1, Ordering::SeqCst);
+
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        tokio::task::spawn_local(async move {
+                            // Simulate slow database fetch
+                            sleep(Duration::from_millis(100)).await;
+                            tx.send(Ok(format!("value-{}", count))).unwrap();
+                        });
+                        rx
+                    })
+                    .await;
+
+                (i, result)
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all tasks
+        let mut results = vec![];
+        for handle in handles {
+            results.push(handle.await.unwrap());
+        }
+
+        // All should get the same value (from the first fetch)
+        let first_value = &results[0].1.as_ref().cloned().unwrap();
+        for (task_id, result) in results {
+            assert_eq!(
+                result.as_ref().unwrap(),
+                first_value,
+                "Task {task_id} got different value",
+            );
+        }
+
+        // Only one fetch should have occurred
+        assert_eq!(
+            fetch_count.load(Ordering::SeqCst),
+            1,
+            "Expected exactly one fetch"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_different_keys() {
+        let cache = Arc::new(make_cache_table());
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        // Spawn tasks for different keys
+        let mut handles = vec![];
+        for i in 0..10 {
+            let cache_clone = cache.clone();
+            let fetch_count_clone = fetch_count.clone();
+
+            let handle = tokio::task::spawn_local(async move {
+                let key = i as u64;
+                let result = cache_clone
+                    .get_or_fetch(&key, || {
+                        fetch_count_clone.fetch_add(1, Ordering::SeqCst);
+
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        tokio::task::spawn_local(async move {
+                            sleep(Duration::from_millis(50)).await;
+                            tx.send(Ok(format!("value-{}", key))).unwrap();
+                        });
+                        rx
+                    })
+                    .await;
+
+                (key, result)
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all tasks
+        let mut results = vec![];
+        for handle in handles {
+            results.push(handle.await.unwrap());
+        }
+
+        // Each should get its own value
+        for (key, result) in results {
+            assert_eq!(result.unwrap(), format!("value-{}", key));
+        }
+
+        // Should have 10 fetches (one per key)
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 10);
+    }
+
+    #[tokio::test]
+    async fn test_cache_eviction_during_fetch() {
+        // Small cache to force eviction
+        let cache = Arc::new(CacheTable::<u64, String>::new(2.try_into().unwrap()));
+
+        // Start a slow fetch for key 1
+        let cache_clone = cache.clone();
+        let slow_fetch = tokio::task::spawn_local(async move {
+            cache_clone
+                .get_or_fetch(&1, || {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    tokio::task::spawn_local(async move {
+                        sleep(Duration::from_millis(200)).await;
+                        tx.send(Ok("slow-value".to_string())).unwrap();
+                    });
+                    rx
+                })
+                .await
+        });
+
+        // Give it time to start
+        sleep(Duration::from_millis(50)).await;
+
+        // Fill cache with other entries to potentially evict key 1
+        for i in 2..=5 {
+            cache.insert(i, format!("fast-value-{}", i));
+        }
+
+        // The slow fetch should still complete successfully
+        let result = slow_fetch.await.unwrap();
+        assert_eq!(result.unwrap(), "slow-value");
+    }
+
+    #[tokio::test]
+    async fn test_error_handling_concurrent() {
+        let cache = Arc::new(make_cache_table());
+        let barrier = Arc::new(Barrier::new(5));
+
+        // Spawn multiple tasks that will all try to fetch the same key
+        // but the fetch will fail
+        let mut handles = vec![];
+        for i in 0..5 {
+            let cache_clone = cache.clone();
+            let barrier_clone = barrier.clone();
+
+            let handle = tokio::task::spawn_local(async move {
+                // Wait for all tasks to be ready
+                barrier_clone.wait().await;
+
+                let result = cache_clone
+                    .get_or_fetch(&42, || {
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        tokio::task::spawn_local(async move {
+                            sleep(Duration::from_millis(100)).await;
+                            tx.send(Err(DbError::CacheLoadFail)).unwrap();
+                        });
+                        rx
+                    })
+                    .await;
+
+                (i, result)
+            });
+            handles.push(handle);
+        }
+
+        // All should get the same error
+        for handle in handles {
+            let (task_id, result) = handle.await.unwrap();
+            assert!(
+                result.is_err(),
+                "Task {} should have gotten an error",
+                task_id
+            );
+        }
+
+        // Cache should not contain the failed entry
+        assert_eq!(cache.get_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_mixed_async_blocking() {
+        let cache = Arc::new(make_cache_table());
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        // Mix of async and blocking operations
+        let mut handles = vec![];
+
+        // Async tasks
+        for i in 0..5 {
+            let cache_clone = cache.clone();
+            let fetch_count_clone = fetch_count.clone();
+
+            let handle = tokio::task::spawn_local(async move {
+                cache_clone
+                    .get_or_fetch(&42, || {
+                        fetch_count_clone.fetch_add(1, Ordering::SeqCst);
+
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        tokio::task::spawn_local(async move {
+                            sleep(Duration::from_millis(100)).await;
+                            tx.send(Ok(format!("async-value"))).unwrap();
+                        });
+                        rx
+                    })
+                    .await
+            });
+            handles.push(handle);
+        }
+
+        // Blocking tasks
+        for i in 0..5 {
+            let cache_clone = cache.clone();
+            let fetch_count_clone = fetch_count.clone();
+
+            let handle = tokio::task::spawn_blocking(move || {
+                cache_clone.get_or_fetch_blocking(&42, || {
+                    fetch_count_clone.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(100));
+                    Ok("blocking-value".to_string())
+                })
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all
+        let mut results = vec![];
+        for handle in handles {
+            results.push(handle.await.unwrap());
+        }
+
+        // All should succeed and get the same value
+        let first_value = results[0].as_ref().unwrap();
+        for result in &results {
+            assert_eq!(result.as_ref().unwrap(), first_value);
+        }
+
+        // Should only have one fetch
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_purge_during_fetch() {
+        let cache = Arc::new(make_cache_table());
+
+        // Start a fetch
+        let cache_clone = cache.clone();
+        let fetch_handle = tokio::task::spawn_local(async move {
+            cache_clone
+                .get_or_fetch(&42, || {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    tokio::task::spawn_local(async move {
+                        sleep(Duration::from_millis(200)).await;
+                        tx.send(Ok("fetched-value".to_string())).unwrap();
+                    });
+                    rx
+                })
+                .await
+        });
+
+        // Let fetch start
+        sleep(Duration::from_millis(50)).await;
+
+        // Purge the key while fetch is in progress
+        cache.purge(&42);
+
+        // Fetch should still complete
+        let result = fetch_handle.await.unwrap();
+        assert_eq!(result.unwrap(), "fetched-value");
+
+        // But cache should be empty (purged entry won't be retained)
+        assert_eq!(cache.get_len(), 0);
+    }
+
+    #[test]
+    fn test_stress_blocking() {
+        use std::thread;
+
+        let cache = Arc::new(make_cache_table());
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        // Spawn multiple threads
+        let mut handles = vec![];
+        for i in 0..10 {
+            let cache_clone = cache.clone();
+            let fetch_count_clone = fetch_count.clone();
+
+            let handle = thread::spawn(move || {
+                let key = (i % 3) as u64; // Use only 3 keys to create contention
+
+                cache_clone.get_or_fetch_blocking(&key, || {
+                    fetch_count_clone.fetch_add(1, Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(100));
+                    Ok(format!("value-{}", key))
+                })
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads
+        let mut results = vec![];
+        for handle in handles {
+            results.push(handle.join().unwrap());
+        }
+
+        // Should have exactly 3 fetches (one per unique key)
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 3);
+
+        // Verify results match expected pattern
+        for result in results {
+            let value = result.unwrap();
+            assert!(value.starts_with("value-"));
+        }
+    }
+
+    // Property-based testing helper
+    #[tokio::test]
+    async fn test_property_cache_consistency() {
+        let cache = Arc::new(make_cache_table());
+
+        // Randomly interleave operations
+        let mut handles = vec![];
+
+        for i in 0..50 {
+            let cache_clone = cache.clone();
+            let handle = tokio::task::spawn_local(async move {
+                let key = (i % 10) as u64;
+
+                match i % 4 {
+                    0 => {
+                        // Fetch
+                        let _ = cache_clone
+                            .get_or_fetch(&key, || {
+                                let (tx, rx) = tokio::sync::oneshot::channel();
+                                tokio::task::spawn_local(async move {
+                                    sleep(Duration::from_millis(10)).await;
+                                    tx.send(Ok(format!("fetched-{}", key))).unwrap();
+                                });
+                                rx
+                            })
+                            .await;
+                    }
+                    1 => {
+                        // Insert
+                        cache_clone.insert(key, format!("inserted-{}", key));
+                    }
+                    2 => {
+                        // Purge
+                        cache_clone.purge(&key);
+                    }
+                    3 => {
+                        // Purge_if
+                        let _ = cache_clone.purge_if(|k| *k == key);
+                    }
+                    _ => unreachable!(),
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all operations
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Cache should be in a consistent state (no panics = success)
+        let _len = cache.get_len();
+    }
+}
