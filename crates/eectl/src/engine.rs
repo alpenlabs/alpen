@@ -8,7 +8,7 @@
 // errors as we'd be able to identify when our perspective on the state is
 // inconsistent with the remote state.
 
-use strata_state::id::L2BlockId;
+use strata_state::{block::L2BlockBundle, id::L2BlockId};
 
 use crate::{errors::*, messages::*};
 
@@ -46,7 +46,13 @@ pub trait ExecEngineCtl {
     /// Check if a block exists on the chain.
     /// If this returns true, it should be safe to use this id
     /// in any of update_*_block methods, submit_payload and prepare_payload
-    fn check_block_exists(&self, id: L2BlockId) -> EngineResult<bool>;
+    fn check_block_exists<'a>(&self, id_ref: L2BlockRef<'a>) -> EngineResult<bool>;
+}
+
+#[derive(Debug)]
+pub enum L2BlockRef<'a> {
+    Id(L2BlockId),
+    Ref(&'a L2BlockBundle),
 }
 
 /// The status of a block that we've just set chain fork.

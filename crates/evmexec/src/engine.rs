@@ -13,7 +13,7 @@ use alpen_reth_node::{
 use futures::future::TryFutureExt;
 use revm_primitives::{Address, B256};
 use strata_eectl::{
-    engine::{BlockStatus, ExecEngineCtl, PayloadStatus},
+    engine::{BlockStatus, ExecEngineCtl, L2BlockRef, PayloadStatus},
     errors::{EngineError, EngineResult},
     messages::{ExecPayloadData, PayloadEnv},
 };
@@ -29,7 +29,7 @@ use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
 
 use crate::{
-    block::EVML2Block,
+    block::{evm_block_hash, EVML2Block},
     el_payload::{make_update_input_from_payload_and_ops, ElPayload},
     http_client::EngineRpc,
 };
@@ -392,11 +392,17 @@ impl<T: EngineRpc> ExecEngineCtl for RpcExecEngineCtl<T> {
         })
     }
 
-    fn check_block_exists(&self, id: L2BlockId) -> EngineResult<bool> {
-        let block = self
-            .get_l2block(&id)
-            .and_then(|l2block| self.get_block_info(l2block))?;
-        let block_hash = block.block_hash();
+    fn check_block_exists<'a>(&self, id_ref: L2BlockRef<'a>) -> EngineResult<bool> {
+        let block_hash = match id_ref {
+            L2BlockRef::Id(id) => self
+                .get_l2block(&id)
+                .and_then(|l2block| self.get_block_info(l2block))?
+                .block_hash(),
+            L2BlockRef::Ref(block_ref) => {
+                evm_block_hash(block_ref).map_err(|err| EngineError::Other(err.to_string()))?
+            }
+        };
+
         self.tokio_handle
             .block_on(self.inner.check_block_exists(block_hash))
     }

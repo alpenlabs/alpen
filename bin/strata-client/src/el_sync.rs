@@ -1,5 +1,9 @@
 use strata_db::DbError;
-use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
+use strata_eectl::{
+    engine::{ExecEngineCtl, L2BlockRef},
+    errors::EngineError,
+    messages::ExecPayloadData,
+};
 use strata_state::id::L2BlockId;
 use strata_storage::NodeStorage;
 use thiserror::Error;
@@ -37,7 +41,7 @@ pub fn sync_chainstate_to_el(
             return Err(Error::MissingChainstate(idx));
         };
 
-        Ok(engine.check_block_exists(*entry.tip_blockid())?)
+        Ok(engine.check_block_exists(L2BlockRef::Id(*entry.tip_blockid()))?)
     })?
     .map(|idx| idx + 1) // sync from next index
     .unwrap_or(0); // sync from genesis
