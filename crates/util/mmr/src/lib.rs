@@ -37,8 +37,17 @@ pub struct MerkleMr64<MH: MerkleHasher + Clone> {
 
 impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     /// Constructs a new MMR with some scale.  This is the number of peaks we
-    /// will keep in the MMR.
+    /// will keep in the MMR.  The real capacity is 2**n of this value
+    /// specified.
+    ///
+    /// # Panics
+    ///
+    /// If the `cap_log2` parameter is larger than 64.
     pub fn new(cap_log2: usize) -> Self {
+        if cap_log2 > 64 {
+            panic!("mmr: tried to create MMR of size {cap_log2} (max is 64)");
+        }
+
         Self {
             num: 0,
             peaks: vec![MH::zero_hash(); cap_log2].into_boxed_slice(),
