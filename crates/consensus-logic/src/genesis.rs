@@ -130,7 +130,7 @@ pub fn make_l2_genesis(
 /// Create genesis L2 block based on rollup params
 /// NOTE: generate block MUST be deterministic
 /// repeated calls with same params MUST return identical blocks
-fn make_genesis_block(params: &Params) -> L2BlockBundle {
+pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     // Create a dummy exec state that we can build the rest of the genesis block
     // around and insert into the genesis state.
     // TODO this might need to talk to the EL to do the genesus setup *properly*

@@ -13,10 +13,7 @@ pub(crate) struct EVML2Block {
 impl EVML2Block {
     /// Attempts to construct an instance from an L2 block bundle.
     pub(crate) fn try_extract(bundle: &L2BlockBundle) -> Result<Self, ConversionError> {
-        let extra_payload_slice = bundle.exec_segment().update().input().extra_payload();
-        let extra_payload = EVMExtraPayload::try_from_slice(extra_payload_slice)
-            .or(Err(ConversionError::InvalidExecPayload))?;
-
+        let extra_payload = get_extra_payload(bundle)?;
         Ok(Self {
             l2_block: bundle.block().to_owned(),
             extra_payload,
@@ -28,6 +25,17 @@ impl EVML2Block {
     pub(crate) fn block_hash(&self) -> B256 {
         FixedBytes(*self.extra_payload.block_hash().as_ref())
     }
+}
+
+fn get_extra_payload(bundle: &L2BlockBundle) -> Result<EVMExtraPayload, ConversionError> {
+    let extra_payload_slice = bundle.exec_segment().update().input().extra_payload();
+    EVMExtraPayload::try_from_slice(extra_payload_slice)
+        .or(Err(ConversionError::InvalidExecPayload))
+}
+
+pub(crate) fn evm_block_hash(bundle: &L2BlockBundle) -> Result<B256, ConversionError> {
+    let extra_payload = get_extra_payload(bundle)?;
+    Ok(FixedBytes(*extra_payload.block_hash().as_ref()))
 }
 
 #[derive(Debug, Error)]
