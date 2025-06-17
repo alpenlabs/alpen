@@ -1,5 +1,6 @@
 //! Merkle mountain range implementation crate.
 #![allow(clippy::declare_interior_mutable_const)]
+#![allow(clippy::borrow_interior_mutable_const)]
 
 pub mod error;
 pub mod hasher;
