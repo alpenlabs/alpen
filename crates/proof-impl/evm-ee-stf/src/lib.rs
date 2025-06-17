@@ -1,52 +1,16 @@
 //! EVM Execution Environment STF for Alpen prover, using RSP for EVM execution. Provides primitives
 //! and utilities to process Ethereum block transactions and state transitions in a zkVM.
+pub mod executor;
 pub mod primitives;
 pub mod program;
 pub mod utils;
-use std::sync::Arc;
 
-use alloy_consensus::EthBlock;
-use alpen_reth_evm::evm::AlpenEvmFactory;
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
-use reth_chainspec::ChainSpec;
-use reth_evm_ethereum::EthEvmConfig;
-use rsp_client_executor::{executor::ClientExecutor, io::EthClientExecutorInput};
+use rsp_client_executor::io::EthClientExecutorInput;
 use utils::generate_exec_update;
 use zkaleido::ZkVmEnv;
 
-pub type AlpEthClientExecutor = ClientExecutor<EthEvmConfig<AlpenEvmFactory>, ChainSpec>;
-
-pub fn process_block_transaction(input: EthClientExecutorInput) -> EvmBlockStfOutput {
-    // TODO: Remove this unwrap
-    let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
-    let executor = AlpEthClientExecutor {
-        evm_config: EthEvmConfig::new_with_evm_factory(
-            chain_spec.clone(),
-            AlpenEvmFactory::default(),
-        ),
-        chain_spec: chain_spec.clone(),
-    };
-
-    let header = executor
-        .execute(input.clone())
-        .expect("failed to execute client");
-
-    let deposit_requests = input
-        .current_block
-        .withdrawals()
-        .map(|w| w.to_vec())
-        .unwrap_or_default();
-
-    EvmBlockStfOutput {
-        block_idx: header.number,
-        new_blockhash: header.hash_slow(),
-        new_state_root: header.state_root,
-        prev_blockhash: header.parent_hash,
-        txn_root: header.transactions_root,
-        deposit_requests,
-        withdrawal_intents: Vec::new(),
-    }
-}
+use crate::executor::process_block;
 
 /// Processes a sequence of EL block transactions from the given `zkvm` environment, ensuring block
 /// hash continuity and committing the resulting updates.
@@ -59,7 +23,7 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
 
     for _ in 0..num_blocks {
         let input: EthClientExecutorInput = zkvm.read_serde();
-        let output = process_block_transaction(input);
+        let output = process_block(input).expect("Failed to process block transaction");
 
         if let Some(expected_hash) = current_blockhash {
             assert_eq!(output.prev_blockhash, expected_hash, "Block hash mismatch");
@@ -77,7 +41,7 @@ mod tests {
 
     use serde::{Deserialize, Serialize};
 
-    use super::{process_block_transaction, EvmBlockStfInput, EvmBlockStfOutput};
+    use super::{process_block, EvmBlockStfInput, EvmBlockStfOutput};
 
     #[derive(Serialize, Deserialize)]
     struct TestData {
@@ -110,7 +74,7 @@ mod tests {
         let test_data = get_mock_data();
 
         let input = test_data.witness;
-        let op = process_block_transaction(input);
+        let op = process_block(input).expect("Failed to process block transaction");
         assert_eq!(op, test_data.params);
     }
 }
