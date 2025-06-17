@@ -15,7 +15,10 @@ use strata_btcio::{
     reader::query::bitcoin_data_reader_task,
     writer::start_envelope_task,
 };
-use strata_common::logging;
+use strata_common::{
+    logging,
+    retry::{policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES},
+};
 use strata_config::Config;
 use strata_consensus_logic::{
     genesis::{self, make_genesis_block},
@@ -251,7 +254,13 @@ fn do_startup_checks(
 ) -> anyhow::Result<()> {
     // Ensure reth and strata are running on same params
     let genesis_block = make_genesis_block(params);
-    match engine.check_block_exists(L2BlockRef::Ref(&genesis_block)) {
+    let genesis_check_res = retry_with_backoff(
+        "engine_submit_payload",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || engine.check_block_exists(L2BlockRef::Ref(&genesis_block)),
+    );
+    match genesis_check_res {
         Ok(true) => {
             info!("startup: genesis params in sync with reth")
         }
@@ -302,7 +311,13 @@ fn do_startup_checks(
 
     // Check that tip L2 block exists (and engine can be connected to)
     let chain_tip = tip_blockid;
-    match engine.check_block_exists(L2BlockRef::Id(chain_tip)) {
+    let tip_check_res = retry_with_backoff(
+        "engine_submit_payload",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || engine.check_block_exists(L2BlockRef::Id(chain_tip)),
+    );
+    match tip_check_res {
         Ok(true) => {
             info!("startup: last l2 block is synced")
         }
