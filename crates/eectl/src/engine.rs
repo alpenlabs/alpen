@@ -46,7 +46,7 @@ pub trait ExecEngineCtl {
     /// Check if a block exists on the chain.
     /// If this returns true, it should be safe to use this id
     /// in any of update_*_block methods, submit_payload and prepare_payload
-    fn check_block_exists<'a>(&self, id_ref: L2BlockRef<'a>) -> EngineResult<bool>;
+    fn check_block_exists(&self, id_ref: L2BlockRef<'_>) -> EngineResult<bool>;
 }
 
 #[derive(Debug)]

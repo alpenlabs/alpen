@@ -392,7 +392,7 @@ impl<T: EngineRpc> ExecEngineCtl for RpcExecEngineCtl<T> {
         })
     }
 
-    fn check_block_exists<'a>(&self, id_ref: L2BlockRef<'a>) -> EngineResult<bool> {
+    fn check_block_exists(&self, id_ref: L2BlockRef<'_>) -> EngineResult<bool> {
         let block_hash = match id_ref {
             L2BlockRef::Id(id) => self
                 .get_l2block(&id)
