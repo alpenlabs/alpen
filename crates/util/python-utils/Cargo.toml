@@ -38,6 +38,9 @@ strata-common.workspace = true
 
 anyhow.workspace = true
 bitcoind-async-client.workspace = true
-corepc-node = { version = "0.8.0", features = ["29_0", "download"] }
+
+# update bitcoind version in CI to match corepc-node feature
+corepc-node = { version = "0.8.0", features = ["29_0"] }
+
 tokio.workspace = true
 tracing.workspace = true

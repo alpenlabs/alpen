@@ -18,11 +18,11 @@ Note that in macOS, you may need to specifically add a firewall rule to allow in
 
 ```bash
 # for Linux (x86_64)
-curl -fsSLO --proto "=https" --tlsv1.2 https://bitcoincore.org/bin/bitcoin-core-28.0/bitcoin-28.0-x86_64-linux-gnu.tar.gz
-tar xzf bitcoin-28.0-x86_64-linux-gnu.tar.gz
-sudo install -m 0755 -t /usr/local/bin bitcoin-28.0/bin/*
+curl -fsSLO --proto "=https" --tlsv1.2 https://bitcoincore.org/bin/bitcoin-core-29.0/bitcoin-29.0-x86_64-linux-gnu.tar.gz
+tar xzf bitcoin-29.0-x86_64-linux-gnu.tar.gz
+sudo install -m 0755 -t /usr/local/bin bitcoin-29.0/bin/*
 # remove the files, as we just copied it to /bin
-rm -rf bitcoin-28.0 bitcoin-28.0-x86_64-linux-gnu.tar.gz
+rm -rf bitcoin-29.0 bitcoin-29.0-x86_64-linux-gnu.tar.gz
 ```
 
 ```bash

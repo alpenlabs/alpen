@@ -36,7 +36,8 @@ strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true
 
-corepc-node = { version = "0.8.0", features = ["29_0", "download"] }
+# update bitcoind version in CI to match corepc-node feature
+corepc-node = { version = "0.8.0", features = ["29_0"] }
 
 [features]
 test_utils = []
