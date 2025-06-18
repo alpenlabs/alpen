@@ -39,8 +39,8 @@ pub trait WorkerContext {
         output: &BlockExecutionOutput,
     ) -> WorkerResult<()>;
 
-    /// Stores a checkin execution's output.  This MAY be broken up into
-    /// mutliple separate pieces.
+    /// Stores a check in execution's output.  This MAY be broken up into
+    /// multiple separate pieces.
     fn store_checkin_output(
         &self,
         epoch: &EpochCommitment,

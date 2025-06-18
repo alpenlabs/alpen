@@ -92,7 +92,7 @@ impl NewChainstateManager {
     ) -> DbResult<Arc<Chainstate>> {
         // TODO this is slow, but we need to do it, we need to do it because we
         // didn't have async fns until recently
-        warn!("fetching instnace toplevel state via async fn, bypassing cache due to limitations");
+        warn!("fetching instance toplevel state via async fn, bypassing cache due to limitations");
         self.ops
             .get_inst_toplevel_state_async(id)
             .map_ok(Arc::new)
