@@ -11,13 +11,13 @@ strata_utils = { path = "../crates/util/python-utils", develop = true }
 bitcoinlib = "^0.7.4"
 websockets = "^15.0"
 web3 = "^7.12.0"
-py-solc-x = "^2.0.3"
-locust = "^2.37.0"
+py-solc-x = "^2.0.4"
+locust = "^2.37.10"
 toml = "^0.10.2"
 
 [tool.poetry.group.dev.dependencies]
-ruff = "0.11.12"
-maturin = "1.8.6"
+ruff = "0.12.0"
+maturin = "1.8.7"
 
 [tool.ruff]
 line-length = 100
