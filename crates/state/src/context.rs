@@ -127,9 +127,6 @@ pub trait StateAccessor {
     /// Gets the last L1 block commitment.
     fn last_l1_block(&self) -> L1BlockCommitment;
 
-    /// Sets the safe L1 block.
-    fn set_last_l1_block(&mut self, block: L1BlockCommitment);
-
     /// Gets the epoch finishing flag.
     fn epoch_finishing_flag(&self) -> bool;
 

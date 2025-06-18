@@ -101,11 +101,6 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
         state.update_header_vs(&header, &Params::new(params.network))?;
 
         process_l1_block(state, &mf, params)?;
-
-        // FIXME this isn't quite an exact replacement
-        // old: state.update_safe_block(height, mf.record().clone());
-        let bc = L1BlockCommitment::new(height, *mf.blkid());
-        state.inner_mut().set_last_l1_block(bc);
     }
 
     // If prev_finalized_epoch is null, i.e. this is the genesis batch, it is

@@ -72,11 +72,6 @@ impl StateAccessor for WbStateAccessorImpl {
         self.toplevel_chs_cache.state().l1_view().get_safe_block()
     }
 
-    fn set_last_l1_block(&mut self, _block: L1BlockCommitment) {
-        // TODO make this work properly
-        warn!("ignoring call to set_last_l1_block because missing proper impls");
-    }
-
     fn epoch_finishing_flag(&self) -> bool {
         self.toplevel_chs_cache.state().is_epoch_finishing()
     }
