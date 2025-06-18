@@ -1,10 +1,75 @@
 version: 2
 updates:
+  # GitHub Actions dependencies
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
+      time: "00:00"
+    # Group all updates into a single PR
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      # Use conventional commit format as specified in user rules
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # Rust/Cargo dependencies
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+    # Group non-security updates
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          # Keep reth updates separate due to version pinning requirements
+          - "reth*"
+          - "alloy-*"
+          - "revm*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Keep major framework dependencies separate for careful review
+      reth-ecosystem:
+        patterns:
+          - "reth*"
+          - "alloy-*"
+          - "revm*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Security updates remain ungrouped for urgent handling
+    open-pull-requests-limit: 20
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # Python dependencies using Poetry
   - package-ecosystem: "pip"
-    directory: "functional-tests/"
+    directory: "/functional-tests/"
     schedule:
       interval: "monthly"
+      time: "00:00"
+    # Group all updates into a single PR
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
