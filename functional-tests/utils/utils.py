@@ -829,6 +829,11 @@ def confirm_btc_withdrawal(
     )
 
 
+def get_latest_eth_block_number(reth_rpc) -> int:
+    """Get the current block number from reth RPC."""
+    return int(reth_rpc.eth_blockNumber(), base=16)
+
+
 def check_initial_eth_balance(rethrpc, address, debug_fn=print):
     """Asserts that the initial ETH balance for `address` is zero."""
     balance = int(rethrpc.eth_getBalance(address), 16)
