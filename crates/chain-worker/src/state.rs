@@ -6,7 +6,6 @@ use strata_chaintsn::context::StateAccessor;
 use strata_primitives::prelude::*;
 use strata_state::{chain_state::Chainstate, state_op::StateCache};
 use strata_storage::NewChainstateManager;
-use tracing::*;
 
 pub struct WbStateAccessorImpl {
     /// Chainstate manager to fetch "deep" information we might not have in memory.

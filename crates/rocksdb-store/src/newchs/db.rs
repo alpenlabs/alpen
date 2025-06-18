@@ -146,8 +146,7 @@ impl NewChainstateDatabase for RocksNewChainstateDb {
         // Since we have a really simple state merge concept now, we can just
         // fudge the details on this one.
 
-        let res = self
-            .db
+        self.db
             .with_optimistic_txn(self.ops.txn_retry_count(), |txn| {
                 // Load the source state entry to make sure it exists.
                 let _inst_entry = txn
@@ -177,8 +176,6 @@ impl NewChainstateDatabase for RocksNewChainstateDb {
 
                 Ok::<_, DbError>(())
             })
-            .map_err(|e| DbError::Other(e.to_string()))?;
-
-        Ok(res)
+            .map_err(|e| DbError::Other(e.to_string()))
     }
 }

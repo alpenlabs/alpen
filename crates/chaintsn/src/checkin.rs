@@ -9,7 +9,6 @@ use strata_primitives::{
         WithdrawalFulfillmentInfo,
     },
     params::RollupParams,
-    prelude::*,
 };
 use strata_state::{
     batch::verify_signed_checkpoint_sig,
@@ -29,6 +28,7 @@ use crate::{
 ///
 /// This is intended as a transitional data structure while we refactor these
 /// pieces of the state transition logic.
+#[derive(Debug, Clone)]
 pub struct SegmentAuxData<'b> {
     first_height: u64,
     segment: &'b L1Segment,
@@ -176,7 +176,7 @@ fn process_proto_op<'s, S: StateAccessor>(
 
 fn process_l1_checkpoint<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
-    src_block_mf: &L1BlockManifest,
+    _src_block_mf: &L1BlockManifest,
     signed_ckpt: &SignedCheckpoint,
     params: &RollupParams,
 ) -> Result<(), OpError> {
@@ -229,7 +229,7 @@ fn process_l1_checkpoint<'s, S: StateAccessor>(
 
 fn process_l1_deposit<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
-    src_block_mf: &L1BlockManifest,
+    _src_block_mf: &L1BlockManifest,
     info: &DepositInfo,
 ) -> Result<(), OpError> {
     let requested_idx = info.deposit_idx;

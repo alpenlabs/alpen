@@ -51,12 +51,12 @@ impl NewChainstateManager {
 
     /// Clones an existing state instance.
     pub async fn clone_inst_async(&self, id: StateInstanceId) -> DbResult<StateInstanceId> {
-        Ok(self.ops.clone_inst_async(id).await?)
+        self.ops.clone_inst_async(id).await
     }
 
     /// Clones an existing state instance.
     pub fn clone_inst_blocking(&self, id: StateInstanceId) -> DbResult<StateInstanceId> {
-        Ok(self.ops.clone_inst_blocking(id)?)
+        self.ops.clone_inst_blocking(id)
     }
 
     /// Deletes a state instance.
@@ -75,12 +75,12 @@ impl NewChainstateManager {
 
     /// Gets the list of state instances.
     pub async fn get_insts_async(&self) -> DbResult<Vec<StateInstanceId>> {
-        Ok(self.ops.get_insts_async().await?)
+        self.ops.get_insts_async().await
     }
 
     /// Gets the list of state instances.
     pub fn get_insts_blocking(&self) -> DbResult<Vec<StateInstanceId>> {
-        Ok(self.ops.get_insts_blocking()?)
+        self.ops.get_insts_blocking()
     }
 
     /// Gets the state instance's toplevel state.
@@ -93,11 +93,10 @@ impl NewChainstateManager {
         // TODO this is slow, but we need to do it, we need to do it because we
         // didn't have async fns until recently
         warn!("fetching instnace toplevel state via async fn, bypassing cache due to limitations");
-        Ok(self
-            .ops
+        self.ops
             .get_inst_toplevel_state_async(id)
             .map_ok(Arc::new)
-            .await?)
+            .await
     }
 
     /// Gets the state instance's toplevel state.
@@ -105,9 +104,9 @@ impl NewChainstateManager {
         &self,
         id: StateInstanceId,
     ) -> DbResult<Arc<Chainstate>> {
-        Ok(self.tl_cache.get_or_fetch_blocking(&id, || {
+        self.tl_cache.get_or_fetch_blocking(&id, || {
             self.ops.get_inst_toplevel_state_blocking(id).map(Arc::new)
-        })?)
+        })
     }
 
     /// Puts a new write batch with some ID.
@@ -126,17 +125,15 @@ impl NewChainstateManager {
 
     /// Gets a write batch with some ID.
     pub async fn get_write_batch_async(&self, id: WriteBatchId) -> DbResult<Option<WriteBatch>> {
-        Ok(self
-            .wb_cache
+        self.wb_cache
             .get_or_fetch(&id, || self.ops.get_write_batch_chan(id))
-            .await?)
+            .await
     }
 
     /// Gets a write batch with some ID.
     pub fn get_write_batch_blocking(&self, id: WriteBatchId) -> DbResult<Option<WriteBatch>> {
-        Ok(self
-            .wb_cache
-            .get_or_fetch_blocking(&id, || self.ops.get_write_batch_blocking(id))?)
+        self.wb_cache
+            .get_or_fetch_blocking(&id, || self.ops.get_write_batch_blocking(id))
     }
 
     /// Deletes a write batch with some ID.

@@ -11,7 +11,7 @@ pub struct ChainWorkerHandle {
 }
 
 impl ChainWorkerHandle {
-    fn new(shared: Arc<Mutex<WorkerShared>>, msg_tx: mpsc::Sender<WorkerMessage>) -> Self {
+    pub fn new(shared: Arc<Mutex<WorkerShared>>, msg_tx: mpsc::Sender<WorkerMessage>) -> Self {
         Self { shared, msg_tx }
     }
 
@@ -90,6 +90,7 @@ impl ChainWorkerInput {
 }
 
 /// Shared state between the worker and the handle.
+#[derive(Debug, Clone, Default)]
 pub struct WorkerShared {
     // TODO
 }

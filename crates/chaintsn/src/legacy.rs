@@ -10,6 +10,7 @@ use strata_state::{bridge_ops::DepositIntent, bridge_state::*, chain_state::Chai
 
 use crate::{context::StateAccessor, macros::*};
 
+#[derive(Debug)]
 pub struct FauxStateCache<'s, S> {
     state: &'s mut S,
 }
@@ -20,11 +21,11 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
     }
 
     pub fn inner(&self) -> &S {
-        &self.state
+        self.state
     }
 
     pub fn inner_mut(&mut self) -> &mut S {
-        &mut self.state
+        self.state
     }
 
     pub fn state(&self) -> &Chainstate {

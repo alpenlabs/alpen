@@ -48,10 +48,10 @@ pub enum WorkerError {
 
 /// Weird impl that we need to go "back down" for context fns.
 // TODO maybe restructure error types so we don't need this?
-impl Into<strata_chainexec::Error> for WorkerError {
-    fn into(self) -> strata_chainexec::Error {
+impl From<WorkerError> for strata_chainexec::Error {
+    fn from(err: WorkerError) -> Self {
         use strata_chainexec::Error as ExecError;
-        match self {
+        match err {
             WorkerError::MissingL2Block(block) => ExecError::MissingL2Header(block),
             WorkerError::MissingPreState(block) => ExecError::MissingBlockPreState(*block.blkid()),
             WorkerError::MissingBlockOutput(block) => {
@@ -61,12 +61,11 @@ impl Into<strata_chainexec::Error> for WorkerError {
                 ExecError::MissingBlockPostState(*block.blkid())
             }
             WorkerError::MissingEpochSummary(epoch) => {
-                // not really sure what to do here
+                // you may still want to log a warning here
                 warn!(?epoch, "worker error: missing epoch summary");
                 ExecError::Unimplemented
             }
-
-            WorkerError::Exec(e) => e, // passthrough self
+            WorkerError::Exec(e) => e,
             WorkerError::WorkerExited
             | WorkerError::Engine(_)
             | WorkerError::InvalidExecPayload(_) => {

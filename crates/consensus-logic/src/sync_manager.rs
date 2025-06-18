@@ -4,13 +4,13 @@
 
 use std::sync::Arc;
 
-use strata_chain_worker::ChainWorkerHandle;
+use strata_chain_worker::{ChainWorkerHandle, WorkerMessage, WorkerShared};
 use strata_eectl::engine::ExecEngineCtl;
 use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 use crate::{
     csm::{
@@ -84,6 +84,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
     let (csm_tx, csm_rx) = mpsc::channel::<CsmMessage>(64);
+    let (msg_tx, _msg_rx) = mpsc::channel::<WorkerMessage>(64);
     let csm_controller = Arc::new(CsmController::new(storage.sync_event().clone(), csm_tx));
 
     // TODO should this be in an `Arc`?  it's already fairly compact so we might
@@ -93,12 +94,15 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Start the fork choice manager thread.  If we haven't done genesis yet
     // this will just wait until the CSM says we have.
     let fcm_storage = storage.clone();
-    let fcm_engine = engine.clone();
-    let fcm_csm_controller = csm_controller.clone();
+    let _fcm_engine = engine.clone();
+    let _fcm_csm_controller = csm_controller.clone();
     let fcm_params = params.clone();
     let handle = executor.handle().clone();
     let st_ch = status_channel.clone();
-    let cw_handle: Arc<ChainWorkerHandle> = todo!();
+    let cw_handle: Arc<ChainWorkerHandle> = Arc::new(ChainWorkerHandle::new(
+        Arc::new(Mutex::new(WorkerShared::default())),
+        msg_tx,
+    ));
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
         // TODO this should be simplified into a builder or something
         fork_choice_manager::tracker_task(
