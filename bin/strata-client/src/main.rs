@@ -252,7 +252,7 @@ fn do_startup_checks(
     // Ensure reth and strata are running on same params
     let genesis_block = make_genesis_block(params);
     let genesis_check_res = retry_with_backoff(
-        "engine_submit_payload",
+        "engine_check_block_exists",
         DEFAULT_ENGINE_CALL_MAX_RETRIES,
         &ExponentialBackoff::default(),
         || engine.check_block_exists(L2BlockRef::Ref(&genesis_block)),
@@ -309,7 +309,7 @@ fn do_startup_checks(
     // Check that tip L2 block exists (and engine can be connected to)
     let chain_tip = tip_blockid;
     let tip_check_res = retry_with_backoff(
-        "engine_submit_payload",
+        "engine_check_block_exists",
         DEFAULT_ENGINE_CALL_MAX_RETRIES,
         &ExponentialBackoff::default(),
         || engine.check_block_exists(L2BlockRef::Id(chain_tip)),
