@@ -5,6 +5,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::{WorkerError, WorkerResult, message::WorkerMessage};
 
+#[allow(dead_code)]
 pub struct ChainWorkerHandle {
     shared: Arc<Mutex<WorkerShared>>,
     msg_tx: mpsc::Sender<WorkerMessage>,
@@ -78,12 +79,14 @@ impl ChainWorkerHandle {
 }
 
 /// Input to the worker, reading inputs from the worker handle.
+#[allow(dead_code)]
 pub(crate) struct ChainWorkerInput {
     shared: Arc<Mutex<WorkerShared>>,
     msg_rx: mpsc::Receiver<WorkerMessage>,
 }
 
 impl ChainWorkerInput {
+    #[allow(dead_code)]
     pub(crate) fn recv_next(&mut self) -> Option<WorkerMessage> {
         self.msg_rx.blocking_recv()
     }

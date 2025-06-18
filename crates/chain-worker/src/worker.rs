@@ -24,11 +24,13 @@ use crate::{
 };
 
 /// `StateAccessor` impl we pass to chaintsn.  Aliased here for convenience.
+#[allow(dead_code)]
 type AccessorImpl = MemStateAccessor;
 
 /// Internal worker task state.
 ///
 /// Has utility functions for basic tasks.
+#[allow(dead_code)]
 pub struct WorkerState<W: WorkerContext, E> {
     /// Shared state between the worker and the handle.
     shared: Arc<WorkerShared>,
@@ -51,6 +53,7 @@ pub struct WorkerState<W: WorkerContext, E> {
     prev_epoch: EpochCommitment,
 }
 
+#[allow(dead_code)]
 impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     /// Gets the current epoch we're in.
     fn cur_epoch(&self) -> u64 {
@@ -60,7 +63,7 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     /// Prepares context for a block we're about to execute.
     fn prepare_block_context<'w>(
         &'w self,
-        l2bc: &L2BlockCommitment,
+        _l2bc: &L2BlockCommitment,
     ) -> WorkerResult<WorkerExecCtxImpl<'w, W>> {
         Ok(WorkerExecCtxImpl {
             worker_context: &self.context,
@@ -144,7 +147,7 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
 
         // Construct the exec payload and just make the call.  This blocks until
         // it gets back to us, which kinda sucks, but we're working on it!
-        let exec_hash = bundle.header().exec_payload_hash();
+        let _exec_hash = bundle.header().exec_payload_hash();
         let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
         let res = self.call_engine("engine_submit_payload", move |eng| {
             // annoying that we're cloning this each time, maybe make it take a ref?
@@ -153,7 +156,7 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
 
         if res == strata_eectl::engine::BlockStatus::Invalid {
             let block = L2BlockCommitment::new(bundle.header().slot(), *blkid);
-            Err(WorkerError::InvalidExecPayload(block).into())
+            Err(WorkerError::InvalidExecPayload(block))
         } else {
             Ok(())
         }
@@ -241,6 +244,7 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     }
 }
 
+#[allow(dead_code)]
 pub fn worker_task<W: WorkerContext, E: ExecEngineCtl>(
     mut state: WorkerState<W, E>,
     mut input: ChainWorkerInput,
@@ -269,8 +273,7 @@ struct WorkerExecCtxImpl<'c, W> {
 impl<'c, W: WorkerContext> ExecContext for WorkerExecCtxImpl<'c, W> {
     fn fetch_l2_header(&self, blkid: &L2BlockId) -> ExecResult<L2BlockHeader> {
         self.worker_context
-            .fetch_header(blkid)
-            .map_err(|e| <WorkerError as Into<strata_chainexec::Error>>::into(e))?
+            .fetch_header(blkid)?
             .ok_or(strata_chainexec::Error::MissingL2Header(*blkid))
     }
 
@@ -280,8 +283,7 @@ impl<'c, W: WorkerContext> ExecContext for WorkerExecCtxImpl<'c, W> {
         // Maybe actually make this return a `StateAccessor` already?
         let wb = self
             .worker_context
-            .fetch_block_write_batch(blkid)
-            .map_err(|e| <WorkerError as Into<strata_chainexec::Error>>::into(e))?
+            .fetch_block_write_batch(blkid)?
             .ok_or(strata_chainexec::Error::MissingBlockPostState(*blkid))?;
         Ok(wb.into_toplevel())
     }
