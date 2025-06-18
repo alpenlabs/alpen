@@ -69,5 +69,5 @@ pub trait NewChainstateDatabase {
         _wb_ids: Vec<WriteBatchId>,
     ) -> DbResult<()>;
 
-    // TODO add acccessor functions for fetching bulk state values
+    // TODO add accessor functions for fetching bulk state values
 }
