@@ -20,8 +20,6 @@ bitcoin.workspace = true
 borsh.workspace = true
 serde.workspace = true
 tracing.workspace = true     # ideally this shouldn't be in this crate
-thiserror.workspace = true   # this shouldn't be in this crate either
-
 
 [dev-dependencies]
 strata-test-utils.workspace = true

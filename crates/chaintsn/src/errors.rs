@@ -2,6 +2,8 @@ use strata_primitives::l1::L1VerificationError;
 use strata_state::prelude::*;
 use thiserror::Error;
 
+use crate::context::ProviderError;
+
 /// Errors for block state transition.
 #[derive(Debug, Error)]
 pub enum TsnError {

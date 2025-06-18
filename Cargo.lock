@@ -13980,6 +13980,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
  "strata-chainexec",
+ "strata-chaintsn",
  "strata-primitives",
  "strata-proofimpl-btc-blockspace",
  "strata-state",
@@ -14267,7 +14268,6 @@ dependencies = [
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
- "thiserror 2.0.12",
  "tracing",
 ]
 

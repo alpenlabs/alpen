@@ -5,6 +5,7 @@ pub mod program;
 
 use program::ClStfOutput;
 use strata_chainexec::{ChainExecutor, MemExecContext};
+use strata_chaintsn::context::L2HeaderAndParent;
 use strata_primitives::{
     buf::Buf32, hash::compute_borsh_hash, l1::ProtocolOperation, params::RollupParams,
 };
@@ -14,7 +15,6 @@ use strata_state::{
     block::{ExecSegment, L2Block},
     block_validation::{check_block_credential, validate_block_segments},
     chain_state::Chainstate,
-    context::L2HeaderAndParent,
     header::{L2BlockHeader, L2Header},
 };
 use zkaleido::ZkVmEnv;
