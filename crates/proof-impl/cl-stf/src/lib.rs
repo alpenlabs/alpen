@@ -3,11 +3,8 @@
 
 pub mod program;
 
-use std::os::macos::raw::stat;
-
 use program::ClStfOutput;
-use strata_chainexec::MemStateAccessor;
-use strata_chaintsn::transition::process_block;
+use strata_chainexec::{ChainExecutor, MemExecContext};
 use strata_primitives::{
     buf::Buf32, hash::compute_borsh_hash, l1::ProtocolOperation, params::RollupParams,
 };
@@ -17,9 +14,8 @@ use strata_state::{
     block::{ExecSegment, L2Block},
     block_validation::{check_block_credential, validate_block_segments},
     chain_state::Chainstate,
-    context::StateAccessor,
-    header::L2Header,
-    state_op::StateCache,
+    context::L2HeaderAndParent,
+    header::{L2BlockHeader, L2Header},
 };
 use zkaleido::ZkVmEnv;
 
@@ -30,9 +26,10 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
     // 2. Read the initial chainstate from which we start the transition and create the state cache
     let initial_chainstate: Chainstate = zkvm.read_borsh();
     let initial_chainstate_root = initial_chainstate.compute_state_root();
-    let mut state_accessor = MemStateAccessor::new(initial_chainstate);
+    let mut final_chainstate_root = initial_chainstate_root;
 
-    // 3. Read L2 blocks
+    // 3. Read L2 blocks and parent header
+    let mut parent_header: L2BlockHeader = zkvm.read_borsh();
     let l2_blocks: Vec<L2Block> = zkvm.read_borsh();
     assert!(!l2_blocks.is_empty(), "At least one L2 block is required");
 
@@ -116,20 +113,21 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
         );
 
         // 10. Apply the state transition
-        process_block(
-            &mut state_accessor,
-            l2_block.header().header(),
-            l2_block.body(),
-            &rollup_params,
-        )
-        .expect("failed to process L2 Block");
+        let executor = ChainExecutor::new(rollup_params.clone());
+        let header_and_parent = L2HeaderAndParent::new_simple(
+            l2_block.header().header().clone(),
+            parent_header.clone(),
+        );
+        let ctx = MemExecContext::default();
+        let output = executor
+            .execute_block(&header_and_parent, l2_block.body(), &ctx)
+            .expect("failed to process L2 Block");
+        parent_header = l2_block.header().header().clone();
+        final_chainstate_root = *output.computed_state_root();
     }
 
-    // 11. Get the final chainstate and construct the output
-    let final_chain_state = state_accessor.state_untracked();
-    let final_chainstate_root = final_chain_state.compute_state_root();
     // NOTE: block range in cl-stf must not cross epoch boundaries
-    let epoch = final_chain_state.cur_epoch();
+    let epoch = 1; // FIXME:
 
     // 12. Get the checkpoint that was posted to Bitcoin (if any) and check if we have used the
     //     right TxFilters and update it

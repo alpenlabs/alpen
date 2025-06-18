@@ -9,17 +9,17 @@
 
 mod diff;
 mod errors;
+mod exec_context;
 mod executor;
 mod output;
 mod state_access;
 mod tip_state;
-mod traits;
 mod validation_util;
 
 pub use diff::ChangedState;
 pub use errors::{Error, ExecResult};
+pub use exec_context::{ExecContext, MemExecContext};
 pub use executor::ChainExecutor;
 pub use output::{BlockExecutionOutput, CheckinExecutionOutput, EpochExecutionOutput, LogMessage};
 pub use state_access::MemStateAccessor;
 pub use tip_state::TipState;
-pub use traits::ExecContext;
