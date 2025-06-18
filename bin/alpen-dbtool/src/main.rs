@@ -1,5 +1,6 @@
 //! Binary entry‑point for the offline Alpen database tool.
 //! Parses CLI arguments with **Clap** and delegates to the `alpen_dbtool` lib.
+mod cli;
 mod cmd;
 mod db;
 mod errors;
@@ -9,10 +10,11 @@ use std::str::FromStr;
 use clap::Parser;
 
 use crate::{
+    cli::{Cli, Command},
     cmd::{
         chainstate::reset_chainstate, checkpoint::get_checkpoint_data, epoch::get_epoch_summary,
         l1_manifest::get_l1_manifest, l2_block::get_l2_block, l2_client::get_l2_client_state,
-        syncinfo::get_syncinfo, Cli, Command,
+        syncinfo::get_syncinfo,
     },
     db::{open_database, DbType},
 };
