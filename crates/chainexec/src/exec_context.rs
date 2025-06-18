@@ -24,6 +24,16 @@ pub struct MemExecContext {
     chainstates: HashMap<L2BlockId, Chainstate>,
 }
 
+impl MemExecContext {
+    pub fn put_header(&mut self, blkid: L2BlockId, header: L2BlockHeader) {
+        self.headers.insert(blkid, header);
+    }
+
+    pub fn put_chainstate(&mut self, blkid: L2BlockId, chainstate: Chainstate) {
+        self.chainstates.insert(blkid, chainstate);
+    }
+}
+
 impl ExecContext for MemExecContext {
     fn fetch_l2_header(&self, blkid: &L2BlockId) -> ExecResult<L2BlockHeader> {
         self.headers
