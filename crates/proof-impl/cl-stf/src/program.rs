@@ -5,7 +5,9 @@ use std::{
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{buf::Buf32, params::RollupParams};
-use strata_state::{batch::TxFilterConfigTransition, block::L2Block, chain_state::Chainstate};
+use strata_state::{
+    batch::TxFilterConfigTransition, block::L2Block, chain_state::Chainstate, header::L2BlockHeader,
+};
 use zkaleido::{
     AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
     ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
@@ -18,6 +20,7 @@ use crate::process_cl_stf;
 pub struct ClStfInput {
     pub rollup_params: RollupParams,
     pub chainstate: Chainstate,
+    pub parent_header: L2BlockHeader,
     pub l2_blocks: Vec<L2Block>,
     pub evm_ee_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
     pub btc_blockspace_proof_with_vk: Option<(ProofReceiptWithMetadata, VerifyingKey)>,
@@ -52,6 +55,7 @@ impl ZkVmProgram for ClStfProgram {
     {
         let mut input_builder = B::new();
         input_builder.write_serde(&input.rollup_params)?;
+        input_builder.write_borsh(&input.parent_header)?;
         input_builder.write_borsh(&input.chainstate)?;
         input_builder.write_borsh(&input.l2_blocks)?;
 

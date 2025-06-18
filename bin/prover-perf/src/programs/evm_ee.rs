@@ -8,7 +8,7 @@ use zkaleido::{
 
 pub(crate) fn prepare_input() -> EvmEeProofInput {
     info!("Preparing input for EVM EE STF");
-    let segment = EvmSegment::initialize_from_saved_ee_data(1, 3);
+    let segment = EvmSegment::initialize_from_saved_ee_data(2, 4);
     segment.get_inputs().clone()
 }
 

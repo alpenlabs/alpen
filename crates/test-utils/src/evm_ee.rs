@@ -153,6 +153,7 @@ impl L2Segment {
             let post_state = state_accessor.state_untracked().clone();
             pre_states.push(pre_state);
             post_states.push(post_state.clone());
+            blocks.push(block.clone());
 
             prev_block = block;
             prev_chainstate = post_state;
