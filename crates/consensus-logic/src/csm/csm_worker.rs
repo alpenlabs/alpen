@@ -83,14 +83,16 @@ pub fn csm_worker(
                     let _ =
                         command_tx.blocking_send(ReaderCommand::FetchBlockById(block.parent_id()));
 
-                    let best_block_height = chain_tracker.best().height();
-                    let block_height = block.height();
+                    if let Some(best_block) = chain_tracker.best() {
+                        let best_block_height = best_block.height();
+                        let block_height = block.height();
 
-                    if block_height.saturating_sub(best_block_height) > BATCH_FETCH_THRESHOLD {
-                        // we are very behind. queue all missing blocks to be fetched by height.
-                        let _ = command_tx.blocking_send(ReaderCommand::FetchBlockRange(
-                            (best_block_height + 1)..block_height,
-                        ));
+                        if block_height.saturating_sub(best_block_height) > BATCH_FETCH_THRESHOLD {
+                            // we are very behind. queue all missing blocks to be fetched by height.
+                            let _ = command_tx.blocking_send(ReaderCommand::FetchBlockRange(
+                                (best_block_height + 1)..block_height,
+                            ));
+                        }
                     }
 
                     orphan_tracker.insert(&block);

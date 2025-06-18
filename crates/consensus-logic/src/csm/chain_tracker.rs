@@ -3,8 +3,7 @@ use std::collections::HashSet;
 use strata_primitives::l1::L1Block;
 use strata_state::l1::L1BlockId;
 use strata_storage::NodeStorage;
-use thiserror::Error;
-use tracing::{error, warn};
+use tracing::warn;
 
 use super::common::{IndexedBlockTable, L1Header};
 
@@ -22,13 +21,13 @@ pub(crate) struct ChainTracker {
     chain: IndexedBlockTable,
     // height below which we dont track for reorgs
     safe_height: u64,
-    best: L1Header,
+    best: Option<L1Header>,
 }
 
 impl ChainTracker {
     /// Gets current best block
-    pub(crate) fn best(&self) -> &L1Header {
-        &self.best
+    pub(crate) fn best(&self) -> Option<&L1Header> {
+        self.best.as_ref()
     }
 
     pub(crate) fn safe_height(&self) -> u64 {
@@ -76,13 +75,9 @@ impl ChainTracker {
         self.chain_tips.insert(block.block_id());
         self.chain.insert(block);
 
-        let new_best = self.find_best_block();
-        if new_best != &self.best {
-            self.best = *new_best;
-            true
-        } else {
-            false
-        }
+        let old_best = self.best;
+        self.best = self.find_best_block();
+        self.best != old_best
     }
 
     /// Prunes the chain tracker, removing blocks with a height less than `min_height`.
@@ -93,9 +88,16 @@ impl ChainTracker {
     /// # Returns
     /// The number of blocks that were pruned from the chain.
     pub(crate) fn prune(&mut self, min_height: u64) -> usize {
+        let Some(best) = self.best.as_ref() else {
+            // chain tracker is empty
+            debug_assert!(self.chain_tips.is_empty());
+            debug_assert!(self.chain.by_block_id.is_empty());
+            return 0;
+        };
+
         // ensure best block is never pruned
-        if min_height > self.best.height() {
-            warn!(best_height = %self.best.height(), prune_height = %min_height, "csm: attempt to purge above best block");
+        if min_height > best.height() {
+            warn!(best_height = %best.height(), prune_height = %min_height, "csm: attempt to purge above best block");
             return 0;
         }
 
@@ -110,19 +112,25 @@ impl ChainTracker {
     }
 
     /// Find block with highest accumulated POW among tracked blocks
-    fn find_best_block(&self) -> &L1Header {
-        let best = self.chain_tips.iter().fold(&self.best, |best, current_id| {
-            let current = &self.chain.by_block_id[current_id];
-            if current.accumulated_pow() > best.accumulated_pow() {
-                current
-            } else {
-                best
+    fn find_best_block(&self) -> Option<L1Header> {
+        self.chain_tips.iter().fold(self.best, |current_best_opt, tip_id| {
+            let tip_header = self.chain.by_block_id.get(tip_id).copied()
+                .unwrap_or_else(|| panic!("invariant violation: Chain tip ID {:?} not found in chain.by_block_id.", tip_id));
+
+            match current_best_opt {
+                Some(best_header_so_far) => {
+                    if tip_header.accumulated_pow() > best_header_so_far.accumulated_pow() {
+                        Some(tip_header) // New tip is better
+                    } else {
+                        current_best_opt // Existing best is still better or equal
+                    }
+                }
+                None => Some(tip_header), // This tip is the first one considered (or self.best was None)
             }
-        });
-        best
+        })
     }
 }
 
-pub fn init_chain_tracker(_storage: &NodeStorage) -> anyhow::Result<ChainTracker> {
+pub(crate) fn init_chain_tracker(storage: &NodeStorage) -> anyhow::Result<ChainTracker> {
     todo!()
 }
