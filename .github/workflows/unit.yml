@@ -69,7 +69,7 @@ jobs:
       - name: Install latest nextest release
         uses: taiki-e/install-action@9903ab6feadaec33945de535fe9d181b91802a55 # v2
         with:
-          tool: nextest
+          tool: nextest@0.9.98
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@9903ab6feadaec33945de535fe9d181b91802a55 # v2
