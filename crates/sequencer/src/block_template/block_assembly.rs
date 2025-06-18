@@ -24,7 +24,6 @@ use strata_state::{
     exec_update::construct_ops_from_deposit_intents,
     header::L2BlockHeader,
     prelude::*,
-    state_op::*,
 };
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
 use tracing::*;

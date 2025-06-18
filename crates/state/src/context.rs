@@ -30,7 +30,7 @@ pub trait BlockHeaderContext {
     fn header(&self) -> &L2BlockHeader;
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct L2HeaderAndParent {
     header: L2BlockHeader,
     parent_blkid: L2BlockId,

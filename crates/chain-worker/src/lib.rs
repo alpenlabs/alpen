@@ -7,4 +7,5 @@ mod worker;
 
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::{ChainWorkerHandle, WorkerShared};
+pub use message::WorkerMessage;
 pub use traits::WorkerContext;

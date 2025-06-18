@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_chain_worker::*;
-use strata_chainexec::{BlockExecutionOutput, ChangedState, CheckinExecutionOutput};
+use strata_chainexec::{BlockExecutionOutput, CheckinExecutionOutput};
 use strata_db::{
     chainstate::{StateInstanceId, WriteBatchId},
     DbError,
@@ -16,6 +16,7 @@ use strata_state::{
 use strata_storage::{CheckpointDbManager, L2BlockManager, NewChainstateManager};
 use tracing::*;
 
+#[expect(missing_debug_implementations)]
 pub struct ChainWorkerCtx {
     l2man: Arc<L2BlockManager>,
     chsman: Arc<NewChainstateManager>,
@@ -23,6 +24,12 @@ pub struct ChainWorkerCtx {
 
     /// Active state instance we build on top of for the current state.
     active_state_inst: StateInstanceId,
+}
+
+impl Default for ChainWorkerCtx {
+    fn default() -> Self {
+        ChainWorkerCtx::new()
+    }
 }
 
 impl ChainWorkerCtx {
@@ -33,10 +40,9 @@ impl ChainWorkerCtx {
 
 impl WorkerContext for ChainWorkerCtx {
     fn fetch_block(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockBundle>> {
-        Ok(self
-            .l2man
+        self.l2man
             .get_block_data_blocking(blkid)
-            .map_err(conv_db_err)?)
+            .map_err(conv_db_err)
     }
 
     fn fetch_header(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockHeader>> {
@@ -56,11 +62,10 @@ impl WorkerContext for ChainWorkerCtx {
     }
 
     fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
-        Ok(self
-            .ckman
+        self.ckman
             .get_epoch_summary_blocking(*epoch)
             .map_err(conv_db_err)?
-            .ok_or_else(|| WorkerError::MissingEpochSummary(*epoch))?)
+            .ok_or(WorkerError::MissingEpochSummary(*epoch))
     }
 
     fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {
@@ -118,17 +123,15 @@ impl WorkerContext for ChainWorkerCtx {
 
     fn fetch_block_write_batch(&self, blkid: &L2BlockId) -> WorkerResult<Option<WriteBatch>> {
         let wbid = conv_blkid_to_slot_wb_id(*blkid);
-        Ok(self
-            .chsman
+        self.chsman
             .get_write_batch_blocking(wbid)
-            .map_err(conv_db_err)?)
+            .map_err(conv_db_err)
     }
 
     fn get_finalized_toplevel_state(&self) -> WorkerResult<Arc<Chainstate>> {
-        Ok(self
-            .chsman
+        self.chsman
             .get_inst_toplevel_state_blocking(self.active_state_inst)
-            .map_err(conv_db_err)?)
+            .map_err(conv_db_err)
     }
 
     fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
@@ -140,10 +143,10 @@ impl WorkerContext for ChainWorkerCtx {
         let cur_epoch_terminal = cur_tl.prev_epoch().to_block_commitment();
         if *finalizing_epoch.prev_terminal() != cur_epoch_terminal {
             // TODO make this error better
-            return Err(WorkerError::Unimplemented.into());
+            return Err(WorkerError::Unimplemented);
         }
 
-        let mut epoch_blkids = Vec::new();
+        let epoch_blkids = Vec::new();
         // TODO collect the blocks from this epoch back to the previous
 
         let mut epoch_wbids = epoch_blkids
@@ -152,14 +155,13 @@ impl WorkerContext for ChainWorkerCtx {
             .collect::<Vec<_>>();
         epoch_wbids.push(conv_blkid_to_epoch_terminal_wb_id(*epoch.last_blkid()));
 
-        Ok(self
-            .chsman
+        self.chsman
             .merge_write_batches_blocking(self.active_state_inst, epoch_wbids)
-            .map_err(conv_db_err)?)
+            .map_err(conv_db_err)
     }
 }
 
-fn conv_db_err(e: DbError) -> WorkerError {
+fn conv_db_err(_e: DbError) -> WorkerError {
     // TODO fixme
     WorkerError::Unimplemented
 }

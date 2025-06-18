@@ -13,7 +13,6 @@ use strata_state::{
     chain_state::Chainstate,
     context::StateAccessor,
     header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
-    state_op::StateCache,
 };
 
 use crate::{

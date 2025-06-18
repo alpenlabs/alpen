@@ -8,7 +8,7 @@ use crate::WorkerResult;
 /// Messages from the handle to the worker to give it work to do, with a
 /// completion to return a result.
 #[derive(Debug)]
-pub(crate) enum WorkerMessage {
+pub enum WorkerMessage {
     TryExecBlock(L2BlockCommitment, oneshot::Sender<WorkerResult<()>>),
     FinalizeEpoch(EpochCommitment, oneshot::Sender<WorkerResult<()>>),
 }

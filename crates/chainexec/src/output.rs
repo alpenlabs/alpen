@@ -9,13 +9,43 @@ use strata_state::state_op::WriteBatch;
 #[derive(Clone)]
 pub struct EpochExecutionOutput {
     /// The final state after applying the L1 check-in.
-    final_state: Buf32,
+    final_state_root: Buf32,
 
     /// Collected logs from all of the blocks.
     logs: Vec<LogMessage>,
 
     /// New writes on top of the previous epoch's state.
     write_batch: WriteBatch,
+}
+
+impl EpochExecutionOutput {
+    pub fn new(final_state_root: Buf32, logs: Vec<LogMessage>, write_batch: WriteBatch) -> Self {
+        Self {
+            final_state_root,
+            logs,
+            write_batch,
+        }
+    }
+
+    pub fn final_state_root(&self) -> &Buf32 {
+        &self.final_state_root
+    }
+
+    pub fn logs(&self) -> &[LogMessage] {
+        &self.logs
+    }
+
+    pub fn write_batch(&self) -> &WriteBatch {
+        &self.write_batch
+    }
+
+    pub fn add_log(&mut self, log: LogMessage) {
+        self.logs.push(log);
+    }
+
+    pub fn logs_iter(&self) -> impl Iterator<Item = &LogMessage> + '_ {
+        self.logs.iter()
+    }
 }
 
 /// Describes the output of executing a block.

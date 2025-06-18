@@ -7,7 +7,7 @@ use strata_chaintsn::{
 use strata_primitives::prelude::*;
 use strata_state::block::L2BlockBody;
 
-use crate::{BlockExecutionOutput, ChangedState, ExecContext, ExecResult, MemStateAccessor};
+use crate::{BlockExecutionOutput, ExecContext, ExecResult, MemStateAccessor};
 
 /// Type alias for the state accessor we're using.
 type StateAccImpl = MemStateAccessor;

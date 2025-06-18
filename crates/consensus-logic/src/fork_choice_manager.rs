@@ -189,7 +189,6 @@ impl ForkChoiceManager {
         self.cur_chainstate.prev_epoch()
     }
 
-    #[expect(unused)]
     fn get_chainstate_finalized_epoch(&self) -> &EpochCommitment {
         self.cur_chainstate.finalized_epoch()
     }
@@ -638,9 +637,9 @@ fn handle_new_block(
     };
 
     if exec_ok {
-        fcm_state.set_block_status(&blkid, BlockStatus::Valid)?;
+        fcm_state.set_block_status(blkid, BlockStatus::Valid)?;
     } else {
-        fcm_state.set_block_status(&blkid, BlockStatus::Invalid)?;
+        fcm_state.set_block_status(blkid, BlockStatus::Invalid)?;
         return Ok(false);
     }
 

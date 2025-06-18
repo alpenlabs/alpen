@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use strata_primitives::prelude::*;
-use strata_state::{block::L2BlockBundle, chain_state::Chainstate, prelude::*};
+use strata_state::{chain_state::Chainstate, prelude::*};
 
 use crate::ExecResult;
 
