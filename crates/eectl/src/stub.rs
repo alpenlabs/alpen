@@ -93,7 +93,7 @@ impl ExecEngineCtl for StubController {
         Ok(())
     }
 
-    fn check_block_exists(&self, _id: L2BlockId) -> EngineResult<bool> {
+    fn check_block_exists(&self, _ref: L2BlockRef<'_>) -> EngineResult<bool> {
         Ok(true)
     }
 }

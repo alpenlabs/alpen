@@ -13,14 +13,17 @@ use strata_btcio::{
     reader::query::bitcoin_data_reader_task,
     writer::start_envelope_task,
 };
-use strata_common::logging;
+use strata_common::{
+    logging,
+    retry::{policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES},
+};
 use strata_config::Config;
 use strata_consensus_logic::{
-    genesis,
+    genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
 };
 use strata_db::{traits::BroadcastDatabase, DbError};
-use strata_eectl::engine::ExecEngineCtl;
+use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
 use strata_primitives::params::{Params, ProofPublishMode};
 use strata_rocksdb::{
@@ -243,8 +246,31 @@ fn do_startup_checks(
     storage: &NodeStorage,
     engine: &impl ExecEngineCtl,
     bitcoin_client: &impl Reader,
+    params: &Params,
     handle: &Handle,
 ) -> anyhow::Result<()> {
+    // Ensure reth and strata are running on same params
+    let genesis_block = make_genesis_block(params);
+    let genesis_check_res = retry_with_backoff(
+        "engine_check_block_exists",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || engine.check_block_exists(L2BlockRef::Ref(&genesis_block)),
+    );
+    match genesis_check_res {
+        Ok(true) => {
+            info!("startup: genesis params in sync with reth")
+        }
+        Ok(false) => {
+            // expected genesis block not present in reth
+            anyhow::bail!("startup: genesis params mismatch with reth");
+        }
+        Err(error) => {
+            // Likely network issue
+            anyhow::bail!("could not connect to exec engine, err = {}", error);
+        }
+    }
+
     let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
         Ok(idx) => idx,
         Err(DbError::NotBootstrapped) => {
@@ -282,7 +308,13 @@ fn do_startup_checks(
 
     // Check that tip L2 block exists (and engine can be connected to)
     let chain_tip = tip_blockid;
-    match engine.check_block_exists(chain_tip) {
+    let tip_check_res = retry_with_backoff(
+        "engine_check_block_exists",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || engine.check_block_exists(L2BlockRef::Id(chain_tip)),
+    );
+    match tip_check_res {
         Ok(true) => {
             info!("startup: last l2 block is synced")
         }
@@ -326,6 +358,7 @@ fn start_core_tasks(
         storage.as_ref(),
         engine.as_ref(),
         bitcoin_client.as_ref(),
+        params.as_ref(),
         executor.handle(),
     )?;
 
