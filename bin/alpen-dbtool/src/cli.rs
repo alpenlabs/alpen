@@ -19,7 +19,12 @@ use crate::cmd::{
 )]
 pub struct Cli {
     /// Node data directory (same as `--datadir` used by the node).
-    #[arg(short = 'd', long = "datadir", value_name = "PATH")]
+    #[arg(
+        short = 'd',
+        long = "datadir",
+        value_name = "PATH",
+        default_value = "data"
+    )]
     pub datadir: PathBuf,
 
     /// Back‑end DB implementation (rocksdb | sled).
