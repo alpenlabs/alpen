@@ -14237,6 +14237,7 @@ dependencies = [
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
+ "thiserror 2.0.12",
  "tracing",
 ]
 

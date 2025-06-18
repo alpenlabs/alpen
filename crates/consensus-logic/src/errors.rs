@@ -1,6 +1,6 @@
 use strata_chaintsn::errors::TsnError;
 use strata_eectl::errors::EngineError;
-use strata_state::{id::L2BlockId, l1::L1BlockId};
+use strata_state::{id::L2BlockId, l1::L1BlockId, traits::DiffError};
 use thiserror::Error;
 use zkaleido::ZkVmError;
 
@@ -132,11 +132,8 @@ pub enum CheckpointSyncError {
     #[error("missing checkpoint for epoch: {0}")]
     MissingCheckpoint(u64),
 
-    #[error("failed to extract chainstate diff from checkpoint: {0}")]
-    FailedDiffExtraction(String),
-
-    #[error("failed to apply diff to latest chainstate: {0}")]
-    FailedDiffApplication(String),
+    #[error("{0}")]
+    StateDiff(#[from] DiffError),
 
     #[error("db: {0}")]
     Db(#[from] strata_db::errors::DbError),
