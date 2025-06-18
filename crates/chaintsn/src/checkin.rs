@@ -11,14 +11,11 @@ use strata_primitives::{
     params::RollupParams,
 };
 use strata_state::{
-    batch::verify_signed_checkpoint_sig,
-    block::L1Segment,
-    bridge_ops::DepositIntent,
-    context::{ProviderError, ProviderResult},
+    batch::verify_signed_checkpoint_sig, block::L1Segment, bridge_ops::DepositIntent,
 };
 
 use crate::{
-    context::{AuxProvider, StateAccessor},
+    context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},
     errors::{OpError, TsnError},
     legacy::FauxStateCache,
     macros::*,

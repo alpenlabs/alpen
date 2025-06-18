@@ -1,6 +1,7 @@
 use std::{thread, time};
 
 use strata_chainexec::MemStateAccessor;
+use strata_chaintsn::context::StateAccessor;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -20,7 +21,6 @@ use strata_state::{
     batch::Checkpoint,
     block::{ExecSegment, L1Segment, L2BlockAccessory, L2BlockBundle},
     chain_state::Chainstate,
-    context::StateAccessor,
     exec_update::construct_ops_from_deposit_intents,
     header::L2BlockHeader,
     prelude::*,
