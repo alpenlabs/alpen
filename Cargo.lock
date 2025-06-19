@@ -13659,7 +13659,6 @@ dependencies = [
  "strata-chainexec",
  "strata-chaintsn",
  "strata-common",
- "strata-eectl",
  "strata-primitives",
  "strata-state",
  "strata-storage",

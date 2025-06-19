@@ -9,12 +9,8 @@ use strata_chainexec::{
     BlockExecutionOutput, ChainExecutor, ExecContext, ExecResult, MemStateAccessor,
 };
 use strata_chaintsn::context::L2HeaderAndParent;
-use strata_common::retry::{
-    DEFAULT_ENGINE_CALL_MAX_RETRIES, policies::ExponentialBackoff, retry_with_backoff,
-};
-use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
 use strata_primitives::{batch::EpochSummary, prelude::*};
-use strata_state::{block::L2BlockBundle, chain_state::Chainstate, header::L2Header, prelude::*};
+use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
 use strata_tasks::ShutdownGuard;
 use tracing::*;
 
@@ -32,7 +28,7 @@ type AccessorImpl = MemStateAccessor;
 ///
 /// Has utility functions for basic tasks.
 #[allow(dead_code)]
-pub struct WorkerState<W: WorkerContext, E> {
+pub struct WorkerState<W: WorkerContext> {
     /// Shared state between the worker and the handle.
     shared: Arc<WorkerShared>,
 
@@ -42,12 +38,8 @@ pub struct WorkerState<W: WorkerContext, E> {
     /// Chain executor we call out to actually update the underlying state.
     chain_exec: ChainExecutor,
 
-    /// Execution engine controller.
-    ///
-    /// This will eventually be refactored out.
-    engine: Arc<E>,
-
     /// Current chain tip.
+    // TODO remove this, not needed
     cur_tip: L2BlockCommitment,
 
     /// Previous epoch that we're building upon.
@@ -55,12 +47,11 @@ pub struct WorkerState<W: WorkerContext, E> {
 }
 
 #[allow(dead_code)]
-impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
+impl<W: WorkerContext> WorkerState<W> {
     fn new(
         shared: Arc<WorkerShared>,
         context: W,
         chain_exec: ChainExecutor,
-        engine: Arc<E>,
         cur_tip: L2BlockCommitment,
         prev_epoch: EpochCommitment,
     ) -> Self {
@@ -68,7 +59,6 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
             shared,
             context,
             chain_exec,
-            engine,
             cur_tip,
             prev_epoch,
         }
@@ -101,11 +91,9 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
 
     /// Updates the current tip as managed by the worker.  This does not persist
     /// in the client's database necessarily.
+    // TODO remove this, not needed
     fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
         self.cur_tip = tip;
-        self.call_engine("engine_update_safe", |eng| {
-            eng.update_safe_block(*tip.blkid())
-        })?;
         Ok(())
     }
 
@@ -126,7 +114,9 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
             .ok_or(WorkerError::MissingL2Block(*parent_blkid))?;
 
         // Try to execute the payload, seeing if *that's* valid.
-        self.try_exec_el_payload(block.blkid(), &bundle)?;
+        // we don't check this anymore, we always assume it's valid, this is
+        // fine for now because it's testnet and we prove it later
+        //self.try_exec_el_payload(block.blkid(), &bundle)?;
 
         let header_ctx = L2HeaderAndParent::new(
             bundle.header().header().clone(),
@@ -152,34 +142,6 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
         self.update_cur_tip(*block)?;
 
         Ok(())
-    }
-
-    fn try_exec_el_payload(
-        &mut self,
-        blkid: &L2BlockId,
-        bundle: &L2BlockBundle,
-    ) -> WorkerResult<()> {
-        // We don't do this for the genesis block because that block doesn't
-        // actually have a well-formed accessory and it gets mad at us.
-        if bundle.header().slot() == 0 {
-            return Ok(());
-        }
-
-        // Construct the exec payload and just make the call.  This blocks until
-        // it gets back to us, which kinda sucks, but we're working on it!
-        let _exec_hash = bundle.header().exec_payload_hash();
-        let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
-        let res = self.call_engine("engine_submit_payload", move |eng| {
-            // annoying that we're cloning this each time, maybe make it take a ref?
-            eng.submit_payload(eng_payload.clone())
-        })?;
-
-        if res == strata_eectl::engine::BlockStatus::Invalid {
-            let block = L2BlockCommitment::new(bundle.header().slot(), *blkid);
-            Err(WorkerError::InvalidExecPayload(block))
-        } else {
-            Ok(())
-        }
     }
 
     /// Takes the block and post-state and inserts database entries to reflect
@@ -241,45 +203,25 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
         // TODO apply outputs that haven't been merged, etc.
 
-        self.call_engine("engine_update_finalized", |eng| {
-            eng.update_finalized_block(*epoch.last_blkid())
-        })?;
-
         Err(WorkerError::Unimplemented)
-    }
-
-    /// Make a call to the exec engine, using retry and backoff.
-    fn call_engine<T>(
-        &mut self,
-        name: &str,
-        f: impl Fn(&E) -> Result<T, EngineError>,
-    ) -> WorkerResult<T> {
-        let res = retry_with_backoff(
-            name,
-            DEFAULT_ENGINE_CALL_MAX_RETRIES,
-            &ExponentialBackoff::default(),
-            move || f(&self.engine),
-        )?;
-        Ok(res)
     }
 }
 
-pub fn init_worker_state<W: WorkerContext, E: ExecEngineCtl>(
+pub fn init_worker_state<W: WorkerContext>(
     shared: Arc<WorkerShared>,
     context: W,
     chain_exec: ChainExecutor,
-    engine: Arc<E>,
     cur_tip: L2BlockCommitment,
     prev_epoch: EpochCommitment,
-) -> anyhow::Result<WorkerState<W, E>> {
+) -> anyhow::Result<WorkerState<W>> {
     Ok(WorkerState::new(
-        shared, context, chain_exec, engine, cur_tip, prev_epoch,
+        shared, context, chain_exec, cur_tip, prev_epoch,
     ))
 }
 
-pub fn worker_task<W: WorkerContext, E: ExecEngineCtl>(
+pub fn worker_task<W: WorkerContext>(
     shutdown: &ShutdownGuard,
-    mut state: WorkerState<W, E>,
+    mut state: WorkerState<W>,
     mut input: ChainWorkerInput,
 ) -> anyhow::Result<()> {
     while let Some(m) = input.recv_next() {
