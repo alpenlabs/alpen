@@ -7,7 +7,6 @@ edition = "2024"
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-common.workspace = true
-strata-eectl.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-storage.workspace = true

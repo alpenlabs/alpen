@@ -1,4 +1,3 @@
-use strata_eectl::errors::EngineError;
 use strata_primitives::prelude::*;
 use thiserror::Error;
 use tracing::*;
@@ -39,9 +38,6 @@ pub enum WorkerError {
     #[error("OL block execution: {0}")]
     Exec(#[from] strata_chainexec::Error),
 
-    #[error("engine: {0}")]
-    Engine(#[from] EngineError),
-
     #[error("not yet implemented")]
     Unimplemented,
 }
@@ -66,9 +62,7 @@ impl From<WorkerError> for strata_chainexec::Error {
                 ExecError::Unimplemented
             }
             WorkerError::Exec(e) => e,
-            WorkerError::WorkerExited
-            | WorkerError::Engine(_)
-            | WorkerError::InvalidExecPayload(_) => {
+            WorkerError::WorkerExited | WorkerError::InvalidExecPayload(_) => {
                 ExecError::Unexpected("exec worker error".to_owned())
             }
             WorkerError::Unimplemented => ExecError::Unimplemented,
