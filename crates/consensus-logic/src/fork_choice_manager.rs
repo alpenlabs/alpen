@@ -4,7 +4,11 @@
 
 use std::{collections::VecDeque, sync::Arc};
 
-use strata_chain_worker::{ChainWorkerHandle, WorkerError, WorkerResult};
+use strata_chain_worker::{
+    worker_task, ChainWorkerHandle, ChainWorkerInput, WorkerError, WorkerMessage, WorkerResult,
+    WorkerShared,
+};
+use strata_chainexec::ChainExecutor;
 use strata_chaintsn::transition::process_block;
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
@@ -25,12 +29,13 @@ use strata_storage::{L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc, watch},
+    sync::{mpsc, watch, Mutex},
 };
 use tracing::*;
 
 use crate::{
-    csm::{ctl::CsmController, message::ForkChoiceMessage},
+    chain_worker_context::ChainWorkerCtx,
+    csm::{ctl::CsmController, message::ForkChoiceMessage, worker::WorkerState},
     errors::*,
     tip_update::{compute_tip_update, TipUpdate},
     unfinalized_tracker::{self, UnfinalizedBlockTracker},
@@ -94,6 +99,10 @@ impl ForkChoiceManager {
     #[expect(unused)]
     fn finalized_tip(&self) -> &L2BlockId {
         self.chain_tracker.finalized_tip()
+    }
+
+    pub fn cur_best_block(&self) -> L2BlockCommitment {
+        self.cur_best_block
     }
 
     fn set_block_status(&self, id: &L2BlockId, status: BlockStatus) -> Result<(), DbError> {
@@ -185,7 +194,7 @@ impl ForkChoiceManager {
         self.cur_chainstate.cur_epoch()
     }
 
-    fn get_chainstate_prev_epoch(&self) -> &EpochCommitment {
+    pub fn get_chainstate_prev_epoch(&self) -> &EpochCommitment {
         self.cur_chainstate.prev_epoch()
     }
 
@@ -259,6 +268,7 @@ pub fn init_forkchoice_manager(
     init_csm_state: Arc<ClientState>,
     chain_worker: Arc<ChainWorkerHandle>,
 ) -> anyhow::Result<ForkChoiceManager> {
+    info!("initialized fcm test");
     // Load data about the last finalized block so we can use that to initialize
     // the finalized tracker.
 
@@ -376,12 +386,13 @@ fn determine_start_tip(
 
 /// Main tracker task that takes a ready fork choice manager and some IO stuff.
 #[allow(clippy::too_many_arguments)]
-pub fn tracker_task(
+pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     shutdown: ShutdownGuard,
     handle: Handle,
     storage: Arc<NodeStorage>,
     fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     chain_worker: Arc<ChainWorkerHandle>,
+    engine: Arc<E>,
     params: Arc<Params>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
@@ -402,6 +413,9 @@ pub fn tracker_task(
         }
     };
 
+    let cur_tip = fcm.cur_best_block();
+    let prev_epoch = *fcm.get_chainstate_prev_epoch();
+
     handle_unprocessed_blocks(&mut fcm, &storage, &status_channel)?;
 
     if let Err(e) = forkchoice_manager_task_inner(&shutdown, handle, fcm, fcm_rx, status_channel) {
@@ -414,7 +428,7 @@ pub fn tracker_task(
 
 /// Check if there are unprocessed L2 blocks in the database.
 /// If there are, pass them to fcm.
-fn handle_unprocessed_blocks(
+pub fn handle_unprocessed_blocks(
     fcm: &mut ForkChoiceManager,
     storage: &NodeStorage,
     status_channel: &StatusChannel,
@@ -453,7 +467,7 @@ enum FcmEvent {
     Abort,
 }
 
-fn forkchoice_manager_task_inner(
+pub fn forkchoice_manager_task_inner(
     shutdown: &ShutdownGuard,
     handle: Handle,
     mut fcm_state: ForkChoiceManager,
@@ -592,6 +606,7 @@ fn handle_new_block(
     blkid: &L2BlockId,
     bundle: &L2BlockBundle,
 ) -> anyhow::Result<bool> {
+    info!("handling new block test");
     let slot = bundle.header().slot();
 
     // First, decide if the block seems correctly signed and we haven't
@@ -602,6 +617,7 @@ fn handle_new_block(
         // It's invalid, write that and return.
         return Ok(false);
     }
+    info!("correctly signed");
 
     // Try to execute the block, to see if it's actually valid.
     //
@@ -631,7 +647,7 @@ fn handle_new_block(
         Ok(()) => true,
         Err(err) => {
             // TODO Need some way to distinguish an invalid block from a exec failure
-            warn!(%err, "try_exec_block failed");
+            error!(%err, "try_exec_block failed");
             false
         }
     };

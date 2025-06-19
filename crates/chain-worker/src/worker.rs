@@ -15,6 +15,7 @@ use strata_common::retry::{
 use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
 use strata_primitives::{batch::EpochSummary, prelude::*};
 use strata_state::{block::L2BlockBundle, chain_state::Chainstate, header::L2Header, prelude::*};
+use strata_tasks::ShutdownGuard;
 use tracing::*;
 
 use crate::{
@@ -44,7 +45,7 @@ pub struct WorkerState<W: WorkerContext, E> {
     /// Execution engine controller.
     ///
     /// This will eventually be refactored out.
-    engine: E,
+    engine: Arc<E>,
 
     /// Current chain tip.
     cur_tip: L2BlockCommitment,
@@ -55,6 +56,24 @@ pub struct WorkerState<W: WorkerContext, E> {
 
 #[allow(dead_code)]
 impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
+    fn new(
+        shared: Arc<WorkerShared>,
+        context: W,
+        chain_exec: ChainExecutor,
+        engine: Arc<E>,
+        cur_tip: L2BlockCommitment,
+        prev_epoch: EpochCommitment,
+    ) -> Self {
+        Self {
+            shared,
+            context,
+            chain_exec,
+            engine,
+            cur_tip,
+            prev_epoch,
+        }
+    }
+
     /// Gets the current epoch we're in.
     fn cur_epoch(&self) -> u64 {
         self.prev_epoch.epoch() + 1
@@ -91,6 +110,7 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     }
 
     fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
+        debug!("Trying to execute block");
         // Prepare execution dependencies.
         let bundle = self
             .context
@@ -232,20 +252,33 @@ impl<W: WorkerContext, E: ExecEngineCtl> WorkerState<W, E> {
     fn call_engine<T>(
         &mut self,
         name: &str,
-        f: impl Fn(&mut E) -> Result<T, EngineError>,
+        f: impl Fn(&E) -> Result<T, EngineError>,
     ) -> WorkerResult<T> {
         let res = retry_with_backoff(
             name,
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
-            move || f(&mut self.engine),
+            move || f(&self.engine),
         )?;
         Ok(res)
     }
 }
 
-#[allow(dead_code)]
+pub fn init_worker_state<W: WorkerContext, E: ExecEngineCtl>(
+    shared: Arc<WorkerShared>,
+    context: W,
+    chain_exec: ChainExecutor,
+    engine: Arc<E>,
+    cur_tip: L2BlockCommitment,
+    prev_epoch: EpochCommitment,
+) -> anyhow::Result<WorkerState<W, E>> {
+    Ok(WorkerState::new(
+        shared, context, chain_exec, engine, cur_tip, prev_epoch,
+    ))
+}
+
 pub fn worker_task<W: WorkerContext, E: ExecEngineCtl>(
+    shutdown: &ShutdownGuard,
     mut state: WorkerState<W, E>,
     mut input: ChainWorkerInput,
 ) -> anyhow::Result<()> {
@@ -260,6 +293,11 @@ pub fn worker_task<W: WorkerContext, E: ExecEngineCtl>(
                 let res = state.finalize_epoch(epoch);
                 let _ = completion.send(res);
             }
+        }
+
+        if shutdown.should_shutdown() {
+            warn!("chain worker task received shutdown signal");
+            break;
         }
     }
 

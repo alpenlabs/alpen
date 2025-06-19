@@ -16,9 +16,9 @@ use crate::{
     csm::{
         ctl::CsmController,
         message::{ClientUpdateNotif, CsmMessage, ForkChoiceMessage},
-        worker,
+        worker::{self},
     },
-    fork_choice_manager,
+    fork_choice_manager::{self},
 };
 
 /// Handle to the core pipeline tasks.
@@ -94,7 +94,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Start the fork choice manager thread.  If we haven't done genesis yet
     // this will just wait until the CSM says we have.
     let fcm_storage = storage.clone();
-    let _fcm_engine = engine.clone();
+    let fcm_engine = engine.clone();
     let _fcm_csm_controller = csm_controller.clone();
     let fcm_params = params.clone();
     let handle = executor.handle().clone();
@@ -111,6 +111,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
             fcm_storage,
             fcm_rx,
             cw_handle,
+            fcm_engine,
             fcm_params,
             st_ch,
         )

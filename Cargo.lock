@@ -13630,6 +13630,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-storage",
+ "strata-tasks",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
