@@ -79,14 +79,20 @@ impl ChainWorkerHandle {
 }
 
 /// Input to the worker, reading inputs from the worker handle.
-#[allow(dead_code)]
-pub(crate) struct ChainWorkerInput {
+pub struct ChainWorkerInput {
     shared: Arc<Mutex<WorkerShared>>,
     msg_rx: mpsc::Receiver<WorkerMessage>,
 }
 
 impl ChainWorkerInput {
-    #[allow(dead_code)]
+    pub fn new(shared: Arc<Mutex<WorkerShared>>, msg_rx: mpsc::Receiver<WorkerMessage>) -> Self {
+        Self { shared, msg_rx }
+    }
+
+    pub fn shared(&self) -> &Mutex<WorkerShared> {
+        &self.shared
+    }
+
     pub(crate) fn recv_next(&mut self) -> Option<WorkerMessage> {
         self.msg_rx.blocking_recv()
     }

@@ -26,15 +26,19 @@ pub struct ChainWorkerCtx {
     active_state_inst: StateInstanceId,
 }
 
-impl Default for ChainWorkerCtx {
-    fn default() -> Self {
-        ChainWorkerCtx::new()
-    }
-}
-
 impl ChainWorkerCtx {
-    pub fn new() -> Self {
-        todo!()
+    pub fn new(
+        l2man: Arc<L2BlockManager>,
+        chsman: Arc<NewChainstateManager>,
+        ckman: Arc<CheckpointDbManager>,
+        active_state_inst: StateInstanceId,
+    ) -> Self {
+        Self {
+            l2man,
+            chsman,
+            ckman,
+            active_state_inst,
+        }
     }
 }
 
