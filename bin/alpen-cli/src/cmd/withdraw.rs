@@ -11,7 +11,7 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{BRIDGE_OUT_AMOUNT, SATS_TO_WEI},
+    constants::SATS_TO_WEI,
     errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     seed::Seed,
@@ -66,14 +66,14 @@ pub async fn withdraw(
             info.address
         }
     };
-    println!("Bridging out {BRIDGE_OUT_AMOUNT} to {address}");
+    println!("Bridging out {} to {address}", bdk_wallet::bitcoin::Amount::from_sat(settings.protocol_params.bridge_out_amount));
 
     let bosd: Descriptor = address.into();
 
     let tx = l2w
         .transaction_request()
         .with_to(settings.bridge_alpen_address)
-        .with_value(U256::from(BRIDGE_OUT_AMOUNT.to_sat() as u128 * SATS_TO_WEI))
+        .with_value(U256::from(settings.protocol_params.bridge_out_amount as u128 * SATS_TO_WEI))
         // calldata for the Alpen EVM-BOSD descriptor
         .input(TransactionInput::new(bosd.to_bytes().into()));
 
