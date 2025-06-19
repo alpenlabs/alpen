@@ -7,7 +7,10 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-common.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 
+anyhow.workspace = true
 thiserror.workspace = true
+tokio.workspace = true

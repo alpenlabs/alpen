@@ -1,3 +1,4 @@
+use strata_primitives::l2::L2BlockCommitment;
 use strata_state::id::L2BlockId;
 use thiserror::Error;
 
@@ -16,6 +17,9 @@ pub enum EngineError {
 
     #[error("missing block in db {0}")]
     DbMissingBlock(L2BlockId),
+
+    #[error("invalid payload in block {0:?}")]
+    InvalidPayload(L2BlockCommitment),
 
     #[error("not yet implemented")]
     Unimplemented,

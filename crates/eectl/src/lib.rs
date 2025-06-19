@@ -4,7 +4,9 @@
 //! corresponding EL client.
 
 pub mod engine;
+pub mod handle;
 pub mod messages;
 pub mod stub;
+pub mod worker;
 
 pub mod errors;
