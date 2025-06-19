@@ -137,7 +137,8 @@ def main(argv):
         "load_generator": load_gen_fac,
     }
 
-    reth_load_env = testenv.LoadEnvConfig(110)
+    # Let load env have state diff generation exex for benchmarking.
+    reth_load_env = testenv.LoadEnvConfig(110, enable_state_diff_gen=True)
     reth_load_env.with_load_builder(
         RethLoadConfigBuilder().with_jobs([BasicRethBlockJob, BasicRethTxJob]).with_rate(30)
     )
@@ -157,6 +158,8 @@ def main(argv):
         "load_reth": reth_load_env,
         # separate env for running crash_* tests
         "crash": testenv.BasicEnvConfig(110),
+        # Separate env with state diffs exex enabled.
+        "state_diffs": testenv.BasicEnvConfig(110, enable_state_diff_gen=True),
     }
 
     setup_root_logger()
