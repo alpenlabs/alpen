@@ -1,3 +1,4 @@
+use strata_primitives::buf::Buf32;
 use thiserror::Error;
 
 use crate::chain_state::Chainstate;
@@ -22,4 +23,7 @@ pub trait ChainstateDiff {
     fn from_buf(buf: &[u8]) -> Result<Self, DiffError>
     where
         Self: Sized;
+
+    /// Get state root.
+    fn state_root(&self) -> Buf32;
 }

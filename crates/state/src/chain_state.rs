@@ -244,4 +244,8 @@ impl ChainstateDiff for FullStateUpdate {
             .map_err(|err| DiffError::FailedExtraction(format!("{:?}", err)))?;
         Ok(Self::new(new_chainstate))
     }
+
+    fn state_root(&self) -> Buf32 {
+        self.new_chainstate.compute_state_root()
+    }
 }

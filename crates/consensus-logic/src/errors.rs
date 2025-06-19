@@ -125,16 +125,22 @@ pub enum CheckpointError {
 
     #[error("proof validation: {0}")]
     Proof(#[from] ZkVmError),
+
+    #[error("missing checkpoint for epoch: {0}")]
+    MissingCheckpoint(u64),
 }
 
 #[derive(Debug, Error)]
-pub enum CheckpointSyncError {
-    #[error("missing checkpoint for epoch: {0}")]
-    MissingCheckpoint(u64),
+pub enum SyncError {
+    #[error("{0}")]
+    Checkpoint(#[from] CheckpointError),
 
     #[error("{0}")]
     StateDiff(#[from] DiffError),
 
     #[error("db: {0}")]
     Db(#[from] strata_db::errors::DbError),
+
+    #[error("{0}")]
+    Anyhow(#[from] anyhow::Error),
 }

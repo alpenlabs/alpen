@@ -15,9 +15,9 @@ use strata_storage::NodeStorage;
 use tokio::sync::watch::Receiver;
 use tracing::{info, warn};
 
-use crate::errors::CheckpointSyncError;
+use crate::errors::{CheckpointError, SyncError};
 
-type SyncResult<T> = std::result::Result<T, CheckpointSyncError>;
+type SyncResult<T> = std::result::Result<T, SyncError>;
 
 /// Wrapper around storage operations needed for checkpoint sync.
 /// Keeps storage concerns encapsulated.
@@ -74,7 +74,7 @@ impl CheckpointSyncStorage {
         if let Some(entry) = self.storage.checkpoint().get_checkpoint(epoch).await? {
             Ok(entry.into_batch_checkpoint())
         } else {
-            Err(CheckpointSyncError::MissingCheckpoint(epoch).into())
+            Err(CheckpointError::MissingCheckpoint(epoch).into())
         }
     }
 }
