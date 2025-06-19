@@ -144,8 +144,15 @@ pub fn open_rocksdb_database(
     Ok(Arc::new(rbdb))
 }
 
-pub type CommonDb =
-    CommonDatabase<L1Db, L2Db, SyncEventDb, ClientStateDb, ChainstateDb, RBCheckpointDB>;
+pub type CommonDb = CommonDatabase<
+    L1Db,
+    L2Db,
+    SyncEventDb,
+    ClientStateDb,
+    ChainstateDb,
+    RocksNewChainstateDb,
+    RBCheckpointDB,
+>;
 
 pub fn init_core_dbs(
     rbdb: Arc<rockbound::OptimisticTransactionDB>,
@@ -158,12 +165,14 @@ pub fn init_core_dbs(
     let clientstate_db: Arc<_> = ClientStateDb::new(rbdb.clone(), ops_config).into();
     let chainstate_db: Arc<_> = ChainstateDb::new(rbdb.clone(), ops_config).into();
     let checkpoint_db: Arc<_> = RBCheckpointDB::new(rbdb.clone(), ops_config).into();
+    let new_checkpoint_db = RocksNewChainstateDb::new(rbdb.clone(), ops_config).into();
     let database = CommonDatabase::new(
         l1_db,
         l2_db,
         sync_ev_db,
         clientstate_db,
         chainstate_db,
+        new_checkpoint_db,
         checkpoint_db,
     );
 

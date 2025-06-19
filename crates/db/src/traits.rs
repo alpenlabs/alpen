@@ -17,6 +17,7 @@ use strata_state::{
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
+    chainstate::NewChainstateDatabase,
     entities::bridge_tx_state::BridgeTxState,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbResult,
@@ -31,6 +32,7 @@ pub trait Database {
     type SyncEventDB: SyncEventDatabase + Send + Sync;
     type ClientStateDB: ClientStateDatabase + Send + Sync;
     type ChainstateDB: ChainstateDatabase + Send + Sync;
+    type NewChainstateDB: NewChainstateDatabase + Send + Sync;
     type CheckpointDB: CheckpointDatabase + Send + Sync;
 
     fn l1_db(&self) -> &Arc<Self::L1DB>;
@@ -38,6 +40,7 @@ pub trait Database {
     fn sync_event_db(&self) -> &Arc<Self::SyncEventDB>;
     fn client_state_db(&self) -> &Arc<Self::ClientStateDB>;
     fn chain_state_db(&self) -> &Arc<Self::ChainstateDB>;
+    fn new_chain_state_db(&self) -> &Arc<Self::NewChainstateDB>;
     fn checkpoint_db(&self) -> &Arc<Self::CheckpointDB>;
 }
 
