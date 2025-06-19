@@ -1,5 +1,7 @@
 use std::{thread, time};
 
+use strata_chainexec::MemStateAccessor;
+use strata_chaintsn::context::StateAccessor;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -22,7 +24,6 @@ use strata_state::{
     exec_update::construct_ops_from_deposit_intents,
     header::L2BlockHeader,
     prelude::*,
-    state_op::*,
 };
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
 use tracing::*;
@@ -385,12 +386,11 @@ fn poll_status_loop<E: ExecEngineCtl>(
 // TODO when we build the "block executor" logic we should shift this out
 fn compute_post_state(
     prev_chstate: Chainstate,
-    header: &impl L2Header,
+    header: &L2BlockHeader,
     body: &L2BlockBody,
     params: &Params,
 ) -> Result<Chainstate, Error> {
-    let mut state_cache = StateCache::new(prev_chstate);
-    strata_chaintsn::transition::process_block(&mut state_cache, header, body, params.rollup())?;
-    let wb = state_cache.finalize();
-    Ok(wb.into_toplevel())
+    let mut state_accessor = MemStateAccessor::new(prev_chstate);
+    strata_chaintsn::transition::process_block(&mut state_accessor, header, body, params.rollup())?;
+    Ok(state_accessor.state_untracked().clone())
 }

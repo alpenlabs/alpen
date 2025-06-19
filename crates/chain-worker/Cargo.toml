@@ -1,0 +1,18 @@
+[package]
+name = "strata-chain-worker"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-chainexec.workspace = true
+strata-chaintsn.workspace = true
+strata-common.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+strata-storage.workspace = true
+strata-tasks.workspace = true
+
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true

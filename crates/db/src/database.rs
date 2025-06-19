@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::traits::*;
+use crate::chainstate::NewChainstateDatabase;
 
 /// Shim database type to wrap various database impls.
 ///
@@ -8,13 +9,21 @@ use super::traits::*;
 /// the provider and stores are actually the same types. We might actually
 /// use this in practice, it's just for testing.
 #[derive(Debug)]
-pub struct CommonDatabase<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
-where
+pub struct CommonDatabase<
+    L1DB,
+    L2DB,
+    SyncEventDB,
+    ClientStateDB,
+    ChainstateDB,
+    NewChainstateDB,
+    CheckpointDB,
+> where
     L1DB: L1Database + Sync + Send + 'static,
     L2DB: L2BlockDatabase + Sync + Send + 'static,
     SyncEventDB: SyncEventDatabase + Sync + Send + 'static,
     ClientStateDB: ClientStateDatabase + Sync + Send + 'static,
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
+    NewChainstateDB: NewChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
     l1_db: Arc<L1DB>,
@@ -22,25 +31,37 @@ where
     sync_event_db: Arc<SyncEventDB>,
     client_state_db: Arc<ClientStateDB>,
     chain_state_db: Arc<ChainstateDB>,
+    new_chain_state_db: Arc<NewChainstateDB>,
     checkpoint_db: Arc<CheckpointDB>,
 }
 
-impl<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
-    CommonDatabase<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
+impl<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, NewChainstateDB, CheckpointDB>
+    CommonDatabase<
+        L1DB,
+        L2DB,
+        SyncEventDB,
+        ClientStateDB,
+        ChainstateDB,
+        NewChainstateDB,
+        CheckpointDB,
+    >
 where
     L1DB: L1Database + Sync + Send + 'static,
     L2DB: L2BlockDatabase + Sync + Send + 'static,
     SyncEventDB: SyncEventDatabase + Sync + Send + 'static,
     ClientStateDB: ClientStateDatabase + Sync + Send + 'static,
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
+    NewChainstateDB: NewChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
+    /// Create a new wrapper over the given database implementations.
     pub fn new(
         l1_db: Arc<L1DB>,
         l2_db: Arc<L2DB>,
         sync_event_db: Arc<SyncEventDB>,
         client_state_db: Arc<ClientStateDB>,
         chain_state_db: Arc<ChainstateDB>,
+        new_chain_state_db: Arc<NewChainstateDB>,
         checkpoint_db: Arc<CheckpointDB>,
     ) -> Self {
         Self {
@@ -49,19 +70,29 @@ where
             sync_event_db,
             client_state_db,
             chain_state_db,
+            new_chain_state_db,
             checkpoint_db,
         }
     }
 }
 
-impl<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB> Database
-    for CommonDatabase<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
+impl<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, NewChainstateDB, CheckpointDB> Database
+    for CommonDatabase<
+        L1DB,
+        L2DB,
+        SyncEventDB,
+        ClientStateDB,
+        ChainstateDB,
+        NewChainstateDB,
+        CheckpointDB,
+    >
 where
     L1DB: L1Database + Sync + Send + 'static,
     L2DB: L2BlockDatabase + Sync + Send + 'static,
     SyncEventDB: SyncEventDatabase + Sync + Send + 'static,
     ClientStateDB: ClientStateDatabase + Sync + Send + 'static,
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
+    NewChainstateDB: NewChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
     type L1DB = L1DB;
@@ -69,6 +100,7 @@ where
     type SyncEventDB = SyncEventDB;
     type ClientStateDB = ClientStateDB;
     type ChainstateDB = ChainstateDB;
+    type NewChainstateDB = NewChainstateDB;
     type CheckpointDB = CheckpointDB;
 
     fn l1_db(&self) -> &Arc<Self::L1DB> {
@@ -89,6 +121,10 @@ where
 
     fn chain_state_db(&self) -> &Arc<Self::ChainstateDB> {
         &self.chain_state_db
+    }
+
+    fn new_chain_state_db(&self) -> &Arc<Self::NewChainstateDB> {
+        &self.new_chain_state_db
     }
 
     fn checkpoint_db(&self) -> &Arc<Self::CheckpointDB> {

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use strata_chainexec::MemStateAccessor;
+use strata_chaintsn::context::StateAccessor;
 use strata_primitives::buf::{Buf32, Buf64};
 use strata_proofimpl_evm_ee_stf::{
     executor::process_block,
@@ -11,7 +13,6 @@ use strata_state::{
     block::{L1Segment, L2Block, L2BlockBody},
     chain_state::Chainstate,
     header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
-    state_op::StateCache,
 };
 
 use crate::{
@@ -124,15 +125,15 @@ impl L2Segment {
             let fake_header = L2BlockHeader::new(slot, 0, ts, prev_block_id, &body, Buf32::zero());
 
             let pre_state = prev_chainstate.clone();
-            let mut state_cache = StateCache::new(pre_state.clone());
+            let mut state_accessor = MemStateAccessor::new(pre_state.clone());
             strata_chaintsn::transition::process_block(
-                &mut state_cache,
+                &mut state_accessor,
                 &fake_header,
                 &body,
                 params.rollup(),
             )
             .unwrap();
-            let post_state = state_cache.finalize().into_toplevel();
+            let post_state = state_accessor.state_untracked().clone();
             let new_state_root = post_state.compute_state_root();
 
             let header = L2BlockHeader::new(slot, 0, ts, prev_block_id, &body, new_state_root);
@@ -140,19 +141,18 @@ impl L2Segment {
             let block = L2Block::new(signed_header, body);
 
             // Note: We need to do this double as of now.
-            let mut state_cache = StateCache::new(pre_state.clone());
+            let mut state_accessor = MemStateAccessor::new(pre_state.clone());
             strata_chaintsn::transition::process_block(
-                &mut state_cache,
-                block.header(),
+                &mut state_accessor,
+                block.header().header(),
                 block.body(),
                 params.rollup(),
             )
             .unwrap();
-            let post_state = state_cache.finalize().into_toplevel();
-
-            blocks.push(block.clone());
+            let post_state = state_accessor.state_untracked().clone();
             pre_states.push(pre_state);
             post_states.push(post_state.clone());
+            blocks.push(block.clone());
 
             prev_block = block;
             prev_chainstate = post_state;

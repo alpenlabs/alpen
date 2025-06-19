@@ -1,5 +1,6 @@
 use strata_chaintsn::errors::TsnError;
 use strata_eectl::errors::EngineError;
+use strata_primitives::prelude::*;
 use strata_state::{id::L2BlockId, l1::L1BlockId};
 use thiserror::Error;
 use zkaleido::ZkVmError;
@@ -74,6 +75,9 @@ pub enum Error {
 
     #[error("checkpoint invalid: {0}")]
     InvalidCheckpoint(#[from] CheckpointError),
+
+    #[error("tried to finalize epoch {0:?} but epoch {1:?} is already final")]
+    FinalizeOldEpoch(EpochCommitment, EpochCommitment),
 
     #[error("stateroot mismatch")]
     StaterootMismatch,

@@ -210,9 +210,17 @@ impl ProvingOp for ClStfOperator {
         }
         l2_blocks.reverse();
 
+        let parent_header = self
+            .get_block(&l2_blocks[0].header().get_blockid())
+            .await?
+            .header()
+            .header()
+            .clone();
+
         let rollup_params = self.rollup_params.as_ref().clone();
         Ok(ClStfInput {
             rollup_params,
+            parent_header,
             chainstate,
             l2_blocks,
             evm_ee_proof_with_vk,
