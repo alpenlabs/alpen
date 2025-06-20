@@ -14,11 +14,11 @@ pub struct GetSyncinfoArgs {
 }
 
 pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<(), DisplayedError> {
-    let (l1_block_height, l1_block_id) = db
-        .l1_db()
+    let l1_db = db.l1_db();
+    let (l1_tip_height, l1_tip_block_id) = l1_db
         .get_canonical_chain_tip()
         .internal_error("Failed to read L1 tip")?
-        .unwrap_or_default();
+        .expect("valid L1 tip");
 
     let last_l2_write_idx = db
         .chain_state_db()
@@ -36,7 +36,8 @@ pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<(), Dis
     let l2_block_height = batch_info.new_toplevel_state().chain_tip_slot();
 
     // Show sync information
-    println!("L1 tip: {}, {:?}", l1_block_height, l1_block_id);
+    println!("L1 tip: {}, {:?}", l1_tip_height, l1_tip_block_id);
+
     println!(
         "L2 height: {}, tip: {:?} ({:?})",
         l2_block_height,

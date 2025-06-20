@@ -3,8 +3,13 @@ use std::path::PathBuf;
 use clap::{crate_version, Parser, Subcommand};
 
 use crate::cmd::{
-    chainstate::ResetChainstateArgs, checkpoint::GetCheckpointDataArgs, epoch::GetEpochSummaryArgs,
-    l1_manifest::GetL1ManifestArgs, l2_block::GetL2BlockArgs, l2_client::GetL2ClientStateArgs,
+    chainstate::ResetChainstateArgs,
+    checkpoint::{GetCheckpointDataArgs, GetCheckpointsSummaryArgs},
+    epoch::GetEpochSummaryArgs,
+    l1_manifest::{GetL1ManifestArgs, GetL1SummaryArgs},
+    l2_block::GetL2BlockArgs,
+    l2_client::GetL2ClientStateArgs,
+    sync_event::{GetSyncEventArgs, GetSyncEventsSummaryArgs},
     syncinfo::GetSyncinfoArgs,
 };
 
@@ -41,6 +46,9 @@ pub enum Command {
     /// Show L1 block manifest.
     GetL1Manifest(GetL1ManifestArgs),
 
+    /// Show L1 data summary.
+    GetL1Summary(GetL1SummaryArgs),
+
     /// Show L2 block.
     GetL2Block(GetL2BlockArgs),
 
@@ -50,11 +58,20 @@ pub enum Command {
     /// Show checkpoint data.
     GetCheckpointData(GetCheckpointDataArgs),
 
+    /// Show summary of checkpoints.
+    GetCheckpointsSummary(GetCheckpointsSummaryArgs),
+
     /// Show epoch summary.
     GetEpochSummary(GetEpochSummaryArgs),
 
     /// Show node’s sync progress on Alpen and Signet.
     GetSyncinfo(GetSyncinfoArgs),
+
+    /// Show details about a sync event.
+    GetSyncEvent(GetSyncEventArgs),
+
+    /// Show summary of sync events.
+    GetSyncEventsSummary(GetSyncEventsSummaryArgs),
 
     /// Roll back chainstate to a particular Alpen block (epoch‑terminal by default).
     ResetChainstate(ResetChainstateArgs),
