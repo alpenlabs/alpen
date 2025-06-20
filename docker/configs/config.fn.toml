@@ -8,10 +8,10 @@ sync_endpoint = "ws://fnclient675f9eff3a682b8c0ea7423.testnet.alpenlabs.io"
 db_retry_count = 5
 
 [bitcoind]
-rpc_url = "bitcoind:38332"
-rpc_user = "bitcoin"
-rpc_password = "bitcoin"
-network = "signet"
+rpc_url = "bitcoind:18443"
+rpc_user = "user"
+rpc_password = "password"
+network = "regtest"
 
 [sync]
 l1_follow_distance = 6

@@ -10,8 +10,8 @@ is_sequencer = true
 
 [bitcoind]
 rpc_url = "bitcoind:18443/wallet/default"
-rpc_user = "rpcuser"
-rpc_password = "rpcpassword"
+rpc_user = "user"
+rpc_password = "password"
 network = "regtest"
 
 [btcio.reader]
