@@ -11,8 +11,8 @@ from utils import (
     get_bridge_pubkey,
     get_latest_eth_block_number,
     wait_for_proof_with_time_out,
-    wait_until,
 )
+from utils.utils import wait_until_eth_block_exceeds
 
 
 @flexitest.register
@@ -150,10 +150,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         # Wait some time so the future blocks in the batches are finalized.
         # Given that L1 blocks are happening more frequent that L2, it's safe
         # to assert only L2 latest block.
-        wait_until(
-            lambda: get_latest_eth_block_number(rethrpc) > l2[1],
-            timeout=60,
-        )
+        wait_until_eth_block_exceeds(rethrpc, l2[1], timeout=60)
 
         task_ids = prover_client_rpc.dev_strata_proveCheckpointRaw(self._chkpt_id, l1, l2)
 

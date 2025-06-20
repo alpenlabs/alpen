@@ -289,6 +289,46 @@ def wait_until_cur_l1_tip_observed(btcrpc, seqrpc, **kwargs):
     wait_until_l1_observed(seqrpc, h, **kwargs)
 
 
+def wait_until_l1_height_at(strata_rpc, height: int, timeout=20) -> Any:
+    """
+    Waits until strata client's reader sees L1 block at least upto given height.
+
+    Returns the latest L1Status.
+    """
+    return wait_until_with_value(
+        lambda: strata_rpc.strata_l1status(),
+        lambda value: value["cur_height"] >= height,
+        error_with="L1 reader did not catch up with bitcoin network",
+        timeout=20,
+    )
+
+
+def wait_until_eth_block_exceeds(
+    reth_rpc, height: int, timeout=5, msg="Timeout: blocks not generated"
+) -> int:
+    """
+    Waits until eth block crosses the given height
+
+    Returns the new height
+    """
+    return wait_until_with_value(
+        lambda: int(reth_rpc.eth_blockNumber(), 16),
+        lambda value: value > height,
+        error_with=msg,
+        timeout=timeout,
+    )
+
+
+def wait_until_recent_block_headers_at(strata_rpc, height: int, timeout=2) -> Any:
+    """ """
+    return wait_until_with_value(
+        lambda: strata_rpc.strata_getRecentBlockHeaders(height),
+        lambda value: value is not None,
+        error_with="Blocks not generated",
+        timeout=timeout,
+    )
+
+
 @dataclass
 class ManualGenBlocksConfig:
     btcrpc: BitcoindClient

@@ -2,7 +2,7 @@ import flexitest
 
 from envs import testenv
 from mixins import seq_crash_mixin
-from utils import wait_until, wait_until_strata_client_ready
+from utils import wait_until
 
 
 @flexitest.register
@@ -11,8 +11,6 @@ class CrashSyncEventTest(seq_crash_mixin.SeqCrashMixin):
         ctx.set_env(testenv.BasicEnvConfig(101))
 
     def main(self, ctx: flexitest.RunContext):
-        wait_until_strata_client_ready(self.seqrpc)
-
         cur_chain_tip = self.handle_bail(lambda: "sync_event")
 
         wait_until(
