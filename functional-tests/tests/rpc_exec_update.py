@@ -1,8 +1,7 @@
-import time
-
 import flexitest
 
 from envs import testenv
+from utils.utils import wait_until_recent_block_headers_at
 
 
 @flexitest.register
@@ -15,9 +14,8 @@ class ExecUpdateTest(testenv.StrataTestBase):
 
         # create both btc and sequencer RPC
         seqrpc = seq.create_rpc()
-        time.sleep(2)
+        recent_blks = wait_until_recent_block_headers_at(seqrpc, 1)
 
-        recent_blks = seqrpc.strata_getRecentBlockHeaders(1)
         exec_update = seqrpc.strata_getExecUpdateById(recent_blks[0]["block_id"])
         self.debug(exec_update)
         assert exec_update["update_idx"] == recent_blks[0]["block_idx"]

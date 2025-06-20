@@ -1,3 +1,5 @@
+import time
+
 import flexitest
 
 from envs import testenv
@@ -13,6 +15,7 @@ class ProverClientTest(testenv.StrataTestBase):
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
 
+        time.sleep(1)
         # Wait until the prover client reports readiness
         wait_until(
             lambda: prover_client_rpc.dev_strata_getReport() is not None,

@@ -9,9 +9,10 @@ from mixins import bridge_mixin
 from utils import (
     confirm_btc_withdrawal,
     get_bridge_pubkey,
+    get_latest_eth_block_number,
     wait_for_proof_with_time_out,
-    wait_until,
 )
+from utils.utils import wait_until_eth_block_exceeds
 
 
 @flexitest.register
@@ -55,7 +56,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
 
         # Do deposit on the L1.
         # Fix the strata block first (to optimize the search).
-        start_block = int(rethrpc.eth_blockNumber(), base=16)
+        start_block = get_latest_eth_block_number(rethrpc)
         l1_deposit_txn_id = self.deposit(ctx, evm_addr, bridge_pk)
         # Do twice the deposit, so the withdrawal will have funds for the gas.
         _ = self.deposit(ctx, evm_addr, bridge_pk)
@@ -67,7 +68,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         self.info(f"deposit block height on L1: {l1_deposit_block_height}")
 
         l2_deposit_block_num = None
-        end_block = int(rethrpc.eth_blockNumber(), base=16)
+        end_block = get_latest_eth_block_number(rethrpc)
         for block_num in range(start_block, end_block + 1):
             block = rethrpc.eth_getBlockByNumber(hex(block_num), True)
             # Bridge-ins are currently handled as withdrawals in the block payload.
@@ -149,10 +150,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         # Wait some time so the future blocks in the batches are finalized.
         # Given that L1 blocks are happening more frequent that L2, it's safe
         # to assert only L2 latest block.
-        wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > l2[1],
-            timeout=60,
-        )
+        wait_until_eth_block_exceeds(rethrpc, l2[1], timeout=60)
 
         task_ids = prover_client_rpc.dev_strata_proveCheckpointRaw(self._chkpt_id, l1, l2)
 

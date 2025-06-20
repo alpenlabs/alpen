@@ -1,5 +1,4 @@
 import logging
-import time
 
 import flexitest
 
@@ -23,13 +22,8 @@ class SyncFullNodeL2LagTest(testenv.StrataTestBase):
         fullnode = ctx.get_service("follower_1_node")
         fnrpc = fullnode.create_rpc()
 
-        # Wait until sequencer and fullnode start
-        wait_until(seqrpc.strata_protocolVersion, timeout=60)
-        wait_until(fnrpc.strata_protocolVersion, timeout=60)
-
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()
-        time.sleep(5)
 
         # Now pause the sync worker so that we can have finalized epoch on L1,
         # but not corresponding block on L2 in full node
@@ -37,7 +31,7 @@ class SyncFullNodeL2LagTest(testenv.StrataTestBase):
         assert paused, "Should pause the fullnode sync worker"
 
         cur_epoch = seqss["cur_epoch"]
-        print(dict(cur_epoch=cur_epoch))
+        self.info(f"{cur_epoch=}")
 
         # wait for fn to sync up to end of current sequencer epoch
         # L1 reader and csm should still be running and syncing with L2 sync paused/

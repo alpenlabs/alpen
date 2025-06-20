@@ -174,13 +174,13 @@ class BridgeMixin(BaseMixin):
         # Send the transaction to the Bitcoin network
         drt_tx_id: str = self.btcrpc.proxy.sendrawtransaction(tx)
 
-        time.sleep(1)
-
         # time to mature DRT
         self.btcrpc.proxy.generatetoaddress(6, seq_addr)
+        # FIXME: use wait_until
         time.sleep(3)
 
         # time to mature DT
         self.btcrpc.proxy.generatetoaddress(6, seq_addr)
+        # FIXME: use wait_until
         time.sleep(3)
         return drt_tx_id

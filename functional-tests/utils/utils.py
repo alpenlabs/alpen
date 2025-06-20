@@ -220,6 +220,17 @@ def wait_until_epoch_finalized(rpc, epoch: int, **kwargs):
     wait_until(_check, **kwargs)
 
 
+def wait_until_strata_client_ready(client_rpc, timeout=5):
+    """
+    Waits until the strata client is ready to serve rpc
+    """
+    wait_until(
+        lambda: client_rpc.strata_protocolVersion() is not None,
+        error_with="Strata client did not start on time",
+        timeout=timeout,
+    )
+
+
 def wait_until_epoch_observed_final(rpc, epoch: int, **kwargs):
     """
     Waits until at least the given epoch is observed as final on L2, according
@@ -276,6 +287,46 @@ def wait_until_cur_l1_tip_observed(btcrpc, seqrpc, **kwargs):
     h = info["blocks"]
     logging.info(f"current bitcoin height is {h}")
     wait_until_l1_observed(seqrpc, h, **kwargs)
+
+
+def wait_until_l1_height_at(strata_rpc, height: int, timeout=20) -> Any:
+    """
+    Waits until strata client's reader sees L1 block at least upto given height.
+
+    Returns the latest L1Status.
+    """
+    return wait_until_with_value(
+        lambda: strata_rpc.strata_l1status(),
+        lambda value: value["cur_height"] >= height,
+        error_with="L1 reader did not catch up with bitcoin network",
+        timeout=20,
+    )
+
+
+def wait_until_eth_block_exceeds(
+    reth_rpc, height: int, timeout=5, msg="Timeout: blocks not generated"
+) -> int:
+    """
+    Waits until eth block crosses the given height
+
+    Returns the new height
+    """
+    return wait_until_with_value(
+        lambda: int(reth_rpc.eth_blockNumber(), 16),
+        lambda value: value > height,
+        error_with=msg,
+        timeout=timeout,
+    )
+
+
+def wait_until_recent_block_headers_at(strata_rpc, height: int, timeout=2) -> Any:
+    """ """
+    return wait_until_with_value(
+        lambda: strata_rpc.strata_getRecentBlockHeaders(height),
+        lambda value: value is not None,
+        error_with="Blocks not generated",
+        timeout=timeout,
+    )
 
 
 @dataclass
@@ -483,7 +534,6 @@ def wait_for_proof_with_time_out(prover_client_rpc, task_id, time_out=3600) -> b
             logging.info(f"Proof generatoin failed for {task_id}")
             return False
 
-        time.sleep(2)
         elapsed_time = time.time() - start_time  # Calculate elapsed time
         if elapsed_time >= time_out:
             raise TimeoutError(f"Operation timed out after {time_out} seconds.")
@@ -817,6 +867,11 @@ def confirm_btc_withdrawal(
     assert btc_balance == original_balance + expected_increase, (
         "BTC balance after withdrawal is not as expected"
     )
+
+
+def get_latest_eth_block_number(reth_rpc) -> int:
+    """Get the current block number from reth RPC."""
+    return int(reth_rpc.eth_blockNumber(), base=16)
 
 
 def check_initial_eth_balance(rethrpc, address, debug_fn=print):

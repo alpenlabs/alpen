@@ -1,10 +1,9 @@
-import time
-
 import flexitest
 from solcx import compile_source, install_solc, set_solc_version
 from web3 import Web3
 
 from envs import testenv
+from utils.utils import wait_until_with_value
 
 
 @flexitest.register
@@ -33,12 +32,12 @@ class ElBlockWitnessDataGenerationTest(testenv.StrataTestBase):
         blockhash = rethrpc.eth_getBlockByNumber(hex(blocknum), False)["hash"]
 
         # wait for witness data generation
-        time.sleep(1)
-
-        # Get the witness data
-        witness_data = rethrpc.strataee_getBlockWitness(blockhash, True)
-        assert witness_data is not None, "non empty witness"
-
+        witness_data = wait_until_with_value(
+            lambda: rethrpc.strataee_getBlockWitness(blockhash, True),
+            lambda value: value is not None,
+            error_with="Finding non empty witness for blockhash {blockhash} timed out",
+            timeout=2,
+        )
         self.debug(witness_data)
 
 
