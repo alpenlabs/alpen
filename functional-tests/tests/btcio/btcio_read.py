@@ -28,11 +28,7 @@ class L1StatusTest(testenv.StrataTestBase):
         wait_for_genesis(seqrpc, timeout=30)
 
         received_block = btcrpc.getblock(btcrpc.proxy.getbestblockhash())
-        l1stat = wait_until_with_value(
-            lambda: seqrpc.strata_l1status(),
-            lambda value: value["cur_height"] >= received_block["height"],
-            error_with="L1 reader did not catch up with bitcoin network",
-        )
+        l1stat = wait_until_l1_height_at(seqrpc, received_block["height"])
 
         # Time is in millis
         cur_time = l1stat["last_update"] // 1000
@@ -41,11 +37,7 @@ class L1StatusTest(testenv.StrataTestBase):
         # generate 2 more btc blocks
         generate_n_blocks(btcrpc, 2)
 
-        next_l1stat = wait_until_with_value(
-            lambda: seqrpc.strata_l1status(),
-            lambda value: value["cur_height"] >= cur_l1_height + 2,
-            error_with="L1 reader did not catch up with bitcoin network",
-        )
+        next_l1stat = wait_until_l1_height_at(seqrpc, cur_l1_height + 2)
         elapsed_time = next_l1stat["last_update"] // 1000
 
         # check if L1 reader is seeing new L1 activity

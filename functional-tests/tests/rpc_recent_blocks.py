@@ -3,7 +3,7 @@ import flexitest
 from envs import testenv
 from utils import wait_until
 
-NUM_BLOCKS_TO_RECEIVE = 10
+EXPECTED_L2_BLOCKS = 10
 BLOCK_NUMBER = 4
 
 
@@ -18,17 +18,17 @@ class RecentBlocksTest(testenv.StrataTestBase):
         # create both btc and sequencer RPC
         seqrpc = seq.create_rpc()
         wait_until(
-            lambda: seqrpc.strata_getHeadersAtIdx(NUM_BLOCKS_TO_RECEIVE) is not None,
-            error_with=f"Expected block {NUM_BLOCKS_TO_RECEIVE} not generated",
+            lambda: seqrpc.strata_getHeadersAtIdx(EXPECTED_L2_BLOCKS) is not None,
+            error_with=f"Expected block {EXPECTED_L2_BLOCKS} not generated",
             timeout=20,
         )
 
-        recent_blks = seqrpc.strata_getRecentBlockHeaders(NUM_BLOCKS_TO_RECEIVE)
-        assert len(recent_blks) == NUM_BLOCKS_TO_RECEIVE
+        recent_blks = seqrpc.strata_getRecentBlockHeaders(EXPECTED_L2_BLOCKS)
+        assert len(recent_blks) == EXPECTED_L2_BLOCKS
 
         # check if they are in order by verifying if N-1 block is parent of N block
-        for idx in reversed(range(0, NUM_BLOCKS_TO_RECEIVE)):
-            if idx != NUM_BLOCKS_TO_RECEIVE - 1:
+        for idx in reversed(range(0, EXPECTED_L2_BLOCKS)):
+            if idx != EXPECTED_L2_BLOCKS - 1:
                 assert recent_blks[idx]["prev_block"] == recent_blks[idx + 1]["block_id"]
 
         l2_blk = seqrpc.strata_getHeadersAtIdx(recent_blks[BLOCK_NUMBER]["block_idx"])

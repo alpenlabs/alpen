@@ -5,7 +5,6 @@ import flexitest
 from envs import testenv
 from utils.utils import (
     wait_until_epoch_confirmed,
-    wait_until_strata_client_ready,
     wait_until_with_value,
 )
 
@@ -23,10 +22,6 @@ class SyncFromRpcTest(testenv.StrataTestBase):
         fnrpc = ctx.get_service("follower_1_node").create_rpc()
         seq_reth_rpc = ctx.get_service("seq_reth").create_rpc()
         fullnode_reth_rpc = ctx.get_service("follower_1_reth").create_rpc()
-
-        # give some time for the sequencer to start up and generate blocks
-        wait_until_strata_client_ready(seqrpc)
-        wait_until_strata_client_ready(fnrpc)
 
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()

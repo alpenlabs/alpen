@@ -3,8 +3,7 @@ import logging
 import flexitest
 
 from envs import testenv
-from utils import wait_for_genesis
-from utils.utils import wait_until_with_value
+from utils import wait_for_genesis, wait_until_eth_block_exceeds
 
 
 @flexitest.register
@@ -23,11 +22,6 @@ class ElBlockGenerationTest(testenv.StrataTestBase):
         logging.info(f"initial EL blocknum is {last_blocknum}")
 
         for _ in range(5):
-            cur_blocknum = wait_until_with_value(
-                lambda: int(rethrpc.eth_blockNumber(), 16),
-                lambda value, last_blk=last_blocknum: value > last_blk,
-                error_with="Timeout: seem to not be making progress",
-                timeout=3,
-            )
+            cur_blocknum = wait_until_eth_block_exceeds(rethrpc, last_blocknum)
             logging.info(f"current EL blocknum is {cur_blocknum}")
             last_blocknum = cur_blocknum

@@ -389,6 +389,11 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
             "prover_client": prover_client,
         }
 
+        # Wait until clients are ready
+        wait_until_strata_client_ready(sequencer.create_rpc())
+        wait_until_strata_client_ready(fullnode.create_rpc())
+        # TODO: add others like prover, reth, btc
+
         return BasicLiveEnv(svcs, bridge_pk, rollup_cfg)
 
 

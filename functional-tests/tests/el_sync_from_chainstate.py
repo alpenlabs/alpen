@@ -50,13 +50,9 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         wait_until_epoch_finalized(seqrpc, 0, timeout=30)
 
         # ensure there are some blocks generated
-        wait_until(
-            lambda: get_latest_eth_block_number(rethrpc) > 0,
-            error_with="not building blocks",
-            timeout=10,
-        )
+        wait_until_eth_block_exceeds(rethrpc, 0, timeout=10)
 
-        print("stop sequencer")
+        self.info("stop sequencer")
         seq.stop()
 
         orig_blocknumber = get_latest_eth_block_number(rethrpc)
@@ -67,56 +63,40 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         SNAPSHOT_IDX = 1
         reth.snapshot_datadir(SNAPSHOT_IDX)
 
-        print("start reth")
+        self.info("start reth")
         reth.start()
 
         # wait for reth to start
-        wait_until(
-            lambda: get_latest_eth_block_number(rethrpc) > 0,
-            error_with="reth did not start in time",
-            timeout=10,
-        )
+        wait_until_eth_block_exceeds(rethrpc, 0, timeout=10)
 
-        print("start sequencer")
+        self.info("start sequencer")
         seq.start()
 
         # generate more blocks
-        wait_until(
-            lambda: get_latest_eth_block_number(rethrpc) > orig_blocknumber + 1,
-            error_with="not building blocks",
-            timeout=10,
-        )
+        wait_until_eth_block_exceeds(rethrpc, orig_blocknumber + 1, timeout=10)
 
-        print("stop sequencer")
+        self.info("stop sequencer")
         seq.stop()
         final_blocknumber = get_latest_eth_block_number(rethrpc)
 
-        print(f"stop reth @{final_blocknumber}")
+        self.info(f"stop reth @{final_blocknumber}")
         reth.stop()
 
         # replace reth db with older snapshot
         reth.restore_snapshot(SNAPSHOT_IDX)
 
         # sequencer now contains more blocks than in reth, should trigger EL sync later
-        print("start reth")
+        self.info("start reth")
         reth.start()
 
         # wait for reth to start
-        wait_until(
-            lambda: get_latest_eth_block_number(rethrpc) > 0,
-            error_with="reth did not start in time",
-            timeout=10,
-        )
+        wait_until_eth_block_exceeds(rethrpc, 0, timeout=10)
 
         # ensure reth db was reset to shorter chain
         assert get_latest_eth_block_number(rethrpc) < final_blocknumber
 
-        print("start sequencer")
+        self.info("start sequencer")
         seq.start()
 
-        print("wait for sync")
-        wait_until(
-            lambda: get_latest_eth_block_number(rethrpc) > final_blocknumber,
-            error_with="not syncing blocks",
-            timeout=10,
-        )
+        self.info("wait for sync")
+        wait_until_eth_block_exceeds(rethrpc, final_blocknumber, timeout=10)
