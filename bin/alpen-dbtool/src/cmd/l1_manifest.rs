@@ -39,6 +39,18 @@ pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(),
         .internal_error("Failed to get block txs")?
         .unwrap();
 
+    // Basic block info
+    println!(
+        "L1 block height: {}, id: {block_id:?}",
+        l1_block_manifest.height()
+    );
+
+    // Number of transactions
+    println!(
+        "L1 block has {} transaction(s)",
+        l1_block_manifest.txs().len()
+    );
+
     // Print relevant transactions
     for tx in l1_block_manifest.txs().iter() {
         for proto_op in tx.protocol_ops().iter() {
