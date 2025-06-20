@@ -17,6 +17,7 @@ pub enum ExecCommand {
     NewBlock(L2BlockCommitment, oneshot::Sender<EngineResult<()>>),
 }
 
+#[derive(Debug)]
 pub struct ExecCtlHandle {
     shared: Arc<ExecShared>,
     msg_tx: mpsc::Sender<ExecCommand>,
@@ -26,6 +27,7 @@ impl ExecCtlHandle {
     // TODO add fns for sending messages
 }
 
+#[derive(Debug)]
 pub struct ExecCtlInput {
     shared: Arc<ExecShared>,
     msg_rx: mpsc::Receiver<ExecCommand>,
@@ -38,6 +40,7 @@ impl ExecCtlInput {
 }
 
 /// State shared between the handle and the worker.
+#[derive(Debug)]
 pub struct ExecShared {
     // TODO
 }
