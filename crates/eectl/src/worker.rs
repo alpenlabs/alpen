@@ -16,6 +16,7 @@ use crate::{
     messages::{ExecPayloadData, TipState},
 };
 
+#[derive(Debug)]
 pub struct WorkerState<E: ExecEngineCtl> {
     engine: E,
 
@@ -42,16 +43,12 @@ impl<E: ExecEngineCtl> WorkerState<E> {
     }
 
     /// Make a call to the exec engine, using retry and backoff.
-    fn call_engine<T>(
-        &mut self,
-        name: &str,
-        f: impl Fn(&mut E) -> EngineResult<T>,
-    ) -> EngineResult<T> {
+    fn call_engine<T>(&mut self, name: &str, f: impl Fn(&E) -> EngineResult<T>) -> EngineResult<T> {
         let res = retry_with_backoff(
             name,
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
-            move || f(&mut self.engine),
+            move || f(&self.engine),
         )?;
         Ok(res)
     }
@@ -93,7 +90,7 @@ impl<E: ExecEngineCtl> WorkerState<E> {
         //
         // TODO this needs to be refactored since we might not always be able to
         // get this data from the block itself
-        let exec_hash = bundle.header().exec_payload_hash();
+        let _exec_hash = bundle.header().exec_payload_hash();
         let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
         let res = self.call_engine("engine_submit_payload", move |eng| {
             // annoying that we're cloning this each time, maybe make it take a ref?
@@ -102,7 +99,7 @@ impl<E: ExecEngineCtl> WorkerState<E> {
 
         if res == BlockStatus::Invalid {
             let block = L2BlockCommitment::new(bundle.header().slot(), *blkid);
-            Err(EngineError::InvalidPayload(block).into())
+            Err(EngineError::InvalidPayload(block))
         } else {
             Ok(())
         }
