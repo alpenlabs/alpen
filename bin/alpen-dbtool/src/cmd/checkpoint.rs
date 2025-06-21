@@ -4,22 +4,76 @@ use clap::Args;
 use strata_db::traits::{CheckpointDatabase, Database, L1Database};
 use strata_primitives::l1::ProtocolOperation;
 use strata_rocksdb::CommonDb;
+use tracing::warn;
 
-use crate::errors::{DisplayableError, DisplayedError};
+use crate::{
+    cmd::l1::get_l1_horizon_height,
+    errors::{DisplayableError, DisplayedError},
+};
+
+/// Arguments to show details about a specific epoch.
+#[derive(Args, Debug)]
+pub(crate) struct GetEpochSummaryArgs {
+    /// Epoch index; defaults to the latest
+    #[arg(value_name = "EPOCH_INDEX")]
+    pub(crate) epoch_idx: Option<u64>,
+}
 
 /// Arguments to show details about a checkpoint.
 #[derive(Args, Debug)]
-pub struct GetCheckpointDataArgs {
+pub(crate) struct GetCheckpointDataArgs {
     /// Checkpoint index; defaults to the latest
-    checkpoint_idx: Option<u64>,
+    #[arg(value_name = "CHECKPOINT_INDEX")]
+    pub(crate) checkpoint_idx: Option<u64>,
 }
 
 /// Arguments to show a summary of all checkpoints.
 #[derive(Args, Debug)]
 pub struct GetCheckpointsSummaryArgs {}
 
+/// Show details about a specific epoch.
+pub(crate) fn get_epoch_summary(
+    db: Arc<CommonDb>,
+    args: GetEpochSummaryArgs,
+) -> Result<(), DisplayedError> {
+    // Determine epoch index
+    let epoch_idx = match args.epoch_idx {
+        Some(i) => i,
+        None => db
+            .checkpoint_db()
+            .get_last_summarized_epoch()
+            .internal_error("Failed to fetch last epoch index")?
+            .expect("a valid epoch index"),
+    };
+
+    // Fetch epoch summary
+    let epoch_commitments = db
+        .checkpoint_db()
+        .get_epoch_commitments_at(epoch_idx)
+        .internal_error("Failed to fetch epoch summary")?;
+
+    if epoch_commitments.len() == 0 {
+        warn!("no epoch commitments founds");
+        return Err(DisplayedError::UserError(
+            format!("Invalid epoch index"),
+            Box::new(epoch_idx),
+        ));
+    }
+
+    let epoch_summary = db
+        .checkpoint_db()
+        .get_epoch_summary(*epoch_commitments.get(0).unwrap())
+        .internal_error("Failed to fetch epoch summary")?
+        .expect("a valid epoch summary");
+
+    // Print epoch summary
+    println!("Epoch idx:  {epoch_idx}");
+    println!("Epoch summary: {epoch_summary:#?}");
+    Ok(())
+}
+
 /// Get details about a specific checkpoint.
-pub fn get_checkpoint_data(
+pub(crate) fn get_checkpoint_data(
     db: Arc<CommonDb>,
     args: GetCheckpointDataArgs,
 ) -> Result<(), DisplayedError> {
@@ -54,7 +108,7 @@ pub fn get_checkpoint_data(
 /// Get summary of all checkpoints in the database.
 ///
 /// Also validate that all checkpoints are present in L1 blocks.
-pub fn get_checkpoints_summary(
+pub(crate) fn get_checkpoints_summary(
     db: Arc<CommonDb>,
     _args: GetCheckpointsSummaryArgs,
 ) -> Result<(), DisplayedError> {
@@ -82,41 +136,16 @@ pub fn get_checkpoints_summary(
         checkpoint_commitments.len()
     );
 
-    // Check all checkpoints are in L1 blocks.
-    let (l1_tip_height, l1_tip_block_id) = l1_db
+    // Check if all checkpoints are present in L1 blocks
+    let (l1_tip_height, _) = l1_db
         .get_canonical_chain_tip()
         .internal_error("Failed to read L1 tip")?
         .expect("valid L1 tip");
 
-    println!(
-        "L1 tip height: {}, block id {:?}",
-        l1_tip_height, l1_tip_block_id
-    );
+    let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
 
-    let apparent_genesis_l1_height = (0..=l1_tip_height)
-        .rev()
-        .find(
-            |&height| match l1_db.get_canonical_blockid_at_height(height) {
-                Ok(Some(_)) => false, // keep searching
-                _ => true,            // break here, found missing or error
-            },
-        )
-        .map(|h| h + 1) // next known good height
-        .unwrap_or(l1_tip_height);
-
-    let genesis_l1_block_id = l1_db
-        .get_canonical_blockid_at_height(apparent_genesis_l1_height)
-        .internal_error("Failed to read L1 genesis block id")?
-        .expect("valid genesis block id");
-
-    println!(
-        "Apparent genesis l1 height: {}, block id {:?}",
-        apparent_genesis_l1_height, genesis_l1_block_id
-    );
-
-    // Check if all checkpoints are present in L1 blocks
     let mut found_checkpoints = 0;
-    for l1_height in apparent_genesis_l1_height..=l1_tip_height {
+    for l1_height in l1_horizon_height..=l1_tip_height {
         let block_id = l1_db
             .get_canonical_blockid_at_height(l1_height)
             .internal_error("Failed to fetch L1 block id")?
@@ -148,7 +177,7 @@ pub fn get_checkpoints_summary(
             });
     }
 
-    println!("Checkpoints found in l1 block transactions: {found_checkpoints}.");
+    println!("Checkpoints included in l1 blocks: {found_checkpoints}");
 
     Ok(())
 }

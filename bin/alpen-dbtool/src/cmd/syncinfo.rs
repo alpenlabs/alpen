@@ -8,14 +8,17 @@ use crate::errors::{DisplayableError, DisplayedError};
 
 /// Arguments to show details latest sync information.
 #[derive(Args, Debug)]
-pub struct GetSyncinfoArgs {
+pub(crate) struct GetSyncinfoArgs {
     /// Emit structured JSON instead of human‑readable output.
     #[arg(short = 'p', long = "porcelain")]
-    porcelain: bool,
+    pub(crate) porcelain: bool,
 }
 
 /// Show the latest sync information.
-pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<(), DisplayedError> {
+pub(crate) fn get_syncinfo(
+    db: Arc<CommonDb>,
+    _args: GetSyncinfoArgs,
+) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();
     let (l1_tip_height, l1_tip_block_id) = l1_db
         .get_canonical_chain_tip()

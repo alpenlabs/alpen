@@ -12,12 +12,11 @@ use clap::Parser;
 use crate::{
     cli::{Cli, Command},
     cmd::{
-        chainstate::reset_chainstate,
-        checkpoint::{get_checkpoint_data, get_checkpoints_summary},
-        epoch::get_epoch_summary,
-        l1_manifest::{get_l1_manifest, get_l1_summary},
-        l2_block::get_l2_block,
-        l2_client::get_l2_client_state,
+        chainstate::{get_chainstate, reset_chainstate},
+        checkpoint::{get_checkpoint_data, get_checkpoints_summary, get_epoch_summary},
+        client_state::get_client_state,
+        l1::{get_l1_manifest, get_l1_summary},
+        l2::get_l2_block,
         sync_event::{get_sync_event, get_sync_events_summary},
         syncinfo::get_syncinfo,
     },
@@ -46,13 +45,14 @@ fn main() {
         Command::GetL1Manifest(args) => get_l1_manifest(db, args),
         Command::GetL1Summary(args) => get_l1_summary(db, args),
         Command::GetL2Block(args) => get_l2_block(db, args),
-        Command::GetL2ClientState(args) => get_l2_client_state(db, args),
+        Command::GetClientState(args) => get_client_state(db, args),
         Command::GetCheckpointData(args) => get_checkpoint_data(db, args),
         Command::GetCheckpointsSummary(args) => get_checkpoints_summary(db, args),
         Command::GetEpochSummary(args) => get_epoch_summary(db, args),
         Command::GetSyncinfo(args) => get_syncinfo(db, args),
         Command::GetSyncEvent(args) => get_sync_event(db, args),
         Command::GetSyncEventsSummary(args) => get_sync_events_summary(db, args),
+        Command::GetChainstate(args) => get_chainstate(db, args),
         Command::ResetChainstate(args) => reset_chainstate(db, args),
     };
 

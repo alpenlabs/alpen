@@ -5,25 +5,51 @@ use hex::FromHex;
 use strata_db::traits::{ChainstateDatabase, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
 use strata_rocksdb::CommonDb;
-use strata_state::header::L2Header;
+use strata_state::{header::L2Header, state_op::WriteBatchEntry};
 
 // use strata_state::header::L2Header;
 use crate::errors::{DisplayableError, DisplayedError};
 
+/// Arguments to get the chainstate with a specific write index.
+#[derive(Args, Debug)]
+pub(crate) struct GetChainstateArgs {
+    /// Chainstate write index; defaults to the latest
+    #[arg(value_name = "CHAINSTATE_WRITE_INDEX")]
+    pub(crate) write_idx: Option<u64>,
+}
+
 /// Arguments to reset the chainstate to a specific L2 block.
 #[derive(Args, Debug)]
-pub struct ResetChainstateArgs {
+pub(crate) struct ResetChainstateArgs {
     /// Target L2 block hash or number to roll back to.
     #[arg(value_name = "L2_BLOCK_ID")]
-    pub block_id: String,
+    pub(crate) block_id: String,
+}
 
-    /// Allow resetting to a non‑epoch‑terminal block (dangerous).
-    #[arg(long = "allow-non-terminal")]
-    pub allow_nterm: bool,
+pub(crate) fn get_chainstate(
+    db: Arc<CommonDb>,
+    args: GetChainstateArgs,
+) -> Result<(), DisplayedError> {
+    let (chainstate_entry, write_idx) = get_chainstate_entry(db.clone(), args.write_idx)?;
+    let (batch_info, _) = chainstate_entry.to_parts();
+    let top_level_state = batch_info.new_toplevel_state();
+    println!("Chainstate write index: {write_idx}");
+    println!(
+        "Chain tip: {}, current epoch: {}, epoch finishing: {}",
+        top_level_state.chain_tip_slot(),
+        top_level_state.cur_epoch(),
+        top_level_state.is_epoch_finishing()
+    );
+    println!("Previous epoch: {:?}", top_level_state.prev_epoch());
+    println!("Finalized epoch: {:?}", top_level_state.finalized_epoch());
+    println!("L1 view: {:?}", top_level_state.l1_view());
+    println!("Deposits table: {:?}", top_level_state.deposits_table());
+
+    Ok(())
 }
 
 /// Reset the chainstate to a specific L2 block.
-pub fn reset_chainstate(
+pub(crate) fn reset_chainstate(
     db: Arc<CommonDb>,
     args: ResetChainstateArgs,
 ) -> Result<(), DisplayedError> {
@@ -49,17 +75,7 @@ pub fn reset_chainstate(
             )
         })?;
     let target_block_height = target_block_data.header().slot();
-
-    let last_l2_write_idx = db
-        .chain_state_db()
-        .get_last_write_idx()
-        .internal_error("Failed to fetch latest chainstate write index")?;
-
-    let chainstate_entry = db
-        .chain_state_db()
-        .get_write_batch(last_l2_write_idx)
-        .internal_error("Failed to fetch chainstate entry")?
-        .expect("valid entry");
+    let (chainstate_entry, _) = get_chainstate_entry(db.clone(), None)?;
     let (batch_info, _) = chainstate_entry.to_parts();
 
     let finalized_height = batch_info
@@ -75,4 +91,27 @@ pub fn reset_chainstate(
     }
 
     Ok(())
+}
+
+/// Get the chainstate write batch entry from the database.
+///
+/// If `update_idx` is None, gets the latest chainstate write batch entry.
+pub(super) fn get_chainstate_entry(
+    db: Arc<CommonDb>,
+    update_idx: Option<u64>,
+) -> Result<(WriteBatchEntry, u64), DisplayedError> {
+    let chainstate_db = db.chain_state_db();
+    let write_idx = update_idx.unwrap_or(
+        chainstate_db
+            .get_last_write_idx()
+            .internal_error("Failed to fetch latest chainstate write index")?,
+    );
+
+    let chainstate_entry = db
+        .chain_state_db()
+        .get_write_batch(write_idx)
+        .internal_error("Failed to fetch chainstate entry")?
+        .expect("valid entry");
+
+    Ok((chainstate_entry, write_idx))
 }

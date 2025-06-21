@@ -9,22 +9,28 @@ use strata_primitives::{
 };
 use strata_rocksdb::CommonDb;
 
-use crate::errors::{DisplayableError, DisplayedError};
+use crate::{
+    cmd::client_state::get_latest_client_state,
+    errors::{DisplayableError, DisplayedError},
+};
 
 /// Arguments to show details about an L1 manifest.
 #[derive(Args, Debug)]
-pub struct GetL1ManifestArgs {
+pub(crate) struct GetL1ManifestArgs {
     /// Block height; defaults to the chain tip
     #[arg(value_name = "L1_BLOCK_ID")]
-    pub block_id: String,
+    pub(crate) block_id: String,
 }
 
 /// Arguments to show a summary of all L1 manifests.
 #[derive(Args, Debug)]
-pub struct GetL1SummaryArgs {}
+pub(crate) struct GetL1SummaryArgs {}
 
 /// Get details about a specific L1 block manifest.
-pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(), DisplayedError> {
+pub(crate) fn get_l1_manifest(
+    db: Arc<CommonDb>,
+    args: GetL1ManifestArgs,
+) -> Result<(), DisplayedError> {
     // Convert String to L1BlockId
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
     if hex_str.len() != 64 {
@@ -65,7 +71,10 @@ pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(),
         l1_block_manifest.txs().len()
     );
 
-    println!("L1 block : {:?}", l1_block_manifest.epoch());
+    println!(
+        "L1 block epoch (this looks wrong): {:?}",
+        l1_block_manifest.epoch()
+    );
 
     // Print relevant transactions
     for tx in l1_block_manifest.txs().iter() {
@@ -92,7 +101,10 @@ pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(),
 }
 
 /// Get summary of L1 manifests in the database.
-pub fn get_l1_summary(db: Arc<CommonDb>, _args: GetL1SummaryArgs) -> Result<(), DisplayedError> {
+pub(crate) fn get_l1_summary(
+    db: Arc<CommonDb>,
+    _args: GetL1SummaryArgs,
+) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();
     let (l1_tip_height, l1_tip_block_id) = l1_db
         .get_canonical_chain_tip()
@@ -104,29 +116,34 @@ pub fn get_l1_summary(db: Arc<CommonDb>, _args: GetL1SummaryArgs) -> Result<(), 
         l1_tip_height, l1_tip_block_id
     );
 
-    let apparent_genesis_l1_height = (0..=l1_tip_height)
-        .rev()
-        .find(
-            |&height| match l1_db.get_canonical_blockid_at_height(height) {
-                Ok(Some(_)) => false, // keep searching
-                _ => true,            // break here, found missing or error
-            },
-        )
-        .map(|h| h + 1) // next known good height
-        .unwrap_or(l1_tip_height);
+    let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
+    if l1_horizon_height == l1_tip_height {
+        println!("Missing all l1 block from horizon.");
+        return Ok(());
+    }
 
-    let genesis_l1_block_id = l1_db
-        .get_canonical_blockid_at_height(apparent_genesis_l1_height)
+    let horizon_l1_block_id = l1_db
+        .get_canonical_blockid_at_height(l1_horizon_height)
         .internal_error("Failed to read L1 genesis block id")?
         .expect("valid genesis block id");
 
+    let (latest_client_state, latest_update_idx) = get_latest_client_state(db.clone(), None)?;
+    let genesis_l1_height = latest_client_state.state().genesis_l1_height();
+
     println!(
-        "Apparent genesis l1 height: {}, block id {:?}",
-        apparent_genesis_l1_height, genesis_l1_block_id
+        "L1 horizon height: {}, block id {:?}",
+        l1_horizon_height, horizon_l1_block_id
+    );
+    println!(
+        "Genesis l1 height: {:?}, expected number of l1 blocks (horizon height to tip) {},
+        number of client state updates: {}",
+        genesis_l1_height,
+        l1_tip_height.saturating_sub(l1_horizon_height) + 1,
+        latest_update_idx
     );
 
-    // Check if all L1 blocks from apparent genesis to tip are present
-    let all_l1_manifests_present = (apparent_genesis_l1_height..=l1_tip_height).all(|l1_height| {
+    // Check if all L1 blocks from L1 horizon to tip are present
+    let all_l1_manifests_present = (l1_horizon_height..=l1_tip_height).all(|l1_height| {
         let Some(block_id) = l1_db
             .get_canonical_blockid_at_height(l1_height)
             .ok()
@@ -152,4 +169,21 @@ pub fn get_l1_summary(db: Arc<CommonDb>, _args: GetL1SummaryArgs) -> Result<(), 
     }
 
     Ok(())
+}
+
+/// Get the L1 horizon height, i.e., the height of the first L1 block in the database
+pub(super) fn get_l1_horizon_height(db: Arc<CommonDb>, l1_tip_height: u64) -> u64 {
+    let l1_db = db.l1_db();
+
+    let horizon_l1_height = (0..=l1_tip_height)
+        .find(
+            |&height| match l1_db.get_canonical_blockid_at_height(height) {
+                Ok(Some(_)) => true, // break when found
+                _ => false,          // keep searching
+            },
+        )
+        .map(|h| h + 1) // next known good height
+        .unwrap_or(l1_tip_height);
+
+    horizon_l1_height
 }

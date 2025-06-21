@@ -3,12 +3,11 @@ use std::path::PathBuf;
 use clap::{crate_version, Parser, Subcommand};
 
 use crate::cmd::{
-    chainstate::ResetChainstateArgs,
-    checkpoint::{GetCheckpointDataArgs, GetCheckpointsSummaryArgs},
-    epoch::GetEpochSummaryArgs,
-    l1_manifest::{GetL1ManifestArgs, GetL1SummaryArgs},
-    l2_block::GetL2BlockArgs,
-    l2_client::GetL2ClientStateArgs,
+    chainstate::{GetChainstateArgs, ResetChainstateArgs},
+    checkpoint::{GetCheckpointDataArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
+    client_state::GetClientStateArgs,
+    l1::{GetL1ManifestArgs, GetL1SummaryArgs},
+    l2::GetL2BlockArgs,
     sync_event::{GetSyncEventArgs, GetSyncEventsSummaryArgs},
     syncinfo::GetSyncinfoArgs,
 };
@@ -52,8 +51,8 @@ pub enum Command {
     /// Show L2 block.
     GetL2Block(GetL2BlockArgs),
 
-    /// Show L2 client state.
-    GetL2ClientState(GetL2ClientStateArgs),
+    /// Show latest client state update.
+    GetClientState(GetClientStateArgs),
 
     /// Show checkpoint data.
     GetCheckpointData(GetCheckpointDataArgs),
@@ -72,6 +71,9 @@ pub enum Command {
 
     /// Show summary of sync events.
     GetSyncEventsSummary(GetSyncEventsSummaryArgs),
+
+    /// Get chainstate write batch.
+    GetChainstate(GetChainstateArgs),
 
     /// Roll back chainstate to a particular Alpen block (epoch‑terminal by default).
     ResetChainstate(ResetChainstateArgs),

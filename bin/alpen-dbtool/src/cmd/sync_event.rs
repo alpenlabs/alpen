@@ -9,18 +9,21 @@ use crate::errors::{DisplayableError, DisplayedError};
 
 /// Arguments to show details about a specific sync event.
 #[derive(Args, Debug)]
-pub struct GetSyncEventArgs {
+pub(crate) struct GetSyncEventArgs {
     /// Sync event index; defaults to the last written index
     #[arg(value_name = "SYNC_EVENT_INDEX")]
-    pub event_index: Option<u64>,
+    pub(crate) event_index: Option<u64>,
 }
 
 /// Arguments to show a summary of all sync events.
 #[derive(Args, Debug)]
-pub struct GetSyncEventsSummaryArgs {}
+pub(crate) struct GetSyncEventsSummaryArgs {}
 
 /// Get SyncEvent details by index.
-pub fn get_sync_event(db: Arc<CommonDb>, args: GetSyncEventArgs) -> Result<(), DisplayedError> {
+pub(crate) fn get_sync_event(
+    db: Arc<CommonDb>,
+    args: GetSyncEventArgs,
+) -> Result<(), DisplayedError> {
     let sync_db = db.sync_event_db();
     let event_index = args.event_index.unwrap_or(
         db.sync_event_db()
@@ -45,7 +48,7 @@ pub fn get_sync_event(db: Arc<CommonDb>, args: GetSyncEventArgs) -> Result<(), D
 }
 
 /// Get summary of L1 manifests in the database.
-pub fn get_sync_events_summary(
+pub(crate) fn get_sync_events_summary(
     db: Arc<CommonDb>,
     _args: GetSyncEventsSummaryArgs,
 ) -> Result<(), DisplayedError> {
