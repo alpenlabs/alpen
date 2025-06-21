@@ -23,6 +23,7 @@ pub struct GetL1ManifestArgs {
 #[derive(Args, Debug)]
 pub struct GetL1SummaryArgs {}
 
+/// Get details about a specific L1 block manifest.
 pub fn get_l1_manifest(db: Arc<CommonDb>, args: GetL1ManifestArgs) -> Result<(), DisplayedError> {
     // Convert String to L1BlockId
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);

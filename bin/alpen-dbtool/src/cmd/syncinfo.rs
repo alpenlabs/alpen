@@ -6,6 +6,7 @@ use strata_rocksdb::CommonDb;
 
 use crate::errors::{DisplayableError, DisplayedError};
 
+/// Arguments to show details latest sync information.
 #[derive(Args, Debug)]
 pub struct GetSyncinfoArgs {
     /// Emit structured JSON instead of human‑readable output.
@@ -13,6 +14,7 @@ pub struct GetSyncinfoArgs {
     porcelain: bool,
 }
 
+/// Show the latest sync information.
 pub fn get_syncinfo(db: Arc<CommonDb>, _args: GetSyncinfoArgs) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();
     let (l1_tip_height, l1_tip_block_id) = l1_db

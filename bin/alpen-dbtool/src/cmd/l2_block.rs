@@ -8,6 +8,7 @@ use strata_rocksdb::CommonDb;
 
 use crate::errors::{DisplayableError, DisplayedError};
 
+/// Arguments to show details about a specific L2 block.
 #[derive(Args, Debug)]
 pub struct GetL2BlockArgs {
     /// L2 Block id
@@ -15,6 +16,7 @@ pub struct GetL2BlockArgs {
     pub block_id: String,
 }
 
+/// Show details about a specific L2 block.
 pub fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<(), DisplayedError> {
     // Convert String to L2BlockId
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);

@@ -18,6 +18,7 @@ pub struct GetCheckpointDataArgs {
 #[derive(Args, Debug)]
 pub struct GetCheckpointsSummaryArgs {}
 
+/// Get details about a specific checkpoint.
 pub fn get_checkpoint_data(
     db: Arc<CommonDb>,
     args: GetCheckpointDataArgs,
@@ -50,6 +51,9 @@ pub fn get_checkpoint_data(
     Ok(())
 }
 
+/// Get summary of all checkpoints in the database.
+///
+/// Also validate that all checkpoints are present in L1 blocks.
 pub fn get_checkpoints_summary(
     db: Arc<CommonDb>,
     _args: GetCheckpointsSummaryArgs,
@@ -63,19 +67,19 @@ pub fn get_checkpoints_summary(
         .expect("valid checkpoint index");
 
     println!("Expected total checkpoints: {}", last_idx + 1);
-    let mut checkpoints_count = 0;
+    let mut checkpoint_commitments = Vec::new();
     for idx in 0..=last_idx {
         let entry = chkpt_db
             .get_checkpoint(idx)
             .internal_error(format!("Failed to get checkpoint at index {idx}"))?;
 
-        if entry.is_some() {
-            checkpoints_count += 1;
+        if let Some(checkpoint_entry) = entry {
+            checkpoint_commitments.push(checkpoint_entry.checkpoint.commitment().clone());
         }
     }
     println!(
         "Total checkpoints in checkpoint database: {}",
-        checkpoints_count
+        checkpoint_commitments.len()
     );
 
     // Check all checkpoints are in L1 blocks.
@@ -110,34 +114,41 @@ pub fn get_checkpoints_summary(
         apparent_genesis_l1_height, genesis_l1_block_id
     );
 
-    // Check checkpoints in blocks from apparent genesis to tip
-    let total_checkpoint_txs: usize = (apparent_genesis_l1_height..=l1_tip_height)
-        .filter_map(|l1_height| {
-            let block_id = l1_db
-                .get_canonical_blockid_at_height(l1_height)
-                .ok()
-                .flatten()?;
+    // Check if all checkpoints are present in L1 blocks
+    let mut found_checkpoints = 0;
+    for l1_height in apparent_genesis_l1_height..=l1_tip_height {
+        let block_id = l1_db
+            .get_canonical_blockid_at_height(l1_height)
+            .internal_error("Failed to fetch L1 block id")?
+            .expect("a valid block id");
+        let manifest = l1_db
+            .get_block_manifest(block_id)
+            .internal_error("Failed to fetch L1 block id")?
+            .expect("a valid manifest");
 
-            let manifest = l1_db.get_block_manifest(block_id).ok().flatten()?;
+        manifest
+            .txs()
+            .iter()
+            .flat_map(|tx| tx.protocol_ops())
+            .filter_map(|op| match op {
+                ProtocolOperation::Checkpoint(signed_checkpoint) => {
+                    Some(signed_checkpoint.checkpoint().commitment())
+                }
+                _ => None,
+            })
+            .for_each(|commitment| {
+                if !checkpoint_commitments.contains(&commitment) {
+                    println!(
+                        "Unexpected checkpoint commitment found in L1 block at height {}: {:?}",
+                        l1_height, commitment
+                    );
+                } else {
+                    found_checkpoints += 1;
+                }
+            });
+    }
 
-            let count = manifest
-                .txs()
-                .iter()
-                .filter(|tx| {
-                    tx.protocol_ops()
-                        .iter()
-                        .any(|op| matches!(op, ProtocolOperation::Checkpoint(_)))
-                })
-                .count();
-
-            Some(count)
-        })
-        .sum();
-
-    println!(
-        "Total checkpoint transactions found in L1 blocks from apparent genesis to tip: {}",
-        total_checkpoint_txs
-    );
+    println!("Checkpoints found in l1 block transactions: {found_checkpoints}.");
 
     Ok(())
 }

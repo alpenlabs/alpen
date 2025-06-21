@@ -10,6 +10,7 @@ use strata_state::header::L2Header;
 // use strata_state::header::L2Header;
 use crate::errors::{DisplayableError, DisplayedError};
 
+/// Arguments to reset the chainstate to a specific L2 block.
 #[derive(Args, Debug)]
 pub struct ResetChainstateArgs {
     /// Target L2 block hash or number to roll back to.
@@ -21,6 +22,7 @@ pub struct ResetChainstateArgs {
     pub allow_nterm: bool,
 }
 
+/// Reset the chainstate to a specific L2 block.
 pub fn reset_chainstate(
     db: Arc<CommonDb>,
     args: ResetChainstateArgs,

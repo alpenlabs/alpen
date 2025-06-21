@@ -7,12 +7,14 @@ use tracing::warn;
 
 use crate::errors::{DisplayableError, DisplayedError};
 
+/// Arguments to show details about a specific epoch.
 #[derive(Args, Debug)]
 pub struct GetEpochSummaryArgs {
     /// Epoch index; defaults to the latest
     epoch_idx: Option<u64>,
 }
 
+/// Show details about a specific epoch.
 pub fn get_epoch_summary(
     db: Arc<CommonDb>,
     args: GetEpochSummaryArgs,
