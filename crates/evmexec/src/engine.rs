@@ -311,7 +311,6 @@ impl<T: EngineRpc> RpcExecEngineCtl<T> {
 }
 
 impl<T: EngineRpc> RpcExecEngineCtl<T> {
-    #[allow(dead_code)]
     fn get_l2block(&self, l2_block_id: &L2BlockId) -> EngineResult<L2BlockBundle> {
         self.l2_block_manager
             .get_block_data_blocking(l2_block_id)
@@ -319,14 +318,12 @@ impl<T: EngineRpc> RpcExecEngineCtl<T> {
             .ok_or(EngineError::DbMissingBlock(*l2_block_id))
     }
 
-    #[allow(dead_code)]
     fn get_evm_block_hash(&self, l2_block_id: &L2BlockId) -> EngineResult<B256> {
         self.get_l2block(l2_block_id)
             .and_then(|l2block| self.get_block_info(l2block))
             .map(|evm_block| evm_block.block_hash())
     }
 
-    #[allow(dead_code)]
     fn get_block_info(&self, l2block: L2BlockBundle) -> EngineResult<EVML2Block> {
         EVML2Block::try_extract(&l2block).map_err(|err| EngineError::Other(err.to_string()))
     }

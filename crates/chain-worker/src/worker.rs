@@ -118,7 +118,7 @@ impl<W: WorkerContext> WorkerState<W> {
         // Try to execute the payload, seeing if *that's* valid.
         // we don't check this anymore, we always assume it's valid, this is
         // fine for now because it's testnet and we prove it later
-        //self.try_exec_el_payload(block.blkid(), &bundle)?;
+        // self.try_exec_el_payload(block.blkid(), &bundle)?;
 
         let header_ctx = L2HeaderAndParent::new(
             bundle.header().header().clone(),
