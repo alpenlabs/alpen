@@ -81,6 +81,7 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for AlpenEvmPrecompiles {
         let Some(precompile_fn) = self.precompiles.precompiles.get(address) else {
             return Ok(None);
         };
+        println!("#### i was called with address: {address:?} and inputs: {inputs:?}");
 
         let mut result = InterpreterResult {
             result: InstructionResult::Return,

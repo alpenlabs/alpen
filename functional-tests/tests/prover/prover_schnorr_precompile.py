@@ -6,7 +6,7 @@ from utils import el_slot_to_block_commitment, wait_for_proof_with_time_out, wai
 from utils.schnorr import (
     get_precompile_input,
     get_test_schnnor_secret_key,
-    make_schnorr_precompile_call,
+    make_precompile_call,
 )
 
 
@@ -33,7 +33,7 @@ class ProverClientTest(testenv.StrataTestBase):
         secret_key = get_test_schnnor_secret_key()
         msg = "AlpenStrata"
         precompile_input = get_precompile_input(secret_key, msg)
-        txid, _data = make_schnorr_precompile_call(web3, precompile_input)
+        txid, _data = make_precompile_call(web3, precompile_input)
 
         txn = web3.eth.get_transaction(txid)
         block_number = txn.blockNumber
