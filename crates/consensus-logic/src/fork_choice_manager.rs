@@ -5,7 +5,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use strata_chain_worker::{
-    worker_task, ChainWorkerHandle, ChainWorkerInput, WorkerError, WorkerMessage, WorkerResult,
+    worker_task, ChainWorkerHandle, ChainWorkerInput, WorkerError, ChainWorkerMessage, WorkerResult,
     WorkerShared,
 };
 use strata_chainexec::ChainExecutor;
@@ -720,6 +720,7 @@ fn handle_new_block<E: ExecEngineCtl>(
     let res = match apply_tip_update(tip_update, fcm_state) {
         Ok(()) => {
             info!(%tip_blkid, "new chain tip");
+
 
             // Also this is the point at which we update the engine head and
             // safe blocks.  We only have to actually call this one, it counts

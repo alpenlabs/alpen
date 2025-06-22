@@ -3,23 +3,23 @@ use std::sync::Arc;
 use strata_primitives::prelude::*;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use crate::{WorkerError, WorkerResult, message::WorkerMessage};
+use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
 
 #[allow(dead_code)]
 pub struct ChainWorkerHandle {
     shared: Arc<Mutex<WorkerShared>>,
-    msg_tx: mpsc::Sender<WorkerMessage>,
+    msg_tx: mpsc::Sender<ChainWorkerMessage>,
 }
 
 impl ChainWorkerHandle {
-    pub fn new(shared: Arc<Mutex<WorkerShared>>, msg_tx: mpsc::Sender<WorkerMessage>) -> Self {
+    pub fn new(shared: Arc<Mutex<WorkerShared>>, msg_tx: mpsc::Sender<ChainWorkerMessage>) -> Self {
         Self { shared, msg_tx }
     }
 
     /// Low-level caller to dispatch work to the worker thread.
     async fn send_and_wait<R>(
         &self,
-        make_fn: impl FnOnce(oneshot::Sender<WorkerResult<R>>) -> WorkerMessage,
+        make_fn: impl FnOnce(oneshot::Sender<WorkerResult<R>>) -> ChainWorkerMessage,
     ) -> WorkerResult<R> {
         // Construct the message with the lambda.
         let (completion_tx, completion_rx) = oneshot::channel();
@@ -39,7 +39,7 @@ impl ChainWorkerHandle {
     /// Low-level caller to dispatch work to the worker thread.
     fn send_and_wait_blocking<R>(
         &self,
-        make_fn: impl FnOnce(oneshot::Sender<WorkerResult<R>>) -> WorkerMessage,
+        make_fn: impl FnOnce(oneshot::Sender<WorkerResult<R>>) -> ChainWorkerMessage,
     ) -> WorkerResult<R> {
         // Construct the message with the lambda.
         let (completion_tx, completion_rx) = oneshot::channel();
@@ -57,35 +57,38 @@ impl ChainWorkerHandle {
 
     /// Tries to execute a block, returns the result.
     pub async fn try_exec_block(&self, block: L2BlockCommitment) -> WorkerResult<()> {
-        self.send_and_wait(|tx| WorkerMessage::TryExecBlock(block, tx))
+        self.send_and_wait(|tx| ChainWorkerMessage::TryExecBlock(block, tx))
             .await
     }
 
     /// Tries to execute a block, returns the result.
     pub fn try_exec_block_blocking(&self, block: L2BlockCommitment) -> WorkerResult<()> {
-        self.send_and_wait_blocking(|tx| WorkerMessage::TryExecBlock(block, tx))
+        self.send_and_wait_blocking(|tx| ChainWorkerMessage::TryExecBlock(block, tx))
     }
 
     /// Finalize an epoch, making whatever database changes necessary.
     pub async fn finalize_epoch(&self, epoch: EpochCommitment) -> WorkerResult<()> {
-        self.send_and_wait(|tx| WorkerMessage::FinalizeEpoch(epoch, tx))
+        self.send_and_wait(|tx| ChainWorkerMessage::FinalizeEpoch(epoch, tx))
             .await
     }
 
     /// Finalize an epoch, making whatever database changes necessary.
     pub fn finalize_epoch_blocking(&self, epoch: EpochCommitment) -> WorkerResult<()> {
-        self.send_and_wait_blocking(|tx| WorkerMessage::FinalizeEpoch(epoch, tx))
+        self.send_and_wait_blocking(|tx| ChainWorkerMessage::FinalizeEpoch(epoch, tx))
     }
 }
 
 /// Input to the worker, reading inputs from the worker handle.
 pub struct ChainWorkerInput {
     shared: Arc<Mutex<WorkerShared>>,
-    msg_rx: mpsc::Receiver<WorkerMessage>,
+    msg_rx: mpsc::Receiver<ChainWorkerMessage>,
 }
 
 impl ChainWorkerInput {
-    pub fn new(shared: Arc<Mutex<WorkerShared>>, msg_rx: mpsc::Receiver<WorkerMessage>) -> Self {
+    pub fn new(
+        shared: Arc<Mutex<WorkerShared>>,
+        msg_rx: mpsc::Receiver<ChainWorkerMessage>,
+    ) -> Self {
         Self { shared, msg_rx }
     }
 
@@ -93,7 +96,7 @@ impl ChainWorkerInput {
         &self.shared
     }
 
-    pub(crate) fn recv_next(&mut self) -> Option<WorkerMessage> {
+    pub(crate) fn recv_next(&mut self) -> Option<ChainWorkerMessage> {
         self.msg_rx.blocking_recv()
     }
 }
