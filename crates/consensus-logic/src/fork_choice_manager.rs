@@ -10,6 +10,9 @@ use strata_chain_worker::{
 };
 use strata_chainexec::ChainExecutor;
 use strata_chaintsn::transition::process_block;
+use strata_common::retry::{
+    policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
+};
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
 use strata_primitives::{
@@ -429,9 +432,16 @@ pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     let update = ChainSyncStatusUpdate::new(status, fcm.cur_chainstate.clone());
     status_channel.update_chain_sync_status(update);
 
-    handle_unprocessed_blocks(&mut fcm, &storage, &status_channel)?;
+    handle_unprocessed_blocks(&mut fcm, &storage, &status_channel, engine.clone())?;
 
-    if let Err(e) = forkchoice_manager_task_inner(&shutdown, handle, fcm, fcm_rx, status_channel) {
+    if let Err(e) = forkchoice_manager_task_inner(
+        &shutdown,
+        handle,
+        fcm,
+        fcm_rx,
+        status_channel,
+        engine.clone(),
+    ) {
         error!(err = ?e, "tracker aborted");
         return Err(e);
     }
@@ -441,10 +451,11 @@ pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
 
 /// Check if there are unprocessed L2 blocks in the database.
 /// If there are, pass them to fcm.
-pub fn handle_unprocessed_blocks(
+pub fn handle_unprocessed_blocks<E: ExecEngineCtl>(
     fcm: &mut ForkChoiceManager,
     storage: &NodeStorage,
     status_channel: &StatusChannel,
+    engine: Arc<E>,
 ) -> anyhow::Result<()> {
     info!("checking for unprocessed L2 blocks");
 
@@ -463,7 +474,12 @@ pub fn handle_unprocessed_blocks(
                 continue;
             }
 
-            process_fc_message(ForkChoiceMessage::NewBlock(blockid), fcm, status_channel)?;
+            process_fc_message(
+                ForkChoiceMessage::NewBlock(blockid),
+                fcm,
+                status_channel,
+                engine.clone(),
+            )?;
         }
         slot += 1;
     }
@@ -480,12 +496,13 @@ enum FcmEvent {
     Abort,
 }
 
-pub fn forkchoice_manager_task_inner(
+pub fn forkchoice_manager_task_inner<E: ExecEngineCtl>(
     shutdown: &ShutdownGuard,
     handle: Handle,
     mut fcm_state: ForkChoiceManager,
     mut fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     status_channel: StatusChannel,
+    engine: Arc<E>,
 ) -> anyhow::Result<()> {
     let mut cl_rx = status_channel.subscribe_client_state();
     loop {
@@ -504,7 +521,9 @@ pub fn forkchoice_manager_task_inner(
         }
 
         match fcm_ev {
-            FcmEvent::NewFcmMsg(m) => process_fc_message(m, &mut fcm_state, &status_channel),
+            FcmEvent::NewFcmMsg(m) => {
+                process_fc_message(m, &mut fcm_state, &status_channel, engine.clone())
+            }
             FcmEvent::NewStateUpdate(st) => handle_new_client_state(&mut fcm_state, st),
             FcmEvent::Abort => break,
         }?;
@@ -547,10 +566,11 @@ async fn wait_for_client_change(
     Ok(state)
 }
 
-fn process_fc_message(
+fn process_fc_message<E: ExecEngineCtl>(
     msg: ForkChoiceMessage,
     fcm_state: &mut ForkChoiceManager,
     status_channel: &StatusChannel,
+    engine: Arc<E>,
 ) -> anyhow::Result<()> {
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
@@ -563,7 +583,7 @@ fn process_fc_message(
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
 
-            let ok = match handle_new_block(fcm_state, &blkid, &block_bundle) {
+            let ok = match handle_new_block(fcm_state, &blkid, &block_bundle, engine) {
                 Ok(v) => v,
                 Err(e) => {
                     if let Some(EngineError::Other(_)) = e.downcast_ref() {
@@ -614,10 +634,11 @@ fn process_fc_message(
     Ok(())
 }
 
-fn handle_new_block(
+fn handle_new_block<E: ExecEngineCtl>(
     fcm_state: &mut ForkChoiceManager,
     blkid: &L2BlockId,
     bundle: &L2BlockBundle,
+    engine: Arc<E>,
 ) -> anyhow::Result<bool> {
     info!("handling new block test");
     let slot = bundle.header().slot();
@@ -630,27 +651,6 @@ fn handle_new_block(
         // It's invalid, write that and return.
         return Ok(false);
     }
-    info!(%blkid, "correctly signed");
-
-    // Try to execute the block, to see if it's actually valid.
-    //
-
-    /*
-    // We don't do this for the genesis block because that block doesn't
-    // actually have a well-formed accessory and it gets mad at us.
-    if slot > 0 {
-        let exec_hash = bundle.header().exec_payload_hash();
-        debug!(?blkid, ?exec_hash, "submitting execution payload");
-        let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
-
-        let res = retry_with_backoff(
-            "engine_submit_payload",
-            DEFAULT_ENGINE_CALL_MAX_RETRIES,
-            &ExponentialBackoff::default(),
-            || engine.submit_payload(eng_payload.clone()),
-        )?;
-        //let res = engine.submit_payload(eng_payload)?;
-    */
 
     // This stores the block output in the database, which lets us make queries
     // about it, at least until it gets reorged out by another block being
@@ -713,14 +713,12 @@ fn handle_new_block(
             // safe blocks.  We only have to actually call this one, it counts
             // for both.
 
-            /*
             retry_with_backoff(
                 "engine_update_safe_block",
                 DEFAULT_ENGINE_CALL_MAX_RETRIES,
                 &ExponentialBackoff::default(),
                 || engine.update_safe_block(tip_blkid),
-            )?;*/
-            //engine.update_safe_block(tip_blkid)?;
+            )?;
 
             Ok(true)
         }

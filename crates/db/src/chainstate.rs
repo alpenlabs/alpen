@@ -19,7 +19,7 @@ use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 use crate::DbResult;
 
 /// ID of a state instance.
-pub type StateInstanceId = u32;
+pub type StateInstanceId = u64;
 
 /// ID we use to query write batches.
 ///
