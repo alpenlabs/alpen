@@ -189,6 +189,15 @@ impl StatusChannel {
         Ok(state.clone())
     }
 
+    /// Waits until declared and returns the client state where genesis was triggered.
+    pub async fn wait_until_declared_epoch_is_some(&self) -> Result<ClientState, RecvError> {
+        let mut rx = self.subscribe_client_state();
+        let state = rx
+            .wait_for(|state| state.get_declared_final_epoch().is_some())
+            .await?;
+        Ok(state.clone())
+    }
+
     // Sender methods
 
     /// Sends the updated `Chainstate` to the chain state receiver. Logs a warning if the receiver

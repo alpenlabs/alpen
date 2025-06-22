@@ -6,12 +6,19 @@ use std::sync::Arc;
 
 use strata_chain_worker::{ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerShared};
 use strata_chainexec::ChainExecutor;
-use strata_eectl::{engine::ExecEngineCtl, worker::ExecWorkerState};
+use strata_eectl::{
+    engine::ExecEngineCtl,
+    handle::ExecCtlInput,
+    worker::{exec_worker_task, ExecWorkerState},
+};
 use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::{
+    runtime::Handle,
+    sync::{broadcast, mpsc, Mutex},
+};
 
 use crate::{
     chain_worker_context::ChainWorkerCtx,
@@ -20,6 +27,7 @@ use crate::{
         message::{ClientUpdateNotif, CsmMessage, ForkChoiceMessage},
         worker::{self},
     },
+    exec_worker_context::ExecWorkerCtx,
     fork_choice_manager::{self},
 };
 
@@ -100,7 +108,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let fcm_engine = engine.clone();
     let _fcm_csm_controller = csm_controller.clone();
     let fcm_params = params.clone();
-    let handle = executor.handle().clone();
+    let fcm_handle = executor.handle().clone();
     let st_ch = status_channel.clone();
     let cw_handle: Arc<ChainWorkerHandle> = Arc::new(ChainWorkerHandle::new(
         Arc::new(Mutex::new(WorkerShared::default())),
@@ -110,7 +118,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         // TODO this should be simplified into a builder or something
         fork_choice_manager::tracker_task(
             shutdown,
-            handle,
+            fcm_handle,
             fcm_storage,
             fcm_rx,
             cw_handle,
@@ -127,11 +135,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         cupdate_tx,
         storage.checkpoint().clone(),
     )?;
-    let prev_epoch = client_worker_state
-        .cur_state()
-        .get_declared_final_epoch()
-        .cloned();
-
     let csm_engine = engine.clone();
     let st_ch = status_channel.clone();
 
@@ -149,27 +152,18 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     );
     let shared = Arc::new(Mutex::new(WorkerShared::default()));
     let chain_worker_state =
-        strata_chain_worker::init_worker_state(shared.clone(), context, chain_exec, prev_epoch)?;
+        strata_chain_worker::init_worker_state(shared.clone(), context, chain_exec, exec_tx)?;
     let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
     executor.spawn_critical("chain_worker_task", move |shutdown| {
         strata_chain_worker::worker_task(&shutdown, chain_worker_state, input)
     });
 
-    // let exec_engine = engine.clone();
-    // let exec_env_id = ();
-    // let cur_tip =
-    // let exec_worker_state = ExecWorkerState::new(exec_engine, exec_env_id, cur_tip, prev_epoch);
-    // executor.spawn_critical("exec_worker_task", move |shutdown| {
-    //     strata_eectl::worker::worker_task(
-    //         shutdown,
-    //         exec_rx,
-    //         exec_tx,
-    //         engine,
-    //         params.clone(),
-    //         storage.clone(),
-    //         status_channel.clone(),
-    //     )
-    // });
+    let ew_handle = executor.handle().clone();
+    let ew_st_ch = status_channel.clone();
+    let ew_storage = storage.clone();
+    executor.spawn_critical("exec_worker_task", move |_shutdown| {
+        spawn_exec_worker(ew_handle, ew_storage, ew_st_ch, engine, exec_rx)
+    });
 
     Ok(SyncManager {
         params,
@@ -178,4 +172,25 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         cupdate_rx,
         status_channel,
     })
+}
+
+fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
+    handle: Handle,
+    storage: Arc<NodeStorage>,
+    status_channel: StatusChannel,
+    engine: Arc<E>,
+    exec_rx: ExecCtlInput,
+) -> anyhow::Result<()> {
+    let init_state = handle.block_on(status_channel.wait_until_declared_epoch_is_some())?;
+    let epoch = init_state
+        .get_declared_final_epoch()
+        .cloned()
+        .expect("sanity check");
+    let cur_tip = epoch.to_block_commitment();
+
+    let exec_env_id = ();
+    let state = ExecWorkerState::new(engine, exec_env_id, cur_tip, epoch);
+    let ctx = ExecWorkerCtx::new(storage.l2().clone());
+    exec_worker_task(state, exec_rx, &ctx)?;
+    Ok(())
 }
