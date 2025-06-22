@@ -6,7 +6,9 @@ use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
-use tracing::{error, info, warn};
+use strata_tasks::ShutdownGuard;
+use tokio::runtime::Handle;
+use tracing::{debug, error, info, warn};
 
 use crate::{
     engine::*,
@@ -22,7 +24,7 @@ pub struct ExecWorkerState<E: ExecEngineCtl> {
     exec_env_id: ExecEnvId,
 
     cur_tip: L2BlockCommitment,
-    prev_epoch: EpochCommitment,
+    prev_epoch: Option<EpochCommitment>,
 }
 
 impl<E: ExecEngineCtl> ExecWorkerState<E> {
@@ -31,7 +33,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
         engine: Arc<E>,
         exec_env_id: ExecEnvId,
         cur_tip: L2BlockCommitment,
-        prev_epoch: EpochCommitment,
+        prev_epoch: Option<EpochCommitment>,
     ) -> Self {
         Self {
             engine,
@@ -55,18 +57,24 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
     /// Calls the engine to update the reffed blocks.
     fn update_engine_refs(&mut self) -> EngineResult<()> {
         let safe = *self.cur_tip.blkid();
-        let finalized = *self.prev_epoch.last_blkid();
-        self.call_engine("engine_update_refs", |eng| {
-            eng.update_safe_block(safe)?;
-            eng.update_finalized_block(finalized)?;
-            Ok(())
-        })
+
+        match self.prev_epoch {
+            Some(prev_epoch) => self.call_engine("engine_update_refs", |eng| {
+                eng.update_safe_block(safe)?;
+                eng.update_finalized_block(*prev_epoch.last_blkid())?;
+                Ok(())
+            }),
+            None => self.call_engine("engine_update_refs", |eng| {
+                eng.update_safe_block(safe)?;
+                Ok(())
+            }),
+        }
     }
 
     /// Updates the tip state and updates the underlying engine's refs.
     fn update_tip_state(&mut self, new_tip_state: &TipState) -> EngineResult<()> {
         self.cur_tip = *new_tip_state.cur_tip();
-        self.prev_epoch = *new_tip_state.prev_epoch();
+        self.prev_epoch = Some(*new_tip_state.prev_epoch());
 
         self.update_engine_refs()?;
         Ok(())
@@ -106,10 +114,12 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
 
 /// Execution controller worker task entrypoint.
 pub fn exec_worker_task<E: ExecEngineCtl>(
+    shutdown: ShutdownGuard,
     mut state: ExecWorkerState<E>,
     mut input: ExecCtlInput,
     context: &impl ExecWorkerContext,
 ) -> anyhow::Result<()> {
+    info!("started exec worker");
     while let Some(inp) = input.recv_msg() {
         match inp {
             ExecCommand::NewTipState(ts, completion) => {
@@ -118,6 +128,7 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
             }
 
             ExecCommand::NewBlock(block, completion) => {
+                debug!("new block here");
                 let payload = context.fetch_exec_payload(&block, &state.exec_env_id)?;
                 // TODO figure out how to call the engine with the payload we got
                 match payload {
@@ -134,6 +145,9 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
                 }
                 let _ = completion.send(Ok(()));
             }
+        }
+        if shutdown.should_shutdown() {
+            break;
         }
     }
 
@@ -153,4 +167,3 @@ pub trait ExecWorkerContext {
         eeid: &ExecEnvId,
     ) -> EngineResult<Option<ExecPayloadData>>;
 }
-

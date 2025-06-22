@@ -11,14 +11,15 @@ use strata_eectl::{
     handle::ExecCtlInput,
     worker::{exec_worker_task, ExecWorkerState},
 };
-use strata_primitives::params::Params;
+use strata_primitives::{l2::L2BlockCommitment, params::Params};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
-use strata_tasks::TaskExecutor;
+use strata_tasks::{ShutdownGuard, TaskExecutor};
 use tokio::{
     runtime::Handle,
     sync::{broadcast, mpsc, Mutex},
 };
+use tracing::info;
 
 use crate::{
     chain_worker_context::ChainWorkerCtx,
@@ -161,8 +162,8 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let ew_handle = executor.handle().clone();
     let ew_st_ch = status_channel.clone();
     let ew_storage = storage.clone();
-    executor.spawn_critical("exec_worker_task", move |_shutdown| {
-        spawn_exec_worker(ew_handle, ew_storage, ew_st_ch, engine, exec_rx)
+    executor.spawn_critical("exec_worker_task", move |shutdown| {
+        spawn_exec_worker(shutdown, ew_handle, ew_storage, ew_st_ch, engine, exec_rx)
     });
 
     Ok(SyncManager {
@@ -175,22 +176,34 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
 }
 
 fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
+    shutdown: ShutdownGuard,
     handle: Handle,
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
     engine: Arc<E>,
     exec_rx: ExecCtlInput,
 ) -> anyhow::Result<()> {
-    let init_state = handle.block_on(status_channel.wait_until_declared_epoch_is_some())?;
-    let epoch = init_state
-        .get_declared_final_epoch()
-        .cloned()
-        .expect("sanity check");
-    let cur_tip = epoch.to_block_commitment();
+    info!("waiting until genesis");
+    let init_state = handle.block_on(status_channel.wait_until_genesis())?;
+    let cur_tip = match init_state.get_declared_final_epoch().cloned() {
+        Some(epoch) => epoch.to_block_commitment(),
+        None => L2BlockCommitment::new(
+            0,
+            *init_state.sync().expect("after genesis").genesis_blkid(),
+        ),
+    };
+
+    let blkid = *cur_tip.blkid();
+    info!(%blkid, "starting exec worker");
 
     let exec_env_id = ();
-    let state = ExecWorkerState::new(engine, exec_env_id, cur_tip, epoch);
+    let state = ExecWorkerState::new(
+        engine,
+        exec_env_id,
+        cur_tip,
+        init_state.get_apparent_finalized_epoch(),
+    );
     let ctx = ExecWorkerCtx::new(storage.l2().clone());
-    exec_worker_task(state, exec_rx, &ctx)?;
+    exec_worker_task(shutdown, state, exec_rx, &ctx)?;
     Ok(())
 }
