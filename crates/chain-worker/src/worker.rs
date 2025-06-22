@@ -119,9 +119,9 @@ impl<W: WorkerContext> WorkerState<W> {
             .ok_or(WorkerError::MissingL2Block(*parent_blkid))?;
 
         // Try to execute the payload, seeing if *that's* valid.
-        // we don't check this anymore, we always assume it's valid, this is
-        // fine for now because it's testnet and we prove it later
-        // self.try_exec_el_payload(block.blkid(), &bundle)?;
+        self.exec_ctl_handle
+            .try_exec_el_payload_blocking(*block)
+            .map_err(|_| WorkerError::InvalidExecPayload(*block))?;
 
         let header_ctx = L2HeaderAndParent::new(
             bundle.header().header().clone(),

@@ -4,8 +4,12 @@ use std::sync::Arc;
 
 use strata_primitives::prelude::*;
 use tokio::sync::{mpsc, oneshot};
+use tracing::debug;
 
-use crate::{errors::EngineResult, messages::TipState};
+use crate::{
+    errors::{EngineError, EngineResult},
+    messages::TipState,
+};
 
 /// Commands we send from the handle to the worker, with completion channels.
 #[derive(Debug)]
@@ -24,7 +28,62 @@ pub struct ExecCtlHandle {
 }
 
 impl ExecCtlHandle {
-    // TODO add fns for sending messages
+    async fn send_and_wait<R>(
+        &self,
+        make_fn: impl FnOnce(oneshot::Sender<EngineResult<R>>) -> ExecCommand,
+    ) -> EngineResult<R> {
+        // Construct the message with the lambda.
+        let (completion_tx, completion_rx) = oneshot::channel();
+        let msg = make_fn(completion_tx);
+
+        // Then send it and wait for a response.
+        if self.msg_tx.send(msg).await.is_err() {
+            return Err(EngineError::WorkerExited);
+        }
+
+        match completion_rx.await {
+            Ok(r) => r,
+            Err(_) => Err(EngineError::WorkerExited),
+        }
+    }
+
+    fn send_and_wait_blocking<R>(
+        &self,
+        make_fn: impl FnOnce(oneshot::Sender<EngineResult<R>>) -> ExecCommand,
+    ) -> EngineResult<R> {
+        // Construct the message with the lambda.
+        let (completion_tx, completion_rx) = oneshot::channel();
+        let msg = make_fn(completion_tx);
+
+        // Then send it and wait for a response.
+        if self.msg_tx.blocking_send(msg).is_err() {
+            return Err(EngineError::WorkerExited);
+        }
+
+        match completion_rx.blocking_recv() {
+            Ok(r) => r,
+            Err(_) => Err(EngineError::WorkerExited),
+        }
+    }
+
+    pub async fn try_exec_el_payload(&self, block: L2BlockCommitment) -> EngineResult<()> {
+        self.send_and_wait(|tx| ExecCommand::NewBlock(block, tx))
+            .await
+    }
+
+    pub fn try_exec_el_payload_blocking(&self, block: L2BlockCommitment) -> EngineResult<()> {
+        debug!(?block, "trying to execute EL payload block");
+        self.send_and_wait_blocking(|tx| ExecCommand::NewBlock(block, tx))
+    }
+
+    pub async fn update_tip_state(&self, tip_state: TipState) -> EngineResult<()> {
+        self.send_and_wait(|tx| ExecCommand::NewTipState(tip_state, tx))
+            .await
+    }
+
+    pub fn update_tip_state_blocking(&self, tip_state: TipState) -> EngineResult<()> {
+        self.send_and_wait_blocking(|tx| ExecCommand::NewTipState(tip_state, tx))
+    }
 }
 
 #[derive(Debug)]
