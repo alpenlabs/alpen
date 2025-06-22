@@ -5,7 +5,9 @@ use strata_chaintsn::context::StateAccessor;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_consensus_logic::checkpoint_verification;
+use strata_consensus_logic::{
+    chain_worker_context::conv_blkid_to_slot_wb_id, checkpoint_verification,
+};
 use strata_db::DbError;
 use strata_eectl::{
     engine::{ExecEngineCtl, PayloadStatus},
@@ -62,7 +64,6 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_slot: u64) -> Result<
 /// Needs to be signed to be a valid L2Block.
 // TODO use parent block chainstate
 pub fn prepare_block(
-    slot: u64,
     prev_block: L2BlockBundle,
     ts: u64,
     epoch_gas_limit: Option<u64>,
@@ -71,9 +72,10 @@ pub fn prepare_block(
     params: &Params,
 ) -> Result<(L2BlockHeader, L2BlockBody, L2BlockAccessory), Error> {
     let prev_blkid = prev_block.header().get_blockid();
-    debug!(%slot, %prev_blkid, "preparing block");
+    let prev_slot = prev_block.header().slot();
+    debug!(%prev_slot, %prev_blkid, "preparing block");
     let l1man = storage.l1();
-    let chsman = storage.chainstate();
+    let chsman = storage.new_chainstate();
     let ckptman = storage.checkpoint();
 
     let prev_global_sr = *prev_block.header().state_root();
@@ -81,11 +83,11 @@ pub fn prepare_block(
     // Get the previous block's state
     // TODO make this get the prev block slot from somewhere more reliable in
     // case we skip slots
-    let prev_slot = prev_block.header().slot();
+    let prev_blkid = prev_block.header().get_blockid();
     let prev_chstate = chsman
-        .get_toplevel_chainstate_blocking(prev_slot)?
+        .get_write_batch_blocking(conv_blkid_to_slot_wb_id(prev_blkid))?
         .ok_or(Error::MissingBlockChainstate(prev_blkid))?
-        .to_chainstate();
+        .into_toplevel();
     let first_block_of_epoch = prev_chstate.is_epoch_finishing();
 
     // Figure out the safe L1 blkid.
@@ -113,6 +115,7 @@ pub fn prepare_block(
 
     // Prepare the execution segment, which right now is just talking to the EVM
     // but will be more advanced later.
+    let slot = prev_slot + 1;
     let (exec_seg, block_acc) = prepare_exec_data(
         slot,
         ts,

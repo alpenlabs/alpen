@@ -37,7 +37,7 @@ use tokio::{
 use tracing::*;
 
 use crate::{
-    chain_worker_context::ChainWorkerCtx,
+    chain_worker_context::{conv_blkid_to_slot_wb_id, ChainWorkerCtx},
     csm::{ctl::CsmController, message::ForkChoiceMessage, worker::WorkerState},
     errors::*,
     tip_update::{compute_tip_update, TipUpdate},
@@ -583,7 +583,7 @@ fn process_fc_message<E: ExecEngineCtl>(
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
 
-            let ok = match handle_new_block(fcm_state, &blkid, &block_bundle, engine) {
+            let ok = match handle_new_block(fcm_state, &block_bundle, engine) {
                 Ok(v) => v,
                 Err(e) => {
                     if let Some(EngineError::Other(_)) = e.downcast_ref() {
@@ -636,12 +636,15 @@ fn process_fc_message<E: ExecEngineCtl>(
 
 fn handle_new_block<E: ExecEngineCtl>(
     fcm_state: &mut ForkChoiceManager,
-    blkid: &L2BlockId,
     bundle: &L2BlockBundle,
     engine: Arc<E>,
 ) -> anyhow::Result<bool> {
-    info!("handling new block test");
     let slot = bundle.header().slot();
+    let blkid = &bundle.header().get_blockid();
+    info!(%blkid, %slot, "handling new block");
+    debug!(?fcm_state.cur_best_block);
+    debug!(?fcm_state.chain_tracker);
+    debug!(?fcm_state.cur_chainstate);
 
     // First, decide if the block seems correctly signed and we haven't
     // already marked it as invalid.
@@ -702,10 +705,19 @@ fn handle_new_block<E: ExecEngineCtl>(
 
     // TODO need to re-add this part
     // Update the tip block in the FCM state.
-    //fcm_state.update_tip_block(last_block, Arc::new(cur_state));
+    let new_chainstate = fcm_state
+        .storage
+        .new_chainstate()
+        .get_write_batch_blocking(conv_blkid_to_slot_wb_id(tip_blkid))?
+        .ok_or(DbError::MissingWriteBatch)?
+        .into_toplevel();
+    fcm_state.update_tip_block(
+        bundle.block().header().get_block_commitment(),
+        Arc::new(new_chainstate),
+    );
 
     // Apply the reorg.
-    match apply_tip_update(tip_update, fcm_state) {
+    let res = match apply_tip_update(tip_update, fcm_state) {
         Ok(()) => {
             info!(%tip_blkid, "new chain tip");
 
@@ -742,7 +754,13 @@ fn handle_new_block<E: ExecEngineCtl>(
                 Err(e)
             }
         }
-    }
+    };
+
+    debug!(?fcm_state.cur_best_block);
+    debug!(?fcm_state.chain_tracker);
+    debug!(?fcm_state.cur_chainstate);
+
+    res
 }
 
 /// Considers if the block is plausibly valid and if we should attach it to the

@@ -805,7 +805,7 @@ impl StrataSequencerApiServer for SequencerServerImpl {
     }
 
     async fn get_sequencer_duties(&self) -> RpcResult<Vec<Duty>> {
-        let (chain_state, tip_blockid) = self
+        let (_, tip_blockid) = self
             .status
             .get_cur_tip_chainstate_with_block()
             .ok_or(Error::BeforeGenesis)?;
@@ -816,7 +816,6 @@ impl StrataSequencerApiServer for SequencerServerImpl {
             .ok_or(Error::MissingInternalState)?;
 
         let duties = extract_duties(
-            chain_state.chain_tip_slot(),
             tip_blockid,
             client_int_state,
             &self.checkpoint_handle,
