@@ -75,8 +75,9 @@ pub(crate) fn reset_chainstate(
             )
         })?;
     let target_block_height = target_block_data.header().slot();
-    let (chainstate_entry, _) = get_chainstate_entry(db.clone(), None)?;
-    let (batch_info, _) = chainstate_entry.to_parts();
+    // It seems write index is the same as the slot number
+    let (chainstate_entry, latest_slot) = get_chainstate_entry(db.clone(), None)?;
+    let (batch_info, latest_block_id) = chainstate_entry.to_parts();
 
     let finalized_height = batch_info
         .new_toplevel_state()
@@ -89,6 +90,30 @@ pub(crate) fn reset_chainstate(
             Box::new(target_block_id),
         ));
     }
+
+    // Determine the slot to reset to
+    let mut target_slot = latest_slot - 1;
+    if target_block_id != latest_block_id {
+        for entry_idx in (0..latest_slot).rev() {
+            let entry = db
+                .chain_state_db()
+                .get_write_batch(entry_idx)
+                .internal_error("Failed to fetch chainstate entry")?
+                .expect("valid entry");
+
+            let (_, block_id) = entry.to_parts();
+            if block_id == target_block_id {
+                target_slot = entry_idx;
+                break;
+            }
+        }
+    }
+
+    println!("Resetting chainstate to slot {target_slot}");
+    // Reset chainstate to the target slot
+    // db.chain_state_db()
+    //     .rollback_writes_to(target_slot)
+    //     .internal_error("failed to reset chainstate")?;
 
     Ok(())
 }
