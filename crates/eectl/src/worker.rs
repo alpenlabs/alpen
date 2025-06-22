@@ -1,5 +1,7 @@
 //! Generic exec worker task.
 
+use std::sync::Arc;
+
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -14,8 +16,8 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct WorkerState<E: ExecEngineCtl> {
-    engine: E,
+pub struct ExecWorkerState<E: ExecEngineCtl> {
+    engine: Arc<E>,
 
     exec_env_id: ExecEnvId,
 
@@ -23,10 +25,10 @@ pub struct WorkerState<E: ExecEngineCtl> {
     prev_epoch: EpochCommitment,
 }
 
-impl<E: ExecEngineCtl> WorkerState<E> {
+impl<E: ExecEngineCtl> ExecWorkerState<E> {
     /// Constructs a new instance.
     pub fn new(
-        engine: E,
+        engine: Arc<E>,
         exec_env_id: ExecEnvId,
         cur_tip: L2BlockCommitment,
         prev_epoch: EpochCommitment,
@@ -104,7 +106,7 @@ impl<E: ExecEngineCtl> WorkerState<E> {
 
 /// Execution controller worker task entrypoint.
 pub fn worker_task<E: ExecEngineCtl>(
-    mut state: WorkerState<E>,
+    mut state: ExecWorkerState<E>,
     mut input: ExecCtlInput,
     context: &impl ExecWorkerContext,
 ) -> anyhow::Result<()> {

@@ -18,7 +18,7 @@ use tracing::*;
 use crate::{
     WorkerContext, WorkerError, WorkerResult,
     handle::{ChainWorkerInput, WorkerShared},
-    message::WorkerMessage,
+    message::ChainWorkerMessage,
 };
 
 /// `StateAccessor` impl we pass to chaintsn.  Aliased here for convenience.
@@ -125,7 +125,6 @@ impl<W: WorkerContext> WorkerState<W> {
             *parent_blkid,
             parent_header,
         );
-        debug!(?header_ctx, "header");
 
         let exec_ctx = self.prepare_block_context(block)?;
 
@@ -228,12 +227,12 @@ pub fn worker_task<W: WorkerContext>(
     info!("Starting chainworker task");
     while let Some(m) = input.recv_next() {
         match m {
-            WorkerMessage::TryExecBlock(l2bc, completion) => {
+            ChainWorkerMessage::TryExecBlock(l2bc, completion) => {
                 let res = state.try_exec_block(&l2bc);
                 let _ = completion.send(res);
             }
 
-            WorkerMessage::FinalizeEpoch(epoch, completion) => {
+            ChainWorkerMessage::FinalizeEpoch(epoch, completion) => {
                 let res = state.finalize_epoch(epoch);
                 let _ = completion.send(res);
             }

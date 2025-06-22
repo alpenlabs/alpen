@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use strata_chain_worker::{ChainWorkerHandle, ChainWorkerInput, WorkerMessage, WorkerShared};
+use strata_chain_worker::{ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerShared};
 use strata_chainexec::ChainExecutor;
-use strata_eectl::engine::ExecEngineCtl;
+use strata_eectl::{engine::ExecEngineCtl, worker::ExecWorkerState};
 use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -86,7 +86,8 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
     let (csm_tx, csm_rx) = mpsc::channel::<CsmMessage>(64);
-    let (msg_tx, msg_rx) = mpsc::channel::<WorkerMessage>(64);
+    let (chain_msg_tx, chain_msg_rx) = mpsc::channel::<ChainWorkerMessage>(64);
+    let (exec_tx, exec_rx) = strata_eectl::handle::make_handle_pair();
     let csm_controller = Arc::new(CsmController::new(storage.sync_event().clone(), csm_tx));
 
     // TODO should this be in an `Arc`?  it's already fairly compact so we might
@@ -103,7 +104,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let st_ch = status_channel.clone();
     let cw_handle: Arc<ChainWorkerHandle> = Arc::new(ChainWorkerHandle::new(
         Arc::new(Mutex::new(WorkerShared::default())),
-        msg_tx,
+        chain_msg_tx,
     ));
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
         // TODO this should be simplified into a builder or something
@@ -149,10 +150,26 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let shared = Arc::new(Mutex::new(WorkerShared::default()));
     let chain_worker_state =
         strata_chain_worker::init_worker_state(shared.clone(), context, chain_exec, prev_epoch)?;
-    let input = ChainWorkerInput::new(shared.clone(), msg_rx);
+    let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
     executor.spawn_critical("chain_worker_task", move |shutdown| {
         strata_chain_worker::worker_task(&shutdown, chain_worker_state, input)
     });
+
+    // let exec_engine = engine.clone();
+    // let exec_env_id = ();
+    // let cur_tip =
+    // let exec_worker_state = ExecWorkerState::new(exec_engine, exec_env_id, cur_tip, prev_epoch);
+    // executor.spawn_critical("exec_worker_task", move |shutdown| {
+    //     strata_eectl::worker::worker_task(
+    //         shutdown,
+    //         exec_rx,
+    //         exec_tx,
+    //         engine,
+    //         params.clone(),
+    //         storage.clone(),
+    //         status_channel.clone(),
+    //     )
+    // });
 
     Ok(SyncManager {
         params,

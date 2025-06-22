@@ -92,8 +92,7 @@ pub fn prepare_block(
 
     // Figure out the safe L1 blkid.
     // FIXME this is somewhat janky, should get it from the MMR
-    let safe_l1_block_rec = prev_chstate.l1_view().safe_block();
-    let safe_l1_blkid = strata_primitives::hash::sha256d(safe_l1_block_rec.buf());
+    let safe_l1_blkid = *prev_chstate.l1_view().safe_block().blkid();
 
     // TODO Pull data from CSM state that we've observed from L1, including new
     // headers or any headers needed to perform a reorg if necessary.
@@ -122,7 +121,7 @@ pub fn prepare_block(
         prev_blkid,
         prev_global_sr,
         &prev_chstate,
-        safe_l1_blkid,
+        safe_l1_blkid.into(),
         engine,
         params.rollup(),
         remaining_gas_limit,
