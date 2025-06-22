@@ -12,7 +12,7 @@ use revm::{
     interpreter::{
         interpreter::EthInterpreter, Gas, InputsImpl, InstructionResult, InterpreterResult,
     },
-    precompile::{PrecompileError, PrecompileFn, Precompiles},
+    precompile::{bls12_381, PrecompileError, PrecompileFn, Precompiles},
     Context, ExecuteEvm, InspectEvm, Inspector, MainBuilder, MainContext,
 };
 use revm_primitives::{hardfork::SpecId, Address, Bytes, TxKind, U256};
@@ -46,6 +46,10 @@ pub fn load_precompiles() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
     INSTANCE.get_or_init(|| {
         let mut precompiles = Precompiles::berlin().clone();
+
+        // EIP-2537: Precompile for BLS12-381
+        precompiles.extend(bls12_381::precompiles());
+
         // Custom precompile.
         precompiles.extend([
             (SCHNORR_ADDRESS, verify_schnorr_precompile as PrecompileFn).into(),
