@@ -35,38 +35,38 @@ pub trait NewChainstateDatabase {
     /// Clones a state instance to create a new state instance.
     ///
     /// This MAY be a copy-on-write type clone.
-    fn clone_inst(&self, _id: StateInstanceId) -> DbResult<StateInstanceId>;
+    fn clone_inst(&self, id: StateInstanceId) -> DbResult<StateInstanceId>;
 
     /// Deletes a state instance, allowing its underlying data to be freed.
-    fn del_inst(&self, _id: StateInstanceId) -> DbResult<()>;
+    fn del_inst(&self, id: StateInstanceId) -> DbResult<()>;
 
     /// Gets a list of state instance IDs.
     fn get_insts(&self) -> DbResult<Vec<StateInstanceId>>;
 
     /// Gets the root of a state instance.
-    fn get_inst_root(&self, _id: StateInstanceId) -> DbResult<Buf32>;
+    fn get_inst_root(&self, id: StateInstanceId) -> DbResult<Buf32>;
 
     /// Gets the toplevel state for a snapshot.
-    fn get_inst_toplevel_state(&self, _id: StateInstanceId) -> DbResult<Chainstate>;
+    fn get_inst_toplevel_state(&self, id: StateInstanceId) -> DbResult<Chainstate>;
 
     /// Puts a write batch associated with an opaque ID.
     ///
     /// This is likely to be a block ID, but can be something else.
-    fn put_write_batch(&self, _id: WriteBatchId, _wb: WriteBatch) -> DbResult<()>;
+    fn put_write_batch(&self, id: WriteBatchId, wb: WriteBatch) -> DbResult<()>;
 
     /// Gets a write batch associated with some ID, if it exists.
-    fn get_write_batch(&self, _id: WriteBatchId) -> DbResult<Option<WriteBatch>>;
+    fn get_write_batch(&self, id: WriteBatchId) -> DbResult<Option<WriteBatch>>;
 
     /// Deletes a write batch.
-    fn del_write_batch(&self, _id: WriteBatchId) -> DbResult<()>;
+    fn del_write_batch(&self, id: WriteBatchId) -> DbResult<()>;
 
     /// Applies a sequence of write batches to a state in a single atomic
     /// operation.  If there is a failure in applying the write ops, the state
     /// instance MUST remain unchanged.
     fn merge_write_batches(
         &self,
-        _state_id: StateInstanceId,
-        _wb_ids: Vec<WriteBatchId>,
+        state_id: StateInstanceId,
+        wb_ids: Vec<WriteBatchId>,
     ) -> DbResult<()>;
 
     // TODO add accessor functions for fetching bulk state values

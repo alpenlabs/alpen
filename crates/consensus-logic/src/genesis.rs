@@ -17,11 +17,12 @@ use strata_state::{
     l1::L1ViewState,
     operation::ClientUpdateOutput,
     prelude::*,
+    state_op::WriteBatch,
 };
 use strata_storage::{ClientStateManager, L1BlockManager, L2BlockManager, NodeStorage};
 use tracing::*;
 
-use crate::errors::Error;
+use crate::{chain_worker_context::conv_blkid_to_slot_wb_id, errors::Error};
 
 /// Inserts into the database an initial basic client state that we can begin
 /// waiting for genesis with.
@@ -62,9 +63,18 @@ pub fn init_genesis_chainstate(
     let (gblock, gchstate) = make_l2_genesis(params, pregenesis_mfs);
 
     // Now insert things into the database.
+    // TODO: avoid duplication
     storage
         .chainstate()
         .write_genesis_state(gchstate.clone(), gblock.header().get_blockid())?;
+
+    let gid = gblock.header().get_blockid();
+
+    let wb = WriteBatch::new(gchstate.clone());
+    let wb_id = conv_blkid_to_slot_wb_id(gid);
+    storage
+        .new_chainstate()
+        .put_write_batch_blocking(wb_id, wb)?;
     storage.l2().put_block_data_blocking(gblock)?;
     // TODO: Status channel should probably be updated.
 
