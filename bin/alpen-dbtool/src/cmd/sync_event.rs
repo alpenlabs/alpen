@@ -4,7 +4,9 @@ use clap::Args;
 use strata_db::traits::{Database, L1Database, SyncEventDatabase};
 use strata_rocksdb::CommonDb;
 use strata_state::sync_event::SyncEvent;
+use tracing::warn;
 
+use super::l1::get_l1_horizon_height;
 use crate::errors::{DisplayableError, DisplayedError};
 
 /// Arguments to show details about a specific sync event.
@@ -56,28 +58,22 @@ pub(crate) fn get_sync_events_summary(
     let sync_db = db.sync_event_db();
     let last_idx = sync_db.get_last_idx().unwrap();
 
-    let l1_db = db.l1_db();
-    let (l1_tip_height, _) = l1_db
+    let (l1_tip_height, _) = db
+        .l1_db()
         .get_canonical_chain_tip()
         .internal_error("Failed to read L1 tip")?
         .expect("valid L1 tip");
 
-    let apparent_genesis_l1_height = (0..=l1_tip_height)
-        .rev()
-        .find(
-            |&height| match l1_db.get_canonical_blockid_at_height(height) {
-                Ok(Some(_)) => false, // keep searching
-                _ => true,            // break here, found missing or error
-            },
-        )
-        .map(|h| h + 1) // next known good height
-        .unwrap_or(l1_tip_height);
+    let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
+    if l1_horizon_height == l1_tip_height {
+        warn!("Missing all l1 blocks from horizon to tip.");
+    }
 
     if let Some(last_idx) = last_idx {
         println!(
-            "Last sync event index: {}. Expected number of L1 blocks (apparent genesis height to tip): {}",
+            "Last sync event index: {}. Expected number of L1 blocks (l1 horizon to tip): {}",
             last_idx,
-            l1_tip_height - apparent_genesis_l1_height + 1
+            l1_tip_height - l1_horizon_height + 1
         );
         let mut observed_l1_heights = std::collections::HashSet::new();
 
@@ -91,7 +87,7 @@ pub(crate) fn get_sync_events_summary(
 
         // Now verify all expected heights are present
         let all_l1_sync_events_present =
-            (apparent_genesis_l1_height..=l1_tip_height).all(|expected_height| {
+            (l1_horizon_height..=l1_tip_height).all(|expected_height| {
                 if !observed_l1_heights.contains(&expected_height) {
                     println!("Missing SyncEvent::L1Block for height {}", expected_height);
                     return false;

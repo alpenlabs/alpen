@@ -8,6 +8,7 @@ use strata_primitives::{
     l1::{L1BlockId, ProtocolOperation},
 };
 use strata_rocksdb::CommonDb;
+use tracing::warn;
 
 use crate::{
     cmd::client_state::get_latest_client_state,
@@ -118,7 +119,7 @@ pub(crate) fn get_l1_summary(
 
     let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
     if l1_horizon_height == l1_tip_height {
-        println!("Missing all l1 block from horizon.");
+        warn!("Missing all l1 blocks from horizon to tip.");
         return Ok(());
     }
 
@@ -176,13 +177,7 @@ pub(super) fn get_l1_horizon_height(db: Arc<CommonDb>, l1_tip_height: u64) -> u6
     let l1_db = db.l1_db();
 
     let horizon_l1_height = (0..=l1_tip_height)
-        .find(
-            |&height| match l1_db.get_canonical_blockid_at_height(height) {
-                Ok(Some(_)) => true, // break when found
-                _ => false,          // keep searching
-            },
-        )
-        .map(|h| h + 1) // next known good height
+        .find(|&height| matches!(l1_db.get_canonical_blockid_at_height(height), Ok(Some(_))))
         .unwrap_or(l1_tip_height);
 
     horizon_l1_height
