@@ -59,7 +59,7 @@ def make_precompile_call(
         "to": precompile_address,
         "from": source,
         "value": hex(0),
-        "gas": hex(100000),
+        "gas": hex(200000),
         "data": precompile_input,
     }
     txid = web3.eth.send_transaction(tx_params)

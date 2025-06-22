@@ -3,8 +3,9 @@ from web3 import Web3
 
 from envs import testenv
 from utils import el_slot_to_block_commitment, wait_for_proof_with_time_out, wait_until_with_value
-from utils.schnorr import (
-    get_precompile_input,
+from utils.constants import PRECOMPILE_SCHNORR_ADDRESS
+from utils.precompile import (
+    get_schnorr_precompile_input,
     get_test_schnnor_secret_key,
     make_precompile_call,
 )
@@ -32,8 +33,8 @@ class ProverClientTest(testenv.StrataTestBase):
 
         secret_key = get_test_schnnor_secret_key()
         msg = "AlpenStrata"
-        precompile_input = get_precompile_input(secret_key, msg)
-        txid, _data = make_precompile_call(web3, precompile_input)
+        precompile_input = get_schnorr_precompile_input(secret_key, msg)
+        txid, _data = make_precompile_call(web3, PRECOMPILE_SCHNORR_ADDRESS, precompile_input)
 
         txn = web3.eth.get_transaction(txid)
         block_number = txn.blockNumber

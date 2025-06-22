@@ -33,7 +33,7 @@ PRECOMPILE_TEST_CASES = {
     },
     "BLS12_PAIRING_CHECK": {
         "address": "0x000000000000000000000000000000000000000f",
-        "input": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",  # noqa: E501
+        "input": "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e100000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801000000000000000000000000000000000606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e100000000000000000000000000000000024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb80000000000000000000000000000000013e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e000000000000000000000000000000000d1b3cc2c7027888be51d9ef691d77bcb679afda66c73f17f9ee3837a55024f78c71363275a75d75d86bab79f74782aa0000000000000000000000000000000013fa4d4a0ad8b1ce186ed5061789213d993923066dddaf1040bc3ff59f825c78df74f2d75467e25e0f55f8a00fa030ed",  # noqa: E501
         "expected_output": "0x0000000000000000000000000000000000000000000000000000000000000001",
     },
     "BLS12_MAP_FP_TO_G1": {
@@ -55,51 +55,45 @@ class ProverBlsPrecompileTest(BaseMixin):
         ctx.set_env("prover")
 
     def main(self, ctx: flexitest.RunContext):
-        reth = ctx.get_service("reth")
-        reth_rpc = reth.create_rpc()
-
-        prover_client = ctx.get_service("prover_client")
-        prover_client_rpc = prover_client.create_rpc()
-
-        web3: Web3 = reth.create_web3()
+        reth_rpc = ctx.get_service("reth").create_rpc()
+        prover_rpc = ctx.get_service("prover_client").create_rpc()
+        web3: Web3 = ctx.get_service("reth").create_web3()
         web3.eth.default_account = web3.address
 
         start_block = web3.eth.block_number
-        for name, case in PRECOMPILE_TEST_CASES.items():
-            precompile_input = case["input"]
-            expected_output = case["expected_output"]
-            precompile_address = case["address"]
-            precompile_address = web3.to_checksum_address(precompile_address)
-            self.debug(f"Testing precompile {name} at address {precompile_address}")
-            print(f"Testing precompile {name} at address {precompile_address}")
-            _txid, data = make_precompile_call(web3, precompile_address, precompile_input)
-            assert data == expected_output, (
-                f"{name} failed: expected '{expected_output}', got '{data}'."
-            )
-        end_block = web3.eth.block_number
-        # Prove the corresponding EE block
-        ee_prover_params = {"start_block": start_block, "end_block": end_block}
 
-        # Wait until the end EE block is generated.
+        for name, case in PRECOMPILE_TEST_CASES.items():
+            address = web3.to_checksum_address(case["address"])
+            input_data, expected_output = case["input"], case["expected_output"]
+
+            self.debug(f"Testing {name} at {address}")
+            _, output = make_precompile_call(web3, address, input_data)
+
+            assert output == expected_output, (
+                f"{name} failed: expected '{expected_output}', got '{output}'."
+            )
+
+        end_block = web3.eth.block_number
+
         wait_until_with_value(
             lambda: web3.eth.get_block("latest")["number"],
-            lambda height: height >= ee_prover_params["end_block"],
+            lambda h: h >= end_block,
             error_with="EE blocks not generated",
         )
 
-        start_block = el_slot_to_block_commitment(reth_rpc, ee_prover_params["start_block"])
-        end_block = el_slot_to_block_commitment(reth_rpc, ee_prover_params["end_block"])
+        prover_range = (
+            el_slot_to_block_commitment(reth_rpc, start_block),
+            el_slot_to_block_commitment(reth_rpc, end_block),
+        )
 
-        task_ids = prover_client_rpc.dev_strata_proveElBlocks((start_block, end_block))
-        self.debug(f"Prover task IDs received: {task_ids}")
+        task_ids = prover_rpc.dev_strata_proveElBlocks(prover_range)
 
         if not task_ids:
-            raise Exception("No task IDs received from prover_client_rpc")
+            raise RuntimeError("Prover did not return any task IDs")
 
         task_id = task_ids[0]
-        self.debug(f"Using task ID: {task_id}")
+        self.debug(f"Selected prover task ID: {task_id}")
 
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=30
+        assert wait_for_proof_with_time_out(prover_rpc, task_id, time_out=30), (
+            f"Proof generation timed out for task {task_id}"
         )
-        assert is_proof_generation_completed
