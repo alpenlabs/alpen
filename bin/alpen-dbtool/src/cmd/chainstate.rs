@@ -70,7 +70,7 @@ pub(crate) fn reset_chainstate(
         .internal_error("Failed to read block data")?
         .ok_or_else(|| {
             DisplayedError::UserError(
-                format!("block with id not found"),
+                "block with id not found".to_string(),
                 Box::new(target_block_id),
             )
         })?;

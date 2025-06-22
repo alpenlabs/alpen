@@ -41,7 +41,7 @@ pub(crate) fn get_syncinfo(
     let l2_block_height = batch_info.new_toplevel_state().chain_tip_slot();
 
     // Show sync information
-    println!("L1 tip: {}, {:?}", l1_tip_height, l1_tip_block_id);
+    println!("L1 tip: {l1_tip_height}, {l1_tip_block_id:?}");
 
     println!(
         "L2 height: {}, tip: {:?} ({:?})",

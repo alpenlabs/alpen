@@ -52,13 +52,10 @@ pub(crate) fn get_client_state(
     for act in sync_actions {
         match act {
             SyncAction::FinalizeEpoch(epoch_commitment) => {
-                println!(
-                    "client state: sync action: epoch commitment {:?}",
-                    epoch_commitment
-                );
+                println!("client state: sync action: epoch commitment {epoch_commitment:?}");
             }
             SyncAction::L2Genesis(l2_block_id) => {
-                println!("client state: sync action: L2 block {:?}", l2_block_id);
+                println!("client state: sync action: L2 block {l2_block_id:?}");
             }
             SyncAction::UpdateCheckpointInclusion {
                 checkpoint,
@@ -69,8 +66,7 @@ pub(crate) fn get_client_state(
                     checkpoint.commitment()
                 );
                 println!(
-                    "client state sync action: Update checkpoint inclusion with l1 reference {:?}",
-                    l1_reference
+                    "client state sync action: Update checkpoint inclusion with l1 reference {l1_reference:?}"
                 );
             }
         }

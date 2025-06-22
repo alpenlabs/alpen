@@ -44,7 +44,7 @@ pub(crate) fn get_sync_event(
             )
         })?;
 
-    println!("Sync Event Index {event_index}: {:?}", sync_event);
+    println!("Sync Event Index {event_index}: {sync_event:?}");
 
     Ok(())
 }
@@ -81,7 +81,7 @@ pub(crate) fn get_sync_events_summary(
             if let Ok(Some(SyncEvent::L1Block(commitment))) = sync_db.get_sync_event(idx) {
                 observed_l1_heights.insert(commitment.height());
             } else {
-                println!("Failed to read sync event at index {}", idx);
+                println!("Failed to read sync event at index {idx}");
             }
         }
 
@@ -89,7 +89,7 @@ pub(crate) fn get_sync_events_summary(
         let all_l1_sync_events_present =
             (l1_horizon_height..=l1_tip_height).all(|expected_height| {
                 if !observed_l1_heights.contains(&expected_height) {
-                    println!("Missing SyncEvent::L1Block for height {}", expected_height);
+                    println!("Missing SyncEvent::L1Block for height {expected_height}");
                     return false;
                 }
                 true

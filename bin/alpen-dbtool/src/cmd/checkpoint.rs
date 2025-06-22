@@ -52,17 +52,17 @@ pub(crate) fn get_epoch_summary(
         .get_epoch_commitments_at(epoch_idx)
         .internal_error("Failed to fetch epoch summary")?;
 
-    if epoch_commitments.len() == 0 {
+    if epoch_commitments.is_empty() {
         warn!("no epoch commitments founds");
         return Err(DisplayedError::UserError(
-            format!("Invalid epoch index"),
+            "Invalid epoch index".to_string(),
             Box::new(epoch_idx),
         ));
     }
 
     let epoch_summary = db
         .checkpoint_db()
-        .get_epoch_summary(*epoch_commitments.get(0).unwrap())
+        .get_epoch_summary(*epoch_commitments.first().unwrap())
         .internal_error("Failed to fetch epoch summary")?
         .expect("a valid epoch summary");
 
@@ -166,10 +166,9 @@ pub(crate) fn get_checkpoints_summary(
                 _ => None,
             })
             .for_each(|commitment| {
-                if !checkpoint_commitments.contains(&commitment) {
+                if !checkpoint_commitments.contains(commitment) {
                     println!(
-                        "Unexpected checkpoint commitment found in L1 block at height {}: {:?}",
-                        l1_height, commitment
+                        "Unexpected checkpoint commitment found in L1 block at height {l1_height}: {commitment:?}"
                     );
                 } else {
                     found_checkpoints += 1;

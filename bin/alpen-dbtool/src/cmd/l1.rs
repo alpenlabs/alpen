@@ -88,10 +88,10 @@ pub(crate) fn get_l1_manifest(
                     );
                 }
                 ProtocolOperation::DaCommitment(da_commitment) => {
-                    println!("DA commitment: {:?}", da_commitment);
+                    println!("DA commitment: {da_commitment:?}");
                 }
                 ProtocolOperation::WithdrawalFulfillment(wf_info) => {
-                    println!("checkpoint commitment: {:?}", wf_info);
+                    println!("checkpoint commitment: {wf_info:?}");
                 }
                 _ => continue,
             }
@@ -112,10 +112,7 @@ pub(crate) fn get_l1_summary(
         .internal_error("Failed to read L1 tip")?
         .expect("valid L1 tip");
 
-    println!(
-        "L1 tip height: {}, block id {:?}",
-        l1_tip_height, l1_tip_block_id
-    );
+    println!("L1 tip height: {l1_tip_height}, block id {l1_tip_block_id:?}");
 
     let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
     if l1_horizon_height == l1_tip_height {
@@ -131,16 +128,11 @@ pub(crate) fn get_l1_summary(
     let (latest_client_state, latest_update_idx) = get_latest_client_state(db.clone(), None)?;
     let genesis_l1_height = latest_client_state.state().genesis_l1_height();
 
+    println!("L1 horizon height: {l1_horizon_height}, block id {horizon_l1_block_id:?}");
     println!(
-        "L1 horizon height: {}, block id {:?}",
-        l1_horizon_height, horizon_l1_block_id
-    );
-    println!(
-        "Genesis l1 height: {:?}, expected number of l1 blocks (horizon height to tip) {},
+        "Genesis l1 height: {genesis_l1_height:?}, expected number of l1 blocks (horizon height to tip) {latest_update_idx},
         number of client state updates: {}",
-        genesis_l1_height,
         l1_tip_height.saturating_sub(l1_horizon_height) + 1,
-        latest_update_idx
     );
 
     // Check if all L1 blocks from L1 horizon to tip are present
@@ -155,10 +147,7 @@ pub(crate) fn get_l1_summary(
         };
 
         if l1_db.get_block_manifest(block_id).ok().flatten().is_none() {
-            println!(
-                "Missing manifest at height {}: block id {:?}",
-                l1_height, block_id
-            );
+            println!("Missing manifest at height {l1_height}: block id {block_id:?}",);
             return false;
         }
 
@@ -176,9 +165,7 @@ pub(crate) fn get_l1_summary(
 pub(super) fn get_l1_horizon_height(db: Arc<CommonDb>, l1_tip_height: u64) -> u64 {
     let l1_db = db.l1_db();
 
-    let horizon_l1_height = (0..=l1_tip_height)
+    (0..=l1_tip_height)
         .find(|&height| matches!(l1_db.get_canonical_blockid_at_height(height), Ok(Some(_))))
-        .unwrap_or(l1_tip_height);
-
-    horizon_l1_height
+        .unwrap_or(l1_tip_height)
 }

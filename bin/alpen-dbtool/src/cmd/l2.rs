@@ -43,7 +43,7 @@ pub(crate) fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<()
         .get_block_data(block_id)
         .internal_error("Failed to read block data")?
         .ok_or_else(|| {
-            DisplayedError::UserError(format!("block with id not found"), Box::new(block_id))
+            DisplayedError::UserError("block with id not found".to_string(), Box::new(block_id))
         })?;
 
     // Print status and header
