@@ -9,6 +9,7 @@ use strata_chainexec::{
     BlockExecutionOutput, ChainExecutor, ExecContext, ExecResult, MemStateAccessor,
 };
 use strata_chaintsn::context::L2HeaderAndParent;
+use strata_eectl::handle::ExecCtlHandle;
 use strata_primitives::{batch::EpochSummary, prelude::*};
 use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
 use strata_tasks::ShutdownGuard;
@@ -39,12 +40,13 @@ pub struct WorkerState<W: WorkerContext> {
     /// Chain executor we call out to actually update the underlying state.
     chain_exec: ChainExecutor,
 
-    /// Current chain tip.
+    exec_ctl_handle: ExecCtlHandle,
+    // Current chain tip.
     // TODO remove this, not needed
     // cur_tip: L2BlockCommitment,
 
-    /// Previous epoch that we're building upon.
-    prev_epoch: Option<EpochCommitment>,
+    // Previous epoch that we're building upon.
+    // prev_epoch: Option<EpochCommitment>,
 }
 
 #[allow(dead_code)]
@@ -53,15 +55,16 @@ impl<W: WorkerContext> WorkerState<W> {
         shared: Arc<Mutex<WorkerShared>>,
         context: W,
         chain_exec: ChainExecutor,
+        exec_ctl_handle: ExecCtlHandle,
         // cur_tip: L2BlockCommitment,
-        prev_epoch: Option<EpochCommitment>,
+        // prev_epoch: Option<EpochCommitment>,
     ) -> Self {
         Self {
             shared,
             context,
             chain_exec,
-            // cur_tip,
-            prev_epoch,
+            exec_ctl_handle, /* cur_tip,
+                              * prev_epoch, */
         }
     }
 
@@ -213,10 +216,15 @@ pub fn init_worker_state<W: WorkerContext>(
     shared: Arc<Mutex<WorkerShared>>,
     context: W,
     chain_exec: ChainExecutor,
-    // cur_tip: L2BlockCommitment,
-    prev_epoch: Option<EpochCommitment>,
+    exec_ctl_handle: ExecCtlHandle,
+    // prev_epoch: Option<EpochCommitment>,
 ) -> anyhow::Result<WorkerState<W>> {
-    Ok(WorkerState::new(shared, context, chain_exec, prev_epoch))
+    Ok(WorkerState::new(
+        shared,
+        context,
+        chain_exec,
+        exec_ctl_handle,
+    ))
 }
 
 pub fn worker_task<W: WorkerContext>(

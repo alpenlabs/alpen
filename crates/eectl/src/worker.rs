@@ -105,7 +105,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
 }
 
 /// Execution controller worker task entrypoint.
-pub fn worker_task<E: ExecEngineCtl>(
+pub fn exec_worker_task<E: ExecEngineCtl>(
     mut state: ExecWorkerState<E>,
     mut input: ExecCtlInput,
     context: &impl ExecWorkerContext,
@@ -153,3 +153,4 @@ pub trait ExecWorkerContext {
         eeid: &ExecEnvId,
     ) -> EngineResult<Option<ExecPayloadData>>;
 }
+
