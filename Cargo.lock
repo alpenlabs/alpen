@@ -13496,7 +13496,6 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "corepc-node",
  "hex",
  "musig2",
