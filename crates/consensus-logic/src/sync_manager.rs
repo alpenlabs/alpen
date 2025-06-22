@@ -4,7 +4,8 @@
 
 use std::sync::Arc;
 
-use strata_chain_worker::{ChainWorkerHandle, WorkerMessage, WorkerShared};
+use strata_chain_worker::{ChainWorkerHandle, ChainWorkerInput, WorkerMessage, WorkerShared};
+use strata_chainexec::ChainExecutor;
 use strata_eectl::engine::ExecEngineCtl;
 use strata_primitives::params::Params;
 use strata_status::StatusChannel;
@@ -13,6 +14,7 @@ use strata_tasks::TaskExecutor;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
 use crate::{
+    chain_worker_context::ChainWorkerCtx,
     csm::{
         ctl::CsmController,
         message::{ClientUpdateNotif, CsmMessage, ForkChoiceMessage},
@@ -84,7 +86,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
     let (csm_tx, csm_rx) = mpsc::channel::<CsmMessage>(64);
-    let (msg_tx, _msg_rx) = mpsc::channel::<WorkerMessage>(64);
+    let (msg_tx, msg_rx) = mpsc::channel::<WorkerMessage>(64);
     let csm_controller = Arc::new(CsmController::new(storage.sync_event().clone(), csm_tx));
 
     // TODO should this be in an `Arc`?  it's already fairly compact so we might
@@ -124,12 +126,32 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         cupdate_tx,
         storage.checkpoint().clone(),
     )?;
+    let prev_epoch = client_worker_state
+        .cur_state()
+        .get_declared_final_epoch()
+        .cloned();
 
     let csm_engine = engine.clone();
     let st_ch = status_channel.clone();
 
     executor.spawn_critical("client_worker_task", move |shutdown| {
         worker::client_worker_task(shutdown, client_worker_state, csm_engine, csm_rx, st_ch)
+    });
+
+    let chain_exec = ChainExecutor::new(params.rollup().clone());
+    let active_state_inst = 0; // FIXME: Not sure what this is
+    let context = ChainWorkerCtx::new(
+        storage.l2().clone(),
+        storage.new_chainstate().clone(),
+        storage.checkpoint().clone(),
+        active_state_inst,
+    );
+    let shared = Arc::new(Mutex::new(WorkerShared::default()));
+    let chain_worker_state =
+        strata_chain_worker::init_worker_state(shared.clone(), context, chain_exec, prev_epoch)?;
+    let input = ChainWorkerInput::new(shared.clone(), msg_rx);
+    executor.spawn_critical("chain_worker_task", move |shutdown| {
+        strata_chain_worker::worker_task(&shutdown, chain_worker_state, input)
     });
 
     Ok(SyncManager {

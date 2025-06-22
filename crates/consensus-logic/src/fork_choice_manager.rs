@@ -309,6 +309,7 @@ pub fn init_forkchoice_manager(
     chain_tracker.load_unfinalized_blocks(storage.l2().as_ref())?;
 
     let cur_tip_block = determine_start_tip(&chain_tracker, storage.l2())?;
+    debug!(?chain_tracker, "init chain tracker");
 
     // Load in that block's chainstate.
     let chsman = storage.chainstate();
@@ -401,7 +402,7 @@ pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     let init_state = handle.block_on(status_channel.wait_until_genesis())?;
     let init_state = Arc::new(init_state);
 
-    info!("starting forkchoice logic");
+    info!(?init_state, "starting forkchoice logic");
 
     // Now that we have the database state in order, we can actually init the
     // FCM.
@@ -415,6 +416,18 @@ pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
 
     let cur_tip = fcm.cur_best_block();
     let prev_epoch = *fcm.get_chainstate_prev_epoch();
+
+    // Update status.
+    // TODO: avoid repitition from process_fc_message
+    let status = ChainSyncStatus {
+        tip: fcm.cur_best_block,
+        prev_epoch: *fcm.get_chainstate_prev_epoch(),
+        finalized_epoch: *fcm.chain_tracker.finalized_epoch(),
+        // FIXME this is a bit convoluted, could this be simpler?
+        safe_l1: fcm.cur_chainstate.l1_view().get_safe_block(),
+    };
+    let update = ChainSyncStatusUpdate::new(status, fcm.cur_chainstate.clone());
+    status_channel.update_chain_sync_status(update);
 
     handle_unprocessed_blocks(&mut fcm, &storage, &status_channel)?;
 
@@ -436,7 +449,7 @@ pub fn handle_unprocessed_blocks(
     info!("checking for unprocessed L2 blocks");
 
     let l2_block_manager = storage.l2();
-    let mut slot = fcm.cur_best_block.slot();
+    let mut slot = fcm.cur_best_block.slot() + 1;
     loop {
         let blkids = l2_block_manager.get_blocks_at_height_blocking(slot)?;
         if blkids.is_empty() {
@@ -617,7 +630,7 @@ fn handle_new_block(
         // It's invalid, write that and return.
         return Ok(false);
     }
-    info!("correctly signed");
+    info!(%blkid, "correctly signed");
 
     // Try to execute the block, to see if it's actually valid.
     //

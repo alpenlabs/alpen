@@ -3,11 +3,8 @@
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_primitives::{
-    epoch::EpochCommitment,
-    l2::{L2BlockCommitment, L2BlockId},
-};
-use strata_state::{block::L2BlockBundle, header::L2Header};
+use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
+use tracing::{error, info, warn};
 
 use crate::{
     engine::*,
@@ -76,12 +73,12 @@ impl<E: ExecEngineCtl> WorkerState<E> {
     /// Tries to exec an EL payload.
     fn try_exec_el_payload(
         &mut self,
-        blkid: &L2BlockId,
-        bundle: &L2BlockBundle,
+        blkid: &L2BlockCommitment,
+        payload: &ExecPayloadData,
     ) -> EngineResult<()> {
         // We don't do this for the genesis block because that block doesn't
         // actually have a well-formed accessory and it gets mad at us.
-        if bundle.header().slot() == 0 {
+        if blkid.slot() == 0 {
             return Ok(());
         }
 
@@ -90,16 +87,15 @@ impl<E: ExecEngineCtl> WorkerState<E> {
         //
         // TODO this needs to be refactored since we might not always be able to
         // get this data from the block itself
-        let _exec_hash = bundle.header().exec_payload_hash();
-        let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
+        // let _exec_hash = bundle.header().exec_payload_hash();
+        // let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
         let res = self.call_engine("engine_submit_payload", move |eng| {
             // annoying that we're cloning this each time, maybe make it take a ref?
-            eng.submit_payload(eng_payload.clone())
+            eng.submit_payload(payload.clone())
         })?;
 
         if res == BlockStatus::Invalid {
-            let block = L2BlockCommitment::new(bundle.header().slot(), *blkid);
-            Err(EngineError::InvalidPayload(block))
+            Err(EngineError::InvalidPayload(*blkid))
         } else {
             Ok(())
         }
@@ -122,6 +118,18 @@ pub fn worker_task<E: ExecEngineCtl>(
             ExecCommand::NewBlock(block, completion) => {
                 let payload = context.fetch_exec_payload(&block, &state.exec_env_id)?;
                 // TODO figure out how to call the engine with the payload we got
+                match payload {
+                    Some(payload) => {
+                        let res = state.try_exec_el_payload(&block, &payload);
+                        match res {
+                            Ok(()) => info!("Executed EL payload"),
+                            Err(e) => error!(%e, "Error in executing EL payload"),
+                        }
+                    }
+                    None => {
+                        warn!("No payload");
+                    }
+                }
                 let _ = completion.send(Ok(()));
             }
         }

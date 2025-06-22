@@ -12,6 +12,7 @@ use strata_chaintsn::context::L2HeaderAndParent;
 use strata_primitives::{batch::EpochSummary, prelude::*};
 use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
 use strata_tasks::ShutdownGuard;
+use tokio::sync::Mutex;
 use tracing::*;
 
 use crate::{
@@ -30,7 +31,7 @@ type AccessorImpl = MemStateAccessor;
 #[allow(dead_code)]
 pub struct WorkerState<W: WorkerContext> {
     /// Shared state between the worker and the handle.
-    shared: Arc<WorkerShared>,
+    shared: Arc<Mutex<WorkerShared>>,
 
     /// Context for us to interface with the underlying system.
     context: W,
@@ -40,34 +41,34 @@ pub struct WorkerState<W: WorkerContext> {
 
     /// Current chain tip.
     // TODO remove this, not needed
-    cur_tip: L2BlockCommitment,
+    // cur_tip: L2BlockCommitment,
 
     /// Previous epoch that we're building upon.
-    prev_epoch: EpochCommitment,
+    prev_epoch: Option<EpochCommitment>,
 }
 
 #[allow(dead_code)]
 impl<W: WorkerContext> WorkerState<W> {
     fn new(
-        shared: Arc<WorkerShared>,
+        shared: Arc<Mutex<WorkerShared>>,
         context: W,
         chain_exec: ChainExecutor,
-        cur_tip: L2BlockCommitment,
-        prev_epoch: EpochCommitment,
+        // cur_tip: L2BlockCommitment,
+        prev_epoch: Option<EpochCommitment>,
     ) -> Self {
         Self {
             shared,
             context,
             chain_exec,
-            cur_tip,
+            // cur_tip,
             prev_epoch,
         }
     }
 
-    /// Gets the current epoch we're in.
-    fn cur_epoch(&self) -> u64 {
-        self.prev_epoch.epoch() + 1
-    }
+    // /// Gets the current epoch we're in.
+    // fn cur_epoch(&self) -> u64 {
+    //     self.prev_epoch.epoch() + 1
+    // }
 
     /// Prepares context for a block we're about to execute.
     fn prepare_block_context<'w>(
@@ -79,26 +80,27 @@ impl<W: WorkerContext> WorkerState<W> {
         })
     }
 
-    /// Prepares a new state accessor for the current tip state.
-    fn prepare_cur_state_accessor(&self) -> WorkerResult<AccessorImpl> {
-        let wb = self
-            .context
-            .fetch_block_write_batch(self.cur_tip.blkid())?
-            .ok_or(WorkerError::MissingBlockOutput(self.cur_tip))?;
+    // /// Prepares a new state accessor for the current tip state.
+    // fn prepare_cur_state_accessor(&self) -> WorkerResult<AccessorImpl> {
+    //     let wb = self
+    //         .context
+    //         .fetch_block_write_batch(self.cur_tip.blkid())?
+    //         .ok_or(WorkerError::MissingBlockOutput(self.cur_tip))?;
 
-        Ok(MemStateAccessor::new(wb.into_toplevel()))
-    }
+    //     Ok(MemStateAccessor::new(wb.into_toplevel()))
+    // }
 
-    /// Updates the current tip as managed by the worker.  This does not persist
-    /// in the client's database necessarily.
-    // TODO remove this, not needed
-    fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
-        self.cur_tip = tip;
-        Ok(())
-    }
+    // /// Updates the current tip as managed by the worker.  This does not persist
+    // /// in the client's database necessarily.
+    // // TODO remove this, not needed
+    // fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
+    //     self.cur_tip = tip;
+    //     Ok(())
+    // }
 
     fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
-        debug!("Trying to execute block");
+        let blkid = block.blkid();
+        debug!(%blkid, "Trying to execute block");
         // Prepare execution dependencies.
         let bundle = self
             .context
@@ -123,6 +125,7 @@ impl<W: WorkerContext> WorkerState<W> {
             *parent_blkid,
             parent_header,
         );
+        debug!(?header_ctx, "header");
 
         let exec_ctx = self.prepare_block_context(block)?;
 
@@ -138,8 +141,8 @@ impl<W: WorkerContext> WorkerState<W> {
 
         self.context.store_block_output(block.blkid(), &output)?;
 
-        // Update the tip we've processed.
-        self.update_cur_tip(*block)?;
+        // // Update the tip we've processed.
+        // self.update_cur_tip(*block)?;
 
         Ok(())
     }
@@ -200,7 +203,7 @@ impl<W: WorkerContext> WorkerState<W> {
         Ok(())
     }
 
-    fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
+    fn finalize_epoch(&mut self, _epoch: EpochCommitment) -> WorkerResult<()> {
         // TODO apply outputs that haven't been merged, etc.
 
         Err(WorkerError::Unimplemented)
@@ -208,15 +211,13 @@ impl<W: WorkerContext> WorkerState<W> {
 }
 
 pub fn init_worker_state<W: WorkerContext>(
-    shared: Arc<WorkerShared>,
+    shared: Arc<Mutex<WorkerShared>>,
     context: W,
     chain_exec: ChainExecutor,
-    cur_tip: L2BlockCommitment,
-    prev_epoch: EpochCommitment,
+    // cur_tip: L2BlockCommitment,
+    prev_epoch: Option<EpochCommitment>,
 ) -> anyhow::Result<WorkerState<W>> {
-    Ok(WorkerState::new(
-        shared, context, chain_exec, cur_tip, prev_epoch,
-    ))
+    Ok(WorkerState::new(shared, context, chain_exec, prev_epoch))
 }
 
 pub fn worker_task<W: WorkerContext>(
@@ -224,6 +225,7 @@ pub fn worker_task<W: WorkerContext>(
     mut state: WorkerState<W>,
     mut input: ChainWorkerInput,
 ) -> anyhow::Result<()> {
+    info!("Starting chainworker task");
     while let Some(m) = input.recv_next() {
         match m {
             WorkerMessage::TryExecBlock(l2bc, completion) => {
