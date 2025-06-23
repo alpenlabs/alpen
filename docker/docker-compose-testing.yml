@@ -93,6 +93,7 @@ services:
       - ./configs/params.json:/app/params.json
       - ./.data/prover-client:/app/.data
       - ./prover-client/elfs:/app/elfs
+      - ./prover-client/prover-client.sample.toml:/app/prover-client.sample.toml
     ports:
       - 9851:9851
     command: [
