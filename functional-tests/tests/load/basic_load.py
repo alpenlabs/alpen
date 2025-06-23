@@ -3,6 +3,7 @@ import flexitest
 from envs import testenv
 from utils import wait_for_proof_with_time_out
 from utils.utils import wait_until_eth_block_exceeds
+from utils.wait.reth import RethWaiter
 
 
 @flexitest.register
@@ -15,9 +16,10 @@ class BasicLoadGenerationTest(testenv.StrataTestBase):
         reth = ctx.get_service("reth")
         prover_client_rpc = prover_client.create_rpc()
         rethrpc = reth.create_rpc()
+        reth_waiter = RethWaiter(rethrpc, timeout=30)
 
         # Wait for a some blocks with transactions to be generated.
-        block_num = wait_until_eth_block_exceeds(rethrpc, 25, timeout=30)
+        block_num = reth_waiter.wait_until_eth_block_exceeds(25)
         self.info(f"Latest reth block={block_num}")
         self.test_checkpoint(50, block_num, prover_client_rpc)
 

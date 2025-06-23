@@ -4,6 +4,7 @@ import flexitest
 
 from envs import testenv
 from utils import *
+from utils.wait.strata import StrataWaiter
 
 
 @flexitest.register
@@ -16,8 +17,9 @@ class SyncGenesisTest(testenv.StrataTestBase):
 
         # create both btc and sequencer RPC
         seqrpc = seq.create_rpc()
+        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=20, interval=2)
 
-        wait_for_genesis(seqrpc, timeout=20, step=2)
+        seq_waiter.wait_for_genesis()
 
         # Make sure we're making progress.
         logging.info("observed genesis, checking that we're still making progress...")

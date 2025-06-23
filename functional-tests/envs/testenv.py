@@ -28,6 +28,7 @@ class StrataTestBase(flexitest.Test):
         self.warning = logger.warning
         self.error = logger.error
         self.critical = logger.critical
+        self.logger = logger
 
 
 class StrataTestRuntime(flexitest.TestRuntime):

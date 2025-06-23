@@ -12,7 +12,7 @@ from utils import (
     get_latest_eth_block_number,
     wait_for_proof_with_time_out,
 )
-from utils.utils import wait_until_eth_block_exceeds
+from utils.wait.reth import RethWaiter
 
 
 @flexitest.register
@@ -138,19 +138,20 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         l1_withdraw_block_height = last_block["height"]
         self.info(f"withdrawal block height on L1: {l1_withdraw_block_height}")
 
+        reth_waiter = RethWaiter(rethrpc, timeout=60)
         # Proving
         self.test_checkpoint(
-            l1_withdraw_block_height, l2_withdraw_block_num, prover_client_rpc, rethrpc
+            l1_withdraw_block_height, l2_withdraw_block_num, prover_client_rpc, reth_waiter,
         )
 
-    def test_checkpoint(self, l1_block, l2_block, prover_client_rpc, rethrpc):
+    def test_checkpoint(self, l1_block, l2_block, prover_client_rpc, reth_waiter):
         self._chkpt_id += 1
         l1 = (l1_block - 1, l1_block + 1)
         l2 = (l2_block - 1, l2_block + 1)
         # Wait some time so the future blocks in the batches are finalized.
         # Given that L1 blocks are happening more frequent that L2, it's safe
         # to assert only L2 latest block.
-        wait_until_eth_block_exceeds(rethrpc, l2[1], timeout=60)
+        reth_waiter.wait_until_eth_block_exceeds(l2[1])
 
         task_ids = prover_client_rpc.dev_strata_proveCheckpointRaw(self._chkpt_id, l1, l2)
 

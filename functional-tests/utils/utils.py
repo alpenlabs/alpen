@@ -112,31 +112,6 @@ def wait_until_with_value(
     raise AssertionError(error_with)
 
 
-def wait_for_genesis(rpc, timeout=20, step=2, **kwargs):
-    """
-    Waits until we see genesis.  That is to say, that `strata_syncStatus`
-    returns a sensible result.
-    """
-
-    def _check_genesis():
-        try:
-            # This should raise if we're before genesis.
-            ss = rpc.strata_syncStatus()
-            logging.info(
-                f"after genesis, tip is slot {ss['tip_height']} blkid {ss['tip_block_id']}"
-            )
-            return True
-        except RpcError as e:
-            # This is the "before genesis" error code, meaning we're still
-            # before genesis
-            if e.code == -32607:
-                return False
-            else:
-                raise e
-
-    wait_until(_check_genesis, timeout=timeout, step=step, **kwargs)
-
-
 def wait_until_chain_epoch(rpc, epoch: int, **kwargs) -> dict:
     """
     Waits until the chain has finished the specified epoch index, determined by
@@ -301,23 +276,6 @@ def wait_until_l1_height_at(strata_rpc, height: int, timeout=20) -> Any:
         error_with="L1 reader did not catch up with bitcoin network",
         timeout=20,
     )
-
-
-def wait_until_eth_block_exceeds(
-    reth_rpc, height: int, timeout=5, msg="Timeout: blocks not generated"
-) -> int:
-    """
-    Waits until eth block crosses the given height
-
-    Returns the new height
-    """
-    return wait_until_with_value(
-        lambda: int(reth_rpc.eth_blockNumber(), 16),
-        lambda value: value > height,
-        error_with=msg,
-        timeout=timeout,
-    )
-
 
 def wait_until_recent_block_headers_at(strata_rpc, height: int, timeout=2) -> Any:
     """ """

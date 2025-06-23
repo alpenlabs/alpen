@@ -1,7 +1,8 @@
 import flexitest
 
 from envs import testenv
-from utils import get_latest_eth_block_number, wait_until_eth_block_exceeds
+from utils import get_latest_eth_block_number
+from utils.wait.reth import RethWaiter
 
 
 @flexitest.register
@@ -12,14 +13,13 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
     def main(self, ctx: flexitest.RunContext):
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
+        reth_waiter = RethWaiter(rethrpc, timeout=60)
 
         # Get initial block number and wait for 20 more blocks to be generated
         initial_block = get_latest_eth_block_number(rethrpc)
-        _ = wait_until_eth_block_exceeds(
-            rethrpc,
+        _ = reth_waiter.wait_until_eth_block_exceeds(
             initial_block + 20,
-            timeout=60,
-            msg="Timeout: 20 blocks were not generated",
+            message="Timeout: 20 blocks were not generated",
         )
 
         block = get_latest_eth_block_number(rethrpc)

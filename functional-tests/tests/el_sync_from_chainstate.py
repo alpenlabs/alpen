@@ -1,8 +1,10 @@
 import flexitest
+from utils.wait.strata import StrataWaiter
 from web3 import Web3
 
 from envs import net_settings, testenv
 from utils import *
+from utils.wait.reth import RethWaiter
 
 
 def send_tx(web3: Web3):
@@ -41,7 +43,11 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         seqrpc = seq.create_rpc()
         rethrpc = reth.create_rpc()
 
-        wait_for_genesis(seqrpc, timeout=20)
+        block_wait_msg = "Timeout: waiting for reth blocks"
+        reth_waiter = RethWaiter(rethrpc, timeout=10, message=block_wait_msg)
+        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=20, interval=2)
+
+        seq_waiter.wait_for_genesis()
 
         # workaround for issue restarting reth with no transactions
         for _ in range(3):
@@ -50,7 +56,7 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         wait_until_epoch_finalized(seqrpc, 0, timeout=30)
 
         # ensure there are some blocks generated
-        wait_until_eth_block_exceeds(rethrpc, 0, timeout=10)
+        reth_waiter.wait_until_eth_block_exceeds(0)
 
         self.info("stop sequencer")
         seq.stop()
@@ -67,13 +73,13 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         reth.start()
 
         # wait for reth to start
-        wait_until_eth_block_exceeds(rethrpc, 0, timeout=10)
+        reth_waiter.wait_until_eth_block_exceeds(0)
 
         self.info("start sequencer")
         seq.start()
 
         # generate more blocks
-        wait_until_eth_block_exceeds(rethrpc, orig_blocknumber + 1, timeout=10)
+        reth_waiter.wait_until_eth_block_exceeds(orig_blocknumber + 1)
 
         self.info("stop sequencer")
         seq.stop()
@@ -90,7 +96,7 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         reth.start()
 
         # wait for reth to start
-        wait_until_eth_block_exceeds(rethrpc, 0, timeout=10)
+        reth_waiter.wait_until_eth_block_exceeds(0)
 
         # ensure reth db was reset to shorter chain
         assert get_latest_eth_block_number(rethrpc) < final_blocknumber
@@ -99,4 +105,4 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         seq.start()
 
         self.info("wait for sync")
-        wait_until_eth_block_exceeds(rethrpc, final_blocknumber, timeout=10)
+        reth_waiter.wait_until_eth_block_exceeds(final_blocknumber)
