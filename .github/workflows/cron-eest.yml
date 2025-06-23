@@ -103,7 +103,22 @@ jobs:
     - name: Wait for services to be ready
       run: |
         sleep 60 # Ideally need some healthchecks.
-        docker ps -a
+        EXITED_CONTAINERS=$(docker ps -a --filter "status=exited" --format '{{.Names}}')
+
+        if [ -n "$EXITED_CONTAINERS" ]; then
+          echo "❌ Found exited containers:"
+          echo "$EXITED_CONTAINERS"
+
+          for name in $EXITED_CONTAINERS; do
+            echo -e "\n=== Logs for container: $name ==="
+            docker logs "$name" || echo "(No logs)"
+          done
+
+          echo "❌ One or more containers have exited. Failing step."
+          exit 1
+        else
+          echo "✅ All containers are running."
+        fi
 
     - name: Run tests
       run: |
@@ -133,7 +148,4 @@ jobs:
     - name: Tear down services
       if: always()
       run: |
-        docker logs strata_sequencer
-        docker logs strata_sequencer_signer
-        docker logs strata_prover_client
         docker compose -f ./docker/docker-compose-testing.yml down
