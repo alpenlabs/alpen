@@ -196,13 +196,7 @@ fn make_genesis_chainstate(
         .as_ref()
         .expect("genesis block must have HeaderVS")
         .clone();
-    let genesis_blk_rec = genesis_mf.record().clone();
-    let l1vs = L1ViewState::new_at_genesis(
-        horizon_blk_height,
-        genesis_blk_height,
-        genesis_blk_rec,
-        gheader_vs,
-    );
+    let l1vs = L1ViewState::new_at_genesis(horizon_blk_height, genesis_blk_height, gheader_vs);
 
     let optbl = construct_operator_table(&params.rollup().operator_config);
     let gdata = GenesisStateData::new(l1vs, optbl, gees);

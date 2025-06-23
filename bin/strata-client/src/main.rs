@@ -294,7 +294,7 @@ fn do_startup_checks(
     let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
     // Check that we can connect to bitcoin client and block we believe to be matured in L1 is
     // actually present
-    let safe_l1blockid = last_chain_state.l1_view().safe_block().blkid();
+    let safe_l1blockid = last_chain_state.l1_view().safe_blkid();
     let block_hash = BlockHash::from_slice(safe_l1blockid.as_ref())?;
 
     match handle.block_on(bitcoin_client.get_block(&block_hash)) {
