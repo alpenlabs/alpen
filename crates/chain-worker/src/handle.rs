@@ -76,6 +76,17 @@ impl ChainWorkerHandle {
     pub fn finalize_epoch_blocking(&self, epoch: EpochCommitment) -> WorkerResult<()> {
         self.send_and_wait_blocking(|tx| ChainWorkerMessage::FinalizeEpoch(epoch, tx))
     }
+
+    /// Finalize an epoch, making whatever database changes necessary.
+    pub async fn update_safe_tip(&self, safe_tip: L2BlockCommitment) -> WorkerResult<()> {
+        self.send_and_wait(|tx| ChainWorkerMessage::UpdateSafeTip(safe_tip, tx))
+            .await
+    }
+
+    /// Finalize an epoch, making whatever database changes necessary.
+    pub fn update_safe_tip_blocking(&self, safe_tip: L2BlockCommitment) -> WorkerResult<()> {
+        self.send_and_wait_blocking(|tx| ChainWorkerMessage::UpdateSafeTip(safe_tip, tx))
+    }
 }
 
 /// Input to the worker, reading inputs from the worker handle.

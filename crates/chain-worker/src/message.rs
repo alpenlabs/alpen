@@ -11,4 +11,5 @@ use crate::WorkerResult;
 pub enum ChainWorkerMessage {
     TryExecBlock(L2BlockCommitment, oneshot::Sender<WorkerResult<()>>),
     FinalizeEpoch(EpochCommitment, oneshot::Sender<WorkerResult<()>>),
+    UpdateSafeTip(L2BlockCommitment, oneshot::Sender<WorkerResult<()>>),
 }

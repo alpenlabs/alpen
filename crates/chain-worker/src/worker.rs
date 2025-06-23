@@ -43,8 +43,7 @@ pub struct WorkerState<W: WorkerContext> {
     exec_ctl_handle: ExecCtlHandle,
     // Current chain tip.
     // TODO remove this, not needed
-    // cur_tip: L2BlockCommitment,
-
+    cur_tip: L2BlockCommitment,
     // Previous epoch that we're building upon.
     // prev_epoch: Option<EpochCommitment>,
 }
@@ -56,13 +55,14 @@ impl<W: WorkerContext> WorkerState<W> {
         context: W,
         chain_exec: ChainExecutor,
         exec_ctl_handle: ExecCtlHandle,
-        // cur_tip: L2BlockCommitment,
+        cur_tip: L2BlockCommitment,
         // prev_epoch: Option<EpochCommitment>,
     ) -> Self {
         Self {
             shared,
             context,
             chain_exec,
+            cur_tip,
             exec_ctl_handle, /* cur_tip,
                               * prev_epoch, */
         }
@@ -93,13 +93,18 @@ impl<W: WorkerContext> WorkerState<W> {
     //     Ok(MemStateAccessor::new(wb.into_toplevel()))
     // }
 
-    // /// Updates the current tip as managed by the worker.  This does not persist
-    // /// in the client's database necessarily.
-    // // TODO remove this, not needed
-    // fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
-    //     self.cur_tip = tip;
-    //     Ok(())
-    // }
+    /// Updates the current tip as managed by the worker.  This does not persist
+    /// in the client's database necessarily.
+    fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
+        self.cur_tip = tip;
+
+        // Try to execute the payload, seeing if *that's* valid.
+        self.exec_ctl_handle
+            .update_safe_tip_blocking(tip)
+            .map_err(WorkerError::ExecEnvEngine)?;
+
+        Ok(())
+    }
 
     fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
         let blkid = block.blkid();
@@ -142,9 +147,6 @@ impl<W: WorkerContext> WorkerState<W> {
         }
 
         self.context.store_block_output(block.blkid(), &output)?;
-
-        // // Update the tip we've processed.
-        // self.update_cur_tip(*block)?;
 
         Ok(())
     }
@@ -217,6 +219,7 @@ pub fn init_worker_state<W: WorkerContext>(
     context: W,
     chain_exec: ChainExecutor,
     exec_ctl_handle: ExecCtlHandle,
+    cur_tip: L2BlockCommitment,
     // prev_epoch: Option<EpochCommitment>,
 ) -> anyhow::Result<WorkerState<W>> {
     Ok(WorkerState::new(
@@ -224,6 +227,7 @@ pub fn init_worker_state<W: WorkerContext>(
         context,
         chain_exec,
         exec_ctl_handle,
+        cur_tip,
     ))
 }
 
@@ -237,6 +241,11 @@ pub fn worker_task<W: WorkerContext>(
         match m {
             ChainWorkerMessage::TryExecBlock(l2bc, completion) => {
                 let res = state.try_exec_block(&l2bc);
+                let _ = completion.send(res);
+            }
+
+            ChainWorkerMessage::UpdateSafeTip(l2bc, completion) => {
+                let res = state.update_cur_tip(l2bc);
                 let _ = completion.send(res);
             }
 
