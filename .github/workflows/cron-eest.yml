@@ -1,12 +1,13 @@
 name: Daily Ethereum Execution Spec tests
 
 on:
-  schedule:
-    - cron: '0 3 * * 0'  # Weekly: Sunday 03:00 UTC
+  #schedule:
+  #  - cron: '0 3 * * 0'  # Weekly: Sunday 03:00 UTC
+  pull_request:
   workflow_dispatch:      # Manual trigger (optional)
 
 env:
-  CI: false
+  #CI: false
   COMMIT: ${{ github.sha }}
 
 permissions: {}
