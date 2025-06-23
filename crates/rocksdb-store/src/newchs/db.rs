@@ -161,7 +161,7 @@ impl NewChainstateDatabase for RocksNewChainstateDb {
                 for wb_id in &wb_ids {
                     let wb = txn
                         .get::<NewWriteBatchSchema>(wb_id)?
-                        .ok_or(DbError::MissingWriteBatch)?;
+                        .ok_or(DbError::MissingWriteBatch(*wb_id))?;
 
                     // In here we'd apply the write batch, but since we can be
                     // lazy for now we can just write down what it is.
