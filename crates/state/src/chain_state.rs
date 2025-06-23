@@ -13,7 +13,7 @@ use crate::{
     genesis::GenesisStateData,
     l1::{self, L1ViewState},
     prelude::*,
-    traits::{ChainstateDiff, DiffError},
+    traits::{ChainstateUpdate, StateUpdateError},
 };
 
 /// L2 blockchain state.  This is the state computed as a function of a
@@ -230,18 +230,18 @@ impl FullStateUpdate {
     }
 }
 
-impl ChainstateDiff for FullStateUpdate {
-    fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> Result<(), DiffError> {
+impl ChainstateUpdate for FullStateUpdate {
+    fn apply_to_chainstate(&self, chainstate: &mut Chainstate) -> Result<(), StateUpdateError> {
         *chainstate = self.new_chainstate.clone();
         Ok(())
     }
 
-    fn from_buf(buf: &[u8]) -> Result<Self, DiffError>
+    fn from_buf(buf: &[u8]) -> Result<Self, StateUpdateError>
     where
         Self: Sized,
     {
         let new_chainstate = borsh::from_slice::<Chainstate>(buf)
-            .map_err(|err| DiffError::FailedExtraction(format!("{:?}", err)))?;
+            .map_err(|err| StateUpdateError::FailedExtraction(format!("{:?}", err)))?;
         Ok(Self::new(new_chainstate))
     }
 }

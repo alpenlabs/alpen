@@ -1,6 +1,6 @@
 use strata_chaintsn::errors::TsnError;
 use strata_eectl::errors::EngineError;
-use strata_state::{id::L2BlockId, l1::L1BlockId, traits::DiffError};
+use strata_state::{id::L2BlockId, l1::L1BlockId, traits::StateUpdateError};
 use thiserror::Error;
 use zkaleido::ZkVmError;
 
@@ -133,8 +133,17 @@ pub enum CheckpointSyncError {
     MissingCheckpoint(u64),
 
     #[error("{0}")]
-    StateDiff(#[from] DiffError),
+    InvalidChainstate(#[from] ChainstateValidationError),
+
+    #[error("{0}")]
+    StateUpdate(#[from] StateUpdateError),
 
     #[error("db: {0}")]
     Db(#[from] strata_db::errors::DbError),
+}
+
+#[derive(Debug, Error)]
+pub enum ChainstateValidationError {
+    #[error("state root mismatch: chainstate slot={0}")]
+    StateRootMismatch(u64),
 }

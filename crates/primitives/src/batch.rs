@@ -239,6 +239,11 @@ impl Checkpoint {
     pub fn sidecar(&self) -> &CheckpointSidecar {
         &self.sidecar
     }
+
+    /// Raw auxiliary data included in a checkpoint (typically for L2 state reconstruction)
+    pub fn aux_data_raw(&self) -> &[u8] {
+        &self.sidecar().bytes()
+    }
 }
 
 #[derive(

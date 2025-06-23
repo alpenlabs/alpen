@@ -8,14 +8,14 @@ use strata_state::{
     chain_state::{Chainstate, FullStateUpdate},
     client_state::ClientState,
     state_op::{WriteBatch, WriteBatchEntry},
-    traits::{ChainstateDiff, DiffError},
+    traits::{ChainstateUpdate, StateUpdateError},
 };
 use strata_status::{ChainSyncStatus, ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use tokio::sync::watch::Receiver;
 use tracing::{info, warn};
 
-use crate::errors::CheckpointSyncError;
+use crate::errors::{ChainstateValidationError, CheckpointSyncError};
 
 type SyncResult<T> = std::result::Result<T, CheckpointSyncError>;
 
@@ -97,7 +97,7 @@ impl CheckpointSyncTracker {
         self.target_epoch
     }
 
-    fn advance_epoch(&mut self) {
+    fn increment_target_epoch(&mut self) {
         self.target_epoch += 1;
     }
 
@@ -120,27 +120,29 @@ pub async fn checkpoint_sync_task(
 ) -> anyhow::Result<()> {
     let mut storage = CheckpointSyncStorage::new(storage);
     let mut sync_tracker = CheckpointSyncTracker::new(storage.init_target_epoch().await?);
-    let diff_extractor = FullStateUpdate::from_buf;
+    let state_update_extractor = FullStateUpdate::from_buf;
     let mut rx = status_channel.subscribe_client_state();
 
     loop {
         let finalized_epoch =
             wait_for_epoch_finalization(&mut rx, sync_tracker.target_epoch()).await;
 
-        // initialize chainstate for tracker if needed
+        // initialize chainstate for tracker if needed (only for first loop iteration)
         if !sync_tracker.is_chainstate_initialized() {
+            // the CSM will have already initialized genesis in the db so we will at least have the
+            // genesis chainstate in db when an epoch is finalized
             let chainstate = storage.get_latest_chainstate().await?;
             sync_tracker.set_chainstate(chainstate);
         }
 
         for epoch in sync_tracker.target_epoch()..=finalized_epoch {
-            let checkpoint = storage.get_checkpoint_by_epoch(epoch).await?;
             if let Some(chainstate) = sync_tracker.chainstate_mut() {
+                // process checkpoint corresponding to finalized epoch
+                let checkpoint = storage.get_checkpoint_by_epoch(epoch).await?;
                 if let Err(e) = process_checkpoint_and_update_chainstate::<FullStateUpdate>(
                     &checkpoint,
                     chainstate,
-                    diff_extractor,
-                    &mut storage,
+                    state_update_extractor,
                 )
                 .await
                 {
@@ -148,8 +150,18 @@ pub async fn checkpoint_sync_task(
                     continue;
                 }
 
+                // store updated chainstate
+                let slot = chainstate.chain_tip_slot();
+                let blkid = checkpoint.batch_info().final_l2_block().blkid();
+                let epoch = checkpoint.batch_info().epoch();
+                info!(%epoch, %slot, %blkid, "storing updated chainstate");
+                storage.store_chainstate(chainstate.clone()).await?;
+
+                // send status update through status channel
                 send_status_update(&checkpoint, chainstate, &status_channel);
-                sync_tracker.advance_epoch();
+
+                // update target epoch
+                sync_tracker.increment_target_epoch();
             }
         }
     }
@@ -162,11 +174,10 @@ async fn wait_for_epoch_finalization(rx: &mut Receiver<ClientState>, target_epoc
         check_and_pause_debug_async(WorkerType::CheckpointSyncWorker).await;
 
         if let Some(finalized_epoch) = rx.borrow().get_declared_final_epoch().map(|ec| ec.epoch()) {
-            let current_epoch = target_epoch.saturating_sub(1);
-            if finalized_epoch < current_epoch {
-                unimplemented!("reorg beyond finalization depth is undefined!");
-            } else if finalized_epoch >= target_epoch {
+            if finalized_epoch >= target_epoch {
                 return finalized_epoch;
+            } else if finalized_epoch < target_epoch.saturating_sub(1) {
+                unimplemented!("reorg beyond finalization depth is undefined!");
             }
         }
     }
@@ -193,24 +204,76 @@ fn send_status_update(
 }
 
 /// Process a single checkpoint.
-/// 1. Extract chainstate diff from checkpoint.
-/// 2. Apply diff to chainstate.
-/// 3. Store updated chainstate to database.
-async fn process_checkpoint_and_update_chainstate<T: ChainstateDiff>(
+/// 1. Extract state update from checkpoint.
+/// 2. Apply update to chainstate.
+/// 3. Validate the resulting chainstate with checkpoint data.
+async fn process_checkpoint_and_update_chainstate<T: ChainstateUpdate>(
     checkpoint: &Checkpoint,
     chainstate: &mut Chainstate,
-    extract_state_diff: fn(&[u8]) -> Result<T, DiffError>,
-    storage: &mut CheckpointSyncStorage,
+    extract_state_update: fn(&[u8]) -> Result<T, StateUpdateError>,
 ) -> SyncResult<()> {
-    // apply diff to chainstate
-    extract_state_diff(checkpoint.sidecar().bytes())?.apply_to_chainstate(chainstate)?;
+    // can be computationally expensive for now but there is no way of
+    // reverting from validation error without keeping a copy
+    let pre_update_chainstate = chainstate.clone();
 
-    // store updated chainstate
-    let slot = chainstate.chain_tip_slot();
-    let blkid = checkpoint.batch_info().final_l2_block().blkid();
-    let epoch = checkpoint.batch_info().epoch();
-    info!(%epoch, %slot, %blkid, "storing updated chainstate");
-    storage.store_chainstate(chainstate.clone()).await?;
+    // extract state update from checkpoint
+    let state_update = extract_state_update(checkpoint.aux_data_raw())?;
+
+    // update chainstate
+    state_update.apply_to_chainstate(chainstate)?;
+
+    if let Err(e) = validate_chainstate(checkpoint, chainstate) {
+        // revert to previous chainstate if error
+        *chainstate = pre_update_chainstate;
+        return Err(e.into());
+    }
 
     Ok(())
+}
+
+/// Validate chainstate according to data committed in checkpoint.
+/// Only compares the state roots for now, add futher validation checks as needed.
+fn validate_chainstate(
+    checkpoint: &Checkpoint,
+    chainstate: &Chainstate,
+) -> Result<(), ChainstateValidationError> {
+    let batch_transition = checkpoint.batch_transition();
+    if batch_transition.chainstate_transition.post_state_root != chainstate.compute_state_root() {
+        return Err(ChainstateValidationError::StateRootMismatch(
+            chainstate.chain_tip_slot(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils::l2::{gen_params, get_genesis_chainstate, get_test_signed_checkpoint};
+
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_chainstate_unmodified_for_invalid_checkpoint_data() {
+        let params = gen_params();
+        let (_, mut chainstate) = get_genesis_chainstate(&params);
+        let pre_process_state_root = chainstate.compute_state_root();
+
+        let signed_checkpoint = get_test_signed_checkpoint();
+        let checkpoint = signed_checkpoint.checkpoint();
+        let state_update_extractor = FullStateUpdate::from_buf;
+        let verification_result = process_checkpoint_and_update_chainstate::<FullStateUpdate>(
+            checkpoint,
+            &mut chainstate,
+            state_update_extractor,
+        )
+        .await;
+
+        let post_process_state_root = chainstate.compute_state_root();
+
+        if verification_result.is_err() {
+            assert_eq!(pre_process_state_root, post_process_state_root);
+        } else {
+            assert_ne!(pre_process_state_root, post_process_state_root);
+        }
+    }
 }
