@@ -197,12 +197,7 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
     info!(%blkid, "starting exec worker");
 
     let exec_env_id = ();
-    let state = ExecWorkerState::new(
-        engine,
-        exec_env_id,
-        cur_tip,
-        init_state.get_apparent_finalized_epoch(),
-    );
+    let state = ExecWorkerState::new(engine, exec_env_id, cur_tip, cur_tip);
     let ctx = ExecWorkerCtx::new(storage.l2().clone());
     exec_worker_task(shutdown, state, exec_rx, &ctx)?;
     Ok(())

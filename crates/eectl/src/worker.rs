@@ -5,16 +5,15 @@ use std::sync::Arc;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
+use strata_primitives::l2::L2BlockCommitment;
 use strata_tasks::ShutdownGuard;
-use tokio::runtime::Handle;
 use tracing::{debug, error, info, warn};
 
 use crate::{
     engine::*,
     errors::{EngineError, EngineResult},
     handle::{ExecCommand, ExecCtlInput},
-    messages::{ExecPayloadData, TipState},
+    messages::ExecPayloadData,
 };
 
 #[derive(Debug)]
@@ -23,8 +22,8 @@ pub struct ExecWorkerState<E: ExecEngineCtl> {
 
     exec_env_id: ExecEnvId,
 
-    cur_tip: L2BlockCommitment,
-    prev_epoch: Option<EpochCommitment>,
+    safe_tip: L2BlockCommitment,
+    finalized_tip: L2BlockCommitment,
 }
 
 impl<E: ExecEngineCtl> ExecWorkerState<E> {
@@ -32,14 +31,14 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
     pub fn new(
         engine: Arc<E>,
         exec_env_id: ExecEnvId,
-        cur_tip: L2BlockCommitment,
-        prev_epoch: Option<EpochCommitment>,
+        safe_tip: L2BlockCommitment,
+        finalized_tip: L2BlockCommitment,
     ) -> Self {
         Self {
             engine,
             exec_env_id,
-            cur_tip,
-            prev_epoch,
+            safe_tip,
+            finalized_tip,
         }
     }
 
@@ -54,30 +53,30 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
         Ok(res)
     }
 
-    /// Calls the engine to update the reffed blocks.
-    fn update_engine_refs(&mut self) -> EngineResult<()> {
-        let safe = *self.cur_tip.blkid();
-
-        match self.prev_epoch {
-            Some(prev_epoch) => self.call_engine("engine_update_refs", |eng| {
-                eng.update_safe_block(safe)?;
-                eng.update_finalized_block(*prev_epoch.last_blkid())?;
-                Ok(())
-            }),
-            None => self.call_engine("engine_update_refs", |eng| {
-                eng.update_safe_block(safe)?;
-                Ok(())
-            }),
-        }
+    fn update_safe_tip(&mut self, new_safe: &L2BlockCommitment) -> EngineResult<()> {
+        self.safe_tip = *new_safe;
+        self.call_engine("engine_update_safe_tip", |eng| {
+            eng.update_safe_block(*new_safe.blkid())?;
+            Ok(())
+        })
     }
 
-    /// Updates the tip state and updates the underlying engine's refs.
-    fn update_tip_state(&mut self, new_tip_state: &TipState) -> EngineResult<()> {
-        self.cur_tip = *new_tip_state.cur_tip();
-        self.prev_epoch = Some(*new_tip_state.prev_epoch());
+    fn update_finalized_tip(&mut self, new_finalized: &L2BlockCommitment) -> EngineResult<()> {
+        self.call_engine("engine_update_finalized_tip", |eng| {
+            eng.update_finalized_block(*new_finalized.blkid())?;
+            Ok(())
+        })
+    }
 
-        self.update_engine_refs()?;
-        Ok(())
+    /// Calls the engine to update the reffed blocks.
+    fn update_engine_refs(&mut self) -> EngineResult<()> {
+        let safe_blkid = *self.safe_tip.blkid();
+        let finalized_blkid = *self.finalized_tip.blkid();
+        self.call_engine("engine_update_refs", |eng| {
+            eng.update_safe_block(safe_blkid)?;
+            eng.update_finalized_block(finalized_blkid)?;
+            Ok(())
+        })
     }
 
     /// Tries to exec an EL payload.
@@ -122,11 +121,6 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
     info!("started exec worker");
     while let Some(inp) = input.recv_msg() {
         match inp {
-            ExecCommand::NewTipState(ts, completion) => {
-                let res = state.update_tip_state(&ts);
-                let _ = completion.send(res);
-            }
-
             ExecCommand::NewBlock(block, completion) => {
                 debug!("new block here");
                 let payload = context.fetch_exec_payload(&block, &state.exec_env_id)?;
@@ -144,6 +138,14 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
                     }
                 }
                 let _ = completion.send(Ok(()));
+            }
+            ExecCommand::NewSafeTip(ts, completion) => {
+                let res = state.update_safe_tip(&ts);
+                let _ = completion.send(res);
+            }
+            ExecCommand::NewFinalizedTip(ts, completion) => {
+                let res = state.update_safe_tip(&ts);
+                let _ = completion.send(res);
             }
         }
         if shutdown.should_shutdown() {

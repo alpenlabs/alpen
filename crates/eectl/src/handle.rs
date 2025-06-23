@@ -6,19 +6,19 @@ use strata_primitives::prelude::*;
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
 
-use crate::{
-    errors::{EngineError, EngineResult},
-    messages::TipState,
-};
+use crate::errors::{EngineError, EngineResult};
 
 /// Commands we send from the handle to the worker, with completion channels.
 #[derive(Debug)]
 pub enum ExecCommand {
-    /// Updates the safe and finalized tips.
-    NewTipState(TipState, oneshot::Sender<EngineResult<()>>),
-
     /// Notifies the worker of a new block being produced.
     NewBlock(L2BlockCommitment, oneshot::Sender<EngineResult<()>>),
+
+    /// Updates the safe tip.
+    NewSafeTip(L2BlockCommitment, oneshot::Sender<EngineResult<()>>),
+
+    /// Updates the finalized tip.
+    NewFinalizedTip(L2BlockCommitment, oneshot::Sender<EngineResult<()>>),
 }
 
 #[derive(Debug)]
@@ -76,13 +76,25 @@ impl ExecCtlHandle {
         self.send_and_wait_blocking(|tx| ExecCommand::NewBlock(block, tx))
     }
 
-    pub async fn update_tip_state(&self, tip_state: TipState) -> EngineResult<()> {
-        self.send_and_wait(|tx| ExecCommand::NewTipState(tip_state, tx))
+    pub async fn update_safe_tip(&self, safe_tip: L2BlockCommitment) -> EngineResult<()> {
+        self.send_and_wait(|tx| ExecCommand::NewSafeTip(safe_tip, tx))
             .await
     }
 
-    pub fn update_tip_state_blocking(&self, tip_state: TipState) -> EngineResult<()> {
-        self.send_and_wait_blocking(|tx| ExecCommand::NewTipState(tip_state, tx))
+    pub fn update_safe_tip_blocking(&self, safe_tip: L2BlockCommitment) -> EngineResult<()> {
+        self.send_and_wait_blocking(|tx| ExecCommand::NewSafeTip(safe_tip, tx))
+    }
+
+    pub async fn update_finalized_tip(&self, finalized_tip: L2BlockCommitment) -> EngineResult<()> {
+        self.send_and_wait(|tx| ExecCommand::NewFinalizedTip(finalized_tip, tx))
+            .await
+    }
+
+    pub fn update_finalized_tip_blocking(
+        &self,
+        finalized_tip: L2BlockCommitment,
+    ) -> EngineResult<()> {
+        self.send_and_wait_blocking(|tx| ExecCommand::NewFinalizedTip(finalized_tip, tx))
     }
 }
 

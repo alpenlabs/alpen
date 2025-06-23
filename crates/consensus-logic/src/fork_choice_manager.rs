@@ -8,7 +8,7 @@ use strata_chain_worker::{
     worker_task, ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerError,
     WorkerResult, WorkerShared,
 };
-use strata_chainexec::ChainExecutor;
+use strata_chainexec::{ChainExecutor, TipState};
 use strata_chaintsn::transition::process_block;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
@@ -182,6 +182,7 @@ impl ForkChoiceManager {
         }
 
         // Do the leg work of applying the finalization.
+        let tip_update = TipState::new(self.cur_best_block(), *epoch);
         self.chain_worker.finalize_epoch_blocking(*epoch)?;
 
         // Now update the in memory bookkeeping about it.
