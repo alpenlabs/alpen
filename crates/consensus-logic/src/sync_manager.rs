@@ -8,7 +8,7 @@ use strata_chain_worker::{ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessag
 use strata_chainexec::ChainExecutor;
 use strata_eectl::{
     engine::ExecEngineCtl,
-    handle::ExecCtlInput,
+    handle::{ExecCtlHandle, ExecCtlInput},
     worker::{exec_worker_task, ExecWorkerState},
 };
 use strata_primitives::{l2::L2BlockCommitment, params::Params};
@@ -106,7 +106,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Start the fork choice manager thread.  If we haven't done genesis yet
     // this will just wait until the CSM says we have.
     let fcm_storage = storage.clone();
-    let fcm_engine = engine.clone();
     let _fcm_csm_controller = csm_controller.clone();
     let fcm_params = params.clone();
     let fcm_handle = executor.handle().clone();
@@ -123,7 +122,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
             fcm_storage,
             fcm_rx,
             cw_handle,
-            fcm_engine,
             fcm_params,
             st_ch,
         )
@@ -143,20 +141,20 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         worker::client_worker_task(shutdown, client_worker_state, csm_engine, csm_rx, st_ch)
     });
 
-    let chain_exec = ChainExecutor::new(params.rollup().clone());
-    let active_state_inst = 0; // FIXME: Not sure what this is
-    let context = ChainWorkerCtx::new(
-        storage.l2().clone(),
-        storage.new_chainstate().clone(),
-        storage.checkpoint().clone(),
-        active_state_inst,
-    );
-    let shared = Arc::new(Mutex::new(WorkerShared::default()));
-    let chain_worker_state =
-        strata_chain_worker::init_worker_state(shared.clone(), context, chain_exec, exec_tx)?;
-    let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
+    let cw_handle = executor.handle().clone();
+    let cw_storage = storage.clone();
+    let cw_status = status_channel.clone();
+    let cw_params = params.clone();
     executor.spawn_critical("chain_worker_task", move |shutdown| {
-        strata_chain_worker::worker_task(&shutdown, chain_worker_state, input)
+        spawn_chain_worker(
+            shutdown,
+            cw_handle,
+            cw_storage,
+            cw_status,
+            cw_params,
+            exec_tx,
+            chain_msg_rx,
+        )
     });
 
     let ew_handle = executor.handle().clone();
@@ -200,5 +198,48 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
     let state = ExecWorkerState::new(engine, exec_env_id, cur_tip, cur_tip);
     let ctx = ExecWorkerCtx::new(storage.l2().clone());
     exec_worker_task(shutdown, state, exec_rx, &ctx)?;
+    Ok(())
+}
+
+fn spawn_chain_worker(
+    shutdown: ShutdownGuard,
+    handle: Handle,
+    storage: Arc<NodeStorage>,
+    status_channel: StatusChannel,
+    params: Arc<Params>,
+    exect_ctl_handle: ExecCtlHandle,
+    chain_msg_rx: mpsc::Receiver<ChainWorkerMessage>,
+) -> anyhow::Result<()> {
+    info!("waiting until genesis");
+    let init_state = handle.block_on(status_channel.wait_until_genesis())?;
+    let cur_tip = match init_state.get_declared_final_epoch().cloned() {
+        Some(epoch) => epoch.to_block_commitment(),
+        None => L2BlockCommitment::new(
+            0,
+            *init_state.sync().expect("after genesis").genesis_blkid(),
+        ),
+    };
+
+    let blkid = *cur_tip.blkid();
+    info!(%blkid, "starting chain worker");
+
+    let context = ChainWorkerCtx::new(
+        storage.l2().clone(),
+        storage.new_chainstate().clone(),
+        storage.checkpoint().clone(),
+        0, // FIXME: Not sure what this is
+    );
+    let chain_exec = ChainExecutor::new(params.rollup().clone());
+    let shared = Arc::new(Mutex::new(WorkerShared::default()));
+    let state = strata_chain_worker::init_worker_state(
+        shared.clone(),
+        context,
+        chain_exec,
+        exect_ctl_handle,
+        cur_tip,
+    )?;
+    let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
+
+    strata_chain_worker::worker_task(&shutdown, state, input)?;
     Ok(())
 }

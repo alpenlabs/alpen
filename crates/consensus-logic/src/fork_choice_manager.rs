@@ -159,9 +159,14 @@ impl ForkChoiceManager {
     }
 
     /// Updates the stored current state.
-    fn update_tip_block(&mut self, block: L2BlockCommitment, state: Arc<Chainstate>) {
+    fn update_tip_block(
+        &mut self,
+        block: L2BlockCommitment,
+        state: Arc<Chainstate>,
+    ) -> WorkerResult<()> {
         self.cur_best_block = block;
         self.cur_chainstate = state;
+        self.chain_worker.update_safe_tip_blocking(block)
     }
 
     fn attach_block(&mut self, blkid: &L2BlockId, bundle: &L2BlockBundle) -> anyhow::Result<bool> {
@@ -391,13 +396,12 @@ fn determine_start_tip(
 
 /// Main tracker task that takes a ready fork choice manager and some IO stuff.
 #[allow(clippy::too_many_arguments)]
-pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
+pub fn tracker_task(
     shutdown: ShutdownGuard,
     handle: Handle,
     storage: Arc<NodeStorage>,
     fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     chain_worker: Arc<ChainWorkerHandle>,
-    engine: Arc<E>,
     params: Arc<Params>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
@@ -433,16 +437,9 @@ pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     let update = ChainSyncStatusUpdate::new(status, fcm.cur_chainstate.clone());
     status_channel.update_chain_sync_status(update);
 
-    handle_unprocessed_blocks(&mut fcm, &storage, &status_channel, engine.clone())?;
+    handle_unprocessed_blocks(&mut fcm, &storage, &status_channel)?;
 
-    if let Err(e) = forkchoice_manager_task_inner(
-        &shutdown,
-        handle,
-        fcm,
-        fcm_rx,
-        status_channel,
-        engine.clone(),
-    ) {
+    if let Err(e) = forkchoice_manager_task_inner(&shutdown, handle, fcm, fcm_rx, status_channel) {
         error!(err = ?e, "tracker aborted");
         return Err(e);
     }
@@ -452,11 +449,10 @@ pub fn tracker_task<E: ExecEngineCtl + Sync + Send + 'static>(
 
 /// Check if there are unprocessed L2 blocks in the database.
 /// If there are, pass them to fcm.
-pub fn handle_unprocessed_blocks<E: ExecEngineCtl>(
+pub fn handle_unprocessed_blocks(
     fcm: &mut ForkChoiceManager,
     storage: &NodeStorage,
     status_channel: &StatusChannel,
-    engine: Arc<E>,
 ) -> anyhow::Result<()> {
     info!("checking for unprocessed L2 blocks");
 
@@ -475,12 +471,7 @@ pub fn handle_unprocessed_blocks<E: ExecEngineCtl>(
                 continue;
             }
 
-            process_fc_message(
-                ForkChoiceMessage::NewBlock(blockid),
-                fcm,
-                status_channel,
-                engine.clone(),
-            )?;
+            process_fc_message(ForkChoiceMessage::NewBlock(blockid), fcm, status_channel)?;
         }
         slot += 1;
     }
@@ -497,13 +488,12 @@ enum FcmEvent {
     Abort,
 }
 
-pub fn forkchoice_manager_task_inner<E: ExecEngineCtl>(
+pub fn forkchoice_manager_task_inner(
     shutdown: &ShutdownGuard,
     handle: Handle,
     mut fcm_state: ForkChoiceManager,
     mut fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     status_channel: StatusChannel,
-    engine: Arc<E>,
 ) -> anyhow::Result<()> {
     let mut cl_rx = status_channel.subscribe_client_state();
     loop {
@@ -522,9 +512,7 @@ pub fn forkchoice_manager_task_inner<E: ExecEngineCtl>(
         }
 
         match fcm_ev {
-            FcmEvent::NewFcmMsg(m) => {
-                process_fc_message(m, &mut fcm_state, &status_channel, engine.clone())
-            }
+            FcmEvent::NewFcmMsg(m) => process_fc_message(m, &mut fcm_state, &status_channel),
             FcmEvent::NewStateUpdate(st) => handle_new_client_state(&mut fcm_state, st),
             FcmEvent::Abort => break,
         }?;
@@ -567,11 +555,10 @@ async fn wait_for_client_change(
     Ok(state)
 }
 
-fn process_fc_message<E: ExecEngineCtl>(
+fn process_fc_message(
     msg: ForkChoiceMessage,
     fcm_state: &mut ForkChoiceManager,
     status_channel: &StatusChannel,
-    engine: Arc<E>,
 ) -> anyhow::Result<()> {
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
@@ -584,7 +571,7 @@ fn process_fc_message<E: ExecEngineCtl>(
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
 
-            let ok = match handle_new_block(fcm_state, &block_bundle, engine) {
+            let ok = match handle_new_block(fcm_state, &block_bundle) {
                 Ok(v) => v,
                 Err(e) => {
                     if let Some(EngineError::Other(_)) = e.downcast_ref() {
@@ -635,10 +622,9 @@ fn process_fc_message<E: ExecEngineCtl>(
     Ok(())
 }
 
-fn handle_new_block<E: ExecEngineCtl>(
+fn handle_new_block(
     fcm_state: &mut ForkChoiceManager,
     bundle: &L2BlockBundle,
-    engine: Arc<E>,
 ) -> anyhow::Result<bool> {
     let slot = bundle.header().slot();
     let blkid = &bundle.header().get_blockid();
@@ -704,34 +690,10 @@ fn handle_new_block<E: ExecEngineCtl>(
     let tip_blkid = *tip_update.new_tip();
     debug!(%tip_blkid, "have new tip, applying update");
 
-    // TODO need to re-add this part
-    // Update the tip block in the FCM state.
-    let new_chainstate = fcm_state
-        .storage
-        .new_chainstate()
-        .get_write_batch_blocking(conv_blkid_to_slot_wb_id(tip_blkid))?
-        .ok_or(DbError::MissingWriteBatch)?
-        .into_toplevel();
-    fcm_state.update_tip_block(
-        bundle.block().header().get_block_commitment(),
-        Arc::new(new_chainstate),
-    );
-
     // Apply the reorg.
-    let res = match apply_tip_update(tip_update, fcm_state) {
+    let res = match apply_tip_update(tip_update, fcm_state, bundle) {
         Ok(()) => {
             info!(%tip_blkid, "new chain tip");
-
-            // Also this is the point at which we update the engine head and
-            // safe blocks.  We only have to actually call this one, it counts
-            // for both.
-
-            retry_with_backoff(
-                "engine_update_safe_block",
-                DEFAULT_ENGINE_CALL_MAX_RETRIES,
-                &ExponentialBackoff::default(),
-                || engine.update_safe_block(tip_blkid),
-            )?;
 
             Ok(true)
         }
@@ -839,11 +801,25 @@ fn pick_best_block<'t>(
     Ok(best_tip)
 }
 
-fn apply_tip_update(update: TipUpdate, fcm_state: &mut ForkChoiceManager) -> anyhow::Result<()> {
+fn apply_tip_update(
+    update: TipUpdate,
+    fcm_state: &mut ForkChoiceManager,
+    bundle: &L2BlockBundle,
+) -> anyhow::Result<()> {
     match update {
         // Easy case.
         TipUpdate::ExtendTip(_cur, new) => {
-            /* apply_blocks([new].into_iter(), fcm_state) */
+            // Update the tip block in the FCM state.
+            let new_chainstate = fcm_state
+                .storage
+                .new_chainstate()
+                .get_write_batch_blocking(conv_blkid_to_slot_wb_id(new))?
+                .ok_or(DbError::MissingWriteBatch)?
+                .into_toplevel();
+            fcm_state.update_tip_block(
+                bundle.block().header().get_block_commitment(),
+                Arc::new(new_chainstate),
+            )?;
 
             Ok(())
         }
