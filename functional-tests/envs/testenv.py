@@ -107,6 +107,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
         duty_timeout_duration: int = 10,
         custom_chain: str | dict = "dev",
         epoch_gas_limit: Optional[int] = None,
+        enable_state_diff_gen: bool = False,
     ):
         super().__init__()
         self.pre_generate_blocks = pre_generate_blocks
@@ -119,6 +120,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
         self.duty_timeout_duration = duty_timeout_duration
         self.custom_chain = custom_chain
         self.epoch_gas_limit = epoch_gas_limit
+        self.enable_state_diff_gen = enable_state_diff_gen
 
     def init(self, ctx: flexitest.EnvContext) -> flexitest.LiveEnv:
         btc_fac = ctx.get_factory("bitcoin")
@@ -161,7 +163,13 @@ class BasicEnvConfig(flexitest.EnvConfig):
         with open(reth_secret_path, "w") as f:
             f.write(generate_jwt_secret())
 
-        reth = reth_fac.create_exec_client(0, reth_secret_path, None, custom_chain=custom_chain)
+        reth = reth_fac.create_exec_client(
+            0,
+            reth_secret_path,
+            None,
+            custom_chain=custom_chain,
+            enable_state_diff_gen=self.enable_state_diff_gen,
+        )
         reth_port = reth.get_prop("rpc_port")
 
         bitcoind = btc_fac.create_regtest_bitcoin()

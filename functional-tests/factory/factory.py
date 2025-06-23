@@ -264,6 +264,7 @@ class RethFactory(flexitest.Factory):
         ctx: flexitest.EnvContext,
         custom_chain: str = "dev",
         name_suffix: str = "",
+        enable_state_diff_gen: bool = False,
     ) -> flexitest.Service:
         name = f"reth.{id}{'.' + name_suffix if name_suffix else ''}"
         datadir = ctx.make_service_dir(name)
@@ -288,11 +289,19 @@ class RethFactory(flexitest.Factory):
             "--http.port", str(ethrpc_http_port),
             "--color", "never",
             "--enable-witness-gen",
-            "--enable-state-diff-gen",
             "--custom-chain", custom_chain,
             "-vvvv"
         ]
         # fmt: on
+
+        # Right now, exex pipeline seems to be very slow and suboptimal.
+        # Disabling state_diff exex for now for the basic env, with the
+        # option to enable in a separate `state_diffs` env.
+        # TODO(STR-1381): investigate and optimize exex.
+        if enable_state_diff_gen:
+            cmd.append(
+                "--enable-state-diff-gen",
+            )
 
         if sequencer_reth_rpc is not None:
             cmd.extend(["--sequencer-http", sequencer_reth_rpc])
