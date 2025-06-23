@@ -286,7 +286,7 @@ async fn derive_l1_range(
 
 async fn fetch_epoch(cl_client: &HttpClient, l2_block: L2BlockCommitment) -> Epoch {
     cl_client
-        .get_chainstate_at_idx(l2_block.slot())
+        .get_chainstate_by_id(*l2_block.blkid())
         .await
         .expect("expect a chainstate")
         .expect("expect a chainstate")
