@@ -922,19 +922,23 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
         Ok(l2_block)
     }
 
-    async fn get_chainstate_at_idx(&self, idx: u64) -> RpcResult<Option<RpcChainState>> {
+    async fn get_chainstate_by_id(&self, blkid: L2BlockId) -> RpcResult<Option<RpcChainState>> {
+        let wb_id = conv_blkid_to_slot_wb_id(blkid);
         let chain_state_res = self
             .storage
-            .chainstate()
-            .get_toplevel_chainstate_async(idx)
+            .new_chainstate()
+            .get_write_batch_async(wb_id)
             .map_err(Error::Db)
             .await?;
         match chain_state_res {
-            Some(cs_entry) => Ok(Some(RpcChainState {
-                tip_blkid: *cs_entry.tip_blockid(),
-                tip_slot: cs_entry.state().chain_tip_slot(),
-                cur_epoch: cs_entry.state().cur_epoch(),
-            })),
+            Some(wb) => {
+                let chs = wb.into_toplevel();
+                Ok(Some(RpcChainState {
+                    tip_blkid: blkid,
+                    tip_slot: chs.chain_tip_slot(),
+                    cur_epoch: chs.cur_epoch(),
+                }))
+            }
             None => Ok(None),
         }
     }

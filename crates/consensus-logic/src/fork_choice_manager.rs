@@ -426,7 +426,7 @@ pub fn tracker_task(
     let prev_epoch = *fcm.get_chainstate_prev_epoch();
 
     // Update status.
-    // TODO: avoid repitition from process_fc_message
+    // TODO: avoid repetition from process_fc_message
     let status = ChainSyncStatus {
         tip: fcm.cur_best_block,
         prev_epoch: *fcm.get_chainstate_prev_epoch(),
