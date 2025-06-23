@@ -14,7 +14,10 @@ use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 #[cfg(feature = "debug-utils")]
 use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
-use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
+use strata_consensus_logic::{
+    chain_worker_context::conv_blkid_to_slot_wb_id, checkpoint_verification::verify_proof,
+    sync_manager::SyncManager,
+};
 use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus};
 use strata_primitives::{
     batch::EpochSummary,
@@ -374,15 +377,16 @@ impl StrataApiServer for StrataRpcImpl {
         Ok(summary)
     }
 
-    async fn get_chainstate_raw(&self, slot: u64) -> RpcResult<Vec<u8>> {
+    async fn get_chainstate_raw(&self, blkid: L2BlockId) -> RpcResult<Vec<u8>> {
+        let wid = conv_blkid_to_slot_wb_id(blkid);
         let chs = self
             .storage
-            .chainstate()
-            .get_toplevel_chainstate_async(slot)
+            .new_chainstate()
+            .get_write_batch_async(wid)
             .map_err(Error::Db)
             .await?
-            .ok_or(Error::MissingChainstate(slot))?
-            .to_chainstate();
+            .ok_or(Error::MissingChainstate(blkid))?
+            .into_toplevel();
 
         let raw_chs = borsh::to_vec(&chs)
             .map_err(|_| Error::Other("failed to serialize chainstate".to_string()))?;
@@ -393,16 +397,17 @@ impl StrataApiServer for StrataRpcImpl {
     async fn get_cl_block_witness_raw(&self, blkid: L2BlockId) -> RpcResult<Vec<u8>> {
         let l2_blk_bundle = self.fetch_l2_block_ok(&blkid).await?;
 
-        let prev_slot = l2_blk_bundle.block().header().header().slot() - 1;
+        let parent = l2_blk_bundle.block().header().header().parent();
+        let wid = conv_blkid_to_slot_wb_id(*parent);
 
         let chain_state = self
             .storage
-            .chainstate()
-            .get_toplevel_chainstate_async(prev_slot)
+            .new_chainstate()
+            .get_write_batch_async(wid)
             .map_err(Error::Db)
             .await?
-            .ok_or(Error::MissingChainstate(prev_slot))?
-            .to_chainstate();
+            .ok_or(Error::MissingChainstate(*parent))?
+            .into_toplevel();
 
         let cl_block_witness = (chain_state, l2_blk_bundle.block());
         let raw_cl_block_witness = borsh::to_vec(&cl_block_witness)

@@ -143,6 +143,7 @@ impl<W: WorkerContext> WorkerState<W> {
 
         // Also, do whatever we have to do to complete the epoch.
         if is_epoch_terminal {
+            debug!(%is_epoch_terminal);
             self.handle_complete_epoch(block.blkid(), bundle.block(), &output)?;
         }
 
@@ -210,7 +211,9 @@ impl<W: WorkerContext> WorkerState<W> {
     fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
         self.exec_ctl_handle
             .update_finalized_tip_blocking(epoch.to_block_commitment())
-            .map_err(|e| e.into())
+            .map_err(WorkerError::ExecEnvEngine)?;
+
+        Ok(())
     }
 }
 
