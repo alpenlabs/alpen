@@ -1,9 +1,7 @@
-import time
-
 import flexitest
 
 from envs import testenv
-from utils import wait_for_proof_with_time_out, wait_until
+from utils.wait import ProverWaiter
 
 
 @flexitest.register
@@ -15,12 +13,9 @@ class ProverClientTest(testenv.StrataTestBase):
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
 
-        time.sleep(1)
-        # Wait until the prover client reports readiness
-        wait_until(
-            lambda: prover_client_rpc.dev_strata_getReport() is not None,
-            error_with="Prover did not start on time",
-        )
+        # Initialize prover waiter and wait for readiness
+        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=30, interval=1)
+        prover_waiter.wait_for_prover_ready()
 
         # Test on with the latest checkpoint
         task_ids = prover_client_rpc.dev_strata_proveLatestCheckPoint()
@@ -29,8 +24,5 @@ class ProverClientTest(testenv.StrataTestBase):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        time_out = 30
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=time_out
-        )
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id, timeout=30)
         assert is_proof_generation_completed

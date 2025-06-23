@@ -2,7 +2,7 @@ import flexitest
 
 from envs import net_settings, testenv
 from utils import *
-from utils.wait.strata import StrataWaiter
+from utils.wait import ProverWaiter, StrataWaiter
 
 
 @flexitest.register
@@ -29,10 +29,8 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
         strata_waiter.wait_for_genesis()
 
         # Wait for prover
-        wait_until(
-            lambda: prover_rpc.dev_strata_getReport() is not None,
-            error_with="Prover did not start on time",
-        )
+        prover_waiter = ProverWaiter(prover_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter.wait_for_prover_ready()
 
         check_submit_proof_fails_for_nonexistent_batch(seqrpc, 100)
 
@@ -48,7 +46,8 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
         seq.start()
         logging.info("Waiting for it to come back up...")
         seqrpc = seq.create_rpc()
-        wait_until(seqrpc.strata_protocolVersion, timeout=5)
+        strata_waiter = StrataWaiter(seqrpc, self.logger, timeout=5, interval=1)
+        strata_waiter.wait_until_client_ready()
 
         # Check for next 2 checkpoints
         logging.info("Now we look for more checkpoints")

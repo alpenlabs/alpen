@@ -1,10 +1,10 @@
 import flexitest
-from utils.wait.strata import StrataWaiter
 from web3 import Web3
 
 from envs import net_settings, testenv
 from utils import *
 from utils.wait.reth import RethWaiter
+from utils.wait.strata import StrataWaiter
 
 
 def send_tx(web3: Web3):

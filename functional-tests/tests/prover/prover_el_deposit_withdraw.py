@@ -10,9 +10,8 @@ from utils import (
     confirm_btc_withdrawal,
     get_bridge_pubkey,
     get_latest_eth_block_number,
-    wait_for_proof_with_time_out,
 )
-from utils.wait.reth import RethWaiter
+from utils.wait import ProverWaiter, RethWaiter
 
 
 @flexitest.register
@@ -141,7 +140,10 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         reth_waiter = RethWaiter(rethrpc, timeout=60)
         # Proving
         self.test_checkpoint(
-            l1_withdraw_block_height, l2_withdraw_block_num, prover_client_rpc, reth_waiter,
+            l1_withdraw_block_height,
+            l2_withdraw_block_num,
+            prover_client_rpc,
+            reth_waiter,
         )
 
     def test_checkpoint(self, l1_block, l2_block, prover_client_rpc, reth_waiter):
@@ -160,7 +162,6 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=30
-        )
+        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=30, interval=2)
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

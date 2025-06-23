@@ -11,18 +11,20 @@ class StrataWaiter:
     """
     Wrapper for encapsulating and waiting strata related rpcs
     """
+
     strata_rpc: Any
     logger: Logger
     timeout: int = 10
     interval: float = 0.5
 
-    def wait_for_genesis(self, message=None):
+    def wait_for_genesis(self, message: str | None = None):
         """
         Waits until we see genesis. That is to say, that `strata_syncStatus`
         returns a sensible result.
         """
 
         msg = message or "Timeout: waiting for genesis"
+
         def _check_genesis():
             try:
                 # This should raise if we're before genesis.
@@ -40,3 +42,270 @@ class StrataWaiter:
                     raise e
 
         wait_until(_check_genesis, timeout=self.timeout, step=self.interval, error_with=msg)
+
+    def wait_until_chain_epoch(
+        self,
+        epoch: int,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until the chain has finished the specified epoch index, determined by
+        checking for epoch summaries.
+
+        Returns the epoch summary.
+        """
+        self.logger.info(f"waiting for epoch {epoch}")
+
+        def _query():
+            status = self.strata_rpc.strata_syncStatus()
+            self.logger.debug(f"checked status {status}")
+            commitments = self.strata_rpc.strata_getEpochCommitments(epoch)
+            if len(commitments) > 0:
+                comm = commitments[0]
+                self.logger.info(
+                    f"now at epoch {epoch}, slot {comm['last_slot']}, blkid {comm['last_blkid']}"
+                )
+                return self.strata_rpc.strata_getEpochSummary(
+                    epoch, comm["last_slot"], comm["last_blkid"]
+                )
+            return None
+
+        def _check(v):
+            return v is not None
+
+        timeout = timeout or self.timeout
+        step = interval or self.interval
+        msg = message or "Timeout: waiting for chain epoch"
+
+        return wait_until_with_value(_query, _check, timeout=timeout, step=step, error_with=msg)
+
+    def wait_until_next_chain_epoch(
+        self, timeout: int | None = None, interval: float | None = None, message: str | None = None
+    ) -> int:
+        """
+        Waits until the chain epoch advances by at least 1.
+
+        Returns the new epoch number.
+        """
+        init_epoch = self.strata_rpc.strata_syncStatus()["cur_epoch"]
+
+        def _query():
+            ss = self.strata_rpc.strata_syncStatus()
+            self.logger.info(f"waiting for next epoch, ss {ss}")
+            return ss["cur_epoch"]
+
+        def _check(epoch):
+            return epoch > init_epoch
+
+        timeout = timeout or self.timeout
+        step = interval or self.interval
+        error_with = message or "Timeout waiting for next epoch"
+
+        return wait_until_with_value(
+            _query, _check, timeout=timeout, step=step, error_with=error_with
+        )
+
+    def wait_until_epoch_confirmed(
+        self,
+        epoch: int,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until at least the given epoch is confirmed on L1, according to
+        calling `strata_clientStatus`.
+        """
+
+        def _check():
+            cs = self.strata_rpc.strata_clientStatus()
+            l1_height = cs["tip_l1_block"]["height"]
+            conf_epoch = cs["confirmed_epoch"]
+            self.logger.info(f"confirmed epoch as of {l1_height}: {conf_epoch}")
+            if conf_epoch is None:
+                return False
+            return conf_epoch["epoch"] >= epoch
+
+        timeout = timeout or self.timeout
+        step = interval or self.interval
+        error_with = message or f"Timeout waiting for epoch {epoch} to be confirmed"
+
+        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+
+    def wait_until_epoch_finalized(
+        self,
+        epoch: int,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until at least the given epoch is finalized on L1, according to
+        calling `strata_clientStatus`.
+        """
+
+        def _check():
+            cs = self.strata_rpc.strata_clientStatus()
+            l1_height = cs["tip_l1_block"]["height"]
+            fin_epoch = cs["finalized_epoch"]
+            self.logger.info(f"finalized epoch as of {l1_height}: {fin_epoch}")
+            if fin_epoch is None:
+                return False
+            return fin_epoch["epoch"] >= epoch
+
+        timeout = timeout or self.timeout
+        step = interval or self.interval
+        error_with = message or f"Timeout waiting for epoch {epoch} to be finalized"
+
+        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+
+    def wait_until_client_ready(
+        self, timeout: int | None = None, interval: float | None = None, message: str | None = None
+    ):
+        """
+        Waits until the strata client is ready to serve rpc
+        """
+        timeout = timeout or self.timeout
+        interval = interval or self.interval
+        message = message or "Strata client did not start on time"
+
+        wait_until(
+            lambda: self.strata_rpc.strata_protocolVersion() is not None,
+            error_with=message,
+            timeout=timeout,
+            step=interval,
+        )
+
+    def wait_until_epoch_observed_final(
+        self,
+        epoch: int,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until at least the given epoch is observed as final on L2, according
+        to calling `strata_syncStatus`.
+        """
+
+        def _check():
+            ss = self.strata_rpc.strata_syncStatus()
+            slot = ss["tip_height"]  # TODO rename to tip_slot
+            of_epoch = ss["observed_finalized_epoch"]
+            self.logger.info(f"observed final epoch as of L2 slot {slot}: {of_epoch}")
+            if not of_epoch:
+                return False
+            return of_epoch["epoch"] >= epoch
+
+        timeout = timeout or self.timeout
+        step = interval or self.interval
+        error_with = message or f"Timeout waiting for epoch {epoch} to be observed as final"
+
+        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+
+    def wait_until_l1_observed(
+        self,
+        height: int,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until the provided L1 height has been observed by the chain.
+        """
+
+        def _check():
+            ss = self.strata_rpc.strata_syncStatus()
+            slot = ss["tip_height"]  # TODO rename to slot
+            epoch = ss["cur_epoch"]
+            view_l1 = ss["safe_l1_block"]["height"]
+            self.logger.info(
+                f"chain now at slot {slot}, epoch {epoch}, observed L1 height is {view_l1}"
+            )
+            return view_l1 >= height
+
+        timeout = timeout or self.timeout
+        step = interval or self.interval
+        error_with = message or f"Timeout waiting for L1 height {height} to be observed"
+
+        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+
+    def wait_until_l1_height_at(
+        self,
+        height: int,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ) -> Any:
+        """
+        Waits until strata client's reader sees L1 block at least upto given height.
+
+        Returns the latest L1Status.
+        """
+        timeout = timeout or self.timeout
+        interval = interval or self.interval
+        message = message or "L1 reader did not catch up with bitcoin network"
+
+        return wait_until_with_value(
+            lambda: self.strata_rpc.strata_l1status(),
+            lambda value: value["cur_height"] >= height,
+            error_with=message,
+            timeout=timeout,
+            step=interval,
+        )
+
+    def wait_until_recent_block_headers_at(
+        self,
+        height: int,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ) -> Any:
+        """
+        Waits until recent block headers are available at given height.
+        """
+        timeout = timeout or 2  # Short timeout as per original function
+        interval = interval or self.interval
+        message = message or "Blocks not generated"
+
+        return wait_until_with_value(
+            lambda: self.strata_rpc.strata_getRecentBlockHeaders(height),
+            lambda value: value is not None,
+            error_with=message,
+            timeout=timeout,
+            step=interval,
+        )
+
+    def wait_until_csm_l1_tip_observed(
+        self, timeout: int | None = None, interval: float | None = None, message: str | None = None
+    ):
+        """
+        Waits until the CSM's current L1 tip block height has been observed by the OL.
+        """
+        init_cs = self.strata_rpc.strata_clientStatus()
+        init_l1_height = init_cs["tip_l1_block"]["height"]
+        self.logger.info(f"target L1 height from CSM is {init_l1_height}")
+        self.wait_until_l1_observed(
+            init_l1_height, timeout=timeout, interval=interval, message=message
+        )
+
+    def wait_until_cur_l1_tip_observed(
+        self,
+        btcrpc,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until the current L1 tip block as requested from the L1 RPC has been
+        observed by the CSM.
+
+        Returns the L1 block height.
+        """
+        info = btcrpc.proxy.getblockchaininfo()
+        h = info["blocks"]
+        self.logger.info(f"current bitcoin height is {h}")
+        self.wait_until_l1_observed(h, timeout=timeout, interval=interval, message=message)
+        return h

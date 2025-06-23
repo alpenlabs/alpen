@@ -1,15 +1,12 @@
 import time
 
 import flexitest
-import web3.eth
 from web3 import Web3
 
 from envs import testenv
 from utils.reth import get_chainconfig
-from utils.utils import (
-    RollupParamsSettings,
-    wait_until,
-)
+from utils.utils import RollupParamsSettings
+from utils.wait import RethWaiter
 
 BLOCK_GAS_LIMIT = 100_000
 EPOCH_GAS_LIMIT = 200_000
@@ -19,10 +16,6 @@ TX_COUNT = 10
 
 chain_config = get_chainconfig()
 chain_config["gasLimit"] = hex(BLOCK_GAS_LIMIT)
-
-
-def block_number_available(web3, block_no):
-    return lambda: web3.eth.get_block_number() >= block_no
 
 
 @flexitest.register
@@ -46,6 +39,7 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         time.sleep(1)
 
         reth = ctx.get_service("reth")
+        rethrpc = reth.create_rpc()
         web3: Web3 = reth.create_web3()
 
         source = web3.address
@@ -66,8 +60,9 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         total_gas_used = 0
         block_no = original_block_no + 1
         zero_gas_blocks = 0
+        reth_waiter = RethWaiter(rethrpc, timeout=30, interval=1)
         while zero_gas_blocks < 2:
-            wait_until(block_number_available(web3, block_no))
+            reth_waiter.wait_until_eth_block_at_least(block_no)
 
             header = web3.eth.get_block(block_no)
             self.info(f"block_number: {header['number']}, gas_used: {header['gasUsed']}")
@@ -86,7 +81,7 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         assert total_gas_used < GAS_PER_TX * TX_COUNT, "all txns should NOT be processed"
 
 
-def make_burner_transaction(web3: web3.Web3, nonce: int):
+def make_burner_transaction(web3: Web3, nonce: int):
     """
     :param web3: Web3 instance.
     :nonce: Nonce for the transaction.

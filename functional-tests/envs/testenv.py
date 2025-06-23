@@ -14,6 +14,7 @@ from factory.config import BitcoindConfig, RethELConfig
 from load.cfg import LoadConfig, LoadConfigBuilder
 from utils import *
 from utils.constants import *
+from utils.wait import StrataWaiter
 
 
 class StrataTestBase(flexitest.Test):
@@ -391,8 +392,10 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         }
 
         # Wait until clients are ready
-        wait_until_strata_client_ready(sequencer.create_rpc())
-        wait_until_strata_client_ready(fullnode.create_rpc())
+        seq_waiter = StrataWaiter(sequencer.create_rpc(), None, timeout=30, interval=2)
+        seq_waiter.wait_until_client_ready()
+        fn_waiter = StrataWaiter(fullnode.create_rpc(), None, timeout=30, interval=2)
+        fn_waiter.wait_until_client_ready()
         # TODO: add others like prover, reth, btc
 
         return BasicLiveEnv(svcs, bridge_pk, rollup_cfg)

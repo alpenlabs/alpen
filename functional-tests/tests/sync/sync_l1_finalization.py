@@ -5,6 +5,7 @@ import flexitest
 
 from envs import net_settings, testenv
 from utils import *
+from utils.wait import ProverWaiter, StrataWaiter
 
 
 @flexitest.register
@@ -33,7 +34,8 @@ class BlockFinalizationTest(testenv.StrataTestBase):
 
         num_epochs = 4
 
-        epoch = wait_until_chain_epoch(seqrpc, num_epochs, timeout=60)
+        strata_waiter = StrataWaiter(seqrpc, self.logger, timeout=60, interval=2)
+        epoch = strata_waiter.wait_until_chain_epoch(num_epochs)
         logging.info(f"epoch summary: {epoch}")
 
         cstat = seqrpc.strata_clientStatus()
@@ -42,20 +44,18 @@ class BlockFinalizationTest(testenv.StrataTestBase):
 
         # Wait for prover
         # TODO What is this check for?
-        wait_until(
-            lambda: prover_rpc.dev_strata_getReport() is not None,
-            error_with="Prover did not start on time",
-        )
+        prover_waiter = ProverWaiter(prover_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter.wait_for_prover_ready()
 
         check_submit_proof_fails_for_nonexistent_batch(seqrpc, 100)
 
         # Wait until we get the checkpoint confirmed.
         wait_epoch_conf = 1
-        wait_until_epoch_confirmed(seqrpc, wait_epoch_conf, timeout=30, step=2)
+        strata_waiter.wait_until_epoch_confirmed(wait_epoch_conf, timeout=30)
         logging.info(f"Epoch {wait_epoch_conf} was confirmed!")
 
         # Wait until we get the expected number of epochs finalized.
-        wait_until_epoch_finalized(seqrpc, num_epochs, timeout=30, step=2)
+        strata_waiter.wait_until_epoch_finalized(num_epochs, timeout=30)
         logging.info(f"Epoch {num_epochs} was finalized!")
 
         # FIXME what does this even check?

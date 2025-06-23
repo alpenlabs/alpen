@@ -10,7 +10,7 @@ from typing import Any, Callable, Optional, TypeVar
 from bitcoinlib.services.bitcoind import BitcoindClient
 from strata_utils import convert_to_xonly_pk, get_balance, musig_aggregate_pks
 
-from factory.seqrpc import JsonrpcClient, RpcError
+from factory.seqrpc import JsonrpcClient
 from utils.constants import *
 
 
@@ -276,6 +276,7 @@ def wait_until_l1_height_at(strata_rpc, height: int, timeout=20) -> Any:
         error_with="L1 reader did not catch up with bitcoin network",
         timeout=20,
     )
+
 
 def wait_until_recent_block_headers_at(strata_rpc, height: int, timeout=2) -> Any:
     """ """

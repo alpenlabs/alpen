@@ -1,5 +1,4 @@
 import logging
-import time
 
 import flexitest
 
@@ -39,7 +38,9 @@ class BridgeMsgTest(testenv.StrataTestBase):
 
         seqrpc.strata_submitBridgeMsg(raw_msg)
 
-        # FIXME: is it possible to wait for some condition here?
+        # Wait for message processing - using time.sleep replacement
+        import time
+
         time.sleep(WAIT_TIME + 2)
 
         # VODepositSig(10)

@@ -2,7 +2,6 @@ import flexitest
 
 from envs import testenv
 from utils import wait_for_proof_with_time_out
-from utils.utils import wait_until_eth_block_exceeds
 from utils.wait.reth import RethWaiter
 
 

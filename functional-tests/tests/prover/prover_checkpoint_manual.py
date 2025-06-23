@@ -2,7 +2,8 @@ import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
-from utils import bytes_to_big_endian, cl_slot_to_block_id, wait_for_proof_with_time_out, wait_until
+from utils import bytes_to_big_endian, cl_slot_to_block_id
+from utils.wait import ProverWaiter
 
 CHECKPOINT_PROVER_PARAMS = {
     "checkpoint_idx": 1,
@@ -28,10 +29,8 @@ class ProverClientTest(testenv.StrataTestBase):
         btcrpc: BitcoindClient = btc.create_rpc()
 
         # Wait until the prover client reports readiness
-        wait_until(
-            lambda: prover_client_rpc.dev_strata_getReport() is not None,
-            error_with="Prover did not start on time",
-        )
+        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter.wait_for_prover_ready()
 
         # L1 Range
         height = CHECKPOINT_PROVER_PARAMS["l1_range"][0]
@@ -59,9 +58,8 @@ class ProverClientTest(testenv.StrataTestBase):
         self.debug(f"got the task ids: {task_ids}")
         assert task_ids is not None
 
-        time_out = 30
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_ids[0], time_out=time_out
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(
+            task_ids[0], timeout=30
         )
 
         # Proof generation is expected to fail because the range will not match
