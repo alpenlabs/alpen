@@ -205,10 +205,10 @@ impl<W: WorkerContext> WorkerState<W> {
         Ok(())
     }
 
-    fn finalize_epoch(&mut self, _epoch: EpochCommitment) -> WorkerResult<()> {
-        // TODO apply outputs that haven't been merged, etc.
-
-        Err(WorkerError::Unimplemented)
+    fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
+        self.exec_ctl_handle
+            .update_finalized_tip_blocking(epoch.to_block_commitment())
+            .map_err(|e| e.into())
     }
 }
 

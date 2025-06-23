@@ -38,6 +38,9 @@ pub enum WorkerError {
     #[error("OL block execution: {0}")]
     Exec(#[from] strata_chainexec::Error),
 
+    #[error("EE block execution: {0}")]
+    ExecEngine(#[from] strata_eectl::errors::EngineError),
+
     #[error("not yet implemented")]
     Unimplemented,
 }
@@ -66,6 +69,7 @@ impl From<WorkerError> for strata_chainexec::Error {
                 ExecError::Unexpected("exec worker error".to_owned())
             }
             WorkerError::Unimplemented => ExecError::Unimplemented,
+            WorkerError::ExecEngine(_) => ExecError::Unimplemented, // FIXME:
         }
     }
 }
