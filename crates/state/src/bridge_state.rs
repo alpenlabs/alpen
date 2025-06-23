@@ -124,7 +124,7 @@ impl OperatorTable {
     }
 
     /// Inserts a new operator entry.
-    pub fn insert(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
+    pub fn insert(&mut self, signing_pk: Buf32, wallet_pk: Buf32) -> (u32, OperatorEntry) {
         let entry = OperatorEntry {
             idx: {
                 let idx = self.next_idx;
@@ -134,7 +134,8 @@ impl OperatorTable {
             signing_pk,
             wallet_pk,
         };
-        self.operators.push(entry);
+        self.operators.push(entry.clone());
+        (self.next_idx, entry)
     }
 
     /// Gets an operator from the table by its idx.

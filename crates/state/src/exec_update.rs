@@ -4,6 +4,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_da_lib::{diff::ListDiff, DaDiff};
 use strata_primitives::{
     buf::Buf32, evm_exec::create_evm_extra_payload, prelude::payload::BlobSpec,
 };
@@ -43,7 +44,9 @@ impl ExecUpdate {
 
 /// Contains the explicit inputs to the STF.  Implicit inputs are determined
 /// from the CL's exec env state.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, DaDiff,
+)]
 pub struct UpdateInput {
     /// Update index.  This is incremented exactly 1.  This is to handle the
     /// future possible cases where we skip CL blocks and provide a monotonic
@@ -59,6 +62,7 @@ pub struct UpdateInput {
     extra_payload: Vec<u8>,
 
     /// last applied Deposit Ops index
+    #[diff_override(Vec<ListDiff<Op>>)]
     applied_ops: Vec<Op>,
 }
 
