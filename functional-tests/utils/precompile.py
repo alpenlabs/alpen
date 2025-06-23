@@ -4,10 +4,9 @@ from strata_utils import sign_schnorr_sig
 from web3 import Web3
 
 from utils import wait_until_with_value
-from utils.constants import PRECOMPILE_SCHNORR_ADDRESS
 
 
-def get_precompile_input(secret_key: str, msg: str) -> str:
+def get_schnorr_precompile_input(secret_key: str, msg: str) -> str:
     """
     Generates the strata schnorr precompile input by signing the SHA-256 hash of the message.
 
@@ -25,12 +24,15 @@ def get_precompile_input(secret_key: str, msg: str) -> str:
     return public_key.hex() + message_hash + signature.hex()
 
 
-def make_schnorr_precompile_call(web3: Web3, precompile_input: str) -> tuple[str, str]:
+def make_precompile_call(
+    web3: Web3, precompile_address: str, precompile_input: str
+) -> tuple[str, str]:
     """
     Executes a Schnorr precompile call.
 
     Args:
         web3 (Web3): An instance of Web3.
+        precompile_address (str): The address of the  precompile.
         precompile_input (str): The input data for the precompile.
 
     Returns:
@@ -44,21 +46,20 @@ def make_schnorr_precompile_call(web3: Web3, precompile_input: str) -> tuple[str
         raise ConnectionError("Cannot connect to reth")
 
     source = web3.address
-    destination = web3.to_checksum_address(PRECOMPILE_SCHNORR_ADDRESS)
 
     # Simulate the precompile call (safe because precompile is stateless)
     simulated_result = web3.eth.call(
         {
-            "to": destination,
+            "to": precompile_address,
             "data": precompile_input,
         }
     )
 
     tx_params = {
-        "to": destination,
+        "to": precompile_address,
         "from": source,
         "value": hex(0),
-        "gas": hex(100000),
+        "gas": hex(200000),
         "data": precompile_input,
     }
     txid = web3.eth.send_transaction(tx_params)
