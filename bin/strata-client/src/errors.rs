@@ -8,6 +8,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum InitError {
+    #[error("{0}")]
+    InvalidArgs(&'static str),
+
     #[error("missing init client state")]
     MissingInitClientState,
 

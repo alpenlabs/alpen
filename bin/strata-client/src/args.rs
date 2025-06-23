@@ -100,6 +100,11 @@ impl Args {
     fn get_direct_overrides(&self) -> Result<Vec<String>, InitError> {
         let mut overrides = Vec::new();
         if self.sequencer {
+            if self.sync_mode == SyncMode::Checkpoint {
+                return Err(InitError::InvalidArgs(
+                    "can not run as both sequencer and checkpoint sync client",
+                ));
+            }
             overrides.push("client.is_sequencer=true".to_string());
         }
         if let Some(datadir) = &self.datadir {
