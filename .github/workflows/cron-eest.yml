@@ -132,4 +132,8 @@ jobs:
 
     - name: Tear down services
       if: always()
-      run: docker compose -f ./docker/docker-compose-testing.yml down
+      run: |
+        docker logs strata_sequencer
+        docker logs strata_sequencer_signer
+        docker logs strata_prover_client
+        docker compose -f ./docker/docker-compose-testing.yml down
