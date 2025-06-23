@@ -2,7 +2,7 @@ use strata_primitives::epoch::EpochCommitment;
 use strata_state::{id::L2BlockId, l1::L1BlockId};
 use thiserror::Error;
 
-use crate::entities::errors::EntityError;
+use crate::{chainstate::WriteBatchId, entities::errors::EntityError};
 
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
@@ -46,8 +46,8 @@ pub enum DbError {
     #[error("missing state instance")]
     MissingStateInstance,
 
-    #[error("missing write batch")]
-    MissingWriteBatch,
+    #[error("missing write batch (id {0})")]
+    MissingWriteBatch(WriteBatchId),
 
     #[error("not yet bootstrapped")]
     NotBootstrapped,

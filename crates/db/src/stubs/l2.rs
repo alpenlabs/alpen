@@ -76,4 +76,15 @@ impl L2BlockDatabase for StubL2Db {
         let tbl = self.statuses.lock();
         Ok(tbl.get(&id).cloned())
     }
+
+    fn get_tip_block(&self) -> DbResult<Option<L2BlockId>> {
+        let tbl = self.heights.lock();
+        let max_height = tbl.keys().max().cloned();
+        if let Some(height) = max_height {
+            if let Some(blocks) = tbl.get(&height) {
+                return Ok(blocks.first().cloned());
+            }
+        }
+        Ok(None)
+    }
 }
