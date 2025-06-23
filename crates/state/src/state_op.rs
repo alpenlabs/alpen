@@ -10,9 +10,7 @@ use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
     epoch::EpochCommitment,
-    l1::{
-        BitcoinAmount, L1HeaderRecord, L1VerificationError, OutputRef, WithdrawalFulfillmentInfo,
-    },
+    l1::{BitcoinAmount, L1VerificationError, OutputRef, WithdrawalFulfillmentInfo},
     l2::{L2BlockCommitment, L2BlockId},
 };
 use tracing::warn;
@@ -155,13 +153,6 @@ impl StateCache {
     /// Sets the previous epoch.
     pub fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().finalized_epoch = epoch;
-    }
-
-    /// Updates the safe L1 block.
-    pub fn update_safe_block(&mut self, height: u64, record: L1HeaderRecord) {
-        let state = self.state_mut();
-        state.l1_state.safe_block_height = height;
-        state.l1_state.safe_block_header = record;
     }
 
     pub fn set_epoch_finishing_flag(&mut self, flag: bool) {

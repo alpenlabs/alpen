@@ -92,7 +92,7 @@ pub fn prepare_block(
 
     // Figure out the safe L1 blkid.
     // FIXME this is somewhat janky, should get it from the MMR
-    let safe_l1_blkid = *prev_chstate.l1_view().safe_block().blkid();
+    let safe_l1_blkid = *prev_chstate.l1_view().safe_blkid();
     debug!(%safe_l1_blkid);
 
     // TODO Pull data from CSM state that we've observed from L1, including new
@@ -163,12 +163,14 @@ fn prepare_l1_segment(
         .get_canonical_chain_tip()?
         .expect("blockasm: should have L1 blocks by now");
     let target_height = cur_real_l1_height.saturating_sub(params.l1_reorg_safe_depth as u64); // -1 to give some buffer for very short reorgs
-    trace!(%target_height, "figuring out which blocks to include in L1 segment");
 
     // Check to see if there's actually no blocks in the queue.  In that case we can just give
     // everything we know about.
     let cur_safe_height = prev_chstate.l1_view().safe_height();
     let cur_next_exp_height = prev_chstate.l1_view().next_expected_height();
+    let l1_verified_block = prev_chstate.l1_view().header_vs().last_verified_block;
+    trace!(%target_height, %cur_safe_height, %cur_next_exp_height, "figuring out which blocks to include in L1 segment");
+    trace!(?l1_verified_block, "last verified L1 block");
 
     // If there isn't any new blocks to pull then we just give nothing.
     if target_height <= cur_next_exp_height {

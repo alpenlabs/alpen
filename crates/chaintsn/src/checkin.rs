@@ -97,7 +97,7 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
         let header: Header = consensus::deserialize(mf.header()).expect("invalid bitcoin header");
         state.update_header_vs(&header, &Params::new(params.network))?;
 
-        process_l1_block(state, &mf, params)?;
+        process_protocol_ops(state, &mf, params)?;
     }
 
     // If prev_finalized_epoch is null, i.e. this is the genesis batch, it is
@@ -122,7 +122,7 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
     Ok(true)
 }
 
-fn process_l1_block<'s, S: StateAccessor>(
+fn process_protocol_ops<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
     block_mf: &L1BlockManifest,
     params: &RollupParams,
