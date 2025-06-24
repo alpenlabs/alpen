@@ -289,12 +289,13 @@ pub fn init_forkchoice_manager(
     // XXX right now we have to do some special casing for if we don't have an
     // initial checkpoint for the genesis epoch
 
-    let latest_chainstate_idx = storage.chainstate().get_last_write_idx_blocking()?;
+    let latest_tip = storage.l2().get_tip_block_blocking()?;
+    let latest_wb_id = conv_blkid_to_slot_wb_id(latest_tip);
     let latest_chainstate = storage
-        .chainstate()
-        .get_toplevel_chainstate_blocking(latest_chainstate_idx)?
-        .ok_or(DbError::MissingL2State(latest_chainstate_idx))?
-        .to_chainstate();
+        .new_chainstate()
+        .get_write_batch_blocking(latest_wb_id)?
+        .ok_or(DbError::MissingWriteBatch(latest_wb_id))?
+        .into_toplevel();
 
     let chainstate_last_epoch = latest_chainstate.prev_epoch();
 
@@ -321,11 +322,12 @@ pub fn init_forkchoice_manager(
     debug!(?chain_tracker, "init chain tracker");
 
     // Load in that block's chainstate.
-    let chsman = storage.chainstate();
-    let chainstate = chsman
-        .get_toplevel_chainstate_blocking(cur_tip_block.slot())?
-        .ok_or(DbError::MissingL2State(cur_tip_block.slot()))?
-        .to_chainstate();
+    let wb_id = conv_blkid_to_slot_wb_id(*cur_tip_block.blkid());
+    let chainstate = storage
+        .new_chainstate()
+        .get_write_batch_blocking(wb_id)?
+        .ok_or(DbError::MissingWriteBatch(wb_id))?
+        .into_toplevel();
 
     // Actually assemble the forkchoice manager state.
     let mut fcm = ForkChoiceManager::new(

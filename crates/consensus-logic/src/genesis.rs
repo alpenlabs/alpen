@@ -76,6 +76,9 @@ pub fn init_genesis_chainstate(
         .new_chainstate()
         .put_write_batch_blocking(wb_id, wb)?;
     storage.l2().put_block_data_blocking(gblock)?;
+    storage
+        .l2()
+        .set_block_status_blocking(&gid, strata_db::traits::BlockStatus::Valid)?;
     // TODO: Status channel should probably be updated.
 
     // TODO make ^this be atomic so we can't accidentally not write both, or

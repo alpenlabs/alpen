@@ -105,10 +105,11 @@ impl L2BlockDatabase for L2Db {
         Ok(self.db.get::<L2BlockStatusSchema>(&id)?)
     }
 
-    fn get_tip_block(&self) -> DbResult<Option<L2BlockId>> {
-        let mut height = get_last_idx::<L2BlockHeightSchema>(&self.db)?.unwrap_or(0);
+    fn get_tip_block(&self) -> DbResult<L2BlockId> {
+        let mut height =
+            get_last_idx::<L2BlockHeightSchema>(&self.db)?.ok_or(DbError::NotBootstrapped)?;
 
-        while height > 0 {
+        loop {
             let blocks = self.get_blocks_at_height(height)?;
             // collect all valid statuses at this height
             let valid = blocks
@@ -120,17 +121,19 @@ impl L2BlockDatabase for L2Db {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            if !valid.is_empty() {
-                // REVIEW: We consider the first valid block at the highest height as the tip.
-                // This may not be the best approach but have been used other places in the
-                // codebase.
-                return Ok(valid.first().cloned());
+            // REVIEW: We consider the first valid block at the highest height as the tip.
+            // This may not be the best approach but have been used other places in the
+            // codebase.
+            if let Some(id) = valid.first().cloned() {
+                return Ok(id);
+            }
+
+            if height == 0 {
+                return Err(DbError::NotBootstrapped);
             }
 
             height -= 1;
         }
-
-        Ok(None)
     }
 }
 
@@ -296,7 +299,22 @@ mod tests {
     }
 
     #[test]
-    fn get_valid_tip_block_ids_fallback_to_lower_height() {
+    fn get_tip_block_returns_tip_if_valid_at_highest_height() {
+        let l2_db = setup_db();
+
+        // make a bundle at height 7 and mark it valid
+        let bundle = make_bundle_at_height(7);
+        let id = bundle.block().header().get_blockid();
+        l2_db.put_block_data(bundle).unwrap();
+        l2_db.set_block_status(id, BlockStatus::Valid).unwrap();
+
+        // should return the same id
+        let tip = l2_db.get_tip_block().unwrap();
+        assert_eq!(tip, id);
+    }
+
+    #[test]
+    fn get_tip_block_fallback_to_lower_height() {
         let l2_db = setup_db();
 
         // tip at height 10 with unchecked status
@@ -311,22 +329,8 @@ mod tests {
             .set_block_status(lower_id, BlockStatus::Valid)
             .unwrap();
 
-        // should skip height 10 and return the valid lower block
-        let valid = l2_db.get_tip_block().unwrap();
-        assert_eq!(valid, Some(lower_id));
-    }
-
-    #[test]
-    fn get_valid_tip_block_ids_empty_if_no_valid_any_height() {
-        let l2_db = setup_db();
-
-        // insert bundles at heights 5 and 6, leave both unchecked
-        let b1 = make_bundle_at_height(5);
-        let b2 = make_bundle_at_height(6);
-        l2_db.put_block_data(b1).unwrap();
-        l2_db.put_block_data(b2).unwrap();
-
-        let valid = l2_db.get_tip_block().unwrap();
-        assert!(valid.is_none());
+        // should return the lower_id
+        let tip = l2_db.get_tip_block().unwrap();
+        assert_eq!(tip, lower_id);
     }
 }

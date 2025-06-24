@@ -26,13 +26,7 @@ pub(crate) fn sync_chainstate_to_el(
 ) -> Result<(), Error> {
     debug!("Syncing chainstate to EL");
     let l2_block_manager = storage.l2();
-    let tip_block = match l2_block_manager.get_tip_block_blocking()? {
-        Some(block) => block,
-        None => {
-            info!("No L2 blocks found, nothing to sync");
-            return Ok(()); // nothing to sync
-        }
-    };
+    let tip_block = l2_block_manager.get_tip_block_blocking()?;
     debug!(%tip_block, "L2 tip block");
 
     let latest_header = l2_block_manager
