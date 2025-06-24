@@ -275,14 +275,16 @@ fn do_startup_checks(
         }
     }
 
-    let tip_blockid = match storage.l2().get_tip_block_blocking()? {
-        Some(tip) => tip,
-        None => {
+    let tip_blockid = match storage.l2().get_tip_block_blocking() {
+        Ok(tip) => tip,
+        Err(DbError::NotBootstrapped) => {
             // genesis is not done
             info!("startup: awaiting genesis");
             return Ok(());
         }
+        err => err?,
     };
+
     let wb_id = conv_blkid_to_slot_wb_id(tip_blockid);
     let last_chain_state = storage
         .new_chainstate()

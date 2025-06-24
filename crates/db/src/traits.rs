@@ -154,7 +154,7 @@ pub trait L2BlockDatabase {
 
     /// Returns the latest valid L2 block ID, or `None` at genesis or when no valid block exists.
     // TODO do we even want to permit this as being a possible thing?
-    fn get_tip_block(&self) -> DbResult<Option<L2BlockId>>;
+    fn get_tip_block(&self) -> DbResult<L2BlockId>;
 }
 
 /// Gets the status of a block.

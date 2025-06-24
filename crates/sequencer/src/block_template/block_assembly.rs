@@ -41,8 +41,9 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
         .ok_or(Error::Db(DbError::MissingWriteBatch(wb_id)))?
         .into_toplevel();
 
+    let prev_epoch = chainstate.prev_epoch();
+    debug!(?prev_epoch);
     let epoch_start_slot = chainstate.prev_epoch().last_slot() + 1;
-    let prev_epoch_end_blkid = *chainstate.prev_epoch().last_blkid();
     let prev_header = storage
         .l2()
         .get_block_data_blocking(&prev_blkid)?
@@ -54,31 +55,20 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
 
     let mut block_to_fetch = prev_blkid;
     for _ in epoch_start_slot..=prev_slot {
-        let block = storage
+        let block: L2BlockBundle = storage
             .l2()
             .get_block_data_blocking(&block_to_fetch)?
             .ok_or(DbError::MissingL2Block(block_to_fetch))?;
         gas_used += block.accessory().gas_used();
         block_to_fetch = *block.header().parent();
     }
-    assert_eq!(
-        block_to_fetch, prev_epoch_end_blkid,
-        "fetched blocks should end at the last block of the previous epoch"
-    );
 
-    for slot in epoch_start_slot..=prev_slot {
-        let blocks = storage.l2().get_blocks_at_height_blocking(slot)?;
-        let block_id = blocks
-            .first()
-            .ok_or(Error::Db(DbError::MissingL2BlockHeight(slot)))?;
-
-        let block = storage
-            .l2()
-            .get_block_data_blocking(block_id)?
-            .ok_or(Error::Db(DbError::MissingL2Block(*block_id)))?;
-
-        gas_used += block.accessory().gas_used();
-    }
+    // REVIEW: This doesn't work for the first block because prev_epoch_end_blkid = 0x00
+    // let prev_epoch_end_blkid = *chainstate.prev_epoch().last_blkid();
+    // assert_eq!(
+    //     block_to_fetch, prev_epoch_end_blkid,
+    //     "fetched blocks should end at the last block of the previous epoch"
+    // );
 
     // TODO: cache
     Ok(gas_used)

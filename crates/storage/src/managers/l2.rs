@@ -65,12 +65,12 @@ impl L2BlockManager {
     }
 
     /// Gets the block at a height.  Async.
-    pub async fn get_tip_block_async(&self) -> DbResult<Option<L2BlockId>> {
+    pub async fn get_tip_block_async(&self) -> DbResult<L2BlockId> {
         self.ops.get_tip_block_async().await
     }
 
     /// Gets the block at a height.  Blocking.
-    pub fn get_tip_block_blocking(&self) -> DbResult<Option<L2BlockId>> {
+    pub fn get_tip_block_blocking(&self) -> DbResult<L2BlockId> {
         self.ops.get_tip_block_blocking()
     }
 
