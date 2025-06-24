@@ -4,17 +4,13 @@ use strata_eectl::{
     errors::EngineError,
     messages::ExecPayloadData,
 };
-use strata_state::id::L2BlockId;
+use strata_state::header::L2Header;
 use strata_storage::NodeStorage;
 use thiserror::Error;
 use tracing::{debug, info};
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
-    #[error("missing chainstate for slot {0}")]
-    MissingChainstate(u64),
-    #[error("missing l2block {0}")]
-    MissingL2Block(L2BlockId),
     #[error("db: {0}")]
     Db(#[from] DbError),
     #[error("engine: {0}")]
@@ -28,43 +24,64 @@ pub(crate) fn sync_chainstate_to_el(
     storage: &NodeStorage,
     engine: &impl ExecEngineCtl,
 ) -> Result<(), Error> {
-    let chainstate_manager = storage.chainstate();
+    debug!("Syncing chainstate to EL");
     let l2_block_manager = storage.l2();
-    let earliest_idx = chainstate_manager.get_earliest_write_idx_blocking()?;
-    let latest_idx = chainstate_manager.get_last_write_idx_blocking()?;
+    let tip_block = match l2_block_manager.get_tip_block_blocking()? {
+        Some(block) => block,
+        None => {
+            info!("No L2 blocks found, nothing to sync");
+            return Ok(()); // nothing to sync
+        }
+    };
+    debug!(%tip_block, "L2 tip block");
 
-    info!(%earliest_idx, %latest_idx, "search for last known idx");
+    let latest_header = l2_block_manager
+        .get_block_data_blocking(&tip_block)?
+        .ok_or(DbError::MissingL2Block(tip_block))?
+        .header()
+        .clone();
+    let latest_idx = latest_header.slot();
+    info!(%latest_idx, "search for last known idx");
 
     // last idx of chainstate whose corresponding block is present in el
-    let sync_from_idx = find_last_match((earliest_idx, latest_idx), |idx| {
-        let Some(entry) = chainstate_manager.get_toplevel_chainstate_blocking(idx)? else {
-            return Err(Error::MissingChainstate(idx));
-        };
-
-        Ok(engine.check_block_exists(L2BlockRef::Id(*entry.tip_blockid()))?)
+    let sync_from_idx = find_last_match((0, latest_idx), |idx| {
+        let tip_block = l2_block_manager
+            .get_blocks_at_height_blocking(idx)?
+            .first()
+            .cloned()
+            .ok_or(DbError::MissingL2BlockHeight(idx))?;
+        Ok(engine.check_block_exists(L2BlockRef::Id(tip_block))?)
     })?
     .map(|idx| idx + 1) // sync from next index
     .unwrap_or(0); // sync from genesis
-
     info!(%sync_from_idx, "last known index in EL");
 
-    for idx in sync_from_idx..=latest_idx {
-        debug!(?idx, "Syncing chainstate");
-        let Some(chainstate_entry) = chainstate_manager.get_toplevel_chainstate_blocking(idx)?
-        else {
-            return Err(Error::MissingChainstate(idx));
-        };
+    // Collect all payloads from sync_from_idx..=latest_idx
+    let mut bundles_to_sync = Vec::with_capacity((latest_idx - sync_from_idx) as usize + 1);
+    let mut block_to_sync = latest_header.get_blockid();
+    for _ in sync_from_idx..=latest_idx {
+        let l2block = l2_block_manager
+            .get_block_data_blocking(&block_to_sync)?
+            .ok_or(DbError::MissingL2Block(block_to_sync))?;
+        block_to_sync = *l2block.header().parent();
+        bundles_to_sync.push(l2block);
+    }
+    bundles_to_sync.reverse();
 
-        let tip_blockid = chainstate_entry.tip_blockid();
+    // Sanity check
+    if let (Some(first_bundle), Some(last_bundle)) =
+        (bundles_to_sync.first(), bundles_to_sync.last())
+    {
+        assert_eq!(first_bundle.header().slot(), sync_from_idx);
+        assert_eq!(last_bundle.header().slot(), latest_idx);
+    }
 
-        let Some(l2block) = l2_block_manager.get_block_data_blocking(tip_blockid)? else {
-            return Err(Error::MissingL2Block(*tip_blockid));
-        };
-
-        let payload = ExecPayloadData::from_l2_block_bundle(&l2block);
-
+    for bundle in bundles_to_sync {
+        let tip_blockid = bundle.block().header().get_blockid();
+        let payload = ExecPayloadData::from_l2_block_bundle(&bundle);
+        debug!(?payload, "Submitting payload to engine");
         engine.submit_payload(payload)?;
-        engine.update_safe_block(*tip_blockid)?;
+        engine.update_safe_block(tip_blockid)?;
     }
 
     Ok(())

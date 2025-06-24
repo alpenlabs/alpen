@@ -810,11 +810,12 @@ fn apply_tip_update(
         // Easy case.
         TipUpdate::ExtendTip(_cur, new) => {
             // Update the tip block in the FCM state.
+            let wb_id = conv_blkid_to_slot_wb_id(new);
             let new_chainstate = fcm_state
                 .storage
                 .new_chainstate()
-                .get_write_batch_blocking(conv_blkid_to_slot_wb_id(new))?
-                .ok_or(DbError::MissingWriteBatch)?
+                .get_write_batch_blocking(wb_id)?
+                .ok_or(DbError::MissingWriteBatch(wb_id))?
                 .into_toplevel();
             fcm_state.update_tip_block(
                 bundle.block().header().get_block_commitment(),
