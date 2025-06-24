@@ -21,6 +21,7 @@ use strata_common::{
 };
 use strata_config::Config;
 use strata_consensus_logic::{
+    chain_worker_context::conv_blkid_to_slot_wb_id,
     genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
 };
@@ -274,24 +275,21 @@ fn do_startup_checks(
         }
     }
 
-    let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
-        Ok(idx) => idx,
-        Err(DbError::NotBootstrapped) => {
+    let tip_blockid = match storage.l2().get_tip_block_blocking()? {
+        Some(tip) => tip,
+        None => {
             // genesis is not done
             info!("startup: awaiting genesis");
             return Ok(());
         }
-        err => err?,
     };
+    let wb_id = conv_blkid_to_slot_wb_id(tip_blockid);
+    let last_chain_state = storage
+        .new_chainstate()
+        .get_write_batch_blocking(wb_id)?
+        .ok_or(DbError::MissingWriteBatch(wb_id))?
+        .into_toplevel();
 
-    let Some(last_chain_state_entry) = storage
-        .chainstate()
-        .get_toplevel_chainstate_blocking(last_state_idx)?
-    else {
-        anyhow::bail!("Missing chain state idx: {last_state_idx}");
-    };
-
-    let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
     // Check that we can connect to bitcoin client and block we believe to be matured in L1 is
     // actually present
     let safe_l1blockid = last_chain_state.l1_view().safe_blkid();
