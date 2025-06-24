@@ -1,10 +1,9 @@
-import time
-
 import flexitest
 from web3 import Web3
 
 from envs import testenv
 from utils import wait_until
+from utils.wait import StrataWaiter
 
 
 @flexitest.register
@@ -22,11 +21,9 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         reth = ctx.get_service("reth")
         # create sequencer RPC and wait until it is active
         seqrpc = seq.create_rpc()
+        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=10)
 
-        wait_until(
-            lambda: seqrpc.strata_protocolVersion() is not None,
-            error_with="Sequencer did not start on time",
-        )
+        seq_waiter.wait_until_client_ready()
 
         # wait for reth to be connected
         web3: Web3 = reth.create_web3()
@@ -56,7 +53,7 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
 
         cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
         # wait for 2 seconds to allow block production if any
-        time.sleep(2)
+        seq_waiter.wait_until_client_ready(timeout=2, interval=2)
         new_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
 
         # block production should halt
@@ -64,14 +61,10 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
 
         # check if new l1 blocks are being recognized
         cur_l1_height = seqrpc.strata_l1status()["cur_height"]
-        wait_until(
-            lambda: seqrpc.strata_l1status()["cur_height"] > cur_l1_height,
-            error_with="L1 reader crashed after reth stopped",
-        )
+        seq_waiter.wait_until_l1_height_at(cur_l1_height + 1)
 
         # stop the sequencer
         seq.stop()
-        time.sleep(2)  # Give time for sequencer to properly shut down.
 
         # start reth again
         reth.start()
@@ -79,17 +72,14 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
 
         # start sequencer again
         seq.start()
-        wait_until(
-            lambda: seqrpc.strata_protocolVersion() is not None,
-            error_with="Sequencer did not start on time after reth restart",
-        )
+        seq_waiter.wait_until_client_ready()
 
         # check if new blocks are being created again
         cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
 
-        wait_until(
-            lambda: seqrpc.strata_clientStatus()["chain_tip_slot"] > cur_slot,
-            error_with="New blocks are not being created",
+        seq_waiter.wait_until_chain_tip_exceeds(
+            cur_slot,
+            msg="New blocks are not being created",
         )
 
 

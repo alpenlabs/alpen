@@ -19,7 +19,7 @@ class ProverClientTest(testenv.StrataTestBase):
         prover_client_rpc = prover_client.create_rpc()
 
         # Wait until the prover client reports readiness
-        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=60, interval=2)
         prover_waiter.wait_for_prover_ready()
 
         # Dispatch the prover task
@@ -35,5 +35,5 @@ class ProverClientTest(testenv.StrataTestBase):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id, timeout=30)
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

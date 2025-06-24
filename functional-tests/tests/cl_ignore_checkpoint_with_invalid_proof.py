@@ -8,10 +8,9 @@ from envs import testenv
 from utils import (
     get_envelope_pushdata,
     submit_da_blob,
-    wait_until,
-    wait_until_epoch_finalized,
     wait_until_with_value,
 )
+from utils.wait.strata import StrataWaiter
 
 
 @flexitest.register
@@ -66,6 +65,7 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         prover_fast = ctx.get_service("prover_client_fast")
         prover_strict = ctx.get_service("prover_client_strict")
         fullnode = ctx.get_service("fullnode")
+        seq_waiter = StrataWaiter(seq_fast.create_rpc(), self.logger, timeout=60)
 
         btcrpc: BitcoindClient = btc.create_rpc()
         seqrpc_fast = seq_fast.create_rpc()
@@ -76,13 +76,10 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         fullnode.stop()
 
         # Wait for seq_fast to start
-        wait_until(
-            lambda: seqrpc_fast.strata_protocolVersion() is not None,
-            error_with="Sequencer (fast) did not start on time",
-        )
+        seq_waiter.wait_until_client_ready()
 
         # Wait for the fast sequencer to create the first 3 epochs
-        wait_until_epoch_finalized(seqrpc_fast, 3, timeout=60)
+        seq_waiter.wait_until_epoch_finalized(3)
 
         # Stop the fast prover so the next epoch's proof is not generated automatically
         prover_fast.stop()
@@ -97,7 +94,7 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         seqrpc_fast.strataadmin_submitCheckpointProof(current_epoch, empty_proof_receipt)
 
         # Wait for the fast sequencer to finalize epoch 4 using the empty proof
-        wait_until_epoch_finalized(seqrpc_fast, 4, timeout=60)
+        seq_waiter.wait_until_epoch_finalized(4)
 
         # Get the commitment details for epoch 4 to find the L1 block hash containing the checkpoint
         epoch_4_commitment = wait_until_with_value(
@@ -146,14 +143,17 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
 
         fullnode_rpc = fullnode.create_rpc()
 
+        seq_strict_waiter = StrataWaiter(seqrpc_strict, self.logger, timeout=60)
+        fn_waiter = StrataWaiter(fullnode_rpc, self.logger, timeout=60)
+
         ## Wait for strict sequencer to finalize epoch 3
-        wait_until_epoch_finalized(seqrpc_strict, 3, timeout=60)
+        seq_strict_waiter.wait_until_epoch_finalized(3)
 
         # Stop the strict prover temporarily before submitting the invalid checkpoint
         prover_strict.stop()
 
         ## Check full node has also finalized epoch 3
-        wait_until_epoch_finalized(fullnode_rpc, 3, timeout=60)
+        fn_waiter.wait_until_epoch_finalized(3)
 
         # Sleep briefly to allow the new epoch (epoch 4) to begin on the strict nodes
         time.sleep(5)
@@ -172,7 +172,7 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         # Their last finalized epoch should still be 3.
         try:
             # Use a short timeout, as we expect these to fail
-            wait_until_epoch_finalized(seqrpc_strict, 4, timeout=10)
+            seq_strict_waiter.wait_until_epoch_finalized(4)
             # If the above line didn't raise an exception,
             # it means epoch 4 was finalized incorrectly
             logging.warn("Strict sequencer incorrectly finalized epoch 4 with invalid proof")
@@ -181,7 +181,7 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
             logging.info("Strict sequencer correctly ignored invalid proof for epoch 4.")
 
         try:
-            wait_until_epoch_finalized(fullnode_rpc, 4, timeout=10)
+            fn_waiter.wait_until_epoch_finalized(4)
             logging.warn("Full node incorrectly finalized epoch 4 with invalid proof")
             return False
         except Exception:
@@ -192,10 +192,10 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
 
         # Wait for the strict sequencer to finalize epoch 5
         # (implying epoch 4 was finalized correctly)
-        wait_until_epoch_finalized(seqrpc_strict, 5, timeout=60)
+        seq_strict_waiter.wait_until_epoch_finalized(5)
 
         # Check the full node also finalized epoch 5
-        wait_until_epoch_finalized(fullnode, 5, timeout=60)
+        fn_waiter.wait_until_epoch_finalized(5)
 
         # Resubmit the invalid proof again after epoch 4 is properly finalized
         logging.info("Resubmitting the invalid proof for epoch 4 after it was finalized correctly")
@@ -206,7 +206,7 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         # Check that the last finalized epoch is still 5 (or higher if time passed)
         # This implicitly checks they ignored the resubmitted invalid proof.
         try:
-            wait_until_epoch_finalized(fullnode, 6, timeout=60)
+            fn_waiter.wait_until_epoch_finalized(6)
         except Exception:
             logging.warn("Sequencer Failed after resubmitting the invalid proof for epoch 4")
             return False

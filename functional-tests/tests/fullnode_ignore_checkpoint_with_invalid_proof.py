@@ -3,10 +3,8 @@ import logging
 import flexitest
 
 from envs import testenv
-from utils import (
-    wait_until,
-    wait_until_epoch_finalized,
-)
+from utils import wait_until
+from utils.wait.strata import StrataWaiter
 
 PROVER_CHECKPOINT_SETTINGS = {
     "CONSECUTIVE_PROOFS_REQUIRED": 4,
@@ -37,9 +35,11 @@ class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         prover_fast = ctx.get_service("prover_client_fast")
         seq_strict = ctx.get_service("seq_node_strict")
         prover_strict = ctx.get_service("prover_client_strict")
+        seq_waiter = StrataWaiter(seq_fast.create_rpc(), self.logger)
 
         # this fullnode has a strict proof policy but connected to the fast sequencer
         fullnode = ctx.get_service("fullnode")
+        fn_waiter = StrataWaiter(fullnode.create_rpc(), self.logger)
 
         prover_fast.stop()
         seq_strict.stop()
@@ -88,12 +88,12 @@ class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
             logging.info(f"Epoch advanced to {current_epoch}")
 
         logging.info("Waiting for epoch 3 to be finalized in the fast sequencer")
-        wait_until_epoch_finalized(seq_fast_rpc, 3, timeout=20)
+        seq_waiter.wait_until_epoch_finalized(3, timeout=20)
 
         try:
             logging.info("Checking if epoch 3 is finalized in the fullnode")
-            wait_until_epoch_finalized(fullnode_rpc, 3, timeout=20)
-            logging.warn("Fullnode incorrectly finalized epoch 3")
+            fn_waiter.wait_until_epoch_finalized(3, timeout=20)
+            self.warning("Fullnode incorrectly finalized epoch 3")
             return False
         except Exception:
             logging.info("Fullnode correctly ignored epochs because of the strict proof policy")

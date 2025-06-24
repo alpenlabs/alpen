@@ -24,5 +24,5 @@ class ProverClientTest(testenv.StrataTestBase):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id, timeout=30)
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

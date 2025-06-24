@@ -1,7 +1,7 @@
 import flexitest
 
 from envs import testenv
-from utils.utils import wait_until_recent_block_headers_at
+from utils.wait.strata import StrataWaiter
 
 
 @flexitest.register
@@ -11,10 +11,11 @@ class ExecUpdateTest(testenv.StrataTestBase):
 
     def main(self, ctx: flexitest.RunContext):
         seq = ctx.get_service("sequencer")
+        seq_waiter = StrataWaiter(seq.create_rpc(), self.logger)
 
         # create both btc and sequencer RPC
         seqrpc = seq.create_rpc()
-        recent_blks = wait_until_recent_block_headers_at(seqrpc, 1)
+        recent_blks = seq_waiter.wait_until_recent_block_headers_at(1)
 
         exec_update = seqrpc.strata_getExecUpdateById(recent_blks[0]["block_id"])
         self.debug(exec_update)

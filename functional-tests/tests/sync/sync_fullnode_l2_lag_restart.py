@@ -4,6 +4,7 @@ import flexitest
 
 from envs import testenv
 from utils import *
+from utils.wait.strata import StrataWaiter
 
 FOLLOW_DIST = 1
 
@@ -21,6 +22,8 @@ class SyncFullNodeL2LagRestartTest(testenv.StrataTestBase):
         seqrpc = seq.create_rpc()
         fullnode = ctx.get_service("follower_1_node")
         fnrpc = fullnode.create_rpc()
+        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=60)
+        fn_waiter = StrataWaiter(fnrpc, self.logger, timeout=60)
 
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()
@@ -35,11 +38,11 @@ class SyncFullNodeL2LagRestartTest(testenv.StrataTestBase):
 
         # wait for fn to sync up to end of current sequencer epoch
         # L1 reader and csm should still be running and syncing with L2 sync paused/
-        wait_until_epoch_confirmed(fnrpc, cur_epoch, timeout=60)
+        fn_waiter.wait_until_epoch_confirmed(cur_epoch)
 
         # Wait until some more epochs are finalized in sequencer so we have plenty of blocks
         # to sync up when we resume fn
-        wait_until_epoch_finalized(seqrpc, cur_epoch + 3, timeout=60)
+        seq_waiter.wait_until_epoch_finalized(cur_epoch + 3)
 
         # Full node tip after sync is paused
         fn_ss = fnrpc.strata_syncStatus()

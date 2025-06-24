@@ -41,3 +41,20 @@ class RethWaiter:
         Get the current block number from reth RPC.
         """
         return int(self.reth_rpc.eth_blockNumber(), 16)
+
+    def wait_until_state_diff_at_blockhash(self, blockhash, timeout: None | int = None):
+        return wait_until_with_value(
+            lambda: self.reth_rpc.strataee_getBlockStateDiff(blockhash),
+            lambda value: value is not None,
+            error_with="Finding non empty statediff for blockhash {blockhash} timed out",
+            timeout=timeout or self.timeout,
+        )
+
+    def wait_until_block_witness_at_blockhash(self, blockhash, timeout: None | int = None):
+        return wait_until_with_value(
+            # TODO: parameterize True
+            lambda: self.reth_rpc.strataee_getBlockWitness(blockhash, True),
+            lambda value: value is not None,
+            error_with="Finding non empty witness for blockhash {blockhash} timed out",
+            timeout=timeout or self.timeout,
+        )

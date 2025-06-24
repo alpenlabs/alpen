@@ -58,9 +58,7 @@ class ProverClientTest(testenv.StrataTestBase):
         self.debug(f"got the task ids: {task_ids}")
         assert task_ids is not None
 
-        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(
-            task_ids[0], timeout=30
-        )
+        is_proof_gen_complete = prover_waiter.wait_for_proof_completion(task_ids[0])
 
         # Proof generation is expected to fail because the range will not match
         # CL STF Proof will fail, which in turns fails the checkpoint proof
@@ -69,5 +67,5 @@ class ProverClientTest(testenv.StrataTestBase):
         # test passes consistently in CI. Not sure on how this can be fixed. I have
         # tried changing the checkpoint prover params. So for now, leaving out the assertion
         # and addition a debug statement instead
-        # assert not is_proof_generation_completed
-        self.debug(f"{is_proof_generation_completed}")
+        # assert not is_proof_gen_complete
+        self.debug(f"{is_proof_gen_complete}")

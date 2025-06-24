@@ -7,6 +7,7 @@ import flexitest
 from envs import testenv
 from envs.testenv import BasicEnvConfig
 from utils import *
+from utils.wait.strata import StrataWaiter
 
 
 @dataclass
@@ -43,6 +44,7 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
 
         prover_rpc = prover_client.create_rpc()
         sequencer_rpc = sequencer.create_rpc()
+        seq_waiter = StrataWaiter(sequencer_rpc, self.logger, timeout=60)
 
         # Wait until the prover client reports readiness
         wait_until(
@@ -50,9 +52,9 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
             error_with="Prover did not start on time",
         )
 
-        epoch = wait_until_next_chain_epoch(sequencer_rpc, timeout=60)
+        epoch = seq_waiter.wait_until_next_chain_epoch()
         logging.info(f"it's now epoch {epoch}")
-        epoch = wait_until_next_chain_epoch(sequencer_rpc, timeout=60)
+        epoch = seq_waiter.wait_until_next_chain_epoch()
         logging.info(f"it's now epoch {epoch}")
 
         def consecutive_checkpoints_verified():

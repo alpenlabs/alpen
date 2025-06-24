@@ -53,7 +53,7 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         for _ in range(3):
             send_tx(web3)
 
-        wait_until_epoch_finalized(seqrpc, 0, timeout=30)
+        seq_waiter.wait_until_epoch_finalized(0, timeout=30)
 
         # ensure there are some blocks generated
         reth_waiter.wait_until_eth_block_exceeds(0)

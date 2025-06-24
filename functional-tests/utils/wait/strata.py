@@ -134,6 +134,18 @@ class StrataWaiter:
 
         wait_until(_check, timeout=timeout, step=step, error_with=error_with)
 
+    def wait_until_chain_tip_exceeds(
+        self, height: int, timeout: int | None = None, msg: str | None = None
+    ):
+        """
+        Waits until strata chain tip exceeds the given height.
+        """
+        wait_until(
+            lambda: self.strata_rpc.strata_clientStatus()["chain_tip_slot"] > height,
+            error_with=msg or "Timeout: expected number of blocks are not being created",
+            timeout=timeout or self.timeout,
+        )
+
     def wait_until_epoch_finalized(
         self,
         epoch: int,

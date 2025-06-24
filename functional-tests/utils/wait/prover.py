@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from logging import Logger
 from typing import Any
 
+from utils.utils import wait_until
+
 
 @dataclass
 class ProverWaiter:
@@ -64,7 +66,6 @@ class ProverWaiter:
         Args:
             timeout: Override timeout in seconds (default uses class timeout)
         """
-        from utils.utils import wait_until
 
         timeout = timeout or self.timeout
         wait_until(

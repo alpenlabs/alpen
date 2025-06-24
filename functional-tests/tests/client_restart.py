@@ -46,7 +46,6 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
         seq.start()
         logging.info("Waiting for it to come back up...")
         seqrpc = seq.create_rpc()
-        strata_waiter = StrataWaiter(seqrpc, self.logger, timeout=5, interval=1)
         strata_waiter.wait_until_client_ready()
 
         # Check for next 2 checkpoints
