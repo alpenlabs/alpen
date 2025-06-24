@@ -33,15 +33,39 @@ use tracing::*;
 use super::error::BlockAssemblyError as Error;
 
 /// Get the total gas used by EL blocks from start of current epoch till prev_slot
-fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_slot: u64) -> Result<u64, Error> {
+fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> Result<u64, Error> {
+    let wb_id = conv_blkid_to_slot_wb_id(prev_blkid);
     let chainstate = storage
-        .chainstate()
-        .get_toplevel_chainstate_blocking(prev_slot)?
-        .ok_or(Error::Db(DbError::MissingL2State(prev_slot)))?
-        .to_chainstate();
+        .new_chainstate()
+        .get_write_batch_blocking(wb_id)?
+        .ok_or(Error::Db(DbError::MissingWriteBatch(wb_id)))?
+        .into_toplevel();
 
     let epoch_start_slot = chainstate.prev_epoch().last_slot() + 1;
+    let prev_epoch_end_blkid = *chainstate.prev_epoch().last_blkid();
+    let prev_header = storage
+        .l2()
+        .get_block_data_blocking(&prev_blkid)?
+        .ok_or(Error::Db(DbError::MissingL2Block(prev_blkid)))?
+        .header()
+        .clone();
     let mut gas_used = 0;
+    let prev_slot = prev_header.slot();
+
+    let mut block_to_fetch = prev_blkid;
+    for _ in epoch_start_slot..=prev_slot {
+        let block = storage
+            .l2()
+            .get_block_data_blocking(&block_to_fetch)?
+            .ok_or(DbError::MissingL2Block(block_to_fetch))?;
+        gas_used += block.accessory().gas_used();
+        block_to_fetch = *block.header().parent();
+    }
+    assert_eq!(
+        block_to_fetch, prev_epoch_end_blkid,
+        "fetched blocks should end at the last block of the previous epoch"
+    );
+
     for slot in epoch_start_slot..=prev_slot {
         let blocks = storage.l2().get_blocks_at_height_blocking(slot)?;
         let block_id = blocks
@@ -108,7 +132,7 @@ pub fn prepare_block(
     let remaining_gas_limit = if first_block_of_epoch {
         epoch_gas_limit
     } else if let Some(epoch_gas_limit) = epoch_gas_limit {
-        let gas_used = get_total_gas_used_in_epoch(storage, prev_slot)?;
+        let gas_used = get_total_gas_used_in_epoch(storage, prev_blkid)?;
         Some(epoch_gas_limit.saturating_sub(gas_used))
     } else {
         None
