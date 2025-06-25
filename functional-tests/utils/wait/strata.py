@@ -1,21 +1,15 @@
 from dataclasses import dataclass
-from logging import Logger
 from typing import Any
 
 from factory.seqrpc import RpcError
-from utils.utils import wait_until, wait_until_with_value
+from utils.wait.base import BaseWaiter
 
 
 @dataclass
-class StrataWaiter:
+class StrataWaiter(BaseWaiter):
     """
     Wrapper for encapsulating and waiting strata related rpcs
     """
-
-    strata_rpc: Any
-    logger: Logger
-    timeout: int = 10
-    interval: float = 0.5
 
     def wait_for_genesis(self, message: str | None = None):
         """
@@ -28,7 +22,7 @@ class StrataWaiter:
         def _check_genesis():
             try:
                 # This should raise if we're before genesis.
-                ss = self.strata_rpc.strata_syncStatus()
+                ss = self.rpc.strata_syncStatus()
                 self.logger.info(
                     f"after genesis, tip is slot {ss['tip_height']} blkid {ss['tip_block_id']}"
                 )
@@ -41,7 +35,7 @@ class StrataWaiter:
                 else:
                     raise e
 
-        wait_until(_check_genesis, timeout=self.timeout, step=self.interval, error_with=msg)
+        self.wait_until(_check_genesis, timeout=self.timeout, step=self.interval, error_with=msg)
 
     def wait_until_chain_epoch(
         self,
@@ -59,15 +53,15 @@ class StrataWaiter:
         self.logger.info(f"waiting for epoch {epoch}")
 
         def _query():
-            status = self.strata_rpc.strata_syncStatus()
+            status = self.rpc.strata_syncStatus()
             self.logger.debug(f"checked status {status}")
-            commitments = self.strata_rpc.strata_getEpochCommitments(epoch)
+            commitments = self.rpc.strata_getEpochCommitments(epoch)
             if len(commitments) > 0:
                 comm = commitments[0]
                 self.logger.info(
                     f"now at epoch {epoch}, slot {comm['last_slot']}, blkid {comm['last_blkid']}"
                 )
-                return self.strata_rpc.strata_getEpochSummary(
+                return self.rpc.strata_getEpochSummary(
                     epoch, comm["last_slot"], comm["last_blkid"]
                 )
             return None
@@ -79,7 +73,7 @@ class StrataWaiter:
         step = interval or self.interval
         msg = message or "Timeout: waiting for chain epoch"
 
-        return wait_until_with_value(_query, _check, timeout=timeout, step=step, error_with=msg)
+        return self.wait_until_with_value(_query, _check, timeout=timeout, step=step, error_with=msg)
 
     def wait_until_next_chain_epoch(
         self, timeout: int | None = None, interval: float | None = None, message: str | None = None
@@ -89,10 +83,10 @@ class StrataWaiter:
 
         Returns the new epoch number.
         """
-        init_epoch = self.strata_rpc.strata_syncStatus()["cur_epoch"]
+        init_epoch = self.rpc.strata_syncStatus()["cur_epoch"]
 
         def _query():
-            ss = self.strata_rpc.strata_syncStatus()
+            ss = self.rpc.strata_syncStatus()
             self.logger.info(f"waiting for next epoch, ss {ss}")
             return ss["cur_epoch"]
 
@@ -103,7 +97,7 @@ class StrataWaiter:
         step = interval or self.interval
         error_with = message or "Timeout waiting for next epoch"
 
-        return wait_until_with_value(
+        return self.wait_until_with_value(
             _query, _check, timeout=timeout, step=step, error_with=error_with
         )
 
@@ -120,7 +114,7 @@ class StrataWaiter:
         """
 
         def _check():
-            cs = self.strata_rpc.strata_clientStatus()
+            cs = self.rpc.strata_clientStatus()
             l1_height = cs["tip_l1_block"]["height"]
             conf_epoch = cs["confirmed_epoch"]
             self.logger.info(f"confirmed epoch as of {l1_height}: {conf_epoch}")
@@ -132,7 +126,7 @@ class StrataWaiter:
         step = interval or self.interval
         error_with = message or f"Timeout waiting for epoch {epoch} to be confirmed"
 
-        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
 
     def wait_until_chain_tip_exceeds(
         self, height: int, timeout: int | None = None, msg: str | None = None
@@ -140,8 +134,8 @@ class StrataWaiter:
         """
         Waits until strata chain tip exceeds the given height.
         """
-        wait_until(
-            lambda: self.strata_rpc.strata_clientStatus()["chain_tip_slot"] > height,
+        self.wait_until(
+            lambda: self.rpc.strata_clientStatus()["chain_tip_slot"] > height,
             error_with=msg or "Timeout: expected number of blocks are not being created",
             timeout=timeout or self.timeout,
         )
@@ -159,7 +153,7 @@ class StrataWaiter:
         """
 
         def _check():
-            cs = self.strata_rpc.strata_clientStatus()
+            cs = self.rpc.strata_clientStatus()
             l1_height = cs["tip_l1_block"]["height"]
             fin_epoch = cs["finalized_epoch"]
             self.logger.info(f"finalized epoch as of {l1_height}: {fin_epoch}")
@@ -171,7 +165,7 @@ class StrataWaiter:
         step = interval or self.interval
         error_with = message or f"Timeout waiting for epoch {epoch} to be finalized"
 
-        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
 
     def wait_until_client_ready(
         self, timeout: int | None = None, interval: float | None = None, message: str | None = None
@@ -183,8 +177,8 @@ class StrataWaiter:
         interval = interval or self.interval
         message = message or "Strata client did not start on time"
 
-        wait_until(
-            lambda: self.strata_rpc.strata_protocolVersion() is not None,
+        self.wait_until(
+            lambda: self.rpc.strata_protocolVersion() is not None,
             error_with=message,
             timeout=timeout,
             step=interval,
@@ -203,7 +197,7 @@ class StrataWaiter:
         """
 
         def _check():
-            ss = self.strata_rpc.strata_syncStatus()
+            ss = self.rpc.strata_syncStatus()
             slot = ss["tip_height"]  # TODO rename to tip_slot
             of_epoch = ss["observed_finalized_epoch"]
             self.logger.info(f"observed final epoch as of L2 slot {slot}: {of_epoch}")
@@ -215,7 +209,7 @@ class StrataWaiter:
         step = interval or self.interval
         error_with = message or f"Timeout waiting for epoch {epoch} to be observed as final"
 
-        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
 
     def wait_until_l1_observed(
         self,
@@ -229,7 +223,7 @@ class StrataWaiter:
         """
 
         def _check():
-            ss = self.strata_rpc.strata_syncStatus()
+            ss = self.rpc.strata_syncStatus()
             slot = ss["tip_height"]  # TODO rename to slot
             epoch = ss["cur_epoch"]
             view_l1 = ss["safe_l1_block"]["height"]
@@ -242,7 +236,7 @@ class StrataWaiter:
         step = interval or self.interval
         error_with = message or f"Timeout waiting for L1 height {height} to be observed"
 
-        wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
 
     def wait_until_l1_height_at(
         self,
@@ -260,8 +254,8 @@ class StrataWaiter:
         interval = interval or self.interval
         message = message or "L1 reader did not catch up with bitcoin network"
 
-        return wait_until_with_value(
-            lambda: self.strata_rpc.strata_l1status(),
+        return self.wait_until_with_value(
+            lambda: self.rpc.strata_l1status(),
             lambda value: value["cur_height"] >= height,
             error_with=message,
             timeout=timeout,
@@ -282,8 +276,8 @@ class StrataWaiter:
         interval = interval or self.interval
         message = message or "Blocks not generated"
 
-        return wait_until_with_value(
-            lambda: self.strata_rpc.strata_getRecentBlockHeaders(height),
+        return self.wait_until_with_value(
+            lambda: self.rpc.strata_getRecentBlockHeaders(height),
             lambda value: value is not None,
             error_with=message,
             timeout=timeout,
@@ -296,7 +290,7 @@ class StrataWaiter:
         """
         Waits until the CSM's current L1 tip block height has been observed by the OL.
         """
-        init_cs = self.strata_rpc.strata_clientStatus()
+        init_cs = self.rpc.strata_clientStatus()
         init_l1_height = init_cs["tip_l1_block"]["height"]
         self.logger.info(f"target L1 height from CSM is {init_l1_height}")
         self.wait_until_l1_observed(
