@@ -1,8 +1,9 @@
 name: Ethereum Execution Spec tests against staging docker.
 
 on:
-  schedule:
-    - cron: '0 15 * * *'  # Daily at 15:00 UTC
+  #schedule:
+  #  - cron: '0 15 * * *'  # Daily at 15:00 UTC
+  pull_request:
   workflow_dispatch:      # Manual trigger (optional)
 
 env:
@@ -20,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: development
-    timeout-minutes: 240 # TODO: change to 60 once the exex witness generation is optimized.
+    timeout-minutes: 90 # TODO: change to 60 once the exex witness generation is optimized.
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       with:
