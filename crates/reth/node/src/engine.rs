@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use alloy_rpc_types::engine::{
-    payload::ExecutionData, ExecutionPayload, ExecutionPayloadEnvelopeV3,
-    ExecutionPayloadEnvelopeV4, ExecutionPayloadV1,
+    payload::ExecutionData, ExecutionPayload, ExecutionPayloadEnvelopeV3, ExecutionPayloadV1,
 };
 use reth_chainspec::ChainSpec;
 use reth_ethereum_payload_builder::EthereumExecutionPayloadValidator;
@@ -17,7 +16,7 @@ use reth_primitives::{Block, EthPrimitives, NodePrimitives, RecoveredBlock, Seal
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    payload::{AlpenBuiltPayload, AlpenPayloadBuilderAttributes},
+    payload::{AlpenBuiltPayload, AlpenExecutionPayloadEnvelopeV4, AlpenPayloadBuilderAttributes},
     AlpenExecutionPayloadEnvelopeV2, AlpenPayloadAttributes,
 };
 
@@ -47,7 +46,7 @@ impl EngineTypes for AlpenEngineTypes {
     type ExecutionPayloadEnvelopeV1 = ExecutionPayloadV1;
     type ExecutionPayloadEnvelopeV2 = AlpenExecutionPayloadEnvelopeV2;
     type ExecutionPayloadEnvelopeV3 = ExecutionPayloadEnvelopeV3;
-    type ExecutionPayloadEnvelopeV4 = ExecutionPayloadEnvelopeV4;
+    type ExecutionPayloadEnvelopeV4 = AlpenExecutionPayloadEnvelopeV4;
 }
 
 /// Strata engine validator

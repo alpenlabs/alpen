@@ -1,18 +1,21 @@
 # adjust according to deployment
-
 [client]
 rpc_host = "0.0.0.0"
 rpc_port = 8432
-l2_blocks_fetch_limit = 1_000
-datadir = "data"
+l2_blocks_fetch_limit = 1000
+datadir = "/app/data"
+sync_endpoint = "ws://fnclient675f9eff3a682b8c0ea7423.testnet.alpenlabs.io"
 db_retry_count = 5
-sequencer_rpc = "ws://sequencer:8432"
 
 [bitcoind]
-rpc_url = "bitcoind:18443"
-rpc_user = "rpcuser"
-rpc_password = "rpcpassword"
-network = "regtest"
+rpc_url = "bitcoind:38332"
+rpc_user = "bitcoin"
+rpc_password = "bitcoin"
+network = "signet"
+
+[sync]
+l1_follow_distance = 6
+client_checkpoint_interval = 20
 
 [btcio.reader]
 client_poll_dur_ms = 200
@@ -20,23 +23,18 @@ client_poll_dur_ms = 200
 [btcio.writer]
 write_poll_dur_ms = 200
 fee_policy = "smart"
-reveal_amount = 100
+reveal_amount = 546
 bundle_interval_ms = 1000
 
 [btcio.broadcaster]
 poll_interval_ms = 1000
 
-[sync]
-l1_follow_distance = 6
-max_reorg_depth = 4
-client_poll_dur_ms = 2000
-client_checkpoint_interval = 10
 
 [exec.reth]
-rpc_url = "reth-fn:8551"
-secret = "configs/jwt.fn.hex"
+rpc_url = "reth:8551"
+secret = "configs/jwt.hex"
 
 [relayer]
 refresh_interval = 10
-stale_duration = 120
+stale_duration = 10
 relay_misc = true

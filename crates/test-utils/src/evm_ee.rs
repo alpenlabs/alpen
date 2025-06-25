@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use strata_primitives::buf::{Buf32, Buf64};
 use strata_proofimpl_evm_ee_stf::{
+    executor::process_block,
     primitives::{EvmEeProofInput, EvmEeProofOutput},
-    process_block_transaction,
     utils::generate_exec_update,
     EvmBlockStfInput,
 };
@@ -48,7 +48,8 @@ impl EvmSegment {
                 serde_json::from_str(&json_file).expect("Invalid JSON file");
             inputs.push(el_proof_input.clone());
 
-            let block_stf_output = process_block_transaction(el_proof_input);
+            let block_stf_output =
+                process_block(el_proof_input).expect("Failed to process block transaction");
             let exec_output = generate_exec_update(&block_stf_output);
             outputs.push(exec_output);
         }

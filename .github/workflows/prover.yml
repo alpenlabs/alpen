@@ -49,7 +49,7 @@ jobs:
       # Under the hood, the following action symlinks mold binary onto lld,
       # so everything is linked faster (hopefully).
       - name: Install mold linker
-        uses: rui314/setup-mold@b3958095189f34b95d402a680b6e96b7f194f7b9 # v1
+        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
 
       - name: Set up Clang
         uses: egor-tensin/setup-clang@ef434b41eb33a70396fb336b1bae39c76d740c3d # v1

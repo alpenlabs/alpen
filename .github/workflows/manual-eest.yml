@@ -1,0 +1,133 @@
+name: Run functional tests against local basic fntests env
+
+on:
+  schedule:
+    - cron: '30 1 * * *' # every day at 1:30 AM UTC
+  workflow_dispatch:     # manual run
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions: {}
+
+jobs:
+  extract-rust-version:
+    name: Extract Rust toolchain version
+    runs-on: ubuntu-latest
+    outputs:
+      rust-version: ${{ steps.extract.outputs.rust-version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Extract Rust toolchain version
+        id: extract
+        uses: ./.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
+
+  run:
+    name: Run functional tests
+    runs-on: ubuntu-latest
+    needs: extract-rust-version
+    timeout-minutes: 120 # TODO: change to 60 once the exex witness generation is optimized.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Cleanup Space
+        uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+
+      - name: Install bitcoind
+        env:
+          BITCOIND_VERSION: "29.0"
+          BITCOIND_ARCH: "x86_64-linux-gnu"
+        run: |
+          curl -fsSLO --proto "=https" --tlsv1.2 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          curl -fsSLO --proto "=https" --tlsv1.2 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/SHA256SUMS"
+          sha256sum --ignore-missing --check SHA256SUMS
+          tar xzf "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          sudo install -m 0755 -t /usr/local/bin bitcoin-"$BITCOIND_VERSION"/bin/*
+          bitcoind --version
+          rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        id: setup-python
+        with:
+          python-version: "^3.10" # Keep in sync with `pyproject.toml`
+
+      - name: Install poetry
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a # v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: functional-tests/.venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        working-directory: functional-tests
+        #if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true' # this was giving issues in cache
+        run: poetry install --no-root --no-interaction
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
+        with:
+          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+        with:
+          cache-on-failure: true
+
+      - name: Build Cargo project
+        run: cargo build --locked -F debug-utils
+
+      - name: Run basic env in fntests
+        env:
+          NO_COLOR: "1"
+          LOG_LEVEL: "info"
+        run: |
+          sudo apt-get install -y screen
+          NEWPATH="$(realpath target/debug/)"
+          export PATH="${NEWPATH}:${PATH}"
+          which strata-client
+          cd functional-tests
+          screen -dmS basic_env poetry run python entry.py -e basic
+          sleep 15  # Wait for the service to start
+
+      - name: Run tests
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          git clone https://github.com/alpenlabs/execution-spec-tests
+          cd execution-spec-tests
+          uv python install 3.11
+          uv python pin 3.11
+          uv sync --all-extras
+          uv run solc-select use 0.8.24 --always-install
+          uv run execute remote \
+            -m state_test \
+            --fork=Shanghai \
+            --rpc-endpoint=http://localhost:12603 \
+            --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+            --rpc-chain-id 2892 \
+            --tx-wait-timeout 30 \
+            -v
+
+      - name: Generate a proof of EE blocks execution.
+        working-directory: docker
+        run: |
+          chmod +x test_ee_proof.sh
+          ./test_ee_proof.sh local
+      
+      - name: Stop service
+        if: always()
+        run: |
+          screen -S basic_env -X quit

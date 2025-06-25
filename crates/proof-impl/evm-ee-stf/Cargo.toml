@@ -18,7 +18,12 @@ alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-eips.workspace = true
 reth-chainspec.workspace = true
 reth-evm-ethereum.workspace = true
+reth-primitives.workspace = true
 
+reth-evm.workspace = true
+reth-primitives-traits.workspace = true
+reth-trie.workspace = true
+revm.workspace = true
 revm-primitives.workspace = true
 rsp-client-executor.workspace = true
 serde.workspace = true
