@@ -1,6 +1,6 @@
 /// Errors displayed to the user when using the Alpen CLI
 #[derive(Debug)]
-pub enum DisplayedError {
+pub(crate) enum DisplayedError {
     /// Errors the use can address by updating configuration or providing expected input
     UserError(String, Box<dyn std::fmt::Debug>),
     /// Internal errors encountered when servicing user's request.

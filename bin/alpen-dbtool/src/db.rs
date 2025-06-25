@@ -4,7 +4,7 @@ use strata_rocksdb::{init_core_dbs, open_rocksdb_database, CommonDb, DbOpsConfig
 
 use crate::errors::{DisplayableError, DisplayedError};
 
-pub enum DbType {
+pub(crate) enum DbType {
     Rocksdb,
 }
 
@@ -23,7 +23,7 @@ impl std::str::FromStr for DbType {
 }
 
 /// Returns a boxed trait-object that satisfies all the low-level traits.
-pub fn open_database(path: &Path, db_type: DbType) -> Result<Arc<CommonDb>, DisplayedError> {
+pub(crate) fn open_database(path: &Path, db_type: DbType) -> Result<Arc<CommonDb>, DisplayedError> {
     match db_type {
         DbType::Rocksdb => {
             let rbdb = open_rocksdb_database(path, ROCKSDB_NAME)

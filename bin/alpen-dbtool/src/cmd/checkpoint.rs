@@ -29,7 +29,7 @@ pub(crate) struct GetCheckpointDataArgs {
 
 /// Arguments to show a summary of all checkpoints.
 #[derive(Args, Debug)]
-pub struct GetCheckpointsSummaryArgs {}
+pub(crate) struct GetCheckpointsSummaryArgs {}
 
 /// Show details about a specific epoch.
 pub(crate) fn get_epoch_summary(

@@ -21,7 +21,7 @@ use crate::cmd::{
     propagate_version = true,
     disable_help_subcommand = true
 )]
-pub struct Cli {
+pub(crate) struct Cli {
     /// Node data directory (same as `--datadir` used by the node).
     #[arg(
         short = 'd',
@@ -29,19 +29,19 @@ pub struct Cli {
         value_name = "PATH",
         default_value = "data"
     )]
-    pub datadir: PathBuf,
+    pub(crate) datadir: PathBuf,
 
     /// Back‑end DB implementation (rocksdb | sled).
     #[arg(short = 't', long = "type", default_value = "rocksdb")]
-    pub db_type: String,
+    pub(crate) db_type: String,
 
     /// Sub‑command selector.
     #[command(subcommand)]
-    pub cmd: Command,
+    pub(crate) cmd: Command,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Command {
+pub(crate) enum Command {
     /// Show L1 block manifest.
     GetL1Manifest(GetL1ManifestArgs),
 
