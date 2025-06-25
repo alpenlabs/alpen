@@ -96,6 +96,8 @@ services:
       - ./prover-client/prover-client.testing.toml:/app/prover-client.toml
     ports:
       - 9851:9851
+    environment:
+      RUST_LOG: info
     command: [
       "--rollup-params", "params.json",
       "--datadir", ".data",
