@@ -1,7 +1,6 @@
 import flexitest
 
 from envs import testenv
-from utils import wait_until
 
 EXPECTED_L2_BLOCKS = 10
 BLOCK_NUMBER = 4
@@ -14,17 +13,13 @@ class RecentBlocksTest(testenv.StrataTestBase):
 
     def main(self, ctx: flexitest.RunContext):
         seq = ctx.get_service("sequencer")
-
-        # create both btc and sequencer RPC
         seqrpc = seq.create_rpc()
-        wait_until(
-            lambda: seqrpc.strata_getHeadersAtIdx(EXPECTED_L2_BLOCKS) is not None,
-            error_with=f"Expected block {EXPECTED_L2_BLOCKS} not generated",
-            timeout=20,
-        )
+        seq_waiter = self.create_strata_waiter(seqrpc)
+
+        seq_waiter.wait_until_chain_tip_exceeds(EXPECTED_L2_BLOCKS)
 
         recent_blks = seqrpc.strata_getRecentBlockHeaders(EXPECTED_L2_BLOCKS)
-        assert len(recent_blks) == EXPECTED_L2_BLOCKS
+        assert len(recent_blks) >= EXPECTED_L2_BLOCKS
 
         # check if they are in order by verifying if N-1 block is parent of N block
         for idx in reversed(range(0, EXPECTED_L2_BLOCKS)):

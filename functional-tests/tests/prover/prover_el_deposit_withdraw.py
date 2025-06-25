@@ -11,7 +11,7 @@ from utils import (
     get_bridge_pubkey,
     get_latest_eth_block_number,
 )
-from utils.wait import ProverWaiter, RethWaiter
+from utils.wait import ProverWaiter
 
 
 @flexitest.register
@@ -137,7 +137,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         l1_withdraw_block_height = last_block["height"]
         self.info(f"withdrawal block height on L1: {l1_withdraw_block_height}")
 
-        reth_waiter = RethWaiter(rethrpc, timeout=60)
+        reth_waiter = self.create_reth_waiter(rethrpc)
         # Proving
         self.test_checkpoint(
             l1_withdraw_block_height,

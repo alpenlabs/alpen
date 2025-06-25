@@ -10,7 +10,6 @@ from utils import (
     submit_da_blob,
     wait_until_with_value,
 )
-from utils.wait.strata import StrataWaiter
 
 
 @flexitest.register
@@ -65,7 +64,7 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         prover_fast = ctx.get_service("prover_client_fast")
         prover_strict = ctx.get_service("prover_client_strict")
         fullnode = ctx.get_service("fullnode")
-        seq_waiter = StrataWaiter(seq_fast.create_rpc(), self.logger, timeout=60)
+        seq_waiter = self.create_strata_waiter(seq_fast.create_rpc())
 
         btcrpc: BitcoindClient = btc.create_rpc()
         seqrpc_fast = seq_fast.create_rpc()
@@ -143,8 +142,8 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
 
         fullnode_rpc = fullnode.create_rpc()
 
-        seq_strict_waiter = StrataWaiter(seqrpc_strict, self.logger, timeout=60)
-        fn_waiter = StrataWaiter(fullnode_rpc, self.logger, timeout=60)
+        seq_strict_waiter = self.create_strata_waiter(seqrpc_strict)
+        fn_waiter = self.create_strata_waiter(fullnode_rpc)
 
         ## Wait for strict sequencer to finalize epoch 3
         seq_strict_waiter.wait_until_epoch_finalized(3)

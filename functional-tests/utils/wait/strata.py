@@ -61,9 +61,7 @@ class StrataWaiter(BaseWaiter):
                 self.logger.info(
                     f"now at epoch {epoch}, slot {comm['last_slot']}, blkid {comm['last_blkid']}"
                 )
-                return self.rpc.strata_getEpochSummary(
-                    epoch, comm["last_slot"], comm["last_blkid"]
-                )
+                return self.rpc.strata_getEpochSummary(epoch, comm["last_slot"], comm["last_blkid"])
             return None
 
         def _check(v):
@@ -73,7 +71,13 @@ class StrataWaiter(BaseWaiter):
         step = interval or self.interval
         msg = message or "Timeout: waiting for chain epoch"
 
-        return self.wait_until_with_value(_query, _check, timeout=timeout, step=step, error_with=msg)
+        return self.wait_until_with_value(
+            _query,
+            _check,
+            timeout=timeout,
+            step=step,
+            error_with=msg,
+        )
 
     def wait_until_next_chain_epoch(
         self, timeout: int | None = None, interval: float | None = None, message: str | None = None
@@ -315,3 +319,10 @@ class StrataWaiter(BaseWaiter):
         self.logger.info(f"current bitcoin height is {h}")
         self.wait_until_l1_observed(h, timeout=timeout, interval=interval, message=message)
         return h
+
+    def wait_until_latest_checkpoint_at(self, idx: int, timeout: int | None = None):
+        self.wait_until(
+            lambda: self.rpc.strata_getLatestCheckpointIndex(None) >= idx,
+            timeout=timeout or self.timeout,
+            error_with=f"Timeout: Checkpoint index did not increment to expected value({idx})",
+        )

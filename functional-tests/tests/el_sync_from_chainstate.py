@@ -3,8 +3,6 @@ from web3 import Web3
 
 from envs import net_settings, testenv
 from utils import *
-from utils.wait.reth import RethWaiter
-from utils.wait.strata import StrataWaiter
 
 
 def send_tx(web3: Web3):
@@ -44,8 +42,8 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         rethrpc = reth.create_rpc()
 
         block_wait_msg = "Timeout: waiting for reth blocks"
-        reth_waiter = RethWaiter(rethrpc, timeout=10, message=block_wait_msg)
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=20, interval=2)
+        reth_waiter = self.create_reth_waiter(rethrpc, message=block_wait_msg)
+        seq_waiter = self.create_strata_waiter(seqrpc)
 
         seq_waiter.wait_for_genesis()
 

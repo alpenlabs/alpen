@@ -5,7 +5,6 @@ import flexitest
 
 from envs import net_settings, testenv
 from utils import *
-from utils.wait import ProverWaiter, StrataWaiter
 
 
 @flexitest.register
@@ -34,7 +33,7 @@ class BlockFinalizationTest(testenv.StrataTestBase):
 
         num_epochs = 4
 
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=60, interval=2)
+        seq_waiter = self.create_strata_waiter(seqrpc, timeout=60)
         epoch = seq_waiter.wait_until_chain_epoch(num_epochs)
         logging.info(f"epoch summary: {epoch}")
 
@@ -44,7 +43,7 @@ class BlockFinalizationTest(testenv.StrataTestBase):
 
         # Wait for prover
         # TODO What is this check for?
-        prover_waiter = ProverWaiter(prover_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter = self.create_prover_waiter(prover_rpc, timeout=30, interval=2)
         prover_waiter.wait_for_prover_ready()
 
         check_submit_proof_fails_for_nonexistent_batch(seqrpc, 100)

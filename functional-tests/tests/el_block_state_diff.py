@@ -3,7 +3,6 @@ from solcx import compile_source, install_solc, set_solc_version
 from web3 import Web3
 
 from envs import testenv
-from utils.wait.reth import RethWaiter
 
 
 @flexitest.register
@@ -16,7 +15,7 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
     def main(self, ctx: flexitest.RunContext):
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
-        reth_waiter = RethWaiter(rethrpc)
+        reth_waiter = self.create_reth_waiter(rethrpc)
 
         web3: Web3 = reth.create_web3()
         web3.eth.default_account = web3.address

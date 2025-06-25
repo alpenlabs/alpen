@@ -1,10 +1,5 @@
 """
-Wait module for functional tests.
-
-This module provides waiter classes for different components:
-- RethWaiter: Ethereum/Reth RPC waiting operations
-- StrataWaiter: Strata L2 chain waiting operations
-- ProverWaiter: Proof generation waiting operations
+Wait module for various components to be used in functional tests.
 
 Usage:
     from utils.wait import RethWaiter, StrataWaiter, ProverWaiter

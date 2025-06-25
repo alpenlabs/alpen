@@ -2,7 +2,7 @@ import flexitest
 
 from envs import net_settings, testenv
 from utils import *
-from utils.wait import ProverWaiter, StrataWaiter
+from utils.wait import ProverWaiter
 
 
 @flexitest.register
@@ -24,7 +24,7 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
 
         prover = ctx.get_service("prover_client")
         prover_rpc = prover.create_rpc()
-        strata_waiter = StrataWaiter(seqrpc, self.logger, timeout=20, interval=2)
+        strata_waiter = self.create_strata_waiter(seqrpc)
 
         strata_waiter.wait_for_genesis()
 

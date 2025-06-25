@@ -4,7 +4,6 @@ import flexitest
 
 from envs import testenv
 from utils.utils import wait_until_with_value
-from utils.wait import StrataWaiter
 
 FOLLOW_DIST = 1
 
@@ -22,7 +21,7 @@ class SyncFromRpcTest(testenv.StrataTestBase):
         fullnode_reth_rpc = ctx.get_service("follower_1_reth").create_rpc()
 
         # Initialize waiters
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=60, interval=2)
+        seq_waiter = self.create_strata_waiter(seqrpc)
 
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()

@@ -3,7 +3,6 @@ from web3 import Web3
 
 from envs import testenv
 from utils import wait_until
-from utils.wait import StrataWaiter
 
 
 @flexitest.register
@@ -21,7 +20,7 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         reth = ctx.get_service("reth")
         # create sequencer RPC and wait until it is active
         seqrpc = seq.create_rpc()
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=10)
+        seq_waiter = self.create_strata_waiter(seqrpc)
 
         seq_waiter.wait_until_client_ready()
 
@@ -46,10 +45,7 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         assert not web3.is_connected(), "Reth did not stop"
 
         # check if rpc is still working
-        wait_until(
-            lambda: seqrpc.strata_clientStatus() is not None,
-            error_with="RPC server of sequencer crashed",
-        )
+        assert seqrpc.strata_clientStatus() is not None, "RPC server of sequencer crashed"
 
         cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
         # wait for 2 seconds to allow block production if any

@@ -39,7 +39,7 @@ class BitcoinReorgChecksTest(testenv.StrataTestBase):
         prover_rpc = prover.create_rpc()
         seq_addr = seq.get_prop("address")
 
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=20, interval=2)
+        seq_waiter = self.create_strata_waiter(seqrpc)
 
         cfg: RollupConfig = ctx.env.rollup_cfg()
         finality_depth = cfg.l1_reorg_safe_depth

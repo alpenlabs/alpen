@@ -2,8 +2,6 @@ import flexitest
 
 from envs import testenv
 from envs.testenv import BasicEnvConfig
-from utils.utils import wait_until_with_value
-from utils.wait.strata import StrataWaiter
 
 REORG_DEPTH = 3
 
@@ -22,8 +20,8 @@ class L1ReadReorgTest(testenv.StrataTestBase):
         btc_rpc = btc.create_rpc()
         seq_rpc = seq.create_rpc()
 
-        self.seq_waiter = StrataWaiter(seq_rpc, self.logger)
-        l1_status = self.seq_waiter.wait_until_l1_height_at(REORG_DEPTH + 1)
+        seq_waiter = self.create_strata_waiter(seq_rpc)
+        l1_status = seq_waiter.wait_until_l1_height_at(REORG_DEPTH + 1)
         curr_l1_height = l1_status["cur_height"]
 
         invalidate_height = curr_l1_height - REORG_DEPTH
@@ -37,11 +35,7 @@ class L1ReadReorgTest(testenv.StrataTestBase):
 
         to_be_invalid_block = seq_rpc.strata_getL1blockHash(invalidate_height)
         # Wait for at least 1 block to be added after invalidating `REORG_DEPTH` blocks.
-        block_from_invalidated_height = wait_until_with_value(
-            lambda: seq_rpc.strata_getL1blockHash(invalidate_height + 1),
-            lambda value: value is not None,
-            error_with="L1 Block not produced in time",
-        )
+        block_from_invalidated_height = seq_waiter.wait_until_l1_height_at(invalidate_height + 1)
 
         self.info(f"now have block {block_from_invalidated_height}")
 

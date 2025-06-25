@@ -4,7 +4,6 @@ from web3 import Web3
 from mixins import BaseMixin
 from utils import (
     el_slot_to_block_commitment,
-    wait_for_proof_with_time_out,
     wait_until_with_value,
 )
 from utils.precompile import make_precompile_call
@@ -57,6 +56,7 @@ class ProverBlsPrecompileTest(BaseMixin):
     def main(self, ctx: flexitest.RunContext):
         reth_rpc = ctx.get_service("reth").create_rpc()
         prover_rpc = ctx.get_service("prover_client").create_rpc()
+        prover_waiter = self.create_prover_waiter(prover_rpc, timeout=30)
         web3: Web3 = ctx.get_service("reth").create_web3()
         web3.eth.default_account = web3.address
 
@@ -94,6 +94,6 @@ class ProverBlsPrecompileTest(BaseMixin):
         task_id = task_ids[0]
         self.debug(f"Selected prover task ID: {task_id}")
 
-        assert wait_for_proof_with_time_out(prover_rpc, task_id, time_out=30), (
+        assert prover_waiter.wait_for_proof_completion(task_id), (
             f"Proof generation timed out for task {task_id}"
         )

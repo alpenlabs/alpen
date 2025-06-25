@@ -3,7 +3,6 @@ from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
 from utils import *
-from utils.wait.strata import StrataWaiter
 
 
 @flexitest.register
@@ -25,7 +24,7 @@ class L1StatusTest(testenv.StrataTestBase):
         # generate 5 btc blocks
         generate_n_blocks(btcrpc, 5)
 
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=30)
+        seq_waiter = self.create_strata_waiter(seqrpc)
 
         # Wait for seq
         seq_waiter.wait_for_genesis(message="Timetout: waiting for genesis")

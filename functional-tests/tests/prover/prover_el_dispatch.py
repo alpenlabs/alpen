@@ -5,7 +5,7 @@ from utils import (
     el_slot_to_block_commitment,
 )
 from utils.transaction import TransactionType
-from utils.wait import ProverWaiter, RethWaiter
+from utils.wait import ProverWaiter
 
 # Constants for native token transfer
 NATIVE_TOKEN_TRANSFER_PARAMS = {
@@ -27,7 +27,7 @@ class ProverClientTest(BaseMixin):
         reth_rpc = reth.create_rpc()
 
         # Wait until at least one EE block is generated.
-        reth_waiter = RethWaiter(reth_rpc, timeout=30, interval=1)
+        reth_waiter = self.create_reth_waiter(reth_rpc)
         reth_waiter.wait_until_eth_block_exceeds(0)
 
         transfer_amount = NATIVE_TOKEN_TRANSFER_PARAMS["TRANSFER_AMOUNT"]

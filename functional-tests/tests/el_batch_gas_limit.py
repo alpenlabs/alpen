@@ -6,7 +6,6 @@ from web3 import Web3
 from envs import testenv
 from utils.reth import get_chainconfig
 from utils.utils import RollupParamsSettings
-from utils.wait import RethWaiter
 
 BLOCK_GAS_LIMIT = 100_000
 EPOCH_GAS_LIMIT = 200_000
@@ -60,7 +59,7 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         total_gas_used = 0
         block_no = original_block_no + 1
         zero_gas_blocks = 0
-        reth_waiter = RethWaiter(rethrpc, timeout=30, interval=1)
+        reth_waiter = self.create_reth_waiter(rethrpc)
         while zero_gas_blocks < 2:
             reth_waiter.wait_until_eth_block_at_least(block_no)
 

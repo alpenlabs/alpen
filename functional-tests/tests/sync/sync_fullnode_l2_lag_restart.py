@@ -4,7 +4,6 @@ import flexitest
 
 from envs import testenv
 from utils import *
-from utils.wait.strata import StrataWaiter
 
 FOLLOW_DIST = 1
 
@@ -22,8 +21,8 @@ class SyncFullNodeL2LagRestartTest(testenv.StrataTestBase):
         seqrpc = seq.create_rpc()
         fullnode = ctx.get_service("follower_1_node")
         fnrpc = fullnode.create_rpc()
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=60)
-        fn_waiter = StrataWaiter(fnrpc, self.logger, timeout=60)
+        seq_waiter = self.create_strata_waiter(seqrpc, timeout=60)
+        fn_waiter = self.create_strata_waiter(fnrpc, timeout=60)
 
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()

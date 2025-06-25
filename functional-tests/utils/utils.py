@@ -230,6 +230,8 @@ def submit_checkpoint(
     """
     Submits checkpoint and if manual_gen, waits till it is present in l1
     """
+    from utils.wait.prover import ProverWaiter
+
     last_published_txid = seqrpc.strata_l1status()["last_published_txid"]
 
     # Post checkpoint proof
@@ -237,7 +239,8 @@ def submit_checkpoint(
     # will post empty proof if prover doesn't submit proofs in time.
     proof_keys = prover_rpc.dev_strata_proveCheckpoint(idx)
     proof_key = proof_keys[0]
-    wait_for_proof_with_time_out(prover_rpc, proof_key)
+    prover_waiter = ProverWaiter(prover_rpc, logging.Logger("submit_checkpoint"), timeout=30)
+    prover_waiter.wait_for_proof_completion(proof_key)
     proof = prover_rpc.dev_strata_getProof(proof_key)
 
     seqrpc.strataadmin_submitCheckpointProof(idx, proof)
@@ -292,34 +295,6 @@ def check_already_sent_proof(seqrpc, sent_batch: int):
         assert e.code == ERROR_PROOF_ALREADY_CREATED
     else:
         raise AssertionError("Expected rpc error")
-
-
-def wait_for_proof_with_time_out(prover_client_rpc, task_id, time_out=3600) -> bool:
-    """
-    Waits for a proof task to complete/fail within a specified timeout period.
-
-    This function continuously polls the status of a proof task identified by `task_id` using
-    the `prover_client_rpc` client. It checks the status every 2 seconds and waits until the
-    proof task status is either "Completed" where it returns True, or "Failed" where it return
-    False. If the specified `time_out` (in seconds) is reached, it throws TimeoutError.
-    """
-
-    start_time = time.time()
-    while True:
-        # Fetch the proof status
-        proof_status = prover_client_rpc.dev_strata_getTaskStatus(task_id)
-        assert proof_status is not None
-        logging.info(f"Got the proof status {proof_status}")
-        if proof_status == "Completed":
-            logging.info(f"Completed the proof generation for {task_id}")
-            return True
-        elif proof_status == "Failed":
-            logging.info(f"Proof generatoin failed for {task_id}")
-            return False
-
-        elapsed_time = time.time() - start_time  # Calculate elapsed time
-        if elapsed_time >= time_out:
-            raise TimeoutError(f"Operation timed out after {time_out} seconds.")
 
 
 def generate_seed_at(path: str):

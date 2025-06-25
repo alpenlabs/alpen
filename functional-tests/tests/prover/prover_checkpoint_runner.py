@@ -7,7 +7,6 @@ import flexitest
 from envs import testenv
 from envs.testenv import BasicEnvConfig
 from utils import *
-from utils.wait.strata import StrataWaiter
 
 
 @dataclass
@@ -44,7 +43,7 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
 
         prover_rpc = prover_client.create_rpc()
         sequencer_rpc = sequencer.create_rpc()
-        seq_waiter = StrataWaiter(sequencer_rpc, self.logger, timeout=60)
+        seq_waiter = self.create_strata_waiter(sequencer_rpc)
 
         # Wait until the prover client reports readiness
         wait_until(

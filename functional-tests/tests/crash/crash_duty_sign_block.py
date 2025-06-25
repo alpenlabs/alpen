@@ -2,7 +2,6 @@ import flexitest
 
 from envs import testenv
 from mixins import seq_crash_mixin
-from utils import wait_until
 
 
 @flexitest.register
@@ -13,10 +12,7 @@ class CrashDutySignBlockTest(seq_crash_mixin.SeqCrashMixin):
     def main(self, ctx: flexitest.RunContext):
         cur_chain_tip = self.handle_bail(lambda: "duty_sign_block")
 
-        wait_until(
-            lambda: self.seqrpc.strata_clientStatus()["chain_tip_slot"] > cur_chain_tip,
-            error_with="chain tip slot not progressing",
-            timeout=20,
-        )
+        seq_waiter = self.create_strata_waiter(self.seqrpc)
+        seq_waiter.wait_until_chain_tip_exceeds(cur_chain_tip)
 
         return True

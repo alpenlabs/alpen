@@ -8,6 +8,7 @@ class RethWaiter(BaseWaiter):
     """
     Wrapper for encapsulating and waiting reth related rpcs
     """
+
     message: str = "Timeout: waiting for blocks"
 
     def wait_until_eth_block_exceeds(self, height, message: str | None = None):

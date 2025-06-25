@@ -14,7 +14,7 @@ from factory.config import BitcoindConfig, RethELConfig
 from load.cfg import LoadConfig, LoadConfigBuilder
 from utils import *
 from utils.constants import *
-from utils.wait import StrataWaiter
+from utils.wait import ProverWaiter, RethWaiter, StrataWaiter
 
 
 class StrataTestBase(flexitest.Test):
@@ -30,6 +30,15 @@ class StrataTestBase(flexitest.Test):
         self.error = logger.error
         self.critical = logger.critical
         self.logger = logger
+
+    def create_reth_waiter(self, reth_rpc, timeout=20, interval=0.5, **kwargs) -> RethWaiter:
+        return RethWaiter(reth_rpc, self.logger, timeout, interval, **kwargs)
+
+    def create_strata_waiter(self, strata_rpc, timeout=20, interval=0.5, **kwargs) -> StrataWaiter:
+        return StrataWaiter(strata_rpc, self.logger, timeout, interval, **kwargs)
+
+    def create_prover_waiter(self, prover_rpc, timeout=20, interval=0.5, **kwargs) -> ProverWaiter:
+        return ProverWaiter(prover_rpc, self.logger, timeout, interval, **kwargs)
 
 
 class StrataTestRuntime(flexitest.TestRuntime):

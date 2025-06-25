@@ -1,7 +1,6 @@
 import flexitest
 
 from envs import testenv
-from utils.wait.strata import StrataWaiter
 
 
 @flexitest.register
@@ -11,7 +10,7 @@ class ExecUpdateTest(testenv.StrataTestBase):
 
     def main(self, ctx: flexitest.RunContext):
         seq = ctx.get_service("sequencer")
-        seq_waiter = StrataWaiter(seq.create_rpc(), self.logger)
+        seq_waiter = self.create_strata_waiter(seq.create_rpc())
 
         # create both btc and sequencer RPC
         seqrpc = seq.create_rpc()

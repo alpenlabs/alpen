@@ -3,8 +3,6 @@ import logging
 import flexitest
 
 from envs import testenv
-from utils.wait.reth import RethWaiter
-from utils.wait.strata import StrataWaiter
 
 
 @flexitest.register
@@ -17,8 +15,8 @@ class ElBlockGenerationTest(testenv.StrataTestBase):
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
 
-        reth_waiter = RethWaiter(rethrpc, message="Timeout: waiting for eth blocks")
-        seq_waiter = StrataWaiter(seqrpc, self.logger, timeout=20)
+        reth_waiter = self.create_reth_waiter(rethrpc)
+        seq_waiter = self.create_strata_waiter(seqrpc)
 
         seq_waiter.wait_for_genesis()
 
