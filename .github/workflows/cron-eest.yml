@@ -75,17 +75,13 @@ jobs:
         # Build datatool with sp1 features
         cargo build --bin strata-datatool --release
 
-        # Generate parameters and capture the output
-        ./target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1
-        cd docker && ./init-keys.sh ../target/release/strata-datatool
+        # Generate params: rollup_name := alpn, block_time := 1000
+        cd docker && ./init-keys.sh ../target/release/strata-datatool -n alpn -t 1
         cd configs
 
-        # TODO reorganize and use CLI args instead of this mess.
-        # Overwrite the block time for faster blocks.
-        jq '.block_time = 1000' params.json > tmp.json && mv tmp.json params.json
-        # Overwrite the rollup_name so the sequencer is happy.
-        jq '.rollup_name = "alpn"' params.json > tmp.json && mv tmp.json params.json
-        # Overwrite the genesis hash
+        # reth/sequencer is taken from CD and is built with different config,
+        # so we have to hack it here so the genesis matches.
+        # Override the genesis hash
         jq '.evm_genesis_block_hash = "37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"' params.json > tmp.json && mv tmp.json params.json
 
     - name: Build Prover Client image in native mode
