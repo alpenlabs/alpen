@@ -7,6 +7,9 @@ version = "0.3.0-alpha.1"
 name = "alpen-dbtool"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 clap.workspace = true
 hex.workspace = true
