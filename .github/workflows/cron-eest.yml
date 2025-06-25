@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: development
-    timeout-minutes: 120 # TODO: change to 60 once the exex witness generation is optimized.
+    timeout-minutes: 240 # TODO: change to 60 once the exex witness generation is optimized.
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       with:
@@ -147,4 +147,5 @@ jobs:
     - name: Tear down services
       if: always()
       run: |
+        docker logs strata_prover_client
         docker compose -f ./docker/docker-compose-testing.yml down
