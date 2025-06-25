@@ -1,9 +1,8 @@
-name: Daily Ethereum Execution Spec tests
+name: Ethereum Execution Spec tests against staging docker.
 
 on:
-  #schedule:
-  #  - cron: '0 3 * * 0'  # Weekly: Sunday 03:00 UTC
-  pull_request:
+  schedule:
+    - cron: '0 15 * * *'  # Daily at 15:00 UTC
   workflow_dispatch:      # Manual trigger (optional)
 
 env:

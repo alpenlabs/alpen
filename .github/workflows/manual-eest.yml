@@ -1,4 +1,4 @@
-name: Run functional tests against local basic fntests env
+name: Ethereum Execution Spec tests against main branch (via fntests).
 
 on:
   schedule:
