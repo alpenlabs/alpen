@@ -13587,6 +13587,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-core",
+ "strata-l1-txfmt",
 ]
 
 [[package]]

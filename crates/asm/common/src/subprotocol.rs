@@ -11,7 +11,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use crate::{Log, SectionState, TxInput, msg::InterprotoMsg};
 
 /// Identifier for a subprotocol.
-pub type SubprotocolId = u8;
+pub type SubprotocolId = strata_l1_txfmt::SubprotocolId;
 
 /// ASM subprotocol interface.
 ///
