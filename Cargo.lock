@@ -13556,6 +13556,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "strata-l1-txfmt",
  "strata-primitives",
  "thiserror 2.0.12",
 ]
@@ -13831,6 +13832,15 @@ dependencies = [
  "strata-primitives",
  "thiserror 2.0.12",
  "zeroize",
+]
+
+[[package]]
+name = "strata-l1-txfmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common#bcb3bf6bf028a878c8a378389bbfb217964c9258"
+dependencies = [
+ "bitcoin",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
