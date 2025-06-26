@@ -35,12 +35,12 @@ where
         cache_guard.get(key).cloned()
     }
 
-    fn insert(&self, key: K, value: V) {
+    pub(crate) fn insert(&self, key: K, value: V) {
         let mut cache_guard = self.cache.write();
         cache_guard.put(key, value);
     }
 
-    fn purge(&self, key: &K) {
+    pub(crate) fn purge(&self, key: &K) {
         let mut cache_guard = self.cache.write();
         cache_guard.pop(key);
         // Remoe fetch mutex if any
@@ -48,7 +48,35 @@ where
         fetch_guard.remove(key);
     }
 
-    #[cfg(test)]
+    pub(crate) fn purge_if(&self, mut pred: impl FnMut(&K) -> bool) -> usize {
+        let mut cache_guard = self.cache.write();
+        let keys_to_remove = cache_guard
+            .iter()
+            .map(|(k, _v)| k)
+            .filter(|k| pred(k))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let mut fetch_guard = self.fetch_mutexes.write();
+        keys_to_remove.iter().for_each(|k| {
+            cache_guard.pop(k);
+            fetch_guard.remove(k);
+        });
+        keys_to_remove.len()
+    }
+
+    pub(crate) fn clear(&self) -> usize {
+        let len = self.get_len();
+        let mut cache_guard = self.cache.write();
+        cache_guard.clear();
+
+        // Remove mutexes
+        let mut fetch_guard = self.fetch_mutexes.write();
+        fetch_guard.clear();
+
+        len
+    }
+
     pub(crate) fn get_len(&self) -> usize {
         self.cache.read().len()
     }
