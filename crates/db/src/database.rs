@@ -9,20 +9,12 @@ use crate::chainstate::ChainstateDatabase;
 /// the provider and stores are actually the same types. We might actually
 /// use this in practice, it's just for testing.
 #[derive(Debug)]
-pub struct CommonDatabase<
-    L1DB,
-    L2DB,
-    SyncEventDB,
-    ClientStateDB,
-    OldChainstateDB,
-    ChainstateDB,
-    CheckpointDB,
-> where
+pub struct CommonDatabase<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
+where
     L1DB: L1Database + Sync + Send + 'static,
     L2DB: L2BlockDatabase + Sync + Send + 'static,
     SyncEventDB: SyncEventDatabase + Sync + Send + 'static,
     ClientStateDB: ClientStateDatabase + Sync + Send + 'static,
-    OldChainstateDB: OldChainstateDatabase + Sync + Send + 'static,
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
@@ -30,27 +22,17 @@ pub struct CommonDatabase<
     l2_db: Arc<L2DB>,
     sync_event_db: Arc<SyncEventDB>,
     client_state_db: Arc<ClientStateDB>,
-    old_chain_state_db: Arc<OldChainstateDB>,
     chain_state_db: Arc<ChainstateDB>,
     checkpoint_db: Arc<CheckpointDB>,
 }
 
-impl<L1DB, L2DB, SyncEventDB, ClientStateDB, OldChainstateDB, ChainstateDB, CheckpointDB>
-    CommonDatabase<
-        L1DB,
-        L2DB,
-        SyncEventDB,
-        ClientStateDB,
-        OldChainstateDB,
-        ChainstateDB,
-        CheckpointDB,
-    >
+impl<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
+    CommonDatabase<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
 where
     L1DB: L1Database + Sync + Send + 'static,
     L2DB: L2BlockDatabase + Sync + Send + 'static,
     SyncEventDB: SyncEventDatabase + Sync + Send + 'static,
     ClientStateDB: ClientStateDatabase + Sync + Send + 'static,
-    OldChainstateDB: OldChainstateDatabase + Sync + Send + 'static,
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
@@ -60,7 +42,6 @@ where
         l2_db: Arc<L2DB>,
         sync_event_db: Arc<SyncEventDB>,
         client_state_db: Arc<ClientStateDB>,
-        old_chain_state_db: Arc<OldChainstateDB>,
         chain_state_db: Arc<ChainstateDB>,
         checkpoint_db: Arc<CheckpointDB>,
     ) -> Self {
@@ -69,29 +50,19 @@ where
             l2_db,
             sync_event_db,
             client_state_db,
-            old_chain_state_db,
             chain_state_db,
             checkpoint_db,
         }
     }
 }
 
-impl<L1DB, L2DB, SyncEventDB, ClientStateDB, OldChainstateDB, ChainstateDB, CheckpointDB> Database
-    for CommonDatabase<
-        L1DB,
-        L2DB,
-        SyncEventDB,
-        ClientStateDB,
-        OldChainstateDB,
-        ChainstateDB,
-        CheckpointDB,
-    >
+impl<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB> Database
+    for CommonDatabase<L1DB, L2DB, SyncEventDB, ClientStateDB, ChainstateDB, CheckpointDB>
 where
     L1DB: L1Database + Sync + Send + 'static,
     L2DB: L2BlockDatabase + Sync + Send + 'static,
     SyncEventDB: SyncEventDatabase + Sync + Send + 'static,
     ClientStateDB: ClientStateDatabase + Sync + Send + 'static,
-    OldChainstateDB: OldChainstateDatabase + Sync + Send + 'static,
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
@@ -99,7 +70,6 @@ where
     type L2DB = L2DB;
     type SyncEventDB = SyncEventDB;
     type ClientStateDB = ClientStateDB;
-    type OldChainstateDB = OldChainstateDB;
     type ChainstateDB = ChainstateDB;
     type CheckpointDB = CheckpointDB;
 
@@ -121,10 +91,6 @@ where
 
     fn chain_state_db(&self) -> &Arc<Self::ChainstateDB> {
         &self.chain_state_db
-    }
-
-    fn old_chain_state_db(&self) -> &Arc<Self::OldChainstateDB> {
-        &self.old_chain_state_db
     }
 
     fn checkpoint_db(&self) -> &Arc<Self::CheckpointDB> {

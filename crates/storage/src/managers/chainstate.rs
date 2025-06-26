@@ -16,7 +16,7 @@ use crate::{cache, ops};
 
 #[expect(missing_debug_implementations)]
 pub struct ChainstateManager {
-    ops: ops::newchs::ChainstateOps,
+    ops: ops::chainstate::ChainstateOps,
     tl_cache: cache::CacheTable<StateInstanceId, Arc<Chainstate>>,
     wb_cache: cache::CacheTable<WriteBatchId, Option<WriteBatch>>,
 }
@@ -26,7 +26,7 @@ impl ChainstateManager {
         pool: ThreadPool,
         db: Arc<D>,
     ) -> Self {
-        let ops = ops::newchs::Context::new(db.clone()).into_ops(pool);
+        let ops = ops::chainstate::Context::new(db.clone()).into_ops(pool);
         let tl_cache = cache::CacheTable::new(64.try_into().unwrap());
         let wb_cache = cache::CacheTable::new(64.try_into().unwrap());
         Self {

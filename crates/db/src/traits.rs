@@ -31,7 +31,6 @@ pub trait Database {
     type L2DB: L2BlockDatabase + Send + Sync;
     type SyncEventDB: SyncEventDatabase + Send + Sync;
     type ClientStateDB: ClientStateDatabase + Send + Sync;
-    type OldChainstateDB: OldChainstateDatabase + Send + Sync;
     type ChainstateDB: ChainstateDatabase + Send + Sync;
     type CheckpointDB: CheckpointDatabase + Send + Sync;
 
@@ -39,7 +38,6 @@ pub trait Database {
     fn l2_db(&self) -> &Arc<Self::L2DB>;
     fn sync_event_db(&self) -> &Arc<Self::SyncEventDB>;
     fn client_state_db(&self) -> &Arc<Self::ClientStateDB>;
-    fn old_chain_state_db(&self) -> &Arc<Self::OldChainstateDB>;
     fn chain_state_db(&self) -> &Arc<Self::ChainstateDB>;
     fn checkpoint_db(&self) -> &Arc<Self::CheckpointDB>;
 }

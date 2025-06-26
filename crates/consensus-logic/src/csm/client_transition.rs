@@ -4,7 +4,7 @@
 use std::cmp::min;
 
 use bitcoin::{block::Header, Transaction};
-use strata_db::traits::{Database, L1Database, L2BlockDatabase, OldChainstateDatabase};
+use strata_db::traits::{Database, L1Database, L2BlockDatabase};
 use strata_primitives::{
     batch::{verify_signed_checkpoint_sig, BatchInfo, Checkpoint},
     l1::{get_btc_params, HeaderVerificationState, L1BlockCommitment, L1BlockId},
