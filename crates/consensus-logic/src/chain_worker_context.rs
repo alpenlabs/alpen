@@ -165,7 +165,7 @@ fn conv_db_err(_e: DbError) -> WorkerError {
     WorkerError::Unimplemented
 }
 
-// REVIEW: Check if this is the right way to convert block IDs to write batch IDs.
+// FIXME: fix duplicate code
 pub fn conv_blkid_to_slot_wb_id(blkid: L2BlockId) -> WriteBatchId {
     let mut buf: Buf32 = blkid.into();
     buf.as_mut_slice()[31] = 0; // last byte to distinguish slot and epoch

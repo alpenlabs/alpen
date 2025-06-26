@@ -148,9 +148,9 @@ impl ForkChoiceManager {
 
         Ok(self
             .storage
-            .chainstate()
-            .get_toplevel_chainstate_blocking(block.slot())?
-            .map(|entry| Arc::new(entry.to_chainstate())))
+            .new_chainstate()
+            .get_slot_write_batch_blocking(*block.blkid())?
+            .map(|wb| Arc::new(wb.into_toplevel())))
     }
 
     /// Tries to execute the block, returning an error if applicable.
@@ -881,19 +881,16 @@ fn revert_chainstate_to_block(
     // Fetch the old state from the database and store in memory.  This
     // is also how  we validate that we actually *can* revert to this
     // block.
+    let blkid = *block.blkid();
     let new_state = fcm_state
         .storage
-        .chainstate()
-        .get_toplevel_chainstate_blocking(block.slot())?
-        .ok_or(Error::MissingIdxChainstate(block.slot()))?
-        .to_chainstate();
+        .new_chainstate()
+        .get_slot_write_batch_blocking(blkid)?
+        .ok_or(Error::MissingBlockChainstate(blkid))?
+        .into_toplevel();
     fcm_state.update_tip_block(*block, Arc::new(new_state));
 
-    // Rollback the writes on the database that we no longer need.
-    fcm_state
-        .storage
-        .chainstate()
-        .rollback_writes_to_blocking(block.slot())?;
+    // FIXME: Rollback the writes on the database that we no longer need.
 
     Ok(())
 }

@@ -24,7 +24,6 @@ pub struct NodeStorage {
     l1_block_manager: Arc<L1BlockManager>,
     l2_block_manager: Arc<L2BlockManager>,
 
-    chainstate_manager: Arc<ChainstateManager>,
     new_chainstate_manager: Arc<NewChainstateManager>,
 
     sync_event_manager: Arc<SyncEventManager>,
@@ -42,10 +41,6 @@ impl NodeStorage {
 
     pub fn l2(&self) -> &Arc<L2BlockManager> {
         &self.l2_block_manager
-    }
-
-    pub fn chainstate(&self) -> &Arc<ChainstateManager> {
-        &self.chainstate_manager
     }
 
     pub fn new_chainstate(&self) -> &Arc<NewChainstateManager> {
@@ -76,7 +71,6 @@ where
 {
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), db.l1_db().clone()));
     let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), db.clone()));
-    let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), db.clone()));
     let new_chainstate_manager = Arc::new(NewChainstateManager::new(
         pool.clone(),
         db.new_chain_state_db().clone(),
@@ -99,7 +93,6 @@ where
         l1_block_manager,
         l2_block_manager,
 
-        chainstate_manager,
         new_chainstate_manager,
 
         sync_event_manager,
