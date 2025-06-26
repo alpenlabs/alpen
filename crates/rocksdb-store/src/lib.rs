@@ -7,7 +7,6 @@ pub mod checkpoint;
 pub mod client_state;
 pub mod l1;
 pub mod l2;
-mod newchs;
 pub mod prover;
 pub mod sync_event;
 pub mod writer;
@@ -38,7 +37,7 @@ use broadcaster::{
     db::BroadcastDb,
     schemas::{BcastL1TxIdSchema, BcastL1TxSchema},
 };
-pub use chain_state::db::ChainstateDb;
+pub use chain_state::{ChainstateDb, StateInstanceEntry};
 pub use checkpoint::db::RBCheckpointDB;
 use checkpoint::schemas::*;
 pub use client_state::db::ClientStateDb;
@@ -47,17 +46,15 @@ use l2::{
     db::L2Db,
     schemas::{L2BlockHeightSchema, L2BlockSchema, L2BlockStatusSchema},
 };
-pub use newchs::{RocksNewChainstateDb, StateInstanceEntry};
 use rockbound::{schema::ColumnFamilyName, Schema, TransactionRetry};
 pub use sync_event::db::SyncEventDb;
 pub use writer::db::RBL1WriterDb;
 use writer::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 
 use crate::{
-    chain_state::schemas::WriteBatchSchema,
+    chain_state::schemas::{StateInstanceSchema, WriteBatchSchema},
     client_state::schemas::ClientUpdateOutputSchema,
     l1::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema},
-    newchs::schemas::{NewWriteBatchSchema, StateInstanceSchema},
     sequence::SequenceSchema,
     sync_event::schemas::SyncEventSchema,
 };
@@ -97,7 +94,7 @@ pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
     EpochSummarySchema::COLUMN_FAMILY_NAME,
 
     // New chainstate schemas
-    NewWriteBatchSchema::COLUMN_FAMILY_NAME,
+    WriteBatchSchema::COLUMN_FAMILY_NAME,
     StateInstanceSchema::COLUMN_FAMILY_NAME,
 ];
 
@@ -144,15 +141,8 @@ pub fn open_rocksdb_database(
     Ok(Arc::new(rbdb))
 }
 
-pub type CommonDb = CommonDatabase<
-    L1Db,
-    L2Db,
-    SyncEventDb,
-    ClientStateDb,
-    ChainstateDb,
-    RocksNewChainstateDb,
-    RBCheckpointDB,
->;
+pub type CommonDb =
+    CommonDatabase<L1Db, L2Db, SyncEventDb, ClientStateDb, ChainstateDb, RBCheckpointDB>;
 
 pub fn init_core_dbs(
     rbdb: Arc<rockbound::OptimisticTransactionDB>,
@@ -163,16 +153,14 @@ pub fn init_core_dbs(
     let l2_db: Arc<_> = L2Db::new(rbdb.clone(), ops_config).into();
     let sync_ev_db: Arc<_> = SyncEventDb::new(rbdb.clone(), ops_config).into();
     let clientstate_db: Arc<_> = ClientStateDb::new(rbdb.clone(), ops_config).into();
-    let chainstate_db: Arc<_> = ChainstateDb::new(rbdb.clone(), ops_config).into();
     let checkpoint_db: Arc<_> = RBCheckpointDB::new(rbdb.clone(), ops_config).into();
-    let new_checkpoint_db = RocksNewChainstateDb::new(rbdb.clone(), ops_config).into();
+    let chainstate_db = ChainstateDb::new(rbdb.clone(), ops_config).into();
     let database = CommonDatabase::new(
         l1_db,
         l2_db,
         sync_ev_db,
         clientstate_db,
         chainstate_db,
-        new_checkpoint_db,
         checkpoint_db,
     );
 
