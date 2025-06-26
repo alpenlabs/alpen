@@ -24,6 +24,8 @@ impl AsmSpec for StrataAsmSpec {
     }
 }
 
+const ALPEN_MAGIC_BYTES: &[u8; 4] = b"ALPN";
+
 /// Computes the next AnchorState by applying the Anchor State Machine (ASM) state transition
 /// function (STF) to the given previous state and new L1 block.
 pub fn asm_stf<S: AsmSpec>(pre_state: AnchorState, block: &Block) -> Result<AnchorState, AsmError> {
@@ -34,7 +36,7 @@ pub fn asm_stf<S: AsmSpec>(pre_state: AnchorState, block: &Block) -> Result<Anch
         .map_err(AsmError::InvalidL1Header)?;
 
     // 2. Filter the relevant transactions
-    let all_relevant_transactions = group_txs_by_subprotocol(&block.txdata);
+    let all_relevant_transactions = group_txs_by_subprotocol(*ALPEN_MAGIC_BYTES, &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
