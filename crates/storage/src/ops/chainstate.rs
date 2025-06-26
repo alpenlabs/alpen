@@ -8,7 +8,7 @@ use strata_state::{chain_state::Chainstate, id::L2BlockId, state_op::WriteBatchE
 use crate::exec::*;
 
 inst_ops_simple! {
-    (<D: ChainstateDatabase> => ChainstateOps) {
+    (<D: OldChainstateDatabase> => OldChainstateOps) {
         write_genesis_state(toplevel: Chainstate, blockid: L2BlockId) => ();
         put_write_batch(idx: u64, batch: WriteBatchEntry) => ();
         get_write_batch(idx: u64) => Option<WriteBatchEntry>;

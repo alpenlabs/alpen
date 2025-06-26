@@ -17,7 +17,7 @@ use strata_state::{
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
-    chainstate::NewChainstateDatabase,
+    chainstate::ChainstateDatabase,
     entities::bridge_tx_state::BridgeTxState,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbResult,
@@ -31,16 +31,16 @@ pub trait Database {
     type L2DB: L2BlockDatabase + Send + Sync;
     type SyncEventDB: SyncEventDatabase + Send + Sync;
     type ClientStateDB: ClientStateDatabase + Send + Sync;
+    type OldChainstateDB: OldChainstateDatabase + Send + Sync;
     type ChainstateDB: ChainstateDatabase + Send + Sync;
-    type NewChainstateDB: NewChainstateDatabase + Send + Sync;
     type CheckpointDB: CheckpointDatabase + Send + Sync;
 
     fn l1_db(&self) -> &Arc<Self::L1DB>;
     fn l2_db(&self) -> &Arc<Self::L2DB>;
     fn sync_event_db(&self) -> &Arc<Self::SyncEventDB>;
     fn client_state_db(&self) -> &Arc<Self::ClientStateDB>;
+    fn old_chain_state_db(&self) -> &Arc<Self::OldChainstateDB>;
     fn chain_state_db(&self) -> &Arc<Self::ChainstateDB>;
-    fn new_chain_state_db(&self) -> &Arc<Self::NewChainstateDB>;
     fn checkpoint_db(&self) -> &Arc<Self::CheckpointDB>;
 }
 
@@ -184,7 +184,7 @@ pub enum BlockStatus {
 /// For now, the full state is just the "toplevel" state that can always be
 /// expected to be of moderate size in memory.
 // TODO maybe rewrite this around storing write batches according to blkid?
-pub trait ChainstateDatabase {
+pub trait OldChainstateDatabase {
     /// Writes the genesis chainstate at index 0.
     fn write_genesis_state(&self, toplevel: Chainstate, blockid: L2BlockId) -> DbResult<()>;
 

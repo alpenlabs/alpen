@@ -225,7 +225,7 @@ fn spawn_chain_worker(
 
     let context = ChainWorkerCtx::new(
         storage.l2().clone(),
-        storage.new_chainstate().clone(),
+        storage.chainstate().clone(),
         storage.checkpoint().clone(),
         0, // FIXME: Not sure what this is
     );

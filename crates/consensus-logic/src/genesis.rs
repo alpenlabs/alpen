@@ -67,7 +67,7 @@ pub fn init_genesis_chainstate(
 
     let wb = WriteBatch::new(gchstate.clone());
     storage
-        .new_chainstate()
+        .chainstate()
         .put_slot_write_batch_blocking(gid, wb)?;
     storage.l2().put_block_data_blocking(gblock)?;
     storage

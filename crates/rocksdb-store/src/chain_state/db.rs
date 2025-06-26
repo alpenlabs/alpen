@@ -33,7 +33,7 @@ impl ChainstateDb {
     }
 }
 
-impl ChainstateDatabase for ChainstateDb {
+impl OldChainstateDatabase for ChainstateDb {
     fn write_genesis_state(
         &self,
         toplevel: strata_state::chain_state::Chainstate,

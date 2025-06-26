@@ -7,7 +7,7 @@ use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 use crate::exec::*;
 
 inst_ops_simple! {
-    (<D: NewChainstateDatabase> => NewChainstateOps) {
+    (<D: ChainstateDatabase> => ChainstateOps) {
         create_new_inst(toplevel: Chainstate) => StateInstanceId;
         clone_inst(id: StateInstanceId) => StateInstanceId;
         del_inst(id: StateInstanceId) => ();

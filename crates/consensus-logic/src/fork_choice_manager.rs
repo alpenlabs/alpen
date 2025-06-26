@@ -148,7 +148,7 @@ impl ForkChoiceManager {
 
         Ok(self
             .storage
-            .new_chainstate()
+            .chainstate()
             .get_slot_write_batch_blocking(*block.blkid())?
             .map(|wb| Arc::new(wb.into_toplevel())))
     }
@@ -291,7 +291,7 @@ pub fn init_forkchoice_manager(
 
     let latest_tip = storage.l2().get_tip_block_blocking()?;
     let latest_chainstate = storage
-        .new_chainstate()
+        .chainstate()
         .get_slot_write_batch_blocking(latest_tip)?
         .ok_or(DbError::MissingSlotWriteBatch(latest_tip))?
         .into_toplevel();
@@ -323,7 +323,7 @@ pub fn init_forkchoice_manager(
     // Load in that block's chainstate.
     let tip_blkid = *cur_tip_block.blkid();
     let chainstate = storage
-        .new_chainstate()
+        .chainstate()
         .get_slot_write_batch_blocking(tip_blkid)?
         .ok_or(DbError::MissingSlotWriteBatch(tip_blkid))?
         .into_toplevel();
@@ -813,7 +813,7 @@ fn apply_tip_update(
             // Update the tip block in the FCM state.
             let new_chainstate = fcm_state
                 .storage
-                .new_chainstate()
+                .chainstate()
                 .get_slot_write_batch_blocking(new)?
                 .ok_or(DbError::MissingSlotWriteBatch(new))?
                 .into_toplevel();
@@ -884,7 +884,7 @@ fn revert_chainstate_to_block(
     let blkid = *block.blkid();
     let new_state = fcm_state
         .storage
-        .new_chainstate()
+        .chainstate()
         .get_slot_write_batch_blocking(blkid)?
         .ok_or(Error::MissingBlockChainstate(blkid))?
         .into_toplevel();

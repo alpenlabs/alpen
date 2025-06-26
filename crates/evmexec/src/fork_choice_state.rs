@@ -50,7 +50,7 @@ fn get_last_chainstate(storage: &NodeStorage) -> Result<Option<ChainstateEntry>>
     };
 
     Ok(storage
-        .new_chainstate()
+        .chainstate()
         .get_slot_write_batch_blocking(tip_blkid)?
         .map(|wb| ChainstateEntry::new(wb.into_toplevel(), tip_blkid)))
 }
