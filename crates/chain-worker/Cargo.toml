@@ -3,6 +3,9 @@ name = "strata-chain-worker"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
