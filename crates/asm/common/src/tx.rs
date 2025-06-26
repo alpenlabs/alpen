@@ -1,12 +1,12 @@
 use bitcoin::Transaction;
 use strata_l1_txfmt::TagDataRef;
 
-/// A wrapper containing a reference to a Bitcoin `Transaction` together with its
+/// A wrapper containing a reference to a Bitcoin [`Transaction`] together with its
 /// parsed SPS-50 payload.
 ///
 /// This struct bundles:
 /// 1. `tx`: the original Bitcoin transaction containing the SPS-50 tag in its first output, and
-/// 2. `tag`: the extracted `TagDataRef`, representing the subprotocol’s transaction type and any
+/// 2. `tag`: the extracted [`TagDataRef`], representing the subprotocol’s transaction type and any
 ///    auxiliary data.
 #[derive(Debug)]
 pub struct TxInput<'t> {

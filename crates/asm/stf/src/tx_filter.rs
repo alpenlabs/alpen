@@ -5,7 +5,6 @@ use bitcoin::Transaction;
 use strata_asm_common::{SubprotocolId, TxInput};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 
-
 /// Groups only those Bitcoin `Transaction`s tagged with an SPS-50 header,
 /// keyed by their subprotocol type.
 ///
