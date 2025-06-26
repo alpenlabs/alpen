@@ -13,7 +13,7 @@ env:
 permissions: {}
 
 jobs:
-  setup-services-and-run-eest:
+  setup-services-and-run-ef-tests:
     permissions:
       contents: read
       id-token: write
@@ -84,8 +84,9 @@ jobs:
         # Override the genesis hash
         jq '.evm_genesis_block_hash = "37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"' params.json > tmp.json && mv tmp.json params.json
 
-    - name: Build Prover Client image in native mode
+    - name: Build Prover Client image in native mode (releases/0.2.0)
       run: |
+        # TODO(STR-1527): fetch the prover client image (in native mode) from ECR!
         mkdir -p docker/prover-client/elfs
 
         # Build prover
