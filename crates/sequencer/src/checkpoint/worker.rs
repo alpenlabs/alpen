@@ -229,7 +229,7 @@ fn create_checkpoint_prep_data_from_summary(
 ) -> anyhow::Result<CheckpointPrepData> {
     let l1man = storage.l1();
     let l2man = storage.l2();
-    let chsman = storage.new_chainstate();
+    let chsman = storage.chainstate();
 
     let epoch = summary.epoch();
     let is_genesis_epoch = epoch == 0;

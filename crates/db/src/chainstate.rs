@@ -27,7 +27,7 @@ pub type StateInstanceId = u64;
 pub type WriteBatchId = Buf32;
 
 /// New chainstate database trait.
-pub trait NewChainstateDatabase {
+pub trait ChainstateDatabase {
     /// Creates a new empty state instance with a certain toplevel state and
     /// empty bulk state.
     fn create_new_inst(&self, toplevel: Chainstate) -> DbResult<StateInstanceId>;

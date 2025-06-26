@@ -13,13 +13,13 @@ use strata_state::{
     batch::EpochSummary, block::L2BlockBundle, chain_state::Chainstate, prelude::*,
     state_op::WriteBatch,
 };
-use strata_storage::{CheckpointDbManager, L2BlockManager, NewChainstateManager};
+use strata_storage::{ChainstateManager, CheckpointDbManager, L2BlockManager};
 use tracing::*;
 
 #[expect(missing_debug_implementations)]
 pub struct ChainWorkerCtx {
     l2man: Arc<L2BlockManager>,
-    chsman: Arc<NewChainstateManager>,
+    chsman: Arc<ChainstateManager>,
     ckman: Arc<CheckpointDbManager>,
 
     /// Active state instance we build on top of for the current state.
@@ -29,7 +29,7 @@ pub struct ChainWorkerCtx {
 impl ChainWorkerCtx {
     pub fn new(
         l2man: Arc<L2BlockManager>,
-        chsman: Arc<NewChainstateManager>,
+        chsman: Arc<ChainstateManager>,
         ckman: Arc<CheckpointDbManager>,
         active_state_inst: StateInstanceId,
     ) -> Self {

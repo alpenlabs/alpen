@@ -4,7 +4,7 @@
 use std::cmp::min;
 
 use bitcoin::{block::Header, Transaction};
-use strata_db::traits::{ChainstateDatabase, Database, L1Database, L2BlockDatabase};
+use strata_db::traits::{Database, L1Database, L2BlockDatabase, OldChainstateDatabase};
 use strata_primitives::{
     batch::{verify_signed_checkpoint_sig, BatchInfo, Checkpoint},
     l1::{get_btc_params, HeaderVerificationState, L1BlockCommitment, L1BlockId},
@@ -69,7 +69,7 @@ impl EventContext for StorageEventContext<'_> {
 
     fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
         self.storage
-            .new_chainstate()
+            .chainstate()
             .get_slot_write_batch_blocking(*blkid)?
             .map(|wb| wb.into_toplevel())
             .ok_or(Error::MissingBlockChainstate(*blkid))

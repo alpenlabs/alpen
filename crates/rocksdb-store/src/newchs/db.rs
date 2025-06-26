@@ -20,7 +20,7 @@ impl RocksNewChainstateDb {
     }
 }
 
-impl NewChainstateDatabase for RocksNewChainstateDb {
+impl ChainstateDatabase for RocksNewChainstateDb {
     fn create_new_inst(&self, toplevel: Chainstate) -> DbResult<StateInstanceId> {
         let entry = StateInstanceEntry::new(toplevel);
 

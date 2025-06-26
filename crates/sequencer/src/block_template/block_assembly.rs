@@ -33,7 +33,7 @@ use super::error::BlockAssemblyError as Error;
 /// Get the total gas used by EL blocks from start of current epoch till prev_slot
 fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> Result<u64, Error> {
     let chainstate = storage
-        .new_chainstate()
+        .chainstate()
         .get_slot_write_batch_blocking(prev_blkid)?
         .ok_or(Error::Db(DbError::MissingSlotWriteBatch(prev_blkid)))?
         .into_toplevel();
@@ -86,7 +86,7 @@ pub fn prepare_block(
     let prev_slot = prev_block.header().slot();
     debug!(%prev_slot, %prev_blkid, "preparing block");
     let l1man = storage.l1();
-    let chsman = storage.new_chainstate();
+    let chsman = storage.chainstate();
     let ckptman = storage.checkpoint();
 
     let prev_global_sr = *prev_block.header().state_root();

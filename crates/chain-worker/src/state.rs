@@ -5,14 +5,14 @@ use std::sync::Arc;
 use strata_chaintsn::context::StateAccessor;
 use strata_primitives::prelude::*;
 use strata_state::{chain_state::Chainstate, state_op::StateCache};
-use strata_storage::NewChainstateManager;
+use strata_storage::ChainstateManager;
 
 #[allow(missing_debug_implementations)]
 #[allow(dead_code)]
 pub struct WbStateAccessorImpl {
     /// Chainstate manager to fetch "deep" information we might not have in memory.
     // we aren't actually using this yet, but we will when we have accounts
-    chs_man: Arc<NewChainstateManager>,
+    chs_man: Arc<ChainstateManager>,
 
     /// Current toplevel state we can write to at-will.
     // this uses state cache for legacy compatibility reasons, will be replaced

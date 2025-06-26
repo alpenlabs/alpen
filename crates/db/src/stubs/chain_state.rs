@@ -47,7 +47,7 @@ impl StubChainstateDb {
     }
 }
 
-impl ChainstateDatabase for StubChainstateDb {
+impl OldChainstateDatabase for StubChainstateDb {
     fn write_genesis_state(&self, toplevel: Chainstate, _blockid: L2BlockId) -> DbResult<()> {
         let mut st = self.state.lock();
         st.toplevels.insert(0, toplevel.clone());

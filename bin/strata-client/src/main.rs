@@ -285,7 +285,7 @@ fn do_startup_checks(
     };
 
     let last_chain_state = storage
-        .new_chainstate()
+        .chainstate()
         .get_slot_write_batch_blocking(tip_blockid)?
         .ok_or(DbError::MissingSlotWriteBatch(tip_blockid))?
         .into_toplevel();

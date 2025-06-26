@@ -377,7 +377,7 @@ impl StrataApiServer for StrataRpcImpl {
     async fn get_chainstate_raw(&self, blkid: L2BlockId) -> RpcResult<Vec<u8>> {
         let chs = self
             .storage
-            .new_chainstate()
+            .chainstate()
             .get_slot_write_batch_async(blkid)
             .map_err(Error::Db)
             .await?
@@ -397,7 +397,7 @@ impl StrataApiServer for StrataRpcImpl {
 
         let chain_state = self
             .storage
-            .new_chainstate()
+            .chainstate()
             .get_slot_write_batch_async(parent)
             .map_err(Error::Db)
             .await?
@@ -920,7 +920,7 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
     async fn get_chainstate_by_id(&self, blkid: L2BlockId) -> RpcResult<Option<RpcChainState>> {
         let chain_state_res = self
             .storage
-            .new_chainstate()
+            .chainstate()
             .get_slot_write_batch_async(blkid)
             .map_err(Error::Db)
             .await?;
