@@ -7,7 +7,8 @@ use strata_db::{
     chainstate::{NewChainstateDatabase, StateInstanceId, WriteBatchId},
     DbResult,
 };
-use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
+use strata_primitives::buf::Buf32;
+use strata_state::{chain_state::Chainstate, id::L2BlockId, state_op::WriteBatch};
 use threadpool::ThreadPool;
 use tracing::*;
 
@@ -123,6 +124,30 @@ impl NewChainstateManager {
         Ok(())
     }
 
+    /// Puts a new write batch for a slot
+    pub async fn put_slot_write_batch_async(&self, id: L2BlockId, wb: WriteBatch) -> DbResult<()> {
+        let wb_id = conv_blkid_to_slot_wb_id(id);
+        self.put_write_batch_async(wb_id, wb).await
+    }
+
+    /// Puts a new write batch for an epoch
+    pub async fn put_epoch_write_batch_async(&self, id: L2BlockId, wb: WriteBatch) -> DbResult<()> {
+        let wb_id = conv_blkid_to_epoch_terminal_wb_id(id);
+        self.put_write_batch_async(wb_id, wb).await
+    }
+
+    /// Puts a new write batch for a slot
+    pub fn put_slot_write_batch_blocking(&self, id: L2BlockId, wb: WriteBatch) -> DbResult<()> {
+        let wb_id = conv_blkid_to_slot_wb_id(id);
+        self.put_write_batch_blocking(wb_id, wb)
+    }
+
+    /// Puts a new write batch for an epoch
+    pub fn put_epoch_write_batch_blocking(&self, id: L2BlockId, wb: WriteBatch) -> DbResult<()> {
+        let wb_id = conv_blkid_to_epoch_terminal_wb_id(id);
+        self.put_write_batch_blocking(wb_id, wb)
+    }
+
     /// Gets a write batch with some ID.
     pub async fn get_write_batch_async(&self, id: WriteBatchId) -> DbResult<Option<WriteBatch>> {
         self.wb_cache
@@ -134,6 +159,30 @@ impl NewChainstateManager {
     pub fn get_write_batch_blocking(&self, id: WriteBatchId) -> DbResult<Option<WriteBatch>> {
         self.wb_cache
             .get_or_fetch_blocking(&id, || self.ops.get_write_batch_blocking(id))
+    }
+
+    /// Gets a write batch with some ID.
+    pub async fn get_slot_write_batch_async(&self, id: L2BlockId) -> DbResult<Option<WriteBatch>> {
+        let wb_id = conv_blkid_to_slot_wb_id(id);
+        self.get_write_batch_async(wb_id).await
+    }
+
+    /// Gets a write batch with some ID.
+    pub fn get_slot_write_batch_blocking(&self, id: L2BlockId) -> DbResult<Option<WriteBatch>> {
+        let wb_id = conv_blkid_to_slot_wb_id(id);
+        self.get_write_batch_blocking(wb_id)
+    }
+
+    /// Gets a write batch with some ID.
+    pub async fn get_epoch_write_batch_async(&self, id: L2BlockId) -> DbResult<Option<WriteBatch>> {
+        let wb_id = conv_blkid_to_epoch_terminal_wb_id(id);
+        self.get_write_batch_async(wb_id).await
+    }
+
+    /// Gets a write batch with some ID.
+    pub fn get_epoch_write_batch_blocking(&self, id: L2BlockId) -> DbResult<Option<WriteBatch>> {
+        let wb_id = conv_blkid_to_epoch_terminal_wb_id(id);
+        self.get_write_batch_blocking(wb_id)
     }
 
     /// Deletes a write batch with some ID.
@@ -180,4 +229,16 @@ impl NewChainstateManager {
 
         Ok(())
     }
+}
+
+fn conv_blkid_to_slot_wb_id(blkid: L2BlockId) -> WriteBatchId {
+    let mut buf: Buf32 = blkid.into();
+    buf.as_mut_slice()[31] = 0; // last byte to distinguish slot and epoch
+    buf
+}
+
+fn conv_blkid_to_epoch_terminal_wb_id(blkid: L2BlockId) -> WriteBatchId {
+    let mut buf: Buf32 = blkid.into();
+    buf.as_mut_slice()[31] = 1; // last byte to distinguish slot and epoch
+    buf
 }

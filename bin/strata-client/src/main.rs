@@ -21,7 +21,6 @@ use strata_common::{
 };
 use strata_config::Config;
 use strata_consensus_logic::{
-    chain_worker_context::conv_blkid_to_slot_wb_id,
     genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
 };
@@ -285,11 +284,10 @@ fn do_startup_checks(
         err => err?,
     };
 
-    let wb_id = conv_blkid_to_slot_wb_id(tip_blockid);
     let last_chain_state = storage
         .new_chainstate()
-        .get_write_batch_blocking(wb_id)?
-        .ok_or(DbError::MissingWriteBatch(wb_id))?
+        .get_slot_write_batch_blocking(tip_blockid)?
+        .ok_or(DbError::MissingSlotWriteBatch(tip_blockid))?
         .into_toplevel();
 
     // Check that we can connect to bitcoin client and block we believe to be matured in L1 is

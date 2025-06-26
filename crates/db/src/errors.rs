@@ -49,6 +49,12 @@ pub enum DbError {
     #[error("missing write batch (id {0})")]
     MissingWriteBatch(WriteBatchId),
 
+    #[error("missing slot write batch (id {0})")]
+    MissingSlotWriteBatch(L2BlockId),
+
+    #[error("missing epoch write batch (id {0})")]
+    MissingEpochWriteBatch(L2BlockId),
+
     #[error("not yet bootstrapped")]
     NotBootstrapped,
 

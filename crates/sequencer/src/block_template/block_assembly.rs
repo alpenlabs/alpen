@@ -5,9 +5,7 @@ use strata_chaintsn::context::StateAccessor;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_consensus_logic::{
-    chain_worker_context::conv_blkid_to_slot_wb_id, checkpoint_verification,
-};
+use strata_consensus_logic::checkpoint_verification;
 use strata_db::DbError;
 use strata_eectl::{
     engine::{ExecEngineCtl, PayloadStatus},
@@ -34,11 +32,10 @@ use super::error::BlockAssemblyError as Error;
 
 /// Get the total gas used by EL blocks from start of current epoch till prev_slot
 fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> Result<u64, Error> {
-    let wb_id = conv_blkid_to_slot_wb_id(prev_blkid);
     let chainstate = storage
         .new_chainstate()
-        .get_write_batch_blocking(wb_id)?
-        .ok_or(Error::Db(DbError::MissingWriteBatch(wb_id)))?
+        .get_slot_write_batch_blocking(prev_blkid)?
+        .ok_or(Error::Db(DbError::MissingSlotWriteBatch(prev_blkid)))?
         .into_toplevel();
 
     let prev_epoch = chainstate.prev_epoch();
@@ -99,7 +96,7 @@ pub fn prepare_block(
     // case we skip slots
     let prev_blkid = prev_block.header().get_blockid();
     let prev_chstate = chsman
-        .get_write_batch_blocking(conv_blkid_to_slot_wb_id(prev_blkid))?
+        .get_slot_write_batch_blocking(prev_blkid)?
         .ok_or(Error::MissingBlockChainstate(prev_blkid))?
         .into_toplevel();
     let first_block_of_epoch = prev_chstate.is_epoch_finishing();

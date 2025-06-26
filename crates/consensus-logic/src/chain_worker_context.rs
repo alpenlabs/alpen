@@ -95,40 +95,35 @@ impl WorkerContext for ChainWorkerCtx {
         Ok(summaries)
     }
 
+    // Store the write batch from the exec output.
     fn store_block_output(
         &self,
         blkid: &L2BlockId,
         output: &BlockExecutionOutput,
     ) -> WorkerResult<()> {
-        let wbid = conv_blkid_to_slot_wb_id(*blkid);
-
-        // Store the write batch from the exec output.
         self.chsman
-            .put_write_batch_blocking(wbid, output.write_batch().clone())
+            .put_slot_write_batch_blocking(*blkid, output.write_batch().clone())
             .map_err(conv_db_err)?;
 
         Ok(())
     }
 
+    // Store the write batch from the exec output.
     fn store_checkin_output(
         &self,
         epoch: &EpochCommitment,
         output: &CheckinExecutionOutput,
     ) -> WorkerResult<()> {
-        let wbid = conv_blkid_to_epoch_terminal_wb_id(*epoch.last_blkid());
-
-        // Store the write batch from the exec output.
         self.chsman
-            .put_write_batch_blocking(wbid, output.write_batch().clone())
+            .put_epoch_write_batch_blocking(*epoch.last_blkid(), output.write_batch().clone())
             .map_err(conv_db_err)?;
 
         Ok(())
     }
 
     fn fetch_block_write_batch(&self, blkid: &L2BlockId) -> WorkerResult<Option<WriteBatch>> {
-        let wbid = conv_blkid_to_slot_wb_id(*blkid);
         self.chsman
-            .get_write_batch_blocking(wbid)
+            .get_slot_write_batch_blocking(*blkid)
             .map_err(conv_db_err)
     }
 
