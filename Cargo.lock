@@ -13658,7 +13658,6 @@ dependencies = [
  "anyhow",
  "strata-chainexec",
  "strata-chaintsn",
- "strata-common",
  "strata-eectl",
  "strata-primitives",
  "strata-state",
@@ -13673,7 +13672,6 @@ dependencies = [
 name = "strata-chainexec"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "strata-chaintsn",
  "strata-primitives",
  "strata-state",

@@ -12,7 +12,7 @@ use tracing::*;
 /// structurally consistent.
 // TODO remove FCM arg from this
 #[allow(dead_code)]
-pub fn check_new_block(_blkid: &L2BlockId, block: &L2Block, params: &RollupParams) -> bool {
+pub(crate) fn check_new_block(_blkid: &L2BlockId, block: &L2Block, params: &RollupParams) -> bool {
     // If it's not the genesis block, check that the block is correctly signed.
     if block.header().slot() > 0 {
         let cred_ok = check_block_credential(block.header(), params);
