@@ -37,7 +37,7 @@ use tokio::{
 use tracing::*;
 
 use crate::{
-    chain_worker_context::{conv_blkid_to_slot_wb_id, ChainWorkerCtx},
+    chain_worker_context::ChainWorkerCtx,
     csm::{ctl::CsmController, message::ForkChoiceMessage, worker::WorkerState},
     errors::*,
     tip_update::{compute_tip_update, TipUpdate},
@@ -290,11 +290,10 @@ pub fn init_forkchoice_manager(
     // initial checkpoint for the genesis epoch
 
     let latest_tip = storage.l2().get_tip_block_blocking()?;
-    let latest_wb_id = conv_blkid_to_slot_wb_id(latest_tip);
     let latest_chainstate = storage
         .new_chainstate()
-        .get_write_batch_blocking(latest_wb_id)?
-        .ok_or(DbError::MissingWriteBatch(latest_wb_id))?
+        .get_slot_write_batch_blocking(latest_tip)?
+        .ok_or(DbError::MissingSlotWriteBatch(latest_tip))?
         .into_toplevel();
 
     let chainstate_last_epoch = latest_chainstate.prev_epoch();
@@ -322,11 +321,11 @@ pub fn init_forkchoice_manager(
     debug!(?chain_tracker, "init chain tracker");
 
     // Load in that block's chainstate.
-    let wb_id = conv_blkid_to_slot_wb_id(*cur_tip_block.blkid());
+    let tip_blkid = *cur_tip_block.blkid();
     let chainstate = storage
         .new_chainstate()
-        .get_write_batch_blocking(wb_id)?
-        .ok_or(DbError::MissingWriteBatch(wb_id))?
+        .get_slot_write_batch_blocking(tip_blkid)?
+        .ok_or(DbError::MissingSlotWriteBatch(tip_blkid))?
         .into_toplevel();
 
     // Actually assemble the forkchoice manager state.
@@ -812,12 +811,11 @@ fn apply_tip_update(
         // Easy case.
         TipUpdate::ExtendTip(_cur, new) => {
             // Update the tip block in the FCM state.
-            let wb_id = conv_blkid_to_slot_wb_id(new);
             let new_chainstate = fcm_state
                 .storage
                 .new_chainstate()
-                .get_write_batch_blocking(wb_id)?
-                .ok_or(DbError::MissingWriteBatch(wb_id))?
+                .get_slot_write_batch_blocking(new)?
+                .ok_or(DbError::MissingSlotWriteBatch(new))?
                 .into_toplevel();
             fcm_state.update_tip_block(
                 bundle.block().header().get_block_commitment(),

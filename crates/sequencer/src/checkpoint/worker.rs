@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use strata_consensus_logic::chain_worker_context::conv_blkid_to_slot_wb_id;
 use strata_db::{types::CheckpointEntry, DbError};
 use strata_l1tx::filter::types::TxFilterConfig;
 use strata_primitives::{
@@ -273,17 +272,17 @@ fn create_checkpoint_prep_data_from_summary(
 
     // Initial state is the state before applying the first block
     let initial_state_height = first_block.slot() - 1;
-    let initial_state_wb_id = conv_blkid_to_slot_wb_id(*first_block.parent());
+    let initial_state_blkid = *first_block.parent();
     let initial_state = chsman
-        .get_write_batch_blocking(initial_state_wb_id)?
+        .get_slot_write_batch_blocking(initial_state_blkid)?
         .ok_or(Error::MissingIdxChainstate(initial_state_height))?
         .into_toplevel();
     let l2_initial_state = initial_state.compute_state_root();
 
     let final_state_height = last_block.slot();
-    let final_state_wb_id = conv_blkid_to_slot_wb_id(last_block.get_blockid());
+    let final_state_blkid = last_block.get_blockid();
     let final_state = chsman
-        .get_write_batch_blocking(final_state_wb_id)?
+        .get_slot_write_batch_blocking(final_state_blkid)?
         .ok_or(Error::MissingIdxChainstate(final_state_height))?
         .into_toplevel();
     let l2_final_state = final_state.compute_state_root();
