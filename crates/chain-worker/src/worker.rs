@@ -30,6 +30,7 @@ type AccessorImpl = MemStateAccessor;
 ///
 /// Has utility functions for basic tasks.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct WorkerState<W: WorkerContext> {
     /// Shared state between the worker and the handle.
     shared: Arc<Mutex<WorkerShared>>,

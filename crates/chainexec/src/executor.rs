@@ -14,6 +14,7 @@ type StateAccImpl = MemStateAccessor;
 
 /// Mid-level chain executor that handles performing the various manipulations
 /// we have to make.
+#[derive(Debug)]
 pub struct ChainExecutor {
     params: RollupParams,
 }

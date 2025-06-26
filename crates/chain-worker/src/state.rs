@@ -9,7 +9,7 @@ use strata_storage::ChainstateManager;
 
 #[allow(missing_debug_implementations)]
 #[allow(dead_code)]
-pub struct WbStateAccessorImpl {
+pub(crate) struct WbStateAccessorImpl {
     /// Chainstate manager to fetch "deep" information we might not have in memory.
     // we aren't actually using this yet, but we will when we have accounts
     chs_man: Arc<ChainstateManager>,

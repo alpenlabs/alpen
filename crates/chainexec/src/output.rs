@@ -6,7 +6,7 @@ use strata_state::state_op::WriteBatch;
 /// Container for the output of executing an epoch.
 ///
 /// This is relevant for OL->ASM signalling.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EpochExecutionOutput {
     /// The final state after applying the L1 check-in.
     final_state_root: Buf32,
@@ -49,7 +49,7 @@ impl EpochExecutionOutput {
 }
 
 /// Describes the output of executing a block.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BlockExecutionOutput {
     /// State root as computed by the STF.
     computed_state_root: Buf32,
@@ -95,7 +95,7 @@ impl BlockExecutionOutput {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CheckinExecutionOutput {
     computed_state_root: Buf32,
     logs: Vec<LogMessage>,
@@ -129,7 +129,7 @@ impl CheckinExecutionOutput {
 /// This is used for OL->ASM messaging.
 ///
 /// Payload SHOULD conform to SPS-msg-fmt.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LogMessage {
     payload: Vec<u8>,
 }

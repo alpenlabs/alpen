@@ -14,6 +14,7 @@ use strata_state::{
 };
 
 /// Accessor for state in memory.
+#[derive(Debug)]
 pub struct MemStateAccessor {
     state_cache: StateCache,
 }
