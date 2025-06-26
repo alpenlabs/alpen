@@ -138,8 +138,9 @@ class StrataWaiter(BaseWaiter):
         """
         Waits until strata chain tip exceeds the given height.
         """
-        self.wait_until(
-            lambda: self.rpc.strata_clientStatus()["chain_tip_slot"] > height,
+        return self.wait_until_with_value(
+            lambda: self.rpc.strata_syncStatus(),
+            lambda stat: stat["tip_height"] > height,
             error_with=msg or "Timeout: expected number of blocks are not being created",
             timeout=timeout or self.timeout,
         )
