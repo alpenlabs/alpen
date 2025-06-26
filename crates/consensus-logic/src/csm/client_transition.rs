@@ -30,7 +30,7 @@ pub trait EventContext {
     fn get_l1_block_manifest(&self, blockid: &L1BlockId) -> Result<L1BlockManifest, Error>;
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error>;
     fn get_l2_block_data(&self, blockid: &L2BlockId) -> Result<L2BlockBundle, Error>;
-    fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error>;
+    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error>;
 }
 
 /// Event context using the main node storage interfaace.
@@ -67,12 +67,12 @@ impl EventContext for StorageEventContext<'_> {
             .ok_or(Error::MissingL2Block(*blkid))
     }
 
-    fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error> {
+    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
         self.storage
-            .chainstate()
-            .get_toplevel_chainstate_blocking(slot)?
-            .map(Into::into)
-            .ok_or(Error::MissingIdxChainstate(slot))
+            .new_chainstate()
+            .get_slot_write_batch_blocking(*blkid)?
+            .map(|wb| wb.into_toplevel())
+            .ok_or(Error::MissingBlockChainstate(*blkid))
     }
 }
 
@@ -344,8 +344,8 @@ mod tests {
             Err(Error::MissingL2Block(*blkid))
         }
 
-        fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error> {
-            Err(Error::MissingIdxChainstate(slot))
+        fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
+            Err(Error::MissingBlockChainstate(*blkid))
         }
     }
 

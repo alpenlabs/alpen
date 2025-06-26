@@ -63,11 +63,6 @@ pub fn init_genesis_chainstate(
     let (gblock, gchstate) = make_l2_genesis(params, pregenesis_mfs);
 
     // Now insert things into the database.
-    // TODO: avoid duplication
-    storage
-        .chainstate()
-        .write_genesis_state(gchstate.clone(), gblock.header().get_blockid())?;
-
     let gid = gblock.header().get_blockid();
 
     let wb = WriteBatch::new(gchstate.clone());
