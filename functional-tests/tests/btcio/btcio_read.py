@@ -27,7 +27,7 @@ class L1StatusTest(testenv.StrataTestBase):
         seq_waiter = self.create_strata_waiter(seqrpc)
 
         # Wait for seq
-        seq_waiter.wait_for_genesis(message="Timetout: waiting for genesis")
+        seq_waiter.wait_until_genesis(message="Timetout: waiting for genesis")
 
         received_block = btcrpc.getblock(btcrpc.proxy.getbestblockhash())
         l1stat = seq_waiter.wait_until_l1_height_at(received_block["height"])

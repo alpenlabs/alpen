@@ -26,7 +26,7 @@ class ProverClientTest(testenv.StrataTestBase):
         prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
 
         # Wait until the prover client reports readiness
-        prover_waiter.wait_for_prover_ready()
+        prover_waiter.wait_until_prover_ready()
 
         # Dispatch the prover task
         start_block_id = cl_slot_to_block_id(seqrpc, CL_PROVER_PARAMS["start_block"])

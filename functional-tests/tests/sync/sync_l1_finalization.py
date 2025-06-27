@@ -44,7 +44,7 @@ class BlockFinalizationTest(testenv.StrataTestBase):
         # Wait for prover
         # TODO What is this check for?
         prover_waiter = self.create_prover_waiter(prover_rpc, timeout=30, interval=2)
-        prover_waiter.wait_for_prover_ready()
+        prover_waiter.wait_until_prover_ready()
 
         check_submit_proof_fails_for_nonexistent_batch(seqrpc, 100)
 

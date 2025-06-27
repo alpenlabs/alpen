@@ -18,7 +18,7 @@ class SyncGenesisTest(testenv.StrataTestBase):
         seqrpc = seq.create_rpc()
         seq_waiter = self.create_strata_waiter(seqrpc)
 
-        seq_waiter.wait_for_genesis()
+        seq_waiter.wait_until_genesis()
 
         # Make sure we're making progress.
         logging.info("observed genesis, checking that we're still making progress...")

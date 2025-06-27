@@ -1,18 +1,31 @@
-from abc import ABC
-from dataclasses import dataclass
 import logging
-from typing import TypeVar
+from dataclasses import dataclass
+from typing import Generic, TypeVar
 
 from utils.utils import wait_until, wait_until_with_value
 
 T = TypeVar("T")
 
+
 @dataclass
-class BaseWaiter[T]:
+class BaseWaiter(Generic[T]):
     inner: T
     logger: logging.Logger
     timeout: int = 10
     interval: float = 0.5
 
-    wait_until = staticmethod(wait_until)
-    wait_until_with_value = staticmethod(wait_until_with_value)
+    def _wait_until(self, *args, timeout=None, step=None, **kwargs):
+        return wait_until(
+            *args,
+            timeout=timeout or self.timeout,
+            step=step or self.interval,
+            **kwargs,
+        )
+
+    def _wait_until_with_value(self, *args, timeout=None, step=None, **kwargs):
+        return wait_until_with_value(
+            *args,
+            timeout=timeout or self.timeout,
+            step=step or self.interval,
+            **kwargs,
+        )

@@ -1,5 +1,4 @@
-from dataclasses import dataclass, field
-from logging import Logger
+from dataclasses import dataclass
 from typing import Any
 
 from factory.seqrpc import RpcError
@@ -7,12 +6,12 @@ from utils.wait.base import BaseWaiter
 
 
 @dataclass
-class StrataWaiter(BaseWaiter):
+class StrataWaiter(BaseWaiter[Any]):
     """
     Wrapper for encapsulating and waiting strata related rpcs
     """
 
-    def wait_for_genesis(self, message: str | None = None):
+    def wait_until_genesis(self, message: str | None = None):
         """
         Waits until we see genesis. That is to say, that `strata_syncStatus`
         returns a sensible result.
@@ -36,7 +35,7 @@ class StrataWaiter(BaseWaiter):
                 else:
                     raise e
 
-        self.wait_until(_check_genesis, timeout=self.timeout, step=self.interval, error_with=msg)
+        self._wait_until(_check_genesis, timeout=self.timeout, step=self.interval, error_with=msg)
 
     def wait_until_chain_epoch(
         self,
@@ -62,21 +61,23 @@ class StrataWaiter(BaseWaiter):
                 self.logger.info(
                     f"now at epoch {epoch}, slot {comm['last_slot']}, blkid {comm['last_blkid']}"
                 )
-                return self.inner.strata_getEpochSummary(epoch, comm["last_slot"], comm["last_blkid"])
+                return self.inner.strata_getEpochSummary(
+                    epoch,
+                    comm["last_slot"],
+                    comm["last_blkid"],
+                )
             return None
 
         def _check(v):
             return v is not None
 
-        timeout = timeout or self.timeout
-        step = interval or self.interval
         msg = message or "Timeout: waiting for chain epoch"
 
-        return self.wait_until_with_value(
+        return self._wait_until_with_value(
             _query,
             _check,
             timeout=timeout,
-            step=step,
+            step=interval,
             error_with=msg,
         )
 
@@ -98,12 +99,14 @@ class StrataWaiter(BaseWaiter):
         def _check(epoch):
             return epoch > init_epoch
 
-        timeout = timeout or self.timeout
-        step = interval or self.interval
         error_with = message or "Timeout waiting for next epoch"
 
-        return self.wait_until_with_value(
-            _query, _check, timeout=timeout, step=step, error_with=error_with
+        return self._wait_until_with_value(
+            _query,
+            _check,
+            timeout=timeout,
+            step=interval,
+            error_with=error_with,
         )
 
     def wait_until_epoch_confirmed(
@@ -127,11 +130,9 @@ class StrataWaiter(BaseWaiter):
                 return False
             return conf_epoch["epoch"] >= epoch
 
-        timeout = timeout or self.timeout
-        step = interval or self.interval
         error_with = message or f"Timeout waiting for epoch {epoch} to be confirmed"
 
-        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self._wait_until(_check, timeout=timeout, step=interval, error_with=error_with)
 
     def wait_until_chain_tip_exceeds(
         self, height: int, timeout: int | None = None, msg: str | None = None
@@ -139,11 +140,11 @@ class StrataWaiter(BaseWaiter):
         """
         Waits until strata chain tip exceeds the given height.
         """
-        return self.wait_until_with_value(
+        return self._wait_until_with_value(
             lambda: self.inner.strata_syncStatus(),
             lambda stat: stat["tip_height"] > height,
             error_with=msg or "Timeout: expected number of blocks are not being created",
-            timeout=timeout or self.timeout,
+            timeout=timeout,
         )
 
     def wait_until_epoch_finalized(
@@ -167,11 +168,14 @@ class StrataWaiter(BaseWaiter):
                 return False
             return fin_epoch["epoch"] >= epoch
 
-        timeout = timeout or self.timeout
-        step = interval or self.interval
         error_with = message or f"Timeout waiting for epoch {epoch} to be finalized"
 
-        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self._wait_until(
+            _check,
+            timeout=timeout,
+            step=interval,
+            error_with=error_with,
+        )
 
     def wait_until_client_ready(
         self, timeout: int | None = None, interval: float | None = None, message: str | None = None
@@ -179,11 +183,9 @@ class StrataWaiter(BaseWaiter):
         """
         Waits until the strata client is ready to serve rpc
         """
-        timeout = timeout or self.timeout
-        interval = interval or self.interval
         message = message or "Strata client did not start on time"
 
-        self.wait_until(
+        self._wait_until(
             lambda: self.inner.strata_protocolVersion() is not None,
             error_with=message,
             timeout=timeout,
@@ -211,11 +213,14 @@ class StrataWaiter(BaseWaiter):
                 return False
             return of_epoch["epoch"] >= epoch
 
-        timeout = timeout or self.timeout
-        step = interval or self.interval
         error_with = message or f"Timeout waiting for epoch {epoch} to be observed as final"
 
-        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self._wait_until(
+            _check,
+            timeout=timeout,
+            step=interval,
+            error_with=error_with,
+        )
 
     def wait_until_l1_observed(
         self,
@@ -238,11 +243,9 @@ class StrataWaiter(BaseWaiter):
             )
             return view_l1 >= height
 
-        timeout = timeout or self.timeout
-        step = interval or self.interval
         error_with = message or f"Timeout waiting for L1 height {height} to be observed"
 
-        self.wait_until(_check, timeout=timeout, step=step, error_with=error_with)
+        self._wait_until(_check, timeout=timeout, step=interval, error_with=error_with)
 
     def wait_until_l1_height_at(
         self,
@@ -256,11 +259,9 @@ class StrataWaiter(BaseWaiter):
 
         Returns the latest L1Status.
         """
-        timeout = timeout or self.timeout
-        interval = interval or self.interval
         message = message or "L1 reader did not catch up with bitcoin network"
 
-        return self.wait_until_with_value(
+        return self._wait_until_with_value(
             lambda: self.inner.strata_l1status(),
             lambda value: value["cur_height"] >= height,
             error_with=message,
@@ -278,11 +279,9 @@ class StrataWaiter(BaseWaiter):
         """
         Waits until recent block headers are available at given height.
         """
-        timeout = timeout or 2  # Short timeout as per original function
-        interval = interval or self.interval
         message = message or "Blocks not generated"
 
-        return self.wait_until_with_value(
+        return self._wait_until_with_value(
             lambda: self.inner.strata_getRecentBlockHeaders(height),
             lambda value: value is not None,
             error_with=message,
@@ -323,8 +322,8 @@ class StrataWaiter(BaseWaiter):
         return h
 
     def wait_until_latest_checkpoint_at(self, idx: int, timeout: int | None = None):
-        self.wait_until(
+        self._wait_until(
             lambda: self.inner.strata_getLatestCheckpointIndex(None) >= idx,
-            timeout=timeout or self.timeout,
+            timeout=timeout,
             error_with=f"Timeout: Checkpoint index did not increment to expected value({idx})",
         )

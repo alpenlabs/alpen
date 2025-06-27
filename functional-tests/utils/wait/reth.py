@@ -1,17 +1,18 @@
 from dataclasses import dataclass
+from typing import Any
 
 from utils.wait.base import BaseWaiter
 
 
 @dataclass
-class RethWaiter(BaseWaiter):
+class RethWaiter(BaseWaiter[Any]):
     """
     Wrapper for encapsulating and waiting reth related rpcs
     """
 
     def wait_until_eth_block_exceeds(self, height, message: str | None = None):
-        message = message or  f"Timeout: waiting for block at height {height}"
-        return self.wait_until_with_value(
+        message = message or f"Timeout: waiting for block at height {height}"
+        return self._wait_until_with_value(
             lambda: int(self.inner.eth_blockNumber(), 16),
             lambda value: value > height,
             error_with=message,
@@ -23,7 +24,7 @@ class RethWaiter(BaseWaiter):
         """
         Waits until eth block number reaches at least the specified height.
         """
-        return self.wait_until_with_value(
+        return self._wait_until_with_value(
             lambda: int(self.inner.eth_blockNumber(), 16),
             lambda value: value >= height,
             error_with=message or f"Timeout: waiting for block height {height}",
@@ -38,7 +39,7 @@ class RethWaiter(BaseWaiter):
         return int(self.inner.eth_blockNumber(), 16)
 
     def wait_until_state_diff_at_blockhash(self, blockhash, timeout: None | int = None):
-        return self.wait_until_with_value(
+        return self._wait_until_with_value(
             lambda: self.inner.strataee_getBlockStateDiff(blockhash),
             lambda value: value is not None,
             error_with="Finding non empty statediff for blockhash {blockhash} timed out",
@@ -46,7 +47,7 @@ class RethWaiter(BaseWaiter):
         )
 
     def wait_until_block_witness_at_blockhash(self, blockhash, timeout: None | int = None):
-        return self.wait_until_with_value(
+        return self._wait_until_with_value(
             # TODO: parameterize True
             lambda: self.inner.strataee_getBlockWitness(blockhash, True),
             lambda value: value is not None,

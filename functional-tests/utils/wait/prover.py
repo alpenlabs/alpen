@@ -1,11 +1,12 @@
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from utils.wait.base import BaseWaiter
 
 
 @dataclass
-class ProverWaiter(BaseWaiter):
+class ProverWaiter(BaseWaiter[Any]):
     """
     Wrapper for encapsulating and waiting prover related operations
     """
@@ -51,7 +52,7 @@ class ProverWaiter(BaseWaiter):
 
             time.sleep(self.interval)
 
-    def wait_for_prover_ready(self, timeout: int | None = None):
+    def wait_until_prover_ready(self, timeout: int | None = None):
         """
         Waits until the prover client reports readiness.
 
@@ -60,7 +61,7 @@ class ProverWaiter(BaseWaiter):
         """
 
         timeout = timeout or self.timeout
-        self.wait_until(
+        self._wait_until(
             lambda: self.inner.dev_strata_getReport() is not None,
             error_with="Prover did not start on time",
             timeout=timeout,

@@ -20,7 +20,7 @@ class ProverClientTest(testenv.StrataTestBase):
 
         # Wait until the prover client reports readiness
         prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=60, interval=2)
-        prover_waiter.wait_for_prover_ready()
+        prover_waiter.wait_until_prover_ready()
 
         # Dispatch the prover task
         block_height = 1

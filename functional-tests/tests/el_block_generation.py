@@ -18,7 +18,7 @@ class ElBlockGenerationTest(testenv.StrataTestBase):
         reth_waiter = self.create_reth_waiter(rethrpc)
         seq_waiter = self.create_strata_waiter(seqrpc)
 
-        seq_waiter.wait_for_genesis()
+        seq_waiter.wait_until_genesis()
 
         last_blocknum = int(rethrpc.eth_blockNumber(), 16)
         logging.info(f"initial EL blocknum is {last_blocknum}")

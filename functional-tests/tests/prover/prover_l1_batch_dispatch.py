@@ -23,7 +23,7 @@ class ProverClientTest(testenv.StrataTestBase):
         btcrpc: BitcoindClient = btc.create_rpc()
         prover_client_rpc = prover_client.create_rpc()
         prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
-        prover_waiter.wait_for_prover_ready()
+        prover_waiter.wait_until_prover_ready()
 
         start_block_height = L1_PROVER_PARAMS["START_BLOCK_HEIGHT"]
         start_block_hash = bytes_to_big_endian(btcrpc.proxy.getblockhash(start_block_height))

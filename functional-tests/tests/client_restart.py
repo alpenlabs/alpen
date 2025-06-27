@@ -26,11 +26,11 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
         prover_rpc = prover.create_rpc()
         strata_waiter = self.create_strata_waiter(seqrpc)
 
-        strata_waiter.wait_for_genesis()
+        strata_waiter.wait_until_genesis()
 
         # Wait for prover
         prover_waiter = ProverWaiter(prover_rpc, self.logger, timeout=30, interval=2)
-        prover_waiter.wait_for_prover_ready()
+        prover_waiter.wait_until_prover_ready()
 
         check_submit_proof_fails_for_nonexistent_batch(seqrpc, 100)
 

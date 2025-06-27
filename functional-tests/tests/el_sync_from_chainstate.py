@@ -41,11 +41,10 @@ class ELSyncFromChainstateTest(testenv.StrataTestBase):
         seqrpc = seq.create_rpc()
         rethrpc = reth.create_rpc()
 
-        block_wait_msg = "Timeout: waiting for reth blocks"
-        reth_waiter = self.create_reth_waiter(rethrpc, message=block_wait_msg)
+        reth_waiter = self.create_reth_waiter(rethrpc)
         seq_waiter = self.create_strata_waiter(seqrpc)
 
-        seq_waiter.wait_for_genesis()
+        seq_waiter.wait_until_genesis()
 
         # workaround for issue restarting reth with no transactions
         for _ in range(3):
