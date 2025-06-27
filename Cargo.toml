@@ -50,6 +50,7 @@ members = [
   # binaries listed separately
   "bin/datatool",
   "bin/alpen-cli",
+  "bin/alpen-dbtool",
   "bin/strata-client",
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
@@ -245,7 +246,7 @@ borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.6.0"
 cfg-if = "1.0.0"
 chrono = "0.4.38"
-clap = "4"
+clap = { version = "4.5", features = ["derive", "wrap_help", "cargo", "color"] }
 deadpool = "0.12.1"
 digest = "0.10"
 ethnum = "1.5.0"
