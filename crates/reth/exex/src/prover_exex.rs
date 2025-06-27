@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Instant};
 
 use alloy_consensus::{BlockHeader, Header};
 use alloy_primitives::map::foldhash::{HashMap, HashMapExt};
@@ -13,9 +13,9 @@ use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
 use reth_provider::{BlockReader, Chain, ExecutionOutcome, StateProvider, StateProviderFactory};
 use reth_revm::{db::CacheDB, primitives::FixedBytes};
-use reth_trie::{HashedPostState, TrieInput};
+use reth_trie::{HashedPostState, MultiProofTargets, TrieInput};
 use reth_trie_common::KeccakKeyHasher;
-use revm_primitives::alloy_primitives::B256;
+use revm_primitives::{alloy_primitives::B256, keccak256, map::B256Set};
 use rsp_mpt::EthereumState;
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 use tracing::{debug, error};
@@ -32,6 +32,7 @@ pub struct ProverWitnessGenerator<
 > {
     ctx: ExExContext<Node>,
     db: Arc<S>,
+    counter: u64,
 }
 
 impl<
@@ -40,10 +41,17 @@ impl<
     > ProverWitnessGenerator<Node, S>
 {
     pub fn new(ctx: ExExContext<Node>, db: Arc<S>) -> Self {
-        Self { ctx, db }
+        Self {
+            ctx,
+            db,
+            counter: 0,
+        }
     }
 
     fn commit(&mut self, chain: &Chain) -> eyre::Result<Option<BlockNumHash>> {
+        self.counter += 1;
+        let start = Instant::now();
+
         let mut finished_height = None;
         let blocks = chain.blocks();
         let bundles = chain.range().filter_map(|block_number| {
@@ -56,7 +64,6 @@ impl<
         for (block_hash, outcome) in bundles {
             #[cfg(debug_assertions)]
             assert!(outcome.len() == 1, "should only contain single block");
-
             let prover_input = extract_zkvm_input(block_hash, &self.ctx, &outcome)?;
 
             // TODO: maybe put db writes in another thread
@@ -67,6 +74,12 @@ impl<
 
             finished_height = Some(BlockNumHash::new(outcome.first_block(), block_hash))
         }
+
+        debug!(
+            "azaza total timing={:?}, height={:?}",
+            start.elapsed(),
+            &self.counter
+        );
 
         Ok(finished_height)
     }
@@ -148,8 +161,32 @@ fn derive_parent_state<P>(
 where
     P: StateProvider,
 {
-    let mut before_proofs = HashMap::new();
-    let mut after_proofs = HashMap::new();
+    let mut before_proofs = HashMap::with_capacity(accessed_states.accessed_accounts().len());
+    let mut after_proofs = HashMap::with_capacity(accessed_states.accessed_accounts().len());
+
+    let multi_proof_targets =
+        MultiProofTargets::from_iter(accessed_states.accessed_accounts().iter().map(
+            |(addr, slots)| {
+                (
+                    keccak256(addr),
+                    B256Set::from_iter(
+                        slots
+                            .iter()
+                            .map(|slot| B256::from_slice(&slot.to_be_bytes::<32>())),
+                    ),
+                )
+            },
+        ));
+
+    let multi_proof_before = provider.multiproof(
+        TrieInput::from_state(HashedPostState::from_bundle_state::<KeccakKeyHasher>([])),
+        multi_proof_targets.clone(),
+    )?;
+
+    let multi_proof_after = provider.multiproof(
+        TrieInput::from_state(exec_outcome.hash_state_slow::<KeccakKeyHasher>()),
+        multi_proof_targets,
+    )?;
 
     // Iterate through accessed accounts
     for (address, slots) in accessed_states.accessed_accounts().iter() {
@@ -159,17 +196,9 @@ where
             .map(|slot| B256::from_slice(&slot.to_be_bytes::<32>()))
             .collect::<Vec<_>>();
 
-        // Get proof before execution
-        let root_before = HashedPostState::from_bundle_state::<KeccakKeyHasher>([]);
-        let proof_before = provider.proof(TrieInput::from_state(root_before), *address, &keys)?;
-
-        // Get proof after execution
-        let root_after = exec_outcome.hash_state_slow::<KeccakKeyHasher>();
-        let proof_after = provider.proof(TrieInput::from_state(root_after), *address, &keys)?;
-
         // Store proofs in the maps
-        before_proofs.insert(*address, proof_before);
-        after_proofs.insert(*address, proof_after);
+        before_proofs.insert(*address, multi_proof_before.account_proof(*address, &keys)?);
+        after_proofs.insert(*address, multi_proof_after.account_proof(*address, &keys)?);
     }
 
     let parent_state =
