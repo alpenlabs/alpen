@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from logging import Logger
 from typing import Any
 
 from factory.seqrpc import RpcError
@@ -22,7 +23,7 @@ class StrataWaiter(BaseWaiter):
         def _check_genesis():
             try:
                 # This should raise if we're before genesis.
-                ss = self.rpc.strata_syncStatus()
+                ss = self.inner.strata_syncStatus()
                 self.logger.info(
                     f"after genesis, tip is slot {ss['tip_height']} blkid {ss['tip_block_id']}"
                 )
@@ -53,15 +54,15 @@ class StrataWaiter(BaseWaiter):
         self.logger.info(f"waiting for epoch {epoch}")
 
         def _query():
-            status = self.rpc.strata_syncStatus()
+            status = self.inner.strata_syncStatus()
             self.logger.debug(f"checked status {status}")
-            commitments = self.rpc.strata_getEpochCommitments(epoch)
+            commitments = self.inner.strata_getEpochCommitments(epoch)
             if len(commitments) > 0:
                 comm = commitments[0]
                 self.logger.info(
                     f"now at epoch {epoch}, slot {comm['last_slot']}, blkid {comm['last_blkid']}"
                 )
-                return self.rpc.strata_getEpochSummary(epoch, comm["last_slot"], comm["last_blkid"])
+                return self.inner.strata_getEpochSummary(epoch, comm["last_slot"], comm["last_blkid"])
             return None
 
         def _check(v):
@@ -87,10 +88,10 @@ class StrataWaiter(BaseWaiter):
 
         Returns the new epoch number.
         """
-        init_epoch = self.rpc.strata_syncStatus()["cur_epoch"]
+        init_epoch = self.inner.strata_syncStatus()["cur_epoch"]
 
         def _query():
-            ss = self.rpc.strata_syncStatus()
+            ss = self.inner.strata_syncStatus()
             self.logger.info(f"waiting for next epoch, ss {ss}")
             return ss["cur_epoch"]
 
@@ -118,7 +119,7 @@ class StrataWaiter(BaseWaiter):
         """
 
         def _check():
-            cs = self.rpc.strata_clientStatus()
+            cs = self.inner.strata_clientStatus()
             l1_height = cs["tip_l1_block"]["height"]
             conf_epoch = cs["confirmed_epoch"]
             self.logger.info(f"confirmed epoch as of {l1_height}: {conf_epoch}")
@@ -139,7 +140,7 @@ class StrataWaiter(BaseWaiter):
         Waits until strata chain tip exceeds the given height.
         """
         return self.wait_until_with_value(
-            lambda: self.rpc.strata_syncStatus(),
+            lambda: self.inner.strata_syncStatus(),
             lambda stat: stat["tip_height"] > height,
             error_with=msg or "Timeout: expected number of blocks are not being created",
             timeout=timeout or self.timeout,
@@ -158,7 +159,7 @@ class StrataWaiter(BaseWaiter):
         """
 
         def _check():
-            cs = self.rpc.strata_clientStatus()
+            cs = self.inner.strata_clientStatus()
             l1_height = cs["tip_l1_block"]["height"]
             fin_epoch = cs["finalized_epoch"]
             self.logger.info(f"finalized epoch as of {l1_height}: {fin_epoch}")
@@ -183,7 +184,7 @@ class StrataWaiter(BaseWaiter):
         message = message or "Strata client did not start on time"
 
         self.wait_until(
-            lambda: self.rpc.strata_protocolVersion() is not None,
+            lambda: self.inner.strata_protocolVersion() is not None,
             error_with=message,
             timeout=timeout,
             step=interval,
@@ -202,7 +203,7 @@ class StrataWaiter(BaseWaiter):
         """
 
         def _check():
-            ss = self.rpc.strata_syncStatus()
+            ss = self.inner.strata_syncStatus()
             slot = ss["tip_height"]  # TODO rename to tip_slot
             of_epoch = ss["observed_finalized_epoch"]
             self.logger.info(f"observed final epoch as of L2 slot {slot}: {of_epoch}")
@@ -228,7 +229,7 @@ class StrataWaiter(BaseWaiter):
         """
 
         def _check():
-            ss = self.rpc.strata_syncStatus()
+            ss = self.inner.strata_syncStatus()
             slot = ss["tip_height"]  # TODO rename to slot
             epoch = ss["cur_epoch"]
             view_l1 = ss["safe_l1_block"]["height"]
@@ -260,7 +261,7 @@ class StrataWaiter(BaseWaiter):
         message = message or "L1 reader did not catch up with bitcoin network"
 
         return self.wait_until_with_value(
-            lambda: self.rpc.strata_l1status(),
+            lambda: self.inner.strata_l1status(),
             lambda value: value["cur_height"] >= height,
             error_with=message,
             timeout=timeout,
@@ -282,7 +283,7 @@ class StrataWaiter(BaseWaiter):
         message = message or "Blocks not generated"
 
         return self.wait_until_with_value(
-            lambda: self.rpc.strata_getRecentBlockHeaders(height),
+            lambda: self.inner.strata_getRecentBlockHeaders(height),
             lambda value: value is not None,
             error_with=message,
             timeout=timeout,
@@ -295,7 +296,7 @@ class StrataWaiter(BaseWaiter):
         """
         Waits until the CSM's current L1 tip block height has been observed by the OL.
         """
-        init_cs = self.rpc.strata_clientStatus()
+        init_cs = self.inner.strata_clientStatus()
         init_l1_height = init_cs["tip_l1_block"]["height"]
         self.logger.info(f"target L1 height from CSM is {init_l1_height}")
         self.wait_until_l1_observed(
@@ -323,7 +324,7 @@ class StrataWaiter(BaseWaiter):
 
     def wait_until_latest_checkpoint_at(self, idx: int, timeout: int | None = None):
         self.wait_until(
-            lambda: self.rpc.strata_getLatestCheckpointIndex(None) >= idx,
+            lambda: self.inner.strata_getLatestCheckpointIndex(None) >= idx,
             timeout=timeout or self.timeout,
             error_with=f"Timeout: Checkpoint index did not increment to expected value({idx})",
         )

@@ -1,18 +1,18 @@
 from abc import ABC
 from dataclasses import dataclass
-from logging import Logger
-from typing import Any
+import logging
+from typing import TypeVar
 
 from utils.utils import wait_until, wait_until_with_value
 
+T = TypeVar("T")
 
 @dataclass
-class BaseWaiter(ABC):
-    rpc: Any
-    logger: Logger
+class BaseWaiter[T]:
+    inner: T
+    logger: logging.Logger
     timeout: int = 10
     interval: float = 0.5
 
-    def __post_init__(self):
-        self.wait_until = wait_until
-        self.wait_until_with_value = wait_until_with_value
+    wait_until = staticmethod(wait_until)
+    wait_until_with_value = staticmethod(wait_until_with_value)

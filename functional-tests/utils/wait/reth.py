@@ -9,13 +9,12 @@ class RethWaiter(BaseWaiter):
     Wrapper for encapsulating and waiting reth related rpcs
     """
 
-    message: str = "Timeout: waiting for blocks"
-
     def wait_until_eth_block_exceeds(self, height, message: str | None = None):
+        message = message or  f"Timeout: waiting for block at height {height}"
         return self.wait_until_with_value(
-            lambda: int(self.rpc.eth_blockNumber(), 16),
+            lambda: int(self.inner.eth_blockNumber(), 16),
             lambda value: value > height,
-            error_with=message or self.message,
+            error_with=message,
             timeout=self.timeout,
             step=self.interval,
         )
@@ -25,7 +24,7 @@ class RethWaiter(BaseWaiter):
         Waits until eth block number reaches at least the specified height.
         """
         return self.wait_until_with_value(
-            lambda: int(self.rpc.eth_blockNumber(), 16),
+            lambda: int(self.inner.eth_blockNumber(), 16),
             lambda value: value >= height,
             error_with=message or f"Timeout: waiting for block height {height}",
             timeout=self.timeout,
@@ -36,11 +35,11 @@ class RethWaiter(BaseWaiter):
         """
         Get the current block number from reth RPC.
         """
-        return int(self.rpc.eth_blockNumber(), 16)
+        return int(self.inner.eth_blockNumber(), 16)
 
     def wait_until_state_diff_at_blockhash(self, blockhash, timeout: None | int = None):
         return self.wait_until_with_value(
-            lambda: self.rpc.strataee_getBlockStateDiff(blockhash),
+            lambda: self.inner.strataee_getBlockStateDiff(blockhash),
             lambda value: value is not None,
             error_with="Finding non empty statediff for blockhash {blockhash} timed out",
             timeout=timeout or self.timeout,
@@ -49,7 +48,7 @@ class RethWaiter(BaseWaiter):
     def wait_until_block_witness_at_blockhash(self, blockhash, timeout: None | int = None):
         return self.wait_until_with_value(
             # TODO: parameterize True
-            lambda: self.rpc.strataee_getBlockWitness(blockhash, True),
+            lambda: self.inner.strataee_getBlockWitness(blockhash, True),
             lambda value: value is not None,
             error_with="Finding non empty witness for blockhash {blockhash} timed out",
             timeout=timeout or self.timeout,

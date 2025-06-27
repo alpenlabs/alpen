@@ -10,8 +10,6 @@ class ProverWaiter(BaseWaiter):
     Wrapper for encapsulating and waiting prover related operations
     """
 
-    message: str = "Timeout: waiting for proof completion"
-
     def wait_for_proof_completion(self, task_id: str, timeout: int | None = None) -> bool:
         """
         Waits for a proof task to complete/fail within a specified timeout period.
@@ -36,7 +34,7 @@ class ProverWaiter(BaseWaiter):
 
         while True:
             # Fetch the proof status
-            proof_status = self.rpc.dev_strata_getTaskStatus(task_id)
+            proof_status = self.inner.dev_strata_getTaskStatus(task_id)
             assert proof_status is not None
             self.logger.info(f"Got the proof status {proof_status}")
 
@@ -63,7 +61,7 @@ class ProverWaiter(BaseWaiter):
 
         timeout = timeout or self.timeout
         self.wait_until(
-            lambda: self.rpc.dev_strata_getReport() is not None,
+            lambda: self.inner.dev_strata_getReport() is not None,
             error_with="Prover did not start on time",
             timeout=timeout,
             step=self.interval,
