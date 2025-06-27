@@ -106,6 +106,7 @@ jobs:
               --build-arg PROVER_FEATURES="sp1" \
               -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}" \
               -f "${DOCKERFILE_PATH}" .
+            # TODO(STR-1527): build (and push) a docker image for prover in native mode as well.
           else
             docker build -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}" \
               -f "${DOCKERFILE_PATH}" .
