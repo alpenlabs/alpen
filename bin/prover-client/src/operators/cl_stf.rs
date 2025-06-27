@@ -85,11 +85,14 @@ impl ClStfOperator {
         cl_block_id: L2BlockId,
     ) -> Result<EvmEeBlockCommitment, ProvingTaskError> {
         let header = self.get_l2_block_header(cl_block_id).await?;
-        let block = self.evm_ee_operator.get_block(header.block_idx).await?;
+        let ee_header = self
+            .evm_ee_operator
+            .get_block_header_by_height(header.block_idx)
+            .await?;
 
         Ok(EvmEeBlockCommitment::new(
-            block.header.number,
-            Buf32(block.header.hash.into()),
+            ee_header.number,
+            Buf32(ee_header.hash.into()),
         ))
     }
 
@@ -210,9 +213,17 @@ impl ProvingOp for ClStfOperator {
         }
         l2_blocks.reverse();
 
+        let parent_header = self
+            .get_block(&l2_blocks[0].header().get_blockid())
+            .await?
+            .header()
+            .header()
+            .clone();
+
         let rollup_params = self.rollup_params.as_ref().clone();
         Ok(ClStfInput {
             rollup_params,
+            parent_header,
             chainstate,
             l2_blocks,
             evm_ee_proof_with_vk,

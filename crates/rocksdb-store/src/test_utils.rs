@@ -49,9 +49,14 @@ pub fn get_common_db(
     let l2_db = Arc::new(L2Db::new(rbdb.clone(), db_ops));
     let sync_ev_db = Arc::new(SyncEventDb::new(rbdb.clone(), db_ops));
     let cs_db = Arc::new(ClientStateDb::new(rbdb.clone(), db_ops));
-    let chst_db = Arc::new(ChainstateDb::new(rbdb.clone(), db_ops));
+    let new_chst_db = Arc::new(ChainstateDb::new(rbdb.clone(), db_ops));
     let chpt_db = Arc::new(RBCheckpointDB::new(rbdb.clone(), db_ops));
     Arc::new(CommonDatabase::new(
-        l1_db, l2_db, sync_ev_db, cs_db, chst_db, chpt_db,
+        l1_db,
+        l2_db,
+        sync_ev_db,
+        cs_db,
+        new_chst_db,
+        chpt_db,
     ))
 }

@@ -37,7 +37,7 @@ use broadcaster::{
     db::BroadcastDb,
     schemas::{BcastL1TxIdSchema, BcastL1TxSchema},
 };
-pub use chain_state::db::ChainstateDb;
+pub use chain_state::{ChainstateDb, StateInstanceEntry};
 pub use checkpoint::db::RBCheckpointDB;
 use checkpoint::schemas::*;
 pub use client_state::db::ClientStateDb;
@@ -52,7 +52,7 @@ pub use writer::db::RBL1WriterDb;
 use writer::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 
 use crate::{
-    chain_state::schemas::WriteBatchSchema,
+    chain_state::schemas::{StateInstanceSchema, WriteBatchSchema},
     client_state::schemas::ClientUpdateOutputSchema,
     l1::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema},
     sequence::SequenceSchema,
@@ -92,6 +92,10 @@ pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
     // Checkpoint schemas
     CheckpointSchema::COLUMN_FAMILY_NAME,
     EpochSummarySchema::COLUMN_FAMILY_NAME,
+
+    // New chainstate schemas
+    WriteBatchSchema::COLUMN_FAMILY_NAME,
+    StateInstanceSchema::COLUMN_FAMILY_NAME,
 ];
 
 /// database operations configuration
@@ -149,8 +153,8 @@ pub fn init_core_dbs(
     let l2_db: Arc<_> = L2Db::new(rbdb.clone(), ops_config).into();
     let sync_ev_db: Arc<_> = SyncEventDb::new(rbdb.clone(), ops_config).into();
     let clientstate_db: Arc<_> = ClientStateDb::new(rbdb.clone(), ops_config).into();
-    let chainstate_db: Arc<_> = ChainstateDb::new(rbdb.clone(), ops_config).into();
     let checkpoint_db: Arc<_> = RBCheckpointDB::new(rbdb.clone(), ops_config).into();
+    let chainstate_db = ChainstateDb::new(rbdb.clone(), ops_config).into();
     let database = CommonDatabase::new(
         l1_db,
         l2_db,

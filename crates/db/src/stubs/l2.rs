@@ -5,7 +5,7 @@ use strata_state::{block::L2BlockBundle, prelude::*};
 
 use crate::{
     traits::{BlockStatus, *},
-    DbResult,
+    DbError, DbResult,
 };
 
 /// Dummy implementation that isn't really compliant with the spec, but we don't
@@ -75,5 +75,19 @@ impl L2BlockDatabase for StubL2Db {
     fn get_block_status(&self, id: L2BlockId) -> DbResult<Option<BlockStatus>> {
         let tbl = self.statuses.lock();
         Ok(tbl.get(&id).cloned())
+    }
+
+    fn get_tip_block(&self) -> DbResult<L2BlockId> {
+        let tbl = self.heights.lock();
+        let max_height = tbl.keys().max().cloned();
+        if let Some(height) = max_height {
+            if let Some(blocks) = tbl.get(&height) {
+                match blocks.first().cloned() {
+                    Some(block_id) => return Ok(block_id),
+                    None => return Err(DbError::NotBootstrapped),
+                }
+            }
+        }
+        Err(DbError::NotBootstrapped)
     }
 }

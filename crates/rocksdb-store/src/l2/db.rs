@@ -9,7 +9,7 @@ use strata_db::{
 use strata_state::{block::L2BlockBundle, prelude::*};
 
 use super::schemas::{L2BlockSchema, L2BlockStatusSchema};
-use crate::{l2::schemas::L2BlockHeightSchema, DbOpsConfig};
+use crate::{l2::schemas::L2BlockHeightSchema, utils::get_last_idx, DbOpsConfig};
 
 #[derive(Debug)]
 pub struct L2Db {
@@ -103,6 +103,37 @@ impl L2BlockDatabase for L2Db {
 
     fn get_block_status(&self, id: L2BlockId) -> DbResult<Option<BlockStatus>> {
         Ok(self.db.get::<L2BlockStatusSchema>(&id)?)
+    }
+
+    fn get_tip_block(&self) -> DbResult<L2BlockId> {
+        let mut height =
+            get_last_idx::<L2BlockHeightSchema>(&self.db)?.ok_or(DbError::NotBootstrapped)?;
+
+        loop {
+            let blocks = self.get_blocks_at_height(height)?;
+            // collect all valid statuses at this height
+            let valid = blocks
+                .into_iter()
+                .filter_map(|blkid| match self.get_block_status(blkid) {
+                    Ok(Some(BlockStatus::Valid)) => Some(Ok(blkid)),
+                    Ok(_) => None,
+                    Err(e) => Some(Err(e)),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // REVIEW: We consider the first valid block at the highest height as the tip.
+            // This may not be the best approach but have been used other places in the
+            // codebase.
+            if let Some(id) = valid.first().cloned() {
+                return Ok(id);
+            }
+
+            if height == 0 {
+                return Err(DbError::NotBootstrapped);
+            }
+
+            height -= 1;
+        }
     }
 }
 
@@ -239,5 +270,67 @@ mod tests {
             .expect("failed to retrieve block status")
             .unwrap();
         assert_eq!(block_status, BlockStatus::Unchecked);
+    }
+
+    #[test]
+    fn get_valid_tip_block_ids_not_bootstrapped() {
+        let l2_db = setup_db();
+        let err = l2_db.get_tip_block().unwrap_err();
+        assert!(matches!(err, DbError::NotBootstrapped));
+    }
+
+    // helper to create a bundle at a specific height
+    fn make_bundle_at_height(height: u64) -> L2BlockBundle {
+        let bundle = get_mock_data();
+        let (l2block, acc) = bundle.into_parts();
+        let (signed_header, body) = l2block.into_parts();
+        let old_hdr = signed_header.header().clone();
+        let new_hdr = L2BlockHeader::new(
+            height,
+            old_hdr.epoch(),
+            old_hdr.timestamp(),
+            *old_hdr.parent(),
+            &body,
+            *old_hdr.state_root(),
+        );
+        let new_signed = SignedL2BlockHeader::new(new_hdr, *signed_header.sig());
+        let new_block = L2Block::new(new_signed, body);
+        L2BlockBundle::new(new_block, acc)
+    }
+
+    #[test]
+    fn get_tip_block_returns_tip_if_valid_at_highest_height() {
+        let l2_db = setup_db();
+
+        // make a bundle at height 7 and mark it valid
+        let bundle = make_bundle_at_height(7);
+        let id = bundle.block().header().get_blockid();
+        l2_db.put_block_data(bundle).unwrap();
+        l2_db.set_block_status(id, BlockStatus::Valid).unwrap();
+
+        // should return the same id
+        let tip = l2_db.get_tip_block().unwrap();
+        assert_eq!(tip, id);
+    }
+
+    #[test]
+    fn get_tip_block_fallback_to_lower_height() {
+        let l2_db = setup_db();
+
+        // tip at height 10 with unchecked status
+        let tip_bundle = make_bundle_at_height(10);
+        l2_db.put_block_data(tip_bundle).unwrap();
+
+        // lower at height 9 marked valid
+        let lower_bundle = make_bundle_at_height(9);
+        let lower_id = lower_bundle.block().header().get_blockid();
+        l2_db.put_block_data(lower_bundle).unwrap();
+        l2_db
+            .set_block_status(lower_id, BlockStatus::Valid)
+            .unwrap();
+
+        // should return the lower_id
+        let tip = l2_db.get_tip_block().unwrap();
+        assert_eq!(tip, lower_id);
     }
 }

@@ -23,6 +23,7 @@ use strata_db::traits::Database;
 pub struct NodeStorage {
     l1_block_manager: Arc<L1BlockManager>,
     l2_block_manager: Arc<L2BlockManager>,
+
     chainstate_manager: Arc<ChainstateManager>,
 
     sync_event_manager: Arc<SyncEventManager>,
@@ -70,7 +71,10 @@ where
 {
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), db.l1_db().clone()));
     let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), db.clone()));
-    let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), db.clone()));
+    let new_chainstate_manager = Arc::new(ChainstateManager::new(
+        pool.clone(),
+        db.chain_state_db().clone(),
+    ));
 
     let sync_event_manager = Arc::new(SyncEventManager::new(
         pool.clone(),
@@ -88,7 +92,8 @@ where
     Ok(NodeStorage {
         l1_block_manager,
         l2_block_manager,
-        chainstate_manager,
+
+        chainstate_manager: new_chainstate_manager,
 
         sync_event_manager,
         client_state_manager,

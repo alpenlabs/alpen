@@ -14,5 +14,6 @@ inst_ops_simple! {
         get_block_status(id: L2BlockId) => Option<BlockStatus>;
         put_block_data(block: L2BlockBundle) => ();
         set_block_status(id: L2BlockId, status: BlockStatus) => ();
+        get_tip_block() => L2BlockId;
     }
 }
