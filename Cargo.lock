@@ -13106,6 +13106,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-moho-incremental"
+version = "0.1.0"
+
+[[package]]
 name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 dependencies = [
