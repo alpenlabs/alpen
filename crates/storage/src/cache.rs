@@ -1,9 +1,15 @@
+//! Generic cache utility for what we're inserting into the database.
+
 use std::{collections::HashMap, hash::Hash, num::NonZeroUsize, sync::Arc};
 
 use lru::LruCache;
 use parking_lot::RwLock;
 use strata_db::{DbError, DbResult};
-use tokio::sync::Mutex;
+use tokio::{
+    runtime,
+    sync::{oneshot, Mutex},
+    task::block_in_place,
+};
 
 use crate::exec::DbRecv;
 
@@ -126,12 +132,14 @@ where
         key: &K,
         fetch_fn: impl Fn() -> DbResult<V>,
     ) -> DbResult<V> {
-        tokio::task::block_in_place(move || {
-            tokio::runtime::Handle::current().block_on(async {
+        if let Some(v) = self.get(key) {
+            return Ok(v);
+        }
+        block_in_place(move || {
+            runtime::Handle::current().block_on(async {
                 self.get_or_fetch(key, || {
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    let result = fetch_fn();
-                    let _ = tx.send(result);
+                    let (tx, rx) = oneshot::channel();
+                    let _ = tx.send(fetch_fn());
                     rx
                 })
                 .await

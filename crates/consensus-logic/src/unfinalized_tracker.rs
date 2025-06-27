@@ -498,8 +498,8 @@ mod tests {
         assert_eq!(chain_tracker.unfinalized_tips, unfinalized_tips);
     }
 
-    #[test]
-    fn test_load_unfinalized_blocks() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_unfinalized_blocks() {
         let db = get_common_db();
         let l2_db = db.l2_db();
 
@@ -544,8 +544,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_get_descendants() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_descendants() {
         let db = get_common_db();
         let l2_db = db.l2_db();
 
@@ -581,8 +581,8 @@ mod tests {
         assert_eq!(chain_tracker.get_all_descendants(&b3).len(), 0);
     }
 
-    #[test]
-    fn test_update_finalized_tip() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_finalized_tip() {
         let db = get_common_db();
         let l2_db = db.l2_db();
 
