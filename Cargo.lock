@@ -14237,6 +14237,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures",
  "lru 0.12.5",
  "parking_lot 0.12.3",
  "paste",

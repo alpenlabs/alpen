@@ -223,3 +223,287 @@ mod tests {
         assert_eq!(len, 0);
     }
 }
+
+#[cfg(test)]
+mod concurrent_tests {
+    use std::{
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
+
+    use tokio::time::sleep;
+
+    use super::*;
+
+    fn helper_fetch_fn(
+        count: Arc<AtomicUsize>,
+        return_value: DbResult<u64>,
+    ) -> impl Fn() -> oneshot::Receiver<DbResult<u64>> {
+        move || {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            count.fetch_add(1, Ordering::SeqCst);
+            tx.send(return_value.clone()).expect("send value");
+            rx
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_fetch_prevention() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(10.try_into().unwrap()));
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        let tasks: Vec<_> = (0..10)
+            .map(|_| {
+                let cache = cache.clone();
+                let fetch_count = fetch_count.clone();
+                tokio::spawn(async move {
+                    cache
+                        .get_or_fetch(&42, helper_fetch_fn(fetch_count, Ok(100)))
+                        .await
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = futures::future::join_all(tasks).await;
+
+        // All tasks should succeed with same value
+        for result in results {
+            assert_eq!(result.unwrap().unwrap(), 100);
+        }
+
+        // Only one fetch should have occurred
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_different_keys() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(10.try_into().unwrap()));
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        let tasks: Vec<_> = (0..5)
+            .map(|i| {
+                let cache = cache.clone();
+                let fetch_count = fetch_count.clone();
+                tokio::spawn(async move {
+                    cache
+                        .get_or_fetch(&i, helper_fetch_fn(fetch_count, Ok(i * 10)))
+                        .await
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = futures::future::join_all(tasks).await;
+
+        // All tasks should succeed with correct values
+        for (i, result) in results.into_iter().enumerate() {
+            assert_eq!(result.unwrap().unwrap(), (i as u64) * 10);
+        }
+
+        // One fetch per key
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 5);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_fetch_error_handling() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(10.try_into().unwrap()));
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        let tasks: Vec<_> = (0..5)
+            .map(|_| {
+                let cache = cache.clone();
+                let fetch_count = fetch_count.clone();
+                tokio::spawn(async move {
+                    cache
+                        .get_or_fetch(&42, helper_fetch_fn(fetch_count, Err(DbError::Busy)))
+                        .await
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = futures::future::join_all(tasks).await;
+
+        // All tasks should fail with same error
+        // TODO: fix this, this is not the case
+        for result in results {
+            assert!(matches!(result.unwrap(), Err(DbError::Busy)));
+        }
+
+        // Only one fetch should occur even on error
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+
+        // Cache should remain empty
+        assert_eq!(cache.get_len(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_purge_during_fetch() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(10.try_into().unwrap()));
+
+        // Start a slow fetch
+        let cache_clone = cache.clone();
+        let fetch_task = tokio::spawn(async move {
+            cache_clone
+                .get_or_fetch(&42, || {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    tokio::spawn(async move {
+                        sleep(Duration::from_millis(50)).await;
+                        tx.send(Ok(100)).expect("send value");
+                    });
+                    rx
+                })
+                .await
+        });
+
+        // Purge while fetch is ongoing
+        sleep(Duration::from_millis(10)).await;
+        cache.purge(&42);
+
+        // Fetch should still complete successfully
+        let result = fetch_task.await.unwrap();
+        assert_eq!(result.unwrap(), 100);
+
+        // Value should be in cache after fetch completes
+        assert_eq!(cache.get(&42), Some(100));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_lru_eviction_under_concurrency() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(3.try_into().unwrap()));
+
+        // Fill cache concurrently
+        let tasks: Vec<_> = (0..10)
+            .map(|i| {
+                let cache = cache.clone();
+                tokio::spawn(async move {
+                    cache.insert(i, i * 10);
+                })
+            })
+            .collect();
+
+        futures::future::join_all(tasks).await;
+
+        // Cache should only have 3 items
+        assert_eq!(cache.get_len(), 3);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_clear_operations() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(10.try_into().unwrap()));
+
+        // Insert some values
+        for i in 0..5 {
+            cache.insert(i, i);
+        }
+
+        // Concurrent clear and access
+        let cache_clone = cache.clone();
+        let clear_task = tokio::spawn(async move { cache_clone.clear() });
+        let access_tasks: Vec<_> = (0..5)
+            .map(|i| {
+                let cache = cache.clone();
+                tokio::spawn(async move { cache.get(&i) })
+            })
+            .collect();
+
+        let clear_count = clear_task.await.unwrap();
+        let _access_results: Vec<_> = futures::future::join_all(access_tasks).await;
+
+        // Clear should have removed some items
+        assert!(clear_count > 0);
+
+        // Final state should be consistent
+        assert_eq!(cache.get_len(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_mixed_async_blocking_access() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(10.try_into().unwrap()));
+        let fetch_count = Arc::new(AtomicUsize::new(0));
+
+        // Mix of async and blocking operations
+        let async_task = {
+            let cache = cache.clone();
+            let fetch_count = fetch_count.clone();
+            tokio::spawn(async move {
+                cache
+                    .get_or_fetch(&42, || {
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        fetch_count.fetch_add(1, Ordering::SeqCst);
+                        tx.send(Ok(100)).expect("send value");
+                        rx
+                    })
+                    .await
+            })
+        };
+
+        let blocking_task = {
+            let cache = cache.clone();
+            let fetch_count = fetch_count.clone();
+            tokio::spawn(async move {
+                tokio::task::spawn_blocking(move || {
+                    cache.get_or_fetch_blocking(&42, || {
+                        fetch_count.fetch_add(1, Ordering::SeqCst);
+                        Ok(200)
+                    })
+                })
+                .await
+                .unwrap()
+            })
+        };
+
+        let (async_result, blocking_result) = tokio::join!(async_task, blocking_task);
+
+        // Both should succeed
+        let async_val = async_result.unwrap().unwrap();
+        let blocking_val = blocking_result.unwrap().unwrap();
+
+        // One should get the cached value from the other
+        assert!(async_val == 100 || async_val == 200);
+        assert!(blocking_val == 100 || blocking_val == 200);
+
+        // Only one fetch should occur
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn test_high_concurrency_stress() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(50.try_into().unwrap()));
+        let total_fetches = Arc::new(AtomicUsize::new(0));
+
+        // 100 concurrent operations on 10 different keys
+        let tasks: Vec<_> = (0..100)
+            .map(|i| {
+                let cache = cache.clone();
+                let total_fetches = total_fetches.clone();
+                let key = (i % 10) as u64;
+
+                tokio::spawn(async move {
+                    cache
+                        .get_or_fetch(&key, || {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            total_fetches.fetch_add(1, Ordering::SeqCst);
+                            tx.send(Ok(key * 100)).expect("send value");
+                            rx
+                        })
+                        .await
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = futures::future::join_all(tasks).await;
+
+        // All operations should succeed
+        for result in results {
+            assert!(result.unwrap().is_ok());
+        }
+
+        // Should have exactly 10 fetches (one per unique key)
+        assert_eq!(total_fetches.load(Ordering::SeqCst), 10);
+
+        // Cache should contain all 10 keys
+        assert_eq!(cache.get_len(), 10);
+    }
+}
