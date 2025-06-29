@@ -7,7 +7,6 @@ use chrono::Utc;
 use colored::Colorize;
 
 use crate::{
-    constants::RECOVERY_DESC_CLEANUP_DELAY,
     errors::{DisplayableError, DisplayedError},
     recovery::DescriptorRecovery,
     seed::Seed,
@@ -80,7 +79,7 @@ pub async fn recover(
         if !needs_recovery {
             assert!(key.len() > 4);
             let desc_height = u32::from_be_bytes(unsafe { *(key[..4].as_ptr() as *const [_; 4]) });
-            if desc_height + RECOVERY_DESC_CLEANUP_DELAY > current_height {
+            if desc_height + settings.protocol_params.recovery_desc_cleanup_delay > current_height {
                 descriptor_file
                     .remove(key)
                     .internal_error("Failed to remove old descriptor")?;
