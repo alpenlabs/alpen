@@ -8,12 +8,12 @@ use crate::Subprotocol;
 /// This way, we only have to declare the subprotocols a single time and they
 /// will always be processed in a consistent order as defined by an `AsmSpec`.
 pub trait AsmSpec {
+    /// 4-byte magic identifier for the SPS-50 L1 transaction header.
+    const MAGIC_BYTES: MagicBytes;
+
     /// Function that calls the loader with each subprotocol we intend to
     /// process, in the order we intend to process them.
     fn call_subprotocols(stage: &mut impl Stage);
-
-    /// Returns the 4-byte magic identifier for the SPS-50 L1 transaction header.
-    fn magic_bytes() -> MagicBytes;
 }
 
 /// Implementation of a subprotocol handling stage.

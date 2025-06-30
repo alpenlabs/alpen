@@ -19,13 +19,11 @@ use crate::{
 pub struct StrataAsmSpec;
 
 impl AsmSpec for StrataAsmSpec {
+    const MAGIC_BYTES: MagicBytes = *b"ALPN";
+
     fn call_subprotocols(stage: &mut impl Stage) {
         stage.process_subprotocol::<OLCoreSubproto>();
         stage.process_subprotocol::<BridgeV1Subproto>();
-    }
-
-    fn magic_bytes() -> MagicBytes {
-        *b"ALPN"
     }
 }
 
@@ -39,7 +37,7 @@ pub fn asm_stf<S: AsmSpec>(pre_state: AnchorState, block: &Block) -> Result<Anch
         .map_err(AsmError::InvalidL1Header)?;
 
     // 2. Filter the relevant transactions
-    let all_relevant_transactions = group_txs_by_subprotocol(S::magic_bytes(), &block.txdata);
+    let all_relevant_transactions = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
