@@ -3,7 +3,6 @@ from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
 from utils import bytes_to_big_endian
-from utils.wait import ProverWaiter
 
 
 @flexitest.register
@@ -19,7 +18,7 @@ class ProverClientTest(testenv.StrataTestBase):
         prover_client_rpc = prover_client.create_rpc()
 
         # Wait until the prover client reports readiness
-        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=60, interval=2)
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=60, interval=2)
         prover_waiter.wait_until_prover_ready()
 
         # Dispatch the prover task

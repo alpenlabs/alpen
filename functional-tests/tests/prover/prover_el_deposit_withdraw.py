@@ -11,7 +11,6 @@ from utils import (
     get_bridge_pubkey,
     get_latest_eth_block_number,
 )
-from utils.wait import ProverWaiter
 
 
 @flexitest.register
@@ -162,6 +161,6 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30, interval=2)
         is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

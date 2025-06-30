@@ -1,3 +1,5 @@
+import time
+
 import flexitest
 
 from envs import testenv
@@ -14,6 +16,7 @@ class ProverClientTest(testenv.StrataTestBase):
 
         # Initialize prover waiter and wait for readiness
         prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30, interval=1)
+        time.sleep(1)  # Can't help :(
         prover_waiter.wait_until_prover_ready()
 
         # Test on with the latest checkpoint

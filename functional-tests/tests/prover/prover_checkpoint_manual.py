@@ -3,7 +3,6 @@ from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
 from utils import bytes_to_big_endian, cl_slot_to_block_id
-from utils.wait import ProverWaiter
 
 CHECKPOINT_PROVER_PARAMS = {
     "checkpoint_idx": 1,
@@ -29,7 +28,7 @@ class ProverClientTest(testenv.StrataTestBase):
         btcrpc: BitcoindClient = btc.create_rpc()
 
         # Wait until the prover client reports readiness
-        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30, interval=2)
         prover_waiter.wait_until_prover_ready()
 
         # L1 Range

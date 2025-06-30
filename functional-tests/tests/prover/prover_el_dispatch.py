@@ -5,7 +5,6 @@ from utils import (
     el_slot_to_block_commitment,
 )
 from utils.transaction import TransactionType
-from utils.wait import ProverWaiter
 
 # Constants for native token transfer
 NATIVE_TOKEN_TRANSFER_PARAMS = {
@@ -56,6 +55,6 @@ class ProverClientTest(BaseMixin):
         task_id = task_ids[0]
         self.debug(f"Using task ID: {task_id}")
 
-        prover_waiter = ProverWaiter(prover_client_rpc, self.logger, timeout=30, interval=2)
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30, interval=2)
         is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed
