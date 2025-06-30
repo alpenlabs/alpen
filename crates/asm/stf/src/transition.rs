@@ -6,6 +6,7 @@ use bitcoin::{block::Block, params::Params};
 use strata_asm_common::{AnchorState, AsmError, AsmSpec, ChainViewState, Stage};
 use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_core::OLCoreSubproto;
+use strata_l1_txfmt::MagicBytes;
 
 use crate::{
     manager::SubprotoManager,
@@ -22,6 +23,10 @@ impl AsmSpec for StrataAsmSpec {
         stage.process_subprotocol::<OLCoreSubproto>();
         stage.process_subprotocol::<BridgeV1Subproto>();
     }
+
+    fn magic_bytes() -> MagicBytes {
+        *b"ALPN"
+    }
 }
 
 /// Computes the next AnchorState by applying the Anchor State Machine (ASM) state transition
@@ -34,7 +39,7 @@ pub fn asm_stf<S: AsmSpec>(pre_state: AnchorState, block: &Block) -> Result<Anch
         .map_err(AsmError::InvalidL1Header)?;
 
     // 2. Filter the relevant transactions
-    let all_relevant_transactions = group_txs_by_subprotocol(&block.txdata);
+    let all_relevant_transactions = group_txs_by_subprotocol(S::magic_bytes(), &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
