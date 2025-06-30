@@ -314,7 +314,7 @@ impl StateCache {
     pub fn check_deposit_fulfillment_valid(
         &self,
         deposit_idx: u32,
-        assigned_operator_idx: u32,
+        assigned_operator_idx: OperatorIdx,
     ) -> bool {
         let Some(deposit_ent) = self.state().deposits_table().get_deposit(deposit_idx) else {
             return false;

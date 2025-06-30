@@ -308,7 +308,10 @@ fn process_withdrawal_fulfillment(
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
     if !state.check_deposit_fulfillment_valid(info.deposit_idx, info.operator_idx) {
-        return Err(OpError::InvalidDeposit(info.deposit_idx, info.operator_idx));
+        return Err(OpError::InvalidDeposit {
+            deposit_idx: info.deposit_idx,
+            operator_idx: info.operator_idx,
+        });
     }
 
     state.mark_deposit_fulfilled(info);
