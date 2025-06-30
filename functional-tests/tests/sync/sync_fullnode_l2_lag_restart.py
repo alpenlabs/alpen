@@ -21,10 +21,8 @@ class SyncFullNodeL2LagRestartTest(testenv.StrataTestBase):
         seqrpc = seq.create_rpc()
         fullnode = ctx.get_service("follower_1_node")
         fnrpc = fullnode.create_rpc()
-
-        # Wait until sequencer and fullnode start
-        wait_until(seqrpc.strata_protocolVersion, timeout=5)
-        wait_until(fnrpc.strata_protocolVersion, timeout=5)
+        seq_waiter = self.create_strata_waiter(seqrpc, timeout=60)
+        fn_waiter = self.create_strata_waiter(fnrpc, timeout=60)
 
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()
@@ -35,15 +33,15 @@ class SyncFullNodeL2LagRestartTest(testenv.StrataTestBase):
         assert paused, "Should pause the fullnode sync worker"
 
         cur_epoch = seqss["cur_epoch"]
-        print(dict(cur_epoch=cur_epoch))
+        self.info(f"{cur_epoch=}")
 
         # wait for fn to sync up to end of current sequencer epoch
         # L1 reader and csm should still be running and syncing with L2 sync paused/
-        wait_until_epoch_confirmed(fnrpc, cur_epoch, timeout=60)
+        fn_waiter.wait_until_epoch_confirmed(cur_epoch)
 
         # Wait until some more epochs are finalized in sequencer so we have plenty of blocks
         # to sync up when we resume fn
-        wait_until_epoch_finalized(seqrpc, cur_epoch + 3, timeout=60)
+        seq_waiter.wait_until_epoch_finalized(cur_epoch + 3)
 
         # Full node tip after sync is paused
         fn_ss = fnrpc.strata_syncStatus()

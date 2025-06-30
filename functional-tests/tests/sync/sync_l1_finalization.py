@@ -33,7 +33,8 @@ class BlockFinalizationTest(testenv.StrataTestBase):
 
         num_epochs = 4
 
-        epoch = wait_until_chain_epoch(seqrpc, num_epochs, timeout=60)
+        seq_waiter = self.create_strata_waiter(seqrpc, timeout=60)
+        epoch = seq_waiter.wait_until_chain_epoch(num_epochs)
         logging.info(f"epoch summary: {epoch}")
 
         cstat = seqrpc.strata_clientStatus()
@@ -42,20 +43,18 @@ class BlockFinalizationTest(testenv.StrataTestBase):
 
         # Wait for prover
         # TODO What is this check for?
-        wait_until(
-            lambda: prover_rpc.dev_strata_getReport() is not None,
-            error_with="Prover did not start on time",
-        )
+        prover_waiter = self.create_prover_waiter(prover_rpc, timeout=30, interval=2)
+        prover_waiter.wait_until_prover_ready()
 
         check_submit_proof_fails_for_nonexistent_batch(seqrpc, 100)
 
         # Wait until we get the checkpoint confirmed.
         wait_epoch_conf = 1
-        wait_until_epoch_confirmed(seqrpc, wait_epoch_conf, timeout=30, step=2)
+        seq_waiter.wait_until_epoch_confirmed(wait_epoch_conf, timeout=30)
         logging.info(f"Epoch {wait_epoch_conf} was confirmed!")
 
         # Wait until we get the expected number of epochs finalized.
-        wait_until_epoch_finalized(seqrpc, num_epochs, timeout=30, step=2)
+        seq_waiter.wait_until_epoch_finalized(num_epochs, timeout=30)
         logging.info(f"Epoch {num_epochs} was finalized!")
 
         # FIXME what does this even check?
@@ -72,7 +71,7 @@ class BlockFinalizationTest(testenv.StrataTestBase):
         ssdump = json.dumps(ss, indent=2)
         logging.info(f"sync status: {ssdump}")
 
-        wait_until_epoch_observed_final(seqrpc, num_epochs, timeout=30, step=2)
+        seq_waiter.wait_until_epoch_observed_final(num_epochs)
 
         # Proof for checkpoint 0 is already sent above
         # FIXME do we still need this if we have the other checks?
