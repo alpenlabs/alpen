@@ -310,6 +310,19 @@ impl StateCache {
             .is_some()
     }
 
+    pub fn check_deposit_fulfilment_valid(
+        &self,
+        deposit_idx: u32,
+        assigned_operator_idx: u32,
+    ) -> bool {
+        let Some(deposit_ent) = self.state().deposits_table().get_deposit(deposit_idx) else {
+            return false;
+        };
+        deposit_ent
+            .deposit_state()
+            .is_dispatched_to(assigned_operator_idx)
+    }
+
     /// Updates the deposit state to `Fulfilled`.
     ///
     /// # Panics
