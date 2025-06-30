@@ -307,7 +307,7 @@ fn process_withdrawal_fulfillment(
     state: &mut StateCache,
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
-    if !state.check_deposit_fulfilment_valid(info.deposit_idx, info.operator_idx) {
+    if !state.check_deposit_fulfillment_valid(info.deposit_idx, info.operator_idx) {
         return Err(OpError::InvalidDeposit(info.deposit_idx, info.operator_idx));
     }
 
@@ -634,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn test_process_l1_block_with_duplicate_withdrawal_fulfilment() {
+    fn test_process_l1_block_with_duplicate_withdrawal_fulfillment() {
         let mut arb = ArbitraryGenerator::new();
 
         // Setup chainstate with a deposit in dispatched state
@@ -655,8 +655,8 @@ mod tests {
 
         let params = gen_params();
 
-        // withdrawal fulfilment op that will be seen twice
-        let withdrawal_fulfilment_protocol_op =
+        // withdrawal fulfillment op that will be seen twice
+        let withdrawal_fulfillment_protocol_op =
             ProtocolOperation::WithdrawalFulfillment(WithdrawalFulfillmentInfo {
                 deposit_idx: 0,
                 operator_idx: 0,
@@ -671,7 +671,7 @@ mod tests {
             vec![L1Tx::new(
                 arb.generate(),
                 arb.generate(),
-                vec![withdrawal_fulfilment_protocol_op.clone()],
+                vec![withdrawal_fulfillment_protocol_op.clone()],
             )],
             chs.cur_epoch(),
             chs.l1_view().safe_height() + 1,
@@ -691,14 +691,14 @@ mod tests {
             "should convert state to fulfilled"
         );
 
-        // Duplicate withdrawal fulfilment seen. Should be ignored and chainstate not updated
+        // Duplicate withdrawal fulfillment seen. Should be ignored and chainstate not updated
         let block_manifest = L1BlockManifest::new(
             arb.generate(),
             None,
             vec![L1Tx::new(
                 arb.generate(),
                 arb.generate(),
-                vec![withdrawal_fulfilment_protocol_op],
+                vec![withdrawal_fulfillment_protocol_op],
             )],
             chs.cur_epoch(),
             chs.l1_view().safe_height() + 1,
