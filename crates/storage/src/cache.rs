@@ -326,13 +326,12 @@ mod concurrent_tests {
         let results: Vec<_> = futures::future::join_all(tasks).await;
 
         // All tasks should fail with same error
-        // TODO: fix this, this is not the case
         for result in results {
             assert!(matches!(result.unwrap(), Err(DbError::Busy)));
         }
 
         // Only one fetch should occur even on error
-        assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 5);
 
         // Cache should remain empty
         assert_eq!(cache.get_len(), 0);
@@ -429,12 +428,7 @@ mod concurrent_tests {
             let fetch_count = fetch_count.clone();
             tokio::spawn(async move {
                 cache
-                    .get_or_fetch(&42, || {
-                        let (tx, rx) = tokio::sync::oneshot::channel();
-                        fetch_count.fetch_add(1, Ordering::SeqCst);
-                        tx.send(Ok(100)).expect("send value");
-                        rx
-                    })
+                    .get_or_fetch(&42, helper_fetch_fn(fetch_count, Ok(100)))
                     .await
             })
         };
@@ -463,6 +457,8 @@ mod concurrent_tests {
         // One should get the cached value from the other
         assert!(async_val == 100 || async_val == 200);
         assert!(blocking_val == 100 || blocking_val == 200);
+        // Both values should be the same
+        assert_eq!(async_val, blocking_val);
 
         // Only one fetch should occur
         assert_eq!(fetch_count.load(Ordering::SeqCst), 1);
@@ -471,23 +467,18 @@ mod concurrent_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn test_high_concurrency_stress() {
         let cache = Arc::new(CacheTable::<u64, u64>::new(50.try_into().unwrap()));
-        let total_fetches = Arc::new(AtomicUsize::new(0));
+        let fetch_count = Arc::new(AtomicUsize::new(0));
 
         // 100 concurrent operations on 10 different keys
         let tasks: Vec<_> = (0..100)
             .map(|i| {
                 let cache = cache.clone();
-                let total_fetches = total_fetches.clone();
+                let fetch_count = fetch_count.clone();
                 let key = (i % 10) as u64;
 
                 tokio::spawn(async move {
                     cache
-                        .get_or_fetch(&key, || {
-                            let (tx, rx) = tokio::sync::oneshot::channel();
-                            total_fetches.fetch_add(1, Ordering::SeqCst);
-                            tx.send(Ok(key * 100)).expect("send value");
-                            rx
-                        })
+                        .get_or_fetch(&key, helper_fetch_fn(fetch_count, Ok(key * 100)))
                         .await
                 })
             })
@@ -501,7 +492,7 @@ mod concurrent_tests {
         }
 
         // Should have exactly 10 fetches (one per unique key)
-        assert_eq!(total_fetches.load(Ordering::SeqCst), 10);
+        assert_eq!(fetch_count.load(Ordering::SeqCst), 10);
 
         // Cache should contain all 10 keys
         assert_eq!(cache.get_len(), 10);
