@@ -310,7 +310,7 @@ impl StateCache {
             .is_some()
     }
 
-    pub fn check_deposit_fulfillment_valid(
+    pub fn is_valid_withdrawal_fulfillment(
         &self,
         deposit_idx: u32,
         assigned_operator_idx: OperatorIdx,
