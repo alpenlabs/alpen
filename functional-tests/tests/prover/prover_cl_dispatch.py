@@ -19,6 +19,7 @@ class ProverClientTest(testenv.StrataTestBase):
 
     def main(self, ctx: flexitest.RunContext):
         prover_client = ctx.get_service("prover_client")
+        reth = ctx.get_service("reth")
         seq = ctx.get_service("sequencer")
 
         prover_client_rpc = prover_client.create_rpc()
@@ -27,6 +28,11 @@ class ProverClientTest(testenv.StrataTestBase):
 
         # Wait until the prover client reports readiness
         prover_waiter.wait_until_prover_ready()
+
+        # Wait until some blocks are produced in EE, this is for creating dependent tasks in prover.
+        reth_waiter = self.create_reth_waiter(reth.create_rpc())
+        reth_waiter.wait_until_eth_block_at_least(20)
+
 
         # Dispatch the prover task
         start_block_id = cl_slot_to_block_id(seqrpc, CL_PROVER_PARAMS["start_block"])
