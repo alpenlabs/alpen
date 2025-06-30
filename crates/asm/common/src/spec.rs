@@ -1,3 +1,5 @@
+use strata_l1_txfmt::MagicBytes;
+
 use crate::Subprotocol;
 
 /// Specification for a concrete ASM instantiation describing the subprotocols we
@@ -9,6 +11,9 @@ pub trait AsmSpec {
     /// Function that calls the loader with each subprotocol we intend to
     /// process, in the order we intend to process them.
     fn call_subprotocols(stage: &mut impl Stage);
+
+    /// Returns the 4-byte magic identifier for the SPS-50 L1 transaction header.
+    fn magic_bytes() -> MagicBytes;
 }
 
 /// Implementation of a subprotocol handling stage.
