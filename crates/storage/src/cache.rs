@@ -213,9 +213,10 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
             Ok(Err(e)) => {
                 // Important ordering for the locks.
+                *slot_guard = SlotState::Error;
+                drop(slot_guard);
                 let mut cache_guard = self.cache.lock().await;
                 trace!("re-acquired cache lock");
-                *slot_guard = SlotState::Error;
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
                 Err(e)
@@ -223,9 +224,10 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
             Err(_) => {
                 // Important ordering for the locks.
+                *slot_guard = SlotState::Error;
+                drop(slot_guard);
                 let mut cache_guard = self.cache.lock().await;
                 trace!("re-acquired cache lock");
-                *slot_guard = SlotState::Error;
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
                 Err(DbError::WorkerFailedStrangely)
@@ -280,9 +282,10 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
             Err(e) => {
                 // Important ordering for the locks.
+                *slot_guard = SlotState::Error;
+                drop(slot_guard);
                 let mut cache_guard = self.cache.blocking_lock();
                 trace!("re-acquired cache lock");
-                *slot_guard = SlotState::Error;
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
                 Err(e)
