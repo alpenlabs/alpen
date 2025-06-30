@@ -1,4 +1,4 @@
-use strata_primitives::l1::L1VerificationError;
+use strata_primitives::{bridge::OperatorIdx, l1::L1VerificationError};
 use strata_state::prelude::*;
 use thiserror::Error;
 
@@ -58,8 +58,11 @@ pub enum OpError {
     #[error("op referenced non-existent deposit {0}")]
     UnknownDeposit(u32),
 
-    #[error("op referenced invalid deposit {0}; operator idx: {1}")]
-    InvalidDeposit(u32, u32),
+    #[error("op referenced invalid deposit {deposit_idx}; operator idx: {operator_idx}")]
+    InvalidDeposit {
+        deposit_idx: u32,
+        operator_idx: OperatorIdx,
+    },
 
     /// Used to discard checkpoints we aren't looking for.
     #[error("operation does not advance the finalized epoch")]
