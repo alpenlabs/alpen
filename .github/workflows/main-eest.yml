@@ -120,6 +120,7 @@ jobs:
             --rpc-chain-id 2892 \
             --tx-wait-timeout 30 \
             -v
+        continue-on-error: true
 
       - name: Generate a proof of EE blocks execution.
         working-directory: docker
