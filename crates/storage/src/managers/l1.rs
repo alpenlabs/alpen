@@ -34,16 +34,16 @@ impl L1BlockManager {
     /// Save an [`L1BlockManifest`] to database. Does not add block to tracked canonical chain.
     pub fn put_block_data(&self, mf: L1BlockManifest) -> DbResult<()> {
         let blockid = mf.blkid();
-        self.manifest_cache.purge(blockid);
-        self.txs_cache.purge(blockid);
+        self.manifest_cache.purge_blocking(blockid);
+        self.txs_cache.purge_blocking(blockid);
         self.ops.put_block_data_blocking(mf)
     }
 
     /// Save an [`L1BlockManifest`] to database. Does not add block to tracked canonical chain.
     pub async fn put_block_data_async(&self, mf: L1BlockManifest) -> DbResult<()> {
         let blockid = mf.blkid();
-        self.manifest_cache.purge(blockid);
-        self.txs_cache.purge(blockid);
+        self.manifest_cache.purge_blocking(blockid);
+        self.txs_cache.purge_blocking(blockid);
         self.ops.put_block_data_async(mf).await
     }
 
@@ -101,7 +101,7 @@ impl L1BlockManager {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_blocking()? else {
             // no chain to revert
             // but clear cache anyway for sanity
-            self.blockheight_cache.clear();
+            self.blockheight_cache.blocking_clear();
             return Err(DbError::L1CanonicalChainEmpty);
         };
 
@@ -111,7 +111,7 @@ impl L1BlockManager {
 
         // clear item from cache for range height +1..=tip_height
         self.blockheight_cache
-            .purge_if(|h| height < *h && *h <= tip_height);
+            .purge_if_blocking(|h| height < *h && *h <= tip_height);
 
         self.ops
             .remove_canonical_chain_entries_blocking(height + 1, tip_height)
@@ -123,7 +123,7 @@ impl L1BlockManager {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_async().await? else {
             // no chain to revert
             // but clear cache anyway for sanity
-            self.blockheight_cache.clear();
+            self.blockheight_cache.blocking_clear();
 
             return Err(DbError::L1CanonicalChainEmpty);
         };
@@ -134,7 +134,7 @@ impl L1BlockManager {
 
         // clear item from cache for range height +1..=tip_height
         self.blockheight_cache
-            .purge_if(|h| height < *h && *h <= tip_height);
+            .purge_if_blocking(|h| height < *h && *h <= tip_height);
 
         self.ops
             .remove_canonical_chain_entries_async(height + 1, tip_height)
