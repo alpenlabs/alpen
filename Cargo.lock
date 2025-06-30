@@ -14258,7 +14258,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "lru 0.12.5",
- "parking_lot 0.12.3",
  "paste",
  "strata-db",
  "strata-primitives",
