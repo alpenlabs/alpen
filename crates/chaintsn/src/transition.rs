@@ -682,7 +682,7 @@ mod tests {
 
         let mut state_cache = StateCache::new(chs.clone());
         let result = process_l1_block(&mut state_cache, &block_manifest, params.rollup());
-        assert!(result.is_ok(), "should succeed");
+        assert!(result.is_ok(), "test: invoke process_l1_block");
         let new_deposit_state = state_cache
             .state()
             .deposits_table()
@@ -691,7 +691,7 @@ mod tests {
             .deposit_state();
         assert!(
             matches!(new_deposit_state, DepositState::Fulfilled(_)),
-            "should convert state to fulfilled"
+            "test: deposit state not set to fulfilled"
         );
 
         // Duplicate withdrawal fulfillment seen. Should be ignored and chainstate not updated
@@ -710,7 +710,11 @@ mod tests {
         let chs = state_cache.state();
         let mut state_cache = StateCache::new(chs.clone());
         let result = process_l1_block(&mut state_cache, &block_manifest, params.rollup());
-        assert!(result.is_ok(), "should succeed");
-        assert_eq!(state_cache.state(), chs, "should not update chainstate");
+        assert!(result.is_ok(), "test: invoke process_l1_block");
+        assert_eq!(
+            state_cache.state(),
+            chs,
+            "test: chainstate changed unexpectedly"
+        );
     }
 }
