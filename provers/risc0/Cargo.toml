@@ -27,10 +27,8 @@ risc0-build = "2.1.0"
 
 [package.metadata.risc0]
 methods = [
+  "guest-btc-blockspace",
   "guest-evm-ee-stf",
   "guest-cl-stf",
-  "guest-cl-agg",
-  "guest-btc-blockspace",
-  "guest-l1-batch",
   "guest-checkpoint",
 ]

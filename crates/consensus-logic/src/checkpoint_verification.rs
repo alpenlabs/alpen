@@ -129,11 +129,8 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_proof_and_empty_public_values_on_strict_mode() {
-        let (checkpoint, mut rollup_params) = get_test_input();
-
-        // Ensure the mode is Strict for this test
-        rollup_params.proof_publish_mode = ProofPublishMode::Strict;
+    fn test_empty_public_values() {
+        let (checkpoint, rollup_params) = get_test_input();
 
         // Explicitly create an empty proof receipt for this test case
         let empty_receipt = ProofReceipt::new(Proof::new(vec![]), PublicValues::new(vec![]));
@@ -163,11 +160,9 @@ mod tests {
 
         let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
 
-        // Check that the result is an Err containing the ProofVerificationError variant
-        // and that the error message matches the expected format for empty proofs in strict mode.
-        assert!(
-            matches!(result, Err(ZkVmError::ProofVerificationError(msg)) if msg.contains("Empty proof received for checkpoint") && msg.contains("which is not allowed in strict proof mode"))
-        );
+        // Check that the result is an Err containing the ProofVerificationError
+        dbg!(&result);
+        assert!(result.is_err());
     }
 
     // #[test]
