@@ -43,11 +43,11 @@ where
 
     while curr_level.len() > 1 {
         let len = curr_level.len();
-        if len % 2 != 0 {
+        if !len.is_multiple_of(2) {
             curr_level.push(curr_level[len - 1]);
         }
 
-        let proof_item_index = if curr_index % 2 == 0 {
+        let proof_item_index = if curr_index.is_multiple_of(2) {
             curr_index + 1
         } else {
             curr_index - 1
