@@ -30,7 +30,7 @@ where
     type Block = <CTX as ContextTr>::Block;
 
     fn set_block(&mut self, block: Self::Block) {
-        self.evm_ctx.data.ctx.set_block(block);
+        self.evm_ctx.ctx.set_block(block);
     }
     fn replay(
         &mut self,
@@ -43,7 +43,7 @@ where
     }
 
     fn transact_one(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
-        self.evm_ctx.data.ctx.set_tx(tx);
+        self.evm_ctx.ctx.set_tx(tx);
         let mut handler = AlpenRevmHandler::default();
         handler.run(self)
     }
@@ -71,11 +71,11 @@ where
     type Inspector = INSP;
 
     fn set_inspector(&mut self, inspector: Self::Inspector) {
-        self.evm_ctx.data.inspector = inspector;
+        self.evm_ctx.inspector = inspector;
     }
 
     fn inspect_one_tx(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
-        self.evm_ctx.data.ctx.set_tx(tx);
+        self.evm_ctx.ctx.set_tx(tx);
         let mut handler = AlpenRevmHandler::default();
         handler.inspect_run(self)
     }
