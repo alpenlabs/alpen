@@ -85,6 +85,10 @@ jobs:
       - name: Cleanup Space
         uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 
+      - name: git logs
+        run: |
+          git log -10
+
       - name: Install bitcoind
         env:
           BITCOIND_VERSION: "29.0"
