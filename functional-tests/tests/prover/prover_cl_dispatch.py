@@ -33,7 +33,6 @@ class ProverClientTest(testenv.StrataTestBase):
         reth_waiter = self.create_reth_waiter(reth.create_rpc())
         reth_waiter.wait_until_eth_block_at_least(20)
 
-
         # Dispatch the prover task
         start_block_id = cl_slot_to_block_id(seqrpc, CL_PROVER_PARAMS["start_block"])
         start_block_commitment = {"slot": CL_PROVER_PARAMS["start_block"], "blkid": start_block_id}

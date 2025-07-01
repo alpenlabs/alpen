@@ -401,9 +401,12 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         }
 
         # Wait until clients are ready
-        seq_waiter = StrataWaiter(sequencer.create_rpc(), None, timeout=30, interval=2)
+        import logging
+
+        logger = logging.getLogger(__name__)
+        seq_waiter = StrataWaiter(sequencer.create_rpc(), logger, timeout=30, interval=2)
         seq_waiter.wait_until_client_ready()
-        fn_waiter = StrataWaiter(fullnode.create_rpc(), None, timeout=30, interval=2)
+        fn_waiter = StrataWaiter(fullnode.create_rpc(), logger, timeout=30, interval=2)
         fn_waiter.wait_until_client_ready()
         # TODO: add others like prover, reth, btc
 

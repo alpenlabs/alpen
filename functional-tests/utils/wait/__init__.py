@@ -6,7 +6,7 @@ Usage:
 
     # Create waiters with RPC clients
     strata_waiter = StrataWaiter(seqrpc, logger, timeout=30)
-    reth_waiter = RethWaiter(rethrpc, timeout=10)
+    reth_waiter = RethWaiter(rethrpc, logger, timeout=10)
     prover_waiter = ProverWaiter(prover_rpc, logger, timeout=300)
 
     # Use waiter methods

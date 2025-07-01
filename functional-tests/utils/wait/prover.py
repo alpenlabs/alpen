@@ -1,16 +1,9 @@
 import time
-from dataclasses import dataclass
-from typing import Any
 
-from utils.wait.base import BaseWaiter
+from utils.wait.base import RpcWaiter
 
 
-@dataclass
-class ProverWaiter(BaseWaiter[Any]):
-    """
-    Wrapper for encapsulating and waiting prover related operations
-    """
-
+class ProverWaiter(RpcWaiter):
     def wait_for_proof_completion(self, task_id: str, timeout: int | None = None) -> bool:
         """
         Waits for a proof task to complete/fail within a specified timeout period.
@@ -35,7 +28,7 @@ class ProverWaiter(BaseWaiter[Any]):
 
         while True:
             # Fetch the proof status
-            proof_status = self.inner.dev_strata_getTaskStatus(task_id)
+            proof_status = self.rpc_client.dev_strata_getTaskStatus(task_id)
             assert proof_status is not None
             self.logger.info(f"Got the proof status {proof_status}")
 
@@ -62,7 +55,7 @@ class ProverWaiter(BaseWaiter[Any]):
 
         timeout = timeout or self.timeout
         self._wait_until(
-            lambda: self.inner.dev_strata_getReport() is not None,
+            lambda: self.rpc_client.dev_strata_getReport() is not None,
             error_with="Prover did not start on time",
             timeout=timeout,
             step=self.interval,
