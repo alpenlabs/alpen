@@ -66,13 +66,13 @@ where
     };
     let logdata = LogData::from(&evt);
 
-    evmctx.journal().log(Log {
+    evmctx.journal_mut().log(Log {
         address: BRIDGEOUT_ADDRESS,
         data: logdata,
     });
 
     let mut account = evmctx
-        .journal()
+        .journal_mut()
         .load_account(BRIDGEOUT_ADDRESS) // Error case should never occur
         .map_err(|_| PrecompileError::Fatal("Failed to load BRIDGEOUT_ADDRESS account".into()))?;
 

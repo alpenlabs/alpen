@@ -3,7 +3,9 @@ use std::{
     sync::OnceLock,
 };
 
-use reth_evm::{eth::EthEvmContext, Database, Evm, EvmEnv, EvmFactory};
+use reth_evm::{
+    eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
+};
 use revm::{
     context::{BlockEnv, Cfg, ContextTr, TxEnv},
     context_interface::result::{EVMError, HaltReason, ResultAndState},
@@ -137,6 +139,8 @@ impl EvmFactory for AlpenEvmFactory {
     type HaltReason = HaltReason;
 
     type Spec = SpecId;
+
+    type Precompiles = PrecompilesMap;
 
     fn create_evm<DB: reth_evm::Database>(
         &self,
