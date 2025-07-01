@@ -15,7 +15,7 @@ use crate::{
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RollupParams {
     /// Rollup name
     pub rollup_name: String,
@@ -134,8 +134,8 @@ impl RollupParams {
         crate::hash::raw(&raw_bytes)
     }
 
-    pub fn rollup_vk(&self) -> RollupVerifyingKey {
-        self.rollup_vk
+    pub fn rollup_vk(&self) -> &RollupVerifyingKey {
+        &self.rollup_vk
     }
 }
 
