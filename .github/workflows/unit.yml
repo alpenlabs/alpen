@@ -67,12 +67,12 @@ jobs:
           toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
 
       - name: Install latest nextest release
-        uses: taiki-e/install-action@9903ab6feadaec33945de535fe9d181b91802a55 # v2
+        uses: taiki-e/install-action@9ca1734d8940023f074414ee621fd530c4ce10f2 # v2.55.3
         with:
-          tool: nextest@0.9.98
+          tool: nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@9903ab6feadaec33945de535fe9d181b91802a55 # v2
+        uses: taiki-e/install-action@9ca1734d8940023f074414ee621fd530c4ce10f2 # v2.55.3
         with:
           tool: cargo-llvm-cov
 
