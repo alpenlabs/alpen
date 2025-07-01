@@ -1,11 +1,12 @@
 use revm::{
     context::{
-        result::{EVMError, ExecutionResult, InvalidTransaction, ResultAndState},
-        ContextSetters, ContextTr, JournalOutput, JournalTr,
+        result::{EVMError, ExecResultAndState, ExecutionResult, HaltReason, InvalidTransaction},
+        ContextSetters, ContextTr, JournalTr,
     },
-    handler::{instructions::EthInstructions, EvmTr, Handler, PrecompileProvider},
+    handler::{instructions::EthInstructions, EvmTr, Handler},
     inspector::{InspectorHandler, JournalExt},
-    interpreter::{interpreter::EthInterpreter, InterpreterResult},
+    interpreter::interpreter::EthInterpreter,
+    state::EvmState,
     Database, DatabaseCommit, ExecuteCommitEvm, ExecuteEvm, InspectCommitEvm, InspectEvm,
     Inspector,
 };
@@ -15,52 +16,57 @@ use crate::api::{evm::AlpenEvmInner, handler::AlpenRevmHandler};
 /// Type alias for the error type of the AlpenEvm.
 type AlpenEvmError<CTX> = EVMError<<<CTX as ContextTr>::Db as Database>::Error, InvalidTransaction>;
 
-impl<CTX, INSP, PRECOMPILE> ExecuteEvm
-    for AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
+// Trait that allows to replay and transact the transaction.
+impl<CTX, INSP> ExecuteEvm for AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>>
 where
-    CTX: ContextSetters<Journal: JournalTr<FinalOutput = JournalOutput>>,
-    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
+    CTX: ContextSetters<Journal: JournalTr<State = EvmState>>,
 {
-    type Output = Result<ResultAndState, AlpenEvmError<CTX>>;
+    type State = EvmState;
+    type ExecutionResult = ExecutionResult<HaltReason>;
+    type Error = AlpenEvmError<CTX>;
 
     type Tx = <CTX as ContextTr>::Tx;
 
     type Block = <CTX as ContextTr>::Block;
 
-    fn set_tx(&mut self, tx: Self::Tx) {
-        self.evm_ctx.data.ctx.set_tx(tx);
-    }
-
     fn set_block(&mut self, block: Self::Block) {
         self.evm_ctx.data.ctx.set_block(block);
     }
-    fn replay(&mut self) -> Self::Output {
-        AlpenRevmHandler::default().run(self)
-    }
-}
-
-impl<CTX, INSP, PRECOMPILE> ExecuteCommitEvm
-    for AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
-where
-    CTX: ContextSetters<Db: DatabaseCommit, Journal: JournalTr<FinalOutput = JournalOutput>>,
-    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
-{
-    type CommitOutput = Result<ExecutionResult, AlpenEvmError<CTX>>;
-
-    fn replay_commit(&mut self) -> Self::CommitOutput {
-        self.replay().map(|r| {
-            self.evm_ctx.ctx().db().commit(r.state);
-            r.result
+    fn replay(
+        &mut self,
+    ) -> Result<ExecResultAndState<Self::ExecutionResult, Self::State>, Self::Error> {
+        let mut handler = AlpenRevmHandler::default();
+        handler.run(self).map(|result| {
+            let state = self.finalize();
+            ExecResultAndState::new(result, state)
         })
     }
+
+    fn transact_one(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
+        self.evm_ctx.data.ctx.set_tx(tx);
+        let mut handler = AlpenRevmHandler::default();
+        handler.run(self)
+    }
+
+    fn finalize(&mut self) -> Self::State {
+        self.ctx().journal_mut().finalize()
+    }
 }
 
-impl<CTX, INSP, PRECOMPILE> InspectEvm
-    for AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
+// Trait allows replay_commit and transact_commit functionality.
+impl<CTX, INSP> ExecuteCommitEvm for AlpenEvmInner<CTX, INSP>
 where
-    CTX: ContextSetters<Journal: JournalTr<FinalOutput = JournalOutput> + JournalExt>,
+    CTX: ContextSetters<Db: DatabaseCommit, Journal: JournalTr<State = EvmState>>,
+{
+    fn commit(&mut self, state: Self::State) {
+        self.ctx().db_mut().commit(state);
+    }
+}
+
+impl<CTX, INSP> InspectEvm for AlpenEvmInner<CTX, INSP>
+where
+    CTX: ContextSetters<Journal: JournalTr<State = EvmState> + JournalExt>,
     INSP: Inspector<CTX, EthInterpreter>,
-    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
     type Inspector = INSP;
 
@@ -68,25 +74,17 @@ where
         self.evm_ctx.data.inspector = inspector;
     }
 
-    fn inspect_replay(&mut self) -> Self::Output {
-        AlpenRevmHandler::default().inspect_run(self)
+    fn inspect_one_tx(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
+        self.evm_ctx.data.ctx.set_tx(tx);
+        let mut handler = AlpenRevmHandler::default();
+        handler.inspect_run(self)
     }
 }
 
-impl<CTX, INSP, PRECOMPILE> InspectCommitEvm
-    for AlpenEvmInner<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
+// Inspect
+impl<CTX, INSP> InspectCommitEvm for AlpenEvmInner<CTX, INSP>
 where
-    CTX: ContextSetters<
-        Db: DatabaseCommit,
-        Journal: JournalTr<FinalOutput = JournalOutput> + JournalExt,
-    >,
+    CTX: ContextSetters<Db: DatabaseCommit, Journal: JournalTr<State = EvmState> + JournalExt>,
     INSP: Inspector<CTX, EthInterpreter>,
-    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    fn inspect_replay_commit(&mut self) -> Self::CommitOutput {
-        self.inspect_replay().map(|r| {
-            self.evm_ctx.ctx().db().commit(r.state);
-            r.result
-        })
-    }
 }
