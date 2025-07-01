@@ -13717,8 +13717,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-primitives",
  "zkaleido",
- "zkaleido-risc0-groth16-verifier",
- "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -13892,6 +13890,8 @@ dependencies = [
  "thiserror 2.0.12",
  "zeroize",
  "zkaleido",
+ "zkaleido-risc0-groth16-verifier",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]

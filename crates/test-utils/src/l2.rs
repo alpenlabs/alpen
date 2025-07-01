@@ -96,11 +96,7 @@ pub fn gen_params_with_seed(seed: u64) -> Params {
             target_l2_batch_size: 64,
             address_length: 20,
             deposit_amount: 1_000_000_000,
-            rollup_vk: RollupVerifyingKey::SP1VerifyingKey(
-                "0x00b01ae596b4e51843484ff71ccbd0dd1a030af70b255e6b9aad50b81d81266f"
-                    .parse()
-                    .unwrap(),
-            ),
+            rollup_vk: RollupVerifyingKey::NativeVerifyingKey,
             dispatch_assignment_dur: 64,
             proof_publish_mode: ProofPublishMode::Strict,
             max_deposits_in_block: 16,
