@@ -14,7 +14,7 @@ use strata_state::{
     block::L2BlockBundle, chain_state::Chainstate, operation::*, state_op::WriteBatchEntry,
     sync_event::SyncEvent,
 };
-use zkaleido::ProofReceipt;
+use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
     entities::bridge_tx_state::BridgeTxState,
@@ -262,12 +262,12 @@ pub trait ProofDatabase {
     /// Inserts a proof into the database.
     ///
     /// Returns `Ok(())` on success, or an error on failure.
-    fn put_proof(&self, proof_key: ProofKey, proof: ProofReceipt) -> DbResult<()>;
+    fn put_proof(&self, proof_key: ProofKey, proof: ProofReceiptWithMetadata) -> DbResult<()>;
 
     /// Retrieves a proof by its key.
     ///
     /// Returns `Some(proof)` if found, or `None` if not.
-    fn get_proof(&self, proof_key: &ProofKey) -> DbResult<Option<ProofReceipt>>;
+    fn get_proof(&self, proof_key: &ProofKey) -> DbResult<Option<ProofReceiptWithMetadata>>;
 
     /// Deletes a proof by its key.
     ///
