@@ -2,7 +2,7 @@ use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, program::EvmEePro
 use strata_test_utils::evm_ee::EvmSegment;
 use tracing::info;
 use zkaleido::{
-    PerformanceReport, ProofReceipt, VerifyingKey, ZkVmHost, ZkVmHostPerf, ZkVmProgram,
+    PerformanceReport, ProofReceiptWithMetadata, VerifyingKey, ZkVmHost, ZkVmHostPerf, ZkVmProgram,
     ZkVmProgramPerf,
 };
 
@@ -12,7 +12,7 @@ pub(crate) fn prepare_input() -> EvmEeProofInput {
     segment.get_inputs().clone()
 }
 
-pub(crate) fn gen_proof(host: &impl ZkVmHost) -> ProofReceipt {
+pub(crate) fn gen_proof(host: &impl ZkVmHost) -> ProofReceiptWithMetadata {
     info!("Generating proof for EVM EE STF");
     let input = prepare_input();
     EvmEeProgram::prove(&input, host).unwrap()
@@ -24,7 +24,7 @@ pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
     EvmEeProgram::perf_report(&input, host).unwrap()
 }
 
-pub(crate) fn proof_with_vk(host: &impl ZkVmHost) -> (ProofReceipt, VerifyingKey) {
+pub(crate) fn proof_with_vk(host: &impl ZkVmHost) -> (ProofReceiptWithMetadata, VerifyingKey) {
     let proof = gen_proof(host);
     let vk = host.vk();
     (proof, vk)
