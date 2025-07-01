@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use clap::Args;
+use argh::FromArgs;
 use strata_db::traits::{CheckpointDatabase, Database, L1Database};
 use strata_primitives::l1::ProtocolOperation;
 use strata_rocksdb::CommonDb;
@@ -11,24 +11,27 @@ use crate::{
     errors::{DisplayableError, DisplayedError},
 };
 
-/// Arguments to show details about a specific epoch.
-#[derive(Args, Debug)]
+/// Shows details about an epoch
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-epoch-summary")]
 pub(crate) struct GetEpochSummaryArgs {
-    /// Epoch index; defaults to the latest
-    #[arg(value_name = "EPOCH_INDEX")]
+    /// epoch index; defaults to the latest
+    #[argh(positional)]
     pub(crate) epoch_idx: Option<u64>,
 }
 
-/// Arguments to show details about a checkpoint.
-#[derive(Args, Debug)]
+/// Shows details about a checkpoint
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-checkpoint-data")]
 pub(crate) struct GetCheckpointDataArgs {
-    /// Checkpoint index; defaults to the latest
-    #[arg(value_name = "CHECKPOINT_INDEX")]
+    /// checkpoint index; defaults to the latest
+    #[argh(positional)]
     pub(crate) checkpoint_idx: Option<u64>,
 }
 
-/// Arguments to show a summary of all checkpoints.
-#[derive(Args, Debug)]
+/// Show a summary of all checkpoints
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-checkpoints-summary")]
 pub(crate) struct GetCheckpointsSummaryArgs {}
 
 /// Show details about a specific epoch.

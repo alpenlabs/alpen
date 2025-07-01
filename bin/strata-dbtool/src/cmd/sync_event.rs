@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use clap::Args;
+use argh::FromArgs;
 use strata_db::traits::{Database, L1Database, SyncEventDatabase};
 use strata_rocksdb::CommonDb;
 use strata_state::sync_event::SyncEvent;
@@ -9,16 +9,18 @@ use tracing::warn;
 use super::l1::get_l1_horizon_height;
 use crate::errors::{DisplayableError, DisplayedError};
 
-/// Arguments to show details about a specific sync event.
-#[derive(Args, Debug)]
+/// Shows details about a sync event
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-sync-event")]
 pub(crate) struct GetSyncEventArgs {
-    /// Sync event index; defaults to the last written index
-    #[arg(value_name = "SYNC_EVENT_INDEX")]
+    /// sync event index; defaults to the last written index
+    #[argh(positional)]
     pub(crate) event_index: Option<u64>,
 }
 
-/// Arguments to show a summary of all sync events.
-#[derive(Args, Debug)]
+/// Shows a summary of all sync events
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-sync-events-summary")]
 pub(crate) struct GetSyncEventsSummaryArgs {}
 
 /// Get SyncEvent details by index.

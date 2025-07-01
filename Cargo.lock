@@ -985,20 +985,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-dbtool"
-version = "0.3.0-alpha.1"
-dependencies = [
- "clap",
- "hex",
- "strata-db",
- "strata-primitives",
- "strata-rocksdb",
- "strata-state",
- "tracing",
- "tracing-subscriber 0.3.19",
-]
-
-[[package]]
 name = "alpen-reth"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -2877,7 +2863,6 @@ dependencies = [
  "anstyle",
  "clap_lex",
  "strsim",
- "terminal_size",
 ]
 
 [[package]]
@@ -13795,6 +13780,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-dbtool"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "argh",
+ "hex",
+ "strata-db",
+ "strata-primitives",
+ "strata-rocksdb",
+ "strata-state",
+ "tracing",
+ "tracing-subscriber 0.3.19",
+]
+
+[[package]]
 name = "strata-eectl"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14569,16 +14568,6 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.3",
  "once_cell",
- "rustix 1.0.7",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "terminal_size"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45c6481c4829e4cc63825e62c49186a34538b7b2750b73b266581ffb612fb5ed"
-dependencies = [
  "rustix 1.0.7",
  "windows-sys 0.59.0",
 ]

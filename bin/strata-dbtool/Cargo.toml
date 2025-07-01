@@ -1,17 +1,17 @@
 [package]
 edition = "2021"
-name = "alpen-dbtool"
+name = "strata-dbtool"
 version = "0.3.0-alpha.1"
 
 [[bin]]
-name = "alpen-dbtool"
+name = "strata-dbtool"
 path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
-clap.workspace = true
+argh.workspace = true
 hex.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

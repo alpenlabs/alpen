@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use clap::Args;
+use argh::FromArgs;
 use hex::FromHex;
 use strata_db::traits::{ChainstateDatabase, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
@@ -10,19 +10,21 @@ use strata_state::{header::L2Header, state_op::WriteBatchEntry};
 // use strata_state::header::L2Header;
 use crate::errors::{DisplayableError, DisplayedError};
 
-/// Arguments to get the chainstate with a specific write index.
-#[derive(Args, Debug)]
+/// Shows the chainstate at the provided index
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-chainstate")]
 pub(crate) struct GetChainstateArgs {
-    /// Chainstate write index; defaults to the latest
-    #[arg(value_name = "CHAINSTATE_WRITE_INDEX")]
+    /// chainstate write index; defaults to the latest
+    #[argh(positional)]
     pub(crate) write_idx: Option<u64>,
 }
 
-/// Arguments to reset the chainstate to a specific L2 block.
-#[derive(Args, Debug)]
+/// Resets the chainstate to a specific L2 block
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "reset-chainstate")]
 pub(crate) struct ResetChainstateArgs {
-    /// Target L2 block hash or number to roll back to.
-    #[arg(value_name = "L2_BLOCK_ID")]
+    /// target L2 block hash or number to roll back to
+    #[argh(positional)]
     pub(crate) block_id: String,
 }
 

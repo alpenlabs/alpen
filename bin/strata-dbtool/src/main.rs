@@ -7,14 +7,12 @@ mod errors;
 
 use std::str::FromStr;
 
-use clap::Parser;
-
 use crate::{
     cli::{Cli, Command},
     cmd::{
         chainstate::{get_chainstate, reset_chainstate},
         checkpoint::{get_checkpoint_data, get_checkpoints_summary, get_epoch_summary},
-        client_state::get_client_state,
+        client_state::get_client_state_update,
         l1::{get_l1_manifest, get_l1_summary},
         l2::get_l2_block,
         sync_event::{get_sync_event, get_sync_events_summary},
@@ -26,7 +24,7 @@ use crate::{
 fn main() {
     tracing_subscriber::fmt::init();
 
-    let cli = Cli::parse();
+    let cli: Cli = argh::from_env();
 
     // // Safety: ensure node isn’t running by locking datadir.
     // let _guard = acquire_lock(&cli.datadir)?;
@@ -45,7 +43,7 @@ fn main() {
         Command::GetL1Manifest(args) => get_l1_manifest(db, args),
         Command::GetL1Summary(args) => get_l1_summary(db, args),
         Command::GetL2Block(args) => get_l2_block(db, args),
-        Command::GetClientState(args) => get_client_state(db, args),
+        Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
         Command::GetCheckpointData(args) => get_checkpoint_data(db, args),
         Command::GetCheckpointsSummary(args) => get_checkpoints_summary(db, args),
         Command::GetEpochSummary(args) => get_epoch_summary(db, args),

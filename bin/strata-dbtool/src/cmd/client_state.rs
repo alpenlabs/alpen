@@ -1,26 +1,28 @@
 use std::sync::Arc;
 
-use clap::Args;
+use argh::FromArgs;
 use strata_db::traits::{ClientStateDatabase, Database};
 use strata_rocksdb::CommonDb;
 use strata_state::operation::{ClientUpdateOutput, SyncAction};
 
 use crate::errors::{DisplayableError, DisplayedError};
 
-/// Arguments to show details about a specific client state update.
-#[derive(Args, Debug)]
-pub(crate) struct GetClientStateArgs {
-    /// Client state update index; defaults to the latest
-    #[arg(value_name = "STATE_UPDATE_INDEX")]
+/// Shows details about a client state update
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-client-state-update")]
+pub(crate) struct GetClientStateUpdateArgs {
+    /// client state update index; defaults to the latest
+    #[argh(positional)]
     pub(crate) state_update_idx: Option<u64>,
 }
 
 /// Show details about a specific L2 client state update.
-pub(crate) fn get_client_state(
+pub(crate) fn get_client_state_update(
     db: Arc<CommonDb>,
-    args: GetClientStateArgs,
+    args: GetClientStateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    let (client_state_update, update_idx) = get_latest_client_state(db, args.state_update_idx)?;
+    let (client_state_update, update_idx) =
+        get_latest_client_state_update(db, args.state_update_idx)?;
     let (client_state, sync_actions) = client_state_update.into_parts();
 
     println!("Client state index {update_idx}");
@@ -76,7 +78,7 @@ pub(crate) fn get_client_state(
 }
 
 /// Get the latest client state update from the database.
-pub(super) fn get_latest_client_state(
+pub(super) fn get_latest_client_state_update(
     db: Arc<CommonDb>,
     update_idx: Option<u64>,
 ) -> Result<(ClientUpdateOutput, u64), DisplayedError> {

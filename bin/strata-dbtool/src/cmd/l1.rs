@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use clap::Args;
+use argh::FromArgs;
 use hex::FromHex;
 use strata_db::traits::{Database, L1Database};
 use strata_primitives::{
@@ -11,20 +11,22 @@ use strata_rocksdb::CommonDb;
 use tracing::warn;
 
 use crate::{
-    cmd::client_state::get_latest_client_state,
+    cmd::client_state::get_latest_client_state_update,
     errors::{DisplayableError, DisplayedError},
 };
 
-/// Arguments to show details about an L1 manifest.
-#[derive(Args, Debug)]
+/// Shows details about an L1 manifest
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-l1-manifest")]
 pub(crate) struct GetL1ManifestArgs {
-    /// Block height; defaults to the chain tip
-    #[arg(value_name = "L1_BLOCK_ID")]
+    /// block height; defaults to the chain tip
+    #[argh(positional)]
     pub(crate) block_id: String,
 }
 
-/// Arguments to show a summary of all L1 manifests.
-#[derive(Args, Debug)]
+/// Shows a summary of all L1 manifests
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-l1-summary")]
 pub(crate) struct GetL1SummaryArgs {}
 
 /// Get details about a specific L1 block manifest.
@@ -125,7 +127,8 @@ pub(crate) fn get_l1_summary(
         .internal_error("Failed to read L1 genesis block id")?
         .expect("valid genesis block id");
 
-    let (latest_client_state, latest_update_idx) = get_latest_client_state(db.clone(), None)?;
+    let (latest_client_state, latest_update_idx) =
+        get_latest_client_state_update(db.clone(), None)?;
     let genesis_l1_height = latest_client_state.state().genesis_l1_height();
 
     println!("L1 horizon height: {l1_horizon_height}, block id {horizon_l1_block_id:?}");

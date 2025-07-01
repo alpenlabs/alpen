@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use clap::Args;
+use argh::FromArgs;
 use hex::FromHex;
 use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
@@ -8,11 +8,12 @@ use strata_rocksdb::CommonDb;
 
 use crate::errors::{DisplayableError, DisplayedError};
 
-/// Arguments to show details about a specific L2 block.
-#[derive(Args, Debug)]
+/// Shows details about a specific L2 block
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "get-l2-block")]
 pub(crate) struct GetL2BlockArgs {
     /// L2 Block id
-    #[arg(value_name = "L2_BLOCK_ID")]
+    #[argh(positional)]
     pub(crate) block_id: String,
 }
 
