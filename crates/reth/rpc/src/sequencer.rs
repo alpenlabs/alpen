@@ -5,6 +5,7 @@ use std::sync::{atomic::AtomicUsize, Arc};
 use jsonrpsee_types::error::{ErrorObject, INTERNAL_ERROR_CODE};
 use reqwest::Client;
 use reth_rpc_eth_types::error::{EthApiError, ToRpcError};
+use reth_rpc_server_types::result::rpc_err;
 
 /// Error type when interacting with the Sequencer
 #[derive(Debug, thiserror::Error)]
@@ -19,7 +20,7 @@ pub enum SequencerRpcError {
 
 impl ToRpcError for SequencerRpcError {
     fn to_rpc_error(&self) -> ErrorObject<'static> {
-        ErrorObject::owned(INTERNAL_ERROR_CODE, self.to_string(), None::<String>)
+        rpc_err(INTERNAL_ERROR_CODE, self.to_string(), None)
     }
 }
 
