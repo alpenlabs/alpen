@@ -88,7 +88,16 @@ impl TaskTracker {
             let task = ProofKey::new(proof_id, *host);
             tasks.push(task);
             let dep_tasks: Vec<_> = deps.iter().map(|&dep| ProofKey::new(dep, *host)).collect();
-            self.insert_task(task, &dep_tasks, db)?;
+
+            // Try to insert task. Continue if the task already exists.
+            let res = self.insert_task(task, &dep_tasks, db);
+            if let Err(err) = res {
+                if let ProvingTaskError::TaskAlreadyFound(_) = err {
+                    info!(?proof_id, "Task already exists.");
+                } else {
+                    return Err(err);
+                }
+            }
         }
 
         Ok(tasks)
