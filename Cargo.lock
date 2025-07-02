@@ -14318,6 +14318,7 @@ dependencies = [
  "strata-proofimpl-evm-ee-stf",
  "strata-state",
  "tokio",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]

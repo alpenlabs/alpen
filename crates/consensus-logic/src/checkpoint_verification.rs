@@ -113,7 +113,7 @@ pub fn verify_proof(
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::params::ProofPublishMode;
+    use strata_primitives::{params::ProofPublishMode, proof::RollupVerifyingKey};
     use strata_test_utils::l2::{gen_params, get_test_signed_checkpoint};
     use zkaleido::{Proof, ProofReceipt, PublicValues, ZkVmError};
 
@@ -145,11 +145,11 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_proof_and_non_empty_public_values_on_strict_mode() {
+    fn test_empty_proof_on_native_mode() {
         let (checkpoint, mut rollup_params) = get_test_input();
 
         // Ensure the mode is Strict for this test
-        rollup_params.proof_publish_mode = ProofPublishMode::Strict;
+        rollup_params.rollup_vk = RollupVerifyingKey::NativeVerifyingKey;
 
         let public_values = checkpoint.batch_transition();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();
@@ -160,50 +160,56 @@ mod tests {
 
         let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
 
-        // Check that the result is an Err containing the ProofVerificationError
-        dbg!(&result);
-        assert!(result.is_err());
+        // In native mode, there is no proof so it is fine
+        assert!(result.is_ok());
     }
 
-    // #[test]
-    // fn test_empty_proof_on_timeout_mode_with_non_native_vk() {
-    //     let (checkpoint, mut rollup_params) = get_test_input();
+    #[test]
+    fn test_empty_proof_on_non_native_mode() {
+        let (checkpoint, rollup_params) = get_test_input();
 
-    //     // Ensure the mode is Timeout for this test
-    //     rollup_params.proof_publish_mode = ProofPublishMode::Timeout(1_000);
+        // Ensure non native mode
+        assert!(!matches!(
+            rollup_params.rollup_vk,
+            RollupVerifyingKey::NativeVerifyingKey
+        ));
 
-    //     // Ensure the VK is non-native for this test
-    //     rollup_params.rollup_vk = RollupVerifyingKey::SP1VerifyingKey(
-    //         "0x00b01ae596b4e51843484ff71ccbd0dd1a030af70b255e6b9aad50b81d81266f"
-    //             .parse()
-    //             .unwrap(),
-    //     );
+        let public_values = checkpoint.batch_transition();
+        let encoded_public_values = borsh::to_vec(public_values).unwrap();
 
-    //     let empty_receipt = ProofReceipt::new(Proof::new(vec![]), PublicValues::new(vec![]));
+        // Create a proof receipt with an empty proof and non-empty public values
+        let proof_receipt =
+            ProofReceipt::new(Proof::new(vec![]), PublicValues::new(encoded_public_values));
 
-    //     let result = verify_proof(&checkpoint, &empty_receipt, &rollup_params);
+        let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
 
-    //     assert!(result.is_ok());
-    // }
+        assert!(matches!(
+            result,
+            Err(ZkVmError::ProofVerificationError { .. })
+        ));
+    }
 
-    // #[test]
-    // fn test_empty_proof_on_timeout_mode_with_native_vk() {
-    //     let (checkpoint, mut rollup_params) = get_test_input();
+    #[test]
+    fn test_empty_proof_on_non_native_mode_with_timeout() {
+        let (checkpoint, mut rollup_params) = get_test_input();
 
-    //     // Ensure the mode is Timeout for this test
-    //     rollup_params.proof_publish_mode = ProofPublishMode::Timeout(1_000);
+        // Ensure the mode is Timeout for this test
+        rollup_params.proof_publish_mode = ProofPublishMode::Timeout(1_000);
 
-    //     // Ensure the VK is native for this test
-    //     rollup_params.rollup_vk = RollupVerifyingKey::NativeVerifyingKey(
-    //         "0000000000000000000000000000000000000000000000000000000000000000"
-    //             .parse()
-    //             .unwrap(),
-    //     );
+        // Ensure non native mode
+        assert!(!matches!(
+            rollup_params.rollup_vk,
+            RollupVerifyingKey::NativeVerifyingKey
+        ));
 
-    //     let empty_receipt = ProofReceipt::new(Proof::new(vec![]), PublicValues::new(vec![]));
+        let public_values = checkpoint.batch_transition();
+        let encoded_public_values = borsh::to_vec(public_values).unwrap();
 
-    //     let result = verify_proof(&checkpoint, &empty_receipt, &rollup_params);
+        // Create a proof receipt with an empty proof and non-empty public values
+        let proof_receipt =
+            ProofReceipt::new(Proof::new(vec![]), PublicValues::new(encoded_public_values));
 
-    //     assert!(result.is_ok());
-    // }
+        let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
+        assert!(result.is_ok());
+    }
 }
