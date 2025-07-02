@@ -2,7 +2,8 @@ import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
-from utils import bytes_to_big_endian, cl_slot_to_block_id, wait_for_proof_with_time_out, wait_until
+from envs.testenv import BasicEnvConfig
+from utils import *
 
 CHECKPOINT_PROVER_PARAMS = {
     "checkpoint_idx": 1,
@@ -14,10 +15,19 @@ CHECKPOINT_PROVER_PARAMS = {
 @flexitest.register
 class ProverClientTest(testenv.StrataTester):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("prover")
+        # standalone env for this test as it involves putting things in DB, that
+        # interferes with other proof
+        rollup_settings = RollupParamsSettings.new_default()
+
+        ctx.set_env(
+            BasicEnvConfig(
+                pre_generate_blocks=101,
+                prover_client_settings=ProverClientSettings.new_default(),
+                rollup_settings=rollup_settings,
+            )
+        )
 
     def main(self, ctx: flexitest.RunContext):
-        self.warning("SKIPPING TEST prover_checkpoint_manual - not implemented")
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
 
