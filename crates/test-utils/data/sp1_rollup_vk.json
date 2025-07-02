@@ -1,0 +1,58 @@
+{
+    "vk": {
+        "g1": {
+            "alpha": {
+                "x": "0x2d4d9aa7e302d9df41749d5507949d05dbea33fbb16c643b22f599a2be6df2e2",
+                "y": "0x14bedd503c37ceb061d8ec60209fe345ce89830a19230301f076caff004d1926"
+            },
+            "k": [
+                {
+                    "x": "0x2509cd86e0c37d3488151fb630535d5ef158cc54a8e8c635743e636871973d07",
+                    "y": "0x2e318f6ba5b0b89338edefeca1f5e6b9397ae6186ede2b786d40a3ae4ad8aa60"
+                },
+                {
+                    "x": "0x04eab241388a79817fe0e0e2ead0b2ec4ffdec51a16028dee020634fd129e71c",
+                    "y": "0x07236256d21c60d02f0bdbf95cff83e03ea9e16fca56b18d5544b0889a65c1f5"
+                }
+            ]
+        },
+        "g2": {
+            "beta": {
+                "x": {
+                    "real": "0x0e187847ad4c798374d0d6732bf501847dd68bc0e071241e0213bc7fc13db7ab",
+                    "imaginary": "0x0967032fcbf776d1afc985f88877f182d38480a653f2decaa9794cbc3bf3060c"
+                },
+                "y": {
+                    "real": "0x192a8cc13cd9f762871f21e43451c6ca9eeab2cb2987c4e366a185c25dac2e7f",
+                    "imaginary": "0x001752a100a72fdf1e5a5d6ea841cc20ec838bccfcf7bd559e79f1c9c759b6a0"
+                }
+            },
+            "delta": {
+                "x": {
+                    "real": "0x03ff41f4ba0c37fe2caf27354d28e4b8f83d3b76777a63b327d736bffb0122ed",
+                    "imaginary": "0x1cc7cb8de715675f21f01ecc9b46d236e0865e0cc020024521998269845f74e6"
+                },
+                "y": {
+                    "real": "0x17387b4b9cf03927909b4f1c3d80fcd6865afc4a264a04499f7e2f6df690dd85",
+                    "imaginary": "0x2ed3b19b5eb39db0d19a3d72dcd590ac85a971def614f4fd11b56b3c5e53c44c"
+                }
+            },
+            "gamma": {
+                "x": {
+                    "real": "0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed",
+                    "imaginary": "0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2"
+                },
+                "y": {
+                    "real": "0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa",
+                    "imaginary": "0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b"
+                }
+            }
+        }
+    },
+    "vk_hash_tag": [
+        164,
+        89,
+        76,
+        89
+    ]
+}
