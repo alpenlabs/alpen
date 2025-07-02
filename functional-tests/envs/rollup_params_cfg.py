@@ -23,14 +23,16 @@ class OperatorConfig(BaseModel):
 
 
 class SP1Groth16Verifier(BaseModel):
-    model_config = {"extra": "allow"} # Allow any additional fields
+    model_config = {"extra": "allow"}  # Allow any additional fields
 
 
 class Risc0Groth16Verifier(BaseModel):
-    model_config = {"extra": "allow"} # Allow any additional fields
+    model_config = {"extra": "allow"}  # Allow any additional fields
+
 
 class Sp1RollupVk(BaseModel):
     sp1: SP1Groth16Verifier
+
 
 class Risc0RollupVk(BaseModel):
     risc0: Risc0Groth16Verifier
