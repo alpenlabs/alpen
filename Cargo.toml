@@ -256,7 +256,7 @@ futures-util = "0.3"
 hex = { version = "0.4", features = ["serde"] }
 http = "1.0.0"
 hyper = "0.14.25"
-jsonrpsee = "0.24"
+jsonrpsee = "0.25.1"
 jsonrpsee-types = "0.25.1"
 lru = "0.12"
 mockall = "0.11"

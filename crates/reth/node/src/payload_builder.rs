@@ -17,7 +17,9 @@ use reth_evm::{
     Evm, NextBlockEnvAttributes,
 };
 use reth_evm_ethereum::EthEvmConfig;
-use reth_node_api::{ConfigureEvm, FullNodeTypes, NodeTypes, PayloadBuilderAttributes};
+use reth_node_api::{
+    ConfigureEvm, FullNodeTypes, NodeTypes, PayloadBuilderAttributes, PrimitivesTy,
+};
 use reth_node_builder::{components::PayloadBuilderBuilder, PayloadBuilderConfig};
 use reth_payload_builder::{EthBuiltPayload, PayloadBuilderError};
 use reth_primitives::{EthPrimitives, InvalidTransactionError, Receipt};
@@ -41,7 +43,7 @@ use crate::{
 #[non_exhaustive]
 pub struct AlpenPayloadBuilderBuilder;
 
-impl<Node, Pool> PayloadBuilderBuilder<Node, Pool> for AlpenPayloadBuilderBuilder
+impl<Node, Pool, Evm> PayloadBuilderBuilder<Node, Pool, Evm> for AlpenPayloadBuilderBuilder
 where
     Node: FullNodeTypes<
         Types: NodeTypes<
@@ -53,6 +55,8 @@ where
     Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TransactionSigned>>
         + Unpin
         + 'static,
+    Evm: ConfigureEvm<Primitives = EthPrimitives, NextBlockEnvCtx = reth_evm::NextBlockEnvAttributes>
+        + 'static,
 {
     type PayloadBuilder = AlpenPayloadBuilder<Pool, Node::Provider>;
 
@@ -60,14 +64,19 @@ where
         self,
         ctx: &BuilderContext<Node>,
         pool: Pool,
+        evm_config: Evm,
     ) -> eyre::Result<Self::PayloadBuilder> {
         let conf = ctx.payload_builder_config();
-        Ok(AlpenPayloadBuilder::new(
-            ctx.provider().clone(),
-            pool,
-            ctx.chain_spec().clone(),
-            EthereumBuilderConfig::new().with_gas_limit(conf.gas_limit()),
-        ))
+        let chain = ctx.chain_spec().chain();
+        let gas_limit = conf.gas_limit_for(chain);
+
+        // Ok(AlpenPayloadBuilder::new(
+        //     ctx.provider().clone(),
+        //     pool,
+        //     evm_config,
+        //     EthereumBuilderConfig::new().with_gas_limit(gas_limit),
+        // ))
+        todo!()
     }
 }
 
@@ -90,13 +99,13 @@ impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
     pub fn new(
         client: Client,
         pool: Pool,
-        chain_spec: Arc<ChainSpec>,
+        evm_config: EthEvmConfig<AlpenEvmFactory>,
         builder_config: EthereumBuilderConfig,
     ) -> Self {
         Self {
             client,
             pool,
-            evm_config: EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default()),
+            evm_config,
             builder_config,
         }
     }
@@ -114,31 +123,33 @@ where
         &self,
         args: BuildArguments<Self::Attributes, Self::BuiltPayload>,
     ) -> Result<BuildOutcome<Self::BuiltPayload>, PayloadBuilderError> {
-        try_build_payload(
-            self.evm_config.clone(),
-            self.client.clone(),
-            self.pool.clone(),
-            self.builder_config.clone(),
-            args,
-            |attributes| self.pool.best_transactions_with_attributes(attributes),
-        )
+        // try_build_payload(
+        //     self.evm_config.clone(),
+        //     self.client.clone(),
+        //     self.pool.clone(),
+        //     self.builder_config.clone(),
+        //     args,
+        //     |attributes| self.pool.best_transactions_with_attributes(attributes),
+        // )
+        todo!()
     }
 
     fn build_empty_payload(
         &self,
         config: PayloadConfig<Self::Attributes>,
     ) -> Result<Self::BuiltPayload, PayloadBuilderError> {
-        let args = BuildArguments::new(Default::default(), config, Default::default(), None);
-        try_build_payload(
-            self.evm_config.clone(),
-            self.client.clone(),
-            self.pool.clone(),
-            self.builder_config.clone(),
-            args,
-            |attributes| self.pool.best_transactions_with_attributes(attributes),
-        )?
-        .into_payload()
-        .ok_or_else(|| PayloadBuilderError::MissingPayload)
+        // let args = BuildArguments::new(Default::default(), config, Default::default(), None);
+        // try_build_payload(
+        //     self.evm_config.clone(),
+        //     self.client.clone(),
+        //     self.pool.clone(),
+        //     self.builder_config.clone(),
+        //     args,
+        //     |attributes| self.pool.best_transactions_with_attributes(attributes),
+        // )?
+        // .into_payload()
+        // .ok_or_else(|| PayloadBuilderError::MissingPayload)
+        todo!()
     }
 }
 
@@ -262,7 +273,7 @@ where
         // There's only limited amount of blob space available per block, so we need to check if
         // the EIP-4844 can still fit in the block
         if let Some(blob_tx) = tx.as_eip4844() {
-            let tx_blob_count = blob_tx.blob_versioned_hashes.len() as u64;
+            let tx_blob_count = blob_tx.blob_versioned_hashes().unwrap_or_default().len() as u64;
 
             if block_blob_count + tx_blob_count > max_blob_count {
                 // we can't fit this _blob_ transaction into the block, so we mark it as
@@ -310,7 +321,7 @@ where
 
         // add to the total blob gas used if the transaction successfully executed
         if let Some(blob_tx) = tx.as_eip4844() {
-            block_blob_count += blob_tx.blob_versioned_hashes.len() as u64;
+            block_blob_count += blob_tx.blob_versioned_hashes().unwrap_or_default().len() as u64;
 
             // if we've reached the max blob count, we can skip blob txs entirely
             if block_blob_count == max_blob_count {
@@ -376,12 +387,13 @@ where
     let sealed_block = Arc::new(block.sealed_block().clone());
     debug!(target: "payload_builder", id=%attributes.id, sealed_block_header = ?sealed_block.sealed_header(), "sealed built block");
 
-    let mut eth_payload = EthBuiltPayload::new(attributes.id, sealed_block, total_fees, requests);
+    let eth_payload = EthBuiltPayload::new(attributes.id, sealed_block, total_fees, requests);
+    // TODO: Handle blob sidecars properly
+    // .with_sidecars(blob_sidecars.into_iter().map(Arc::unwrap_or_clone));
     // extend the payload with the blob sidecars from the executed txs
-    eth_payload.extend_sidecars(blob_sidecars.into_iter().map(Arc::unwrap_or_clone));
+    // eth_payload.extend_sidecars(blob_sidecars.into_iter().map(Arc::unwrap_or_clone));
 
     let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
-    // let strata_payload = StrataBuiltPayload::new(eth_payload, Default::default());
 
     Ok(BuildOutcome::Better {
         payload: strata_payload,

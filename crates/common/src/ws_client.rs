@@ -6,7 +6,6 @@ use core::fmt;
 use deadpool::managed::{self, Manager, Object, Pool, RecycleError, RecycleResult};
 use jsonrpsee::{
     core::{
-        async_trait,
         client::{BatchResponse, ClientT},
         params::BatchRequestBuilder,
         traits::ToRpcParams,
@@ -112,46 +111,53 @@ impl ManagedWsClient {
 ///
 /// This implementation allows `[ManagedWsClient`] to perform JSON-RPC operations,
 /// including notifications, method calls, and batch requests.
-#[async_trait]
 impl ClientT for ManagedWsClient {
     /// Send a [notification request](https://www.jsonrpc.org/specification#notification).
     ///
     /// Notifications do not produce a response on the JSON-RPC server.
-    async fn notification<Params>(&self, method: &str, params: Params) -> Result<(), ClientError>
+    fn notification<Params>(&self, method: &str, params: Params) -> impl core::future::Future<Output = Result<(), ClientError>> + Send
     where
         Params: ToRpcParams + Send,
     {
-        self.get_ready_rpc_client()
-            .await?
-            .notification(method, params)
-            .await
+        async move {
+            self.get_ready_rpc_client()
+                .await?
+                .notification(method, params)
+                .await
+        }
     }
 
     /// Send a [method call request](https://www.jsonrpc.org/specification#request_object).
     ///
     /// Returns `Ok` if the server responds successfully, otherwise a `ClientError`.
-    async fn request<R, Params>(&self, method: &str, params: Params) -> Result<R, ClientError>
+    fn request<R, Params>(&self, method: &str, params: Params) -> impl core::future::Future<Output = Result<R, ClientError>> + Send
     where
         R: DeserializeOwned,
         Params: ToRpcParams + Send,
     {
-        self.get_ready_rpc_client()
-            .await?
-            .request(method, params)
-            .await
+        async move {
+            self.get_ready_rpc_client()
+                .await?
+                .request(method, params)
+                .await
+        }
     }
 
     /// Sends a batch request.
-    async fn batch_request<'a, R>(
+    fn batch_request<'a, R>(
         &self,
         batch: BatchRequestBuilder<'a>,
-    ) -> Result<BatchResponse<'a, R>, ClientError>
+    ) -> impl core::future::Future<Output = Result<BatchResponse<'a, R>, ClientError>> + Send
     where
         R: DeserializeOwned + fmt::Debug + 'a,
     {
-        self.get_ready_rpc_client()
-            .await?
-            .batch_request(batch)
-            .await
+        let pool = self.pool.clone();
+        async move {
+            pool.get()
+                .await
+                .map_err(|err| ClientError::Custom(err.to_string()))?
+                .batch_request(batch)
+                .await
+        }
     }
 }

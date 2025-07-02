@@ -47,14 +47,7 @@ impl NodeTypes for AlpenEthereumNode {
 
 impl<N> Node<N> for AlpenEthereumNode
 where
-    N: FullNodeTypes<
-        Types: NodeTypes<
-            Payload = AlpenEngineTypes,
-            ChainSpec = ChainSpec,
-            Primitives = EthPrimitives,
-            Storage = EthStorage,
-        >,
-    >,
+    N: FullNodeTypes<Types = Self>,
 {
     type ComponentsBuilder = ComponentsBuilder<
         N,
@@ -65,24 +58,28 @@ where
         EthereumConsensusBuilder,
     >;
 
-    type AddOns = AlpenRethNodeAddOns<
-        NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
-    >;
+    // type AddOns = AlpenRethNodeAddOns<
+    //     NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
+    // >;
+
+    type AddOns = ();
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
-        ComponentsBuilder::default()
-            .node_types::<N>()
-            .pool(AlpenEthereumPoolBuilder::default())
-            .payload(BasicPayloadServiceBuilder::default())
-            .network(EthereumNetworkBuilder::default())
-            .executor(AlpenExecutorBuilder::default())
-            .consensus(EthereumConsensusBuilder::default())
+        todo!()
+        // ComponentsBuilder::default()
+        //     .node_types::<N>()
+        //     .pool(AlpenEthereumPoolBuilder::default())
+        //     .payload(BasicPayloadServiceBuilder::default())
+        //     .network(EthereumNetworkBuilder::default())
+        //     .executor(AlpenExecutorBuilder::default())
+        //     .consensus(EthereumConsensusBuilder::default())
     }
 
     fn add_ons(&self) -> Self::AddOns {
-        Self::AddOns::builder()
-            .with_sequencer(self.args.sequencer_http.clone())
-            .build()
+        todo!()
+        // Self::AddOns::builder()
+        //     .with_sequencer(self.args.sequencer_http.clone())
+        //     .build()
     }
 }
 
@@ -117,6 +114,7 @@ impl AlpenRethAddOnsBuilder {
                 AlpenEthApiBuilder::default().with_sequencer(sequencer_client_clone),
                 AlpenEngineValidatorBuilder::default(),
                 BasicEngineApiBuilder::default(),
+                Default::default(),
             ),
         }
     }
@@ -182,9 +180,7 @@ where
     ) -> eyre::Result<Self::Handle> {
         let Self { rpc_add_ons } = self;
 
-        rpc_add_ons
-            .launch_add_ons_with(ctx, move |_, _, _| Ok(()))
-            .await
+        rpc_add_ons.launch_add_ons_with(ctx, move |_| Ok(())).await
     }
 }
 
