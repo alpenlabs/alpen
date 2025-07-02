@@ -5,7 +5,6 @@ from envs.testenv import BasicEnvConfig
 from utils import (
     ProverClientSettings,
     RollupParamsSettings,
-    wait_for_proof_with_time_out,
     wait_until,
 )
 
@@ -61,13 +60,11 @@ class ProverClientRestartTest(testenv.StrataTestBase):
 
     def prove_latest_checkpoint(self, prover_client_rpc):
         task_ids = prover_client_rpc.dev_strata_proveLatestCheckPoint()
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
         self.debug(f"got task ids: {task_ids}")
         task_id = task_ids[0]
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        time_out = 30
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=time_out
-        )
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

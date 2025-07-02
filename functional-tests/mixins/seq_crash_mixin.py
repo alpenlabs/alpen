@@ -1,4 +1,3 @@
-import time
 from collections.abc import Callable
 
 import flexitest
@@ -28,7 +27,6 @@ class SeqCrashMixin(BaseMixin):
 
         Returns the chain_tip_slot before the bailout.
         """
-        time.sleep(2)
         cur_chain_tip = self.seqrpc.strata_syncStatus()["tip_height"]
 
         # Trigger the bailout

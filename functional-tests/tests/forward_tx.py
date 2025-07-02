@@ -2,7 +2,6 @@ import flexitest
 from web3 import Web3
 
 from envs import testenv
-from utils import wait_until
 
 
 @flexitest.register
@@ -11,11 +10,15 @@ class FullnodeElBlockGenerationTest(testenv.StrataTestBase):
         ctx.set_env("hub1")
 
     def main(self, ctx: flexitest.RunContext):
-        seq_web3: Web3 = ctx.get_service("seq_reth").create_web3()
-        fn_web3: Web3 = ctx.get_service("follower_1_reth").create_web3()
+        seq_reth = ctx.get_service("seq_reth")
+        seq_web3: Web3 = seq_reth.create_web3()
+        fn_reth = ctx.get_service("follower_1_reth")
+        fn_web3: Web3 = fn_reth.create_web3()
+
+        reth_waiter = self.create_reth_waiter(seq_reth.create_rpc())
 
         # give some time for the sequencer to start up and generate blocks
-        wait_until(lambda: seq_web3.eth.get_block_number() > 1)
+        reth_waiter.wait_until_eth_block_exceeds(1)
 
         dest = fn_web3.to_checksum_address("deadf001900dca3ebeefdeadf001900dca3ebeef")
 

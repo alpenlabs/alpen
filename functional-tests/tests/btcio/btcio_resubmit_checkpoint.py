@@ -35,12 +35,6 @@ class ResubmitCheckpointTest(testenv.StrataTestBase):
         # generate 5 btc blocks
         generate_n_blocks(btcrpc, 5)
 
-        # Wait for seq
-        wait_until(
-            lambda: seqrpc.strata_protocolVersion() is not None,
-            error_with="Sequencer did not start on time",
-        )
-
         verified_on = wait_until_with_value(
             lambda: seqrpc.strata_getL2BlockStatus(1),
             predicate=lambda val: isinstance(val, dict) and "Finalized" in val,

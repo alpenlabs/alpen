@@ -1,10 +1,9 @@
 import logging
-import time
 
 import flexitest
 
 from envs import testenv
-from utils.utils import wait_until_epoch_confirmed, wait_until_with_value
+from utils.utils import wait_until_with_value
 
 FOLLOW_DIST = 1
 
@@ -21,8 +20,8 @@ class SyncFromRpcTest(testenv.StrataTestBase):
         seq_reth_rpc = ctx.get_service("seq_reth").create_rpc()
         fullnode_reth_rpc = ctx.get_service("follower_1_reth").create_rpc()
 
-        # give some time for the sequencer to start up and generate blocks
-        time.sleep(5)
+        # Initialize waiters
+        seq_waiter = self.create_strata_waiter(seqrpc)
 
         # Pick a recent slot and make sure they're both the same.
         seqss = seqrpc.strata_syncStatus()
@@ -43,8 +42,6 @@ class SyncFromRpcTest(testenv.StrataTestBase):
 
         # Now *also* check the reth nodes.
         last_blocknum = int(seq_reth_rpc.eth_blockNumber(), 16)
-
-        time.sleep(3)
 
         # test an older block because latest may not have been synced yet
         test_blocknum = last_blocknum - 1
@@ -67,7 +64,7 @@ class SyncFromRpcTest(testenv.StrataTestBase):
 
         # Check fullnode sees same checkpoint reference as sequencer
         epoch = 1
-        wait_until_epoch_confirmed(seqrpc, epoch)
+        seq_waiter.wait_until_epoch_confirmed(epoch)
 
         # Wait for L1 reference to be available (checkpoint published to L1)
         def get_checkpoint_infos():

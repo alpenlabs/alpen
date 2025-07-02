@@ -1,5 +1,3 @@
-import time
-
 import flexitest
 from solcx import compile_source, install_solc, set_solc_version
 from web3 import Web3
@@ -17,6 +15,7 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
     def main(self, ctx: flexitest.RunContext):
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
+        reth_waiter = self.create_reth_waiter(rethrpc)
 
         web3: Web3 = reth.create_web3()
         web3.eth.default_account = web3.address
@@ -33,12 +32,7 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
         blockhash = rethrpc.eth_getBlockByNumber(hex(blocknum), False)["hash"]
 
         # wait for witness data generation
-        time.sleep(1)
-
-        # Get the state diff data
-        state_diff_data = rethrpc.strataee_getBlockStateDiff(blockhash)
-        assert state_diff_data is not None, "non empty state diff"
-
+        state_diff_data = reth_waiter.wait_until_state_diff_at_blockhash(blockhash, timeout=2)
         self.info(state_diff_data)
 
 

@@ -1,9 +1,6 @@
-import time
-
 import flexitest
 
 from envs import testenv
-from utils import wait_for_proof_with_time_out
 
 
 @flexitest.register
@@ -16,15 +13,15 @@ class BasicLoadGenerationTest(testenv.StrataTestBase):
         reth = ctx.get_service("reth")
         prover_client_rpc = prover_client.create_rpc()
         rethrpc = reth.create_rpc()
+        reth_waiter = self.create_reth_waiter(rethrpc)
 
-        # Wait for some blocks with transactions to be generated.
-        time.sleep(30)
-
-        block = int(rethrpc.eth_blockNumber(), base=16)
-        print(f"Latest reth block={block}")
-        self.test_checkpoint(50, block, prover_client_rpc)
+        # Wait for a some blocks with transactions to be generated.
+        block_num = reth_waiter.wait_until_eth_block_exceeds(25)
+        self.info(f"Latest reth block={block_num}")
+        self.test_checkpoint(50, block_num, prover_client_rpc)
 
     def test_checkpoint(self, l1_block, l2_block, prover_client_rpc):
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
         l1 = (1, l1_block)
         l2 = (1, l2_block)
 
@@ -35,4 +32,4 @@ class BasicLoadGenerationTest(testenv.StrataTestBase):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        assert wait_for_proof_with_time_out(prover_client_rpc, task_id, time_out=30)
+        assert prover_waiter.wait_for_proof_completion(task_id)

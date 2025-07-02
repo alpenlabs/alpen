@@ -4,7 +4,6 @@ from web3 import Web3
 from mixins import BaseMixin
 from utils import (
     el_slot_to_block_commitment,
-    wait_for_proof_with_time_out,
     wait_until_with_value,
 )
 
@@ -23,6 +22,7 @@ class ElPrecompileTest(BaseMixin):
 
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
 
         web3: Web3 = reth.create_web3()
         web3.eth.default_account = web3.address
@@ -58,7 +58,5 @@ class ElPrecompileTest(BaseMixin):
         task_id = task_ids[0]
         self.debug(f"Using task ID: {task_id}")
 
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=30
-        )
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

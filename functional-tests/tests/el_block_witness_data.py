@@ -1,5 +1,3 @@
-import time
-
 import flexitest
 from solcx import compile_source, install_solc, set_solc_version
 from web3 import Web3
@@ -17,6 +15,7 @@ class ElBlockWitnessDataGenerationTest(testenv.StrataTestBase):
     def main(self, ctx: flexitest.RunContext):
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
+        reth_waiter = self.create_reth_waiter(rethrpc)
 
         web3: Web3 = reth.create_web3()
         web3.eth.default_account = web3.address
@@ -33,12 +32,7 @@ class ElBlockWitnessDataGenerationTest(testenv.StrataTestBase):
         blockhash = rethrpc.eth_getBlockByNumber(hex(blocknum), False)["hash"]
 
         # wait for witness data generation
-        time.sleep(1)
-
-        # Get the witness data
-        witness_data = rethrpc.strataee_getBlockWitness(blockhash, True)
-        assert witness_data is not None, "non empty witness"
-
+        witness_data = reth_waiter.wait_until_block_witness_at_blockhash(blockhash, timeout=2)
         self.debug(witness_data)
 
 

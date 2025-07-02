@@ -2,7 +2,7 @@ import flexitest
 from web3 import Web3
 
 from envs import testenv
-from utils import el_slot_to_block_commitment, wait_for_proof_with_time_out, wait_until_with_value
+from utils import el_slot_to_block_commitment
 from utils.constants import PRECOMPILE_SCHNORR_ADDRESS
 from utils.precompile import (
     get_schnorr_precompile_input,
@@ -19,17 +19,15 @@ class ProverClientTest(testenv.StrataTestBase):
     def main(self, ctx: flexitest.RunContext):
         prover_client = ctx.get_service("prover_client")
         prover_client_rpc = prover_client.create_rpc()
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
+        reth_waiter = self.create_reth_waiter(rethrpc)
 
         web3: Web3 = reth.create_web3()
 
         # Wait for first EE block
-        wait_until_with_value(
-            lambda: web3.eth.get_block("latest")["number"],
-            lambda block_height: block_height > 0,
-            error_with="EE blocks not generated",
-        )
+        reth_waiter.wait_until_eth_block_at_least(1)
 
         secret_key = get_test_schnnor_secret_key()
         msg = "AlpenStrata"
@@ -46,11 +44,7 @@ class ProverClientTest(testenv.StrataTestBase):
         }
 
         # Wait for end EE block
-        wait_until_with_value(
-            lambda: web3.eth.get_block("latest")["number"],
-            lambda block_height: block_height >= ee_prover_params["end_block"],
-            error_with="EE blocks not generated",
-        )
+        reth_waiter.wait_until_eth_block_at_least(ee_prover_params["end_block"])
 
         # Dispatch the prover task
         start_block = el_slot_to_block_commitment(rethrpc, ee_prover_params["start_block"])
@@ -62,8 +56,5 @@ class ProverClientTest(testenv.StrataTestBase):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        time_out = 30
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=time_out
-        )
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed
