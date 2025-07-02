@@ -9,7 +9,6 @@ workspace = true
 [dependencies]
 strata-chaintsn.workspace = true
 strata-common = { workspace = true, default-features = true }
-strata-crypto = { workspace = true, default-features = true }
 strata-db.workspace = true
 strata-eectl.workspace = true
 strata-primitives.workspace = true

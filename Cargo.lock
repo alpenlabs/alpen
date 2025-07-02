@@ -13634,6 +13634,7 @@ dependencies = [
  "strata-test-utils",
  "thiserror 2.0.12",
  "tracing",
+ "zkaleido",
 ]
 
 [[package]]
@@ -13713,7 +13714,6 @@ dependencies = [
  "rand 0.8.5",
  "strata-chaintsn",
  "strata-common",
- "strata-crypto",
  "strata-db",
  "strata-eectl",
  "strata-primitives",
