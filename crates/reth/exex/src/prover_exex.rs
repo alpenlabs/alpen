@@ -7,7 +7,7 @@ use alpen_reth_db::WitnessStore;
 use eyre::eyre;
 use futures_util::TryStreamExt;
 use reth_chainspec::EthChainSpec;
-use reth_evm::execute::{BlockExecutorProvider, Executor};
+use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
@@ -21,7 +21,7 @@ use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 use tracing::{debug, error};
 
 use crate::{
-    alloy2reth::IntoRspGenesis,
+    alloy2reth::IntoRspChainConfig,
     cache_db_provider::{AccessedState, CacheDBProvider},
 };
 
@@ -97,7 +97,7 @@ where
     Node: FullNodeComponents,
     Node::Types: NodeTypes<Primitives = EthPrimitives>,
 {
-    let genesis = ctx.config.chain.genesis().clone().try_into_rsp()?;
+    let genesis = ctx.config.chain.genesis().config.clone().into_rsp();
 
     // fetch current block
     let current_block = ctx
@@ -132,7 +132,7 @@ where
         current_block,
         parent_state,
         ancestor_headers: accessed_ancestors,
-        state_requests: accessed_info.accessed_accounts().clone(),
+        // state_requests: accessed_info.accessed_accounts().clone(),
         bytecodes: accessed_info.accessed_contracts().clone(),
         custom_beneficiary: None,
         opcode_tracking: false,
@@ -204,11 +204,10 @@ where
 
     // wrap in a cache-backed provider and run the executor
     let cache_provider = CacheDBProvider::new(history_provider);
-    let cache_db = CacheDB::new(&cache_provider);
-    ctx.block_executor()
-        .clone()
-        .executor(cache_db)
-        .execute(&current_block)?;
+    let _cache_db = CacheDB::new(&cache_provider);
+
+    // TODO: Abishek Use the executor to run the block execution
+    // ctx.executor(cache_db).execute(&current_block)?;
 
     Ok(cache_provider.get_accessed_state())
 }

@@ -3,9 +3,7 @@ use std::{
     sync::OnceLock,
 };
 
-use reth_evm::{
-    eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
-};
+use reth_evm::{eth::EthEvmContext, Database, Evm, EvmEnv, EvmFactory};
 use revm::{
     context::{BlockEnv, Cfg, ContextTr, TxEnv},
     context_interface::result::{EVMError, HaltReason, ResultAndState},
@@ -15,7 +13,7 @@ use revm::{
         interpreter::EthInterpreter, Gas, InputsImpl, InstructionResult, InterpreterResult,
     },
     precompile::{bls12_381, PrecompileError, PrecompileFn, Precompiles},
-    Context, ExecuteEvm, InspectEvm, Inspector, MainBuilder, MainContext,
+    Context, Inspector, MainBuilder, MainContext,
 };
 use revm_primitives::{hardfork::SpecId, Address, Bytes, TxKind, U256};
 
@@ -53,10 +51,10 @@ pub fn load_precompiles() -> &'static Precompiles {
         precompiles.extend(bls12_381::precompiles());
 
         // Custom precompile.
-        precompiles.extend([
-            (SCHNORR_ADDRESS, verify_schnorr_precompile as PrecompileFn).into(),
-            (BRIDGEOUT_ADDRESS, bridgeout_precompile as PrecompileFn).into(),
-        ]);
+        // precompiles.extend([
+        //     (SCHNORR_ADDRESS, verify_schnorr_precompile as PrecompileFn).into(),
+        //     (BRIDGEOUT_ADDRESS, bridgeout_precompile as PrecompileFn).into(),
+        // ]);
         precompiles
     })
 }
@@ -90,26 +88,26 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for AlpenEvmPrecompiles {
             output: Bytes::new(),
         };
 
-        let res = match *address {
-            BRIDGEOUT_ADDRESS => bridge_context_call(&inputs.input, gas_limit, context),
-            _ => (precompile_fn)(&inputs.input, gas_limit),
-        };
+        // let res = match *address {
+        //     BRIDGEOUT_ADDRESS => bridge_context_call(&inputs.input, gas_limit, context),
+        //     _ => (precompile_fn)(&inputs.input, gas_limit),
+        // };
 
-        match res {
-            Ok(output) => {
-                let underflow = result.gas.record_cost(output.gas_used);
-                assert!(underflow, "Gas underflow is not possible");
-                result.output = output.bytes;
-            }
-            Err(PrecompileError::Fatal(e)) => return Err(e),
-            Err(e) => {
-                result.result = if e.is_oog() {
-                    InstructionResult::PrecompileOOG
-                } else {
-                    InstructionResult::PrecompileError
-                };
-            }
-        }
+        // match res {
+        //     Ok(output) => {
+        //         let underflow = result.gas.record_cost(output.gas_used);
+        //         assert!(underflow, "Gas underflow is not possible");
+        //         result.output = output.bytes;
+        //     }
+        //     Err(PrecompileError::Fatal(e)) => return Err(e),
+        //     Err(e) => {
+        //         result.result = if e.is_oog() {
+        //             InstructionResult::PrecompileOOG
+        //         } else {
+        //             InstructionResult::PrecompileError
+        //         };
+        //     }
+        // }
         Ok(Some(result))
     }
 
@@ -129,7 +127,7 @@ pub struct AlpenEvmFactory;
 
 impl EvmFactory for AlpenEvmFactory {
     type Evm<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>> =
-        AlpenEvm<DB, I, AlpenEvmPrecompiles>;
+        AlpenEvm<DB, I, Self::Precompiles>;
 
     type Context<DB: reth_evm::Database> = EthEvmContext<DB>;
 
@@ -140,7 +138,7 @@ impl EvmFactory for AlpenEvmFactory {
 
     type Spec = SpecId;
 
-    type Precompiles = PrecompilesMap;
+    type Precompiles = AlpenEvmPrecompiles;
 
     fn create_evm<DB: reth_evm::Database>(
         &self,
@@ -190,12 +188,12 @@ pub struct AlpenEvm<DB: Database, I, P = AlpenEvmPrecompiles> {
 impl<DB: Database, I, P> AlpenEvm<DB, I, P> {
     /// Provides a reference to the EVM context.
     pub const fn ctx(&self) -> &EthEvmContext<DB> {
-        &self.inner.evm_ctx.data.ctx
+        &self.inner.evm_ctx.ctx
     }
 
     /// Provides a mutable reference to the EVM context.
     pub fn ctx_mut(&mut self) -> &mut EthEvmContext<DB> {
-        &mut self.inner.evm_ctx.data.ctx
+        &mut self.inner.evm_ctx.ctx
     }
 }
 
@@ -224,25 +222,34 @@ impl<DB, I, P> Evm for AlpenEvm<DB, I, P>
 where
     DB: Database,
     I: Inspector<EthEvmContext<DB>>,
-    P: PrecompileProvider<EthEvmContext<DB>, Output = InterpreterResult>,
+    AlpenEvmPrecompiles: PrecompileProvider<EthEvmContext<DB>, Output = InterpreterResult>,
 {
     type DB = DB;
     type Tx = TxEnv;
     type Error = EVMError<DB::Error>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
+    type Precompiles = AlpenEvmPrecompiles;
+    type Inspector = I;
 
     fn block(&self) -> &BlockEnv {
         &self.block
     }
 
-    fn transact_raw(&mut self, tx: Self::Tx) -> Result<ResultAndState, Self::Error> {
-        if self.inspect {
-            self.inner.set_tx(tx);
-            self.inner.inspect_replay()
-        } else {
-            self.inner.transact(tx)
-        }
+    fn chain_id(&self) -> u64 {
+        self.cfg.chain_id
+    }
+
+    fn transact_raw(
+        &mut self,
+        _tx: Self::Tx,
+    ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
+        // if self.inspect {
+        //     self.ctx().inspect_tx(tx)
+        // } else {
+        //     self.inner.evm_ctx.transact(tx)
+        // }
+        todo!()
     }
 
     fn transact_system_call(
@@ -250,7 +257,7 @@ where
         caller: Address,
         contract: Address,
         data: Bytes,
-    ) -> Result<ResultAndState, Self::Error> {
+    ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
         let tx = TxEnv {
             caller,
             kind: TxKind::Call(contract),
@@ -313,59 +320,26 @@ where
     }
 
     fn finish(self) -> (Self::DB, EvmEnv<Self::Spec>) {
-        let Context {
-            block: block_env,
-            cfg: cfg_env,
-            journaled_state,
-            ..
-        } = self.inner.evm_ctx.data.ctx;
-
-        (journaled_state.database, EvmEnv { block_env, cfg_env })
+        todo!()
     }
 
     fn set_inspector_enabled(&mut self, enabled: bool) {
         self.inspect = enabled;
     }
 
-    fn transact(
-        &mut self,
-        tx: impl reth_evm::IntoTxEnv<Self::Tx>,
-    ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        self.transact_raw(tx.into_tx_env())
+    fn precompiles(&self) -> &Self::Precompiles {
+        todo!()
     }
 
-    fn transact_commit(
-        &mut self,
-        tx: impl reth_evm::IntoTxEnv<Self::Tx>,
-    ) -> Result<revm::context::result::ExecutionResult<Self::HaltReason>, Self::Error>
-    where
-        Self::DB: revm::DatabaseCommit,
-    {
-        let ResultAndState { result, state } = self.transact(tx)?;
-        self.db_mut().commit(state);
-
-        Ok(result)
+    fn precompiles_mut(&mut self) -> &mut Self::Precompiles {
+        todo!()
     }
 
-    fn into_db(self) -> Self::DB
-    where
-        Self: Sized,
-    {
-        self.finish().0
+    fn inspector(&self) -> &Self::Inspector {
+        todo!()
     }
 
-    fn into_env(self) -> EvmEnv<Self::Spec>
-    where
-        Self: Sized,
-    {
-        self.finish().1
-    }
-
-    fn enable_inspector(&mut self) {
-        self.set_inspector_enabled(true)
-    }
-
-    fn disable_inspector(&mut self) {
-        self.set_inspector_enabled(false)
+    fn inspector_mut(&mut self) -> &mut Self::Inspector {
+        todo!()
     }
 }

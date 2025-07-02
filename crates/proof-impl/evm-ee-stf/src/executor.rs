@@ -11,7 +11,9 @@ use reth_trie::KeccakKeyHasher;
 use revm::database::WrapDatabaseRef;
 use revm_primitives::alloy_primitives::Bloom;
 use rsp_client_executor::{
-    error::ClientError, io::EthClientExecutorInput, profile_report, BlockValidator, FromInput,
+    error::ClientError,
+    io::{EthClientExecutorInput, WitnessInput},
+    profile_report, BlockValidator, FromInput,
 };
 
 use crate::EvmBlockStfOutput;
@@ -30,13 +32,15 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
     let evm_config =
         EthEvmConfig::new_with_evm_factory(chain_spec.clone(), AlpenEvmFactory::default());
 
+    let sealed_headers = input.sealed_headers().collect::<Vec<_>>();
+
     // Initialize the witnessed database with verified storage proofs.
     let db = profile_report!(INIT_WITNESS_DB, {
-        let trie_db = input.witness_db().unwrap();
+        let trie_db = input.witness_db(&sealed_headers).unwrap();
         WrapDatabaseRef(trie_db)
     });
 
-    let block_executor = BasicBlockExecutor::new(evm_config, db);
+    let mut block_executor = BasicBlockExecutor::new(evm_config, db);
     let block = profile_report!(RECOVER_SENDERS, {
         EthPrimitives::from_input_block(input.current_block.clone())
             .try_into_recovered()
@@ -48,7 +52,7 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
         EthPrimitives::validate_header(block.sealed_block().sealed_header(), chain_spec.clone())
     })?;
 
-    let execution_output = profile_report!(BLOCK_EXECUTION, { block_executor.execute(&block) })?;
+    let execution_output = todo!(); // profile_report!(BLOCK_EXECUTION, { block_executor.execute_one(&block) })?;
 
     // Validate the block post execution.
     profile_report!(VALIDATE_EXECUTION, {
