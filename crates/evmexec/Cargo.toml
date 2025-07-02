@@ -27,11 +27,9 @@ reth-primitives = { workspace = true, features = [
   "std",
 ] }
 reth-rpc-api.workspace = true
-reth-rpc-layer.workspace = true
 revm-primitives.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tower.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
