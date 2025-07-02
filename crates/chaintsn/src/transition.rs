@@ -16,9 +16,10 @@ use strata_primitives::{
     },
     l2::L2BlockCommitment,
     params::RollupParams,
+    proof::RollupVerifyingKey,
 };
 use strata_state::{
-    batch::verify_signed_checkpoint_sig,
+    batch::{verify_signed_checkpoint_sig, Checkpoint},
     block::L1Segment,
     bridge_ops::{DepositIntent, WithdrawalIntent},
     bridge_state::{DepositState, DispatchCommand, WithdrawOutput},
@@ -29,6 +30,7 @@ use strata_state::{
     state_queue,
 };
 use tracing::warn;
+use zkaleido::{ProofReceipt, ZkVmResult};
 
 use crate::{
     errors::{OpError, TsnError},
@@ -235,30 +237,13 @@ fn process_l1_checkpoint(
     let ckpt = signed_ckpt.checkpoint(); // inner data
     let ckpt_epoch = ckpt.batch_transition().epoch;
 
-    let receipt = ckpt.construct_receipt();
-
     // Note: This is error because this is done by the sequencer
     if ckpt_epoch != 0 && ckpt_epoch != state.state().finalized_epoch().epoch() + 1 {
         error!(%ckpt_epoch, "Invalid checkpoint: proof for invalid epoch");
         return Err(OpError::EpochNotExtend);
     }
 
-    // TODO refactor this to encapsulate the conditional verification into
-    // another fn so we don't have to think about it here
-    if receipt.proof().is_empty() {
-        warn!(%ckpt_epoch, "Empty proof posted");
-        // If the proof is empty but empty proofs are not allowed, this will fail.
-        if !params.proof_publish_mode.allow_empty() {
-            error!(%ckpt_epoch, "Invalid checkpoint: Received empty proof while in strict proof mode. Check `proof_publish_mode` in rollup parameters; set it to a non-strict mode (e.g., `timeout`) to accept empty proofs.");
-            return Err(OpError::InvalidProof);
-        }
-    } else {
-        // Otherwise, verify the non-empty proof.
-        verify_rollup_groth16_proof_receipt(&receipt, &params.rollup_vk).map_err(|error| {
-            error!(%ckpt_epoch, %error, "Failed to verify non-empty proof for epoch");
-            OpError::InvalidProof
-        })?;
-    }
+    verify_checkpoint_proof(ckpt, params).map_err(|_| OpError::InvalidProof)?;
 
     // Copy the epoch commitment and make it finalized.
     let old_fin_epoch = state.state().finalized_epoch();
@@ -270,6 +255,31 @@ fn process_l1_checkpoint(
     trace!(?new_fin_epoch, "observed finalized checkpoint");
 
     Ok(())
+}
+
+/// Verify that the provided checkpoint proof is valid for the given params.
+///
+/// # Caution
+///
+/// If the checkpoint proof is empty, this function returns an `Ok(())`.
+pub fn verify_checkpoint_proof(
+    checkpoint: &Checkpoint,
+    rollup_params: &RollupParams,
+) -> ZkVmResult<()> {
+    let checkpoint_idx = checkpoint.batch_info().epoch();
+    let proof_receipt = checkpoint.construct_receipt();
+
+    // FIXME: we are accepting empty proofs for now (devnet) to reduce dependency on the prover
+    // infra.
+    let is_empty_proof = proof_receipt.proof().is_empty();
+    let allow_empty = rollup_params.proof_publish_mode.allow_empty();
+
+    if is_empty_proof && allow_empty {
+        warn!(%checkpoint_idx, "Verifying empty proof as correct");
+        return Ok(());
+    }
+
+    verify_rollup_groth16_proof_receipt(&proof_receipt, rollup_params.rollup_vk())
 }
 
 fn process_l1_deposit(

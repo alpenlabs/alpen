@@ -16,6 +16,7 @@ rand_chacha.workspace = true
 rand_core.workspace = true
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
+zkaleido.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true

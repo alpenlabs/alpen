@@ -1,6 +1,6 @@
 //! General handling around checkpoint verification.
 
-use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
+use strata_chaintsn::transition::verify_checkpoint_proof;
 use strata_primitives::params::*;
 use strata_state::{batch::*, client_state::L1Checkpoint};
 use tracing::*;
@@ -98,17 +98,7 @@ pub fn verify_proof(
         ));
     }
 
-    // FIXME: we are accepting empty proofs for now (devnet) to reduce dependency on the prover
-    // infra.
-    let is_empty_proof = proof_receipt.proof().is_empty();
-    let allow_empty = rollup_params.proof_publish_mode.allow_empty();
-
-    if is_empty_proof && allow_empty {
-        warn!(%checkpoint_idx, "verifying empty proof as correct");
-        return Ok(());
-    }
-
-    verify_rollup_groth16_proof_receipt(proof_receipt, rollup_params.rollup_vk())
+    verify_checkpoint_proof(checkpoint, rollup_params)
 }
 
 #[cfg(test)]
