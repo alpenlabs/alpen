@@ -36,16 +36,15 @@ fn init_rocksdb_components(
     let clientstate_db: Arc<_> = ClientStateDb::new(rbdb.clone(), ops_config).into();
     let chainstate_db: Arc<_> = ChainstateDb::new(rbdb.clone(), ops_config).into();
     let checkpoint_db: Arc<_> = RBCheckpointDB::new(rbdb.clone(), ops_config).into();
-    let database = CommonDatabase::new(
+
+    CommonDatabase::new(
         l1_db,
         l2_db,
         sync_ev_db,
         clientstate_db,
         chainstate_db,
         checkpoint_db,
-    );
-
-    database
+    )
 }
 
 /// Returns a boxed trait-object that satisfies all the low-level traits.
