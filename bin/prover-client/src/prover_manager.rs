@@ -291,8 +291,8 @@ mod tests {
             ProofContext::Checkpoint(0),
             strata_primitives::proof::ProofZkVm::SP1,
         );
-        let err = ProvingTaskError::ZkVmError(zkaleido::ZkVmError::ProofGenerationError(
-            "Unavailable".to_string(),
+        let err = ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(
+            "Some Network Error".to_string(),
         ));
 
         assert_eq!(
