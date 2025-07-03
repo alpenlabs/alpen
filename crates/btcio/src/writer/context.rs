@@ -8,7 +8,7 @@ use strata_status::StatusChannel;
 
 /// All the items that writer tasks need as context.
 #[derive(Debug, Clone)]
-pub struct WriterContext<R: Reader + Signer + Wallet> {
+pub(crate) struct WriterContext<R: Reader + Signer + Wallet> {
     /// Params for rollup.
     pub params: Arc<Params>,
 
@@ -26,7 +26,7 @@ pub struct WriterContext<R: Reader + Signer + Wallet> {
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
-    pub fn new(
+    pub(crate) fn new(
         params: Arc<Params>,
         config: Arc<WriterConfig>,
         sequencer_address: Address,
