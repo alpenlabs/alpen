@@ -6,6 +6,7 @@ use config::ConfigArgs;
 use deposit::DepositArgs;
 use drain::DrainArgs;
 use faucet::FaucetArgs;
+use generate_params::GenerateParamsArgs;
 use receive::ReceiveArgs;
 use recover::RecoverArgs;
 use reset::ResetArgs;
@@ -20,6 +21,7 @@ pub mod config;
 pub mod deposit;
 pub mod drain;
 pub mod faucet;
+pub mod generate_params;
 pub mod receive;
 pub mod recover;
 pub mod reset;
@@ -30,6 +32,10 @@ pub mod withdraw;
 /// A CLI for interacting with Alpen and the underlying bitcoin (signet) network
 #[derive(FromArgs, PartialEq, Debug)]
 pub struct TopLevel {
+    /// custom protocol parameters file
+    #[argh(option)]
+    pub protocol_params: Option<std::path::PathBuf>,
+
     #[argh(subcommand)]
     pub cmd: Commands,
 }
@@ -50,4 +56,5 @@ pub enum Commands {
     Reset(ResetArgs),
     Scan(ScanArgs),
     Config(ConfigArgs),
+    GenerateParams(GenerateParamsArgs),
 }
