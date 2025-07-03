@@ -26,13 +26,13 @@ impl SyncEventManager {
 
     pub async fn write_sync_event_async(&self, ev: SyncEvent) -> DbResult<u64> {
         let idx = self.ops.write_sync_event_async(ev.clone()).await?;
-        self.event_cache.insert(idx, Some(ev));
+        self.event_cache.insert_blocking(idx, Some(ev));
         Ok(idx)
     }
 
     pub fn write_sync_event_blocking(&self, ev: SyncEvent) -> DbResult<u64> {
         let idx = self.ops.write_sync_event_blocking(ev.clone())?;
-        self.event_cache.insert(idx, Some(ev));
+        self.event_cache.insert_blocking(idx, Some(ev));
         Ok(idx)
     }
 
@@ -41,7 +41,7 @@ impl SyncEventManager {
             .clear_sync_event_range_async(start_idx, end_idx)
             .await?;
         self.event_cache
-            .purge_if(|k| *k >= start_idx && *k < end_idx);
+            .purge_if_blocking(|k| *k >= start_idx && *k < end_idx);
         Ok(())
     }
 
@@ -49,7 +49,7 @@ impl SyncEventManager {
         self.ops
             .clear_sync_event_range_blocking(start_idx, end_idx)?;
         self.event_cache
-            .purge_if(|k| *k >= start_idx && *k < end_idx);
+            .purge_if_blocking(|k| *k >= start_idx && *k < end_idx);
         Ok(())
     }
 

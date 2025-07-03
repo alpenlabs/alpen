@@ -28,7 +28,7 @@ impl L2BlockManager {
         let header = bundle.block().header().clone();
         let id = header.get_blockid();
         self.ops.put_block_data_async(bundle).await?;
-        self.block_cache.purge(&id);
+        self.block_cache.purge_blocking(&id);
         Ok(())
     }
 
@@ -37,7 +37,7 @@ impl L2BlockManager {
         let header = bundle.block().header().clone();
         let id = header.get_blockid();
         self.ops.put_block_data_blocking(bundle)?;
-        self.block_cache.purge(&id);
+        self.block_cache.purge_blocking(&id);
         Ok(())
     }
 

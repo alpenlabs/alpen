@@ -41,14 +41,14 @@ impl ChainstateManager {
     /// Stores a new write batch at a particular index.
     pub async fn put_write_batch_async(&self, idx: u64, wb: WriteBatchEntry) -> DbResult<()> {
         self.ops.put_write_batch_async(idx, wb).await?;
-        self.wb_cache.purge(&idx);
+        self.wb_cache.purge_blocking(&idx);
         Ok(())
     }
 
     /// Stores a new write batch at a particular index.
     pub fn put_write_batch_blocking(&self, idx: u64, wb: WriteBatchEntry) -> DbResult<()> {
         self.ops.put_write_batch_blocking(idx, wb)?;
-        self.wb_cache.purge(&idx);
+        self.wb_cache.purge_blocking(&idx);
         Ok(())
     }
 
@@ -67,27 +67,27 @@ impl ChainstateManager {
 
     pub async fn purge_entries_before_async(&self, before_idx: u64) -> DbResult<()> {
         self.ops.purge_entries_before_async(before_idx).await?;
-        self.wb_cache.purge_if(|k| *k < before_idx);
+        self.wb_cache.purge_if_blocking(|k| *k < before_idx);
         Ok(())
     }
 
     pub fn purge_entries_before_blocking(&self, before_idx: u64) -> DbResult<()> {
         self.ops.purge_entries_before_blocking(before_idx)?;
-        self.wb_cache.purge_if(|k| *k < before_idx);
+        self.wb_cache.purge_if_blocking(|k| *k < before_idx);
         Ok(())
     }
 
     /// Rolls back writes after a given new tip index, making it the newest tip.
     pub async fn rollback_writes_to_async(&self, new_tip_idx: u64) -> DbResult<()> {
         self.ops.rollback_writes_to_async(new_tip_idx).await?;
-        self.wb_cache.purge_if(|k| *k > new_tip_idx);
+        self.wb_cache.purge_if_blocking(|k| *k > new_tip_idx);
         Ok(())
     }
 
     /// Rolls back writes after a given new tip index, making it the newest tip.
     pub fn rollback_writes_to_blocking(&self, new_tip_idx: u64) -> DbResult<()> {
         self.ops.rollback_writes_to_blocking(new_tip_idx)?;
-        self.wb_cache.purge_if(|k| *k > new_tip_idx);
+        self.wb_cache.purge_if_blocking(|k| *k > new_tip_idx);
         Ok(())
     }
 
