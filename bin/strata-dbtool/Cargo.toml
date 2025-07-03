@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 argh.workspace = true
 hex.workspace = true
+rockbound.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

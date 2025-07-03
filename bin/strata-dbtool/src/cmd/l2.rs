@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use hex::FromHex;
 use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
-use strata_rocksdb::CommonDb;
 
 use crate::errors::{DisplayableError, DisplayedError};
 
@@ -18,7 +15,7 @@ pub(crate) struct GetL2BlockArgs {
 }
 
 /// Show details about a specific L2 block.
-pub(crate) fn get_l2_block(db: Arc<CommonDb>, args: GetL2BlockArgs) -> Result<(), DisplayedError> {
+pub(crate) fn get_l2_block(db: &impl Database, args: GetL2BlockArgs) -> Result<(), DisplayedError> {
     // Convert String to L2BlockId
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
     if hex_str.len() != 64 {

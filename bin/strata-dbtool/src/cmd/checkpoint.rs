@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use strata_db::traits::{CheckpointDatabase, Database, L1Database};
 use strata_primitives::l1::ProtocolOperation;
-use strata_rocksdb::CommonDb;
 use tracing::warn;
 
 use crate::{
@@ -36,7 +33,7 @@ pub(crate) struct GetCheckpointsSummaryArgs {}
 
 /// Show details about a specific epoch.
 pub(crate) fn get_epoch_summary(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     args: GetEpochSummaryArgs,
 ) -> Result<(), DisplayedError> {
     // Determine epoch index
@@ -77,7 +74,7 @@ pub(crate) fn get_epoch_summary(
 
 /// Get details about a specific checkpoint.
 pub(crate) fn get_checkpoint_data(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     args: GetCheckpointDataArgs,
 ) -> Result<(), DisplayedError> {
     // Determine checkpoint index
@@ -112,7 +109,7 @@ pub(crate) fn get_checkpoint_data(
 ///
 /// Also validate that all checkpoints are present in L1 blocks.
 pub(crate) fn get_checkpoints_summary(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     _args: GetCheckpointsSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();
@@ -145,7 +142,7 @@ pub(crate) fn get_checkpoints_summary(
         .internal_error("Failed to read L1 tip")?
         .expect("valid L1 tip");
 
-    let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
+    let l1_horizon_height = get_l1_horizon_height(db, l1_tip_height);
 
     let mut found_checkpoints = 0;
     for l1_height in l1_horizon_height..=l1_tip_height {

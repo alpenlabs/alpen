@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use strata_db::traits::{ClientStateDatabase, Database};
-use strata_rocksdb::CommonDb;
 use strata_state::operation::{ClientUpdateOutput, SyncAction};
 
 use crate::errors::{DisplayableError, DisplayedError};
@@ -18,7 +15,7 @@ pub(crate) struct GetClientStateUpdateArgs {
 
 /// Show details about a specific L2 client state update.
 pub(crate) fn get_client_state_update(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     args: GetClientStateUpdateArgs,
 ) -> Result<(), DisplayedError> {
     let (client_state_update, update_idx) =
@@ -79,7 +76,7 @@ pub(crate) fn get_client_state_update(
 
 /// Get the latest client state update from the database.
 pub(super) fn get_latest_client_state_update(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     update_idx: Option<u64>,
 ) -> Result<(ClientUpdateOutput, u64), DisplayedError> {
     let client_state_db = db.client_state_db();

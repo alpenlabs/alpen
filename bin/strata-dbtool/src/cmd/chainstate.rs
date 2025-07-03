@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use hex::FromHex;
 use strata_db::traits::{ChainstateDatabase, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
-use strata_rocksdb::CommonDb;
 use strata_state::{header::L2Header, state_op::WriteBatchEntry};
 
 // use strata_state::header::L2Header;
@@ -29,10 +26,10 @@ pub(crate) struct ResetChainstateArgs {
 }
 
 pub(crate) fn get_chainstate(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     args: GetChainstateArgs,
 ) -> Result<(), DisplayedError> {
-    let (chainstate_entry, write_idx) = get_chainstate_entry(db.clone(), args.write_idx)?;
+    let (chainstate_entry, write_idx) = get_chainstate_entry(db, args.write_idx)?;
     let (batch_info, _) = chainstate_entry.to_parts();
     let top_level_state = batch_info.new_toplevel_state();
     println!("Chainstate write index: {write_idx}");
@@ -52,7 +49,7 @@ pub(crate) fn get_chainstate(
 
 /// Reset the chainstate to a specific L2 block.
 pub(crate) fn reset_chainstate(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     args: ResetChainstateArgs,
 ) -> Result<(), DisplayedError> {
     let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
@@ -78,7 +75,7 @@ pub(crate) fn reset_chainstate(
         })?;
     let target_block_height = target_block_data.header().slot();
     // It seems write index is the same as the slot number
-    let (chainstate_entry, latest_slot) = get_chainstate_entry(db.clone(), None)?;
+    let (chainstate_entry, latest_slot) = get_chainstate_entry(db, None)?;
     let (batch_info, latest_block_id) = chainstate_entry.to_parts();
 
     let finalized_height = batch_info
@@ -124,7 +121,7 @@ pub(crate) fn reset_chainstate(
 ///
 /// If `update_idx` is None, gets the latest chainstate write batch entry.
 pub(super) fn get_chainstate_entry(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     update_idx: Option<u64>,
 ) -> Result<(WriteBatchEntry, u64), DisplayedError> {
     let chainstate_db = db.chain_state_db();

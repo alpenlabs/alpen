@@ -40,18 +40,18 @@ fn main() {
     });
 
     let result = match cli.cmd {
-        Command::GetL1Manifest(args) => get_l1_manifest(db, args),
-        Command::GetL1Summary(args) => get_l1_summary(db, args),
-        Command::GetL2Block(args) => get_l2_block(db, args),
-        Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
-        Command::GetCheckpointData(args) => get_checkpoint_data(db, args),
-        Command::GetCheckpointsSummary(args) => get_checkpoints_summary(db, args),
-        Command::GetEpochSummary(args) => get_epoch_summary(db, args),
-        Command::GetSyncinfo(args) => get_syncinfo(db, args),
-        Command::GetSyncEvent(args) => get_sync_event(db, args),
-        Command::GetSyncEventsSummary(args) => get_sync_events_summary(db, args),
-        Command::GetChainstate(args) => get_chainstate(db, args),
-        Command::ResetChainstate(args) => reset_chainstate(db, args),
+        Command::GetL1Manifest(args) => get_l1_manifest(&db, args),
+        Command::GetL1Summary(args) => get_l1_summary(&db, args),
+        Command::GetL2Block(args) => get_l2_block(&db, args),
+        Command::GetClientStateUpdate(args) => get_client_state_update(&db, args),
+        Command::GetCheckpointData(args) => get_checkpoint_data(&db, args),
+        Command::GetCheckpointsSummary(args) => get_checkpoints_summary(&db, args),
+        Command::GetEpochSummary(args) => get_epoch_summary(&db, args),
+        Command::GetSyncinfo(args) => get_syncinfo(&db, args),
+        Command::GetSyncEvent(args) => get_sync_event(&db, args),
+        Command::GetSyncEventsSummary(args) => get_sync_events_summary(&db, args),
+        Command::GetChainstate(args) => get_chainstate(&db, args),
+        Command::ResetChainstate(args) => reset_chainstate(&db, args),
     };
 
     if let Err(err) = result {

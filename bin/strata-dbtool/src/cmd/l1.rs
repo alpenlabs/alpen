@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use hex::FromHex;
 use strata_db::traits::{Database, L1Database};
@@ -7,7 +5,6 @@ use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockId, ProtocolOperation},
 };
-use strata_rocksdb::CommonDb;
 use tracing::warn;
 
 use crate::{
@@ -31,7 +28,7 @@ pub(crate) struct GetL1SummaryArgs {}
 
 /// Get details about a specific L1 block manifest.
 pub(crate) fn get_l1_manifest(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     args: GetL1ManifestArgs,
 ) -> Result<(), DisplayedError> {
     // Convert String to L1BlockId
@@ -105,7 +102,7 @@ pub(crate) fn get_l1_manifest(
 
 /// Get summary of L1 manifests in the database.
 pub(crate) fn get_l1_summary(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     _args: GetL1SummaryArgs,
 ) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();
@@ -116,7 +113,7 @@ pub(crate) fn get_l1_summary(
 
     println!("L1 tip height: {l1_tip_height}, block id {l1_tip_block_id:?}");
 
-    let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
+    let l1_horizon_height = get_l1_horizon_height(db, l1_tip_height);
     if l1_horizon_height == l1_tip_height {
         warn!("Missing all l1 blocks from horizon to tip.");
         return Ok(());
@@ -127,8 +124,7 @@ pub(crate) fn get_l1_summary(
         .internal_error("Failed to read L1 genesis block id")?
         .expect("valid genesis block id");
 
-    let (latest_client_state, latest_update_idx) =
-        get_latest_client_state_update(db.clone(), None)?;
+    let (latest_client_state, latest_update_idx) = get_latest_client_state_update(db, None)?;
     let genesis_l1_height = latest_client_state.state().genesis_l1_height();
 
     println!("L1 horizon height: {l1_horizon_height}, block id {horizon_l1_block_id:?}");
@@ -165,7 +161,7 @@ pub(crate) fn get_l1_summary(
 }
 
 /// Get the L1 horizon height, i.e., the height of the first L1 block in the database
-pub(super) fn get_l1_horizon_height(db: Arc<CommonDb>, l1_tip_height: u64) -> u64 {
+pub(super) fn get_l1_horizon_height(db: &impl Database, l1_tip_height: u64) -> u64 {
     let l1_db = db.l1_db();
 
     (0..=l1_tip_height)

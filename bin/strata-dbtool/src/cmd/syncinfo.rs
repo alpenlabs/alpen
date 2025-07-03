@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L1Database, L2BlockDatabase};
-use strata_rocksdb::CommonDb;
 
 use crate::errors::{DisplayableError, DisplayedError};
 
@@ -10,14 +7,14 @@ use crate::errors::{DisplayableError, DisplayedError};
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "get-syncinfo")]
 pub(crate) struct GetSyncinfoArgs {
-    /// emit structured JSON instead of human‑readable output.
-    #[argh(switch, short = 'p')]
-    pub(crate) porcelain: bool,
+    // emit structured JSON instead of human‑readable output.
+    // #[argh(switch, short = 'p')]
+    // pub(crate) porcelain: bool,
 }
 
 /// Show the latest sync information.
 pub(crate) fn get_syncinfo(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     _args: GetSyncinfoArgs,
 ) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();

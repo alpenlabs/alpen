@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use strata_db::traits::{Database, L1Database, SyncEventDatabase};
-use strata_rocksdb::CommonDb;
 use strata_state::sync_event::SyncEvent;
 use tracing::warn;
 
@@ -25,7 +22,7 @@ pub(crate) struct GetSyncEventsSummaryArgs {}
 
 /// Get SyncEvent details by index.
 pub(crate) fn get_sync_event(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     args: GetSyncEventArgs,
 ) -> Result<(), DisplayedError> {
     let sync_db = db.sync_event_db();
@@ -53,7 +50,7 @@ pub(crate) fn get_sync_event(
 
 /// Get summary of L1 manifests in the database.
 pub(crate) fn get_sync_events_summary(
-    db: Arc<CommonDb>,
+    db: &impl Database,
     _args: GetSyncEventsSummaryArgs,
 ) -> Result<(), DisplayedError> {
     // Check sync events present for all L1 blocks
@@ -66,7 +63,7 @@ pub(crate) fn get_sync_events_summary(
         .internal_error("Failed to read L1 tip")?
         .expect("valid L1 tip");
 
-    let l1_horizon_height = get_l1_horizon_height(db.clone(), l1_tip_height);
+    let l1_horizon_height = get_l1_horizon_height(db, l1_tip_height);
     if l1_horizon_height == l1_tip_height {
         warn!("Missing all l1 blocks from horizon to tip.");
     }
