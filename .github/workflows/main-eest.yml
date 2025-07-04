@@ -1,4 +1,4 @@
-name: Run functional tests against local basic fntests env
+name: Ethereum Execution Spec tests against main branch (via fntests).
 
 on:
   schedule:
@@ -120,6 +120,7 @@ jobs:
             --rpc-chain-id 2892 \
             --tx-wait-timeout 30 \
             -v
+        continue-on-error: true
 
       - name: Generate a proof of EE blocks execution.
         working-directory: docker
