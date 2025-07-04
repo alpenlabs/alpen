@@ -78,6 +78,8 @@ you can run the basic CI checks in your local environment:
   used to lint and format `TOML` files.
 - [`codespell`](https://github.com/codespell-project/codespell):
   used to check for common misspellings in code.
+- [`just`](https://just.systems):
+  RIP `Makefile`s.
 - [`cargo-nextest`](https://nexte.st):
   modern test runner for Rust.
 - [`cargo-audit`](https://docs.rs/cargo-audit/latest/cargo_audit/):
@@ -90,8 +92,8 @@ you can run the basic CI checks in your local environment:
 ## Locally running CI
 
 Before you create a PR, make sure that all the required CI checks pass locally.
-For your convenience, a `Makefile` recipe has been created which you can run via:
+For your convenience, a `.justfile` recipe has been created which you can run via:
 
 ```bash
-make pr # `make` should already be installed in most systems
+just pr
 ```
