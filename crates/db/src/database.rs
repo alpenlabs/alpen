@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::traits::*;
+use crate::chainstate::ChainstateDatabase;
 
 /// Shim database type to wrap various database impls.
 ///
@@ -35,6 +36,7 @@ where
     ChainstateDB: ChainstateDatabase + Sync + Send + 'static,
     CheckpointDB: CheckpointDatabase + Sync + Send + 'static,
 {
+    /// Create a new wrapper over the given database implementations.
     pub fn new(
         l1_db: Arc<L1DB>,
         l2_db: Arc<L2DB>,

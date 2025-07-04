@@ -274,8 +274,8 @@ fn do_startup_checks(
         }
     }
 
-    let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
-        Ok(idx) => idx,
+    let tip_blockid = match storage.l2().get_tip_block_blocking() {
+        Ok(tip) => tip,
         Err(DbError::NotBootstrapped) => {
             // genesis is not done
             info!("startup: awaiting genesis");
@@ -284,17 +284,15 @@ fn do_startup_checks(
         err => err?,
     };
 
-    let Some(last_chain_state_entry) = storage
+    let last_chain_state = storage
         .chainstate()
-        .get_toplevel_chainstate_blocking(last_state_idx)?
-    else {
-        anyhow::bail!("Missing chain state idx: {last_state_idx}");
-    };
+        .get_slot_write_batch_blocking(tip_blockid)?
+        .ok_or(DbError::MissingSlotWriteBatch(tip_blockid))?
+        .into_toplevel();
 
-    let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
     // Check that we can connect to bitcoin client and block we believe to be matured in L1 is
     // actually present
-    let safe_l1blockid = last_chain_state.l1_view().safe_block().blkid();
+    let safe_l1blockid = last_chain_state.l1_view().safe_blkid();
     let block_hash = BlockHash::from_slice(safe_l1blockid.as_ref())?;
 
     match handle.block_on(bitcoin_client.get_block(&block_hash)) {

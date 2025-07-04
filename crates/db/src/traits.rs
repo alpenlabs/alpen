@@ -17,6 +17,7 @@ use strata_state::{
 use zkaleido::ProofReceipt;
 
 use crate::{
+    chainstate::ChainstateDatabase,
     entities::bridge_tx_state::BridgeTxState,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbResult,
@@ -148,6 +149,10 @@ pub trait L2BlockDatabase {
 
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: L2BlockId) -> DbResult<Option<BlockStatus>>;
+
+    /// Returns the latest valid L2 block ID, or `None` at genesis or when no valid block exists.
+    // TODO do we even want to permit this as being a possible thing?
+    fn get_tip_block(&self) -> DbResult<L2BlockId>;
 }
 
 /// Gets the status of a block.
@@ -177,7 +182,7 @@ pub enum BlockStatus {
 /// For now, the full state is just the "toplevel" state that can always be
 /// expected to be of moderate size in memory.
 // TODO maybe rewrite this around storing write batches according to blkid?
-pub trait ChainstateDatabase {
+pub trait OldChainstateDatabase {
     /// Writes the genesis chainstate at index 0.
     fn write_genesis_state(&self, toplevel: Chainstate, blockid: L2BlockId) -> DbResult<()>;
 

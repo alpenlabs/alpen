@@ -124,6 +124,7 @@ impl StrataRpcImpl {
 fn conv_blk_header_to_rpc(blk_header: &impl L2Header) -> RpcBlockHeader {
     RpcBlockHeader {
         block_idx: blk_header.slot(),
+        epoch: blk_header.epoch(),
         timestamp: blk_header.timestamp(),
         block_id: *blk_header.get_blockid().as_ref(),
         prev_block: *blk_header.parent().as_ref(),
@@ -373,15 +374,15 @@ impl StrataApiServer for StrataRpcImpl {
         Ok(summary)
     }
 
-    async fn get_chainstate_raw(&self, slot: u64) -> RpcResult<Vec<u8>> {
+    async fn get_chainstate_raw(&self, blkid: L2BlockId) -> RpcResult<Vec<u8>> {
         let chs = self
             .storage
             .chainstate()
-            .get_toplevel_chainstate_async(slot)
+            .get_slot_write_batch_async(blkid)
             .map_err(Error::Db)
             .await?
-            .ok_or(Error::MissingChainstate(slot))?
-            .to_chainstate();
+            .ok_or(Error::MissingChainstate(blkid))?
+            .into_toplevel();
 
         let raw_chs = borsh::to_vec(&chs)
             .map_err(|_| Error::Other("failed to serialize chainstate".to_string()))?;
@@ -392,16 +393,16 @@ impl StrataApiServer for StrataRpcImpl {
     async fn get_cl_block_witness_raw(&self, blkid: L2BlockId) -> RpcResult<Vec<u8>> {
         let l2_blk_bundle = self.fetch_l2_block_ok(&blkid).await?;
 
-        let prev_slot = l2_blk_bundle.block().header().header().slot() - 1;
+        let parent = *l2_blk_bundle.block().header().header().parent();
 
         let chain_state = self
             .storage
             .chainstate()
-            .get_toplevel_chainstate_async(prev_slot)
+            .get_slot_write_batch_async(parent)
             .map_err(Error::Db)
             .await?
-            .ok_or(Error::MissingChainstate(prev_slot))?
-            .to_chainstate();
+            .ok_or(Error::MissingChainstate(parent))?
+            .into_toplevel();
 
         let cl_block_witness = (chain_state, l2_blk_bundle.block());
         let raw_cl_block_witness = borsh::to_vec(&cl_block_witness)
@@ -804,7 +805,7 @@ impl StrataSequencerApiServer for SequencerServerImpl {
     }
 
     async fn get_sequencer_duties(&self) -> RpcResult<Vec<Duty>> {
-        let (chain_state, tip_blockid) = self
+        let (_, tip_blockid) = self
             .status
             .get_cur_tip_chainstate_with_block()
             .ok_or(Error::BeforeGenesis)?;
@@ -815,7 +816,6 @@ impl StrataSequencerApiServer for SequencerServerImpl {
             .ok_or(Error::MissingInternalState)?;
 
         let duties = extract_duties(
-            chain_state.chain_tip_slot(),
             tip_blockid,
             client_int_state,
             &self.checkpoint_handle,
@@ -917,19 +917,22 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
         Ok(l2_block)
     }
 
-    async fn get_chainstate_at_idx(&self, idx: u64) -> RpcResult<Option<RpcChainState>> {
+    async fn get_chainstate_by_id(&self, blkid: L2BlockId) -> RpcResult<Option<RpcChainState>> {
         let chain_state_res = self
             .storage
             .chainstate()
-            .get_toplevel_chainstate_async(idx)
+            .get_slot_write_batch_async(blkid)
             .map_err(Error::Db)
             .await?;
         match chain_state_res {
-            Some(cs_entry) => Ok(Some(RpcChainState {
-                tip_blkid: *cs_entry.tip_blockid(),
-                tip_slot: cs_entry.state().chain_tip_slot(),
-                cur_epoch: cs_entry.state().cur_epoch(),
-            })),
+            Some(wb) => {
+                let chs = wb.into_toplevel();
+                Ok(Some(RpcChainState {
+                    tip_blkid: blkid,
+                    tip_slot: chs.chain_tip_slot(),
+                    cur_epoch: chs.cur_epoch(),
+                }))
+            }
             None => Ok(None),
         }
     }
