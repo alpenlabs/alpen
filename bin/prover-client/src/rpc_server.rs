@@ -219,9 +219,12 @@ impl StrataProverClientApiServer for ProverClientRpc {
     }
 
     async fn get_proof(&self, key: ProofKey) -> RpcResult<Option<ProofReceipt>> {
-        self.db
+        let proof = self
+            .db
             .get_proof(&key)
-            .map_err(to_jsonrpsee_error("proof not found in db"))
+            .map_err(to_jsonrpsee_error("proof not found in db"))?;
+
+        Ok(proof.map(|p| p.receipt().clone()))
     }
 
     async fn get_report(&self) -> RpcResult<HashMap<String, usize>> {

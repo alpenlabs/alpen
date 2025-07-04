@@ -22,19 +22,23 @@ class OperatorConfig(BaseModel):
         return [operator.wallet_pk for operator in self.static]
 
 
+class SP1Groth16Verifier(BaseModel):
+    model_config = {"extra": "allow"}  # Allow any additional fields
+
+
+class Risc0Groth16Verifier(BaseModel):
+    model_config = {"extra": "allow"}  # Allow any additional fields
+
+
 class Sp1RollupVk(BaseModel):
-    sp1: StrBuf32
+    sp1: SP1Groth16Verifier
 
 
 class Risc0RollupVk(BaseModel):
-    risc0: StrBuf32
+    risc0: Risc0Groth16Verifier
 
 
-class NativeRollupVk(BaseModel):
-    native: StrBuf32
-
-
-RollupVk = Union[Sp1RollupVk, Risc0RollupVk, NativeRollupVk]
+RollupVk = Union[Sp1RollupVk, Risc0RollupVk, Literal["native"]]
 
 
 class ProofPublishModeTimeout(BaseModel):

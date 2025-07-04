@@ -3,7 +3,7 @@ use std::sync::Arc;
 use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt, TransactionRetry};
 use strata_db::{errors::DbError, traits::ProofDatabase, DbResult};
 use strata_primitives::proof::{ProofContext, ProofKey};
-use zkaleido::ProofReceipt;
+use zkaleido::ProofReceiptWithMetadata;
 
 use super::schemas::{ProofDepsSchema, ProofSchema};
 use crate::DbOpsConfig;
@@ -21,7 +21,7 @@ impl ProofDb {
 }
 
 impl ProofDatabase for ProofDb {
-    fn put_proof(&self, proof_key: ProofKey, proof: ProofReceipt) -> DbResult<()> {
+    fn put_proof(&self, proof_key: ProofKey, proof: ProofReceiptWithMetadata) -> DbResult<()> {
         self.db
             .with_optimistic_txn(TransactionRetry::Count(self.ops.retry_count), |tx| {
                 if tx.get::<ProofSchema>(&proof_key)?.is_some() {
@@ -35,7 +35,7 @@ impl ProofDatabase for ProofDb {
             .map_err(|e| DbError::TransactionError(e.to_string()))
     }
 
-    fn get_proof(&self, proof_key: &ProofKey) -> DbResult<Option<ProofReceipt>> {
+    fn get_proof(&self, proof_key: &ProofKey) -> DbResult<Option<ProofReceiptWithMetadata>> {
         Ok(self.db.get::<ProofSchema>(proof_key)?)
     }
 
@@ -93,7 +93,7 @@ mod tests {
         l2::L2BlockCommitment,
         proof::{ProofContext, ProofZkVm},
     };
-    use zkaleido::{Proof, PublicValues};
+    use zkaleido::{Proof, ProofMetadata, ProofReceipt, PublicValues, ZkVm};
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance_for_prover;
@@ -103,7 +103,7 @@ mod tests {
         ProofDb::new(db, db_ops)
     }
 
-    fn generate_proof() -> (ProofKey, ProofReceipt) {
+    fn generate_proof() -> (ProofKey, ProofReceiptWithMetadata) {
         let proof_context = ProofContext::BtcBlockspace(
             0,
             L1BlockCommitment::default(),
@@ -113,7 +113,9 @@ mod tests {
         let proof_key = ProofKey::new(proof_context, host);
         let proof = Proof::default();
         let public_values = PublicValues::default();
-        let proof_receipt = ProofReceipt::new(proof, public_values);
+        let receipt = ProofReceipt::new(proof, public_values);
+        let metadata = ProofMetadata::new(ZkVm::Native, "0.1".to_string());
+        let proof_receipt = ProofReceiptWithMetadata::new(receipt, metadata);
         (proof_key, proof_receipt)
     }
 
@@ -149,7 +151,7 @@ mod tests {
         let result = db.put_proof(proof_key, proof.clone());
         assert!(
             result.is_ok(),
-            "ProofReceipt should be inserted successfully"
+            "ProofReceiptWithMetadata should be inserted successfully"
         );
 
         let stored_proof = db.get_proof(&proof_key).unwrap();
@@ -194,7 +196,7 @@ mod tests {
         let result = db.put_proof_deps(proof_context, deps.clone());
         assert!(
             result.is_ok(),
-            "ProofReceipt should be inserted successfully"
+            "ProofReceiptWithMetadata should be inserted successfully"
         );
 
         let stored_deps = db.get_proof_deps(proof_context).unwrap();

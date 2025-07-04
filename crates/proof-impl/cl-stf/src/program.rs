@@ -7,8 +7,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{buf::Buf32, params::RollupParams};
 use strata_state::{batch::TxFilterConfigTransition, block::L2Block, chain_state::Chainstate};
 use zkaleido::{
-    AggregationInput, ProofReceipt, PublicValues, VerifyingKey, ZkVmError, ZkVmInputResult,
-    ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
+    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
+    ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -19,8 +19,8 @@ pub struct ClStfInput {
     pub rollup_params: RollupParams,
     pub chainstate: Chainstate,
     pub l2_blocks: Vec<L2Block>,
-    pub evm_ee_proof_with_vk: (ProofReceipt, VerifyingKey),
-    pub btc_blockspace_proof_with_vk: Option<(ProofReceipt, VerifyingKey)>,
+    pub evm_ee_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
+    pub btc_blockspace_proof_with_vk: Option<(ProofReceiptWithMetadata, VerifyingKey)>,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
