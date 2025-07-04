@@ -9,7 +9,7 @@ use std::any::Any;
 use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
-use crate::{Log, SectionState, TxInput, msg::InterprotoMsg};
+use crate::{AsmError, Log, SectionState, TxInput, msg::InterprotoMsg};
 
 /// ASM subprotocol interface.
 ///
@@ -26,11 +26,22 @@ pub trait Subprotocol: 'static {
     /// State type serialized into the ASM state structure.
     type State: Any + BorshDeserialize + BorshSerialize;
 
+    /// Genesis configuration type for initializing the subprotocol state.
+    /// This should contain all necessary parameters for proper subprotocol initialization.
+    type GenesisConfig: Any + BorshDeserialize + BorshSerialize;
+
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + Any;
 
     /// Constructs a new state to use if the ASM does not have an instance of it.
-    fn init() -> Self::State;
+    ///
+    /// # Arguments
+    /// * `genesis_config_data` - Serialized genesis configuration data that should be deserialized
+    ///   into Self::GenesisConfig before use
+    ///
+    /// # Returns
+    /// The initialized state or an error if deserialization fails
+    fn init(genesis_config_data: &[u8]) -> Result<Self::State, AsmError>;
 
     /// Processes a batch of L1 transactions, extracting all relevant information for this
     /// subprotocol.
