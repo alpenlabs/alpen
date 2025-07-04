@@ -621,3 +621,31 @@ impl ClientStateMut {
         }
     }*/
 }
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+pub struct L1ClientState {
+    block_id: L1BlockId,
+    anchor_state: AnchorState,
+}
+
+impl L1ClientState {
+    pub fn new(block_id: L1BlockId, anchor_state: AnchorState) -> Self {
+        Self {
+            block_id,
+            anchor_state,
+        }
+    }
+
+    pub fn block_id(&self) -> &L1BlockId {
+        &self.block_id
+    }
+
+    pub fn anchor_state(&self) -> &AnchorState {
+        &self.anchor_state
+    }
+}
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+pub struct AnchorState {
+    // placeholder
+}
