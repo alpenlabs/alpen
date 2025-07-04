@@ -1,13 +1,10 @@
 use argh::FromArgs;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{CheckpointDatabase, Database, L1Database};
 use strata_primitives::l1::ProtocolOperation;
 use tracing::warn;
 
-use crate::{
-    cli::OutputFormat,
-    cmd::l1::get_l1_horizon_height,
-    errors::{DisplayableError, DisplayedError},
-};
+use crate::{cli::OutputFormat, cmd::l1::get_l1_horizon_height};
 
 /// Shows details about an epoch
 #[derive(FromArgs, Debug)]

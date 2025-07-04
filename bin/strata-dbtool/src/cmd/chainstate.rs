@@ -1,13 +1,11 @@
 use argh::FromArgs;
 use hex::FromHex;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{ChainstateDatabase, Database, L2BlockDatabase};
-use strata_primitives::{buf::Buf32, l2::L2BlockId};
+use strata_primitives::{buf::Buf32, l2::L2BlockId, prelude::EpochCommitment};
 use strata_state::{header::L2Header, state_op::WriteBatchEntry};
 
-use crate::{
-    cli::OutputFormat,
-    errors::{DisplayableError, DisplayedError},
-};
+use crate::cli::OutputFormat;
 
 /// Shows the chainstate at the provided index
 #[derive(FromArgs, Debug)]
@@ -39,6 +37,21 @@ pub(crate) struct ResetChainstateArgs {
     pub(crate) delete_blocks: bool,
 }
 
+/// Chainstate information displayed to the user
+#[derive(serde::Serialize)]
+struct ChainstateInfo<'a> {
+    write_index: u64,
+    chain_tip: u64,
+    current_epoch: u64,
+    is_epoch_finishing: bool,
+    previous_epoch: u64,
+    previous_epoch_last_slot: u64,
+    previous_epoch_last_block_id: &'a L2BlockId,
+    finalized_epoch: u64,
+    finalized_epoch_last_slot: u64,
+    finalized_epoch_last_block_id: &'a L2BlockId,
+}
+
 pub(crate) fn get_chainstate(
     db: &impl Database,
     args: GetChainstateArgs,
@@ -46,18 +59,45 @@ pub(crate) fn get_chainstate(
     let (chainstate_entry, write_idx) = get_chainstate_entry(db, args.write_idx)?;
     let (batch_info, _) = chainstate_entry.to_parts();
     let top_level_state = batch_info.new_toplevel_state();
-    println!("Chainstate write index: {write_idx}");
-    println!(
-        "Chain tip: {}, current epoch: {}, epoch finishing: {}",
-        top_level_state.chain_tip_slot(),
-        top_level_state.cur_epoch(),
-        top_level_state.is_epoch_finishing()
-    );
-    println!("Previous epoch: {:?}", top_level_state.prev_epoch());
-    println!("Finalized epoch: {:?}", top_level_state.finalized_epoch());
-    println!("L1 view: {:?}", top_level_state.l1_view());
-    println!("Deposits table: {:?}", top_level_state.deposits_table());
-
+    if args.output_format == OutputFormat::Json {
+        let chainstate_info = ChainstateInfo {
+            write_index: write_idx,
+            chain_tip: top_level_state.chain_tip_slot(),
+            current_epoch: top_level_state.cur_epoch(),
+            is_epoch_finishing: top_level_state.is_epoch_finishing(),
+            previous_epoch: top_level_state.prev_epoch().epoch(),
+            previous_epoch_last_slot: top_level_state.prev_epoch().last_slot(),
+            previous_epoch_last_block_id: top_level_state.prev_epoch().last_blkid(),
+            finalized_epoch: top_level_state.finalized_epoch().epoch(),
+            finalized_epoch_last_slot: top_level_state.finalized_epoch().last_slot(),
+            finalized_epoch_last_block_id: top_level_state.finalized_epoch().last_blkid(),
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&chainstate_info).unwrap()
+        );
+    } else {
+        println!("Chainstate write index {write_idx}");
+        println!("Chainstate chain tip {}", top_level_state.chain_tip_slot());
+        println!("chainstate.current_epoch {}", top_level_state.cur_epoch());
+        println!(
+            "Chainstate epoch finishing {}",
+            top_level_state.is_epoch_finishing()
+        );
+        println!(
+            "chainstate previous epoch {:?}",
+            top_level_state.prev_epoch()
+        );
+        println!(
+            "Chainstate finalized epoch {:?}",
+            top_level_state.finalized_epoch()
+        );
+        println!("Chainstate L1 view {:?}", top_level_state.l1_view());
+        println!(
+            "chainstate deposits table {:?}",
+            top_level_state.deposits_table()
+        );
+    }
     Ok(())
 }
 

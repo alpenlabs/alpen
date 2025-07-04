@@ -976,6 +976,7 @@ dependencies = [
  "sha2 0.10.9",
  "shrex",
  "sled",
+ "strata-cli-common",
  "strata-primitives",
  "terrors",
  "tokio",
@@ -13634,6 +13635,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-cli-common"
+version = "0.3.0-alpha.1"
+
+[[package]]
 name = "strata-client"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -13786,6 +13791,9 @@ dependencies = [
  "argh",
  "hex",
  "rockbound",
+ "serde",
+ "serde_json",
+ "strata-cli-common",
  "strata-db",
  "strata-primitives",
  "strata-rocksdb",

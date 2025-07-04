@@ -1,6 +1,6 @@
 /// Errors displayed to the user when using the Alpen CLI
 #[derive(Debug)]
-pub(crate) enum DisplayedError {
+pub enum DisplayedError {
     /// Errors the use can address by updating configuration or providing expected input
     UserError(String, Box<dyn std::fmt::Debug>),
     /// Internal errors encountered when servicing user's request.
@@ -8,7 +8,7 @@ pub(crate) enum DisplayedError {
 }
 
 #[inline]
-pub(crate) fn user_error<E>(msg: impl Into<String>) -> impl FnOnce(E) -> DisplayedError
+pub fn user_error<E>(msg: impl Into<String>) -> impl FnOnce(E) -> DisplayedError
 where
     E: std::fmt::Debug + 'static,
 {
@@ -16,14 +16,14 @@ where
 }
 
 #[inline]
-pub(crate) fn internal_error<E>(msg: impl Into<String>) -> impl FnOnce(E) -> DisplayedError
+pub fn internal_error<E>(msg: impl Into<String>) -> impl FnOnce(E) -> DisplayedError
 where
     E: std::fmt::Debug + 'static,
 {
     move |e| DisplayedError::InternalError(msg.into(), Box::new(e))
 }
 
-pub(crate) trait DisplayableError {
+pub trait DisplayableError {
     type Output;
     fn user_error(self, msg: impl Into<String>) -> Result<Self::Output, DisplayedError>;
     fn internal_error(self, msg: impl Into<String>) -> Result<Self::Output, DisplayedError>;

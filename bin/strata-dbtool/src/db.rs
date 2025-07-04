@@ -1,12 +1,11 @@
 use std::{path::Path, sync::Arc};
 
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::{database::CommonDatabase, traits::Database};
 use strata_rocksdb::{
     l2::db::L2Db, open_rocksdb_database, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db,
     RBCheckpointDB, SyncEventDb, ROCKSDB_NAME,
 };
-
-use crate::errors::{DisplayableError, DisplayedError};
 
 pub(crate) enum DbType {
     Rocksdb,

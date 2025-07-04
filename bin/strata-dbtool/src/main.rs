@@ -3,7 +3,6 @@
 mod cli;
 mod cmd;
 mod db;
-mod errors;
 
 use std::str::FromStr;
 

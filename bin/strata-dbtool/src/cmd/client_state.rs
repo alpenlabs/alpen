@@ -1,11 +1,9 @@
 use argh::FromArgs;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{ClientStateDatabase, Database};
 use strata_state::operation::{ClientUpdateOutput, SyncAction};
 
-use crate::{
-    cli::OutputFormat,
-    errors::{DisplayableError, DisplayedError},
-};
+use crate::cli::OutputFormat;
 
 /// Shows details about a client state update
 #[derive(FromArgs, Debug)]

@@ -1,10 +1,8 @@
 use argh::FromArgs;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L1Database, L2BlockDatabase};
 
-use crate::{
-    cli::OutputFormat,
-    errors::{DisplayableError, DisplayedError},
-};
+use crate::cli::OutputFormat;
 
 /// Show latest sync information
 #[derive(FromArgs, Debug)]

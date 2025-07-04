@@ -1,5 +1,6 @@
 use argh::FromArgs;
 use hex::FromHex;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{Database, L1Database};
 use strata_primitives::{
     buf::Buf32,
@@ -7,11 +8,7 @@ use strata_primitives::{
 };
 use tracing::warn;
 
-use crate::{
-    cli::OutputFormat,
-    cmd::client_state::get_latest_client_state_update,
-    errors::{DisplayableError, DisplayedError},
-};
+use crate::{cli::OutputFormat, cmd::client_state::get_latest_client_state_update};
 
 /// Shows details about an L1 manifest
 #[derive(FromArgs, Debug)]

@@ -1,13 +1,11 @@
 use argh::FromArgs;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{Database, L1Database, SyncEventDatabase};
 use strata_state::sync_event::SyncEvent;
 use tracing::warn;
 
 use super::l1::get_l1_horizon_height;
-use crate::{
-    cli::OutputFormat,
-    errors::{DisplayableError, DisplayedError},
-};
+use crate::cli::OutputFormat;
 
 /// Shows details about a sync event
 #[derive(FromArgs, Debug)]

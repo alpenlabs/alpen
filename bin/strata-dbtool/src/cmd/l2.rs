@@ -1,12 +1,10 @@
 use argh::FromArgs;
 use hex::FromHex;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
 
-use crate::{
-    cli::OutputFormat,
-    errors::{DisplayableError, DisplayedError},
-};
+use crate::cli::OutputFormat;
 
 /// Shows details about a specific L2 block
 #[derive(FromArgs, Debug)]
