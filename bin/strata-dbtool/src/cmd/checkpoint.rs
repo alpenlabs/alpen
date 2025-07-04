@@ -4,6 +4,7 @@ use strata_primitives::l1::ProtocolOperation;
 use tracing::warn;
 
 use crate::{
+    cli::OutputFormat,
     cmd::l1::get_l1_horizon_height,
     errors::{DisplayableError, DisplayedError},
 };
@@ -15,6 +16,10 @@ pub(crate) struct GetEpochSummaryArgs {
     /// epoch index; defaults to the latest
     #[argh(positional)]
     pub(crate) epoch_idx: Option<u64>,
+
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Shows details about a checkpoint
@@ -24,12 +29,20 @@ pub(crate) struct GetCheckpointDataArgs {
     /// checkpoint index; defaults to the latest
     #[argh(positional)]
     pub(crate) checkpoint_idx: Option<u64>,
+
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Show a summary of all checkpoints
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "get-checkpoints-summary")]
-pub(crate) struct GetCheckpointsSummaryArgs {}
+pub(crate) struct GetCheckpointsSummaryArgs {
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
+}
 
 /// Show details about a specific epoch.
 pub(crate) fn get_epoch_summary(

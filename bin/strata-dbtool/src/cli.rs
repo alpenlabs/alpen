@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf, str::FromStr};
 
 use argh::FromArgs;
 
@@ -14,9 +14,7 @@ use crate::cmd::{
 
 /// Alpen DB tool – offline database & chain‑maintenance utility.
 #[derive(FromArgs)]
-#[argh(
-    description = "Inspect, repair and roll back an Alpen node’s database while the node is offline."
-)]
+/// Inspect, repair and roll back an Alpen node’s database while the node is offline."
 pub(crate) struct Cli {
     /// node data directory (same as `--datadir` used by the node).
     #[argh(option, short = 'd', default = "PathBuf::from(\"data\")")]
@@ -46,4 +44,43 @@ pub(crate) enum Command {
     GetSyncEventsSummary(GetSyncEventsSummaryArgs),
     GetChainstate(GetChainstateArgs),
     ResetChainstate(ResetChainstateArgs),
+}
+
+/// Output format
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub(crate) enum OutputFormat {
+    /// Structured JSON
+    Json,
+    /// Similar to porcelain in git
+    Porcelain,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct UnsupportedOutputFormat;
+
+impl fmt::Display for UnsupportedOutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "must be 'json' or 'porcelain'")
+    }
+}
+
+impl FromStr for OutputFormat {
+    type Err = UnsupportedOutputFormat;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "json" => Ok(Self::Json),
+            "porcelain" => Ok(Self::Porcelain),
+            _ => Err(UnsupportedOutputFormat),
+        }
+    }
+}
+
+impl fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            OutputFormat::Json => "json",
+            OutputFormat::Porcelain => "porcelain",
+        })
+    }
 }

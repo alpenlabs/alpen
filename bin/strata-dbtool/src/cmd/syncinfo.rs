@@ -1,15 +1,18 @@
 use argh::FromArgs;
 use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L1Database, L2BlockDatabase};
 
-use crate::errors::{DisplayableError, DisplayedError};
+use crate::{
+    cli::OutputFormat,
+    errors::{DisplayableError, DisplayedError},
+};
 
 /// Show latest sync information
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "get-syncinfo")]
 pub(crate) struct GetSyncinfoArgs {
-    // emit structured JSON instead of human‑readable output.
-    // #[argh(switch, short = 'p')]
-    // pub(crate) porcelain: bool,
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Show the latest sync information.

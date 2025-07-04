@@ -3,7 +3,10 @@ use hex::FromHex;
 use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
 
-use crate::errors::{DisplayableError, DisplayedError};
+use crate::{
+    cli::OutputFormat,
+    errors::{DisplayableError, DisplayedError},
+};
 
 /// Shows details about a specific L2 block
 #[derive(FromArgs, Debug)]
@@ -12,6 +15,10 @@ pub(crate) struct GetL2BlockArgs {
     /// L2 Block id
     #[argh(positional)]
     pub(crate) block_id: String,
+
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Show details about a specific L2 block.

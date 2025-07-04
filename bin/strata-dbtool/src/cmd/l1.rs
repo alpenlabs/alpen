@@ -8,6 +8,7 @@ use strata_primitives::{
 use tracing::warn;
 
 use crate::{
+    cli::OutputFormat,
     cmd::client_state::get_latest_client_state_update,
     errors::{DisplayableError, DisplayedError},
 };
@@ -19,12 +20,20 @@ pub(crate) struct GetL1ManifestArgs {
     /// block height; defaults to the chain tip
     #[argh(positional)]
     pub(crate) block_id: String,
+
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Shows a summary of all L1 manifests
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "get-l1-summary")]
-pub(crate) struct GetL1SummaryArgs {}
+pub(crate) struct GetL1SummaryArgs {
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
+}
 
 /// Get details about a specific L1 block manifest.
 pub(crate) fn get_l1_manifest(

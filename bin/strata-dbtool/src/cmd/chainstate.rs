@@ -4,8 +4,10 @@ use strata_db::traits::{ChainstateDatabase, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId};
 use strata_state::{header::L2Header, state_op::WriteBatchEntry};
 
-// use strata_state::header::L2Header;
-use crate::errors::{DisplayableError, DisplayedError};
+use crate::{
+    cli::OutputFormat,
+    errors::{DisplayableError, DisplayedError},
+};
 
 /// Shows the chainstate at the provided index
 #[derive(FromArgs, Debug)]
@@ -14,15 +16,27 @@ pub(crate) struct GetChainstateArgs {
     /// chainstate write index; defaults to the latest
     #[argh(positional)]
     pub(crate) write_idx: Option<u64>,
+
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Resets the chainstate to a specific L2 block
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "reset-chainstate")]
 pub(crate) struct ResetChainstateArgs {
-    /// target L2 block hash or number to roll back to
+    /// target L2 block id
     #[argh(positional)]
     pub(crate) block_id: String,
+
+    /// clear status of blocks after target block
+    #[argh(switch, short = 'u')]
+    pub(crate) update_block_status: bool,
+
+    /// delete blocks after target block
+    #[argh(switch, short = 'd')]
+    pub(crate) delete_blocks: bool,
 }
 
 pub(crate) fn get_chainstate(

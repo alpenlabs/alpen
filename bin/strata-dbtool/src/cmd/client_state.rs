@@ -2,7 +2,10 @@ use argh::FromArgs;
 use strata_db::traits::{ClientStateDatabase, Database};
 use strata_state::operation::{ClientUpdateOutput, SyncAction};
 
-use crate::errors::{DisplayableError, DisplayedError};
+use crate::{
+    cli::OutputFormat,
+    errors::{DisplayableError, DisplayedError},
+};
 
 /// Shows details about a client state update
 #[derive(FromArgs, Debug)]
@@ -11,6 +14,10 @@ pub(crate) struct GetClientStateUpdateArgs {
     /// client state update index; defaults to the latest
     #[argh(positional)]
     pub(crate) state_update_idx: Option<u64>,
+
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Show details about a specific L2 client state update.

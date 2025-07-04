@@ -26,9 +26,6 @@ fn main() {
 
     let cli: Cli = argh::from_env();
 
-    // // Safety: ensure node isn’t running by locking datadir.
-    // let _guard = acquire_lock(&cli.datadir)?;
-
     let db_type = DbType::from_str(&cli.db_type).unwrap_or_else(|e| {
         eprintln!("{e}");
         std::process::exit(1);

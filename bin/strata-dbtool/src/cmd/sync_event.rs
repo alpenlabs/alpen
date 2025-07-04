@@ -4,7 +4,10 @@ use strata_state::sync_event::SyncEvent;
 use tracing::warn;
 
 use super::l1::get_l1_horizon_height;
-use crate::errors::{DisplayableError, DisplayedError};
+use crate::{
+    cli::OutputFormat,
+    errors::{DisplayableError, DisplayedError},
+};
 
 /// Shows details about a sync event
 #[derive(FromArgs, Debug)]
@@ -13,12 +16,20 @@ pub(crate) struct GetSyncEventArgs {
     /// sync event index; defaults to the last written index
     #[argh(positional)]
     pub(crate) event_index: Option<u64>,
+
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
 }
 
 /// Shows a summary of all sync events
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "get-sync-events-summary")]
-pub(crate) struct GetSyncEventsSummaryArgs {}
+pub(crate) struct GetSyncEventsSummaryArgs {
+    /// output format: "json" or "porcelain"
+    #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
+    pub(crate) output_format: OutputFormat,
+}
 
 /// Get SyncEvent details by index.
 pub(crate) fn get_sync_event(
