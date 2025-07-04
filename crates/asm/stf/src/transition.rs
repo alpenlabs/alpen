@@ -46,7 +46,7 @@ pub fn asm_stf<S: AsmSpec>(pre_state: AnchorState, block: &Block) -> Result<Anch
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its slice of txs.
-    let mut process_stage = ProcessStage::new(all_relevant_transactions, &mut manager);
+    let mut process_stage = ProcessStage::new(all_relevant_transactions, &mut manager, &pre_state);
     S::call_subprotocols(&mut process_stage);
 
     // 5. FINISH: Let each subprotocol process its buffered interproto messages.
