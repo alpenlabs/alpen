@@ -216,22 +216,14 @@ async fn make_proof(
 /// Handles the task error by determining the next status based on [`ProvingTaskError`] nature.
 fn handle_task_error(task: ProofKey, e: ProvingTaskError) -> ProvingTaskStatus {
     match e {
-        ProvingTaskError::RpcError(_) => {
+        ProvingTaskError::RpcError(_)
+        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_)) => {
             // RpcError is retryable as it usually indicates the downstream services may
             // currently be unavailable.
+            // NetworkRetryableError indicates network error on SP1 side.
+            // See STR-1410 and STR-1473 for details.
             info!(?task, ?e, "proving task failed transiently");
             ProvingTaskStatus::TransientFailure
-        }
-        ProvingTaskError::ZkVmError(zkaleido::ZkVmError::ProofGenerationError(ref message)) => {
-            if message.to_lowercase().contains("unavailable") {
-                // This type of error with status:Unavailable indicates network error on SP1 side.
-                // See STR-1410 for details.
-                info!(?task, ?e, "proving task failed transiently");
-                ProvingTaskStatus::TransientFailure
-            } else {
-                error!(?task, ?e, "proving task failed");
-                ProvingTaskStatus::Failed
-            }
         }
         _ => {
             // Other errors are treated as non-retryable, so the task is failed permanently.
@@ -299,8 +291,8 @@ mod tests {
             ProofContext::Checkpoint(0),
             strata_primitives::proof::ProofZkVm::SP1,
         );
-        let err = ProvingTaskError::ZkVmError(zkaleido::ZkVmError::ProofGenerationError(
-            "Unavailable".to_string(),
+        let err = ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(
+            "Some Network Error".to_string(),
         ));
 
         assert_eq!(
