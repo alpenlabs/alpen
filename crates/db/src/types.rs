@@ -242,7 +242,7 @@ impl From<CheckpointEntry> for Checkpoint {
     }
 }
 
-/// Status of the commmitment
+/// Status of the commitment
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub enum CheckpointProvingStatus {
     /// Proof has not been created for this checkpoint
