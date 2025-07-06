@@ -58,11 +58,11 @@ where
         EthereumConsensusBuilder,
     >;
 
-    // type AddOns = AlpenRethNodeAddOns<
-    //     NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
-    // >;
+    type AddOns = AlpenRethNodeAddOns<
+        NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
+    >;
 
-    type AddOns = ();
+    // type AddOns = ();
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
         todo!()
