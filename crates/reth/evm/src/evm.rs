@@ -3,7 +3,9 @@ use std::{
     sync::OnceLock,
 };
 
-use reth_evm::{eth::EthEvmContext, Database, Evm, EvmEnv, EvmFactory};
+use reth_evm::{
+    eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
+};
 use revm::{
     context::{BlockEnv, Cfg, ContextTr, TxEnv},
     context_interface::result::{EVMError, HaltReason, ResultAndState},
@@ -138,7 +140,7 @@ impl EvmFactory for AlpenEvmFactory {
 
     type Spec = SpecId;
 
-    type Precompiles = AlpenEvmPrecompiles;
+    type Precompiles = PrecompilesMap;
 
     fn create_evm<DB: reth_evm::Database>(
         &self,
@@ -150,7 +152,10 @@ impl EvmFactory for AlpenEvmFactory {
             .with_cfg(input.cfg_env)
             .with_block(input.block_env)
             .build_mainnet_with_inspector(NoOpInspector {})
-            .with_precompiles(AlpenEvmPrecompiles::new());
+            .with_precompiles(PrecompilesMap::from_static(
+                // TODO: Revisit this
+                AlpenEvmPrecompiles::new().precompiles.precompiles,
+            ));
 
         AlpenEvm {
             inner: AlpenEvmInner::new(evm_ctx),
@@ -169,7 +174,10 @@ impl EvmFactory for AlpenEvmFactory {
             .with_cfg(input.cfg_env)
             .with_block(input.block_env)
             .build_mainnet_with_inspector(inspector)
-            .with_precompiles(AlpenEvmPrecompiles::new());
+            .with_precompiles(PrecompilesMap::from_static(
+                // TODO: Revisit this
+                AlpenEvmPrecompiles::new().precompiles.precompiles,
+            ));
 
         AlpenEvm {
             inner: AlpenEvmInner::new(evm_ctx),
@@ -229,7 +237,7 @@ where
     type Error = EVMError<DB::Error>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
-    type Precompiles = AlpenEvmPrecompiles;
+    type Precompiles = PrecompilesMap;
     type Inspector = I;
 
     fn block(&self) -> &BlockEnv {

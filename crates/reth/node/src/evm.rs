@@ -14,13 +14,11 @@ impl<Node> ExecutorBuilder<Node> for AlpenExecutorBuilder
 where
     Node: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec, Primitives = EthPrimitives>>,
 {
-    // type EVM = EthEvmConfig<ChainSpec, AlpenEvmFactory>;
-    type EVM = EthEvmConfig<ChainSpec>;
+    type EVM = EthEvmConfig<ChainSpec, AlpenEvmFactory>;
 
     async fn build_evm(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::EVM> {
-        // let evm_config =
-        //     EthEvmConfig::new_with_evm_factory(ctx.chain_spec(), AlpenEvmFactory::default());
-        // Ok(evm_config)
-        todo!()
+        let evm_config =
+            EthEvmConfig::new_with_evm_factory(ctx.chain_spec(), AlpenEvmFactory::default());
+        Ok(evm_config)
     }
 }
