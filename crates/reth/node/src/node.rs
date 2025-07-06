@@ -47,7 +47,14 @@ impl NodeTypes for AlpenEthereumNode {
 
 impl<N> Node<N> for AlpenEthereumNode
 where
-    N: FullNodeTypes<Types = Self>,
+    N: FullNodeTypes<
+        Types: NodeTypes<
+            Payload = AlpenEngineTypes,
+            ChainSpec = ChainSpec,
+            Primitives = EthPrimitives,
+            Storage = EthStorage,
+        >,
+    >,
 {
     type ComponentsBuilder = ComponentsBuilder<
         N,
@@ -62,24 +69,20 @@ where
         NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
     >;
 
-    // type AddOns = ();
-
     fn components_builder(&self) -> Self::ComponentsBuilder {
-        todo!()
-        // ComponentsBuilder::default()
-        //     .node_types::<N>()
-        //     .pool(AlpenEthereumPoolBuilder::default())
-        //     .payload(BasicPayloadServiceBuilder::default())
-        //     .network(EthereumNetworkBuilder::default())
-        //     .executor(AlpenExecutorBuilder::default())
-        //     .consensus(EthereumConsensusBuilder::default())
+        ComponentsBuilder::default()
+            .node_types::<N>()
+            .pool(AlpenEthereumPoolBuilder::default())
+            .executor(AlpenExecutorBuilder::default())
+            .payload(BasicPayloadServiceBuilder::default())
+            .network(EthereumNetworkBuilder::default())
+            .consensus(EthereumConsensusBuilder::default())
     }
 
     fn add_ons(&self) -> Self::AddOns {
-        todo!()
-        // Self::AddOns::builder()
-        //     .with_sequencer(self.args.sequencer_http.clone())
-        //     .build()
+        Self::AddOns::builder()
+            .with_sequencer(self.args.sequencer_http.clone())
+            .build()
     }
 }
 

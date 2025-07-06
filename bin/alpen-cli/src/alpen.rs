@@ -49,7 +49,7 @@ impl AlpenWallet {
     pub fn new(seed: &Seed, alpen_http_endpoint: &str) -> Result<Self, AlpenEndpointParseError> {
         let wallet = seed.get_alpen_wallet();
 
-        let provider = ProviderBuilder::new().wallet(wallet).on_http(
+        let provider = ProviderBuilder::new().wallet(wallet).connect_http(
             alpen_http_endpoint
                 .parse()
                 .map_err(|_| AlpenEndpointParseError)?,
