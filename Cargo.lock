@@ -1110,7 +1110,6 @@ dependencies = [
  "reth-node-ethereum",
  "reth-payload-builder",
  "reth-primitives",
- "reth-primitives-traits",
  "reth-provider",
  "reth-rpc-eth-types",
  "reth-transaction-pool",
