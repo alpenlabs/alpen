@@ -87,8 +87,7 @@ pub(crate) fn get_syncinfo(
         println!("L1 tip height: {l1_tip_height}, block id: {l1_tip_block_id:?}");
 
         println!(
-            "L2 tip: height {}, block id: {:?}, status {:?}",
-            l2_block_height, l2_block_id, l2_block_status
+            "L2 tip: height {l2_block_height}, block id: {l2_block_id:?}, status {l2_block_status:?}"
         );
         println!(
             "Finalized block id: {:?}",

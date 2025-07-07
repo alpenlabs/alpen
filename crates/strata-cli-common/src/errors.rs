@@ -1,4 +1,4 @@
-/// Errors displayed to the user when using the Alpen CLI
+/// Errors displayed to the user when using the CLI
 #[derive(Debug)]
 pub enum DisplayedError {
     /// Errors the use can address by updating configuration or providing expected input

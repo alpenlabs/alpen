@@ -44,7 +44,7 @@ pub(crate) struct GetCheckpointDataArgs {
 pub(crate) struct GetCheckpointsSummaryArgs {
     /// output format: "json" or "porcelain"
     #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
-    pub(crate) output_format: OutputFormat,
+    pub(crate) _output_format: OutputFormat,
 }
 
 /// Epoch information displayed to the user
@@ -141,7 +141,7 @@ pub(crate) fn get_checkpoint_data(
     if args.output_format == OutputFormat::Json {
         let checkpoint_info = CheckpointInfo {
             checkpoint_index: checkpoint_idx,
-            checkpoint_commitment: &checkpoint_commitment,
+            checkpoint_commitment,
             proving_status: &entry.proving_status,
             confirmation_status: &entry.confirmation_status,
         };

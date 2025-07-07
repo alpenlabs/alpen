@@ -29,7 +29,7 @@ pub(crate) struct GetL1ManifestArgs {
 pub(crate) struct GetL1SummaryArgs {
     /// output format: "json" or "porcelain"
     #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
-    pub(crate) output_format: OutputFormat,
+    pub(crate) _output_format: OutputFormat,
 }
 
 /// L1 block information displayed to the user

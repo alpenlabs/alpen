@@ -26,7 +26,7 @@ pub(crate) struct GetSyncEventArgs {
 pub(crate) struct GetSyncEventsSummaryArgs {
     /// output format: "json" or "porcelain"
     #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
-    pub(crate) output_format: OutputFormat,
+    pub(crate) _output_format: OutputFormat,
 }
 
 /// Sync event information displayed to the user

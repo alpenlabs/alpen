@@ -82,9 +82,9 @@ pub(crate) fn get_chainstate(
             "Chainstate epoch finishing {}",
             top_level_state.is_epoch_finishing()
         );
-        println!("chainstate previous epoch {:?}", prev_epoch);
-        println!("Chainstate finalized epoch {:?}", finalized_epoch);
-        println!("Chainstate L1 view {:?}", l1_view_state);
+        println!("chainstate previous epoch {prev_epoch:?}");
+        println!("Chainstate finalized epoch {finalized_epoch:?}");
+        println!("Chainstate L1 view {l1_view_state:?}");
     }
     Ok(())
 }
