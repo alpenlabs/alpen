@@ -16667,7 +16667,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc13#3daf4d485756ee1618598d6129c5288e18715b2d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "arbitrary",
  "async-trait",
@@ -16680,7 +16680,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc13#3daf4d485756ee1618598d6129c5288e18715b2d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "bincode",
  "borsh",
@@ -16691,19 +16691,23 @@ dependencies = [
 [[package]]
 name = "zkaleido-risc0-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc13#3daf4d485756ee1618598d6129c5288e18715b2d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
+ "bytemuck",
  "hex",
  "risc0-binfmt",
  "risc0-groth16",
  "risc0-zkp",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 1.0.69",
  "zkaleido",
 ]
 
 [[package]]
 name = "zkaleido-risc0-host"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc13#3daf4d485756ee1618598d6129c5288e18715b2d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "bincode",
  "borsh",
@@ -16716,17 +16720,22 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc13#3daf4d485756ee1618598d6129c5288e18715b2d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
+ "blake3",
+ "borsh",
  "hex",
- "sp1-verifier",
+ "serde",
+ "sha2 0.10.9",
+ "substrate-bn",
+ "thiserror 1.0.69",
  "zkaleido",
 ]
 
 [[package]]
 name = "zkaleido-sp1-host"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc13#3daf4d485756ee1618598d6129c5288e18715b2d"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "bincode",
  "borsh",
