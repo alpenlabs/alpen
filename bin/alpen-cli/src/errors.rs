@@ -8,6 +8,7 @@ pub(crate) type BoxedErr = Box<BoxedInner>;
 pub struct PlatformFailure(BoxedErr);
 
 impl PlatformFailure {
+    #[allow(unused)]
     pub fn new<E>(e: E) -> Self
     where
         E: Into<BoxedErr>,
@@ -24,6 +25,7 @@ impl PlatformFailure {
 pub struct NoStorageAccess(BoxedErr);
 
 impl NoStorageAccess {
+    #[allow(unused)]
     pub fn new<E>(e: E) -> Self
     where
         E: Into<BoxedErr>,
