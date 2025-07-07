@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use strata_primitives::l1::{
     HeaderVerificationState, L1BlockCommitment, L1BlockId, L1HeaderRecord,
 };
