@@ -160,9 +160,11 @@ pub(crate) fn reset_chainstate(
     if args.update_block_status {
         println!("Marking blocks after {target_block_id} as unchecked");
         for slot in target_slot + 1..latest_slot {
-            let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or(default);
+            let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or_default();
             for id in l2_block_ids.iter() {
-                db.l2_db().set_block_status(id, BlockStatus::Unchecked)?;
+                db.l2_db()
+                    .set_block_status(*id, BlockStatus::Unchecked)
+                    .internal_error(format!("Failed to update status for block with id {}", *id))?;
             }
         }
     }
@@ -171,9 +173,11 @@ pub(crate) fn reset_chainstate(
     if args.delete_blocks {
         println!("Deleting blocks after {target_block_id}");
         for slot in target_slot + 1..latest_slot {
-            let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or(default);
+            let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or_default();
             for id in l2_block_ids.iter() {
-                db.l2_db().del_block_data(id)?;
+                db.l2_db()
+                    .del_block_data(*id)
+                    .internal_error(format!("Failed to delete block with id {}", *id))?;
             }
         }
     }
