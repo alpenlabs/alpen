@@ -1,4 +1,4 @@
-use strata_primitives::l1::L1VerificationError;
+use strata_primitives::{bridge::OperatorIdx, l1::L1VerificationError};
 use strata_state::prelude::*;
 use thiserror::Error;
 
