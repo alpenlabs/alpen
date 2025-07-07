@@ -10,7 +10,7 @@ from typing import Any, Callable, Optional, TypeVar
 from bitcoinlib.services.bitcoind import BitcoindClient
 from strata_utils import convert_to_xonly_pk, get_balance, musig_aggregate_pks
 
-from factory.seqrpc import JsonrpcClient, RpcError
+from factory.seqrpc import JsonrpcClient
 from utils.constants import *
 
 
@@ -110,172 +110,6 @@ def wait_until_with_value(
 
         time.sleep(step)
     raise AssertionError(error_with)
-
-
-def wait_for_genesis(rpc, timeout=20, step=2, **kwargs):
-    """
-    Waits until we see genesis.  That is to say, that `strata_syncStatus`
-    returns a sensible result.
-    """
-
-    def _check_genesis():
-        try:
-            # This should raise if we're before genesis.
-            ss = rpc.strata_syncStatus()
-            logging.info(
-                f"after genesis, tip is slot {ss['tip_height']} blkid {ss['tip_block_id']}"
-            )
-            return True
-        except RpcError as e:
-            # This is the "before genesis" error code, meaning we're still
-            # before genesis
-            if e.code == -32607:
-                return False
-            else:
-                raise e
-
-    wait_until(_check_genesis, timeout=timeout, step=step, **kwargs)
-
-
-def wait_until_chain_epoch(rpc, epoch: int, **kwargs) -> dict:
-    """
-    Waits until the chain has finished the specified epoch index, determined by
-    checking for epoch summaries.
-
-    Returns the epoch summary.
-    """
-
-    logging.info(f"waiting for epoch {epoch}")
-
-    def _query():
-        status = rpc.strata_syncStatus()
-        logging.debug(f"checked status {status}")
-        commitments = rpc.strata_getEpochCommitments(epoch)
-        if len(commitments) > 0:
-            comm = commitments[0]
-            logging.info(
-                f"now at epoch {epoch}, slot {comm['last_slot']}, blkid {comm['last_blkid']}"
-            )
-            return rpc.strata_getEpochSummary(epoch, comm["last_slot"], comm["last_blkid"])
-        return None
-
-    def _check(v):
-        return v is not None
-
-    return wait_until_with_value(_query, _check, **kwargs)
-
-
-def wait_until_next_chain_epoch(rpc, **kwargs) -> int:
-    """
-    Waits until the chain epoch advances by at least 1.
-
-    Returns the new epoch number.
-    """
-    init_epoch = rpc.strata_syncStatus()["cur_epoch"]
-
-    def _query():
-        ss = rpc.strata_syncStatus()
-        logging.info(f"waiting for next epoch, ss {ss}")
-        return ss["cur_epoch"]
-
-    def _check(epoch):
-        return epoch > init_epoch
-
-    return wait_until_with_value(_query, _check, **kwargs)
-
-
-def wait_until_epoch_confirmed(rpc, epoch: int, **kwargs):
-    """
-    Waits until at least the given epoch is confirmed on L1, according to
-    calling `strata_clientStatus`.
-    """
-
-    def _check():
-        cs = rpc.strata_clientStatus()
-        l1_height = cs["tip_l1_block"]["height"]
-        conf_epoch = cs["confirmed_epoch"]
-        logging.info(f"confirmed epoch as of {l1_height}: {conf_epoch}")
-        if conf_epoch is None:
-            return False
-        return conf_epoch["epoch"] >= epoch
-
-    wait_until(_check, **kwargs)
-
-
-def wait_until_epoch_finalized(rpc, epoch: int, **kwargs):
-    """
-    Waits until at least the given epoch is finalized on L1, according to
-    calling `strata_clientStatus`.
-    """
-
-    def _check():
-        cs = rpc.strata_clientStatus()
-        l1_height = cs["tip_l1_block"]["height"]
-        fin_epoch = cs["finalized_epoch"]
-        logging.info(f"finalized epoch as of {l1_height}: {fin_epoch}")
-        if fin_epoch is None:
-            return False
-        return fin_epoch["epoch"] >= epoch
-
-    wait_until(_check, **kwargs)
-
-
-def wait_until_epoch_observed_final(rpc, epoch: int, **kwargs):
-    """
-    Waits until at least the given epoch is observed as final on L2, according
-    to calling `strata_syncStatus`.
-    """
-
-    def _check():
-        ss = rpc.strata_syncStatus()
-        slot = ss["tip_height"]  # TODO rename to tip_slot
-        of_epoch = ss["observed_finalized_epoch"]
-        logging.info(f"observed final epoch as of L2 slot {slot}: {of_epoch}")
-        if not of_epoch:
-            return False
-        return of_epoch["epoch"] >= epoch
-
-    wait_until(_check, **kwargs)
-
-
-def wait_until_l1_observed(rpc, height: int, **kwargs):
-    """
-    Waits until the provided L1 height has been observed by the chain.
-    """
-
-    def _check():
-        ss = rpc.strata_syncStatus()
-        slot = ss["tip_height"]  # TODO rename to slot
-        epoch = ss["cur_epoch"]
-        view_l1 = ss["safe_l1_block"]["height"]
-        logging.info(f"chain now at slot {slot}, epoch {epoch}, observed L1 height is {view_l1}")
-        return view_l1 >= height
-
-    wait_until(_check, **kwargs)
-
-
-def wait_until_csm_l1_tip_observed(rpc, **kwargs):
-    """
-    Waits until the CSM's current L1 tip block height has been observed by the OL.
-    """
-
-    init_cs = rpc.strata_clientStatus()
-    init_l1_height = init_cs["tip_l1_block"]["height"]
-    logging.info(f"target L1 height from CSM is {init_l1_height}")
-    wait_until_l1_observed(init_l1_height, **kwargs)
-
-
-def wait_until_cur_l1_tip_observed(btcrpc, seqrpc, **kwargs):
-    """
-    Waits until the current L1 tip block as requested from the L1 RPC has been
-    observed by the CSM.
-
-    Returns the L1 block height.
-    """
-    info = btcrpc.proxy.getblockchaininfo()
-    h = info["blocks"]
-    logging.info(f"current bitcoin height is {h}")
-    wait_until_l1_observed(seqrpc, h, **kwargs)
 
 
 @dataclass
@@ -396,6 +230,8 @@ def submit_checkpoint(
     """
     Submits checkpoint and if manual_gen, waits till it is present in l1
     """
+    from utils.wait.prover import ProverWaiter
+
     last_published_txid = seqrpc.strata_l1status()["last_published_txid"]
 
     # Post checkpoint proof
@@ -403,7 +239,8 @@ def submit_checkpoint(
     # will post empty proof if prover doesn't submit proofs in time.
     proof_keys = prover_rpc.dev_strata_proveCheckpoint(idx)
     proof_key = proof_keys[0]
-    wait_for_proof_with_time_out(prover_rpc, proof_key)
+    prover_waiter = ProverWaiter(prover_rpc, logging.Logger("submit_checkpoint"), timeout=30)
+    prover_waiter.wait_for_proof_completion(proof_key)
     proof = prover_rpc.dev_strata_getProof(proof_key)
 
     seqrpc.strataadmin_submitCheckpointProof(idx, proof)
@@ -458,35 +295,6 @@ def check_already_sent_proof(seqrpc, sent_batch: int):
         assert e.code == ERROR_PROOF_ALREADY_CREATED
     else:
         raise AssertionError("Expected rpc error")
-
-
-def wait_for_proof_with_time_out(prover_client_rpc, task_id, time_out=3600) -> bool:
-    """
-    Waits for a proof task to complete/fail within a specified timeout period.
-
-    This function continuously polls the status of a proof task identified by `task_id` using
-    the `prover_client_rpc` client. It checks the status every 2 seconds and waits until the
-    proof task status is either "Completed" where it returns True, or "Failed" where it return
-    False. If the specified `time_out` (in seconds) is reached, it throws TimeoutError.
-    """
-
-    start_time = time.time()
-    while True:
-        # Fetch the proof status
-        proof_status = prover_client_rpc.dev_strata_getTaskStatus(task_id)
-        assert proof_status is not None
-        logging.info(f"Got the proof status {proof_status}")
-        if proof_status == "Completed":
-            logging.info(f"Completed the proof generation for {task_id}")
-            return True
-        elif proof_status == "Failed":
-            logging.info(f"Proof generatoin failed for {task_id}")
-            return False
-
-        time.sleep(2)
-        elapsed_time = time.time() - start_time  # Calculate elapsed time
-        if elapsed_time >= time_out:
-            raise TimeoutError(f"Operation timed out after {time_out} seconds.")
 
 
 def generate_seed_at(path: str):
@@ -817,6 +625,11 @@ def confirm_btc_withdrawal(
     assert btc_balance == original_balance + expected_increase, (
         "BTC balance after withdrawal is not as expected"
     )
+
+
+def get_latest_eth_block_number(reth_rpc) -> int:
+    """Get the current block number from reth RPC."""
+    return int(reth_rpc.eth_blockNumber(), base=16)
 
 
 def check_initial_eth_balance(rethrpc, address, debug_fn=print):

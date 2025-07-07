@@ -228,7 +228,7 @@ impl DepositsTable {
     /// Returns if the deposit table is empty.  This is practically probably
     /// never going to be true.
     pub fn is_empty(&self) -> bool {
-        self.len() > 0
+        self.len() == 0
     }
 
     /// Gets the position in the deposit table of a hypothetical deposit entry

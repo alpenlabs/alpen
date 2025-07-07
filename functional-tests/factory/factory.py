@@ -58,7 +58,7 @@ class BitcoinFactory(flexitest.Factory):
         svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
         svc.start()
 
-        def _create_rpc():
+        def _create_rpc() -> BitcoindClient:
             st = svc.check_status()
             if not st:
                 raise RuntimeError("service isn't active")
@@ -469,7 +469,7 @@ def _inject_service_create_rpc(svc: flexitest.service.ProcService, rpc_url: str,
             logging.warning(f"service '{name}' seems to have crashed as of call to {method}")
             raise RuntimeError(f"process '{name}' crashed")
 
-    def _create_rpc():
+    def _create_rpc() -> seqrpc.JsonrpcClient:
         rpc = seqrpc.JsonrpcClient(rpc_url)
         rpc._pre_call_hook = _status_ck
         return rpc

@@ -9,8 +9,7 @@ from mixins import bridge_mixin
 from utils import (
     confirm_btc_withdrawal,
     get_bridge_pubkey,
-    wait_for_proof_with_time_out,
-    wait_until,
+    get_latest_eth_block_number,
 )
 
 
@@ -55,7 +54,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
 
         # Do deposit on the L1.
         # Fix the strata block first (to optimize the search).
-        start_block = int(rethrpc.eth_blockNumber(), base=16)
+        start_block = get_latest_eth_block_number(rethrpc)
         l1_deposit_txn_id = self.deposit(ctx, evm_addr, bridge_pk)
         # Do twice the deposit, so the withdrawal will have funds for the gas.
         _ = self.deposit(ctx, evm_addr, bridge_pk)
@@ -67,7 +66,7 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         self.info(f"deposit block height on L1: {l1_deposit_block_height}")
 
         l2_deposit_block_num = None
-        end_block = int(rethrpc.eth_blockNumber(), base=16)
+        end_block = get_latest_eth_block_number(rethrpc)
         for block_num in range(start_block, end_block + 1):
             block = rethrpc.eth_getBlockByNumber(hex(block_num), True)
             # Bridge-ins are currently handled as withdrawals in the block payload.
@@ -137,22 +136,23 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         l1_withdraw_block_height = last_block["height"]
         self.info(f"withdrawal block height on L1: {l1_withdraw_block_height}")
 
+        reth_waiter = self.create_reth_waiter(rethrpc)
         # Proving
         self.test_checkpoint(
-            l1_withdraw_block_height, l2_withdraw_block_num, prover_client_rpc, rethrpc
+            l1_withdraw_block_height,
+            l2_withdraw_block_num,
+            prover_client_rpc,
+            reth_waiter,
         )
 
-    def test_checkpoint(self, l1_block, l2_block, prover_client_rpc, rethrpc):
+    def test_checkpoint(self, l1_block, l2_block, prover_client_rpc, reth_waiter):
         self._chkpt_id += 1
         l1 = (l1_block - 1, l1_block + 1)
         l2 = (l2_block - 1, l2_block + 1)
         # Wait some time so the future blocks in the batches are finalized.
         # Given that L1 blocks are happening more frequent that L2, it's safe
         # to assert only L2 latest block.
-        wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > l2[1],
-            timeout=60,
-        )
+        reth_waiter.wait_until_eth_block_exceeds(l2[1])
 
         task_ids = prover_client_rpc.dev_strata_proveCheckpointRaw(self._chkpt_id, l1, l2)
 
@@ -161,7 +161,6 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=30
-        )
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30, interval=2)
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

@@ -2,7 +2,7 @@ import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from envs import testenv
-from utils import bytes_to_big_endian, wait_for_proof_with_time_out, wait_until
+from utils import bytes_to_big_endian
 
 
 @flexitest.register
@@ -18,10 +18,8 @@ class ProverClientTest(testenv.StrataTestBase):
         prover_client_rpc = prover_client.create_rpc()
 
         # Wait until the prover client reports readiness
-        wait_until(
-            lambda: prover_client_rpc.dev_strata_getReport() is not None,
-            error_with="Prover did not start on time",
-        )
+        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=60, interval=2)
+        prover_waiter.wait_until_prover_ready()
 
         # Dispatch the prover task
         block_height = 1
@@ -36,8 +34,5 @@ class ProverClientTest(testenv.StrataTestBase):
         self.debug(f"using task id: {task_id}")
         assert task_id is not None
 
-        time_out = 30
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=time_out
-        )
+        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
         assert is_proof_generation_completed

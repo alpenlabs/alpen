@@ -13,9 +13,9 @@ use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
 use reth_provider::{BlockReader, Chain, ExecutionOutcome, StateProvider, StateProviderFactory};
 use reth_revm::{db::CacheDB, primitives::FixedBytes};
-use reth_trie::{HashedPostState, TrieInput};
+use reth_trie::{HashedPostState, MultiProofTargets, TrieInput};
 use reth_trie_common::KeccakKeyHasher;
-use revm_primitives::alloy_primitives::B256;
+use revm_primitives::{alloy_primitives::B256, keccak256, map::B256Set, Address};
 use rsp_mpt::EthereumState;
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 use tracing::{debug, error};
@@ -148,28 +148,46 @@ fn derive_parent_state<P>(
 where
     P: StateProvider,
 {
-    let mut before_proofs = HashMap::new();
-    let mut after_proofs = HashMap::new();
+    let touched_accounts = accessed_states
+        .accessed_accounts()
+        .iter()
+        .map(|(addr, slots)| {
+            (
+                *addr,
+                slots
+                    .iter()
+                    .map(|slot| B256::from_slice(&slot.to_be_bytes::<32>()))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<HashMap<Address, Vec<B256>>>();
 
-    // Iterate through accessed accounts
-    for (address, slots) in accessed_states.accessed_accounts().iter() {
-        // Convert slots to keys
-        let keys = slots
-            .iter()
-            .map(|slot| B256::from_slice(&slot.to_be_bytes::<32>()))
-            .collect::<Vec<_>>();
+    let multi_proof_targets =
+        MultiProofTargets::from_iter(touched_accounts.iter().map(|(addr, keys)| {
+            (
+                keccak256(addr),
+                B256Set::from_iter(keys.iter().map(keccak256)),
+            )
+        }));
 
-        // Get proof before execution
-        let root_before = HashedPostState::from_bundle_state::<KeccakKeyHasher>([]);
-        let proof_before = provider.proof(TrieInput::from_state(root_before), *address, &keys)?;
+    let multi_proof_before = provider.multiproof(
+        TrieInput::from_state(HashedPostState::from_bundle_state::<KeccakKeyHasher>([])),
+        multi_proof_targets.clone(),
+    )?;
 
-        // Get proof after execution
-        let root_after = exec_outcome.hash_state_slow::<KeccakKeyHasher>();
-        let proof_after = provider.proof(TrieInput::from_state(root_after), *address, &keys)?;
+    let multi_proof_after = provider.multiproof(
+        TrieInput::from_state(exec_outcome.hash_state_slow::<KeccakKeyHasher>()),
+        multi_proof_targets,
+    )?;
 
+    // Iterate through accessed accounts and put account proofs for each of them.
+    let num_accs = touched_accounts.len();
+    let mut before_proofs = HashMap::with_capacity(num_accs);
+    let mut after_proofs = HashMap::with_capacity(num_accs);
+    for (address, keys) in touched_accounts.iter() {
         // Store proofs in the maps
-        before_proofs.insert(*address, proof_before);
-        after_proofs.insert(*address, proof_after);
+        before_proofs.insert(*address, multi_proof_before.account_proof(*address, keys)?);
+        after_proofs.insert(*address, multi_proof_after.account_proof(*address, keys)?);
     }
 
     let parent_state =

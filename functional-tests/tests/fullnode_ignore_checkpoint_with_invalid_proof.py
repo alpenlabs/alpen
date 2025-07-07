@@ -1,13 +1,8 @@
 import logging
-import time
 
 import flexitest
 
 from envs import testenv
-from utils import (
-    wait_until,
-    wait_until_epoch_finalized,
-)
 
 PROVER_CHECKPOINT_SETTINGS = {
     "CONSECUTIVE_PROOFS_REQUIRED": 4,
@@ -39,39 +34,25 @@ class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         seq_strict = ctx.get_service("seq_node_strict")
         prover_strict = ctx.get_service("prover_client_strict")
 
+        seq_fast_rpc = seq_fast.create_rpc()
+        seq_waiter = self.create_strata_waiter(seq_fast_rpc)
+
         # this fullnode has a strict proof policy but connected to the fast sequencer
         fullnode = ctx.get_service("fullnode")
+        fn_waiter = self.create_strata_waiter(fullnode.create_rpc())
 
         prover_fast.stop()
         seq_strict.stop()
         prover_strict.stop()
 
-        seq_fast_rpc = seq_fast.create_rpc()
-        fullnode_rpc = fullnode.create_rpc()
-
-        # Sleep for 3 seconds to ensure that the sequencer has time to start
-        time.sleep(3)
-
-        # Wait for seq_fast to start
-        wait_until(
-            lambda: seq_fast_rpc.strata_protocolVersion() is not None,
-            error_with="Sequencer (fast) did not start on time",
-        )
-
-        # Wait for fullnode to start
-        wait_until(
-            lambda: fullnode_rpc.strata_protocolVersion() is not None,
-            error_with="Fullnode did not start on time",
-        )
+        seq_waiter.wait_until_client_ready()
+        fn_waiter.wait_until_client_ready()
 
         empty_proof_receipt = {"proof": [], "public_values": []}
 
         current_epoch = 0
 
-        wait_until(
-            lambda: seq_fast_rpc.strata_getLatestCheckpointIndex(None) == current_epoch,
-            error_with="Checkpoint index did not increment",
-        )
+        seq_waiter.wait_until_latest_checkpoint_at(current_epoch)
 
         for _ in range(PROVER_CHECKPOINT_SETTINGS["CONSECUTIVE_PROOFS_REQUIRED"]):
             logging.info(f"Submitting proof for epoch {current_epoch}")
@@ -80,24 +61,18 @@ class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
             seq_fast_rpc.strataadmin_submitCheckpointProof(current_epoch, empty_proof_receipt)
 
             # Wait for epoch increment
-            wait_until(
-                lambda current_epoch=current_epoch: seq_fast_rpc.strata_getLatestCheckpointIndex(
-                    None
-                )
-                == current_epoch + 1,
-                error_with="Checkpoint index did not increment",
-            )
+            seq_waiter.wait_until_latest_checkpoint_at(current_epoch + 1)
 
             current_epoch += 1
             logging.info(f"Epoch advanced to {current_epoch}")
 
         logging.info("Waiting for epoch 3 to be finalized in the fast sequencer")
-        wait_until_epoch_finalized(seq_fast_rpc, 3, timeout=20)
+        seq_waiter.wait_until_epoch_finalized(3, timeout=20)
 
         try:
             logging.info("Checking if epoch 3 is finalized in the fullnode")
-            wait_until_epoch_finalized(fullnode_rpc, 3, timeout=20)
-            logging.warn("Fullnode incorrectly finalized epoch 3")
+            fn_waiter.wait_until_epoch_finalized(3, timeout=20)
+            self.warning("Fullnode incorrectly finalized epoch 3")
             return False
         except Exception:
             logging.info("Fullnode correctly ignored epochs because of the strict proof policy")

@@ -1,5 +1,4 @@
 import logging
-import time
 
 import flexitest
 
@@ -38,6 +37,9 @@ class BridgeMsgTest(testenv.StrataTestBase):
         )
 
         seqrpc.strata_submitBridgeMsg(raw_msg)
+
+        # Wait for message processing - using time.sleep replacement
+        import time
 
         time.sleep(WAIT_TIME + 2)
 

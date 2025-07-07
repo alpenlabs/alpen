@@ -307,8 +307,11 @@ fn process_withdrawal_fulfillment(
     state: &mut StateCache,
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
-    if !state.check_deposit_exists(info.deposit_idx) {
-        return Err(OpError::UnknownDeposit(info.deposit_idx));
+    if !state.is_valid_withdrawal_fulfillment(info.deposit_idx, info.operator_idx) {
+        return Err(OpError::InvalidDeposit {
+            deposit_idx: info.deposit_idx,
+            operator_idx: info.operator_idx,
+        });
     }
 
     state.mark_deposit_fulfilled(info);
@@ -575,14 +578,17 @@ mod tests {
         buf::Buf32,
         l1::{
             BitcoinAmount, DepositInfo, DepositUpdateTx, L1BlockManifest, L1HeaderRecord, L1Tx,
-            ProtocolOperation,
+            ProtocolOperation, WithdrawalFulfillmentInfo,
         },
         l2::L2BlockId,
         params::OperatorConfig,
     };
     use strata_state::{
         block::{ExecSegment, L1Segment, L2BlockBody},
-        bridge_state::OperatorTable,
+        bridge_state::{
+            DepositState, DepositsTable, DispatchCommand, DispatchedState, FulfilledState,
+            OperatorTable,
+        },
         chain_state::Chainstate,
         exec_env::ExecEnvState,
         exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
@@ -594,7 +600,10 @@ mod tests {
     use strata_test_utils::{l2::gen_params, ArbitraryGenerator};
 
     use super::{next_rand_op_pos, process_block};
-    use crate::{slot_rng::SlotRng, transition::process_l1_view_update};
+    use crate::{
+        slot_rng::SlotRng,
+        transition::{process_l1_block, process_l1_view_update},
+    };
 
     #[test]
     // Confirm that operator index sampling is deterministic and in bounds
@@ -625,5 +634,87 @@ mod tests {
         let result = process_l1_view_update(&mut state_cache, &l1_segment, params.rollup());
         assert_eq!(state_cache.state(), &chs);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_process_l1_block_with_duplicate_withdrawal_fulfillment() {
+        let mut arb = ArbitraryGenerator::new();
+
+        // Setup chainstate with a deposit in dispatched state
+        let mut chs: Chainstate = arb.generate();
+        let mut deposit_table = DepositsTable::new_empty();
+        deposit_table.create_next_deposit(
+            arb.generate(),
+            vec![0, 1, 2],
+            BitcoinAmount::from_int_btc(10),
+        );
+        let mut deposit = deposit_table.get_deposit_mut(0).expect("should exist");
+        deposit.set_state(DepositState::Dispatched(DispatchedState::new(
+            DispatchCommand::new(vec![]),
+            0,
+            100,
+        )));
+        *chs.deposits_table_mut() = deposit_table;
+
+        let params = gen_params();
+
+        // withdrawal fulfillment op that will be seen twice
+        let withdrawal_fulfillment_protocol_op =
+            ProtocolOperation::WithdrawalFulfillment(WithdrawalFulfillmentInfo {
+                deposit_idx: 0,
+                operator_idx: 0,
+                amt: BitcoinAmount::from_int_btc(10),
+                txid: Buf32::zero(),
+            });
+
+        // send protocol op for first time. Should set deposit to fulfilled state
+        let block_manifest = L1BlockManifest::new(
+            arb.generate(),
+            None,
+            vec![L1Tx::new(
+                arb.generate(),
+                arb.generate(),
+                vec![withdrawal_fulfillment_protocol_op.clone()],
+            )],
+            chs.cur_epoch(),
+            chs.l1_view().safe_height() + 1,
+        );
+
+        let mut state_cache = StateCache::new(chs.clone());
+        let result = process_l1_block(&mut state_cache, &block_manifest, params.rollup());
+        assert!(result.is_ok(), "test: invoke process_l1_block");
+        let new_deposit_state = state_cache
+            .state()
+            .deposits_table()
+            .get_deposit(0)
+            .expect("should exist")
+            .deposit_state();
+        assert!(
+            matches!(new_deposit_state, DepositState::Fulfilled(_)),
+            "test: deposit state not set to fulfilled"
+        );
+
+        // Duplicate withdrawal fulfillment seen. Should be ignored and chainstate not updated
+        let block_manifest = L1BlockManifest::new(
+            arb.generate(),
+            None,
+            vec![L1Tx::new(
+                arb.generate(),
+                arb.generate(),
+                vec![withdrawal_fulfillment_protocol_op],
+            )],
+            chs.cur_epoch(),
+            chs.l1_view().safe_height() + 1,
+        );
+
+        let chs = state_cache.state();
+        let mut state_cache = StateCache::new(chs.clone());
+        let result = process_l1_block(&mut state_cache, &block_manifest, params.rollup());
+        assert!(result.is_ok(), "test: invoke process_l1_block");
+        assert_eq!(
+            state_cache.state(),
+            chs,
+            "test: chainstate changed unexpectedly"
+        );
     }
 }
