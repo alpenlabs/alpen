@@ -6,7 +6,6 @@ on:
   workflow_dispatch:      # Manual trigger (optional)
 
 env:
-  #CI: false
   COMMIT: ${{ github.sha }}
 
 permissions: {}
@@ -86,6 +85,7 @@ jobs:
 
     - name: Build params
       run: |
+        # TODO: consider switching to uv instead of pip3.
         # Install base58
         pip3 install base58
 
