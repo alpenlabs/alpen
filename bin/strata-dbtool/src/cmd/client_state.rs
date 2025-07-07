@@ -1,7 +1,10 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{ClientStateDatabase, Database};
-use strata_state::operation::{ClientUpdateOutput, SyncAction};
+use strata_state::{
+    client_state::ClientState,
+    operation::{ClientUpdateOutput, SyncAction},
+};
 
 use crate::cli::OutputFormat;
 
@@ -18,6 +21,14 @@ pub(crate) struct GetClientStateUpdateArgs {
     pub(crate) output_format: OutputFormat,
 }
 
+/// Strata client state update displayed to the user
+#[derive(serde::Serialize)]
+struct ClientStateUpdateInfo<'a> {
+    update_index: u64,
+    client_state: &'a ClientState,
+    sync_actions: &'a Vec<SyncAction>,
+}
+
 /// Show details about a specific L2 client state update.
 pub(crate) fn get_client_state_update(
     db: &impl Database,
@@ -27,53 +38,17 @@ pub(crate) fn get_client_state_update(
         get_latest_client_state_update(db, args.state_update_idx)?;
     let (client_state, sync_actions) = client_state_update.into_parts();
 
-    println!("Client state index {update_idx}");
-    println!(
-        "client state: genesis l1 height: {}",
-        client_state.genesis_l1_height()
-    );
-    println!(
-        "client state: deepest L1 block: {:?}",
-        client_state.get_deepest_l1_block()
-    );
-    println!(
-        "client state: latest L1 block: {:?}",
-        client_state.get_tip_l1_block()
-    );
-
-    println!(
-        "client state: finalized epoch: {:?}",
-        client_state.get_apparent_finalized_epoch()
-    );
-    println!(
-        "client state: finalized checkpoint: {:?}",
-        client_state
-            .get_apparent_finalized_checkpoint()
-            .unwrap()
-            .batch_info
-    );
-
-    for act in sync_actions {
-        match act {
-            SyncAction::FinalizeEpoch(epoch_commitment) => {
-                println!("client state: sync action: epoch commitment {epoch_commitment:?}");
-            }
-            SyncAction::L2Genesis(l2_block_id) => {
-                println!("client state: sync action: L2 block {l2_block_id:?}");
-            }
-            SyncAction::UpdateCheckpointInclusion {
-                checkpoint,
-                l1_reference,
-            } => {
-                println!(
-                    "client state sync action: Update checkpoint inclusion for: {:?}",
-                    checkpoint.commitment()
-                );
-                println!(
-                    "client state sync action: Update checkpoint inclusion with l1 reference {l1_reference:?}"
-                );
-            }
-        }
+    if args.output_format == OutputFormat::Json {
+        let update_info = ClientStateUpdateInfo {
+            update_index: update_idx,
+            client_state: &client_state,
+            sync_actions: &sync_actions,
+        };
+        println!("{}", serde_json::to_string_pretty(&update_info).unwrap());
+    } else {
+        println!("Client state update index {update_idx}");
+        println!("Client state {client_state:?}");
+        println!("Sync actions {sync_actions:?}");
     }
 
     Ok(())

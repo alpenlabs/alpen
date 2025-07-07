@@ -4,7 +4,7 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{Database, L1Database};
 use strata_primitives::{
     buf::Buf32,
-    l1::{L1BlockId, ProtocolOperation},
+    l1::{L1BlockId, L1HeaderRecord, L1Tx, ProtocolOperation},
 };
 use tracing::warn;
 
@@ -30,6 +30,14 @@ pub(crate) struct GetL1SummaryArgs {
     /// output format: "json" or "porcelain"
     #[argh(option, short = 'f', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
+}
+
+/// L1 block information displayed to the user
+#[derive(serde::Serialize)]
+struct L1BlockInfo<'a> {
+    header: &'a L1HeaderRecord,
+    transactions: &'a [L1Tx],
+    height: u64,
 }
 
 /// Get details about a specific L1 block manifest.
@@ -65,40 +73,46 @@ pub(crate) fn get_l1_manifest(
             )
         })?;
 
-    // Basic block info
-    println!(
-        "L1 block height: {}, id: {block_id:?}",
-        l1_block_manifest.height()
-    );
+    // Print block information
+    if args.output_format == OutputFormat::Json {
+        let block_info = L1BlockInfo {
+            header: l1_block_manifest.record(),
+            transactions: l1_block_manifest.txs(),
+            height: l1_block_manifest.height(),
+        };
+        println!("{}", serde_json::to_string_pretty(&block_info).unwrap());
+    } else {
+        // Basic block info
+        println!(
+            "L1 block height: {}, id: {block_id:?}",
+            l1_block_manifest.height()
+        );
 
-    // Number of transactions
-    println!(
-        "L1 block has {} transaction(s)",
-        l1_block_manifest.txs().len()
-    );
+        // Number of transactions
+        println!(
+            "L1 block has {} transaction(s)",
+            l1_block_manifest.txs().len()
+        );
 
-    println!(
-        "L1 block epoch (this looks wrong): {:?}",
-        l1_block_manifest.epoch()
-    );
-
-    // Print relevant transactions
-    for tx in l1_block_manifest.txs().iter() {
-        for proto_op in tx.protocol_ops().iter() {
-            match proto_op {
-                ProtocolOperation::Checkpoint(signed_checkpoint) => {
-                    println!(
-                        "checkpoint commitment: {:?}",
-                        signed_checkpoint.checkpoint().commitment()
-                    );
+        // Print relevant transactions
+        for (index, tx) in l1_block_manifest.txs().iter().enumerate() {
+            println!("Transaction index: {index}");
+            for proto_op in tx.protocol_ops().iter() {
+                match proto_op {
+                    ProtocolOperation::Checkpoint(signed_checkpoint) => {
+                        println!(
+                            "checkpoint commitment: {:?}",
+                            signed_checkpoint.checkpoint().commitment()
+                        );
+                    }
+                    ProtocolOperation::DaCommitment(da_commitment) => {
+                        println!("DA commitment: {da_commitment:?}");
+                    }
+                    ProtocolOperation::WithdrawalFulfillment(wf_info) => {
+                        println!("Withdrawal fulfillment: {wf_info:?}");
+                    }
+                    _ => continue,
                 }
-                ProtocolOperation::DaCommitment(da_commitment) => {
-                    println!("DA commitment: {da_commitment:?}");
-                }
-                ProtocolOperation::WithdrawalFulfillment(wf_info) => {
-                    println!("checkpoint commitment: {wf_info:?}");
-                }
-                _ => continue,
             }
         }
     }

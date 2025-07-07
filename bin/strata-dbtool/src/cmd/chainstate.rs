@@ -1,9 +1,9 @@
 use argh::FromArgs;
 use hex::FromHex;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{ChainstateDatabase, Database, L2BlockDatabase};
+use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId, prelude::EpochCommitment};
-use strata_state::{header::L2Header, state_op::WriteBatchEntry};
+use strata_state::{header::L2Header, l1::L1ViewState, state_op::WriteBatchEntry};
 
 use crate::cli::OutputFormat;
 
@@ -44,12 +44,9 @@ struct ChainstateInfo<'a> {
     chain_tip: u64,
     current_epoch: u64,
     is_epoch_finishing: bool,
-    previous_epoch: u64,
-    previous_epoch_last_slot: u64,
-    previous_epoch_last_block_id: &'a L2BlockId,
-    finalized_epoch: u64,
-    finalized_epoch_last_slot: u64,
-    finalized_epoch_last_block_id: &'a L2BlockId,
+    previous_epoch: &'a EpochCommitment,
+    finalized_epoch: &'a EpochCommitment,
+    l1_view_state: &'a L1ViewState,
 }
 
 pub(crate) fn get_chainstate(
@@ -59,18 +56,19 @@ pub(crate) fn get_chainstate(
     let (chainstate_entry, write_idx) = get_chainstate_entry(db, args.write_idx)?;
     let (batch_info, _) = chainstate_entry.to_parts();
     let top_level_state = batch_info.new_toplevel_state();
+    let prev_epoch = top_level_state.prev_epoch();
+    let finalized_epoch = top_level_state.finalized_epoch();
+    let l1_view_state = top_level_state.l1_view();
+
     if args.output_format == OutputFormat::Json {
         let chainstate_info = ChainstateInfo {
             write_index: write_idx,
             chain_tip: top_level_state.chain_tip_slot(),
             current_epoch: top_level_state.cur_epoch(),
             is_epoch_finishing: top_level_state.is_epoch_finishing(),
-            previous_epoch: top_level_state.prev_epoch().epoch(),
-            previous_epoch_last_slot: top_level_state.prev_epoch().last_slot(),
-            previous_epoch_last_block_id: top_level_state.prev_epoch().last_blkid(),
-            finalized_epoch: top_level_state.finalized_epoch().epoch(),
-            finalized_epoch_last_slot: top_level_state.finalized_epoch().last_slot(),
-            finalized_epoch_last_block_id: top_level_state.finalized_epoch().last_blkid(),
+            previous_epoch: prev_epoch,
+            finalized_epoch,
+            l1_view_state,
         };
         println!(
             "{}",
@@ -84,19 +82,9 @@ pub(crate) fn get_chainstate(
             "Chainstate epoch finishing {}",
             top_level_state.is_epoch_finishing()
         );
-        println!(
-            "chainstate previous epoch {:?}",
-            top_level_state.prev_epoch()
-        );
-        println!(
-            "Chainstate finalized epoch {:?}",
-            top_level_state.finalized_epoch()
-        );
-        println!("Chainstate L1 view {:?}", top_level_state.l1_view());
-        println!(
-            "chainstate deposits table {:?}",
-            top_level_state.deposits_table()
-        );
+        println!("chainstate previous epoch {:?}", prev_epoch);
+        println!("Chainstate finalized epoch {:?}", finalized_epoch);
+        println!("Chainstate L1 view {:?}", l1_view_state);
     }
     Ok(())
 }
@@ -164,9 +152,31 @@ pub(crate) fn reset_chainstate(
 
     println!("Resetting chainstate to slot {target_slot}");
     // Reset chainstate to the target slot
-    // db.chain_state_db()
-    //     .rollback_writes_to(target_slot)
-    //     .internal_error("failed to reset chainstate")?;
+    db.chain_state_db()
+        .rollback_writes_to(target_slot)
+        .internal_error("failed to reset chainstate")?;
+
+    // Mark the status to unchecked
+    if args.update_block_status {
+        println!("Marking blocks after {target_block_id} as unchecked");
+        for slot in target_slot + 1..latest_slot {
+            let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or(default);
+            for id in l2_block_ids.iter() {
+                db.l2_db().set_block_status(id, BlockStatus::Unchecked)?;
+            }
+        }
+    }
+
+    // Delete blocks
+    if args.delete_blocks {
+        println!("Deleting blocks after {target_block_id}");
+        for slot in target_slot + 1..latest_slot {
+            let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or(default);
+            for id in l2_block_ids.iter() {
+                db.l2_db().del_block_data(id)?;
+            }
+        }
+    }
 
     Ok(())
 }

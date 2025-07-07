@@ -29,6 +29,13 @@ pub(crate) struct GetSyncEventsSummaryArgs {
     pub(crate) output_format: OutputFormat,
 }
 
+/// Sync event information displayed to the user
+#[derive(serde::Serialize)]
+struct SyncEventInfo<'a> {
+    event_index: u64,
+    event: &'a SyncEvent,
+}
+
 /// Get SyncEvent details by index.
 pub(crate) fn get_sync_event(
     db: &impl Database,
@@ -52,7 +59,17 @@ pub(crate) fn get_sync_event(
             )
         })?;
 
-    println!("Sync Event Index {event_index}: {sync_event:?}");
+    // Print sync event information
+    if args.output_format == OutputFormat::Json {
+        let event_info = SyncEventInfo {
+            event_index,
+            event: &sync_event,
+        };
+        println!("{}", serde_json::to_string_pretty(&event_info).unwrap());
+    } else {
+        println!("Event Index {event_index}");
+        println!("Event: {sync_event:?}");
+    }
 
     Ok(())
 }

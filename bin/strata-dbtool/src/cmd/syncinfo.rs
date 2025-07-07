@@ -1,6 +1,11 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L1Database, L2BlockDatabase};
+use strata_primitives::{
+    l1::L1BlockId,
+    l2::L2BlockId,
+    prelude::{EpochCommitment, L1BlockCommitment},
+};
 
 use crate::cli::OutputFormat;
 
@@ -13,10 +18,25 @@ pub(crate) struct GetSyncinfoArgs {
     pub(crate) output_format: OutputFormat,
 }
 
+/// Sync information displayed to the user
+#[derive(serde::Serialize)]
+struct SyncInfo<'a> {
+    l1_tip_height: u64,
+    l1_tip_block_id: &'a L1BlockId,
+    l2_tip_height: u64,
+    l2_tip_block_id: &'a L2BlockId,
+    l2_tip_block_status: &'a BlockStatus,
+    l2_finalized_block_id: &'a L2BlockId,
+    current_epoch: u64,
+    previous_epoch: &'a EpochCommitment,
+    finalized_epoch: &'a EpochCommitment,
+    safe_block_id: &'a L1BlockCommitment,
+}
+
 /// Show the latest sync information.
 pub(crate) fn get_syncinfo(
     db: &impl Database,
-    _args: GetSyncinfoArgs,
+    args: GetSyncinfoArgs,
 ) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();
     let (l1_tip_height, l1_tip_block_id) = l1_db
@@ -36,41 +56,64 @@ pub(crate) fn get_syncinfo(
         .expect("valid entry");
     let (batch_info, l2_block_id) = chainstate_entry.to_parts();
 
-    let l2_block_status = db.l2_db().get_block_status(l2_block_id).ok().flatten();
+    let l2_block_status = db
+        .l2_db()
+        .get_block_status(l2_block_id)
+        .ok()
+        .flatten()
+        .unwrap_or(BlockStatus::Unchecked);
     let l2_block_height = batch_info.new_toplevel_state().chain_tip_slot();
+    let top_level_state = batch_info.new_toplevel_state();
 
-    // Show sync information
-    println!("L1 tip: {l1_tip_height}, {l1_tip_block_id:?}");
+    // Print sync information
+    if args.output_format == OutputFormat::Json {
+        let syncinfo = SyncInfo {
+            l1_tip_height,
+            l1_tip_block_id: &l1_tip_block_id,
+            l2_tip_height: l2_block_height,
+            l2_tip_block_id: &l2_block_id,
+            l2_tip_block_status: &l2_block_status,
+            l2_finalized_block_id: batch_info
+                .new_toplevel_state()
+                .finalized_epoch()
+                .last_blkid(),
+            current_epoch: top_level_state.cur_epoch(),
+            previous_epoch: top_level_state.prev_epoch(),
+            finalized_epoch: top_level_state.finalized_epoch(),
+            safe_block_id: &top_level_state.l1_view().get_safe_block(),
+        };
+        println!("{}", serde_json::to_string_pretty(&syncinfo).unwrap());
+    } else {
+        println!("L1 tip height: {l1_tip_height}, block id: {l1_tip_block_id:?}");
 
-    println!(
-        "L2 height: {}, tip: {:?} ({:?})",
-        l2_block_height,
-        l2_block_id,
-        l2_block_status.unwrap_or(BlockStatus::Unchecked)
-    );
-    println!(
-        "Finalized block id: {:?}",
-        batch_info
-            .new_toplevel_state()
-            .finalized_epoch()
-            .last_blkid()
-    );
-    println!(
-        "Current epoch: {:?}",
-        batch_info.new_toplevel_state().cur_epoch()
-    );
-    println!(
-        "Previous epoch: {:?}",
-        batch_info.new_toplevel_state().prev_epoch()
-    );
-    println!(
-        "Finalized epoch: {:?}",
-        batch_info.new_toplevel_state().finalized_epoch()
-    );
-    println!(
-        "L1 safe block: {:?}",
-        batch_info.new_toplevel_state().l1_view().get_safe_block()
-    );
+        println!(
+            "L2 tip: height {}, block id: {:?}, status {:?}",
+            l2_block_height, l2_block_id, l2_block_status
+        );
+        println!(
+            "Finalized block id: {:?}",
+            batch_info
+                .new_toplevel_state()
+                .finalized_epoch()
+                .last_blkid()
+        );
+        println!(
+            "Current epoch: {:?}",
+            batch_info.new_toplevel_state().cur_epoch()
+        );
+        println!(
+            "Previous epoch: {:?}",
+            batch_info.new_toplevel_state().prev_epoch()
+        );
+        println!(
+            "Finalized epoch: {:?}",
+            batch_info.new_toplevel_state().finalized_epoch()
+        );
+        println!(
+            "L1 safe block: {:?}",
+            batch_info.new_toplevel_state().l1_view().get_safe_block()
+        );
+    }
 
     Ok(())
 }

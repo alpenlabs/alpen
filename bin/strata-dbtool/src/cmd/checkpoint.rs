@@ -1,7 +1,13 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{CheckpointDatabase, Database, L1Database};
-use strata_primitives::l1::ProtocolOperation;
+use strata_db::{
+    traits::{CheckpointDatabase, Database, L1Database},
+    types::{CheckpointConfStatus, CheckpointProvingStatus},
+};
+use strata_primitives::{
+    batch::{CheckpointCommitment, EpochSummary},
+    l1::ProtocolOperation,
+};
 use tracing::warn;
 
 use crate::{cli::OutputFormat, cmd::l1::get_l1_horizon_height};
@@ -41,6 +47,22 @@ pub(crate) struct GetCheckpointsSummaryArgs {
     pub(crate) output_format: OutputFormat,
 }
 
+/// Epoch information displayed to the user
+#[derive(serde::Serialize)]
+struct EpochInfo<'a> {
+    epoch_index: u64,
+    epoch_summary: &'a EpochSummary,
+}
+
+/// Checkpoint information displayed to the user
+#[derive(serde::Serialize)]
+struct CheckpointInfo<'a> {
+    checkpoint_index: u64,
+    checkpoint_commitment: &'a CheckpointCommitment,
+    confirmation_status: &'a CheckpointConfStatus,
+    proving_status: &'a CheckpointProvingStatus,
+}
+
 /// Show details about a specific epoch.
 pub(crate) fn get_epoch_summary(
     db: &impl Database,
@@ -77,8 +99,17 @@ pub(crate) fn get_epoch_summary(
         .expect("a valid epoch summary");
 
     // Print epoch summary
-    println!("Epoch idx:  {epoch_idx}");
-    println!("Epoch summary: {epoch_summary:#?}");
+    if args.output_format == OutputFormat::Json {
+        let epoch_info = EpochInfo {
+            epoch_index: epoch_idx,
+            epoch_summary: &epoch_summary,
+        };
+        println!("{}", serde_json::to_string_pretty(&epoch_info).unwrap());
+    } else {
+        println!("Epoch idx:  {epoch_idx}");
+        println!("Epoch summary: {epoch_summary:#?}");
+    }
+
     Ok(())
 }
 
@@ -107,10 +138,23 @@ pub(crate) fn get_checkpoint_data(
     let checkpoint_commitment = entry.checkpoint.commitment();
 
     // Print checkpoint information
-    println!("Checkpoint idx:  {checkpoint_idx}");
-    println!("Checkpoint commitment: {checkpoint_commitment:#?}");
-    println!("Checkpoint status: {:?}", entry.confirmation_status);
-    println!("Proving status: {:?}", entry.proving_status);
+    if args.output_format == OutputFormat::Json {
+        let checkpoint_info = CheckpointInfo {
+            checkpoint_index: checkpoint_idx,
+            checkpoint_commitment: &checkpoint_commitment,
+            proving_status: &entry.proving_status,
+            confirmation_status: &entry.confirmation_status,
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&checkpoint_info).unwrap()
+        );
+    } else {
+        println!("Checkpoint idx:  {checkpoint_idx}");
+        println!("Checkpoint commitment: {checkpoint_commitment:#?}");
+        println!("Checkpoint status: {:?}", entry.confirmation_status);
+        println!("Proving status: {:?}", entry.proving_status);
+    }
 
     Ok(())
 }
