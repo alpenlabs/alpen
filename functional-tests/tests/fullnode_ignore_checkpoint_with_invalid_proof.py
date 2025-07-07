@@ -33,7 +33,7 @@ class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         # of skipping.
         #
         # Skipping because we run func tests in native mode where the
-        # proofs are always empty and there is no semantic difference between 
+        # proofs are always empty and there is no semantic difference between
         # fastBatch policy and strict batch policy.
         return True
 

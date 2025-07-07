@@ -114,8 +114,8 @@ fn resolve_rollup_vk() -> RollupVerifyingKey {
         let vk_buf32: Buf32 = GUEST_CHECKPOINT_VK_HASH_STR
             .parse()
             .expect("invalid sp1 checkpoint verifier key hash");
-        let sp1_verifier =
-            SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0).unwrap();
+        let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0)
+            .expect("Failed to load SP1 Groth16 verifier");
         RollupVerifyingKey::SP1VerifyingKey(sp1_verifier)
     }
 
@@ -130,7 +130,7 @@ fn resolve_rollup_vk() -> RollupVerifyingKey {
             risc0_zkvm::ALLOWED_CONTROL_ROOT,
             Digest::new(GUEST_RISC0_CHECKPOINT_ID),
         )
-        .unwrap();
+        .expect("Failed to load Risc0 Groth16 verifier");
         RollupVerifyingKey::Risc0VerifyingKey(risc0_verifier)
     }
 
