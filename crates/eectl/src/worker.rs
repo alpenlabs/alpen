@@ -15,6 +15,7 @@ use crate::{
     errors::{EngineError, EngineResult},
     handle::{ExecCommand, ExecCtlInput},
     messages::ExecPayloadData,
+    sync::sync_chainstate_to_el,
 };
 
 #[expect(missing_debug_implementations)]
@@ -123,6 +124,9 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
     context: &impl ExecWorkerContext,
 ) -> anyhow::Result<()> {
     info!("started exec worker");
+
+    sync_chainstate_to_el(&state.l2_storage, state.engine.as_ref())?;
+
     while let Some(inp) = input.recv_msg() {
         match inp {
             ExecCommand::NewBlock(block, completion) => {

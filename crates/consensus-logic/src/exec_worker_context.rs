@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_eectl::{
-    errors::{EngineError, EngineResult},
+    errors::EngineResult,
     messages::ExecPayloadData,
     worker::{ExecEnvId, ExecWorkerContext},
 };
@@ -26,10 +26,7 @@ impl ExecWorkerContext for ExecWorkerCtx {
         _eeid: &ExecEnvId,
     ) -> EngineResult<Option<ExecPayloadData>> {
         let blkid = block.blkid();
-        let bundle = self
-            .l2man
-            .get_block_data_blocking(blkid)
-            .map_err(|_| EngineError::DbMissingBlock(*blkid))?;
+        let bundle = self.l2man.get_block_data_blocking(blkid)?;
 
         match bundle {
             Some(bundle) => Ok(Some(ExecPayloadData::from_l2_block_bundle(&bundle))),

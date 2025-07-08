@@ -9,7 +9,7 @@ use tracing::debug;
 use crate::errors::{EngineError, EngineResult};
 
 /// Commands we send from the handle to the worker, with completion channels.
-#[derive(Debug)]
+#[expect(missing_debug_implementations)]
 pub enum ExecCommand {
     /// Notifies the worker of a new block being produced.
     NewBlock(L2BlockCommitment, oneshot::Sender<EngineResult<()>>),

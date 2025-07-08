@@ -1,5 +1,5 @@
+use strata_db::DbError;
 use strata_primitives::l2::L2BlockCommitment;
-use strata_state::id::L2BlockId;
 use thiserror::Error;
 
 pub type EngineResult<T> = Result<T, EngineError>;
@@ -15,8 +15,8 @@ pub enum EngineError {
     #[error("invalid address {0:?}")]
     InvalidAddress(Vec<u8>),
 
-    #[error("missing block in db {0}")]
-    DbMissingBlock(L2BlockId),
+    #[error("db: {0}")]
+    Db(#[from] DbError),
 
     #[error("invalid payload in block {0:?}")]
     InvalidPayload(L2BlockCommitment),
