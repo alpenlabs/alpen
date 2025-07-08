@@ -207,7 +207,7 @@ fn spawn_chain_worker(
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
     params: Arc<Params>,
-    exect_ctl_handle: ExecCtlHandle,
+    exec_ctl_handle: ExecCtlHandle,
     chain_msg_rx: mpsc::Receiver<ChainWorkerMessage>,
 ) -> anyhow::Result<()> {
     info!("waiting until genesis");
@@ -235,7 +235,7 @@ fn spawn_chain_worker(
         shared.clone(),
         context,
         chain_exec,
-        exect_ctl_handle,
+        exec_ctl_handle,
         cur_tip,
     )?;
     let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
