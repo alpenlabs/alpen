@@ -1,6 +1,7 @@
 #!/bin/bash
 # Usage: ./init-keys.sh <path_to_datatool_binary>
 DATATOOL_PATH=${1:-./strata-datatool}
+shift
 
 echo "Checking if 'base58' is installed.".
 if ! command -v base58 &> /dev/null; then \
@@ -56,12 +57,21 @@ op5pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP5_SEED_FILE})
 seqpubkey=$($DATATOOL_PATH -b regtest genseqpubkey -f ${CONFIG_FILE}/sequencer.key)
 
 ROLLUP_PARAMS_FILE=$CONFIG_FILE/params.json
+
+# Construct args for genparams.
+# Check if -n is set in args
+if [[ "$@" != *"-n "* ]]; then
+    extra_args+=("-n" "alpenstrata")
+fi
+
+# Check if --output is set
+if [[ "$@" != *"--output "* ]]; then
+    extra_args+=(--output "$ROLLUP_PARAMS_FILE")
+fi
+
 $DATATOOL_PATH -b regtest genparams \
-    -n "alpenstrata" \
     -s $seqpubkey \
     -b $op1pubkey \
     -b $op2pubkey \
-    --output $ROLLUP_PARAMS_FILE
-    # -b $op3pubkey \
-    # -b $op4pubkey \
-    # -b $op5pubkey \
+    "${extra_args[@]}" \
+    "$@"
