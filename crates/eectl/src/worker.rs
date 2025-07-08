@@ -58,6 +58,13 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
         Ok(res)
     }
 
+    fn check_tip_block_exists(&mut self) -> EngineResult<bool> {
+        let blkid = *self.safe_tip.blkid();
+        self.call_engine("engine_check_block_exists", |eng| {
+            eng.check_block_exists(L2BlockRef::Id(blkid))
+        })
+    }
+
     fn update_safe_tip(&mut self, new_safe: &L2BlockCommitment) -> EngineResult<()> {
         self.safe_tip = *new_safe;
         self.call_engine("engine_update_safe_tip", |eng| {
@@ -123,9 +130,24 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
     mut input: ExecCtlInput,
     context: &impl ExecWorkerContext,
 ) -> anyhow::Result<()> {
-    info!("started exec worker");
+    info!("starting exec worker");
 
-    sync_chainstate_to_el(&state.l2_storage, state.engine.as_ref())?;
+    // Check that tip L2 block exists (and engine can be connected to)
+    let chain_tip = &state.safe_tip.clone();
+    match state.check_tip_block_exists() {
+        Ok(true) => {
+            info!("startup: last l2 block is synced")
+        }
+        Ok(false) => {
+            // Current chain tip tip block is not known by the EL.
+            warn!(?chain_tip, "missing expected EVM block");
+            sync_chainstate_to_el(&state.l2_storage, state.engine.as_ref())?;
+        }
+        Err(error) => {
+            // Likely network issue
+            anyhow::bail!("could not connect to exec engine, err = {}", error);
+        }
+    }
 
     while let Some(inp) = input.recv_msg() {
         match inp {
