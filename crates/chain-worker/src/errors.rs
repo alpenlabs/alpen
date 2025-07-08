@@ -41,6 +41,12 @@ pub enum WorkerError {
     #[error("EE block execution: {0}")]
     ExecEnvEngine(#[from] strata_eectl::errors::EngineError),
 
+    #[error("missing required dependency: {0}")]
+    MissingDependency(&'static str),
+
+    #[error("unexpected error: {0}")]
+    Unexpected(String),
+
     #[error("not yet implemented")]
     Unimplemented,
 }
@@ -68,6 +74,10 @@ impl From<WorkerError> for strata_chainexec::Error {
             WorkerError::WorkerExited | WorkerError::InvalidExecPayload(_) => {
                 ExecError::Unexpected("exec worker error".to_owned())
             }
+            WorkerError::MissingDependency(dep) => {
+                ExecError::Unexpected(format!("missing dependency: {dep}"))
+            }
+            WorkerError::Unexpected(msg) => ExecError::Unexpected(msg),
             WorkerError::Unimplemented => ExecError::Unimplemented,
             WorkerError::ExecEnvEngine(_) => ExecError::Unimplemented, // FIXME:
         }

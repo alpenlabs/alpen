@@ -10,10 +10,14 @@ use strata_chainexec::{
 };
 use strata_chaintsn::context::L2HeaderAndParent;
 use strata_eectl::handle::ExecCtlHandle;
-use strata_primitives::{batch::EpochSummary, prelude::*};
+use strata_primitives::{batch::EpochSummary, params::Params, prelude::*};
 use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
+use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
-use tokio::sync::Mutex;
+use tokio::{
+    runtime::Handle,
+    sync::{Mutex, mpsc},
+};
 use tracing::*;
 
 use crate::{
@@ -235,7 +239,7 @@ pub fn init_worker_state<W: WorkerContext>(
     ))
 }
 
-pub fn worker_task<W: WorkerContext>(
+fn worker_task<W: WorkerContext>(
     shutdown: &ShutdownGuard,
     mut state: WorkerState<W>,
     mut input: ChainWorkerInput,
@@ -289,4 +293,69 @@ impl<'c, W: WorkerContext> ExecContext for WorkerExecCtxImpl<'c, W> {
             .ok_or(strata_chainexec::Error::MissingBlockPostState(*blkid))?;
         Ok(wb.into_toplevel())
     }
+}
+
+/// Internal function to spawn a chain worker with encapsulated initialization.
+///
+/// This function contains all the initialization logic that was previously exposed
+/// in the consensus-logic crate, including genesis waiting and tip resolution.
+pub(crate) fn spawn_chain_worker_internal<W: WorkerContext>(
+    shutdown: ShutdownGuard,
+    handle: Handle,
+    context: W,
+    status_channel: StatusChannel,
+    params: Arc<Params>,
+    exec_ctl_handle: ExecCtlHandle,
+    chain_msg_rx: mpsc::Receiver<ChainWorkerMessage>,
+) -> anyhow::Result<()> {
+    // Wait for genesis and determine the current tip
+    let cur_tip = wait_for_genesis_and_resolve_tip(&status_channel, &handle)?;
+
+    let blkid = *cur_tip.blkid();
+    info!(%blkid, "starting chain worker");
+
+    // Create the chain executor
+    let chain_exec = ChainExecutor::new(params.rollup().clone());
+
+    // Initialize shared state and worker state
+    let shared = Arc::new(Mutex::new(WorkerShared::default()));
+    let state = init_worker_state(
+        shared.clone(),
+        context,
+        chain_exec,
+        exec_ctl_handle,
+        cur_tip,
+    )?;
+
+    // Create input receiver
+    let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
+
+    // Run the worker task
+    worker_task(&shutdown, state, input)?;
+    Ok(())
+}
+
+/// Wait for genesis and resolve the current tip block commitment.
+///
+/// This encapsulates the complex logic for determining the initial state
+/// that the worker should start from.
+fn wait_for_genesis_and_resolve_tip(
+    status_channel: &StatusChannel,
+    handle: &Handle,
+) -> WorkerResult<L2BlockCommitment> {
+    info!("waiting until genesis");
+
+    let init_state = handle
+        .block_on(status_channel.wait_until_genesis())
+        .map_err(|e| WorkerError::Unexpected(format!("failed to wait for genesis: {e}")))?;
+
+    let cur_tip = match init_state.get_declared_final_epoch().cloned() {
+        Some(epoch) => epoch.to_block_commitment(),
+        None => L2BlockCommitment::new(
+            0,
+            *init_state.sync().expect("after genesis").genesis_blkid(),
+        ),
+    };
+
+    Ok(cur_tip)
 }

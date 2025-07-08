@@ -5,8 +5,8 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use strata_chain_worker::{
-    worker_task, ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerError,
-    WorkerResult, WorkerShared,
+    ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerError, WorkerResult,
+    WorkerShared,
 };
 use strata_chainexec::{ChainExecutor, TipState};
 use strata_chaintsn::transition::process_block;

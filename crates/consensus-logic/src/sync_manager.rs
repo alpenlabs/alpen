@@ -4,8 +4,7 @@
 
 use std::sync::Arc;
 
-use strata_chain_worker::{ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerShared};
-use strata_chainexec::ChainExecutor;
+use strata_chain_worker::ChainWorkerHandle;
 use strata_db::DbError;
 use strata_eectl::{
     engine::ExecEngineCtl,
@@ -19,7 +18,7 @@ use strata_storage::NodeStorage;
 use strata_tasks::{ShutdownGuard, TaskExecutor};
 use tokio::{
     runtime::Handle,
-    sync::{broadcast, mpsc, Mutex},
+    sync::{broadcast, mpsc},
 };
 use tracing::info;
 
@@ -97,13 +96,20 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
     let (csm_tx, csm_rx) = mpsc::channel::<CsmMessage>(64);
-    let (chain_msg_tx, chain_msg_rx) = mpsc::channel::<ChainWorkerMessage>(64);
     let (exec_tx, exec_rx) = strata_eectl::handle::make_handle_pair();
     let csm_controller = Arc::new(CsmController::new(storage.sync_event().clone(), csm_tx));
 
     // TODO should this be in an `Arc`?  it's already fairly compact so we might
     // not be benefitting from the reduced cloning
     let (cupdate_tx, cupdate_rx) = broadcast::channel::<Arc<ClientUpdateNotif>>(64);
+
+    let cw_handle = executor.handle().clone();
+    let cw_storage = storage.clone();
+    let cw_status = status_channel.clone();
+    let cw_params = params.clone();
+    let cw_handle = Arc::new(spawn_chain_worker(
+        executor, cw_handle, cw_storage, cw_status, cw_params, exec_tx,
+    )?);
 
     // Start the fork choice manager thread.  If we haven't done genesis yet
     // this will just wait until the CSM says we have.
@@ -112,10 +118,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let fcm_params = params.clone();
     let fcm_handle = executor.handle().clone();
     let st_ch = status_channel.clone();
-    let cw_handle: Arc<ChainWorkerHandle> = Arc::new(ChainWorkerHandle::new(
-        Arc::new(Mutex::new(WorkerShared::default())),
-        chain_msg_tx,
-    ));
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
         // TODO this should be simplified into a builder or something
         fork_choice_manager::tracker_task(
@@ -141,22 +143,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
 
     executor.spawn_critical("client_worker_task", move |shutdown| {
         worker::client_worker_task(shutdown, client_worker_state, csm_engine, csm_rx, st_ch)
-    });
-
-    let cw_handle = executor.handle().clone();
-    let cw_storage = storage.clone();
-    let cw_status = status_channel.clone();
-    let cw_params = params.clone();
-    executor.spawn_critical("chain_worker_task", move |shutdown| {
-        spawn_chain_worker(
-            shutdown,
-            cw_handle,
-            cw_storage,
-            cw_status,
-            cw_params,
-            exec_tx,
-            chain_msg_rx,
-        )
     });
 
     let ew_handle = executor.handle().clone();
@@ -217,44 +203,29 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
 }
 
 fn spawn_chain_worker(
-    shutdown: ShutdownGuard,
+    executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
     params: Arc<Params>,
     exec_ctl_handle: ExecCtlHandle,
-    chain_msg_rx: mpsc::Receiver<ChainWorkerMessage>,
-) -> anyhow::Result<()> {
-    info!("waiting until genesis");
-    let init_state = handle.block_on(status_channel.wait_until_genesis())?;
-    let cur_tip = match init_state.get_declared_final_epoch().cloned() {
-        Some(epoch) => epoch.to_block_commitment(),
-        None => L2BlockCommitment::new(
-            0,
-            *init_state.sync().expect("after genesis").genesis_blkid(),
-        ),
-    };
-
-    let blkid = *cur_tip.blkid();
-    info!(%blkid, "starting chain worker");
-
+) -> anyhow::Result<ChainWorkerHandle> {
+    // Create the worker context - this stays in consensus-logic since it implements WorkerContext
     let context = ChainWorkerCtx::new(
         storage.l2().clone(),
         storage.chainstate().clone(),
         storage.checkpoint().clone(),
         0, // FIXME: Not sure what this is
     );
-    let chain_exec = ChainExecutor::new(params.rollup().clone());
-    let shared = Arc::new(Mutex::new(WorkerShared::default()));
-    let state = strata_chain_worker::init_worker_state(
-        shared.clone(),
-        context,
-        chain_exec,
-        exec_ctl_handle,
-        cur_tip,
-    )?;
-    let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
 
-    strata_chain_worker::worker_task(&shutdown, state, input)?;
-    Ok(())
+    // Use the new builder API to launch the worker and get a handle
+    let handle = strata_chain_worker::ChainWorkerBuilder::new()
+        .with_context(context)
+        .with_params(params)
+        .with_exec_handle(exec_ctl_handle)
+        .with_status_channel(status_channel)
+        .with_runtime(handle)
+        .launch(executor)?;
+
+    Ok(handle)
 }

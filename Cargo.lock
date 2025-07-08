@@ -13661,6 +13661,7 @@ dependencies = [
  "strata-eectl",
  "strata-primitives",
  "strata-state",
+ "strata-status",
  "strata-storage",
  "strata-tasks",
  "thiserror 2.0.12",
