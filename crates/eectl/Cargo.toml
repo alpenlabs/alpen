@@ -11,7 +11,7 @@ strata-common.workspace = true
 strata-db.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
-strata-storage.workspace = true
+strata-status.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true

@@ -332,6 +332,7 @@ pub(crate) fn spawn_chain_worker_internal<W: WorkerContext>(
 
     // Run the worker task
     worker_task(&shutdown, state, input)?;
+
     Ok(())
 }
 

@@ -1,58 +1,45 @@
-use strata_db::DbError;
 use strata_state::header::L2Header;
-use strata_storage::L2BlockManager;
 use tracing::{debug, info};
 
 use crate::{
     engine::{ExecEngineCtl, L2BlockRef},
     errors::EngineError,
     messages::ExecPayloadData,
+    worker::ExecWorkerContext,
 };
 
 /// Sync missing blocks in EL using payloads stored in L2 block database.
 ///
 /// TODO: retry on network errors
 pub(crate) fn sync_chainstate_to_el(
-    l2_block_manager: &L2BlockManager,
+    context: &impl ExecWorkerContext,
     engine: &impl ExecEngineCtl,
 ) -> Result<(), EngineError> {
     info!("Syncing chainstate to EL");
-    let tip_block = l2_block_manager.get_tip_block_blocking()?;
+    let tip_block = context.get_cur_tip()?;
+    debug!(?tip_block, "L2 tip block");
 
-    let latest_header = l2_block_manager
-        .get_block_data_blocking(&tip_block)?
-        .ok_or(DbError::MissingL2Block(tip_block))?
-        .header()
-        .clone();
-    let latest_idx = latest_header.slot();
-    debug!(%tip_block, "L2 tip block");
-    debug!(%latest_idx, "L2 tip idx");
+    let tip_idx = tip_block.slot();
 
     // last idx of chainstate whose corresponding block is present in el
-    let sync_from_idx = find_last_match((0, latest_idx), |idx| {
-        let tip_block = l2_block_manager
-            .get_blocks_at_height_blocking(idx)?
-            .first()
-            .cloned()
-            .ok_or(DbError::MissingL2BlockHeight(idx))?;
-        engine.check_block_exists(L2BlockRef::Id(tip_block))
+    let sync_from_idx = find_last_match((0, tip_idx), |idx| {
+        let blkid = context.get_blkid_at_height(idx)?;
+        engine.check_block_exists(L2BlockRef::Id(blkid))
     })?
     .map(|idx| idx + 1) // sync from next index
     .unwrap_or(0); // sync from genesis
     info!(%sync_from_idx, "last known EL block index");
 
-    if sync_from_idx >= latest_idx {
+    if sync_from_idx >= tip_idx {
         info!("EL in sync with chainstate");
         return Ok(());
     }
 
-    // Collect all payloads from sync_from_idx..=latest_idx
-    let mut bundles_to_sync = Vec::with_capacity((latest_idx - sync_from_idx) as usize + 1);
-    let mut block_to_sync = latest_header.get_blockid();
-    for _ in sync_from_idx..=latest_idx {
-        let l2block = l2_block_manager
-            .get_block_data_blocking(&block_to_sync)?
-            .ok_or(DbError::MissingL2Block(block_to_sync))?;
+    // Collect all payloads from sync_from_idx..=tip_idx
+    let mut bundles_to_sync = Vec::with_capacity((tip_idx - sync_from_idx) as usize + 1);
+    let mut block_to_sync = *tip_block.blkid();
+    for _ in sync_from_idx..=tip_idx {
+        let l2block = context.get_block(block_to_sync)?;
         block_to_sync = *l2block.header().parent();
         bundles_to_sync.push(l2block);
     }
@@ -63,7 +50,7 @@ pub(crate) fn sync_chainstate_to_el(
         (bundles_to_sync.first(), bundles_to_sync.last())
     {
         assert_eq!(first_bundle.header().slot(), sync_from_idx);
-        assert_eq!(last_bundle.header().slot(), latest_idx);
+        assert_eq!(last_bundle.header().slot(), tip_idx);
     }
 
     for bundle in bundles_to_sync {

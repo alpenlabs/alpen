@@ -21,6 +21,9 @@ pub enum EngineError {
     #[error("invalid payload in block {0:?}")]
     InvalidPayload(L2BlockCommitment),
 
+    #[error("missing required dependency: {0}")]
+    MissingDependency(&'static str),
+
     #[error("not yet implemented")]
     Unimplemented,
 

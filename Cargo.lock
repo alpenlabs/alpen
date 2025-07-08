@@ -13855,7 +13855,7 @@ dependencies = [
  "strata-db",
  "strata-primitives",
  "strata-state",
- "strata-storage",
+ "strata-status",
  "strata-tasks",
  "thiserror 2.0.12",
  "tokio",

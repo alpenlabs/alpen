@@ -6,8 +6,10 @@ use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
 use strata_primitives::l2::L2BlockCommitment;
-use strata_storage::L2BlockManager;
+use strata_state::{block::L2BlockBundle, id::L2BlockId};
+use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
+use tokio::runtime::Handle;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -21,12 +23,9 @@ use crate::{
 #[expect(missing_debug_implementations)]
 pub struct ExecWorkerState<E: ExecEngineCtl> {
     engine: Arc<E>,
-
     exec_env_id: ExecEnvId,
-
     safe_tip: L2BlockCommitment,
     finalized_tip: L2BlockCommitment,
-    l2_storage: Arc<L2BlockManager>,
 }
 
 impl<E: ExecEngineCtl> ExecWorkerState<E> {
@@ -36,14 +35,12 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
         exec_env_id: ExecEnvId,
         safe_tip: L2BlockCommitment,
         finalized_tip: L2BlockCommitment,
-        l2_storage: Arc<L2BlockManager>,
     ) -> Self {
         Self {
             engine,
             exec_env_id,
             safe_tip,
             finalized_tip,
-            l2_storage,
         }
     }
 
@@ -139,7 +136,7 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
         Ok(false) => {
             // Current chain tip tip block is not known by the EL.
             warn!(?chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(&state.l2_storage, state.engine.as_ref())?;
+            sync_chainstate_to_el(context, state.engine.as_ref())?;
         }
         Err(error) => {
             // Likely network issue
@@ -184,6 +181,34 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
     Ok(())
 }
 
+pub(crate) fn spawn_exec_worker_internal<E: ExecEngineCtl + Sync + Send + 'static>(
+    shutdown: ShutdownGuard,
+    handle: Handle,
+    context: &impl ExecWorkerContext,
+    status_channel: StatusChannel,
+    engine: Arc<E>,
+    exec_rx: ExecCtlInput,
+) -> anyhow::Result<()> {
+    info!("waiting until genesis");
+    let init_state = handle.block_on(status_channel.wait_until_genesis())?;
+    let finalized_tip = match init_state.get_declared_final_epoch().cloned() {
+        Some(epoch) => epoch.to_block_commitment(),
+        None => L2BlockCommitment::new(
+            0,
+            *init_state.sync().expect("after genesis").genesis_blkid(),
+        ),
+    };
+
+    let cur_tip = context.get_cur_tip()?;
+
+    info!(?cur_tip, ?finalized_tip, "starting exec worker");
+
+    let exec_env_id = ();
+    let state = ExecWorkerState::new(engine, exec_env_id, cur_tip, finalized_tip);
+    exec_worker_task(shutdown, state, exec_rx, context)?;
+    Ok(())
+}
+
 /// ID of the execution env we're watching.
 // TODO make this be an account ID or something
 pub type ExecEnvId = ();
@@ -196,4 +221,10 @@ pub trait ExecWorkerContext {
         block: &L2BlockCommitment,
         eeid: &ExecEnvId,
     ) -> EngineResult<Option<ExecPayloadData>>;
+
+    fn get_cur_tip(&self) -> EngineResult<L2BlockCommitment>;
+
+    fn get_block(&self, blkid: L2BlockId) -> EngineResult<L2BlockBundle>;
+
+    fn get_blkid_at_height(&self, height: u64) -> EngineResult<L2BlockId>;
 }
