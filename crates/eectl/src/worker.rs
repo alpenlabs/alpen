@@ -130,8 +130,6 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
     mut input: ExecCtlInput,
     context: &impl ExecWorkerContext,
 ) -> anyhow::Result<()> {
-    info!("starting exec worker");
-
     // Check that tip L2 block exists (and engine can be connected to)
     let chain_tip = &state.safe_tip.clone();
     match state.check_tip_block_exists() {

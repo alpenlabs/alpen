@@ -6,12 +6,14 @@ use std::sync::Arc;
 
 use strata_chain_worker::{ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerShared};
 use strata_chainexec::ChainExecutor;
+use strata_db::DbError;
 use strata_eectl::{
     engine::ExecEngineCtl,
     handle::{ExecCtlHandle, ExecCtlInput},
     worker::{exec_worker_task, ExecWorkerState},
 };
 use strata_primitives::{l2::L2BlockCommitment, params::Params};
+use strata_state::header::L2Header;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{ShutdownGuard, TaskExecutor};
@@ -183,7 +185,7 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
 ) -> anyhow::Result<()> {
     info!("waiting until genesis");
     let init_state = handle.block_on(status_channel.wait_until_genesis())?;
-    let cur_tip = match init_state.get_declared_final_epoch().cloned() {
+    let finalized_tip = match init_state.get_declared_final_epoch().cloned() {
         Some(epoch) => epoch.to_block_commitment(),
         None => L2BlockCommitment::new(
             0,
@@ -191,11 +193,24 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
         ),
     };
 
-    let blkid = *cur_tip.blkid();
-    info!(%blkid, "starting exec worker");
+    let cur_tip_blkid = storage.l2().get_tip_block_blocking()?;
+    let cur_tip_slot = storage
+        .l2()
+        .get_block_data_blocking(&cur_tip_blkid)?
+        .ok_or(DbError::MissingL2Block(cur_tip_blkid))?
+        .header()
+        .slot();
+    let cur_tip = L2BlockCommitment::new(cur_tip_slot, cur_tip_blkid);
+    info!(?cur_tip, ?finalized_tip, "starting exec worker");
 
     let exec_env_id = ();
-    let state = ExecWorkerState::new(engine, exec_env_id, cur_tip, cur_tip, storage.l2().clone());
+    let state = ExecWorkerState::new(
+        engine,
+        exec_env_id,
+        cur_tip,
+        finalized_tip,
+        storage.l2().clone(),
+    );
     let ctx = ExecWorkerCtx::new(storage.l2().clone());
     exec_worker_task(shutdown, state, exec_rx, &ctx)?;
     Ok(())

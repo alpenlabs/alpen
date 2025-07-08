@@ -16,7 +16,7 @@ pub(crate) fn sync_chainstate_to_el(
     l2_block_manager: &L2BlockManager,
     engine: &impl ExecEngineCtl,
 ) -> Result<(), EngineError> {
-    debug!("Syncing chainstate to EL");
+    info!("Syncing chainstate to EL");
     let tip_block = l2_block_manager.get_tip_block_blocking()?;
 
     let latest_header = l2_block_manager
@@ -40,6 +40,11 @@ pub(crate) fn sync_chainstate_to_el(
     .map(|idx| idx + 1) // sync from next index
     .unwrap_or(0); // sync from genesis
     info!(%sync_from_idx, "last known EL block index");
+
+    if sync_from_idx >= latest_idx {
+        info!("EL in sync with chainstate");
+        return Ok(());
+    }
 
     // Collect all payloads from sync_from_idx..=latest_idx
     let mut bundles_to_sync = Vec::with_capacity((latest_idx - sync_from_idx) as usize + 1);
