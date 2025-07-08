@@ -26,7 +26,7 @@ use crate::{
     csm::{
         ctl::CsmController,
         message::{ClientUpdateNotif, CsmMessage, ForkChoiceMessage},
-        worker::{self},
+        worker,
     },
     exec_worker_context::ExecWorkerCtx,
     fork_choice_manager::{self},
