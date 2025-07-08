@@ -239,7 +239,7 @@ pub fn init_worker_state<W: WorkerContext>(
     ))
 }
 
-fn worker_task<W: WorkerContext>(
+fn worker_task_inner<W: WorkerContext>(
     shutdown: &ShutdownGuard,
     mut state: WorkerState<W>,
     mut input: ChainWorkerInput,
@@ -299,7 +299,8 @@ impl<'c, W: WorkerContext> ExecContext for WorkerExecCtxImpl<'c, W> {
 ///
 /// This function contains all the initialization logic that was previously exposed
 /// in the consensus-logic crate, including genesis waiting and tip resolution.
-pub(crate) fn spawn_chain_worker_internal<W: WorkerContext>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn worker_task<W: WorkerContext>(
     shutdown: ShutdownGuard,
     handle: Handle,
     context: W,
@@ -307,6 +308,7 @@ pub(crate) fn spawn_chain_worker_internal<W: WorkerContext>(
     params: Arc<Params>,
     exec_ctl_handle: ExecCtlHandle,
     chain_msg_rx: mpsc::Receiver<ChainWorkerMessage>,
+    shared: Arc<Mutex<WorkerShared>>,
 ) -> anyhow::Result<()> {
     // Wait for genesis and determine the current tip
     let cur_tip = wait_for_genesis_and_resolve_tip(&status_channel, &handle)?;
@@ -318,7 +320,6 @@ pub(crate) fn spawn_chain_worker_internal<W: WorkerContext>(
     let chain_exec = ChainExecutor::new(params.rollup().clone());
 
     // Initialize shared state and worker state
-    let shared = Arc::new(Mutex::new(WorkerShared::default()));
     let state = init_worker_state(
         shared.clone(),
         context,
@@ -328,10 +329,10 @@ pub(crate) fn spawn_chain_worker_internal<W: WorkerContext>(
     )?;
 
     // Create input receiver
-    let input = ChainWorkerInput::new(shared.clone(), chain_msg_rx);
+    let input = ChainWorkerInput::new(shared, chain_msg_rx);
 
     // Run the worker task
-    worker_task(&shutdown, state, input)?;
+    worker_task_inner(&shutdown, state, input)?;
 
     Ok(())
 }

@@ -121,7 +121,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
 }
 
 /// Execution controller worker task entrypoint.
-pub fn exec_worker_task<E: ExecEngineCtl>(
+pub fn worker_task_inner<E: ExecEngineCtl>(
     shutdown: ShutdownGuard,
     mut state: ExecWorkerState<E>,
     mut input: ExecCtlInput,
@@ -181,7 +181,7 @@ pub fn exec_worker_task<E: ExecEngineCtl>(
     Ok(())
 }
 
-pub(crate) fn spawn_exec_worker_internal<E: ExecEngineCtl + Sync + Send + 'static>(
+pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     shutdown: ShutdownGuard,
     handle: Handle,
     context: &impl ExecWorkerContext,
@@ -205,7 +205,7 @@ pub(crate) fn spawn_exec_worker_internal<E: ExecEngineCtl + Sync + Send + 'stati
 
     let exec_env_id = ();
     let state = ExecWorkerState::new(engine, exec_env_id, cur_tip, finalized_tip);
-    exec_worker_task(shutdown, state, exec_rx, context)?;
+    worker_task_inner(shutdown, state, exec_rx, context)?;
     Ok(())
 }
 

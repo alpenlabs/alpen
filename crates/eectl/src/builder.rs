@@ -8,7 +8,7 @@ use crate::{
     engine::ExecEngineCtl,
     errors::{EngineError, EngineResult},
     handle::{make_handle_pair, ExecCtlHandle},
-    worker::{spawn_exec_worker_internal, ExecWorkerContext},
+    worker::{worker_task, ExecWorkerContext},
 };
 
 /// Builder for creating and launching an exec worker task.
@@ -86,7 +86,7 @@ impl<E, W> ExecWorkerBuilder<E, W> {
 
         // Spawn the worker task
         executor.spawn_critical("exec_worker_task", move |shutdown| {
-            spawn_exec_worker_internal(
+            worker_task(
                 shutdown,
                 runtime_handle,
                 &context,

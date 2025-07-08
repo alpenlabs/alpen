@@ -102,11 +102,11 @@ impl<W> ChainWorkerBuilder<W> {
         let shared = Arc::new(Mutex::new(WorkerShared::default()));
 
         // Create the handle that will be returned
-        let handle = ChainWorkerHandle::new(shared, msg_tx);
+        let handle = ChainWorkerHandle::new(shared.clone(), msg_tx);
 
         // Spawn the worker task
         executor.spawn_critical("chain_worker_task", move |shutdown| {
-            worker::spawn_chain_worker_internal(
+            worker::worker_task(
                 shutdown,
                 runtime_handle,
                 context,
@@ -114,6 +114,7 @@ impl<W> ChainWorkerBuilder<W> {
                 params,
                 exec_ctl_handle,
                 msg_rx,
+                shared,
             )
         });
 
