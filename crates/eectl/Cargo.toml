@@ -10,6 +10,7 @@ workspace = true
 strata-common.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
+strata-storage.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true

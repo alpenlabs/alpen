@@ -6,6 +6,7 @@ use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
 use strata_primitives::l2::L2BlockCommitment;
+use strata_storage::L2BlockManager;
 use strata_tasks::ShutdownGuard;
 use tracing::{debug, error, info, warn};
 
@@ -16,7 +17,7 @@ use crate::{
     messages::ExecPayloadData,
 };
 
-#[derive(Debug)]
+#[expect(missing_debug_implementations)]
 pub struct ExecWorkerState<E: ExecEngineCtl> {
     engine: Arc<E>,
 
@@ -24,6 +25,7 @@ pub struct ExecWorkerState<E: ExecEngineCtl> {
 
     safe_tip: L2BlockCommitment,
     finalized_tip: L2BlockCommitment,
+    l2_storage: Arc<L2BlockManager>,
 }
 
 impl<E: ExecEngineCtl> ExecWorkerState<E> {
@@ -33,12 +35,14 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
         exec_env_id: ExecEnvId,
         safe_tip: L2BlockCommitment,
         finalized_tip: L2BlockCommitment,
+        l2_storage: Arc<L2BlockManager>,
     ) -> Self {
         Self {
             engine,
             exec_env_id,
             safe_tip,
             finalized_tip,
+            l2_storage,
         }
     }
 

@@ -35,7 +35,7 @@ pub(crate) fn sync_chainstate_to_el(
         .header()
         .clone();
     let latest_idx = latest_header.slot();
-    info!(%latest_idx, "search for last known idx");
+    info!(%latest_idx, "searching for last known EL block idx");
 
     // last idx of chainstate whose corresponding block is present in el
     let sync_from_idx = find_last_match((0, latest_idx), |idx| {
@@ -48,7 +48,7 @@ pub(crate) fn sync_chainstate_to_el(
     })?
     .map(|idx| idx + 1) // sync from next index
     .unwrap_or(0); // sync from genesis
-    info!(%sync_from_idx, "last known index in EL");
+    info!(%sync_from_idx, "last known EL block index");
 
     // Collect all payloads from sync_from_idx..=latest_idx
     let mut bundles_to_sync = Vec::with_capacity((latest_idx - sync_from_idx) as usize + 1);

@@ -7,6 +7,7 @@ pub mod engine;
 pub mod handle;
 pub mod messages;
 pub mod stub;
+pub mod sync;
 pub mod worker;
 
 pub mod errors;
