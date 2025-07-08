@@ -1,8 +1,10 @@
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
-use zkaleido::{PerformanceReport, ProofReceipt, VerifyingKey, ZkVmHostPerf, ZkVmProgramPerf};
+use zkaleido::{
+    PerformanceReport, ProofReceiptWithMetadata, VerifyingKey, ZkVmHostPerf, ZkVmProgramPerf,
+};
 
 pub(super) fn prepare_input(
-    cl_stf_proof_with_vk: (ProofReceipt, VerifyingKey),
+    cl_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
 ) -> CheckpointProverInput {
     let (cl_stf_proof, cl_stf_vk) = cl_stf_proof_with_vk;
     let cl_stf_proofs = vec![cl_stf_proof];
@@ -14,7 +16,7 @@ pub(super) fn prepare_input(
 
 pub(crate) fn gen_perf_report(
     host: &impl ZkVmHostPerf,
-    cl_stf_proof_with_vk: (ProofReceipt, VerifyingKey),
+    cl_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
 ) -> PerformanceReport {
     let input = prepare_input(cl_stf_proof_with_vk);
     CheckpointProgram::perf_report(&input, host).unwrap()

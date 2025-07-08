@@ -5,8 +5,8 @@ use std::{
 
 use strata_state::batch::BatchTransition;
 use zkaleido::{
-    AggregationInput, ProofReceipt, PublicValues, VerifyingKey, ZkVmError, ZkVmInputResult,
-    ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
+    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
+    ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -14,7 +14,7 @@ use crate::process_checkpoint_proof;
 
 #[derive(Debug)]
 pub struct CheckpointProverInput {
-    pub cl_stf_proofs: Vec<ProofReceipt>,
+    pub cl_stf_proofs: Vec<ProofReceiptWithMetadata>,
     pub cl_stf_vk: VerifyingKey,
 }
 

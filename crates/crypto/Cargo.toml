@@ -10,5 +10,3 @@ workspace = true
 strata-primitives.workspace = true
 
 zkaleido.workspace = true
-zkaleido-risc0-groth16-verifier.workspace = true
-zkaleido-sp1-groth16-verifier.workspace = true
