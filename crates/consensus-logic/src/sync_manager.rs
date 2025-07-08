@@ -99,7 +99,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let ex_st_ch = status_channel.clone();
     let ex_handle = executor.handle().clone();
     let ex_engine = engine.clone();
-    let ex_handle = spawn_exec_worker_2(executor, ex_handle, ex_storage, ex_st_ch, ex_engine)?;
+    let ex_handle = spawn_exec_worker(executor, ex_handle, ex_storage, ex_st_ch, ex_engine)?;
 
     let cw_handle = executor.handle().clone();
     let cw_storage = storage.clone();
@@ -152,7 +152,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     })
 }
 
-fn spawn_exec_worker_2<E: ExecEngineCtl + Sync + Send + 'static>(
+fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
     executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
