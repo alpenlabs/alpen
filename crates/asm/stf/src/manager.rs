@@ -12,22 +12,23 @@ use strata_asm_common::{
 pub(crate) struct HandlerImpl<S: Subprotocol, R> {
     state: S::State,
     interproto_msg_buf: Vec<S::Msg>,
+    aux_inputs: Vec<S::AuxInput>,
 
     _r: std::marker::PhantomData<R>,
 }
 
 impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
-    pub(crate) fn new(state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
+    pub(crate) fn new(
+        state: S::State,
+        aux_inputs: Vec<S::AuxInput>,
+        interproto_msg_buf: Vec<S::Msg>,
+    ) -> Self {
         Self {
             state,
+            aux_inputs,
             interproto_msg_buf,
             _r: std::marker::PhantomData,
         }
-    }
-
-    /// Constructs an instance by wrapping a subprotocol's state.
-    pub(crate) fn from_state(state: S::State) -> Self {
-        Self::new(state, Vec::new())
     }
 }
 
@@ -49,7 +50,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
             .as_mut_any()
             .downcast_mut::<R>()
             .expect("asm: handler");
-        S::process_txs(&mut self.state, txs, relayer);
+        S::process_txs(&mut self.state, txs, &self.aux_inputs, relayer);
     }
 
     fn process_buffered_msgs(&mut self) {
@@ -69,8 +70,12 @@ pub(crate) struct SubprotoManager {
 
 impl SubprotoManager {
     /// Inserts a subproto by creating a handler for it, wrapping a tstate.
-    pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, state: S::State) {
-        let handler = HandlerImpl::<S, Self>::from_state(state);
+    pub(crate) fn insert_subproto<S: Subprotocol>(
+        &mut self,
+        state: S::State,
+        aux_inputs: Vec<S::AuxInput>,
+    ) {
+        let handler = HandlerImpl::<S, Self>::new(state, aux_inputs, Vec::new());
         assert_eq!(
             handler.id(),
             S::ID,
