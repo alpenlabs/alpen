@@ -145,9 +145,14 @@ impl SubprotoManager {
         h.to_section()
     }
 
-    /// Exports each handler as a section we can use when constructing the final
-    /// `AnchorState`.  Consumes the manager.
-    pub(crate) fn export_sections(self) -> Vec<SectionState> {
+    /// Exports each handler as a `SectionState` for constructing the final
+    /// `AnchorState`, and returns both the sections and the accumulated logs.
+    /// Consumes the manager.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the exported sections are not sorted by `id`.
+    pub(crate) fn export_sections_and_logs(self) -> (Vec<SectionState>, Vec<Log>) {
         let sections = self
             .handlers
             .into_values()
@@ -160,7 +165,7 @@ impl SubprotoManager {
             "asm: sections not sorted on export"
         );
 
-        sections
+        (sections, self.logs)
     }
 }
 
