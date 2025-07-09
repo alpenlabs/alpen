@@ -50,6 +50,14 @@ impl Subprotocol for OLCoreSubproto {
         todo!()
     }
 
+    fn pre_process_txs(
+        _state: &Self::State,
+        _txs: &[TxInput<'_>],
+        _collector: &mut impl strata_asm_common::AuxInputCollector,
+    ) {
+        todo!()
+    }
+
     fn process_txs(_state: &mut Self::State, _txs: &[TxInput<'_>], _relayer: &mut impl MsgRelayer) {
         todo!()
     }

@@ -32,6 +32,20 @@ pub trait Subprotocol: 'static {
     /// Constructs a new state to use if the ASM does not have an instance of it.
     fn init() -> Self::State;
 
+    /// During this phase, the subprotocol declares *external* data it will need
+    /// before actual processing. Any required L1 headers, block-metadata, or other
+    /// off-chain inputs should be requested via the `AuxInputCollector`.
+    ///
+    /// # Parameters
+    /// - `state`    – current subprotocol state snapshot (read-only)
+    /// - `txs`      – list of new L1 transactions to examine
+    /// - `collector`– hook for registering requests for auxiliary inputs
+    fn pre_process_txs(
+        state: &Self::State,
+        txs: &[TxInput<'_>],
+        collector: &mut impl AuxInputCollector,
+    );
+
     /// Processes a batch of L1 transactions, extracting all relevant information for this
     /// subprotocol.
     ///
@@ -89,4 +103,19 @@ pub trait SubprotoHandler {
 
     /// Repacks the state into a [`SectionState`] instance.
     fn to_section(&self) -> SectionState;
+}
+
+/// Responsible for gathering any off-chain or auxiliary data that
+/// subprotocols declare during `pre_process_txs`.
+///
+/// Implementors should record requests (e.g. “I need header for block 123”)
+/// and then fetch all of them in batch before `process_txs` runs.
+///
+/// # Notes
+///
+/// If any requested auxiliary data is malformed or cannot be provided,
+/// the subsequent `process_txs` call will panic.
+pub trait AuxInputCollector {
+    /// Request the L1 header for a specific block number.
+    fn request_header(&mut self, block_number: u64);
 }
