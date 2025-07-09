@@ -1,6 +1,6 @@
 use moho_runtime_interface::MohoProgram;
 use moho_types::{InnerStateCommitment, StateReference};
-use strata_asm_common::AnchorState;
+use strata_asm_common::{AnchorState, Log};
 use strata_asm_stf::{StrataAsmSpec, asm_stf};
 use strata_primitives::hash::compute_borsh_hash;
 
@@ -14,6 +14,8 @@ impl MohoProgram for AsmMohoIncremetal {
 
     type StepInput = AsmStepInput;
 
+    type StepOutput = Vec<Log>;
+
     fn compute_input_reference(input: &AsmStepInput) -> StateReference {
         input.compute_ref()
     }
@@ -26,19 +28,15 @@ impl MohoProgram for AsmMohoIncremetal {
         InnerStateCommitment::new(compute_borsh_hash(state).into())
     }
 
-    fn process_transition(pre_state: &AnchorState, inp: &AsmStepInput) -> AnchorState {
-        asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0, &inp.aux_bundle)
-            .unwrap()
-            .0
+    fn process_transition(pre_state: &AnchorState, inp: &AsmStepInput) -> (AnchorState, Vec<Log>) {
+        asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0, &inp.aux_bundle).unwrap()
     }
 
-    fn extract_next_vk(_state: &Self::State) -> moho_types::InnerVerificationKey {
-        // REVIEW: since the state is opaque, we might need to extract this from log instead
+    fn extract_next_vk(_output: &Self::StepOutput) -> moho_types::InnerVerificationKey {
         todo!()
     }
 
-    fn extract_export_state(_state: &Self::State) -> moho_types::ExportState {
-        // REVIEW: since the state is opaque, we might need to extract this from log instead
+    fn extract_export_state(_state: &Self::StepOutput) -> moho_types::ExportState {
         todo!()
     }
 }
