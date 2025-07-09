@@ -6,7 +6,7 @@ use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
 use strata_primitives::l2::L2BlockCommitment;
-use strata_state::{block::L2BlockBundle, id::L2BlockId};
+use strata_state::id::L2BlockId;
 use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
 use tokio::runtime::Handle;
@@ -136,7 +136,7 @@ pub fn worker_task_inner<E: ExecEngineCtl>(
         Ok(false) => {
             // Current chain tip tip block is not known by the EL.
             warn!(?chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(context, state.engine.as_ref())?;
+            sync_chainstate_to_el(context, state.engine.as_ref(), state.exec_env_id)?;
         }
         Err(error) => {
             // Likely network issue
@@ -199,7 +199,7 @@ pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
         ),
     };
 
-    let cur_tip = context.get_cur_tip()?;
+    let cur_tip = context.fetch_cur_tip()?;
 
     info!(?cur_tip, ?finalized_tip, "starting exec worker");
 
@@ -222,9 +222,13 @@ pub trait ExecWorkerContext {
         eeid: &ExecEnvId,
     ) -> EngineResult<Option<ExecPayloadData>>;
 
-    fn get_cur_tip(&self) -> EngineResult<L2BlockCommitment>;
+    /// Retrieves the parent block commitment, or returns an error if unable to fetch the parent
+    fn fetch_parent(&self, block: &L2BlockCommitment) -> EngineResult<L2BlockCommitment>;
 
-    fn get_block(&self, blkid: L2BlockId) -> EngineResult<L2BlockBundle>;
+    /// Retrieves the current tip, or returns an error if unable to fetch the tip.
+    fn fetch_cur_tip(&self) -> EngineResult<L2BlockCommitment>;
 
-    fn get_blkid_at_height(&self, height: u64) -> EngineResult<L2BlockId>;
+    /// Retrieves block ID at height, returning `None` if the height is valid but the block doesn't
+    /// exist.
+    fn fetch_blkid_at_height(&self, height: u64) -> EngineResult<Option<L2BlockId>>;
 }
