@@ -95,113 +95,49 @@ impl L1WriterDatabase for RBL1WriterDb {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db::traits::L1WriterDatabase;
-    use strata_primitives::buf::Buf32;
-    use strata_test_utils::ArbitraryGenerator;
-    use test;
+    use strata_db_tests::l1_writer_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
 
+    fn setup_db() -> RBL1WriterDb {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        RBL1WriterDb::new(db, db_ops)
+    }
+
     #[test]
     fn test_put_blob_new_entry() {
-        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
-        let seq_db = RBL1WriterDb::new(db, db_ops);
-
-        let blob: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-
-        seq_db.put_payload_entry(0, blob.clone()).unwrap();
-
-        let stored_blob = seq_db.get_payload_entry_by_idx(0).unwrap();
-        assert_eq!(stored_blob, Some(blob));
+        let db = setup_db();
+        l1_writer_tests::test_put_blob_new_entry(&db);
     }
 
     #[test]
     fn test_put_blob_existing_entry() {
-        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
-        let seq_db = RBL1WriterDb::new(db, db_ops);
-        let blob: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-
-        seq_db.put_payload_entry(0, blob.clone()).unwrap();
-
-        let result = seq_db.put_payload_entry(0, blob);
-
-        // Should be ok to put to existing key
-        assert!(result.is_ok());
+        let db = setup_db();
+        l1_writer_tests::test_put_blob_existing_entry(&db);
     }
 
     #[test]
     fn test_update_entry() {
-        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
-        let seq_db = RBL1WriterDb::new(db, db_ops);
-
-        let entry: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-
-        // Insert
-        seq_db.put_payload_entry(0, entry.clone()).unwrap();
-
-        let updated_entry: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-
-        // Update existing idx
-        seq_db.put_payload_entry(0, updated_entry.clone()).unwrap();
-        let retrieved_entry = seq_db.get_payload_entry_by_idx(0).unwrap().unwrap();
-        assert_eq!(updated_entry, retrieved_entry);
+        let db = setup_db();
+        l1_writer_tests::test_update_entry(&db);
     }
 
     #[test]
     fn test_get_last_entry_idx() {
-        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
-        let seq_db = RBL1WriterDb::new(db, db_ops);
-
-        let blob: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-
-        let next_blob_idx = seq_db.get_next_payload_idx().unwrap();
-        assert_eq!(
-            next_blob_idx, 0,
-            "There is no last blobidx in the beginning"
-        );
-
-        seq_db
-            .put_payload_entry(next_blob_idx, blob.clone())
-            .unwrap();
-        // Now the next idx is 1
-
-        let blob: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-
-        seq_db.put_payload_entry(1, blob.clone()).unwrap();
-        let next_blob_idx = seq_db.get_next_payload_idx().unwrap();
-        // Now the last idx is 2
-
-        assert_eq!(next_blob_idx, 2);
+        let db = setup_db();
+        l1_writer_tests::test_get_last_entry_idx(&db);
     }
-
-    // Intent related tests
 
     #[test]
     fn test_put_intent_new_entry() {
-        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
-        let seq_db = RBL1WriterDb::new(db, db_ops);
-
-        let intent: IntentEntry = ArbitraryGenerator::new().generate();
-        let intent_id: Buf32 = [0; 32].into();
-
-        seq_db.put_intent_entry(intent_id, intent.clone()).unwrap();
-
-        let stored_intent = seq_db.get_intent_by_id(intent_id).unwrap();
-        assert_eq!(stored_intent, Some(intent));
+        let db = setup_db();
+        l1_writer_tests::test_put_intent_new_entry(&db);
     }
 
     #[test]
     fn test_put_intent_entry() {
-        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
-        let seq_db = RBL1WriterDb::new(db, db_ops);
-        let intent: IntentEntry = ArbitraryGenerator::new().generate();
-        let intent_id: Buf32 = [0; 32].into();
-
-        let result = seq_db.put_intent_entry(intent_id, intent.clone());
-        assert!(result.is_ok());
-
-        let retrieved = seq_db.get_intent_by_id(intent_id).unwrap().unwrap();
-        assert_eq!(retrieved, intent);
+        let db = setup_db();
+        l1_writer_tests::test_put_intent_entry(&db);
     }
 }

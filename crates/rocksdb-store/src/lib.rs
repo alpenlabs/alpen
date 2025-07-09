@@ -1,6 +1,5 @@
 //! RocksDB store for the Alpen codebase.
 
-pub mod bridge_relay;
 pub mod broadcaster;
 pub mod chain_state;
 pub mod checkpoint;
@@ -30,8 +29,6 @@ pub const PROVER_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
 ];
 
 // Re-exports
-pub use bridge_relay::db::BridgeMsgDb;
-use bridge_relay::schemas::*;
 pub use broadcaster::db::L1BroadcastDb;
 use broadcaster::{
     db::BroadcastDb,
@@ -84,10 +81,6 @@ pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
     // Bcast schemas
     BcastL1TxIdSchema::COLUMN_FAMILY_NAME,
     BcastL1TxSchema::COLUMN_FAMILY_NAME,
-
-    // Bridge relay schemas
-    BridgeMsgIdSchema::COLUMN_FAMILY_NAME,
-    ScopeMsgIdSchema::COLUMN_FAMILY_NAME,
 
     // Checkpoint schemas
     CheckpointSchema::COLUMN_FAMILY_NAME,

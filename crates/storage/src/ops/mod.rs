@@ -1,4 +1,3 @@
-pub mod bridge_relay;
 pub mod chainstate;
 pub mod checkpoint;
 pub mod client_state;

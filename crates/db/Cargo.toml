@@ -16,7 +16,6 @@ arbitrary.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
 mockall = { workspace = true, optional = true }
-musig2.workspace = true
 parking_lot = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
@@ -29,4 +28,3 @@ stubs = ["dep:parking_lot", "dep:tracing"]
 
 [dev-dependencies]
 serde_json.workspace = true
-strata-test-utils.workspace = true

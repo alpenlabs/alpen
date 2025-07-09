@@ -40,7 +40,7 @@ use strata_sequencer::{
     checkpoint::{checkpoint_expiry_worker, checkpoint_worker, CheckpointHandle},
 };
 use strata_status::StatusChannel;
-use strata_storage::{create_node_storage, ops::bridge_relay::BridgeMsgOps, NodeStorage};
+use strata_storage::{create_node_storage, NodeStorage};
 use strata_sync::{self, L2SyncContext, RpcSyncPeer};
 use strata_tasks::{ShutdownSignal, TaskExecutor, TaskManager};
 use tokio::{
@@ -115,11 +115,6 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let database = init_core_dbs(rbdb.clone(), ops_config);
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
-    // Set up bridge messaging stuff.
-    // TODO move all of this into relayer task init
-    let bridge_msg_db = Arc::new(strata_rocksdb::BridgeMsgDb::new(rbdb.clone(), ops_config));
-    let bridge_msg_ctx = strata_storage::ops::bridge_relay::Context::new(bridge_msg_db);
-    let bridge_msg_ops = Arc::new(bridge_msg_ctx.into_ops(pool.clone()));
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
     let bitcoin_client = create_bitcoin_rpc_client(&config)?;
@@ -139,7 +134,6 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         params.clone(),
         database,
         storage.clone(),
-        bridge_msg_ops,
         bitcoin_client,
     )?;
 
@@ -337,7 +331,6 @@ fn do_startup_checks(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn start_core_tasks(
     executor: &TaskExecutor,
     pool: threadpool::ThreadPool,
@@ -345,7 +338,6 @@ fn start_core_tasks(
     params: Arc<Params>,
     database: Arc<CommonDb>,
     storage: Arc<NodeStorage>,
-    _bridge_msg_ops: Arc<BridgeMsgOps>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();

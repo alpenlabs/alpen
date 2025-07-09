@@ -20,10 +20,7 @@ tempfile = { workspace = true, optional = true }
 tracing.workspace = true
 
 [dev-dependencies]
-strata-test-utils.workspace = true
 strata-db-tests.workspace = true
-
-bitcoin.workspace = true
 
 [features]
 default = ["test_utils"]

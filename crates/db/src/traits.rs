@@ -17,7 +17,6 @@ use strata_state::{
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
-    entities::bridge_tx_state::BridgeTxState,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbResult,
 };
@@ -327,21 +326,3 @@ pub trait L1BroadcastDatabase {
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
 }
 
-/// Provides access to the implementers of provider and store traits for interacting with the
-/// transaction state database of the bridge client.
-///
-/// This trait assumes that the [`Txid`](bitcoin::Txid) is always unique.
-pub trait BridgeTxDatabase {
-    /// Add [`BridgeTxState`] to the database replacing the existing one if present.
-    fn put_tx_state(&self, txid: Buf32, tx_state: BridgeTxState) -> DbResult<()>;
-
-    /// Delete the stored [`BridgeTxState`] from the database and return it. This can be invoked,
-    /// for example, when a fully signed Deposit Transaction has been broadcasted. If the `txid`
-    /// did not exist, `None` is returned.
-    ///
-    /// *WARNING*: This can have detrimental effects if used at the wrong time.
-    fn delete_tx_state(&self, txid: Buf32) -> DbResult<Option<BridgeTxState>>;
-
-    /// Fetch [`BridgeTxState`] from db.
-    fn get_tx_state(&self, txid: Buf32) -> DbResult<Option<BridgeTxState>>;
-}
