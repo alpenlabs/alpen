@@ -147,8 +147,7 @@ impl ChainstateDatabase for ChainstateDb {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
-    use strata_test_utils::ArbitraryGenerator;
+    use strata_db_tests::chain_state_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -160,181 +159,37 @@ mod tests {
 
     #[test]
     fn test_write_genesis_state() {
-        let mut generator = ArbitraryGenerator::new();
-        let genesis_state: Chainstate = generator.generate();
-        let genesis_blockid: L2BlockId = generator.generate();
-
         let db = setup_db();
-
-        let res = db.get_earliest_write_idx();
-        assert!(res.is_err_and(|x| matches!(x, DbError::NotBootstrapped)));
-
-        let res = db.get_last_write_idx();
-        assert!(res.is_err_and(|x| matches!(x, DbError::NotBootstrapped)));
-
-        let res = db.write_genesis_state(genesis_state.clone(), genesis_blockid);
-        assert!(res.is_ok());
-
-        let res = db.get_earliest_write_idx();
-        assert!(res.is_ok_and(|x| matches!(x, 0)));
-
-        let res = db.get_last_write_idx();
-        assert!(res.is_ok_and(|x| matches!(x, 0)));
-
-        let res = db.write_genesis_state(genesis_state, genesis_blockid);
-        assert!(res.is_err_and(|x| matches!(x, DbError::OverwriteStateUpdate(0))));
+        chain_state_tests::test_write_genesis_state(&db);
     }
 
     #[test]
     fn test_write_state_update() {
-        let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
-        let genesis_state: Chainstate = generator.generate();
-        let genesis_blockid: L2BlockId = generator.generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
-
-        let res = db.put_write_batch(1, WriteBatchEntry::new(batch.clone(), genesis_blockid));
-        assert!(res.is_err_and(|x| matches!(x, DbError::NotBootstrapped)));
-
-        db.write_genesis_state(genesis_state, genesis_blockid)
-            .unwrap();
-
-        let res = db.put_write_batch(1, WriteBatchEntry::new(batch.clone(), generator.generate()));
-        assert!(res.is_ok());
-
-        let res = db.put_write_batch(2, WriteBatchEntry::new(batch.clone(), generator.generate()));
-        assert!(res.is_ok());
-
-        let res = db.put_write_batch(2, WriteBatchEntry::new(batch.clone(), generator.generate()));
-        assert!(res.is_err_and(|x| matches!(x, DbError::OverwriteStateUpdate(2))));
-
-        let res = db.put_write_batch(4, WriteBatchEntry::new(batch.clone(), generator.generate()));
-        assert!(res.is_err_and(|x| matches!(x, DbError::OooInsert("Chainstate", 4))));
+        chain_state_tests::test_write_state_update(&db);
     }
 
     #[test]
     fn test_get_earliest_and_last_state_idx() {
-        let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
-        let genesis_state: Chainstate = generator.generate();
-        let genesis_blockid: L2BlockId = generator.generate();
-
-        let batch = WriteBatch::new_replace(genesis_state.clone());
-
-        db.write_genesis_state(genesis_state, genesis_blockid)
-            .unwrap();
-        for i in 1..=5 {
-            eprintln!("test inserting index {i}");
-            assert_eq!(db.get_earliest_write_idx().unwrap(), 0);
-            db.put_write_batch(i, WriteBatchEntry::new(batch.clone(), generator.generate()))
-                .unwrap();
-            assert_eq!(db.get_last_write_idx().unwrap(), i);
-        }
+        chain_state_tests::test_get_earliest_and_last_state_idx(&db);
     }
 
     #[test]
     fn test_purge() {
-        let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
-        let genesis_state: Chainstate = ArbitraryGenerator::new().generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
-
-        db.write_genesis_state(genesis_state, generator.generate())
-            .unwrap();
-        for i in 1..=5 {
-            eprintln!("test inserting index {i}");
-            assert_eq!(db.get_earliest_write_idx().unwrap(), 0);
-            db.put_write_batch(i, WriteBatchEntry::new(batch.clone(), generator.generate()))
-                .unwrap();
-            assert_eq!(db.get_last_write_idx().unwrap(), i);
-        }
-
-        db.purge_entries_before(3).unwrap();
-        // Ensure that calling the purge again does not fail
-        db.purge_entries_before(3).unwrap();
-
-        assert_eq!(db.get_earliest_write_idx().unwrap(), 3);
-        assert_eq!(db.get_last_write_idx().unwrap(), 5);
-
-        for i in 0..3 {
-            assert!(db.get_write_batch(i).unwrap().is_none());
-        }
-
-        for i in 3..=5 {
-            assert!(db.get_write_batch(i).unwrap().is_some());
-        }
-
-        let res = db.purge_entries_before(2);
-        assert!(res.is_err_and(|x| matches!(x, DbError::MissingL2State(2))));
-
-        let res = db.purge_entries_before(1);
-        assert!(res.is_err_and(|x| matches!(x, DbError::MissingL2State(1))));
+        chain_state_tests::test_purge(&db);
     }
 
     #[test]
     fn test_rollback() {
-        let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
-        let genesis_state: Chainstate = generator.generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
-
-        db.write_genesis_state(genesis_state, generator.generate())
-            .unwrap();
-        for i in 1..=5 {
-            db.put_write_batch(i, WriteBatchEntry::new(batch.clone(), generator.generate()))
-                .unwrap();
-        }
-
-        db.rollback_writes_to(3).unwrap();
-        // Ensures that calling the rollback again does not fail
-        db.rollback_writes_to(3).unwrap();
-
-        for i in 4..=5 {
-            assert!(db.get_write_batch(i).unwrap().is_none());
-        }
-
-        // For genesis there is no BatchWrites
-        for i in 1..=3 {
-            assert!(db.get_write_batch(i).unwrap().is_some());
-        }
-
-        assert_eq!(db.get_earliest_write_idx().unwrap(), 0);
-        assert_eq!(db.get_last_write_idx().unwrap(), 3);
-
-        let res = db.rollback_writes_to(5);
-        assert!(res.is_err_and(|x| matches!(x, DbError::RevertAboveCurrent(5, 3))));
-
-        let res = db.rollback_writes_to(4);
-        assert!(res.is_err_and(|x| matches!(x, DbError::RevertAboveCurrent(4, 3))));
-
-        let res = db.rollback_writes_to(3);
-        assert!(res.is_ok());
-
-        db.rollback_writes_to(2).unwrap();
-        assert_eq!(db.get_earliest_write_idx().unwrap(), 0);
-        assert_eq!(db.get_last_write_idx().unwrap(), 2);
+        chain_state_tests::test_rollback(&db);
     }
 
     #[test]
     fn test_purge_and_rollback() {
-        let mut generator = ArbitraryGenerator::new();
         let db = setup_db();
-        let genesis_state: Chainstate = generator.generate();
-        let batch = WriteBatch::new_replace(genesis_state.clone());
-
-        db.write_genesis_state(genesis_state, generator.generate())
-            .unwrap();
-        for i in 1..=5 {
-            db.put_write_batch(i, WriteBatchEntry::new(batch.clone(), generator.generate()))
-                .unwrap();
-        }
-
-        db.purge_entries_before(3).unwrap();
-
-        let res = db.rollback_writes_to(3);
-        assert!(res.is_ok());
-
-        let res = db.rollback_writes_to(2);
-        assert!(res.is_err_and(|x| matches!(x, DbError::MissingL2State(2))));
+        chain_state_tests::test_purge_and_rollback(&db);
     }
 }
