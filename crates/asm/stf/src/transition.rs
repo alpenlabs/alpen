@@ -3,7 +3,7 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmSpec, ChainViewState, Stage};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, Log, Stage};
 use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_core::OLCoreSubproto;
 use strata_l1_txfmt::MagicBytes;
@@ -32,7 +32,7 @@ impl AsmSpec for StrataAsmSpec {
 pub fn asm_stf<S: AsmSpec>(
     pre_state: &AnchorState,
     block: &Block,
-) -> Result<AnchorState, AsmError> {
+) -> AsmResult<(AnchorState, Vec<Log>)> {
     // 1. Validate and update PoW header continuity for the new block.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
@@ -57,10 +57,11 @@ pub fn asm_stf<S: AsmSpec>(
     S::call_subprotocols(&mut finish_stage);
 
     // 6. Construct the final `AnchorState` we return.
-    let sections = manager.export_sections();
+    let (sections, logs) = manager.export_sections_and_logs();
     let chain_view = ChainViewState { pow_state };
-    Ok(AnchorState {
+    let state = AnchorState {
         chain_view,
         sections,
-    })
+    };
+    Ok((state, logs))
 }
