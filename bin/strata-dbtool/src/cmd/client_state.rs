@@ -76,10 +76,7 @@ pub(crate) fn get_client_state_update(
             client_state.genesis_l1_height()
         );
         if let Some(l1_block) = client_state.most_recent_l1_block() {
-            println!(
-                "client_state_update.client_state.latest_l1_block {:?}",
-                l1_block
-            );
+            println!("client_state_update.client_state.latest_l1_block {l1_block:?}");
         }
         println!(
             "client_state_update.client_state.next_expected_l1_height {}",
@@ -131,7 +128,7 @@ pub(crate) fn get_client_state_update(
                 }
                 SyncAction::L2Genesis(block_id) => {
                     println!("client_state_update.sync_action L2Genesis");
-                    println!("client_state_update.sync_action.blkid {}", block_id);
+                    println!("client_state_update.sync_action.blkid {block_id:?}");
                 }
                 SyncAction::UpdateCheckpointInclusion { .. } => {
                     println!("client_state_update.sync_action UpdateCheckpointInclusion");

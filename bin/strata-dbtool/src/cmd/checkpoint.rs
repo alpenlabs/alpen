@@ -228,7 +228,7 @@ pub(crate) fn get_checkpoint_data(
 
         match confirmation_status {
             CheckpointConfStatus::Pending => {
-                println!("checkpoint.confirmation_status: {:?}", confirmation_status);
+                println!("checkpoint.confirmation_status: {confirmation_status:?}");
             }
             CheckpointConfStatus::Confirmed(ref checkpoint_l1_ref) => {
                 println!("checkpoint.confirmation_status: Confirmed");
@@ -240,7 +240,7 @@ pub(crate) fn get_checkpoint_data(
             }
         }
 
-        println!("checkpoint.proving_status: {:?}", proving_status);
+        println!("checkpoint.proving_status: {proving_status:?}");
     }
 
     Ok(())
