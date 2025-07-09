@@ -13,7 +13,7 @@ use strata_proofimpl_btc_blockspace::logic::{BlockScanResult, BlockscanProofOutp
 use strata_state::{
     batch::TxFilterConfigTransition,
     block::{ExecSegment, L2Block},
-    block_validation::{check_block_credential, validate_block_segments},
+    block_validation::{check_block_credential, validate_block_structure},
     chain_state::Chainstate,
     header::{L2BlockHeader, L2Header},
 };
@@ -111,11 +111,14 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
 
         // 8. Now that the L2 Block body is verified, check that the L2 Block header is consistent
         //    with the body
-        assert!(validate_block_segments(l2_block), "block validation failed");
+        assert!(
+            validate_block_structure(l2_block).is_ok(),
+            "block validation failed"
+        );
 
         // 9. Verify that the block credential is valid
         assert!(
-            check_block_credential(l2_block.header(), &rollup_params),
+            check_block_credential(l2_block.header(), &rollup_params).is_ok(),
             "Block credential verification failed"
         );
 

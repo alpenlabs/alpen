@@ -32,5 +32,3 @@ pub enum Error {
     #[error("unexpected failure: {0}")]
     Unexpected(String),
 }
-
-// Removed this, it looks like we shouldn't have this ine

@@ -245,7 +245,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::block_validation::validate_block_segments;
+    use crate::block_validation::validate_block_structure;
 
     // This test is flaky because sometimes it generates an L1 segment with no
     // elements twice.
@@ -253,18 +253,18 @@ mod tests {
     fn test_verify_block_hashes() {
         // use arbitrary generator to get the new block
         let block: L2Block = ArbitraryGenerator::new().generate();
-        assert!(validate_block_segments(&block));
+        assert!(validate_block_structure(&block).is_ok());
 
         let arb_exec_segment: ExecSegment = ArbitraryGenerator::new().generate();
         let arb_l1_segment: L1Segment = ArbitraryGenerator::new().generate();
         // mutate the l2Block's body to create a new block with arbitrary exec segment
         let blk_body = L2BlockBody::new(block.body().l1_segment().clone(), arb_exec_segment);
         let arb_exec_block = L2Block::new(block.header().clone(), blk_body);
-        assert!(!validate_block_segments(&arb_exec_block));
+        assert!(validate_block_structure(&arb_exec_block).is_err());
 
         // mutate the l2Block's body to create a new block with arbitrary l1 segment
         let blk_body = L2BlockBody::new(arb_l1_segment, block.body().exec_segment().clone());
         let arb_l1_block = L2Block::new(block.header().clone(), blk_body);
-        assert!(!validate_block_segments(&arb_l1_block));
+        assert!(validate_block_structure(&arb_l1_block).is_err());
     }
 }
