@@ -6525,6 +6525,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "moho-runtime-interface"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/moho#33bf244472f9125dc5b80dcf7e510654af1a59cf"
+dependencies = [
+ "borsh",
+ "moho-types",
+]
+
+[[package]]
+name = "moho-types"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/moho#33bf244472f9125dc5b80dcf7e510654af1a59cf"
+dependencies = [
+ "borsh",
+]
+
+[[package]]
 name = "moka"
 version = "0.12.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13108,6 +13125,16 @@ dependencies = [
 [[package]]
 name = "strata-asm-moho-incremental"
 version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "moho-runtime-interface",
+ "moho-types",
+ "strata-asm-common",
+ "strata-asm-stf",
+ "strata-primitives",
+ "strata-test-utils",
+]
 
 [[package]]
 name = "strata-asm-proto-bridge-v1"
