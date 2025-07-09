@@ -84,33 +84,68 @@ pub(crate) fn get_syncinfo(
         };
         println!("{}", serde_json::to_string_pretty(&syncinfo).unwrap());
     } else {
-        println!("L1 tip height: {l1_tip_height}, block id: {l1_tip_block_id:?}");
+        println!("syncinfo.l1_tip.height: {l1_tip_height}");
+        println!("syncinfo.l1_tip.blkid {l1_tip_block_id:?}");
+        println!("syncinfo.l2_tip.height: {l2_block_height}");
+        println!("syncinfo.l2_tip.blkid {l2_block_id:?}");
+        println!("syncinfo.l2_tip.block_status {l2_block_status:?}");
 
+        let top_level_state = batch_info.new_toplevel_state();
         println!(
-            "L2 tip: height {l2_block_height}, block id: {l2_block_id:?}, status {l2_block_status:?}"
+            "syncinfo.top_level_state.current_epoch: {}",
+            top_level_state.cur_epoch()
         );
         println!(
-            "Finalized block id: {:?}",
-            batch_info
-                .new_toplevel_state()
-                .finalized_epoch()
-                .last_blkid()
+            "syncinfo.top_level_state.current_slot: {}",
+            top_level_state.chain_tip_slot()
+        );
+
+        let prev_block = top_level_state.prev_block();
+        println!(
+            "syncinfo.top_level_state.prev_block.height: {}",
+            prev_block.slot()
         );
         println!(
-            "Current epoch: {:?}",
-            batch_info.new_toplevel_state().cur_epoch()
+            "syncinfo.top_level_state.prev_block.blkid: {:?}",
+            prev_block.blkid()
+        );
+
+        let prev_epoch = top_level_state.prev_epoch();
+        println!(
+            "syncinfo.top_level_state.prev_epoch.epoch: {:?}",
+            prev_epoch.epoch()
         );
         println!(
-            "Previous epoch: {:?}",
-            batch_info.new_toplevel_state().prev_epoch()
+            "syncinfo.top_level_state.prev_epoch.last_slot: {:?}",
+            prev_epoch.last_slot()
         );
         println!(
-            "Finalized epoch: {:?}",
-            batch_info.new_toplevel_state().finalized_epoch()
+            "syncinfo.top_level_state.prev_epoch.last_blkid: {:?}",
+            prev_epoch.last_blkid()
+        );
+
+        let finalized_epoch = top_level_state.finalized_epoch();
+        println!(
+            "syncinfo.top_level_state.finalized_epoch.epoch: {:?}",
+            finalized_epoch.epoch()
         );
         println!(
-            "L1 safe block: {:?}",
-            batch_info.new_toplevel_state().l1_view().get_safe_block()
+            "syncinfo.top_level_state.finalized_epoch.last_slot: {:?}",
+            finalized_epoch.last_slot()
+        );
+        println!(
+            "syncinfo.top_level_state.finalized_epoch.last_blkid: {:?}",
+            finalized_epoch.last_blkid()
+        );
+
+        let l1_safe_block = top_level_state.l1_view().get_safe_block();
+        println!(
+            "syncinfo.top_level_state.l1_view.safe_block.height: {}",
+            l1_safe_block.height()
+        );
+        println!(
+            "syncinfo.top_level_state.l1_view.safe_block.blkid: {:?}",
+            l1_safe_block.blkid()
         );
     }
 

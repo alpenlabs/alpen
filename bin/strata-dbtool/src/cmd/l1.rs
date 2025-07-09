@@ -4,7 +4,7 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{Database, L1Database};
 use strata_primitives::{
     buf::Buf32,
-    l1::{L1BlockId, L1HeaderRecord, L1Tx, ProtocolOperation},
+    l1::{L1BlockId, L1Tx, ProtocolOperation},
 };
 use tracing::warn;
 
@@ -35,7 +35,7 @@ pub(crate) struct GetL1SummaryArgs {
 /// L1 block information displayed to the user
 #[derive(serde::Serialize)]
 struct L1BlockInfo<'a> {
-    header: &'a L1HeaderRecord,
+    block_id: &'a L1BlockId,
     transactions: &'a [L1Tx],
     height: u64,
 }
@@ -76,33 +76,79 @@ pub(crate) fn get_l1_manifest(
     // Print block information
     if args.output_format == OutputFormat::Json {
         let block_info = L1BlockInfo {
-            header: l1_block_manifest.record(),
+            block_id: &block_id,
             transactions: l1_block_manifest.txs(),
             height: l1_block_manifest.height(),
         };
         println!("{}", serde_json::to_string_pretty(&block_info).unwrap());
     } else {
         // Basic block info
-        println!(
-            "L1 block height: {}, id: {block_id:?}",
-            l1_block_manifest.height()
-        );
+        println!("l1_block.height {}", l1_block_manifest.height());
+        println!("l1_block.blkid {block_id:?}");
 
         // Number of transactions
-        println!(
-            "L1 block has {} transaction(s)",
-            l1_block_manifest.txs().len()
-        );
+        println!("l1_block.tx_count {}", l1_block_manifest.txs().len());
 
         // Print relevant transactions
         for (index, tx) in l1_block_manifest.txs().iter().enumerate() {
-            println!("Transaction index: {index}");
             for proto_op in tx.protocol_ops().iter() {
                 match proto_op {
                     ProtocolOperation::Checkpoint(signed_checkpoint) => {
                         println!(
-                            "checkpoint commitment: {:?}",
-                            signed_checkpoint.checkpoint().commitment()
+                            "tx_{index}.checkpoint.signature {:?}",
+                            signed_checkpoint.signature()
+                        );
+                        let batch_info = signed_checkpoint.checkpoint().batch_info();
+                        println!("tx_{index}.checkpoint.batch.epoch {}", batch_info.epoch());
+                        println!(
+                            "tx_{index}.checkpoint.batch.l1_range.start.height {}",
+                            batch_info.l1_range.0.height()
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch.l1_range.start.blkid {:?}",
+                            batch_info.l1_range.0.blkid()
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch.l1_range.end.height {}",
+                            batch_info.l1_range.1.height()
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch.l1_range.end.blkid {:?}",
+                            batch_info.l1_range.1.blkid()
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch.l2_range.start.slot {}",
+                            batch_info.l2_range.0.slot()
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch.l2_range.start.blkid {:?}",
+                            batch_info.l2_range.0.blkid()
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch.l2_range.end.slot {}",
+                            batch_info.l2_range.1.slot()
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch.l2_range.end.blkid {:?}",
+                            batch_info.l2_range.1.blkid()
+                        );
+
+                        let batch_transition = signed_checkpoint.checkpoint().batch_transition();
+                        println!(
+                            "tx_{index}.checkpoint.batch_transition.chainstate.pre_root {:?}",
+                            batch_transition.chainstate_transition.pre_state_root
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch_transition.chainstate.post_root {:?}",
+                            batch_transition.chainstate_transition.post_state_root
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch_transition.tx_filter.pre_config_hash {:?}",
+                            batch_transition.tx_filters_transition.pre_config_hash
+                        );
+                        println!(
+                            "tx_{index}.checkpoint.batch_transition.tx_filter.post_config_hash {:?}",
+                            batch_transition.tx_filters_transition.post_config_hash
                         );
                     }
                     ProtocolOperation::DaCommitment(da_commitment) => {
@@ -131,31 +177,35 @@ pub(crate) fn get_l1_summary(
         .internal_error("Failed to read L1 tip")?
         .expect("valid L1 tip");
 
-    println!("L1 tip height: {l1_tip_height}, block id {l1_tip_block_id:?}");
+    println!("l1_summary.tip_height {l1_tip_height}");
+    println!("l1_summary.tip_blkid {l1_tip_block_id:?}");
 
-    let l1_horizon_height = get_l1_horizon_height(db, l1_tip_height);
-    if l1_horizon_height == l1_tip_height {
+    let (client_state_update, _) = get_latest_client_state_update(db, None)?;
+    let (client_state, _) = client_state_update.into_parts();
+    let horizon_l1_height = client_state.horizon_l1_height();
+    let genesis_l1_height = client_state.genesis_l1_height();
+
+    if horizon_l1_height == l1_tip_height {
         warn!("Missing all l1 blocks from horizon to tip.");
         return Ok(());
     }
 
-    let horizon_l1_block_id = l1_db
-        .get_canonical_blockid_at_height(l1_horizon_height)
-        .internal_error("Failed to read L1 genesis block id")?
-        .expect("valid genesis block id");
+    let horizon_l1_blkid = l1_db
+        .get_canonical_blockid_at_height(horizon_l1_height)
+        .internal_error("Failed to read L1 horizon block id")?
+        .expect("valid horizon block id");
 
-    let (latest_client_state, latest_update_idx) = get_latest_client_state_update(db, None)?;
-    let genesis_l1_height = latest_client_state.state().genesis_l1_height();
+    println!("l1_summary.horizon_height {horizon_l1_height}");
+    println!("l1_summary.horizon_blkid {horizon_l1_blkid}");
 
-    println!("L1 horizon height: {l1_horizon_height}, block id {horizon_l1_block_id:?}");
+    println!("l1_summary.genesis_height: {genesis_l1_height:?}");
     println!(
-        "Genesis l1 height: {genesis_l1_height:?}, expected number of l1 blocks (horizon height to tip) {latest_update_idx},
-        number of client state updates: {}",
-        l1_tip_height.saturating_sub(l1_horizon_height) + 1,
+        "l1_summary.expected_l1_block_count {}",
+        l1_tip_height.saturating_sub(horizon_l1_height) + 1
     );
 
     // Check if all L1 blocks from L1 horizon to tip are present
-    let all_l1_manifests_present = (l1_horizon_height..=l1_tip_height).all(|l1_height| {
+    let all_l1_manifests_present = (horizon_l1_height..=l1_tip_height).all(|l1_height| {
         let Some(block_id) = l1_db
             .get_canonical_blockid_at_height(l1_height)
             .ok()
@@ -173,18 +223,7 @@ pub(crate) fn get_l1_summary(
         true
     });
 
-    if all_l1_manifests_present {
-        println!("All expected l1 block manifests found in L1Database.")
-    }
+    println!("l1_summary.all_manifests_in_l1_db {all_l1_manifests_present}");
 
     Ok(())
-}
-
-/// Get the L1 horizon height, i.e., the height of the first L1 block in the database
-pub(super) fn get_l1_horizon_height(db: &impl Database, l1_tip_height: u64) -> u64 {
-    let l1_db = db.l1_db();
-
-    (0..=l1_tip_height)
-        .find(|&height| matches!(l1_db.get_canonical_blockid_at_height(height), Ok(Some(_))))
-        .unwrap_or(l1_tip_height)
 }

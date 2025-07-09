@@ -2,8 +2,8 @@ use argh::FromArgs;
 use hex::FromHex;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
-use strata_primitives::{buf::Buf32, l2::L2BlockId};
-use strata_state::{block::L1Segment, header::L2BlockHeader};
+use strata_primitives::{buf::Buf32, l1::L1BlockId, l2::L2BlockId};
+use strata_state::header::{L2BlockHeader, L2Header};
 
 use crate::cli::OutputFormat;
 
@@ -26,7 +26,7 @@ struct L2BlockInfo<'a> {
     id: &'a L2BlockId,
     status: &'a BlockStatus,
     header: &'a L2BlockHeader,
-    l1_segment: &'a L1Segment,
+    l1_segment: Vec<(u64, &'a L1BlockId)>,
 }
 
 /// Show details about a specific L2 block.
@@ -62,23 +62,47 @@ pub(crate) fn get_l2_block(db: &impl Database, args: GetL2BlockArgs) -> Result<(
     // Print status and header
     let l2_block = bundle.block();
     if args.output_format == OutputFormat::Json {
+        let mut l1_segment: Vec<(u64, &L1BlockId)> = Vec::new();
+        for l1_manifest in l2_block.body().l1_segment().new_manifests().iter() {
+            l1_segment.push((l1_manifest.height(), l1_manifest.blkid()));
+        }
         let block_info = L2BlockInfo {
             id: &block_id,
             status: &status,
             header: l2_block.header().header(),
-            l1_segment: l2_block.l1_segment(),
+            l1_segment,
         };
         println!("{}", serde_json::to_string_pretty(&block_info).unwrap());
     } else {
-        println!("L2 block id: {block_id:?}, status: {status:?}");
-        println!("Block header: {:#?}", l2_block.header().header());
-        println!("L1 segment");
+        println!("l2_block.blkid: {block_id:?}");
+        println!("l2_block.status: {status:?}");
+        println!("l2_block.header.slot: {}", l2_block.header().slot());
+        println!("l2_block.header.epoch: {}", l2_block.header().epoch());
+        println!(
+            "l2_block.header.timestamp: {}",
+            l2_block.header().timestamp()
+        );
+        println!(
+            "l2_block.header.prev_blkid: {:?}",
+            l2_block.header().parent()
+        );
+        println!(
+            "l2_block.header.l1_segment_hash: {:?}",
+            l2_block.header().l1_payload_hash()
+        );
+        println!(
+            "l2_block.header.exec_segment_hash: {:?}",
+            l2_block.header().exec_payload_hash()
+        );
+        println!(
+            "l2_block.header.state_root: {:?}",
+            l2_block.header().state_root()
+        );
         for l1_manifest in l2_block.body().l1_segment().new_manifests().iter() {
             println!(
-                "L1 blkid {:?}, height {}, txs {}",
-                l1_manifest.blkid(),
+                "l2_block.l1_segment.{}.blkid {:?}",
                 l1_manifest.height(),
-                l1_manifest.txs().len()
+                l1_manifest.blkid()
             );
         }
     }

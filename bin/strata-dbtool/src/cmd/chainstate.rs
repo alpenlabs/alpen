@@ -3,7 +3,7 @@ use hex::FromHex;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L2BlockDatabase};
 use strata_primitives::{buf::Buf32, l2::L2BlockId, prelude::EpochCommitment};
-use strata_state::{header::L2Header, l1::L1ViewState, state_op::WriteBatchEntry};
+use strata_state::{header::L2Header, l1::L1BlockId, state_op::WriteBatchEntry};
 
 use crate::cli::OutputFormat;
 
@@ -46,7 +46,9 @@ struct ChainstateInfo<'a> {
     is_epoch_finishing: bool,
     previous_epoch: &'a EpochCommitment,
     finalized_epoch: &'a EpochCommitment,
-    l1_view_state: &'a L1ViewState,
+    l1_next_expected_height: u64,
+    l1_safe_block_height: u64,
+    l1_safe_block_blkid: &'a L1BlockId,
 }
 
 pub(crate) fn get_chainstate(
@@ -68,23 +70,61 @@ pub(crate) fn get_chainstate(
             is_epoch_finishing: top_level_state.is_epoch_finishing(),
             previous_epoch: prev_epoch,
             finalized_epoch,
-            l1_view_state,
+            l1_next_expected_height: l1_view_state.next_expected_height(),
+            l1_safe_block_height: l1_view_state.safe_height(),
+            l1_safe_block_blkid: l1_view_state.safe_blkid(),
         };
         println!(
             "{}",
             serde_json::to_string_pretty(&chainstate_info).unwrap()
         );
     } else {
-        println!("Chainstate write index {write_idx}");
-        println!("Chainstate chain tip {}", top_level_state.chain_tip_slot());
+        println!("chainstate.write_index: {write_idx}");
+        println!("chainstate.chain_tip: {}", top_level_state.chain_tip_slot());
         println!("chainstate.current_epoch {}", top_level_state.cur_epoch());
         println!(
-            "Chainstate epoch finishing {}",
+            "chainstate.is_epoch_finishing: {}",
             top_level_state.is_epoch_finishing()
         );
-        println!("chainstate previous epoch {prev_epoch:?}");
-        println!("Chainstate finalized epoch {finalized_epoch:?}");
-        println!("Chainstate L1 view {l1_view_state:?}");
+
+        let prev_epoch = top_level_state.prev_epoch();
+        println!("chainstate.prev_epoch.epoch: {:?}", prev_epoch.epoch());
+        println!(
+            "chainstate.prev_epoch.last_slot: {:?}",
+            prev_epoch.last_slot()
+        );
+        println!(
+            "chainstate.prev_epoch.last_blkid: {:?}",
+            prev_epoch.last_blkid()
+        );
+
+        let finalized_epoch = top_level_state.finalized_epoch();
+        println!(
+            "chainstate.finalized_epoch.epoch: {:?}",
+            finalized_epoch.epoch()
+        );
+        println!(
+            "chainstate.finalized_epoch.last_slot: {:?}",
+            finalized_epoch.last_slot()
+        );
+        println!(
+            "chainstate.finalized_epoch.last_blkid: {:?}",
+            finalized_epoch.last_blkid()
+        );
+
+        let l1_view = top_level_state.l1_view();
+        println!(
+            "chainstate.l1_view.next_expected_height: {}",
+            l1_view.next_expected_height()
+        );
+        println!(
+            "chainstate.l1_view.safe_block.height: {}",
+            l1_view.safe_height()
+        );
+        println!(
+            "chainstate.l1_view.safe_block.blkid: {:?}",
+            l1_view.safe_blkid()
+        );
     }
     Ok(())
 }

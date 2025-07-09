@@ -1,10 +1,11 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{Database, L1Database, SyncEventDatabase};
+use strata_primitives::prelude::L1BlockCommitment;
 use strata_state::sync_event::SyncEvent;
 use tracing::warn;
 
-use super::l1::get_l1_horizon_height;
+use super::client_state::get_latest_client_state_update;
 use crate::cli::OutputFormat;
 
 /// Shows details about a sync event
@@ -67,11 +68,32 @@ pub(crate) fn get_sync_event(
         };
         println!("{}", serde_json::to_string_pretty(&event_info).unwrap());
     } else {
-        println!("Event Index {event_index}");
-        println!("Event: {sync_event:?}");
+        println!("sync_event.event_index {event_index}");
+        match sync_event {
+            SyncEvent::L1Block(ref l1_commitment) => {
+                println!("sync_event.event L1Block");
+                print_l1_block_commitment(l1_commitment);
+            }
+            SyncEvent::L1Revert(ref l1_commitment) => {
+                println!("sync_event.event L1Revert");
+                print_l1_block_commitment(l1_commitment);
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Print L1 block commitment for a sync event
+fn print_l1_block_commitment(l1_ref: &L1BlockCommitment) {
+    println!(
+        "sync_event.event.l1_block_commitment.height {}",
+        l1_ref.height()
+    );
+    println!(
+        "sync_event.event.l1_block_commitment.blkid {:?}",
+        l1_ref.blkid()
+    );
 }
 
 /// Get summary of L1 manifests in the database.
@@ -89,17 +111,21 @@ pub(crate) fn get_sync_events_summary(
         .internal_error("Failed to read L1 tip")?
         .expect("valid L1 tip");
 
-    let l1_horizon_height = get_l1_horizon_height(db, l1_tip_height);
-    if l1_horizon_height == l1_tip_height {
+    let (client_state_update, _) = get_latest_client_state_update(db, None)?;
+    let (client_state, _) = client_state_update.into_parts();
+    let horizon_l1_height = client_state.horizon_l1_height();
+
+    if horizon_l1_height == l1_tip_height {
         warn!("Missing all l1 blocks from horizon to tip.");
     }
 
     if let Some(last_idx) = last_idx {
+        println!("sync_events_summary.last_event_index {last_idx}");
         println!(
-            "Last sync event index: {}. Expected number of L1 blocks (l1 horizon to tip): {}",
-            last_idx,
-            l1_tip_height - l1_horizon_height + 1
+            "sync_events_summary.expected_l1_blocks_count {}",
+            l1_tip_height.saturating_sub(horizon_l1_height) + 1
         );
+
         let mut observed_l1_heights = std::collections::HashSet::new();
 
         for idx in (1..=last_idx).rev() {
@@ -112,7 +138,7 @@ pub(crate) fn get_sync_events_summary(
 
         // Now verify all expected heights are present
         let all_l1_sync_events_present =
-            (l1_horizon_height..=l1_tip_height).all(|expected_height| {
+            (horizon_l1_height..=l1_tip_height).all(|expected_height| {
                 if !observed_l1_heights.contains(&expected_height) {
                     println!("Missing SyncEvent::L1Block for height {expected_height}");
                     return false;
@@ -120,9 +146,7 @@ pub(crate) fn get_sync_events_summary(
                 true
             });
 
-        if all_l1_sync_events_present {
-            println!("All expected Sync Events found in SyncEventDatabase.")
-        }
+        println!("sync_events_summary.all_sync_events_in_db {all_l1_sync_events_present}");
     }
 
     Ok(())

@@ -1,8 +1,10 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{ClientStateDatabase, Database};
+use strata_primitives::prelude::L1BlockCommitment;
 use strata_state::{
-    client_state::ClientState,
+    client_state::InternalState,
+    l1::L1BlockId,
     operation::{ClientUpdateOutput, SyncAction},
 };
 
@@ -25,7 +27,14 @@ pub(crate) struct GetClientStateUpdateArgs {
 #[derive(serde::Serialize)]
 struct ClientStateUpdateInfo<'a> {
     update_index: u64,
-    client_state: &'a ClientState,
+    is_chain_active: bool,
+    horizon_l1_height: u64,
+    genesis_l1_height: u64,
+    latest_l1_block: Option<&'a L1BlockId>,
+    next_expected_l1_height: u64,
+    tip_l1_block: Option<L1BlockCommitment>,
+    deepest_l1_block: Option<L1BlockCommitment>,
+    last_internal_state: Option<&'a InternalState>,
     sync_actions: &'a Vec<SyncAction>,
 }
 
@@ -41,14 +50,94 @@ pub(crate) fn get_client_state_update(
     if args.output_format == OutputFormat::Json {
         let update_info = ClientStateUpdateInfo {
             update_index: update_idx,
-            client_state: &client_state,
+            is_chain_active: client_state.is_chain_active(),
+            horizon_l1_height: client_state.horizon_l1_height(),
+            genesis_l1_height: client_state.genesis_l1_height(),
+            latest_l1_block: client_state.most_recent_l1_block(),
+            next_expected_l1_height: client_state.next_exp_l1_block(),
+            tip_l1_block: client_state.get_tip_l1_block(),
+            deepest_l1_block: client_state.get_deepest_l1_block(),
+            last_internal_state: client_state.get_last_internal_state(),
             sync_actions: &sync_actions,
         };
         println!("{}", serde_json::to_string_pretty(&update_info).unwrap());
     } else {
-        println!("Client state update index {update_idx}");
-        println!("Client state {client_state:?}");
-        println!("Sync actions {sync_actions:?}");
+        println!("client_state_update.update_index {update_idx}");
+        println!(
+            "client_state_update.client_state.is_chain_active {}",
+            client_state.is_chain_active()
+        );
+        println!(
+            "client_state_update.client_state.horizon_l1_height {}",
+            client_state.horizon_l1_height()
+        );
+        println!(
+            "client_state_update.client_state.genesis_l1_height {}",
+            client_state.genesis_l1_height()
+        );
+        if let Some(l1_block) = client_state.most_recent_l1_block() {
+            println!(
+                "client_state_update.client_state.latest_l1_block {:?}",
+                l1_block
+            );
+        }
+        println!(
+            "client_state_update.client_state.next_expected_l1_height {}",
+            client_state.next_exp_l1_block()
+        );
+
+        if let Some(tip_l1_block) = client_state.get_tip_l1_block() {
+            println!(
+                "client_state_update.client_state.tip_l1_block.height {}",
+                tip_l1_block.height()
+            );
+            println!(
+                "client_state_update.client_state.tip_l1_block.blkid {:?}",
+                tip_l1_block.blkid()
+            );
+        }
+
+        if let Some(tip_l1_block) = client_state.get_deepest_l1_block() {
+            println!(
+                "client_state_update.client_state.deepest_l1_block.height {}",
+                tip_l1_block.height()
+            );
+            println!(
+                "client_state_update.client_state.deepest_l1_block.blkid {:?}",
+                tip_l1_block.blkid()
+            );
+        }
+
+        if let Some(last_internal_state) = client_state.get_last_internal_state() {
+            println!(
+                "client_state_update.client_state.last_internal_state.blkid {:?}",
+                last_internal_state.blkid()
+            );
+        }
+
+        for sync_action in sync_actions.iter() {
+            match sync_action {
+                SyncAction::FinalizeEpoch(epoch) => {
+                    println!("client_state_update.sync_action FinalizeEpoch");
+                    println!("client_state_update.sync_action.epoch {}", epoch.epoch());
+                    println!(
+                        "client_state_update.sync_action.last_slot {}",
+                        epoch.last_slot()
+                    );
+                    println!(
+                        "client_state_update.sync_action.last_blkid {:?}",
+                        epoch.last_blkid()
+                    );
+                }
+                SyncAction::L2Genesis(block_id) => {
+                    println!("client_state_update.sync_action L2Genesis");
+                    println!("client_state_update.sync_action.blkid {}", block_id);
+                }
+                SyncAction::UpdateCheckpointInclusion { .. } => {
+                    println!("client_state_update.sync_action UpdateCheckpointInclusion");
+                }
+            }
+        }
     }
 
     Ok(())
