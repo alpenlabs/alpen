@@ -29,7 +29,10 @@ impl AsmSpec for StrataAsmSpec {
 
 /// Computes the next AnchorState by applying the Anchor State Machine (ASM) state transition
 /// function (STF) to the given previous state and new L1 block.
-pub fn asm_stf<S: AsmSpec>(pre_state: AnchorState, block: &Block) -> Result<AnchorState, AsmError> {
+pub fn asm_stf<S: AsmSpec>(
+    pre_state: &AnchorState,
+    block: &Block,
+) -> Result<AnchorState, AsmError> {
     // 1. Validate and update PoW header continuity for the new block.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
@@ -42,7 +45,7 @@ pub fn asm_stf<S: AsmSpec>(pre_state: AnchorState, block: &Block) -> Result<Anch
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Bring each subprotocol into the subproto manager.
-    let mut loader_stage = SubprotoLoaderStage::new(&pre_state, &mut manager);
+    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager);
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its slice of txs.

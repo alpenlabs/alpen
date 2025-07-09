@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitcoin.workspace = true
+borsh.workspace = true
+moho-runtime-interface.workspace = true
+moho-types.workspace = true
+strata-asm-common.workspace = true
+strata-asm-stf.workspace = true
+strata-primitives.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true
 
 [lints]
 workspace = true
