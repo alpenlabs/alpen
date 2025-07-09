@@ -29,6 +29,14 @@ impl Subprotocol for BridgeV1Subproto {
         todo!()
     }
 
+    fn pre_process_txs(
+        _state: &Self::State,
+        _txs: &[strata_asm_common::TxInput<'_>],
+        _collector: &mut impl strata_asm_common::AuxInputCollector,
+    ) {
+        todo!()
+    }
+
     fn process_txs(
         _state: &mut Self::State,
         _txs: &[strata_asm_common::TxInput<'_>],
