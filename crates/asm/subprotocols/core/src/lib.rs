@@ -46,6 +46,8 @@ impl Subprotocol for OLCoreSubproto {
 
     type Msg = NullMsg<CORE_SUBPROTOCOL_ID>;
 
+    type AuxInput = ();
+
     fn init() -> Self::State {
         todo!()
     }
@@ -58,7 +60,12 @@ impl Subprotocol for OLCoreSubproto {
         todo!()
     }
 
-    fn process_txs(_state: &mut Self::State, _txs: &[TxInput<'_>], _relayer: &mut impl MsgRelayer) {
+    fn process_txs(
+        _state: &mut Self::State,
+        _txs: &[TxInput<'_>],
+        _aux_inputs: &[Self::AuxInput],
+        _relayer: &mut impl MsgRelayer,
+    ) {
         todo!()
     }
 

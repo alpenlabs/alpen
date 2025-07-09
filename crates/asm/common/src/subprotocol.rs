@@ -29,6 +29,14 @@ pub trait Subprotocol: 'static {
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + Any;
 
+    /// Type of auxiliary input required by the subprotocol.
+    ///
+    /// This associated type represents the exact data requested via `AuxInputCollector` (for
+    /// example, block headers or other off-chain metadata). It must be serializable, verifiable,
+    /// and correspond directly to the output of the collector. Implementations of
+    /// `process_txs` are responsible for validating this data before using it in any state updates.
+    type AuxInput: Any + BorshSerialize + BorshDeserialize;
+
     /// Constructs a new state to use if the ASM does not have an instance of it.
     fn init() -> Self::State;
 
@@ -51,7 +59,12 @@ pub trait Subprotocol: 'static {
     ///
     /// Updates the subprotocol’s internal state and collects any resulting `InterprotoMsg` and
     /// `Log` on the provided `MsgRelayer`.
-    fn process_txs(state: &mut Self::State, txs: &[TxInput<'_>], relayer: &mut impl MsgRelayer);
+    fn process_txs(
+        state: &mut Self::State,
+        txs: &[TxInput<'_>],
+        aux_inputs: &[Self::AuxInput],
+        relayer: &mut impl MsgRelayer,
+    );
 
     /// Use the msgs other subprotocols to update its state.
     ///

@@ -27,7 +27,9 @@ impl MohoProgram for AsmMohoIncremetal {
     }
 
     fn process_transition(pre_state: &AnchorState, inp: &AsmStepInput) -> AnchorState {
-        asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0).unwrap().0
+        asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0, &inp.aux_bundle)
+            .unwrap()
+            .0
     }
 
     fn extract_next_vk(_state: &Self::State) -> moho_types::InnerVerificationKey {

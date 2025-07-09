@@ -25,6 +25,8 @@ impl Subprotocol for BridgeV1Subproto {
 
     type Msg = NullMsg<BRIDGE_V1_SUBPROTOCOL_ID>;
 
+    type AuxInput = ();
+
     fn init() -> Self::State {
         todo!()
     }
@@ -40,6 +42,7 @@ impl Subprotocol for BridgeV1Subproto {
     fn process_txs(
         _state: &mut Self::State,
         _txs: &[strata_asm_common::TxInput<'_>],
+        _aux_inputs: &[Self::AuxInput],
         _relayer: &mut impl strata_asm_common::MsgRelayer,
     ) {
         todo!()

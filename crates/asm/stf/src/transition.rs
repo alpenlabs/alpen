@@ -3,7 +3,9 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, Log, Stage};
+use strata_asm_common::{
+    AnchorState, AsmError, AsmResult, AsmSpec, AuxBundle, ChainViewState, Log, Stage,
+};
 use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_core::OLCoreSubproto;
 use strata_l1_txfmt::MagicBytes;
@@ -32,6 +34,7 @@ impl AsmSpec for StrataAsmSpec {
 pub fn asm_stf<S: AsmSpec>(
     pre_state: &AnchorState,
     block: &Block,
+    aux: &AuxBundle,
 ) -> AsmResult<(AnchorState, Vec<Log>)> {
     // 1. Validate and update PoW header continuity for the new block.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
@@ -45,7 +48,7 @@ pub fn asm_stf<S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Bring each subprotocol into the subproto manager.
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager);
+    let mut loader_stage = SubprotoLoaderStage::new(pre_state, aux, &mut manager);
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its slice of txs.

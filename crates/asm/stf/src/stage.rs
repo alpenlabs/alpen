@@ -3,20 +3,26 @@
 
 use std::collections::BTreeMap;
 
-use strata_asm_common::{AnchorState, Stage, Subprotocol, SubprotocolId, TxInput};
+use strata_asm_common::{AnchorState, AuxBundle, Stage, Subprotocol, SubprotocolId, TxInput};
 
 use crate::manager::SubprotoManager;
 
 /// Stage that loads each subprotocol from the anchor state we're basing off of.
 pub(crate) struct SubprotoLoaderStage<'a> {
     anchor_state: &'a AnchorState,
+    aux_bundle: &'a AuxBundle,
     manager: &'a mut SubprotoManager,
 }
 
 impl<'a> SubprotoLoaderStage<'a> {
-    pub(crate) fn new(anchor_state: &'a AnchorState, manager: &'a mut SubprotoManager) -> Self {
+    pub(crate) fn new(
+        anchor_state: &'a AnchorState,
+        aux_bundle: &'a AuxBundle,
+        manager: &'a mut SubprotoManager,
+    ) -> Self {
         Self {
             anchor_state,
+            aux_bundle,
             manager,
         }
     }
@@ -33,7 +39,15 @@ impl Stage for SubprotoLoaderStage<'_> {
             None => S::init(),
         };
 
-        self.manager.insert_subproto::<S>(state);
+        // OPTIMIZE: Linear scan is done every time to find the section
+        let aux_inputs = match self.aux_bundle.find_payload(S::ID) {
+            Some(sec) => sec
+                .try_to_aux_inputs::<S>()
+                .expect("asm: invalid aux inputs"),
+            None => Vec::new(),
+        };
+
+        self.manager.insert_subproto::<S>(state, aux_inputs);
     }
 }
 
