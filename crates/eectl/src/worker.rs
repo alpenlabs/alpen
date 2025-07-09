@@ -5,6 +5,7 @@ use std::sync::Arc;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
+use strata_db::DbError;
 use strata_primitives::l2::L2BlockCommitment;
 use strata_state::id::L2BlockId;
 use strata_status::StatusChannel;
@@ -17,7 +18,6 @@ use crate::{
     errors::{EngineError, EngineResult},
     handle::{ExecCommand, ExecCtlInput},
     messages::ExecPayloadData,
-    sync::sync_chainstate_to_el,
 };
 
 #[expect(missing_debug_implementations)]
@@ -118,6 +118,96 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
             Ok(())
         }
     }
+
+    /// Sync missing blocks in EL using payloads stored in L2 block database.
+    ///
+    /// TODO: retry on network errors
+    pub fn sync_missing_blocks_to_el(
+        &mut self,
+        context: &impl ExecWorkerContext,
+    ) -> Result<(), EngineError> {
+        info!("Syncing chainstate to EL");
+        let tip_block = context.fetch_cur_tip()?;
+        debug!(?tip_block, "L2 tip block");
+
+        let tip_idx = tip_block.slot();
+
+        // last idx of chainstate whose corresponding block is present in el
+        let sync_from_idx = find_last_match((0, tip_idx), |idx| {
+            let blkid = context
+                .fetch_blkid_at_height(idx)?
+                .ok_or(DbError::MissingL2BlockHeight(idx))?;
+            self.engine.check_block_exists(L2BlockRef::Id(blkid))
+        })?
+        .map(|idx| idx + 1) // sync from next index
+        .unwrap_or(0); // sync from genesis
+        info!(%sync_from_idx, "last known EL block index");
+
+        if sync_from_idx >= tip_idx {
+            info!("EL in sync with chainstate");
+            return Ok(());
+        }
+
+        // Collect all payloads from sync_from_idx..=tip_idx
+        let mut payloads_to_sync = Vec::with_capacity((tip_idx - sync_from_idx) as usize + 1);
+        let mut block_to_sync = tip_block;
+        for _ in sync_from_idx..=tip_idx {
+            let payload = context
+                .fetch_exec_payload(&block_to_sync, &self.exec_env_id)?
+                .ok_or(DbError::MissingL2Block(*block_to_sync.blkid()))?;
+            payloads_to_sync.push((block_to_sync, payload));
+            block_to_sync = context.fetch_parent(&block_to_sync)?;
+        }
+        payloads_to_sync.reverse();
+
+        // Sanity check
+        if let (Some((first_block, _)), Some((last_block, _))) =
+            (payloads_to_sync.first(), payloads_to_sync.last())
+        {
+            assert_eq!(first_block.slot(), sync_from_idx);
+            assert_eq!(last_block.slot(), tip_idx);
+        }
+
+        for (block, payload) in payloads_to_sync {
+            debug!(?payload, "Submitting payload to engine");
+            self.call_engine("engine_submit_payload", |eng| {
+                eng.submit_payload(payload.clone())
+            })?;
+            self.call_engine("engine_update_safe_block", |eng| {
+                eng.update_safe_block(*block.blkid())
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+fn find_last_match(
+    range: (u64, u64),
+    predicate: impl Fn(u64) -> Result<bool, EngineError>,
+) -> Result<Option<u64>, EngineError> {
+    let (mut left, mut right) = range;
+
+    // Check the leftmost value first
+    if !predicate(left)? {
+        return Ok(None); // If the leftmost value is false, no values can be true
+    }
+
+    let mut best_match = None;
+
+    // Proceed with binary search
+    while left <= right {
+        let mid = left + (right - left) / 2;
+
+        if predicate(mid)? {
+            best_match = Some(mid); // Update best match
+            left = mid + 1; // Continue searching in the right half
+        } else {
+            right = mid - 1; // Search in the left half
+        }
+    }
+
+    Ok(best_match)
 }
 
 /// Execution controller worker task entrypoint.
@@ -136,7 +226,7 @@ pub fn worker_task_inner<E: ExecEngineCtl>(
         Ok(false) => {
             // Current chain tip tip block is not known by the EL.
             warn!(?chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(context, state.engine.as_ref(), state.exec_env_id)?;
+            state.sync_missing_blocks_to_el(context)?;
         }
         Err(error) => {
             // Likely network issue
@@ -231,4 +321,26 @@ pub trait ExecWorkerContext {
     /// Retrieves block ID at height, returning `None` if the height is valid but the block doesn't
     /// exist.
     fn fetch_blkid_at_height(&self, height: u64) -> EngineResult<Option<L2BlockId>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_last_match() {
+        // find match
+        assert!(matches!(
+            find_last_match((0, 5), |idx| Ok(idx < 3)),
+            Ok(Some(2))
+        ));
+        // found no match
+        assert!(matches!(find_last_match((0, 5), |_| Ok(false)), Ok(None)));
+        // got error
+        let error_message = "intentional error for test";
+        assert!(matches!(
+            find_last_match((0, 5), |_| Err(EngineError::Other(error_message.into()))),
+            Err(err) if err.to_string().contains(error_message)
+        ));
+    }
 }
