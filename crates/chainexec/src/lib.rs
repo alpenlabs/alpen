@@ -14,7 +14,10 @@ mod executor;
 mod output;
 mod state_access;
 mod tip_state;
-mod validation_util;
+
+// this can be directly exported since it's utils, I don't love this, but it's
+// fine for now
+pub mod validation_util;
 
 pub use diff::ChangedState;
 pub use errors::{Error, ExecResult};

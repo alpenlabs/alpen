@@ -12,4 +12,3 @@ strata-primitives.workspace = true
 strata-state.workspace = true
 
 thiserror.workspace = true
-tracing.workspace = true

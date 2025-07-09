@@ -8,7 +8,7 @@ use strata_chain_worker::{
     ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerError, WorkerResult,
     WorkerShared,
 };
-use strata_chainexec::{ChainExecutor, TipState};
+use strata_chainexec::{validation_util, ChainExecutor, TipState};
 use strata_chaintsn::transition::process_block;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
@@ -21,7 +21,7 @@ use strata_primitives::{
 use strata_state::{
     batch::EpochSummary,
     block::L2BlockBundle,
-    block_validation::validate_block_segments,
+    block_validation::validate_block_structure,
     chain_state::Chainstate,
     client_state::ClientState,
     prelude::*,
@@ -533,13 +533,13 @@ fn wait_for_fcm_event(
         tokio::select! {
             m = fcm_rx.recv() => {
                 m.map(FcmEvent::NewFcmMsg).unwrap_or_else(|| {
-                    warn!("Fcm channel closed");
+                    trace!("input channel closed");
                     FcmEvent::Abort
                 })
             }
             c = wait_for_client_change(cl_rx) => {
                 c.map(FcmEvent::NewStateUpdate).unwrap_or_else(|_| {
-                    warn!("ClientState update sender closed");
+                    trace!("ClientState update channel closed");
                     FcmEvent::Abort
                 })
             }
@@ -630,15 +630,21 @@ fn handle_new_block(
     let slot = bundle.header().slot();
     let blkid = &bundle.header().get_blockid();
     info!(%blkid, %slot, "handling new block");
-    debug!(?fcm_state.cur_best_block);
-    debug!(?fcm_state.chain_tracker);
-    debug!(?fcm_state.cur_chainstate);
+
+    /*
+      debug!(?fcm_state.cur_best_block);
+      debug!(?fcm_state.chain_tracker);
+      debug!(?fcm_state.cur_chainstate);
+    */
 
     // First, decide if the block seems correctly signed and we haven't
     // already marked it as invalid.
-    let chstate = fcm_state.cur_chainstate.as_ref();
-    let correctly_signed = check_new_block(blkid, bundle.block(), chstate, fcm_state)?;
-    if !correctly_signed {
+    let check_res = validation_util::check_block_proposal_valid(
+        blkid,
+        bundle.block(),
+        fcm_state.params.rollup(),
+    );
+    if check_res.is_err() {
         // It's invalid, write that and return.
         return Ok(false);
     }
@@ -725,44 +731,6 @@ fn handle_new_block(
     debug!(?fcm_state.cur_chainstate);
 
     res
-}
-
-/// Considers if the block is plausibly valid and if we should attach it to the
-/// pending unfinalized blocks tree.  The block is assumed to already be
-/// structurally consistent.
-// TODO remove FCM arg from this
-// TODO remove from this module, exists in chainexec
-fn check_new_block(
-    blkid: &L2BlockId,
-    block: &L2Block,
-    _chainstate: &Chainstate,
-    state: &ForkChoiceManager,
-) -> anyhow::Result<bool, Error> {
-    let params = state.params.as_ref();
-
-    // If it's not the genesis block, check that the block is correctly signed.
-    if block.header().slot() > 0 {
-        let cred_ok =
-            strata_state::block_validation::check_block_credential(block.header(), params.rollup());
-        if !cred_ok {
-            warn!("block has invalid credential");
-            return Ok(false);
-        }
-    }
-
-    // Check that we haven't already marked the block as invalid.
-    if let Some(status) = state.get_block_status(blkid)? {
-        if status == strata_db::traits::BlockStatus::Invalid {
-            warn!("rejecting block that fails validation");
-            return Ok(false);
-        }
-    }
-
-    if !validate_block_segments(block) {
-        return Ok(false);
-    }
-
-    Ok(true)
 }
 
 /// Returns if we should switch to the new fork.  This is dependent on our
