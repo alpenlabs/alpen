@@ -33,10 +33,12 @@ impl MohoProgram for AsmMohoIncremetal {
     }
 
     fn extract_next_vk(_state: &Self::State) -> moho_types::InnerVerificationKey {
+        // REVIEW: since the state is opaque, we might need to extract this from log instead
         todo!()
     }
 
     fn extract_export_state(_state: &Self::State) -> moho_types::ExportState {
+        // REVIEW: since the state is opaque, we might need to extract this from log instead
         todo!()
     }
 }
