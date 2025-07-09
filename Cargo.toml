@@ -44,6 +44,7 @@ members = [
   "crates/util/mmr",
   "crates/util/shrex",
   "crates/vtxjmt",
+  "crates/db-tests",
   "provers/risc0",
   "provers/sp1",
 
@@ -113,6 +114,7 @@ strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
 strata-rocksdb = { path = "crates/rocksdb-store" }
+strata-db-tests = { path = "crates/db-tests" }
 strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }

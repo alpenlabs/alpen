@@ -1,0 +1,16 @@
+[package]
+name = "strata-db-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strata-db = { path = "../db" }
+strata-primitives = { path = "../primitives" }
+strata-state = { path = "../state" }
+strata-test-utils = { path = "../test-utils" }
+bitcoin = { workspace = true }
+strata-l1tx = { path = "../l1tx" }
+zkaleido = { workspace = true }
+
+[dev-dependencies]
+# This crate is intended for testing, so no dev-dependencies needed

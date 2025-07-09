@@ -21,6 +21,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+strata-db-tests.workspace = true
 
 bitcoin.workspace = true
 

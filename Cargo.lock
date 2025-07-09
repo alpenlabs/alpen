@@ -13786,6 +13786,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-db-tests"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "strata-db",
+ "strata-l1tx",
+ "strata-primitives",
+ "strata-state",
+ "strata-test-utils",
+ "zkaleido",
+]
+
+[[package]]
 name = "strata-eectl"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14113,6 +14126,7 @@ dependencies = [
  "borsh",
  "rockbound",
  "strata-db",
+ "strata-db-tests",
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
