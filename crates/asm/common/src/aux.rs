@@ -5,14 +5,14 @@ use crate::{AsmError, Mismatched, Subprotocol};
 
 /// A single subprotocol’s auxiliary‐input payload, stored as raw Borsh‐serialized blobs.
 ///
-/// `AuxPayload` contains everything a given subprotocol asked for during its
-/// `pre_process_txs` phase, in opaque byte form. The `id` field tells you
-/// which `Subprotocol::ID` this belongs to, and `data` is a list of raw
-/// Borsh‐serialized AuxInput blobs—one blob per instance of that protocol’s
-/// `AuxInput`.
+/// [`AuxPayload`] contains everything a given subprotocol asked for during its
+/// [`pre_process_txs`](Subprotocol::pre_process_txs) phase, in opaque byte
+/// form. The `id` field tells you which [`Subprotocol::ID`] this belongs to, and `data` is a list
+/// of raw Borsh‐serialized AuxInput blobs—one blob per instance of
+/// [`Subprotocol::AuxInput`].
 ///
 /// Each entry in `data` must deserialize into an instance of
-/// `<P as Subprotocol>::AuxInput`, so that
+/// [`Subprotocol::AuxInput`], so that
 /// `payload.data` → `Vec<P::AuxInput>`.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AuxPayload {

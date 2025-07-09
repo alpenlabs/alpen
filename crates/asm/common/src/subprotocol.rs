@@ -121,7 +121,7 @@ pub trait SubprotoHandler {
 /// Responsible for gathering any off-chain or auxiliary data that
 /// subprotocols declare during `pre_process_txs`.
 ///
-/// Implementors should record requests (e.g. “I need header for block 123”)
+/// Implementers should record requests (e.g. “I need header for block 123”)
 /// and then fetch all of them in batch before `process_txs` runs.
 ///
 /// # Notes
