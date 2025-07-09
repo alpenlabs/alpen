@@ -113,7 +113,9 @@ impl<W: WorkerContext> WorkerState<W> {
 
     fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
         let blkid = block.blkid();
+
         debug!(%blkid, "Trying to execute block");
+
         // Prepare execution dependencies.
         let bundle = self
             .context
@@ -144,7 +146,7 @@ impl<W: WorkerContext> WorkerState<W> {
         // Invoke the executor and produce an output.
         let output = self
             .chain_exec
-            .execute_block(&header_ctx, bundle.body(), &exec_ctx)?;
+            .verify_block(&header_ctx, bundle.body(), &exec_ctx)?;
 
         // Also, do whatever we have to do to complete the epoch.
         if is_epoch_terminal {
@@ -152,6 +154,7 @@ impl<W: WorkerContext> WorkerState<W> {
             self.handle_complete_epoch(block.blkid(), bundle.block(), &output)?;
         }
 
+        // Finally, we can persist the outputs.
         self.context.store_block_output(block.blkid(), &output)?;
 
         Ok(())

@@ -56,6 +56,7 @@ pub enum WorkerError {
 impl From<WorkerError> for strata_chainexec::Error {
     fn from(err: WorkerError) -> Self {
         use strata_chainexec::Error as ExecError;
+        // TODO improve these relationships, they're kinda backwards in places
         match err {
             WorkerError::MissingL2Block(block) => ExecError::MissingL2Header(block),
             WorkerError::MissingPreState(block) => ExecError::MissingBlockPreState(*block.blkid()),

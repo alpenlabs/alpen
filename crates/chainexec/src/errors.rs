@@ -15,11 +15,11 @@ pub enum Error {
     #[error("missing L2 block header {0}")]
     MissingL2Header(L2BlockId),
 
-    #[error("transition: {0}")]
-    Transition(#[from] strata_chaintsn::errors::TsnError),
-
     #[error("computed state root mismatch with block state root")]
     StateRootMismatch,
+
+    #[error("transition: {0}")]
+    Transition(#[from] strata_chaintsn::errors::TsnError),
 
     #[error("not yet implemented")]
     Unimplemented,
@@ -32,3 +32,5 @@ pub enum Error {
     #[error("unexpected failure: {0}")]
     Unexpected(String),
 }
+
+// Removed this, it looks like we shouldn't have this ine

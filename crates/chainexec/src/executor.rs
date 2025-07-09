@@ -1,13 +1,13 @@
 //! Chain executor.
 
 use strata_chaintsn::{
-    context::{BlockHeaderContext, StateAccessor},
+    context::{BlockHeaderContext, L2HeaderAndParent, StateAccessor},
     transition::process_block,
 };
 use strata_primitives::prelude::*;
-use strata_state::block::L2BlockBody;
+use strata_state::{block::L2BlockBody, header::L2Header};
 
-use crate::{BlockExecutionOutput, ExecContext, ExecResult, MemStateAccessor};
+use crate::{BlockExecutionOutput, Error, ExecContext, ExecResult, MemStateAccessor};
 
 /// Type alias for the state accessor we're using.
 type StateAccImpl = MemStateAccessor;
@@ -55,6 +55,21 @@ impl ChainExecutor {
         let exec_output = BlockExecutionOutput::new(computed_sr, Vec::new(), wb);
         Ok(exec_output)
     }
+
+    /// Executes the block and verifies that the body matches the header and any
+    /// other associated data.
+    ///
+    /// If this succeeds, then the block is all good.
+    pub fn verify_block(
+        &self,
+        header_and_parent: &L2HeaderAndParent,
+        block_body: &L2BlockBody,
+        ctx: &impl ExecContext,
+    ) -> ExecResult<BlockExecutionOutput> {
+        let output = self.execute_block(header_and_parent, block_body, ctx)?;
+        verify_output_matches_block(header_and_parent, block_body, &output)?;
+        Ok(output)
+    }
 }
 
 fn try_execute_block_inner(
@@ -91,6 +106,19 @@ fn try_execute_block_inner(
             warn!(block_sr = %header.state_root(), %computed_sr, "state root mismatch");
             Err(Error::StateRootMismatch)?
     }*/
+
+    Ok(())
+}
+
+fn verify_output_matches_block(
+    hap: &L2HeaderAndParent,
+    _body: &L2BlockBody,
+    output: &BlockExecutionOutput,
+) -> ExecResult<()> {
+    // Check that the state roots match.
+    if output.computed_state_root() != hap.header().state_root() {
+        return Err(Error::StateRootMismatch);
+    }
 
     Ok(())
 }
