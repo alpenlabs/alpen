@@ -42,8 +42,8 @@ impl AsmStepInput {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
 /// A wrapper around Bitcoin's `Block` to provide Borsh (de)serialization.
+#[derive(Debug, Clone, PartialEq)]
 pub struct L1Block(pub Block);
 
 impl BorshSerialize for L1Block {

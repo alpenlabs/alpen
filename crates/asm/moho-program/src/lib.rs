@@ -3,4 +3,4 @@
 mod input;
 mod program;
 
-pub use program::AsmMohoIncremetal;
+pub use program::AsmStfProgram;
