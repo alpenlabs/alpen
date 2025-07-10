@@ -37,15 +37,18 @@ impl ExecWorkerContext for ExecWorkerCtx {
     }
 
     fn fetch_parent(&self, block: &L2BlockCommitment) -> EngineResult<L2BlockCommitment> {
-        let parent_blk = self
+        let blk = self
             .l2man
             .get_block_data_blocking(block.blkid())?
             .ok_or(DbError::MissingL2Block(*block.blkid()))?;
-        let parent_blkid = parent_blk.header().parent();
-        // REVIEW: Check if simply doing -1 is enough or we want to fetch the parent block again and
-        // get the slot from there in case the slot are empty
-        let parent_slot = block.slot() - 1;
-        Ok(L2BlockCommitment::new(parent_slot, *parent_blkid))
+        let parent_blk = self
+            .l2man
+            .get_block_data_blocking(blk.header().parent())?
+            .ok_or(DbError::MissingL2Block(*blk.header().parent()))?;
+        Ok(L2BlockCommitment::new(
+            parent_blk.header().slot(),
+            parent_blk.header().get_blockid(),
+        ))
     }
 
     fn fetch_cur_tip(&self) -> EngineResult<L2BlockCommitment> {
