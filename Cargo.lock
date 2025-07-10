@@ -13574,6 +13574,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "moho-types",
  "strata-l1-txfmt",
  "strata-primitives",
  "thiserror 2.0.12",

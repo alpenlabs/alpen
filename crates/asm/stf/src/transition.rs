@@ -4,7 +4,7 @@
 
 use bitcoin::{block::Block, params::Params};
 use strata_asm_common::{
-    AnchorState, AsmError, AsmResult, AsmSpec, AuxBundle, ChainViewState, Log, Stage,
+    AnchorState, AsmError, AsmLog, AsmResult, AsmSpec, AuxBundle, ChainViewState, Stage,
 };
 use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_core::OLCoreSubproto;
@@ -35,7 +35,7 @@ pub fn asm_stf<S: AsmSpec>(
     pre_state: &AnchorState,
     block: &Block,
     aux: &AuxBundle,
-) -> AsmResult<(AnchorState, Vec<Log>)> {
+) -> AsmResult<(AnchorState, Vec<AsmLog>)> {
     // 1. Validate and update PoW header continuity for the new block.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state

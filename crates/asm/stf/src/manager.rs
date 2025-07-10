@@ -3,7 +3,7 @@
 use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
-    AnchorState, AsmError, InterprotoMsg, Log, MsgRelayer, SectionState, SubprotoHandler,
+    AnchorState, AsmError, AsmLog, InterprotoMsg, MsgRelayer, SectionState, SubprotoHandler,
     Subprotocol, SubprotocolId, TxInput,
 };
 
@@ -70,7 +70,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
 /// Manages subproto handlers and relays messages between them.
 pub(crate) struct SubprotoManager {
     handlers: BTreeMap<SubprotocolId, Box<dyn SubprotoHandler>>,
-    logs: Vec<Log>,
+    logs: Vec<AsmLog>,
 }
 
 impl SubprotoManager {
@@ -166,7 +166,7 @@ impl SubprotoManager {
     /// # Panics
     ///
     /// Panics if the exported sections are not sorted by `id`.
-    pub(crate) fn export_sections_and_logs(self) -> (Vec<SectionState>, Vec<Log>) {
+    pub(crate) fn export_sections_and_logs(self) -> (Vec<SectionState>, Vec<AsmLog>) {
         let sections = self
             .handlers
             .into_values()
@@ -200,7 +200,7 @@ impl MsgRelayer for SubprotoManager {
         h.accept_msg(m);
     }
 
-    fn emit_log(&mut self, log: Log) {
+    fn emit_log(&mut self, log: AsmLog) {
         self.logs.push(log);
     }
 
