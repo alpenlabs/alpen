@@ -4,7 +4,8 @@ use rockbound::{rocksdb, OptimisticTransactionDB};
 use tempfile::TempDir;
 
 use crate::{
-    l2::db::L2Db, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db, RBCheckpointDB, SyncEventDb, RocksDbBackend, ProofDb, RBL1WriterDb,
+    l2::db::L2Db, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db, ProofDb, RBCheckpointDB,
+    RBL1WriterDb, RocksDbBackend, SyncEventDb,
 };
 
 pub fn get_rocksdb_tmp_instance() -> anyhow::Result<(Arc<OptimisticTransactionDB>, DbOpsConfig)> {

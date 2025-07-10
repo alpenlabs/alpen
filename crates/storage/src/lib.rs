@@ -80,18 +80,13 @@ where
     let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), l2_db));
     let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
 
-    let sync_event_manager = Arc::new(SyncEventManager::new(
-        pool.clone(),
-        sync_event_db,
-    ));
-    let client_state_manager =
-        Arc::new(ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?);
+    let sync_event_manager = Arc::new(SyncEventManager::new(pool.clone(), sync_event_db));
+    let client_state_manager = Arc::new(
+        ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?,
+    );
 
     // (see above)
-    let checkpoint_manager = Arc::new(CheckpointDbManager::new(
-        pool.clone(),
-        checkpoint_db,
-    ));
+    let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     Ok(NodeStorage {
         l1_block_manager,

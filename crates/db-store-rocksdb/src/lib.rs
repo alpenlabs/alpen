@@ -43,10 +43,10 @@ use l2::{
     db::L2Db,
     schemas::{L2BlockHeightSchema, L2BlockSchema, L2BlockStatusSchema},
 };
+pub use prover::db::ProofDb;
 use rockbound::{schema::ColumnFamilyName, Schema, TransactionRetry};
 pub use sync_event::db::SyncEventDb;
 pub use writer::db::RBL1WriterDb;
-pub use prover::db::ProofDb;
 use writer::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 
 use crate::{
@@ -141,7 +141,6 @@ pub fn open_rocksdb_backend(
     Ok(init_rocksdb_backend(rbdb, ops_config))
 }
 
-
 /// Complete RocksDB backend with all database types
 #[derive(Debug)]
 pub struct RocksDbBackend {
@@ -156,6 +155,7 @@ pub struct RocksDbBackend {
 }
 
 impl RocksDbBackend {
+    #[allow(clippy::too_many_arguments)] // hard to avoid here
     pub fn new(
         l1_db: Arc<L1Db>,
         l2_db: Arc<L2Db>,
