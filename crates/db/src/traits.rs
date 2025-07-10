@@ -160,7 +160,6 @@ pub enum BlockStatus {
     Invalid,
 }
 
-
 /// Database for checkpoint data.
 pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Inserts an epoch summary retrievable by its epoch commitment.

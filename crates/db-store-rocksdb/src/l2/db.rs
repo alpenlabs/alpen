@@ -106,9 +106,10 @@ impl L2BlockDatabase for L2Db {
     }
 
     fn get_tip_block(&self) -> DbResult<L2BlockId> {
-        use crate::utils::{get_last_idx};
-        
-        let mut height = get_last_idx::<L2BlockHeightSchema>(&self.db)?.ok_or(DbError::NotBootstrapped)?;
+        use crate::utils::get_last_idx;
+
+        let mut height =
+            get_last_idx::<L2BlockHeightSchema>(&self.db)?.ok_or(DbError::NotBootstrapped)?;
 
         loop {
             let blocks = self.get_blocks_at_height(height)?;
