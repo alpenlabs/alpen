@@ -124,17 +124,21 @@ pub trait SubprotoHandler {
     fn to_section(&self) -> SectionState;
 }
 
-/// Responsible for gathering any off-chain or auxiliary data that
-/// subprotocols declare during `pre_process_txs`.
+/// Responsible for recording a request for auxiliary input data.
 ///
-/// Implementers should record requests (e.g. “I need header for block 123”)
-/// and then fetch all of them in batch before `process_txs` runs.
+/// The caller provides an opaque byte slice; the collector must interpret
+/// those bytes out-of-band according to its own conventions
 ///
-/// # Notes
+/// # Parameters
 ///
-/// If any requested auxiliary data is malformed or cannot be provided,
-/// the subsequent `process_txs` call will panic.
+/// - `data`: an opaque byte slice whose meaning is defined entirely by the collector’s
+///   implementation.
+///
+/// # Panics
+///
+/// Implementations must understand the details of the subprotocol to understand the `data`
+/// requested
 pub trait AuxInputCollector {
-    /// Request the L1 header for a specific block number.
-    fn request_header(&mut self, block_number: u64);
+    /// Record that this exact `data` blob will be needed later as auxiliary input.
+    fn request_aux_input(&mut self, data: &[u8]);
 }
