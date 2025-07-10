@@ -7,14 +7,19 @@ use strata_primitives::{l1::L1BlockCommitment, l2::L2BlockCommitment, proof::Rol
 pub enum AsmLog {
     /// Deposit event carrying deposit operation details.
     Deposit(DepositLog),
+
     /// Forced inclusion event carrying raw payload details.
     ForcedInclusion(ForcedInclusionData),
+
     /// Checkpoint update event carrying block commitment references.
     CheckpointUpdate(CheckpointUpdate),
+
     /// Verification key update for the rollup state transition function.
     OlStfUpdate(OlStfUpdate),
+
     /// Verification key update for the execution environment state transition.
     AsmStfUpdate(AsmStfUpdate),
+
     /// Export state update event carrying export entry data.
     NewExportEntry(NewExportEntry),
 }
@@ -65,6 +70,8 @@ pub struct AsmStfUpdate {
 /// Details for an export state update event.
 #[derive(Debug, Clone)]
 pub struct NewExportEntry {
+    /// Export container ID.
+    pub container_id: u16,
     /// Export entry data.
-    pub entry: ExportEntry,
+    pub entry_data: ExportEntry,
 }
