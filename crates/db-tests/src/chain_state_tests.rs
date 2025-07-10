@@ -7,7 +7,7 @@ use strata_state::{
 };
 use strata_test_utils::ArbitraryGenerator;
 
-pub fn test_write_genesis_state<T: ChainstateDatabase>(db: &T) {
+pub fn test_write_genesis_state(db: &impl ChainstateDatabase) {
     let mut generator = ArbitraryGenerator::new();
     let genesis_state: Chainstate = generator.generate();
     let genesis_blockid: L2BlockId = generator.generate();
@@ -31,7 +31,7 @@ pub fn test_write_genesis_state<T: ChainstateDatabase>(db: &T) {
     assert!(res.is_err_and(|x| matches!(x, DbError::OverwriteStateUpdate(0))));
 }
 
-pub fn test_write_state_update<T: ChainstateDatabase>(db: &T) {
+pub fn test_write_state_update(db: &impl ChainstateDatabase) {
     let mut generator = ArbitraryGenerator::new();
     let genesis_state: Chainstate = generator.generate();
     let genesis_blockid: L2BlockId = generator.generate();
@@ -56,7 +56,7 @@ pub fn test_write_state_update<T: ChainstateDatabase>(db: &T) {
     assert!(res.is_err_and(|x| matches!(x, DbError::OooInsert("Chainstate", 4))));
 }
 
-pub fn test_get_earliest_and_last_state_idx<T: ChainstateDatabase>(db: &T) {
+pub fn test_get_earliest_and_last_state_idx(db: &impl ChainstateDatabase) {
     let mut generator = ArbitraryGenerator::new();
     let genesis_state: Chainstate = generator.generate();
     let genesis_blockid: L2BlockId = generator.generate();
@@ -73,7 +73,7 @@ pub fn test_get_earliest_and_last_state_idx<T: ChainstateDatabase>(db: &T) {
     }
 }
 
-pub fn test_purge<T: ChainstateDatabase>(db: &T) {
+pub fn test_purge(db: &impl ChainstateDatabase) {
     let mut generator = ArbitraryGenerator::new();
     let genesis_state: Chainstate = ArbitraryGenerator::new().generate();
     let batch = WriteBatch::new_replace(genesis_state.clone());
@@ -109,7 +109,7 @@ pub fn test_purge<T: ChainstateDatabase>(db: &T) {
     assert!(res.is_err_and(|x| matches!(x, DbError::MissingL2State(1))));
 }
 
-pub fn test_rollback<T: ChainstateDatabase>(db: &T) {
+pub fn test_rollback(db: &impl ChainstateDatabase) {
     let mut generator = ArbitraryGenerator::new();
     let genesis_state: Chainstate = generator.generate();
     let batch = WriteBatch::new_replace(genesis_state.clone());
@@ -151,7 +151,7 @@ pub fn test_rollback<T: ChainstateDatabase>(db: &T) {
     assert_eq!(db.get_last_write_idx().unwrap(), 2);
 }
 
-pub fn test_purge_and_rollback<T: ChainstateDatabase>(db: &T) {
+pub fn test_purge_and_rollback(db: &impl ChainstateDatabase) {
     let mut generator = ArbitraryGenerator::new();
     let genesis_state: Chainstate = generator.generate();
     let batch = WriteBatch::new_replace(genesis_state.clone());

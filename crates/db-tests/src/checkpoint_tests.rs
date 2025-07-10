@@ -3,7 +3,7 @@ use strata_db::types::CheckpointEntry;
 use strata_state::batch::EpochSummary;
 use strata_test_utils::ArbitraryGenerator;
 
-pub fn test_insert_summary_single<T: CheckpointDatabase>(db: &T) {
+pub fn test_insert_summary_single(db: &impl CheckpointDatabase) {
     let summary: EpochSummary = ArbitraryGenerator::new().generate();
     let commitment = summary.get_epoch_commitment();
     db.insert_epoch_summary(summary.clone()).expect("test: insert");
@@ -21,14 +21,14 @@ pub fn test_insert_summary_single<T: CheckpointDatabase>(db: &T) {
     assert_eq!(commitments.as_slice(), &[commitment]);
 }
 
-pub fn test_insert_summary_overwrite<T: CheckpointDatabase>(db: &T) {
+pub fn test_insert_summary_overwrite(db: &impl CheckpointDatabase) {
     let summary: EpochSummary = ArbitraryGenerator::new().generate();
     db.insert_epoch_summary(summary.clone()).expect("test: insert");
     db.insert_epoch_summary(summary)
         .expect_err("test: passed unexpectedly");
 }
 
-pub fn test_insert_summary_multiple<T: CheckpointDatabase>(db: &T) {
+pub fn test_insert_summary_multiple(db: &impl CheckpointDatabase) {
     let mut ag = ArbitraryGenerator::new();
     let summary1: EpochSummary = ag.generate();
     let epoch = summary1.epoch();
@@ -68,7 +68,7 @@ pub fn test_insert_summary_multiple<T: CheckpointDatabase>(db: &T) {
     assert_eq!(stored_commitments, commitments);
 }
 
-pub fn test_batch_checkpoint_new_entry<T: CheckpointDatabase>(db: &T) {
+pub fn test_batch_checkpoint_new_entry(db: &impl CheckpointDatabase) {
     let batchidx = 1;
     let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
     db.put_checkpoint(batchidx, checkpoint.clone()).unwrap();
@@ -77,21 +77,21 @@ pub fn test_batch_checkpoint_new_entry<T: CheckpointDatabase>(db: &T) {
     assert_eq!(checkpoint, retrieved_batch);
 }
 
-pub fn test_batch_checkpoint_existing_entry<T: CheckpointDatabase>(db: &T) {
+pub fn test_batch_checkpoint_existing_entry(db: &impl CheckpointDatabase) {
     let batchidx = 1;
     let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
     db.put_checkpoint(batchidx, checkpoint.clone()).unwrap();
     db.put_checkpoint(batchidx, checkpoint.clone()).unwrap();
 }
 
-pub fn test_batch_checkpoint_non_monotonic_entries<T: CheckpointDatabase>(db: &T) {
+pub fn test_batch_checkpoint_non_monotonic_entries(db: &impl CheckpointDatabase) {
     let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
     db.put_checkpoint(100, checkpoint.clone()).unwrap();
     db.put_checkpoint(1, checkpoint.clone()).unwrap();
     db.put_checkpoint(3, checkpoint.clone()).unwrap();
 }
 
-pub fn test_get_last_batch_checkpoint_idx<T: CheckpointDatabase>(db: &T) {
+pub fn test_get_last_batch_checkpoint_idx(db: &impl CheckpointDatabase) {
     let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
     db.put_checkpoint(100, checkpoint.clone()).unwrap();
     db.put_checkpoint(1, checkpoint.clone()).unwrap();
@@ -105,7 +105,7 @@ pub fn test_get_last_batch_checkpoint_idx<T: CheckpointDatabase>(db: &T) {
     assert_eq!(last_idx, 100);
 }
 
-pub fn test_256_checkpoints<T: CheckpointDatabase>(db: &T) {
+pub fn test_256_checkpoints(db: &impl CheckpointDatabase) {
     let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
 
     for expected_idx in 0..=256 {

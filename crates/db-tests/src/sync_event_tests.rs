@@ -5,7 +5,7 @@ use strata_db::errors::DbError;
 use strata_state::sync_event::SyncEvent;
 use strata_test_utils::ArbitraryGenerator;
 
-pub fn test_get_sync_event<T: SyncEventDatabase>(db: &T) {
+pub fn test_get_sync_event(db: &impl SyncEventDatabase) {
     let ev1 = db.get_sync_event(1).unwrap();
     assert!(ev1.is_none());
 
@@ -17,7 +17,7 @@ pub fn test_get_sync_event<T: SyncEventDatabase>(db: &T) {
     assert_eq!(ev1.unwrap(), ev);
 }
 
-pub fn test_get_last_idx_1<T: SyncEventDatabase>(db: &T) {
+pub fn test_get_last_idx_1(db: &impl SyncEventDatabase) {
     let idx = db.get_last_idx().unwrap().unwrap_or(0);
     assert_eq!(idx, 0);
 
@@ -29,7 +29,7 @@ pub fn test_get_last_idx_1<T: SyncEventDatabase>(db: &T) {
     }
 }
 
-pub fn test_get_timestamp<T: SyncEventDatabase>(db: &T) {
+pub fn test_get_timestamp(db: &impl SyncEventDatabase) {
     let mut timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -43,7 +43,7 @@ pub fn test_get_timestamp<T: SyncEventDatabase>(db: &T) {
     }
 }
 
-pub fn test_clear_sync_event<T: SyncEventDatabase>(db: &T) {
+pub fn test_clear_sync_event(db: &impl SyncEventDatabase) {
     let n = 5;
     for _ in 1..=n {
         let _ = insert_event(db);
@@ -66,7 +66,7 @@ pub fn test_clear_sync_event<T: SyncEventDatabase>(db: &T) {
     assert!(ev5.is_some());
 }
 
-pub fn test_clear_sync_event_2<T: SyncEventDatabase>(db: &T) {
+pub fn test_clear_sync_event_2(db: &impl SyncEventDatabase) {
     let n = 5;
     for _ in 1..=n {
         let _ = insert_event(db);
@@ -75,7 +75,7 @@ pub fn test_clear_sync_event_2<T: SyncEventDatabase>(db: &T) {
     assert!(res.is_err_and(|x| matches!(x, DbError::Other(ref msg) if msg == "end_idx must be less than or equal to last_key")));
 }
 
-pub fn test_get_last_idx_2<T: SyncEventDatabase>(db: &T) {
+pub fn test_get_last_idx_2(db: &impl SyncEventDatabase) {
     let n = 5;
     for _ in 1..=n {
         let _ = insert_event(db);
@@ -88,7 +88,7 @@ pub fn test_get_last_idx_2<T: SyncEventDatabase>(db: &T) {
 }
 
 // Helper function to insert events
-fn insert_event<T: SyncEventDatabase>(db: &T) -> SyncEvent {
+fn insert_event(db: &impl SyncEventDatabase) -> SyncEvent {
     let ev: SyncEvent = ArbitraryGenerator::new().generate();
     let res = db.write_sync_event(ev.clone());
     assert!(res.is_ok());

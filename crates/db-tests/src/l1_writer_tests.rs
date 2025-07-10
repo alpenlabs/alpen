@@ -3,7 +3,7 @@ use strata_db::types::{BundledPayloadEntry, IntentEntry};
 use strata_primitives::buf::Buf32;
 use strata_test_utils::ArbitraryGenerator;
 
-pub fn test_put_blob_new_entry<T: L1WriterDatabase>(db: &T) {
+pub fn test_put_blob_new_entry(db: &impl L1WriterDatabase) {
     let blob: BundledPayloadEntry = ArbitraryGenerator::new().generate();
 
     db.put_payload_entry(0, blob.clone()).unwrap();
@@ -12,7 +12,7 @@ pub fn test_put_blob_new_entry<T: L1WriterDatabase>(db: &T) {
     assert_eq!(stored_blob, Some(blob));
 }
 
-pub fn test_put_blob_existing_entry<T: L1WriterDatabase>(db: &T) {
+pub fn test_put_blob_existing_entry(db: &impl L1WriterDatabase) {
     let blob: BundledPayloadEntry = ArbitraryGenerator::new().generate();
 
     db.put_payload_entry(0, blob.clone()).unwrap();
@@ -23,7 +23,7 @@ pub fn test_put_blob_existing_entry<T: L1WriterDatabase>(db: &T) {
     assert!(result.is_ok());
 }
 
-pub fn test_update_entry<T: L1WriterDatabase>(db: &T) {
+pub fn test_update_entry(db: &impl L1WriterDatabase) {
     let entry: BundledPayloadEntry = ArbitraryGenerator::new().generate();
 
     // Insert
@@ -37,7 +37,7 @@ pub fn test_update_entry<T: L1WriterDatabase>(db: &T) {
     assert_eq!(updated_entry, retrieved_entry);
 }
 
-pub fn test_get_last_entry_idx<T: L1WriterDatabase>(db: &T) {
+pub fn test_get_last_entry_idx(db: &impl L1WriterDatabase) {
     let blob: BundledPayloadEntry = ArbitraryGenerator::new().generate();
 
     let next_blob_idx = db.get_next_payload_idx().unwrap();
@@ -58,7 +58,7 @@ pub fn test_get_last_entry_idx<T: L1WriterDatabase>(db: &T) {
     assert_eq!(next_blob_idx, 2);
 }
 
-pub fn test_put_intent_new_entry<T: L1WriterDatabase>(db: &T) {
+pub fn test_put_intent_new_entry(db: &impl L1WriterDatabase) {
     let intent: IntentEntry = ArbitraryGenerator::new().generate();
     let intent_id: Buf32 = [0; 32].into();
 
@@ -68,7 +68,7 @@ pub fn test_put_intent_new_entry<T: L1WriterDatabase>(db: &T) {
     assert_eq!(stored_intent, Some(intent));
 }
 
-pub fn test_put_intent_entry<T: L1WriterDatabase>(db: &T) {
+pub fn test_put_intent_entry(db: &impl L1WriterDatabase) {
     let intent: IntentEntry = ArbitraryGenerator::new().generate();
     let intent_id: Buf32 = [0; 32].into();
 

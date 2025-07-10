@@ -2,7 +2,7 @@ use strata_db::traits::{L2BlockDatabase, BlockStatus};
 use strata_state::{block::L2BlockBundle, prelude::*};
 use strata_test_utils::ArbitraryGenerator;
 
-pub fn test_set_and_get_block_data<T: L2BlockDatabase>(db: &T) {
+pub fn test_set_and_get_block_data(db: &impl L2BlockDatabase) {
     let bundle = get_mock_data();
     let block_hash = bundle.block().header().get_blockid();
     let block_height = bundle.block().header().slot();
@@ -31,7 +31,7 @@ pub fn test_set_and_get_block_data<T: L2BlockDatabase>(db: &T) {
     assert!(block_ids.contains(&block_hash))
 }
 
-pub fn test_del_and_get_block_data<T: L2BlockDatabase>(db: &T) {
+pub fn test_del_and_get_block_data(db: &impl L2BlockDatabase) {
     let bundle = get_mock_data();
     let block_hash = bundle.block().header().get_blockid();
     let block_height = bundle.block().header().slot();
@@ -69,7 +69,7 @@ pub fn test_del_and_get_block_data<T: L2BlockDatabase>(db: &T) {
     assert!(!block_ids.contains(&block_hash))
 }
 
-pub fn test_set_and_get_block_status<T: L2BlockDatabase>(db: &T) {
+pub fn test_set_and_get_block_status(db: &impl L2BlockDatabase) {
     let bundle = get_mock_data();
     let block_hash = bundle.block().header().get_blockid();
 

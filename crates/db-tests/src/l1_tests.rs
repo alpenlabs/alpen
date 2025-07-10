@@ -2,7 +2,7 @@ use strata_db::traits::L1Database;
 use strata_primitives::l1::{L1BlockManifest, L1Tx, L1TxRef, L1TxProof, ProtocolOperation};
 use strata_test_utils::ArbitraryGenerator;
 
-pub fn test_insert_into_empty_db<T: L1Database>(db: &T) {
+pub fn test_insert_into_empty_db(db: &impl L1Database) {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
     let idx = 1;
     
@@ -52,7 +52,7 @@ pub fn test_insert_into_empty_db<T: L1Database>(db: &T) {
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
 }
 
-pub fn test_insert_into_canonical_chain<T: L1Database>(db: &T) {
+pub fn test_insert_into_canonical_chain(db: &impl L1Database) {
     let heights = vec![1, 2, 5000, 1000, 1002, 999];
     let mut blockids = Vec::new();
     for height in &heights {
@@ -79,7 +79,7 @@ pub fn test_insert_into_canonical_chain<T: L1Database>(db: &T) {
     }
 }
 
-pub fn test_remove_canonical_chain_range<T: L1Database>(db: &T) {
+pub fn test_remove_canonical_chain_range(db: &impl L1Database) {
     // First insert a couple of manifests
     let num_txs = 10;
     let start_height = 1;
@@ -104,7 +104,7 @@ pub fn test_remove_canonical_chain_range<T: L1Database>(db: &T) {
     }
 }
 
-pub fn test_get_block_data<T: L1Database>(db: &T) {
+pub fn test_get_block_data(db: &impl L1Database) {
     let idx = 1;
 
     // insert
@@ -137,7 +137,7 @@ pub fn test_get_block_data<T: L1Database>(db: &T) {
     }
 }
 
-pub fn test_get_tx<T: L1Database>(db: &T) {
+pub fn test_get_tx(db: &impl L1Database) {
     let idx = 1; // block number
     // Insert a block
     let (mf, txns) = insert_block_data(idx, db, 10);
@@ -161,7 +161,7 @@ pub fn test_get_tx<T: L1Database>(db: &T) {
     );
 }
 
-pub fn test_get_chain_tip<T: L1Database>(db: &T) {
+pub fn test_get_chain_tip(db: &impl L1Database) {
     assert_eq!(
         db.get_canonical_chain_tip().unwrap(),
         None,
@@ -182,7 +182,7 @@ pub fn test_get_chain_tip<T: L1Database>(db: &T) {
     ));
 }
 
-pub fn test_get_block_txs<T: L1Database>(db: &T) {
+pub fn test_get_block_txs(db: &impl L1Database) {
     let num_txs = 10;
     insert_block_data(1, db, num_txs);
     insert_block_data(2, db, num_txs);
@@ -194,7 +194,7 @@ pub fn test_get_block_txs<T: L1Database>(db: &T) {
     assert_eq!(block_txs, expected);
 }
 
-pub fn test_get_blockid_invalid_range<T: L1Database>(db: &T) {
+pub fn test_get_blockid_invalid_range(db: &impl L1Database) {
     let num_txs = 10;
     let _ = insert_block_data(1, db, num_txs);
     let _ = insert_block_data(2, db, num_txs);
@@ -204,7 +204,7 @@ pub fn test_get_blockid_invalid_range<T: L1Database>(db: &T) {
     assert_eq!(range.len(), 0);
 }
 
-pub fn test_get_blockid_range<T: L1Database>(db: &T) {
+pub fn test_get_blockid_range(db: &impl L1Database) {
     let num_txs = 10;
     let (mf1, _) = insert_block_data(1, db, num_txs);
     let (mf2, _) = insert_block_data(2, db, num_txs);
@@ -217,7 +217,7 @@ pub fn test_get_blockid_range<T: L1Database>(db: &T) {
     }
 }
 
-pub fn test_get_txs_fancy<T: L1Database>(db: &T) {
+pub fn test_get_txs_fancy(db: &impl L1Database) {
     let num_txs = 3;
     let total_num_blocks = 4;
 
@@ -266,7 +266,7 @@ pub fn test_get_txs_fancy<T: L1Database>(db: &T) {
 }
 
 // Helper function to insert block data
-fn insert_block_data<T: L1Database>(height: u64, db: &T, num_txs: usize) -> (L1BlockManifest, Vec<L1Tx>) {
+fn insert_block_data(height: u64, db: &impl L1Database, num_txs: usize) -> (L1BlockManifest, Vec<L1Tx>) {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
 
     // TODO maybe tweak this to make it a bit more realistic?

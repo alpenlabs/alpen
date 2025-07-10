@@ -8,7 +8,7 @@ use strata_primitives::{
 };
 use zkaleido::{Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues, ZkVm};
 
-pub fn test_insert_new_proof<T: ProofDatabase>(db: &T) {
+pub fn test_insert_new_proof(db: &impl ProofDatabase) {
     let (proof_key, proof) = generate_proof();
 
     let result = db.put_proof(proof_key, proof.clone());
@@ -21,7 +21,7 @@ pub fn test_insert_new_proof<T: ProofDatabase>(db: &T) {
     assert_eq!(stored_proof, Some(proof));
 }
 
-pub fn test_insert_duplicate_proof<T: ProofDatabase>(db: &T) {
+pub fn test_insert_duplicate_proof(db: &impl ProofDatabase) {
     let (proof_key, proof) = generate_proof();
 
     db.put_proof(proof_key, proof.clone()).unwrap();
@@ -30,7 +30,7 @@ pub fn test_insert_duplicate_proof<T: ProofDatabase>(db: &T) {
     assert!(result.is_err(), "Duplicate proof insertion should fail");
 }
 
-pub fn test_get_nonexistent_proof<T: ProofDatabase>(db: &T) {
+pub fn test_get_nonexistent_proof(db: &impl ProofDatabase) {
     let (proof_key, proof) = generate_proof();
     db.put_proof(proof_key, proof.clone()).unwrap();
 
@@ -44,7 +44,7 @@ pub fn test_get_nonexistent_proof<T: ProofDatabase>(db: &T) {
     assert_eq!(stored_proof, None, "Nonexistent proof should return None");
 }
 
-pub fn test_insert_new_deps<T: ProofDatabase>(db: &T) {
+pub fn test_insert_new_deps(db: &impl ProofDatabase) {
     let (proof_context, deps) = generate_proof_context_with_deps();
 
     let result = db.put_proof_deps(proof_context, deps.clone());
@@ -57,7 +57,7 @@ pub fn test_insert_new_deps<T: ProofDatabase>(db: &T) {
     assert_eq!(stored_deps, Some(deps));
 }
 
-pub fn test_insert_duplicate_proof_deps<T: ProofDatabase>(db: &T) {
+pub fn test_insert_duplicate_proof_deps(db: &impl ProofDatabase) {
     let (proof_context, deps) = generate_proof_context_with_deps();
 
     db.put_proof_deps(proof_context, deps.clone()).unwrap();
@@ -69,7 +69,7 @@ pub fn test_insert_duplicate_proof_deps<T: ProofDatabase>(db: &T) {
     );
 }
 
-pub fn test_get_nonexistent_proof_deps<T: ProofDatabase>(db: &T) {
+pub fn test_get_nonexistent_proof_deps(db: &impl ProofDatabase) {
     let (proof_context, deps) = generate_proof_context_with_deps();
     db.put_proof_deps(proof_context, deps.clone()).unwrap();
 
