@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use strata_db::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey};
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use tokio::sync::Mutex;
 use tracing::{error, info, instrument};
 use zkaleido::{ZkVmHost, ZkVmProgram};
@@ -191,7 +191,7 @@ mod tests {
     use std::sync::Arc;
 
     use strata_primitives::{buf::Buf32, evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment};
-    use strata_rocksdb::{prover::db::ProofDb, test_utils::get_rocksdb_tmp_instance_for_prover};
+    use strata_db_store_rocksdb::{prover::db::ProofDb, test_utils::get_rocksdb_tmp_instance_for_prover};
     use strata_rpc_types::ProofKey;
     use tokio::sync::Mutex;
     use zkaleido::ZkVmProgram;
@@ -253,7 +253,7 @@ mod tests {
         async fn fetch_input(
             &self,
             _task_id: &strata_rpc_types::ProofKey,
-            _db: &strata_rocksdb::prover::db::ProofDb,
+            _db: &strata_db_store_rocksdb::prover::db::ProofDb,
         ) -> Result<<Self::Program as zkaleido::ZkVmProgram>::Input, crate::errors::ProvingTaskError>
         {
             todo!()
@@ -296,7 +296,7 @@ mod tests {
         async fn fetch_input(
             &self,
             _task_id: &strata_rpc_types::ProofKey,
-            _db: &strata_rocksdb::prover::db::ProofDb,
+            _db: &strata_db_store_rocksdb::prover::db::ProofDb,
         ) -> Result<<Self::Program as zkaleido::ZkVmProgram>::Input, crate::errors::ProvingTaskError>
         {
             todo!()
@@ -338,7 +338,7 @@ mod tests {
         async fn fetch_input(
             &self,
             _task_id: &strata_rpc_types::ProofKey,
-            _db: &strata_rocksdb::prover::db::ProofDb,
+            _db: &strata_db_store_rocksdb::prover::db::ProofDb,
         ) -> Result<<Self::Program as zkaleido::ZkVmProgram>::Input, crate::errors::ProvingTaskError>
         {
             todo!()

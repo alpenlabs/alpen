@@ -301,7 +301,7 @@ mod tests {
         block_credential,
         l1::{L1BlockManifest, L1HeaderRecord},
     };
-    use strata_rocksdb::test_utils::get_common_db;
+    use strata_db_store_rocksdb::test_utils::get_common_db;
     use strata_state::{l1::L1BlockId, operation};
     use strata_test_utils::{
         bitcoin::gen_l1_chain,

@@ -9,7 +9,7 @@ use strata_primitives::{
     proof::{Epoch, ProofContext, ProofKey},
 };
 use strata_proofimpl_btc_blockspace::{logic::BlockScanProofInput, program::BtcBlockspaceProgram};
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_rpc_api::StrataApiClient;
 use strata_state::chain_state::Chainstate;
 use tracing::error;

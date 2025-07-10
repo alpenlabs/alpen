@@ -1,5 +1,5 @@
 use revm_primitives::alloy_primitives::B256;
-use strata_rocksdb::{
+use strata_db_store_rocksdb::{
     define_table_with_seek_key_codec, define_table_without_codec, impl_borsh_value_codec,
 };
 

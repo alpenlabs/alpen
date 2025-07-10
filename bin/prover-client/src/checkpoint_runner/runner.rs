@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use tokio::{
     sync::Mutex,
     time::{interval, Duration},

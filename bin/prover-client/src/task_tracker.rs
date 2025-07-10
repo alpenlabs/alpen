@@ -2,7 +2,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use strata_db::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use tracing::{info, warn};
 
 use crate::{errors::ProvingTaskError, status::ProvingTaskStatus};
@@ -292,7 +292,7 @@ mod tests {
         l2::L2BlockCommitment,
         proof::{ProofContext, ProofZkVm},
     };
-    use strata_rocksdb::test_utils::get_rocksdb_tmp_instance_for_prover;
+    use strata_db_store_rocksdb::test_utils::get_rocksdb_tmp_instance_for_prover;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;

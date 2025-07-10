@@ -10,7 +10,7 @@ workspace = true
 alpen-reth-statediff.workspace = true
 strata-db.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
-strata-rocksdb.workspace = true
+strata-db-store-rocksdb.workspace = true
 
 anyhow.workspace = true
 bincode.workspace = true

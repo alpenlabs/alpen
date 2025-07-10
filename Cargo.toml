@@ -13,6 +13,7 @@ members = [
   "crates/consensus-logic",
   "crates/crypto",
   "crates/db",
+  "crates/db-store-rocksdb",
   "crates/db-tests",
   "crates/eectl",
   "crates/evmexec",
@@ -102,6 +103,7 @@ strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-crypto = { path = "crates/crypto", default-features = false }
 strata-db = { path = "crates/db" }
+strata-db-store-rocksdb = { path = "crates/db-store-rocksdb" }
 strata-db-tests = { path = "crates/db-tests" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
@@ -115,7 +117,6 @@ strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
-strata-rocksdb = { path = "crates/rocksdb-store" }
 strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }

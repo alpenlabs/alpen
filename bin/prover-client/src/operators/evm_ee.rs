@@ -8,7 +8,7 @@ use strata_primitives::{
 use strata_proofimpl_evm_ee_stf::{
     primitives::EvmEeProofInput, program::EvmEeProgram, EvmBlockStfInput,
 };
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use tracing::error;
 
 use super::ProvingOp;

@@ -8,7 +8,7 @@ use strata_primitives::{
     proof::{ProofContext, ProofKey},
 };
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::{RpcCheckpointConfStatus, RpcCheckpointInfo};
 use strata_zkvm_hosts::get_verification_key;

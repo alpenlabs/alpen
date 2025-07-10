@@ -14,7 +14,7 @@ use rpc_server::ProverClientRpc;
 use strata_common::logging;
 #[cfg(feature = "risc0-builder")]
 use strata_risc0_guest_builder as _;
-use strata_rocksdb::{prover::db::ProofDb, DbOpsConfig};
+use strata_db_store_rocksdb::{prover::db::ProofDb, DbOpsConfig};
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder as _;
 use task_tracker::TaskTracker;

@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "strata-rocksdb"
+name = "strata-db-store-rocksdb"
 version = "0.3.0-alpha.1"
 
 [lints]

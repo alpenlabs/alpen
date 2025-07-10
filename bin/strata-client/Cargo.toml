@@ -19,7 +19,7 @@ strata-db.workspace = true
 strata-eectl.workspace = true
 strata-evmexec.workspace = true
 strata-primitives.workspace = true
-strata-rocksdb.workspace = true
+strata-db-store-rocksdb.workspace = true
 strata-rpc-api = { workspace = true, default-features = true }
 strata-rpc-types.workspace = true
 strata-rpc-utils.workspace = true

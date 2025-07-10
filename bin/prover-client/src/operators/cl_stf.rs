@@ -11,7 +11,7 @@ use strata_primitives::{
     proof::{ProofContext, ProofKey},
 };
 use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::RpcBlockHeader;
 use strata_state::{block::L2Block, chain_state::Chainstate, header::L2Header, id::L2BlockId};
