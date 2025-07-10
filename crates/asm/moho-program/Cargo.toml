@@ -3,6 +3,9 @@ name = "strata-asm-moho-program"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 bitcoin.workspace = true
 borsh.workspace = true
@@ -14,6 +17,3 @@ strata-primitives.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
-
-[lints]
-workspace = true
