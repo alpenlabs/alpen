@@ -15,7 +15,7 @@ mod sequence;
 pub mod utils;
 
 use anyhow::Context;
-use strata_db::database::CommonDatabase;
+use strata_db::traits::DatabaseBackend;
 
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
@@ -46,6 +46,7 @@ use l2::{
 use rockbound::{schema::ColumnFamilyName, Schema, TransactionRetry};
 pub use sync_event::db::SyncEventDb;
 pub use writer::db::RBL1WriterDb;
+pub use prover::db::ProofDb;
 use writer::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 
 use crate::{
@@ -130,30 +131,93 @@ pub fn open_rocksdb_database(
     Ok(Arc::new(rbdb))
 }
 
-pub type CommonDb =
-    CommonDatabase<L1Db, L2Db, SyncEventDb, ClientStateDb, ChainstateDb, RBCheckpointDB>;
+/// Opens a complete RocksDB backend from datadir with all database types
+pub fn open_rocksdb_backend(
+    datadir: &Path,
+    dbname: &'static str,
+    ops_config: DbOpsConfig,
+) -> anyhow::Result<Arc<RocksDbBackend>> {
+    let rbdb = open_rocksdb_database(datadir, dbname)?;
+    Ok(init_rocksdb_backend(rbdb, ops_config))
+}
+
+
+/// Complete RocksDB backend with all database types
+#[derive(Debug)]
+pub struct RocksDbBackend {
+    l1_db: Arc<L1Db>,
+    l2_db: Arc<L2Db>,
+    sync_event_db: Arc<SyncEventDb>,
+    client_state_db: Arc<ClientStateDb>,
+    chain_state_db: Arc<ChainstateDb>,
+    checkpoint_db: Arc<RBCheckpointDB>,
+    writer_db: Arc<RBL1WriterDb>,
+    prover_db: Arc<prover::db::ProofDb>,
+}
+
+impl RocksDbBackend {
+    pub fn new(
+        l1_db: Arc<L1Db>,
+        l2_db: Arc<L2Db>,
+        sync_event_db: Arc<SyncEventDb>,
+        client_state_db: Arc<ClientStateDb>,
+        chain_state_db: Arc<ChainstateDb>,
+        checkpoint_db: Arc<RBCheckpointDB>,
+        writer_db: Arc<RBL1WriterDb>,
+        prover_db: Arc<prover::db::ProofDb>,
+    ) -> Self {
+        Self {
+            l1_db,
+            l2_db,
+            sync_event_db,
+            client_state_db,
+            chain_state_db,
+            checkpoint_db,
+            writer_db,
+            prover_db,
+        }
+    }
+}
+
+impl DatabaseBackend for RocksDbBackend {
+    fn l1_db(&self) -> Arc<impl strata_db::traits::L1Database> {
+        self.l1_db.clone()
+    }
+
+    fn l2_db(&self) -> Arc<impl strata_db::traits::L2BlockDatabase> {
+        self.l2_db.clone()
+    }
+
+    fn sync_event_db(&self) -> Arc<impl strata_db::traits::SyncEventDatabase> {
+        self.sync_event_db.clone()
+    }
+
+    fn client_state_db(&self) -> Arc<impl strata_db::traits::ClientStateDatabase> {
+        self.client_state_db.clone()
+    }
+
+    fn chain_state_db(&self) -> Arc<impl strata_db::traits::ChainstateDatabase> {
+        self.chain_state_db.clone()
+    }
+
+    fn checkpoint_db(&self) -> Arc<impl strata_db::traits::CheckpointDatabase> {
+        self.checkpoint_db.clone()
+    }
+
+    fn writer_db(&self) -> Arc<impl strata_db::traits::L1WriterDatabase> {
+        self.writer_db.clone()
+    }
+
+    fn prover_db(&self) -> Arc<impl strata_db::traits::ProofDatabase> {
+        self.prover_db.clone()
+    }
+}
 
 pub fn init_core_dbs(
     rbdb: Arc<rockbound::OptimisticTransactionDB>,
     ops_config: DbOpsConfig,
-) -> Arc<CommonDb> {
-    // Initialize databases.
-    let l1_db: Arc<_> = L1Db::new(rbdb.clone(), ops_config).into();
-    let l2_db: Arc<_> = L2Db::new(rbdb.clone(), ops_config).into();
-    let sync_ev_db: Arc<_> = SyncEventDb::new(rbdb.clone(), ops_config).into();
-    let clientstate_db: Arc<_> = ClientStateDb::new(rbdb.clone(), ops_config).into();
-    let chainstate_db: Arc<_> = ChainstateDb::new(rbdb.clone(), ops_config).into();
-    let checkpoint_db: Arc<_> = RBCheckpointDB::new(rbdb.clone(), ops_config).into();
-    let database = CommonDatabase::new(
-        l1_db,
-        l2_db,
-        sync_ev_db,
-        clientstate_db,
-        chainstate_db,
-        checkpoint_db,
-    );
-
-    database.into()
+) -> Arc<RocksDbBackend> {
+    init_rocksdb_backend(rbdb, ops_config)
 }
 
 pub fn init_broadcaster_database(
@@ -169,4 +233,37 @@ pub fn init_writer_database(
     ops_config: DbOpsConfig,
 ) -> Arc<RBL1WriterDb> {
     RBL1WriterDb::new(rbdb, ops_config).into()
+}
+
+pub fn init_prover_database(
+    rbdb: Arc<rockbound::OptimisticTransactionDB>,
+    ops_config: DbOpsConfig,
+) -> Arc<ProofDb> {
+    ProofDb::new(rbdb, ops_config).into()
+}
+
+/// Initialize a complete RocksDB backend with all database types
+pub fn init_rocksdb_backend(
+    rbdb: Arc<rockbound::OptimisticTransactionDB>,
+    ops_config: DbOpsConfig,
+) -> Arc<RocksDbBackend> {
+    let l1_db = Arc::new(L1Db::new(rbdb.clone(), ops_config));
+    let l2_db = Arc::new(L2Db::new(rbdb.clone(), ops_config));
+    let sync_event_db = Arc::new(SyncEventDb::new(rbdb.clone(), ops_config));
+    let client_state_db = Arc::new(ClientStateDb::new(rbdb.clone(), ops_config));
+    let chain_state_db = Arc::new(ChainstateDb::new(rbdb.clone(), ops_config));
+    let checkpoint_db = Arc::new(RBCheckpointDB::new(rbdb.clone(), ops_config));
+    let writer_db = Arc::new(RBL1WriterDb::new(rbdb.clone(), ops_config));
+    let prover_db = Arc::new(ProofDb::new(rbdb, ops_config));
+
+    Arc::new(RocksDbBackend::new(
+        l1_db,
+        l2_db,
+        sync_event_db,
+        client_state_db,
+        chain_state_db,
+        checkpoint_db,
+        writer_db,
+        prover_db,
+    ))
 }

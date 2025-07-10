@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use rockbound::{rocksdb, OptimisticTransactionDB};
-use strata_db::database::CommonDatabase;
 use tempfile::TempDir;
 
 use crate::{
-    l2::db::L2Db, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db, RBCheckpointDB, SyncEventDb,
+    l2::db::L2Db, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db, RBCheckpointDB, SyncEventDb, RocksDbBackend, ProofDb, RBL1WriterDb,
 };
 
 pub fn get_rocksdb_tmp_instance() -> anyhow::Result<(Arc<OptimisticTransactionDB>, DbOpsConfig)> {
@@ -42,8 +41,7 @@ fn get_rocksdb_tmp_instance_core(
     Ok((Arc::new(rbdb), db_ops))
 }
 
-pub fn get_common_db(
-) -> Arc<CommonDatabase<L1Db, L2Db, SyncEventDb, ClientStateDb, ChainstateDb, RBCheckpointDB>> {
+pub fn get_rocksdb_backend() -> Arc<RocksDbBackend> {
     let (rbdb, db_ops) = get_rocksdb_tmp_instance().unwrap();
     let l1_db = Arc::new(L1Db::new(rbdb.clone(), db_ops));
     let l2_db = Arc::new(L2Db::new(rbdb.clone(), db_ops));
@@ -51,7 +49,9 @@ pub fn get_common_db(
     let cs_db = Arc::new(ClientStateDb::new(rbdb.clone(), db_ops));
     let chst_db = Arc::new(ChainstateDb::new(rbdb.clone(), db_ops));
     let chpt_db = Arc::new(RBCheckpointDB::new(rbdb.clone(), db_ops));
-    Arc::new(CommonDatabase::new(
-        l1_db, l2_db, sync_ev_db, cs_db, chst_db, chpt_db,
+    let writer_db = Arc::new(RBL1WriterDb::new(rbdb.clone(), db_ops));
+    let prover_db = Arc::new(ProofDb::new(rbdb, db_ops));
+    Arc::new(RocksDbBackend::new(
+        l1_db, l2_db, sync_ev_db, cs_db, chst_db, chpt_db, writer_db, prover_db,
     ))
 }

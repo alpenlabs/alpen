@@ -27,7 +27,7 @@ use strata_consensus_logic::{
 use strata_db::{traits::BroadcastDatabase, DbError};
 use strata_db_store_rocksdb::{
     broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
-    open_rocksdb_database, CommonDb, DbOpsConfig, RBL1WriterDb, ROCKSDB_NAME,
+    open_rocksdb_database, DbOpsConfig, RBL1WriterDb, RocksDbBackend, ROCKSDB_NAME,
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
@@ -228,7 +228,7 @@ fn init_logging(rt: &Handle) {
 #[expect(missing_debug_implementations)]
 pub struct CoreContext {
     pub runtime: Handle,
-    pub database: Arc<CommonDb>,
+    pub database: Arc<RocksDbBackend>,
     pub storage: Arc<NodeStorage>,
     pub pool: threadpool::ThreadPool,
     pub params: Arc<Params>,
@@ -335,7 +335,7 @@ fn start_core_tasks(
     pool: threadpool::ThreadPool,
     config: &Config,
     params: Arc<Params>,
-    database: Arc<CommonDb>,
+    database: Arc<RocksDbBackend>,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<CoreContext> {
@@ -568,7 +568,6 @@ fn start_template_manager_task(
     executor: &TaskExecutor,
 ) -> block_template::TemplateManagerHandle {
     let CoreContext {
-        database,
         storage,
         engine,
         params,
@@ -582,7 +581,6 @@ fn start_template_manager_task(
 
     let worker_ctx = block_template::WorkerContext::new(
         params.clone(),
-        database.clone(),
         storage.clone(),
         engine.clone(),
         status_channel.clone(),
@@ -592,7 +590,7 @@ fn start_template_manager_task(
 
     let t_shared_state = shared_state.clone();
     executor.spawn_critical("template_manager_worker", |shutdown| {
-        block_template::worker(shutdown, worker_ctx, t_shared_state, rx)
+        block_template::worker_task(shutdown, worker_ctx, t_shared_state, rx)
     });
 
     block_template::TemplateManagerHandle::new(

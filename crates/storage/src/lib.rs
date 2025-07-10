@@ -14,7 +14,7 @@ pub use managers::{
     sync_event::SyncEventManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
-use strata_db::traits::Database;
+use strata_db::traits::DatabaseBackend;
 
 /// A consolidation of database managers.
 // TODO move this to its own module
@@ -66,23 +66,31 @@ pub fn create_node_storage<D>(
     pool: threadpool::ThreadPool,
 ) -> anyhow::Result<NodeStorage>
 where
-    D: Database + Sync + Send + 'static,
+    D: DatabaseBackend + 'static,
 {
-    let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), db.l1_db().clone()));
-    let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), db.clone()));
-    let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), db.clone()));
+    // Extract database references first to ensure they live long enough
+    let l1_db = db.l1_db();
+    let l2_db = db.l2_db();
+    let chainstate_db = db.chain_state_db();
+    let sync_event_db = db.sync_event_db();
+    let client_state_db = db.client_state_db();
+    let checkpoint_db = db.checkpoint_db();
+
+    let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
+    let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), l2_db));
+    let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
 
     let sync_event_manager = Arc::new(SyncEventManager::new(
         pool.clone(),
-        db.sync_event_db().clone(),
+        sync_event_db,
     ));
     let client_state_manager =
-        Arc::new(ClientStateManager::new(pool.clone(), db.clone()).context("open client state")?);
+        Arc::new(ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?);
 
     // (see above)
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(
         pool.clone(),
-        db.checkpoint_db().clone(),
+        checkpoint_db,
     ));
 
     Ok(NodeStorage {

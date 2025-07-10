@@ -1,27 +1,13 @@
 //! Core state transition function.
-#![allow(unused)] // still under development
 
-use std::cmp::min;
-
-use bitcoin::{block::Header, Transaction};
-use strata_db::traits::{ChainstateDatabase, Database, L1Database, L2BlockDatabase};
-use strata_primitives::{
-    batch::{verify_signed_checkpoint_sig, BatchInfo, Checkpoint},
-    l1::{get_btc_params, HeaderVerificationState, L1BlockCommitment, L1BlockId},
-    prelude::*,
-};
+use bitcoin::Transaction;
+use strata_primitives::{batch::verify_signed_checkpoint_sig, l1::L1BlockCommitment, prelude::*};
 use strata_state::{
-    block::{self, L2BlockBundle},
-    chain_state::{Chainstate, ChainstateEntry},
-    client_state::*,
-    header::L2Header,
-    id::L2BlockId,
-    operation::*,
-    sync_event::SyncEvent,
+    block::L2BlockBundle, chain_state::Chainstate, client_state::*, header::L2Header,
+    id::L2BlockId, operation::*, sync_event::SyncEvent,
 };
 use strata_storage::NodeStorage;
 use tracing::*;
-use zkaleido::ProofReceipt;
 
 use crate::{checkpoint_verification::verify_checkpoint, errors::*, genesis::make_l2_genesis};
 
@@ -121,7 +107,7 @@ fn handle_block(
     state: &mut ClientStateMut,
     block: &L1BlockCommitment,
     block_mf: &L1BlockManifest,
-    context: &impl EventContext,
+    _context: &impl EventContext,
     params: &Params,
 ) -> Result<(), Error> {
     let height = block.height();
@@ -218,7 +204,7 @@ fn handle_block(
 
 fn process_genesis_trigger_block(
     block_mf: &L1BlockManifest,
-    params: &RollupParams,
+    _params: &RollupParams,
 ) -> Result<InternalState, Error> {
     // TODO maybe more bookkeeping?
     Ok(InternalState::new(*block_mf.blkid(), None))
@@ -281,7 +267,7 @@ fn process_l1_block(
 }
 
 fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<CheckpointL1Ref, Error> {
-    let btx: Transaction = tx.tx_data().try_into().map_err(|e| {
+    let btx: Transaction = tx.tx_data().try_into().map_err(|_e| {
         warn!(%height, "Invalid bitcoin transaction data in L1Tx");
         let msg = format!("Invalid bitcoin transaction data in L1Tx at height {height}");
         Error::Other(msg)
@@ -297,7 +283,7 @@ fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<Checkp
 mod tests {
     use bitcoin::{params::MAINNET, BlockHash};
     use strata_db::traits::L1Database;
-    use strata_db_store_rocksdb::test_utils::get_common_db;
+    use strata_db_store_rocksdb::test_utils::get_rocksdb_backend;
     use strata_primitives::{
         block_credential,
         l1::{L1BlockManifest, L1HeaderRecord},

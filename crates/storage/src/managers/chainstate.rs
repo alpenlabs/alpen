@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use strata_db::{traits::*, DbResult};
+use strata_db::{traits::ChainstateDatabase, DbResult};
 use strata_state::{
     chain_state::{Chainstate, ChainstateEntry},
     id::L2BlockId,
@@ -19,8 +19,8 @@ pub struct ChainstateManager {
 }
 
 impl ChainstateManager {
-    pub fn new<D: Database + Sync + Send + 'static>(pool: ThreadPool, db: Arc<D>) -> Self {
-        let ops = ops::chainstate::Context::new(db.chain_state_db().clone()).into_ops(pool);
+    pub fn new(pool: ThreadPool, db: Arc<impl ChainstateDatabase + 'static>) -> Self {
+        let ops = ops::chainstate::Context::new(db).into_ops(pool);
         let wb_cache = cache::CacheTable::new(64.try_into().unwrap());
         Self { ops, wb_cache }
     }

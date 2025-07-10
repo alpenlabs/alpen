@@ -6,7 +6,6 @@ use std::{
     sync::Arc,
 };
 
-use strata_db::traits::Database;
 use strata_eectl::engine::ExecEngineCtl;
 use strata_primitives::params::{Params, RollupParams};
 use strata_state::{
@@ -29,27 +28,23 @@ use crate::utils::now_millis;
 
 /// Container to pass context to worker
 #[expect(missing_debug_implementations)]
-pub struct WorkerContext<D, E> {
+pub struct WorkerContext<E> {
     params: Arc<Params>,
-    // TODO remove
-    _database: Arc<D>,
     storage: Arc<NodeStorage>,
     engine: Arc<E>,
     status_channel: StatusChannel,
 }
 
-impl<D, E> WorkerContext<D, E> {
+impl<E> WorkerContext<E> {
     /// Create new worker context.
     pub fn new(
         params: Arc<Params>,
-        database: Arc<D>,
         storage: Arc<NodeStorage>,
         engine: Arc<E>,
         status_channel: StatusChannel,
     ) -> Self {
         Self {
             params,
-            _database: database,
             storage,
             engine,
             status_channel,
@@ -105,16 +100,12 @@ impl WorkerState {
 pub type SharedState = Arc<RwLock<WorkerState>>;
 
 /// Block template worker task.
-pub fn worker<D, E>(
+pub fn worker_task<E: ExecEngineCtl>(
     shutdown: ShutdownGuard,
-    ctx: WorkerContext<D, E>,
+    ctx: WorkerContext<E>,
     state: SharedState,
     mut rx: mpsc::Receiver<TemplateManagerRequest>,
-) -> anyhow::Result<()>
-where
-    D: Database,
-    E: ExecEngineCtl,
-{
+) -> anyhow::Result<()> {
     while let Some(request) = rx.blocking_recv() {
         match request {
             TemplateManagerRequest::GenerateBlockTemplate(config, response) => {
@@ -149,15 +140,11 @@ where
 }
 
 /// Generate new [`BlockTemplate`] according to provided [`BlockGenerationConfig`].
-fn generate_block_template<D, E>(
-    ctx: &WorkerContext<D, E>,
+fn generate_block_template<E: ExecEngineCtl>(
+    ctx: &WorkerContext<E>,
     state: &RwLock<WorkerState>,
     config: BlockGenerationConfig,
-) -> Result<BlockTemplate, Error>
-where
-    D: Database,
-    E: ExecEngineCtl,
-{
+) -> Result<BlockTemplate, Error> {
     // check if we already have pending template for this parent block id
     if let Ok(template) = state
         .blocking_read()

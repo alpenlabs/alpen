@@ -10,4 +10,4 @@ pub use block_assembly::prepare_block;
 pub use error::Error;
 pub use handle::{TemplateManagerHandle, TemplateManagerRequest};
 pub use types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate, FullBlockTemplate};
-pub use worker::{worker, SharedState, WorkerContext};
+pub use worker::{worker_task, SharedState, WorkerContext};

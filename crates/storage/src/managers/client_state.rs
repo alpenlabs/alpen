@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use strata_db::{traits::Database, DbError, DbResult};
+use strata_db::{traits::ClientStateDatabase, DbError, DbResult};
 use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
 use threadpool::ThreadPool;
 use tokio::sync::Mutex;
@@ -23,11 +23,11 @@ pub struct ClientStateManager {
 }
 
 impl ClientStateManager {
-    pub fn new<D: Database + Sync + Send + 'static>(
+    pub fn new(
         pool: ThreadPool,
-        db: Arc<D>,
+        db: Arc<impl ClientStateDatabase + 'static>,
     ) -> DbResult<Self> {
-        let ops = ops::client_state::Context::new(db.client_state_db().clone()).into_ops(pool);
+        let ops = ops::client_state::Context::new(db).into_ops(pool);
         let update_cache = cache::CacheTable::new(64.try_into().unwrap());
         let state_cache = cache::CacheTable::new(64.try_into().unwrap());
 

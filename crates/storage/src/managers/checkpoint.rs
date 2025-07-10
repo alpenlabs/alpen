@@ -15,9 +15,9 @@ pub struct CheckpointDbManager {
 }
 
 impl CheckpointDbManager {
-    pub fn new<D: CheckpointDatabase + Sync + Send + 'static>(
+    pub fn new(
         pool: ThreadPool,
-        db: Arc<D>,
+        db: Arc<impl CheckpointDatabase + 'static>,
     ) -> Self {
         let ops = ops::checkpoint::Context::new(db).into_ops(pool);
         let summary_cache = cache::CacheTable::new(64.try_into().unwrap());
