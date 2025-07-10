@@ -1,5 +1,8 @@
 use bitcoin::hashes::Hash;
-use strata_db::{traits::L1BroadcastDatabase, types::{L1TxEntry, L1TxStatus}};
+use strata_db::{
+    traits::L1BroadcastDatabase,
+    types::{L1TxEntry, L1TxStatus},
+};
 use strata_primitives::buf::Buf32;
 use strata_test_utils::bitcoin::get_test_bitcoin_txs;
 

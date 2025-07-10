@@ -325,4 +325,3 @@ pub trait L1BroadcastDatabase {
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
 }
-

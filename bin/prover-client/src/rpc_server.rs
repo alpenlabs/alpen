@@ -7,11 +7,11 @@ use async_trait::async_trait;
 use bitcoind_async_client::{traits::Reader, Client};
 use jsonrpsee::{core::RpcResult, http_client::HttpClient, RpcModule};
 use strata_db::traits::ProofDatabase;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_primitives::{
     evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, proof::Epoch,
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
-use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_rpc_api::StrataDebugApiClient;
 use strata_rpc_types::ProofKey;
 use strata_rpc_utils::to_jsonrpsee_error;

@@ -1,5 +1,4 @@
-use strata_db::traits::ClientStateDatabase;
-use strata_db::errors::DbError;
+use strata_db::{errors::DbError, traits::ClientStateDatabase};
 use strata_state::operation::ClientUpdateOutput;
 use strata_test_utils::ArbitraryGenerator;
 

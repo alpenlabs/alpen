@@ -187,6 +187,7 @@ lint-fix-ws:
         --all-features \
         --fix \
         --no-deps \
+        --allow-dirty \
         -- -D warnings
 
 # Check if codespell is installed

@@ -1,7 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use strata_db::traits::SyncEventDatabase;
-use strata_db::errors::DbError;
+use strata_db::{errors::DbError, traits::SyncEventDatabase};
 use strata_state::sync_event::SyncEvent;
 use strata_test_utils::ArbitraryGenerator;
 

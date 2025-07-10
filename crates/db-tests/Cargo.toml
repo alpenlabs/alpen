@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bitcoin = { workspace = true }
 strata-db = { path = "../db" }
+strata-l1tx = { path = "../l1tx" }
 strata-primitives = { path = "../primitives" }
 strata-state = { path = "../state" }
 strata-test-utils = { path = "../test-utils" }
-bitcoin = { workspace = true }
-strata-l1tx = { path = "../l1tx" }
 zkaleido = { workspace = true }
 
 [dev-dependencies]

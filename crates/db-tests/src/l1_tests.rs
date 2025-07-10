@@ -1,11 +1,11 @@
 use strata_db::traits::L1Database;
-use strata_primitives::l1::{L1BlockManifest, L1Tx, L1TxRef, L1TxProof, ProtocolOperation};
+use strata_primitives::l1::{L1BlockManifest, L1Tx, L1TxProof, L1TxRef, ProtocolOperation};
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_insert_into_empty_db(db: &impl L1Database) {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
     let idx = 1;
-    
+
     // TODO maybe tweak this to make it a bit more realistic?
     let txs: Vec<L1Tx> = (0..10)
         .map(|i| {
@@ -27,7 +27,7 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
     let res = db.set_canonical_chain_entry(idx, *mf.blkid());
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
-    
+
     // insert another block with arbitrary id
     let idx = 200_011;
     let txs: Vec<L1Tx> = (0..10)
@@ -139,7 +139,7 @@ pub fn test_get_block_data(db: &impl L1Database) {
 
 pub fn test_get_tx(db: &impl L1Database) {
     let idx = 1; // block number
-    // Insert a block
+                 // Insert a block
     let (mf, txns) = insert_block_data(idx, db, 10);
     let blockid = mf.blkid();
     let txidx: u32 = 3; // some tx index
@@ -266,7 +266,11 @@ pub fn test_get_txs_fancy(db: &impl L1Database) {
 }
 
 // Helper function to insert block data
-fn insert_block_data(height: u64, db: &impl L1Database, num_txs: usize) -> (L1BlockManifest, Vec<L1Tx>) {
+fn insert_block_data(
+    height: u64,
+    db: &impl L1Database,
+    num_txs: usize,
+) -> (L1BlockManifest, Vec<L1Tx>) {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
 
     // TODO maybe tweak this to make it a bit more realistic?

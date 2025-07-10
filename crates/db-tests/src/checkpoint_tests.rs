@@ -1,12 +1,11 @@
-use strata_db::traits::CheckpointDatabase;
-use strata_db::types::CheckpointEntry;
+use strata_db::{traits::CheckpointDatabase, types::CheckpointEntry};
 use strata_state::batch::EpochSummary;
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_insert_summary_single(db: &impl CheckpointDatabase) {
     let summary: EpochSummary = ArbitraryGenerator::new().generate();
     let commitment = summary.get_epoch_commitment();
-    db.insert_epoch_summary(summary.clone()).expect("test: insert");
+    db.insert_epoch_summary(summary).expect("test: insert");
 
     let stored = db
         .get_epoch_summary(commitment)
@@ -23,7 +22,7 @@ pub fn test_insert_summary_single(db: &impl CheckpointDatabase) {
 
 pub fn test_insert_summary_overwrite(db: &impl CheckpointDatabase) {
     let summary: EpochSummary = ArbitraryGenerator::new().generate();
-    db.insert_epoch_summary(summary.clone()).expect("test: insert");
+    db.insert_epoch_summary(summary).expect("test: insert");
     db.insert_epoch_summary(summary)
         .expect_err("test: passed unexpectedly");
 }
@@ -42,8 +41,8 @@ pub fn test_insert_summary_multiple(db: &impl CheckpointDatabase) {
 
     let commitment1 = summary1.get_epoch_commitment();
     let commitment2 = summary2.get_epoch_commitment();
-    db.insert_epoch_summary(summary1.clone()).expect("test: insert");
-    db.insert_epoch_summary(summary2.clone()).expect("test: insert");
+    db.insert_epoch_summary(summary1).expect("test: insert");
+    db.insert_epoch_summary(summary2).expect("test: insert");
 
     let stored1 = db
         .get_epoch_summary(commitment1)

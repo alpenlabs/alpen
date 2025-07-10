@@ -297,11 +297,11 @@ fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<Checkp
 mod tests {
     use bitcoin::{params::MAINNET, BlockHash};
     use strata_db::traits::L1Database;
+    use strata_db_store_rocksdb::test_utils::get_common_db;
     use strata_primitives::{
         block_credential,
         l1::{L1BlockManifest, L1HeaderRecord},
     };
-    use strata_db_store_rocksdb::test_utils::get_common_db;
     use strata_state::{l1::L1BlockId, operation};
     use strata_test_utils::{
         bitcoin::gen_l1_chain,

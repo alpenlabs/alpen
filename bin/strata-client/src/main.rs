@@ -25,13 +25,13 @@ use strata_consensus_logic::{
     sync_manager::{self, SyncManager},
 };
 use strata_db::{traits::BroadcastDatabase, DbError};
-use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
-use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
-use strata_primitives::params::{Params, ProofPublishMode};
 use strata_db_store_rocksdb::{
     broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
     open_rocksdb_database, CommonDb, DbOpsConfig, RBL1WriterDb, ROCKSDB_NAME,
 };
+use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
+use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
+use strata_primitives::params::{Params, ProofPublishMode};
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,
 };
@@ -114,7 +114,6 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     // Initialize core databases
     let database = init_core_dbs(rbdb.clone(), ops_config);
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
-
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
     let bitcoin_client = create_bitcoin_rpc_client(&config)?;

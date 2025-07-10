@@ -1,4 +1,4 @@
-use strata_db::traits::{L2BlockDatabase, BlockStatus};
+use strata_db::traits::{BlockStatus, L2BlockDatabase};
 use strata_state::{block::L2BlockBundle, prelude::*};
 use strata_test_utils::ArbitraryGenerator;
 

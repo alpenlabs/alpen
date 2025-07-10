@@ -1,5 +1,4 @@
-use strata_db::traits::ChainstateDatabase;
-use strata_db::errors::DbError;
+use strata_db::{errors::DbError, traits::ChainstateDatabase};
 use strata_state::{
     chain_state::Chainstate,
     id::L2BlockId,

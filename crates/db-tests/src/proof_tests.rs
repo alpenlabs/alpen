@@ -117,8 +117,7 @@ fn generate_proof_context_with_deps() -> (ProofContext, Vec<ProofContext>) {
     let evm_commitment_2 = EvmEeBlockCommitment::new(2, evm_block_2);
 
     // Create main proof context
-    let main_context =
-        ProofContext::ClStf(L2BlockCommitment::null(), L2BlockCommitment::null());
+    let main_context = ProofContext::ClStf(L2BlockCommitment::null(), L2BlockCommitment::null());
 
     // Create dependency proof contexts
     let deps = vec![ProofContext::EvmEeStf(evm_commitment_1, evm_commitment_2)];
