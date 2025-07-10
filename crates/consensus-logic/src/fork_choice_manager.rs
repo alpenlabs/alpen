@@ -779,7 +779,7 @@ fn apply_tip_update(
         // Easy case.
         TipUpdate::ExtendTip(_cur, new) => {
             // Update the tip block in the FCM state.
-            let new_chainstate = fcm_state
+            let chainstate = fcm_state
                 .storage
                 .chainstate()
                 .get_slot_write_batch_blocking(new)?
@@ -787,7 +787,7 @@ fn apply_tip_update(
                 .into_toplevel();
             fcm_state.update_tip_block(
                 bundle.block().header().get_block_commitment(),
-                Arc::new(new_chainstate),
+                Arc::new(chainstate),
             )?;
 
             Ok(())

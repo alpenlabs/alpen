@@ -71,7 +71,7 @@ where
 {
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), db.l1_db().clone()));
     let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), db.clone()));
-    let new_chainstate_manager = Arc::new(ChainstateManager::new(
+    let chainstate_manager = Arc::new(ChainstateManager::new(
         pool.clone(),
         db.chain_state_db().clone(),
     ));
@@ -93,7 +93,7 @@ where
         l1_block_manager,
         l2_block_manager,
 
-        chainstate_manager: new_chainstate_manager,
+        chainstate_manager,
 
         sync_event_manager,
         client_state_manager,

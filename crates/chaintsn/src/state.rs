@@ -8,20 +8,20 @@ use crate::context::StateAccessor;
 pub struct State<S: StateAccessor> {
     accessor: S,
 
-    new_chainstate: Chainstate,
+    chainstate: Chainstate,
 }
 
 impl<S: StateAccessor> State<S> {
     /// Constructs a new instance wrapping a previous state.
-    pub fn new(accessor: S, new_chainstate: Chainstate) -> Self {
+    pub fn new(accessor: S, chainstate: Chainstate) -> Self {
         Self {
             accessor,
-            new_chainstate,
+            chainstate,
         }
     }
 
     pub fn cur_chainstate(&self) -> &Chainstate {
-        &self.new_chainstate
+        &self.chainstate
     }
 
     pub fn accessor(&self) -> &impl StateAccessor {
