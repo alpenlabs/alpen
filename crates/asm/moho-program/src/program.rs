@@ -7,9 +7,9 @@ use strata_primitives::hash::compute_borsh_hash;
 use crate::input::AsmStepInput;
 
 #[derive(Debug)]
-pub struct AsmMohoIncremetal;
+pub struct AsmStfProgram;
 
-impl MohoProgram for AsmMohoIncremetal {
+impl MohoProgram for AsmStfProgram {
     type State = AnchorState;
 
     type StepInput = AsmStepInput;
