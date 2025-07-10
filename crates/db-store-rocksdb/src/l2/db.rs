@@ -109,7 +109,7 @@ impl L2BlockDatabase for L2Db {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::l2_tests;
+    use strata_db_tests::l2_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -119,21 +119,5 @@ mod tests {
         L2Db::new(db, ops)
     }
 
-    #[test]
-    fn set_and_get_block_data() {
-        let l2_db = setup_db();
-        l2_tests::test_set_and_get_block_data(&l2_db);
-    }
-
-    #[test]
-    fn del_and_get_block_data() {
-        let l2_db = setup_db();
-        l2_tests::test_del_and_get_block_data(&l2_db);
-    }
-
-    #[test]
-    fn set_and_get_block_status() {
-        let l2_db = setup_db();
-        l2_tests::test_set_and_get_block_status(&l2_db);
-    }
+    l2_db_tests!(setup_db());
 }

@@ -110,3 +110,26 @@ fn get_mock_data() -> L2BlockBundle {
     let l2_block: L2BlockBundle = arb.generate();
     l2_block
 }
+
+#[macro_export]
+macro_rules! l2_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn set_and_get_block_data() {
+            let db = $setup_expr;
+            $crate::l2_tests::test_set_and_get_block_data(&db);
+        }
+
+        #[test]
+        fn del_and_get_block_data() {
+            let db = $setup_expr;
+            $crate::l2_tests::test_del_and_get_block_data(&db);
+        }
+
+        #[test]
+        fn set_and_get_block_status() {
+            let db = $setup_expr;
+            $crate::l2_tests::test_set_and_get_block_status(&db);
+        }
+    };
+}

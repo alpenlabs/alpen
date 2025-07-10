@@ -78,3 +78,44 @@ pub fn test_put_intent_entry<T: L1WriterDatabase>(db: &T) {
     let retrieved = db.get_intent_by_id(intent_id).unwrap().unwrap();
     assert_eq!(retrieved, intent);
 }
+
+#[macro_export]
+macro_rules! l1_writer_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_put_blob_new_entry() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_put_blob_new_entry(&db);
+        }
+
+        #[test]
+        fn test_put_blob_existing_entry() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_put_blob_existing_entry(&db);
+        }
+
+        #[test]
+        fn test_update_entry() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_update_entry(&db);
+        }
+
+        #[test]
+        fn test_get_last_entry_idx() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_get_last_entry_idx(&db);
+        }
+
+        #[test]
+        fn test_put_intent_new_entry() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_put_intent_new_entry(&db);
+        }
+
+        #[test]
+        fn test_put_intent_entry() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_put_intent_entry(&db);
+        }
+    };
+}

@@ -114,7 +114,7 @@ impl traits::BroadcastDatabase for BroadcastDb {
 
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::l1_broadcast_tests;
+    use strata_db_tests::l1_broadcast_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -124,39 +124,5 @@ mod tests {
         L1BroadcastDb::new(db, db_ops)
     }
 
-    #[test]
-    fn test_get_last_tx_entry() {
-        let db = setup_db();
-        l1_broadcast_tests::test_get_last_tx_entry(&db);
-    }
-
-    #[test]
-    fn test_add_tx_new_entry() {
-        let db = setup_db();
-        l1_broadcast_tests::test_add_tx_new_entry(&db);
-    }
-
-    #[test]
-    fn test_put_tx_existing_entry() {
-        let db = setup_db();
-        l1_broadcast_tests::test_put_tx_existing_entry(&db);
-    }
-
-    #[test]
-    fn test_update_tx_entry() {
-        let db = setup_db();
-        l1_broadcast_tests::test_update_tx_entry(&db);
-    }
-
-    #[test]
-    fn test_get_txentry_by_idx() {
-        let db = setup_db();
-        l1_broadcast_tests::test_get_txentry_by_idx(&db);
-    }
-
-    #[test]
-    fn test_get_next_txidx() {
-        let db = setup_db();
-        l1_broadcast_tests::test_get_next_txidx(&db);
-    }
+    l1_broadcast_db_tests!(setup_db());
 }

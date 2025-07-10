@@ -106,7 +106,7 @@ impl CheckpointDatabase for RBCheckpointDB {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::checkpoint_tests;
+    use strata_db_tests::checkpoint_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -116,53 +116,5 @@ mod tests {
         RBCheckpointDB::new(db, db_ops)
     }
 
-    #[test]
-    fn test_insert_summary_single() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_insert_summary_single(&seq_db);
-    }
-
-    #[test]
-    fn test_insert_summary_overwrite() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_insert_summary_overwrite(&seq_db);
-    }
-
-    #[test]
-    fn test_insert_summary_multiple() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_insert_summary_multiple(&seq_db);
-    }
-
-    #[test]
-    fn test_batch_checkpoint_new_entry() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_batch_checkpoint_new_entry(&seq_db);
-    }
-
-    #[test]
-    fn test_batch_checkpoint_existing_entry() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_batch_checkpoint_existing_entry(&seq_db);
-    }
-
-    #[test]
-    fn test_batch_checkpoint_non_monotonic_entries() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_batch_checkpoint_non_monotonic_entries(&seq_db);
-    }
-
-    #[test]
-    fn test_get_last_batch_checkpoint_idx() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_get_last_batch_checkpoint_idx(&seq_db);
-    }
-
-    /// Tests a peculiar issue with `default_codec` in rockbound schema. If it is used instead of
-    /// `seek_key_codec`, the last_idx won't grow beyond 255.
-    #[test]
-    fn test_256_checkpoints() {
-        let seq_db = setup_db();
-        checkpoint_tests::test_256_checkpoints(&seq_db);
-    }
+    checkpoint_db_tests!(setup_db());
 }

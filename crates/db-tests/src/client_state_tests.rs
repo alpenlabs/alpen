@@ -45,3 +45,26 @@ pub fn test_get_consensus_update<T: ClientStateDatabase>(db: &T) {
     let update = db.get_client_update(1).expect("test: get").unwrap();
     assert_eq!(update, output);
 }
+
+#[macro_export]
+macro_rules! client_state_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_write_consensus_output() {
+            let db = $setup_expr;
+            $crate::client_state_tests::test_write_consensus_output(&db);
+        }
+
+        #[test]
+        fn test_get_last_write_idx() {
+            let db = $setup_expr;
+            $crate::client_state_tests::test_get_last_write_idx(&db);
+        }
+
+        #[test]
+        fn test_get_consensus_update() {
+            let db = $setup_expr;
+            $crate::client_state_tests::test_get_consensus_update(&db);
+        }
+    };
+}

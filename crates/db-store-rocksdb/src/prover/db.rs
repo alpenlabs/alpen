@@ -86,7 +86,7 @@ impl ProofDatabase for ProofDb {
 
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::proof_tests;
+    use strata_db_tests::proof_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance_for_prover;
@@ -96,39 +96,5 @@ mod tests {
         ProofDb::new(db, db_ops)
     }
 
-    #[test]
-    fn test_insert_new_proof() {
-        let db = setup_db();
-        proof_tests::test_insert_new_proof(&db);
-    }
-
-    #[test]
-    fn test_insert_duplicate_proof() {
-        let db = setup_db();
-        proof_tests::test_insert_duplicate_proof(&db);
-    }
-
-    #[test]
-    fn test_get_nonexistent_proof() {
-        let db = setup_db();
-        proof_tests::test_get_nonexistent_proof(&db);
-    }
-
-    #[test]
-    fn test_insert_new_deps() {
-        let db = setup_db();
-        proof_tests::test_insert_new_deps(&db);
-    }
-
-    #[test]
-    fn test_insert_duplicate_proof_deps() {
-        let db = setup_db();
-        proof_tests::test_insert_duplicate_proof_deps(&db);
-    }
-
-    #[test]
-    fn test_get_nonexistent_proof_deps() {
-        let db = setup_db();
-        proof_tests::test_get_nonexistent_proof_deps(&db);
-    }
+    proof_db_tests!(setup_db());
 }

@@ -175,7 +175,7 @@ impl L1Database for L1Db {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::l1_tests;
+    use strata_db_tests::l1_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -185,63 +185,5 @@ mod tests {
         L1Db::new(db, db_ops)
     }
 
-    #[test]
-    fn test_insert_into_empty_db() {
-        let db = setup_db();
-        l1_tests::test_insert_into_empty_db(&db);
-    }
-
-    #[test]
-    fn test_insert_into_canonical_chain() {
-        let db = setup_db();
-        l1_tests::test_insert_into_canonical_chain(&db);
-    }
-
-    #[test]
-    fn test_remove_canonical_chain_range() {
-        let db = setup_db();
-        l1_tests::test_remove_canonical_chain_range(&db);
-    }
-
-    #[test]
-    fn test_get_block_data() {
-        let db = setup_db();
-        l1_tests::test_get_block_data(&db);
-    }
-
-    #[test]
-    fn test_get_tx() {
-        let db = setup_db();
-        l1_tests::test_get_tx(&db);
-    }
-
-    #[test]
-    fn test_get_chain_tip() {
-        let db = setup_db();
-        l1_tests::test_get_chain_tip(&db);
-    }
-
-    #[test]
-    fn test_get_block_txs() {
-        let db = setup_db();
-        l1_tests::test_get_block_txs(&db);
-    }
-
-    #[test]
-    fn test_get_blockid_invalid_range() {
-        let db = setup_db();
-        l1_tests::test_get_blockid_invalid_range(&db);
-    }
-
-    #[test]
-    fn test_get_blockid_range() {
-        let db = setup_db();
-        l1_tests::test_get_blockid_range(&db);
-    }
-
-    #[test]
-    fn test_get_txs_fancy() {
-        let db = setup_db();
-        l1_tests::test_get_txs_fancy(&db);
-    }
+    l1_db_tests!(setup_db());
 }

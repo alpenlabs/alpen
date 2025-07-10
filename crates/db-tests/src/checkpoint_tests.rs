@@ -116,3 +116,56 @@ pub fn test_256_checkpoints<T: CheckpointDatabase>(db: &T) {
         db.put_checkpoint(last_idx + 1, checkpoint.clone()).unwrap();
     }
 }
+
+#[macro_export]
+macro_rules! checkpoint_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_insert_summary_single() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_insert_summary_single(&db);
+        }
+
+        #[test]
+        fn test_insert_summary_overwrite() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_insert_summary_overwrite(&db);
+        }
+
+        #[test]
+        fn test_insert_summary_multiple() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_insert_summary_multiple(&db);
+        }
+
+        #[test]
+        fn test_batch_checkpoint_new_entry() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_batch_checkpoint_new_entry(&db);
+        }
+
+        #[test]
+        fn test_batch_checkpoint_existing_entry() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_batch_checkpoint_existing_entry(&db);
+        }
+
+        #[test]
+        fn test_batch_checkpoint_non_monotonic_entries() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_batch_checkpoint_non_monotonic_entries(&db);
+        }
+
+        #[test]
+        fn test_get_last_batch_checkpoint_idx() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_get_last_batch_checkpoint_idx(&db);
+        }
+
+        #[test]
+        fn test_256_checkpoints() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_256_checkpoints(&db);
+        }
+    };
+}

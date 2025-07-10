@@ -125,3 +125,44 @@ fn generate_proof_context_with_deps() -> (ProofContext, Vec<ProofContext>) {
 
     (main_context, deps)
 }
+
+#[macro_export]
+macro_rules! proof_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_insert_new_proof() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_insert_new_proof(&db);
+        }
+
+        #[test]
+        fn test_insert_duplicate_proof() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_insert_duplicate_proof(&db);
+        }
+
+        #[test]
+        fn test_get_nonexistent_proof() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_get_nonexistent_proof(&db);
+        }
+
+        #[test]
+        fn test_insert_new_deps() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_insert_new_deps(&db);
+        }
+
+        #[test]
+        fn test_insert_duplicate_proof_deps() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_insert_duplicate_proof_deps(&db);
+        }
+
+        #[test]
+        fn test_get_nonexistent_proof_deps() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_get_nonexistent_proof_deps(&db);
+        }
+    };
+}

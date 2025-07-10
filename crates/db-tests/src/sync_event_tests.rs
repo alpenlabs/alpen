@@ -94,3 +94,44 @@ fn insert_event<T: SyncEventDatabase>(db: &T) -> SyncEvent {
     assert!(res.is_ok());
     ev
 }
+
+#[macro_export]
+macro_rules! sync_event_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_get_sync_event() {
+            let db = $setup_expr;
+            $crate::sync_event_tests::test_get_sync_event(&db);
+        }
+
+        #[test]
+        fn test_get_last_idx_1() {
+            let db = $setup_expr;
+            $crate::sync_event_tests::test_get_last_idx_1(&db);
+        }
+
+        #[test]
+        fn test_get_timestamp() {
+            let db = $setup_expr;
+            $crate::sync_event_tests::test_get_timestamp(&db);
+        }
+
+        #[test]
+        fn test_clear_sync_event() {
+            let db = $setup_expr;
+            $crate::sync_event_tests::test_clear_sync_event(&db);
+        }
+
+        #[test]
+        fn test_clear_sync_event_2() {
+            let db = $setup_expr;
+            $crate::sync_event_tests::test_clear_sync_event_2(&db);
+        }
+
+        #[test]
+        fn test_get_last_idx_2() {
+            let db = $setup_expr;
+            $crate::sync_event_tests::test_get_last_idx_2(&db);
+        }
+    };
+}

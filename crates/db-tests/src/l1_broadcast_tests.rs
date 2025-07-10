@@ -89,3 +89,44 @@ fn generate_l1_tx_entry() -> (Buf32, L1TxEntry) {
     let txentry = L1TxEntry::from_tx(&txns[0]);
     (txid, txentry)
 }
+
+#[macro_export]
+macro_rules! l1_broadcast_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_get_last_tx_entry() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_get_last_tx_entry(&db);
+        }
+
+        #[test]
+        fn test_add_tx_new_entry() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_add_tx_new_entry(&db);
+        }
+
+        #[test]
+        fn test_put_tx_existing_entry() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_tx_existing_entry(&db);
+        }
+
+        #[test]
+        fn test_update_tx_entry() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_update_tx_entry(&db);
+        }
+
+        #[test]
+        fn test_get_txentry_by_idx() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_get_txentry_by_idx(&db);
+        }
+
+        #[test]
+        fn test_get_next_txidx() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_get_next_txidx(&db);
+        }
+    };
+}

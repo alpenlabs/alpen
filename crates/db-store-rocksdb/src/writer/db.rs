@@ -95,7 +95,7 @@ impl L1WriterDatabase for RBL1WriterDb {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::l1_writer_tests;
+    use strata_db_tests::l1_writer_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -105,39 +105,5 @@ mod tests {
         RBL1WriterDb::new(db, db_ops)
     }
 
-    #[test]
-    fn test_put_blob_new_entry() {
-        let db = setup_db();
-        l1_writer_tests::test_put_blob_new_entry(&db);
-    }
-
-    #[test]
-    fn test_put_blob_existing_entry() {
-        let db = setup_db();
-        l1_writer_tests::test_put_blob_existing_entry(&db);
-    }
-
-    #[test]
-    fn test_update_entry() {
-        let db = setup_db();
-        l1_writer_tests::test_update_entry(&db);
-    }
-
-    #[test]
-    fn test_get_last_entry_idx() {
-        let db = setup_db();
-        l1_writer_tests::test_get_last_entry_idx(&db);
-    }
-
-    #[test]
-    fn test_put_intent_new_entry() {
-        let db = setup_db();
-        l1_writer_tests::test_put_intent_new_entry(&db);
-    }
-
-    #[test]
-    fn test_put_intent_entry() {
-        let db = setup_db();
-        l1_writer_tests::test_put_intent_entry(&db);
-    }
+    l1_writer_db_tests!(setup_db());
 }

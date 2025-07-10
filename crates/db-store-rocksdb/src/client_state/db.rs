@@ -70,7 +70,7 @@ impl ClientStateDatabase for ClientStateDb {
 
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::client_state_tests;
+    use strata_db_tests::client_state_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -89,21 +89,5 @@ mod tests {
         assert_eq!(idx, None);
     }
 
-    #[test]
-    fn test_write_consensus_output() {
-        let db = setup_db();
-        client_state_tests::test_write_consensus_output(&db);
-    }
-
-    #[test]
-    fn test_get_last_write_idx() {
-        let db = setup_db();
-        client_state_tests::test_get_last_write_idx(&db);
-    }
-
-    #[test]
-    fn test_get_consensus_update() {
-        let db = setup_db();
-        client_state_tests::test_get_consensus_update(&db);
-    }
+    client_state_db_tests!(setup_db());
 }

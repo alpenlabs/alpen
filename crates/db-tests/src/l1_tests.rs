@@ -293,3 +293,68 @@ fn insert_block_data<T: L1Database>(height: u64, db: &T, num_txs: usize) -> (L1B
 
     (mf, txs)
 }
+
+#[macro_export]
+macro_rules! l1_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_insert_into_empty_db() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_insert_into_empty_db(&db);
+        }
+
+        #[test]
+        fn test_insert_into_canonical_chain() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_insert_into_canonical_chain(&db);
+        }
+
+        #[test]
+        fn test_remove_canonical_chain_range() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_remove_canonical_chain_range(&db);
+        }
+
+        #[test]
+        fn test_get_block_data() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_get_block_data(&db);
+        }
+
+        #[test]
+        fn test_get_tx() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_get_tx(&db);
+        }
+
+        #[test]
+        fn test_get_chain_tip() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_get_chain_tip(&db);
+        }
+
+        #[test]
+        fn test_get_block_txs() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_get_block_txs(&db);
+        }
+
+        #[test]
+        fn test_get_blockid_invalid_range() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_get_blockid_invalid_range(&db);
+        }
+
+        #[test]
+        fn test_get_blockid_range() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_get_blockid_range(&db);
+        }
+
+        #[test]
+        fn test_get_txs_fancy() {
+            let db = $setup_expr;
+            $crate::l1_tests::test_get_txs_fancy(&db);
+        }
+    };
+}

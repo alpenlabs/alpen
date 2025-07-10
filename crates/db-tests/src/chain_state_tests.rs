@@ -171,3 +171,44 @@ pub fn test_purge_and_rollback<T: ChainstateDatabase>(db: &T) {
     let res = db.rollback_writes_to(2);
     assert!(res.is_err_and(|x| matches!(x, DbError::MissingL2State(2))));
 }
+
+#[macro_export]
+macro_rules! chain_state_db_tests {
+    ($setup_expr:expr) => {
+        #[test]
+        fn test_write_genesis_state() {
+            let db = $setup_expr;
+            $crate::chain_state_tests::test_write_genesis_state(&db);
+        }
+
+        #[test]
+        fn test_write_state_update() {
+            let db = $setup_expr;
+            $crate::chain_state_tests::test_write_state_update(&db);
+        }
+
+        #[test]
+        fn test_get_earliest_and_last_state_idx() {
+            let db = $setup_expr;
+            $crate::chain_state_tests::test_get_earliest_and_last_state_idx(&db);
+        }
+
+        #[test]
+        fn test_purge() {
+            let db = $setup_expr;
+            $crate::chain_state_tests::test_purge(&db);
+        }
+
+        #[test]
+        fn test_rollback() {
+            let db = $setup_expr;
+            $crate::chain_state_tests::test_rollback(&db);
+        }
+
+        #[test]
+        fn test_purge_and_rollback() {
+            let db = $setup_expr;
+            $crate::chain_state_tests::test_purge_and_rollback(&db);
+        }
+    };
+}

@@ -115,7 +115,7 @@ impl SyncEventDatabase for SyncEventDb {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::sync_event_tests;
+    use strata_db_tests::sync_event_db_tests;
 
     use super::*;
     use crate::test_utils::get_rocksdb_tmp_instance;
@@ -125,39 +125,5 @@ mod tests {
         SyncEventDb::new(db, db_ops)
     }
 
-    #[test]
-    fn test_get_sync_event() {
-        let db = setup_db();
-        sync_event_tests::test_get_sync_event(&db);
-    }
-
-    #[test]
-    fn test_get_last_idx_1() {
-        let db = setup_db();
-        sync_event_tests::test_get_last_idx_1(&db);
-    }
-
-    #[test]
-    fn test_get_timestamp() {
-        let db = setup_db();
-        sync_event_tests::test_get_timestamp(&db);
-    }
-
-    #[test]
-    fn test_clear_sync_event() {
-        let db = setup_db();
-        sync_event_tests::test_clear_sync_event(&db);
-    }
-
-    #[test]
-    fn test_clear_sync_event_2() {
-        let db = setup_db();
-        sync_event_tests::test_clear_sync_event_2(&db);
-    }
-
-    #[test]
-    fn test_get_last_idx_2() {
-        let db = setup_db();
-        sync_event_tests::test_get_last_idx_2(&db);
-    }
+    sync_event_db_tests!(setup_db());
 }
