@@ -1,10 +1,8 @@
 use argh::FromArgs;
 use rand_core::OsRng;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
-use crate::{
-    errors::{DisplayableError, DisplayedError},
-    seed::{password::Password, EncryptedSeedPersister, Seed},
-};
+use crate::seed::{password::Password, EncryptedSeedPersister, Seed};
 
 /// Changes the seed's encryption password
 #[derive(FromArgs, PartialEq, Debug)]

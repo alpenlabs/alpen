@@ -3,8 +3,6 @@
 pub mod alpen;
 pub mod cmd;
 pub mod constants;
-#[macro_use]
-pub mod errors;
 mod link;
 pub mod net_type;
 pub mod recovery;

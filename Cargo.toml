@@ -51,6 +51,7 @@ members = [
   "bin/datatool",
   "bin/alpen-cli",
   "bin/strata-client",
+  "bin/strata-dbtool",
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
   "bin/prover-client",
@@ -95,6 +96,7 @@ strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-stf = { path = "crates/asm/stf" }
 strata-btcio = { path = "crates/btcio" }
 strata-chaintsn = { path = "crates/chaintsn" }
+strata-cli-common = { path = "crates/strata-cli-common" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
@@ -248,7 +250,7 @@ borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.6.0"
 cfg-if = "1.0.0"
 chrono = "0.4.38"
-clap = "4"
+clap = { version="4.5.39", default-features = false, features = ["derive"] }
 deadpool = "0.12.1"
 digest = "0.10"
 ethnum = "1.5.0"
