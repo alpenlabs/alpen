@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 bitcoin.workspace = true
 borsh.workspace = true
+moho-types.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 thiserror.workspace = true

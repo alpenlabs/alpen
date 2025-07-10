@@ -1,6 +1,6 @@
 use moho_runtime_interface::MohoProgram;
 use moho_types::{InnerStateCommitment, StateReference};
-use strata_asm_common::{AnchorState, Log};
+use strata_asm_common::{AnchorState, AsmLog};
 use strata_asm_stf::{StrataAsmSpec, asm_stf};
 use strata_primitives::hash::compute_borsh_hash;
 
@@ -14,7 +14,7 @@ impl MohoProgram for AsmStfProgram {
 
     type StepInput = AsmStepInput;
 
-    type StepOutput = Vec<Log>;
+    type StepOutput = Vec<AsmLog>;
 
     fn compute_input_reference(input: &AsmStepInput) -> StateReference {
         input.compute_ref()
@@ -28,7 +28,10 @@ impl MohoProgram for AsmStfProgram {
         InnerStateCommitment::new(compute_borsh_hash(state).into())
     }
 
-    fn process_transition(pre_state: &AnchorState, inp: &AsmStepInput) -> (AnchorState, Vec<Log>) {
+    fn process_transition(
+        pre_state: &AnchorState,
+        inp: &AsmStepInput,
+    ) -> (AnchorState, Vec<AsmLog>) {
         asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0, &inp.aux_bundle).unwrap()
     }
 

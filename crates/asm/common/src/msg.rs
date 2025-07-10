@@ -32,34 +32,6 @@ impl<const ID: SubprotocolId> InterprotoMsg for NullMsg<ID> {
     }
 }
 
-/// Stub type for SPS-msg-fmt log.
-///
-/// This should be converted to be a wrapper from the strata-common repo.
-#[derive(Clone, Debug)]
-pub struct Log {
-    /// Type identifier
-    ty: u16,
-    /// Body of the message
-    body: Vec<u8>,
-}
-
-impl Log {
-    /// Constructor
-    pub fn new(ty: u16, body: Vec<u8>) -> Self {
-        Self { ty, body }
-    }
-
-    /// Returns type identifier
-    pub fn ty(&self) -> u16 {
-        self.ty
-    }
-
-    /// Returns slice of body
-    pub fn body(&self) -> &[u8] {
-        &self.body
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::any::Any;
