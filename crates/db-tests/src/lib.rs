@@ -1,5 +1,8 @@
-// Generic database test utilities for database trait implementations
-// This crate provides reusable test functions for database trait implementations
+//! Generic database unit tests for database trait impls.
+//!
+//! Each module exports a macro which instantiates all of the unit tests for
+//! the database kind so that when new unit tests are added, all impls
+//! automatically inherit them.
 
 pub mod chain_state_tests;
 pub mod checkpoint_tests;
