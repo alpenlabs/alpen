@@ -1,0 +1,14 @@
+[package]
+name = "strata-chainexec"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-chaintsn.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+
+thiserror.workspace = true

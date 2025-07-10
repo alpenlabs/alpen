@@ -64,6 +64,16 @@ impl L2BlockManager {
         self.ops.get_blocks_at_height_blocking(h)
     }
 
+    /// Gets the block at a height.  Async.
+    pub async fn get_tip_block_async(&self) -> DbResult<L2BlockId> {
+        self.ops.get_tip_block_async().await
+    }
+
+    /// Gets the block at a height.  Blocking.
+    pub fn get_tip_block_blocking(&self) -> DbResult<L2BlockId> {
+        self.ops.get_tip_block_blocking()
+    }
+
     /// Gets the block's verification status.  Async.
     pub async fn get_block_status_async(&self, id: &L2BlockId) -> DbResult<Option<BlockStatus>> {
         self.ops.get_block_status_async(*id).await

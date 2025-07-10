@@ -206,7 +206,6 @@ fn generate_block_template_inner(
 
     // Actually put the template together.
     let (header, body, accessory) = prepare_block(
-        slot,
         parent,
         ts,
         config.epoch_gas_limit(),

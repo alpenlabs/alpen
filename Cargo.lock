@@ -13622,12 +13622,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-chain-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "strata-chainexec",
+ "strata-chaintsn",
+ "strata-eectl",
+ "strata-primitives",
+ "strata-state",
+ "strata-status",
+ "strata-storage",
+ "strata-tasks",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "strata-chainexec"
+version = "0.1.0"
+dependencies = [
+ "strata-chaintsn",
+ "strata-primitives",
+ "strata-state",
+ "thiserror 2.0.12",
+]
+
+[[package]]
 name = "strata-chaintsn"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "strata-chainexec",
  "strata-crypto",
  "strata-primitives",
  "strata-state",
@@ -13712,6 +13741,8 @@ dependencies = [
  "bitcoin",
  "borsh",
  "rand 0.8.5",
+ "strata-chain-worker",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-common",
  "strata-db",
@@ -13772,13 +13803,13 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
+ "mockall",
  "parking_lot 0.12.3",
  "serde",
  "serde_json",
  "strata-primitives",
  "strata-state",
  "thiserror 2.0.12",
- "tracing",
  "zkaleido",
 ]
 
@@ -13815,9 +13846,16 @@ dependencies = [
 name = "strata-eectl"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "anyhow",
+ "strata-common",
+ "strata-db",
  "strata-primitives",
  "strata-state",
+ "strata-status",
+ "strata-tasks",
  "thiserror 2.0.12",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -13973,6 +14011,7 @@ name = "strata-proofimpl-cl-stf"
 version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-primitives",
  "strata-proofimpl-btc-blockspace",
@@ -14174,6 +14213,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-common",
  "strata-consensus-logic",
@@ -14242,6 +14282,7 @@ dependencies = [
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
+ "thiserror 2.0.12",
  "tracing",
 ]
 
@@ -14262,6 +14303,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures",
  "lru 0.12.5",
  "parking_lot 0.12.3",
  "paste",
@@ -14319,6 +14361,7 @@ dependencies = [
  "rand_core 0.6.4",
  "serde_json",
  "strata-btcio",
+ "strata-chainexec",
  "strata-chaintsn",
  "strata-consensus-logic",
  "strata-l1tx",

@@ -14,7 +14,6 @@ use crate::{
 
 /// Extracts new duties given a current chainstate and an identity.
 pub async fn extract_duties(
-    tip_slot: u64,
     tip_blkid: L2BlockId,
     cistate: &InternalState,
     checkpoint_handle: &CheckpointHandle,
@@ -22,7 +21,7 @@ pub async fn extract_duties(
     params: &Params,
 ) -> Result<Vec<Duty>, Error> {
     let mut duties = vec![];
-    duties.extend(extract_block_duties(tip_slot, tip_blkid, l2_block_manager, params).await?);
+    duties.extend(extract_block_duties(tip_blkid, l2_block_manager, params).await?);
     duties.extend(extract_batch_duties(cistate, checkpoint_handle).await?);
 
     if !duties.is_empty() {
@@ -33,24 +32,25 @@ pub async fn extract_duties(
 }
 
 async fn extract_block_duties(
-    tip_slot: u64,
     tip_blkid: L2BlockId,
     l2_block_manager: &L2BlockManager,
     params: &Params,
 ) -> Result<Vec<Duty>, Error> {
-    let tip_block_ts = l2_block_manager
+    let tip_block_header = l2_block_manager
         .get_block_data_async(&tip_blkid)
         .await?
         .ok_or(Error::MissingL2Block(tip_blkid))?
         .header()
-        .timestamp();
+        .clone();
+    let tip_block_ts = tip_block_header.timestamp();
+    let new_tip_slot = tip_block_header.slot() + 1;
 
     let target_ts = tip_block_ts + params.rollup().block_time;
 
     // Since we're not rotating sequencers, for now we just *always* produce a
     // new block.
     Ok(vec![Duty::SignBlock(BlockSigningDuty::new_simple(
-        tip_slot + 1,
+        new_tip_slot,
         tip_blkid,
         target_ts,
     ))])

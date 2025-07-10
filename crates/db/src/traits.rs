@@ -10,13 +10,11 @@ use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
-use strata_state::{
-    block::L2BlockBundle, chain_state::Chainstate, operation::*, state_op::WriteBatchEntry,
-    sync_event::SyncEvent,
-};
+use strata_state::{block::L2BlockBundle, operation::*, sync_event::SyncEvent};
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
+    chainstate::ChainstateDatabase,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbResult,
 };
@@ -142,6 +140,10 @@ pub trait L2BlockDatabase: Send + Sync + 'static {
 
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: L2BlockId) -> DbResult<Option<BlockStatus>>;
+
+    /// Returns the latest valid L2 block ID, or `None` at genesis or when no valid block exists.
+    // TODO do we even want to permit this as being a possible thing?
+    fn get_tip_block(&self) -> DbResult<L2BlockId>;
 }
 
 /// Gets the status of a block.
@@ -158,44 +160,6 @@ pub enum BlockStatus {
     Invalid,
 }
 
-/// Low-level Strata chainstate database.  This provides the basic interface for
-/// storing and fetching write batches and toplevel states on disk.
-///
-/// Currently we do not have a "bulk" state that we would want to avoid storing
-/// in memory all at once.  In the future, we expect that this interface would
-/// be extended to expose a "finalized" state that's fully materialized, along
-/// with functions to walk the finalized state forwards and backwards.  We can
-/// use the unmerged write batches to construct a view of more recent states
-/// than the fully materialized state in-memory.
-///
-/// For now, the full state is just the "toplevel" state that can always be
-/// expected to be of moderate size in memory.
-// TODO maybe rewrite this around storing write batches according to blkid?
-pub trait ChainstateDatabase: Send + Sync + 'static {
-    /// Writes the genesis chainstate at index 0.
-    fn write_genesis_state(&self, toplevel: Chainstate, blockid: L2BlockId) -> DbResult<()>;
-
-    /// Stores a write batch in the database, possibly computing that state
-    /// under the hood from the writes.  Will not overwrite existing data,
-    /// previous writes must be purged first in order to be replaced.
-    fn put_write_batch(&self, idx: u64, batch: WriteBatchEntry) -> DbResult<()>;
-
-    /// Gets the write batch stored to compute a height.
-    fn get_write_batch(&self, idx: u64) -> DbResult<Option<WriteBatchEntry>>;
-
-    /// Tells the database to purge state before a certain index.
-    fn purge_entries_before(&self, before_idx: u64) -> DbResult<()>;
-
-    /// Rolls back any writes after a specified index.
-    fn rollback_writes_to(&self, new_tip_idx: u64) -> DbResult<()>;
-
-    /// Gets the last written state.
-    fn get_last_write_idx(&self) -> DbResult<u64>;
-
-    /// Gets the earliest written state.  This corresponds to calls to
-    /// `purge_entries_before`.
-    fn get_earliest_write_idx(&self) -> DbResult<u64>;
-}
 
 /// Database for checkpoint data.
 pub trait CheckpointDatabase: Send + Sync + 'static {

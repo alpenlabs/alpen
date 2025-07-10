@@ -34,7 +34,7 @@ use broadcaster::{
     db::BroadcastDb,
     schemas::{BcastL1TxIdSchema, BcastL1TxSchema},
 };
-pub use chain_state::db::ChainstateDb;
+pub use chain_state::{db::ChainstateDb, types::StateInstanceEntry};
 pub use checkpoint::db::RBCheckpointDB;
 use checkpoint::schemas::*;
 pub use client_state::db::ClientStateDb;
@@ -50,7 +50,7 @@ pub use writer::db::RBL1WriterDb;
 use writer::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 
 use crate::{
-    chain_state::schemas::WriteBatchSchema,
+    chain_state::schemas::{StateInstanceSchema, WriteBatchSchema},
     client_state::schemas::ClientUpdateOutputSchema,
     l1::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema},
     sequence::SequenceSchema,
@@ -72,7 +72,6 @@ pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
     L2BlockSchema::COLUMN_FAMILY_NAME,
     L2BlockStatusSchema::COLUMN_FAMILY_NAME,
     L2BlockHeightSchema::COLUMN_FAMILY_NAME,
-    WriteBatchSchema::COLUMN_FAMILY_NAME,
 
     // Payload/intent schemas
     PayloadSchema::COLUMN_FAMILY_NAME,
@@ -86,6 +85,10 @@ pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
     // Checkpoint schemas
     CheckpointSchema::COLUMN_FAMILY_NAME,
     EpochSummarySchema::COLUMN_FAMILY_NAME,
+
+    // Chainstate schemas
+    WriteBatchSchema::COLUMN_FAMILY_NAME,
+    StateInstanceSchema::COLUMN_FAMILY_NAME,
 ];
 
 /// database operations configuration
@@ -196,7 +199,7 @@ impl DatabaseBackend for RocksDbBackend {
         self.client_state_db.clone()
     }
 
-    fn chain_state_db(&self) -> Arc<impl strata_db::traits::ChainstateDatabase> {
+    fn chain_state_db(&self) -> Arc<impl strata_db::chainstate::ChainstateDatabase> {
         self.chain_state_db.clone()
     }
 

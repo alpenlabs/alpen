@@ -71,7 +71,7 @@ pub trait StrataApi {
     ) -> RpcResult<Option<EpochSummary>>;
 
     #[method(name = "getChainstateRaw")]
-    async fn get_chainstate_raw(&self, slot: u64) -> RpcResult<Vec<u8>>;
+    async fn get_chainstate_raw(&self, block_id: L2BlockId) -> RpcResult<Vec<u8>>;
 
     #[method(name = "getCLBlockWitness")]
     async fn get_cl_block_witness_raw(&self, block_id: L2BlockId) -> RpcResult<Vec<u8>>;
@@ -213,8 +213,8 @@ pub trait StrataDebugApi {
     async fn get_block_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<L2Block>>;
 
     /// Get the ChainState at a certain index
-    #[method(name = "debug_getChainstateAtIdx")]
-    async fn get_chainstate_at_idx(&self, idx: u64) -> RpcResult<Option<RpcChainState>>;
+    #[method(name = "debug_getChainstateById")]
+    async fn get_chainstate_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<RpcChainState>>;
 
     /// Get the ClientState at a certain index
     #[method(name = "debug_getClientStateAtIdx")]

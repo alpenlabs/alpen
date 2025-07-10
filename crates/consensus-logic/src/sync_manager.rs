@@ -4,20 +4,26 @@
 
 use std::sync::Arc;
 
-use strata_eectl::engine::ExecEngineCtl;
+use strata_chain_worker::ChainWorkerHandle;
+use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
-use tokio::sync::{broadcast, mpsc};
+use tokio::{
+    runtime::Handle,
+    sync::{broadcast, mpsc},
+};
 
 use crate::{
+    chain_worker_context::ChainWorkerCtx,
     csm::{
         ctl::CsmController,
         message::{ClientUpdateNotif, CsmMessage, ForkChoiceMessage},
         worker,
     },
-    fork_choice_manager,
+    exec_worker_context::ExecWorkerCtx,
+    fork_choice_manager::{self},
 };
 
 /// Handle to the core pipeline tasks.
@@ -89,23 +95,35 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // not be benefitting from the reduced cloning
     let (cupdate_tx, cupdate_rx) = broadcast::channel::<Arc<ClientUpdateNotif>>(64);
 
+    let ex_storage = storage.clone();
+    let ex_st_ch = status_channel.clone();
+    let ex_handle = executor.handle().clone();
+    let ex_engine = engine.clone();
+    let ex_handle = spawn_exec_worker(executor, ex_handle, ex_storage, ex_st_ch, ex_engine)?;
+
+    let cw_handle = executor.handle().clone();
+    let cw_storage = storage.clone();
+    let cw_st_ch = status_channel.clone();
+    let cw_params = params.clone();
+    let cw_handle = Arc::new(spawn_chain_worker(
+        executor, cw_handle, cw_storage, cw_st_ch, cw_params, ex_handle,
+    )?);
+
     // Start the fork choice manager thread.  If we haven't done genesis yet
     // this will just wait until the CSM says we have.
     let fcm_storage = storage.clone();
-    let fcm_engine = engine.clone();
-    let fcm_csm_controller = csm_controller.clone();
+    let _fcm_csm_controller = csm_controller.clone();
     let fcm_params = params.clone();
-    let handle = executor.handle().clone();
+    let fcm_handle = executor.handle().clone();
     let st_ch = status_channel.clone();
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
         // TODO this should be simplified into a builder or something
         fork_choice_manager::tracker_task(
             shutdown,
-            handle,
+            fcm_handle,
             fcm_storage,
-            fcm_engine,
             fcm_rx,
-            fcm_csm_controller,
+            cw_handle,
             fcm_params,
             st_ch,
         )
@@ -118,7 +136,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         cupdate_tx,
         storage.checkpoint().clone(),
     )?;
-
     let csm_engine = engine.clone();
     let st_ch = status_channel.clone();
 
@@ -133,4 +150,52 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         cupdate_rx,
         status_channel,
     })
+}
+
+fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
+    executor: &TaskExecutor,
+    handle: Handle,
+    storage: Arc<NodeStorage>,
+    status_channel: StatusChannel,
+    engine: Arc<E>,
+) -> anyhow::Result<ExecCtlHandle> {
+    // Create the worker context - this stays in consensus-logic since it implements WorkerContext
+    let context = ExecWorkerCtx::new(storage.l2().clone());
+
+    let handle = strata_eectl::builder::ExecWorkerBuilder::new()
+        .with_context(context)
+        .with_engine(engine)
+        .with_status_channel(status_channel)
+        .with_runtime(handle)
+        .launch(executor)?;
+
+    Ok(handle)
+}
+
+fn spawn_chain_worker(
+    executor: &TaskExecutor,
+    handle: Handle,
+    storage: Arc<NodeStorage>,
+    status_channel: StatusChannel,
+    params: Arc<Params>,
+    exec_ctl_handle: ExecCtlHandle,
+) -> anyhow::Result<ChainWorkerHandle> {
+    // Create the worker context - this stays in consensus-logic since it implements WorkerContext
+    let context = ChainWorkerCtx::new(
+        storage.l2().clone(),
+        storage.chainstate().clone(),
+        storage.checkpoint().clone(),
+        0, // FIXME: Not sure what this is
+    );
+
+    // Use the new builder API to launch the worker and get a handle
+    let handle = strata_chain_worker::ChainWorkerBuilder::new()
+        .with_context(context)
+        .with_params(params)
+        .with_exec_handle(exec_ctl_handle)
+        .with_status_channel(status_channel)
+        .with_runtime(handle)
+        .launch(executor)?;
+
+    Ok(handle)
 }

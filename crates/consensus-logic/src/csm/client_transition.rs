@@ -1,7 +1,14 @@
 //! Core state transition function.
 
-use bitcoin::Transaction;
-use strata_primitives::{batch::verify_signed_checkpoint_sig, l1::L1BlockCommitment, prelude::*};
+use std::cmp::min;
+
+use bitcoin::{block::Header, Transaction};
+use strata_db::traits::{DatabaseBackend, L1Database, L2BlockDatabase};
+use strata_primitives::{
+    batch::{verify_signed_checkpoint_sig, BatchInfo, Checkpoint},
+    l1::{get_btc_params, HeaderVerificationState, L1BlockCommitment, L1BlockId},
+    prelude::*,
+};
 use strata_state::{
     block::L2BlockBundle, chain_state::Chainstate, client_state::*, header::L2Header,
     id::L2BlockId, operation::*, sync_event::SyncEvent,
@@ -16,7 +23,7 @@ pub trait EventContext {
     fn get_l1_block_manifest(&self, blockid: &L1BlockId) -> Result<L1BlockManifest, Error>;
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error>;
     fn get_l2_block_data(&self, blockid: &L2BlockId) -> Result<L2BlockBundle, Error>;
-    fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error>;
+    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error>;
 }
 
 /// Event context using the main node storage interfaace.
@@ -53,12 +60,12 @@ impl EventContext for StorageEventContext<'_> {
             .ok_or(Error::MissingL2Block(*blkid))
     }
 
-    fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error> {
+    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
         self.storage
             .chainstate()
-            .get_toplevel_chainstate_blocking(slot)?
-            .map(Into::into)
-            .ok_or(Error::MissingIdxChainstate(slot))
+            .get_slot_write_batch_blocking(*blkid)?
+            .map(|wb| wb.into_toplevel())
+            .ok_or(Error::MissingBlockChainstate(*blkid))
     }
 }
 
@@ -323,8 +330,8 @@ mod tests {
             Err(Error::MissingL2Block(*blkid))
         }
 
-        fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error> {
-            Err(Error::MissingIdxChainstate(slot))
+        fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
+            Err(Error::MissingBlockChainstate(*blkid))
         }
     }
 

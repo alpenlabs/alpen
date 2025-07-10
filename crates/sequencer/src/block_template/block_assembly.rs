@@ -1,5 +1,7 @@
 use std::{thread, time};
 
+use strata_chainexec::MemStateAccessor;
+use strata_chaintsn::context::StateAccessor;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -22,7 +24,6 @@ use strata_state::{
     exec_update::construct_ops_from_deposit_intents,
     header::L2BlockHeader,
     prelude::*,
-    state_op::*,
 };
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
 use tracing::*;
@@ -30,28 +31,41 @@ use tracing::*;
 use super::error::BlockAssemblyError as Error;
 
 /// Get the total gas used by EL blocks from start of current epoch till prev_slot
-fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_slot: u64) -> Result<u64, Error> {
+fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> Result<u64, Error> {
     let chainstate = storage
         .chainstate()
-        .get_toplevel_chainstate_blocking(prev_slot)?
-        .ok_or(Error::Db(DbError::MissingL2State(prev_slot)))?
-        .to_chainstate();
+        .get_slot_write_batch_blocking(prev_blkid)?
+        .ok_or(Error::Db(DbError::MissingSlotWriteBatch(prev_blkid)))?
+        .into_toplevel();
 
+    let prev_epoch = chainstate.prev_epoch();
+    debug!(?prev_epoch);
     let epoch_start_slot = chainstate.prev_epoch().last_slot() + 1;
+    let prev_header = storage
+        .l2()
+        .get_block_data_blocking(&prev_blkid)?
+        .ok_or(Error::Db(DbError::MissingL2Block(prev_blkid)))?
+        .header()
+        .clone();
     let mut gas_used = 0;
-    for slot in epoch_start_slot..=prev_slot {
-        let blocks = storage.l2().get_blocks_at_height_blocking(slot)?;
-        let block_id = blocks
-            .first()
-            .ok_or(Error::Db(DbError::MissingL2BlockHeight(slot)))?;
+    let prev_slot = prev_header.slot();
 
-        let block = storage
+    let mut block_to_fetch = prev_blkid;
+    for _ in epoch_start_slot..=prev_slot {
+        let block: L2BlockBundle = storage
             .l2()
-            .get_block_data_blocking(block_id)?
-            .ok_or(Error::Db(DbError::MissingL2Block(*block_id)))?;
-
+            .get_block_data_blocking(&block_to_fetch)?
+            .ok_or(DbError::MissingL2Block(block_to_fetch))?;
         gas_used += block.accessory().gas_used();
+        block_to_fetch = *block.header().parent();
     }
+
+    // REVIEW: This doesn't work for the first block because prev_epoch_end_blkid = 0x00
+    // let prev_epoch_end_blkid = *chainstate.prev_epoch().last_blkid();
+    // assert_eq!(
+    //     block_to_fetch, prev_epoch_end_blkid,
+    //     "fetched blocks should end at the last block of the previous epoch"
+    // );
 
     // TODO: cache
     Ok(gas_used)
@@ -61,7 +75,6 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_slot: u64) -> Result<
 /// Needs to be signed to be a valid L2Block.
 // TODO use parent block chainstate
 pub fn prepare_block(
-    slot: u64,
     prev_block: L2BlockBundle,
     ts: u64,
     epoch_gas_limit: Option<u64>,
@@ -70,7 +83,8 @@ pub fn prepare_block(
     params: &Params,
 ) -> Result<(L2BlockHeader, L2BlockBody, L2BlockAccessory), Error> {
     let prev_blkid = prev_block.header().get_blockid();
-    debug!(%slot, %prev_blkid, "preparing block");
+    let prev_slot = prev_block.header().slot();
+    debug!(%prev_slot, %prev_blkid, "preparing block");
     let l1man = storage.l1();
     let chsman = storage.chainstate();
     let ckptman = storage.checkpoint();
@@ -80,17 +94,17 @@ pub fn prepare_block(
     // Get the previous block's state
     // TODO make this get the prev block slot from somewhere more reliable in
     // case we skip slots
-    let prev_slot = prev_block.header().slot();
+    let prev_blkid = prev_block.header().get_blockid();
     let prev_chstate = chsman
-        .get_toplevel_chainstate_blocking(prev_slot)?
+        .get_slot_write_batch_blocking(prev_blkid)?
         .ok_or(Error::MissingBlockChainstate(prev_blkid))?
-        .to_chainstate();
+        .into_toplevel();
     let first_block_of_epoch = prev_chstate.is_epoch_finishing();
 
     // Figure out the safe L1 blkid.
     // FIXME this is somewhat janky, should get it from the MMR
-    let safe_l1_block_rec = prev_chstate.l1_view().safe_block();
-    let safe_l1_blkid = strata_primitives::hash::sha256d(safe_l1_block_rec.buf());
+    let safe_l1_blkid = *prev_chstate.l1_view().safe_blkid();
+    debug!(%safe_l1_blkid);
 
     // TODO Pull data from CSM state that we've observed from L1, including new
     // headers or any headers needed to perform a reorg if necessary.
@@ -100,11 +114,12 @@ pub fn prepare_block(
         ckptman.as_ref(),
         params.rollup(),
     )?;
+    debug!(?l1_seg);
 
     let remaining_gas_limit = if first_block_of_epoch {
         epoch_gas_limit
     } else if let Some(epoch_gas_limit) = epoch_gas_limit {
-        let gas_used = get_total_gas_used_in_epoch(storage, prev_slot)?;
+        let gas_used = get_total_gas_used_in_epoch(storage, prev_blkid)?;
         Some(epoch_gas_limit.saturating_sub(gas_used))
     } else {
         None
@@ -112,13 +127,14 @@ pub fn prepare_block(
 
     // Prepare the execution segment, which right now is just talking to the EVM
     // but will be more advanced later.
+    let slot = prev_slot + 1;
     let (exec_seg, block_acc) = prepare_exec_data(
         slot,
         ts,
         prev_blkid,
         prev_global_sr,
         &prev_chstate,
-        safe_l1_blkid,
+        safe_l1_blkid.into(),
         engine,
         params.rollup(),
         remaining_gas_limit,
@@ -158,12 +174,14 @@ fn prepare_l1_segment(
         .get_canonical_chain_tip()?
         .expect("blockasm: should have L1 blocks by now");
     let target_height = cur_real_l1_height.saturating_sub(params.l1_reorg_safe_depth as u64); // -1 to give some buffer for very short reorgs
-    trace!(%target_height, "figuring out which blocks to include in L1 segment");
 
     // Check to see if there's actually no blocks in the queue.  In that case we can just give
     // everything we know about.
     let cur_safe_height = prev_chstate.l1_view().safe_height();
     let cur_next_exp_height = prev_chstate.l1_view().next_expected_height();
+    let l1_verified_block = prev_chstate.l1_view().header_vs().last_verified_block;
+    trace!(%target_height, %cur_safe_height, %cur_next_exp_height, "figuring out which blocks to include in L1 segment");
+    trace!(?l1_verified_block, "last verified L1 block");
 
     // If there isn't any new blocks to pull then we just give nothing.
     if target_height <= cur_next_exp_height {
@@ -385,12 +403,11 @@ fn poll_status_loop<E: ExecEngineCtl>(
 // TODO when we build the "block executor" logic we should shift this out
 fn compute_post_state(
     prev_chstate: Chainstate,
-    header: &impl L2Header,
+    header: &L2BlockHeader,
     body: &L2BlockBody,
     params: &Params,
 ) -> Result<Chainstate, Error> {
-    let mut state_cache = StateCache::new(prev_chstate);
-    strata_chaintsn::transition::process_block(&mut state_cache, header, body, params.rollup())?;
-    let wb = state_cache.finalize();
-    Ok(wb.into_toplevel())
+    let mut state_accessor = MemStateAccessor::new(prev_chstate);
+    strata_chaintsn::transition::process_block(&mut state_accessor, header, body, params.rollup())?;
+    Ok(state_accessor.state_untracked().clone())
 }

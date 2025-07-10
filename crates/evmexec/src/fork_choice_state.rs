@@ -43,18 +43,16 @@ fn compute_evm_fc_state_from_chainstate(
 }
 
 fn get_last_chainstate(storage: &NodeStorage) -> Result<Option<ChainstateEntry>> {
-    let chsman = storage.chainstate();
-
-    let last_write_idx = match chsman.get_last_write_idx_blocking() {
-        Ok(idx) => idx,
-        Err(DbError::NotBootstrapped) => {
-            // before genesis block ready; use hardcoded genesis state
-            return Ok(None);
-        }
+    let tip_blkid = match storage.l2().get_tip_block_blocking() {
+        Ok(id) => id,
+        Err(DbError::NotBootstrapped) => return Ok(None),
         Err(e) => return Err(e.into()),
     };
 
-    Ok(chsman.get_toplevel_chainstate_blocking(last_write_idx)?)
+    Ok(storage
+        .chainstate()
+        .get_slot_write_batch_blocking(tip_blkid)?
+        .map(|wb| ChainstateEntry::new(wb.into_toplevel(), tip_blkid)))
 }
 
 fn get_evm_block_hash_by_id(

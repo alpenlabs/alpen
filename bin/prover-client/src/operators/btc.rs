@@ -66,12 +66,12 @@ impl BtcBlockspaceOperator {
         // canonical commitment
         assert_eq!(epoch_commitments.len(), 1);
 
-        let slot = epoch_commitments[0].last_slot();
+        let blkid = *epoch_commitments[0].last_blkid();
         let chainstate_raw = self
             .cl_client
-            .get_chainstate_raw(slot)
+            .get_chainstate_raw(blkid)
             .await
-            .inspect_err(|_| error!(%slot, "Failed to fetch raw chainstate"))
+            .inspect_err(|_| error!(%blkid, "Failed to fetch raw chainstate"))
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
 
         let chainstate: Chainstate =

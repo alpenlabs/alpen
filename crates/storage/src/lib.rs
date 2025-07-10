@@ -23,6 +23,7 @@ use strata_db::traits::DatabaseBackend;
 pub struct NodeStorage {
     l1_block_manager: Arc<L1BlockManager>,
     l2_block_manager: Arc<L2BlockManager>,
+
     chainstate_manager: Arc<ChainstateManager>,
 
     sync_event_manager: Arc<SyncEventManager>,
@@ -91,6 +92,7 @@ where
     Ok(NodeStorage {
         l1_block_manager,
         l2_block_manager,
+
         chainstate_manager,
 
         sync_event_manager,

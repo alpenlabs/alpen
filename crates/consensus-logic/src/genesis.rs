@@ -17,6 +17,7 @@ use strata_state::{
     l1::L1ViewState,
     operation::ClientUpdateOutput,
     prelude::*,
+    state_op::WriteBatch,
 };
 use strata_storage::{ClientStateManager, L1BlockManager, L2BlockManager, NodeStorage};
 use tracing::*;
@@ -62,10 +63,16 @@ pub fn init_genesis_chainstate(
     let (gblock, gchstate) = make_l2_genesis(params, pregenesis_mfs);
 
     // Now insert things into the database.
+    let gid = gblock.header().get_blockid();
+
+    let wb = WriteBatch::new(gchstate.clone());
     storage
         .chainstate()
-        .write_genesis_state(gchstate.clone(), gblock.header().get_blockid())?;
+        .put_slot_write_batch_blocking(gid, wb)?;
     storage.l2().put_block_data_blocking(gblock)?;
+    storage
+        .l2()
+        .set_block_status_blocking(&gid, strata_db::traits::BlockStatus::Valid)?;
     // TODO: Status channel should probably be updated.
 
     // TODO make ^this be atomic so we can't accidentally not write both, or
@@ -186,13 +193,7 @@ fn make_genesis_chainstate(
         .as_ref()
         .expect("genesis block must have HeaderVS")
         .clone();
-    let genesis_blk_rec = genesis_mf.record().clone();
-    let l1vs = L1ViewState::new_at_genesis(
-        horizon_blk_height,
-        genesis_blk_height,
-        genesis_blk_rec,
-        gheader_vs,
-    );
+    let l1vs = L1ViewState::new_at_genesis(horizon_blk_height, genesis_blk_height, gheader_vs);
 
     let optbl = construct_operator_table(&params.rollup().operator_config);
     let gdata = GenesisStateData::new(l1vs, optbl, gees);
