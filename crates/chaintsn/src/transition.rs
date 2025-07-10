@@ -193,6 +193,7 @@ fn process_l1_checkpoint(
 /// # Caution
 ///
 /// If the checkpoint proof is empty, this function returns an `Ok(())`.
+// FIXME this does not belong here, it should be in a more general module probably
 pub fn verify_checkpoint_proof(
     checkpoint: &Checkpoint,
     rollup_params: &RollupParams,
