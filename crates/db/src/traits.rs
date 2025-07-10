@@ -17,34 +17,28 @@ use strata_state::{
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
-    entities::bridge_tx_state::BridgeTxState,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbResult,
 };
 
-/// Common database interface that we can parameterize worker tasks over if
+/// Common database backend interface that we can parameterize worker tasks over if
 /// parameterizing them over each individual trait gets cumbersome or if we need
 /// to use behavior that crosses different interfaces.
-pub trait Database {
-    type L1DB: L1Database + Send + Sync;
-    type L2DB: L2BlockDatabase + Send + Sync;
-    type SyncEventDB: SyncEventDatabase + Send + Sync;
-    type ClientStateDB: ClientStateDatabase + Send + Sync;
-    type ChainstateDB: ChainstateDatabase + Send + Sync;
-    type CheckpointDB: CheckpointDatabase + Send + Sync;
-
-    fn l1_db(&self) -> &Arc<Self::L1DB>;
-    fn l2_db(&self) -> &Arc<Self::L2DB>;
-    fn sync_event_db(&self) -> &Arc<Self::SyncEventDB>;
-    fn client_state_db(&self) -> &Arc<Self::ClientStateDB>;
-    fn chain_state_db(&self) -> &Arc<Self::ChainstateDB>;
-    fn checkpoint_db(&self) -> &Arc<Self::CheckpointDB>;
+pub trait DatabaseBackend: Send + Sync {
+    fn l1_db(&self) -> Arc<impl L1Database>;
+    fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
+    fn sync_event_db(&self) -> Arc<impl SyncEventDatabase>;
+    fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
+    fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
+    fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
+    fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
+    fn prover_db(&self) -> Arc<impl ProofDatabase>;
 }
 
 /// Database interface to control our view of L1 data.
 /// Operations are NOT VALIDATED at this level.
 /// Ensure all operations are done through `L1BlockManager`
-pub trait L1Database {
+pub trait L1Database: Send + Sync + 'static {
     /// Atomically extends the chain with a new block, providing the manifest
     /// and a list of transactions we find relevant.  Returns error if
     /// provided out-of-order.
@@ -87,7 +81,7 @@ pub trait L1Database {
 
 /// Provider and store to write and query sync events.  This does not provide notifications, that
 /// should be handled at a higher level.
-pub trait SyncEventDatabase {
+pub trait SyncEventDatabase: Send + Sync + 'static {
     /// Atomically writes a new sync event, returning its index.
     fn write_sync_event(&self, ev: SyncEvent) -> DbResult<u64>;
 
@@ -107,7 +101,7 @@ pub trait SyncEventDatabase {
 }
 
 /// Db for client state updates and checkpoints.
-pub trait ClientStateDatabase {
+pub trait ClientStateDatabase: Send + Sync + 'static {
     /// Writes a new consensus output for a given input index.  These input
     /// indexes correspond to indexes in [``SyncEventDatabase``] and
     /// [``SyncEventDatabase``].  Will error if `idx - 1` does not exist (unless
@@ -125,7 +119,7 @@ pub trait ClientStateDatabase {
 
 /// L2 data store for CL blocks.  Does not store anything about what we think
 /// the L2 chain tip is, that's controlled by the consensus state.
-pub trait L2BlockDatabase {
+pub trait L2BlockDatabase: Send + Sync + 'static {
     /// Stores an L2 block, does not care about the block height of the L2
     /// block.  Also sets the block's status to "unchecked".
     fn put_block_data(&self, block: L2BlockBundle) -> DbResult<()>;
@@ -177,7 +171,7 @@ pub enum BlockStatus {
 /// For now, the full state is just the "toplevel" state that can always be
 /// expected to be of moderate size in memory.
 // TODO maybe rewrite this around storing write batches according to blkid?
-pub trait ChainstateDatabase {
+pub trait ChainstateDatabase: Send + Sync + 'static {
     /// Writes the genesis chainstate at index 0.
     fn write_genesis_state(&self, toplevel: Chainstate, blockid: L2BlockId) -> DbResult<()>;
 
@@ -204,7 +198,7 @@ pub trait ChainstateDatabase {
 }
 
 /// Database for checkpoint data.
-pub trait CheckpointDatabase {
+pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Inserts an epoch summary retrievable by its epoch commitment.
     ///
     /// Fails if there's already an entry there.
@@ -235,7 +229,7 @@ pub trait CheckpointDatabase {
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
 /// database and to fetch [`BundledPayloadEntry`] and indices from the database
-pub trait L1WriterDatabase {
+pub trait L1WriterDatabase: Send + Sync + 'static {
     /// Store the [`BundledPayloadEntry`].
     fn put_payload_entry(&self, idx: u64, payloadentry: BundledPayloadEntry) -> DbResult<()>;
 
@@ -258,7 +252,7 @@ pub trait L1WriterDatabase {
     fn get_next_intent_idx(&self) -> DbResult<u64>;
 }
 
-pub trait ProofDatabase {
+pub trait ProofDatabase: Send + Sync + 'static {
     /// Inserts a proof into the database.
     ///
     /// Returns `Ok(())` on success, or an error on failure.
@@ -293,8 +287,8 @@ pub trait ProofDatabase {
 }
 
 // TODO remove this trait, just like the high level `Database` trait
-pub trait BroadcastDatabase {
-    type L1BroadcastDB: L1BroadcastDatabase + Sync + Send;
+pub trait BroadcastDatabase: Send + Sync + 'static {
+    type L1BroadcastDB: L1BroadcastDatabase;
 
     /// Return a reference to the L1 broadcast db implementation
     fn l1_broadcast_db(&self) -> &Arc<Self::L1BroadcastDB>;
@@ -302,7 +296,7 @@ pub trait BroadcastDatabase {
 
 /// A trait encapsulating the provider and store traits for interacting with the broadcast
 /// transactions([`L1TxEntry`]), their indices and ids
-pub trait L1BroadcastDatabase {
+pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Updates/Inserts a txentry to database. Returns Some(idx) if newly inserted else None
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>>;
 
@@ -325,23 +319,4 @@ pub trait L1BroadcastDatabase {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
-}
-
-/// Provides access to the implementers of provider and store traits for interacting with the
-/// transaction state database of the bridge client.
-///
-/// This trait assumes that the [`Txid`](bitcoin::Txid) is always unique.
-pub trait BridgeTxDatabase {
-    /// Add [`BridgeTxState`] to the database replacing the existing one if present.
-    fn put_tx_state(&self, txid: Buf32, tx_state: BridgeTxState) -> DbResult<()>;
-
-    /// Delete the stored [`BridgeTxState`] from the database and return it. This can be invoked,
-    /// for example, when a fully signed Deposit Transaction has been broadcasted. If the `txid`
-    /// did not exist, `None` is returned.
-    ///
-    /// *WARNING*: This can have detrimental effects if used at the wrong time.
-    fn delete_tx_state(&self, txid: Buf32) -> DbResult<Option<BridgeTxState>>;
-
-    /// Fetch [`BridgeTxState`] from db.
-    fn get_tx_state(&self, txid: Buf32) -> DbResult<Option<BridgeTxState>>;
 }

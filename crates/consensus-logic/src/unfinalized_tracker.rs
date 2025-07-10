@@ -407,9 +407,9 @@ impl FinalizeReport {
 mod tests {
     use std::collections::HashSet;
 
-    use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
+    use strata_db::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
+    use strata_db_store_rocksdb::test_utils::get_rocksdb_backend;
     use strata_primitives::{epoch::EpochCommitment, l2::L2BlockId};
-    use strata_rocksdb::test_utils::get_common_db;
     use strata_state::header::L2Header;
     use strata_storage::L2BlockManager;
     use strata_test_utils::l2::gen_l2_chain;
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_load_unfinalized_blocks() {
-        let db = get_common_db();
+        let db = get_rocksdb_backend();
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
@@ -510,7 +510,7 @@ mod tests {
         let mut chain_tracker = unfinalized_tracker::UnfinalizedBlockTracker::new_empty(epoch);
 
         let pool = threadpool::ThreadPool::new(1);
-        let blkman = L2BlockManager::new(pool, db);
+        let blkman = L2BlockManager::new(pool, db.l2_db());
 
         chain_tracker.load_unfinalized_blocks(&blkman).unwrap();
 
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let db = get_common_db();
+        let db = get_rocksdb_backend();
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
@@ -556,7 +556,7 @@ mod tests {
         let mut chain_tracker = unfinalized_tracker::UnfinalizedBlockTracker::new_empty(epoch);
 
         let pool = threadpool::ThreadPool::new(1);
-        let blkman = L2BlockManager::new(pool, db);
+        let blkman = L2BlockManager::new(pool, db.l2_db());
 
         chain_tracker.load_unfinalized_blocks(&blkman).unwrap();
 
@@ -583,13 +583,13 @@ mod tests {
 
     #[test]
     fn test_update_finalized_tip() {
-        let db = get_common_db();
+        let db = get_rocksdb_backend();
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
 
         let pool = threadpool::ThreadPool::new(1);
-        let blk_manager = L2BlockManager::new(pool, db);
+        let blk_manager = L2BlockManager::new(pool, db.l2_db());
 
         check_update_finalized(
             g,

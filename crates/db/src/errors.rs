@@ -2,8 +2,6 @@ use strata_primitives::epoch::EpochCommitment;
 use strata_state::{id::L2BlockId, l1::L1BlockId};
 use thiserror::Error;
 
-use crate::entities::errors::EntityError;
-
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -98,10 +96,7 @@ pub enum DbError {
     #[error("transaction error {0}")]
     TransactionError(String),
 
-    #[error("problem with entity: {0}")]
-    EntityError(#[from] EntityError),
-
-    #[error(" rocksdb {0}")]
+    #[error("rocksdb {0}")]
     RocksDb(String),
 
     #[error("not yet implemented")]

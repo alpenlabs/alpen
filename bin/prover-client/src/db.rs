@@ -12,8 +12,8 @@ pub(crate) fn open_rocksdb_database(
         fs::create_dir_all(&database_dir)?;
     }
 
-    let dbname = strata_rocksdb::ROCKSDB_NAME;
-    let cfs = strata_rocksdb::PROVER_COLUMN_FAMILIES;
+    let dbname = strata_db_store_rocksdb::ROCKSDB_NAME;
+    let cfs = strata_db_store_rocksdb::PROVER_COLUMN_FAMILIES;
     let mut opts = rocksdb::Options::default();
     opts.create_if_missing(true);
     opts.create_missing_column_families(true);

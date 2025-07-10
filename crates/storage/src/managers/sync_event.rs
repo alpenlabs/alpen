@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use strata_db::{traits::*, DbResult};
+use strata_db::{traits::SyncEventDatabase, DbResult};
 use strata_state::sync_event::SyncEvent;
 use threadpool::ThreadPool;
 
@@ -17,7 +17,7 @@ pub struct SyncEventManager {
 }
 
 impl SyncEventManager {
-    pub fn new<D: SyncEventDatabase + Sync + Send + 'static>(pool: ThreadPool, db: Arc<D>) -> Self {
+    pub fn new(pool: ThreadPool, db: Arc<impl SyncEventDatabase + 'static>) -> Self {
         let ops = ops::sync_event::Context::new(db).into_ops(pool);
         let event_cache = cache::CacheTable::new(64.try_into().unwrap());
 

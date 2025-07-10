@@ -1017,8 +1017,8 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-db",
+ "strata-db-store-rocksdb",
  "strata-proofimpl-evm-ee-stf",
- "strata-rocksdb",
  "tempfile",
 ]
 
@@ -13607,9 +13607,9 @@ dependencies = [
  "secp256k1 0.29.1",
  "strata-config",
  "strata-db",
+ "strata-db-store-rocksdb",
  "strata-l1tx",
  "strata-primitives",
- "strata-rocksdb",
  "strata-state",
  "strata-status",
  "strata-storage",
@@ -13657,10 +13657,10 @@ dependencies = [
  "strata-config",
  "strata-consensus-logic",
  "strata-db",
+ "strata-db-store-rocksdb",
  "strata-eectl",
  "strata-evmexec",
  "strata-primitives",
- "strata-rocksdb",
  "strata-rpc-api",
  "strata-rpc-types",
  "strata-rpc-utils",
@@ -13715,9 +13715,9 @@ dependencies = [
  "strata-chaintsn",
  "strata-common",
  "strata-db",
+ "strata-db-store-rocksdb",
  "strata-eectl",
  "strata-primitives",
- "strata-rocksdb",
  "strata-state",
  "strata-status",
  "strata-storage",
@@ -13772,16 +13772,42 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
- "mockall",
- "musig2",
  "parking_lot 0.12.3",
  "serde",
  "serde_json",
  "strata-primitives",
  "strata-state",
- "strata-test-utils",
  "thiserror 2.0.12",
  "tracing",
+ "zkaleido",
+]
+
+[[package]]
+name = "strata-db-store-rocksdb"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "borsh",
+ "rockbound",
+ "strata-db",
+ "strata-db-tests",
+ "strata-primitives",
+ "strata-state",
+ "tempfile",
+ "tracing",
+ "zkaleido",
+]
+
+[[package]]
+name = "strata-db-tests"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "strata-db",
+ "strata-primitives",
+ "strata-state",
+ "strata-test-utils",
  "zkaleido",
 ]
 
@@ -13998,6 +14024,7 @@ dependencies = [
  "serde_json",
  "strata-common",
  "strata-db",
+ "strata-db-store-rocksdb",
  "strata-l1tx",
  "strata-primitives",
  "strata-proofimpl-btc-blockspace",
@@ -14006,7 +14033,6 @@ dependencies = [
  "strata-proofimpl-evm-ee-stf",
  "strata-prover-client-rpc-api",
  "strata-risc0-guest-builder",
- "strata-rocksdb",
  "strata-rpc-api",
  "strata-rpc-types",
  "strata-rpc-utils",
@@ -14100,24 +14126,6 @@ dependencies = [
  "strata-proofimpl-evm-ee-stf",
  "strata-state",
  "strata-test-utils",
- "zkaleido",
-]
-
-[[package]]
-name = "strata-rocksdb"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "bincode",
- "bitcoin",
- "borsh",
- "rockbound",
- "strata-db",
- "strata-primitives",
- "strata-state",
- "strata-test-utils",
- "tempfile",
- "tracing",
  "zkaleido",
 ]
 
