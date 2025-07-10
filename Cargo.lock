@@ -13805,7 +13805,6 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "strata-db",
- "strata-l1tx",
  "strata-primitives",
  "strata-state",
  "strata-test-utils",

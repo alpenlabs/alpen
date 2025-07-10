@@ -3,14 +3,14 @@ name = "strata-db-tests"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-bitcoin = { workspace = true }
-strata-db = { path = "../db" }
-strata-l1tx = { path = "../l1tx" }
-strata-primitives = { path = "../primitives" }
-strata-state = { path = "../state" }
-strata-test-utils = { path = "../test-utils" }
-zkaleido = { workspace = true }
+[lints]
+workspace = true
 
-[dev-dependencies]
-# This crate is intended for testing, so no dev-dependencies needed
+[dependencies]
+strata-db.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+strata-test-utils.workspace = true
+
+bitcoin.workspace = true
+zkaleido.workspace = true
