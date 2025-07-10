@@ -15,14 +15,13 @@ anyhow.workspace = true
 arbitrary.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
-mockall = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 
 [features]
 default = []
-mocks = ["mockall"]
+mocks = []
 stubs = ["dep:parking_lot"]
 
 [dev-dependencies]

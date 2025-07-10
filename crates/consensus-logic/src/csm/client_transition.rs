@@ -1,8 +1,6 @@
 //! Core state transition function.
 
-
 use bitcoin::Transaction;
-use strata_db::traits::L1Database;
 use strata_primitives::{
     batch::verify_signed_checkpoint_sig,
     l1::{L1BlockCommitment, L1BlockId},

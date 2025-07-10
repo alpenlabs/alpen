@@ -13803,7 +13803,6 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
- "mockall",
  "parking_lot 0.12.3",
  "serde",
  "serde_json",
