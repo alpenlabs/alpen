@@ -4,30 +4,14 @@
 
 use bitcoin::{block::Block, params::Params};
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLog, AsmResult, AsmSpec, AuxBundle, ChainViewState, Stage,
+    AnchorState, AsmError, AsmLog, AsmResult, AsmSpec, AuxBundle, ChainViewState,
 };
-use strata_asm_proto_bridge_v1::BridgeV1Subproto;
-use strata_asm_proto_core::OLCoreSubproto;
-use strata_l1_txfmt::MagicBytes;
 
 use crate::{
     manager::SubprotoManager,
     stage::{FinishStage, ProcessStage, SubprotoLoaderStage},
     tx_filter::group_txs_by_subprotocol,
 };
-
-/// ASM spec for the Strata protocol.
-#[derive(Debug)]
-pub struct StrataAsmSpec;
-
-impl AsmSpec for StrataAsmSpec {
-    const MAGIC_BYTES: MagicBytes = *b"ALPN";
-
-    fn call_subprotocols(stage: &mut impl Stage) {
-        stage.process_subprotocol::<OLCoreSubproto>();
-        stage.process_subprotocol::<BridgeV1Subproto>();
-    }
-}
 
 /// Computes the next AnchorState by applying the Anchor State Machine (ASM) state transition
 /// function (STF) to the given previous state and new L1 block.
