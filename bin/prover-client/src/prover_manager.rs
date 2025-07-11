@@ -225,6 +225,15 @@ fn handle_task_error(task: ProofKey, e: ProvingTaskError) -> ProvingTaskStatus {
             info!(?task, ?e, "proving task failed transiently");
             ProvingTaskStatus::TransientFailure
         }
+        ProvingTaskError::IdempotentCompletion(_) => {
+            // The checkpoint task has been completed in the past.
+            info!(
+                ?task,
+                ?e,
+                "proving task was done in the past, so completing it now in an idempotent way."
+            );
+            ProvingTaskStatus::Completed
+        }
         _ => {
             // Other errors are treated as non-retryable, so the task is failed permanently.
             error!(?task, ?e, "proving task failed");
@@ -237,8 +246,13 @@ fn handle_task_error(task: ProofKey, e: ProvingTaskError) -> ProvingTaskStatus {
 /// Then, the [`ProvingTaskError`] is handled as usual.
 fn handle_checkpoint_error(chkpt_err: CheckpointError) -> ProvingTaskError {
     match chkpt_err {
-        CheckpointError::FetchError(error) | CheckpointError::SubmitProofError { error, .. } => {
-            ProvingTaskError::RpcError(error)
+        CheckpointError::FetchError(error) => ProvingTaskError::RpcError(error),
+        CheckpointError::SubmitProofError { error, .. } => {
+            if error.to_lowercase().contains("proof already created") {
+                ProvingTaskError::IdempotentCompletion(error)
+            } else {
+                ProvingTaskError::RpcError(error)
+            }
         }
         CheckpointError::CheckpointNotFound(_) => ProvingTaskError::WitnessNotFound,
         CheckpointError::ProofErr(proving_task_error) => proving_task_error,
