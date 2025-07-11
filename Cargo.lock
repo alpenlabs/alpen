@@ -13124,7 +13124,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-moho-program"
+name = "strata-asm-moho-program-impl"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
