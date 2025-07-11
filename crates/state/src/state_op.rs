@@ -10,9 +10,7 @@ use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
     epoch::EpochCommitment,
-    l1::{
-        BitcoinAmount, L1HeaderRecord, L1VerificationError, OutputRef, WithdrawalFulfillmentInfo,
-    },
+    l1::{BitcoinAmount, L1VerificationError, OutputRef, WithdrawalFulfillmentInfo},
     l2::{L2BlockCommitment, L2BlockId},
 };
 use tracing::warn;
@@ -23,36 +21,23 @@ use crate::{
     chain_state::{Chainstate, ChainstateEntry},
 };
 
-#[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
-#[repr(u8)] // needed because of representational shit
-pub enum StateOp {
-    /// Does nothing, successfully.
-    Noop,
-}
-
 /// Collection of writes we're making to the state.
 #[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct WriteBatch {
     /// Full "toplevel" state.
     new_toplevel_state: Chainstate,
-
-    /// Ops applied to the "bulk state", which doesn't exist yet.
-    ops: Vec<StateOp>,
 }
 
 impl WriteBatch {
     /// Creates a new instance from the toplevel state and a list of ops.
-    pub fn new(new_toplevel_state: Chainstate, ops: Vec<StateOp>) -> Self {
-        Self {
-            new_toplevel_state,
-            ops,
-        }
+    pub fn new(new_toplevel_state: Chainstate) -> Self {
+        Self { new_toplevel_state }
     }
 
     /// Creates a new instance from the new toplevel state and assumes no
     /// changes to the bulk state.
-    pub fn new_replace(new_state: Chainstate) -> Self {
-        Self::new(new_state, Vec::new())
+    pub fn new_replace_toplevel(new_state: Chainstate) -> Self {
+        Self::new(new_state)
     }
 
     pub fn new_toplevel_state(&self) -> &Chainstate {
@@ -95,9 +80,6 @@ pub struct StateCache {
 
     /// New state that we're modifying.
     new_state: Chainstate,
-
-    /// Write operations we're making to the bulk state, if there are any.
-    write_ops: Vec<StateOp>,
 }
 
 impl StateCache {
@@ -105,7 +87,6 @@ impl StateCache {
         Self {
             original_state: state.clone(),
             new_state: state,
-            write_ops: Vec::new(),
         }
     }
 
@@ -123,32 +104,20 @@ impl StateCache {
         &self.original_state
     }
 
-    /// Returns if there's no write ops.
+    /// Returns if the new state matches the original state.
     ///
-    /// Note that this does not guarantee that no changes have been made to the
-    /// chainstate from wherever it was derived from before the instance was
-    /// constructed.  This is a minimal safety measure.
+    /// This may be an expensive operation!
     pub fn is_empty(&self) -> bool {
-        self.write_ops.is_empty()
+        self.new_state == self.original_state
     }
 
     /// Finalizes the changes made to the state, exporting it as a write batch
     /// that can be applied to the previous state to produce it.
     pub fn finalize(self) -> WriteBatch {
-        WriteBatch::new(self.new_state, self.write_ops)
+        WriteBatch::new(self.new_state)
     }
 
     // Primitive manipulation functions.
-
-    /// Pushes a new state op onto the write ops list.
-    ///
-    /// This currently is meaningless since we don't have write ops that do anything anymore.
-    #[deprecated(
-        note = "there is no way to make use of this anymore, but we're leaving it in case we do have something to do with it"
-    )]
-    pub fn push_op(&mut self, op: StateOp) {
-        self.write_ops.push(op);
-    }
 
     // Semantic manipulation functions.
     // TODO rework a lot of these to make them lower-level and focus more on
@@ -184,13 +153,6 @@ impl StateCache {
     /// Sets the previous epoch.
     pub fn set_finalized_epoch(&mut self, epoch: EpochCommitment) {
         self.state_mut().finalized_epoch = epoch;
-    }
-
-    /// Updates the safe L1 block.
-    pub fn update_safe_block(&mut self, height: u64, record: L1HeaderRecord) {
-        let state = self.state_mut();
-        state.l1_state.safe_block_height = height;
-        state.l1_state.safe_block_header = record;
     }
 
     pub fn set_epoch_finishing_flag(&mut self, flag: bool) {

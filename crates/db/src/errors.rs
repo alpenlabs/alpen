@@ -2,6 +2,7 @@ use strata_primitives::epoch::EpochCommitment;
 use strata_state::{id::L2BlockId, l1::L1BlockId};
 use thiserror::Error;
 
+use crate::chainstate::WriteBatchId;
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -40,6 +41,18 @@ pub enum DbError {
 
     #[error("missing L2 state (slot {0})")]
     MissingL2State(u64),
+
+    #[error("missing state instance")]
+    MissingStateInstance,
+
+    #[error("missing write batch (id {0})")]
+    MissingWriteBatch(WriteBatchId),
+
+    #[error("missing slot write batch (id {0})")]
+    MissingSlotWriteBatch(L2BlockId),
+
+    #[error("missing epoch write batch (id {0})")]
+    MissingEpochWriteBatch(L2BlockId),
 
     #[error("not yet bootstrapped")]
     NotBootstrapped,

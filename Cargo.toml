@@ -7,7 +7,9 @@ members = [
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
   "crates/btcio",
+  "crates/chainexec",
   "crates/chaintsn",
+  "crates/chain-worker",
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
@@ -97,6 +99,8 @@ strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-stf = { path = "crates/asm/stf" }
 strata-btcio = { path = "crates/btcio" }
+strata-chain-worker = { path = "crates/chain-worker" }
+strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }

@@ -30,25 +30,30 @@ impl EvmEeOperator {
         Self { el_client }
     }
 
-    /// Retrieves the EVM EE [`Block`] for a given block number.
-    pub(crate) async fn get_block(&self, block_num: u64) -> Result<Block, ProvingTaskError> {
-        self.el_client
+    /// Retrieves the EVM EE [`Header`] for a given block number.
+    async fn get_block_header(&self, blkid: Buf32) -> Result<Header, ProvingTaskError> {
+        let block: Block = self
+            .el_client
+            .request("eth_getBlockByHash", rpc_params![blkid, false])
+            .await
+            .inspect_err(|_| error!(%blkid, "Failed to fetch EVM Block"))
+            .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
+        Ok(block.header)
+    }
+
+    /// Retrieves the EVM EE [`Header`] for a given block number.
+    pub(crate) async fn get_block_header_by_height(
+        &self,
+        block_num: u64,
+    ) -> Result<Header, ProvingTaskError> {
+        let block: Block = self
+            .el_client
             .request(
                 "eth_getBlockByNumber",
                 rpc_params![format!("0x{:x}", block_num), false],
             )
             .await
             .inspect_err(|_| error!(%block_num, "Failed to fetch EVM Block"))
-            .map_err(|e| ProvingTaskError::RpcError(e.to_string()))
-    }
-
-    /// Retrieves the EVM EE [`Block`] for a given block number.
-    async fn get_block_header(&self, blkid: Buf32) -> Result<Header, ProvingTaskError> {
-        let block: Block = self
-            .el_client
-            .request("eth_getBlockByHash", rpc_params![blkid, false])
-            .await
-            .inspect_err(|_| error!(%blkid, "Failed to fetch EVM Block Header"))
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
         Ok(block.header)
     }

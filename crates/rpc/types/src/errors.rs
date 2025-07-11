@@ -32,7 +32,7 @@ pub enum RpcServerError {
     UnknownIdx(u32),
 
     #[error("missing chainstate for index {0}")]
-    MissingChainstate(u64),
+    MissingChainstate(L2BlockId),
 
     #[error("db: {0}")]
     Db(#[from] strata_db::errors::DbError),

@@ -11,6 +11,7 @@ use alloy_rpc_types::{
 use alpen_reth_evm::constants::COINBASE_ADDRESS;
 use alpen_reth_node::AlpenPayloadAttributes;
 use revm_primitives::{Address, B256};
+use strata_db::DbError;
 use strata_eectl::{
     engine::{BlockStatus, ExecEngineCtl, L2BlockRef, PayloadStatus},
     errors::{EngineError, EngineResult},
@@ -137,7 +138,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
                     ..Default::default()
                 }),
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, EngineError>>()?;
 
         let payload_attributes = AlpenPayloadAttributes::new(
             PayloadAttributes {
@@ -311,22 +312,18 @@ impl<T: EngineRpc> RpcExecEngineCtl<T> {
 }
 
 impl<T: EngineRpc> RpcExecEngineCtl<T> {
-    #[allow(dead_code)]
     fn get_l2block(&self, l2_block_id: &L2BlockId) -> EngineResult<L2BlockBundle> {
         self.l2_block_manager
-            .get_block_data_blocking(l2_block_id)
-            .map_err(|err| EngineError::Other(err.to_string()))?
-            .ok_or(EngineError::DbMissingBlock(*l2_block_id))
+            .get_block_data_blocking(l2_block_id)?
+            .ok_or(DbError::MissingL2Block(*l2_block_id).into())
     }
 
-    #[allow(dead_code)]
     fn get_evm_block_hash(&self, l2_block_id: &L2BlockId) -> EngineResult<B256> {
         self.get_l2block(l2_block_id)
             .and_then(|l2block| self.get_block_info(l2block))
             .map(|evm_block| evm_block.block_hash())
     }
 
-    #[allow(dead_code)]
     fn get_block_info(&self, l2block: L2BlockBundle) -> EngineResult<EVML2Block> {
         EVML2Block::try_extract(&l2block).map_err(|err| EngineError::Other(err.to_string()))
     }

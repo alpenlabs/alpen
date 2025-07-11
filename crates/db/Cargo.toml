@@ -18,11 +18,11 @@ borsh.workspace = true
 parking_lot = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
-tracing = { workspace = true, optional = true }
 
 [features]
 default = []
-stubs = ["dep:parking_lot", "dep:tracing"]
+mocks = []
+stubs = ["dep:parking_lot"]
 
 [dev-dependencies]
 serde_json.workspace = true

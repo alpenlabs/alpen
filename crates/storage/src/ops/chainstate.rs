@@ -1,20 +1,22 @@
-//! Low level database ops for chainstate database.
-
 use std::sync::Arc;
 
-use strata_db::traits::*;
-use strata_state::{chain_state::Chainstate, id::L2BlockId, state_op::WriteBatchEntry};
+use strata_db::chainstate::*;
+use strata_primitives::buf::Buf32;
+use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 
 use crate::exec::*;
 
 inst_ops_simple! {
     (<D: ChainstateDatabase> => ChainstateOps) {
-        write_genesis_state(toplevel: Chainstate, blockid: L2BlockId) => ();
-        put_write_batch(idx: u64, batch: WriteBatchEntry) => ();
-        get_write_batch(idx: u64) => Option<WriteBatchEntry>;
-        purge_entries_before(before_idx: u64) => ();
-        rollback_writes_to(new_tip_idx: u64) => ();
-        get_last_write_idx() => u64;
-        get_earliest_write_idx() => u64;
+        create_new_inst(toplevel: Chainstate) => StateInstanceId;
+        clone_inst(id: StateInstanceId) => StateInstanceId;
+        del_inst(id: StateInstanceId) => ();
+        get_insts() => Vec<StateInstanceId>;
+        get_inst_root(id: StateInstanceId) => Buf32;
+        get_inst_toplevel_state(id: StateInstanceId) => Chainstate;
+        put_write_batch(id: WriteBatchId, wb: WriteBatch) => ();
+        get_write_batch(id: WriteBatchId) => Option<WriteBatch>;
+        del_write_batch(id: WriteBatchId) => ();
+        merge_write_batches(state_id: StateInstanceId, wb_ids: Vec<WriteBatchId>) => ();
     }
 }

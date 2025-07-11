@@ -4,7 +4,8 @@
 pub mod program;
 
 use program::ClStfOutput;
-use strata_chaintsn::transition::process_block;
+use strata_chainexec::{ChainExecutor, MemExecContext};
+use strata_chaintsn::context::L2HeaderAndParent;
 use strata_primitives::{
     buf::Buf32, hash::compute_borsh_hash, l1::ProtocolOperation, params::RollupParams,
 };
@@ -12,10 +13,9 @@ use strata_proofimpl_btc_blockspace::logic::{BlockScanResult, BlockscanProofOutp
 use strata_state::{
     batch::TxFilterConfigTransition,
     block::{ExecSegment, L2Block},
-    block_validation::{check_block_credential, validate_block_segments},
+    block_validation::{check_block_credential, validate_block_structure},
     chain_state::Chainstate,
-    header::L2Header,
-    state_op::StateCache,
+    header::{L2BlockHeader, L2Header},
 };
 use zkaleido::ZkVmEnv;
 
@@ -23,12 +23,17 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
     // 1. Read the rollup params
     let rollup_params: RollupParams = zkvm.read_serde();
 
-    // 2. Read the initial chainstate from which we start the transition and create the state cache
+    // 2. Read the parent header which we consider valid and the initial chainstate from which we
+    //    start the transition
+    let mut parent_header: L2BlockHeader = zkvm.read_borsh();
     let initial_chainstate: Chainstate = zkvm.read_borsh();
-    let initial_chainstate_root = initial_chainstate.compute_state_root();
-    let mut state_cache = StateCache::new(initial_chainstate);
+    let mut ctx = MemExecContext::default();
+    ctx.put_chainstate(parent_header.get_blockid(), initial_chainstate.clone());
 
-    // 3. Read L2 blocks
+    let initial_chainstate_root = initial_chainstate.compute_state_root();
+    let mut final_chainstate_root = initial_chainstate_root;
+
+    // 3. Read L2 blocks and parent header
     let l2_blocks: Vec<L2Block> = zkvm.read_borsh();
     assert!(!l2_blocks.is_empty(), "At least one L2 block is required");
 
@@ -60,6 +65,9 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
     // This index are necessary because while each ExecSegment in L2BlockBody corresponds
     // directly to an L2 block, an L1Segment may be absent, or there may be multiple per L2 block.
     let mut blockscan_result_idx = 0;
+
+    // NOTE: block range in cl-stf must not cross epoch boundaries
+    let mut epoch = initial_chainstate.cur_epoch();
 
     for (l2_block, exec_segment) in l2_blocks.iter().zip(exec_segments) {
         // 6. Verify that the exec segment is the same that was proven
@@ -103,30 +111,36 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8], btc_blockscan_vke
 
         // 8. Now that the L2 Block body is verified, check that the L2 Block header is consistent
         //    with the body
-        assert!(validate_block_segments(l2_block), "block validation failed");
+        assert!(
+            validate_block_structure(l2_block).is_ok(),
+            "block validation failed"
+        );
 
         // 9. Verify that the block credential is valid
         assert!(
-            check_block_credential(l2_block.header(), &rollup_params),
+            check_block_credential(l2_block.header(), &rollup_params).is_ok(),
             "Block credential verification failed"
         );
 
         // 10. Apply the state transition
-        process_block(
-            &mut state_cache,
-            l2_block.header(),
-            l2_block.body(),
-            &rollup_params,
-        )
-        .expect("failed to process L2 Block");
-    }
+        let executor = ChainExecutor::new(rollup_params.clone());
+        let header_and_parent = L2HeaderAndParent::new_simple(
+            l2_block.header().header().clone(),
+            parent_header.clone(),
+        );
+        let output = executor
+            .execute_block(&header_and_parent, l2_block.body(), &ctx)
+            .expect("failed to process L2 Block");
+        parent_header = l2_block.header().header().clone();
+        final_chainstate_root = *output.computed_state_root();
 
-    // 11. Get the final chainstate and construct the output
-    let wb = state_cache.finalize();
-    let final_chain_state = wb.into_toplevel();
-    let final_chainstate_root = final_chain_state.compute_state_root();
-    // NOTE: block range in cl-stf must not cross epoch boundaries
-    let epoch = final_chain_state.cur_epoch();
+        ctx.put_chainstate(
+            l2_block.header().get_blockid(),
+            output.write_batch().new_toplevel_state().clone(),
+        );
+
+        epoch = output.write_batch().new_toplevel_state().cur_epoch();
+    }
 
     // 12. Get the checkpoint that was posted to Bitcoin (if any) and check if we have used the
     //     right TxFilters and update it

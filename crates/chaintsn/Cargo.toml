@@ -20,6 +20,7 @@ zkaleido.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+strata-chainexec.workspace = true
 
 
 [features]

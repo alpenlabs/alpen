@@ -83,7 +83,7 @@ pub fn verify_proof(
     rollup_params: &RollupParams,
 ) -> ZkVmResult<()> {
     let checkpoint_idx = checkpoint.batch_info().epoch();
-    info!(%checkpoint_idx, "verifying proof");
+    trace!(%checkpoint_idx, "verifying proof");
 
     // Do the public parameters check
     let expected_public_output = *checkpoint.batch_transition();
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn test_empty_proof_on_native_mode() {
-        let (checkpoint, mut rollup_params) = get_test_input();
+        let (mut checkpoint, mut rollup_params) = get_test_input();
 
         // Ensure the mode is Strict for this test
         rollup_params.rollup_vk = RollupVerifyingKey::NativeVerifyingKey;
@@ -148,6 +148,10 @@ mod tests {
         let proof_receipt =
             ProofReceipt::new(Proof::new(vec![]), PublicValues::new(encoded_public_values));
 
+        // We have to to make the proof empty a second time because we're sloppy
+        // with our receipt handling.
+        checkpoint.set_proof(Proof::new(Vec::new()));
+
         let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
 
         // In native mode, there is no proof so it is fine
@@ -156,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_empty_proof_on_non_native_mode() {
-        let (checkpoint, rollup_params) = get_test_input();
+        let (mut checkpoint, rollup_params) = get_test_input();
 
         // Ensure non native mode
         assert!(!matches!(
@@ -171,6 +175,10 @@ mod tests {
         let proof_receipt =
             ProofReceipt::new(Proof::new(vec![]), PublicValues::new(encoded_public_values));
 
+        // We have to to make the proof empty a second time because we're sloppy
+        // with our receipt handling.
+        checkpoint.set_proof(Proof::new(Vec::new()));
+
         let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
 
         assert!(matches!(
@@ -181,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_empty_proof_on_non_native_mode_with_timeout() {
-        let (checkpoint, mut rollup_params) = get_test_input();
+        let (mut checkpoint, mut rollup_params) = get_test_input();
 
         // Ensure the mode is Timeout for this test
         rollup_params.proof_publish_mode = ProofPublishMode::Timeout(1_000);
@@ -199,7 +207,12 @@ mod tests {
         let proof_receipt =
             ProofReceipt::new(Proof::new(vec![]), PublicValues::new(encoded_public_values));
 
+        // We have to to make the proof empty a second time because we're sloppy
+        // with our receipt handling.
+        checkpoint.set_proof(Proof::new(Vec::new()));
+
         let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
+        eprintln!("verify_proof result {result:?}");
         assert!(result.is_ok());
     }
 }

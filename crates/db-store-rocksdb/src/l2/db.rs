@@ -104,6 +104,37 @@ impl L2BlockDatabase for L2Db {
     fn get_block_status(&self, id: L2BlockId) -> DbResult<Option<BlockStatus>> {
         Ok(self.db.get::<L2BlockStatusSchema>(&id)?)
     }
+
+    fn get_tip_block(&self) -> DbResult<L2BlockId> {
+        use crate::utils::get_last_idx;
+
+        let mut height =
+            get_last_idx::<L2BlockHeightSchema>(&self.db)?.ok_or(DbError::NotBootstrapped)?;
+
+        loop {
+            let blocks = self.get_blocks_at_height(height)?;
+            // collect all valid statuses at this height
+            let valid = blocks
+                .into_iter()
+                .filter_map(|blkid| match self.get_block_status(blkid) {
+                    Ok(Some(BlockStatus::Valid)) => Some(Ok(blkid)),
+                    Ok(_) => None,
+                    Err(e) => Some(Err(e)),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Return the first valid block at the highest height as the tip.
+            if let Some(id) = valid.first().cloned() {
+                return Ok(id);
+            }
+
+            if height == 0 {
+                return Err(DbError::NotBootstrapped);
+            }
+
+            height -= 1;
+        }
+    }
 }
 
 #[cfg(feature = "test_utils")]

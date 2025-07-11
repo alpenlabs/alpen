@@ -51,7 +51,7 @@ pub fn retry_with_backoff<R, E, F>(
     operation: F,
 ) -> Result<R, E>
 where
-    F: FnMut() -> Result<R, E>,
+    F: Fn() -> Result<R, E>,
     E: std::fmt::Debug,
 {
     retry_with_backoff_inner(name, max_retries, backoff, operation, sleep)
@@ -62,11 +62,11 @@ fn retry_with_backoff_inner<R, E, F, S>(
     name: &str,
     max_retries: u16,
     backoff: &impl Backoff,
-    mut operation: F,
+    operation: F,
     mut sleep_fn: S,
 ) -> Result<R, E>
 where
-    F: FnMut() -> Result<R, E>,
+    F: Fn() -> Result<R, E>,
     E: std::fmt::Debug,
     S: FnMut(Duration),
 {

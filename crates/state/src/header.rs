@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use strata_primitives::{
     buf::{Buf32, Buf64},
     hash,
+    l2::L2BlockCommitment,
 };
 
 use crate::{block::L2BlockBody, id::L2BlockId};
@@ -19,6 +20,7 @@ pub trait L2Header {
     fn exec_payload_hash(&self) -> &Buf32;
     fn state_root(&self) -> &Buf32;
     fn get_blockid(&self) -> L2BlockId;
+    fn get_block_commitment(&self) -> L2BlockCommitment;
 }
 
 /// Block header that forms the chain we use to reach consensus.
@@ -127,6 +129,10 @@ impl L2Header for L2BlockHeader {
     fn get_blockid(&self) -> L2BlockId {
         self.get_sighash().into()
     }
+
+    fn get_block_commitment(&self) -> L2BlockCommitment {
+        L2BlockCommitment::new(self.slot(), self.get_blockid())
+    }
 }
 
 fn fill_sighash_buf(tmplt: &L2BlockHeader, buf: &mut [u8]) -> Result<(), io::Error> {
@@ -208,5 +214,9 @@ impl L2Header for SignedL2BlockHeader {
 
     fn get_blockid(&self) -> L2BlockId {
         self.header.get_blockid()
+    }
+
+    fn get_block_commitment(&self) -> L2BlockCommitment {
+        self.header.get_block_commitment()
     }
 }

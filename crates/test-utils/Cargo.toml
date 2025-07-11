@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-btcio.workspace = true
+strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-consensus-logic.workspace = true
 strata-l1tx = { workspace = true, features = ["test_utils"] }

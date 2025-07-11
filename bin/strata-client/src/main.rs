@@ -6,7 +6,6 @@ use std::{sync::Arc, time::Duration};
 use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
-use el_sync::sync_chainstate_to_el;
 use errors::InitError;
 use jsonrpsee::Methods;
 use rpc_client::sync_client;
@@ -52,7 +51,6 @@ use tracing::*;
 use crate::{args::Args, helpers::*};
 
 mod args;
-mod el_sync;
 mod errors;
 mod helpers;
 mod network;
@@ -267,8 +265,8 @@ fn do_startup_checks(
         }
     }
 
-    let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
-        Ok(idx) => idx,
+    let tip_blockid = match storage.l2().get_tip_block_blocking() {
+        Ok(tip) => tip,
         Err(DbError::NotBootstrapped) => {
             // genesis is not done
             info!("startup: awaiting genesis");
@@ -277,17 +275,15 @@ fn do_startup_checks(
         err => err?,
     };
 
-    let Some(last_chain_state_entry) = storage
+    let last_chain_state = storage
         .chainstate()
-        .get_toplevel_chainstate_blocking(last_state_idx)?
-    else {
-        anyhow::bail!("Missing chain state idx: {last_state_idx}");
-    };
+        .get_slot_write_batch_blocking(tip_blockid)?
+        .ok_or(DbError::MissingSlotWriteBatch(tip_blockid))?
+        .into_toplevel();
 
-    let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
     // Check that we can connect to bitcoin client and block we believe to be matured in L1 is
     // actually present
-    let safe_l1blockid = last_chain_state.l1_view().safe_block().blkid();
+    let safe_l1blockid = last_chain_state.l1_view().safe_blkid();
     let block_hash = BlockHash::from_slice(safe_l1blockid.as_ref())?;
 
     match handle.block_on(bitcoin_client.get_block(&block_hash)) {
@@ -299,29 +295,6 @@ fn do_startup_checks(
         }
         Err(client_error) => {
             anyhow::bail!("could not connect to bitcoin, err = {}", client_error);
-        }
-    }
-
-    // Check that tip L2 block exists (and engine can be connected to)
-    let chain_tip = tip_blockid;
-    let tip_check_res = retry_with_backoff(
-        "engine_check_block_exists",
-        DEFAULT_ENGINE_CALL_MAX_RETRIES,
-        &ExponentialBackoff::default(),
-        || engine.check_block_exists(L2BlockRef::Id(chain_tip)),
-    );
-    match tip_check_res {
-        Ok(true) => {
-            info!("startup: last l2 block is synced")
-        }
-        Ok(false) => {
-            // Current chain tip tip block is not known by the EL.
-            warn!(%chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(storage, engine)?;
-        }
-        Err(error) => {
-            // Likely network issue
-            anyhow::bail!("could not connect to exec engine, err = {}", error);
         }
     }
 

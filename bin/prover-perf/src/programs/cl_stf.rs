@@ -16,14 +16,18 @@ pub(crate) fn prepare_input(
     let params = gen_params();
     let rollup_params = params.rollup().clone();
 
-    let l2_segment = L2Segment::initialize_from_saved_evm_ee_data(1, 3);
+    let l2_segment = L2Segment::initialize_from_saved_evm_ee_data(1, 4);
     let chainstate = l2_segment.pre_states[0].clone();
-    let l2_blocks = l2_segment.blocks.clone();
+    let (parent_block, l2_blocks) = l2_segment
+        .blocks
+        .split_first()
+        .expect("must have at least one element");
 
     ClStfInput {
         rollup_params,
         chainstate,
-        l2_blocks,
+        parent_header: parent_block.header().header().clone(),
+        l2_blocks: l2_blocks.to_vec(),
         evm_ee_proof_with_vk,
         btc_blockspace_proof_with_vk,
     }
