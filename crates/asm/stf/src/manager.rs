@@ -4,7 +4,7 @@ use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
     AnchorState, AsmError, AsmLog, AuxInputCollector, InterprotoMsg, MsgRelayer, SectionState,
-    SubprotoHandler, Subprotocol, SubprotocolId, TxInput,
+    SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -51,7 +51,7 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
 
     fn pre_process_txs(
         &mut self,
-        txs: &[TxInput<'_>],
+        txs: &[TxInputRef<'_>],
         collector: &mut dyn AuxInputCollector,
         anchor_pre: &AnchorState,
     ) {
@@ -64,7 +64,7 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
 
     fn process_txs(
         &mut self,
-        txs: &[TxInput<'_>],
+        txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_pre: &AnchorState,
     ) {
@@ -113,7 +113,7 @@ impl SubprotoManager {
     /// `self` acting as the `AuxInputCollector`, and then reinserts the handler.
     pub(crate) fn invoke_pre_process_txs<S: Subprotocol>(
         &mut self,
-        txs: &[TxInput<'_>],
+        txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
     ) {
         // We temporarily take the handler out of the map so we can call
@@ -133,7 +133,7 @@ impl SubprotoManager {
     /// and then reinserts the handler.
     pub(crate) fn invoke_process_txs<S: Subprotocol>(
         &mut self,
-        txs: &[TxInput<'_>],
+        txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
     ) {
         // We temporarily take the handler out of the map so we can call

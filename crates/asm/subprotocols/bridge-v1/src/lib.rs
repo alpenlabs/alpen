@@ -33,7 +33,7 @@ impl Subprotocol for BridgeV1Subproto {
 
     fn pre_process_txs(
         _state: &Self::State,
-        _txs: &[strata_asm_common::TxInput<'_>],
+        _txs: &[strata_asm_common::TxInputRef<'_>],
         _collector: &mut impl strata_asm_common::AuxInputCollector,
         _anchor_pre: &AnchorState,
     ) {
@@ -42,7 +42,7 @@ impl Subprotocol for BridgeV1Subproto {
 
     fn process_txs(
         _state: &mut Self::State,
-        _txs: &[strata_asm_common::TxInput<'_>],
+        _txs: &[strata_asm_common::TxInputRef<'_>],
         _anchor_pre: &AnchorState,
         _aux_inputs: &[Self::AuxInput],
         _relayer: &mut impl strata_asm_common::MsgRelayer,
