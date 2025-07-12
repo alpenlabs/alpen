@@ -49,12 +49,17 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
         self.interproto_msg_buf.push(m.clone());
     }
 
-    fn pre_process_txs(&mut self, txs: &[TxInput<'_>], collector: &mut dyn AuxInputCollector) {
+    fn pre_process_txs(
+        &mut self,
+        txs: &[TxInput<'_>],
+        collector: &mut dyn AuxInputCollector,
+        anchor_pre: &AnchorState,
+    ) {
         let collector = collector
             .as_mut_any()
             .downcast_mut::<C>()
             .expect("asm: handler");
-        S::pre_process_txs(&self.state, txs, collector);
+        S::pre_process_txs(&self.state, txs, collector, anchor_pre);
     }
 
     fn process_txs(
@@ -95,6 +100,26 @@ impl SubprotoManager {
             "asm: subproto handler impl ID doesn't match"
         );
         self.insert_handler(Box::new(handler));
+    }
+
+    /// FIXME: docs Dispatches transaction processing to the appropriate handler.
+    ///
+    /// This default implementation temporarily removes the handler to satisfy
+    /// borrow-checker constraints, invokes `process_txs` with `self` as the relayer,
+    /// and then reinserts the handler.
+    pub(crate) fn invoke_pre_process_txs<S: Subprotocol>(
+        &mut self,
+        txs: &[TxInput<'_>],
+        anchor_pre: &AnchorState,
+    ) {
+        // We temporarily take the handler out of the map so we can call
+        // `process_txs` with `self` as the relayer without violating the
+        // borrow checker.
+        let mut h = self
+            .remove_handler(S::ID)
+            .expect("asm: unloaded subprotocol");
+        h.pre_process_txs(txs, self, anchor_pre);
+        self.insert_handler(h);
     }
 
     /// Dispatches transaction processing to the appropriate handler.

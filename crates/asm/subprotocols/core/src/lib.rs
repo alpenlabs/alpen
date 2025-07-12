@@ -56,6 +56,7 @@ impl Subprotocol for OLCoreSubproto {
         _state: &Self::State,
         _txs: &[TxInput<'_>],
         _collector: &mut impl strata_asm_common::AuxInputCollector,
+        _anchor_pre: &AnchorState,
     ) {
         todo!()
     }
