@@ -17,7 +17,7 @@ impl AsmStfOutput {
     }
 }
 
-/// Ouptut of preprocessing for ASM STF
+/// Output of preprocessing for ASM STF
 #[derive(Debug)]
 pub struct AsmPreProcessOutput<'t> {
     pub aux_requests: Vec<AuxRequest>,
