@@ -92,8 +92,12 @@ pub(crate) struct SubprotoManager {
 
 impl SubprotoManager {
     /// Inserts a subproto by creating a handler for it, wrapping a tstate.
-    pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, state: S::State) {
-        let handler = HandlerImpl::<S, Self, Self>::new(state, Vec::new(), Vec::new());
+    pub(crate) fn insert_subproto<S: Subprotocol>(
+        &mut self,
+        state: S::State,
+        aux_inputs: Vec<S::AuxInput>,
+    ) {
+        let handler = HandlerImpl::<S, Self, Self>::new(state, aux_inputs, Vec::new());
         assert_eq!(
             handler.id(),
             S::ID,
@@ -102,11 +106,11 @@ impl SubprotoManager {
         self.insert_handler(Box::new(handler));
     }
 
-    /// FIXME: docs Dispatches transaction processing to the appropriate handler.
+    /// Dispatches pre-processing to the appropriate handler.
     ///
-    /// This default implementation temporarily removes the handler to satisfy
-    /// borrow-checker constraints, invokes `process_txs` with `self` as the relayer,
-    /// and then reinserts the handler.
+    /// This method temporarily removes the handler from the internal map to satisfy
+    /// Rust’s borrow rules, invokes its `pre_process_txs` implementation with
+    /// `self` acting as the `AuxInputCollector`, and then reinserts the handler.
     pub(crate) fn invoke_pre_process_txs<S: Subprotocol>(
         &mut self,
         txs: &[TxInput<'_>],
