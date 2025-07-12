@@ -9,7 +9,7 @@ use std::any::Any;
 use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
-use crate::{AnchorState, AsmLog, SectionState, TxInputRef, msg::InterprotoMsg};
+use crate::{AnchorState, AsmLog, AuxRequest, SectionState, TxInputRef, msg::InterprotoMsg};
 
 /// ASM subprotocol interface.
 ///
@@ -153,7 +153,7 @@ pub trait SubprotoHandler {
 /// requested
 pub trait AuxInputCollector: Any {
     /// Record that this exact `data` blob will be needed later as auxiliary input.
-    fn request_aux_input(&mut self, data: &[u8]);
+    fn request_aux_input(&mut self, req: AuxRequest);
 
     /// Gets this aux input collector as a `&dyn Any`.
     fn as_mut_any(&mut self) -> &mut dyn Any;

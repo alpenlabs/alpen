@@ -83,9 +83,10 @@ pub fn pre_process_asm<'t, S: AsmSpec>(
         .flat_map(|(_k, vec)| vec)
         .collect();
 
+    let aux_requests = manager.export_aux_requests();
     let output = AsmPreProcessOutput {
         txs: relevant_txs,
-        aux_requests: vec![],
+        aux_requests,
     };
 
     Ok(output)

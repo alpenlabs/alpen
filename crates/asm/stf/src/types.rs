@@ -1,4 +1,4 @@
-use strata_asm_common::{AnchorState, AsmLog, TxInputRef};
+use strata_asm_common::{AnchorState, AsmLog, AuxRequest, TxInputRef};
 
 /// Output of applying the Anchor State Machine (ASM) state transition function
 #[derive(Debug, Clone)]
@@ -16,6 +16,6 @@ impl AsmStfOutput {
 /// Ouptut of preprocessing for ASM STF
 #[derive(Debug)]
 pub struct AsmPreProcessOutput<'t> {
-    pub aux_requests: Vec<u8>,
+    pub aux_requests: Vec<AuxRequest>,
     pub txs: Vec<TxInputRef<'t>>,
 }
