@@ -32,12 +32,11 @@ pub fn asm_stf<S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Bring each subprotocol into the subproto manager.
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager);
+    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager, aux);
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its slice of txs.
-    let mut process_stage =
-        ProcessStage::new(all_relevant_transactions, aux, &mut manager, pre_state);
+    let mut process_stage = ProcessStage::new(all_relevant_transactions, &mut manager, pre_state);
     S::call_subprotocols(&mut process_stage);
 
     // 5. FINISH: Let each subprotocol process its buffered interproto messages.
@@ -54,19 +53,27 @@ pub fn asm_stf<S: AsmSpec>(
     Ok((state, logs))
 }
 
-pub fn collect_aux_requests<S: AsmSpec>(pre_state: &AnchorState, block: &Block) {
+pub fn collect_aux_requests<S: AsmSpec>(pre_state: &AnchorState, block: &Block) -> AsmResult<()> {
+    // 1. Validate and update PoW header continuity for the new block.
+    let mut pow_state = pre_state.chain_view.pow_state.clone();
+    pow_state
+        .check_and_update_continuity(&block.header, &Params::MAINNET)
+        .map_err(AsmError::InvalidL1Header)?;
+
     // 2. Filter the relevant transactions
     let all_relevant_transactions = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Bring each subprotocol into the subproto manager.
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager);
+    let aux = &AuxBundle::default();
+    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager, aux);
     S::call_subprotocols(&mut loader_stage);
 
+    // 4. PROCESS: Feed each subprotocol its slice of txs.
     let mut pre_process_stage =
         PreProcessStage::new(all_relevant_transactions, &mut manager, pre_state);
     S::call_subprotocols(&mut pre_process_stage);
 
-    
+    Ok(())
 }

@@ -11,13 +11,19 @@ use crate::manager::SubprotoManager;
 pub(crate) struct SubprotoLoaderStage<'a> {
     anchor_state: &'a AnchorState,
     manager: &'a mut SubprotoManager,
+    aux_bundle: &'a AuxBundle,
 }
 
 impl<'a> SubprotoLoaderStage<'a> {
-    pub(crate) fn new(anchor_state: &'a AnchorState, manager: &'a mut SubprotoManager) -> Self {
+    pub(crate) fn new(
+        anchor_state: &'a AnchorState,
+        manager: &'a mut SubprotoManager,
+        aux_bundle: &'a AuxBundle,
+    ) -> Self {
         Self {
             anchor_state,
             manager,
+            aux_bundle,
         }
     }
 }
@@ -33,7 +39,14 @@ impl Stage for SubprotoLoaderStage<'_> {
             None => S::init(),
         };
 
-        self.manager.insert_subproto::<S>(state);
+        let aux_inputs = match self.aux_bundle.find_payload(S::ID) {
+            Some(payload) => payload
+                .try_to_aux_inputs::<S>()
+                .expect("asm: invalid aux input"),
+            None => Vec::new(),
+        };
+
+        self.manager.insert_subproto::<S>(state, aux_inputs);
     }
 }
 
@@ -71,36 +84,34 @@ impl Stage for PreProcessStage<'_, '_, '_> {
 }
 
 /// Stage to process txs pre-extracted from the block for each subprotocol.
-pub(crate) struct ProcessStage<'a, 'b, 'm, 'x> {
+pub(crate) struct ProcessStage<'a, 'b, 'm> {
     anchor_state: &'a AnchorState,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
-    aux: &'x AuxBundle,
     manager: &'m mut SubprotoManager,
 }
 
-impl<'a, 'b, 'm, 'x> ProcessStage<'a, 'b, 'm, 'x> {
+impl<'a, 'b, 'm> ProcessStage<'a, 'b, 'm> {
     pub(crate) fn new(
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
-        aux: &'x AuxBundle,
         manager: &'m mut SubprotoManager,
         anchor_state: &'a AnchorState,
     ) -> Self {
         Self {
             anchor_state,
             tx_bufs,
-            aux,
             manager,
         }
     }
 }
 
-impl Stage for ProcessStage<'_, '_, '_, '_> {
+impl Stage for ProcessStage<'_, '_, '_> {
     fn process_subprotocol<S: Subprotocol>(&mut self) {
         let txs = self
             .tx_bufs
             .get(&S::ID)
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
+
         self.manager.invoke_process_txs::<S>(txs, self.anchor_state);
     }
 }

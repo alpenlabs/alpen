@@ -56,7 +56,7 @@ impl AuxPayload {
 /// during their `pre_process_txs` phase for one particular L1 block. You can
 /// use it to look up, decode, and feed each protocol’s inputs into
 /// `process_txs`.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxBundle {
     /// All auxiliary‐input payloads collected for this L1 block.
     pub entries: Vec<AuxPayload>,
