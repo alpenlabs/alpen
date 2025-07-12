@@ -3,22 +3,22 @@
 
 use std::collections::BTreeMap;
 
-use strata_asm_common::{AnchorState, AuxBundle, Stage, Subprotocol, SubprotocolId, TxInputRef};
+use strata_asm_common::{AnchorState, AuxPayload, Stage, Subprotocol, SubprotocolId, TxInputRef};
 
 use crate::manager::SubprotoManager;
 
 /// Stage that loads each subprotocol from the anchor state we're basing off of.
-pub(crate) struct SubprotoLoaderStage<'a> {
+pub(crate) struct SubprotoLoaderStage<'a, 'x> {
     anchor_state: &'a AnchorState,
     manager: &'a mut SubprotoManager,
-    aux_bundle: &'a AuxBundle,
+    aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
 }
 
-impl<'a> SubprotoLoaderStage<'a> {
+impl<'a, 'x> SubprotoLoaderStage<'a, 'x> {
     pub(crate) fn new(
         anchor_state: &'a AnchorState,
         manager: &'a mut SubprotoManager,
-        aux_bundle: &'a AuxBundle,
+        aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
     ) -> Self {
         Self {
             anchor_state,
@@ -28,7 +28,7 @@ impl<'a> SubprotoLoaderStage<'a> {
     }
 }
 
-impl Stage for SubprotoLoaderStage<'_> {
+impl Stage for SubprotoLoaderStage<'_, '_> {
     fn process_subprotocol<S: Subprotocol>(&mut self) {
         // Load or create the subprotocol state.
         // OPTIMIZE: Linear scan is done every time to find the section
@@ -39,7 +39,7 @@ impl Stage for SubprotoLoaderStage<'_> {
             None => S::init(),
         };
 
-        let aux_inputs = match self.aux_bundle.find_payloads(S::ID) {
+        let aux_inputs = match self.aux_bundle.get(&S::ID) {
             Some(payloads) => payloads
                 .iter()
                 .map(|payload| {
