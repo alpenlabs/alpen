@@ -9,15 +9,15 @@ use strata_l1_txfmt::TagDataRef;
 /// 2. `tag`: the extracted [`TagDataRef`], representing the subprotocol's transaction type and any
 ///    auxiliary data.
 #[derive(Debug)]
-pub struct TxInput<'t> {
+pub struct TxInputRef<'t> {
     tx: &'t Transaction,
     tag: TagDataRef<'t>,
 }
 
-impl<'t> TxInput<'t> {
+impl<'t> TxInputRef<'t> {
     /// Create a new `TxInput` referencing the given `Transaction`.
     pub fn new(tx: &'t Transaction, tag: TagDataRef<'t>) -> Self {
-        TxInput { tx, tag }
+        TxInputRef { tx, tag }
     }
 
     /// Gets the inner transaction.

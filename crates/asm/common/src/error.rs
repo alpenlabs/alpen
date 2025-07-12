@@ -45,3 +45,6 @@ pub enum AsmError {
     #[error("L1Header do not follow consensus rules")]
     InvalidL1Header(#[source] L1VerificationError),
 }
+
+/// Wrapper result type for database operations.
+pub type AsmResult<T> = Result<T, AsmError>;

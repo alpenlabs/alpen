@@ -2,7 +2,7 @@
 //! on-chain verification and anchoring of zk-SNARK checkpoint proofs.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::{MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput};
+use strata_asm_common::{AnchorState, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef};
 use strata_primitives::{batch::EpochSummary, buf::Buf32, l1::L1BlockId};
 use zkaleido::VerifyingKey;
 
@@ -46,11 +46,28 @@ impl Subprotocol for OLCoreSubproto {
 
     type Msg = NullMsg<CORE_SUBPROTOCOL_ID>;
 
+    type AuxInput = ();
+
     fn init() -> Self::State {
         todo!()
     }
 
-    fn process_txs(_state: &mut Self::State, _txs: &[TxInput<'_>], _relayer: &mut impl MsgRelayer) {
+    fn pre_process_txs(
+        _state: &Self::State,
+        _txs: &[TxInputRef<'_>],
+        _collector: &mut impl strata_asm_common::AuxInputCollector,
+        _anchor_pre: &AnchorState,
+    ) {
+        todo!()
+    }
+
+    fn process_txs(
+        _state: &mut Self::State,
+        _txs: &[TxInputRef<'_>],
+        _anchor_pre: &AnchorState,
+        _aux_inputs: &[Self::AuxInput],
+        _relayer: &mut impl MsgRelayer,
+    ) {
         todo!()
     }
 

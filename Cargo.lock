@@ -3458,7 +3458,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 2.0.101",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -6829,6 +6829,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "moho-runtime-interface"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
+dependencies = [
+ "borsh",
+ "moho-types",
+]
+
+[[package]]
+name = "moho-types"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
+dependencies = [
+ "borsh",
+]
+
+[[package]]
 name = "moka"
 version = "0.12.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7201,7 +7218,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af1844ef2428cc3e1cb900be36181049ef3d3193c63e43026cfe202983b27a56"
 dependencies = [
- "proc-macro-crate 3.3.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.101",
@@ -13557,9 +13574,24 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "moho-types",
  "strata-l1-txfmt",
  "strata-primitives",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "strata-asm-moho-program-impl"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "moho-runtime-interface",
+ "moho-types",
+ "strata-asm-common",
+ "strata-asm-stf",
+ "strata-primitives",
+ "strata-test-utils",
 ]
 
 [[package]]
