@@ -9,7 +9,7 @@ use strata_asm_common::{
 
 use crate::{
     manager::SubprotoManager,
-    stage::{FinishStage, ProcessStage, SubprotoLoaderStage},
+    stage::{FinishStage, PreProcessStage, ProcessStage, SubprotoLoaderStage},
     tx_filter::group_txs_by_subprotocol,
 };
 
@@ -52,4 +52,21 @@ pub fn asm_stf<S: AsmSpec>(
         sections,
     };
     Ok((state, logs))
+}
+
+pub fn collect_aux_requests<S: AsmSpec>(pre_state: &AnchorState, block: &Block) {
+    // 2. Filter the relevant transactions
+    let all_relevant_transactions = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
+
+    let mut manager = SubprotoManager::new();
+
+    // 3. LOAD: Bring each subprotocol into the subproto manager.
+    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager);
+    S::call_subprotocols(&mut loader_stage);
+
+    let mut pre_process_stage =
+        PreProcessStage::new(all_relevant_transactions, &mut manager, pre_state);
+    S::call_subprotocols(&mut pre_process_stage);
+
+    
 }

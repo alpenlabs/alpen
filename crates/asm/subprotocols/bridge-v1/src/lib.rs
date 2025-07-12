@@ -35,6 +35,7 @@ impl Subprotocol for BridgeV1Subproto {
         _state: &Self::State,
         _txs: &[strata_asm_common::TxInput<'_>],
         _collector: &mut impl strata_asm_common::AuxInputCollector,
+        _anchor_pre: &AnchorState,
     ) {
         todo!()
     }

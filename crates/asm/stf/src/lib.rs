@@ -12,4 +12,4 @@ mod transition;
 mod tx_filter;
 
 pub use spec::StrataAsmSpec;
-pub use transition::asm_stf;
+pub use transition::{asm_stf, collect_aux_requests};

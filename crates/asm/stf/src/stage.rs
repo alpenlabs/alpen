@@ -38,6 +38,39 @@ impl Stage for SubprotoLoaderStage<'_> {
 }
 
 /// Stage to process txs pre-extracted from the block for each subprotocol.
+pub(crate) struct PreProcessStage<'a, 'b, 'm> {
+    anchor_state: &'a AnchorState,
+    tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
+    manager: &'m mut SubprotoManager,
+}
+
+impl<'a, 'b, 'm> PreProcessStage<'a, 'b, 'm> {
+    pub(crate) fn new(
+        tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
+        manager: &'m mut SubprotoManager,
+        anchor_state: &'a AnchorState,
+    ) -> Self {
+        Self {
+            anchor_state,
+            tx_bufs,
+            manager,
+        }
+    }
+}
+
+impl Stage for PreProcessStage<'_, '_, '_> {
+    fn process_subprotocol<S: Subprotocol>(&mut self) {
+        let txs = self
+            .tx_bufs
+            .get(&S::ID)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        self.manager
+            .invoke_pre_process_txs::<S>(txs, self.anchor_state);
+    }
+}
+
+/// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct ProcessStage<'a, 'b, 'm, 'x> {
     anchor_state: &'a AnchorState,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
