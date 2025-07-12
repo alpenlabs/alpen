@@ -32,7 +32,8 @@ impl MohoProgram for AsmStfProgram {
         pre_state: &AnchorState,
         inp: &AsmStepInput,
     ) -> (AnchorState, Vec<AsmLog>) {
-        asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0, &inp.aux_bundle).unwrap()
+        let output = asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0, &inp.aux_bundle).unwrap();
+        (output.state, output.logs)
     }
 
     fn extract_next_vk(output: &Self::StepOutput) -> Option<InnerVerificationKey> {

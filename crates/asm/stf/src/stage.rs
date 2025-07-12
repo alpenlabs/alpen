@@ -39,10 +39,15 @@ impl Stage for SubprotoLoaderStage<'_> {
             None => S::init(),
         };
 
-        let aux_inputs = match self.aux_bundle.find_payload(S::ID) {
-            Some(payload) => payload
-                .try_to_aux_inputs::<S>()
-                .expect("asm: invalid aux input"),
+        let aux_inputs = match self.aux_bundle.find_payloads(S::ID) {
+            Some(payloads) => payloads
+                .iter()
+                .map(|payload| {
+                    payload
+                        .try_to_aux_input::<S>()
+                        .expect("asm: invalid aux input")
+                })
+                .collect(),
             None => Vec::new(),
         };
 

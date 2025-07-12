@@ -3,8 +3,8 @@
 use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLog, AuxInputCollector, InterprotoMsg, MsgRelayer, SectionState,
-    SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AsmLog, AuxInputCollector, AuxRequest, InterprotoMsg, MsgRelayer,
+    SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -88,6 +88,7 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
 pub(crate) struct SubprotoManager {
     handlers: BTreeMap<SubprotocolId, Box<dyn SubprotoHandler>>,
     logs: Vec<AsmLog>,
+    aux_requests: Vec<AuxRequest>,
 }
 
 impl SubprotoManager {
@@ -218,6 +219,10 @@ impl SubprotoManager {
 
         (sections, self.logs)
     }
+
+    pub(crate) fn export_aux_requests(self) -> Vec<AuxRequest> {
+        self.aux_requests
+    }
 }
 
 impl SubprotoManager {
@@ -225,6 +230,7 @@ impl SubprotoManager {
         Self {
             handlers: BTreeMap::new(),
             logs: Vec::new(),
+            aux_requests: Vec::new(),
         }
     }
 }
@@ -247,8 +253,8 @@ impl MsgRelayer for SubprotoManager {
 }
 
 impl AuxInputCollector for SubprotoManager {
-    fn request_aux_input(&mut self, _data: &[u8]) {
-        todo!()
+    fn request_aux_input(&mut self, req: AuxRequest) {
+        self.aux_requests.push(req);
     }
 
     fn as_mut_any(&mut self) -> &mut dyn Any {
