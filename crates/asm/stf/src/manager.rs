@@ -3,21 +3,24 @@
 use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLog, InterprotoMsg, MsgRelayer, SectionState, SubprotoHandler,
-    Subprotocol, SubprotocolId, TxInput,
+    AnchorState, AsmError, AsmLog, AuxInputCollector, InterprotoMsg, MsgRelayer, SectionState,
+    SubprotoHandler, Subprotocol, SubprotocolId, TxInput,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
 /// buffering logic for interproto messages.
-pub(crate) struct HandlerImpl<S: Subprotocol, R> {
+pub(crate) struct HandlerImpl<S: Subprotocol, R, C> {
     state: S::State,
     interproto_msg_buf: Vec<S::Msg>,
     aux_inputs: Vec<S::AuxInput>,
 
     _r: std::marker::PhantomData<R>,
+    _c: std::marker::PhantomData<C>,
 }
 
-impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
+impl<S: Subprotocol + 'static, R: MsgRelayer + 'static, C: AuxInputCollector + 'static>
+    HandlerImpl<S, R, C>
+{
     pub(crate) fn new(
         state: S::State,
         aux_inputs: Vec<S::AuxInput>,
@@ -28,11 +31,12 @@ impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
             aux_inputs,
             interproto_msg_buf,
             _r: std::marker::PhantomData,
+            _c: std::marker::PhantomData,
         }
     }
 }
 
-impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
+impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for HandlerImpl<S, R, C> {
     fn id(&self) -> SubprotocolId {
         S::ID
     }
@@ -43,6 +47,14 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
             .downcast_ref::<S::Msg>()
             .expect("asm: incorrect interproto msg type");
         self.interproto_msg_buf.push(m.clone());
+    }
+
+    fn pre_process_txs(&mut self, txs: &[TxInput<'_>], collector: &mut dyn AuxInputCollector) {
+        let collector = collector
+            .as_mut_any()
+            .downcast_mut::<C>()
+            .expect("asm: handler");
+        S::pre_process_txs(&self.state, txs, collector);
     }
 
     fn process_txs(
@@ -75,12 +87,8 @@ pub(crate) struct SubprotoManager {
 
 impl SubprotoManager {
     /// Inserts a subproto by creating a handler for it, wrapping a tstate.
-    pub(crate) fn insert_subproto<S: Subprotocol>(
-        &mut self,
-        state: S::State,
-        aux_inputs: Vec<S::AuxInput>,
-    ) {
-        let handler = HandlerImpl::<S, Self>::new(state, aux_inputs, Vec::new());
+    pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, state: S::State) {
+        let handler = HandlerImpl::<S, Self, Self>::new(state, Vec::new(), Vec::new());
         assert_eq!(
             handler.id(),
             S::ID,
@@ -202,6 +210,16 @@ impl MsgRelayer for SubprotoManager {
 
     fn emit_log(&mut self, log: AsmLog) {
         self.logs.push(log);
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl AuxInputCollector for SubprotoManager {
+    fn request_aux_input(&mut self, _data: &[u8]) {
+        todo!()
     }
 
     fn as_mut_any(&mut self) -> &mut dyn Any {

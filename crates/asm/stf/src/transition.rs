@@ -32,11 +32,12 @@ pub fn asm_stf<S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Bring each subprotocol into the subproto manager.
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, aux, &mut manager);
+    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager);
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its slice of txs.
-    let mut process_stage = ProcessStage::new(all_relevant_transactions, &mut manager, pre_state);
+    let mut process_stage =
+        ProcessStage::new(all_relevant_transactions, aux, &mut manager, pre_state);
     S::call_subprotocols(&mut process_stage);
 
     // 5. FINISH: Let each subprotocol process its buffered interproto messages.
