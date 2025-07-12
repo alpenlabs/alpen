@@ -14,3 +14,5 @@ mod types;
 
 pub use spec::StrataAsmSpec;
 pub use transition::{asm_stf, pre_process_asm};
+pub use tx_filter::group_txs_by_subprotocol;
+pub use types::AsmStfInput;

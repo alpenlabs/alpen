@@ -1,4 +1,8 @@
-use strata_asm_common::{AnchorState, AsmLog, AuxRequest, TxInputRef};
+use std::collections::BTreeMap;
+
+use bitcoin::block::Header;
+use strata_asm_common::{AnchorState, AsmLog, AuxPayload, AuxRequest, TxInputRef};
+use strata_l1_txfmt::SubprotocolId;
 
 /// Output of applying the Anchor State Machine (ASM) state transition function
 #[derive(Debug, Clone)]
@@ -18,4 +22,12 @@ impl AsmStfOutput {
 pub struct AsmPreProcessOutput<'t> {
     pub aux_requests: Vec<AuxRequest>,
     pub txs: Vec<TxInputRef<'t>>,
+}
+
+/// Input for ASM STF
+#[derive(Debug)]
+pub struct AsmStfInput<'b, 'x> {
+    pub header: &'b Header,
+    pub protocol_txs: BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
+    pub aux_input: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
 }

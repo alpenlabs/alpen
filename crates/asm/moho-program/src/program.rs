@@ -1,7 +1,7 @@
 use moho_runtime_interface::MohoProgram;
 use moho_types::{ExportState, InnerStateCommitment, InnerVerificationKey, StateReference};
-use strata_asm_common::{AnchorState, AsmLog};
-use strata_asm_stf::{StrataAsmSpec, asm_stf};
+use strata_asm_common::{AnchorState, AsmLog, AsmSpec};
+use strata_asm_stf::{AsmStfInput, StrataAsmSpec, asm_stf, group_txs_by_subprotocol};
 use strata_primitives::hash::compute_borsh_hash;
 
 use crate::input::AsmStepInput;
@@ -30,9 +30,21 @@ impl MohoProgram for AsmStfProgram {
 
     fn process_transition(
         pre_state: &AnchorState,
-        inp: &AsmStepInput,
+        input: &AsmStepInput,
     ) -> (AnchorState, Vec<AsmLog>) {
-        let output = asm_stf::<StrataAsmSpec>(pre_state, &inp.block.0, &inp.aux_bundle).unwrap();
+        // 1. Validate the input
+        assert!(input.validate_block());
+
+        let protocol_txs =
+            group_txs_by_subprotocol(StrataAsmSpec::MAGIC_BYTES, &input.block.0.txdata);
+
+        let stf_input = AsmStfInput {
+            protocol_txs,
+            header: &input.block.0.header,
+            aux_input: &input.aux_bundle,
+        };
+
+        let output = asm_stf::<StrataAsmSpec>(pre_state, stf_input).unwrap();
         (output.state, output.logs)
     }
 
