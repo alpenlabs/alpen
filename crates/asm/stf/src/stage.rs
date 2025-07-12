@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use strata_asm_common::{AnchorState, AuxBundle, Stage, Subprotocol, SubprotocolId, TxInput};
+use strata_asm_common::{AnchorState, AuxBundle, Stage, Subprotocol, SubprotocolId, TxInputRef};
 
 use crate::manager::SubprotoManager;
 
@@ -53,13 +53,13 @@ impl Stage for SubprotoLoaderStage<'_> {
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct PreProcessStage<'a, 'b, 'm> {
     anchor_state: &'a AnchorState,
-    tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
+    tx_bufs: &'b BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
     manager: &'m mut SubprotoManager,
 }
 
 impl<'a, 'b, 'm> PreProcessStage<'a, 'b, 'm> {
     pub(crate) fn new(
-        tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
+        tx_bufs: &'b BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
         manager: &'m mut SubprotoManager,
         anchor_state: &'a AnchorState,
     ) -> Self {
@@ -86,13 +86,13 @@ impl Stage for PreProcessStage<'_, '_, '_> {
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct ProcessStage<'a, 'b, 'm> {
     anchor_state: &'a AnchorState,
-    tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
+    tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
     manager: &'m mut SubprotoManager,
 }
 
 impl<'a, 'b, 'm> ProcessStage<'a, 'b, 'm> {
     pub(crate) fn new(
-        tx_bufs: BTreeMap<SubprotocolId, Vec<TxInput<'b>>>,
+        tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
         manager: &'m mut SubprotoManager,
         anchor_state: &'a AnchorState,
     ) -> Self {

@@ -3,14 +3,13 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{
-    AnchorState, AsmError, AsmLog, AsmResult, AsmSpec, AuxBundle, ChainViewState,
-};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, AuxBundle, ChainViewState};
 
 use crate::{
     manager::SubprotoManager,
     stage::{FinishStage, PreProcessStage, ProcessStage, SubprotoLoaderStage},
     tx_filter::group_txs_by_subprotocol,
+    types::{AsmPreProcessOutput, AsmStfOutput},
 };
 
 /// Computes the next AnchorState by applying the Anchor State Machine (ASM) state transition
@@ -19,7 +18,7 @@ pub fn asm_stf<S: AsmSpec>(
     pre_state: &AnchorState,
     block: &Block,
     aux: &AuxBundle,
-) -> AsmResult<(AnchorState, Vec<AsmLog>)> {
+) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
@@ -27,7 +26,7 @@ pub fn asm_stf<S: AsmSpec>(
         .map_err(AsmError::InvalidL1Header)?;
 
     // 2. Filter the relevant transactions
-    let all_relevant_transactions = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
+    let grouped_relevant_txs = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
@@ -36,7 +35,7 @@ pub fn asm_stf<S: AsmSpec>(
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its slice of txs.
-    let mut process_stage = ProcessStage::new(all_relevant_transactions, &mut manager, pre_state);
+    let mut process_stage = ProcessStage::new(grouped_relevant_txs, &mut manager, pre_state);
     S::call_subprotocols(&mut process_stage);
 
     // 5. FINISH: Let each subprotocol process its buffered interproto messages.
@@ -50,10 +49,14 @@ pub fn asm_stf<S: AsmSpec>(
         chain_view,
         sections,
     };
-    Ok((state, logs))
+    let output = AsmStfOutput { state, logs };
+    Ok(output)
 }
 
-pub fn collect_aux_requests<S: AsmSpec>(pre_state: &AnchorState, block: &Block) -> AsmResult<()> {
+pub fn pre_process_asm<'t, S: AsmSpec>(
+    pre_state: &AnchorState,
+    block: &'t Block,
+) -> AsmResult<AsmPreProcessOutput<'t>> {
     // 1. Validate and update PoW header continuity for the new block.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
@@ -61,7 +64,7 @@ pub fn collect_aux_requests<S: AsmSpec>(pre_state: &AnchorState, block: &Block) 
         .map_err(AsmError::InvalidL1Header)?;
 
     // 2. Filter the relevant transactions
-    let all_relevant_transactions = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
+    let grouped_relevant_txs = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
@@ -72,8 +75,18 @@ pub fn collect_aux_requests<S: AsmSpec>(pre_state: &AnchorState, block: &Block) 
 
     // 4. PROCESS: Feed each subprotocol its slice of txs.
     let mut pre_process_stage =
-        PreProcessStage::new(all_relevant_transactions, &mut manager, pre_state);
+        PreProcessStage::new(&grouped_relevant_txs, &mut manager, pre_state);
     S::call_subprotocols(&mut pre_process_stage);
 
-    Ok(())
+    let relevant_txs = grouped_relevant_txs
+        .into_iter()
+        .flat_map(|(_k, vec)| vec)
+        .collect();
+
+    let output = AsmPreProcessOutput {
+        txs: relevant_txs,
+        aux_requests: vec![],
+    };
+
+    Ok(output)
 }
