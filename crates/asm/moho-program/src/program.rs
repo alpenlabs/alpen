@@ -1,7 +1,7 @@
 use moho_runtime_interface::MohoProgram;
 use moho_types::{ExportState, InnerStateCommitment, InnerVerificationKey, StateReference};
 use strata_asm_common::{AnchorState, AsmLog, AsmSpec};
-use strata_asm_stf::{AsmStfInput, StrataAsmSpec, asm_stf, group_txs_by_subprotocol};
+use strata_asm_stf::{AsmStfInput, AsmStfOutput, StrataAsmSpec, asm_stf, group_txs_by_subprotocol};
 use strata_primitives::hash::compute_borsh_hash;
 
 use crate::input::AsmStepInput;
@@ -14,7 +14,7 @@ impl MohoProgram for AsmStfProgram {
 
     type StepInput = AsmStepInput;
 
-    type StepOutput = Vec<AsmLog>;
+    type StepOutput = AsmStfOutput;
 
     fn compute_input_reference(input: &AsmStepInput) -> StateReference {
         input.compute_ref()
@@ -28,10 +28,7 @@ impl MohoProgram for AsmStfProgram {
         InnerStateCommitment::new(compute_borsh_hash(state).into())
     }
 
-    fn process_transition(
-        pre_state: &AnchorState,
-        input: &AsmStepInput,
-    ) -> (AnchorState, Vec<AsmLog>) {
+    fn process_transition(pre_state: &AnchorState, input: &AsmStepInput) -> AsmStfOutput {
         // 1. Validate the input
         assert!(input.validate_block());
 
@@ -44,13 +41,16 @@ impl MohoProgram for AsmStfProgram {
             aux_input: &input.aux_bundle,
         };
 
-        let output = asm_stf::<StrataAsmSpec>(pre_state, stf_input).unwrap();
-        (output.state, output.logs)
+        asm_stf::<StrataAsmSpec>(pre_state, stf_input).unwrap()
+    }
+
+    fn extract_post_state(output: &Self::StepOutput) -> &Self::State {
+        &output.state
     }
 
     fn extract_next_vk(output: &Self::StepOutput) -> Option<InnerVerificationKey> {
         // Iterate through each AsmLog; if we find an AsmStfUpdate, grab its vk and return it.
-        output.iter().find_map(|log| {
+        output.logs.iter().find_map(|log| {
             if let AsmLog::AsmStfUpdate(update) = log {
                 Some(update.new_vk.clone())
             } else {
@@ -61,7 +61,7 @@ impl MohoProgram for AsmStfProgram {
 
     fn update_export_state(export_state: &mut ExportState, output: &Self::StepOutput) {
         // Iterate through each AsmLog; if we find an NewExportEntry, add it to ExportState
-        for log in output {
+        for log in &output.logs {
             if let AsmLog::NewExportEntry(export) = log {
                 export_state.add_entry(export.container_id, export.entry_data.clone());
             }

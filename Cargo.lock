@@ -6527,7 +6527,7 @@ dependencies = [
 [[package]]
 name = "moho-runtime-interface"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#5d00248299fb5658b9f0bfac87b92b34c5c1bccf"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
 dependencies = [
  "borsh",
  "moho-types",
@@ -6536,7 +6536,7 @@ dependencies = [
 [[package]]
 name = "moho-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#5d00248299fb5658b9f0bfac87b92b34c5c1bccf"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
 dependencies = [
  "borsh",
 ]
