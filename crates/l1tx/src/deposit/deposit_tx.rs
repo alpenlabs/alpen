@@ -116,7 +116,7 @@ fn validate_deposit_signature(
     // Compute the sighash
     let prevout = Prevouts::All(&utxos);
     let sighash = SighashCache::new(tx)
-        .taproot_key_spend_signature_hash(0, &prevout, TapSighashType::All)
+        .taproot_key_spend_signature_hash(0, &prevout, TapSighashType::Default)
         .unwrap();
 
     // Prepare the message for signature verification
