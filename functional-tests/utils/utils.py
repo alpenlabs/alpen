@@ -398,7 +398,7 @@ def generate_simple_params(
     seqkey = generate_seqpubkey_from_seed(seqseedpath)
     opxprivs = []
     for p in opseedpaths:
-        with open(p, 'r') as f:
+        with open(p) as f:
             opxprivs.append(f.read().strip())
 
     params = generate_params(settings, seqkey, opxprivs)
