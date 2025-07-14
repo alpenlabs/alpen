@@ -13431,10 +13431,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-jmt"
-version = "0.3.0-alpha.1"
-
-[[package]]
 name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 dependencies = [

@@ -47,7 +47,6 @@ members = [
   "crates/test-utils",
   "crates/util/mmr",
   "crates/util/shrex",
-  "crates/vtxjmt",
   "crates/db-tests",
   "provers/risc0",
   "provers/sp1",
