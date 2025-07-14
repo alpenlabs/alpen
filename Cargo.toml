@@ -186,12 +186,12 @@ revm-primitives = { version = "18.0.0", features = [
 ], default-features = false }
 
 # reth itself:
-reth = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-chain-state = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
+reth-cli-runner = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-cli-util = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
@@ -207,6 +207,7 @@ reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-network-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
+reth-node-core = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-payload-validator = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
