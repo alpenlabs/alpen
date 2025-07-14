@@ -7,11 +7,16 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
-use bitcoin::{base58, bip32::Xpriv, secp256k1::SECP256K1, Network};
+use bitcoin::{
+    bip32::{Xpriv, Xpub},
+    secp256k1::SECP256K1,
+    Network,
+};
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use shrex::Hex;
@@ -154,13 +159,8 @@ fn exec_genxpriv(cmd: SubcXpriv, ctx: &mut CmdContext) -> anyhow::Result<()> {
     }
 
     let xpriv = gen_priv(&mut ctx.rng, ctx.bitcoin_network);
-    let mut buf = xpriv.encode();
-    let mut s = base58::encode_check(&buf);
 
-    let result = fs::write(&cmd.path, s.as_bytes());
-
-    buf.zeroize();
-    s.zeroize();
+    let result = fs::write(&cmd.path, xpriv.to_string().as_bytes());
 
     match result {
         Ok(_) => Ok(()),
@@ -179,9 +179,7 @@ fn exec_genseqpubkey(cmd: SubcSeqPubkey, _ctx: &mut CmdContext) -> anyhow::Resul
 
     let seq_keys = SequencerKeys::new(&xpriv)?;
     let seq_xpub = seq_keys.derived_xpub();
-    let s = base58::encode_check(&seq_xpub.to_x_only_pub().serialize());
-
-    println!("{s}");
+    println!("{seq_xpub}");
 
     Ok(())
 }
@@ -197,14 +195,7 @@ fn exec_genseqprivkey(cmd: SubcSeqPrivkey, _ctx: &mut CmdContext) -> anyhow::Res
 
     let seq_keys = SequencerKeys::new(&xpriv)?;
     let seq_xpriv = seq_keys.derived_xpriv();
-    let mut raw_buf = seq_xpriv.encode();
-    let mut s = base58::encode_check(&raw_buf);
-
-    println!("{s}");
-
-    // Zeroize the buffers after printing.
-    raw_buf.zeroize();
-    s.zeroize();
+    println!("{seq_xpriv}");
 
     Ok(())
 }
@@ -243,18 +234,8 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     // Parse the sequencer key, trimming whitespace for convenience.
     let seqkey = match cmd.seqkey.as_ref().map(|s| s.trim()) {
         Some(seqkey) => {
-            let buf = match base58::decode_check(seqkey) {
-                Ok(v) => v,
-                Err(e) => {
-                    anyhow::bail!("failed to parse sequencer key '{seqkey}': {e}");
-                }
-            };
-
-            let Ok(buf) = Buf32::try_from(buf.as_slice()) else {
-                anyhow::bail!("invalid sequencer key '{seqkey}' (must be 32 bytes)");
-            };
-
-            Some(buf)
+            let xpub = Xpub::from_str(seqkey)?;
+            Some(Buf32(xpub.to_x_only_pub().serialize()))
         }
         None => None,
     };
@@ -265,18 +246,18 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     if let Some(opkeys_path) = cmd.opkeys {
         let opkeys_str = fs::read_to_string(opkeys_path)?;
 
-        for l in opkeys_str.lines() {
+        for line in opkeys_str.lines() {
             // skip lines that are empty or look like comments
-            if l.trim().is_empty() || l.starts_with("#") {
+            if line.trim().is_empty() || line.starts_with("#") {
                 continue;
             }
 
-            opkeys.push(parse_xpriv(l)?);
+            opkeys.push(Xpriv::from_str(line)?);
         }
     }
 
-    for k in cmd.opkey {
-        opkeys.push(parse_xpriv(&k)?);
+    for key in cmd.opkey {
+        opkeys.push(Xpriv::from_str(&key)?);
     }
 
     // Parse the deposit size str.
@@ -359,63 +340,24 @@ fn gen_priv<R: CryptoRngCore>(rng: &mut R, net: Network) -> ZeroizableXpriv {
 }
 
 /// Reads an [`Xpriv`] from file as a string and verifies the checksum.
-///
-/// # Notes
-///
-/// This [`Xpriv`] will [`Zeroize`](zeroize) on [`Drop`].
-fn read_xpriv(path: &Path) -> anyhow::Result<ZeroizableXpriv> {
-    let mut raw_buf = fs::read(path)?;
-    let str_buf: &str = std::str::from_utf8(&raw_buf)?;
-    let mut buf = base58::decode_check(str_buf)?;
-
-    // Parse into a ZeroizableXpriv.
-    let xpriv = Xpriv::decode(&buf)?;
-    let zeroizable_xpriv: ZeroizableXpriv = xpriv.into();
-
-    // Zeroize the buffers after parsing.
-    //
-    // NOTE: `zeroizable_xpriv` is zeroized on drop;
-    //        and `str_buf` is a reference to `raw_buf`.
-    raw_buf.zeroize();
-    buf.zeroize();
-
-    Ok(zeroizable_xpriv)
+fn read_xpriv(path: &Path) -> anyhow::Result<Xpriv> {
+    let xpriv = Xpriv::from_str(&fs::read_to_string(path)?)?;
+    Ok(xpriv)
 }
 
 /// Parses an [`Xpriv`] from environment variable.
-///
-/// # Notes
-///
-/// This [`Xpriv`] will [`Zeroize`](zeroize) on [`Drop`].
-fn parse_xpriv_from_env(env: &'static str) -> anyhow::Result<Option<ZeroizableXpriv>> {
-    let mut env_val = match std::env::var(env) {
+fn parse_xpriv_from_env(env: &'static str) -> anyhow::Result<Xpriv> {
+    let env_val = match std::env::var(env) {
         Ok(v) => v,
         Err(_) => anyhow::bail!("got --key-from-env but {env} not set or invalid"),
     };
 
-    let mut buf = base58::decode_check(&env_val)?;
+    let xpriv = match Xpriv::from_str(&env_val) {
+        Ok(xpriv) => xpriv,
+        Err(_) => anyhow::bail!("got --key-from-env but invalid xpriv"),
+    };
 
-    // Parse into a ZeroizableXpriv.
-    let mut xpriv = Xpriv::decode(&buf)?;
-    let zeroizable_xpriv: ZeroizableXpriv = xpriv.into();
-
-    // Zeroize the buffers after parsing.
-    //
-    // NOTE: `zeroizable_xpriv` is zeroized on drop.
-    env_val.zeroize();
-    buf.zeroize();
-    xpriv.private_key.non_secure_erase();
-
-    Ok(Some(zeroizable_xpriv))
-}
-
-/// Parses an [`Xpriv`] from file path.
-///
-/// # Notes
-///
-/// This [`Xpriv`] will [`Zeroize`](zeroize) on [`Drop`].
-fn parse_xpriv_from_path(path: &Path) -> anyhow::Result<Option<ZeroizableXpriv>> {
-    Ok(Some(read_xpriv(path)?))
+    Ok(xpriv)
 }
 
 /// Resolves an [`Xpriv`] from the file path (if provided) or environment variable (if
@@ -433,11 +375,11 @@ fn resolve_xpriv(
     path: &Option<PathBuf>,
     from_env: bool,
     env: &'static str,
-) -> anyhow::Result<Option<ZeroizableXpriv>> {
+) -> anyhow::Result<Option<Xpriv>> {
     match (path, from_env) {
         (Some(_), true) => anyhow::bail!("got key path and --key-from-env, pick a lane"),
-        (Some(path), false) => parse_xpriv_from_path(path),
-        (None, true) => parse_xpriv_from_env(env),
+        (Some(path), false) => Ok(Some(read_xpriv(path)?)),
+        (None, true) => parse_xpriv_from_env(env).map(Some),
         _ => Ok(None),
     }
 }
@@ -533,20 +475,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         max_deposits_in_block: 16,
         network: config.bitcoin_network,
     })
-}
-
-/// Parses an [`Xpriv`] from [`&str`], richly generating [`anyhow::Result`]s from
-/// it.
-fn parse_xpriv(s: &str) -> anyhow::Result<Xpriv> {
-    let Ok(buf) = base58::decode_check(s) else {
-        anyhow::bail!("failed to parse key: {s}");
-    };
-
-    let Ok(xpk) = Xpriv::decode(&buf) else {
-        anyhow::bail!("failed to decode key: {s}");
-    };
-
-    Ok(xpk)
 }
 
 /// Parses an abbreviated amount string.
