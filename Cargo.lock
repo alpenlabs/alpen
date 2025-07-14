@@ -13785,11 +13785,8 @@ dependencies = [
  "risc0-groth16",
  "risc0-zkvm",
  "serde_json",
-<<<<<<< main
- "sp1-verifier",
-=======
  "shrex",
->>>>>>> fixes
+ "sp1-verifier",
  "strata-key-derivation",
  "strata-primitives",
  "strata-risc0-guest-builder",
