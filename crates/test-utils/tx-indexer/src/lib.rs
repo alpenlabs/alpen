@@ -16,8 +16,7 @@ use strata_primitives::{
     indexed::Indexed,
     l1::{BitcoinAmount, ProtocolOperation, WithdrawalFulfillmentInfo},
 };
-
-use crate::{
+use strata_test_utils::{
     bitcoin::{
         build_test_deposit_request_script, build_test_deposit_script, create_test_deposit_tx,
         generate_withdrawal_fulfillment_data, test_taproot_addr,

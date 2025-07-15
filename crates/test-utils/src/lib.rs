@@ -7,7 +7,6 @@ pub mod bitcoin;
 pub mod bitcoin_mainnet_segment;
 pub mod evm_ee;
 pub mod l2;
-pub mod tx_indexer;
 
 pub use bitcoin::create_opreturn_metadata;
 

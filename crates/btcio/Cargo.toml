@@ -33,10 +33,11 @@ tracing.workspace = true
 [dev-dependencies]
 borsh.workspace = true
 strata-db-store-rocksdb = { workspace = true, features = ["test_utils"] }
-strata-l1tx = { workspace = true, features = ["test_utils"] }
+strata-l1tx.workspace = true
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true
+strata-test-utils-tx-indexer.workspace = true
 
 # update bitcoind version in CI to match corepc-node feature
 corepc-node = { version = "0.8.0", features = ["29_0"] }
