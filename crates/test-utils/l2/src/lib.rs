@@ -22,7 +22,38 @@ use strata_test_utils::ArbitraryGenerator;
 use strata_test_utils_btc::segment::BtcChainSegment;
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
-pub fn gen_block(parent: Option<&SignedL2BlockHeader>) -> L2BlockBundle {
+/// Generates a sequence of L2 block bundles starting from an optional parent block.
+///
+/// # Arguments
+///
+/// * `parent` - An optional [`SignedL2BlockHeader`] representing the parent block to build upon. If
+///   `None`, the genesis or default starting point is assumed.
+/// * `blocks_num` - The number of L2 blocks to generate.
+///
+/// # Returns
+///
+/// A vector containing [`L2BlockBundle`] instances forming the generated L2 chain.
+pub fn gen_l2_chain(parent: Option<SignedL2BlockHeader>, blocks_num: usize) -> Vec<L2BlockBundle> {
+    let mut blocks = Vec::new();
+    let mut parent = match parent {
+        Some(p) => p,
+        None => {
+            let p = gen_block(None);
+            blocks.push(p.clone());
+            p.header().clone()
+        }
+    };
+
+    for _ in 0..blocks_num {
+        let block = gen_block(Some(&parent));
+        blocks.push(block.clone());
+        parent = block.header().clone()
+    }
+
+    blocks
+}
+
+fn gen_block(parent: Option<&SignedL2BlockHeader>) -> L2BlockBundle {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
     let header: L2BlockHeader = arb.generate();
     let body: L2BlockBody = arb.generate();
@@ -53,34 +84,15 @@ pub fn gen_block(parent: Option<&SignedL2BlockHeader>) -> L2BlockBundle {
     L2BlockBundle::new(block, accessory)
 }
 
-pub fn gen_l2_chain(parent: Option<SignedL2BlockHeader>, blocks_num: usize) -> Vec<L2BlockBundle> {
-    let mut blocks = Vec::new();
-    let mut parent = match parent {
-        Some(p) => p,
-        None => {
-            let p = gen_block(None);
-            blocks.push(p.clone());
-            p.header().clone()
-        }
-    };
-
-    for _ in 0..blocks_num {
-        let block = gen_block(Some(&parent));
-        blocks.push(block.clone());
-        parent = block.header().clone()
-    }
-
-    blocks
+/// Generates consensus [`Params`].
+///
+/// N.B. Currently, uses the same seed under the hood.
+pub fn gen_params() -> Params {
+    // TODO: create a random seed if we really need random op_pubkeys every time this is called
+    gen_params_with_seed(0)
 }
 
-pub fn get_rollup_vk() -> RollupVerifyingKey {
-    let sp1_vk: SP1Groth16Verifier =
-        serde_json::from_slice(include_bytes!("../../data/sp1_rollup_vk.json")).unwrap();
-
-    RollupVerifyingKey::SP1VerifyingKey(sp1_vk)
-}
-
-pub fn gen_params_with_seed(seed: u64) -> Params {
+fn gen_params_with_seed(seed: u64) -> Params {
     let opkeys = make_dummy_operator_pubkeys_with_seed(seed);
     Params {
         rollup: RollupParams {
@@ -118,11 +130,22 @@ pub fn gen_params_with_seed(seed: u64) -> Params {
     }
 }
 
-pub fn gen_params() -> Params {
-    // TODO: create a random seed if we really need random op_pubkeys every time this is called
-    gen_params_with_seed(0)
+fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> OperatorPubkeys {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let sk = SecretKey::new(&mut rng);
+    let x_only_public_key = sk.x_only_public_key(SECP256K1);
+    let (pk, _) = x_only_public_key;
+    OperatorPubkeys::new(pk.into(), pk.into())
 }
 
+fn get_rollup_vk() -> RollupVerifyingKey {
+    let sp1_vk: SP1Groth16Verifier =
+        serde_json::from_slice(include_bytes!("../../data/sp1_rollup_vk.json")).unwrap();
+
+    RollupVerifyingKey::SP1VerifyingKey(sp1_vk)
+}
+
+/// Gets the [`ClientState`] from consensus [`Params`].
 pub fn gen_client_state(params: Option<&Params>) -> ClientState {
     let params = match params {
         Some(p) => p,
@@ -131,14 +154,7 @@ pub fn gen_client_state(params: Option<&Params>) -> ClientState {
     ClientState::from_genesis_params(params)
 }
 
-pub fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> OperatorPubkeys {
-    let mut rng = StdRng::seed_from_u64(seed);
-    let sk = SecretKey::new(&mut rng);
-    let x_only_public_key = sk.x_only_public_key(SECP256K1);
-    let (pk, _) = x_only_public_key;
-    OperatorPubkeys::new(pk.into(), pk.into())
-}
-
+/// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.
 pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
     let btc_chain = BtcChainSegment::load();
     // Build the genesis block and genesis consensus states.
@@ -146,6 +162,7 @@ pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
     make_l2_genesis(params, pregenesis_mfs)
 }
 
+/// Generates random valid [`SignedCheckpoint`].
 pub fn get_test_signed_checkpoint() -> SignedCheckpoint {
     let chstate: Chainstate = ArbitraryGenerator::new_with_size(1 << 12).generate();
     SignedCheckpoint::new(
