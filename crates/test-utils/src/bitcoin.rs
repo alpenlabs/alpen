@@ -135,7 +135,7 @@ pub fn create_test_deposit_tx(
     let prevtxout = [prev_txout];
     let prevouts = Prevouts::All(&prevtxout);
     let sighash = SighashCache::new(&mut tx)
-        .taproot_key_spend_signature_hash(0, &prevouts, TapSighashType::All)
+        .taproot_key_spend_signature_hash(0, &prevouts, TapSighashType::Default)
         .unwrap();
 
     let msg = Message::from_digest(*sighash.as_ref());
