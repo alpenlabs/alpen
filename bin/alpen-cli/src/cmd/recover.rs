@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use argh::FromArgs;
 use bdk_wallet::{
     bitcoin::Amount, chain::ChainOracle, coin_selection::InsufficientFunds,
@@ -9,6 +11,7 @@ use colored::Colorize;
 use crate::{
     constants::RECOVERY_DESC_CLEANUP_DELAY,
     errors::{DisplayableError, DisplayedError},
+    link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
     settings::Settings,
@@ -47,7 +50,7 @@ pub async fn recover(
 
     println!("Current signet chain height: {current_height}");
     let descs = descriptor_file
-        .read_descs_after_block(current_height)
+        .read_descs(..=current_height)
         .await
         .internal_error("Failed to read descriptors after chain height")?;
 
@@ -78,14 +81,13 @@ pub async fn recover(
         let needs_recovery = recovery_wallet.balance().confirmed > Amount::ZERO;
 
         if !needs_recovery {
-            assert!(key.len() > 4);
-            let desc_height = u32::from_be_bytes(unsafe { *(key[..4].as_ptr() as *const [_; 4]) });
-            if desc_height + RECOVERY_DESC_CLEANUP_DELAY > current_height {
+            if key.recover_at + RECOVERY_DESC_CLEANUP_DELAY > current_height {
                 descriptor_file
-                    .remove(key)
+                    .remove(&key)
                     .internal_error("Failed to remove old descriptor")?;
                 println!(
-                    "removed old, already claimed descriptor due for recovery at {desc_height}"
+                    "removed old, already claimed descriptor due for recovery at {}",
+                    key.recover_at
                 );
             }
             continue;
@@ -97,14 +99,24 @@ pub async fn recover(
 
         let recover_to = l1w.reveal_next_address(KeychainKind::External).address;
         println!(
-            "Recovering a deposit transaction from address {} to {}",
+            "Recovering a deposit transaction from recovery address {} to wallet address {}",
             address.to_string().yellow(),
             recover_to.to_string().yellow()
         );
 
+        let policy = recovery_wallet
+            .policies(KeychainKind::External)
+            .expect("valid descriptor use")
+            .expect("a policy");
+
         // we want to drain the recovery path to the l1 wallet
         let mut psbt = {
             let mut builder = recovery_wallet.build_tx();
+            // we want to spend via the 2nd option - the recovery + delay
+            builder.policy_path(
+                BTreeMap::from([(policy.id, vec![1])]),
+                KeychainKind::External,
+            );
             builder.drain_wallet();
             builder.drain_to(recover_to.script_pubkey());
             builder.fee_rate(fee_rate);
@@ -120,16 +132,26 @@ pub async fn recover(
             }
         };
 
-        recovery_wallet
-            .sign(&mut psbt, Default::default())
-            .expect("tx should be signed");
+        assert!(
+            recovery_wallet
+                .sign(&mut psbt, Default::default())
+                .expect("sign to be ok"),
+            "transaction should be finalized"
+        );
 
         let tx = psbt.extract_tx().expect("tx should be signed and ready");
         settings
             .signet_backend
             .broadcast_tx(&tx)
             .await
-            .internal_error("Failed to broadcast signet transaction")?
+            .internal_error("Failed to broadcast signet transaction")?;
+
+        println!(
+            "{}",
+            OnchainObject::from(&tx.compute_txid())
+                .with_maybe_explorer(settings.mempool_space_endpoint.as_deref())
+                .pretty()
+        );
     }
 
     Ok(())

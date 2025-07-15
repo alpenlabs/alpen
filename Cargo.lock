@@ -970,6 +970,7 @@ dependencies = [
  "directories",
  "indicatif",
  "keyring",
+ "make_buf",
  "rand_core 0.6.4",
  "reqwest 0.12.15",
  "serde",
@@ -6471,6 +6472,11 @@ dependencies = [
  "quote",
  "syn 2.0.101",
 ]
+
+[[package]]
+name = "make_buf"
+version = "1.0.2"
+source = "git+https://github.com/alpenlabs/make_buf#899166a2d9de49b663a5f7bd1d727a3e51f607e3"
 
 [[package]]
 name = "malachite"

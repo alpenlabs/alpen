@@ -3,19 +3,17 @@ use std::{str::FromStr, time::Duration};
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
 use argh::FromArgs;
 use bdk_wallet::{
-    bitcoin::{
-        script::PushBytesBuf, taproot::LeafVersion, Address, ScriptBuf, TapNodeHash, XOnlyPublicKey,
-    },
+    bitcoin::{script::PushBytesBuf, secp256k1::SECP256K1, Network, PrivateKey, XOnlyPublicKey},
     chain::ChainOracle,
     coin_selection::InsufficientFunds,
     descriptor::IntoWalletDescriptor,
     error::CreateTxError,
-    miniscript::{miniscript::Tap, Miniscript},
     template::DescriptorTemplateOut,
     KeychainKind, TxOrdering, Wallet,
 };
 use colored::Colorize;
 use indicatif::ProgressBar;
+use rand_core::OsRng;
 use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
@@ -86,9 +84,8 @@ pub async fn deposit(
         recovery_address.to_string().yellow()
     );
 
-    let (bridge_in_desc, _recovery_script, _recovery_script_hash) =
-        bridge_in_descriptor(settings.bridge_musig2_pubkey, recovery_address)
-            .expect("valid bridge in descriptor");
+    let bridge_in_desc = bridge_in_descriptor(settings.bridge_musig2_pubkey, settings.network)
+        .expect("valid bridge in descriptor");
 
     let desc = bridge_in_desc
         .clone()
@@ -202,57 +199,17 @@ pub async fn deposit(
 /// and the single script path spend is locked to the user's recovery address with a timelock of
 fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
-    recovery_address: Address,
-) -> Result<(DescriptorTemplateOut, ScriptBuf, TapNodeHash), NotTaprootAddress> {
-    let recovery_xonly_pubkey = recovery_address.extract_p2tr_pubkey()?;
+    network: Network,
+) -> Result<DescriptorTemplateOut, NotTaprootAddress> {
+    let (secret_key, _) = SECP256K1.generate_keypair(&mut OsRng);
+    let private_key = PrivateKey::new(secret_key, network);
 
     let desc = bdk_wallet::descriptor!(
         tr(bridge_pubkey,
-            and_v(v:pk(recovery_xonly_pubkey),older(RECOVER_DELAY))
+            and_v(v:pk(private_key),older(RECOVER_DELAY))
         )
     )
     .expect("valid descriptor");
 
-    // we have to do this to obtain the script hash
-    // i have tried to extract it directly from the desc above
-    // it is a massive pita
-    let recovery_script = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
-        "and_v(v:pk({recovery_xonly_pubkey}),older({RECOVER_DELAY}))"
-    ))
-    .expect("valid recovery script")
-    .encode();
-
-    let recovery_script_hash = TapNodeHash::from_script(&recovery_script, LeafVersion::TapScript);
-
-    Ok((desc, recovery_script, recovery_script_hash))
-}
-
-#[cfg(test)]
-mod tests {
-    use bdk_wallet::bitcoin::{consensus, secp256k1::SECP256K1, Network, Sequence};
-
-    use super::*;
-
-    #[test]
-    fn bridge_in_descriptor_script() {
-        pub(crate) const BRIDGE_MUSIG2_PUBKEY: &str =
-            "14ced579c6a92533fa68ccc16da93b41073993cfc6cc982320645d8e9a63ee65";
-
-        let bridge_musig2_pubkey = BRIDGE_MUSIG2_PUBKEY.parse::<XOnlyPublicKey>().unwrap();
-        let internal_recovery_pubkey = XOnlyPublicKey::from_slice(&[2u8; 32]).unwrap();
-        let recovery_address =
-            Address::p2tr(SECP256K1, internal_recovery_pubkey, None, Network::Bitcoin);
-        let external_recovery_pubkey = recovery_address.extract_p2tr_pubkey().unwrap();
-        let sequence = Sequence::from_consensus(RECOVER_DELAY);
-        let sequence_hex = consensus::encode::serialize_hex(&sequence);
-
-        let (_bridge_in_descriptor, recovery_script, _recovery_script_hash) =
-            bridge_in_descriptor(bridge_musig2_pubkey, recovery_address).unwrap();
-
-        let expected = format!(
-            "OP_PUSHBYTES_32 {external_recovery_pubkey} OP_CHECKSIGVERIFY OP_PUSHBYTES_2 {sequence_hex:.4} OP_CSV"
-        );
-        let got = recovery_script.to_asm_string();
-        assert_eq!(got, expected);
-    }
+    Ok(desc)
 }
