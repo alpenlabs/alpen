@@ -2,7 +2,7 @@
 
 This project includes code that is modified from the original implementation of SP1 RETH.
 
-**Reference:** [SP1 Reth Repository](https://github.com/succinctlabs/sp1-reth)
+**Reference:** [SP1 Reth Repository](https://github.com/sp1-patches/reth)
 
 ## Files Added from SP1 RETH
 
