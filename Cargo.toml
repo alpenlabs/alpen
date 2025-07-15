@@ -137,6 +137,7 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 
 # moho
 moho-runtime-impl = { git = "https://github.com/alpenlabs/moho", branch = "STR-1289-asm-moho-compatibility" }

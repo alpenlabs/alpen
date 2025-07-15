@@ -13119,6 +13119,7 @@ dependencies = [
  "borsh",
  "moho-types",
  "strata-l1-txfmt",
+ "strata-msg-fmt",
  "strata-primitives",
  "thiserror 2.0.12",
 ]
@@ -13525,6 +13526,14 @@ dependencies = [
  "revm-primitives",
  "rlp",
  "serde",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "strata-msg-fmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common#53b79d1fd710a9d3516cfdf94bfa8a5cda43c949"
+dependencies = [
  "thiserror 2.0.12",
 ]
 

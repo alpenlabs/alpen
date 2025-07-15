@@ -4,6 +4,7 @@
 mod aux;
 mod error;
 mod log;
+mod logs;
 mod msg;
 mod spec;
 mod state;
