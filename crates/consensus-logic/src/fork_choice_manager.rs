@@ -524,6 +524,8 @@ fn process_fc_message(
                 }
             };
 
+            strata_common::check_bail_trigger("fcm_post_block");
+
             let status = if ok {
                 // check if any pending blocks can be finalized
                 if let Err(err) = handle_epoch_finalization(fcm_state, engine) {
