@@ -105,6 +105,7 @@ pub async fn recover(
         // we want to drain the recovery path to the l1 wallet
         let mut psbt = {
             let mut builder = recovery_wallet.build_tx();
+            builder.drain_wallet();
             builder.drain_to(recover_to.script_pubkey());
             builder.fee_rate(fee_rate);
             match builder.finish() {
