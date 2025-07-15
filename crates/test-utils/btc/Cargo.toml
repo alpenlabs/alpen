@@ -10,10 +10,10 @@ workspace = true
 strata-btcio.workspace = true
 strata-primitives.workspace = true
 strata-state = { workspace = true, features = ["test_utils"] }
+strata-test-utils.workspace = true
 
 anyhow.workspace = true
 bitcoin = { workspace = true, features = ["rand-std"] }
 bitcoind-async-client.workspace = true
 hex.workspace = true
 tokio.workspace = true
-strata-test-utils.workspace = true

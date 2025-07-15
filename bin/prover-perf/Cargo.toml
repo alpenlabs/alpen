@@ -17,8 +17,8 @@ strata-proofimpl-evm-ee-stf.workspace = true
 
 strata-l1tx.workspace = true
 strata-test-utils-btc.workspace = true
-strata-test-utils-l2.workspace = true
 strata-test-utils-evm-ee.workspace = true
+strata-test-utils-l2.workspace = true
 strata-zkvm-hosts.workspace = true
 
 # sp1

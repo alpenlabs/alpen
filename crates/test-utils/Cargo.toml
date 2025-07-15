@@ -14,7 +14,7 @@ strata-consensus-logic.workspace = true
 strata-l1tx = { workspace = true, features = ["test_utils"] }
 strata-primitives.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
-strata-state = { workspace = true, features = ["test_utils"] }
+strata-state.workspace = true
 
 anyhow.workspace = true
 arbitrary.workspace = true

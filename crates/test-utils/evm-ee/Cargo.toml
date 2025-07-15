@@ -11,8 +11,8 @@ strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
-strata-state = { workspace = true, features = ["test_utils"] }
-
-serde_json.workspace = true
+strata-state.workspace = true
 strata-test-utils-btc.workspace = true
 strata-test-utils-l2.workspace = true
+
+serde_json.workspace = true
