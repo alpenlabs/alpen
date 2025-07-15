@@ -9,7 +9,9 @@ use std::any::Any;
 use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
-use crate::{AnchorState, AsmLog, AuxRequest, SectionState, TxInputRef, msg::InterprotoMsg};
+use crate::{
+    AnchorState, AuxRequest, SectionState, TxInputRef, logs::AsmLogEntry, msg::InterprotoMsg,
+};
 
 /// ASM subprotocol interface.
 ///
@@ -84,7 +86,7 @@ pub trait MsgRelayer: Any {
     fn relay_msg(&mut self, m: &dyn InterprotoMsg);
 
     /// Emits an output log message.
-    fn emit_log(&mut self, log: AsmLog);
+    fn emit_log(&mut self, log: AsmLogEntry);
 
     /// Gets this msg relayer as a `&dyn Any`.
     fn as_mut_any(&mut self) -> &mut dyn Any;

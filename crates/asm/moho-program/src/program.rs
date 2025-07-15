@@ -1,6 +1,6 @@
 use moho_runtime_interface::MohoProgram;
 use moho_types::{ExportState, InnerStateCommitment, InnerVerificationKey, StateReference};
-use strata_asm_common::{AnchorState, AsmLog, AsmSpec};
+use strata_asm_common::{AnchorState, AsmSpec, asm_stf::AsmStfUpdate, export::NewExportEntry};
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, StrataAsmSpec, asm_stf, group_txs_by_subprotocol};
 use strata_primitives::hash::compute_borsh_hash;
 
@@ -51,18 +51,16 @@ impl MohoProgram for AsmStfProgram {
     fn extract_next_vk(output: &Self::StepOutput) -> Option<InnerVerificationKey> {
         // Iterate through each AsmLog; if we find an AsmStfUpdate, grab its vk and return it.
         output.logs.iter().find_map(|log| {
-            if let AsmLog::AsmStfUpdate(update) = log {
-                Some(update.new_vk.clone())
-            } else {
-                None
-            }
+            log.try_into_log::<AsmStfUpdate>()
+                .ok()
+                .map(|update| update.new_vk.clone())
         })
     }
 
     fn update_export_state(export_state: &mut ExportState, output: &Self::StepOutput) {
         // Iterate through each AsmLog; if we find an NewExportEntry, add it to ExportState
         for log in &output.logs {
-            if let AsmLog::NewExportEntry(export) = log {
+            if let Ok(export) = log.try_into_log::<NewExportEntry>() {
                 export_state.add_entry(export.container_id, export.entry_data.clone());
             }
         }

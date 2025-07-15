@@ -3,17 +3,15 @@ use strata_msg_fmt::TypeId;
 
 use crate::logs::{AsmLog, constants::DEPOSIT_LOG_TYPE_ID};
 
-/// Details for a deposit operation.
+/// Details for a forced inclusion operation.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct DepositLog {
+pub struct ForcedInclusionData {
     /// Identifier of the target execution environment.
     pub ee_id: u64,
-    /// Amount in satoshis.
-    pub amount: u64,
-    /// Serialized address for the operation.
-    pub addr: Vec<u8>,
+    /// Raw payload data for inclusion.
+    pub payload: Vec<u8>,
 }
 
-impl AsmLog for DepositLog {
+impl AsmLog for ForcedInclusionData {
     const TY: TypeId = DEPOSIT_LOG_TYPE_ID;
 }
