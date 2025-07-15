@@ -273,3 +273,20 @@ pub fn generate_withdrawal_fulfillment_data(
 
     (addresses, txids, deposits)
 }
+
+/// Creates an OP_RETURN metadata script.
+pub fn create_opreturn_metadata(
+    magic: [u8; 4],
+    operator_idx: u32,
+    deposit_idx: u32,
+    deposit_txid: &[u8; 32],
+) -> ScriptBuf {
+    let mut metadata = [0u8; 44];
+    metadata[..4].copy_from_slice(&magic);
+    // first 4 bytes = operator idx
+    metadata[4..8].copy_from_slice(&operator_idx.to_be_bytes());
+    // next 4 bytes = deposit idx
+    metadata[8..12].copy_from_slice(&deposit_idx.to_be_bytes());
+    metadata[12..44].copy_from_slice(deposit_txid);
+    Descriptor::new_op_return(&metadata).unwrap().to_script()
+}

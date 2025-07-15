@@ -13894,7 +13894,6 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "hex",
- "musig2",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "serde_json",
