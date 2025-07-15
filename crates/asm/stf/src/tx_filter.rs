@@ -9,8 +9,8 @@ use strata_l1_txfmt::{MagicBytes, ParseConfig};
 /// keyed by their subprotocol type.
 ///
 /// Transactions that lack a valid SPS-50 header (wrong magic, not OP_RETURN in
-/// output[0], or too-short payload) are filtered out.
-/// Returns references to the original transactions wrapped in [`TxInput`].
+/// first output, or too-short payload) are filtered out.
+/// Returns references to the original transactions wrapped in [`TxInputRef`].
 pub fn group_txs_by_subprotocol<'t, I>(
     magic: MagicBytes,
     transactions: I,
