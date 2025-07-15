@@ -4,21 +4,18 @@ use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
 use strata_primitives::buf::{Buf32, Buf64};
 use strata_proofimpl_evm_ee_stf::{
+    EvmBlockStfInput,
     executor::process_block,
     primitives::{EvmEeProofInput, EvmEeProofOutput},
     utils::generate_exec_update,
-    EvmBlockStfInput,
 };
 use strata_state::{
     block::{L1Segment, L2Block, L2BlockBody},
     chain_state::Chainstate,
     header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
 };
-
-use crate::{
-    bitcoin_mainnet_segment::BtcChainSegment,
-    l2::{gen_params, get_genesis_chainstate},
-};
+use strata_test_utils_btc::segment::BtcChainSegment;
+use strata_test_utils_l2::{gen_params, get_genesis_chainstate};
 
 /// Represents a segment of EVM execution by holding inputs and outputs for
 /// block heights within a range. This struct is used to simulate EVM proof

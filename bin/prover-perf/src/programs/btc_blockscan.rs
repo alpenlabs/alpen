@@ -1,6 +1,7 @@
 use strata_l1tx::filter::types::TxFilterConfig;
 use strata_proofimpl_btc_blockspace::{logic::BlockScanProofInput, program::BtcBlockspaceProgram};
-use strata_test_utils::{bitcoin_mainnet_segment::BtcChainSegment, l2::gen_params};
+use strata_test_utils_btc::segment::BtcChainSegment;
+use strata_test_utils_l2::gen_params;
 use tracing::info;
 use zkaleido::{
     PerformanceReport, ProofReceiptWithMetadata, VerifyingKey, ZkVmHost, ZkVmHostPerf, ZkVmProgram,

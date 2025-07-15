@@ -147,9 +147,9 @@ mod test {
     use strata_state::bridge_state::{
         DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
     };
-    use strata_test_utils::{
-        bitcoin::generate_withdrawal_fulfillment_data, l2::gen_params, ArbitraryGenerator,
-    };
+    use strata_test_utils::ArbitraryGenerator;
+    use strata_test_utils_btc::generate_withdrawal_fulfillment_data;
+    use strata_test_utils_l2::gen_params;
 
     use super::*;
     use crate::{
@@ -175,7 +175,12 @@ mod test {
         deposit_idx: u32,
         deposit_txid: &[u8; 32],
     ) -> ScriptBuf {
-        strata_test_utils::create_opreturn_metadata(magic, operator_idx, deposit_idx, deposit_txid)
+        strata_test_utils_btc::create_opreturn_metadata(
+            magic,
+            operator_idx,
+            deposit_idx,
+            deposit_txid,
+        )
     }
 
     fn create_outputref(txid_bytes: &[u8; 32], vout: u32) -> OutputRef {

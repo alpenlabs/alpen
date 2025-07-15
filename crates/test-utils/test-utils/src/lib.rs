@@ -3,13 +3,6 @@
 use arbitrary::{Arbitrary, Unstructured};
 use rand_core::{CryptoRngCore, OsRng};
 
-pub mod bitcoin;
-pub mod bitcoin_mainnet_segment;
-pub mod evm_ee;
-pub mod l2;
-
-pub use bitcoin::create_opreturn_metadata;
-
 /// The default buffer size for the `ArbitraryGenerator`.
 const ARB_GEN_LEN: usize = 65_536;
 

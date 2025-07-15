@@ -412,7 +412,7 @@ mod tests {
     use strata_primitives::{epoch::EpochCommitment, l2::L2BlockId};
     use strata_state::header::L2Header;
     use strata_storage::L2BlockManager;
-    use strata_test_utils::l2::gen_l2_chain;
+    use strata_test_utils_l2::gen_l2_chain;
 
     use crate::unfinalized_tracker;
 

@@ -288,10 +288,8 @@ mod tests {
     use bitcoin::BlockHash;
     use strata_primitives::l1::L1BlockManifest;
     use strata_state::l1::L1BlockId;
-    use strata_test_utils::{
-        bitcoin_mainnet_segment::BtcChainSegment,
-        l2::{gen_client_state, gen_params},
-    };
+    use strata_test_utils_btc::segment::BtcChainSegment;
+    use strata_test_utils_l2::{gen_client_state, gen_params};
 
     use super::*;
     use crate::genesis;

@@ -18,5 +18,6 @@ borsh.workspace = true
 [dev-dependencies]
 rand.workspace = true
 strata-l1tx.workspace = true
-strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
+strata-test-utils-l2.workspace = true
 strata-test-utils-tx-indexer.workspace = true

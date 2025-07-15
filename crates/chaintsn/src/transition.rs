@@ -537,7 +537,8 @@ mod tests {
         l1::L1ViewState,
         state_op::StateCache,
     };
-    use strata_test_utils::{l2::gen_params, ArbitraryGenerator};
+    use strata_test_utils::ArbitraryGenerator;
+    use strata_test_utils_l2::gen_params;
 
     use super::{next_rand_op_pos, process_block};
     use crate::{checkin::process_l1_view_update, slot_rng::SlotRng, transition::process_l1_block};

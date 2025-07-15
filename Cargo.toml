@@ -44,6 +44,9 @@ members = [
   "crates/storage",
   "crates/sync",
   "crates/tasks",
+  "crates/test-utils/btc",
+  "crates/test-utils/evm-ee",
+  "crates/test-utils/l2",
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
   "crates/util/mmr",
@@ -131,6 +134,9 @@ strata-storage = { path = "crates/storage" }
 strata-sync = { path = "crates/sync" }
 strata-tasks = { path = "crates/tasks" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
+strata-test-utils-btc = { path = "crates/test-utils/btc" }
+strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
+strata-test-utils-l2 = { path = "crates/test-utils/l2" }
 strata-test-utils-tx-indexer = { path = "crates/test-utils/tx-indexer" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 

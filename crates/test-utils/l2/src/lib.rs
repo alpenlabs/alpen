@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bitcoin::secp256k1::{SecretKey, SECP256K1};
+use bitcoin::secp256k1::{SECP256K1, SecretKey};
 use borsh::to_vec;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_primitives::{
     block_credential,
@@ -18,9 +18,9 @@ use strata_state::{
     client_state::ClientState,
     header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
 };
+use strata_test_utils::ArbitraryGenerator;
+use strata_test_utils_btc::segment::BtcChainSegment;
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
-
-use crate::{bitcoin_mainnet_segment::BtcChainSegment, ArbitraryGenerator};
 
 pub fn gen_block(parent: Option<&SignedL2BlockHeader>) -> L2BlockBundle {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);

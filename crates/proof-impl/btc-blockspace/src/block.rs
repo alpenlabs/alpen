@@ -170,7 +170,7 @@ pub fn check_pow(block: &Header) -> bool {
 #[cfg(test)]
 mod tests {
     use bitcoin::Witness;
-    use strata_test_utils::bitcoin_mainnet_segment::BtcChainSegment;
+    use strata_test_utils_btc::segment::BtcChainSegment;
 
     use super::*;
 

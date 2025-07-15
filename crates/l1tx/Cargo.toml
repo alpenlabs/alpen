@@ -22,6 +22,8 @@ tracing.workspace = true
 strata-btcio = { workspace = true, features = ["test_utils"] }
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
+strata-test-utils-l2.workspace = true
 
 [features]
 test_utils = []

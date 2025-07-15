@@ -1,5 +1,5 @@
 use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, program::EvmEeProgram};
-use strata_test_utils::evm_ee::EvmSegment;
+use strata_test_utils_evm_ee::EvmSegment;
 use tracing::info;
 use zkaleido::{
     PerformanceReport, ProofReceiptWithMetadata, VerifyingKey, ZkVmHost, ZkVmHostPerf, ZkVmProgram,

@@ -12,4 +12,5 @@ strata-primitives.workspace = true
 
 bitcoin = { workspace = true, features = ["rand-std"] }
 
-strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
+strata-test-utils-l2.workspace = true

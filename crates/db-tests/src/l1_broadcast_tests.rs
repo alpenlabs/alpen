@@ -4,7 +4,7 @@ use strata_db::{
     types::{L1TxEntry, L1TxStatus},
 };
 use strata_primitives::buf::Buf32;
-use strata_test_utils::bitcoin::get_test_bitcoin_txs;
+use strata_test_utils_btc::get_test_bitcoin_txs;
 
 pub fn test_get_last_tx_entry(db: &impl L1BroadcastDatabase) {
     for _ in 0..2 {

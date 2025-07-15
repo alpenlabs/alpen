@@ -11,6 +11,7 @@ strata-db.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
 
 bitcoin.workspace = true
 zkaleido.workspace = true

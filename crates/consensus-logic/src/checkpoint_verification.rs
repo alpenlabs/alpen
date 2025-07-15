@@ -104,7 +104,7 @@ pub fn verify_proof(
 #[cfg(test)]
 mod tests {
     use strata_primitives::{params::ProofPublishMode, proof::RollupVerifyingKey};
-    use strata_test_utils::l2::{gen_params, get_test_signed_checkpoint};
+    use strata_test_utils_l2::{gen_params, get_test_signed_checkpoint};
     use zkaleido::{Proof, ProofReceipt, PublicValues, ZkVmError};
 
     use super::*;
