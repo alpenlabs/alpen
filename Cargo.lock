@@ -13117,11 +13117,21 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
- "moho-types",
  "strata-l1-txfmt",
  "strata-msg-fmt",
  "strata-primitives",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "strata-asm-logs"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "moho-types",
+ "strata-asm-common",
+ "strata-msg-fmt",
+ "strata-primitives",
 ]
 
 [[package]]
@@ -13133,6 +13143,7 @@ dependencies = [
  "moho-runtime-interface",
  "moho-types",
  "strata-asm-common",
+ "strata-asm-logs",
  "strata-asm-stf",
  "strata-primitives",
  "strata-test-utils",

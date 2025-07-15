@@ -1,0 +1,14 @@
+[package]
+name = "strata-asm-logs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+borsh = { workspace = true }
+moho-types = { workspace = true }
+strata-asm-common = { workspace = true }
+strata-msg-fmt = { workspace = true }
+strata-primitives = { workspace = true }
+
+[lints]
+workspace = true

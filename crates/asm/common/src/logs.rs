@@ -1,10 +1,4 @@
-pub mod asm_stf;
-pub mod checkpoint;
-pub mod constants;
-pub mod deposit;
-pub mod export;
-pub mod forced_inclusion;
-
+// Re-export from the separate logs crate
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_msg_fmt::{Msg, OwnedMsg, TypeId};
 
