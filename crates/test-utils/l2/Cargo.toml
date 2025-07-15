@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 strata-consensus-logic.workspace = true
 strata-primitives.workspace = true
-strata-state = { workspace = true, features = ["test_utils"] }
+strata-state.workspace = true
 
 bitcoin = { workspace = true, features = ["rand-std"] }
 borsh.workspace = true

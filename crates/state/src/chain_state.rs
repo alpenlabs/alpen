@@ -179,16 +179,6 @@ pub struct HashedChainState {
     pub deposits_hash: Buf32,
 }
 
-// NOTE: This is a helper setter that is supposed to be used only in tests.
-// This is being used in `strata_btcio::reader` to test the reader's behaviour when the epoch
-// changes.
-#[cfg(any(test, feature = "test_utils"))]
-impl Chainstate {
-    pub fn set_epoch(&mut self, ep: u64) {
-        self.cur_epoch = ep;
-    }
-}
-
 impl<'a> Arbitrary<'a> for Chainstate {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let gdata = GenesisStateData::arbitrary(u)?;
