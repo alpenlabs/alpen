@@ -138,17 +138,9 @@ fn extract_op_return_data(script: &ScriptBuf) -> Option<&[u8]> {
 
 #[cfg(test)]
 mod test {
-    use bitcoin::{
-        absolute::LockTime, consensus, transaction::Version, Amount, OutPoint, Transaction, TxOut,
-    };
-    use strata_primitives::{
-        bitcoin_bosd::Descriptor, l1::OutputRef, params::Params, sorted_vec::FlatTable,
-    };
-    use strata_state::bridge_state::{
-        DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
-    };
-    use strata_test_utils::ArbitraryGenerator;
-    use strata_test_utils_btc::generate_withdrawal_fulfillment_data;
+    use bitcoin::{absolute::LockTime, transaction::Version, Amount, Transaction, TxOut};
+    use strata_primitives::{bitcoin_bosd::Descriptor, params::Params, sorted_vec::FlatTable};
+    use strata_test_utils_btc::{create_opreturn_metadata, generate_withdrawal_fulfillment_data};
     use strata_test_utils_l2::gen_params;
 
     use super::*;
@@ -169,105 +161,11 @@ mod test {
         DEPOSIT_AMT - OPERATOR_FEE
     }
 
-    fn create_opreturn_metadata(
-        magic: [u8; 4],
-        operator_idx: u32,
-        deposit_idx: u32,
-        deposit_txid: &[u8; 32],
-    ) -> ScriptBuf {
-        strata_test_utils_btc::create_opreturn_metadata(
-            magic,
-            operator_idx,
-            deposit_idx,
-            deposit_txid,
-        )
-    }
-
-    fn create_outputref(txid_bytes: &[u8; 32], vout: u32) -> OutputRef {
-        OutPoint::new(consensus::deserialize(txid_bytes).unwrap(), vout).into()
-    }
-
     #[expect(unused)]
     fn generate_data() -> (Vec<Descriptor>, Vec<[u8; 32]>, TxFilterConfig) {
+        let (addresses, txids, deposits) = generate_withdrawal_fulfillment_data(deposit_amt());
         let params: Params = gen_params();
-        let mut gen = ArbitraryGenerator::new();
-        let mut addresses = Vec::new();
-        let mut txids = Vec::<[u8; 32]>::new();
-        for _ in 0..10 {
-            addresses.push(Descriptor::new_p2wpkh(&gen.generate()));
-            txids.push(gen.generate());
-        }
-
         let mut filterconfig = TxFilterConfig::derive_from(params.rollup()).unwrap();
-
-        let create_dispatched_deposit_entry =
-            |operator_idx: u32,
-             deposit_idx: u32,
-             addr: Descriptor,
-             deadline: u64,
-             deposit_txid: &[u8; 32],
-             withdrawal_request_txid: Option<Buf32>| {
-                DepositEntry::new(
-                    deposit_idx,
-                    create_outputref(deposit_txid, 0),
-                    vec![0, 1, 2],
-                    deposit_amt(),
-                    withdrawal_request_txid,
-                )
-                .with_state(DepositState::Dispatched(DispatchedState::new(
-                    DispatchCommand::new(vec![WithdrawOutput::new(
-                        addr,
-                        Amount::from_btc(10.0).unwrap().into(),
-                    )]),
-                    operator_idx,
-                    deadline,
-                )))
-            };
-
-        let deposits = vec![
-            // deposits with withdrawal assignments
-            create_dispatched_deposit_entry(
-                1,
-                2,
-                addresses[0].clone(),
-                100,
-                &txids[0],
-                gen.generate(),
-            ),
-            create_dispatched_deposit_entry(
-                2,
-                3,
-                addresses[1].clone(),
-                100,
-                &txids[1],
-                gen.generate(),
-            ),
-            create_dispatched_deposit_entry(
-                0,
-                4,
-                addresses[2].clone(),
-                100,
-                &txids[2],
-                gen.generate(),
-            ),
-            // deposits without withdrawal assignments
-            DepositEntry::new(
-                5,
-                create_outputref(&txids[3], 0),
-                vec![0, 1, 2],
-                deposit_amt(),
-                None,
-            )
-            .with_state(DepositState::Accepted),
-            DepositEntry::new(
-                6,
-                create_outputref(&txids[4], 0),
-                vec![0, 1, 2],
-                deposit_amt(),
-                None,
-            )
-            .with_state(DepositState::Accepted),
-        ];
 
         // Watch all withdrawals that have been ordered.
         let exp_fulfillments = deposits
