@@ -41,7 +41,7 @@ impl EvmSegment {
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
 
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evm_ee/");
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/evm_ee/");
         for height in start_height..=end_height {
             let witness_path = dir.join(format!("witness_{height}.json"));
             let json_file = std::fs::read_to_string(witness_path).expect("Expected JSON file");

@@ -75,7 +75,7 @@ pub fn gen_l2_chain(parent: Option<SignedL2BlockHeader>, blocks_num: usize) -> V
 
 pub fn get_rollup_vk() -> RollupVerifyingKey {
     let sp1_vk: SP1Groth16Verifier =
-        serde_json::from_slice(include_bytes!("../data/sp1_rollup_vk.json")).unwrap();
+        serde_json::from_slice(include_bytes!("../../data/sp1_rollup_vk.json")).unwrap();
 
     RollupVerifyingKey::SP1VerifyingKey(sp1_vk)
 }

@@ -23,7 +23,7 @@ use strata_state::bridge_state::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
 };
 
-use crate::{l2::gen_params, ArbitraryGenerator};
+use crate::ArbitraryGenerator;
 
 pub fn get_test_bitcoin_txs() -> Vec<Transaction> {
     let t1 = "0200000000010176f29f18c5fc677ad6dd6c9309f6b9112f83cb95889af21da4be7fbfe22d1d220000000000fdffffff0300e1f505000000002200203946555814a18ccc94ef4991fb6af45278425e6a0a2cfc2bf4cf9c47515c56ff0000000000000000176a1500e0e78c8201d91f362c2ad3bb6f8e6f31349454663b1010240100000022512012d77c9ae5fdca5a3ab0b17a29b683fd2690f5ad56f6057a000ec42081ac89dc0247304402205de15fbfb413505a3563608dad6a73eb271b4006a4156eeb62d1eacca5efa10b02201eb71b975304f3cbdc664c6dd1c07b93ac826603309b3258cb92cfd201bb8792012102f55f96fd587a706a7b5e7312c4e9d755a65b3dad9945d65598bca34c9e961db400000000";
@@ -49,15 +49,10 @@ pub fn gen_l1_chain(len: usize) -> Vec<L1HeaderRecord> {
 
 pub fn get_btc_mainnet_block() -> Block {
     let raw_block = include_bytes!(
-        "../data/mainnet_block_000000000000000000000c835b2adcaedc20fdf6ee440009c249452c726dafae.raw"
+        "../../data/mainnet_block_000000000000000000000c835b2adcaedc20fdf6ee440009c249452c726dafae.raw"
     );
     let block: Block = deserialize(&raw_block[..]).unwrap();
     block
-}
-
-pub fn get_test_tx_filter_config() -> TxFilterConfig {
-    let config = gen_params();
-    TxFilterConfig::derive_from(config.rollup()).expect("can't derive filter config")
 }
 
 /// Creates a signed test Taproot deposit transaction.

@@ -44,7 +44,7 @@ members = [
   "crates/storage",
   "crates/sync",
   "crates/tasks",
-  "crates/test-utils",
+  "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
   "crates/util/mmr",
   "crates/util/shrex",
@@ -130,7 +130,7 @@ strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
 strata-sync = { path = "crates/sync" }
 strata-tasks = { path = "crates/tasks" }
-strata-test-utils = { path = "crates/test-utils" }
+strata-test-utils = { path = "crates/test-utils/test-utils" }
 strata-test-utils-tx-indexer = { path = "crates/test-utils/tx-indexer" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 

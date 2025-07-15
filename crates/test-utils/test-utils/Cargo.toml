@@ -1,0 +1,29 @@
+[package]
+edition = "2021"
+name = "strata-test-utils"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-btcio.workspace = true
+strata-chainexec.workspace = true
+strata-chaintsn.workspace = true
+strata-consensus-logic.workspace = true
+strata-l1tx = { workspace = true, features = ["test_utils"] }
+strata-primitives.workspace = true
+strata-proofimpl-evm-ee-stf.workspace = true
+strata-state = { workspace = true, features = ["test_utils"] }
+
+anyhow.workspace = true
+arbitrary.workspace = true
+bitcoin = { workspace = true, features = ["rand-std"] }
+bitcoind-async-client.workspace = true
+borsh.workspace = true
+hex.workspace = true
+rand.workspace = true
+rand_core.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+zkaleido-sp1-groth16-verifier.workspace = true
