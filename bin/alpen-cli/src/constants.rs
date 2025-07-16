@@ -2,15 +2,10 @@ use std::time::Duration;
 
 use alloy::consensus::constants::ETH_TO_WEI;
 use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
-use strata_primitives::constants::RECOVER_DELAY;
 
 /// Number of blocks that the wallet considers a transaction "buried" or final taking into account
 /// reorgs that might happen.
 pub const FINALITY_DEPTH: u32 = 6;
-
-/// Number of blocks after which the wallet actually enables recovery. This is mostly to account
-/// for any reorgs that may happen at the recovery height.
-pub const RECOVER_AT_DELAY: u32 = RECOVER_DELAY + FINALITY_DEPTH;
 
 pub const RECOVERY_DESC_CLEANUP_DELAY: u32 = 100;
 
