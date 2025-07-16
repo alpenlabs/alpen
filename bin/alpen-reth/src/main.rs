@@ -36,6 +36,8 @@ fn main() {
     command.chain = command.ext.custom_chain.clone();
     // disable peer discovery
     command.network.discovery.disable_discovery = true;
+    // allow chain fork blocks to be created
+    command.always_process_payload_attributes_on_canonical_head = true;
 
     if let Err(err) = run(command, |builder, ext| async move {
         let datadir = builder.config().datadir().data_dir().to_path_buf();

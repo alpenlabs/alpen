@@ -1,4 +1,4 @@
-use strata_db::DbError;
+use strata_db::{traits::BlockStatus, DbError};
 use strata_eectl::{
     engine::{ExecEngineCtl, L2BlockRef},
     errors::EngineError,
@@ -65,6 +65,53 @@ pub fn sync_chainstate_to_el(
 
         engine.submit_payload(payload)?;
         engine.update_safe_block(*tip_blockid)?;
+    }
+
+    Ok(())
+}
+
+/// Sync missing or invalid L2 block status using chainstate.
+pub fn sync_chainstate_l2_status(storage: &NodeStorage) -> Result<(), Error> {
+    let chainstate_manager = storage.chainstate();
+    let l2_block_manager = storage.l2();
+    let earliest_idx = chainstate_manager.get_earliest_write_idx_blocking()?;
+    let latest_idx = chainstate_manager.get_last_write_idx_blocking()?;
+
+    info!(%earliest_idx, %latest_idx, "search for last known idx");
+
+    // last idx of chainstate whose corresponding block is present in el
+    let sync_from_idx = find_last_match((earliest_idx, latest_idx), |idx| {
+        let Some(entry) = chainstate_manager.get_toplevel_chainstate_blocking(idx)? else {
+            return Err(Error::MissingChainstate(idx));
+        };
+
+        match l2_block_manager.get_block_status_blocking(entry.tip_blockid())? {
+            Some(BlockStatus::Valid) => Ok(true),
+            _ => Ok(false),
+        }
+    })?
+    .map(|idx| idx + 1) // sync from next index
+    .unwrap_or(0); // sync from genesis
+
+    info!(%sync_from_idx, "last valid status");
+
+    for idx in sync_from_idx..=latest_idx {
+        debug!(?idx, "Syncing chainstate to L2 status");
+        let Some(chainstate_entry) = chainstate_manager.get_toplevel_chainstate_blocking(idx)?
+        else {
+            return Err(Error::MissingChainstate(idx));
+        };
+
+        let tip_blockid = chainstate_entry.tip_blockid();
+
+        if l2_block_manager
+            .get_block_data_blocking(tip_blockid)?
+            .is_none()
+        {
+            return Err(Error::MissingL2Block(*tip_blockid));
+        };
+
+        l2_block_manager.set_block_status_blocking(tip_blockid, BlockStatus::Valid)?;
     }
 
     Ok(())

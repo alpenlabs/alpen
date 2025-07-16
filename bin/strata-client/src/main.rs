@@ -47,7 +47,7 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{args::Args, helpers::*};
+use crate::{args::Args, el_sync::sync_chainstate_l2_status, helpers::*};
 
 mod args;
 mod el_sync;
@@ -289,6 +289,10 @@ fn do_startup_checks(
     };
 
     let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
+
+    // check that L2 block for latest chainstate is marked valid
+    sync_chainstate_l2_status(storage)?;
+
     // Check that we can connect to bitcoin client and block we believe to be matured in L1 is
     // actually present
     let safe_l1blockid = last_chain_state.l1_view().safe_block().blkid();
