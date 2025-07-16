@@ -13977,6 +13977,7 @@ dependencies = [
  "rand 0.8.5",
  "reth-primitives",
  "reth-rpc-api",
+ "reth-rpc-layer",
  "revm-primitives",
  "strata-db",
  "strata-eectl",
@@ -13986,6 +13987,7 @@ dependencies = [
  "strata-test-utils",
  "thiserror 2.0.12",
  "tokio",
+ "tower 0.5.2",
  "tracing",
 ]
 
