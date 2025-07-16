@@ -71,8 +71,6 @@ pub fn sync_chainstate_to_el(
 }
 
 /// Sync missing or invalid L2 block status using chainstate.
-///
-/// TODO: retry on network errors
 pub fn sync_chainstate_l2_status(storage: &NodeStorage) -> Result<(), Error> {
     let chainstate_manager = storage.chainstate();
     let l2_block_manager = storage.l2();
