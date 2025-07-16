@@ -18,7 +18,7 @@ use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{BRIDGE_IN_AMOUNT, RECOVER_AT_DELAY, SIGNET_BLOCK_TIME},
+    constants::{RECOVER_AT_DELAY, SIGNET_BLOCK_TIME},
     errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
@@ -75,7 +75,7 @@ pub async fn deposit(
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
     println!(
         "Bridging {} to Alpen address {}",
-        BRIDGE_IN_AMOUNT.to_string().green(),
+        settings.bridge_in_amount.to_string().green(),
         alpen_address.to_string().cyan(),
     );
 
@@ -143,7 +143,7 @@ pub async fn deposit(
         let mut builder = l1w.build_tx();
         // Important: the deposit won't be found by the sequencer if the order isn't correct.
         builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(bridge_in_address.script_pubkey(), BRIDGE_IN_AMOUNT);
+        builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
         builder.add_data(&push_bytes);
         builder.fee_rate(fee_rate);
         match builder.finish() {
