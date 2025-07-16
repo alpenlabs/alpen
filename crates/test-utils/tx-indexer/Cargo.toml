@@ -9,8 +9,7 @@ workspace = true
 [dependencies]
 strata-l1tx = { workspace = true, features = ["test_utils"] }
 strata-primitives.workspace = true
-
-bitcoin = { workspace = true, features = ["rand-std"] }
-
 strata-test-utils-btc.workspace = true
 strata-test-utils-l2.workspace = true
+
+bitcoin = { workspace = true, features = ["rand-std"] }
