@@ -344,7 +344,7 @@ mod tests {
 
         // Create the PSBT
         let mut psbt = Psbt::from_unsigned_tx(transaction).expect("could not create PSBT");
-        let ty = TapSighashType::All.into();
+        let ty = TapSighashType::Default.into();
         let origins = BTreeMap::from([(
             x_only_pubkey,
             (vec![], (wallet_fingerprint, derivation_path)),
