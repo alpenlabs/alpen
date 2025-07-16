@@ -1,13 +1,15 @@
+//! EVM related test utilities for the Alpen codebase.
+
 use std::path::PathBuf;
 
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
 use strata_primitives::buf::{Buf32, Buf64};
 use strata_proofimpl_evm_ee_stf::{
-    EvmBlockStfInput,
     executor::process_block,
     primitives::{EvmEeProofInput, EvmEeProofOutput},
     utils::generate_exec_update,
+    EvmBlockStfInput,
 };
 use strata_state::{
     block::{L1Segment, L2Block, L2BlockBody},

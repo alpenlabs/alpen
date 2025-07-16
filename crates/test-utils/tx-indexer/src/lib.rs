@@ -1,3 +1,5 @@
+//! Transaction indexing tests and helpers.
+
 use bitcoin::{
     absolute::LockTime,
     block::{Header, Version},

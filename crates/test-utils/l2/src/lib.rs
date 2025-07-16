@@ -1,8 +1,10 @@
+//! L2/rollup related test utilities for the Alpen codebase.
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bitcoin::secp256k1::{SECP256K1, SecretKey};
+use bitcoin::secp256k1::{SecretKey, SECP256K1};
 use borsh::to_vec;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{rngs::StdRng, SeedableRng};
 use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_primitives::{
     block_credential,

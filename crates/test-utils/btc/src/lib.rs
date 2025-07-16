@@ -1,3 +1,5 @@
+//! Btc related test utilities for the Alpen codebase.
+
 use std::str::FromStr;
 
 use bitcoin::{

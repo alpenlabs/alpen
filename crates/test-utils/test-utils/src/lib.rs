@@ -1,4 +1,4 @@
-//! Test utilities for the Alpen codebase.
+//! Generic Arbitrary generator for the Alpen codebase.
 
 use arbitrary::{Arbitrary, Unstructured};
 use rand_core::{CryptoRngCore, OsRng};
