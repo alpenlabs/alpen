@@ -14,11 +14,10 @@ use bdk_wallet::{
 use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
-use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{RECOVER_AT_DELAY, SIGNET_BLOCK_TIME},
+    constants::{FINALITY_DEPTH, SIGNET_BLOCK_TIME},
     errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
@@ -87,8 +86,12 @@ pub async fn deposit(
     let (secret_key, _) = SECP256K1.generate_keypair(&mut OsRng);
     let recovery_private_key = PrivateKey::new(secret_key, settings.network);
 
-    let bridge_in_desc = bridge_in_descriptor(settings.bridge_musig2_pubkey, recovery_private_key)
-        .expect("valid bridge in descriptor");
+    let bridge_in_desc = bridge_in_descriptor(
+        settings.bridge_musig2_pubkey,
+        recovery_private_key,
+        settings.recover_delay,
+    )
+    .expect("valid bridge in descriptor");
 
     let desc = bridge_in_desc
         .clone()
@@ -106,7 +109,11 @@ pub async fn deposit(
         .expect("valid chain tip")
         .height;
 
-    let recover_at = current_block_height + RECOVER_AT_DELAY;
+    // Number of blocks after which the wallet actually enables recovery. This is mostly to account
+    // for any reorgs that may happen at the recovery height.
+    let recover_at_delay = settings.recover_delay + FINALITY_DEPTH;
+
+    let recover_at = current_block_height + recover_at_delay;
 
     let bridge_in_address = temp_wallet
         .reveal_next_address(KeychainKind::External)
@@ -203,10 +210,11 @@ pub async fn deposit(
 fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
     private_key: PrivateKey,
+    recover_delay: u32,
 ) -> Result<DescriptorTemplateOut, NotTaprootAddress> {
     let desc = bdk_wallet::descriptor!(
         tr(bridge_pubkey,
-            and_v(v:pk(private_key),older(RECOVER_DELAY))
+            and_v(v:pk(private_key),older(recover_delay))
         )
     )
     .expect("valid descriptor");
@@ -219,10 +227,11 @@ mod tests {
     use std::sync::Arc;
 
     use bdk_wallet::{
-        bitcoin::Network,
+        bitcoin::{consensus, secp256k1::SECP256K1, Network, Sequence},
         keys::{DescriptorPublicKey, SinglePub, SinglePubKey},
         miniscript::{descriptor::TapTree, Descriptor, Miniscript},
     };
+    use strata_primitives::constants::RECOVER_DELAY;
 
     use super::*;
 
@@ -238,7 +247,8 @@ mod tests {
         let recovery_private_key = PrivateKey::new(secret_key, Network::Bitcoin);
 
         let (desc, _key_map, _network) =
-            bridge_in_descriptor(bridge_pubkey, recovery_private_key).expect("good descriptor");
+            bridge_in_descriptor(bridge_pubkey, recovery_private_key, RECOVER_DELAY)
+                .expect("good descriptor");
         assert!(desc.sanity_check().is_ok());
         let Descriptor::Tr(tr_desc) = desc else {
             panic!("should be taproot descriptor")
