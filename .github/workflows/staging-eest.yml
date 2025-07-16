@@ -43,7 +43,7 @@ jobs:
       id: pull-images
       env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX }}
+          ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX_MAIN }}
       run: |
         BINARIES=(
           "strata-client"
