@@ -13,6 +13,7 @@ use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
+use strata_primitives::constants::RECOVER_DELAY as DEFAULT_RECOVER_DELAY;
 use terrors::OneOf;
 
 use crate::{
@@ -37,6 +38,7 @@ pub struct SettingsFromFile {
     pub bridge_pubkey: Hex<[u8; 32]>,
     pub magic_bytes: String,
     pub network: Option<Network>,
+    pub recover_delay: Option<u32>,
     pub bridge_in_amount_sats: Option<u64>,
     pub bridge_out_amount_sats: Option<u64>,
     pub bridge_alpen_address: Option<String>,
@@ -60,6 +62,7 @@ pub struct Settings {
     pub network: Network,
     pub config_file: PathBuf,
     pub signet_backend: Arc<dyn SignetBackend>,
+    pub recover_delay: u32,
     pub bridge_in_amount: Amount,
     pub bridge_out_amount: Amount,
 }
@@ -143,6 +146,7 @@ impl Settings {
             network: from_file.network.unwrap_or(DEFAULT_NETWORK),
             config_file: CONFIG_FILE.clone(),
             signet_backend: sync_backend,
+            recover_delay: from_file.recover_delay.unwrap_or(DEFAULT_RECOVER_DELAY),
             bridge_in_amount: from_file
                 .bridge_in_amount_sats
                 .map(Amount::from_sat)
