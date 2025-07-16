@@ -8,7 +8,7 @@ use std::{
 
 use alloy::primitives::Address as AlpenAddress;
 use bdk_bitcoind_rpc::bitcoincore_rpc::{Auth, Client};
-use bdk_wallet::bitcoin::{Network, XOnlyPublicKey};
+use bdk_wallet::bitcoin::{Amount, Network, XOnlyPublicKey};
 use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,10 @@ use shrex::Hex;
 use terrors::OneOf;
 
 use crate::{
-    constants::{BRIDGE_ALPEN_ADDRESS, DEFAULT_NETWORK, MAGIC_BYTES_LEN},
+    constants::{
+        DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
+        DEFAULT_NETWORK, MAGIC_BYTES_LEN,
+    },
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -34,6 +37,9 @@ pub struct SettingsFromFile {
     pub bridge_pubkey: Hex<[u8; 32]>,
     pub magic_bytes: String,
     pub network: Option<Network>,
+    pub bridge_in_amount_sats: Option<u64>,
+    pub bridge_out_amount_sats: Option<u64>,
+    pub bridge_alpen_address: Option<String>,
 }
 
 /// Settings struct filled with either config values or
@@ -54,6 +60,8 @@ pub struct Settings {
     pub network: Network,
     pub config_file: PathBuf,
     pub signet_backend: Arc<dyn SignetBackend>,
+    pub bridge_in_amount: Amount,
+    pub bridge_out_amount: Amount,
 }
 
 pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
@@ -124,12 +132,25 @@ impl Settings {
             mempool_space_endpoint: from_file.mempool_endpoint,
             blockscout_endpoint: from_file.blockscout_endpoint,
             magic_bytes: from_file.magic_bytes,
-            bridge_alpen_address: AlpenAddress::from_str(BRIDGE_ALPEN_ADDRESS)
-                .expect("valid Alpen address"),
+            bridge_alpen_address: AlpenAddress::from_str(
+                from_file
+                    .bridge_alpen_address
+                    .as_deref()
+                    .unwrap_or(DEFAULT_BRIDGE_ALPEN_ADDRESS),
+            )
+            .expect("valid Alpen address"),
             linux_seed_file,
             network: from_file.network.unwrap_or(DEFAULT_NETWORK),
             config_file: CONFIG_FILE.clone(),
             signet_backend: sync_backend,
+            bridge_in_amount: from_file
+                .bridge_in_amount_sats
+                .map(Amount::from_sat)
+                .unwrap_or(DEFAULT_BRIDGE_IN_AMOUNT),
+            bridge_out_amount: from_file
+                .bridge_out_amount_sats
+                .map(Amount::from_sat)
+                .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
         })
     }
 }
