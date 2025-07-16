@@ -132,6 +132,7 @@ class StrataFactory(flexitest.Factory):
         }
 
         svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
+        svc.stop_timeout = 30
         svc.start()
         _inject_service_create_rpc(svc, rpc_url, "sequencer")
         return svc
@@ -176,6 +177,7 @@ class StrataSequencerFactory(flexitest.Factory):
             "seqkey": seqkey_path,
         }
         svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
+        svc.stop_timeout = 30
         svc.start()
 
         return svc
@@ -246,6 +248,7 @@ class FullNodeFactory(flexitest.Factory):
         }
 
         svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
+        svc.stop_timeout = 30
         svc.start()
         _inject_service_create_rpc(svc, rpc_url, name)
         return svc
@@ -311,6 +314,7 @@ class RethFactory(flexitest.Factory):
         ethrpc_url = f"ws://localhost:{ethrpc_ws_port}"
 
         svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
+        svc.stop_timeout = 30
         svc.start()
 
         def _create_web3():
@@ -427,6 +431,7 @@ enable_checkpoint_runner = {str(settings.enable_checkpoint_proving).lower()}
         props = {"rpc_port": rpc_port}
 
         svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
+        svc.stop_timeout = 30
         svc.start()
         _inject_service_create_rpc(svc, rpc_url, "prover")
         return svc
