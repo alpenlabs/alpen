@@ -21,6 +21,7 @@ pub enum DebugCommands {
     Recovery(RecoveryArgs),
 }
 
+/// Handler for individual debug commands
 pub async fn debug(args: DebugArgs, seed: Seed, settings: Settings) -> Result<(), DisplayedError> {
     match args.cmd {
         DebugCommands::Recovery(args) => recovery(args, seed, settings).await,
@@ -32,6 +33,8 @@ pub async fn debug(args: DebugArgs, seed: Seed, settings: Settings) -> Result<()
 #[argh(subcommand, name = "recovery")]
 pub struct RecoveryArgs {}
 
+/// Handler for descriptor recovery debug, just decrypting and showing the contents of the recovery
+/// database at the moment.
 pub async fn recovery(
     _args: RecoveryArgs,
     seed: Seed,
