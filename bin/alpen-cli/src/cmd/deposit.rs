@@ -16,11 +16,10 @@ use bdk_wallet::{
 };
 use colored::Colorize;
 use indicatif::ProgressBar;
-use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{BRIDGE_IN_AMOUNT, RECOVER_AT_DELAY, SIGNET_BLOCK_TIME},
+    constants::SIGNET_BLOCK_TIME,
     errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
@@ -77,7 +76,7 @@ pub async fn deposit(
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
     println!(
         "Bridging {} to Alpen address {}",
-        BRIDGE_IN_AMOUNT.to_string().green(),
+        settings.bridge_in_amount.to_string().green(),
         alpen_address.to_string().cyan(),
     );
 
@@ -86,9 +85,12 @@ pub async fn deposit(
         recovery_address.to_string().yellow()
     );
 
-    let (bridge_in_desc, _recovery_script, _recovery_script_hash) =
-        bridge_in_descriptor(settings.bridge_musig2_pubkey, recovery_address)
-            .expect("valid bridge in descriptor");
+    let (bridge_in_desc, _recovery_script, _recovery_script_hash) = bridge_in_descriptor(
+        settings.bridge_musig2_pubkey,
+        recovery_address,
+        settings.recover_delay,
+    )
+    .expect("valid bridge in descriptor");
 
     let desc = bridge_in_desc
         .clone()
@@ -106,7 +108,11 @@ pub async fn deposit(
         .expect("valid chain tip")
         .height;
 
-    let recover_at = current_block_height + RECOVER_AT_DELAY;
+    // Number of blocks after which the wallet actually enables recovery. This is mostly to account
+    // for any reorgs that may happen at the recovery height.
+    let recover_at_delay = settings.recover_delay + settings.finality_depth;
+
+    let recover_at = current_block_height + recover_at_delay;
 
     let bridge_in_address = temp_wallet
         .reveal_next_address(KeychainKind::External)
@@ -143,7 +149,7 @@ pub async fn deposit(
         let mut builder = l1w.build_tx();
         // Important: the deposit won't be found by the sequencer if the order isn't correct.
         builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(bridge_in_address.script_pubkey(), BRIDGE_IN_AMOUNT);
+        builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
         builder.add_data(&push_bytes);
         builder.fee_rate(fee_rate);
         match builder.finish() {
@@ -203,12 +209,13 @@ pub async fn deposit(
 fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
     recovery_address: Address,
+    recover_delay: u32,
 ) -> Result<(DescriptorTemplateOut, ScriptBuf, TapNodeHash), NotTaprootAddress> {
     let recovery_xonly_pubkey = recovery_address.extract_p2tr_pubkey()?;
 
     let desc = bdk_wallet::descriptor!(
         tr(bridge_pubkey,
-            and_v(v:pk(recovery_xonly_pubkey),older(RECOVER_DELAY))
+            and_v(v:pk(recovery_xonly_pubkey),older(recover_delay))
         )
     )
     .expect("valid descriptor");
@@ -218,7 +225,7 @@ fn bridge_in_descriptor(
     // it is a massive pita
     let recovery_script = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
         "and_v(v:pk({}),older({}))",
-        recovery_xonly_pubkey, RECOVER_DELAY
+        recovery_xonly_pubkey, recover_delay
     ))
     .expect("valid recovery script")
     .encode();
@@ -231,6 +238,7 @@ fn bridge_in_descriptor(
 #[cfg(test)]
 mod tests {
     use bdk_wallet::bitcoin::{consensus, secp256k1::SECP256K1, Network, Sequence};
+    use strata_primitives::constants::RECOVER_DELAY;
 
     use super::*;
 
@@ -248,7 +256,7 @@ mod tests {
         let sequence_hex = consensus::encode::serialize_hex(&sequence);
 
         let (_bridge_in_descriptor, recovery_script, _recovery_script_hash) =
-            bridge_in_descriptor(bridge_musig2_pubkey, recovery_address).unwrap();
+            bridge_in_descriptor(bridge_musig2_pubkey, recovery_address, RECOVER_DELAY).unwrap();
 
         let expected = format!(
             "OP_PUSHBYTES_32 {external_recovery_pubkey} OP_CHECKSIGVERIFY OP_PUSHBYTES_2 {sequence_hex:.4} OP_CSV"
