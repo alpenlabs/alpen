@@ -3,6 +3,7 @@
 name: Tests with coverage
 
 on:
+  workflow_dispatch:  # TODO: remove after testing
   pull_request:
   merge_group:
   push:
