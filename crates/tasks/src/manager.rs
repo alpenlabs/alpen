@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use futures_util::{future::select, FutureExt, TryFutureExt};
+use futures_util::{future::select, FutureExt};
 use thiserror::Error;
 use tokio::{runtime::Handle, sync::mpsc};
 use tracing::{debug, error, info, warn};
@@ -171,17 +171,36 @@ impl TaskManager {
         }
     }
 
-    /// Start background handler to send the shutdown signal when a ctrl-c (SIGINT) is received
+    /// Start background handler to send the shutdown signal when a ctrl-c (SIGINT) or SIGTERM is
+    /// received
     pub fn start_signal_listeners(&self) {
         let shutdown_signal = self.shutdown_signal();
 
         self.tokio_handle.spawn(async move {
-            // TODO: add more relevant signals
             // TODO: double ctrl+c for force quit
-            let _ = tokio::signal::ctrl_c().into_future().await;
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut sigterm =
+                    signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+                let mut sigint =
+                    signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
 
-            // got a ctrl+c. send a shutdown
-            warn!("Got INT. Initiating shutdown");
+                tokio::select! {
+                    _ = sigterm.recv() => {
+                        warn!("Got TERM. Initiating shutdown");
+                    }
+                    _ = sigint.recv() => {
+                        warn!("Got INT. Initiating shutdown");
+                    }
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = tokio::signal::ctrl_c().await;
+                warn!("Got INT. Initiating shutdown");
+            }
+
             shutdown_signal.send()
         });
     }
