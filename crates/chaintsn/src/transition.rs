@@ -243,6 +243,11 @@ fn process_l1_checkpoint(
         return Err(OpError::EpochNotExtend);
     }
 
+    // Also just check if the epoch numbers in batch transition and batch info match
+    if ckpt_epoch != ckpt.batch_info().epoch() {
+        return Err(OpError::MalformedCheckpoint);
+    }
+
     // TODO refactor this to encapsulate the conditional verification into
     // another fn so we don't have to think about it here
     if receipt.proof().is_empty() {
