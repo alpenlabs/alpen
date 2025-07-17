@@ -3,7 +3,6 @@
 name: Tests with coverage
 
 on:
-  workflow_dispatch:  # TODO: remove after testing
   pull_request:
   merge_group:
   push:
@@ -32,6 +31,8 @@ jobs:
     needs: [functional-tests, unit-tests]
     timeout-minutes: 10
     steps:
+      # NOTE: codecov action needs source files in the same path as in the lcov.info
+      # ensure the source location is same in unit test, functional test and this job
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -52,6 +53,29 @@ jobs:
           lcov --add-tracefile ./lcov.unit.info \
             --add-tracefile ./lcov.functional.info \
             --output-file ./lcov.info
+
+      - name: Generate cov report
+        continue-on-error: true
+        run: |
+          cargo genhtml lcov.info \
+            --output-directory coverage-report \
+            --title "Test Coverage" \
+            --legend --synthesize-missing
+          zip -r coverage-report.zip coverage-report
+      - name: Upload coverage lcov artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: combined-lcov
+          path: lcov.info
+
+      - name: Upload coverage report
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-report
+          path: coverage-report.zip
+
       - name: Publish Test Coverage
         uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
         env:

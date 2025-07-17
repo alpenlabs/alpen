@@ -136,10 +136,16 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: ls before
+        run: ls -la target/llvm-cov-target
+
       - name: Build Cargo project
         env:
           RUSTFLAGS: "-Cinstrument-coverage"
         run: cargo build --locked -F debug-utils
+
+      - name: ls after build
+        run: ls -la target/llvm-cov-target
 
       - name: Run functional tests (1)
         id: funcTestsRun1
@@ -148,10 +154,10 @@ jobs:
           NO_COLOR: "1"
           LOG_LEVEL: "info"
         run: |
-          export PATH="$(realpath target/llvm-cov-target/debug):$PATH"
+          NEWPATH="$(realpath target/llvm-cov-target/debug)"
+          export PATH="$NEWPATH:$PATH"
           which strata-client
-          cd functional-tests && poetry run python entry.py -g btcio
-        # TODO: remove -g btcio
+          cd functional-tests && poetry run python entry.py
 
       # Run again just to be sure as some tests are flaky, with more logging
       - name: Run functional tests (2)
@@ -164,10 +170,14 @@ jobs:
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
         run: |
-          export PATH="$(realpath target/llvm-cov-target/debug):$PATH"
+          NEWPATH="$(realpath target/llvm-cov-target/debug)"
+          export PATH="$NEWPATH:$PATH"
           which strata-client
-          cd functional-tests && poetry run python entry.py -g btcio
-        # TODO: remove -g btcio
+          cd functional-tests && poetry run python entry.py
+
+      - name: ls after
+        run: ls -la target/llvm-cov-target
+
       - name: Generate combined coverage lcov
         id: genFunctionalLcov
         continue-on-error: true
