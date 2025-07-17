@@ -168,6 +168,20 @@ jobs:
           which strata-client
           cd functional-tests && poetry run python entry.py
 
+      - name: Generate combined coverage lcov
+        id: genFunctionalLcov
+        continue-on-error: true
+        run: |
+          cargo llvm-cov -F debug-utils report --lcov > lcov.functional.info
+
+      - name: Upload coverage lcov artifact
+        if: steps.genFunctionalLcov.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: functional-lcov
+          path: lcov.functional.info
+
       - name: Zip log files on failure
         if: steps.funcTestsRun2.outcome == 'failure'
         # Create a zip archive (logs.zip) that includes only service.log files,
@@ -188,17 +202,6 @@ jobs:
           retention-days: 30
           if-no-files-found: error
           compression-level: 0 # already compressed
-
-      - name: Generate combined coverage lcov
-        run: |
-          cargo llvm-cov -F debug-utils report --lcov > lcov.functional.info
-
-      - name: Upload coverage lcov artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: functional-lcov
-          path: lcov.functional.info
-
 
       - name: Fail job if functional tests fail
         if: steps.funcTestsRun2.outcome == 'failure'

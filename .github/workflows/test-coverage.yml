@@ -19,11 +19,11 @@ concurrency:
 permissions: {}
 
 jobs:
-  functional-tests:
-    uses: ./.github/workflows/functional.yml
-
   unit-tests:
     uses: ./.github/workflows/unit.yml
+
+  functional-tests:
+    uses: ./.github/workflows/functional.yml
 
   publish-coverage:
     name: Check that unit tests pass
