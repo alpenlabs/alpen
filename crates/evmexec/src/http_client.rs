@@ -6,7 +6,11 @@ use alloy_rpc_types::{
     eth::{Block as RpcBlock, Header, Transaction, TransactionRequest},
 };
 use alpen_reth_node::{AlpenEngineTypes, AlpenExecutionPayloadEnvelopeV4, AlpenPayloadAttributes};
-use jsonrpsee::http_client::{transport::HttpBackend, HttpClient, HttpClientBuilder};
+use jsonrpsee::{
+    core::{client::SubscriptionClientT, middleware::layer::RpcLogger},
+    http_client::{transport::HttpBackend, HttpClient, HttpClientBuilder},
+    server::middleware::rpc::RpcService,
+};
 #[cfg(test)]
 use mockall::automock;
 use reth_primitives::Receipt;
@@ -14,13 +18,17 @@ use reth_rpc_api::{EngineApiClient, EthApiClient};
 use reth_rpc_layer::{AuthClientLayer, AuthClientService};
 use revm_primitives::alloy_primitives::{BlockHash, B256};
 
-fn http_client(http_url: &str, secret: JwtSecret) -> HttpClient<AuthClientService<HttpBackend>> {
+fn http_client(
+    http_url: &str,
+    secret: JwtSecret,
+) -> impl SubscriptionClientT + Clone + Send + Sync + Unpin + 'static {
     let middleware = tower::ServiceBuilder::new().layer(AuthClientLayer::new(secret));
 
-    HttpClientBuilder::default()
+    let res = HttpClientBuilder::default()
         .set_http_middleware(middleware)
         .build(http_url)
-        .expect("Failed to create http client")
+        .expect("Failed to create http client");
+    res
 }
 
 type RpcResult<T> = Result<T, jsonrpsee::core::ClientError>;
@@ -52,18 +60,25 @@ pub trait EngineRpc {
 
 #[derive(Debug, Clone)]
 pub struct EngineRpcClient {
-    client: Arc<HttpClient<AuthClientService<HttpBackend>>>,
+    http_url: String,
+    secret: JwtSecret,
 }
 
 impl EngineRpcClient {
     pub fn from_url_secret(http_url: &str, secret: JwtSecret) -> Self {
         EngineRpcClient {
-            client: Arc::new(http_client(http_url, secret)),
+            http_url: http_url.to_string(),
+            secret,
         }
     }
 
-    pub fn inner(&self) -> &HttpClient<AuthClientService<HttpBackend>> {
-        &self.client
+    fn create_client(&self) -> impl SubscriptionClientT + Clone + Send + Sync + Unpin + 'static {
+        let middleware =
+            tower::ServiceBuilder::new().layer(AuthClientLayer::new(self.secret.clone()));
+        HttpClientBuilder::default()
+            .set_http_middleware(middleware)
+            .build(&self.http_url)
+            .expect("Failed to create http client")
     }
 }
 
@@ -73,14 +88,21 @@ impl EngineRpc for EngineRpcClient {
         fork_choice_state: ForkchoiceState,
         payload_attributes: Option<AlpenPayloadAttributes>,
     ) -> RpcResult<ForkchoiceUpdated> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::fork_choice_updated_v3(&self.client, fork_choice_state, payload_attributes).await
+        let client = self.create_client();
+        EngineApiClient::<AlpenEngineTypes>::fork_choice_updated_v3(
+            &client,
+            fork_choice_state,
+            payload_attributes,
+        )
+        .await
     }
 
     async fn get_payload_v4(
         &self,
         payload_id: PayloadId,
     ) -> RpcResult<AlpenExecutionPayloadEnvelopeV4> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_v4(&self.client, payload_id).await
+        let client = self.create_client();
+        EngineApiClient::<AlpenEngineTypes>::get_payload_v4(&client, payload_id).await
     }
 
     async fn new_payload_v4(
@@ -90,10 +112,9 @@ impl EngineRpc for EngineRpcClient {
         parent_beacon_block_root: B256,
         execution_requests: RequestsOrHash,
     ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<
-            AlpenEngineTypes,
-        >>::new_payload_v4(
-            &self.client,
+        let client = self.create_client();
+        EngineApiClient::<AlpenEngineTypes>::new_payload_v4(
+            &client,
             payload,
             versioned_hashes,
             parent_beacon_block_root,
@@ -103,13 +124,14 @@ impl EngineRpc for EngineRpcClient {
     }
 
     async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<RpcBlock>> {
-        <HttpClient<AuthClientService<HttpBackend>> as EthApiClient<
+        let client = self.create_client();
+        EthApiClient::<
             TransactionRequest,
             Transaction,
             RpcBlock<alloy_rpc_types::Transaction>,
             Receipt,
             Header,
-        >>::block_by_hash(&self.client, block_hash, false)
+        >::block_by_hash(&client, block_hash, false)
         .await
     }
 }
