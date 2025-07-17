@@ -36,12 +36,12 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: functional-lcov
-          path: lcov.functional.info
       - name: Download unit test coverage
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: unit-lcov
-          path: lcov.unit.info
+      - name: ls
+        run: ls -la
       - name: Install lcov
         run: sudo apt-get update && sudo apt-get install -y lcov
       - name: Merge test coverage
