@@ -57,7 +57,7 @@ jobs:
       - name: Generate cov report
         continue-on-error: true
         run: |
-          cargo genhtml lcov.info \
+          genhtml lcov.info \
             --output-directory coverage-report \
             --title "Test Coverage" \
             --legend --synthesize-missing
