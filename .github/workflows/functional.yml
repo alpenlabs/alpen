@@ -149,7 +149,7 @@ jobs:
           NO_COLOR: "1"
           LOG_LEVEL: "info"
         run: |
-          export PATH="$CARGO_TARGET_DIR/debug:$PATH"
+          export PATH="$(realpath target/llvm-cov-target/debug):$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
 
@@ -164,7 +164,7 @@ jobs:
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
         run: |
-          export PATH="$CARGO_TARGET_DIR/debug:$PATH"
+          export PATH="$(realpath target/llvm-cov-target/debug):$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
 
