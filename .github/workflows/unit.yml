@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-unit
   cancel-in-progress: true
 
 permissions: {}
