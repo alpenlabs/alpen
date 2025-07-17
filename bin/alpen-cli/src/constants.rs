@@ -5,7 +5,7 @@ use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
 
 /// Number of blocks that the wallet considers a transaction "buried" or final taking into account
 /// reorgs that might happen.
-pub const FINALITY_DEPTH: u32 = 6;
+pub const DEFAULT_FINALITY_DEPTH: u32 = 6;
 
 pub const RECOVERY_DESC_CLEANUP_DELAY: u32 = 100;
 

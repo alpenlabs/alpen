@@ -17,7 +17,7 @@ use rand_core::OsRng;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::{FINALITY_DEPTH, SIGNET_BLOCK_TIME},
+    constants::SIGNET_BLOCK_TIME,
     errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
@@ -111,7 +111,7 @@ pub async fn deposit(
 
     // Number of blocks after which the wallet actually enables recovery. This is mostly to account
     // for any reorgs that may happen at the recovery height.
-    let recover_at_delay = settings.recover_delay + FINALITY_DEPTH;
+    let recover_at_delay = settings.recover_delay + settings.finality_depth;
 
     let recover_at = current_block_height + recover_at_delay;
 
