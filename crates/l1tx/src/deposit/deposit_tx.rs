@@ -5,10 +5,10 @@ use bitcoin::{
     key::TapTweak,
     opcodes::all::OP_RETURN,
     sighash::{Prevouts, SighashCache},
-    taproot::TAPROOT_CONTROL_NODE_SIZE,
-    Amount, OutPoint, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, XOnlyPublicKey,
+    taproot::{self, TAPROOT_CONTROL_NODE_SIZE},
+    Amount, OutPoint, ScriptBuf, TapNodeHash, Transaction, TxOut, XOnlyPublicKey,
 };
-use secp256k1::{constants::SCHNORR_SIGNATURE_SIZE, schnorr::Signature, Message};
+use secp256k1::Message;
 use strata_primitives::{
     buf::Buf32,
     l1::{DepositInfo, OutputRef},
@@ -71,7 +71,7 @@ pub fn extract_deposit_info(tx: &Transaction, config: &DepositTxParams) -> Optio
     })
 }
 
-/// Validate that the transaction has been signed off by the N of N operators pubkey.
+/// Validate that the transaction has been signed off by the N-of-N operators pubkey.
 fn validate_deposit_signature(
     tx: &Transaction,
     tag_data: &DepositTag<'_>,
@@ -92,11 +92,12 @@ fn validate_deposit_signature(
         return None;
     }
     let sig_witness = &input.witness[0];
-    if sig_witness.len() < SCHNORR_SIGNATURE_SIZE {
-        return None;
-    }
-    let sig_bytes = &sig_witness[..SCHNORR_SIGNATURE_SIZE];
-    let schnorr_sig = Signature::from_slice(sig_bytes).ok()?;
+
+    // rust-bitcoin taproot::Signature handles both both 64-byte (SIGHASH_DEFAULT)
+    // and 65-byte (explicit sighash) signatures.
+    let taproot_sig = taproot::Signature::from_slice(sig_witness).ok()?;
+    let schnorr_sig = taproot_sig.signature;
+    let sighash_type = taproot_sig.sighash_type;
 
     // Parse the internal pubkey and merkle root
     let internal_pubkey = dep_config.operators_pubkey;
@@ -116,7 +117,8 @@ fn validate_deposit_signature(
     // Compute the sighash
     let prevout = Prevouts::All(&utxos);
     let sighash = SighashCache::new(tx)
-        .taproot_key_spend_signature_hash(0, &prevout, TapSighashType::All)
+        // NOTE: preserving the original sighash_type.
+        .taproot_key_spend_signature_hash(0, &prevout, sighash_type)
         .unwrap();
 
     // Prepare the message for signature verification
