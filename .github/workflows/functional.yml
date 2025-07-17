@@ -73,7 +73,6 @@ jobs:
     needs: extract-rust-version
     timeout-minutes: 60
     env:
-      # These are safe to set for the whole job
       CARGO_TARGET_DIR: "target/llvm-cov-target"
       LLVM_PROFILE_FILE: "target/llvm-cov-target/strata-%p-%m.profraw"
 
@@ -151,7 +150,8 @@ jobs:
         run: |
           export PATH="$(realpath target/llvm-cov-target/debug):$PATH"
           which strata-client
-          cd functional-tests && poetry run python entry.py
+          cd functional-tests && poetry run python entry.py -g btcio
+        # TODO: remove -g btcio
 
       # Run again just to be sure as some tests are flaky, with more logging
       - name: Run functional tests (2)
@@ -166,11 +166,14 @@ jobs:
         run: |
           export PATH="$(realpath target/llvm-cov-target/debug):$PATH"
           which strata-client
-          cd functional-tests && poetry run python entry.py
-
+          cd functional-tests && poetry run python entry.py -g btcio
+        # TODO: remove -g btcio
       - name: Generate combined coverage lcov
         id: genFunctionalLcov
         continue-on-error: true
+        env:
+          # for llvm-cov
+          CARGO_TARGET_DIR: "target"
         run: |
           cargo llvm-cov -F debug-utils report --lcov > lcov.functional.info
 
