@@ -237,7 +237,7 @@ mod tests {
 
         let recovery_private_key = PrivateKey::new(secret_key, Network::Bitcoin);
 
-        let (desc, _key_map, _networkk) =
+        let (desc, _key_map, _network) =
             bridge_in_descriptor(bridge_pubkey, recovery_private_key).expect("good descriptor");
         assert!(desc.sanity_check().is_ok());
         let Descriptor::Tr(tr_desc) = desc else {
