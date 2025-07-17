@@ -19,7 +19,7 @@ use terrors::OneOf;
 use crate::{
     constants::{
         DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
-        DEFAULT_NETWORK, MAGIC_BYTES_LEN,
+        DEFAULT_FINALITY_DEPTH, DEFAULT_NETWORK, MAGIC_BYTES_LEN,
     },
     signet::{backend::SignetBackend, EsploraClient},
 };
@@ -42,6 +42,7 @@ pub struct SettingsFromFile {
     pub bridge_in_amount_sats: Option<u64>,
     pub bridge_out_amount_sats: Option<u64>,
     pub bridge_alpen_address: Option<String>,
+    pub finality_depth: Option<u32>,
 }
 
 /// Settings struct filled with either config values or
@@ -65,6 +66,7 @@ pub struct Settings {
     pub recover_delay: u32,
     pub bridge_in_amount: Amount,
     pub bridge_out_amount: Amount,
+    pub finality_depth: u32,
 }
 
 pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
@@ -155,6 +157,7 @@ impl Settings {
                 .bridge_out_amount_sats
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
+            finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
         })
     }
 }
