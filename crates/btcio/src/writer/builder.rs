@@ -1,5 +1,5 @@
 use core::{result::Result::Ok, str::FromStr};
-use std::cmp::Reverse;
+use std::{cmp::Reverse, sync::Arc};
 
 use anyhow::anyhow;
 use bitcoin::{
@@ -33,6 +33,42 @@ use super::context::WriterContext;
 
 const BITCOIN_DUST_LIMIT: u64 = 546;
 
+/// Config for creating envelope transactions.
+#[derive(Debug, Clone)]
+pub struct EnvelopeConfig {
+    pub params: Arc<Params>,
+    /// Address to send change and reveal output to
+    pub sequencer_address: Address,
+    /// Amount to send to reveal address.
+    ///
+    /// NOTE: must be higher than the dust limit.
+    //
+    // TODO: Make this and all other bitcoin related values to Amount
+    pub reveal_amount: u64,
+    /// Bitcoin network
+    pub network: Network,
+    /// Bitcoin fee rate, sats/vByte
+    pub fee_rate: u64,
+}
+
+impl EnvelopeConfig {
+    pub fn new(
+        params: Arc<Params>,
+        sequencer_address: Address,
+        network: Network,
+        fee_rate: u64,
+        reveal_amount: u64,
+    ) -> Self {
+        Self {
+            params,
+            sequencer_address,
+            reveal_amount,
+            fee_rate,
+            network,
+        }
+    }
+}
+
 // TODO: these might need to be in rollup params
 #[derive(Debug, Error)]
 pub enum EnvelopeError {
@@ -64,24 +100,28 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         FeePolicy::Smart => ctx.client.estimate_smart_fee(1).await? * 2,
         FeePolicy::Fixed(val) => val,
     };
-    create_envelope_transactions(ctx, payloads, utxos, fee_rate, network)
+    let env_config = EnvelopeConfig::new(
+        ctx.params.clone(),
+        ctx.sequencer_address.clone(),
+        network,
+        fee_rate,
+        BITCOIN_DUST_LIMIT,
+    );
+    create_envelope_transactions(&env_config, payloads, utxos)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn create_envelope_transactions<R: Reader + Signer + Wallet>(
-    ctx: &WriterContext<R>,
+pub fn create_envelope_transactions(
+    env_config: &EnvelopeConfig,
     payloads: &[L1Payload],
     utxos: Vec<ListUnspent>,
-    fee_rate: u64,
-    network: Network,
 ) -> Result<(Transaction, Transaction), EnvelopeError> {
     // Create commit key
     let key_pair = generate_key_pair()?;
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
     // Start creating envelope content
-    let reveal_script = build_reveal_script(ctx.params.as_ref(), &public_key, payloads)?;
+    let reveal_script = build_reveal_script(env_config.params.as_ref(), &public_key, payloads)?;
     // Create spend info for tapscript
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())?
@@ -93,14 +133,14 @@ pub fn create_envelope_transactions<R: Reader + Signer + Wallet>(
         SECP256K1,
         public_key,
         taproot_spend_info.merkle_root(),
-        network,
+        env_config.network,
     );
 
     // Calculate commit value
     let commit_value = calculate_commit_output_value(
-        &ctx.sequencer_address,
-        ctx.config.reveal_amount,
-        fee_rate,
+        &env_config.sequencer_address,
+        env_config.reveal_amount,
+        env_config.fee_rate,
         &reveal_script,
         &taproot_spend_info,
     );
@@ -109,9 +149,9 @@ pub fn create_envelope_transactions<R: Reader + Signer + Wallet>(
     let (unsigned_commit_tx, _) = build_commit_transaction(
         utxos,
         reveal_address.clone(),
-        ctx.sequencer_address.clone(),
+        env_config.sequencer_address.clone(),
         commit_value,
-        fee_rate,
+        env_config.fee_rate,
     )?;
 
     let output_to_reveal = unsigned_commit_tx.output[0].clone();
@@ -119,9 +159,9 @@ pub fn create_envelope_transactions<R: Reader + Signer + Wallet>(
     // Build reveal tx
     let mut reveal_tx = build_reveal_transaction(
         unsigned_commit_tx.clone(),
-        ctx.sequencer_address.clone(),
-        ctx.config.reveal_amount,
-        fee_rate,
+        env_config.sequencer_address.clone(),
+        env_config.reveal_amount,
+        env_config.fee_rate,
         &reveal_script,
         &taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
@@ -138,7 +178,12 @@ pub fn create_envelope_transactions<R: Reader + Signer + Wallet>(
     )?;
 
     // Check if envelope is locked to the correct address
-    assert_correct_address(&key_pair, &taproot_spend_info, &reveal_address, network);
+    assert_correct_address(
+        &key_pair,
+        &taproot_spend_info,
+        &reveal_address,
+        env_config.network,
+    );
 
     Ok((unsigned_commit_tx, reveal_tx))
 }
@@ -672,14 +717,16 @@ mod tests {
         let (ctx, _, _, utxos) = get_mock_data();
 
         let payload = L1Payload::new_da(vec![0u8; 100]);
-        let (commit, reveal) = super::create_envelope_transactions(
-            &ctx,
-            &[payload],
-            utxos.to_vec(),
-            10,
-            bitcoin::Network::Bitcoin,
-        )
-        .unwrap();
+
+        let env_config = EnvelopeConfig::new(
+            ctx.params.clone(),
+            ctx.sequencer_address.clone(),
+            Network::Regtest,
+            1000,
+            546,
+        );
+        let (commit, reveal) =
+            super::create_envelope_transactions(&env_config, &[payload], utxos.to_vec()).unwrap();
 
         // check outputs
         assert_eq!(commit.output.len(), 2, "commit tx should have 2 outputs");
