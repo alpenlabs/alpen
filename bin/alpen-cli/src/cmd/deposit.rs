@@ -3,7 +3,7 @@ use std::{str::FromStr, time::Duration};
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
 use argh::FromArgs;
 use bdk_wallet::{
-    bitcoin::{script::PushBytesBuf, secp256k1::SECP256K1, Network, PrivateKey, XOnlyPublicKey},
+    bitcoin::{script::PushBytesBuf, secp256k1::SECP256K1, PrivateKey, XOnlyPublicKey},
     chain::ChainOracle,
     coin_selection::InsufficientFunds,
     descriptor::IntoWalletDescriptor,
@@ -84,7 +84,10 @@ pub async fn deposit(
         recovery_address.to_string().yellow()
     );
 
-    let bridge_in_desc = bridge_in_descriptor(settings.bridge_musig2_pubkey, settings.network)
+    let (secret_key, _) = SECP256K1.generate_keypair(&mut OsRng);
+    let recovery_private_key = PrivateKey::new(secret_key, settings.network);
+
+    let bridge_in_desc = bridge_in_descriptor(settings.bridge_musig2_pubkey, recovery_private_key)
         .expect("valid bridge in descriptor");
 
     let desc = bridge_in_desc
@@ -199,11 +202,8 @@ pub async fn deposit(
 /// and the single script path spend is locked to the user's recovery address with a timelock of
 fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
-    network: Network,
+    private_key: PrivateKey,
 ) -> Result<DescriptorTemplateOut, NotTaprootAddress> {
-    let (secret_key, _) = SECP256K1.generate_keypair(&mut OsRng);
-    let private_key = PrivateKey::new(secret_key, network);
-
     let desc = bdk_wallet::descriptor!(
         tr(bridge_pubkey,
             and_v(v:pk(private_key),older(RECOVER_DELAY))
@@ -212,4 +212,59 @@ fn bridge_in_descriptor(
     .expect("valid descriptor");
 
     Ok(desc)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use bdk_wallet::{
+        bitcoin::Network,
+        keys::{DescriptorPublicKey, SinglePub, SinglePubKey},
+        miniscript::{descriptor::TapTree, Descriptor, Miniscript},
+    };
+
+    use super::*;
+
+    #[test]
+    fn bridge_in_desc() {
+        let bridge_pubkey = XOnlyPublicKey::from_str(
+            "89f96f834e39766f97e245d70b27236681f741ae51c117df19761af7cb2f657e",
+        )
+        .expect("valid pubkey");
+
+        let (secret_key, public_key) = SECP256K1.generate_keypair(&mut OsRng);
+
+        let recovery_private_key = PrivateKey::new(secret_key, Network::Bitcoin);
+
+        let (desc, _key_map, _networkk) =
+            bridge_in_descriptor(bridge_pubkey, recovery_private_key).expect("good descriptor");
+        assert!(desc.sanity_check().is_ok());
+        let Descriptor::Tr(tr_desc) = desc else {
+            panic!("should be taproot descriptor")
+        };
+
+        let expected_recovery_script = format!("and_v(v:pk({public_key}),older({RECOVER_DELAY}))",);
+
+        let expected_taptree = TapTree::Leaf(Arc::new(
+            Miniscript::from_str(&expected_recovery_script).expect("valid miniscript"),
+        ));
+
+        let expected_internal_key = DescriptorPublicKey::Single(SinglePub {
+            origin: None,
+            key: SinglePubKey::XOnly(bridge_pubkey),
+        });
+
+        assert_eq!(
+            tr_desc.internal_key(),
+            &expected_internal_key,
+            "internal key should be the bridge pubkey"
+        );
+
+        assert_eq!(
+            tr_desc.tap_tree().as_ref().expect("taptree to be present"),
+            &expected_taptree,
+            "tap tree should be the expected taptree"
+        )
+    }
 }
