@@ -4,9 +4,6 @@ use alloy_consensus::Transaction;
 use alloy_eips::Typed2718;
 use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
 use alpen_reth_primitives::WithdrawalIntent;
-use reth::{
-    builder::BuilderContext, providers::StateProviderFactory, revm::database::StateProviderDatabase,
-};
 use reth_basic_payload_builder::*;
 use reth_chainspec::{ChainSpec, ChainSpecProvider, EthChainSpec, EthereumHardforks};
 use reth_errors::{BlockExecutionError, BlockValidationError};
@@ -18,10 +15,12 @@ use reth_evm::{
 };
 use reth_evm_ethereum::EthEvmConfig;
 use reth_node_api::{ConfigureEvm, FullNodeTypes, NodeTypes, PayloadBuilderAttributes};
-use reth_node_builder::{components::PayloadBuilderBuilder, PayloadBuilderConfig};
+use reth_node_builder::{components::PayloadBuilderBuilder, BuilderContext, PayloadBuilderConfig};
 use reth_payload_builder::{EthBuiltPayload, PayloadBuilderError};
 use reth_primitives::{EthPrimitives, InvalidTransactionError, Receipt};
 use reth_primitives_traits::SignedTransaction;
+use reth_provider::StateProviderFactory;
+use reth_revm::database::StateProviderDatabase;
 use reth_transaction_pool::{
     error::{Eip4844PoolTransactionError, InvalidPoolTransactionError},
     BestTransactions, BestTransactionsAttributes, PoolTransaction, TransactionPool,
