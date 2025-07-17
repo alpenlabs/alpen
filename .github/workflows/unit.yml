@@ -3,10 +3,7 @@
 name: Unit Tests
 
 on:
-  pull_request:
-  merge_group:
-  push:
-    branches: [main]
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
@@ -83,7 +80,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          cargo llvm-cov --workspace --locked nextest --profile ci --lcov --output-path lcov.info --no-cfg-coverage --no-cfg-coverage-nightly
+          cargo llvm-cov --workspace --locked nextest --profile ci --lcov --output-path lcov.unit.info --no-cfg-coverage --no-cfg-coverage-nightly
 
       - name: Test Summary
         uses: test-summary/action@31493c76ec9e7aa675f1585d3ed6f1da69269a86 # v2
@@ -91,11 +88,11 @@ jobs:
         with:
           paths: "target/nextest/ci/junit.xml"
 
-      - name: Publish Test Coverage
-        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
+      - name: Upload coverage lcov artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unit-lcov
+          path: lcov.unit.info
 
   doc:
     name: Run doc tests

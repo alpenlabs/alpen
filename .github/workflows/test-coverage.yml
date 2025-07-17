@@ -1,0 +1,55 @@
+# Runs unit tests, functional tests and publishes coverage.
+
+name: Tests with coverage
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  functional-tests:
+    uses: ./.github/workflows/functional.yml
+
+  unit-tests:
+    uses: ./.github/workflows/unit.yml
+
+  publish-coverage:
+    name: Check that unit tests pass
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [functional-tests, unit-tests]
+    timeout-minutes: 10
+    steps:
+      - name: Download functional test coverage
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: functional-lcov
+          path: lcov.functional.info
+      - name: Download unit test coverage
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unit-lcov
+          path: lcov.unit.info
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+      - name: Merge test coverage
+        run: |
+          lcov --add-tracefile ./lcov.unit.info \
+            --add-tracefile ./lcov.functional.info \
+            --output-file ./lcov.info
+      - name: Publish Test Coverage
+        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
