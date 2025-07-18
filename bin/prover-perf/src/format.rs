@@ -32,5 +32,5 @@ pub fn format_results(results: &[PerformanceReport], host_name: String) -> Strin
     }
     table_text.push('\n');
 
-    format!("*{} Execution Results*\n {}", host_name, table_text)
+    format!("*{host_name} Execution Results*\n {table_text}")
 }

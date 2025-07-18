@@ -149,7 +149,8 @@ mod tests {
         // Try with larger size
         let bytes = vec![1; 2000];
         let envelope_data = L1Payload::new_checkpoint(bytes.clone());
-        let script = generate_envelope_script_test(&[envelope_data.clone()], &params).unwrap();
+        let script =
+            generate_envelope_script_test(std::slice::from_ref(&envelope_data), &params).unwrap();
 
         // Parse the rollup name
         let result = parse_envelope_payloads(&script, &filter_config).unwrap();

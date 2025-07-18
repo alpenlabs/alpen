@@ -50,7 +50,7 @@ impl EvmSegment {
 
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evm_ee/");
         for height in start_height..=end_height {
-            let witness_path = dir.join(format!("witness_{}.json", height));
+            let witness_path = dir.join(format!("witness_{height}.json"));
             let json_file = std::fs::read_to_string(witness_path).expect("Expected JSON file");
             let el_proof_input: EvmBlockStfInput =
                 serde_json::from_str(&json_file).expect("Invalid JSON file");

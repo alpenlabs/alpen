@@ -187,7 +187,7 @@ impl SignetBackend for EsploraClient {
                 let mut once = BTreeSet::<KeychainKind>::new();
                 move |keychain, spk_i, script| {
                     if once.insert(keychain) {
-                        bar2.println(format!("\nScanning keychain [{:?}]", keychain));
+                        bar2.println(format!("\nScanning keychain [{keychain:?}]"));
                     }
                     bar2.println(format!("- idx {spk_i}: {script}"));
                 }
@@ -323,12 +323,10 @@ async fn sync_wallet_with_core(
             send_update.send(WalletUpdate::NewBlock(ev)).unwrap();
             let elapsed = start_apply_block.elapsed();
             bar2.println(format!(
-                "Applied block {} at height {} in {:?}",
-                hash, height, elapsed
+                "Applied block {hash} at height {height} in {elapsed:?}"
             ));
             bar2.set_message(format!(
-                "Current height: {}, scanned {} blocks",
-                height, blocks_scanned
+                "Current height: {height}, scanned {blocks_scanned} blocks"
             ));
         }
         bar2.println("Scanning mempool");
@@ -338,8 +336,7 @@ async fn sync_wallet_with_core(
         send_update.send(WalletUpdate::MempoolTxs(mempool)).unwrap();
         let elapsed = apply_start.elapsed();
         bar.println(format!(
-            "Applied {} unconfirmed transactions in {:?}",
-            txs_len, elapsed
+            "Applied {txs_len} unconfirmed transactions in {elapsed:?}"
         ));
         Ok(())
     })
