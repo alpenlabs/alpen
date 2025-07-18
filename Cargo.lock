@@ -6531,8 +6531,8 @@ dependencies = [
 
 [[package]]
 name = "make_buf"
-version = "1.0.1"
-source = "git+https://github.com/alpenlabs/make_buf.git?rev=903dbe1d4068712ee046c54fe2906ba04e72c905#903dbe1d4068712ee046c54fe2906ba04e72c905"
+version = "1.0.2"
+source = "git+https://github.com/alpenlabs/make_buf#899166a2d9de49b663a5f7bd1d727a3e51f607e3"
 
 [[package]]
 name = "malachite"
