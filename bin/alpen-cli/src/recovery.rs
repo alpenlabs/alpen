@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     io::{self, Cursor, Read},
+    ops::{Bound, RangeBounds},
     path::Path,
     str::FromStr,
     string::FromUtf8Error,
@@ -13,9 +14,9 @@ use bdk_wallet::{
     miniscript::{descriptor::DescriptorKeyParseError, Descriptor},
     template::DescriptorTemplateOut,
 };
+use make_buf::make_buf;
 use rand_core::{OsRng, RngCore};
 use sha2::{Digest, Sha256};
-use sled::IVec;
 use terrors::OneOf;
 use tokio::io::AsyncReadExt;
 
@@ -126,14 +127,30 @@ impl DescriptorRecovery {
         })
     }
 
-    pub async fn read_descs_after_block(
+    pub async fn read_descs(
         &mut self,
-        height: u32,
-    ) -> Result<Vec<(IVec, DescriptorTemplateOut)>, OneOf<ReadDescsAfterError>> {
-        let after_height = self.db.range(height.to_be_bytes()..);
+        height_range: impl RangeBounds<u32>,
+    ) -> Result<
+        Vec<(DescriptorRecoveryKey, DescriptorTemplateOut)>,
+        OneOf<(
+            InvalidDescriptor,
+            InvalidNetwork,
+            InvalidNetworksLen,
+            InvalidPrivateKey,
+            InvalidPublicKey,
+            aes_gcm_siv::Error,
+            io::Error,
+            sled::Error,
+            EntryTooShort,
+        )>,
+    > {
+        let after_height = self
+            .db
+            .range(BigEndianRangeBounds::from_u32_range(height_range));
         let mut descs = vec![];
         for desc_entry in after_height {
             let (key, mut raw) = desc_entry.map_err(OneOf::new)?;
+            let key = DescriptorRecoveryKey::decode(&key).unwrap();
             if raw.len() <= 12 + 16 {
                 return Err(OneOf::new(EntryTooShort { length: raw.len() }));
             }
@@ -205,22 +222,10 @@ impl DescriptorRecovery {
         Ok(descs)
     }
 
-    pub fn remove<K: AsRef<[u8]>>(&self, key: K) -> sled::Result<Option<sled::IVec>> {
-        self.db.remove(key)
+    pub fn remove(&self, key: &DescriptorRecoveryKey) -> sled::Result<Option<sled::IVec>> {
+        self.db.remove(key.encode())
     }
 }
-
-pub type ReadDescsAfterError = (
-    InvalidDescriptor,
-    InvalidNetwork,
-    InvalidNetworksLen,
-    InvalidPrivateKey,
-    InvalidPublicKey,
-    aes_gcm_siv::Error,
-    io::Error,
-    sled::Error,
-    EntryTooShort,
-);
 
 #[derive(Debug)]
 #[allow(unused)]
@@ -247,3 +252,91 @@ pub struct InvalidPrivateKey(OneOf<(FromUtf8Error, DescriptorKeyParseError)>);
 #[derive(Debug)]
 #[allow(unused)]
 pub struct InvalidPublicKey(OneOf<(FromUtf8Error, DescriptorKeyParseError)>);
+
+#[derive(Debug)]
+pub struct DescriptorRecoveryKey {
+    pub recover_at: u32,
+    pub desc_string_hash: [u8; Self::DESC_STRING_HASH_SIZE],
+}
+
+impl DescriptorRecoveryKey {
+    const ENCODED_SIZE: usize = Self::DESC_STRING_HASH_SIZE + Self::RECOVER_AT_SIZE;
+    const DESC_STRING_HASH_SIZE: usize = 32;
+    const RECOVER_AT_SIZE: usize = (u32::BITS / 8) as usize;
+
+    pub fn new(recover_at: u32, desc: &Descriptor<DescriptorPublicKey>) -> Self {
+        let mut hasher = <Sha256 as Digest>::new(); // this is to appease the analyzer
+        hasher.update(desc.to_string().as_bytes());
+        Self {
+            recover_at,
+            desc_string_hash: hasher.finalize().into(),
+        }
+    }
+
+    pub fn encode(&self) -> [u8; Self::ENCODED_SIZE] {
+        make_buf! {
+            (&self.recover_at.to_be_bytes(), DescriptorRecoveryKey::RECOVER_AT_SIZE),
+            (&self.desc_string_hash, DescriptorRecoveryKey::DESC_STRING_HASH_SIZE)
+        }
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != Self::ENCODED_SIZE {
+            return None;
+        }
+
+        let recover_at = u32::from_be_bytes(unsafe {
+            *(bytes[..Self::RECOVER_AT_SIZE].as_ptr() as *const [_; Self::RECOVER_AT_SIZE])
+        });
+        let mut desc_string_hash = [0u8; Self::DESC_STRING_HASH_SIZE];
+        desc_string_hash.copy_from_slice(&bytes[Self::RECOVER_AT_SIZE..]);
+
+        Some(Self {
+            recover_at,
+            desc_string_hash,
+        })
+    }
+}
+
+/// A helper so that we can pass ranges of block heights as u32s when reading descriptors,
+/// but the database actually needs to do the range via the big endian representation.
+struct BigEndianRangeBounds {
+    start: Bound<[u8; 4]>,
+    end: Bound<[u8; 4]>,
+}
+
+impl BigEndianRangeBounds {
+    fn from_u32_range<R: RangeBounds<u32>>(range: R) -> Self {
+        let start = match range.start_bound() {
+            Bound::Included(&n) => Bound::Included(n.to_be_bytes()),
+            Bound::Excluded(&n) => Bound::Excluded(n.to_be_bytes()),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(&n) => Bound::Included(n.to_be_bytes()),
+            Bound::Excluded(&n) => Bound::Excluded(n.to_be_bytes()),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+
+        Self { start, end }
+    }
+}
+
+impl RangeBounds<[u8; 4]> for BigEndianRangeBounds {
+    fn start_bound(&self) -> Bound<&[u8; 4]> {
+        match &self.start {
+            Bound::Included(arr) => Bound::Included(arr),
+            Bound::Excluded(arr) => Bound::Excluded(arr),
+            Bound::Unbounded => Bound::Unbounded,
+        }
+    }
+
+    fn end_bound(&self) -> Bound<&[u8; 4]> {
+        match &self.end {
+            Bound::Included(arr) => Bound::Included(arr),
+            Bound::Excluded(arr) => Bound::Excluded(arr),
+            Bound::Unbounded => Bound::Unbounded,
+        }
+    }
+}

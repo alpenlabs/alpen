@@ -107,6 +107,8 @@ zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag =
 zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
 
+make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
+
 # IMPORTANT: ensure alloy-* and revm packages are of the same version as inside reth dependency
 # reth dependencies:
 alloy-consensus = { version = "0.9.2", default-features = false }
