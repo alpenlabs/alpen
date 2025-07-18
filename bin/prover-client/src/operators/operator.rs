@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use jsonrpsee::http_client::HttpClient;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_primitives::{params::RollupParams, proof::ProofContext};
-use strata_rocksdb::prover::db::ProofDb;
 use strata_rpc_types::ProofKey;
 use strata_zkvm_hosts::{resolve_host, ZkVmHostInstance};
 

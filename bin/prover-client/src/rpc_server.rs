@@ -7,11 +7,11 @@ use async_trait::async_trait;
 use bitcoind_async_client::{traits::Reader, Client};
 use jsonrpsee::{core::RpcResult, http_client::HttpClient, RpcModule};
 use strata_db::traits::ProofDatabase;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_primitives::{
     evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, proof::Epoch,
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
-use strata_rocksdb::prover::db::ProofDb;
 use strata_rpc_api::StrataDebugApiClient;
 use strata_rpc_types::ProofKey;
 use strata_rpc_utils::to_jsonrpsee_error;
@@ -219,9 +219,12 @@ impl StrataProverClientApiServer for ProverClientRpc {
     }
 
     async fn get_proof(&self, key: ProofKey) -> RpcResult<Option<ProofReceipt>> {
-        self.db
+        let proof = self
+            .db
             .get_proof(&key)
-            .map_err(to_jsonrpsee_error("proof not found in db"))
+            .map_err(to_jsonrpsee_error("proof not found in db"))?;
+
+        Ok(proof.map(|p| p.receipt().clone()))
     }
 
     async fn get_report(&self) -> RpcResult<HashMap<String, usize>> {
@@ -283,7 +286,7 @@ async fn derive_l1_range(
 
 async fn fetch_epoch(cl_client: &HttpClient, l2_block: L2BlockCommitment) -> Epoch {
     cl_client
-        .get_chainstate_at_idx(l2_block.slot())
+        .get_chainstate_by_id(*l2_block.blkid())
         .await
         .expect("expect a chainstate")
         .expect("expect a chainstate")

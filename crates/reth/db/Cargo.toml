@@ -9,8 +9,8 @@ workspace = true
 [dependencies]
 alpen-reth-statediff.workspace = true
 strata-db.workspace = true
+strata-db-store-rocksdb.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
-strata-rocksdb.workspace = true
 
 anyhow.workspace = true
 bincode.workspace = true

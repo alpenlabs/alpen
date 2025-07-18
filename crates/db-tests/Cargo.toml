@@ -1,0 +1,17 @@
+[package]
+name = "strata-db-tests"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-db.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
+
+bitcoin.workspace = true
+zkaleido.workspace = true

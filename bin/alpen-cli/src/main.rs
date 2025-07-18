@@ -23,6 +23,8 @@ use seed::KeychainPersister;
 use settings::Settings;
 use signet::persist::set_data_dir;
 
+use crate::cmd::debug::debug;
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let TopLevel { cmd } = argh::from_env();
@@ -69,7 +71,9 @@ async fn main() {
         Commands::Receive(args) => receive(args, seed, settings).await,
         Commands::ChangePwd(args) => change_pwd(args, seed, persister).await,
         Commands::Scan(args) => scan(args, seed, settings).await,
-        _ => Ok(()),
+        Commands::Debug(args) => debug(args, seed, settings).await,
+        Commands::Config(_) => unreachable!("handled prior"),
+        Commands::Reset(_) => unreachable!("handled prior"),
     };
 
     if let Err(err) = result {

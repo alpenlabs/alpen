@@ -58,7 +58,7 @@ Let's break down what this means:
   the only way to reorganize this block is to reorganize
   the bitcoin block that the Alpen block was confirmed in.
 
-To learn more, check our [documentation](https://docs.stratabtc.org).
+To learn more, check our [documentation](https://docs.alpenlabs.io).
 
 > [!IMPORTANT]
 > Currently,

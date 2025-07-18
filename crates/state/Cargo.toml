@@ -19,8 +19,8 @@ async-trait.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
 serde.workspace = true
+thiserror.workspace = true
 tracing.workspace = true     # ideally this shouldn't be in this crate
-
 
 [dev-dependencies]
 strata-test-utils.workspace = true

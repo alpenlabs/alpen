@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_db::{
-    traits::{BlockStatus, Database},
+    traits::{BlockStatus, L2BlockDatabase},
     DbResult,
 };
 use strata_state::{block::L2BlockBundle, header::L2Header, id::L2BlockId};
@@ -17,8 +17,8 @@ pub struct L2BlockManager {
 }
 
 impl L2BlockManager {
-    pub fn new<D: Database + Sync + Send + 'static>(pool: ThreadPool, db: Arc<D>) -> Self {
-        let ops = ops::l2::Context::new(db.l2_db().clone()).into_ops(pool);
+    pub fn new(pool: ThreadPool, db: Arc<impl L2BlockDatabase + 'static>) -> Self {
+        let ops = ops::l2::Context::new(db).into_ops(pool);
         let block_cache = cache::CacheTable::new(64.try_into().unwrap());
         Self { ops, block_cache }
     }
@@ -62,6 +62,16 @@ impl L2BlockManager {
     /// Gets the block at a height.  Blocking.
     pub fn get_blocks_at_height_blocking(&self, h: u64) -> DbResult<Vec<L2BlockId>> {
         self.ops.get_blocks_at_height_blocking(h)
+    }
+
+    /// Gets the block at a height.  Async.
+    pub async fn get_tip_block_async(&self) -> DbResult<L2BlockId> {
+        self.ops.get_tip_block_async().await
+    }
+
+    /// Gets the block at a height.  Blocking.
+    pub fn get_tip_block_blocking(&self) -> DbResult<L2BlockId> {
+        self.ops.get_tip_block_blocking()
     }
 
     /// Gets the block's verification status.  Async.

@@ -6,7 +6,6 @@ use std::{sync::Arc, time::Duration};
 use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
-use el_sync::sync_chainstate_to_el;
 use errors::InitError;
 use jsonrpsee::Methods;
 use rpc_client::sync_client;
@@ -25,13 +24,13 @@ use strata_consensus_logic::{
     sync_manager::{self, SyncManager},
 };
 use strata_db::{traits::BroadcastDatabase, DbError};
+use strata_db_store_rocksdb::{
+    broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
+    open_rocksdb_database, DbOpsConfig, RBL1WriterDb, RocksDbBackend, ROCKSDB_NAME,
+};
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
 use strata_primitives::params::{Params, ProofPublishMode};
-use strata_rocksdb::{
-    broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
-    open_rocksdb_database, CommonDb, DbOpsConfig, RBL1WriterDb, ROCKSDB_NAME,
-};
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,
 };
@@ -40,7 +39,7 @@ use strata_sequencer::{
     checkpoint::{checkpoint_expiry_worker, checkpoint_worker, CheckpointHandle},
 };
 use strata_status::StatusChannel;
-use strata_storage::{create_node_storage, ops::bridge_relay::BridgeMsgOps, NodeStorage};
+use strata_storage::{create_node_storage, NodeStorage};
 use strata_sync::{self, L2SyncContext, RpcSyncPeer};
 use strata_tasks::{ShutdownSignal, TaskExecutor, TaskManager};
 use tokio::{
@@ -52,7 +51,6 @@ use tracing::*;
 use crate::{args::Args, helpers::*};
 
 mod args;
-mod el_sync;
 mod errors;
 mod helpers;
 mod network;
@@ -115,12 +113,6 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let database = init_core_dbs(rbdb.clone(), ops_config);
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
-    // Set up bridge messaging stuff.
-    // TODO move all of this into relayer task init
-    let bridge_msg_db = Arc::new(strata_rocksdb::BridgeMsgDb::new(rbdb.clone(), ops_config));
-    let bridge_msg_ctx = strata_storage::ops::bridge_relay::Context::new(bridge_msg_db);
-    let bridge_msg_ops = Arc::new(bridge_msg_ctx.into_ops(pool.clone()));
-
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
     let bitcoin_client = create_bitcoin_rpc_client(&config)?;
 
@@ -139,7 +131,6 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         params.clone(),
         database,
         storage.clone(),
-        bridge_msg_ops,
         bitcoin_client,
     )?;
 
@@ -235,7 +226,7 @@ fn init_logging(rt: &Handle) {
 #[expect(missing_debug_implementations)]
 pub struct CoreContext {
     pub runtime: Handle,
-    pub database: Arc<CommonDb>,
+    pub database: Arc<RocksDbBackend>,
     pub storage: Arc<NodeStorage>,
     pub pool: threadpool::ThreadPool,
     pub params: Arc<Params>,
@@ -274,8 +265,8 @@ fn do_startup_checks(
         }
     }
 
-    let last_state_idx = match storage.chainstate().get_last_write_idx_blocking() {
-        Ok(idx) => idx,
+    let tip_blockid = match storage.l2().get_tip_block_blocking() {
+        Ok(tip) => tip,
         Err(DbError::NotBootstrapped) => {
             // genesis is not done
             info!("startup: awaiting genesis");
@@ -284,17 +275,15 @@ fn do_startup_checks(
         err => err?,
     };
 
-    let Some(last_chain_state_entry) = storage
+    let last_chain_state = storage
         .chainstate()
-        .get_toplevel_chainstate_blocking(last_state_idx)?
-    else {
-        anyhow::bail!("Missing chain state idx: {last_state_idx}");
-    };
+        .get_slot_write_batch_blocking(tip_blockid)?
+        .ok_or(DbError::MissingSlotWriteBatch(tip_blockid))?
+        .into_toplevel();
 
-    let (last_chain_state, tip_blockid) = last_chain_state_entry.to_parts();
     // Check that we can connect to bitcoin client and block we believe to be matured in L1 is
     // actually present
-    let safe_l1blockid = last_chain_state.l1_view().safe_block().blkid();
+    let safe_l1blockid = last_chain_state.l1_view().safe_blkid();
     let block_hash = BlockHash::from_slice(safe_l1blockid.as_ref())?;
 
     match handle.block_on(bitcoin_client.get_block(&block_hash)) {
@@ -309,43 +298,18 @@ fn do_startup_checks(
         }
     }
 
-    // Check that tip L2 block exists (and engine can be connected to)
-    let chain_tip = tip_blockid;
-    let tip_check_res = retry_with_backoff(
-        "engine_check_block_exists",
-        DEFAULT_ENGINE_CALL_MAX_RETRIES,
-        &ExponentialBackoff::default(),
-        || engine.check_block_exists(L2BlockRef::Id(chain_tip)),
-    );
-    match tip_check_res {
-        Ok(true) => {
-            info!("startup: last l2 block is synced")
-        }
-        Ok(false) => {
-            // Current chain tip tip block is not known by the EL.
-            warn!(%chain_tip, "missing expected EVM block");
-            sync_chainstate_to_el(storage, engine)?;
-        }
-        Err(error) => {
-            // Likely network issue
-            anyhow::bail!("could not connect to exec engine, err = {}", error);
-        }
-    }
-
     // everything looks ok
     info!("Startup checks passed");
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn start_core_tasks(
     executor: &TaskExecutor,
     pool: threadpool::ThreadPool,
     config: &Config,
     params: Arc<Params>,
-    database: Arc<CommonDb>,
+    database: Arc<RocksDbBackend>,
     storage: Arc<NodeStorage>,
-    _bridge_msg_ops: Arc<BridgeMsgOps>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();
@@ -577,7 +541,6 @@ fn start_template_manager_task(
     executor: &TaskExecutor,
 ) -> block_template::TemplateManagerHandle {
     let CoreContext {
-        database,
         storage,
         engine,
         params,
@@ -591,7 +554,6 @@ fn start_template_manager_task(
 
     let worker_ctx = block_template::WorkerContext::new(
         params.clone(),
-        database.clone(),
         storage.clone(),
         engine.clone(),
         status_channel.clone(),
@@ -601,7 +563,7 @@ fn start_template_manager_task(
 
     let t_shared_state = shared_state.clone();
     executor.spawn_critical("template_manager_worker", |shutdown| {
-        block_template::worker(shutdown, worker_ctx, t_shared_state, rx)
+        block_template::worker_task(shutdown, worker_ctx, t_shared_state, rx)
     });
 
     block_template::TemplateManagerHandle::new(

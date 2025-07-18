@@ -97,6 +97,10 @@ impl Chainstate {
         &self.l1_state
     }
 
+    pub fn l1_view_mut(&mut self) -> &mut L1ViewState {
+        &mut self.l1_state
+    }
+
     pub fn cur_epoch(&self) -> u64 {
         self.cur_epoch
     }
@@ -134,6 +138,10 @@ impl Chainstate {
         &self.operator_table
     }
 
+    pub fn operator_table_mut(&mut self) -> &mut OperatorTable {
+        &mut self.operator_table
+    }
+
     pub fn deposits_table(&self) -> &DepositsTable {
         &self.deposits_table
     }
@@ -144,6 +152,10 @@ impl Chainstate {
 
     pub fn exec_env_state(&self) -> &ExecEnvState {
         &self.exec_env_state
+    }
+
+    pub fn exec_env_state_mut(&mut self) -> &mut ExecEnvState {
+        &mut self.exec_env_state
     }
 
     pub fn is_epoch_finishing(&self) -> bool {
@@ -165,16 +177,6 @@ pub struct HashedChainState {
     pub exec_env_hash: Buf32,
     pub operators_hash: Buf32,
     pub deposits_hash: Buf32,
-}
-
-// NOTE: This is a helper setter that is supposed to be used only in tests.
-// This is being used in `strata_btcio::reader` to test the reader's behaviour when the epoch
-// changes.
-#[cfg(any(test, feature = "test_utils"))]
-impl Chainstate {
-    pub fn set_epoch(&mut self, ep: u64) {
-        self.cur_epoch = ep;
-    }
 }
 
 impl<'a> Arbitrary<'a> for Chainstate {

@@ -36,7 +36,7 @@ pub fn compute_wtxid(tx: &Transaction) -> Buf32 {
 #[cfg(test)]
 mod tests {
     use bitcoin::{hashes::Hash, Txid, Wtxid};
-    use strata_test_utils::bitcoin::get_btc_mainnet_block;
+    use strata_test_utils_btc::get_btc_mainnet_block;
 
     use super::*;
 

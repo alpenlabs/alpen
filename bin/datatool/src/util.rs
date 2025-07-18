@@ -110,19 +110,28 @@ fn resolve_rollup_vk() -> RollupVerifyingKey {
     #[cfg(all(feature = "sp1-builder", not(feature = "risc0-builder")))]
     {
         use strata_sp1_guest_builder::GUEST_CHECKPOINT_VK_HASH_STR;
+        use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
         let vk_buf32: Buf32 = GUEST_CHECKPOINT_VK_HASH_STR
             .parse()
             .expect("invalid sp1 checkpoint verifier key hash");
-        RollupVerifyingKey::SP1VerifyingKey(vk_buf32)
+        let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0)
+            .expect("Failed to load SP1 Groth16 verifier");
+        RollupVerifyingKey::SP1VerifyingKey(sp1_verifier)
     }
 
     // Use Risc0 if only `risc0` feature is enabled
     #[cfg(all(feature = "risc0-builder", not(feature = "sp1-builder")))]
     {
         use strata_risc0_guest_builder::GUEST_RISC0_CHECKPOINT_ID;
-        let vk_u8: [u8; 32] = bytemuck::cast(GUEST_RISC0_CHECKPOINT_ID);
-        let vk_buf32 = vk_u8.into();
-        RollupVerifyingKey::Risc0VerifyingKey(vk_buf32)
+        use zkaleido_risc0_groth16_verifier::Risc0Groth16Verifier;
+        let risc0_verifier = Risc0Groth16Verifier::load(
+            risc0_groth16::verifying_key(),
+            risc0_zkvm::BN254_IDENTITY_CONTROL_ID,
+            risc0_zkvm::ALLOWED_CONTROL_ROOT,
+            Digest::new(GUEST_RISC0_CHECKPOINT_ID),
+        )
+        .expect("Failed to load Risc0 Groth16 verifier");
+        RollupVerifyingKey::Risc0VerifyingKey(risc0_verifier)
     }
 
     // Panic if both `sp1` and `risc0` feature are enabled
@@ -137,7 +146,7 @@ fn resolve_rollup_vk() -> RollupVerifyingKey {
     // If neither `risc0` nor `sp1` is enabled, use the Native verifying key
     #[cfg(all(not(feature = "risc0-builder"), not(feature = "sp1-builder")))]
     {
-        RollupVerifyingKey::NativeVerifyingKey(Buf32::zero())
+        RollupVerifyingKey::NativeVerifyingKey
     }
 }
 

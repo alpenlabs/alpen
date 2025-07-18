@@ -114,13 +114,11 @@ fn parse_tag_script(
 #[cfg(test)]
 mod tests {
     use bitcoin::{absolute::LockTime, Amount, Transaction};
-    use strata_test_utils::{
-        bitcoin::{
-            build_no_op_deposit_request_script, build_test_deposit_request_script,
-            create_test_deposit_tx, test_taproot_addr,
-        },
-        l2::gen_params,
+    use strata_test_utils_btc::{
+        build_no_op_deposit_request_script, build_test_deposit_request_script,
+        create_test_deposit_tx, test_taproot_addr,
     };
+    use strata_test_utils_l2::gen_params;
 
     use super::extract_deposit_request_info;
     use crate::{

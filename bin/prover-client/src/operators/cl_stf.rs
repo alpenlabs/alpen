@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use jsonrpsee::http_client::HttpClient;
 use strata_db::traits::ProofDatabase;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
@@ -11,7 +12,6 @@ use strata_primitives::{
     proof::{ProofContext, ProofKey},
 };
 use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
-use strata_rocksdb::prover::db::ProofDb;
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::RpcBlockHeader;
 use strata_state::{block::L2Block, chain_state::Chainstate, header::L2Header, id::L2BlockId};
@@ -85,11 +85,14 @@ impl ClStfOperator {
         cl_block_id: L2BlockId,
     ) -> Result<EvmEeBlockCommitment, ProvingTaskError> {
         let header = self.get_l2_block_header(cl_block_id).await?;
-        let block = self.evm_ee_operator.get_block(header.block_idx).await?;
+        let ee_header = self
+            .evm_ee_operator
+            .get_block_header_by_height(header.block_idx)
+            .await?;
 
         Ok(EvmEeBlockCommitment::new(
-            block.header.number,
-            Buf32(block.header.hash.into()),
+            ee_header.number,
+            Buf32(ee_header.hash.into()),
         ))
     }
 
@@ -210,9 +213,17 @@ impl ProvingOp for ClStfOperator {
         }
         l2_blocks.reverse();
 
+        let parent_header = self
+            .get_block(&l2_blocks[0].header().get_blockid())
+            .await?
+            .header()
+            .header()
+            .clone();
+
         let rollup_params = self.rollup_params.as_ref().clone();
         Ok(ClStfInput {
             rollup_params,
+            parent_header,
             chainstate,
             l2_blocks,
             evm_ee_proof_with_vk,

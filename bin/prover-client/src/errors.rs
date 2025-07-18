@@ -69,4 +69,15 @@ pub(crate) enum ProvingTaskError {
     /// Represents an error returned by the ZKVM.
     #[error("{0:?}")]
     ZkVmError(ZkVmError),
+
+    /// Error related to completion of something that was already completed in the past.
+    /// This error ultimately transforms the proving task into completed.
+    //
+    // Currently only used when checkpoint proof already accepted by the sequencer.
+    // TODO(STR-1567): this is a workaround - sequencer currently returns the latest checkpoint
+    // index (regardless if the checkpoint has already been proven or not) and lacks
+    // proper method to fetch the latest unproven checkpoint.
+    // Once the sequencer can return the latest unproven checkpoint, this error can be removed.
+    #[error("{0}")]
+    IdempotentCompletion(String),
 }

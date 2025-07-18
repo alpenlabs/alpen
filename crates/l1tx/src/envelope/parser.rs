@@ -130,7 +130,7 @@ mod tests {
 
     use strata_btcio::test_utils::generate_envelope_script_test;
     use strata_primitives::l1::payload::L1Payload;
-    use strata_test_utils::l2::gen_params;
+    use strata_test_utils_l2::gen_params;
 
     use super::*;
 

@@ -29,12 +29,15 @@ sha2.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 zkaleido.workspace = true
+zkaleido-risc0-groth16-verifier.workspace = true
+zkaleido-sp1-groth16-verifier.workspace = true
 
 [target.'cfg(target_os = "zkvm")'.dependencies]
 k256 = { version = "0.13.4", features = ["schnorr"] }
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
 
 serde_json.workspace = true
 

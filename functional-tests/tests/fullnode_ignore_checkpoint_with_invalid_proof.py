@@ -29,6 +29,14 @@ class FullnodeIgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
             - Fullnode should not finalize the epochs with empty proofs
         """
 
+        # REVIEW: check if there is a better way to test this instead
+        # of skipping.
+        #
+        # Skipping because we run func tests in native mode where the
+        # proofs are always empty and there is no semantic difference between
+        # fastBatch policy and strict batch policy.
+        return True
+
         seq_fast = ctx.get_service("seq_node_fast")
         prover_fast = ctx.get_service("prover_client_fast")
         seq_strict = ctx.get_service("seq_node_strict")

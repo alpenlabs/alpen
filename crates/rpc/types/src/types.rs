@@ -174,6 +174,9 @@ pub struct RpcBlockHeader {
     /// The index of the block representing height.
     pub block_idx: u64,
 
+    /// Epoch a block belongs to.
+    pub epoch: u64,
+
     /// The timestamp of when the block was created in UNIX epoch format.
     pub timestamp: u64,
 

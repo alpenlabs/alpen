@@ -2,10 +2,8 @@
 
 #![feature(btree_extract_if)] // remove when we remove the stubs
 
-pub mod database;
-pub mod entities;
+pub mod chainstate;
 pub mod errors;
-pub mod interfaces;
 pub mod traits;
 pub mod types;
 

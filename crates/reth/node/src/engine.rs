@@ -116,7 +116,7 @@ where
     fn validate_payload_attributes_against_header(
         &self,
         _attr: &<T as PayloadTypes>::PayloadAttributes,
-        _header: &<Self::Block as reth::api::Block>::Header,
+        _header: &<Self::Block as reth_node_api::Block>::Header,
     ) -> Result<(), InvalidPayloadAttributesError> {
         // skip default timestamp validation
         Ok(())

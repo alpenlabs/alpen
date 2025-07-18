@@ -1,9 +1,10 @@
 use strata_l1tx::filter::types::TxFilterConfig;
 use strata_proofimpl_btc_blockspace::{logic::BlockScanProofInput, program::BtcBlockspaceProgram};
-use strata_test_utils::{bitcoin_mainnet_segment::BtcChainSegment, l2::gen_params};
+use strata_test_utils_btc::segment::BtcChainSegment;
+use strata_test_utils_l2::gen_params;
 use tracing::info;
 use zkaleido::{
-    PerformanceReport, ProofReceipt, VerifyingKey, ZkVmHost, ZkVmHostPerf, ZkVmProgram,
+    PerformanceReport, ProofReceiptWithMetadata, VerifyingKey, ZkVmHost, ZkVmHostPerf, ZkVmProgram,
     ZkVmProgramPerf,
 };
 
@@ -28,13 +29,13 @@ pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
     BtcBlockspaceProgram::perf_report(&input, host).unwrap()
 }
 
-pub(crate) fn gen_proof(host: &impl ZkVmHost) -> ProofReceipt {
+pub(crate) fn gen_proof(host: &impl ZkVmHost) -> ProofReceiptWithMetadata {
     info!("Generating proof for BTC Blockscan");
     let input = prepare_input();
     BtcBlockspaceProgram::prove(&input, host).unwrap()
 }
 
-pub(crate) fn proof_with_vk(host: &impl ZkVmHost) -> (ProofReceipt, VerifyingKey) {
+pub(crate) fn proof_with_vk(host: &impl ZkVmHost) -> (ProofReceiptWithMetadata, VerifyingKey) {
     let proof = gen_proof(host);
     let vk = host.vk();
     (proof, vk)

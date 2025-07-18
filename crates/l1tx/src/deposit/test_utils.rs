@@ -1,5 +1,5 @@
 use strata_primitives::{l1::XOnlyPk, params::DepositTxParams};
-use strata_test_utils::bitcoin::test_taproot_addr;
+use strata_test_utils_btc::test_taproot_addr;
 
 pub fn get_deposit_tx_config() -> DepositTxParams {
     DepositTxParams {

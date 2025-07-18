@@ -13,10 +13,13 @@ use scan::ScanArgs;
 use send::SendArgs;
 use withdraw::WithdrawArgs;
 
+use crate::cmd::debug::DebugArgs;
+
 pub mod backup;
 pub mod balance;
 pub mod change_pwd;
 pub mod config;
+pub mod debug;
 pub mod deposit;
 pub mod drain;
 pub mod faucet;
@@ -50,4 +53,5 @@ pub enum Commands {
     Reset(ResetArgs),
     Scan(ScanArgs),
     Config(ConfigArgs),
+    Debug(DebugArgs),
 }

@@ -1,6 +1,6 @@
 use jsonrpsee::http_client::HttpClient;
 use strata_db::traits::ProofDatabase;
-use strata_rocksdb::prover::db::ProofDb;
+use strata_db_store_rocksdb::prover::db::ProofDb;
 use strata_rpc_api::StrataSequencerApiClient;
 use strata_rpc_types::ProofKey;
 use tracing::info;
@@ -23,7 +23,7 @@ pub(crate) async fn submit_checkpoint_proof(
     info!(%proof_key, %checkpoint_index, "submitting ready checkpoint proof");
 
     sequencer_client
-        .submit_checkpoint_proof(checkpoint_index, proof)
+        .submit_checkpoint_proof(checkpoint_index, proof.receipt().clone())
         .await
         .map_err(|e| CheckpointError::SubmitProofError {
             index: checkpoint_index,

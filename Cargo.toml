@@ -7,12 +7,16 @@ members = [
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
   "crates/btcio",
+  "crates/chainexec",
   "crates/chaintsn",
+  "crates/chain-worker",
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
   "crates/crypto",
   "crates/db",
+  "crates/db-store-rocksdb",
+  "crates/db-tests",
   "crates/eectl",
   "crates/evmexec",
   "crates/key-derivation",
@@ -40,10 +44,14 @@ members = [
   "crates/storage",
   "crates/sync",
   "crates/tasks",
-  "crates/test-utils",
+  "crates/test-utils/btc",
+  "crates/test-utils/evm-ee",
+  "crates/test-utils/l2",
+  "crates/test-utils/test-utils",
+  "crates/test-utils/tx-indexer",
   "crates/util/mmr",
   "crates/util/shrex",
-  "crates/vtxjmt",
+  "crates/db-tests",
   "provers/risc0",
   "provers/sp1",
 
@@ -95,6 +103,8 @@ strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-stf = { path = "crates/asm/stf" }
 strata-btcio = { path = "crates/btcio" }
+strata-chain-worker = { path = "crates/chain-worker" }
+strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
 strata-cli-common = { path = "crates/strata-cli-common" }
 strata-common = { path = "crates/common" }
@@ -102,6 +112,8 @@ strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-crypto = { path = "crates/crypto", default-features = false }
 strata-db = { path = "crates/db" }
+strata-db-store-rocksdb = { path = "crates/db-store-rocksdb" }
+strata-db-tests = { path = "crates/db-tests" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
 strata-key-derivation = { path = "crates/key-derivation" }
@@ -114,7 +126,6 @@ strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
-strata-rocksdb = { path = "crates/rocksdb-store" }
 strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
@@ -124,16 +135,22 @@ strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
 strata-sync = { path = "crates/sync" }
 strata-tasks = { path = "crates/tasks" }
-strata-test-utils = { path = "crates/test-utils" }
+strata-test-utils = { path = "crates/test-utils/test-utils" }
+strata-test-utils-btc = { path = "crates/test-utils/btc" }
+strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
+strata-test-utils-l2 = { path = "crates/test-utils/l2" }
+strata-test-utils-tx-indexer = { path = "crates/test-utils/tx-indexer" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
-zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
+zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
+
+make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
 # IMPORTANT: ensure alloy-* and revm packages are of the same version as inside reth dependency
 # reth dependencies:
@@ -180,12 +197,12 @@ revm-primitives = { version = "18.0.0", features = [
 ], default-features = false }
 
 # reth itself:
-reth = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-chain-state = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
+reth-cli-runner = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-cli-util = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
@@ -201,6 +218,7 @@ reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-network-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
+reth-node-core = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
 reth-payload-validator = { git = "https://github.com/paradigmxyz/reth", tag = "v1.3.10" }
@@ -303,6 +321,7 @@ tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
+
 # This is needed for custom build of SP1
 [profile.release.build-override]
 opt-level = 3

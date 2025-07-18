@@ -1,27 +1,17 @@
 //! Core state transition function.
-#![allow(unused)] // still under development
 
-use std::cmp::min;
-
-use bitcoin::{block::Header, Transaction};
-use strata_db::traits::{ChainstateDatabase, Database, L1Database, L2BlockDatabase};
+use bitcoin::Transaction;
 use strata_primitives::{
-    batch::{verify_signed_checkpoint_sig, BatchInfo, Checkpoint},
-    l1::{get_btc_params, HeaderVerificationState, L1BlockCommitment, L1BlockId},
+    batch::verify_signed_checkpoint_sig,
+    l1::{L1BlockCommitment, L1BlockId},
     prelude::*,
 };
 use strata_state::{
-    block::{self, L2BlockBundle},
-    chain_state::{Chainstate, ChainstateEntry},
-    client_state::*,
-    header::L2Header,
-    id::L2BlockId,
-    operation::*,
-    sync_event::SyncEvent,
+    block::L2BlockBundle, chain_state::Chainstate, client_state::*, header::L2Header,
+    id::L2BlockId, operation::*, sync_event::SyncEvent,
 };
 use strata_storage::NodeStorage;
 use tracing::*;
-use zkaleido::ProofReceipt;
 
 use crate::{checkpoint_verification::verify_checkpoint, errors::*, genesis::make_l2_genesis};
 
@@ -30,7 +20,7 @@ pub trait EventContext {
     fn get_l1_block_manifest(&self, blockid: &L1BlockId) -> Result<L1BlockManifest, Error>;
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error>;
     fn get_l2_block_data(&self, blockid: &L2BlockId) -> Result<L2BlockBundle, Error>;
-    fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error>;
+    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error>;
 }
 
 /// Event context using the main node storage interfaace.
@@ -67,12 +57,12 @@ impl EventContext for StorageEventContext<'_> {
             .ok_or(Error::MissingL2Block(*blkid))
     }
 
-    fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error> {
+    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
         self.storage
             .chainstate()
-            .get_toplevel_chainstate_blocking(slot)?
-            .map(Into::into)
-            .ok_or(Error::MissingIdxChainstate(slot))
+            .get_slot_write_batch_blocking(*blkid)?
+            .map(|wb| wb.into_toplevel())
+            .ok_or(Error::MissingBlockChainstate(*blkid))
     }
 }
 
@@ -121,7 +111,7 @@ fn handle_block(
     state: &mut ClientStateMut,
     block: &L1BlockCommitment,
     block_mf: &L1BlockManifest,
-    context: &impl EventContext,
+    _context: &impl EventContext,
     params: &Params,
 ) -> Result<(), Error> {
     let height = block.height();
@@ -218,7 +208,7 @@ fn handle_block(
 
 fn process_genesis_trigger_block(
     block_mf: &L1BlockManifest,
-    params: &RollupParams,
+    _params: &RollupParams,
 ) -> Result<InternalState, Error> {
     // TODO maybe more bookkeeping?
     Ok(InternalState::new(*block_mf.blkid(), None))
@@ -281,7 +271,7 @@ fn process_l1_block(
 }
 
 fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<CheckpointL1Ref, Error> {
-    let btx: Transaction = tx.tx_data().try_into().map_err(|e| {
+    let btx: Transaction = tx.tx_data().try_into().map_err(|_e| {
         warn!(%height, "Invalid bitcoin transaction data in L1Tx");
         let msg = format!("Invalid bitcoin transaction data in L1Tx at height {height}");
         Error::Other(msg)
@@ -295,20 +285,11 @@ fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<Checkp
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{params::MAINNET, BlockHash};
-    use strata_db::traits::L1Database;
-    use strata_primitives::{
-        block_credential,
-        l1::{L1BlockManifest, L1HeaderRecord},
-    };
-    use strata_rocksdb::test_utils::get_common_db;
-    use strata_state::{l1::L1BlockId, operation};
-    use strata_test_utils::{
-        bitcoin::gen_l1_chain,
-        bitcoin_mainnet_segment::BtcChainSegment,
-        l2::{gen_client_state, gen_params},
-        ArbitraryGenerator,
-    };
+    use bitcoin::BlockHash;
+    use strata_primitives::l1::L1BlockManifest;
+    use strata_state::l1::L1BlockId;
+    use strata_test_utils_btc::segment::BtcChainSegment;
+    use strata_test_utils_l2::{gen_client_state, gen_params};
 
     use super::*;
     use crate::genesis;
@@ -344,8 +325,8 @@ mod tests {
             Err(Error::MissingL2Block(*blkid))
         }
 
-        fn get_toplevel_chainstate(&self, slot: u64) -> Result<Chainstate, Error> {
-            Err(Error::MissingIdxChainstate(slot))
+        fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
+            Err(Error::MissingBlockChainstate(*blkid))
         }
     }
 
@@ -401,7 +382,7 @@ mod tests {
         let reorg_safe_depth = params.rollup().l1_reorg_safe_depth;
 
         let chain = BtcChainSegment::load();
-        let l1_verification_state = chain
+        let _l1_verification_state = chain
             .get_verification_state(genesis + 1, reorg_safe_depth)
             .unwrap();
 
@@ -409,7 +390,7 @@ mod tests {
 
         let pregenesis_mfs = chain.get_block_manifests(genesis, 1).unwrap();
         let (genesis_block, _) = genesis::make_l2_genesis(&params, pregenesis_mfs);
-        let genesis_blockid = genesis_block.header().get_blockid();
+        let _genesis_blockid = genesis_block.header().get_blockid();
 
         let l1_blocks = l1_chain
             .iter()
@@ -417,7 +398,7 @@ mod tests {
             .map(|(i, block)| L1BlockCommitment::new(horizon + i as u64, *block.blkid()))
             .collect::<Vec<_>>();
 
-        let blkids: Vec<L1BlockId> = l1_chain.iter().map(|b| *b.blkid()).collect();
+        let _blkids: Vec<L1BlockId> = l1_chain.iter().map(|b| *b.blkid()).collect();
 
         let test_cases = [
             // These are kinda weird out because we got rid of pre-genesis
@@ -429,11 +410,8 @@ mod tests {
                     event: SyncEvent::L1Block(l1_blocks[0]),
                     expected_actions: &[],
                 }],
-                state_assertions: Box::new({
-                    let l1_chain = l1_chain.clone();
-                    move |state| {
-                        assert!(!state.is_chain_active());
-                    }
+                state_assertions: Box::new(move |state| {
+                    assert!(!state.is_chain_active());
                 }),
             },
             TestCase {
@@ -442,17 +420,14 @@ mod tests {
                     event: SyncEvent::L1Block(l1_blocks[1]),
                     expected_actions: &[],
                 }],
-                state_assertions: Box::new({
-                    let l1_chain = l1_chain.clone();
-                    move |state| {
-                        assert!(!state.is_chain_active());
-                        /*assert_eq!(
-                            state.most_recent_l1_block(),
-                            Some(&l1_chain[1].blkid())
-                        );*/
-                        // Because values for horizon is 40318, genesis is 40320
-                        assert_eq!(state.next_exp_l1_block(), genesis);
-                    }
+                state_assertions: Box::new(move |state| {
+                    assert!(!state.is_chain_active());
+                    /*assert_eq!(
+                        state.most_recent_l1_block(),
+                        Some(&l1_chain[1].blkid())
+                    );*/
+                    // Because values for horizon is 40318, genesis is 40320
+                    assert_eq!(state.next_exp_l1_block(), genesis);
                 }),
             },
             TestCase {
@@ -475,7 +450,6 @@ mod tests {
                 }],
                 state_assertions: Box::new({
                     let l1_chain = l1_chain.clone();
-                    let blkids = blkids.clone();
                     move |state| {
                         assert!(state.is_chain_active());
                         assert_eq!(
@@ -494,7 +468,6 @@ mod tests {
                 }],
                 state_assertions: Box::new({
                     let l1_chain = l1_chain.clone();
-                    let blkids = blkids.clone();
                     move |state| {
                         assert!(state.is_chain_active());
                         assert_eq!(
@@ -511,12 +484,9 @@ mod tests {
                     event: SyncEvent::L1Block(l1_blocks[5]),
                     expected_actions: &[],
                 }],
-                state_assertions: Box::new({
-                    let l1_chain = &l1_chain;
-                    move |state| {
-                        assert!(state.is_chain_active());
-                        assert_eq!(state.next_exp_l1_block(), genesis + 4);
-                    }
+                state_assertions: Box::new(move |state| {
+                    assert!(state.is_chain_active());
+                    assert_eq!(state.next_exp_l1_block(), genesis + 4);
                 }),
             },
             TestCase {
@@ -525,7 +495,7 @@ mod tests {
                     event: SyncEvent::L1Revert(l1_blocks[4]),
                     expected_actions: &[],
                 }],
-                state_assertions: Box::new({ move |state| {} }),
+                state_assertions: Box::new(move |_state| {}),
             },
         ];
 

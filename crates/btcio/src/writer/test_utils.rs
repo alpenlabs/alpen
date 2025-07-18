@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_db::{traits::BroadcastDatabase, types::L1TxEntry};
-use strata_rocksdb::{
+use strata_db_store_rocksdb::{
     broadcaster::db::BroadcastDb, test_utils::get_rocksdb_tmp_instance, L1BroadcastDb, RBL1WriterDb,
 };
 use strata_storage::ops::{

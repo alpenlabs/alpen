@@ -18,7 +18,7 @@ pub struct L1BlockManager {
 
 impl L1BlockManager {
     /// Create new instance of [`L1BlockManager`]
-    pub fn new<D: L1Database + Sync + Send + 'static>(pool: ThreadPool, db: Arc<D>) -> Self {
+    pub fn new(pool: ThreadPool, db: Arc<impl L1Database + 'static>) -> Self {
         let ops = ops::l1::Context::new(db).into_ops(pool);
         let manifest_cache = CacheTable::new(64.try_into().unwrap());
         let txs_cache = CacheTable::new(64.try_into().unwrap());

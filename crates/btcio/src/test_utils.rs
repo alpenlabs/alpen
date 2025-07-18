@@ -446,7 +446,8 @@ pub(crate) mod test_context {
     use bitcoin::{Address, Network};
     use strata_config::btcio::WriterConfig;
     use strata_status::StatusChannel;
-    use strata_test_utils::{l2::gen_params, ArbitraryGenerator};
+    use strata_test_utils::ArbitraryGenerator;
+    use strata_test_utils_l2::gen_params;
 
     use crate::{test_utils::TestBitcoinClient, writer::context::WriterContext};
 
