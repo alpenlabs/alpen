@@ -13,13 +13,13 @@ use bdk_wallet::{
 };
 use colored::Colorize;
 use indicatif::ProgressBar;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use rand_core::OsRng;
 use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
     alpen::AlpenWallet,
     constants::{BRIDGE_IN_AMOUNT, RECOVER_AT_DELAY, SIGNET_BLOCK_TIME},
-    errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,

@@ -1,10 +1,11 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::Serialize;
 use strata_primitives::l1::{HeaderVerificationState, L1BlockCommitment, L1BlockId};
 
 /// Describes state relating to the CL's view of L1.  Updated by entries in the
 /// L1 segment of CL blocks.
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
 pub struct L1ViewState {
     /// The first block we decide we're able to look at.  This probably won't
     /// change unless we want to do Bitcoin history expiry or something.
