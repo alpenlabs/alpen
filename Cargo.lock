@@ -13158,6 +13158,8 @@ dependencies = [
  "strata-storage",
  "strata-tasks",
  "strata-test-utils",
+ "strata-test-utils-l2",
+ "strata-test-utils-tx-indexer",
  "thiserror 2.0.12",
  "threadpool",
  "tokio",
@@ -13204,6 +13206,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
+ "strata-test-utils-l2",
  "thiserror 2.0.12",
  "tracing",
  "zkaleido",
@@ -13296,7 +13299,8 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "strata-tasks",
- "strata-test-utils",
+ "strata-test-utils-btc",
+ "strata-test-utils-l2",
  "thiserror 2.0.12",
  "threadpool",
  "tokio",
@@ -13381,6 +13385,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
+ "strata-test-utils-btc",
  "zkaleido",
 ]
 
@@ -13431,10 +13436,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-jmt"
-version = "0.3.0-alpha.1"
-
-[[package]]
 name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -13467,6 +13468,8 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
+ "strata-test-utils-btc",
+ "strata-test-utils-l2",
  "thiserror 2.0.12",
  "tracing",
 ]
@@ -13517,6 +13520,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "strata-test-utils",
+ "strata-test-utils-btc",
  "thiserror 2.0.12",
  "zeroize",
  "zkaleido",
@@ -13533,7 +13537,9 @@ dependencies = [
  "rand 0.8.5",
  "strata-l1tx",
  "strata-primitives",
- "strata-test-utils",
+ "strata-test-utils-btc",
+ "strata-test-utils-l2",
+ "strata-test-utils-tx-indexer",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
@@ -13657,7 +13663,9 @@ dependencies = [
  "strata-proofimpl-evm-ee-stf",
  "strata-risc0-guest-builder",
  "strata-sp1-guest-builder",
- "strata-test-utils",
+ "strata-test-utils-btc",
+ "strata-test-utils-evm-ee",
+ "strata-test-utils-l2",
  "strata-zkvm-hosts",
  "tokio",
  "tracing",
@@ -13892,26 +13900,64 @@ dependencies = [
 name = "strata-test-utils"
 version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "arbitrary",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "strata-test-utils-btc"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "anyhow",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "hex",
- "musig2",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "serde_json",
  "strata-btcio",
+ "strata-primitives",
+ "strata-state",
+ "strata-test-utils",
+ "tokio",
+]
+
+[[package]]
+name = "strata-test-utils-evm-ee"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "serde_json",
  "strata-chainexec",
  "strata-chaintsn",
- "strata-consensus-logic",
- "strata-l1tx",
  "strata-primitives",
  "strata-proofimpl-evm-ee-stf",
  "strata-state",
- "tokio",
+ "strata-test-utils-btc",
+ "strata-test-utils-l2",
+]
+
+[[package]]
+name = "strata-test-utils-l2"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "rand 0.8.5",
+ "serde_json",
+ "strata-consensus-logic",
+ "strata-primitives",
+ "strata-state",
+ "strata-test-utils",
+ "strata-test-utils-btc",
  "zkaleido-sp1-groth16-verifier",
+]
+
+[[package]]
+name = "strata-test-utils-tx-indexer"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "bitcoin",
+ "strata-l1tx",
+ "strata-primitives",
+ "strata-test-utils-btc",
+ "strata-test-utils-l2",
 ]
 
 [[package]]

@@ -312,7 +312,7 @@ mod tests {
 
     use bitcoin::params::MAINNET;
     use rand::{rngs::OsRng, Rng};
-    use strata_test_utils::bitcoin_mainnet_segment::BtcChainSegment;
+    use strata_test_utils_btc::segment::BtcChainSegment;
 
     use super::*;
 

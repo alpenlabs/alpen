@@ -34,14 +34,14 @@ pub struct BtcChainSegment {
 impl BtcChainSegment {
     pub fn load_full_block() -> Block {
         let raw_block = include_bytes!(
-        "../data/mainnet_block_000000000000000000000c835b2adcaedc20fdf6ee440009c249452c726dafae.raw"
+        "../../data/mainnet_block_000000000000000000000c835b2adcaedc20fdf6ee440009c249452c726dafae.raw"
     );
         let block: Block = deserialize(&raw_block[..]).unwrap();
         block
     }
 
     pub fn load() -> BtcChainSegment {
-        let raw_headers = include_bytes!("../data/mainnet_blocks_40000-50000.raw");
+        let raw_headers = include_bytes!("../../data/mainnet_blocks_40000-50000.raw");
 
         let chunk_size = Header::SIZE;
         let capacity = raw_headers.len() / chunk_size;
@@ -330,7 +330,7 @@ impl BtcChainSegment {
 
 /// If we're already in a tokio runtime, we'll block in place. Otherwise, we'll create a new
 /// runtime.
-pub fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
     use tokio::task::block_in_place;
 
     // Handle case if we're already in an tokio runtime.

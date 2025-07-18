@@ -189,7 +189,7 @@ mod test {
         test_utils::get_rocksdb_tmp_instance,
     };
     use strata_storage::ops::l1tx_broadcast::Context;
-    use strata_test_utils::l2::gen_params;
+    use strata_test_utils_l2::gen_params;
 
     use super::*;
     use crate::test_utils::{TestBitcoinClient, SOME_TX};

@@ -78,7 +78,7 @@ impl TxVisitor for ReaderTxVisitorImpl {
 
 #[cfg(test)]
 mod test {
-    use strata_test_utils::tx_indexer::{
+    use strata_test_utils_tx_indexer::{
         test_index_deposit_request_with_visitor, test_index_deposit_with_visitor,
         test_index_multiple_deposits_with_visitor, test_index_no_deposit_with_visitor,
         test_index_tx_with_multiple_ops_with_visitor,

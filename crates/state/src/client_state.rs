@@ -204,35 +204,6 @@ impl ClientState {
     }
 }
 
-#[cfg(feature = "test_utils")]
-impl ClientState {
-    // TODO figure out a way to remove this function, this is only used in one
-    // reader test and we should rework that to have some "status update" type
-    // that it actually pulls from the status channel
-    #[deprecated(note = "this should not exist, rework something")]
-    pub fn set_last_finalized_checkpoint(&mut self, ckpt: L1Checkpoint) {
-        eprintln!("doing evil set_last_finalized_checkpoint things");
-
-        // First overwrite the declared epoch.  Maybe this is all we actually
-        // need to do for this test?
-        self.declared_final_epoch = Some(ckpt.batch_info.get_epoch_commitment());
-
-        // We need *some* last block to do this successfully.
-        if self.int_states.is_empty() {
-            let fake_blkid = L1BlockId::from(strata_primitives::buf::Buf32::zero());
-            self.int_states
-                .push_back(InternalState::new(fake_blkid, None));
-        }
-
-        // Overwriting this is horrible and will probably break something.
-        let last = self
-            .int_states
-            .back_mut()
-            .expect("clientstate: get last state");
-        last.last_checkpoint = Some(ckpt);
-    }
-}
-
 type L1BlockHeight = u64;
 
 /// Relates to our view of the L2 chain, does not exist before genesis.

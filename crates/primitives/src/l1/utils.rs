@@ -46,7 +46,7 @@ pub fn generate_l1_tx(block: &Block, idx: u32, proto_ops: Vec<ProtocolOperation>
 #[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
-    use strata_test_utils::bitcoin::get_btc_mainnet_block;
+    use strata_test_utils_btc::get_btc_mainnet_block;
 
     use super::*;
 

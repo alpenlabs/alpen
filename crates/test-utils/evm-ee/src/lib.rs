@@ -1,3 +1,5 @@
+//! EVM related test utilities for the Alpen codebase.
+
 use std::path::PathBuf;
 
 use strata_chainexec::MemStateAccessor;
@@ -14,11 +16,8 @@ use strata_state::{
     chain_state::Chainstate,
     header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
 };
-
-use crate::{
-    bitcoin_mainnet_segment::BtcChainSegment,
-    l2::{gen_params, get_genesis_chainstate},
-};
+use strata_test_utils_btc::segment::BtcChainSegment;
+use strata_test_utils_l2::{gen_params, get_genesis_chainstate};
 
 /// Represents a segment of EVM execution by holding inputs and outputs for
 /// block heights within a range. This struct is used to simulate EVM proof
@@ -41,7 +40,7 @@ impl EvmSegment {
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
 
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/evm_ee/");
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/evm_ee/");
         for height in start_height..=end_height {
             let witness_path = dir.join(format!("witness_{height}.json"));
             let json_file = std::fs::read_to_string(witness_path).expect("Expected JSON file");

@@ -73,7 +73,8 @@ mod test {
         batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint},
         chain_state::Chainstate,
     };
-    use strata_test_utils::{l2::gen_params, ArbitraryGenerator};
+    use strata_test_utils::ArbitraryGenerator;
+    use strata_test_utils_l2::gen_params;
 
     use super::TxFilterConfig;
     use crate::filter::parse_valid_checkpoint_envelopes;

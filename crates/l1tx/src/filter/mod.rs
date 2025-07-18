@@ -70,13 +70,11 @@ mod test {
     use strata_primitives::{
         buf::Buf32, l1::BitcoinAmount, operator::OperatorPubkeys, params::OperatorConfig,
     };
-    use strata_test_utils::{
-        bitcoin::{
-            build_test_deposit_request_script, build_test_deposit_script, create_test_deposit_tx,
-            test_taproot_addr,
-        },
-        l2::gen_params,
+    use strata_test_utils_btc::{
+        build_test_deposit_request_script, build_test_deposit_script, create_test_deposit_tx,
+        test_taproot_addr,
     };
+    use strata_test_utils_l2::gen_params;
 
     use crate::{
         filter::{extract_deposit_requests, try_parse_tx_deposit},

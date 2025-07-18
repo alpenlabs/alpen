@@ -1,5 +1,6 @@
 use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
-use strata_test_utils::{evm_ee::L2Segment, l2::gen_params};
+use strata_test_utils_evm_ee::L2Segment;
+use strata_test_utils_l2::gen_params;
 use tracing::info;
 use zkaleido::{
     PerformanceReport, ProofReceiptWithMetadata, VerifyingKey, ZkVmHost, ZkVmHostPerf, ZkVmProgram,

@@ -89,7 +89,8 @@ pub fn process_blockscan_proof(zkvm: &impl ZkVmEnv) {
 mod tests {
     use std::sync::Arc;
 
-    use strata_test_utils::{bitcoin_mainnet_segment::BtcChainSegment, l2::gen_params};
+    use strata_test_utils_btc::segment::BtcChainSegment;
+    use strata_test_utils_l2::gen_params;
     use zkaleido::ZkVmProgram;
     use zkaleido_native_adapter::{NativeHost, NativeMachine};
 

@@ -37,6 +37,7 @@ k256 = { version = "0.13.4", features = ["schnorr"] }
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
 
 serde_json.workspace = true
 

@@ -1,3 +1,5 @@
+//! Transaction indexing tests and helpers.
+
 use bitcoin::{
     absolute::LockTime,
     block::{Header, Version},
@@ -16,15 +18,11 @@ use strata_primitives::{
     indexed::Indexed,
     l1::{BitcoinAmount, ProtocolOperation, WithdrawalFulfillmentInfo},
 };
-
-use crate::{
-    bitcoin::{
-        build_test_deposit_request_script, build_test_deposit_script, create_test_deposit_tx,
-        generate_withdrawal_fulfillment_data, test_taproot_addr,
-    },
-    create_opreturn_metadata,
-    l2::gen_params,
+use strata_test_utils_btc::{
+    build_test_deposit_request_script, build_test_deposit_script, create_opreturn_metadata,
+    create_test_deposit_tx, generate_withdrawal_fulfillment_data, test_taproot_addr,
 };
+use strata_test_utils_l2::gen_params;
 
 // TEST FUNCTIONS
 

@@ -100,10 +100,9 @@ pub fn get_operator_wallet_pks(params: &RollupParams) -> Vec<Buf32> {
 pub mod test_utils {
     use bitcoin::{
         secp256k1::{Keypair, Secp256k1, SecretKey},
-        Address, Network, ScriptBuf,
+        Address, Network,
     };
     use strata_primitives::{
-        bitcoin_bosd::Descriptor,
         l1::{BitcoinAddress, XOnlyPk},
         params::Params,
         sorted_vec::FlatTable,
@@ -158,20 +157,5 @@ pub mod test_utils {
         filterconfig.expected_withdrawal_fulfillments =
             FlatTable::try_from_unsorted(exp_fulfillments).expect("types: malformed deposits");
         filterconfig
-    }
-
-    /// Helper function to create opreturn meta for withdrawal fulfillment
-    pub fn create_opreturn_metadata_for_withdrawal_fulfillment(
-        operator_idx: u32,
-        deposit_idx: u32,
-        deposit_txid: &[u8; 32],
-    ) -> ScriptBuf {
-        let mut metadata = [0u8; 40];
-        // first 4 bytes = operator idx
-        metadata[..4].copy_from_slice(&operator_idx.to_be_bytes());
-        // next 4 bytes = deposit idx
-        metadata[4..8].copy_from_slice(&deposit_idx.to_be_bytes());
-        metadata[8..40].copy_from_slice(deposit_txid);
-        Descriptor::new_op_return(&metadata).unwrap().to_script()
     }
 }
