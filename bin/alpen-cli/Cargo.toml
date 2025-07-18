@@ -36,6 +36,7 @@ config = { version = "0.14.0", default-features = false, features = ["toml"] }
 dialoguer = "0.11.0"
 directories = "5.0.1"
 indicatif = { version = "0.17.8", features = ["improved_unicode", "tokio"] }
+make_buf.workspace = true
 rand_core.workspace = true
 reqwest.workspace = true
 serde.workspace = true
@@ -46,7 +47,6 @@ terrors.workspace = true
 tokio.workspace = true
 zeroize.workspace = true
 zxcvbn = "3.1.0"
-make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
 # sha2 fails to compile on windows with the "asm" feature
 [target.'cfg(not(target_os = "windows"))'.dependencies]

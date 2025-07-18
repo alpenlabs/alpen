@@ -257,10 +257,14 @@ pub struct InvalidPublicKey(OneOf<(FromUtf8Error, DescriptorKeyParseError)>);
 #[derive(Debug)]
 pub struct DescriptorRecoveryKey {
     pub recover_at: u32,
-    pub desc_string_hash: [u8; 32],
+    pub desc_string_hash: [u8; Self::DESC_STRING_HASH_SIZE],
 }
 
 impl DescriptorRecoveryKey {
+    const ENCODED_SIZE: usize = Self::DESC_STRING_HASH_SIZE + Self::RECOVER_AT_SIZE;
+    const DESC_STRING_HASH_SIZE: usize = 32;
+    const RECOVER_AT_SIZE: usize = (u32::BITS / 8) as usize;
+
     pub fn new(recover_at: u32, desc: &Descriptor<DescriptorPublicKey>) -> Self {
         let mut hasher = <Sha256 as Digest>::new(); // this is to appease the analyzer
         hasher.update(desc.to_string().as_bytes());
@@ -270,21 +274,23 @@ impl DescriptorRecoveryKey {
         }
     }
 
-    pub fn encode(&self) -> [u8; 36] {
+    pub fn encode(&self) -> [u8; Self::ENCODED_SIZE] {
         make_buf! {
-            (&self.recover_at.to_be_bytes(), 4),
-            (&self.desc_string_hash, 32)
+            (&self.recover_at.to_be_bytes(), DescriptorRecoveryKey::RECOVER_AT_SIZE),
+            (&self.desc_string_hash, DescriptorRecoveryKey::DESC_STRING_HASH_SIZE)
         }
     }
 
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != 36 {
+        if bytes.len() != Self::ENCODED_SIZE {
             return None;
         }
 
-        let recover_at = u32::from_be_bytes(unsafe { *(bytes[..4].as_ptr() as *const [_; 4]) });
-        let mut desc_string_hash = [0u8; 32];
-        desc_string_hash.copy_from_slice(&bytes[4..36]);
+        let recover_at = u32::from_be_bytes(unsafe {
+            *(bytes[..Self::RECOVER_AT_SIZE].as_ptr() as *const [_; Self::RECOVER_AT_SIZE])
+        });
+        let mut desc_string_hash = [0u8; Self::DESC_STRING_HASH_SIZE];
+        desc_string_hash.copy_from_slice(&bytes[Self::RECOVER_AT_SIZE..]);
 
         Some(Self {
             recover_at,
@@ -293,6 +299,8 @@ impl DescriptorRecoveryKey {
     }
 }
 
+/// A helper so that we can pass ranges of block heights as u32s when reading descriptors,
+/// but the database actually needs to do the range via the big endian representation.
 struct BigEndianRangeBounds {
     start: Bound<[u8; 4]>,
     end: Bound<[u8; 4]>,
