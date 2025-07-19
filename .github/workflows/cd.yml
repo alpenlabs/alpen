@@ -78,7 +78,7 @@ jobs:
         # build and push the Docker image for every program
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX }}
+          ECR_REPOSITORY_PREFIX: ${{ github.ref == 'refs/heads/main' && vars.ECR_REPOSITORY_PREFIX_MAIN || vars.ECR_REPOSITORY_PREFIX }}
         run: |
           SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
           SHORT_TAG="${SHORT_TAG:0:7}"
