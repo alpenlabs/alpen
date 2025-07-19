@@ -302,7 +302,6 @@ def generate_seed_at(path: str):
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genxpriv",
         "-f", path
     ]
@@ -317,7 +316,6 @@ def generate_seqpubkey_from_seed(path: str) -> str:
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genseqpubkey",
         "-f", path
     ]
@@ -335,13 +333,13 @@ def generate_seqpubkey_from_seed(path: str) -> str:
 
 
 def generate_opxpub_from_seed(path: str) -> str:
-    """Generates operate pubkey from seed at file path."""
+    """Generates operator Musig2 pubkey from xprv at file path."""
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genopxpub",
-        "-f", path
+        "-f", path,
+        "-w"
     ]
     # fmt: on
 
@@ -352,12 +350,11 @@ def generate_opxpub_from_seed(path: str) -> str:
     return res
 
 
-def generate_params(settings: RollupParamsSettings, seqpubkey: str, oppubkeys: list[str]) -> str:
+def generate_params(settings: RollupParamsSettings, seqpubkey: str, opxprivs: list[str]) -> str:
     """Generates a params file from config values."""
     # fmt: off
     cmd = [
         "strata-datatool",
-        "-b", "regtest",
         "genparams",
         "--name", "ALPN",
         "--block-time", str(settings.block_time_sec),
@@ -373,7 +370,7 @@ def generate_params(settings: RollupParamsSettings, seqpubkey: str, oppubkeys: l
         cmd.extend(["--chain-config", settings.chain_config])
     # fmt: on
 
-    for k in oppubkeys:
+    for k in opxprivs:
         cmd.extend(["--opkey", k])
 
     res = subprocess.run(cmd, stdout=subprocess.PIPE)
@@ -399,9 +396,12 @@ def generate_simple_params(
         generate_seed_at(p)
 
     seqkey = generate_seqpubkey_from_seed(seqseedpath)
-    opxpubs = [generate_opxpub_from_seed(p) for p in opseedpaths]
+    opxprivs = []
+    for p in opseedpaths:
+        with open(p) as f:
+            opxprivs.append(f.read().strip())
 
-    params = generate_params(settings, seqkey, opxpubs)
+    params = generate_params(settings, seqkey, opxprivs)
     print(f"Params {params}")
     return {"params": params, "opseedpaths": opseedpaths}
 

@@ -19,8 +19,8 @@
 use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
 use secp256k1::SECP256K1;
 use strata_primitives::constants::{
-    STRATA_OPERATOR_BASE_DERIVATION_PATH, STRATA_OPERATOR_MESSAGE_IDX, STRATA_OPERATOR_WALLET_IDX,
-    STRATA_OP_MESSAGE_DERIVATION_PATH, STRATA_OP_WALLET_DERIVATION_PATH,
+    STRATA_OPERATOR_BASE_DERIVATION_PATH, STRATA_OP_MESSAGE_DERIVATION_PATH,
+    STRATA_OP_WALLET_DERIVATION_PATH,
 };
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -49,9 +49,9 @@ pub struct OperatorKeys {
 impl OperatorKeys {
     /// Creates a new [`OperatorKeys`] from a master [`Xpriv`].
     pub fn new(master: &Xpriv) -> Result<Self, KeyError> {
-        let base_xpriv = master.derive_priv(SECP256K1, &*STRATA_OPERATOR_BASE_DERIVATION_PATH)?;
-        let message_xpriv = master.derive_priv(SECP256K1, &*STRATA_OP_MESSAGE_DERIVATION_PATH)?;
-        let wallet_xpriv = master.derive_priv(SECP256K1, &*STRATA_OP_WALLET_DERIVATION_PATH)?;
+        let base_xpriv = master.derive_priv(SECP256K1, &STRATA_OPERATOR_BASE_DERIVATION_PATH)?;
+        let message_xpriv = master.derive_priv(SECP256K1, &STRATA_OP_MESSAGE_DERIVATION_PATH)?;
+        let wallet_xpriv = master.derive_priv(SECP256K1, &STRATA_OP_WALLET_DERIVATION_PATH)?;
 
         Ok(Self {
             master: *master,
@@ -255,24 +255,6 @@ impl Zeroize for OperatorKeys {
 }
 
 impl ZeroizeOnDrop for OperatorKeys {}
-
-/// Converts the base [`Xpub`] to the message [`Xpub`].
-pub fn convert_base_xpub_to_message_xpub(base_xpub: &Xpub) -> Xpub {
-    let message_partial_path = ChildNumber::from_normal_idx(STRATA_OPERATOR_MESSAGE_IDX)
-        .expect("unfallible as long MESSAGE_IDX is not changed");
-    base_xpub
-        .derive_pub(SECP256K1, &message_partial_path)
-        .expect("unfallible")
-}
-
-/// Converts the base [`Xpub`] to the wallet [`Xpub`].
-pub fn convert_base_xpub_to_wallet_xpub(base_xpub: &Xpub) -> Xpub {
-    let wallet_partial_path = ChildNumber::from_normal_idx(STRATA_OPERATOR_WALLET_IDX)
-        .expect("unfallible as long WALLET_IDX is not changed");
-    base_xpub
-        .derive_pub(SECP256K1, &wallet_partial_path)
-        .expect("unfallible")
-}
 
 #[cfg(test)]
 mod tests {
