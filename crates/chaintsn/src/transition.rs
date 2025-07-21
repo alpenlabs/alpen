@@ -168,12 +168,19 @@ fn process_l1_checkpoint(
     let ckpt = signed_ckpt.checkpoint(); // inner data
     let ckpt_epoch = ckpt.batch_transition().epoch;
 
+    let receipt = ckpt.construct_receipt();
+    let fin_epoch = state.state().finalized_epoch();
+
     // Note: This is error because this is done by the sequencer
-    if ckpt_epoch != 0 && ckpt_epoch != state.state().finalized_epoch().epoch() + 1 {
+    if !is_checkpoint_null(ckpt, fin_epoch) && ckpt_epoch != fin_epoch.epoch() + 1 {
         error!(%ckpt_epoch, "Invalid checkpoint: proof for invalid epoch");
         return Err(OpError::EpochNotExtend);
     }
 
+    // Also just check if the epoch numbers in batch transition and batch info match
+    if ckpt_epoch != ckpt.batch_info().epoch() {
+        return Err(OpError::MalformedCheckpoint);
+    }
     verify_checkpoint_proof(ckpt, params).map_err(|_| OpError::InvalidProof)?;
 
     // Copy the epoch commitment and make it finalized.
@@ -212,6 +219,15 @@ pub fn verify_checkpoint_proof(
     }
 
     verify_rollup_groth16_proof_receipt(&proof_receipt, rollup_params.rollup_vk())
+}
+
+/// Checks if the given checkpoint is null based on previous finalized epoch. A checkpoint is
+/// considered null epoch if and only if it's epoch is 0 and the state's finalized epoch is 0.
+/// Note that for null epoch we don't do continuity check.
+fn is_checkpoint_null(ckpt: &Checkpoint, finalized_epoch: &EpochCommitment) -> bool {
+    let ckpt_epoch = ckpt.batch_transition().epoch;
+    // Checkpoint is null only if its epoch is 0 and the state's finalized epoch is 0.
+    ckpt_epoch == 0 && finalized_epoch.epoch() == 0
 }
 
 fn process_l1_deposit(

@@ -72,4 +72,7 @@ pub enum OpError {
     /// Used to discard checkpoints we aren't looking for.
     #[error("op does not advance the finalized epoch")]
     EpochNotExtend,
+
+    #[error("checkpoint data is malformed")]
+    MalformedCheckpoint,
 }
