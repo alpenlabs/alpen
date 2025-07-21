@@ -33,20 +33,21 @@ bytemuck = { version = "1.21.0", optional = true }
 rand_core.workspace = true
 reth-chainspec.workspace = true
 serde_json.workspace = true
+shrex.workspace = true
 zeroize.workspace = true
 
 [features]
 default = []
 risc0-builder = [
-  "dep:strata-risc0-guest-builder",
-  "dep:bytemuck",
-  "dep:zkaleido-risc0-groth16-verifier",
-  "dep:risc0-zkvm",
-  "dep:risc0-groth16",
+    "dep:strata-risc0-guest-builder",
+    "dep:bytemuck",
+    "dep:zkaleido-risc0-groth16-verifier",
+    "dep:risc0-zkvm",
+    "dep:risc0-groth16",
 ]
 sp1-builder = [
-  "strata-sp1-guest-builder/sp1-dev",
-  "dep:sp1-verifier",
-  "dep:zkaleido-sp1-groth16-verifier",
+    "strata-sp1-guest-builder/sp1-dev",
+    "dep:sp1-verifier",
+    "dep:zkaleido-sp1-groth16-verifier",
 ]
 sp1-docker-builder = ["sp1-builder", "strata-sp1-guest-builder/docker-build"]
