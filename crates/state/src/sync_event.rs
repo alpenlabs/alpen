@@ -39,5 +39,5 @@ pub trait EventSubmitter {
     /// Submit event async
     async fn submit_event_async(&self, sync_event: SyncEvent) -> anyhow::Result<()>;
 
-    async fn submit_event_idx_async(&self, sync_idx: u64) -> anyhow::Result<()>;
+    async fn submit_event_idx_async(&self, sync_idx: u64);
 }

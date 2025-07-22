@@ -42,7 +42,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
 
     // Write to sync event db.
     for ev in sync_evs {
-        event_submitter.submit_event_idx_async(ev).await?;
+        event_submitter.submit_event_idx_async(ev).await;
     }
     Ok(())
 }
