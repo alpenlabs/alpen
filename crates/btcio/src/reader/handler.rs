@@ -52,7 +52,7 @@ async fn handle_blockdata<R: Reader>(
     blockdata: BlockData,
     hvs: Option<HeaderVerificationState>,
     epoch: u64,
-) -> anyhow::Result<Vec<SyncEvent>> {
+) -> anyhow::Result<Vec<u64>> {
     let ReaderContext {
         params, storage, ..
     } = ctx;
@@ -73,11 +73,8 @@ async fn handle_blockdata<R: Reader>(
     let l1blockid = *manifest.blkid();
 
     storage.l1().put_block_data_async(manifest).await?;
-    storage
-        .l1()
-        .extend_canonical_chain_async(&l1blockid)
-        .await?;
-    info!(%height, %l1blockid, txs = %num_txs, "wrote L1 block manifest");
+
+    strata_common::check_bail_trigger("btcio_pre_l1_write");
 
     // Create a sync event if it's something we care about.
     let blkid: Buf32 = blockdata.block().block_hash().into();
@@ -88,6 +85,8 @@ async fn handle_blockdata<R: Reader>(
         .extend_canonical_chain_and_write_sync_event_async(&l1blockid, sync_event)
         .await?;
     info!(%height, %l1blockid, txs = %num_txs, sync_ev = %sync_event_idx, "wrote L1 block manifest");
+
+    strata_common::check_bail_trigger("btcio_post_l1_write");
 
     sync_evs.push(sync_event_idx);
 
