@@ -25,12 +25,14 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
             // L1 reorgs will be handled in L2 STF, we just have to reflect
             // what the client is telling us in the database.
             let height = block.height();
-            ctx.storage
+            let sync_event = SyncEvent::L1Revert(block);
+            let sync_event_idx = ctx
+                .storage
                 .l1()
-                .revert_canonical_chain_async(height)
+                .revert_canonical_chain_and_write_sync_event_async(height, sync_event)
                 .await?;
             debug!(%height, "reverted L1 block database");
-            vec![SyncEvent::L1Revert(block)]
+            vec![sync_event_idx]
         }
 
         L1Event::BlockData(blockdata, epoch, hvs) => {
@@ -40,7 +42,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
 
     // Write to sync event db.
     for ev in sync_evs {
-        event_submitter.submit_event_async(ev).await?;
+        event_submitter.submit_event_idx_async(ev).await?;
     }
     Ok(())
 }
@@ -80,7 +82,14 @@ async fn handle_blockdata<R: Reader>(
     // Create a sync event if it's something we care about.
     let blkid: Buf32 = blockdata.block().block_hash().into();
     let block_commitment = L1BlockCommitment::new(height, blkid.into());
-    sync_evs.push(SyncEvent::L1Block(block_commitment));
+    let sync_event = SyncEvent::L1Block(block_commitment);
+    let sync_event_idx = storage
+        .l1()
+        .extend_canonical_chain_and_write_sync_event_async(&l1blockid, sync_event)
+        .await?;
+    info!(%height, %l1blockid, txs = %num_txs, sync_ev = %sync_event_idx, "wrote L1 block manifest");
+
+    sync_evs.push(sync_event_idx);
 
     Ok(sync_evs)
 }

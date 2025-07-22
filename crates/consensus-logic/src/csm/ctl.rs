@@ -60,4 +60,15 @@ impl EventSubmitter for CsmController {
 
         Ok(())
     }
+
+    async fn submit_event_idx_async(&self, ev_idx: u64) -> anyhow::Result<()> {
+        let msg = CsmMessage::EventInput(ev_idx);
+        if self.csm_tx.send(msg).await.is_err() {
+            warn!(%ev_idx, "sync event receiver closed when submitting");
+        } else {
+            trace!(%ev_idx, "sent csm event input");
+        }
+
+        Ok(())
+    }
 }

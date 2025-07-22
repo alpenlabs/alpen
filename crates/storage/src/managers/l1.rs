@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use strata_db::{traits::L1Database, DbError, DbResult};
 use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_state::sync_event::SyncEvent;
 use threadpool::ThreadPool;
 use tracing::error;
 
@@ -280,5 +281,62 @@ impl L1BlockManager {
     pub async fn get_tx_async(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>> {
         // TODO: Might need to use a cache here, but let's keep it for when we use it
         self.ops.get_tx_async(tx_ref).await
+    }
+
+    /// Append `blockid` to tracked canonical chain and save sync event atomically.
+    /// [`L1BlockManifest`] for this `blockid` must be present in db.
+    pub async fn extend_canonical_chain_and_write_sync_event_async(
+        &self,
+        blockid: &L1BlockId,
+        sync_event: SyncEvent,
+    ) -> DbResult<u64> {
+        let new_block = self
+            .get_block_manifest_async(blockid)
+            .await?
+            .ok_or(DbError::MissingL1BlockManifest(*blockid))?;
+        let height = new_block.height();
+
+        if let Some((tip_height, tip_blockid)) = self.get_canonical_chain_tip_async().await? {
+            if height != tip_height + 1 {
+                error!(expected = %(tip_height + 1), got = %height, "attempted to extend canonical chain out of order");
+                return Err(DbError::OooInsert("l1block", height));
+            }
+
+            if new_block.get_prev_blockid() != tip_blockid {
+                return Err(DbError::L1InvalidNextBlock(height, *blockid));
+            }
+        };
+
+        self.ops
+            .set_canonical_chain_entry_and_write_sync_event_async(height, *blockid, sync_event)
+            .await
+    }
+
+    /// Reverts tracked canonical chain to `height`.
+    /// `height` must be less than tracked canonical chain height.
+    pub async fn revert_canonical_chain_and_write_sync_event_async(
+        &self,
+        height: u64,
+        sync_event: SyncEvent,
+    ) -> DbResult<u64> {
+        let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_async().await? else {
+            return Err(DbError::L1CanonicalChainEmpty);
+        };
+
+        if height > tip_height {
+            return Err(DbError::L1InvalidRevertHeight(height, tip_height));
+        }
+
+        // clear item from cache for range height +1..=tip_height
+        self.blockheight_cache
+            .purge_if(|h| height < *h && *h <= tip_height);
+
+        self.ops
+            .remove_canonical_chain_entries_and_write_sync_event_async(
+                height + 1,
+                tip_height,
+                sync_event,
+            )
+            .await
     }
 }

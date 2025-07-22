@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use strata_db::traits::*;
 use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_state::sync_event::SyncEvent;
 
 use crate::exec::*;
 
@@ -21,5 +22,8 @@ inst_ops_simple! {
         get_block_txs(blockid: L1BlockId) => Option<Vec<L1TxRef>>;
         get_tx(tx_ref: L1TxRef) => Option<L1Tx>;
         // get_mmr(blockid: L1BlockId) => Option<CompactMmr>;
+
+        set_canonical_chain_entry_and_write_sync_event(height: u64, blockid: L1BlockId, ev: SyncEvent) => u64;
+        remove_canonical_chain_entries_and_write_sync_event(start_height: u64, end_height: u64, ev: SyncEvent) => u64;
     }
 }
