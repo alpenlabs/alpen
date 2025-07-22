@@ -1,0 +1,20 @@
+[package]
+name = "strata-asm-moho-program-impl"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+borsh.workspace = true
+moho-runtime-interface.workspace = true
+moho-types.workspace = true
+strata-asm-common.workspace = true
+strata-asm-logs.workspace = true
+strata-asm-stf.workspace = true
+strata-primitives.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true

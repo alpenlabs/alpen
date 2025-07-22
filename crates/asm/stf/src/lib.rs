@@ -6,8 +6,15 @@
 //! modules provide the handler and stage infrastructure used by the STF.
 
 mod manager;
+mod preprocess;
+mod spec;
 mod stage;
-mod transition;
+mod stf;
 mod tx_filter;
+mod types;
 
-pub use transition::{StrataAsmSpec, asm_stf};
+pub use preprocess::pre_process_asm;
+pub use spec::StrataAsmSpec;
+pub use stf::asm_stf;
+pub use tx_filter::group_txs_by_subprotocol;
+pub use types::{AsmStfInput, AsmStfOutput};

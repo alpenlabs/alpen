@@ -6531,6 +6531,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "moho-runtime-interface"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
+dependencies = [
+ "borsh",
+ "moho-types",
+]
+
+[[package]]
+name = "moho-types"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
+dependencies = [
+ "borsh",
+]
+
+[[package]]
 name = "moka"
 version = "0.12.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13107,8 +13124,35 @@ dependencies = [
  "bitcoin",
  "borsh",
  "strata-l1-txfmt",
+ "strata-msg-fmt",
  "strata-primitives",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "strata-asm-logs"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "moho-types",
+ "strata-asm-common",
+ "strata-msg-fmt",
+ "strata-primitives",
+]
+
+[[package]]
+name = "strata-asm-moho-program-impl"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "moho-runtime-interface",
+ "moho-types",
+ "strata-asm-common",
+ "strata-asm-logs",
+ "strata-asm-stf",
+ "strata-primitives",
+ "strata-test-utils",
 ]
 
 [[package]]
@@ -13503,6 +13547,14 @@ dependencies = [
  "revm-primitives",
  "rlp",
  "serde",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "strata-msg-fmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common#53b79d1fd710a9d3516cfdf94bfa8a5cda43c949"
+dependencies = [
  "thiserror 2.0.12",
 ]
 

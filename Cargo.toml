@@ -3,7 +3,9 @@ resolver = "2"
 
 members = [
   "crates/asm/common",
+  "crates/asm/logs",
   "crates/asm/stf",
+  "crates/asm/moho-program",
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
   "crates/btcio",
@@ -98,6 +100,8 @@ alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff" }
 rlp = "0.5.2"
 strata-asm-common = { path = "crates/asm/common" }
+strata-asm-logs = { path = "crates/asm/logs" }
+strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-stf = { path = "crates/asm/stf" }
@@ -142,7 +146,14 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 
+# moho
+moho-runtime-impl = { git = "https://github.com/alpenlabs/moho", branch = "STR-1289-asm-moho-compatibility" }
+moho-runtime-interface = { git = "https://github.com/alpenlabs/moho", branch = "STR-1289-asm-moho-compatibility" }
+moho-types = { git = "https://github.com/alpenlabs/moho", branch = "STR-1289-asm-moho-compatibility" }
+
+# zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
 zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
 zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }

@@ -1,6 +1,6 @@
 //! BridgeV1 Subprotocol
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::{NullMsg, Subprotocol, SubprotocolId};
+use strata_asm_common::{AnchorState, NullMsg, Subprotocol, SubprotocolId};
 
 /// The unique identifier for the BridgeV1 subprotocol within the Anchor State Machine.
 ///
@@ -25,13 +25,26 @@ impl Subprotocol for BridgeV1Subproto {
 
     type Msg = NullMsg<BRIDGE_V1_SUBPROTOCOL_ID>;
 
+    type AuxInput = ();
+
     fn init() -> Self::State {
+        todo!()
+    }
+
+    fn pre_process_txs(
+        _state: &Self::State,
+        _txs: &[strata_asm_common::TxInputRef<'_>],
+        _collector: &mut impl strata_asm_common::AuxInputCollector,
+        _anchor_pre: &AnchorState,
+    ) {
         todo!()
     }
 
     fn process_txs(
         _state: &mut Self::State,
-        _txs: &[strata_asm_common::TxInput<'_>],
+        _txs: &[strata_asm_common::TxInputRef<'_>],
+        _anchor_pre: &AnchorState,
+        _aux_inputs: &[Self::AuxInput],
         _relayer: &mut impl strata_asm_common::MsgRelayer,
     ) {
         todo!()
