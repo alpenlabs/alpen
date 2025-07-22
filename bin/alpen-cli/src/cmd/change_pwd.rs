@@ -19,7 +19,7 @@ pub async fn change_pwd(
     let mut new_pw =
         Password::read(true).internal_error("Failed to read the password entered by user")?;
     if let Err(feedback) = new_pw.validate() {
-        println!("Password is weak. {}", feedback);
+        println!("Password is weak. {feedback}");
     }
     let encrypted_seed = seed
         .encrypt(&mut new_pw, &mut OsRng)

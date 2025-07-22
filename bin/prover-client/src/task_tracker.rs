@@ -272,7 +272,7 @@ impl TaskTracker {
         let mut report: HashMap<String, usize> = HashMap::new();
 
         for status in self.tasks.values() {
-            *report.entry(format!("{:?}", status)).or_insert(0) += 1;
+            *report.entry(format!("{status:?}")).or_insert(0) += 1;
         }
 
         report

@@ -236,46 +236,40 @@ fn process_l1_block(
     // TODO split out each proto op handling into a separate function
     for tx in block_mf.txs() {
         for op in tx.protocol_ops() {
-            match op {
-                ProtocolOperation::Checkpoint(signed_ckpt) => {
-                    debug!(%height, "Obtained checkpoint in l1_block");
-                    // Before we do anything, check its signature.
-                    if !verify_signed_checkpoint_sig(signed_ckpt, &params.cred_rule) {
-                        warn!(%height, "ignoring checkpointing with invalid signature");
-                        continue;
-                    }
-
-                    let ckpt = signed_ckpt.checkpoint();
-
-                    // Now do the more thorough checks
-                    if verify_checkpoint(ckpt, checkpoint.as_ref(), params).is_err() {
-                        // If it's invalid then just print a warning and move on.
-                        warn!(%height, "ignoring invalid checkpoint in L1 block");
-                        continue;
-                    }
-
-                    let ckpt_ref = get_l1_reference(tx, *block_mf.blkid(), height)?;
-
-                    // Construct the state bookkeeping entry for the checkpoint.
-                    let l1ckpt = L1Checkpoint::new(
-                        ckpt.batch_info().clone(),
-                        *ckpt.batch_transition(),
-                        ckpt_ref.clone(),
-                    );
-
-                    // If it all looks good then overwrite the saved checkpoint.
-                    checkpoint = Some(l1ckpt);
-
-                    // Emit a sync action to update checkpoint entry in db
-                    sync_actions.push(SyncAction::UpdateCheckpointInclusion {
-                        checkpoint: signed_ckpt.clone().into(),
-                        l1_reference: ckpt_ref,
-                    });
+            if let ProtocolOperation::Checkpoint(signed_ckpt) = op {
+                debug!(%height, "Obtained checkpoint in l1_block");
+                // Before we do anything, check its signature.
+                if !verify_signed_checkpoint_sig(signed_ckpt, &params.cred_rule) {
+                    warn!(%height, "ignoring checkpointing with invalid signature");
+                    continue;
                 }
 
-                // The rest we don't care about here.  Maybe we will in the
-                // future, like for when we actually do DA, but not for now.
-                _ => {}
+                let ckpt = signed_ckpt.checkpoint();
+
+                // Now do the more thorough checks
+                if verify_checkpoint(ckpt, checkpoint.as_ref(), params).is_err() {
+                    // If it's invalid then just print a warning and move on.
+                    warn!(%height, "ignoring invalid checkpoint in L1 block");
+                    continue;
+                }
+
+                let ckpt_ref = get_l1_reference(tx, *block_mf.blkid(), height)?;
+
+                // Construct the state bookkeeping entry for the checkpoint.
+                let l1ckpt = L1Checkpoint::new(
+                    ckpt.batch_info().clone(),
+                    *ckpt.batch_transition(),
+                    ckpt_ref.clone(),
+                );
+
+                // If it all looks good then overwrite the saved checkpoint.
+                checkpoint = Some(l1ckpt);
+
+                // Emit a sync action to update checkpoint entry in db
+                sync_actions.push(SyncAction::UpdateCheckpointInclusion {
+                    checkpoint: signed_ckpt.clone().into(),
+                    l1_reference: ckpt_ref,
+                });
             }
         }
     }
@@ -287,10 +281,7 @@ fn process_l1_block(
 fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<CheckpointL1Ref, Error> {
     let btx: Transaction = tx.tx_data().try_into().map_err(|e| {
         warn!(%height, "Invalid bitcoin transaction data in L1Tx");
-        let msg = format!(
-            "Invalid bitcoin transaction data in L1Tx at height {}",
-            height
-        );
+        let msg = format!("Invalid bitcoin transaction data in L1Tx at height {height}");
         Error::Other(msg)
     })?;
 
