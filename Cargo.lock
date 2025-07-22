@@ -6533,7 +6533,7 @@ dependencies = [
 [[package]]
 name = "moho-runtime-interface"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
+source = "git+https://github.com/alpenlabs/moho#1a9c4617cec2fb2cee402a9c5fb223f64160c12f"
 dependencies = [
  "borsh",
  "moho-types",
@@ -6542,7 +6542,7 @@ dependencies = [
 [[package]]
 name = "moho-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/moho?branch=STR-1289-asm-moho-compatibility#c77d09949d075212a6319ee46cff2746441f4abc"
+source = "git+https://github.com/alpenlabs/moho#1a9c4617cec2fb2cee402a9c5fb223f64160c12f"
 dependencies = [
  "borsh",
 ]
@@ -13152,7 +13152,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-stf",
  "strata-primitives",
- "strata-test-utils",
+ "strata-test-utils-btc",
 ]
 
 [[package]]

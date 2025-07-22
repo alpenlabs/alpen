@@ -58,12 +58,14 @@ impl MohoProgram for AsmStfProgram {
         })
     }
 
-    fn update_export_state(export_state: &mut ExportState, output: &Self::StepOutput) {
+    fn compute_export_state(export_state: ExportState, output: &Self::StepOutput) -> ExportState {
         // Iterate through each AsmLog; if we find an NewExportEntry, add it to ExportState
+        let mut new_export_state = export_state;
         for log in &output.logs {
             if let Ok(export) = log.try_into_log::<NewExportEntry>() {
-                export_state.add_entry(export.container_id, export.entry_data.clone());
+                new_export_state.add_entry(export.container_id, export.entry_data.clone());
             }
         }
+        new_export_state
     }
 }
