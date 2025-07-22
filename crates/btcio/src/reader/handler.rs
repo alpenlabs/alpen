@@ -1,5 +1,6 @@
 use bitcoin::{consensus::serialize, hashes::Hash, Block};
 use bitcoind_async_client::traits::Reader;
+use strata_common::check_bail_trigger;
 use strata_primitives::{
     buf::Buf32,
     l1::{
@@ -74,7 +75,7 @@ async fn handle_blockdata<R: Reader>(
 
     storage.l1().put_block_data_async(manifest).await?;
 
-    strata_common::check_bail_trigger("btcio_pre_l1_write");
+    check_bail_trigger("btcio_pre_l1_write");
 
     // Create a sync event if it's something we care about.
     let blkid: Buf32 = blockdata.block().block_hash().into();
@@ -86,7 +87,7 @@ async fn handle_blockdata<R: Reader>(
         .await?;
     info!(%height, %l1blockid, txs = %num_txs, sync_ev = %sync_event_idx, "wrote L1 block manifest");
 
-    strata_common::check_bail_trigger("btcio_post_l1_write");
+    check_bail_trigger("btcio_post_l1_write");
 
     sync_evs.push(sync_event_idx);
 
