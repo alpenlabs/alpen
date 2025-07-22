@@ -86,7 +86,7 @@ impl BorshDeserialize for L1Block {
 #[cfg(test)]
 mod tests {
 
-    use strata_test_utils::bitcoin_mainnet_segment::BtcChainSegment;
+    use strata_test_utils_btc::segment::BtcChainSegment;
 
     use super::*;
 

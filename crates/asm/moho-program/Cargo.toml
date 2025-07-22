@@ -17,4 +17,4 @@ strata-asm-stf.workspace = true
 strata-primitives.workspace = true
 
 [dev-dependencies]
-strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true

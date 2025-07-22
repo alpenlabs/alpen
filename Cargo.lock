@@ -13152,7 +13152,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-stf",
  "strata-primitives",
- "strata-test-utils",
+ "strata-test-utils-btc",
 ]
 
 [[package]]
