@@ -1,6 +1,6 @@
 use moho_runtime_interface::MohoProgram;
 use moho_types::{ExportState, InnerStateCommitment, InnerVerificationKey, StateReference};
-use strata_asm_common::{AnchorState, AsmSpec};
+use strata_asm_common::{AnchorState, AsmSpec, GenesisConfigRegistry};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, StrataAsmSpec, asm_stf, group_txs_by_subprotocol};
 use strata_primitives::hash::compute_borsh_hash;
@@ -42,7 +42,10 @@ impl MohoProgram for AsmStfProgram {
             aux_input: &input.aux_bundle,
         };
 
-        asm_stf::<StrataAsmSpec>(pre_state, stf_input).unwrap()
+        // TODO: Evaluate whether genesis_registry is needed during preprocessing
+        // pass empty `genesis_registry` for now
+        let genesis_registry = GenesisConfigRegistry::new();
+        asm_stf::<StrataAsmSpec>(pre_state, stf_input, &genesis_registry).unwrap()
     }
 
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State {

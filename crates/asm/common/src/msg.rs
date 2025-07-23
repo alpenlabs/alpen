@@ -5,8 +5,7 @@ use std::any::Any;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_l1_txfmt::SubprotocolId;
 // Re-export standard types for convenience
-pub use strata_msg_fmt::{Error as MessageError, Msg, OwnedMsg as Message, TypeId as MessageType};
-use strata_msg_fmt::{OwnedMsg, TypeId};
+pub use strata_msg_fmt::{Error as MessageError, Msg, OwnedMsg, TypeId};
 
 use crate::AsmError;
 
@@ -38,45 +37,6 @@ impl<const ID: SubprotocolId> InterprotoMsg for NullMsg<ID> {
     }
 }
 
-/// Encodes a message type and body into SPS-msg-fmt format
-fn encode_sps_msg(ty: TypeId, body: &[u8]) -> Result<Vec<u8>, AsmError> {
-    let mut result = Vec::new();
-    if ty < 0x80 {
-        // Single byte encoding
-        result.push(ty as u8);
-    } else if ty < 0x8000 {
-        // Two byte encoding
-        result.push(0x80 | ((ty >> 8) as u8));
-        result.push(ty as u8);
-    } else {
-        // Use strata_msg_fmt::Error directly - AsmError will convert it
-        return Err(MessageError::TypeOutOfBounds(ty).into());
-    }
-    result.extend_from_slice(body);
-    Ok(result)
-}
-
-/// Decodes SPS-msg-fmt format into message type and body
-fn decode_sps_msg(encoded: &[u8]) -> Result<(TypeId, &[u8]), AsmError> {
-    if encoded.is_empty() {
-        return Err(MessageError::BufEmpty.into());
-    }
-
-    let (ty, body_start) = if encoded[0] < 0x80 {
-        // Single byte encoding
-        (encoded[0] as TypeId, 1)
-    } else {
-        // Two byte encoding
-        if encoded.len() < 2 {
-            return Err(MessageError::BufTooShort.into());
-        }
-        let ty = (((encoded[0] & 0x7F) as TypeId) << 8) | (encoded[1] as TypeId);
-        (ty, 2)
-    };
-
-    Ok((ty, &encoded[body_start..]))
-}
-
 /// Generic message from OL to ASM using strata-msg-fmt
 ///
 /// This type wraps messages in the SPS-msg-fmt format, allowing for
@@ -96,10 +56,8 @@ pub struct OLToASMMessage {
 impl OLToASMMessage {
     /// Creates a new OL to ASM message from type and body
     pub fn new(ty: TypeId, body: Vec<u8>) -> Result<Self, AsmError> {
-        // Validate type is within SPS-msg-fmt bounds
-        if ty > 0x7FFF {
-            return Err(MessageError::TypeOutOfBounds(ty).into());
-        }
+        // Use strata_msg_fmt's validation
+        strata_msg_fmt::check_type(ty).map_err(AsmError::from)?;
         Ok(Self { ty, body })
     }
 
@@ -113,10 +71,11 @@ impl OLToASMMessage {
 
     /// Creates a new OL to ASM message from raw encoded bytes
     pub fn from_encoded(encoded_bytes: Vec<u8>) -> Result<Self, AsmError> {
-        let (ty, body) = decode_sps_msg(&encoded_bytes)?;
+        // Use OwnedMsg's TryFrom implementation for decoding
+        let owned_msg = OwnedMsg::try_from(encoded_bytes.as_slice()).map_err(AsmError::from)?;
         Ok(Self {
-            ty,
-            body: body.to_vec(),
+            ty: owned_msg.ty(),
+            body: owned_msg.body().to_vec(),
         })
     }
 
@@ -142,7 +101,11 @@ impl OLToASMMessage {
 
     /// Encodes the message to SPS-msg-fmt bytes
     pub fn encode(&self) -> Result<Vec<u8>, AsmError> {
-        encode_sps_msg(self.ty, &self.body)
+        let mut result = Vec::new();
+        // Use strata_msg_fmt's encoding
+        strata_msg_fmt::try_encode_into_buf(self.ty, self.body.iter().copied(), &mut result)
+            .map_err(AsmError::from)?;
+        Ok(result)
     }
 
     /// Returns the raw encoded message bytes (alias for encode)
@@ -202,9 +165,6 @@ impl InterprotoMsg for MessagesContainer {
     }
 }
 
-/// Alias for OwnedMsg to maintain compatibility
-pub type Log = OwnedMsg;
-
 #[cfg(test)]
 mod tests {
     use std::any::Any;
@@ -212,7 +172,7 @@ mod tests {
     use strata_l1_txfmt::SubprotocolId;
     use strata_msg_fmt::{Msg, OwnedMsg};
 
-    use super::{InterprotoMsg, OLToASMMessage, decode_sps_msg, encode_sps_msg};
+    use super::{InterprotoMsg, OLToASMMessage};
 
     #[derive(Clone)]
     struct Foo {
@@ -236,34 +196,37 @@ mod tests {
     }
 
     #[test]
-    fn test() {
+    fn test_interproto_msg_trait_object() {
         let inst = Foo { x: 5 };
         inst.x();
         let _inst_box = Box::new(inst) as Box<dyn InterprotoMsg>;
     }
 
     #[test]
-    fn test_sps_msg_fmt_encoding() {
+    fn test_msg_fmt_encoding() {
         // type 0x00 body "hello" → 0068656c6c6f
-        let encoded = encode_sps_msg(0x00, b"hello").unwrap();
+        let mut encoded = Vec::new();
+        strata_msg_fmt::try_encode_into_buf(0x00, b"hello".iter().copied(), &mut encoded).unwrap();
         assert_eq!(encoded, vec![0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f]);
-        let (ty, body) = decode_sps_msg(&encoded).unwrap();
-        assert_eq!(ty, 0x00);
-        assert_eq!(body, b"hello");
+        let owned_msg = OwnedMsg::try_from(encoded.as_slice()).unwrap();
+        assert_eq!(owned_msg.ty(), 0x00);
+        assert_eq!(owned_msg.body(), b"hello");
 
         // type 0x80 body "abc" → 8080616263
-        let encoded = encode_sps_msg(0x80, b"abc").unwrap();
+        let mut encoded = Vec::new();
+        strata_msg_fmt::try_encode_into_buf(0x80, b"abc".iter().copied(), &mut encoded).unwrap();
         assert_eq!(encoded, vec![0x80, 0x80, 0x61, 0x62, 0x63]);
-        let (ty, body) = decode_sps_msg(&encoded).unwrap();
-        assert_eq!(ty, 0x80);
-        assert_eq!(body, b"abc");
+        let owned_msg = OwnedMsg::try_from(encoded.as_slice()).unwrap();
+        assert_eq!(owned_msg.ty(), 0x80);
+        assert_eq!(owned_msg.body(), b"abc");
 
         // type 0x1234 body "xyz" → 923478797a
-        let encoded = encode_sps_msg(0x1234, b"xyz").unwrap();
+        let mut encoded = Vec::new();
+        strata_msg_fmt::try_encode_into_buf(0x1234, b"xyz".iter().copied(), &mut encoded).unwrap();
         assert_eq!(encoded, vec![0x92, 0x34, 0x78, 0x79, 0x7a]);
-        let (ty, body) = decode_sps_msg(&encoded).unwrap();
-        assert_eq!(ty, 0x1234);
-        assert_eq!(body, b"xyz");
+        let owned_msg = OwnedMsg::try_from(encoded.as_slice()).unwrap();
+        assert_eq!(owned_msg.ty(), 0x1234);
+        assert_eq!(owned_msg.body(), b"xyz");
     }
 
     #[test]

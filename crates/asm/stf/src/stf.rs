@@ -25,6 +25,7 @@ use crate::{
 /// * `pre_state` - The current anchor state containing chain view and subprotocol states
 /// * `input` - The ASM STF input containing the block header, protocol transactions, and auxiliary
 ///   data
+/// * `genesis_registry` - genesis configuration registry for subprotocol initialization
 ///
 /// # Returns
 ///
@@ -46,39 +47,7 @@ use crate::{
 pub fn asm_stf<'b, 'x, S: AsmSpec>(
     pre_state: &AnchorState,
     input: AsmStfInput<'b, 'x>,
-) -> AsmResult<AsmStfOutput> {
-    asm_stf_with_genesis::<S>(pre_state, input, None)
-}
-
-/// Computes the next AnchorState by applying the Anchor State Machine (ASM) state transition
-/// function (STF) with optional genesis configuration support.
-///
-/// This function provides the same functionality as `asm_stf` but additionally accepts an optional
-/// genesis configuration registry for initializing subprotocol states when they are not found in
-/// the current anchor state.
-///
-/// # Arguments
-///
-/// * `pre_state` - The current anchor state containing chain view and subprotocol states
-/// * `input` - The ASM STF input containing the block header, protocol transactions, and auxiliary
-///   data
-/// * `genesis_registry` - Optional genesis configuration registry for subprotocol initialization
-///
-/// # Returns
-///
-/// Returns an `AsmResult` containing:
-/// - `AsmStfOutput` with the new anchor state and execution logs on success
-/// - `AsmError` if validation fails or state transition encounters an error
-///
-/// # Type Parameters
-///
-/// * `S` - The ASM specification type that defines magic bytes and subprotocol behavior
-/// * `'b` - Lifetime parameter tied to the input block reference
-/// * `'x` - Lifetime parameter tied to the auxiliary input data
-pub fn asm_stf_with_genesis<'b, 'x, S: AsmSpec>(
-    pre_state: &AnchorState,
-    input: AsmStfInput<'b, 'x>,
-    genesis_registry: Option<&GenesisConfigRegistry>,
+    genesis_registry: &GenesisConfigRegistry,
 ) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -89,7 +58,8 @@ pub fn asm_stf_with_genesis<'b, 'x, S: AsmSpec>(
 
     let mut manager = SubprotoManager::new();
 
-    // 3. LOAD: Bring each subprotocol into the subproto manager.
+    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data and
+    // genesis config data if needed.
     let mut loader_stage =
         SubprotoLoaderStage::new(pre_state, &mut manager, input.aux_input, genesis_registry);
     S::call_subprotocols(&mut loader_stage);

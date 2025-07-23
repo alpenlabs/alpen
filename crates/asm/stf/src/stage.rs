@@ -14,7 +14,7 @@ pub(crate) struct SubprotoLoaderStage<'a, 'x> {
     anchor_state: &'a AnchorState,
     manager: &'a mut SubprotoManager,
     aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
-    genesis_registry: Option<&'a GenesisConfigRegistry>,
+    genesis_registry: &'a GenesisConfigRegistry,
 }
 
 impl<'a, 'x> SubprotoLoaderStage<'a, 'x> {
@@ -22,7 +22,7 @@ impl<'a, 'x> SubprotoLoaderStage<'a, 'x> {
         anchor_state: &'a AnchorState,
         manager: &'a mut SubprotoManager,
         aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
-        genesis_registry: Option<&'a GenesisConfigRegistry>,
+        genesis_registry: &'a GenesisConfigRegistry,
     ) -> Self {
         Self {
             anchor_state,
@@ -35,6 +35,8 @@ impl<'a, 'x> SubprotoLoaderStage<'a, 'x> {
 
 impl Stage for SubprotoLoaderStage<'_, '_> {
     fn process_subprotocol<S: Subprotocol>(&mut self) {
+        // Load or create the subprotocol state.
+        // OPTIMIZE: Linear scan is done every time to find the section
         let state = match self.anchor_state.find_section(S::ID) {
             Some(sec) => sec
                 .try_to_state::<S>()
@@ -46,11 +48,7 @@ impl Stage for SubprotoLoaderStage<'_, '_> {
             // genesis_registry
             None => {
                 // Try to get genesis config data from registry
-                let genesis_config_data = if let Some(registry) = self.genesis_registry {
-                    registry.get_raw(S::ID)
-                } else {
-                    None
-                };
+                let genesis_config_data = self.genesis_registry.get_raw(S::ID);
 
                 S::init(genesis_config_data).expect("asm: failed to initialize subprotocol state")
             }

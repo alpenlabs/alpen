@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, GenesisConfigRegistry};
 
 use crate::{
     manager::SubprotoManager,
@@ -34,8 +34,15 @@ use crate::{
 ///
 /// # Returns
 ///
-/// * `AsmPreProcessOutput` - Contains grouped transactions and auxiliary input requests
-/// * `AsmError` - If block validation fails or subprotocol loading encounters errors
+/// Returns an `AsmResult` containing:
+/// - `AsmPreProcessOutput` with filtered transactions and auxiliary requests on success
+/// - `AsmError` if validation fails or pre-processing encounters an error
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The block header fails PoW continuity validation
+/// - Subprotocol loading or pre-processing fails
 ///
 /// # Type Parameters
 ///
@@ -59,23 +66,27 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
-    // We use empty auxiliary bundle in the loader stage as no auxiliary data is needed during
-    // loading.
+    // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
     let aux = BTreeMap::new();
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager, &aux, None);
+
+    // TODO: Evaluate whether genesis_registry is needed during preprocessing
+    // pass empty `genesis_registry` for now
+    let genesis_registry = GenesisConfigRegistry::new();
+    let mut loader_stage =
+        SubprotoLoaderStage::new(pre_state, &mut manager, &aux, &genesis_registry);
     S::call_subprotocols(&mut loader_stage);
 
-    // 4. PRE-PROCESS: Collect auxiliary input requirements from each subprotocol.
+    // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
     let mut pre_process_stage =
         PreProcessStage::new(&grouped_relevant_txs, &mut manager, pre_state);
     S::call_subprotocols(&mut pre_process_stage);
 
-    // 5. Extract results and prepare output for main STF processing.
-    // Flatten the grouped transactions into a single list while preserving order.
+    // 5. Flatten the grouped transactions back into a single collection.
+    // The grouping was needed for per-subprotocol processing, but the output needs a flat list.
     let relevant_txs: Vec<_> = grouped_relevant_txs.into_values().flatten().collect();
 
-    // Export auxiliary input requests that must be fulfilled before main processing.
+    // 6. Export auxiliary requests collected during pre-processing.
     // These requests will be fulfilled before running the main ASM state transition.
     let aux_requests = manager.export_aux_requests();
     let output = AsmPreProcessOutput {

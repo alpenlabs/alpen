@@ -158,8 +158,7 @@ impl Subprotocol for OLCoreSubproto {
 
     fn init(genesis_config_data: Option<&[u8]>) -> std::result::Result<Self::State, AsmError> {
         // Core subprotocol requires genesis configuration for proper initialization
-        let genesis_data =
-            genesis_config_data.ok_or(AsmError::MissingGenesisConfig(Self::ID))?;
+        let genesis_data = genesis_config_data.ok_or(AsmError::MissingGenesisConfig(Self::ID))?;
 
         // Deserialize the genesis configuration
         let genesis_config: Self::GenesisConfig =

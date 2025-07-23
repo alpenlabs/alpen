@@ -21,6 +21,12 @@ use crate::{
 /// Each subprotocol defines its own transaction processing logic, message handling,
 /// and state management.
 ///
+///
+/// 1. processes each new L1 block to update its own state and emit outgoing inter-protocol
+///    messages, and then
+/// 2. receives incoming messages to finalize and serialize its state for inclusion in the global
+///    AnchorState.
+///
 /// # Example
 ///
 /// ```ignore
@@ -38,8 +44,16 @@ use crate::{
 ///         Ok(MyState::from_config(config))
 ///     }
 ///
+///     fn pre_process_txs(state: &Self::State, txs: &[TxInputRef], ...) {
+///         // Pre-process transactions
+///     }
+///
 ///     fn process_txs(state: &mut Self::State, txs: &[TxInputRef], ...) {
 ///         // Process transactions
+///     }
+///
+///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]) {
+///         // Process messages
 ///     }
 /// }
 /// ```
@@ -78,6 +92,11 @@ pub trait Subprotocol: 'static {
 
     /// Pre-processes a batch of L1 transactions by registering any required off-chain inputs.
     ///
+    /// During this phase, the subprotocol declares *external* data it will need before actual
+    /// processing. Any required L1 headers, block-metadata, or other off-chain inputs should be
+    /// requested via the `AuxInputCollector`.
+    /// (e.g., Merkle proof for logs emitted in a previous block from "history_mmr" in AnchorState)
+    ///
     /// This method is called before transaction processing to allow subprotocols to specify
     /// any auxiliary data they need (such as L1 block headers, Merkle proofs, or other metadata).
     /// The requested data will be made available during the subsequent `process_txs` call.
@@ -101,7 +120,7 @@ pub trait Subprotocol: 'static {
     /// subprotocol.
     ///
     /// This is the core transaction processing method where subprotocols implement their
-    /// specific business logic. The method receives validated auxiliary inputs (requested
+    /// specific business logic. The method receives auxiliary inputs (requested
     /// during `pre_process_txs`) and can generate messages to other subprotocols and emit logs.
     ///
     /// # Arguments
@@ -126,6 +145,11 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `msgs` - Slice of messages received from other subprotocols
+    ///
+    /// TODO:
+    /// Also generate the event logs that is later needed for other components
+    /// to read ASM activity. Return the commitment of the events. The actual
+    /// event is defined by the subprotocol and is not visible to the ASM.
     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]);
 }
 
