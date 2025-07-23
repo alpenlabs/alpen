@@ -13662,31 +13662,6 @@ dependencies = [
  "sha2 0.10.8",
  "strata-primitives",
  "zkaleido",
-]
-
-[[package]]
-name = "strata-datatool"
-version = "0.3.0-alpha.1"
-dependencies = [
- "alloy-genesis",
- "alloy-primitives",
- "alpen-chainspec",
- "anyhow",
- "argh",
- "bitcoin",
- "bytemuck",
- "rand_core 0.6.4",
- "reth-chainspec",
- "risc0-groth16",
- "risc0-zkvm",
- "serde_json",
- "shrex",
- "sp1-verifier",
- "strata-key-derivation",
- "strata-primitives",
- "strata-risc0-guest-builder",
- "strata-sp1-guest-builder",
- "zeroize",
  "zkaleido-risc0-groth16-verifier",
  "zkaleido-sp1-groth16-verifier",
 ]
@@ -13707,6 +13682,7 @@ dependencies = [
  "reth-chainspec",
  "secp256k1",
  "serde_json",
+ "shrex",
  "strata-key-derivation",
  "strata-primitives",
  "strata-risc0-guest-builder",
