@@ -7,24 +7,24 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
 use bitcoin::{
-    base58,
     bip32::{Xpriv, Xpub},
+    secp256k1::SECP256K1,
     Network,
 };
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
-use strata_key_derivation::{
-    operator::{convert_base_xpub_to_message_xpub, convert_base_xpub_to_wallet_xpub, OperatorKeys},
-    sequencer::SequencerKeys,
-};
+use shrex::Hex;
+use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_primitives::{
     block_credential,
     buf::Buf32,
+    crypto::EvenSecretKey,
     keys::ZeroizableXpriv,
     operator::OperatorPubkeys,
     params::{ProofPublishMode, RollupParams},
@@ -149,13 +149,8 @@ fn exec_genxpriv(cmd: SubcXpriv, ctx: &mut CmdContext) -> anyhow::Result<()> {
     }
 
     let xpriv = gen_priv(&mut ctx.rng, ctx.bitcoin_network);
-    let mut buf = xpriv.encode();
-    let mut s = base58::encode_check(&buf);
 
-    let result = fs::write(&cmd.path, s.as_bytes());
-
-    buf.zeroize();
-    s.zeroize();
+    let result = fs::write(&cmd.path, xpriv.to_string().as_bytes());
 
     match result {
         Ok(_) => Ok(()),
@@ -174,10 +169,7 @@ fn exec_genseqpubkey(cmd: SubcSeqPubkey, _ctx: &mut CmdContext) -> anyhow::Resul
 
     let seq_keys = SequencerKeys::new(&xpriv)?;
     let seq_xpub = seq_keys.derived_xpub();
-    let raw_buf = seq_xpub.to_x_only_pub().serialize();
-    let s = base58::encode_check(&raw_buf);
-
-    println!("{s}");
+    println!("{seq_xpub}");
 
     Ok(())
 }
@@ -193,14 +185,7 @@ fn exec_genseqprivkey(cmd: SubcSeqPrivkey, _ctx: &mut CmdContext) -> anyhow::Res
 
     let seq_keys = SequencerKeys::new(&xpriv)?;
     let seq_xpriv = seq_keys.derived_xpriv();
-    let mut raw_buf = seq_xpriv.encode();
-    let mut s = base58::encode_check(&raw_buf);
-
-    println!("{s}");
-
-    // Zeroize the buffers after printing.
-    raw_buf.zeroize();
-    s.zeroize();
+    println!("{seq_xpriv}");
 
     Ok(())
 }
@@ -214,11 +199,19 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
     };
 
     let op_keys = OperatorKeys::new(&xpriv)?;
-    let op_base_xpub = op_keys.base_xpub();
-    let raw_buf = op_base_xpub.encode();
-    let s = base58::encode_check(&raw_buf);
+    if cmd.p2p {
+        let p2p_pk = EvenSecretKey::from(op_keys.message_xpriv().private_key)
+            .x_only_public_key(SECP256K1)
+            .0;
+        println!("{:?}", Hex(p2p_pk.serialize()));
+    }
 
-    println!("{s}");
+    if cmd.wallet {
+        let wallet_pk = EvenSecretKey::from(op_keys.wallet_xpriv().private_key)
+            .x_only_public_key(SECP256K1)
+            .0;
+        println!("{:?}", Hex(wallet_pk.serialize()));
+    }
 
     Ok(())
 }
@@ -231,18 +224,8 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     // Parse the sequencer key, trimming whitespace for convenience.
     let seqkey = match cmd.seqkey.as_ref().map(|s| s.trim()) {
         Some(seqkey) => {
-            let buf = match base58::decode_check(seqkey) {
-                Ok(v) => v,
-                Err(e) => {
-                    anyhow::bail!("failed to parse sequencer key '{seqkey}': {e}");
-                }
-            };
-
-            let Ok(buf) = Buf32::try_from(buf.as_slice()) else {
-                anyhow::bail!("invalid sequencer key '{seqkey}' (must be 32 bytes)");
-            };
-
-            Some(buf)
+            let xpub = Xpub::from_str(seqkey)?;
+            Some(Buf32(xpub.to_x_only_pub().serialize()))
         }
         None => None,
     };
@@ -253,18 +236,18 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     if let Some(opkeys_path) = cmd.opkeys {
         let opkeys_str = fs::read_to_string(opkeys_path)?;
 
-        for l in opkeys_str.lines() {
+        for line in opkeys_str.lines() {
             // skip lines that are empty or look like comments
-            if l.trim().is_empty() || l.starts_with("#") {
+            if line.trim().is_empty() || line.starts_with("#") {
                 continue;
             }
 
-            opkeys.push(parse_xpub(l)?);
+            opkeys.push(Xpriv::from_str(line)?);
         }
     }
 
-    for k in cmd.opkey {
-        opkeys.push(parse_xpub(&k)?);
+    for key in cmd.opkey {
+        opkeys.push(Xpriv::from_str(&key)?);
     }
 
     // Parse the deposit size str.
@@ -303,7 +286,10 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         evm_genesis_info,
     };
 
-    let params = construct_params(config);
+    let params = match construct_params(config) {
+        Ok(p) => p,
+        Err(e) => anyhow::bail!("failed to construct params: {e}"),
+    };
     let params_buf = serde_json::to_string_pretty(&params)?;
 
     if let Some(out_path) = &cmd.output {
@@ -344,63 +330,24 @@ fn gen_priv<R: CryptoRngCore>(rng: &mut R, net: Network) -> ZeroizableXpriv {
 }
 
 /// Reads an [`Xpriv`] from file as a string and verifies the checksum.
-///
-/// # Notes
-///
-/// This [`Xpriv`] will [`Zeroize`](zeroize) on [`Drop`].
-fn read_xpriv(path: &Path) -> anyhow::Result<ZeroizableXpriv> {
-    let mut raw_buf = fs::read(path)?;
-    let str_buf: &str = std::str::from_utf8(&raw_buf)?;
-    let mut buf = base58::decode_check(str_buf)?;
-
-    // Parse into a ZeroizableXpriv.
-    let xpriv = Xpriv::decode(&buf)?;
-    let zeroizable_xpriv: ZeroizableXpriv = xpriv.into();
-
-    // Zeroize the buffers after parsing.
-    //
-    // NOTE: `zeroizable_xpriv` is zeroized on drop;
-    //        and `str_buf` is a reference to `raw_buf`.
-    raw_buf.zeroize();
-    buf.zeroize();
-
-    Ok(zeroizable_xpriv)
+fn read_xpriv(path: &Path) -> anyhow::Result<Xpriv> {
+    let xpriv = Xpriv::from_str(&fs::read_to_string(path)?)?;
+    Ok(xpriv)
 }
 
 /// Parses an [`Xpriv`] from environment variable.
-///
-/// # Notes
-///
-/// This [`Xpriv`] will [`Zeroize`](zeroize) on [`Drop`].
-fn parse_xpriv_from_env(env: &'static str) -> anyhow::Result<Option<ZeroizableXpriv>> {
-    let mut env_val = match std::env::var(env) {
+fn parse_xpriv_from_env(env: &'static str) -> anyhow::Result<Xpriv> {
+    let env_val = match std::env::var(env) {
         Ok(v) => v,
         Err(_) => anyhow::bail!("got --key-from-env but {env} not set or invalid"),
     };
 
-    let mut buf = base58::decode_check(&env_val)?;
+    let xpriv = match Xpriv::from_str(&env_val) {
+        Ok(xpriv) => xpriv,
+        Err(_) => anyhow::bail!("got --key-from-env but invalid xpriv"),
+    };
 
-    // Parse into a ZeroizableXpriv.
-    let mut xpriv = Xpriv::decode(&buf)?;
-    let zeroizable_xpriv: ZeroizableXpriv = xpriv.into();
-
-    // Zeroize the buffers after parsing.
-    //
-    // NOTE: `zeroizable_xpriv` is zeroized on drop.
-    env_val.zeroize();
-    buf.zeroize();
-    xpriv.private_key.non_secure_erase();
-
-    Ok(Some(zeroizable_xpriv))
-}
-
-/// Parses an [`Xpriv`] from file path.
-///
-/// # Notes
-///
-/// This [`Xpriv`] will [`Zeroize`](zeroize) on [`Drop`].
-fn parse_xpriv_from_path(path: &Path) -> anyhow::Result<Option<ZeroizableXpriv>> {
-    Ok(Some(read_xpriv(path)?))
+    Ok(xpriv)
 }
 
 /// Resolves an [`Xpriv`] from the file path (if provided) or environment variable (if
@@ -418,11 +365,11 @@ fn resolve_xpriv(
     path: &Option<PathBuf>,
     from_env: bool,
     env: &'static str,
-) -> anyhow::Result<Option<ZeroizableXpriv>> {
+) -> anyhow::Result<Option<Xpriv>> {
     match (path, from_env) {
         (Some(_), true) => anyhow::bail!("got key path and --key-from-env, pick a lane"),
-        (Some(path), false) => parse_xpriv_from_path(path),
-        (None, true) => parse_xpriv_from_env(env),
+        (Some(path), false) => Ok(Some(read_xpriv(path)?)),
+        (None, true) => parse_xpriv_from_env(env).map(Some),
         _ => Ok(None),
     }
 }
@@ -448,8 +395,8 @@ pub struct ParamsConfig {
     genesis_trigger: u64,
     /// Sequencer's key.
     seqkey: Option<Buf32>,
-    /// Operators' keys.
-    opkeys: Vec<Xpub>,
+    /// Operators' master keys.
+    opkeys: Vec<Xpriv>,
     /// Verifier's key.
     rollup_vk: RollupVerifyingKey,
     /// Amount of sats to deposit.
@@ -462,7 +409,7 @@ pub struct ParamsConfig {
 
 /// Constructs the parameters for a Strata network.
 // TODO convert this to also initialize the sync params
-fn construct_params(config: ParamsConfig) -> RollupParams {
+fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
     let cr = config
         .seqkey
         .map(block_credential::CredRule::SchnorrKey)
@@ -470,18 +417,27 @@ fn construct_params(config: ParamsConfig) -> RollupParams {
 
     let opkeys = config
         .opkeys
-        .into_iter()
-        .map(|xpk| {
-            let message_xpub = convert_base_xpub_to_message_xpub(&xpk);
-            let wallet_xpub = convert_base_xpub_to_wallet_xpub(&xpk);
-            let message_key_buf = message_xpub.to_x_only_pub().serialize().into();
-            let wallet_key_buf = wallet_xpub.to_x_only_pub().serialize().into();
-            OperatorPubkeys::new(message_key_buf, wallet_key_buf)
-        })
-        .collect::<Vec<_>>();
+        .iter()
+        .map(OperatorKeys::new)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let pub_opkeys = opkeys.iter().map(|keys| {
+        OperatorPubkeys::new(
+            EvenSecretKey::from(keys.message_xpriv().private_key)
+                .x_only_public_key(SECP256K1)
+                .0
+                .serialize()
+                .into(),
+            EvenSecretKey::from(keys.wallet_xpriv().private_key)
+                .x_only_public_key(SECP256K1)
+                .0
+                .serialize()
+                .into(),
+        )
+    });
 
     // TODO add in bitcoin network
-    RollupParams {
+    Ok(RollupParams {
         rollup_name: config.name,
         block_time: config.block_time_sec * 1000,
         da_tag: config.da_tag,
@@ -490,7 +446,7 @@ fn construct_params(config: ParamsConfig) -> RollupParams {
         // TODO do we want to remove this?
         horizon_l1_height: config.horizon_height,
         genesis_l1_height: config.genesis_trigger,
-        operator_config: strata_primitives::params::OperatorConfig::Static(opkeys),
+        operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
         // TODO make configurable
@@ -508,21 +464,7 @@ fn construct_params(config: ParamsConfig) -> RollupParams {
         // TODO make configurable
         max_deposits_in_block: 16,
         network: config.bitcoin_network,
-    }
-}
-
-/// Parses an [`Xpub`] from [`&str`], richly generating [`anyhow::Result`]s from
-/// it.
-fn parse_xpub(s: &str) -> anyhow::Result<Xpub> {
-    let Ok(buf) = base58::decode_check(s) else {
-        anyhow::bail!("failed to parse key: {s}");
-    };
-
-    let Ok(xpk) = Xpub::decode(&buf) else {
-        anyhow::bail!("failed to decode key: {s}");
-    };
-
-    Ok(xpk)
+    })
 }
 
 /// Parses an abbreviated amount string.
