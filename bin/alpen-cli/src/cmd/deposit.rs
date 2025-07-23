@@ -227,7 +227,7 @@ mod tests {
     use std::sync::Arc;
 
     use bdk_wallet::{
-        bitcoin::{consensus, secp256k1::SECP256K1, Network, Sequence},
+        bitcoin::{secp256k1::SECP256K1, Network},
         keys::{DescriptorPublicKey, SinglePub, SinglePubKey},
         miniscript::{descriptor::TapTree, Descriptor, Miniscript},
     };
