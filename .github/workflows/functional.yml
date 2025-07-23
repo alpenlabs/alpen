@@ -73,8 +73,9 @@ jobs:
     needs: extract-rust-version
     timeout-minutes: 60
     env:
-      CARGO_TARGET_DIR: "target/llvm-cov-target"
-      LLVM_PROFILE_FILE: "target/llvm-cov-target/strata-%p-%m.profraw"
+      # generating build artifacts and coverage data in default dir for cargo-llvm-cov
+      CARGO_TARGET_DIR: "${{ github.workspace }}/target/llvm-cov-target"
+      LLVM_PROFILE_FILE: "${{ github.workspace }}/target/llvm-cov-target/strata-%p-%m.profraw"
 
     steps:
       - name: Checkout repository
@@ -182,8 +183,8 @@ jobs:
         id: genFunctionalLcov
         continue-on-error: true
         env:
-          # for llvm-cov
-          CARGO_TARGET_DIR: "target"
+          # cargo-llvm-cov expects default target dir and adds llvm-cov-target itself
+          CARGO_TARGET_DIR: "${{ github.workspace }}/target"
         run: |
           cargo llvm-cov -F debug-utils report --lcov > lcov.functional.info
 
