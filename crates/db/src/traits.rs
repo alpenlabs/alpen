@@ -62,6 +62,24 @@ pub trait L1Database {
     /// remove canonical chain records in given range (inclusive)
     fn remove_canonical_chain_entries(&self, start_height: u64, end_height: u64) -> DbResult<()>;
 
+    /// Set a specific height, blockid in canonical chain records and insert new sync event
+    /// atomically.
+    fn set_canonical_chain_entry_and_write_sync_event(
+        &self,
+        height: u64,
+        blockid: L1BlockId,
+        ev: SyncEvent,
+    ) -> DbResult<u64>;
+
+    /// remove canonical chain records in given range (inclusive) and insert new sync event
+    /// atomically.
+    fn remove_canonical_chain_entries_and_write_sync_event(
+        &self,
+        start_height: u64,
+        end_height: u64,
+        ev: SyncEvent,
+    ) -> DbResult<u64>;
+
     /// Prune earliest blocks till height
     fn prune_to_height(&self, height: u64) -> DbResult<()>;
 

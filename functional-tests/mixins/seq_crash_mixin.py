@@ -1,5 +1,7 @@
 import time
+from abc import abstractmethod
 from collections.abc import Callable
+from typing import Generic, TypeVar
 
 import flexitest
 
@@ -8,8 +10,10 @@ from utils.constants import *
 
 from . import BaseMixin
 
+T = TypeVar("T")
 
-class SeqCrashMixin(BaseMixin):
+
+class SeqCrashMixin(BaseMixin, Generic[T]):
     """
     Mixin for emulating the crash of sequencer.
     Provides a method for handling the bailout, stops and restarts sequencer under the hood.
@@ -22,14 +26,22 @@ class SeqCrashMixin(BaseMixin):
         protocol_version = self.seqrpc.strata_protocolVersion()
         assert protocol_version is not None, "Sequencer RPC inactive"
 
-    def handle_bail(self, bail_tag: Callable[[], str], **kwargs) -> int:
+    @abstractmethod
+    def get_recovery_metric(self) -> T:
+        """
+        Abstract method to get a metric value used to determine crash recovery.
+        Derived classes should override this to return their desired recovery metric.
+        """
+        pass
+
+    def handle_bail(self, bail_tag: Callable[[], str], **kwargs) -> T:
         """
         Handles the bailout process for the given sequencer RPC.
 
-        Returns the chain_tip_slot before the bailout.
+        Returns the recovery metric value before the bailout.
         """
         time.sleep(2)
-        cur_chain_tip = self.seqrpc.strata_syncStatus()["tip_height"]
+        recovery_metric = self.get_recovery_metric()
 
         # Trigger the bailout
         self.seqrpc.debug_bail(bail_tag())
@@ -54,4 +66,13 @@ class SeqCrashMixin(BaseMixin):
             **kwargs,
         )
 
-        return cur_chain_tip
+        return recovery_metric
+
+
+class DefaultSeqCrashMixin(SeqCrashMixin[int]):
+    """
+    Default implementation using syncStatus tip_height as the recovery metric.
+    """
+
+    def get_recovery_metric(self) -> int:
+        return self.seqrpc.strata_syncStatus()["tip_height"]

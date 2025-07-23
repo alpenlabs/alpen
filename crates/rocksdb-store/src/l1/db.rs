@@ -9,12 +9,17 @@ use rockbound::{
 use strata_db::{errors::DbError, traits::*, DbResult};
 use strata_mmr::CompactMmr;
 use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_state::sync_event::SyncEvent;
 use tracing::*;
 
 use super::schemas::{
     L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, MmrSchema, TxnSchema,
 };
-use crate::DbOpsConfig;
+use crate::{
+    sequence::get_next_id_opts,
+    sync_event::schemas::{SyncEventSchema, SyncEventWithTimestamp},
+    DbOpsConfig,
+};
 
 pub struct L1Db {
     db: Arc<OptimisticTransactionDB>,
@@ -73,6 +78,53 @@ impl L1Database for L1Db {
         // Execute the batch
         self.db.write_schemas(batch)?;
         Ok(())
+    }
+
+    fn set_canonical_chain_entry_and_write_sync_event(
+        &self,
+        height: u64,
+        blockid: L1BlockId,
+        ev: SyncEvent,
+    ) -> strata_db::DbResult<u64> {
+        self.db
+            .with_optimistic_txn(self.ops.txn_retry_count(), |txn| {
+                txn.put::<L1CanonicalBlockSchema>(&height, &blockid)?;
+                // autoincrementing, starting from index 1
+                let id = get_next_id_opts::<SyncEventSchema, OptimisticTransactionDB>(
+                    txn,
+                    |v| v + 1,
+                    1,
+                )?;
+                let event = SyncEventWithTimestamp::new(ev.clone());
+                txn.put::<SyncEventSchema>(&id, &event)?;
+                Ok::<_, anyhow::Error>(id)
+            })
+            .map_err(|e: rockbound::TransactionError<_>| DbError::TransactionError(e.to_string()))
+    }
+
+    fn remove_canonical_chain_entries_and_write_sync_event(
+        &self,
+        start_height: u64,
+        end_height: u64,
+        ev: SyncEvent,
+    ) -> strata_db::DbResult<u64> {
+        self.db
+            .with_optimistic_txn(self.ops.txn_retry_count(), |txn| {
+                for height in (start_height..=end_height).rev() {
+                    txn.delete::<L1CanonicalBlockSchema>(&height)?;
+                }
+
+                // autoincrementing, starting from index 1
+                let id = get_next_id_opts::<SyncEventSchema, OptimisticTransactionDB>(
+                    txn,
+                    |v| v + 1,
+                    1,
+                )?;
+                let event = SyncEventWithTimestamp::new(ev.clone());
+                txn.put::<SyncEventSchema>(&id, &event)?;
+                Ok::<_, anyhow::Error>(id)
+            })
+            .map_err(|e: rockbound::TransactionError<_>| DbError::TransactionError(e.to_string()))
     }
 
     fn prune_to_height(&self, end_height: u64) -> DbResult<()> {

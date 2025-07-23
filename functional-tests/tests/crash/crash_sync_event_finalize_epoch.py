@@ -6,7 +6,7 @@ from utils import ProverClientSettings, wait_until
 
 
 @flexitest.register
-class CrashSyncEventFinalizeEpochTest(seq_crash_mixin.SeqCrashMixin):
+class CrashSyncEventFinalizeEpochTest(seq_crash_mixin.DefaultSeqCrashMixin):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
             testenv.BasicEnvConfig(
@@ -20,7 +20,7 @@ class CrashSyncEventFinalizeEpochTest(seq_crash_mixin.SeqCrashMixin):
         cur_chain_tip = self.handle_bail(lambda: "sync_event_finalize_epoch", timeout=60)
 
         wait_until(
-            lambda: self.seqrpc.strata_syncStatus()["tip_height"] > cur_chain_tip + 1,
+            lambda: self.get_recovery_metric() > cur_chain_tip + 1,
             error_with="chain tip slot not progressing",
         )
 
