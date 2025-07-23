@@ -3,6 +3,9 @@ name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+test_utils = []
+
 [lints]
 workspace = true
 
