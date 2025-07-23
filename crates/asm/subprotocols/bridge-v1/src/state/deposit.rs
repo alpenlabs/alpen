@@ -4,11 +4,56 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bridge::OperatorIdx,
-    buf::Buf32,
     l1::{BitcoinAmount, OutputRef},
 };
 
-use super::deposit_state::DepositState;
+/// Container for the state machine of a deposit factory.
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+pub struct DepositEntry {
+    deposit_idx: u32,
+
+    /// The outpoint that this deposit entry references.
+    output: OutputRef,
+
+    /// List of notary operators, by their indexes.
+    // TODO convert this to a windowed bitmap or something
+    notary_operators: Vec<OperatorIdx>,
+
+    /// Deposit amount, in the native asset.
+    amt: BitcoinAmount,
+}
+
+impl DepositEntry {
+    pub fn new(
+        idx: u32,
+        output: OutputRef,
+        operators: Vec<OperatorIdx>,
+        amt: BitcoinAmount,
+    ) -> Self {
+        Self {
+            deposit_idx: idx,
+            output,
+            notary_operators: operators,
+            amt,
+        }
+    }
+
+    pub fn idx(&self) -> u32 {
+        self.deposit_idx
+    }
+
+    pub fn output(&self) -> &OutputRef {
+        &self.output
+    }
+
+    pub fn notary_operators(&self) -> &[OperatorIdx] {
+        &self.notary_operators
+    }
+
+    pub fn amt(&self) -> BitcoinAmount {
+        self.amt
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct DepositsTable {
@@ -26,20 +71,6 @@ impl DepositsTable {
         Self {
             next_idx: 0,
             deposits: Vec::new(),
-        }
-    }
-
-    /// Sanity checks the operator table for sensibility.
-    #[allow(dead_code)] // FIXME: remove this.
-    fn sanity_check(&self) {
-        if !self.deposits.is_sorted_by_key(|e| e.deposit_idx) {
-            panic!("bridge_state: deposits list not sorted");
-        }
-
-        if let Some(e) = self.deposits.last()
-            && self.next_idx <= e.deposit_idx
-        {
-            panic!("bridge_state: deposits next_idx before last entry");
         }
     }
 
@@ -98,7 +129,7 @@ impl DepositsTable {
         amt: BitcoinAmount,
     ) -> u32 {
         let idx = self.next_idx();
-        let deposit_entry = DepositEntry::new(idx, tx_ref, operators, amt, None);
+        let deposit_entry = DepositEntry::new(idx, tx_ref, operators, amt);
         self.deposits.push(deposit_entry);
         self.next_idx += 1;
         idx
@@ -127,7 +158,7 @@ impl DepositsTable {
         match self.get_deposit_entry_pos(idx) {
             Ok(_) => false,
             Err(pos) => {
-                let entry = DepositEntry::new(idx, tx_ref, operators, amt, None);
+                let entry = DepositEntry::new(idx, tx_ref, operators, amt);
                 self.deposits.insert(pos as usize, entry);
 
                 // Tricky bookkeeping.
@@ -146,90 +177,5 @@ impl DepositsTable {
 
     pub fn deposits(&self) -> impl Iterator<Item = &DepositEntry> {
         self.deposits.iter()
-    }
-}
-
-/// Container for the state machine of a deposit factory.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
-pub struct DepositEntry {
-    deposit_idx: u32,
-
-    /// The outpoint that this deposit entry references.
-    output: OutputRef,
-
-    /// List of notary operators, by their indexes.
-    // TODO convert this to a windowed bitmap or something
-    notary_operators: Vec<OperatorIdx>,
-
-    /// Deposit amount, in the native asset.
-    amt: BitcoinAmount,
-
-    /// Deposit state.
-    state: DepositState,
-
-    /// Withdrawal request transaction id
-    withdrawal_request_txid: Option<Buf32>,
-}
-
-impl DepositEntry {
-    pub fn new(
-        idx: u32,
-        output: OutputRef,
-        operators: Vec<OperatorIdx>,
-        amt: BitcoinAmount,
-        withdrawal_request_txid: Option<Buf32>,
-    ) -> Self {
-        Self {
-            deposit_idx: idx,
-            output,
-            notary_operators: operators,
-            amt,
-            state: DepositState::Accepted,
-            withdrawal_request_txid,
-        }
-    }
-
-    pub fn idx(&self) -> u32 {
-        self.deposit_idx
-    }
-
-    pub fn output(&self) -> &OutputRef {
-        &self.output
-    }
-
-    pub fn notary_operators(&self) -> &[OperatorIdx] {
-        &self.notary_operators
-    }
-
-    pub fn amt(&self) -> BitcoinAmount {
-        self.amt
-    }
-
-    pub fn deposit_state(&self) -> &DepositState {
-        &self.state
-    }
-
-    pub fn deposit_state_mut(&mut self) -> &mut DepositState {
-        &mut self.state
-    }
-
-    pub fn set_state(&mut self, new_state: DepositState) {
-        self.state = new_state;
-    }
-
-    pub fn withdrawal_request_txid(&self) -> Option<Buf32> {
-        self.withdrawal_request_txid
-    }
-
-    pub fn set_withdrawal_request_txid(&mut self, new_wr_txid: Option<Buf32>) {
-        self.withdrawal_request_txid = new_wr_txid;
-    }
-}
-
-#[cfg(feature = "test_utils")]
-impl DepositEntry {
-    pub fn with_state(mut self, state: DepositState) -> Self {
-        self.state = state;
-        self
     }
 }

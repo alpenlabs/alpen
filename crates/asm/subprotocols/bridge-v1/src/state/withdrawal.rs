@@ -15,12 +15,12 @@ use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 /// amounts that can be batched and then serviced together). At the moment, the underlying `Vec` of
 /// [`WithdrawOutput`] always has a single element.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
-pub struct DispatchCommand {
+pub struct WithdrawalCommand {
     /// The table of withdrawal outputs.
     withdraw_outputs: Vec<WithdrawOutput>,
 }
 
-impl DispatchCommand {
+impl WithdrawalCommand {
     pub fn new(withdraw_outputs: Vec<WithdrawOutput>) -> Self {
         Self { withdraw_outputs }
     }

@@ -5,8 +5,9 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::state::{deposit::DepositsTable, operator::OperatorTable};
+use crate::state::{assignment::AssignmentTable, deposit::DepositsTable, operator::OperatorTable};
 
+pub mod assignment;
 pub mod deposit;
 pub mod deposit_state;
 pub mod operator;
@@ -16,6 +17,7 @@ pub mod withdrawal;
 pub struct BridgeV1State {
     operators: OperatorTable,
     deposits: DepositsTable,
+    assignments: AssignmentTable,
 }
 
 impl Default for BridgeV1State {
@@ -23,6 +25,7 @@ impl Default for BridgeV1State {
         Self {
             operators: OperatorTable::new_empty(),
             deposits: DepositsTable::new_empty(),
+            assignments: AssignmentTable::new_empty(),
         }
     }
 }

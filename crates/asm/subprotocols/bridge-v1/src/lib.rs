@@ -1,6 +1,6 @@
 //! BridgeV1 Subprotocol
 
-mod state;
+pub mod state;
 mod subprotocol;
 
 pub use subprotocol::BridgeV1Subproto;
