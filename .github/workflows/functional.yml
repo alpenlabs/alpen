@@ -141,10 +141,6 @@ jobs:
         env:
           RUSTFLAGS: "-Cinstrument-coverage"
         run: cargo build --locked -F debug-utils
-
-      - name: ls after build
-        run: ls -la target/llvm-cov-target
-
       - name: Run functional tests (1)
         id: funcTestsRun1
         continue-on-error: true
@@ -172,10 +168,6 @@ jobs:
           export PATH="$NEWPATH:$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
-
-      - name: ls after
-        run: ls -la target/llvm-cov-target
-
       - name: Generate combined coverage lcov
         id: genFunctionalLcov
         continue-on-error: true

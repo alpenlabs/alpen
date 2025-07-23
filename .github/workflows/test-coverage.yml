@@ -53,29 +53,6 @@ jobs:
           lcov --add-tracefile ./lcov.unit.info \
             --add-tracefile ./lcov.functional.info \
             --output-file ./lcov.info
-
-      - name: Generate cov report
-        continue-on-error: true
-        run: |
-          genhtml lcov.info \
-            --output-directory coverage-report \
-            --title "Test Coverage" \
-            --legend --synthesize-missing
-          zip -r coverage-report.zip coverage-report
-      - name: Upload coverage lcov artifact
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: combined-lcov
-          path: lcov.info
-
-      - name: Upload coverage report
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: coverage-report
-          path: coverage-report.zip
-
       - name: Publish Test Coverage
         uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
         env:
