@@ -1,55 +1,109 @@
-//! Withdrawal-related types and commands.
+//! Withdrawal Command Management
+//!
+//! This module contains types for specifying withdrawal commands and outputs.
+//! Withdrawal commands define the Bitcoin outputs that operators should create
+//! when processing withdrawal requests from deposits.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
-/// Command to operator(s) to initiate the withdrawal.  Describes the set of
-/// outputs we're trying to withdraw to.
+/// Command specifying Bitcoin outputs for a withdrawal operation.
 ///
-/// May also include future information to deal with fee accounting.
+/// This structure instructs operators on how to construct the Bitcoin transaction
+/// outputs when processing a withdrawal. Each command contains a list of outputs
+/// with their destinations and amounts.
 ///
-/// # Note
+/// # Batching Support
 ///
-/// This is mostly here in order to support withdrawal batching (i.e., sub-denomination withdrawal
-/// amounts that can be batched and then serviced together). At the moment, the underlying `Vec` of
-/// [`WithdrawOutput`] always has a single element.
+/// The design supports withdrawal batching where multiple sub-denomination amounts
+/// can be combined and processed together in a single transaction. Currently, most
+/// withdrawal commands contain a single output, but the structure is prepared for
+/// future batching implementations.
+///
+/// # Fee Handling
+///
+/// Future versions may include additional fee accounting information to help
+/// operators calculate appropriate transaction fees.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct WithdrawalCommand {
-    /// The table of withdrawal outputs.
+    /// List of Bitcoin outputs to create in the withdrawal transaction.
     withdraw_outputs: Vec<WithdrawOutput>,
 }
 
 impl WithdrawalCommand {
+    /// Creates a new withdrawal command with the specified outputs.
+    ///
+    /// # Parameters
+    ///
+    /// - `withdraw_outputs` - Vector of withdrawal outputs specifying destinations and amounts
+    ///
+    /// # Returns
+    ///
+    /// A new [`WithdrawalCommand`] instance.
     pub fn new(withdraw_outputs: Vec<WithdrawOutput>) -> Self {
         Self { withdraw_outputs }
     }
 
+    /// Returns a slice of all withdrawal outputs.
+    ///
+    /// # Returns
+    ///
+    /// Slice reference to all [`WithdrawOutput`] instances in this command.
     pub fn withdraw_outputs(&self) -> &[WithdrawOutput] {
         &self.withdraw_outputs
     }
 }
 
-/// An output constructed from [`crate::bridge_ops::WithdrawalIntent`].
+/// Bitcoin output specification for a withdrawal operation.
+///
+/// Each withdrawal output specifies a destination address (as a Bitcoin descriptor)
+/// and the amount to be sent. This structure provides all information needed by
+/// operators to construct the appropriate Bitcoin transaction output.
+///
+/// # Bitcoin Descriptors
+///
+/// The destination uses Bitcoin Output Script Descriptors (BOSD) which provide
+/// a standardized way to specify Bitcoin addresses and locking conditions.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct WithdrawOutput {
-    /// BOSD [`Descriptor`].
+    /// Bitcoin Output Script Descriptor specifying the destination address.
     destination: Descriptor,
 
-    /// Amount in sats.
+    /// Amount to withdraw (in satoshis).
     amt: BitcoinAmount,
 }
 
 impl WithdrawOutput {
+    /// Creates a new withdrawal output with the specified destination and amount.
+    ///
+    /// # Parameters
+    ///
+    /// - `destination` - Bitcoin descriptor specifying the destination address
+    /// - `amt` - Amount to withdraw in satoshis
+    ///
+    /// # Returns
+    ///
+    /// A new [`WithdrawOutput`] instance.
     pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
         Self { destination, amt }
     }
 
+    /// Returns a reference to the destination descriptor.
+    ///
+    /// # Returns
+    ///
+    /// Reference to the [`Descriptor`] specifying where funds should be sent.
     pub fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
+    /// Returns the withdrawal amount.
+    ///
+    /// # Returns
+    ///
+    /// The withdrawal amount as [`BitcoinAmount`] (in satoshis).
     pub fn amt(&self) -> BitcoinAmount {
         self.amt
     }

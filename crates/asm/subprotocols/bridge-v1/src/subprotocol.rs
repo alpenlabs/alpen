@@ -1,4 +1,8 @@
-//! BridgeV1 Subprotocol
+//! Bridge V1 Subprotocol Implementation
+//!
+//! This module contains the core subprotocol implementation that integrates
+//! with the Strata Anchor State Machine (ASM).
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{
     AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
@@ -7,9 +11,9 @@ use strata_asm_common::{
 
 use crate::state::BridgeV1State;
 
-/// The unique identifier for the BridgeV1 subprotocol within the Anchor State Machine.
+/// The unique identifier for the Bridge V1 subprotocol within the Anchor State Machine.
 ///
-/// This constant is used to tag `SectionState` entries belonging to the CoreASM logic
+/// This constant is used to tag `SectionState` entries belonging to the Bridge V1 logic
 /// and must match the `subprotocol_id` checked in `SectionState::subprotocol()`.
 pub const BRIDGE_V1_SUBPROTOCOL_ID: SubprotocolId = 2;
 
@@ -19,7 +23,11 @@ pub struct BridgeV1GenesisConfig {
     // TODO: Add bridge-specific genesis parameters when implementing
 }
 
-/// BridgeV1 subprotocol impl.
+/// Bridge V1 subprotocol implementation.
+///
+/// This struct implements the [`Subprotocol`] trait to integrate the bridge functionality
+/// with the ASM. It handles Bitcoin deposit processing, operator management, and withdrawal
+/// coordination.
 #[derive(Copy, Clone, Debug)]
 pub struct BridgeV1Subproto;
 

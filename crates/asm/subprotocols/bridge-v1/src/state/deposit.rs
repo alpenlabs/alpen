@@ -1,4 +1,9 @@
-//! Deposit-related types and tables.
+//! Bitcoin Deposit Management
+//!
+//! This module contains types and tables for managing Bitcoin deposits in the bridge.
+//! Deposits represent Bitcoin UTXOs locked to N/N multisig addresses where N are the
+//! notary operators. We preserve the historical operator set that controlled each deposit
+//! since the operator set may change over time. 
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -7,23 +12,55 @@ use strata_primitives::{
     l1::{BitcoinAmount, OutputRef},
 };
 
-/// Container for the state machine of a deposit factory.
+/// Bitcoin deposit entry containing UTXO reference and historical multisig operators.
+///
+/// Each deposit represents a Bitcoin UTXO that has been locked to an N/N multisig
+/// address where N are the notary operators. The deposit tracks:
+///
+/// - **`deposit_idx`** - Unique identifier for this deposit
+/// - **`output`** - Bitcoin UTXO reference (transaction hash + output index)
+/// - **`notary_operators`** - The N operators that make up the N/N multisig
+/// - **`amt`** - Amount of Bitcoin locked in this deposit
+///
+/// # Multisig Design
+///
+/// The `notary_operators` field preserves the historical set of operators that
+/// formed the N/N multisig when this deposit was locked. Any one honest operator
+/// from this set can properly process user withdrawals. We store this historical
+/// set because the active operator set may change over time.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct DepositEntry {
     deposit_idx: u32,
 
-    /// The outpoint that this deposit entry references.
+    /// Bitcoin UTXO reference (transaction hash + output index).
     output: OutputRef,
 
-    /// List of notary operators, by their indexes.
-    // TODO convert this to a windowed bitmap or something
+    /// Historical set of operators that formed the N/N multisig for this deposit.
+    /// 
+    /// This preserves the specific operators who controlled the multisig when the
+    /// deposit was locked, since the active operator set may change over time.
+    /// Any one honest operator from this set can process user withdrawals.
+    /// 
+    /// TODO: Convert this to a windowed bitmap for better memory efficiency.
     notary_operators: Vec<OperatorIdx>,
 
-    /// Deposit amount, in the native asset.
+    /// Amount of Bitcoin locked in this deposit (in satoshis).
     amt: BitcoinAmount,
 }
 
 impl DepositEntry {
+    /// Creates a new deposit entry with the specified parameters.
+    ///
+    /// # Parameters
+    ///
+    /// - `idx` - Unique deposit identifier
+    /// - `output` - Bitcoin UTXO reference
+    /// - `operators` - Historical set of operators that form the N/N multisig
+    /// - `amt` - Amount of Bitcoin locked in the deposit
+    ///
+    /// # Returns
+    ///
+    /// A new [`DepositEntry`] instance.
     pub fn new(
         idx: u32,
         output: OutputRef,
@@ -38,35 +75,83 @@ impl DepositEntry {
         }
     }
 
+    /// Returns the unique deposit identifier.
+    ///
+    /// # Returns
+    ///
+    /// The deposit index as [`u32`].
     pub fn idx(&self) -> u32 {
         self.deposit_idx
     }
 
+    /// Returns a reference to the Bitcoin UTXO being tracked.
+    ///
+    /// # Returns
+    ///
+    /// Reference to the [`OutputRef`] containing transaction hash and output index.
     pub fn output(&self) -> &OutputRef {
         &self.output
     }
 
+    /// Returns the historical set of operators that formed the N/N multisig.
+    ///
+    /// This preserves the specific operators who controlled the multisig when the
+    /// deposit was locked. Any one honest operator from this set can properly
+    /// process user withdrawals.
+    ///
+    /// # Returns
+    ///
+    /// Slice of [`OperatorIdx`] values representing the multisig operators.
     pub fn notary_operators(&self) -> &[OperatorIdx] {
         &self.notary_operators
     }
 
+    /// Returns the amount of Bitcoin locked in this deposit.
+    ///
+    /// # Returns
+    ///
+    /// The deposit amount as [`BitcoinAmount`] (in satoshis).
     pub fn amt(&self) -> BitcoinAmount {
         self.amt
     }
 }
 
+/// Table for managing Bitcoin deposits with efficient lookup operations.
+///
+/// This table maintains all deposits tracked by the bridge, providing efficient
+/// insertion and lookup operations. The table automatically assigns unique indices
+/// and maintains sorted order for binary search efficiency.
+///
+/// # Ordering Invariant
+///
+/// The deposits vector **MUST** remain sorted by deposit index at all times.
+/// This invariant enables O(log n) lookup operations via binary search.
+///
+/// # Index Management
+///
+/// - `next_idx` tracks the next available deposit index for new deposits
+/// - Indices can be assigned sequentially or at specific positions
+/// - Out-of-order insertions are supported and maintain sorted order
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct DepositsTable {
-    /// Next unassigned deposit index.
+    /// Next unassigned deposit index for new registrations.
     next_idx: u32,
 
-    /// Deposit table.
+    /// Vector of deposit entries, sorted by deposit index.
     ///
-    /// MUST be sorted by `deposit_idx`.
+    /// **Invariant**: MUST be sorted by `DepositEntry::deposit_idx` field.
     deposits: Vec<DepositEntry>,
 }
 
 impl DepositsTable {
+    /// Creates a new empty deposits table.
+    ///
+    /// Initializes the table with no deposits and `next_idx` set to 0,
+    /// ready for deposit registrations.
+    ///
+    /// # Returns
+    ///
+    /// A new empty [`DepositsTable`].
     pub fn new_empty() -> Self {
         Self {
             next_idx: 0,
@@ -74,19 +159,39 @@ impl DepositsTable {
         }
     }
 
-    /// Returns the number of deposit entries being tracked.
+    /// Returns the number of deposits being tracked.
+    ///
+    /// # Returns
+    ///
+    /// The total count of deposits in the table as [`u32`].
     pub fn len(&self) -> u32 {
         self.deposits.len() as u32
     }
 
-    /// Returns if the deposit table is empty.  This is practically probably
-    /// never going to be true.
+    /// Returns whether the deposits table is empty.
+    ///
+    /// In practice, this will typically return `false` once deposits start
+    /// being processed by the bridge.
+    ///
+    /// # Returns
+    ///
+    /// `true` if no deposits are tracked, `false` otherwise.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Gets the position in the deposit table of a hypothetical deposit entry
-    /// index.
+    /// Finds the position where a deposit with the given index exists or should be inserted.
+    ///
+    /// Uses binary search to efficiently locate the position.
+    ///
+    /// # Parameters
+    ///
+    /// - `idx` - The deposit index to search for
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(position)` if a deposit with this index exists
+    /// - `Err(position)` where the deposit should be inserted to maintain sort order
     pub fn get_deposit_entry_pos(&self, idx: u32) -> Result<u32, u32> {
         self.deposits
             .binary_search_by_key(&idx, |e| e.deposit_idx)
@@ -94,34 +199,84 @@ impl DepositsTable {
             .map_err(|i| i as u32)
     }
 
-    /// Gets a deposit from the table by its idx.
+    /// Retrieves a deposit entry by its unique index.
     ///
-    /// Does a binary search.
+    /// Uses binary search for O(log n) lookup performance.
+    ///
+    /// # Parameters
+    ///
+    /// - `idx` - The unique deposit index to search for
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&DepositEntry)` if the deposit exists
+    /// - `None` if no deposit with the given index is found
     pub fn get_deposit(&self, idx: u32) -> Option<&DepositEntry> {
         self.get_deposit_entry_pos(idx)
             .ok()
             .map(|i| &self.deposits[i as usize])
     }
 
-    /// Gets a mut ref to a deposit from the table by its idx.
+    /// Retrieves a mutable reference to a deposit entry by its unique index.
     ///
-    /// Does a binary search.
+    /// Uses binary search for O(log n) lookup performance.
+    ///
+    /// # Parameters
+    ///
+    /// - `idx` - The unique deposit index to search for
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&mut DepositEntry)` if the deposit exists
+    /// - `None` if no deposit with the given index is found
     pub fn get_deposit_mut(&mut self, idx: u32) -> Option<&mut DepositEntry> {
         self.get_deposit_entry_pos(idx)
             .ok()
             .map(|i| &mut self.deposits[i as usize])
     }
 
-    pub fn get_all_deposits_idxs_iters_iter(&self) -> impl Iterator<Item = u32> + '_ {
+    /// Returns an iterator over all deposit indices.
+    ///
+    /// The indices are returned in sorted order due to the table's invariant.
+    ///
+    /// # Returns
+    ///
+    /// Iterator yielding each deposit's unique index.
+    pub fn deposit_indices(&self) -> impl Iterator<Item = u32> + '_ {
         self.deposits.iter().map(|e| e.deposit_idx)
     }
 
-    /// Gets a deposit entry by its internal position, *ignoring* the indexes.
+    /// Retrieves a deposit entry by its position in the internal vector.
+    ///
+    /// This method accesses deposits by their storage position rather than their
+    /// logical index. Useful for iteration or when the position is known.
+    ///
+    /// # Parameters
+    ///
+    /// - `pos` - The position in the internal vector (0-based)
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&DepositEntry)` if the position is valid
+    /// - `None` if the position is out of bounds
     pub fn get_entry_at_pos(&self, pos: u32) -> Option<&DepositEntry> {
         self.deposits.get(pos as usize)
     }
 
-    /// Adds a new deposit to the table and returns the index of the new deposit.
+    /// Creates a new deposit with the next available index.
+    ///
+    /// This is the most efficient way to add deposits when order doesn't matter,
+    /// as no binary search or insertion is required.
+    ///
+    /// # Parameters
+    ///
+    /// - `tx_ref` - Bitcoin UTXO reference for the deposit
+    /// - `operators` - Historical set of operators that form the N/N multisig
+    /// - `amt` - Amount of Bitcoin locked in the deposit
+    ///
+    /// # Returns
+    ///
+    /// The unique index assigned to the new deposit.
     pub fn create_next_deposit(
         &mut self,
         tx_ref: OutputRef,
@@ -135,10 +290,23 @@ impl DepositsTable {
         idx
     }
 
-    /// Tries to create a deposit entry at a specific idx.  If the entry requested if after the
-    /// `next_entry`, then updates it to be equal to that.
+    /// Attempts to create a deposit at a specific index.
     ///
-    /// Returns if we inserted it successfully.
+    /// This method allows inserting deposits at specific indices, which is useful
+    /// for maintaining consistency when deposits are processed out of order.
+    /// If the requested index is beyond `next_idx`, it updates `next_idx` accordingly.
+    ///
+    /// # Parameters
+    ///
+    /// - `idx` - The specific index to assign to the deposit
+    /// - `tx_ref` - Bitcoin UTXO reference for the deposit
+    /// - `operators` - Historical set of operators that form the N/N multisig
+    /// - `amt` - Amount of Bitcoin locked in the deposit
+    ///
+    /// # Returns
+    ///
+    /// - `true` if the deposit was successfully created
+    /// - `false` if a deposit with this index already exists
     pub fn try_create_deposit_at(
         &mut self,
         idx: u32,
@@ -171,10 +339,25 @@ impl DepositsTable {
         }
     }
 
+    /// Returns the next available deposit index.
+    ///
+    /// This is the index that will be assigned to the next deposit
+    /// created via [`create_next_deposit`].
+    ///
+    /// # Returns
+    ///
+    /// The next available deposit index as [`u32`].
     pub fn next_idx(&self) -> u32 {
         self.next_idx
     }
 
+    /// Returns an iterator over all deposit entries.
+    ///
+    /// The entries are returned in sorted order by deposit index.
+    ///
+    /// # Returns
+    ///
+    /// Iterator yielding references to all [`DepositEntry`] instances.
     pub fn deposits(&self) -> impl Iterator<Item = &DepositEntry> {
         self.deposits.iter()
     }
@@ -508,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deposits_table_get_all_deposits_idxs_iters_iter() {
+    fn test_deposits_table_deposit_indices() {
         let mut table = DepositsTable::new_empty();
         
         let output_ref = create_test_output_ref(1);
@@ -520,7 +703,7 @@ mod tests {
         table.try_create_deposit_at(5, output_ref, operators.clone(), amount);
         table.try_create_deposit_at(2, output_ref, operators, amount);
         
-        let indices: Vec<_> = table.get_all_deposits_idxs_iters_iter().collect();
+        let indices: Vec<_> = table.deposit_indices().collect();
         assert_eq!(indices, vec![0, 2, 5]); // Should be sorted by deposit_idx
     }
 
