@@ -1,5 +1,5 @@
 use strata_asm_common::L2ToL1Msg;
-use strata_msg_fmt::TypeId;
+use strata_msg_fmt::{MAX_TYPE, TypeId};
 use strata_primitives::{buf::Buf32, hash};
 
 use crate::error::*;
@@ -87,10 +87,10 @@ pub(crate) fn validate_l2_to_l1_messages(messages: &[L2ToL1Msg]) -> Result<()> {
     for (idx, msg) in messages.iter().enumerate() {
         // Validate that the message type is within expected range
         let ty: TypeId = msg.ty();
-        if ty > 0x7FFF {
-            return Err(CoreError::MissingRequiredFieldInL2ToL1Msg {
+        if ty > MAX_TYPE {
+            return Err(CoreError::InvalidL2ToL1Msg {
                 index: idx,
-                field: "valid message type".into(),
+                reason: "valid message type".into(),
             });
         }
 
@@ -102,9 +102,9 @@ pub(crate) fn validate_l2_to_l1_messages(messages: &[L2ToL1Msg]) -> Result<()> {
 
         // Basic validation that message body is not empty for certain types
         if msg.body().is_empty() && ty != 0 {
-            return Err(CoreError::MissingRequiredFieldInL2ToL1Msg {
+            return Err(CoreError::InvalidL2ToL1Msg {
                 index: idx,
-                field: "non-empty message body".into(),
+                reason: "required non-empty message body".into(),
             });
         }
     }

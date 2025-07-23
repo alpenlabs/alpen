@@ -58,8 +58,7 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
 
     let mut manager = SubprotoManager::new();
 
-    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data and
-    // genesis config data if needed.
+    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
     let mut loader_stage =
         SubprotoLoaderStage::new(pre_state, &mut manager, input.aux_input, genesis_registry);
     S::call_subprotocols(&mut loader_stage);

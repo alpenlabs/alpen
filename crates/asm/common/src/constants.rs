@@ -6,6 +6,7 @@ use strata_l1_txfmt::{SubprotocolId, TxType};
 /// and must match the `subprotocol_id` checked in `SectionState::subprotocol()`.
 pub const CORE_SUBPROTOCOL_ID: SubprotocolId = 1;
 
+/// The unique identifier for the BridgeV1 subprotocol within the Anchor State Machine.
 pub const BRIDGE_SUBPROTOCOL_ID: SubprotocolId = 2;
 
 /// Core Subprotocol Transaction type identifiers

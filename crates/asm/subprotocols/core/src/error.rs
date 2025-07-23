@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// Result type alias for the OL Core subprotocol
-pub type Result<T> = std::result::Result<T, CoreError>;
+pub(crate) type Result<T> = std::result::Result<T, CoreError>;
 
 // TODO: Review and refine error variants as needed
 /// Errors that can occur in the OL Core subprotocol
@@ -27,9 +27,9 @@ pub enum CoreError {
     #[error("Invalid L1 block height: {reason}")]
     InvalidL1BlockHeight { reason: String },
 
-    /// Missing required field in L2 to L1 message
-    #[error("Missing required field '{field}' in L2 to L1 message at index {index}")]
-    MissingRequiredFieldInL2ToL1Msg { index: usize, field: String },
+    /// Invalid L2 to L1 message
+    #[error("Invalid L2 to L1 message at index {index}, reason: {reason}")]
+    InvalidL2ToL1Msg { index: usize, reason: String },
 
     /// L1 to L2 message range mismatch
     #[error("L1 to L2 message range commitment does not match")]

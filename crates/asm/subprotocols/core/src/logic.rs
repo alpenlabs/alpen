@@ -69,7 +69,6 @@ pub(crate) fn ol_stf_checkpoint_handler(
     // TODO: why we last_checkpoint_ref directly in state? it's already in verified_checkpoint
     state.last_checkpoint_ref = *checkpoint.batch_info().final_l1_block().blkid();
 
-    // Send inter subprotocol messages
     // Validate and forward OL→ASM messages to appropriate subprotocols
     utils::validate_l2_to_l1_messages(&public_params.l2_to_l1_msgs)?;
 

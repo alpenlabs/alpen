@@ -121,7 +121,6 @@ fn extract_l2_to_l1_messages(_checkpoint: &Checkpoint) -> Result<Vec<L2ToL1Msg>>
 }
 
 /// Verify that the provided checkpoint proof is valid for the verifier key.
-#[allow(dead_code)]
 pub(crate) fn verify_proof(
     checkpoint: &Checkpoint,
     proof_receipt: &ProofReceipt,

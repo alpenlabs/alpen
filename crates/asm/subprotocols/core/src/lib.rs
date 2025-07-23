@@ -41,7 +41,7 @@ mod logic;
 mod utils;
 
 use borsh::{BorshDeserialize, BorshSerialize, from_slice};
-pub use error::*;
+pub(crate) use error::*;
 use strata_asm_common::{
     AnchorState, AsmError, AuxInputCollector, CORE_SUBPROTOCOL_ID, EE_UPGRADE_TX_TYPE,
     FORCED_INCLUSION_TX_TYPE, MsgRelayer, NullMsg, OL_STF_CHECKPOINT_TX_TYPE, Subprotocol,
@@ -179,11 +179,13 @@ impl Subprotocol for OLCoreSubproto {
         _collector: &mut impl AuxInputCollector,
         _anchor_pre: &AnchorState,
     ) {
-        // No auxiliary input needed for core subprotocol processing
+        // TODO: Waiting for auxiliary input to be defined
+        // it's also dependent on the history_mmr and public_params of zk proof
     }
 
-    // Transactions come from L1 and can be submitted by anyone, so we handle failures gracefully.
-    // Invalid transactions are logged and ignored rather than causing panics or halting processing.
+    // Transactions come from L1 and can be submitted by anyone, so we handle tx processing failures
+    // gracefully. Invalid transactions are logged and ignored rather than causing panics or
+    // halting processing.
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
@@ -191,6 +193,8 @@ impl Subprotocol for OLCoreSubproto {
         _aux_inputs: &[Self::AuxInput],
         relayer: &mut impl MsgRelayer,
     ) {
+        // TODO: Define the role of anchor_pre and aux_inputs in checkpoint tx processing and
+        // validation and update the code accordingly
         for tx in txs {
             let result = match tx.tag().tx_type() {
                 OL_STF_CHECKPOINT_TX_TYPE => handle_ol_stf_checkpoint(state, tx, relayer),
