@@ -20,6 +20,7 @@ use crate::error::*;
 /// # Returns
 /// Vector of extracted L2→L1 messages or error if parsing fails
 pub(crate) fn extract_l2_to_l1_messages(checkpoint: &Checkpoint) -> Result<Vec<L2ToL1Msg>> {
+    // [PLACE_HOLDER]
     // For now, return empty vector as we don't have access to the actual
     // withdrawal data structure in the batch transition
 
@@ -62,6 +63,7 @@ pub(crate) fn validate_l2_to_l1_messages(messages: &[L2ToL1Msg]) -> Result<()> {
             });
         }
 
+        // [PLACE_HOLDER] => Waiting for the design and spec of L2 → L1 messaging system.
         // TODO: Add message type-specific validation once message types are defined
         // For example:
         // - Type 0x01 might be withdrawal messages

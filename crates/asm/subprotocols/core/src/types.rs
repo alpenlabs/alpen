@@ -3,8 +3,12 @@
 //! This module contains the state structures and management logic for the Core subprotocol.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_common::L2ToL1Msg;
 use strata_primitives::{
-    batch::EpochSummary, buf::Buf32, l1::L1BlockId, proof::RollupVerifyingKey,
+    batch::{Checkpoint, EpochSummary},
+    buf::Buf32,
+    l1::{L1BlockCommitment, L1BlockId},
+    proof::RollupVerifyingKey,
 };
 
 use crate::error::*;
@@ -29,20 +33,35 @@ pub struct CoreOLState {
 
 impl CoreOLState {
     /// Get the rollup verifying key by deserializing from stored bytes
-    pub fn checkpoint_vk(&self) -> std::result::Result<RollupVerifyingKey, CoreError> {
+    pub fn checkpoint_vk(&self) -> Result<RollupVerifyingKey> {
         serde_json::from_slice(&self.checkpoint_vk_bytes)
             .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))
     }
 
     /// Set the rollup verifying key by serializing to bytes
-    pub fn set_checkpoint_vk(
-        &mut self,
-        vk: &RollupVerifyingKey,
-    ) -> std::result::Result<(), CoreError> {
+    pub fn set_checkpoint_vk(&mut self, vk: &RollupVerifyingKey) -> Result<()> {
         self.checkpoint_vk_bytes = serde_json::to_vec(vk)
             .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))?;
         Ok(())
     }
+}
+
+/// Applies a validated checkpoint to the current state
+///
+/// This function updates the Core subprotocol state with the new checkpoint
+/// information. It should only be called after all validation has passed.
+///
+/// # Arguments
+/// * `state` - Mutable reference to the current state
+/// * `new_epoch_summary` - The new epoch summary to apply
+/// * `checkpoint` - The checkpoint containing the final L1 block reference
+pub(crate) fn apply_checkpoint_to_state(
+    state: &mut CoreOLState,
+    new_epoch_summary: EpochSummary,
+    checkpoint: &Checkpoint,
+) {
+    state.verified_checkpoint = new_epoch_summary;
+    state.last_checkpoint_ref = *checkpoint.batch_info().final_l1_block().blkid();
 }
 
 /// Genesis configuration for the Core subprotocol.
@@ -75,7 +94,7 @@ impl CoreGenesisConfig {
         initial_checkpoint: EpochSummary,
         initial_l1_ref: L1BlockId,
         sequencer_pubkey: Buf32,
-    ) -> std::result::Result<Self, CoreError> {
+    ) -> Result<Self> {
         let checkpoint_vk_bytes = serde_json::to_vec(checkpoint_vk)
             .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))?;
 
@@ -88,8 +107,24 @@ impl CoreGenesisConfig {
     }
 
     /// Get the rollup verifying key by deserializing from stored bytes
-    pub fn checkpoint_vk(&self) -> std::result::Result<RollupVerifyingKey, CoreError> {
+    pub fn checkpoint_vk(&self) -> Result<RollupVerifyingKey> {
         serde_json::from_slice(&self.checkpoint_vk_bytes)
             .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))
     }
+}
+
+/// [PLACE_HOLDER] => Finalize the public parameters for checkpoint proof
+#[derive(BorshSerialize, BorshDeserialize)]
+pub(crate) struct CheckpointProofPublicParameters {
+    /// New epoch summary.
+    pub epoch_summary: EpochSummary,
+    /// Hash of the OL state diff.
+    pub state_diff_hash: Buf32,
+    /// Ordered messages L2 → L1. For now, this only includes the
+    /// withdrawal requests.
+    pub l2_to_l1_msgs: Vec<L2ToL1Msg>,
+    /// Previous L1 commitment or genesis.
+    pub prev_l1_ref: L1BlockCommitment,
+    /// Commitment to the range of L1 → L2 messages.
+    pub l1_to_l2_msgs_range_commitment_hash: Buf32,
 }

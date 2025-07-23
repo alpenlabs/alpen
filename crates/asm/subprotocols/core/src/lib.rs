@@ -40,17 +40,17 @@ mod error;
 mod handlers;
 mod messages;
 mod parsing;
-mod state;
+mod types;
 mod verification;
 
 // Public re-exports
 use borsh::from_slice;
 pub use error::*;
-pub use state::{CoreGenesisConfig, CoreOLState};
 use strata_asm_common::{
     AnchorState, AsmError, AuxInputCollector, CORE_SUBPROTOCOL_ID, MsgRelayer, NullMsg,
     Subprotocol, SubprotocolId, TxInputRef,
 };
+pub use types::{CoreGenesisConfig, CoreOLState};
 
 /// OL Core subprotocol.
 ///
@@ -66,8 +66,13 @@ impl Subprotocol for OLCoreSubproto {
 
     type State = CoreOLState;
 
+    // [PLACE_HOLDER]
+    // TODO: Define the message type for inter-subprotocol communication
+    // type of msg that we receive from other subprotocols
     type Msg = NullMsg<CORE_SUBPROTOCOL_ID>;
 
+    // [PLACE_HOLDER]
+    // TODO: Define the auxiliary input type for the Core subprotocol
     type AuxInput = ();
 
     type GenesisConfig = CoreGenesisConfig;
@@ -95,6 +100,7 @@ impl Subprotocol for OLCoreSubproto {
         _collector: &mut impl AuxInputCollector,
         _anchor_pre: &AnchorState,
     ) {
+        // [PLACE_HOLDER]
         // TODO: Waiting for auxiliary input to be defined
         // it's also dependent on the history_mmr and public_params of zk proof
     }
@@ -105,14 +111,12 @@ impl Subprotocol for OLCoreSubproto {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        _anchor_pre: &AnchorState,
-        _aux_inputs: &[Self::AuxInput],
+        anchor_pre: &AnchorState,
+        aux_inputs: &[Self::AuxInput],
         relayer: &mut impl MsgRelayer,
     ) {
-        // TODO: Define the role of anchor_pre and aux_inputs in checkpoint tx processing and
-        // validation and update the code accordingly
         for tx in txs {
-            let result = handlers::route_transaction(state, tx, relayer);
+            let result = handlers::route_transaction(state, tx, anchor_pre, aux_inputs, relayer);
 
             // TODO: Implement proper logging approach
             // Since this code also runs as a part of zkVM guest program, we cannot use the
@@ -131,6 +135,7 @@ impl Subprotocol for OLCoreSubproto {
     }
 
     fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
+        // [PLACE_HOLDER]
         // TODO: Implement message processing from upgrade subprotocol messages
         // to update verifying key and sequencer key.
     }

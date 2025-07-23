@@ -2,7 +2,7 @@
 //!
 //! Validates that state transitions follow protocol rules and maintain consistency.
 
-use strata_primitives::batch::{Checkpoint, EpochSummary};
+use strata_primitives::batch::Checkpoint;
 
 use crate::{CoreOLState, error::*};
 
@@ -50,30 +50,12 @@ pub(crate) fn validate_state_transition(
     let prev_l1_height = prev_epoch_summary.new_l1().height();
     let new_l1_height = new_batch_info.final_l1_block().height();
     if new_l1_height <= prev_l1_height {
-        return Err(CoreError::InvalidL1BlockHeight {
-            reason: format!(
-                "new L1 height {new_l1_height} must be greater than previous height {prev_l1_height}"
-            ),
-        });
+        return Err(CoreError::InvalidL1BlockHeight(format!(
+            "new L1 height {new_l1_height} must be greater than previous height {prev_l1_height}"
+        )));
     }
 
-    Ok(())
-}
+    // [PLACE_HOLDER] => Validate auxiliary data related things
 
-/// Applies a validated checkpoint to the current state
-///
-/// This function updates the Core subprotocol state with the new checkpoint
-/// information. It should only be called after all validation has passed.
-///
-/// # Arguments
-/// * `state` - Mutable reference to the current state
-/// * `new_epoch_summary` - The new epoch summary to apply
-/// * `checkpoint` - The checkpoint containing the final L1 block reference
-pub(crate) fn apply_checkpoint_to_state(
-    state: &mut CoreOLState,
-    new_epoch_summary: EpochSummary,
-    checkpoint: &Checkpoint,
-) {
-    state.verified_checkpoint = new_epoch_summary;
-    state.last_checkpoint_ref = *checkpoint.batch_info().final_l1_block().blkid();
+    Ok(())
 }

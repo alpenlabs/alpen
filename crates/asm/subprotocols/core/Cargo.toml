@@ -9,8 +9,10 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-crypto.workspace = true
+strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-primitives.workspace = true
+
 
 borsh.workspace = true
 serde_json.workspace = true

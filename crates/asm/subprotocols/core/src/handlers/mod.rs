@@ -7,17 +7,23 @@ pub(crate) mod forced_inclusion;
 pub(crate) mod upgrade;
 
 use strata_asm_common::{
-    EE_UPGRADE_TX_TYPE, FORCED_INCLUSION_TX_TYPE, MsgRelayer, OL_STF_CHECKPOINT_TX_TYPE, TxInputRef,
+    AnchorState, EE_UPGRADE_TX_TYPE, FORCED_INCLUSION_TX_TYPE, MsgRelayer,
+    OL_STF_CHECKPOINT_TX_TYPE, Subprotocol, TxInputRef,
 };
 
-use crate::{CoreOLState, error::*};
+use crate::{CoreOLState, OLCoreSubproto, error::*};
 
 /// Routes transactions to appropriate handlers based on transaction type
 pub(crate) fn route_transaction(
     state: &mut CoreOLState,
     tx: &TxInputRef<'_>,
+    _anchor_pre: &AnchorState,
+    _aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
     relayer: &mut impl MsgRelayer,
 ) -> Result<()> {
+    // [PLACE_HOLDER]
+    // TODO: Define the role of anchor_pre and aux_inputs in checkpoint validation logic and update
+    // the code accordingly
     match tx.tag().tx_type() {
         OL_STF_CHECKPOINT_TX_TYPE => checkpoint::handle(state, tx, relayer),
         FORCED_INCLUSION_TX_TYPE => forced_inclusion::handle(state, tx, relayer),

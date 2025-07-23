@@ -3,6 +3,7 @@
 //! Handles parsing of Bitcoin inscription envelopes to extract checkpoint data.
 
 use strata_asm_common::TxInputRef;
+use strata_l1_txfmt::TxType;
 
 use crate::error::*;
 
@@ -18,6 +19,7 @@ use crate::error::*;
 /// # Returns
 /// The extracted data from the inscription envelope or parsing error
 pub(crate) fn parse_inscription_envelope(tx: &TxInputRef<'_>) -> Result<Vec<u8>> {
+    // [PLACE_HOLDER]
     // TODO: Implement proper Bitcoin inscription parsing
     // This should:
     // 1. Parse the transaction witness stack
@@ -31,16 +33,12 @@ pub(crate) fn parse_inscription_envelope(tx: &TxInputRef<'_>) -> Result<Vec<u8>>
         .tx()
         .input
         .first()
-        .ok_or_else(|| CoreError::MalformedSignedCheckpoint {
-            reason: "no transaction inputs".to_string(),
-        })?
+        .ok_or_else(|| CoreError::TxParsingError("no transaction inputs".to_string()))?
         .witness
         .to_vec();
 
     if witness_data.is_empty() {
-        return Err(CoreError::MalformedSignedCheckpoint {
-            reason: "empty witness data".to_string(),
-        });
+        return Err(CoreError::TxParsingError("empty witness data".to_string()));
     }
 
     // Return the first witness element as placeholder
@@ -48,27 +46,28 @@ pub(crate) fn parse_inscription_envelope(tx: &TxInputRef<'_>) -> Result<Vec<u8>>
 }
 
 /// Validates inscription envelope format and structure
-///
+/// [PLACE_HOLDER]
 /// TODO: Implement inscription envelope validation
 /// This function should validate that the inscription follows the expected
-/// format and contains valid checkpoint data.
+/// format of the tx type.
 ///
 /// # Arguments
 /// * `envelope_data` - The raw inscription envelope data
+/// * `tx_type` - The type of the transaction (checkpoint, forced inclusion, etc.)
 ///
 /// # Returns
 /// Result indicating if the envelope is valid
-pub(crate) fn validate_inscription_envelope(envelope_data: &[u8]) -> Result<()> {
+pub(crate) fn validate_inscription_envelope(envelope_data: &[u8], _tx_type: TxType) -> Result<()> {
     // TODO: Implement inscription envelope validation
     // This should validate:
     // 1. Inscription envelope structure
-    // 2. Content type and format
-    // 3. Data integrity checks
+    // 2. Content type and format (sequence of byte based on tx type inscription standard)
+    // 3. Data integrity checks (max size, etc.)
 
     if envelope_data.is_empty() {
-        return Err(CoreError::MalformedSignedCheckpoint {
-            reason: "empty inscription envelope".to_string(),
-        });
+        return Err(CoreError::MalformedSignedCheckpoint(
+            "empty inscription envelope".to_string(),
+        ));
     }
 
     // Placeholder validation

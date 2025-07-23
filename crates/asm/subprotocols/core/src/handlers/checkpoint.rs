@@ -5,7 +5,7 @@
 use strata_asm_common::{BRIDGE_SUBPROTOCOL_ID, MessagesContainer, MsgRelayer, TxInputRef};
 use zkaleido::{ProofReceipt, PublicValues};
 
-use crate::{CoreOLState, error::*, messages, parsing, verification};
+use crate::{CoreOLState, error::*, messages, parsing, types, verification};
 
 /// Handles OL STF checkpoint transactions according to the specification
 ///
@@ -13,13 +13,19 @@ use crate::{CoreOLState, error::*, messages, parsing, verification};
 ///
 /// 1. **Extract and validate** the signed checkpoint from transaction data
 /// 2. **Verify signature** using the current sequencer public key
-/// 3. **Verify zk-SNARK proof** using the current verifying key
-/// 4. **Construct expected public parameters** from trusted state
+/// 3. **Verify ASM zk-SNARK proof** using the current verifying key
+/// 4. **Construct expected public parameters** from local ASM state
 /// 5. **Validate state transitions** (epochs, block heights, hashes)
 /// 6. **Verify L1→L2 message range** using rolling hash
 /// 7. **Update internal state** with new checkpoint summary
 /// 8. **Forward withdrawal messages** to Bridge subprotocol
-/// 9. **Emit checkpoint summary log** for external monitoring
+/// 9. **Emit logs** for OL (TODO: define the log format)
+///
+/// [PLACE_HOLDER] => What are the rest of security checks that are not covered by these steps?
+/// [PLACE_HOLDER] => Define the role of anchor_pre and aux_inputs in checkpoint validation logic
+/// [PLACE_HOLDER] => Define messages type that we gonna send to other subprotocols
+///                   (e.g. withdrawal, etc.)
+///
 ///
 /// # Security Notes
 ///
@@ -32,13 +38,10 @@ pub(crate) fn handle(
     tx: &TxInputRef<'_>,
     relayer: &mut impl MsgRelayer,
 ) -> Result<()> {
-    // 1. Extract signed checkpoint
+    // 1. Extract and validate signed checkpoint
     let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
 
-    // 2. Validate checkpoint format and structure
-    parsing::checkpoint::validate_checkpoint_format(&signed_checkpoint)?;
-
-    // 3. Verify signature using dedicated signature verification function
+    // 2. Verify signature using dedicated signature verification function
     verification::signature::verify_checkpoint_signature(
         &signed_checkpoint,
         &state.sequencer_pubkey,
@@ -46,11 +49,12 @@ pub(crate) fn handle(
 
     let checkpoint = signed_checkpoint.checkpoint();
 
-    // 4. Validate state transition before processing
+    // 3. Validate state transition before processing
     verification::state_transition::validate_state_transition(state, checkpoint)?;
 
-    // 5. Construct expected public parameters from trusted state
-    let public_params = verification::construct_expected_public_parameters(state, checkpoint)?;
+    // 4. Construct expected public parameters from trusted state
+    let public_params =
+        verification::construct_checkpoint_proof_public_parameters(state, checkpoint)?;
 
     let public_values =
         PublicValues::new(borsh::to_vec(&public_params).expect("checkpoint: proof output"));
@@ -80,12 +84,9 @@ pub(crate) fn handle(
     messages::validate_l2_to_l1_messages(&public_params.l2_to_l1_msgs)?;
 
     // 10. Apply checkpoint to state using dedicated state management function
-    verification::state_transition::apply_checkpoint_to_state(
-        state,
-        public_params.epoch_summary,
-        checkpoint,
-    );
+    types::apply_checkpoint_to_state(state, public_params.epoch_summary, checkpoint);
 
+    // [PLACE_HOLDER] => Update here when we have the design of L2 → L1 messaging system.
     // 11. Forward withdrawal messages to Bridge subprotocol
     if !public_params.l2_to_l1_msgs.is_empty() {
         // Convert OLToASMMessage to Message format and send to bridge
@@ -104,6 +105,7 @@ pub(crate) fn handle(
     }
 
     // 12. Emit Log of the Summary
+    // [PLACE_HOLDER]
     // TODO: Emit required log for core subprotocol
     // For now, we'll skip log emission to avoid dependency issues
     // This can be implemented later when the proper log structure is defined

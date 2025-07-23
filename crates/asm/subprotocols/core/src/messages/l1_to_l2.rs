@@ -26,11 +26,9 @@ pub(crate) fn compute_rolling_hash(
 ) -> Result<Buf32> {
     // Validate height range
     if start_height > end_height {
-        return Err(CoreError::InvalidL1BlockHeight {
-            reason: format!(
-                "start height {start_height} cannot be greater than end height {end_height}"
-            ),
-        });
+        return Err(CoreError::InvalidL1BlockHeight(format!(
+            "start height {start_height} cannot be greater than end height {end_height}"
+        )));
     }
 
     // Validate range consistency
@@ -95,6 +93,8 @@ pub(crate) fn validate_l1_to_l2_messages(
     _end_height: u64,
     _commitment_hash: &Buf32,
 ) -> Result<()> {
+    // [PLACE_HOLDER] => Waiting for the design of L1 → L2 messaging system and defining what is
+    // the l1_commitment should be and etc.
     // TODO: Implement L1→L2 message range validation
     // This should:
     // 1. Fetch L1→L2 messages for the given height range

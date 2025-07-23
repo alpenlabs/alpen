@@ -8,4 +8,4 @@ pub(crate) mod signature;
 pub(crate) mod state_transition;
 
 // Re-export main verification functions for convenience
-pub(crate) use proof::{construct_expected_public_parameters, verify_checkpoint_proof};
+pub(crate) use proof::{construct_checkpoint_proof_public_parameters, verify_checkpoint_proof};

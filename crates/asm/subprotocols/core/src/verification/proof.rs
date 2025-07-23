@@ -2,44 +2,22 @@
 //!
 //! Handles verification of zero-knowledge proofs submitted with checkpoint transactions.
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::L2ToL1Msg;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_primitives::{
-    batch::{Checkpoint, EpochSummary},
-    buf::Buf32,
-    hash,
-    l1::L1BlockCommitment,
-    proof::RollupVerifyingKey,
-};
+use strata_primitives::{batch::Checkpoint, hash, proof::RollupVerifyingKey};
 use zkaleido::ProofReceipt;
 
-use crate::{CoreOLState, error::*, messages};
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub(crate) struct CheckpointProofPublicParameters {
-    /// New epoch summary.
-    pub epoch_summary: EpochSummary,
-    /// Hash of the OL state diff.
-    pub state_diff_hash: Buf32,
-    /// Ordered messages L2 → L1. For now, this only includes the
-    /// withdrawal requests.
-    pub l2_to_l1_msgs: Vec<L2ToL1Msg>,
-    /// Previous L1 commitment or genesis.
-    pub prev_l1_ref: L1BlockCommitment,
-    /// Commitment to the range of L1 → L2 messages.
-    pub l1_to_l2_msgs_range_commitment_hash: Buf32,
-}
+use crate::{CoreOLState, error::*, messages, types::CheckpointProofPublicParameters};
 
 /// Constructs expected public parameters from trusted state and checkpoint data
 ///
 /// This function builds the expected public parameters that should match the
 /// ones committed to in the zk-SNARK proof. Parameters are constructed from
 /// our own trusted state rather than sequencer input for security.
-pub(crate) fn construct_expected_public_parameters(
+pub(crate) fn construct_checkpoint_proof_public_parameters(
     state: &CoreOLState,
     checkpoint: &Checkpoint,
 ) -> Result<CheckpointProofPublicParameters> {
+    // [PLACE_HOLDER] => Define the role of auxiliary data in public parameters for checkpoint proof
     let prev_epoch_summary = &state.verified_checkpoint;
 
     let new_batch_info = checkpoint.batch_info();
@@ -70,20 +48,19 @@ pub(crate) fn construct_expected_public_parameters(
     let prev_l1_height = prev_epoch_summary.new_l1().height();
     let new_l1_hight = new_batch_info.final_l1_block().height();
     if new_l1_hight <= prev_l1_height {
-        return Err(CoreError::InvalidL1BlockHeight {
-            reason: format!(
-                "new L1 height {new_l1_hight} must be greater than previous height {prev_l1_height}"
-            ),
-        });
+        return Err(CoreError::InvalidL1BlockHeight(format!(
+            "new L1 height {new_l1_hight} must be greater than previous height {prev_l1_height}"
+        )));
     }
 
-    // TODO: What is the algorithm for calculating the state_diff_hash?
+    // [PLACE_HOLDER]
+    // TODO: What is the algorithm for calculating the state_diff_hash based on ASM local state?
     // The current approach using hash::hash_data(checkpoint.sidecar().chainstate()) is a
     // placeholder. Need to implement the proper state diff hashing algorithm.
     let state_diff_hash = hash::raw(checkpoint.sidecar().chainstate());
 
-    // TODO: Verify if extracting post_state_root from batch_transition().chainstate_transition
-    // is the correct approach for retrieving the new state.
+    // TODO: Verify whether extracting post_state_root from batch_transition().chainstate_transition
+    // is the correct method for retrieving the new state.
     let new_state = checkpoint
         .batch_transition()
         .chainstate_transition
@@ -95,9 +72,10 @@ pub(crate) fn construct_expected_public_parameters(
         new_state,
     );
 
-    // Extract L2→L1 messages from checkpoint's data
     let l2_to_l1_msgs = messages::extract_l2_to_l1_messages(checkpoint)?;
 
+    // [PLACE_HOLDER] => Waiting for the design of L1 → L2 messaging system and defining what is
+    // the l1_commitment should be and etc.
     let l1_to_l2_msgs_range_commitment_hash = messages::l1_to_l2::compute_rolling_hash(
         vec![], // TODO: fetch actual L1 commitments for this range
         prev_l1_height,

@@ -24,8 +24,8 @@ pub enum CoreError {
     InvalidL2BlockSlot { prev_slot: u64, new_slot: u64 },
 
     /// Invalid L1 Block height
-    #[error("Invalid L1 block height: {reason}")]
-    InvalidL1BlockHeight { reason: String },
+    #[error("Invalid L1 block height: {0}")]
+    InvalidL1BlockHeight(String),
 
     /// Invalid L2 to L1 message
     #[error("Invalid L2 to L1 message at index {index}, reason: {reason}")]
@@ -36,8 +36,8 @@ pub enum CoreError {
     L1ToL2RangeMismatch,
 
     /// Malformed signed checkpoint
-    #[error("Failed to extract signed checkpoint from transaction: {reason}")]
-    MalformedSignedCheckpoint { reason: String },
+    #[error("Failed to extract signed checkpoint from transaction: {0}")]
+    MalformedSignedCheckpoint(String),
 
     /// Serialization error
     #[error("Failed to serialize data")]
