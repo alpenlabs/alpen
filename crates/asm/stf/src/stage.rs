@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use strata_asm_common::{AnchorState, AuxPayload, Stage, Subprotocol, SubprotocolId, TxInputRef};
+use strata_asm_common::{
+    AnchorState, AuxPayload, GenesisConfigRegistry, Stage, Subprotocol, SubprotocolId, TxInputRef,
+};
 
 use crate::manager::SubprotoManager;
 
@@ -12,6 +14,7 @@ pub(crate) struct SubprotoLoaderStage<'a, 'x> {
     anchor_state: &'a AnchorState,
     manager: &'a mut SubprotoManager,
     aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
+    genesis_registry: Option<&'a GenesisConfigRegistry>,
 }
 
 impl<'a, 'x> SubprotoLoaderStage<'a, 'x> {
@@ -19,26 +22,41 @@ impl<'a, 'x> SubprotoLoaderStage<'a, 'x> {
         anchor_state: &'a AnchorState,
         manager: &'a mut SubprotoManager,
         aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
+        genesis_registry: Option<&'a GenesisConfigRegistry>,
     ) -> Self {
         Self {
             anchor_state,
             manager,
             aux_bundle,
+            genesis_registry,
         }
     }
 }
 
 impl Stage for SubprotoLoaderStage<'_, '_> {
     fn process_subprotocol<S: Subprotocol>(&mut self) {
-        // Load or create the subprotocol state.
-        // OPTIMIZE: Linear scan is done every time to find the section
         let state = match self.anchor_state.find_section(S::ID) {
             Some(sec) => sec
                 .try_to_state::<S>()
                 .expect("asm: invalid section subproto state"),
-            None => S::init(),
+            // State not found in the anchor state, which occurs in two scenarios:
+            // 1. During genesis block processing, before any state initialization
+            // 2. When introducing a new subprotocol to an existing chain
+            // In either case, we must initialize a fresh state from the provided configuration in
+            // genesis_registry
+            None => {
+                // Try to get genesis config data from registry
+                let genesis_config_data = if let Some(registry) = self.genesis_registry {
+                    registry.get_raw(S::ID)
+                } else {
+                    None
+                };
+
+                S::init(genesis_config_data).expect("asm: failed to initialize subprotocol state")
+            }
         };
 
+        // Extract auxiliary inputs for this subprotocol from the bundle
         let aux_inputs = match self.aux_bundle.get(&S::ID) {
             Some(payloads) => payloads
                 .iter()

@@ -7,7 +7,15 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-borsh.workspace = true
 strata-asm-common.workspace = true
+strata-crypto.workspace = true
+strata-msg-fmt.workspace = true
 strata-primitives.workspace = true
+
+borsh.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 zkaleido.workspace = true
+
+[features]
+debug-utils = []

@@ -16,29 +16,26 @@ use crate::{
 
 /// Pre-processes a Bitcoin block for the Anchor State Machine (ASM) state transition.
 ///
-/// This function performs the initial phase of ASM block processing that must be completed
-/// before running the main ASM state transition function [`crate::asm_stf`].
+/// This function performs the initial phase of ASM processing, which includes:
 ///
-/// This function performs the initial phase of ASM block processing, which validates block header
-/// continuity against the current chain state, filters and groups transactions by subprotocol,
-/// and pre-processes transactions to collect the [`AuxRequest`](strata_asm_common::AuxRequest)
+/// 1. **Block Header Validation**: Verifies Bitcoin consensus rules and chain continuity
+/// 2. **Transaction Filtering**: Groups relevant transactions by their target subprotocols
+/// 3. **Subprotocol Loading**: Initializes subprotocol states from the anchor state
+/// 4. **Auxiliary Input Collection**: Gathers external data requirements from subprotocols
+///
+/// The output contains all the information needed for the main ASM state transition,
+/// including grouped transactions and auxiliary input requests that must be fulfilled
+/// before processing can continue.
 ///
 /// # Arguments
 ///
-/// * `pre_state` - The current anchor state containing chain view and subprotocol states
-/// * `block` - The Bitcoin block to pre-process
+/// * `pre_state` - The previous anchor state to transition from
+/// * `block` - The new L1 Bitcoin block to process
 ///
 /// # Returns
 ///
-/// Returns an `AsmResult` containing:
-/// - `AsmPreProcessOutput` with filtered transactions and auxiliary requests on success
-/// - `AsmError` if validation fails or pre-processing encounters an error
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - The block header fails PoW continuity validation
-/// - Subprotocol loading or pre-processing fails
+/// * `AsmPreProcessOutput` - Contains grouped transactions and auxiliary input requests
+/// * `AsmError` - If block validation fails or subprotocol loading encounters errors
 ///
 /// # Type Parameters
 ///
@@ -62,25 +59,23 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
-    // We use empty auxpayload in the loader stage as no auxiliary data is needed during loading.
+    // We use empty auxiliary bundle in the loader stage as no auxiliary data is needed during
+    // loading.
     let aux = BTreeMap::new();
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager, &aux);
+    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager, &aux, None);
     S::call_subprotocols(&mut loader_stage);
 
-    // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
+    // 4. PRE-PROCESS: Collect auxiliary input requirements from each subprotocol.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
     let mut pre_process_stage =
         PreProcessStage::new(&grouped_relevant_txs, &mut manager, pre_state);
     S::call_subprotocols(&mut pre_process_stage);
 
-    // 5. Flatten the grouped transactions back into a single collection.
-    // The grouping was needed for per-subprotocol processing, but the output needs a flat list.
-    let relevant_txs = grouped_relevant_txs
-        .into_iter()
-        .flat_map(|(_k, vec)| vec)
-        .collect();
+    // 5. Extract results and prepare output for main STF processing.
+    // Flatten the grouped transactions into a single list while preserving order.
+    let relevant_txs: Vec<_> = grouped_relevant_txs.into_values().flatten().collect();
 
-    // 6. Export auxiliary requests collected during pre-processing.
+    // Export auxiliary input requests that must be fulfilled before main processing.
     // These requests will be fulfilled before running the main ASM state transition.
     let aux_requests = manager.export_aux_requests();
     let output = AsmPreProcessOutput {

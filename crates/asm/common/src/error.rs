@@ -1,12 +1,11 @@
 use std::fmt::{Debug, Display};
 
+use strata_l1_txfmt::SubprotocolId;
 use strata_msg_fmt::TypeId;
 use strata_primitives::l1::L1VerificationError;
 use thiserror::Error;
 
-use crate::SubprotocolId;
-
-/// A generic “expected vs actual” error.
+/// A generic "expected vs actual" error.
 #[derive(Debug, Error)]
 #[error("expected {expected}, found {actual}")]
 pub struct Mismatched<T>
@@ -60,6 +59,18 @@ pub enum AsmError {
 
     #[error("msg format error {0:?}")]
     MsgFmtError(#[from] strata_msg_fmt::Error),
+
+    /// Genesis configuration related errors
+    #[error("genesis registry not available for subprotocol {0}")]
+    GenesisRegistryNotAvailable(SubprotocolId),
+
+    /// Missing genesis configuration for subprotocol
+    #[error("missing genesis configuration for subprotocol {0}")]
+    MissingGenesisConfig(SubprotocolId),
+
+    /// Failed to initialize subprotocol from genesis configuration
+    #[error("failed to initialize subprotocol {0} from genesis config: {1}")]
+    GenesisInitializationFailed(SubprotocolId, String),
 }
 
 /// Wrapper result type for database operations.

@@ -13168,8 +13168,12 @@ name = "strata-asm-proto-core"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "serde_json",
  "strata-asm-common",
+ "strata-crypto",
+ "strata-msg-fmt",
  "strata-primitives",
+ "thiserror 2.0.12",
  "zkaleido",
 ]
 
