@@ -22,10 +22,8 @@ pub struct GenesisConfigRegistry {
     configs: BTreeMap<SubprotocolId, Vec<u8>>,
 }
 
-/// [PLACE_HOLDER] =>
-/// TODO: Do we have a better alternative approach that simplifies and improves state
-/// initialization?
-/// the current approach add genesis management complexity to ASM upper layer
+// [PLACE_HOLDER] => TODO: Do we have a better alternative approach that simplifies and improves
+// state initialization? the current approach add genesis management complexity to ASM upper layer
 impl GenesisConfigRegistry {
     pub fn new() -> Self {
         Self {
