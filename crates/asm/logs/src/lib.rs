@@ -5,7 +5,6 @@
 
 pub mod asm_stf;
 pub mod checkpoint;
-pub mod constants;
 pub mod deposit;
 pub mod export;
 pub mod forced_inclusion;
