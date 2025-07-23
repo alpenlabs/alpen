@@ -137,9 +137,6 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: ls before
-        run: ls -la target/llvm-cov-target
-
       - name: Build Cargo project
         env:
           RUSTFLAGS: "-Cinstrument-coverage"
