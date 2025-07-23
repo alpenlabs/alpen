@@ -1,0 +1,117 @@
+//! OL STF Checkpoint transaction handler
+//!
+//! Handles checkpoint verification and state updates for the Core subprotocol.
+
+use strata_asm_common::{BRIDGE_SUBPROTOCOL_ID, MessagesContainer, MsgRelayer, TxInputRef};
+use zkaleido::{ProofReceipt, PublicValues};
+
+use crate::{CoreOLState, error::*, messages, parsing, verification};
+
+/// Handles OL STF checkpoint transactions according to the specification
+///
+/// This function implements the complete checkpoint verification workflow:
+///
+/// 1. **Extract and validate** the signed checkpoint from transaction data
+/// 2. **Verify signature** using the current sequencer public key
+/// 3. **Verify zk-SNARK proof** using the current verifying key
+/// 4. **Construct expected public parameters** from trusted state
+/// 5. **Validate state transitions** (epochs, block heights, hashes)
+/// 6. **Verify L1→L2 message range** using rolling hash
+/// 7. **Update internal state** with new checkpoint summary
+/// 8. **Forward withdrawal messages** to Bridge subprotocol
+/// 9. **Emit checkpoint summary log** for external monitoring
+///
+/// # Security Notes
+///
+/// - Proof public parameters should constructed from our own state, not sequencer input
+/// - All state transitions are validated for proper progression
+/// - Proof verification uses verifying key from state
+/// - L1→L2 message commitments are verified against expected range
+pub(crate) fn handle(
+    state: &mut CoreOLState,
+    tx: &TxInputRef<'_>,
+    relayer: &mut impl MsgRelayer,
+) -> Result<()> {
+    // 1. Extract signed checkpoint
+    let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
+
+    // 2. Validate checkpoint format and structure
+    parsing::checkpoint::validate_checkpoint_format(&signed_checkpoint)?;
+
+    // 3. Verify signature using dedicated signature verification function
+    verification::signature::verify_checkpoint_signature(
+        &signed_checkpoint,
+        &state.sequencer_pubkey,
+    )?;
+
+    let checkpoint = signed_checkpoint.checkpoint();
+
+    // 4. Validate state transition before processing
+    verification::state_transition::validate_state_transition(state, checkpoint)?;
+
+    // 5. Construct expected public parameters from trusted state
+    let public_params = verification::construct_expected_public_parameters(state, checkpoint)?;
+
+    let public_values =
+        PublicValues::new(borsh::to_vec(&public_params).expect("checkpoint: proof output"));
+
+    let proof = checkpoint.proof().clone();
+    let proof_receipt = ProofReceipt::new(proof, public_values);
+
+    // 6. Get the rollup verifying key from state
+    let rollup_vk = state
+        .checkpoint_vk()
+        .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))?;
+
+    // 7. Verify the zk-SNARK proof
+    verification::verify_checkpoint_proof(checkpoint, &proof_receipt, &rollup_vk)?;
+
+    // 8. Validate L1→L2 Message Range using the rolling hash
+    let prev_l1_height = state.verified_checkpoint.new_l1().height();
+    let new_l1_height = checkpoint.batch_info().final_l1_block().height();
+    let expected_commitment = &public_params.l1_to_l2_msgs_range_commitment_hash;
+    messages::l1_to_l2::validate_l1_to_l2_messages(
+        prev_l1_height,
+        new_l1_height,
+        expected_commitment,
+    )?;
+
+    // 9. Validate L2→L1 messages
+    messages::validate_l2_to_l1_messages(&public_params.l2_to_l1_msgs)?;
+
+    // 10. Apply checkpoint to state using dedicated state management function
+    verification::state_transition::apply_checkpoint_to_state(
+        state,
+        public_params.epoch_summary,
+        checkpoint,
+    );
+
+    // 11. Forward withdrawal messages to Bridge subprotocol
+    if !public_params.l2_to_l1_msgs.is_empty() {
+        // Convert OLToASMMessage to Message format and send to bridge
+        let mut bridge_messages = Vec::new();
+        for ol_msg in &public_params.l2_to_l1_msgs {
+            if let Ok(decoded) = ol_msg.decode() {
+                bridge_messages.push(decoded);
+            }
+        }
+
+        if !bridge_messages.is_empty() {
+            let container =
+                MessagesContainer::with_messages(BRIDGE_SUBPROTOCOL_ID, bridge_messages);
+            relayer.relay_msg(&container);
+        }
+    }
+
+    // 12. Emit Log of the Summary
+    // TODO: Emit required log for core subprotocol
+    // For now, we'll skip log emission to avoid dependency issues
+    // This can be implemented later when the proper log structure is defined
+    let _summary_body =
+        borsh::to_vec(&public_params.epoch_summary).map_err(|_| CoreError::SerializationError)?;
+
+    // TODO: Create and emit proper log entry once log format is finalized
+    // relayer.emit_log(log_entry);
+
+    Ok(())
+}

@@ -1,3 +1,7 @@
+//! ZK-SNARK proof verification for checkpoint data
+//!
+//! Handles verification of zero-knowledge proofs submitted with checkpoint transactions.
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::L2ToL1Msg;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
@@ -10,7 +14,7 @@ use strata_primitives::{
 };
 use zkaleido::ProofReceipt;
 
-use crate::{CoreOLState, error::*, utils};
+use crate::{CoreOLState, error::*, messages};
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub(crate) struct CheckpointProofPublicParameters {
@@ -27,6 +31,11 @@ pub(crate) struct CheckpointProofPublicParameters {
     pub l1_to_l2_msgs_range_commitment_hash: Buf32,
 }
 
+/// Constructs expected public parameters from trusted state and checkpoint data
+///
+/// This function builds the expected public parameters that should match the
+/// ones committed to in the zk-SNARK proof. Parameters are constructed from
+/// our own trusted state rather than sequencer input for security.
 pub(crate) fn construct_expected_public_parameters(
     state: &CoreOLState,
     checkpoint: &Checkpoint,
@@ -87,9 +96,9 @@ pub(crate) fn construct_expected_public_parameters(
     );
 
     // Extract L2→L1 messages from checkpoint's data
-    let l2_to_l1_msgs = extract_l2_to_l1_messages(checkpoint)?;
+    let l2_to_l1_msgs = messages::extract_l2_to_l1_messages(checkpoint)?;
 
-    let l1_to_l2_msgs_range_commitment_hash = utils::compute_rolling_hash(
+    let l1_to_l2_msgs_range_commitment_hash = messages::l1_to_l2::compute_rolling_hash(
         vec![], // TODO: fetch actual L1 commitments for this range
         prev_l1_height,
         new_l1_hight,
@@ -104,24 +113,11 @@ pub(crate) fn construct_expected_public_parameters(
     })
 }
 
-// TODO: Parse the actual batch transition structure to extract withdrawal messages
-// This is a placeholder implementation that would need to be replaced with
-// proper parsing logic based on the actual BatchTransition structure
-fn extract_l2_to_l1_messages(_checkpoint: &Checkpoint) -> Result<Vec<L2ToL1Msg>> {
-    // For now, return empty vector as we don't have access to the actual
-    // withdrawal data structure in the batch transition
-
-    // In a real implementation, this would:
-    // 1. Parse the batch transition to find withdrawal operations
-    // 2. Extract destination addresses, amounts, and data
-    // 3. Validate withdrawal message format
-    // 4. Return properly formatted L2ToL1Msg instances
-
-    Ok(Vec::new())
-}
-
-/// Verify that the provided checkpoint proof is valid for the verifier key.
-pub(crate) fn verify_proof(
+/// Verifies that the provided checkpoint proof is valid for the verifier key
+///
+/// This function performs zk-SNARK proof verification using the rollup verifying key.
+/// It includes logic for handling empty proofs during development/testing phases.
+pub(crate) fn verify_checkpoint_proof(
     checkpoint: &Checkpoint,
     proof_receipt: &ProofReceipt,
     rollup_vk: &RollupVerifyingKey,

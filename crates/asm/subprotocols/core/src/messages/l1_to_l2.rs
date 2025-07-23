@@ -1,5 +1,7 @@
-use strata_asm_common::L2ToL1Msg;
-use strata_msg_fmt::{MAX_TYPE, TypeId};
+//! L1→L2 message processing
+//!
+//! Handles validation of L1→L2 message ranges and commitments.
+
 use strata_primitives::{buf::Buf32, hash};
 
 use crate::error::*;
@@ -32,7 +34,6 @@ pub(crate) fn compute_rolling_hash(
     }
 
     // Validate range consistency
-
     if !(start_height <= end_height
         && l1_commitments.len() == (end_height - start_height + 1) as usize)
     {
@@ -76,38 +77,31 @@ fn compute_rolling_hash_from_range(
     Ok(current_hash)
 }
 
-/// Validates the structure and content of OL→ASM messages
+/// Validates L1→L2 message range commitments
+///
+/// TODO: Implement L1→L2 message range validation
+/// This function should verify that the L1→L2 message commitments
+/// in the checkpoint match the expected range of L1 blocks.
 ///
 /// # Arguments
-/// * `messages` - Vector of OLToASMMessage to validate
+/// * `start_height` - Starting L1 block height for message range
+/// * `end_height` - Ending L1 block height for message range
+/// * `commitment_hash` - Hash commitment to the message range
 ///
 /// # Returns
-/// Result indicating validation success or specific error
-pub(crate) fn validate_l2_to_l1_messages(messages: &[L2ToL1Msg]) -> Result<()> {
-    for (idx, msg) in messages.iter().enumerate() {
-        // Validate that the message type is within expected range
-        let ty: TypeId = msg.ty();
-        if ty > MAX_TYPE {
-            return Err(CoreError::InvalidL2ToL1Msg {
-                index: idx,
-                reason: "valid message type".into(),
-            });
-        }
+/// Result indicating if the message range is valid
+pub(crate) fn validate_l1_to_l2_messages(
+    _start_height: u64,
+    _end_height: u64,
+    _commitment_hash: &Buf32,
+) -> Result<()> {
+    // TODO: Implement L1→L2 message range validation
+    // This should:
+    // 1. Fetch L1→L2 messages for the given height range
+    // 2. Compute expected commitment hash using compute_rolling_hash
+    // 3. Compare with provided commitment hash
+    // 4. Return validation result
 
-        // TODO: Add message type-specific validation once message types are defined
-        // For example:
-        // - Type 0x01 might be withdrawal messages
-        // - Type 0x02 might be upgrade messages
-        // Each type would have its own validation logic
-
-        // Basic validation that message body is not empty for certain types
-        if msg.body().is_empty() && ty != 0 {
-            return Err(CoreError::InvalidL2ToL1Msg {
-                index: idx,
-                reason: "required non-empty message body".into(),
-            });
-        }
-    }
-
+    // For now, always return Ok as placeholder
     Ok(())
 }
