@@ -5,8 +5,13 @@ use strata_asm_common::{
     TxInputRef,
 };
 
-mod constants;
-use constants::BRIDGE_SUBPROTOCOL_ID;
+mod state;
+
+/// The unique identifier for the BridgeV1 subprotocol within the Anchor State Machine.
+///
+/// This constant is used to tag `SectionState` entries belonging to the CoreASM logic
+/// and must match the `subprotocol_id` checked in `SectionState::subprotocol()`.
+pub const BRIDGE_V1_SUBPROTOCOL_ID: SubprotocolId = 2;
 
 /// BridgeV1 state.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -25,11 +30,11 @@ pub struct BridgeV1GenesisConfig {
 pub struct BridgeV1Subproto;
 
 impl Subprotocol for BridgeV1Subproto {
-    const ID: SubprotocolId = BRIDGE_SUBPROTOCOL_ID;
+    const ID: SubprotocolId = BRIDGE_V1_SUBPROTOCOL_ID;
 
     type State = BridgeV1State;
 
-    type Msg = NullMsg<BRIDGE_SUBPROTOCOL_ID>;
+    type Msg = NullMsg<BRIDGE_V1_SUBPROTOCOL_ID>;
 
     type AuxInput = ();
 

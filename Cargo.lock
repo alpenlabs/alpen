@@ -13161,8 +13161,9 @@ name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "serde",
  "strata-asm-common",
- "strata-l1-txfmt",
+ "strata-primitives",
 ]
 
 [[package]]

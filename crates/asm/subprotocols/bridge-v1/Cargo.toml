@@ -8,5 +8,6 @@ workspace = true
 
 [dependencies]
 borsh.workspace = true
+serde.workspace = true
 strata-asm-common.workspace = true
-strata-l1-txfmt.workspace = true
+strata-primitives.workspace = true
