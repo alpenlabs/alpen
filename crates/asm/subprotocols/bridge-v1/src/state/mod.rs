@@ -3,13 +3,17 @@
 //! This just implements a very simple n-of-n multisig bridge.  It will be
 //! extended to a more sophisticated design when we have that specced out.
 
+use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
-    errors::WithdrawalValidationError,
+    errors::{DepositError, WithdrawalValidationError},
     state::{assignment::AssignmentTable, deposit::DepositsTable, operator::OperatorTable},
-    txs::{deposit::DepositInfo, withdrawal::WithdrawalInfo},
+    txs::{
+        deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
+        withdrawal::WithdrawalInfo,
+    },
 };
 
 pub mod assignment;
@@ -43,9 +47,32 @@ pub struct BridgeV1State {
 
     /// Table of operator assignments for withdrawal processing.
     assignments: AssignmentTable,
+
+    amount: BitcoinAmount,
 }
 
 impl BridgeV1State {
+    /// Creates a new bridge state with the specified amount and operator table.
+    ///
+    /// Initializes all component tables as empty and sets the expected deposit amount
+    /// that will be used for deposit validation.
+    ///
+    /// # Parameters
+    ///
+    /// - `operators` - Table of registered bridge operators
+    /// - `amount` - Expected deposit amount for validation
+    ///
+    /// # Returns
+    ///
+    /// A new [`BridgeV1State`] instance.
+    pub fn new(operators: OperatorTable, amount: BitcoinAmount) -> Self {
+        Self {
+            operators,
+            deposits: DepositsTable::new_empty(),
+            assignments: AssignmentTable::new_empty(),
+            amount,
+        }
+    }
 
     /// Returns a reference to the operator table.
     ///
@@ -101,10 +128,11 @@ impl BridgeV1State {
         &mut self.assignments
     }
 
-    /// Processes a parsed deposit by adding it to the deposits table.
+    /// Processes a parsed deposit by validating and adding it to the deposits table.
     ///
-    /// This function takes already parsed deposit information and creates a new deposit entry
-    /// in the deposits table. Only operators that are part of the current N/N multisig set
+    /// This function takes already parsed deposit information, validates it against the
+    /// current bridge state, and creates a new deposit entry in the deposits table if
+    /// validation passes. Only operators that are part of the current N/N multisig set
     /// are included as notary operators for the deposit.
     ///
     /// # Parameters
@@ -113,11 +141,82 @@ impl BridgeV1State {
     ///
     /// # Returns
     ///
-    /// The deposit index assigned to the newly created deposit entry.
-    pub fn process_deposit(&mut self, deposit_info: &DepositInfo) -> u32 {
+    /// - `Ok(u32)` - The deposit index assigned to the newly created deposit entry
+    /// - `Err(DepositParseError)` - If validation fails for any reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The deposit amount is zero or negative
+    /// - The internal key doesn't match the current aggregated operator key
+    /// - The deposit index already exists in the deposits table
+    pub fn process_deposit(
+        &mut self,
+        tx: &Transaction,
+        info: &DepositInfo,
+    ) -> Result<u32, DepositError> {
+        // Validate the deposit first
+        self.validate_deposit(tx, info)?;
+
         let notary_operators = self.operators().current_multisig_indices().collect();
-        self.deposits
-            .create_next_deposit(deposit_info.outpoint, notary_operators, deposit_info.amt)
+        let deposit_idx =
+            self.deposits
+                .create_next_deposit(info.outpoint, notary_operators, info.amt);
+
+        Ok(deposit_idx)
+    }
+
+    /// Validates a deposit transaction and info against bridge state requirements.
+    ///
+    /// This function performs comprehensive validation of a deposit by verifying:
+    /// - The deposit amount matches the bridge's expected amount
+    /// - The Deposit Request Transaction (DRT) spending signature is valid
+    /// - The deposit output is properly locked to the aggregated operator key
+    /// - The deposit index is unique within the deposits table
+    ///
+    /// # Parameters
+    ///
+    /// - `tx` - The Bitcoin transaction containing the deposit
+    /// - `info` - The parsed deposit information to validate
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` - If the deposit passes all validation checks
+    /// - `Err(DepositError)` - If validation fails for any reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The deposit amount doesn't match the bridge's expected amount
+    /// - The DRT spending signature is invalid or doesn't match the aggregated operator key
+    /// - The deposit output lock is incorrect
+    /// - A deposit with the same index already exists
+    fn validate_deposit(&self, tx: &Transaction, info: &DepositInfo) -> Result<(), DepositError> {
+        // Verify the deposit amount matches the bridge's expected amount
+        if info.amt.to_sat() != self.amount.to_sat() {
+            return Err(DepositError::InvalidDepositAmount {
+                expected: self.amount.to_sat(),
+                actual: info.amt.to_sat(),
+            });
+        }
+
+        // Validate the DRT spending signature against the aggregated operator key
+        validate_drt_spending_signature(
+            tx,
+            info.drt_tapnode_hash,
+            self.operators().agg_key(),
+            info.amt.into(),
+        )?;
+
+        // Ensure the deposit output is properly locked to the aggregated operator key
+        validate_deposit_output_lock(tx, self.operators().agg_key())?;
+
+        // Verify this deposit index hasn't been used before
+        if self.deposits().get_deposit(info.deposit_idx).is_some() {
+            return Err(DepositError::DepositIdxAlreadyExists(info.deposit_idx));
+        }
+
+        Ok(())
     }
 
     /// Processes a parsed withdrawal by validating it against assignment information.
@@ -200,4 +299,3 @@ impl BridgeV1State {
         Ok(())
     }
 }
-

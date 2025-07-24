@@ -3,42 +3,37 @@ use strata_primitives::{bridge::OperatorIdx, l1::BitcoinAmount};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum DepositParseError {
-    /// The tag data does not match the expected format.
-    #[error("Invalid deposit tag data format")]
-    InvalidData,
+pub enum DepositError {
+    /// The auxiliary data in the deposit transaction tag is malformed or has insufficient length.
+    /// Expected at least 37 bytes (4 bytes deposit index + 32 bytes tapscript root + 1+ bytes
+    /// destination address).
+    #[error(
+        "Invalid deposit auxiliary data: expected at least 37 bytes (deposit index + tapscript root + destination), got {0} bytes"
+    )]
+    InvalidAuxiliaryData(usize),
 
-    /// The magic bytes in the tag do not match the expected value.
-    #[error("Invalid magic bytes in deposit tag")]
-    InvalidMagic,
+    /// The transaction type byte in the tag does not match the expected deposit transaction type.
+    #[error("Invalid transaction type: expected deposit transaction type {expected}, got {actual}")]
+    InvalidTxType { expected: u8, actual: u8 },
 
-    /// The deposit index is out of bounds.
-    #[error("Deposit index is out of bounds")]
-    OutOfBoundsDepositIndex,
-
-    /// The amount of satoshis is invalid (e.g., negative or zero).
-    #[error("Invalid amount of satoshis in deposit tag")]
-    InvalidSatsAmount,
-
-    /// Invalid destination address length
-    #[error("Invalid destination length {0}")]
-    InvalidDestLen(u8),
-
-    /// Transaction missing required output at expected index
-    #[error("Missing output at index {0}")]
+    /// Transaction is missing the required deposit output at the expected index.
+    #[error(
+        "Missing deposit output at index {0}: deposit transactions must have exactly 2 outputs (OP_RETURN tag + P2TR deposit)"
+    )]
     MissingOutput(u32),
 
-    /// Deposit amount doesn't match expected amount
-    #[error("Invalid deposit amount: expected {expected}, got {actual}")]
+    /// Signature validation failed during deposit verification.
+    /// This indicates the transaction was not signed by the expected operator set.
+    #[error("Deposit signature validation failed: {reason}")]
+    InvalidSignature { reason: String },
+
+    /// The deposit amount does not match the expected amount for this bridge configuration.
+    #[error("Invalid deposit amount: expected {expected} satoshis, got {actual} satoshis")]
     InvalidDepositAmount { expected: u64, actual: u64 },
 
-    /// Deposit address doesn't match expected address
-    #[error("Invalid deposit address")]
-    InvalidDepositAddress,
-
-    /// Signature validation failed
-    #[error("Invalid deposit signature")]
-    InvalidSignature,
+    /// A deposit with this index already exists in the deposits table.
+    #[error("Deposit index {0} already exists in deposits table")]
+    DepositIdxAlreadyExists(u32),
 }
 
 #[derive(Debug, Error)]

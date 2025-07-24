@@ -135,7 +135,7 @@ pub struct OperatorTable {
     ///
     /// The key is automatically computed when the operator table is created or
     /// updated, ensuring it always reflects the current active multisig participants.
-    agg_operator_key: XOnlyPk,
+    agg_key: XOnlyPk,
 }
 
 impl OperatorTable {
@@ -187,7 +187,7 @@ impl OperatorTable {
                     is_in_current_multisig: true,
                 })
                 .collect(),
-            agg_operator_key,
+            agg_key: agg_operator_key,
         }
     }
 
@@ -243,6 +243,10 @@ impl OperatorTable {
     /// Slice reference to all [`OperatorEntry`] instances in the table.
     pub fn operators(&self) -> &[OperatorEntry] {
         &self.operators
+    }
+
+    pub fn agg_key(&self) -> &XOnlyPk {
+        &self.agg_key
     }
 
     /// Retrieves an operator entry by its unique index.
@@ -367,15 +371,11 @@ impl OperatorTable {
                 panic!("Cannot have empty multisig - at least one operator must be active");
             }
 
-            self.agg_operator_key = generate_agg_pubkey(active_keys.into_iter())
+            self.agg_key = generate_agg_pubkey(active_keys.into_iter())
                 .expect("Failed to generate aggregated key")
                 .into();
         }
     }
-
-
-
-
 }
 
 impl OperatorKeyProvider for OperatorTable {
@@ -474,7 +474,8 @@ mod tests {
         let new_operators = create_test_operator_pubkeys(2);
         let start_idx = table.next_idx;
         table.update_multisig_and_recalc_key(&[], &new_operators);
-        let assigned_indices: Vec<OperatorIdx> = (start_idx..start_idx + new_operators.len() as OperatorIdx).collect();
+        let assigned_indices: Vec<OperatorIdx> =
+            (start_idx..start_idx + new_operators.len() as OperatorIdx).collect();
 
         assert_eq!(table.len(), 3); // 1 initial + 2 new
         assert_eq!(table.next_idx, 3);

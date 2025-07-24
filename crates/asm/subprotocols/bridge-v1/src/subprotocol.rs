@@ -16,9 +16,12 @@ use crate::{
 };
 
 /// Genesis configuration for the BridgeV1 subprotocol.
-#[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct BridgeV1GenesisConfig {
-    // TODO: Add bridge-specific genesis parameters when implementing
+    /// Initial operator table for the bridge
+    pub operators: crate::state::OperatorTable,
+    /// Expected deposit amount for validation
+    pub amount: strata_primitives::l1::BitcoinAmount,
 }
 
 /// Bridge V1 subprotocol implementation.
@@ -40,9 +43,8 @@ impl Subprotocol for BridgeV1Subproto {
 
     type GenesisConfig = BridgeV1GenesisConfig;
 
-    fn init(_genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
-        // For now, always return default state regardless of genesis config
-        Ok(BridgeV1State::default())
+    fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
+        Ok(BridgeV1State::new(genesis_config.operators, genesis_config.amount))
     }
 
     fn pre_process_txs(
@@ -77,10 +79,7 @@ impl Subprotocol for BridgeV1Subproto {
 
 impl BridgeV1Subproto {
     /// Processes a deposit transaction with error logging.
-    fn process_deposit_tx(
-        state: &mut BridgeV1State,
-        tx: &strata_asm_common::TxInputRef<'_>,
-    ) {
+    fn process_deposit_tx(state: &mut BridgeV1State, tx: &strata_asm_common::TxInputRef<'_>) {
         let deposit_info = match extract_deposit_info(tx) {
             Ok(info) => info,
             Err(e) => {
@@ -93,7 +92,18 @@ impl BridgeV1Subproto {
             }
         };
 
-        let deposit_idx = state.process_deposit(&deposit_info);
+        let deposit_idx = match state.process_deposit(tx.tx(), &deposit_info) {
+            Ok(idx) => idx,
+            Err(e) => {
+                tracing::error!(
+                    tx_id = %tx.tx().compute_txid(),
+                    error = %e,
+                    "Failed to process deposit"
+                );
+                return;
+            }
+        };
+
         tracing::info!(
             tx_id = %tx.tx().compute_txid(),
             deposit_idx = deposit_idx,
@@ -103,10 +113,7 @@ impl BridgeV1Subproto {
     }
 
     /// Processes a withdrawal transaction with error logging.
-    fn process_withdrawal_tx(
-        state: &mut BridgeV1State,
-        tx: &strata_asm_common::TxInputRef<'_>,
-    ) {
+    fn process_withdrawal_tx(state: &mut BridgeV1State, tx: &strata_asm_common::TxInputRef<'_>) {
         let withdrawal_info = match extract_withdrawal_info(tx) {
             Ok(info) => info,
             Err(e) => {
