@@ -10,7 +10,12 @@ test_utils = []
 workspace = true
 
 [dependencies]
+bitcoin.workspace = true
 borsh.workspace = true
+secp256k1.workspace = true
 serde.workspace = true
+thiserror.workspace = true
+
 strata-asm-common.workspace = true
+strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
