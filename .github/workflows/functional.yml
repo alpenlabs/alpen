@@ -150,7 +150,7 @@ jobs:
           NO_COLOR: "1"
           LOG_LEVEL: "info"
         run: |
-          NEWPATH="$(realpath target/llvm-cov-target/debug)"
+          NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
           export PATH="$NEWPATH:$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
@@ -166,7 +166,7 @@ jobs:
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
         run: |
-          NEWPATH="$(realpath target/llvm-cov-target/debug)"
+          NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
           export PATH="$NEWPATH:$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
