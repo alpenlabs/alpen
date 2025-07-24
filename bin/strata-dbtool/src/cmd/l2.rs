@@ -50,6 +50,18 @@ pub(crate) fn get_earliest_l2_block_id(
     Ok(blocks_at_slot_0[0])
 }
 
+/// Get the slot for a specific L2 block.
+pub(crate) fn get_l2_block_slot(
+    db: &impl Database,
+    block_id: L2BlockId,
+) -> Result<Option<u64>, DisplayedError> {
+    let Some(block_data) = get_l2_block_data(db, block_id)? else {
+        return Ok(None);
+    };
+
+    Ok(Some(block_data.block().header().slot()))
+}
+
 /// Get L2 block data by block ID.
 pub(crate) fn get_l2_block_data(
     db: &impl Database,
