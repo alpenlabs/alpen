@@ -9,13 +9,11 @@ use strata_asm_common::{
     TxInputRef,
 };
 
-use crate::state::BridgeV1State;
-
-/// The unique identifier for the Bridge V1 subprotocol within the Anchor State Machine.
-///
-/// This constant is used to tag `SectionState` entries belonging to the Bridge V1 logic
-/// and must match the `subprotocol_id` checked in `SectionState::subprotocol()`.
-pub const BRIDGE_V1_SUBPROTOCOL_ID: SubprotocolId = 2;
+use crate::{
+    constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    state::BridgeV1State,
+    txs::{deposit::extract_deposit_info, withdrawal::extract_withdrawal_info},
+};
 
 /// Genesis configuration for the BridgeV1 subprotocol.
 #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
@@ -57,16 +55,87 @@ impl Subprotocol for BridgeV1Subproto {
     }
 
     fn process_txs(
-        _state: &mut Self::State,
-        _txs: &[TxInputRef<'_>],
+        state: &mut Self::State,
+        txs: &[TxInputRef<'_>],
         _anchor_pre: &AnchorState,
         _aux_inputs: &[Self::AuxInput],
         _relayer: &mut impl MsgRelayer,
     ) {
-        // TODO: Implement bridge transaction processing
+        for tx in txs {
+            match tx.tag().tx_type() {
+                DEPOSIT_TX_TYPE => Self::process_deposit_tx(state, tx),
+                WITHDRAWAL_TX_TYPE => Self::process_withdrawal_tx(state, tx),
+                _ => continue, // Ignore unsupported transaction types
+            }
+        }
     }
 
     fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
         // TODO: Implement bridge message processing
+    }
+}
+
+impl BridgeV1Subproto {
+    /// Processes a deposit transaction with error logging.
+    fn process_deposit_tx(
+        state: &mut BridgeV1State,
+        tx: &strata_asm_common::TxInputRef<'_>,
+    ) {
+        let deposit_info = match extract_deposit_info(tx) {
+            Ok(info) => info,
+            Err(e) => {
+                tracing::warn!(
+                    tx_id = %tx.tx().compute_txid(),
+                    error = %e,
+                    "Failed to extract deposit information from transaction"
+                );
+                return;
+            }
+        };
+
+        let deposit_idx = state.process_deposit(&deposit_info);
+        tracing::info!(
+            tx_id = %tx.tx().compute_txid(),
+            deposit_idx = deposit_idx,
+            amount = %deposit_info.amt,
+            "Successfully processed deposit"
+        );
+    }
+
+    /// Processes a withdrawal transaction with error logging.
+    fn process_withdrawal_tx(
+        state: &mut BridgeV1State,
+        tx: &strata_asm_common::TxInputRef<'_>,
+    ) {
+        let withdrawal_info = match extract_withdrawal_info(tx) {
+            Ok(info) => info,
+            Err(e) => {
+                tracing::warn!(
+                    tx_id = %tx.tx().compute_txid(),
+                    error = %e,
+                    "Failed to extract withdrawal information from transaction"
+                );
+                return;
+            }
+        };
+
+        if let Err(e) = state.process_withdrawal(&withdrawal_info) {
+            tracing::warn!(
+                tx_id = %tx.tx().compute_txid(),
+                deposit_idx = withdrawal_info.deposit_idx(),
+                operator_idx = withdrawal_info.operator_idx(),
+                error = %e,
+                "Withdrawal validation failed"
+            );
+            return;
+        }
+
+        tracing::info!(
+            tx_id = %tx.tx().compute_txid(),
+            deposit_idx = withdrawal_info.deposit_idx(),
+            operator_idx = withdrawal_info.operator_idx(),
+            amount = %withdrawal_info.withdrawal_amount(),
+            "Successfully validated withdrawal"
+        );
     }
 }

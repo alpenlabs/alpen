@@ -5,7 +5,7 @@ use strata_primitives::{bridge::OperatorIdx, l1::BitcoinAmount};
 use crate::errors::WithdrawalParseError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WithdrawalInfo {
+pub struct WithdrawalInfo {
     pub(crate) operator_idx: OperatorIdx,
     pub(crate) deposit_idx: u32,
     pub(crate) deposit_txid: Txid,
@@ -14,7 +14,7 @@ pub(crate) struct WithdrawalInfo {
 }
 
 // TODO: make this standard
-pub(crate) fn extract_withdrawal_info<'t>(
+pub fn extract_withdrawal_info<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalInfo, WithdrawalParseError> {
     if tx.tx().output.len() < 2 {
@@ -72,4 +72,31 @@ pub(crate) fn extract_withdrawal_info<'t>(
         withdrawal_address,
         withdrawal_amount,
     })
+}
+
+impl WithdrawalInfo {
+    /// Returns the operator index performing the withdrawal.
+    pub fn operator_idx(&self) -> OperatorIdx {
+        self.operator_idx
+    }
+
+    /// Returns the deposit index being withdrawn from.
+    pub fn deposit_idx(&self) -> u32 {
+        self.deposit_idx
+    }
+
+    /// Returns the transaction ID of the original deposit.
+    pub fn deposit_txid(&self) -> Txid {
+        self.deposit_txid
+    }
+
+    /// Returns the withdrawal destination address.
+    pub fn withdrawal_address(&self) -> &ScriptBuf {
+        &self.withdrawal_address
+    }
+
+    /// Returns the withdrawal amount.
+    pub fn withdrawal_amount(&self) -> BitcoinAmount {
+        self.withdrawal_amount
+    }
 }

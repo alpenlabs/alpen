@@ -19,6 +19,7 @@
 //! The main entry point is [`BridgeV1Subproto`] which implements the [`Subprotocol`]
 //! trait for integration with the Anchor State Machine.
 
+pub mod constants;
 pub mod errors;
 pub mod state;
 pub mod subprotocol;

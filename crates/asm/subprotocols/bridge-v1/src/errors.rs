@@ -1,3 +1,5 @@
+use bitcoin::Txid;
+use strata_primitives::{bridge::OperatorIdx, l1::BitcoinAmount};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -68,4 +70,33 @@ pub enum WithdrawalParseError {
     /// Invalid deposit txid bytes
     #[error("Deposit txid bytes conversion error: expected 32 bytes, got {0}")]
     InvalidDepositTxidBytes(usize),
+}
+
+#[derive(Debug, Error)]
+pub enum WithdrawalValidationError {
+    /// No assignment found for the deposit
+    #[error("No assignment found for deposit index {deposit_idx}")]
+    NoAssignmentFound { deposit_idx: u32 },
+
+    /// Deposit not found in deposits table
+    #[error("Deposit not found for deposit index {deposit_idx}")]
+    DepositNotFound { deposit_idx: u32 },
+
+    /// Operator performing withdrawal doesn't match assigned operator
+    #[error("Operator mismatch: expected {expected}, got {actual}")]
+    OperatorMismatch {
+        expected: OperatorIdx,
+        actual: OperatorIdx,
+    },
+
+    /// Deposit txid in withdrawal doesn't match the actual deposit
+    #[error("Deposit txid mismatch: expected {expected}, got {actual}")]
+    DepositTxidMismatch { expected: Txid, actual: Txid },
+
+    /// Withdrawal amount doesn't match assignment amount
+    #[error("Withdrawal amount mismatch: expected {expected}, got {actual}")]
+    AmountMismatch {
+        expected: BitcoinAmount,
+        actual: BitcoinAmount,
+    },
 }

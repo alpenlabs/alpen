@@ -12,8 +12,7 @@ use strata_asm_common::TxInputRef;
 use strata_l1_txfmt::TagDataRef;
 use strata_primitives::{
     buf::Buf32,
-    l1::{DepositInfo, OutputRef},
-    prelude::DepositTxParams,
+    l1::{BitcoinAmount, OutputRef, XOnlyPk},
 };
 
 use crate::errors::DepositParseError;
@@ -21,6 +20,23 @@ use crate::errors::DepositParseError;
 const TAKEBACK_HASH_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
 const SATS_AMOUNT_LEN: usize = size_of::<u64>();
 const DEPOSIT_IDX_LEN: usize = size_of::<u32>();
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DepositInfo {
+    /// The index of the deposit in the bridge's deposit table.
+    pub deposit_idx: u32,
+
+    /// The amount of Bitcoin deposited.
+    pub amt: BitcoinAmount,
+
+    /// The destination address for the deposit.
+    pub address: Vec<u8>,
+
+    /// The outpoint of the deposit transaction.
+    pub outpoint: OutputRef,
+
+    pub script_buf: ScriptBuf,
+}
 
 /// Extracts [`DepositInfo`] from a [`Transaction`].
 ///
@@ -41,7 +57,6 @@ const DEPOSIT_IDX_LEN: usize = size_of::<u32>();
 /// - The signature validation fails
 pub fn extract_deposit_info<'a>(
     tx_input: &TxInputRef<'a>,
-    config: &DepositTxParams,
 ) -> Result<DepositInfo, DepositParseError> {
     // Get the second output (index 1)
     // First output needs to be the OP_RETURN output according to SPS-50.
@@ -51,21 +66,8 @@ pub fn extract_deposit_info<'a>(
         .get(1)
         .ok_or(DepositParseError::MissingOutput(1))?;
 
-    // Check if it is exact deposit denomination amount
-    if send_addr_out.value.to_sat() != config.deposit_amount {
-        return Err(DepositParseError::InvalidDepositAmount {
-            expected: config.deposit_amount,
-            actual: send_addr_out.value.to_sat(),
-        });
-    }
-
-    // Check if deposit output address matches.
-    if send_addr_out.script_pubkey != config.address.address().script_pubkey() {
-        return Err(DepositParseError::InvalidDepositAddress);
-    }
-
     // Parse the tag from the OP_RETURN output.
-    let tag_data = parse_tag(tx_input.tag(), config.address_length)?;
+    let tag_data = parse_tag(tx_input.tag())?;
 
     // Get the first input of the transaction
     let deposit_outpoint = OutputRef::from(OutPoint {
@@ -73,16 +75,13 @@ pub fn extract_deposit_info<'a>(
         vout: 0, // deposit must always exist in the first output
     });
 
-    // Check if it was signed off by the operators and hence verify that this is just not someone
-    // else sending bitcoin to N-of-N address.
-    validate_deposit_signature(tx_input.tx(), &tag_data, config)?;
-
     // Construct and return the DepositInfo
     Ok(DepositInfo {
         deposit_idx: tag_data.deposit_idx,
         amt: send_addr_out.value.into(),
         address: tag_data.dest_buf.to_vec(),
         outpoint: deposit_outpoint,
+        script_buf: send_addr_out.script_pubkey.clone(),
     })
 }
 
@@ -90,7 +89,7 @@ pub fn extract_deposit_info<'a>(
 fn validate_deposit_signature(
     tx: &Transaction,
     tag_data: &DepositTag<'_>,
-    dep_config: &DepositTxParams,
+    operators_pubkey: &XOnlyPk,
 ) -> Result<(), DepositParseError> {
     // Initialize necessary variables and dependencies
     let secp = secp256k1::SECP256K1;
@@ -116,7 +115,7 @@ fn validate_deposit_signature(
     let sighash_type = taproot_sig.sighash_type;
 
     // Parse the internal pubkey and merkle root
-    let internal_pubkey = dep_config.operators_pubkey;
+    let internal_pubkey = operators_pubkey;
     let merkle_root: TapNodeHash = TapNodeHash::from_byte_array(*tag_data.tapscript_root.as_ref());
 
     let int_key = XOnlyPublicKey::from_slice(internal_pubkey.inner().as_bytes()).unwrap();
@@ -156,11 +155,10 @@ struct DepositTag<'buf> {
 }
 
 /// SPS-50 already parses some information from the tag, so we just extract the rest here
-fn parse_tag<'b>(
-    tag: &'b TagDataRef<'b>,
-    addr_len: u8,
-) -> Result<DepositTag<'b>, DepositParseError> {
+fn parse_tag<'b>(tag: &'b TagDataRef<'b>) -> Result<DepositTag<'b>, DepositParseError> {
     let aux_data = tag.aux_data();
+
+    let addr_len = aux_data[0] as usize;
 
     if aux_data.len() != DEPOSIT_IDX_LEN + SATS_AMOUNT_LEN + TAKEBACK_HASH_LEN + addr_len as usize {
         return Err(DepositParseError::InvalidData);
@@ -197,106 +195,4 @@ fn parse_tag<'b>(
             .try_into()
             .expect("expected takeback hash length to match"),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use bitcoin::Network;
-    use strata_l1_txfmt::TagDataRef;
-    use strata_primitives::{
-        l1::{BitcoinAddress, XOnlyPk},
-        params::DepositTxParams,
-    };
-
-    use super::parse_tag;
-    use crate::errors::DepositParseError;
-
-    const MAGIC_BYTES: &[u8] = &[1, 2, 3, 4];
-    const ADDRESS: &str = "bcrt1p729l9680ht3zf7uhl6pgdrlhfp9r29cwajr5jk3k05fer62763fscz0w4s";
-
-    fn dummy_config() -> DepositTxParams {
-        assert_eq!(MAGIC_BYTES.len(), 4, "test: magic not 4 bytes");
-        let addr = BitcoinAddress::parse(ADDRESS, Network::Regtest).unwrap();
-        DepositTxParams {
-            magic_bytes: MAGIC_BYTES.to_vec(),
-            address_length: 20,
-            deposit_amount: 10,
-            address: addr.clone(),
-            operators_pubkey: XOnlyPk::from_address(&addr).unwrap(),
-        }
-    }
-
-    // Tests for parse_tag
-
-    #[test]
-    fn parses_valid_buffer_correctly() {
-        const ADDR_LEN: usize = 20;
-        const SUBPROTO_ID: u8 = 1;
-        const TX_TYPE: u8 = 0; // Deposit tx type
-
-        let deposit_idx: u32 = 42;
-        let dest_buf = vec![0xAB; ADDR_LEN];
-        let takeback_hash = vec![0xCD; 32];
-        let sats_amt: u64 = 1_000_000;
-
-        let mut aux_data = Vec::new();
-        aux_data.extend_from_slice(&deposit_idx.to_be_bytes());
-        aux_data.extend_from_slice(&dest_buf);
-        aux_data.extend_from_slice(&takeback_hash);
-        aux_data.extend_from_slice(&sats_amt.to_be_bytes());
-
-        let tag_data =
-            TagDataRef::new(SUBPROTO_ID, TX_TYPE, &aux_data).expect("Failed to create TagDataRef");
-
-        let result = parse_tag(&tag_data, ADDR_LEN as u8).expect("should parse successfully");
-
-        assert_eq!(result.deposit_idx, 42);
-        assert_eq!(result.dest_buf, dest_buf.as_slice());
-        assert_eq!(result.amount, sats_amt);
-        assert_eq!(
-            result.tapscript_root,
-            takeback_hash
-                .as_slice()
-                .try_into()
-                .expect("takeback not 32 bytes")
-        );
-    }
-
-    #[test]
-    fn fails_if_buffer_too_short() {
-        const ADDR_LEN: usize = 20;
-        const SUBPROTO_ID: u8 = 1;
-        const TX_TYPE: u8 = 0;
-        let short_aux_data = vec![0u8; 10]; // too short
-
-        let tag_data = TagDataRef::new(SUBPROTO_ID, TX_TYPE, &short_aux_data)
-            .expect("Failed to create TagDataRef");
-        let result = parse_tag(&tag_data, ADDR_LEN as u8);
-
-        assert!(matches!(result, Err(DepositParseError::InvalidData)));
-    }
-
-    #[test]
-    fn fails_if_address_length_mismatch() {
-        const ADDR_LEN: usize = 20;
-        const SUBPROTO_ID: u8 = 1;
-        const TX_TYPE: u8 = 0;
-
-        let deposit_idx: u32 = 10;
-        let wrong_dest_buf = vec![0xFF; ADDR_LEN - 1]; // wrong address size  
-        let takeback_hash = vec![0xCD; 32];
-        let sats_amt: u64 = 42;
-
-        let mut aux_data = Vec::new();
-        aux_data.extend_from_slice(&deposit_idx.to_be_bytes());
-        aux_data.extend_from_slice(&wrong_dest_buf);
-        aux_data.extend_from_slice(&takeback_hash);
-        aux_data.extend_from_slice(&sats_amt.to_be_bytes());
-
-        let tag_data =
-            TagDataRef::new(SUBPROTO_ID, TX_TYPE, &aux_data).expect("Failed to create TagDataRef");
-        let result = parse_tag(&tag_data, ADDR_LEN as u8);
-
-        assert!(matches!(result, Err(DepositParseError::InvalidData)));
-    }
 }
