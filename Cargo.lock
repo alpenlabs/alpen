@@ -13724,11 +13724,14 @@ name = "strata-dbtool"
 version = "0.2.0"
 dependencies = [
  "argh",
+ "hex",
  "rockbound",
  "strata-cli-common",
  "strata-db",
+ "strata-primitives",
  "strata-rocksdb",
  "strata-state",
+ "tracing",
  "tracing-subscriber 0.3.19",
 ]
 
