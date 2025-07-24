@@ -58,22 +58,34 @@ pub fn next_u32(instructions: &mut Instructions<'_>) -> Option<u32> {
     }
 }
 
-/// Returns taproot address along with untweaked internal pubkey
-pub fn generate_taproot_address(
-    operator_wallet_pks: &[Buf32],
-    network: Network,
-) -> anyhow::Result<(BitcoinAddress, XOnlyPublicKey)> {
-    let keys = operator_wallet_pks.iter().map(|op| {
+/// Returns the aggregated public key from an iterator of operator public keys.
+/// 
+/// # Panics
+/// 
+/// Panics if any key in the iterator is not a valid x-only public key.
+pub fn generate_agg_pubkey<'k>(
+    keys: impl Iterator<Item = &'k Buf32>,
+) -> anyhow::Result<XOnlyPublicKey> {
+    let keys = keys.map(|op| {
         PublicKey::from_x_only_public_key(
             XOnlyPublicKey::from_slice(op.as_ref()).expect("slice not an x-only public key"),
             bitcoin::key::Parity::Even,
         )
     });
-
-    let x_only_pub_key = KeyAggContext::new(keys)?
+    let agg_pubkey = KeyAggContext::new(keys)?
         .aggregated_pubkey::<PublicKey>()
         .x_only_public_key()
         .0;
+
+    Ok(agg_pubkey)
+}
+
+/// Returns taproot address along with untweaked internal pubkey
+pub fn generate_taproot_address(
+    operator_wallet_pks: &[Buf32],
+    network: Network,
+) -> anyhow::Result<(BitcoinAddress, XOnlyPublicKey)> {
+    let x_only_pub_key = generate_agg_pubkey(operator_wallet_pks.iter())?;
 
     let taproot_builder = TaprootBuilder::new();
     let spend_info = taproot_builder

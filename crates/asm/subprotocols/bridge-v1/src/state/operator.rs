@@ -4,9 +4,11 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_l1tx::utils::generate_agg_pubkey;
 use strata_primitives::{
     bridge::OperatorIdx,
     buf::Buf32,
+    l1::XOnlyPk,
     operator::{OperatorKeyProvider, OperatorPubkeys},
 };
 
@@ -119,28 +121,28 @@ pub struct OperatorTable {
     ///
     /// **Invariant**: MUST be sorted by `OperatorEntry::idx` field.
     operators: Vec<OperatorEntry>,
+
+    /// Aggregated public key derived from operator wallet keys that are part of the current N/N
+    /// multisig.
+    ///
+    /// This key is computed by aggregating the wallet public keys of only those operators
+    /// where `is_in_current_multisig` is true, using the MuSig2 key aggregation protocol.
+    /// It serves as the collective public key for multi-signature operations and is used for:
+    ///
+    /// - Generating deposit addresses for the bridge
+    /// - Verifying multi-signatures from the current operator set
+    /// - Representing the current N/N multisig set as a single cryptographic entity
+    ///
+    /// The key is automatically computed when the operator table is created or
+    /// updated, ensuring it always reflects the current active multisig participants.
+    agg_operator_key: XOnlyPk,
 }
 
 impl OperatorTable {
-    /// Creates a new empty operator table.
-    ///
-    /// Initializes the table with no operators and `next_idx` set to 0,
-    /// ready for operator registrations.
-    ///
-    /// # Returns
-    ///
-    /// A new empty [`OperatorTable`].
-    pub fn new_empty() -> Self {
-        Self {
-            next_idx: 0,
-            operators: Vec::new(),
-        }
-    }
-
     /// Constructs an operator table from a list of operator public keys.
     ///
-    /// This convenience method is used during initialization to populate the table
-    /// with a known set of operators. Indices are assigned sequentially starting from 0.
+    /// This method is used during initialization to populate the table with a known set of
+    /// operators. Indices are assigned sequentially starting from 0.
     ///
     /// # Parameters
     ///
@@ -149,6 +151,10 @@ impl OperatorTable {
     /// # Returns
     ///
     /// A new [`OperatorTable`] with operators indexed 0, 1, 2, etc.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `entries` is empty. At least one operator is required.
     ///
     /// # Example
     ///
@@ -161,6 +167,14 @@ impl OperatorTable {
     /// assert_eq!(table.len(), 2);
     /// ```
     pub fn from_operator_list(entries: &[OperatorPubkeys]) -> Self {
+        if entries.is_empty() {
+            panic!(
+                "Cannot create operator table with empty entries - at least one operator is required"
+            );
+        }
+        let agg_operator_key = generate_agg_pubkey(entries.iter().map(|o| o.wallet_pk()))
+            .unwrap()
+            .into();
         Self {
             next_idx: entries.len() as OperatorIdx,
             operators: entries
@@ -173,6 +187,7 @@ impl OperatorTable {
                     is_in_current_multisig: true,
                 })
                 .collect(),
+            agg_operator_key,
         }
     }
 
@@ -228,29 +243,6 @@ impl OperatorTable {
     /// Slice reference to all [`OperatorEntry`] instances in the table.
     pub fn operators(&self) -> &[OperatorEntry] {
         &self.operators
-    }
-
-    /// Registers a new operator with the provided public keys.
-    ///
-    /// The operator is assigned the next available index and appended to the table.
-    /// Since indices are assigned sequentially, this maintains the sorted order invariant.
-    ///
-    /// # Parameters
-    ///
-    /// - `signing_pk` - Public key for message signature verification
-    /// - `wallet_pk` - Public key for Bitcoin transaction signatures (MuSig2 compatible)
-    pub fn insert(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
-        let entry = OperatorEntry {
-            idx: {
-                let idx = self.next_idx;
-                self.next_idx += 1;
-                idx
-            },
-            signing_pk,
-            wallet_pk,
-            is_in_current_multisig: true,
-        };
-        self.operators.push(entry);
     }
 
     /// Retrieves an operator entry by its unique index.
@@ -315,27 +307,75 @@ impl OperatorTable {
             .map(|operator| operator.idx)
     }
 
-    /// Updates the multisig membership status for an operator.
+    /// Updates the multisig membership status for multiple operators, inserts new operators,
+    /// and recalculates the aggregated key.
     ///
-    /// This method allows marking operators as part of the current multisig or not without
-    /// removing them from the table entirely.
+    /// This is the central method for updating multisig membership. All other methods that modify
+    /// the multisig set should call this method internally to ensure the aggregated key is
+    /// correctly recalculated.
     ///
     /// # Parameters
     ///
-    /// - `idx` - The operator index to update
-    /// - `is_in_multisig` - Whether the operator should be in the current multisig
+    /// - `updates` - Slice of (operator_index, is_in_multisig) pairs for existing operators
+    /// - `inserts` - Slice of new operators to insert (marked as in multisig by default)
     ///
-    /// # Returns
+    /// # Panics
     ///
-    /// `true` if the operator was found and updated, `false` if the operator doesn't exist.
-    pub fn set_multisig_membership(&mut self, idx: OperatorIdx, is_in_multisig: bool) -> bool {
-        if let Ok(pos) = self.operators.binary_search_by_key(&idx, |e| e.idx) {
-            self.operators[pos].is_in_current_multisig = is_in_multisig;
-            true
-        } else {
-            false
+    /// Panics if the updates would result in no operators being in the multisig.
+    pub fn update_multisig_and_recalc_key(
+        &mut self,
+        updates: &[(OperatorIdx, bool)],
+        inserts: &[OperatorPubkeys],
+    ) {
+        // Handle inserts first
+        for op_keys in inserts {
+            let idx = self.next_idx;
+            let entry = OperatorEntry {
+                idx,
+                signing_pk: *op_keys.signing_pk(),
+                wallet_pk: *op_keys.wallet_pk(),
+                is_in_current_multisig: true,
+            };
+
+            // Insert in correct position to maintain sorted order
+            let insert_pos = self
+                .operators
+                .binary_search_by_key(&idx, |e| e.idx)
+                .unwrap_or_else(|pos| pos);
+            self.operators.insert(insert_pos, entry);
+
+            self.next_idx += 1;
+        }
+
+        // Handle updates
+        for &(idx, is_in_multisig) in updates {
+            if let Ok(pos) = self.operators.binary_search_by_key(&idx, |e| e.idx) {
+                self.operators[pos].is_in_current_multisig = is_in_multisig;
+            }
+        }
+
+        if !updates.is_empty() || !inserts.is_empty() {
+            // Recalculate aggregated key based on current multisig members
+            let active_keys: Vec<&Buf32> = self
+                .operators
+                .iter()
+                .filter(|op| op.is_in_current_multisig)
+                .map(|op| &op.wallet_pk)
+                .collect();
+
+            if active_keys.is_empty() {
+                panic!("Cannot have empty multisig - at least one operator must be active");
+            }
+
+            self.agg_operator_key = generate_agg_pubkey(active_keys.into_iter())
+                .expect("Failed to generate aggregated key")
+                .into();
         }
     }
+
+
+
+
 }
 
 impl OperatorKeyProvider for OperatorTable {
@@ -348,24 +388,34 @@ impl OperatorKeyProvider for OperatorTable {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::secp256k1::{SECP256K1, SecretKey};
     use strata_primitives::operator::OperatorPubkeys;
 
     use super::*;
 
-    fn create_test_buf32(value: u8) -> Buf32 {
-        let mut buf = [0u8; 32];
-        buf[0] = value;
-        Buf32::from(buf)
-    }
+    /// Creates test operator pubkeys with randomly generated valid secp256k1 keys
+    fn create_test_operator_pubkeys(count: usize) -> Vec<OperatorPubkeys> {
+        use bitcoin::secp256k1::rand;
+        let mut keys = Vec::with_capacity(count);
 
-    fn create_test_operator_pubkeys(signing: u8, wallet: u8) -> OperatorPubkeys {
-        OperatorPubkeys::new(create_test_buf32(signing), create_test_buf32(wallet))
+        for _ in 0..count {
+            // Generate random signing key
+            let signing_sk = SecretKey::new(&mut rand::thread_rng());
+            let (signing_pk, _) = signing_sk.x_only_public_key(SECP256K1);
+
+            // Generate random wallet key
+            let wallet_sk = SecretKey::new(&mut rand::thread_rng());
+            let (wallet_pk, _) = wallet_sk.x_only_public_key(SECP256K1);
+
+            keys.push(OperatorPubkeys::new(signing_pk.into(), wallet_pk.into()));
+        }
+
+        keys
     }
 
     #[test]
     fn test_operator_entry_getters() {
-        let signing_pk = create_test_buf32(1);
-        let wallet_pk = create_test_buf32(2);
+        let (signing_pk, wallet_pk) = create_test_operator_pubkeys(1)[0].clone().into_parts();
 
         let entry = OperatorEntry {
             idx: 5,
@@ -381,22 +431,16 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_table_new_empty() {
-        let table = OperatorTable::new_empty();
-
-        assert_eq!(table.len(), 0);
-        assert!(table.is_empty());
-        assert_eq!(table.operators().len(), 0);
-        assert_eq!(table.next_idx, 0);
+    #[should_panic(
+        expected = "Cannot create operator table with empty entries - at least one operator is required"
+    )]
+    fn test_operator_table_empty_entries_panics() {
+        OperatorTable::from_operator_list(&[]);
     }
 
     #[test]
     fn test_operator_table_from_operator_list() {
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-            create_test_operator_pubkeys(5, 6),
-        ];
+        let operators = create_test_operator_pubkeys(3);
 
         let table = OperatorTable::from_operator_list(&operators);
 
@@ -407,52 +451,112 @@ mod tests {
         // Check first operator
         let op0 = table.get_operator(0).unwrap();
         assert_eq!(op0.idx(), 0);
-        assert_eq!(op0.signing_pk(), &create_test_buf32(1));
-        assert_eq!(op0.wallet_pk(), &create_test_buf32(2));
+        assert_eq!(op0.signing_pk(), operators[0].signing_pk());
+        assert_eq!(op0.wallet_pk(), operators[0].wallet_pk());
 
         // Check second operator
         let op1 = table.get_operator(1).unwrap();
         assert_eq!(op1.idx(), 1);
-        assert_eq!(op1.signing_pk(), &create_test_buf32(3));
-        assert_eq!(op1.wallet_pk(), &create_test_buf32(4));
+        assert_eq!(op1.signing_pk(), operators[1].signing_pk());
+        assert_eq!(op1.wallet_pk(), operators[1].wallet_pk());
     }
 
     #[test]
     fn test_operator_table_insert() {
-        let mut table = OperatorTable::new_empty();
-
-        let signing_pk1 = create_test_buf32(10);
-        let wallet_pk1 = create_test_buf32(20);
-        table.insert(signing_pk1, wallet_pk1);
+        // Start with one operator since we can't have empty table
+        let initial_operators = create_test_operator_pubkeys(1);
+        let mut table = OperatorTable::from_operator_list(&initial_operators);
 
         assert_eq!(table.len(), 1);
         assert_eq!(table.next_idx, 1);
 
-        let op = table.get_operator(0).unwrap();
-        assert_eq!(op.idx(), 0);
-        assert_eq!(op.signing_pk(), &signing_pk1);
-        assert_eq!(op.wallet_pk(), &wallet_pk1);
+        // Insert new operators with valid keys
+        let new_operators = create_test_operator_pubkeys(2);
+        let start_idx = table.next_idx;
+        table.update_multisig_and_recalc_key(&[], &new_operators);
+        let assigned_indices: Vec<OperatorIdx> = (start_idx..start_idx + new_operators.len() as OperatorIdx).collect();
 
-        // Insert second operator
-        let signing_pk2 = create_test_buf32(30);
-        let wallet_pk2 = create_test_buf32(40);
-        table.insert(signing_pk2, wallet_pk2);
+        assert_eq!(table.len(), 3); // 1 initial + 2 new
+        assert_eq!(table.next_idx, 3);
+        assert_eq!(assigned_indices, vec![1, 2]);
 
-        assert_eq!(table.len(), 2);
-        assert_eq!(table.next_idx, 2);
+        // Check the first inserted operator (index 1)
+        let op1 = table.get_operator(1).unwrap();
+        assert_eq!(op1.idx(), 1);
+        assert_eq!(op1.signing_pk(), new_operators[0].signing_pk());
+        assert_eq!(op1.wallet_pk(), new_operators[0].wallet_pk());
 
-        let op2 = table.get_operator(1).unwrap();
-        assert_eq!(op2.idx(), 1);
-        assert_eq!(op2.signing_pk(), &signing_pk2);
-        assert_eq!(op2.wallet_pk(), &wallet_pk2);
+        // Check the second inserted operator (index 2)
+        let op2 = table.get_operator(2).unwrap();
+        assert_eq!(op2.idx(), 2);
+        assert_eq!(op2.signing_pk(), new_operators[1].signing_pk());
+        assert_eq!(op2.wallet_pk(), new_operators[1].wallet_pk());
+
+        // All new operators should be in the current multisig by default
+        assert!(op1.is_in_current_multisig());
+        assert!(op2.is_in_current_multisig());
+    }
+
+    #[test]
+    fn test_operator_table_update_multisig_membership() {
+        let operators = create_test_operator_pubkeys(3);
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        // Initially all operators should be in multisig
+        assert!(table.get_operator(0).unwrap().is_in_current_multisig());
+        assert!(table.get_operator(1).unwrap().is_in_current_multisig());
+        assert!(table.get_operator(2).unwrap().is_in_current_multisig());
+
+        // Update multiple operators at once
+        let updates = vec![(0, false), (2, false)];
+        table.update_multisig_and_recalc_key(&updates, &[]);
+        assert!(!table.get_operator(0).unwrap().is_in_current_multisig());
+        assert!(table.get_operator(1).unwrap().is_in_current_multisig()); // unchanged
+        assert!(!table.get_operator(2).unwrap().is_in_current_multisig());
+
+        // Test with non-existent operator
+        let updates = vec![(0, true), (99, false)]; // 99 doesn't exist
+        table.update_multisig_and_recalc_key(&updates, &[]);
+
+        // Only existing operator should be updated
+        assert!(table.get_operator(0).unwrap().is_in_current_multisig());
+    }
+
+    #[test]
+    fn test_operator_table_remove_from_active_set() {
+        let operators = create_test_operator_pubkeys(4);
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        // Remove operators 1 and 3 from active set
+        let updates: Vec<(OperatorIdx, bool)> = vec![(1, false), (3, false)];
+        table.update_multisig_and_recalc_key(&updates, &[]);
+        assert!(table.get_operator(0).unwrap().is_in_current_multisig());
+        assert!(!table.get_operator(1).unwrap().is_in_current_multisig());
+        assert!(table.get_operator(2).unwrap().is_in_current_multisig());
+        assert!(!table.get_operator(3).unwrap().is_in_current_multisig());
+
+        // Test with non-existent operators
+        let updates: Vec<(OperatorIdx, bool)> = vec![(1, false), (99, false)]; // 1 already inactive, 99 doesn't exist
+        table.update_multisig_and_recalc_key(&updates, &[]);
+
+        // Operator 1 should still be inactive
+        assert!(!table.get_operator(1).unwrap().is_in_current_multisig());
+    }
+
+    #[test]
+    fn test_empty_insert() {
+        let operators = create_test_operator_pubkeys(1);
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        // Test inserting empty slice
+        table.update_multisig_and_recalc_key(&[], &[]);
+        assert_eq!(table.len(), 1); // No change
+        assert_eq!(table.next_idx, 1); // No change
     }
 
     #[test]
     fn test_operator_table_get_operator() {
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-        ];
+        let operators = create_test_operator_pubkeys(2);
         let table = OperatorTable::from_operator_list(&operators);
 
         // Test existing operators
@@ -466,10 +570,7 @@ mod tests {
 
     #[test]
     fn test_operator_table_get_entry_at_pos() {
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-        ];
+        let operators = create_test_operator_pubkeys(2);
         let table = OperatorTable::from_operator_list(&operators);
 
         // Test valid positions
@@ -486,11 +587,7 @@ mod tests {
 
     #[test]
     fn test_operator_table_indices() {
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-            create_test_operator_pubkeys(5, 6),
-        ];
+        let operators = create_test_operator_pubkeys(3);
         let table = OperatorTable::from_operator_list(&operators);
 
         let indices: Vec<_> = table.indices().collect();
@@ -499,18 +596,15 @@ mod tests {
 
     #[test]
     fn test_operator_key_provider() {
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-        ];
+        let operators = create_test_operator_pubkeys(2);
         let table = OperatorTable::from_operator_list(&operators);
 
         // Test existing operator
         let signing_pk = table.get_operator_signing_pk(0).unwrap();
-        assert_eq!(signing_pk, create_test_buf32(2)); // Returns wallet_pk
+        assert_eq!(signing_pk, *operators[0].wallet_pk()); // Returns wallet_pk
 
         let signing_pk2 = table.get_operator_signing_pk(1).unwrap();
-        assert_eq!(signing_pk2, create_test_buf32(4)); // Returns wallet_pk
+        assert_eq!(signing_pk2, *operators[1].wallet_pk()); // Returns wallet_pk
 
         // Test non-existing operator
         assert!(table.get_operator_signing_pk(2).is_none());
@@ -518,24 +612,19 @@ mod tests {
 
     #[test]
     fn test_operator_table_sanity_check() {
-        let table = OperatorTable::new_empty();
-        table.sanity_check(); // Should not panic on empty table
+        // Test with one operator (minimum required)
+        let operators = create_test_operator_pubkeys(1);
+        let table = OperatorTable::from_operator_list(&operators);
+        table.sanity_check(); // Should not panic on single operator table
 
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-        ];
+        let operators = create_test_operator_pubkeys(2);
         let table = OperatorTable::from_operator_list(&operators);
         table.sanity_check(); // Should not panic on valid table
     }
 
     #[test]
     fn test_current_multisig_indices() {
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-            create_test_operator_pubkeys(5, 6),
-        ];
+        let operators = create_test_operator_pubkeys(3);
         let mut table = OperatorTable::from_operator_list(&operators);
 
         // Initially, all operators should be in the current multisig set
@@ -543,7 +632,7 @@ mod tests {
         assert_eq!(current_indices, vec![0, 1, 2]);
 
         // Mark operator 1 as not in current multisig
-        assert!(table.set_multisig_membership(1, false));
+        table.update_multisig_and_recalc_key(&[(1, false)], &[]);
 
         // Now only operators 0 and 2 should be in current multisig
         let current_indices: Vec<_> = table.current_multisig_indices().collect();
@@ -552,10 +641,7 @@ mod tests {
 
     #[test]
     fn test_set_multisig_membership() {
-        let operators = vec![
-            create_test_operator_pubkeys(1, 2),
-            create_test_operator_pubkeys(3, 4),
-        ];
+        let operators = create_test_operator_pubkeys(2);
         let mut table = OperatorTable::from_operator_list(&operators);
 
         // Initially, both operators should be in current multisig
@@ -563,15 +649,15 @@ mod tests {
         assert!(table.get_operator(1).unwrap().is_in_current_multisig());
 
         // Remove operator 0 from current multisig
-        assert!(table.set_multisig_membership(0, false));
+        table.update_multisig_and_recalc_key(&[(0, false)], &[]);
         assert!(!table.get_operator(0).unwrap().is_in_current_multisig());
         assert!(table.get_operator(1).unwrap().is_in_current_multisig());
 
-        // Try to update non-existent operator
-        assert!(!table.set_multisig_membership(99, false));
+        // Try to update non-existent operator (should be ignored)
+        table.update_multisig_and_recalc_key(&[(99, false)], &[]);
 
         // Add operator 0 back to current multisig
-        assert!(table.set_multisig_membership(0, true));
+        table.update_multisig_and_recalc_key(&[(0, true)], &[]);
         assert!(table.get_operator(0).unwrap().is_in_current_multisig());
     }
 }

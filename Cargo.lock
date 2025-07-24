@@ -13166,6 +13166,7 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-l1-txfmt",
+ "strata-l1tx",
  "strata-primitives",
  "thiserror 2.0.12",
  "tracing",

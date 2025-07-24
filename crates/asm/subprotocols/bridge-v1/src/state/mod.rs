@@ -46,21 +46,6 @@ pub struct BridgeV1State {
 }
 
 impl BridgeV1State {
-    /// Creates a new empty bridge state.
-    ///
-    /// Initializes all component tables as empty, ready for operator
-    /// registrations and deposit processing.
-    ///
-    /// # Returns
-    ///
-    /// A new [`BridgeV1State`] instance with empty tables.
-    pub fn new() -> Self {
-        Self {
-            operators: OperatorTable::new_empty(),
-            deposits: DepositsTable::new_empty(),
-            assignments: AssignmentTable::new_empty(),
-        }
-    }
 
     /// Returns a reference to the operator table.
     ///
@@ -216,11 +201,3 @@ impl BridgeV1State {
     }
 }
 
-impl Default for BridgeV1State {
-    /// Creates a default empty bridge state.
-    ///
-    /// Equivalent to [`BridgeV1State::new()`].
-    fn default() -> Self {
-        Self::new()
-    }
-}
