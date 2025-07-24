@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use strata_cli_common::errors::DisplayedError;
 use strata_db::traits::Database;
 
 use crate::cli::OutputFormat;
@@ -28,7 +29,7 @@ pub(crate) struct GetSyncEventsSummaryArgs {
 pub(crate) fn get_sync_event(
     _db: &impl Database,
     _args: GetSyncEventArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }
 
@@ -36,6 +37,6 @@ pub(crate) fn get_sync_event(
 pub(crate) fn get_sync_events_summary(
     _db: &impl Database,
     _args: GetSyncEventsSummaryArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }

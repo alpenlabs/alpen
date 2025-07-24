@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use strata_cli_common::errors::DisplayedError;
 use strata_db::traits::Database;
 
 use crate::cli::OutputFormat;
@@ -40,7 +41,7 @@ pub(crate) struct GetEpochSummaryArgs {
 pub(crate) fn get_checkpoint(
     _db: &impl Database,
     _args: GetCheckpointArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }
 
@@ -48,7 +49,7 @@ pub(crate) fn get_checkpoint(
 pub(crate) fn get_checkpoints_summary(
     _db: &impl Database,
     _args: GetCheckpointsSummaryArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }
 
@@ -56,6 +57,6 @@ pub(crate) fn get_checkpoints_summary(
 pub(crate) fn get_epoch_summary(
     _db: &impl Database,
     _args: GetEpochSummaryArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }

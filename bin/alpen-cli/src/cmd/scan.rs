@@ -1,11 +1,7 @@
 use argh::FromArgs;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
-use crate::{
-    errors::{DisplayableError, DisplayedError},
-    seed::Seed,
-    settings::Settings,
-    signet::SignetWallet,
-};
+use crate::{seed::Seed, settings::Settings, signet::SignetWallet};
 
 /// Performs a full scan of the signet wallet
 #[derive(FromArgs, PartialEq, Debug)]

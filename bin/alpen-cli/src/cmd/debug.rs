@@ -1,11 +1,7 @@
 use argh::FromArgs;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
-use crate::{
-    errors::{DisplayableError, DisplayedError},
-    recovery::DescriptorRecovery,
-    seed::Seed,
-    settings::Settings,
-};
+use crate::{recovery::DescriptorRecovery, seed::Seed, settings::Settings};
 
 /// Various debug utilities
 #[derive(FromArgs, PartialEq, Debug)]

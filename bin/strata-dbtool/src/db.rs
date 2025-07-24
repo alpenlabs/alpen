@@ -1,5 +1,6 @@
 use std::{path::Path, sync::Arc};
 
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::{database::CommonDatabase, traits::Database};
 use strata_rocksdb::{
     l2::db::L2Db, open_rocksdb_database, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db,
@@ -43,14 +44,11 @@ fn init_rocksdb_components(
 }
 
 /// Returns a boxed trait-object that satisfies all the low-level traits.
-pub(crate) fn open_database(
-    path: &Path,
-    db_type: DbType,
-) -> Result<impl Database, Box<dyn std::error::Error>> {
+pub(crate) fn open_database(path: &Path, db_type: DbType) -> Result<impl Database, DisplayedError> {
     match db_type {
         DbType::Rocksdb => {
             let rbdb = open_rocksdb_database(path, ROCKSDB_NAME)
-                .map_err(|e| format!("Failed to open rocksdb database: {e}"))?;
+                .internal_error("Failed to open rocksdb database")?;
             Ok(init_rocksdb_components(rbdb, DbOpsConfig::new(3)))
         }
     }
