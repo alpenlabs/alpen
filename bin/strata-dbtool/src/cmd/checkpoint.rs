@@ -6,6 +6,15 @@ use strata_primitives::l1::ProtocolOperation;
 use super::l1::{get_l1_block_id_at_height, get_l1_block_manifest, get_l1_chain_tip};
 use crate::{cli::OutputFormat, cmd::client_state::get_latest_client_state_update};
 
+/// Get the last epoch index from the database.
+///
+/// This finds the highest epoch index in the database.
+pub(crate) fn get_last_epoch(db: &impl DatabaseBackend) -> Result<Option<u64>, DisplayedError> {
+    db.checkpoint_db()
+        .get_last_summarized_epoch()
+        .internal_error("Failed to get last summarized epoch")
+}
+
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-checkpoint")]
 /// Get checkpoint
