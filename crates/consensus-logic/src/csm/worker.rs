@@ -170,7 +170,7 @@ pub fn client_worker_task<E: ExecEngineCtl>(
             &shutdown,
         ) {
             error!(err = %e, ?msg, "failed to process sync message, aborting!");
-            break;
+            return Err(e);
         }
 
         if shutdown.should_shutdown() {

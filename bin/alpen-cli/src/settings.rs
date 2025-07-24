@@ -8,32 +8,59 @@ use std::{
 
 use alloy::primitives::Address as AlpenAddress;
 use bdk_bitcoind_rpc::bitcoincore_rpc::{Auth, Client};
-use bdk_wallet::bitcoin::{Network, XOnlyPublicKey};
+use bdk_wallet::bitcoin::{Amount, Network, XOnlyPublicKey};
 use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
+use strata_primitives::constants::RECOVER_DELAY as DEFAULT_RECOVER_DELAY;
 use terrors::OneOf;
 
 use crate::{
-    constants::{BRIDGE_ALPEN_ADDRESS, DEFAULT_NETWORK, MAGIC_BYTES_LEN},
+    constants::{
+        DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
+        DEFAULT_FINALITY_DEPTH, DEFAULT_NETWORK, MAGIC_BYTES_LEN,
+    },
     signet::{backend::SignetBackend, EsploraClient},
 };
 
+/// Settings deserialized from the config file.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsFromFile {
+    /// Esplora server endpoint.
     pub esplora: Option<String>,
+    /// Bitcoind RPC username.
     pub bitcoind_rpc_user: Option<String>,
+    /// Bitcoind RPC password.
     pub bitcoind_rpc_pw: Option<String>,
+    /// Path to the Bitcoind RPC cookie file.
     pub bitcoind_rpc_cookie: Option<PathBuf>,
+    /// Bitcoind RPC endpoint.
     pub bitcoind_rpc_endpoint: Option<String>,
+    /// Alpen network RPC endpoint.
     pub alpen_endpoint: String,
+    /// Faucet service endpoint.
     pub faucet_endpoint: String,
+    /// Mempool explorer endpoint.
     pub mempool_endpoint: Option<String>,
+    /// Blockscout explorer endpoint.
     pub blockscout_endpoint: Option<String>,
+    /// The aggregated Musig2 public key for the bridge.
     pub bridge_pubkey: Hex<[u8; 32]>,
+    /// Magic bytes to identify deposit transactions (=4 bytes).
     pub magic_bytes: String,
+    /// The Bitcoin network to use (signet, regtest, mainnet, etc).
     pub network: Option<Network>,
+    /// Delay in blocks for descriptor recovery.
+    pub recover_delay: Option<u32>,
+    /// The amount for bridge-in transactions in satoshis.
+    pub bridge_in_amount_sats: Option<u64>,
+    /// The amount for bridge-out transactions in satoshis.
+    pub bridge_out_amount_sats: Option<u64>,
+    /// The address of the bridge precompile in alpen evm in hex.
+    pub bridge_alpen_address: Option<String>,
+    /// The number of confirmations to consider a Bitcoin transaction final.
+    pub finality_depth: Option<u32>,
 }
 
 /// Settings struct filled with either config values or
@@ -54,6 +81,10 @@ pub struct Settings {
     pub network: Network,
     pub config_file: PathBuf,
     pub signet_backend: Arc<dyn SignetBackend>,
+    pub recover_delay: u32,
+    pub bridge_in_amount: Amount,
+    pub bridge_out_amount: Amount,
+    pub finality_depth: u32,
 }
 
 pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
@@ -123,13 +154,28 @@ impl Settings {
             descriptor_db: descriptor_file,
             mempool_space_endpoint: from_file.mempool_endpoint,
             blockscout_endpoint: from_file.blockscout_endpoint,
-            bridge_alpen_address: AlpenAddress::from_str(BRIDGE_ALPEN_ADDRESS)
-                .expect("valid Alpen address"),
             magic_bytes: from_file.magic_bytes,
+            bridge_alpen_address: AlpenAddress::from_str(
+                from_file
+                    .bridge_alpen_address
+                    .as_deref()
+                    .unwrap_or(DEFAULT_BRIDGE_ALPEN_ADDRESS),
+            )
+            .expect("valid Alpen address"),
             linux_seed_file,
             network: from_file.network.unwrap_or(DEFAULT_NETWORK),
             config_file: CONFIG_FILE.clone(),
             signet_backend: sync_backend,
+            recover_delay: from_file.recover_delay.unwrap_or(DEFAULT_RECOVER_DELAY),
+            bridge_in_amount: from_file
+                .bridge_in_amount_sats
+                .map(Amount::from_sat)
+                .unwrap_or(DEFAULT_BRIDGE_IN_AMOUNT),
+            bridge_out_amount: from_file
+                .bridge_out_amount_sats
+                .map(Amount::from_sat)
+                .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
+            finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
         })
     }
 }
