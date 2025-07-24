@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use strata_cli_common::errors::DisplayedError;
 use strata_db::traits::DatabaseBackend;
 
 use crate::cli::OutputFormat;
@@ -35,7 +36,7 @@ pub(crate) struct RevertChainstateArgs {
 pub(crate) fn get_chainstate(
     _db: &impl DatabaseBackend,
     _args: GetChainstateArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }
 
@@ -43,6 +44,6 @@ pub(crate) fn get_chainstate(
 pub(crate) fn revert_chainstate(
     _db: &impl DatabaseBackend,
     _args: RevertChainstateArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }

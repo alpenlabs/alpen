@@ -4,15 +4,11 @@ use alloy::{
 };
 use argh::FromArgs;
 use bdk_wallet::bitcoin::Amount;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
-    alpen::AlpenWallet,
-    constants::SATS_TO_WEI,
-    errors::{DisplayableError, DisplayedError},
-    net_type::NetworkType,
-    seed::Seed,
-    settings::Settings,
-    signet::SignetWallet,
+    alpen::AlpenWallet, constants::SATS_TO_WEI, net_type::NetworkType, seed::Seed,
+    settings::Settings, signet::SignetWallet,
 };
 
 /// Prints the wallet's current balance(s)

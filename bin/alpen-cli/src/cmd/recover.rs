@@ -7,10 +7,10 @@ use bdk_wallet::{
 };
 use chrono::Utc;
 use colored::Colorize;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
     constants::RECOVERY_DESC_CLEANUP_DELAY,
-    errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,

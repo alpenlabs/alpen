@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use strata_cli_common::errors::DisplayedError;
 use strata_db::traits::DatabaseBackend;
 
 use crate::cli::OutputFormat;
@@ -16,6 +17,6 @@ pub(crate) struct GetSyncinfoArgs {
 pub(crate) fn get_syncinfo(
     _db: &impl DatabaseBackend,
     _args: GetSyncinfoArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }
