@@ -10,6 +10,10 @@ use std::{
 
 use futures_util::{future::select, FutureExt};
 use thiserror::Error;
+#[cfg(not(unix))]
+use tokio::signal::ctrl_c;
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::{runtime::Handle, sync::mpsc};
 use tracing::{debug, error, info, warn};
 
@@ -180,7 +184,6 @@ impl TaskManager {
             // TODO: double ctrl+c for force quit
             #[cfg(unix)]
             {
-                use tokio::signal::unix::{signal, SignalKind};
                 let mut sigterm =
                     signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
                 let mut sigint =
@@ -197,7 +200,7 @@ impl TaskManager {
             }
             #[cfg(not(unix))]
             {
-                let _ = tokio::signal::ctrl_c().await;
+                let _ = ctrl_c().await;
                 warn!("Got INT. Initiating shutdown");
             }
 
