@@ -108,6 +108,10 @@ impl ClientState {
         self.int_states.next_idx()
     }
 
+    pub fn horizon_l1_height(&self) -> u64 {
+        self.horizon_l1_height
+    }
+
     pub fn genesis_l1_height(&self) -> u64 {
         self.genesis_l1_height
     }

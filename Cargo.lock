@@ -13454,6 +13454,7 @@ dependencies = [
  "strata-cli-common",
  "strata-db",
  "strata-db-store-rocksdb",
+ "strata-state",
  "tracing-subscriber 0.3.19",
 ]
 
