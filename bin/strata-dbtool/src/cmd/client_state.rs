@@ -3,7 +3,10 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{ClientStateDatabase, Database};
 use strata_state::operation::ClientUpdateOutput;
 
-use crate::cli::OutputFormat;
+use crate::{
+    cli::OutputFormat,
+    output::{client_state::ClientStateUpdateInfo, output},
+};
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-client-state-update")]
@@ -26,82 +29,22 @@ pub(crate) fn get_client_state_update(
     let (client_state_update, update_idx) = get_latest_client_state_update(db, args.update_index)?;
     let (client_state, sync_actions) = client_state_update.into_parts();
 
-    // Print in porcelain format
-    println!("client_state_update.update_index {update_idx}");
-    println!(
-        "client_state_update.client_state.is_chain_active {}",
-        client_state.is_chain_active()
-    );
-    println!(
-        "client_state_update.client_state.horizon_l1_height {}",
-        client_state.horizon_l1_height()
-    );
-    println!(
-        "client_state_update.client_state.genesis_l1_height {}",
-        client_state.genesis_l1_height()
-    );
-    if let Some(l1_block) = client_state.most_recent_l1_block() {
-        println!("client_state_update.client_state.latest_l1_block {l1_block:?}");
-    }
-    println!(
-        "client_state_update.client_state.next_expected_l1_height {}",
-        client_state.next_exp_l1_block()
-    );
+    // Create the output data structure
+    let client_state_info = ClientStateUpdateInfo {
+        update_index: update_idx,
+        is_chain_active: client_state.is_chain_active(),
+        horizon_l1_height: client_state.horizon_l1_height(),
+        genesis_l1_height: client_state.genesis_l1_height(),
+        latest_l1_block: client_state.most_recent_l1_block(),
+        next_expected_l1_height: client_state.next_exp_l1_block(),
+        tip_l1_block: client_state.get_tip_l1_block(),
+        deepest_l1_block: client_state.get_deepest_l1_block(),
+        last_internal_state: client_state.get_last_internal_state(),
+        sync_actions: &sync_actions,
+    };
 
-    if let Some(tip_l1_block) = client_state.get_tip_l1_block() {
-        println!(
-            "client_state_update.client_state.tip_l1_block.height {}",
-            tip_l1_block.height()
-        );
-        println!(
-            "client_state_update.client_state.tip_l1_block.blkid {:?}",
-            tip_l1_block.blkid()
-        );
-    }
-
-    if let Some(tip_l1_block) = client_state.get_deepest_l1_block() {
-        println!(
-            "client_state_update.client_state.deepest_l1_block.height {}",
-            tip_l1_block.height()
-        );
-        println!(
-            "client_state_update.client_state.deepest_l1_block.blkid {:?}",
-            tip_l1_block.blkid()
-        );
-    }
-
-    if let Some(last_internal_state) = client_state.get_last_internal_state() {
-        println!(
-            "client_state_update.client_state.last_internal_state.blkid {:?}",
-            last_internal_state.blkid()
-        );
-    }
-
-    for sync_action in sync_actions.iter() {
-        match sync_action {
-            strata_state::operation::SyncAction::FinalizeEpoch(epoch) => {
-                println!("client_state_update.sync_action FinalizeEpoch");
-                println!("client_state_update.sync_action.epoch {}", epoch.epoch());
-                println!(
-                    "client_state_update.sync_action.last_slot {}",
-                    epoch.last_slot()
-                );
-                println!(
-                    "client_state_update.sync_action.last_blkid {:?}",
-                    epoch.last_blkid()
-                );
-            }
-            strata_state::operation::SyncAction::L2Genesis(block_id) => {
-                println!("client_state_update.sync_action L2Genesis");
-                println!("client_state_update.sync_action.blkid {block_id:?}");
-            }
-            strata_state::operation::SyncAction::UpdateCheckpointInclusion { .. } => {
-                println!("client_state_update.sync_action UpdateCheckpointInclusion");
-            }
-        }
-    }
-
-    Ok(())
+    // Use the output utility
+    output(&client_state_info, args.output_format)
 }
 
 /// Get the latest client state update from the database.
