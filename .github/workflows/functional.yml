@@ -110,6 +110,7 @@ jobs:
         with:
           virtualenvs-create: true
           virtualenvs-in-project: true
+
       - name: Load cached venv
         id: cached-poetry-dependencies
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
@@ -141,6 +142,7 @@ jobs:
         env:
           RUSTFLAGS: "-Cinstrument-coverage"
         run: cargo build --locked -F debug-utils
+
       - name: Run functional tests (1)
         id: funcTestsRun1
         continue-on-error: true
@@ -168,6 +170,7 @@ jobs:
           export PATH="$NEWPATH:$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
+
       - name: Generate combined coverage lcov
         id: genFunctionalLcov
         continue-on-error: true

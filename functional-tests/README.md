@@ -117,7 +117,7 @@ The test harness script will be extended with more functionality as we need it.
 CI_COVERAGE=1 ./run_test.sh
 ```
 
-Code coverage artifacts (*.profraw) are generated in `target/llvm-cov-target/`.
+Code coverage artifacts (`*.profraw` files) are generated in `target/llvm-cov-target/`.
 Binaries and other build artifacts are generated in `target/llvm-cov-target/debug`.
 
 
