@@ -3,7 +3,7 @@
 //! Handles checkpoint verification and state updates for the Core subprotocol.
 
 use strata_asm_common::{AnchorState, MsgRelayer, Subprotocol, TxInputRef};
-use zkaleido::{ProofReceipt, PublicValues};
+use zkaleido::PublicValues;
 
 use crate::{CoreOLState, OLCoreSubproto, error::*, messages, parsing, types, verification};
 
@@ -62,7 +62,6 @@ pub(crate) fn handle_checkpoint_transaction(
         PublicValues::new(borsh::to_vec(&public_params).expect("checkpoint: proof output"));
 
     let proof = checkpoint.proof().clone();
-    let proof_receipt = ProofReceipt::new(proof, public_values);
 
     // 6. Get the rollup verifying key from state
     let rollup_vk = state
@@ -70,7 +69,7 @@ pub(crate) fn handle_checkpoint_transaction(
         .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))?;
 
     // 7. Verify the zk-SNARK proof
-    verification::verify_checkpoint_proof(checkpoint, &proof_receipt, &rollup_vk)?;
+    verification::verify_checkpoint_proof(checkpoint, public_values, proof, &rollup_vk)?;
 
     // 8. Validate L1→L2 Message Range using the rolling hash
     let prev_l1_height = state.verified_checkpoint.new_l1().height();

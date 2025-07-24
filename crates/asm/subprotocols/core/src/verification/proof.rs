@@ -4,7 +4,7 @@
 
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_primitives::{batch::Checkpoint, hash, proof::RollupVerifyingKey};
-use zkaleido::ProofReceipt;
+use zkaleido::{Proof, ProofReceipt, PublicValues};
 
 use crate::{CoreOLState, error::*, messages, types::CheckpointProofPublicParameters};
 
@@ -97,10 +97,13 @@ pub(crate) fn construct_checkpoint_proof_public_parameters(
 /// It includes logic for handling empty proofs during development/testing phases.
 pub(crate) fn verify_checkpoint_proof(
     checkpoint: &Checkpoint,
-    proof_receipt: &ProofReceipt,
+    public_values: PublicValues,
+    proof: Proof,
     rollup_vk: &RollupVerifyingKey,
 ) -> Result<()> {
     let _checkpoint_idx = checkpoint.batch_info().epoch();
+
+    let proof_receipt = ProofReceipt::new(proof.clone(), public_values);
 
     // FIXME: we are accepting empty proofs for now (devnet) to reduce dependency on the prover
     // infra.
@@ -125,6 +128,6 @@ pub(crate) fn verify_checkpoint_proof(
         return Err(CoreError::InvalidProof);
     }
 
-    verify_rollup_groth16_proof_receipt(proof_receipt, rollup_vk)
+    verify_rollup_groth16_proof_receipt(&proof_receipt, rollup_vk)
         .map_err(|_| CoreError::InvalidProof)
 }
