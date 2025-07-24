@@ -13672,6 +13672,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-dbtool"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "argh",
+ "rockbound",
+ "strata-db",
+ "strata-db-store-rocksdb",
+ "tracing-subscriber 0.3.19",
+]
+
+[[package]]
 name = "strata-eectl"
 version = "0.3.0-alpha.1"
 dependencies = [
