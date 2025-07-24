@@ -24,8 +24,6 @@ define_ids! {SubprotocolId, all_subprotocol_ids,
 // Define all transaction type IDs
 define_ids! {TxType, all_core_tx_type_ids,
     OL_STF_CHECKPOINT_TX_TYPE = 1,
-    FORCED_INCLUSION_TX_TYPE = 2,
-    EE_UPGRADE_TX_TYPE = 3,
 }
 
 #[cfg(test)]

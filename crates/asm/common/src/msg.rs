@@ -43,14 +43,12 @@ impl<const ID: SubprotocolId> InterprotoMsg for NullMsg<ID> {
 /// providing a consistent interface for storing and retrieving different types of ASM messages.
 /// The underlying [`OwnedMsg`] handles the storage and encoding/decoding according to the
 /// SPS-msg-fmt specification.
-/// [PLACE_HOLDER] Update the names to align with the team's new naming convention.
-///
-/// [PLACE_HOLDER] TODO: Inter-protocol messaging design
 /// Key points for future implementation:
 /// - Don't pass raw OL logs as inter-proto messages
 /// - Each subprotocol should export opaque enum types for messages it expects
 /// - Use typed messages instead of raw OwnedMsg objects
 /// - Example: BridgeMessage::Withdrawal { recipient, amount }
+// [PLACE_HOLDER] Update the names to align with the team's new naming convention.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message(pub OwnedMsg);
 
@@ -117,8 +115,8 @@ impl BorshDeserialize for Message {
     }
 }
 
+// [PLACE_HOLDER] Update the names to align with the team’s new naming convention.
 /// Temporary alias for backwards compatibility
-/// [PLACE_HOLDER] Update the names to align with the team’s new naming convention.
 /// Temporary alias for backwards compatibility
 pub type L2ToL1Msg = Message;
 

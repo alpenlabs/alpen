@@ -33,7 +33,7 @@ use crate::{CoreOLState, error::*, messages, parsing, types, verification};
 /// - All state transitions are validated for proper progression
 /// - Proof verification uses verifying key from state
 /// - L1→L2 message commitments are verified against expected range
-pub(crate) fn handle(
+pub(crate) fn handle_checkpoint_transaction(
     state: &mut CoreOLState,
     tx: &TxInputRef<'_>,
     _relayer: &mut impl MsgRelayer,

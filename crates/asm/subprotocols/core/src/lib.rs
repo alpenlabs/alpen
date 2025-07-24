@@ -51,6 +51,7 @@ use strata_asm_common::{
     AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
     TxInputRef,
 };
+use strata_primitives::{batch::EpochSummary, buf::Buf32, l2::L2BlockCommitment};
 pub use types::{CoreGenesisConfig, CoreOLState};
 
 /// OL Core subprotocol.
@@ -79,11 +80,21 @@ impl Subprotocol for OLCoreSubproto {
     type GenesisConfig = CoreGenesisConfig;
 
     fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
+        // Construct genesis EpochSummary from the complete L1 block information
+        // At genesis time, we have the complete L1 block commitment (ID + height)
+        let genesis_epoch_summary = EpochSummary::new(
+            0,                               // epoch: genesis is epoch 0
+            L2BlockCommitment::null(),       // terminal: no L2 blocks yet
+            L2BlockCommitment::null(),       // prev_terminal: no previous epoch
+            genesis_config.genesis_l1_block, // new_l1: complete L1 block commitment
+            Buf32::zero(),                   // final_state: genesis state (zero)
+        );
+
         // Initialize the Core subprotocol state from genesis configuration
         Ok(CoreOLState {
-            checkpoint_vk_bytes: genesis_config.checkpoint_vk_bytes,
-            verified_checkpoint: genesis_config.initial_checkpoint,
-            last_checkpoint_ref: genesis_config.initial_l1_ref,
+            checkpoint_vk: genesis_config.checkpoint_vk,
+            verified_checkpoint: genesis_epoch_summary,
+            last_checkpoint_ref: *genesis_config.genesis_l1_block.blkid(),
             sequencer_pubkey: genesis_config.sequencer_pubkey,
         })
     }
