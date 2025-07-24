@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use strata_cli_common::errors::DisplayedError;
 use strata_db::traits::DatabaseBackend;
 
 use crate::cli::OutputFormat;
@@ -19,6 +20,6 @@ pub(crate) struct GetClientStateUpdateArgs {
 pub(crate) fn get_client_state_update(
     _db: &impl DatabaseBackend,
     _args: GetClientStateUpdateArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }

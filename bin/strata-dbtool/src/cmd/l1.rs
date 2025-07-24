@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use strata_cli_common::errors::DisplayedError;
 use strata_db::traits::DatabaseBackend;
 
 use crate::cli::OutputFormat;
@@ -28,7 +29,7 @@ pub(crate) struct GetL1SummaryArgs {
 pub(crate) fn get_l1_manifest(
     _db: &impl DatabaseBackend,
     _args: GetL1ManifestArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }
 
@@ -36,6 +37,6 @@ pub(crate) fn get_l1_manifest(
 pub(crate) fn get_l1_summary(
     _db: &impl DatabaseBackend,
     _args: GetL1SummaryArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), DisplayedError> {
     Ok(())
 }

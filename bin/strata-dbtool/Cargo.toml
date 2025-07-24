@@ -15,5 +15,6 @@ argh.workspace = true
 rockbound.workspace = true
 tracing-subscriber.workspace = true
 
+strata-cli-common.workspace = true
 strata-db.workspace = true
 strata-db-store-rocksdb.workspace = true

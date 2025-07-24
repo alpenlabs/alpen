@@ -14,11 +14,11 @@ use bdk_wallet::{
 use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
     alpen::AlpenWallet,
     constants::SIGNET_BLOCK_TIME,
-    errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
