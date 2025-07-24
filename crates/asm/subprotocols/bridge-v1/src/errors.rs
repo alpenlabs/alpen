@@ -38,3 +38,34 @@ pub enum DepositParseError {
     #[error("Invalid deposit signature")]
     InvalidSignature,
 }
+
+#[derive(Debug, Error)]
+pub enum WithdrawalParseError {
+    /// Transaction has insufficient outputs
+    #[error("Transaction has insufficient outputs: expected at least 2, got {0}")]
+    InsufficientOutputs(usize),
+
+    /// Metadata script size mismatch
+    #[error("Metadata script size mismatch: expected {expected}, got {actual}")]
+    InvalidMetadataSize { expected: usize, actual: usize },
+
+    /// Invalid tag bytes conversion
+    #[error("Tag bytes conversion error: expected 4 bytes, got {0}")]
+    InvalidTagBytes(usize),
+
+    /// Tag mismatch
+    #[error("Tag mismatch: expected {expected}, got {actual}")]
+    TagMismatch { expected: String, actual: String },
+
+    /// Invalid operator index bytes
+    #[error("Operator index bytes conversion error: expected 4 bytes, got {0}")]
+    InvalidOperatorIdxBytes(usize),
+
+    /// Invalid deposit index bytes
+    #[error("Deposit index bytes conversion error: expected 4 bytes, got {0}")]
+    InvalidDepositIdxBytes(usize),
+
+    /// Invalid deposit txid bytes
+    #[error("Deposit txid bytes conversion error: expected 32 bytes, got {0}")]
+    InvalidDepositTxidBytes(usize),
+}
