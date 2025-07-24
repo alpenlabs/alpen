@@ -12,15 +12,17 @@ use crate::{CoreOLState, OLCoreSubproto, constants::OL_STF_CHECKPOINT_TX_TYPE, e
 pub(crate) fn route_transaction(
     state: &mut CoreOLState,
     tx: &TxInputRef<'_>,
-    _anchor_pre: &AnchorState,
-    _aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
+    anchor_pre: &AnchorState,
+    aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
     relayer: &mut impl MsgRelayer,
 ) -> Result<()> {
     // [PLACE_HOLDER]
     // TODO: Define the role of anchor_pre and aux_inputs in checkpoint validation logic and update
     // the code accordingly
     match tx.tag().tx_type() {
-        OL_STF_CHECKPOINT_TX_TYPE => checkpoint::handle_checkpoint_transaction(state, tx, relayer),
+        OL_STF_CHECKPOINT_TX_TYPE => {
+            checkpoint::handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_inputs)
+        }
         // [PLACE_HOLDER] Add other transaction types related to vk upgrade, etc.
         _ => Err(CoreError::TxParsingError("unsupported tx type".to_string())),
     }

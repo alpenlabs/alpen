@@ -2,9 +2,10 @@
 //!
 //! Handles validation of L1→L2 message ranges and commitments.
 
+use strata_asm_common::{AnchorState, Subprotocol};
 use strata_primitives::{buf::Buf32, hash};
 
-use crate::error::*;
+use crate::{OLCoreSubproto, error::*};
 
 /// Computes a rolling hash over L1→L2 message commitments
 ///
@@ -92,16 +93,12 @@ pub(crate) fn validate_l1_to_l2_messages(
     _start_height: u64,
     _end_height: u64,
     _commitment_hash: &Buf32,
+    _anchor_pre: &AnchorState,
+    _aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
 ) -> Result<()> {
     // [PLACE_HOLDER] => Waiting for the design of L1 → L2 messaging system and defining what is
     // the l1_commitment should be and etc.
-    // TODO: Implement L1→L2 message range validation
-    // This should:
-    // 1. Fetch L1→L2 messages for the given height range
-    // 2. Compute expected commitment hash using compute_rolling_hash
-    // 3. Compare with provided commitment hash
-    // 4. Return validation result
 
-    // For now, always return Ok as placeholder
+    // For now, return Ok as placeholder
     Ok(())
 }

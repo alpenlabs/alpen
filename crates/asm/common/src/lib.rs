@@ -20,3 +20,6 @@ pub use state::*;
 pub use subprotocol::*;
 pub use subprotocol_genesis::*;
 pub use tx::*;
+
+// Re-export the logging module
+pub mod logging;

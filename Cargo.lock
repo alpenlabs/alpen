@@ -13127,6 +13127,7 @@ dependencies = [
  "strata-msg-fmt",
  "strata-primitives",
  "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -13173,6 +13174,7 @@ dependencies = [
  "strata-asm-common",
  "strata-crypto",
  "strata-l1-txfmt",
+ "strata-l1tx",
  "strata-msg-fmt",
  "strata-primitives",
  "thiserror 2.0.12",

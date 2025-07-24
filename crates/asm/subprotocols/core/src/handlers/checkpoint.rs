@@ -2,10 +2,10 @@
 //!
 //! Handles checkpoint verification and state updates for the Core subprotocol.
 
-use strata_asm_common::{MsgRelayer, TxInputRef};
+use strata_asm_common::{AnchorState, MsgRelayer, Subprotocol, TxInputRef};
 use zkaleido::{ProofReceipt, PublicValues};
 
-use crate::{CoreOLState, error::*, messages, parsing, types, verification};
+use crate::{error::*, messages, parsing, types, verification, CoreOLState, OLCoreSubproto};
 
 /// Handles OL STF checkpoint transactions according to the specification
 ///
@@ -13,7 +13,7 @@ use crate::{CoreOLState, error::*, messages, parsing, types, verification};
 ///
 /// 1. **Extract and validate** the signed checkpoint from transaction data
 /// 2. **Verify signature** using the current sequencer public key
-/// 3. **Verify ASM zk-SNARK proof** using the current verifying key
+/// 3. **Verify Checkpoint zk-SNARK proof** using the current verifying key
 /// 4. **Construct expected public parameters** from local ASM state
 /// 5. **Validate state transitions** (epochs, block heights, hashes)
 /// 6. **Verify L1→L2 message range** using rolling hash
@@ -37,6 +37,8 @@ pub(crate) fn handle_checkpoint_transaction(
     state: &mut CoreOLState,
     tx: &TxInputRef<'_>,
     _relayer: &mut impl MsgRelayer,
+    anchor_pre: &AnchorState,
+    aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
 ) -> Result<()> {
     // 1. Extract and validate signed checkpoint
     let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
@@ -78,6 +80,8 @@ pub(crate) fn handle_checkpoint_transaction(
         prev_l1_height,
         new_l1_height,
         expected_commitment,
+        anchor_pre,
+        aux_inputs,
     )?;
 
     // 9. Validate L2→L1 messages

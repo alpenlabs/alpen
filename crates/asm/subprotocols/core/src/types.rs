@@ -96,7 +96,6 @@ impl CoreGenesisConfig {
             sequencer_pubkey,
         })
     }
-
 }
 
 /// [PLACE_HOLDER] => Finalize the public parameters for checkpoint proof

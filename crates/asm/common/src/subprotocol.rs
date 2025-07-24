@@ -218,7 +218,7 @@ pub trait SubprotoHandler {
 ///
 /// # Parameters
 ///
-/// - `data`: an opaque byte slice whose meaning is defined entirely by the collector's
+/// - `data`: an opaque byte slice whose meaning is defined entirely by the collector’s
 ///   implementation.
 ///
 /// # Panics

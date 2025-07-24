@@ -49,7 +49,7 @@ use constants::CORE_SUBPROTOCOL_ID;
 pub use error::*;
 use strata_asm_common::{
     AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
-    TxInputRef,
+    TxInputRef, logging,
 };
 use strata_primitives::{batch::EpochSummary, buf::Buf32, l2::L2BlockCommitment};
 pub use types::{CoreGenesisConfig, CoreOLState};
@@ -123,18 +123,13 @@ impl Subprotocol for OLCoreSubproto {
         for tx in txs {
             let result = handlers::route_transaction(state, tx, anchor_pre, aux_inputs, relayer);
 
-            // TODO: Implement proper logging approach
-            // Since this code also runs as a part of zkVM guest program, we cannot use the
-            // `tracing` crate. We need a proper logging mechanism to identify which
-            // transaction processing failed and why. For now, we print errors to stderr
-            // as a temporary solution.
-            //
+            // Log transaction processing errors using zkVM-compatible logging.
             // We can't propagate errors to upper layers when transaction processing fails because
             // invalidating and rejecting transactions is normal and expected behavior. We don't
             // want to halt the entire block processing because of a single invalid transaction.
             if let Err(e) = result {
                 let txid = tx.tx().compute_txid();
-                eprintln!("Error processing transaction (txid: {txid:?}): {e:?}");
+                logging::warn!("Error processing transaction (txid: {txid:?}): {e:?}");
             }
         }
     }
