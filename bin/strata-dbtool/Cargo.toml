@@ -15,3 +15,4 @@ tracing-subscriber.workspace = true
 strata-cli-common.workspace = true
 strata-db.workspace = true
 strata-rocksdb.workspace = true
+strata-state.workspace = true
