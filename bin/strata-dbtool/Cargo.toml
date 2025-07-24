@@ -10,9 +10,12 @@ path = "src/main.rs"
 [dependencies]
 argh.workspace = true
 rockbound.workspace = true
+tracing.workspace = true
 tracing-subscriber.workspace = true
+hex.workspace = true
 
 strata-cli-common.workspace = true
 strata-db.workspace = true
+strata-primitives.workspace = true
 strata-rocksdb.workspace = true
 strata-state.workspace = true
