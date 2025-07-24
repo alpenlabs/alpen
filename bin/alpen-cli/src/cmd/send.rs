@@ -11,11 +11,11 @@ use bdk_wallet::{
     bitcoin::{Address, Amount},
     error::CreateTxError,
 };
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
     alpen::AlpenWallet,
     constants::SATS_TO_WEI,
-    errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     net_type::NetworkType,
     seed::Seed,

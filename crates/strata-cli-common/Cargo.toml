@@ -1,0 +1,4 @@
+[package]
+edition = "2021"
+name = "strata-cli-common"
+version = "0.2.0"

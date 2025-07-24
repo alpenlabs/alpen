@@ -1,0 +1,17 @@
+[package]
+edition = "2021"
+name = "strata-dbtool"
+version = "0.2.0"
+
+[[bin]]
+name = "strata-dbtool"
+path = "src/main.rs"
+
+[dependencies]
+argh.workspace = true
+rockbound.workspace = true
+tracing-subscriber.workspace = true
+
+strata-cli-common.workspace = true
+strata-db.workspace = true
+strata-rocksdb.workspace = true

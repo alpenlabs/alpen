@@ -1224,6 +1224,7 @@ dependencies = [
  "sha2 0.10.8",
  "shrex",
  "sled",
+ "strata-cli-common",
  "strata-primitives",
  "terrors",
  "tokio",
@@ -3057,9 +3058,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.27"
+version = "4.5.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "769b0145982b4b48713e01ec42d61614425f27b7058bda7180a3a41f30104796"
+checksum = "be92d32e80243a54711e5d7ce823c35c41c9d929dc4ab58e1276f625841aadf9"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -3067,9 +3068,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.27"
+version = "4.5.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b26884eb4b57140e4d2d93652abfa49498b938b3c9179f9fc487b0acc3edad7"
+checksum = "707eab41e9622f9139419d573eca0900137718000c517d47da73045f54331c3d"
 dependencies = [
  "anstream",
  "anstyle",
@@ -3079,9 +3080,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.24"
+version = "4.5.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b755194d6389280185988721fffba69495eed5ee9feeee9a599b53db80318c"
+checksum = "ef4f52386a59ca4c860f7393bcf8abd8dfd91ecccc0f774635ff68e92eeef491"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -13539,6 +13540,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-cli-common"
+version = "0.2.0"
+
+[[package]]
 name = "strata-client"
 version = "0.2.0"
 dependencies = [
@@ -13712,6 +13717,18 @@ dependencies = [
  "thiserror 2.0.12",
  "tracing",
  "zkaleido",
+]
+
+[[package]]
+name = "strata-dbtool"
+version = "0.2.0"
+dependencies = [
+ "argh",
+ "rockbound",
+ "strata-cli-common",
+ "strata-db",
+ "strata-rocksdb",
+ "tracing-subscriber 0.3.19",
 ]
 
 [[package]]

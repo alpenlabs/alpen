@@ -1,7 +1,8 @@
 use argh::FromArgs;
 use bip39::Language;
+use strata_cli_common::errors::DisplayedError;
 
-use crate::{errors::DisplayedError, seed::Seed};
+use crate::seed::Seed;
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "backup")]
