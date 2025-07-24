@@ -1,11 +1,18 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
-use strata_primitives::l2::L2BlockId;
+use strata_primitives::{l1::L1BlockId, l2::L2BlockId};
 use strata_state::{block::L2BlockBundle, header::L2Header};
 
 use super::chainstate::get_latest_l2_write_batch;
-use crate::{cli::OutputFormat, utils::block_id::parse_l2_block_id};
+use crate::{
+    cli::OutputFormat,
+    output::{
+        l2::{L2BlockInfo, L2SummaryInfo},
+        output,
+    },
+    utils::block_id::parse_l2_block_id,
+};
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-l2-block")]
@@ -90,49 +97,31 @@ pub(crate) fn get_l2_block(db: &impl Database, args: GetL2BlockArgs) -> Result<(
 
     let l2_block = bundle.block();
     let header = l2_block.header();
-
-    // Print in porcelain format
-    println!("l2_block.id {block_id:?}");
-    println!("l2_block.status {status:?}");
-    println!("l2_block.header.slot {}", header.slot());
-    println!("l2_block.header.parent_blkid {:?}", header.parent());
-    println!("l2_block.header.state_root {:?}", header.state_root());
-    println!(
-        "l2_block.header.l1_payload_hash {:?}",
-        header.l1_payload_hash()
-    );
-    println!(
-        "l2_block.header.exec_payload_hash {:?}",
-        header.exec_payload_hash()
-    );
-    println!("l2_block.header.epoch {}", header.epoch());
-    println!("l2_block.header.timestamp {}", header.timestamp());
-
-    // Print L1 segment information
     let l1_segment = l2_block.body().l1_segment();
-    println!(
-        "l2_block.l1_segment.new_manifests_count {}",
-        l1_segment.new_manifests().len()
-    );
 
-    for (index, manifest) in l1_segment.new_manifests().iter().enumerate() {
-        println!(
-            "l2_block.l1_segment.manifest_{index}.height {}",
-            manifest.height()
-        );
-        println!(
-            "l2_block.l1_segment.manifest_{index}.blkid {:?}",
-            manifest.blkid()
-        );
-    }
+    // Create L1 segment data
+    let l1_segment_data: Vec<(u64, &L1BlockId)> = l1_segment
+        .new_manifests()
+        .iter()
+        .map(|manifest| (manifest.height(), manifest.blkid()))
+        .collect();
 
-    Ok(())
+    // Create the output data structure
+    let block_info = L2BlockInfo {
+        id: &block_id,
+        status: &status,
+        header,
+        l1_segment: l1_segment_data,
+    };
+
+    // Use the output utility
+    output(&block_info, args.output_format)
 }
 
 /// Get L2 summary - check all L2 blocks exist in database.
 pub(crate) fn get_l2_summary(
     db: &impl Database,
-    _args: GetL2SummaryArgs,
+    args: GetL2SummaryArgs,
 ) -> Result<(), DisplayedError> {
     // Get the tip block (highest slot)
     let latest_write_batch = get_latest_l2_write_batch(db)
@@ -174,21 +163,18 @@ pub(crate) fn get_l2_summary(
     let expected_block_count = tip_slot.saturating_sub(earliest_slot) + 1;
     let all_blocks_present = missing_slots.is_empty();
 
-    // Print in porcelain format
-    println!("l2_summary.tip_slot {tip_slot}");
-    println!("l2_summary.tip_block_id {tip_block_id:?}");
-    println!("l2_summary.earliest_slot {earliest_slot}");
-    println!("l2_summary.earliest_block_id {earliest_block_id:?}");
-    println!("l2_summary.current_epoch {current_epoch}");
-    println!("l2_summary.expected_block_count {expected_block_count}");
-    println!("l2_summary.all_blocks_present {all_blocks_present}");
+    // Create the output data structure
+    let summary_info = L2SummaryInfo {
+        tip_slot,
+        tip_block_id,
+        earliest_slot,
+        earliest_block_id: &earliest_block_id,
+        current_epoch,
+        expected_block_count,
+        all_blocks_present,
+        missing_slots,
+    };
 
-    if !missing_slots.is_empty() {
-        println!("l2_summary.missing_slots_count {}", missing_slots.len());
-        for slot in missing_slots {
-            println!("l2_summary.missing_slot {slot}");
-        }
-    }
-
-    Ok(())
+    // Use the output utility
+    output(&summary_info, args.output_format)
 }
