@@ -24,24 +24,42 @@ use crate::{
     signet::{backend::SignetBackend, EsploraClient},
 };
 
+/// Settings deserialized from the config file.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsFromFile {
+    /// Esplora server endpoint.
     pub esplora: Option<String>,
+    /// Bitcoind RPC username.
     pub bitcoind_rpc_user: Option<String>,
+    /// Bitcoind RPC password.
     pub bitcoind_rpc_pw: Option<String>,
+    /// Path to the Bitcoind RPC cookie file.
     pub bitcoind_rpc_cookie: Option<PathBuf>,
+    /// Bitcoind RPC endpoint.
     pub bitcoind_rpc_endpoint: Option<String>,
+    /// Alpen network RPC endpoint.
     pub alpen_endpoint: String,
+    /// Faucet service endpoint.
     pub faucet_endpoint: String,
+    /// Mempool explorer endpoint.
     pub mempool_endpoint: Option<String>,
+    /// Blockscout explorer endpoint.
     pub blockscout_endpoint: Option<String>,
+    /// The aggregated Musig2 public key for the bridge.
     pub bridge_pubkey: Hex<[u8; 32]>,
+    /// Magic bytes to identify deposit transactions (=4 bytes).
     pub magic_bytes: String,
+    /// The Bitcoin network to use (signet, regtest, mainnet, etc).
     pub network: Option<Network>,
+    /// Delay in blocks for descriptor recovery.
     pub recover_delay: Option<u32>,
+    /// The amount for bridge-in transactions in satoshis.
     pub bridge_in_amount_sats: Option<u64>,
+    /// The amount for bridge-out transactions in satoshis.
     pub bridge_out_amount_sats: Option<u64>,
+    /// The address of the bridge precompile in alpen evm in hex.
     pub bridge_alpen_address: Option<String>,
+    /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
 }
 
