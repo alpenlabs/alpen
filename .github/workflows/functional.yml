@@ -1,10 +1,7 @@
 name: Run functional tests
 
 on:
-  pull_request:
-  merge_group:
-  push:
-    branches: [main]
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
@@ -75,6 +72,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: extract-rust-version
     timeout-minutes: 60
+    env:
+      # generating build artifacts and coverage data in default dir for cargo-llvm-cov
+      CARGO_TARGET_DIR: "${{ github.workspace }}/target/llvm-cov-target"
+      LLVM_PROFILE_FILE: "${{ github.workspace }}/target/llvm-cov-target/strata-%p-%m.profraw"
 
     steps:
       - name: Checkout repository
@@ -109,6 +110,7 @@ jobs:
         with:
           virtualenvs-create: true
           virtualenvs-in-project: true
+
       - name: Load cached venv
         id: cached-poetry-dependencies
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
@@ -126,12 +128,19 @@ jobs:
         with:
           toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
 
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@9ca1734d8940023f074414ee621fd530c4ce10f2 # v2.55.3
+        with:
+          tool: cargo-llvm-cov
+
       - name: Rust cache
         uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           cache-on-failure: true
 
       - name: Build Cargo project
+        env:
+          RUSTFLAGS: "-Cinstrument-coverage"
         run: cargo build --locked -F debug-utils
 
       - name: Run functional tests (1)
@@ -141,8 +150,8 @@ jobs:
           NO_COLOR: "1"
           LOG_LEVEL: "info"
         run: |
-          NEWPATH="$(realpath target/debug/)"
-          export PATH="${NEWPATH}:${PATH}"
+          NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
+          export PATH="$NEWPATH:$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
 
@@ -157,10 +166,27 @@ jobs:
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
         run: |
-          NEWPATH="$(realpath target/debug/)"
-          export PATH="${NEWPATH}:${PATH}"
+          NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
+          export PATH="$NEWPATH:$PATH"
           which strata-client
           cd functional-tests && poetry run python entry.py
+
+      - name: Generate combined coverage lcov
+        id: genFunctionalLcov
+        continue-on-error: true
+        env:
+          # cargo-llvm-cov expects default target dir and adds llvm-cov-target itself
+          CARGO_TARGET_DIR: "${{ github.workspace }}/target"
+        run: |
+          cargo llvm-cov -F debug-utils report --lcov > lcov.functional.info
+
+      - name: Upload coverage lcov artifact
+        if: steps.genFunctionalLcov.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: functional-lcov
+          path: lcov.functional.info
 
       - name: Zip log files on failure
         if: steps.funcTestsRun2.outcome == 'failure'
