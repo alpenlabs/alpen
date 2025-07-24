@@ -41,6 +41,10 @@ pub struct OperatorEntry {
 
     /// Wallet pubkey used to compute MuSig2 pubkey from a set of operators.
     wallet_pk: Buf32,
+
+    /// Whether this operator is part of the current N/N multisig set.
+    /// Operators not in the current multisig are preserved but not assigned new tasks.
+    is_in_current_multisig: bool,
 }
 
 impl OperatorEntry {
@@ -75,6 +79,18 @@ impl OperatorEntry {
     /// Reference to the wallet public key as [`Buf32`].
     pub fn wallet_pk(&self) -> &Buf32 {
         &self.wallet_pk
+    }
+
+    /// Returns whether this operator is part of the current N/N multisig set.
+    ///
+    /// Operators in the current multisig are eligible for new task assignments, while operators
+    /// not in the current multisig are preserved in the table but not assigned new tasks.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the operator is in the current multisig, `false` otherwise.
+    pub fn is_in_current_multisig(&self) -> bool {
+        self.is_in_current_multisig
     }
 }
 
@@ -154,6 +170,7 @@ impl OperatorTable {
                     idx: i as OperatorIdx,
                     signing_pk: *e.signing_pk(),
                     wallet_pk: *e.wallet_pk(),
+                    is_in_current_multisig: true,
                 })
                 .collect(),
         }
@@ -231,6 +248,7 @@ impl OperatorTable {
             },
             signing_pk,
             wallet_pk,
+            is_in_current_multisig: true,
         };
         self.operators.push(entry);
     }
@@ -281,6 +299,43 @@ impl OperatorTable {
     pub fn indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
         self.operators.iter().map(|operator| operator.idx)
     }
+
+    /// Returns an iterator over indices of operators in the current N/N multisig.
+    ///
+    /// Only returns indices of operators where `is_in_current_multisig` is `true`.
+    /// This is used for assignment creation and deposit processing.
+    ///
+    /// # Returns
+    ///
+    /// Iterator yielding [`OperatorIdx`] for operators in the current multisig.
+    pub fn current_multisig_indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
+        self.operators
+            .iter()
+            .filter(|operator| operator.is_in_current_multisig)
+            .map(|operator| operator.idx)
+    }
+
+    /// Updates the multisig membership status for an operator.
+    ///
+    /// This method allows marking operators as part of the current multisig or not without
+    /// removing them from the table entirely.
+    ///
+    /// # Parameters
+    ///
+    /// - `idx` - The operator index to update
+    /// - `is_in_multisig` - Whether the operator should be in the current multisig
+    ///
+    /// # Returns
+    ///
+    /// `true` if the operator was found and updated, `false` if the operator doesn't exist.
+    pub fn set_multisig_membership(&mut self, idx: OperatorIdx, is_in_multisig: bool) -> bool {
+        if let Ok(pos) = self.operators.binary_search_by_key(&idx, |e| e.idx) {
+            self.operators[pos].is_in_current_multisig = is_in_multisig;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl OperatorKeyProvider for OperatorTable {
@@ -316,11 +371,13 @@ mod tests {
             idx: 5,
             signing_pk,
             wallet_pk,
+            is_in_current_multisig: true,
         };
 
         assert_eq!(entry.idx(), 5);
         assert_eq!(entry.signing_pk(), &signing_pk);
         assert_eq!(entry.wallet_pk(), &wallet_pk);
+        assert!(entry.is_in_current_multisig());
     }
 
     #[test]
@@ -470,5 +527,51 @@ mod tests {
         ];
         let table = OperatorTable::from_operator_list(&operators);
         table.sanity_check(); // Should not panic on valid table
+    }
+
+    #[test]
+    fn test_current_multisig_indices() {
+        let operators = vec![
+            create_test_operator_pubkeys(1, 2),
+            create_test_operator_pubkeys(3, 4),
+            create_test_operator_pubkeys(5, 6),
+        ];
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        // Initially, all operators should be in the current multisig set
+        let current_indices: Vec<_> = table.current_multisig_indices().collect();
+        assert_eq!(current_indices, vec![0, 1, 2]);
+
+        // Mark operator 1 as not in current multisig
+        assert!(table.set_multisig_membership(1, false));
+
+        // Now only operators 0 and 2 should be in current multisig
+        let current_indices: Vec<_> = table.current_multisig_indices().collect();
+        assert_eq!(current_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_set_multisig_membership() {
+        let operators = vec![
+            create_test_operator_pubkeys(1, 2),
+            create_test_operator_pubkeys(3, 4),
+        ];
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        // Initially, both operators should be in current multisig
+        assert!(table.get_operator(0).unwrap().is_in_current_multisig());
+        assert!(table.get_operator(1).unwrap().is_in_current_multisig());
+
+        // Remove operator 0 from current multisig
+        assert!(table.set_multisig_membership(0, false));
+        assert!(!table.get_operator(0).unwrap().is_in_current_multisig());
+        assert!(table.get_operator(1).unwrap().is_in_current_multisig());
+
+        // Try to update non-existent operator
+        assert!(!table.set_multisig_membership(99, false));
+
+        // Add operator 0 back to current multisig
+        assert!(table.set_multisig_membership(0, true));
+        assert!(table.get_operator(0).unwrap().is_in_current_multisig());
     }
 }

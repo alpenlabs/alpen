@@ -119,19 +119,18 @@ impl BridgeV1State {
     /// Processes a parsed deposit by adding it to the deposits table.
     ///
     /// This function takes already parsed deposit information and creates a new deposit entry
-    /// in the deposits table with the specified notary operators.
+    /// in the deposits table. Only operators that are part of the current N/N multisig set
+    /// are included as notary operators for the deposit.
     ///
     /// # Parameters
     ///
     /// - `deposit_info` - Parsed deposit information containing amount, destination, and outpoint
-    /// - `notary_operators` - Vector of operator indices that form the N/N multisig for this
-    ///   deposit
     ///
     /// # Returns
     ///
     /// The deposit index assigned to the newly created deposit entry.
     pub fn process_deposit(&mut self, deposit_info: &DepositInfo) -> u32 {
-        let notary_operators = self.operators().indices().collect();
+        let notary_operators = self.operators().current_multisig_indices().collect();
         self.deposits
             .create_next_deposit(deposit_info.outpoint, notary_operators, deposit_info.amt)
     }
@@ -165,9 +164,11 @@ impl BridgeV1State {
         withdrawal_info: &WithdrawalInfo,
     ) -> Result<(), WithdrawalValidationError> {
         let deposit_idx = withdrawal_info.deposit_idx();
-        
+
         // Check if an assignment exists for this deposit
-        let assignment = self.assignments.get_assignment(deposit_idx)
+        let assignment = self
+            .assignments
+            .get_assignment(deposit_idx)
             .ok_or(WithdrawalValidationError::NoAssignmentFound { deposit_idx })?;
 
         // Validate that the operator matches the assignment
@@ -181,9 +182,11 @@ impl BridgeV1State {
         }
 
         // Validate that the deposit txid matches
-        let deposit = self.deposits.get_deposit(deposit_idx)
+        let deposit = self
+            .deposits
+            .get_deposit(deposit_idx)
             .ok_or(WithdrawalValidationError::DepositNotFound { deposit_idx })?;
-            
+
         let expected_txid = deposit.output().outpoint().txid;
         let actual_txid = withdrawal_info.deposit_txid();
         if expected_txid != actual_txid {
@@ -194,12 +197,13 @@ impl BridgeV1State {
         }
 
         // Validate withdrawal amount against assignment command
-        let expected_amount: BitcoinAmount = assignment.withdrawal_command()
+        let expected_amount: BitcoinAmount = assignment
+            .withdrawal_command()
             .withdraw_outputs()
             .iter()
             .map(|output| output.amt())
             .sum();
-            
+
         let actual_amount = withdrawal_info.withdrawal_amount();
         if expected_amount != actual_amount {
             return Err(WithdrawalValidationError::AmountMismatch {
