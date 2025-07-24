@@ -37,74 +37,55 @@ impl<const ID: SubprotocolId> InterprotoMsg for NullMsg<ID> {
     }
 }
 
-/// Generic message from OL to ASM using strata-msg-fmt
+/// A wrapper around [`OwnedMsg`] that provides typed access to ASM messages.
 ///
-/// This type wraps messages in the SPS-msg-fmt format, allowing for
-/// different message types to be sent from OL to ASM (e.g., withdrawals,
-/// upgrade messages, etc.)
+/// `Message` encapsulates a message with a type identifier and serialized data body,
+/// providing a consistent interface for storing and retrieving different types of ASM messages.
+/// The underlying [`OwnedMsg`] handles the storage and encoding/decoding according to the
+/// SPS-msg-fmt specification.
+/// [PLACE_HOLDER] Update the names to align with the team's new naming convention.
 ///
-/// We store the type and body separately for Borsh compatibility while
-/// maintaining full SPS-msg-fmt compliance through encoding/decoding.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
-pub struct OLToASMMessage {
-    /// Message type identifier
-    ty: TypeId,
-    /// Message body
-    body: Vec<u8>,
-}
+/// [PLACE_HOLDER] TODO: Inter-protocol messaging design
+/// Key points for future implementation:
+/// - Don't pass raw OL logs as inter-proto messages
+/// - Each subprotocol should export opaque enum types for messages it expects
+/// - Use typed messages instead of raw OwnedMsg objects
+/// - Example: BridgeMessage::Withdrawal { recipient, amount }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Message(pub OwnedMsg);
 
-impl OLToASMMessage {
-    /// Creates a new OL to ASM message from type and body
+impl Message {
+    /// Creates a new message from type and body
     pub fn new(ty: TypeId, body: Vec<u8>) -> Result<Self, AsmError> {
-        // Use strata_msg_fmt's validation
-        strata_msg_fmt::check_type(ty).map_err(AsmError::from)?;
-        Ok(Self { ty, body })
+        let owned_msg = OwnedMsg::new(ty, body).map_err(AsmError::from)?;
+        Ok(Message(owned_msg))
     }
 
-    /// Creates an OL to ASM message from an OwnedMsg
-    pub fn from_msg(msg: &OwnedMsg) -> Self {
-        Self {
-            ty: msg.ty(),
-            body: msg.body().to_vec(),
-        }
-    }
-
-    /// Creates a new OL to ASM message from raw encoded bytes
+    /// Creates a message from raw encoded bytes
     pub fn from_encoded(encoded_bytes: Vec<u8>) -> Result<Self, AsmError> {
-        // Use OwnedMsg's TryFrom implementation for decoding
         let owned_msg = OwnedMsg::try_from(encoded_bytes.as_slice()).map_err(AsmError::from)?;
-        Ok(Self {
-            ty: owned_msg.ty(),
-            body: owned_msg.body().to_vec(),
-        })
-    }
-
-    /// Creates an OwnedMsg from this message
-    pub fn to_msg(&self) -> Result<OwnedMsg, MessageError> {
-        OwnedMsg::new(self.ty, self.body.clone())
+        Ok(Message(owned_msg))
     }
 
     /// Returns the message type
     pub fn ty(&self) -> TypeId {
-        self.ty
+        self.0.ty()
     }
 
     /// Returns the message body
     pub fn body(&self) -> &[u8] {
-        &self.body
-    }
-
-    /// Returns the message body as Vec
-    pub fn body_vec(&self) -> Vec<u8> {
-        self.body.clone()
+        self.0.body()
     }
 
     /// Encodes the message to SPS-msg-fmt bytes
     pub fn encode(&self) -> Result<Vec<u8>, AsmError> {
         let mut result = Vec::new();
-        // Use strata_msg_fmt's encoding
-        strata_msg_fmt::try_encode_into_buf(self.ty, self.body.iter().copied(), &mut result)
-            .map_err(AsmError::from)?;
+        strata_msg_fmt::try_encode_into_buf(
+            self.0.ty(),
+            self.0.body().iter().copied(),
+            &mut result,
+        )
+        .map_err(AsmError::from)?;
         Ok(result)
     }
 
@@ -113,21 +94,39 @@ impl OLToASMMessage {
         self.encode()
     }
 
-    /// Compatibility method for old API - returns OwnedMsg
-    pub fn decode(&self) -> Result<OwnedMsg, MessageError> {
-        self.to_msg()
+    /// Converts to OwnedMsg
+    pub fn to_msg(&self) -> OwnedMsg {
+        self.0.clone()
+    }
+}
+
+impl BorshSerialize for Message {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        // Serialize as (ty, body) tuple for Borsh compatibility
+        (self.0.ty(), self.0.body().to_vec()).serialize(writer)
+    }
+}
+
+impl BorshDeserialize for Message {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        // Deserialize as (ty, body) tuple for Borsh compatibility
+        let (ty, body): (TypeId, Vec<u8>) = BorshDeserialize::deserialize_reader(reader)?;
+        let owned_msg = OwnedMsg::new(ty, body)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        Ok(Message(owned_msg))
     }
 }
 
 /// Temporary alias for backwards compatibility
-/// TODO: Remove once all code is updated to use OLToASMMessage
-pub type L2ToL1Msg = OLToASMMessage;
+/// [PLACE_HOLDER] Update the names to align with the team’s new naming convention.
+/// Temporary alias for backwards compatibility
+pub type L2ToL1Msg = Message;
 
 /// Generic container for multiple messages following SPS-msg-fmt
 #[derive(Clone, Debug)]
 pub struct MessagesContainer {
     /// The target subprotocol ID
-    target_subprotocol: SubprotocolId,
+    pub target_subprotocol: SubprotocolId,
     /// Messages using strata-msg-fmt
     pub messages: Vec<OwnedMsg>,
 }
@@ -155,16 +154,6 @@ impl MessagesContainer {
     }
 }
 
-impl InterprotoMsg for MessagesContainer {
-    fn id(&self) -> SubprotocolId {
-        self.target_subprotocol
-    }
-
-    fn as_dyn_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::any::Any;
@@ -172,7 +161,7 @@ mod tests {
     use strata_l1_txfmt::SubprotocolId;
     use strata_msg_fmt::{Msg, OwnedMsg};
 
-    use super::{InterprotoMsg, OLToASMMessage};
+    use super::{InterprotoMsg, Message};
 
     #[derive(Clone)]
     struct Foo {
@@ -230,19 +219,19 @@ mod tests {
     }
 
     #[test]
-    fn test_ol_to_asm_message() {
+    fn test_message_wrapper() {
         let type_id = 0x1234;
         let body = vec![0x01, 0x02, 0x03];
-        let ol_msg = OLToASMMessage::new(type_id, body.clone()).unwrap();
+        let msg = Message::new(type_id, body.clone()).unwrap();
 
-        assert_eq!(ol_msg.ty(), type_id);
-        assert_eq!(ol_msg.body(), &body);
+        assert_eq!(msg.ty(), type_id);
+        assert_eq!(msg.body(), &body);
 
         // Test encoding/decoding roundtrip
-        let encoded = ol_msg.encode().unwrap();
-        let decoded_ol_msg = OLToASMMessage::from_encoded(encoded).unwrap();
-        assert_eq!(decoded_ol_msg.ty(), type_id);
-        assert_eq!(decoded_ol_msg.body(), &body);
+        let encoded = msg.encode().unwrap();
+        let decoded_msg = Message::from_encoded(encoded).unwrap();
+        assert_eq!(decoded_msg.ty(), type_id);
+        assert_eq!(decoded_msg.body(), &body);
     }
 
     #[test]
@@ -253,15 +242,15 @@ mod tests {
         // Create using strata-msg-fmt directly
         let msg = OwnedMsg::new(type_id, body.clone()).unwrap();
 
-        // Test SPS-msg-fmt compliance via OLToASMMessage
-        let ol_msg = OLToASMMessage::from_msg(&msg);
-        let encoded = ol_msg.encode().unwrap();
-        let parsed_ol_msg = OLToASMMessage::from_encoded(encoded).unwrap();
-        assert_eq!(parsed_ol_msg.ty(), msg.ty());
-        assert_eq!(parsed_ol_msg.body(), msg.body());
+        // Test SPS-msg-fmt compliance via Message
+        let message_wrapper = Message(msg.clone());
+        let encoded = message_wrapper.encode().unwrap();
+        let parsed_message_wrapper = Message::from_encoded(encoded).unwrap();
+        assert_eq!(parsed_message_wrapper.ty(), msg.ty());
+        assert_eq!(parsed_message_wrapper.body(), msg.body());
 
         // Test OwnedMsg conversion roundtrip
-        let converted_msg = ol_msg.to_msg().unwrap();
+        let converted_msg = message_wrapper.to_msg();
         assert_eq!(converted_msg.ty(), type_id);
         assert_eq!(converted_msg.body(), body);
     }

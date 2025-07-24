@@ -39,9 +39,8 @@ use crate::{
 ///     type Msg = MyMessage;
 ///     type AuxInput = MyAuxData;
 ///
-///     fn init(genesis_config_data: &[u8]) -> Result<Self::State, AsmError> {
-///         let config: Self::GenesisConfig = borsh::from_slice(genesis_config_data)?;
-///         Ok(MyState::from_config(config))
+///     fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
+///        // init logic
 ///     }
 ///
 ///     fn pre_process_txs(state: &Self::State, txs: &[TxInputRef], ...) {
@@ -79,16 +78,15 @@ pub trait Subprotocol: 'static {
     /// This should contain all necessary parameters for proper subprotocol initialization.
     type GenesisConfig: Any + BorshDeserialize + BorshSerialize;
 
-    /// Constructs a new state using optional genesis configuration data.
+    /// Constructs a new state using the provided genesis configuration.
     ///
     /// # Arguments
-    /// * `genesis_config_data` - Optional serialized genesis configuration data that should be
-    ///   deserialized into Self::GenesisConfig before use. Each subprotocol can decide whether to
-    ///   accept None (empty genesis) or require proper configuration.
+    /// * `genesis_config` - The genesis configuration for this subprotocol. Subprotocols that don't
+    ///   require configuration should use `type GenesisConfig = ()`.
     ///
     /// # Returns
-    /// The initialized state or an error if deserialization/initialization fails
-    fn init(genesis_config_data: Option<&[u8]>) -> Result<Self::State, AsmError>;
+    /// The initialized state or an error if initialization fails
+    fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError>;
 
     /// Pre-processes a batch of L1 transactions by registering any required off-chain inputs.
     ///

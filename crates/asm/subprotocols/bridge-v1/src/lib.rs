@@ -1,9 +1,12 @@
 //! BridgeV1 Subprotocol
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInputCollector, BRIDGE_SUBPROTOCOL_ID, MsgRelayer, NullMsg,
-    Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
+
+mod constants;
+use constants::BRIDGE_SUBPROTOCOL_ID;
 
 /// BridgeV1 state.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -32,7 +35,7 @@ impl Subprotocol for BridgeV1Subproto {
 
     type GenesisConfig = BridgeV1GenesisConfig;
 
-    fn init(_genesis_config_data: Option<&[u8]>) -> std::result::Result<Self::State, AsmError> {
+    fn init(_genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
         // For now, always return default state regardless of genesis config
         Ok(BridgeV1State {})
     }

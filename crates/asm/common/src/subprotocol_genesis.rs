@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_l1_txfmt::SubprotocolId;
 
-use crate::AsmError;
+use crate::{AsmError, Subprotocol};
 
 /// Registry for managing genesis state for all subprotocols.
 ///
@@ -34,13 +34,9 @@ impl GenesisConfigRegistry {
     /// Registers a genesis configuration for a subprotocol.
     ///
     /// # Arguments
-    /// * `id` - The subprotocol ID
     /// * `config` - The genesis configuration to register
-    pub fn register<T: BorshSerialize>(
-        &mut self,
-        id: SubprotocolId,
-        config: &T,
-    ) -> Result<(), AsmError> {
+    pub fn register<S: Subprotocol>(&mut self, config: &S::GenesisConfig) -> Result<(), AsmError> {
+        let id = S::ID;
         let serialized = borsh::to_vec(config).map_err(|e| AsmError::Serialization(id, e))?;
         self.configs.insert(id, serialized);
         Ok(())
@@ -89,10 +85,46 @@ impl GenesisConfigRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AnchorState, MsgRelayer, TxInputRef};
 
     #[derive(Debug, PartialEq, BorshSerialize, BorshDeserialize)]
     struct TestConfig {
         value: u32,
+    }
+
+    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+    struct TestState {
+        value: u32,
+    }
+
+    struct TestSubprotocol;
+
+    impl Subprotocol for TestSubprotocol {
+        const ID: SubprotocolId = 1;
+        type State = TestState;
+        type Msg = ();
+        type AuxInput = ();
+        type GenesisConfig = TestConfig;
+
+        fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
+            Ok(TestState {
+                value: genesis_config.value,
+            })
+        }
+
+        fn process_txs(
+            _state: &mut Self::State,
+            _txs: &[TxInputRef<'_>],
+            _anchor_pre: &AnchorState,
+            _aux_inputs: &[Self::AuxInput],
+            _relayer: &mut impl MsgRelayer,
+        ) {
+            // No-op for test
+        }
+
+        fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
+            // No-op for test
+        }
     }
 
     #[test]
@@ -101,7 +133,7 @@ mod tests {
         let config = TestConfig { value: 42 };
 
         // Register config
-        registry.register(1, &config).unwrap();
+        registry.register::<TestSubprotocol>(&config).unwrap();
         assert!(registry.contains(1));
         assert_eq!(registry.len(), 1);
 

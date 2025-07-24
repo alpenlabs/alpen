@@ -1,6 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::{AsmLog, DEPOSIT_LOG_TYPE_ID};
+use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
+
+use crate::constants::DEPOSIT_LOG_TYPE_ID;
 
 /// Details for a deposit operation.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

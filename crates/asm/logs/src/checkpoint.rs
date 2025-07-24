@@ -1,7 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::{AsmLog, CHECKPOINT_UPDATE_LOG_TYPE};
+use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
 use strata_primitives::{l1::L1BlockCommitment, l2::L2BlockCommitment};
+
+use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE;
 
 /// Details for a checkpoint update event.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

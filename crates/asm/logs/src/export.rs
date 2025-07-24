@@ -1,7 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::ExportEntry;
-use strata_asm_common::{AsmLog, NEW_EXPORT_ENTRY_LOG_TYPE};
+use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
+
+use crate::constants::NEW_EXPORT_ENTRY_LOG_TYPE;
 
 /// Details for an export state update event.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

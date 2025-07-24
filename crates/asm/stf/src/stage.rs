@@ -47,10 +47,16 @@ impl Stage for SubprotoLoaderStage<'_, '_> {
             // In either case, we must initialize a fresh state from the provided configuration in
             // genesis_registry
             None => {
-                // Try to get genesis config data from registry
-                let genesis_config_data = self.genesis_registry.get_raw(S::ID);
+                // Deserialize genesis config from registry, or use default if not found
+                let genesis_config: S::GenesisConfig =
+                    self.genesis_registry.get(S::ID).unwrap_or_else(|| {
+                        // For subprotocols that use () as GenesisConfig, this will work
+                        // For other subprotocols, they should provide config in registry
+                        borsh::from_slice(&[])
+                            .expect("asm: subprotocol requires genesis config but none provided")
+                    });
 
-                S::init(genesis_config_data).expect("asm: failed to initialize subprotocol state")
+                S::init(genesis_config).expect("asm: failed to initialize subprotocol state")
             }
         };
 

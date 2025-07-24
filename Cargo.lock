@@ -13161,6 +13161,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "strata-asm-common",
+ "strata-l1-txfmt",
 ]
 
 [[package]]
@@ -13183,6 +13184,7 @@ name = "strata-asm-stf"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "borsh",
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-core",

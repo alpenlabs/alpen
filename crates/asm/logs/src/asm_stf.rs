@@ -1,7 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::InnerVerificationKey;
-use strata_asm_common::{AsmLog, ASM_STF_UPDATE_LOG_TYPE};
+use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
+
+use crate::constants::ASM_STF_UPDATE_LOG_TYPE;
 
 /// Details for an execution environment verification key update.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

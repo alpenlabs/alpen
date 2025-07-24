@@ -36,6 +36,7 @@
 //! - Rolling hash verification prevents L1→L2 message manipulation
 
 // Module declarations
+mod constants;
 mod error;
 mod handlers;
 mod messages;
@@ -44,11 +45,11 @@ mod types;
 mod verification;
 
 // Public re-exports
-use borsh::from_slice;
+use constants::CORE_SUBPROTOCOL_ID;
 pub use error::*;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInputCollector, CORE_SUBPROTOCOL_ID, MsgRelayer, NullMsg,
-    Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
 pub use types::{CoreGenesisConfig, CoreOLState};
 
@@ -77,14 +78,7 @@ impl Subprotocol for OLCoreSubproto {
 
     type GenesisConfig = CoreGenesisConfig;
 
-    fn init(genesis_config_data: Option<&[u8]>) -> std::result::Result<Self::State, AsmError> {
-        // Core subprotocol requires genesis configuration for proper initialization
-        let genesis_data = genesis_config_data.ok_or(AsmError::MissingGenesisConfig(Self::ID))?;
-
-        // Deserialize the genesis configuration
-        let genesis_config: Self::GenesisConfig =
-            from_slice(genesis_data).map_err(|e| AsmError::Deserialization(Self::ID, e))?;
-
+    fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
         // Initialize the Core subprotocol state from genesis configuration
         Ok(CoreOLState {
             checkpoint_vk_bytes: genesis_config.checkpoint_vk_bytes,

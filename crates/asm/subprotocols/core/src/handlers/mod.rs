@@ -6,12 +6,13 @@ pub(crate) mod checkpoint;
 pub(crate) mod forced_inclusion;
 pub(crate) mod upgrade;
 
-use strata_asm_common::{
-    AnchorState, EE_UPGRADE_TX_TYPE, FORCED_INCLUSION_TX_TYPE, MsgRelayer,
-    OL_STF_CHECKPOINT_TX_TYPE, Subprotocol, TxInputRef,
-};
+use strata_asm_common::{AnchorState, MsgRelayer, Subprotocol, TxInputRef};
 
-use crate::{CoreOLState, OLCoreSubproto, error::*};
+use crate::{
+    CoreOLState, OLCoreSubproto,
+    constants::{EE_UPGRADE_TX_TYPE, FORCED_INCLUSION_TX_TYPE, OL_STF_CHECKPOINT_TX_TYPE},
+    error::*,
+};
 
 /// Routes transactions to appropriate handlers based on transaction type
 pub(crate) fn route_transaction(

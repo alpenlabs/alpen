@@ -1,6 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::{AsmLog, FORCED_INCLUSION_LOG_TYPE_ID};
+use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
+
+use crate::constants::FORCED_INCLUSION_LOG_TYPE_ID;
 
 /// Details for a forced inclusion operation.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

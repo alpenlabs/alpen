@@ -2,7 +2,7 @@
 //!
 //! Handles checkpoint verification and state updates for the Core subprotocol.
 
-use strata_asm_common::{BRIDGE_SUBPROTOCOL_ID, MessagesContainer, MsgRelayer, TxInputRef};
+use strata_asm_common::{MsgRelayer, TxInputRef};
 use zkaleido::{ProofReceipt, PublicValues};
 
 use crate::{CoreOLState, error::*, messages, parsing, types, verification};
@@ -36,7 +36,7 @@ use crate::{CoreOLState, error::*, messages, parsing, types, verification};
 pub(crate) fn handle(
     state: &mut CoreOLState,
     tx: &TxInputRef<'_>,
-    relayer: &mut impl MsgRelayer,
+    _relayer: &mut impl MsgRelayer,
 ) -> Result<()> {
     // 1. Extract and validate signed checkpoint
     let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
@@ -88,13 +88,20 @@ pub(crate) fn handle(
 
     // [PLACE_HOLDER] => Update here when we have the design of L2 → L1 messaging system.
     // 11. Forward withdrawal messages to Bridge subprotocol
+    // [PLACE_HOLDER] TODO: Fix inter-protocol messaging
+    // Key points:
+    // - Don't pass raw OL logs as inter-proto messages
+    // - Bridge subprotocol should export opaque enum types for messages it expects
+    // - Each subprotocol should define its own message interface
+    // - Use typed messages instead of raw OwnedMsg objects
+    // - Example: BridgeMessage::Withdrawal { recipient, amount }
+    /*
     if !public_params.l2_to_l1_msgs.is_empty() {
-        // Convert OLToASMMessage to Message format and send to bridge
+        // Convert Message to OwnedMsg format and send to bridge
+        // [PLACE_HOLDER] Update the names to align with the team's new naming convention.
         let mut bridge_messages = Vec::new();
         for ol_msg in &public_params.l2_to_l1_msgs {
-            if let Ok(decoded) = ol_msg.decode() {
-                bridge_messages.push(decoded);
-            }
+            bridge_messages.push(ol_msg.to_msg());
         }
 
         if !bridge_messages.is_empty() {
@@ -103,6 +110,7 @@ pub(crate) fn handle(
             relayer.relay_msg(&container);
         }
     }
+    */
 
     // 12. Emit Log of the Summary
     // [PLACE_HOLDER]
