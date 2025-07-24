@@ -13682,6 +13682,7 @@ dependencies = [
  "reth-chainspec",
  "secp256k1",
  "serde_json",
+ "shrex",
  "strata-key-derivation",
  "strata-primitives",
  "strata-risc0-guest-builder",

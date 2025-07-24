@@ -1,6 +1,6 @@
-use std::{fs, path::Path};
+use std::{fs, path::Path, str::FromStr};
 
-use bitcoin::{base58, bip32::Xpriv};
+use bitcoin::bip32::Xpriv;
 use strata_crypto::sign_schnorr_sig;
 use strata_key_derivation::sequencer::SequencerKeys;
 use strata_primitives::{
@@ -14,11 +14,9 @@ use zeroize::Zeroize;
 
 /// Loads sequencer identity data from the root key at the specified path.
 pub(crate) fn load_seqkey(path: &Path) -> anyhow::Result<IdentityData> {
-    let raw_buf = fs::read(path)?;
-    let str_buf = std::str::from_utf8(&raw_buf)?;
     debug!(?path, "loading sequencer root key");
-    let buf = base58::decode_check(str_buf)?;
-    let master_xpriv = ZeroizableXpriv::new(Xpriv::decode(&buf)?);
+    let serialized_xpriv = fs::read_to_string(path)?;
+    let master_xpriv = ZeroizableXpriv::new(Xpriv::from_str(&serialized_xpriv)?);
 
     // Actually do the key derivation from the root key and then derive the pubkey from that.
     let seq_keys = SequencerKeys::new(&master_xpriv)?;

@@ -25,6 +25,7 @@ rand_core.workspace = true
 reth-chainspec.workspace = true
 secp256k1 = { workspace = true, features = ["global-context", "std"] }
 serde_json.workspace = true
+shrex.workspace = true
 terrors = "0.3.0"
 zeroize.workspace = true
 
