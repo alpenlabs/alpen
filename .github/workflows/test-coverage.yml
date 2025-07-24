@@ -25,7 +25,7 @@ jobs:
     uses: ./.github/workflows/functional.yml
 
   publish-coverage:
-    name: Check that unit tests pass
+    name: Check that all tests pass
     runs-on: ubuntu-latest
     if: always()
     needs: [functional-tests, unit-tests]
