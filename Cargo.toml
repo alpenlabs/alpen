@@ -43,6 +43,7 @@ members = [
   "bin/datatool",
   "bin/alpen-cli",
   "bin/strata-client",
+  "bin/strata-dbtool",
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
   "bin/prover-client",
