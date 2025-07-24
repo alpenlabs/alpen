@@ -1,12 +1,11 @@
 use argh::FromArgs;
-use hex::FromHex;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{BlockStatus, Database, L2BlockDatabase};
-use strata_primitives::{buf::Buf32, l2::L2BlockId};
+use strata_primitives::l2::L2BlockId;
 use strata_state::{block::L2BlockBundle, header::L2Header};
 
 use super::chainstate::get_latest_l2_write_batch;
-use crate::cli::OutputFormat;
+use crate::{cli::OutputFormat, utils::block_id::parse_l2_block_id};
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-l2-block")]
@@ -63,18 +62,8 @@ pub(crate) fn get_l2_block_data(
 
 /// Get L2 block by block ID.
 pub(crate) fn get_l2_block(db: &impl Database, args: GetL2BlockArgs) -> Result<(), DisplayedError> {
-    // Convert String to L2BlockId
-    let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
-    if hex_str.len() != 64 {
-        return Err(DisplayedError::UserError(
-            "Block-id must be 32-byte / 64-char hex".into(),
-            Box::new(args.block_id.to_owned()),
-        ));
-    }
-
-    let bytes: [u8; 32] =
-        <[u8; 32]>::from_hex(hex_str).user_error(format!("Invalid 32-byte hex {hex_str}"))?;
-    let block_id = L2BlockId::from(Buf32::from(bytes));
+    // Parse block ID using utility function
+    let block_id = parse_l2_block_id(&args.block_id)?;
 
     // Fetch block status and data
     let status = db
