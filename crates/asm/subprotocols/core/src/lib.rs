@@ -54,6 +54,8 @@ use strata_asm_common::{
 use strata_primitives::{batch::EpochSummary, buf::Buf32, l2::L2BlockCommitment};
 pub use types::{CoreGenesisConfig, CoreOLState};
 
+use crate::{constants::OL_STF_CHECKPOINT_TX_TYPE, handlers::handle_checkpoint_transaction};
+
 /// OL Core subprotocol.
 ///
 /// The OL Core subprotocol ensures that each zk‐SNARK proof of a new checkpoint
@@ -121,7 +123,13 @@ impl Subprotocol for OLCoreSubproto {
         relayer: &mut impl MsgRelayer,
     ) {
         for tx in txs {
-            let result = handlers::route_transaction(state, tx, anchor_pre, aux_inputs, relayer);
+            let result = match tx.tag().tx_type() {
+                OL_STF_CHECKPOINT_TX_TYPE => {
+                    handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_inputs)
+                }
+                // [PLACE_HOLDER] Add other transaction types related to vk upgrade, etc.
+                _ => Err(CoreError::TxParsingError("unsupported tx type".to_string())),
+            };
 
             // Log transaction processing errors using zkVM-compatible logging.
             // We can't propagate errors to upper layers when transaction processing fails because

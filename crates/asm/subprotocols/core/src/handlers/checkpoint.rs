@@ -5,7 +5,7 @@
 use strata_asm_common::{AnchorState, MsgRelayer, Subprotocol, TxInputRef};
 use zkaleido::{ProofReceipt, PublicValues};
 
-use crate::{error::*, messages, parsing, types, verification, CoreOLState, OLCoreSubproto};
+use crate::{CoreOLState, OLCoreSubproto, error::*, messages, parsing, types, verification};
 
 /// Handles OL STF checkpoint transactions according to the specification
 ///
