@@ -181,7 +181,7 @@ jobs:
           cargo llvm-cov -F debug-utils report --lcov > lcov.functional.info
 
       - name: Upload coverage lcov artifact
-        if: steps.genFunctionalLcov.outcome == 'success'
+        if: hashFiles('lcov.functional.info') != ''
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
