@@ -243,7 +243,7 @@ impl From<CheckpointEntry> for Checkpoint {
 }
 
 /// Status of the commmitment
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
 pub enum CheckpointProvingStatus {
     /// Proof has not been created for this checkpoint
     PendingProof,
@@ -251,7 +251,7 @@ pub enum CheckpointProvingStatus {
     ProofReady,
 }
 
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
 pub enum CheckpointConfStatus {
     /// Pending to be posted on L1
     Pending,

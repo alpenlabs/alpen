@@ -8,14 +8,10 @@ use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use shrex::{encode, Hex};
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
-    alpen::AlpenWallet,
-    errors::{DisplayableError, DisplayedError},
-    net_type::NetworkType,
-    seed::Seed,
-    settings::Settings,
-    signet::SignetWallet,
+    alpen::AlpenWallet, net_type::NetworkType, seed::Seed, settings::Settings, signet::SignetWallet,
 };
 
 /// Requests BTC from the faucet
