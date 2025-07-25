@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use typed_sled::{Schema, SledDb, SledTree, TreeName, error::Result};
+use typed_sled::{
+    Schema, SledDb, SledTree, TreeName, codec_derive::DefaultCodecDeriveBorsh, error::Result,
+};
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
 struct User {
@@ -33,6 +35,11 @@ impl Schema for AccountSchema {
     type Key = u32;
     type Value = Account;
 }
+
+impl DefaultCodecDeriveBorsh for User {}
+impl DefaultCodecDeriveBorsh for Account {}
+impl DefaultCodecDeriveBorsh for UserSchema {}
+impl DefaultCodecDeriveBorsh for AccountSchema {}
 
 fn main() -> Result<()> {
     // Open the database

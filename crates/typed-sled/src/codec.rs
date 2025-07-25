@@ -1,5 +1,3 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-
 use crate::schema::Schema;
 
 #[derive(Debug)]
@@ -51,37 +49,4 @@ pub trait KeyCodec<S: Schema>: Sized {
 pub trait ValueCodec<S: Schema>: Sized {
     fn encode_value(&self) -> CodecResult<Vec<u8>>;
     fn decode_value(buf: &[u8]) -> CodecResult<Self>;
-}
-
-// Blanket implementations for borsh derived types. We can later add other implementations with
-// feature gates.
-
-// Blanket implementation for KeyCodec
-impl<T, S> KeyCodec<S> for T
-where
-    T: BorshSerialize + BorshDeserialize + Sized,
-    S: Schema,
-{
-    fn encode_key(&self) -> CodecResult<Vec<u8>> {
-        borsh::to_vec(self).map_err(CodecError::Deserialization)
-    }
-
-    fn decode_key(buf: &[u8]) -> CodecResult<Self> {
-        borsh::from_slice(buf).map_err(CodecError::Deserialization)
-    }
-}
-
-// Blanket implementation for ValueCodec
-impl<T, S> ValueCodec<S> for T
-where
-    T: BorshSerialize + BorshDeserialize + Sized,
-    S: Schema,
-{
-    fn encode_value(&self) -> CodecResult<Vec<u8>> {
-        borsh::to_vec(self).map_err(CodecError::Deserialization)
-    }
-
-    fn decode_value(buf: &[u8]) -> CodecResult<Self> {
-        borsh::from_slice(buf).map_err(CodecError::Deserialization)
-    }
 }
