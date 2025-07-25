@@ -129,8 +129,8 @@ impl BridgeV1Subproto {
         if let Err(e) = state.process_withdrawal(&withdrawal_info) {
             tracing::warn!(
                 tx_id = %tx.tx().compute_txid(),
-                deposit_idx = withdrawal_info.deposit_idx(),
-                operator_idx = withdrawal_info.operator_idx(),
+                deposit_idx = withdrawal_info.deposit_idx,
+                operator_idx = withdrawal_info.operator_idx,
                 error = %e,
                 "Withdrawal validation failed"
             );
@@ -139,9 +139,9 @@ impl BridgeV1Subproto {
 
         tracing::info!(
             tx_id = %tx.tx().compute_txid(),
-            deposit_idx = withdrawal_info.deposit_idx(),
-            operator_idx = withdrawal_info.operator_idx(),
-            amount = %withdrawal_info.withdrawal_amount(),
+            deposit_idx = withdrawal_info.deposit_idx,
+            operator_idx = withdrawal_info.operator_idx,
+            amount = %withdrawal_info.withdrawal_amount,
             "Successfully validated withdrawal"
         );
     }

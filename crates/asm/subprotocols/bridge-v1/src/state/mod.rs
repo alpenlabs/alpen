@@ -247,7 +247,7 @@ impl BridgeV1State {
         &self,
         withdrawal_info: &WithdrawalInfo,
     ) -> Result<(), WithdrawalValidationError> {
-        let deposit_idx = withdrawal_info.deposit_idx();
+        let deposit_idx = withdrawal_info.deposit_idx;
 
         // Check if an assignment exists for this deposit
         let assignment = self
@@ -257,7 +257,7 @@ impl BridgeV1State {
 
         // Validate that the operator matches the assignment
         let expected_operator = assignment.assignee();
-        let actual_operator = withdrawal_info.operator_idx();
+        let actual_operator = withdrawal_info.operator_idx;
         if expected_operator != actual_operator {
             return Err(WithdrawalValidationError::OperatorMismatch {
                 expected: expected_operator,
@@ -272,7 +272,8 @@ impl BridgeV1State {
             .ok_or(WithdrawalValidationError::DepositNotFound { deposit_idx })?;
 
         let expected_txid = deposit.output().outpoint().txid;
-        let actual_txid = withdrawal_info.deposit_txid();
+        let actual_txid = withdrawal_info.deposit_txid;
+
         if expected_txid != actual_txid {
             return Err(WithdrawalValidationError::DepositTxidMismatch {
                 expected: expected_txid,
@@ -288,7 +289,7 @@ impl BridgeV1State {
             .map(|output| output.amt())
             .sum();
 
-        let actual_amount = withdrawal_info.withdrawal_amount();
+        let actual_amount = withdrawal_info.withdrawal_amount;
         if expected_amount != actual_amount {
             return Err(WithdrawalValidationError::AmountMismatch {
                 expected: expected_amount,
