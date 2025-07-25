@@ -11,11 +11,11 @@ use bdk_wallet::{
     error::CreateTxError,
 };
 use colored::Colorize;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
     alpen::AlpenWallet,
     constants::SATS_TO_WEI,
-    errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     seed::Seed,
     settings::Settings,

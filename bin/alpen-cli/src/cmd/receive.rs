@@ -1,14 +1,10 @@
 use alloy::providers::WalletProvider;
 use argh::FromArgs;
 use bdk_wallet::KeychainKind;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
-    alpen::AlpenWallet,
-    errors::{DisplayableError, DisplayedError},
-    net_type::NetworkType,
-    seed::Seed,
-    settings::Settings,
-    signet::SignetWallet,
+    alpen::AlpenWallet, net_type::NetworkType, seed::Seed, settings::Settings, signet::SignetWallet,
 };
 
 /// Prints a new address for the internal wallet

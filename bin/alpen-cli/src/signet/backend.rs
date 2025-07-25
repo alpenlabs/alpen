@@ -26,6 +26,9 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::EsploraClient;
 
+pub type BoxedInner = dyn std::error::Error + Send + Sync;
+pub type BoxedErr = Box<BoxedInner>;
+
 #[macro_export]
 macro_rules! boxed_err {
     ($name:ident) => {
@@ -34,7 +37,7 @@ macro_rules! boxed_err {
             where
                 E: std::error::Error + Send + Sync + 'static,
             {
-                Self::from(Box::new(err) as $crate::errors::BoxedErr)
+                Self::from(Box::new(err) as BoxedErr)
             }
         }
 
@@ -64,8 +67,6 @@ macro_rules! boxed_err {
         }
     };
 }
-
-use crate::errors::{BoxedErr, BoxedInner};
 
 #[derive(Debug)]
 pub struct UpdateError(BoxedErr);

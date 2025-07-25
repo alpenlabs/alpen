@@ -1,12 +1,9 @@
 use argh::FromArgs;
 use colored::Colorize;
 use dialoguer::Confirm;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
-use crate::{
-    errors::{DisplayableError, DisplayedError},
-    seed::EncryptedSeedPersister,
-    settings::Settings,
-};
+use crate::{seed::EncryptedSeedPersister, settings::Settings};
 
 /// DANGER: resets the CLI completely, destroying all keys and databases.
 /// Keeps config.
