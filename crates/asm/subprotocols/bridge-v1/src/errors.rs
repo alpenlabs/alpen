@@ -95,3 +95,18 @@ pub enum WithdrawalValidationError {
         actual: BitcoinAmount,
     },
 }
+
+#[derive(Debug, Error)]
+pub enum WithdrawalCommandError {
+    /// No unassigned deposits are available for processing
+    #[error("No unassigned deposits available for withdrawal command processing")]
+    NoUnassignedDeposits,
+
+    /// No eligible operators found for the deposit
+    #[error("No current multisig operator found in deposit's notary operators for deposit index {deposit_idx}")]
+    NoEligibleOperators { deposit_idx: u32 },
+
+    /// Deposit not found for the given index
+    #[error("Deposit not found for index {deposit_idx}")]
+    DepositNotFound { deposit_idx: u32 },
+}

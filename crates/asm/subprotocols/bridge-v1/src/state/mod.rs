@@ -5,50 +5,32 @@
 
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
-use moho_types::ExportEntry;
-use strata_primitives::{bridge::OperatorIdx, buf::Buf32, l1::BitcoinAmount};
+use rand_chacha::{
+    ChaChaRng,
+    rand_core::{RngCore, SeedableRng},
+};
+use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 
 use crate::{
-    errors::{DepositError, WithdrawalValidationError},
-    state::{assignment::AssignmentTable, deposit::DepositsTable, operator::OperatorTable},
+    errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
+    state::{
+        assignment::AssignmentTable,
+        deposit::DepositsTable,
+        withdrawal::{WithdrawalCommand, WithdrawalProcessedInfo},
+    },
     txs::{
         deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
         withdrawal::WithdrawalInfo,
     },
 };
 
+// Re-export types that are needed in genesis config
+pub use operator::OperatorTable;
+
 pub mod assignment;
 pub mod deposit;
 pub mod operator;
 pub mod withdrawal;
-
-/// Information about a successfully processed withdrawal.
-///
-/// This structure holds the essential information from a withdrawal transaction
-/// that needs to be stored in the MohoState for later use by the Bridge proof.
-/// The Bridge proof uses this information to prove that operators have correctly
-/// front-paid users and can now withdraw the corresponding locked funds.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct WithdrawalProcessedInfo {
-    /// The transaction ID of the withdrawal transaction
-    pub withdrawal_txid: Buf32,
-
-    /// The transaction ID of the deposit that was assigned
-    pub deposit_txid: Buf32,
-
-    /// The transaction idx of the deposit that was assigned
-    pub deposit_idx: u32,
-
-    /// The index of the operator who processed the withdrawal
-    pub operator_idx: OperatorIdx,
-}
-
-impl WithdrawalProcessedInfo {
-    pub fn to_export_entry(&self) -> ExportEntry {
-        let payload = borsh::to_vec(&self).expect("Failed to serialize WithdrawalProcessedInfo");
-        ExportEntry::new(self.deposit_idx, payload)
-    }
-}
 
 /// Main state container for the Bridge V1 subprotocol.
 ///
@@ -60,6 +42,8 @@ impl WithdrawalProcessedInfo {
 /// - `operators` - Table of registered bridge operators with their public keys
 /// - `deposits` - Table of Bitcoin deposits with UTXO references and amounts
 /// - `assignments` - Table linking deposits to operators with execution deadlines
+/// - `denomination` - The amount of bitcoin expected to be locked in the N/N multisig
+/// - `deadline_duration` - The duration (in blocks) for assignment execution deadlines
 ///
 /// # Serialization
 ///
@@ -76,29 +60,35 @@ pub struct BridgeV1State {
     /// Table of operator assignments for withdrawal processing.
     assignments: AssignmentTable,
 
-    amount: BitcoinAmount,
+    /// The amount of bitcoin expected to be locked in the N/N multisig.
+    denomination: BitcoinAmount,
+
+    /// The duration (in blocks) for assignment execution deadlines.
+    deadline_duration: u64,
 }
 
 impl BridgeV1State {
-    /// Creates a new bridge state with the specified amount and operator table.
+    /// Creates a new bridge state with the specified parameters.
     ///
-    /// Initializes all component tables as empty and sets the expected deposit amount
-    /// that will be used for deposit validation.
+    /// Initializes all component tables as empty and sets the expected deposit denomination
+    /// and deadline duration for validation and assignment management.
     ///
     /// # Parameters
     ///
     /// - `operators` - Table of registered bridge operators
-    /// - `amount` - Expected deposit amount for validation
+    /// - `denomination` - Expected deposit amount for validation
+    /// - `deadline_duration` - Duration in blocks for assignment execution deadlines
     ///
     /// # Returns
     ///
     /// A new [`BridgeV1State`] instance.
-    pub fn new(operators: OperatorTable, amount: BitcoinAmount) -> Self {
+    pub fn new(operators: crate::state::operator::OperatorTable, denomination: BitcoinAmount, deadline_duration: u64) -> Self {
         Self {
             operators,
             deposits: DepositsTable::new_empty(),
             assignments: AssignmentTable::new_empty(),
-            amount,
+            denomination,
+            deadline_duration,
         }
     }
 
@@ -107,7 +97,7 @@ impl BridgeV1State {
     /// # Returns
     ///
     /// Immutable reference to the [`OperatorTable`].
-    pub fn operators(&self) -> &OperatorTable {
+    pub fn operators(&self) -> &crate::state::operator::OperatorTable {
         &self.operators
     }
 
@@ -116,7 +106,7 @@ impl BridgeV1State {
     /// # Returns
     ///
     /// Mutable reference to the [`OperatorTable`].
-    pub fn operators_mut(&mut self) -> &mut OperatorTable {
+    pub fn operators_mut(&mut self) -> &mut crate::state::operator::OperatorTable {
         &mut self.operators
     }
 
@@ -156,21 +146,31 @@ impl BridgeV1State {
         &mut self.assignments
     }
 
-    /// Processes a parsed deposit by validating and adding it to the deposits table.
+    /// Returns the deadline duration for assignment execution.
     ///
-    /// This function takes already parsed deposit information, validates it against the
+    /// # Returns
+    ///
+    /// The duration (in blocks) for assignment execution deadlines.
+    pub fn deadline_duration(&self) -> u64 {
+        self.deadline_duration
+    }
+
+    /// Processes a deposit transaction by validating and adding it to the deposits table.
+    ///
+    /// This function takes already parsed deposit transaction information, validates it against the
     /// current state, and creates a new deposit entry in the deposits table if
     /// validation passes. Only operators that are part of the current N/N multisig set
     /// are included as notary operators for the deposit.
     ///
     /// # Parameters
     ///
-    /// - `deposit_info` - Parsed deposit information containing amount, destination, and outpoint
+    /// - `tx` - The deposit transaction
+    /// - `info` - Parsed deposit information containing amount, destination, and outpoint
     ///
     /// # Returns
     ///
     /// - `Ok(u32)` - The deposit index assigned to the newly created deposit entry
-    /// - `Err(DepositParseError)` - If validation fails for any reason
+    /// - `Err(DepositError)` - If validation fails for any reason
     ///
     /// # Errors
     ///
@@ -178,7 +178,7 @@ impl BridgeV1State {
     /// - The deposit amount is zero or negative
     /// - The internal key doesn't match the current aggregated operator key
     /// - The deposit index already exists in the deposits table
-    pub fn process_deposit(
+    pub fn process_deposit_tx(
         &mut self,
         tx: &Transaction,
         info: &DepositInfo,
@@ -221,9 +221,9 @@ impl BridgeV1State {
     /// - A deposit with the same index already exists
     fn validate_deposit(&self, tx: &Transaction, info: &DepositInfo) -> Result<(), DepositError> {
         // Verify the deposit amount matches the bridge's expected amount
-        if info.amt.to_sat() != self.amount.to_sat() {
+        if info.amt.to_sat() != self.denomination.to_sat() {
             return Err(DepositError::InvalidDepositAmount {
-                expected: self.amount.to_sat(),
+                expected: self.denomination.to_sat(),
                 actual: info.amt.to_sat(),
             });
         }
@@ -247,24 +247,24 @@ impl BridgeV1State {
         Ok(())
     }
 
-    /// Processes a parsed withdrawal by validating it, removing the deposit, and removing the
-    /// assignment.
+    /// Processes a withdrawal fulfillment transaction by validating it, removing the deposit, and
+    /// removing the assignment.
     ///
-    /// This function takes already parsed withdrawal information, validates it against the
-    /// current state using the assignment table, removes the corresponding deposit from the
-    /// deposits table, and removes the assignment entry to mark the withdrawal as completed.
+    /// This function takes already parsed withdrawal transaction information, validates it against
+    /// the current state using the assignment table, removes the corresponding deposit from the
+    /// deposits table, and removes the assignment entry to mark the withdrawal as fulfilled.
     /// The withdrawal processing information is returned to the caller for storage in MohoState
     /// and later use by Bridge proof.
     ///
     /// # Parameters
     ///
-    /// - `withdrawal_txid` - The transaction ID of the withdrawal transaction
+    /// - `tx` - The withdrawal fulfillment transaction
     /// - `withdrawal_info` - Parsed withdrawal information containing operator, deposit details,
     ///   and withdrawal amounts
     ///
     /// # Returns
     ///
-    /// - `Ok(WithdrawalProcessedInfo)` - The processed withdrawal information if withdrawal passes
+    /// - `Ok(WithdrawalProcessedInfo)` - The processed withdrawal information if transaction passes
     ///   validation
     /// - `Err(WithdrawalValidationError)` - If validation fails for any reason
     ///
@@ -275,7 +275,7 @@ impl BridgeV1State {
     /// - The operator doesn't match the assigned operator
     /// - The withdrawal specifications don't match the assignment
     /// - The deposit referenced in the withdrawal doesn't exist
-    pub fn process_withdrawal(
+    pub fn process_withdrawal_fulfillment_tx(
         &mut self,
         tx: &Transaction,
         withdrawal_info: &WithdrawalInfo,
@@ -288,7 +288,7 @@ impl BridgeV1State {
             .remove_deposit(withdrawal_info.deposit_idx)
             .expect("Deposit must exist after successful validation");
 
-        // Remove the assignment from the table to mark withdrawal as completed
+        // Remove the assignment from the table to mark withdrawal as fulfilled
         // Safe to unwrap since validate_withdrawal ensures the assignment exists
         let _removed_assignment = self
             .assignments
@@ -382,5 +382,120 @@ impl BridgeV1State {
         }
 
         Ok(())
+    }
+
+    /// Creates a withdrawal assignment by selecting an unassigned deposit and assigning it to an
+    /// operator.
+    ///
+    /// This function handles incoming withdrawal commands by:
+    /// 1. Finding a deposit that has not been assigned yet
+    /// 2. Randomly selecting an operator from the current multisig set that is also a notary
+    ///    operator for that deposit
+    /// 3. Creating an assignment linking the deposit to the selected operator with a deadline
+    ///    calculated from the current block height plus the configured deadline duration
+    ///
+    /// # Parameters
+    ///
+    /// - `withdrawal_cmd` - The withdrawal command specifying outputs and amounts
+    /// - `l1_block_hash` - The L1 block hash used as seed for random operator selection
+    /// - `current_block_height` - The current Bitcoin block height for deadline calculation
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` - If the withdrawal assignment was successfully created
+    /// - `Err(WithdrawalCommandError)` - If no suitable deposit/operator combination could be found
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - No unassigned deposits are available
+    /// - No current multisig operators are notary operators for any unassigned deposit
+    /// - The deposit for the unassigned index is not found
+    pub fn create_withdrawal_assignment(
+        &mut self,
+        withdrawal_cmd: &WithdrawalCommand,
+        l1_block_hash: &Buf32,
+        current_block_height: u64,
+    ) -> Result<(), WithdrawalCommandError> {
+        // Find an unassigned deposit index
+        let unassigned_deposit_idx = self.deposits().next_unassigned_idx();
+
+        // Get the deposit to check its notary operators
+        let deposit = self.deposits.get_deposit(unassigned_deposit_idx).ok_or(
+            WithdrawalCommandError::DepositNotFound {
+                deposit_idx: unassigned_deposit_idx,
+            },
+        )?;
+
+        // Randomly select an operator from current multisig that is also in the deposit's notary
+        // operators
+        let selected_operator = self.select_operator_for_deposit(
+            unassigned_deposit_idx,
+            deposit.notary_operators(),
+            l1_block_hash,
+        )?;
+
+        // Create assignment with deadline calculated from current block height + deadline duration
+        let exec_deadline = current_block_height + self.deadline_duration();
+
+        self.assignments.insert(
+            unassigned_deposit_idx,
+            withdrawal_cmd.clone(),
+            selected_operator,
+            exec_deadline,
+        );
+
+        // Increment the next unassigned index since we just created an assignment for this deposit
+        self.deposits.increment_next_unassigned_idx();
+
+        Ok(())
+    }
+
+    /// Randomly selects an operator from the current multisig set that is also a notary operator
+    /// for the deposit.
+    ///
+    /// Uses ChaChaRng with the L1 block hash as seed to ensure deterministic but unpredictable
+    /// operator selection across different nodes.
+    ///
+    /// # Parameters
+    ///
+    /// - `deposit_idx` - The deposit index for error reporting
+    /// - `notary_operators` - List of notary operator indices for the deposit
+    /// - `l1_block_hash` - The L1 block hash used as seed for random selection
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(OperatorIdx)` - Index of a randomly selected suitable operator
+    /// - `Err(WithdrawalCommandError)` - If no current multisig operator is found in the notary
+    ///   operators
+    fn select_operator_for_deposit(
+        &self,
+        deposit_idx: u32,
+        notary_operators: &[u32],
+        l1_block_hash: &Buf32,
+    ) -> Result<u32, WithdrawalCommandError> {
+        // Collect current multisig operators into a small Vec for efficient contains() check
+        let current_multisig_operators: Vec<u32> =
+            self.operators.current_multisig_indices().collect();
+
+        // Filter notary operators to only those in current multisig
+        let eligible_operators: Vec<u32> = notary_operators
+            .iter()
+            .filter(|&&op_idx| current_multisig_operators.contains(&op_idx))
+            .copied()
+            .collect();
+
+        if eligible_operators.is_empty() {
+            return Err(WithdrawalCommandError::NoEligibleOperators { deposit_idx });
+        }
+
+        // Use ChaChaRng with L1 block hash as seed for deterministic random selection
+        let seed_bytes: [u8; 32] = (*l1_block_hash).into();
+        let mut rng = ChaChaRng::from_seed(seed_bytes);
+
+        // Select a random index
+        let random_index = (rng.next_u32() as usize) % eligible_operators.len();
+
+        Ok(eligible_operators[random_index])
     }
 }

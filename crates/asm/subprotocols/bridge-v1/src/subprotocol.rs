@@ -5,13 +5,15 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
+    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, MsgRelayer, Subprotocol, SubprotocolId,
     TxInputRef,
 };
 use strata_asm_logs::NewExportEntry;
+use strata_primitives::buf::Buf32;
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    msgs::BridgeIncomingMsg,
     state::BridgeV1State,
     txs::{deposit::extract_deposit_info, withdrawal::extract_withdrawal_info},
 };
@@ -21,8 +23,10 @@ use crate::{
 pub struct BridgeV1GenesisConfig {
     /// Initial operator table for the bridge
     pub operators: crate::state::OperatorTable,
-    /// Expected deposit amount for validation
-    pub amount: strata_primitives::l1::BitcoinAmount,
+    /// Expected deposit denomination for validation
+    pub denomination: strata_primitives::l1::BitcoinAmount,
+    /// Duration in blocks for assignment execution deadlines
+    pub deadline_duration: u64,
 }
 
 /// Bridge V1 subprotocol implementation.
@@ -38,14 +42,14 @@ impl Subprotocol for BridgeV1Subproto {
 
     type State = BridgeV1State;
 
-    type Msg = NullMsg<BRIDGE_V1_SUBPROTOCOL_ID>;
+    type Msg = BridgeIncomingMsg;
 
     type AuxInput = ();
 
     type GenesisConfig = BridgeV1GenesisConfig;
 
     fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
-        Ok(BridgeV1State::new(genesis_config.operators, genesis_config.amount))
+        Ok(BridgeV1State::new(genesis_config.operators, genesis_config.denomination, genesis_config.deadline_duration))
     }
 
     fn pre_process_txs(
@@ -73,8 +77,26 @@ impl Subprotocol for BridgeV1Subproto {
         }
     }
 
-    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
-        // TODO: Implement bridge message processing
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]) {
+        for msg in msgs {
+            match msg {
+                BridgeIncomingMsg::ProcessWithdrawal(withdrawal_cmd) => {
+                    // TODO: Pass actual L1BlockHash instead of placeholder
+                    let placeholder_hash = Buf32::zero();
+                    let current_block_height = 0;
+                    if let Err(e) = state.create_withdrawal_assignment(
+                        withdrawal_cmd,
+                        &placeholder_hash,
+                        current_block_height,
+                    ) {
+                        tracing::error!(
+                            error = %e,
+                            "Failed to create withdrawal assignment"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -93,7 +115,7 @@ impl BridgeV1Subproto {
             }
         };
 
-        let deposit_idx = match state.process_deposit(tx.tx(), &deposit_info) {
+        let deposit_idx = match state.process_deposit_tx(tx.tx(), &deposit_info) {
             Ok(idx) => idx,
             Err(e) => {
                 tracing::error!(
@@ -113,7 +135,7 @@ impl BridgeV1Subproto {
         );
     }
 
-    /// Processes a withdrawal transaction with error logging.
+    /// Processes a withdrawal fulfillment transaction with error logging.
     fn process_withdrawal_tx(
         state: &mut BridgeV1State,
         tx: &strata_asm_common::TxInputRef<'_>,
@@ -131,19 +153,20 @@ impl BridgeV1Subproto {
             }
         };
 
-        let withdrawal_processed_info = match state.process_withdrawal(tx.tx(), &withdrawal_info) {
-            Ok(assignment) => assignment,
-            Err(e) => {
-                tracing::warn!(
-                    tx_id = %tx.tx().compute_txid(),
-                    deposit_idx = withdrawal_info.deposit_idx,
-                    operator_idx = withdrawal_info.operator_idx,
-                    error = %e,
-                    "Withdrawal validation failed"
-                );
-                return;
-            }
-        };
+        let withdrawal_processed_info =
+            match state.process_withdrawal_fulfillment_tx(tx.tx(), &withdrawal_info) {
+                Ok(assignment) => assignment,
+                Err(e) => {
+                    tracing::warn!(
+                        tx_id = %tx.tx().compute_txid(),
+                        deposit_idx = withdrawal_info.deposit_idx,
+                        operator_idx = withdrawal_info.operator_idx,
+                        error = %e,
+                        "Withdrawal validation failed"
+                    );
+                    return;
+                }
+            };
 
         // FIXME: This is a placeholder for the actual container ID logic.
         let container_id = 0; // Replace with actual logic to determine container ID

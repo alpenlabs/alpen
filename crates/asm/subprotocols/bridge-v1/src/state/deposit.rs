@@ -137,6 +137,13 @@ pub struct DepositsTable {
     /// Next unassigned deposit index for new registrations.
     next_idx: u32,
 
+    /// Next deposit index that has not been assigned to an operator yet.
+    /// 
+    /// This field tracks the sequential assignment of deposits to operators.
+    /// When a deposit is assigned, this index is incremented to point to the
+    /// next unassigned deposit, enabling O(1) lookup for unassigned deposits.
+    next_unassigned_idx: u32,
+
     /// Vector of deposit entries, sorted by deposit index.
     ///
     /// **Invariant**: MUST be sorted by `DepositEntry::deposit_idx` field.
@@ -155,6 +162,7 @@ impl DepositsTable {
     pub fn new_empty() -> Self {
         Self {
             next_idx: 0,
+            next_unassigned_idx: 0,
             deposits: Vec::new(),
         }
     }
@@ -349,6 +357,26 @@ impl DepositsTable {
     /// The next available deposit index as [`u32`].
     pub fn next_idx(&self) -> u32 {
         self.next_idx
+    }
+
+    /// Returns the next unassigned deposit index.
+    ///
+    /// This is the index of the next deposit that has not been assigned 
+    /// to an operator yet.
+    ///
+    /// # Returns
+    ///
+    /// The next unassigned deposit index as [`u32`].
+    pub fn next_unassigned_idx(&self) -> u32 {
+        self.next_unassigned_idx
+    }
+
+    /// Increments the next unassigned deposit index.
+    ///
+    /// This should be called when a deposit is assigned to an operator
+    /// to move the pointer to the next unassigned deposit.
+    pub fn increment_next_unassigned_idx(&mut self) {
+        self.next_unassigned_idx += 1;
     }
 
     /// Returns an iterator over all deposit entries.

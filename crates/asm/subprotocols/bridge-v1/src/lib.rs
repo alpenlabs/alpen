@@ -21,6 +21,7 @@
 
 pub mod constants;
 pub mod errors;
+pub mod msgs;
 pub mod state;
 pub mod subprotocol;
 pub mod txs;

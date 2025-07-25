@@ -5,8 +5,11 @@
 //! when processing withdrawal requests from deposits.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use moho_types::ExportEntry;
 use serde::{Deserialize, Serialize};
-use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
+use strata_primitives::{
+    bitcoin_bosd::Descriptor, bridge::OperatorIdx, buf::Buf32, l1::BitcoinAmount,
+};
 
 /// Command specifying Bitcoin outputs for a withdrawal operation.
 ///
@@ -17,7 +20,7 @@ use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 /// # Batching Support
 ///
 /// The design supports withdrawal batching where multiple sub-denomination amounts
-/// can be combined and processed together in a single transaction. Currently, most
+/// can be combined and processed together in a single transaction. Currently,
 /// withdrawal commands contain a single output, but the structure is prepared for
 /// future batching implementations.
 ///
@@ -52,6 +55,12 @@ impl WithdrawalCommand {
     /// Slice reference to all [`WithdrawOutput`] instances in this command.
     pub fn withdraw_outputs(&self) -> &[WithdrawOutput] {
         &self.withdraw_outputs
+    }
+
+    /// Gets the total value of the batch.  This must be less than the size of
+    /// the utxo it's assigned to.
+    pub fn get_total_value(&self) -> BitcoinAmount {
+        self.withdraw_outputs.iter().map(|wi| wi.amt).sum()
     }
 }
 
@@ -106,5 +115,33 @@ impl WithdrawOutput {
     /// The withdrawal amount as [`BitcoinAmount`] (in satoshis).
     pub fn amt(&self) -> BitcoinAmount {
         self.amt
+    }
+}
+
+/// Information about a successfully processed withdrawal.
+///
+/// This structure holds the essential information from a withdrawal transaction
+/// that needs to be stored in the MohoState for later use by the Bridge proof.
+/// The Bridge proof uses this information to prove that operators have correctly
+/// front-paid users and can now withdraw the corresponding locked funds.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct WithdrawalProcessedInfo {
+    /// The transaction ID of the withdrawal transaction
+    pub withdrawal_txid: Buf32,
+
+    /// The transaction ID of the deposit that was assigned
+    pub deposit_txid: Buf32,
+
+    /// The transaction idx of the deposit that was assigned
+    pub deposit_idx: u32,
+
+    /// The index of the operator who processed the withdrawal
+    pub operator_idx: OperatorIdx,
+}
+
+impl WithdrawalProcessedInfo {
+    pub fn to_export_entry(&self) -> ExportEntry {
+        let payload = borsh::to_vec(&self).expect("Failed to serialize WithdrawalProcessedInfo");
+        ExportEntry::new(self.deposit_idx, payload)
     }
 }

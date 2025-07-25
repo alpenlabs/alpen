@@ -13163,6 +13163,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "moho-types",
+ "rand_chacha 0.3.1",
  "secp256k1 0.29.1",
  "serde",
  "strata-asm-common",
