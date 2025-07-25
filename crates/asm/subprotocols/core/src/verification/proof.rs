@@ -76,7 +76,7 @@ pub(crate) fn construct_checkpoint_proof_public_parameters(
 
     // [PLACE_HOLDER] => Waiting for the design of L1 → L2 messaging system and defining what is
     // the l1_commitment should be and etc.
-    let l1_to_l2_msgs_range_commitment_hash = messages::l1_to_l2::compute_rolling_hash(
+    let l1_to_l2_msgs_range_commitment_hash = messages::compute_rolling_hash(
         vec![], // TODO: fetch actual L1 commitments for this range
         prev_l1_height,
         new_l1_hight,

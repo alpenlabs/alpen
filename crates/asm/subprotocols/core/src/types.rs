@@ -86,12 +86,12 @@ pub struct CoreGenesisConfig {
 impl CoreGenesisConfig {
     /// Create a new genesis config with the given rollup verifying key
     pub fn new(
-        checkpoint_vk: &VerifyingKey,
+        checkpoint_vk: VerifyingKey,
         genesis_l1_block: L1BlockCommitment,
         sequencer_pubkey: Buf32,
     ) -> Result<Self> {
         Ok(Self {
-            checkpoint_vk: checkpoint_vk.clone(),
+            checkpoint_vk,
             genesis_l1_block,
             sequencer_pubkey,
         })

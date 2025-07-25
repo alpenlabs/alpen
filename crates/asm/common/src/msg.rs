@@ -76,20 +76,8 @@ impl Message {
     }
 
     /// Encodes the message to SPS-msg-fmt bytes
-    pub fn encode(&self) -> Result<Vec<u8>, AsmError> {
-        let mut result = Vec::new();
-        strata_msg_fmt::try_encode_into_buf(
-            self.0.ty(),
-            self.0.body().iter().copied(),
-            &mut result,
-        )
-        .map_err(AsmError::from)?;
-        Ok(result)
-    }
-
-    /// Returns the raw encoded message bytes (alias for encode)
-    pub fn encoded(&self) -> Result<Vec<u8>, AsmError> {
-        self.encode()
+    pub fn encode(&self) -> Vec<u8> {
+        self.0.to_vec()
     }
 
     /// Converts to OwnedMsg
@@ -119,38 +107,6 @@ impl BorshDeserialize for Message {
 /// Temporary alias for backwards compatibility
 /// Temporary alias for backwards compatibility
 pub type L2ToL1Msg = Message;
-
-/// Generic container for multiple messages following SPS-msg-fmt
-#[derive(Clone, Debug)]
-pub struct MessagesContainer {
-    /// The target subprotocol ID
-    pub target_subprotocol: SubprotocolId,
-    /// Messages using strata-msg-fmt
-    pub messages: Vec<OwnedMsg>,
-}
-
-impl MessagesContainer {
-    /// Creates a new messages container for a specific subprotocol
-    pub fn new(target_subprotocol: SubprotocolId) -> Self {
-        Self {
-            target_subprotocol,
-            messages: Vec::new(),
-        }
-    }
-
-    /// Adds a message to the container
-    pub fn add_message(&mut self, message: OwnedMsg) {
-        self.messages.push(message);
-    }
-
-    /// Creates a new container with the provided messages
-    pub fn with_messages(target_subprotocol: SubprotocolId, messages: Vec<OwnedMsg>) -> Self {
-        Self {
-            target_subprotocol,
-            messages,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -226,7 +182,7 @@ mod tests {
         assert_eq!(msg.body(), &body);
 
         // Test encoding/decoding roundtrip
-        let encoded = msg.encode().unwrap();
+        let encoded = msg.encode();
         let decoded_msg = Message::from_encoded(encoded).unwrap();
         assert_eq!(decoded_msg.ty(), type_id);
         assert_eq!(decoded_msg.body(), &body);
@@ -242,7 +198,7 @@ mod tests {
 
         // Test SPS-msg-fmt compliance via Message
         let message_wrapper = Message(msg.clone());
-        let encoded = message_wrapper.encode().unwrap();
+        let encoded = message_wrapper.encode();
         let parsed_message_wrapper = Message::from_encoded(encoded).unwrap();
         assert_eq!(parsed_message_wrapper.ty(), msg.ty());
         assert_eq!(parsed_message_wrapper.body(), msg.body());

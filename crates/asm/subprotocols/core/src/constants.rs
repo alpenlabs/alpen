@@ -2,27 +2,27 @@ use strata_l1_txfmt::{SubprotocolId, TxType};
 
 /// Macro to define all type IDs and ensure they're included in uniqueness tests
 macro_rules! define_ids {
-    ($type:ty, $fn_name:ident, $($name:ident = $value:expr),* $(,)?) => {
+    ($type:ty, $const_name:ident, $($name:ident = $value:expr),* $(,)?) => {
         $(
             pub(crate) const $name: $type = $value;
         )*
 
-        /// Get all defined type IDs as an array
+        /// Array containing all defined type IDs
         #[allow(dead_code)]
-        const fn $fn_name() -> &'static [$type] {
-            &[$($name),*]
-        }
+        const $const_name: &'static [$type] = &[$($name),*];
     };
 }
 
 // Define all subprotocol IDs
-define_ids! {SubprotocolId, all_subprotocol_ids,
+define_ids! {SubprotocolId, SUBPROTOCOL_IDS,
     CORE_SUBPROTOCOL_ID = 1,
     BRIDGE_SUBPROTOCOL_ID = 2,
 }
 
 // Define all transaction type IDs
-define_ids! {TxType, all_core_tx_type_ids,
+// [PLACE_HOLDER] TODO: Export TxType definitions from strata-common repo instead of defining
+// locally
+define_ids! {TxType, CORE_TX_TYPE_IDS,
     OL_STF_CHECKPOINT_TX_TYPE = 1,
 }
 
@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_all_type_ids_are_unique() {
-        let subprotocol_ids = all_subprotocol_ids();
+        let subprotocol_ids = SUBPROTOCOL_IDS;
         let unique_ids: HashSet<_> = subprotocol_ids.iter().collect();
         assert_eq!(
             subprotocol_ids.len(),
@@ -42,7 +42,7 @@ mod tests {
             "All subprotocol IDs must be unique"
         );
 
-        let tx_type_ids = all_core_tx_type_ids();
+        let tx_type_ids = CORE_TX_TYPE_IDS;
         let unique_ids: HashSet<_> = tx_type_ids.iter().collect();
         assert_eq!(
             tx_type_ids.len(),

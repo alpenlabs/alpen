@@ -44,7 +44,7 @@ pub(crate) fn handle_checkpoint_transaction(
     let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
 
     // 2. Verify signature using dedicated signature verification function
-    verification::signature::verify_checkpoint_signature(
+    verification::verify_checkpoint_signature(
         &signed_checkpoint,
         &state.sequencer_pubkey,
     )?;
@@ -52,7 +52,7 @@ pub(crate) fn handle_checkpoint_transaction(
     let checkpoint = signed_checkpoint.checkpoint();
 
     // 3. Validate state transition before processing
-    verification::state_transition::validate_state_transition(state, checkpoint)?;
+    verification::validate_state_transition(state, checkpoint)?;
 
     // 4. Construct expected public parameters from trusted state
     let public_params =
@@ -75,7 +75,7 @@ pub(crate) fn handle_checkpoint_transaction(
     let prev_l1_height = state.verified_checkpoint.new_l1().height();
     let new_l1_height = checkpoint.batch_info().final_l1_block().height();
     let expected_commitment = &public_params.l1_to_l2_msgs_range_commitment_hash;
-    messages::l1_to_l2::validate_l1_to_l2_messages(
+    messages::validate_l1_to_l2_messages(
         prev_l1_height,
         new_l1_height,
         expected_commitment,
