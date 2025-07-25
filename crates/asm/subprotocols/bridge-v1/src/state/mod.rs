@@ -5,7 +5,8 @@
 
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::l1::BitcoinAmount;
+use moho_types::ExportEntry;
+use strata_primitives::{bridge::OperatorIdx, buf::Buf32, l1::BitcoinAmount};
 
 use crate::{
     errors::{DepositError, WithdrawalValidationError},
@@ -18,9 +19,36 @@ use crate::{
 
 pub mod assignment;
 pub mod deposit;
-pub mod deposit_state;
 pub mod operator;
 pub mod withdrawal;
+
+/// Information about a successfully processed withdrawal.
+///
+/// This structure holds the essential information from a withdrawal transaction
+/// that needs to be stored in the MohoState for later use by the Bridge proof.
+/// The Bridge proof uses this information to prove that operators have correctly
+/// front-paid users and can now withdraw the corresponding locked funds.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct WithdrawalProcessedInfo {
+    /// The transaction ID of the withdrawal transaction
+    pub withdrawal_txid: Buf32,
+
+    /// The transaction ID of the deposit that was assigned
+    pub deposit_txid: Buf32,
+
+    /// The transaction idx of the deposit that was assigned
+    pub deposit_idx: u32,
+
+    /// The index of the operator who processed the withdrawal
+    pub operator_idx: OperatorIdx,
+}
+
+impl WithdrawalProcessedInfo {
+    pub fn to_export_entry(&self) -> ExportEntry {
+        let payload = borsh::to_vec(&self).expect("Failed to serialize WithdrawalProcessedInfo");
+        ExportEntry::new(self.deposit_idx, payload)
+    }
+}
 
 /// Main state container for the Bridge V1 subprotocol.
 ///
@@ -131,7 +159,7 @@ impl BridgeV1State {
     /// Processes a parsed deposit by validating and adding it to the deposits table.
     ///
     /// This function takes already parsed deposit information, validates it against the
-    /// current bridge state, and creates a new deposit entry in the deposits table if
+    /// current state, and creates a new deposit entry in the deposits table if
     /// validation passes. Only operators that are part of the current N/N multisig set
     /// are included as notary operators for the deposit.
     ///
@@ -219,7 +247,63 @@ impl BridgeV1State {
         Ok(())
     }
 
-    /// Processes a parsed withdrawal by validating it against assignment information.
+    /// Processes a parsed withdrawal by validating it, removing the deposit, and removing the
+    /// assignment.
+    ///
+    /// This function takes already parsed withdrawal information, validates it against the
+    /// current state using the assignment table, removes the corresponding deposit from the
+    /// deposits table, and removes the assignment entry to mark the withdrawal as completed.
+    /// The withdrawal processing information is returned to the caller for storage in MohoState
+    /// and later use by Bridge proof.
+    ///
+    /// # Parameters
+    ///
+    /// - `withdrawal_txid` - The transaction ID of the withdrawal transaction
+    /// - `withdrawal_info` - Parsed withdrawal information containing operator, deposit details,
+    ///   and withdrawal amounts
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(WithdrawalProcessedInfo)` - The processed withdrawal information if withdrawal passes
+    ///   validation
+    /// - `Err(WithdrawalValidationError)` - If validation fails for any reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - No assignment exists for the referenced deposit
+    /// - The operator doesn't match the assigned operator
+    /// - The withdrawal specifications don't match the assignment
+    /// - The deposit referenced in the withdrawal doesn't exist
+    pub fn process_withdrawal(
+        &mut self,
+        tx: &Transaction,
+        withdrawal_info: &WithdrawalInfo,
+    ) -> Result<WithdrawalProcessedInfo, WithdrawalValidationError> {
+        self.validate_withdrawal(withdrawal_info)?;
+
+        // Remove the deposit from the deposits table since it's now fulfilled
+        let removed_deposit = self
+            .deposits
+            .remove_deposit(withdrawal_info.deposit_idx)
+            .expect("Deposit must exist after successful validation");
+
+        // Remove the assignment from the table to mark withdrawal as completed
+        // Safe to unwrap since validate_withdrawal ensures the assignment exists
+        let _removed_assignment = self
+            .assignments
+            .remove_assignment(withdrawal_info.deposit_idx)
+            .expect("Assignment must exist after successful validation");
+
+        Ok(WithdrawalProcessedInfo {
+            withdrawal_txid: tx.compute_txid().into(),
+            deposit_txid: removed_deposit.output().outpoint().txid.into(),
+            deposit_idx: removed_deposit.idx(),
+            operator_idx: withdrawal_info.operator_idx,
+        })
+    }
+
+    /// Validates the parsed withdrawal it against assignment information.
     ///
     /// This function takes already parsed withdrawal information and validates it
     /// against the corresponding assignment entry. It checks that:
@@ -243,7 +327,7 @@ impl BridgeV1State {
     /// - No assignment exists for the referenced deposit
     /// - The operator doesn't match the assigned operator
     /// - The withdrawal specifications don't match the assignment
-    pub fn process_withdrawal(
+    pub fn validate_withdrawal(
         &self,
         withdrawal_info: &WithdrawalInfo,
     ) -> Result<(), WithdrawalValidationError> {

@@ -12,12 +12,14 @@ workspace = true
 [dependencies]
 bitcoin.workspace = true
 borsh.workspace = true
+moho-types.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
 strata-asm-common.workspace = true
+strata-asm-logs.workspace = true
 strata-l1-txfmt.workspace = true
 strata-l1tx.workspace = true
 strata-primitives.workspace = true

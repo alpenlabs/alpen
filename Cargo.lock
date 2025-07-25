@@ -13162,9 +13162,11 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "moho-types",
  "secp256k1 0.29.1",
  "serde",
  "strata-asm-common",
+ "strata-asm-logs",
  "strata-l1-txfmt",
  "strata-l1tx",
  "strata-primitives",

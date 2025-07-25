@@ -361,6 +361,26 @@ impl DepositsTable {
     pub fn deposits(&self) -> impl Iterator<Item = &DepositEntry> {
         self.deposits.iter()
     }
+
+    /// Removes a deposit entry from the table by its index.
+    ///
+    /// This method locates and removes the deposit with the specified index
+    /// from the table. Uses binary search for efficient lookup.
+    ///
+    /// # Parameters
+    ///
+    /// - `idx` - The unique deposit index to remove
+    ///
+    /// # Returns
+    ///
+    /// - `Some(DepositEntry)` if the deposit was found and removed
+    /// - `None` if no deposit with the given index exists
+    pub fn remove_deposit(&mut self, idx: u32) -> Option<DepositEntry> {
+        match self.get_deposit_entry_pos(idx) {
+            Ok(pos) => Some(self.deposits.remove(pos as usize)),
+            Err(_) => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -835,5 +855,36 @@ mod tests {
 
         let deposit = table.get_deposit(1).unwrap();
         assert!(deposit.notary_operators().is_empty());
+    }
+
+    #[test]
+    fn test_deposits_table_remove_deposit() {
+        let mut table = DepositsTable::new_empty();
+
+        let output_ref1 = create_test_output_ref(1);
+        let output_ref2 = create_test_output_ref(2);
+        let operators = vec![0];
+        let amount = BitcoinAmount::from_sat(1000);
+
+        // Create two deposits
+        table.create_next_deposit(output_ref1, operators.clone(), amount);
+        table.create_next_deposit(output_ref2, operators, amount);
+
+        assert_eq!(table.len(), 2);
+
+        // Remove the first deposit
+        let removed_deposit = table.remove_deposit(0).unwrap();
+        assert_eq!(removed_deposit.idx(), 0);
+        assert_eq!(table.len(), 1);
+
+        // Verify the deposit is no longer accessible
+        assert!(table.get_deposit(0).is_none());
+        
+        // Verify the second deposit is still there
+        assert!(table.get_deposit(1).is_some());
+
+        // Try to remove a non-existent deposit
+        assert!(table.remove_deposit(10).is_none());
+        assert_eq!(table.len(), 1);
     }
 }

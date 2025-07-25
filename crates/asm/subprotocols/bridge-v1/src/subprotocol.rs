@@ -5,9 +5,10 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
+    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
     TxInputRef,
 };
+use strata_asm_logs::NewExportEntry;
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
@@ -61,12 +62,12 @@ impl Subprotocol for BridgeV1Subproto {
         txs: &[TxInputRef<'_>],
         _anchor_pre: &AnchorState,
         _aux_inputs: &[Self::AuxInput],
-        _relayer: &mut impl MsgRelayer,
+        relayer: &mut impl MsgRelayer,
     ) {
         for tx in txs {
             match tx.tag().tx_type() {
                 DEPOSIT_TX_TYPE => Self::process_deposit_tx(state, tx),
-                WITHDRAWAL_TX_TYPE => Self::process_withdrawal_tx(state, tx),
+                WITHDRAWAL_TX_TYPE => Self::process_withdrawal_tx(state, tx, relayer),
                 _ => continue, // Ignore unsupported transaction types
             }
         }
@@ -113,7 +114,11 @@ impl BridgeV1Subproto {
     }
 
     /// Processes a withdrawal transaction with error logging.
-    fn process_withdrawal_tx(state: &mut BridgeV1State, tx: &strata_asm_common::TxInputRef<'_>) {
+    fn process_withdrawal_tx(
+        state: &mut BridgeV1State,
+        tx: &strata_asm_common::TxInputRef<'_>,
+        relayer: &mut impl strata_asm_common::MsgRelayer,
+    ) {
         let withdrawal_info = match extract_withdrawal_info(tx) {
             Ok(info) => info,
             Err(e) => {
@@ -126,23 +131,32 @@ impl BridgeV1Subproto {
             }
         };
 
-        if let Err(e) = state.process_withdrawal(&withdrawal_info) {
-            tracing::warn!(
-                tx_id = %tx.tx().compute_txid(),
-                deposit_idx = withdrawal_info.deposit_idx,
-                operator_idx = withdrawal_info.operator_idx,
-                error = %e,
-                "Withdrawal validation failed"
-            );
-            return;
-        }
+        let withdrawal_processed_info = match state.process_withdrawal(tx.tx(), &withdrawal_info) {
+            Ok(assignment) => assignment,
+            Err(e) => {
+                tracing::warn!(
+                    tx_id = %tx.tx().compute_txid(),
+                    deposit_idx = withdrawal_info.deposit_idx,
+                    operator_idx = withdrawal_info.operator_idx,
+                    error = %e,
+                    "Withdrawal validation failed"
+                );
+                return;
+            }
+        };
+
+        // FIXME: This is a placeholder for the actual container ID logic.
+        let container_id = 0; // Replace with actual logic to determine container ID
+        let withdrawal_processed_log =
+            NewExportEntry::new(container_id, withdrawal_processed_info.to_export_entry());
+        relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
 
         tracing::info!(
             tx_id = %tx.tx().compute_txid(),
             deposit_idx = withdrawal_info.deposit_idx,
             operator_idx = withdrawal_info.operator_idx,
             amount = %withdrawal_info.withdrawal_amount,
-            "Successfully validated withdrawal"
+            "Successfully processed withdrawal"
         );
     }
 }
