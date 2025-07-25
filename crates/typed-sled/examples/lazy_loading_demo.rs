@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use typed_sled::{Schema, SledDb, SledTree, TreeName, error::Result};
+use typed_sled::{
+    Schema, SledDb, SledTree, TreeName, codec_derive::DefaultCodecDeriveBorsh, error::Result,
+};
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 struct Settings {
@@ -11,6 +13,9 @@ struct Settings {
 
 #[derive(Debug)]
 struct SettingsSchema;
+
+impl DefaultCodecDeriveBorsh for Settings {}
+impl DefaultCodecDeriveBorsh for SettingsSchema {}
 
 impl Schema for SettingsSchema {
     const TREE_NAME: TreeName = TreeName("settings");

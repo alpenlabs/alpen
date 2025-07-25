@@ -54,6 +54,9 @@
 //! ```
 
 pub mod codec;
+// NOTE: This contains borsh specific derivation and some tweaks to have integers be big endian
+// encoded. Might need to feature gate for borsh.
+pub mod codec_derive;
 pub mod db;
 pub mod error;
 pub mod schema;

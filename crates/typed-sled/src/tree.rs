@@ -129,7 +129,7 @@ mod tests {
     use borsh::{BorshDeserialize, BorshSerialize};
 
     use super::*;
-    use crate::{Schema, TreeName};
+    use crate::{Schema, TreeName, codec_derive::DefaultCodecDeriveBorsh};
 
     #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
     struct TestValue {
@@ -145,6 +145,7 @@ mod tests {
             }
         }
     }
+    impl DefaultCodecDeriveBorsh for TestValue {}
 
     #[derive(Debug)]
     struct TestSchema;
@@ -316,7 +317,7 @@ mod tests {
             tree.put(&i, &TestValue::new_with_name(i)).unwrap();
         }
 
-        let items: Result<Vec<_>> = tree.range(..3).unwrap().collect();
+        let items: Result<Vec<_>> = tree.range(..=3).unwrap().collect();
         let items = items.unwrap();
 
         assert_eq!(items.len(), 3);
