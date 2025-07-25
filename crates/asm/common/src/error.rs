@@ -1,10 +1,9 @@
 use std::fmt::{Debug, Display};
 
+use strata_l1_txfmt::SubprotocolId;
 use strata_msg_fmt::TypeId;
 use strata_primitives::l1::L1VerificationError;
 use thiserror::Error;
-
-use crate::SubprotocolId;
 
 /// A generic “expected vs actual” error.
 #[derive(Debug, Error)]
@@ -60,6 +59,10 @@ pub enum AsmError {
 
     #[error("msg format error {0:?}")]
     MsgFmtError(#[from] strata_msg_fmt::Error),
+
+    /// Missing genesis configuration for subprotocol
+    #[error("missing genesis configuration for subprotocol {0}")]
+    MissingGenesisConfig(SubprotocolId),
 }
 
 /// Wrapper result type for database operations.

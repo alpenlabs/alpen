@@ -9,3 +9,4 @@ workspace = true
 [dependencies]
 borsh.workspace = true
 strata-asm-common.workspace = true
+strata-l1-txfmt.workspace = true

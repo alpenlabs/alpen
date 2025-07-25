@@ -3,7 +3,9 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::params::Params;
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, GenesisConfigRegistry,
+};
 
 use crate::{
     manager::SubprotoManager,
@@ -23,6 +25,7 @@ use crate::{
 /// * `pre_state` - The current anchor state containing chain view and subprotocol states
 /// * `input` - The ASM STF input containing the block header, protocol transactions, and auxiliary
 ///   data
+/// * `genesis_registry` - genesis configuration registry for subprotocol initialization
 ///
 /// # Returns
 ///
@@ -44,6 +47,7 @@ use crate::{
 pub fn asm_stf<'b, 'x, S: AsmSpec>(
     pre_state: &AnchorState,
     input: AsmStfInput<'b, 'x>,
+    genesis_registry: &GenesisConfigRegistry,
 ) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -54,8 +58,9 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
 
     let mut manager = SubprotoManager::new();
 
-    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data.
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager, input.aux_input);
+    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
+    let mut loader_stage =
+        SubprotoLoaderStage::new(pre_state, &mut manager, input.aux_input, genesis_registry);
     S::call_subprotocols(&mut loader_stage);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.

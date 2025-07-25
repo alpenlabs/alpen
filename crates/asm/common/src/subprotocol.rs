@@ -10,17 +10,52 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AuxRequest, SectionState, TxInputRef, log::AsmLogEntry, msg::InterprotoMsg,
+    AnchorState, AsmError, AuxRequest, SectionState, TxInputRef, log::AsmLogEntry,
+    msg::InterprotoMsg,
 };
 
-/// ASM subprotocol interface.
+/// Trait for defining subprotocol behavior within the ASM framework.
 ///
-/// A Subprotocol encapsulates a self-contained piece of logic that
+/// Subprotocols are modular components that can be plugged into the ASM to handle
+/// specific transaction types and maintain their own state within the anchor state.
+/// Each subprotocol defines its own transaction processing logic, message handling,
+/// and state management.
+///
 ///
 /// 1. processes each new L1 block to update its own state and emit outgoing inter-protocol
 ///    messages, and then
 /// 2. receives incoming messages to finalize and serialize its state for inclusion in the global
 ///    AnchorState.
+///
+/// # Example
+///
+/// ```ignore
+/// struct MySubprotocol;
+///
+/// impl Subprotocol for MySubprotocol {
+///     const ID: SubprotocolId = 42;
+///     type State = MyState;
+///     type GenesisConfig = MyConfig;
+///     type Msg = MyMessage;
+///     type AuxInput = MyAuxData;
+///
+///     fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
+///        // init logic
+///     }
+///
+///     fn pre_process_txs(state: &Self::State, txs: &[TxInputRef], ...) {
+///         // Pre-process transactions
+///     }
+///
+///     fn process_txs(state: &mut Self::State, txs: &[TxInputRef], ...) {
+///         // Process transactions
+///     }
+///
+///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]) {
+///         // Process messages
+///     }
+/// }
+/// ```
 pub trait Subprotocol: 'static {
     /// The subprotocol ID used when searching for relevant transactions.
     const ID: SubprotocolId;
@@ -39,29 +74,59 @@ pub trait Subprotocol: 'static {
     /// `process_txs` are responsible for validating this data before using it in any state updates.
     type AuxInput: Any + BorshSerialize + BorshDeserialize;
 
-    /// Constructs a new state to use if the ASM does not have an instance of it.
-    fn init() -> Self::State;
+    /// Genesis configuration type for initializing the subprotocol state.
+    /// This should contain all necessary parameters for proper subprotocol initialization.
+    type GenesisConfig: Any + BorshDeserialize + BorshSerialize;
 
-    /// During this phase, the subprotocol declares *external* data it will need
-    /// before actual processing. Any required L1 headers, block-metadata, or other
-    /// off-chain inputs should be requested via the `AuxInputCollector`.
+    /// Constructs a new state using the provided genesis configuration.
     ///
-    /// # Parameters
-    /// - `state`    – current subprotocol state snapshot (read-only)
-    /// - `txs`      – list of new L1 transactions to examine
-    /// - `collector`– hook for registering requests for auxiliary inputs
+    /// # Arguments
+    /// * `genesis_config` - The genesis configuration for this subprotocol. Subprotocols that don't
+    ///   require configuration should use `type GenesisConfig = ()`.
+    ///
+    /// # Returns
+    /// The initialized state or an error if initialization fails
+    fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError>;
+
+    /// Pre-processes a batch of L1 transactions by registering any required off-chain inputs.
+    ///
+    /// During this phase, the subprotocol declares *external* data it will need before actual
+    /// processing. Any required L1 headers, block-metadata, or other off-chain inputs should be
+    /// requested via the `AuxInputCollector`.
+    /// (e.g., Merkle proof for logs emitted in a previous block from "history_mmr" in AnchorState)
+    ///
+    /// This method is called before transaction processing to allow subprotocols to specify
+    /// any auxiliary data they need (such as L1 block headers, Merkle proofs, or other metadata).
+    /// The requested data will be made available during the subsequent `process_txs` call.
+    ///
+    /// # Arguments
+    /// * `state` - Current state of the subprotocol
+    /// * `txs` - Slice of L1 transactions relevant to this subprotocol
+    /// * `collector` - Interface for registering auxiliary input requirements
+    /// * `anchor_pre` - The previous anchor state for context
     fn pre_process_txs(
         state: &Self::State,
         txs: &[TxInputRef<'_>],
         collector: &mut impl AuxInputCollector,
         anchor_pre: &AnchorState,
-    );
+    ) {
+        // Default implementation: no auxiliary input required
+        let _ = (state, txs, collector, anchor_pre);
+    }
 
     /// Processes a batch of L1 transactions, extracting all relevant information for this
     /// subprotocol.
     ///
-    /// Updates the subprotocol’s internal state and collects any resulting `InterprotoMsg` and
-    /// `Log` on the provided `MsgRelayer`.
+    /// This is the core transaction processing method where subprotocols implement their
+    /// specific business logic. The method receives auxiliary inputs (requested
+    /// during `pre_process_txs`) and can generate messages to other subprotocols and emit logs.
+    ///
+    /// # Arguments
+    /// * `state` - Mutable reference to the subprotocol's state
+    /// * `txs` - Slice of L1 transactions relevant to this subprotocol
+    /// * `anchor_pre` - The previous anchor state for validation context
+    /// * `aux_inputs` - Auxiliary data previously requested and validated
+    /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
@@ -70,7 +135,14 @@ pub trait Subprotocol: 'static {
         relayer: &mut impl MsgRelayer,
     );
 
-    /// Use the msgs other subprotocols to update its state.
+    /// Processes messages received from other subprotocols.
+    ///
+    /// This method handles inter-subprotocol communication, allowing subprotocols to
+    /// react to events and data from other components in the ASM.
+    ///
+    /// # Arguments
+    /// * `state` - Mutable reference to the subprotocol's state
+    /// * `msgs` - Slice of messages received from other subprotocols
     ///
     /// TODO:
     /// Also generate the event logs that is later needed for other components
@@ -99,7 +171,7 @@ pub trait SubprotoHandler {
     fn id(&self) -> SubprotocolId;
 
     /// Pre-processes a batch of L1 transactions by delegating to the inner
-    /// subprotocol’s `pre_process_txs` implementation.
+    /// subprotocol's `pre_process_txs` implementation.
     ///
     /// Any required off-chain inputs should be registered via the provided `AuxInputCollector` for
     /// the subsequent processing phase.
@@ -110,7 +182,7 @@ pub trait SubprotoHandler {
         anchor_state: &AnchorState,
     );
 
-    /// Processes a batch of L1 transactions by delegating to the underlying subprotocol’s
+    /// Processes a batch of L1 transactions by delegating to the underlying subprotocol's
     /// `process_txs` implementation.
     ///
     /// Messages and logs generated by the subprotocol will be sent via the provided `MsgRelayer`.

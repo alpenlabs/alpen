@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, GenesisConfigRegistry};
 
 use crate::{
     manager::SubprotoManager,
@@ -16,17 +16,22 @@ use crate::{
 
 /// Pre-processes a Bitcoin block for the Anchor State Machine (ASM) state transition.
 ///
-/// This function performs the initial phase of ASM block processing that must be completed
-/// before running the main ASM state transition function [`crate::asm_stf`].
+/// This function performs the initial phase of ASM processing, which includes:
 ///
-/// This function performs the initial phase of ASM block processing, which validates block header
-/// continuity against the current chain state, filters and groups transactions by subprotocol,
-/// and pre-processes transactions to collect the [`AuxRequest`](strata_asm_common::AuxRequest)
+/// 1. **Block Header Validation**: Verifies Bitcoin consensus rules and chain continuity
+/// 2. **Transaction Filtering**: Groups relevant transactions by their target subprotocols
+/// 3. **Subprotocol Loading**: Initializes subprotocol states from the anchor state
+/// 4. **Auxiliary Input Collection**: Gathers external data requirements from subprotocols
+///
+/// The output contains all the information needed for the main ASM state transition,
+/// including grouped transactions and auxiliary input requests that must be fulfilled
+/// before processing can continue.
 ///
 /// # Arguments
 ///
-/// * `pre_state` - The current anchor state containing chain view and subprotocol states
-/// * `block` - The Bitcoin block to pre-process
+/// * `pre_state` - The previous anchor state to transition from
+/// * `block` - The new L1 Bitcoin block to process
+/// * `genesis_registry` - Genesis configuration registry for subprotocol initialization
 ///
 /// # Returns
 ///
@@ -47,6 +52,7 @@ use crate::{
 pub fn pre_process_asm<'b, S: AsmSpec>(
     pre_state: &AnchorState,
     block: &'b Block,
+    genesis_registry: &GenesisConfigRegistry,
 ) -> AsmResult<AsmPreProcessOutput<'b>> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -62,9 +68,11 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
-    // We use empty auxpayload in the loader stage as no auxiliary data is needed during loading.
+    // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
     let aux = BTreeMap::new();
-    let mut loader_stage = SubprotoLoaderStage::new(pre_state, &mut manager, &aux);
+
+    let mut loader_stage =
+        SubprotoLoaderStage::new(pre_state, &mut manager, &aux, genesis_registry);
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
@@ -75,10 +83,7 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 5. Flatten the grouped transactions back into a single collection.
     // The grouping was needed for per-subprotocol processing, but the output needs a flat list.
-    let relevant_txs = grouped_relevant_txs
-        .into_iter()
-        .flat_map(|(_k, vec)| vec)
-        .collect();
+    let relevant_txs: Vec<_> = grouped_relevant_txs.into_values().flatten().collect();
 
     // 6. Export auxiliary requests collected during pre-processing.
     // These requests will be fulfilled before running the main ASM state transition.

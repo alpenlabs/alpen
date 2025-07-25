@@ -1,20 +1,19 @@
 use strata_msg_fmt::TypeId;
 
 /// Macro to define all type IDs and ensure they're included in uniqueness tests
-macro_rules! define_type_ids {
-    ($($name:ident = $value:expr),* $(,)?) => {
+macro_rules! define_ids {
+    ($type:ty, $const_name:ident, $($name:ident = $value:expr),* $(,)?) => {
         $(
-            pub const $name: TypeId = $value;
+            pub const $name: $type = $value;
         )*
 
-        /// Get all defined type IDs as an array
-        pub const fn all_type_ids() -> &'static [TypeId] {
-            &[$($name),*]
-        }
+        /// Array containing all defined type IDs
+        pub const $const_name: &'static [$type] = &[$($name),*];
     };
 }
 
-define_type_ids! {
+// Define all log type IDs
+define_ids! {TypeId, LOG_TYPE_IDS,
     DEPOSIT_LOG_TYPE_ID = 1,
     FORCED_INCLUSION_LOG_TYPE_ID = 2,
     CHECKPOINT_UPDATE_LOG_TYPE = 3,
@@ -31,10 +30,10 @@ mod tests {
 
     #[test]
     fn test_all_type_ids_are_unique() {
-        let type_ids = all_type_ids();
-        let unique_ids: HashSet<_> = type_ids.iter().collect();
+        let log_ids = LOG_TYPE_IDS;
+        let unique_ids: HashSet<_> = log_ids.iter().collect();
         assert_eq!(
-            type_ids.len(),
+            log_ids.len(),
             unique_ids.len(),
             "All type IDs must be unique"
         );
