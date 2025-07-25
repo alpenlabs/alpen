@@ -86,6 +86,8 @@ impl Message {
     }
 }
 
+// TODO: Remove these Borsh implementations when upstream OwnedMsg implements
+// Serialize/Deserialize The Message wrapper was primarily created to add serialization support.
 impl BorshSerialize for Message {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         // Serialize as (ty, body) tuple for Borsh compatibility

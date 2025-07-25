@@ -50,8 +50,11 @@ impl Stage for SubprotoLoaderStage<'_, '_> {
                 // Deserialize genesis config from registry, or use default if not found
                 let genesis_config: S::GenesisConfig =
                     self.genesis_registry.get(S::ID).unwrap_or_else(|| {
-                        // For subprotocols that use () as GenesisConfig, this will work
-                        // For other subprotocols, they should provide config in registry
+                        // This is expected behavior: forces upper layer ASM managers to provide
+                        // genesis config for subprotocols that require specific genesis types.
+                        // For subprotocols that use () or empty structs as GenesisConfig, this
+                        // fallback will work fine. For subprotocols with non-empty genesis config
+                        // requirements, this will panic, ensuring proper configuration is provided.
                         borsh::from_slice(&[])
                             .expect("asm: subprotocol requires genesis config but none provided")
                     });
