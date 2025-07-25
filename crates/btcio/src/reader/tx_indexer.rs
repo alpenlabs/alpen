@@ -26,10 +26,6 @@ impl ReaderTxVisitorImpl {
             da_entries: Vec::new(),
         }
     }
-
-    pub(crate) fn ops(&self) -> &[ProtocolOperation] {
-        &self.ops
-    }
 }
 
 impl TxVisitor for ReaderTxVisitorImpl {

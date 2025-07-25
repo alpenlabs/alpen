@@ -7,14 +7,12 @@ use std::{
 use anyhow::bail;
 use bitcoin::{Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
-use secp256k1::XOnlyPublicKey;
 use strata_config::btcio::ReaderConfig;
 use strata_l1tx::{
     filter::{indexer::index_block, types::TxFilterConfig},
     messages::RelevantTxEntry,
 };
 use strata_primitives::{
-    block_credential::CredRule,
     l1::{
         get_relative_difficulty_adjustment_height, BtcParams, HeaderVerificationState,
         L1BlockCommitment, L1BlockId, TIMESTAMPS_FOR_MEDIAN,
@@ -33,7 +31,7 @@ use crate::{
         handler::handle_bitcoin_event,
         state::ReaderState,
         tx_indexer::ReaderTxVisitorImpl,
-        utils::{find_checkpoint_in_events, find_last_checkpoint_chainstate},
+        utils::{find_checkpoint_in_event, find_last_checkpoint_chainstate},
     },
     status::{apply_status_updates, L1StatusUpdate},
 };
@@ -54,9 +52,6 @@ pub(crate) struct ReaderContext<R: Reader> {
 
     /// Status transmitter
     pub status_channel: StatusChannel,
-
-    /// Sequencer Pubkey
-    pub seq_pubkey: Option<XOnlyPublicKey>,
 }
 
 /// The main task that initializes the reader state and starts reading from bitcoin.
@@ -68,18 +63,8 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block = calculate_target_next_block(
-        storage.l1().as_ref(),
-        params.rollup().genesis_l1_view.height(),
-    )?;
-
-    let seq_pubkey = match params.rollup.cred_rule {
-        CredRule::Unchecked => None,
-        CredRule::SchnorrKey(buf32) => Some(
-            XOnlyPublicKey::try_from(buf32)
-                .expect("the sequencer pubkey must be valid in the params"),
-        ),
-    };
+    let target_next_block =
+        calculate_target_next_block(storage.l1().as_ref(), params.rollup().horizon_l1_height)?;
 
     let ctx = ReaderContext {
         client,
@@ -87,7 +72,6 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
         config,
         params,
         status_channel,
-        seq_pubkey,
     };
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
 }
@@ -259,10 +243,8 @@ async fn poll_for_new_blocks<R: Reader>(
     let scan_start_height = state.next_height();
     for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
-            Ok((blkid, evs)) => {
-                events.extend_from_slice(&evs);
-
-                if let Some(checkpt) = find_checkpoint_in_events(&evs) {
+            Ok((blkid, ev)) => {
+                if let Some(checkpt) = find_checkpoint_in_event(&ev) {
                     // if we have a checkpoint in this block, update filterconfig based on this
                     let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().chainstate())
                         .expect("deserialize chainstate");
@@ -271,6 +253,7 @@ async fn poll_for_new_blocks<R: Reader>(
                         .filter_config_mut()
                         .update_from_chainstate(&chainstate);
                 }
+                events.push(ev);
 
                 info!(%fetch_height, %blkid, "accepted new block");
             }
@@ -306,13 +289,13 @@ async fn find_pivot_block(
     Ok(None)
 }
 
-/// Fetches a block at given height, extracts relevant transactions and emits an `L1Event`.
+/// Fetches a block at given height, extracts relevant transactions and emits an [`L1Event`].
 async fn fetch_and_process_block<R: Reader>(
     ctx: &ReaderContext<R>,
     height: u64,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
-) -> anyhow::Result<(BlockHash, Vec<L1Event>)> {
+) -> anyhow::Result<(BlockHash, L1Event)> {
     let block = ctx.client.get_block_at(height).await?;
     let (evs, l1blkid) = process_block(ctx, state, status_updates, height, block).await?;
 
@@ -329,7 +312,7 @@ async fn process_block<R: Reader>(
     status_updates: &mut Vec<L1StatusUpdate>,
     height: u64,
     block: Block,
-) -> anyhow::Result<(Vec<L1Event>, BlockHash)> {
+) -> anyhow::Result<(L1Event, BlockHash)> {
     let txs = block.txdata.len();
 
     // Index all the stuff in the block.
@@ -348,9 +331,8 @@ async fn process_block<R: Reader>(
     status_updates.push(L1StatusUpdate::CurTip(l1blkid.to_string()));
 
     let block_ev = L1Event::BlockData(block_data, state.epoch());
-    let l1_events = vec![block_ev];
 
-    Ok((l1_events, l1blkid))
+    Ok((block_ev, l1blkid))
 }
 
 /// Retrieves the timestamps for a specified number of blocks starting from the given block height,
@@ -472,32 +454,7 @@ mod test {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{
-        corepc_node_helpers::{get_bitcoind_and_client, mine_blocks},
-        TestBitcoinClient,
-    };
-
-    // Get reader state with provided recent blocks
-    fn get_reader_state(
-        ctx: &ReaderContext<TestBitcoinClient>,
-        n_recent_blocks: usize,
-    ) -> ReaderState {
-        let filter_config = TxFilterConfig::derive_from(ctx.params.rollup()).unwrap();
-        let recent_block_ids: Vec<Buf32> = (0..n_recent_blocks)
-            .map(|_| ArbitraryGenerator::new().generate())
-            .collect();
-        let recent_blocks: VecDeque<BlockHash> = recent_block_ids
-            .into_iter()
-            .map(|b| BlockHash::from_byte_array(b.into()))
-            .collect();
-        ReaderState::new(
-            n_recent_blocks as u64 + 1, // next height
-            n_recent_blocks,
-            recent_blocks,
-            filter_config,
-            ctx.status_channel.get_cur_chain_epoch().unwrap(),
-        )
-    }
+    use crate::test_utils::corepc_node_helpers::{get_bitcoind_and_client, mine_blocks};
 
     #[tokio::test()]
     async fn test_fetch_timestamps() {
