@@ -44,10 +44,7 @@ pub(crate) fn handle_checkpoint_transaction(
     let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
 
     // 2. Verify signature using dedicated signature verification function
-    verification::verify_checkpoint_signature(
-        &signed_checkpoint,
-        &state.sequencer_pubkey,
-    )?;
+    verification::verify_checkpoint_signature(&signed_checkpoint, &state.sequencer_pubkey)?;
 
     let checkpoint = signed_checkpoint.checkpoint();
 
