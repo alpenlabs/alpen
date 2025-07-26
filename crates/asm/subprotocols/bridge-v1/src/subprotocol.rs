@@ -4,8 +4,7 @@
 //! with the Strata Anchor State Machine (ASM).
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, MsgRelayer, Subprotocol, SubprotocolId,
-    TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
 };
 use strata_asm_logs::NewExportEntry;
 use strata_primitives::buf::Buf32;
@@ -14,7 +13,7 @@ use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
     msgs::BridgeIncomingMsg,
     state::{BridgeV1Config, BridgeV1State},
-    txs::{deposit::extract_deposit_info, withdrawal::extract_withdrawal_info},
+    txs::{deposit::parse::extract_deposit_info, withdrawal::extract_withdrawal_info},
 };
 
 /// Bridge V1 subprotocol implementation.
@@ -38,15 +37,6 @@ impl Subprotocol for BridgeV1Subproto {
 
     fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
         Ok(BridgeV1State::new(&genesis_config))
-    }
-
-    fn pre_process_txs(
-        _state: &Self::State,
-        _txs: &[TxInputRef<'_>],
-        _collector: &mut impl AuxInputCollector,
-        _anchor_pre: &AnchorState,
-    ) {
-        // No auxiliary input needed for bridge subprotocol processing
     }
 
     fn process_txs(

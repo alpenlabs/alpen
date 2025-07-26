@@ -21,7 +21,10 @@ use crate::{
         withdrawal::{WithdrawalCommand, WithdrawalProcessedInfo},
     },
     txs::{
-        deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
+        deposit::{
+            parse::DepositInfo,
+            validation::{validate_deposit_output_lock, validate_drt_spending_signature},
+        },
         withdrawal::WithdrawalInfo,
     },
 };
@@ -86,7 +89,8 @@ impl BridgeV1State {
     ///
     /// # Parameters
     ///
-    /// - `config` - Configuration containing operator public keys, denomination, and deadline duration
+    /// - `config` - Configuration containing operator public keys, denomination, and deadline
+    ///   duration
     ///
     /// # Returns
     ///
