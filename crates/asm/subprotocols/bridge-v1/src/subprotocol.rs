@@ -3,7 +3,6 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, AuxInputCollector, MsgRelayer, Subprotocol, SubprotocolId,
     TxInputRef,
@@ -14,20 +13,9 @@ use strata_primitives::buf::Buf32;
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
     msgs::BridgeIncomingMsg,
-    state::BridgeV1State,
+    state::{BridgeV1Config, BridgeV1State},
     txs::{deposit::extract_deposit_info, withdrawal::extract_withdrawal_info},
 };
-
-/// Genesis configuration for the BridgeV1 subprotocol.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-pub struct BridgeV1GenesisConfig {
-    /// Initial operator table for the bridge
-    pub operators: crate::state::OperatorTable,
-    /// Expected deposit denomination for validation
-    pub denomination: strata_primitives::l1::BitcoinAmount,
-    /// Duration in blocks for assignment execution deadlines
-    pub deadline_duration: u64,
-}
 
 /// Bridge V1 subprotocol implementation.
 ///
@@ -46,10 +34,10 @@ impl Subprotocol for BridgeV1Subproto {
 
     type AuxInput = ();
 
-    type GenesisConfig = BridgeV1GenesisConfig;
+    type GenesisConfig = BridgeV1Config;
 
     fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
-        Ok(BridgeV1State::new(genesis_config.operators, genesis_config.denomination, genesis_config.deadline_duration))
+        Ok(BridgeV1State::new(&genesis_config))
     }
 
     fn pre_process_txs(

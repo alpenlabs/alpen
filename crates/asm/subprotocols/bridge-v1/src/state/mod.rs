@@ -5,11 +5,13 @@
 
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
+// Re-export types that are needed in genesis config
+pub use operator::OperatorTable;
 use rand_chacha::{
     ChaChaRng,
     rand_core::{RngCore, SeedableRng},
 };
-use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
+use strata_primitives::{buf::Buf32, l1::BitcoinAmount, operator::OperatorPubkeys};
 
 use crate::{
     errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
@@ -23,9 +25,6 @@ use crate::{
         withdrawal::WithdrawalInfo,
     },
 };
-
-// Re-export types that are needed in genesis config
-pub use operator::OperatorTable;
 
 pub mod assignment;
 pub mod deposit;
@@ -67,28 +66,39 @@ pub struct BridgeV1State {
     deadline_duration: u64,
 }
 
+/// Configuration for the BridgeV1 subprotocol.
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+pub struct BridgeV1Config {
+    /// Initial operator public keys for the bridge
+    pub operators: Vec<OperatorPubkeys>,
+    /// Expected deposit denomination for validation
+    pub denomination: BitcoinAmount,
+    /// Duration in blocks for assignment execution deadlines
+    pub deadline_duration: u64,
+}
+
 impl BridgeV1State {
-    /// Creates a new bridge state with the specified parameters.
+    /// Creates a new bridge state with the specified configuration.
     ///
-    /// Initializes all component tables as empty and sets the expected deposit denomination
-    /// and deadline duration for validation and assignment management.
+    /// Initializes all component tables as empty, creates an operator table from the provided
+    /// operator public keys, and sets the expected deposit denomination and deadline duration
+    /// for validation and assignment management.
     ///
     /// # Parameters
     ///
-    /// - `operators` - Table of registered bridge operators
-    /// - `denomination` - Expected deposit amount for validation
-    /// - `deadline_duration` - Duration in blocks for assignment execution deadlines
+    /// - `config` - Configuration containing operator public keys, denomination, and deadline duration
     ///
     /// # Returns
     ///
     /// A new [`BridgeV1State`] instance.
-    pub fn new(operators: crate::state::operator::OperatorTable, denomination: BitcoinAmount, deadline_duration: u64) -> Self {
+    pub fn new(config: &BridgeV1Config) -> Self {
+        let operators = OperatorTable::from_operator_list(&config.operators);
         Self {
             operators,
             deposits: DepositsTable::new_empty(),
             assignments: AssignmentTable::new_empty(),
-            denomination,
-            deadline_duration,
+            denomination: config.denomination,
+            deadline_duration: config.deadline_duration,
         }
     }
 
