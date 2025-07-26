@@ -40,3 +40,5 @@ pub mod parse;
 #[cfg(test)]
 pub mod test;
 pub mod validation;
+
+pub const DEPOSIT_OUTPUT_INDEX: u32 = 1;

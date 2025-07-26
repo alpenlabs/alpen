@@ -25,3 +25,7 @@ pub mod msgs;
 pub mod state;
 pub mod subprotocol;
 pub mod txs;
+
+// Suppress unused dependency warning - this may be used by other parts of the codebase
+#[cfg(test)]
+use strata_test_utils as _;

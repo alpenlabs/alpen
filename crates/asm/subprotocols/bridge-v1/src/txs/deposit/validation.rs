@@ -8,9 +8,7 @@ use bitcoin::{
 use secp256k1::Message;
 use strata_primitives::{buf::Buf32, l1::XOnlyPk};
 
-use crate::errors::DepositError;
-
-const DEPOSIT_OUTPUT_INDEX: u32 = 1;
+use crate::{errors::DepositError, txs::deposit::DEPOSIT_OUTPUT_INDEX};
 
 /// Validates that the DRT spending signature in the deposit transaction is valid.
 ///
@@ -158,4 +156,221 @@ pub fn validate_deposit_output_lock(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{
+        Amount,
+        secp256k1::{Secp256k1, SecretKey},
+    };
+    use strata_primitives::{buf::Buf32, l1::XOnlyPk};
+
+    use super::*;
+    use crate::txs::deposit::test::create_test_deposit_tx;
+
+    // Test data constants
+    const TEST_DEPOSIT_IDX: u32 = 123;
+    const TEST_TAPSCRIPT_ROOT: [u8; 32] = [0xAB; 32];
+    const TEST_DESTINATION: &[u8] = b"test_destination";
+    const TEST_DEPOSIT_AMOUNT: u64 = 1000000;
+
+    // Helper function to create a test operator keypair
+    fn create_test_operator_keypair() -> (XOnlyPk, SecretKey) {
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
+        let (xonly_pk, _) = keypair.x_only_public_key();
+        let operators_pubkey =
+            XOnlyPk::new(Buf32::new(xonly_pk.serialize())).expect("Valid public key");
+        (operators_pubkey, secret_key)
+    }
+
+    // Helper function to create a test transaction using the standard test utility
+    fn create_test_tx() -> Transaction {
+        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
+        create_test_deposit_tx(
+            TEST_DEPOSIT_IDX,
+            TEST_TAPSCRIPT_ROOT,
+            TEST_DESTINATION,
+            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+            &operators_pubkey,
+            &operators_privkey,
+        )
+    }
+
+    #[test]
+    fn test_validate_deposit_output_lock_success() {
+        let (operators_pubkey, _) = create_test_operator_keypair();
+        let tx = create_test_tx();
+
+        // This should succeed
+        let result = validate_deposit_output_lock(&tx, &operators_pubkey);
+        assert!(
+            result.is_ok(),
+            "Valid deposit output lock should pass validation"
+        );
+    }
+
+    #[test]
+    fn test_validate_deposit_output_lock_missing_output() {
+        let (operators_pubkey, _) = create_test_operator_keypair();
+        let mut tx = create_test_tx();
+
+        // Remove the deposit output (keep only OP_RETURN at index 0)
+        tx.output.truncate(1);
+
+        let result = validate_deposit_output_lock(&tx, &operators_pubkey);
+        assert!(
+            result.is_err(),
+            "Should fail when deposit output is missing"
+        );
+
+        assert!(matches!(result, Err(DepositError::MissingOutput(_))));
+        if let Err(DepositError::MissingOutput(index)) = result {
+            assert_eq!(index, DEPOSIT_OUTPUT_INDEX);
+        }
+    }
+
+    #[test]
+    fn test_validate_deposit_output_lock_wrong_script() {
+        use bitcoin::ScriptBuf;
+
+        let (operators_pubkey, _) = create_test_operator_keypair();
+        let mut tx = create_test_tx();
+
+        // Mutate the deposit output to have wrong script (empty script instead of P2TR)
+        tx.output[1].script_pubkey = ScriptBuf::new();
+
+        let result = validate_deposit_output_lock(&tx, &operators_pubkey);
+        assert!(
+            result.is_err(),
+            "Should fail when deposit output has wrong script"
+        );
+
+        assert!(matches!(result, Err(DepositError::InvalidSignature { .. })));
+        if let Err(DepositError::InvalidSignature { reason }) = result {
+            assert!(reason.contains("not locked to the aggregated operator key"));
+        }
+    }
+
+    #[test]
+    fn test_validate_drt_spending_signature_no_witness() {
+        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
+        let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
+
+        // Create a signed transaction then remove the witness
+        let mut tx = create_test_deposit_tx(
+            TEST_DEPOSIT_IDX,
+            TEST_TAPSCRIPT_ROOT,
+            TEST_DESTINATION,
+            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+            &operators_pubkey,
+            &operators_privkey,
+        );
+
+        // Clear the witness to test no witness case
+        tx.input[0].witness.clear();
+
+        let result = validate_drt_spending_signature(
+            &tx,
+            drt_tapnode_hash,
+            &operators_pubkey,
+            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+        );
+
+        assert!(
+            result.is_err(),
+            "Should fail when no witness data is present"
+        );
+
+        assert!(matches!(result, Err(DepositError::InvalidSignature { .. })));
+        if let Err(DepositError::InvalidSignature { reason }) = result {
+            assert!(reason.contains("No witness data found"));
+        }
+    }
+
+    #[test]
+    fn test_validate_drt_spending_signature_invalid_signature() {
+        use bitcoin::Witness;
+
+        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
+        let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
+
+        // Create a signed transaction then replace with invalid signature
+        let mut tx = create_test_deposit_tx(
+            TEST_DEPOSIT_IDX,
+            TEST_TAPSCRIPT_ROOT,
+            TEST_DESTINATION,
+            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+            &operators_pubkey,
+            &operators_privkey,
+        );
+
+        // Replace with invalid witness data
+        tx.input[0].witness = Witness::from_slice(&[&[0u8; 64]]); // Dummy signature
+
+        let result = validate_drt_spending_signature(
+            &tx,
+            drt_tapnode_hash,
+            &operators_pubkey,
+            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+        );
+
+        assert!(result.is_err(), "Should fail with invalid signature");
+
+        // The exact error depends on whether signature parsing or verification fails first
+        assert!(matches!(result, Err(DepositError::InvalidSignature { .. })));
+    }
+
+    #[test]
+    fn test_validate_drt_spending_signature_success() {
+        // Create a specific keypair that we'll use consistently
+        let secp = Secp256k1::new();
+        let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
+        let (internal_key, _) = keypair.x_only_public_key();
+        let operators_pubkey = XOnlyPk::new(Buf32::new(internal_key.serialize())).unwrap();
+
+        let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
+
+        // Create a properly signed transaction using the test utility
+        let tx = create_test_deposit_tx(
+            TEST_DEPOSIT_IDX,
+            TEST_TAPSCRIPT_ROOT,
+            TEST_DESTINATION,
+            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+            &operators_pubkey,
+            &secret_key,
+        );
+
+        // Test the validation - this should succeed
+        let result = validate_drt_spending_signature(
+            &tx,
+            drt_tapnode_hash,
+            &operators_pubkey,
+            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+        );
+
+        assert!(
+            result.is_ok(),
+            "Should succeed with valid signature: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_create_valid_p2tr_script() {
+        use bitcoin::{ScriptBuf, XOnlyPublicKey};
+
+        let (operators_pubkey, _) = create_test_operator_keypair();
+        let secp = Secp256k1::new();
+
+        let operators_xonly =
+            XOnlyPublicKey::from_slice(operators_pubkey.inner().as_bytes()).unwrap();
+        let script = ScriptBuf::new_p2tr(&secp, operators_xonly, None);
+
+        // Verify it's a P2TR script
+        assert!(script.is_p2tr(), "Generated script should be P2TR");
+        assert_eq!(script.len(), 34, "P2TR script should be 34 bytes"); // OP_1 + 32 bytes
+    }
 }
