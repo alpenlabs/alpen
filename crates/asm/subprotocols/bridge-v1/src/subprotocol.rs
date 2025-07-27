@@ -7,7 +7,7 @@ use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
 };
 use strata_asm_logs::NewExportEntry;
-use strata_primitives::buf::Buf32;
+use strata_primitives::{buf::Buf32, l1::L1BlockId};
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
@@ -39,18 +39,72 @@ impl Subprotocol for BridgeV1Subproto {
         Ok(BridgeV1State::new(&genesis_config))
     }
 
+    /// Processes transactions for the Bridge V1 subprotocol and handles expired assignment
+    /// reassignment.
+    ///
+    /// This function is the main transaction processing entry point that:
+    /// 1. Processes each transaction based on its type:
+    ///    - **Deposit transactions** (`DEPOSIT_TX_TYPE`): Validates and records Bitcoin deposits in
+    ///      the bridge state, making them available for withdrawal assignment
+    ///    - **Withdrawal transactions** (`WITHDRAWAL_TX_TYPE`): Validates and processes withdrawal
+    ///      fulfillments, removing completed assignments and deposits from the state
+    /// 2. After processing all transactions, reassigns any expired assignments to new operators
+    ///    that haven't previously failed on the same withdrawal
+    ///
+    /// # Parameters
+    ///
+    /// - `state` - Mutable reference to the bridge state
+    /// - `txs` - Array of transaction input references to process
+    /// - `anchor_pre` - Current anchor state containing chain view and block information
+    /// - `_aux_inputs` - Auxiliary inputs (unused in Bridge V1)
+    /// - `relayer` - Message relayer for emitting logs and events
+    ///
+    /// # Transaction Types Processed
+    ///
+    /// - **Deposit transactions**: Bitcoin transactions that lock funds in the bridge's multisig,
+    ///   creating new deposit entries that can be assigned for withdrawal
+    /// - **Withdrawal transactions**: Bitcoin transactions that fulfill assigned withdrawals,
+    ///   completing the bridge process and removing assignments
+    ///
+    /// # Post-Processing
+    ///
+    /// After all transactions are processed, the function identifies and reassigns expired
+    /// assignments using the current Bitcoin block height from the anchor state. This ensures
+    /// that failed operators don't block withdrawals indefinitely.
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        _anchor_pre: &AnchorState,
+        anchor_pre: &AnchorState,
         _aux_inputs: &[Self::AuxInput],
         relayer: &mut impl MsgRelayer,
     ) {
+        // Process each transaction based on its type
         for tx in txs {
             match tx.tag().tx_type() {
                 DEPOSIT_TX_TYPE => Self::process_deposit_tx(state, tx),
                 WITHDRAWAL_TX_TYPE => Self::process_withdrawal_tx(state, tx, relayer),
                 _ => continue, // Ignore unsupported transaction types
+            }
+        }
+
+        // After processing all transactions, reassign expired assignments
+        let current_block = &anchor_pre.chain_view.pow_state.last_verified_block;
+
+        match state.reassign_expired_assignments(current_block) {
+            Ok(reassigned_deposits) => {
+                if !reassigned_deposits.is_empty() {
+                    tracing::info!(
+                        count = reassigned_deposits.len(),
+                        deposits = ?reassigned_deposits,
+                        "Successfully reassigned expired assignments"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    "Failed to reassign expired assignments"
+                );
             }
         }
     }
@@ -59,12 +113,12 @@ impl Subprotocol for BridgeV1Subproto {
         for msg in msgs {
             match msg {
                 BridgeIncomingMsg::ProcessWithdrawal(withdrawal_cmd) => {
-                    // TODO: Pass actual L1BlockHash instead of placeholder
-                    let placeholder_hash = Buf32::zero();
+                    // TODO: Pass actual L1BlockId instead of placeholder
+                    let placeholder_id = L1BlockId::from(Buf32::zero());
                     let current_block_height = 0;
                     if let Err(e) = state.create_withdrawal_assignment(
                         withdrawal_cmd,
-                        &placeholder_hash,
+                        &placeholder_id,
                         current_block_height,
                     ) {
                         tracing::error!(

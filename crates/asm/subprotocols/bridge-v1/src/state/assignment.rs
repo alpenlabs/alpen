@@ -17,7 +17,8 @@ use super::withdrawal::WithdrawalCommand;
 ///
 /// - **`deposit_idx`** - Reference to the deposit being processed
 /// - **`withdrawal_cmd`** - Specification of outputs and amounts for withdrawal
-/// - **`assignee`** - Operator responsible for executing the withdrawal
+/// - **`current_assignee`** - Operator currently responsible for executing the withdrawal
+/// - **`previous_assignees`** - List of operators who were previously assigned but failed to execute
 /// - **`exec_deadline`** - Bitcoin block height deadline for execution
 ///
 /// # Execution Deadline
@@ -32,11 +33,18 @@ pub struct AssignmentEntry {
     /// Withdrawal command specifying outputs and amounts.
     withdrawal_cmd: WithdrawalCommand,
 
-    /// Index of the operator assigned to execute this withdrawal.
+    /// Index of the operator currently assigned to execute this withdrawal.
     ///
     /// This operator fronts the funds for the withdrawal and will be
     /// reimbursed by the bridge notaries upon successful execution.
-    assignee: OperatorIdx,
+    current_assignee: OperatorIdx,
+
+    /// List of operators who were previously assigned to this withdrawal.
+    ///
+    /// When a withdrawal is reassigned, the current assignee is moved to this
+    /// list before a new operator is selected. This prevents reassigning to
+    /// operators who have already failed to execute the withdrawal.
+    previous_assignees: Vec<OperatorIdx>,
 
     /// Bitcoin block height deadline for withdrawal execution.
     ///
@@ -53,7 +61,7 @@ impl AssignmentEntry {
     ///
     /// - `deposit_idx` - Index of the deposit to be processed
     /// - `withdrawal_cmd` - Withdrawal command with output specifications
-    /// - `assignee` - Index of the operator assigned to execute the withdrawal
+    /// - `current_assignee` - Index of the operator assigned to execute the withdrawal
     /// - `exec_deadline` - Bitcoin block height deadline for execution
     ///
     /// # Returns
@@ -62,13 +70,14 @@ impl AssignmentEntry {
     pub fn new(
         deposit_idx: u32,
         withdrawal_cmd: WithdrawalCommand,
-        assignee: OperatorIdx,
+        current_assignee: OperatorIdx,
         exec_deadline: BitcoinBlockHeight,
     ) -> Self {
         Self {
             deposit_idx,
             withdrawal_cmd,
-            assignee,
+            current_assignee,
+            previous_assignees: Vec::new(),
             exec_deadline,
         }
     }
@@ -91,13 +100,31 @@ impl AssignmentEntry {
         &self.withdrawal_cmd
     }
 
-    /// Returns the index of the assigned operator.
+    /// Returns the index of the currently assigned operator.
     ///
     /// # Returns
     ///
-    /// The [`OperatorIdx`] of the operator responsible for this assignment.
-    pub fn assignee(&self) -> OperatorIdx {
-        self.assignee
+    /// The [`OperatorIdx`] of the operator currently responsible for this assignment.
+    pub fn current_assignee(&self) -> OperatorIdx {
+        self.current_assignee
+    }
+
+    /// Returns a reference to the list of previous assignees.
+    ///
+    /// # Returns
+    ///
+    /// Reference to the [`Vec<OperatorIdx>`] of operators previously assigned to this withdrawal.
+    pub fn previous_assignees(&self) -> &[OperatorIdx] {
+        &self.previous_assignees
+    }
+
+    /// Returns a mutable reference to the list of previous assignees.
+    ///
+    /// # Returns
+    ///
+    /// Mutable reference to the [`Vec<OperatorIdx>`] of operators previously assigned to this withdrawal.
+    pub fn previous_assignees_mut(&mut self) -> &mut Vec<OperatorIdx> {
+        &mut self.previous_assignees
     }
 
     /// Returns the execution deadline for this assignment.
@@ -113,9 +140,19 @@ impl AssignmentEntry {
     ///
     /// # Parameters
     ///
-    /// - `assignee_op_idx` - New operator index to assign
-    pub fn set_assignee(&mut self, assignee_op_idx: OperatorIdx) {
-        self.assignee = assignee_op_idx;
+    /// - `new_assignee` - New operator index to assign
+    pub fn set_current_assignee(&mut self, new_assignee: OperatorIdx) {
+        self.current_assignee = new_assignee;
+    }
+
+    /// Reassigns the withdrawal to a new operator, moving the current assignee to previous assignees.
+    ///
+    /// # Parameters
+    ///
+    /// - `new_assignee` - New operator index to assign
+    pub fn reassign(&mut self, new_assignee: OperatorIdx) {
+        self.previous_assignees.push(self.current_assignee);
+        self.current_assignee = new_assignee;
     }
 
     /// Updates the execution deadline for this assignment.
@@ -413,7 +450,7 @@ impl AssignmentTable {
     ) -> impl Iterator<Item = &AssignmentEntry> + '_ {
         self.assignments
             .iter()
-            .filter(move |e| e.assignee == operator_idx)
+            .filter(move |e| e.current_assignee == operator_idx)
     }
 
     /// Returns an iterator over assignments that have expired.
@@ -464,7 +501,7 @@ mod tests {
         let assignment = AssignmentEntry::new(10, withdrawal_cmd.clone(), assignee, exec_deadline);
 
         assert_eq!(assignment.deposit_idx(), 10);
-        assert_eq!(assignment.assignee(), assignee);
+        assert_eq!(assignment.current_assignee(), assignee);
         assert_eq!(assignment.exec_deadline(), exec_deadline);
         assert_eq!(assignment.withdrawal_command().withdraw_outputs().len(), 1);
     }
@@ -475,8 +512,8 @@ mod tests {
         let mut assignment = AssignmentEntry::new(10, withdrawal_cmd, 5, 1000);
 
         // Test assignee setter
-        assignment.set_assignee(7);
-        assert_eq!(assignment.assignee(), 7);
+        assignment.set_current_assignee(7);
+        assert_eq!(assignment.current_assignee(), 7);
 
         // Test deadline setter
         assignment.set_exec_deadline(2000);
@@ -505,7 +542,7 @@ mod tests {
 
         let assignment = table.get_assignment(0).unwrap();
         assert_eq!(assignment.deposit_idx(), 0);
-        assert_eq!(assignment.assignee(), 1);
+        assert_eq!(assignment.current_assignee(), 1);
 
         // Insert second assignment (sequential)
         table.insert(1, withdrawal_cmd2, 2, 2000);
@@ -513,7 +550,7 @@ mod tests {
 
         let assignment2 = table.get_assignment(1).unwrap();
         assert_eq!(assignment2.deposit_idx(), 1);
-        assert_eq!(assignment2.assignee(), 2);
+        assert_eq!(assignment2.current_assignee(), 2);
     }
 
     #[test]
@@ -597,11 +634,11 @@ mod tests {
 
         // Test mutable access
         let assignment = table.get_assignment_mut(0).unwrap();
-        assignment.set_assignee(5);
+        assignment.set_current_assignee(5);
 
         // Verify the change
         let assignment = table.get_assignment(0).unwrap();
-        assert_eq!(assignment.assignee(), 5);
+        assert_eq!(assignment.current_assignee(), 5);
 
         // Test non-existing assignment
         assert!(table.get_assignment_mut(100).is_none());

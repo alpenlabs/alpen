@@ -11,7 +11,11 @@ use rand_chacha::{
     ChaChaRng,
     rand_core::{RngCore, SeedableRng},
 };
-use strata_primitives::{buf::Buf32, l1::BitcoinAmount, operator::OperatorPubkeys};
+use strata_primitives::{
+    buf::Buf32,
+    l1::{BitcoinAmount, L1BlockId},
+    operator::OperatorPubkeys,
+};
 
 use crate::{
     errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
@@ -354,7 +358,7 @@ impl BridgeV1State {
             .ok_or(WithdrawalValidationError::NoAssignmentFound { deposit_idx })?;
 
         // Validate that the operator matches the assignment
-        let expected_operator = assignment.assignee();
+        let expected_operator = assignment.current_assignee();
         let actual_operator = withdrawal_info.operator_idx;
         if expected_operator != actual_operator {
             return Err(WithdrawalValidationError::OperatorMismatch {
@@ -411,7 +415,7 @@ impl BridgeV1State {
     /// # Parameters
     ///
     /// - `withdrawal_cmd` - The withdrawal command specifying outputs and amounts
-    /// - `l1_block_hash` - The L1 block hash used as seed for random operator selection
+    /// - `l1_block_id` - The L1 block ID used as seed for random operator selection
     /// - `current_block_height` - The current Bitcoin block height for deadline calculation
     ///
     /// # Returns
@@ -428,7 +432,7 @@ impl BridgeV1State {
     pub fn create_withdrawal_assignment(
         &mut self,
         withdrawal_cmd: &WithdrawalCommand,
-        l1_block_hash: &Buf32,
+        l1_block_id: &L1BlockId,
         current_block_height: u64,
     ) -> Result<(), WithdrawalCommandError> {
         // Find an unassigned deposit index
@@ -443,10 +447,11 @@ impl BridgeV1State {
 
         // Randomly select an operator from current multisig that is also in the deposit's notary
         // operators
-        let selected_operator = self.select_operator_for_deposit(
+        let selected_operator = self.select_operator_for_deposit_excluding(
             unassigned_deposit_idx,
             deposit.notary_operators(),
-            l1_block_hash,
+            &[],
+            l1_block_id,
         )?;
 
         // Create assignment with deadline calculated from current block height + deadline duration
@@ -465,37 +470,105 @@ impl BridgeV1State {
         Ok(())
     }
 
-    /// Randomly selects an operator from the current multisig set that is also a notary operator
-    /// for the deposit.
+    /// Reassigns a withdrawal to a new operator by moving the current assignee to previous
+    /// assignees and selecting a new eligible operator.
     ///
-    /// Uses ChaChaRng with the L1 block hash as seed to ensure deterministic but unpredictable
+    /// This function handles withdrawal reassignment by:
+    /// 1. Finding the existing assignment for the deposit
+    /// 2. Getting the deposit to check notary operators
+    /// 3. Selecting a new operator that hasn't been assigned before
+    /// 4. Reassigning the withdrawal to the new operator
+    ///
+    /// # Parameters
+    ///
+    /// - `deposit_idx` - The deposit index to reassign
+    /// - `l1_block_id` - The L1 block ID used as seed for random operator selection
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` - If the withdrawal was successfully reassigned
+    /// - `Err(WithdrawalCommandError)` - If reassignment failed
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - No assignment exists for the deposit
+    /// - The deposit is not found
+    /// - No eligible operators are available for reassignment
+    pub fn reassign_withdrawal(
+        &mut self,
+        deposit_idx: u32,
+        l1_block_id: &L1BlockId,
+    ) -> Result<(), WithdrawalCommandError> {
+        // Get the existing assignment
+        let assignment = self
+            .assignments
+            .get_assignment(deposit_idx)
+            .ok_or(WithdrawalCommandError::DepositNotFound { deposit_idx })?;
+
+        // Get the deposit to check its notary operators
+        let deposit = self
+            .deposits
+            .get_deposit(deposit_idx)
+            .ok_or(WithdrawalCommandError::DepositNotFound { deposit_idx })?;
+
+        // Collect all previous assignees including the current one
+        let mut excluded_operators = assignment.previous_assignees().to_vec();
+        excluded_operators.push(assignment.current_assignee());
+
+        // Select a new operator excluding previous assignees
+        let selected_operator = self.select_operator_for_deposit_excluding(
+            deposit_idx,
+            deposit.notary_operators(),
+            &excluded_operators,
+            l1_block_id,
+        )?;
+
+        // Reassign the withdrawal
+        let assignment = self
+            .assignments
+            .get_assignment_mut(deposit_idx)
+            .expect("Assignment exists since we found it above");
+        assignment.reassign(selected_operator);
+
+        Ok(())
+    }
+
+    /// Randomly selects an operator from the current multisig set that is also a notary operator
+    /// for the deposit, excluding operators that have been previously assigned.
+    ///
+    /// Uses ChaChaRng with the L1 block ID as seed to ensure deterministic but unpredictable
     /// operator selection across different nodes.
     ///
     /// # Parameters
     ///
     /// - `deposit_idx` - The deposit index for error reporting
     /// - `notary_operators` - List of notary operator indices for the deposit
-    /// - `l1_block_hash` - The L1 block hash used as seed for random selection
+    /// - `excluded_operators` - List of operator indices to exclude from selection
+    /// - `l1_block_id` - The L1 block ID used as seed for random selection
     ///
     /// # Returns
     ///
     /// - `Ok(OperatorIdx)` - Index of a randomly selected suitable operator
-    /// - `Err(WithdrawalCommandError)` - If no current multisig operator is found in the notary
-    ///   operators
-    fn select_operator_for_deposit(
+    /// - `Err(WithdrawalCommandError)` - If no eligible operator is found
+    fn select_operator_for_deposit_excluding(
         &self,
         deposit_idx: u32,
         notary_operators: &[u32],
-        l1_block_hash: &Buf32,
+        excluded_operators: &[u32],
+        l1_block_id: &L1BlockId,
     ) -> Result<u32, WithdrawalCommandError> {
         // Collect current multisig operators into a small Vec for efficient contains() check
         let current_multisig_operators: Vec<u32> =
             self.operators.current_multisig_indices().collect();
 
-        // Filter notary operators to only those in current multisig
+        // Filter notary operators to only those in current multisig and not excluded
         let eligible_operators: Vec<u32> = notary_operators
             .iter()
-            .filter(|&&op_idx| current_multisig_operators.contains(&op_idx))
+            .filter(|&&op_idx| {
+                current_multisig_operators.contains(&op_idx)
+                    && !excluded_operators.contains(&op_idx)
+            })
             .copied()
             .collect();
 
@@ -503,13 +576,117 @@ impl BridgeV1State {
             return Err(WithdrawalCommandError::NoEligibleOperators { deposit_idx });
         }
 
-        // Use ChaChaRng with L1 block hash as seed for deterministic random selection
-        let seed_bytes: [u8; 32] = (*l1_block_hash).into();
+        // Use ChaChaRng with L1 block ID as seed for deterministic random selection
+        let seed_bytes: [u8; 32] = Buf32::from(*l1_block_id).into();
         let mut rng = ChaChaRng::from_seed(seed_bytes);
 
         // Select a random index
         let random_index = (rng.next_u32() as usize) % eligible_operators.len();
 
         Ok(eligible_operators[random_index])
+    }
+
+    /// Selects an operator for a deposit with fallback to clearing previous assignees.
+    ///
+    /// This function attempts to select an operator excluding previously assigned ones.
+    /// If no eligible operators are found, it clears all previous assignees from the
+    /// assignment and tries again with all notary operators available.
+    ///
+    /// # Parameters
+    ///
+    /// - `deposit_idx` - The deposit index for the assignment
+    /// - `notary_operators` - List of notary operator indices for the deposit
+    /// - `excluded_operators` - List of operator indices to exclude from selection
+    /// - `l1_block_id` - The L1 block ID used as seed for random selection
+    ///
+    /// # Returns
+    ///
+    /// - `u32` - Index of a randomly selected suitable operator
+    ///
+    /// # Behavior
+    ///
+    /// 1. First attempts to select from operators not in `excluded_operators`
+    /// 2. If no eligible operators found, clears the assignment's previous assignees
+    /// 3. Retries selection with all notary operators available
+    /// 4. This ensures that withdrawals can always be reassigned when operators are available
+    fn select_operator_for_deposit_with_fallback(
+        &mut self,
+        deposit_idx: u32,
+        notary_operators: &[u32],
+        excluded_operators: &[u32],
+        l1_block_id: &L1BlockId,
+    ) -> u32 {
+        // First attempt: try to select excluding previous assignees
+        match self.select_operator_for_deposit_excluding(
+            deposit_idx,
+            notary_operators,
+            excluded_operators,
+            l1_block_id,
+        ) {
+            Ok(operator_idx) => operator_idx,
+            Err(WithdrawalCommandError::NoEligibleOperators { .. }) => {
+                // No eligible operators found - clear previous assignees and try again
+                if let Some(assignment) = self.assignments.get_assignment_mut(deposit_idx) {
+                    assignment.previous_assignees_mut().clear();
+                }
+
+                // Retry with no exclusions (all notary operators are now eligible)
+                self.select_operator_for_deposit_excluding(
+                    deposit_idx,
+                    notary_operators,
+                    &[], // No exclusions this time
+                    l1_block_id,
+                )
+                .expect("Should always find an operator after clearing previous assignees")
+            }
+            Err(other_error) => {
+                // For other errors (like deposit not found), we can't recover
+                panic!("Unexpected error in operator selection: {}", other_error);
+            }
+        }
+    }
+
+    /// Processes all expired assignments by reassigning them to new operators.
+    ///
+    /// This function iterates through all assignments, identifies those that have expired
+    /// based on the current Bitcoin block height, and attempts to reassign them to new
+    /// operators that haven't been previously assigned to the same withdrawal.
+    ///
+    /// # Parameters
+    ///
+    /// - `current_block` - The current L1 block commitment containing height and block hash
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Vec<u32>)` - Vector of deposit indices that were successfully reassigned
+    /// - `Err(WithdrawalCommandError)` - If any reassignment fails
+    ///
+    /// # Notes
+    ///
+    /// If a reassignment fails for any expired assignment (e.g., no eligible operators
+    /// remaining), the function returns an error and stops processing. Successfully
+    /// reassigned deposits before the error are returned in the error context if needed.
+    pub fn reassign_expired_assignments(
+        &mut self,
+        current_block: &strata_primitives::l1::L1BlockCommitment,
+    ) -> Result<Vec<u32>, WithdrawalCommandError> {
+        let current_block_height = current_block.height();
+        let l1_block_id = current_block.blkid();
+
+        // Collect expired assignment deposit indices first to avoid borrowing issues
+        let expired_deposit_indices: Vec<u32> = self
+            .assignments
+            .get_expired_assignments(current_block_height)
+            .map(|assignment| assignment.deposit_idx())
+            .collect();
+
+        let mut reassigned_deposits = Vec::new();
+
+        for deposit_idx in expired_deposit_indices {
+            self.reassign_withdrawal(deposit_idx, l1_block_id)?;
+            reassigned_deposits.push(deposit_idx);
+        }
+
+        Ok(reassigned_deposits)
     }
 }
