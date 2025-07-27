@@ -55,4 +55,8 @@ impl OperatorPubkeys {
     pub fn wallet_pk(&self) -> &Buf32 {
         &self.wallet_pk
     }
+
+    pub fn into_parts(self) -> (Buf32, Buf32) {
+        (self.signing_pk, self.wallet_pk)
+    }
 }

@@ -1,5 +1,5 @@
 use strata_asm_common::{AsmSpec, Stage};
-use strata_asm_proto_bridge_v1::BridgeV1Subproto;
+use strata_asm_proto_bridge_v1::subprotocol::BridgeV1Subproto;
 use strata_asm_proto_core::OLCoreSubproto;
 use strata_l1_txfmt::MagicBytes;
 

@@ -776,6 +776,12 @@ impl XOnlyPk {
     }
 }
 
+impl From<XOnlyPublicKey> for XOnlyPk {
+    fn from(value: XOnlyPublicKey) -> Self {
+        Self(Buf32(value.serialize()))
+    }
+}
+
 impl TryFrom<XOnlyPk> for Descriptor {
     type Error = ParseError;
 

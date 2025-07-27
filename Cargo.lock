@@ -13160,9 +13160,20 @@ dependencies = [
 name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "borsh",
+ "moho-types",
+ "rand_chacha 0.3.1",
+ "secp256k1 0.29.1",
+ "serde",
  "strata-asm-common",
+ "strata-asm-logs",
  "strata-l1-txfmt",
+ "strata-l1tx",
+ "strata-primitives",
+ "strata-test-utils",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]

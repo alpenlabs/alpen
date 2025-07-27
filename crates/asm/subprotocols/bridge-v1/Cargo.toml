@@ -3,10 +3,27 @@ name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+test_utils = []
+
 [lints]
 workspace = true
 
 [dependencies]
+bitcoin.workspace = true
 borsh.workspace = true
+moho-types.workspace = true
+rand_chacha.workspace = true
+secp256k1.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
 strata-asm-common.workspace = true
+strata-asm-logs.workspace = true
 strata-l1-txfmt.workspace = true
+strata-l1tx.workspace = true
+strata-primitives.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true
