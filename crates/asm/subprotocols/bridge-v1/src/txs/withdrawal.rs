@@ -31,7 +31,7 @@
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 
-use bitcoin::{ScriptBuf, Txid, consensus::encode};
+use bitcoin::{OutPoint, ScriptBuf, Transaction, Txid, consensus::encode, hashes::Hash};
 use strata_asm_common::TxInputRef;
 use strata_primitives::{bridge::OperatorIdx, l1::BitcoinAmount};
 
@@ -44,8 +44,8 @@ pub struct WithdrawalInfo {
     pub(crate) operator_idx: OperatorIdx,
 
     /// The index of the deposit that the operator wishes to receive payout from later.
-    /// This must be validated against the operator's assigned deposits in the state's assignments table
-    /// to ensure the operator is authorized to claim this specific deposit.
+    /// This must be validated against the operator's assigned deposits in the state's assignments
+    /// table to ensure the operator is authorized to claim this specific deposit.
     pub(crate) deposit_idx: u32,
 
     /// The transaction ID of the deposit that the operator wishes to claim for payout.
@@ -146,4 +146,114 @@ pub fn extract_withdrawal_info<'t>(
         withdrawal_address,
         withdrawal_amount,
     })
+}
+
+/// Creates a withdrawal fulfillment transaction for testing purposes.
+///
+/// This function constructs a Bitcoin transaction that follows the full SPS-50 specification
+/// for withdrawal fulfillment transactions. The transaction contains:
+/// - Input: A dummy input spending from a previous output
+/// - Output 0: OP_RETURN with full SPS-50 format: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+/// - Output 1: The actual withdrawal payment to the recipient address
+///
+/// The transaction is fully compatible with the SPS-50 parser and can be parsed by `ParseConfig`.
+///
+/// # Parameters
+///
+/// - `withdrawal_info` - The withdrawal information specifying operator, deposit details, recipient
+///   address, and withdrawal amount
+///
+/// # Returns
+///
+/// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
+#[cfg(test)]
+pub fn create_withdrawal_fulfillment_tx(withdrawal_info: &WithdrawalInfo) -> Transaction {
+    use bitcoin::{Sequence, TxIn, Witness, script::PushBytesBuf};
+
+    use crate::{
+        constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE},
+        txs::deposit::test::TEST_MAGIC_BYTES,
+    };
+
+    // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+    let mut tagged_payload = Vec::new();
+    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
+    tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID
+    tagged_payload.push(WITHDRAWAL_TX_TYPE); // 1 byte transaction type
+
+    // Auxiliary data: [OPERATOR_IDX][DEPOSIT_IDX][DEPOSIT_TXID]
+    tagged_payload.extend_from_slice(&withdrawal_info.operator_idx.to_be_bytes()); // 4 bytes
+    tagged_payload.extend_from_slice(&withdrawal_info.deposit_idx.to_be_bytes()); // 4 bytes
+    tagged_payload.extend_from_slice(withdrawal_info.deposit_txid.as_byte_array()); // 32 bytes
+
+    // Create OP_RETURN script with the tagged payload
+    let op_return_script = ScriptBuf::new_op_return(
+        PushBytesBuf::try_from(tagged_payload).expect("Tagged payload should fit in push bytes"),
+    );
+
+    Transaction {
+        version: bitcoin::transaction::Version(2),
+        lock_time: bitcoin::absolute::LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint::null(), // Dummy input
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::from_slice(&[vec![0u8; 64]]), // Dummy witness
+        }],
+        output: vec![
+            // OP_RETURN output with SPS-50 tagged payload
+            bitcoin::TxOut {
+                value: bitcoin::Amount::from_sat(0),
+                script_pubkey: op_return_script,
+            },
+            // Withdrawal fulfillment output
+            bitcoin::TxOut {
+                value: bitcoin::Amount::from_sat(withdrawal_info.withdrawal_amount.to_sat()),
+                script_pubkey: withdrawal_info.withdrawal_address.clone(),
+            },
+        ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use bitcoin::Address;
+    use strata_asm_common::TxInputRef;
+    use strata_l1_txfmt::ParseConfig;
+
+    use super::*;
+    use crate::txs::{deposit::test::TEST_MAGIC_BYTES, withdrawal::extract_withdrawal_info};
+
+    fn generate_withdrawal_info() -> WithdrawalInfo {
+        WithdrawalInfo {
+            operator_idx: 42,
+            deposit_idx: 1337,
+            deposit_txid: Txid::from_byte_array([0xab; 32]),
+            withdrawal_address: Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+                .unwrap()
+                .assume_checked()
+                .script_pubkey(),
+            withdrawal_amount: BitcoinAmount::from_sat(95_000),
+        }
+    }
+
+    #[test]
+    fn test_create_withdrawal_fulfillment_tx_and_extract_info() {
+        let original_withdrawal_info = generate_withdrawal_info();
+        // Create the withdrawal fulfillment transaction with proper SPS-50 format
+        let tx = create_withdrawal_fulfillment_tx(&original_withdrawal_info);
+
+        // Parse the transaction using the SPS-50 parser
+        let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
+        let tag_data = parser.try_parse_tx(&tx).expect("Should parse transaction");
+        let tx_input_ref = TxInputRef::new(&tx, tag_data);
+
+        // Extract withdrawal info using the actual parser
+        let extracted_info = extract_withdrawal_info(&tx_input_ref)
+            .expect("Should successfully extract withdrawal info");
+
+        assert_eq!(extracted_info, original_withdrawal_info);
+    }
 }
