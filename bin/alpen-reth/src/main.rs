@@ -11,7 +11,7 @@ use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
 use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
 use reth_chainspec::ChainSpec;
-use reth_cli_commands::node::NodeCommand;
+use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
@@ -138,7 +138,12 @@ where
     info!(target: "reth::cli", cmd = %command.ext.logs.log_file_directory, "Initialized tracing, debug log directory");
 
     let runner = CliRunner::try_default_runtime()?;
-    runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))?;
+    runner.run_command_until_exit(|ctx| {
+        command.execute(
+            ctx,
+            FnLauncher::new::<AlpenChainSpecParser, AdditionalConfig>(launcher),
+        )
+    })?;
 
     Ok(())
 }
