@@ -73,8 +73,7 @@ impl EngineRpcClient {
     }
 
     fn create_client(&self) -> impl SubscriptionClientT + Clone + Send + Sync + Unpin + 'static {
-        let middleware =
-            tower::ServiceBuilder::new().layer(AuthClientLayer::new(self.secret.clone()));
+        let middleware = tower::ServiceBuilder::new().layer(AuthClientLayer::new(self.secret));
         HttpClientBuilder::default()
             .set_http_middleware(middleware)
             .build(&self.http_url)

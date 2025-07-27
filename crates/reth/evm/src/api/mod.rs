@@ -2,20 +2,18 @@ use std::ops::{Deref, DerefMut};
 
 use reth_evm::{eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv};
 use revm::{
-    context::{BlockEnv, Evm as EvmCtx, FrameStack, TxEnv},
+    context::{BlockEnv, Evm as EvmCtx, FrameStack, JournalTr, TxEnv},
     context_interface::result::{EVMError, HaltReason, ResultAndState},
     handler::{
         evm::{ContextDbError, FrameInitResult},
         instructions::EthInstructions,
-        EthFrame, EvmTr, FrameInitOrResult, FrameResult, PrecompileProvider,
+        EthFrame, EthPrecompiles, EvmTr, FrameInitOrResult, FrameResult, PrecompileProvider,
     },
     inspector::InspectorEvmTr,
     interpreter::{interpreter::EthInterpreter, interpreter_action::FrameInit, InterpreterResult},
-    Context, InspectEvm, Inspector,
+    Context, InspectEvm, Inspector, Journal,
 };
 use revm_primitives::{hardfork::SpecId, Address, Bytes, TxKind, U256};
-
-use crate::AlpenEvmPrecompiles;
 
 mod exec;
 pub mod handler;
@@ -33,6 +31,33 @@ pub struct AlpenEvm<DB: Database, I> {
     >,
     pub inspect: bool,
 }
+
+impl<DB: Database, I> AlpenEvm<DB, I> {
+    /// Creates a new [`AlpenEvm`].
+    pub fn new(env: EvmEnv, db: DB, inspector: I, inspect: bool) -> Self {
+        let precompiles = PrecompilesMap::from_static(EthPrecompiles::default().precompiles);
+
+        Self {
+            inner: EvmCtx {
+                ctx: Context {
+                    block: env.block_env,
+                    cfg: env.cfg_env,
+                    journaled_state: Journal::new(db),
+                    tx: Default::default(),
+                    chain: Default::default(),
+                    local: Default::default(),
+                    error: Ok(()),
+                },
+                inspector,
+                instruction: EthInstructions::new_mainnet(),
+                precompiles,
+                frame_stack: Default::default(),
+            },
+            inspect,
+        }
+    }
+}
+
 impl<DB: Database, I> AlpenEvm<DB, I> {
     /// Provides a reference to the EVM context.
     pub const fn ctx(&self) -> &EthEvmContext<DB> {
@@ -154,7 +179,6 @@ impl<DB, I> Evm for AlpenEvm<DB, I>
 where
     DB: Database,
     I: Inspector<EthEvmContext<DB>>,
-    AlpenEvmPrecompiles: PrecompileProvider<EthEvmContext<DB>, Output = InterpreterResult>,
 {
     type DB = DB;
     type Tx = TxEnv;

@@ -132,20 +132,7 @@ impl EvmFactory for AlpenEvmFactory {
         db: DB,
         input: EvmEnv,
     ) -> Self::Evm<DB, revm::inspector::NoOpInspector> {
-        let evm_ctx = Context::mainnet()
-            .with_db(db)
-            .with_cfg(input.cfg_env)
-            .with_block(input.block_env)
-            .build_mainnet_with_inspector(NoOpInspector {})
-            .with_precompiles(PrecompilesMap::from_static(
-                // TODO: Revisit this
-                AlpenEvmPrecompiles::new().precompiles.precompiles,
-            ));
-
-        AlpenEvm {
-            inner: evm_ctx,
-            inspect: false,
-        }
+        AlpenEvm::new(input, db, NoOpInspector {}, false)
     }
 
     fn create_evm_with_inspector<DB: reth_evm::Database, I: revm::Inspector<Self::Context<DB>>>(
@@ -154,19 +141,6 @@ impl EvmFactory for AlpenEvmFactory {
         input: reth_evm::EvmEnv<Self::Spec>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
-        let evm_ctx = Context::mainnet()
-            .with_db(db)
-            .with_cfg(input.cfg_env)
-            .with_block(input.block_env)
-            .build_mainnet_with_inspector(inspector)
-            .with_precompiles(PrecompilesMap::from_static(
-                // TODO: Revisit this
-                AlpenEvmPrecompiles::new().precompiles.precompiles,
-            ));
-
-        AlpenEvm {
-            inner: evm_ctx,
-            inspect: true,
-        }
+        AlpenEvm::new(input, db, inspector, true)
     }
 }

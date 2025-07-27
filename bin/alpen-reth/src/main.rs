@@ -47,7 +47,7 @@ fn main() {
 
         let mut extend_rpc = None;
 
-        if ext.enable_witness_gen || ext.enable_state_diff_gen {
+        if (ext.enable_witness_gen || ext.enable_state_diff_gen) && false {
             let rbdb = db::open_rocksdb_database(datadir.clone()).expect("open rocksdb");
             let db = Arc::new(WitnessDB::new(rbdb));
             // Add RPC for querying block witness and state diffs.
