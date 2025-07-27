@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_consensus::Transaction;
 use alloy_eips::Typed2718;
-use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
+use alpen_reth_evm::collect_withdrawal_intents;
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
 use reth_chainspec::{ChainSpec, ChainSpecProvider, EthChainSpec, EthereumHardforks};
@@ -79,7 +79,7 @@ pub struct AlpenPayloadBuilder<Pool, Client> {
     /// Transaction pool.
     pool: Pool,
     /// The type responsible for creating the evm.
-    evm_config: EthEvmConfig<AlpenEvmFactory>,
+    evm_config: EthEvmConfig,
     /// Payload builder configuration.
     builder_config: EthereumBuilderConfig,
 }
@@ -95,7 +95,7 @@ impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
         Self {
             client,
             pool,
-            evm_config: EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default()),
+            evm_config: EthEvmConfig::new(chain_spec),
             builder_config,
         }
     }
@@ -154,8 +154,8 @@ type BestTransactionsIter<Pool> = Box<
 /// Adapted from
 /// [default_ethereum_payload](reth_ethereum_payload_builder::default_ethereum_payload)
 #[inline]
-fn try_build_payload<EvmConfig, Pool, Client, F>(
-    evm_config: EvmConfig,
+fn try_build_payload<Pool, Client, F>(
+    evm_config: EthEvmConfig,
     client: Client,
     pool: Pool,
     builder_config: EthereumBuilderConfig,
@@ -163,8 +163,7 @@ fn try_build_payload<EvmConfig, Pool, Client, F>(
     best_txs: F,
 ) -> Result<BuildOutcome<AlpenBuiltPayload>, PayloadBuilderError>
 where
-    EvmConfig: ConfigureEvm<Primitives = EthPrimitives, NextBlockEnvCtx = NextBlockEnvAttributes>,
-    Client: StateProviderFactory + ChainSpecProvider<ChainSpec = ChainSpec>,
+    Client: StateProviderFactory + ChainSpecProvider<ChainSpec: EthereumHardforks>,
     Pool: TransactionPool<Transaction: PoolTransaction<Consensus = TransactionSigned>>,
     F: FnOnce(BestTransactionsAttributes) -> BestTransactionsIter<Pool>,
 {
@@ -230,13 +229,17 @@ where
         PayloadBuilderError::Internal(err.into())
     })?;
 
+    // initialize empty blob sidecars at first. If cancun is active then this will be populated by
+    // blob sidecars if any.
+    let mut blob_sidecars = BlobSidecars::Empty;
+
     let mut block_blob_count = 0;
+
     let blob_params = chain_spec.blob_params_at_timestamp(attributes.timestamp);
     let max_blob_count = blob_params
         .as_ref()
         .map(|params| params.max_blob_count)
         .unwrap_or_default();
-
     while let Some(pool_tx) = best_txs.next() {
         // ensure we still have capacity for this transaction
         if cumulative_gas_used + pool_tx.gas_limit() > block_gas_limit {
@@ -260,8 +263,9 @@ where
 
         // There's only limited amount of blob space available per block, so we need to check if
         // the EIP-4844 can still fit in the block
+        let mut blob_tx_sidecar = None;
         if let Some(blob_tx) = tx.as_eip4844() {
-            let tx_blob_count = blob_tx.blob_versioned_hashes.len() as u64;
+            let tx_blob_count = blob_tx.tx().blob_versioned_hashes.len() as u64;
 
             if block_blob_count + tx_blob_count > max_blob_count {
                 // we can't fit this _blob_ transaction into the block, so we mark it as
@@ -280,6 +284,35 @@ where
                 );
                 continue;
             }
+
+            let blob_sidecar_result = 'sidecar: {
+                let Some(sidecar) = pool
+                    .get_blob(*tx.hash())
+                    .map_err(PayloadBuilderError::other)?
+                else {
+                    break 'sidecar Err(Eip4844PoolTransactionError::MissingEip4844BlobSidecar);
+                };
+
+                if chain_spec.is_osaka_active_at_timestamp(attributes.timestamp) {
+                    if sidecar.is_eip7594() {
+                        Ok(sidecar)
+                    } else {
+                        Err(Eip4844PoolTransactionError::UnexpectedEip4844SidecarAfterOsaka)
+                    }
+                } else if sidecar.is_eip4844() {
+                    Ok(sidecar)
+                } else {
+                    Err(Eip4844PoolTransactionError::UnexpectedEip7594SidecarBeforeOsaka)
+                }
+            };
+
+            blob_tx_sidecar = match blob_sidecar_result {
+                Ok(sidecar) => Some(sidecar),
+                Err(error) => {
+                    best_txs.mark_invalid(&pool_tx, InvalidPoolTransactionError::Eip4844(error));
+                    continue;
+                }
+            };
         }
 
         let gas_used = match builder.execute_transaction(tx.clone()) {
@@ -309,7 +342,7 @@ where
 
         // add to the total blob gas used if the transaction successfully executed
         if let Some(blob_tx) = tx.as_eip4844() {
-            block_blob_count += blob_tx.blob_versioned_hashes.len() as u64;
+            block_blob_count += blob_tx.tx().blob_versioned_hashes.len() as u64;
 
             // if we've reached the max blob count, we can skip blob txs entirely
             if block_blob_count == max_blob_count {
@@ -317,13 +350,17 @@ where
             }
         }
 
-        // update add to total fees
+        // update and add to total fees
         let miner_fee = tx
             .effective_tip_per_gas(base_fee)
             .expect("fee is always valid; execution succeeded");
-
         total_fees += U256::from(miner_fee) * U256::from(gas_used);
         cumulative_gas_used += gas_used;
+
+        // Add blob tx sidecar to the payload.
+        if let Some(sidecar) = blob_tx_sidecar {
+            blob_sidecars.push_sidecar_variant(sidecar.as_ref().clone());
+        }
     }
 
     // check if we have a better block
@@ -347,23 +384,12 @@ where
         .is_prague_active_at_timestamp(attributes.timestamp)
         .then_some(execution_result.requests);
 
-    // initialize empty blob sidecars at first. If cancun is active then this will
-    let mut blob_sidecars = Vec::new();
+    let sealed_block = Arc::new(block.sealed_block().clone());
+    debug!(target: "payload_builder", id=%attributes.id, sealed_block_header = ?sealed_block.sealed_header(), "sealed built block");
 
-    // only determine cancun fields when active
-    if chain_spec.is_cancun_active_at_timestamp(attributes.timestamp) {
-        // grab the blob sidecars from the executed txs
-        blob_sidecars = pool
-            .get_all_blobs_exact(
-                block
-                    .body()
-                    .transactions()
-                    .filter(|tx| tx.is_eip4844())
-                    .map(|tx| *tx.tx_hash())
-                    .collect(),
-            )
-            .map_err(PayloadBuilderError::other)?;
-    }
+    let eth_payload = EthBuiltPayload::new(attributes.id, sealed_block, total_fees, requests)
+        // add blob sidecars from the executed txs
+        .with_sidecars(blob_sidecars);
 
     // collect receipts from the executed transactions
     let receipts: Vec<Receipt> = execution_result.receipts;
@@ -372,15 +398,7 @@ where
     let withdrawal_intents: Vec<WithdrawalIntent> =
         collect_withdrawal_intents(tx_receipt_pairs).collect();
 
-    let sealed_block = Arc::new(block.sealed_block().clone());
-    debug!(target: "payload_builder", id=%attributes.id, sealed_block_header = ?sealed_block.sealed_header(), "sealed built block");
-
-    let mut eth_payload = EthBuiltPayload::new(attributes.id, sealed_block, total_fees, requests);
-    // extend the payload with the blob sidecars from the executed txs
-    eth_payload.extend_sidecars(blob_sidecars.into_iter().map(Arc::unwrap_or_clone));
-
     let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
-    // let strata_payload = StrataBuiltPayload::new(eth_payload, Default::default());
 
     Ok(BuildOutcome::Better {
         payload: strata_payload,

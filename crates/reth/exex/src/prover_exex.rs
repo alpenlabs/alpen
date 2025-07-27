@@ -7,21 +7,21 @@ use alpen_reth_db::WitnessStore;
 use eyre::eyre;
 use futures_util::TryStreamExt;
 use reth_chainspec::EthChainSpec;
-use reth_evm::execute::{BlockExecutorProvider, Executor};
+use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
 use reth_provider::{BlockReader, Chain, ExecutionOutcome, StateProvider, StateProviderFactory};
 use reth_revm::{db::CacheDB, primitives::FixedBytes};
-use reth_trie::{HashedPostState, MultiProofTargets, TrieInput};
+use reth_trie::{HashedPostState, TrieInput};
 use reth_trie_common::KeccakKeyHasher;
-use revm_primitives::{alloy_primitives::B256, keccak256, map::B256Set, Address};
+use revm_primitives::alloy_primitives::B256;
 use rsp_mpt::EthereumState;
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 use tracing::{debug, error};
 
 use crate::{
-    alloy2reth::IntoRspGenesis,
+    alloy2reth::IntoRspChainConfig,
     cache_db_provider::{AccessedState, CacheDBProvider},
 };
 
@@ -97,7 +97,7 @@ where
     Node: FullNodeComponents,
     Node::Types: NodeTypes<Primitives = EthPrimitives>,
 {
-    let genesis = ctx.config.chain.genesis().clone().try_into_rsp()?;
+    let genesis = ctx.config.chain.genesis().config.clone().into_rsp();
 
     // fetch current block
     let current_block = ctx
@@ -132,7 +132,7 @@ where
         current_block,
         parent_state,
         ancestor_headers: accessed_ancestors,
-        state_requests: accessed_info.accessed_accounts().clone(),
+        // state_requests: accessed_info.accessed_accounts().clone(),
         bytecodes: accessed_info.accessed_contracts().clone(),
         custom_beneficiary: None,
         opcode_tracking: false,
@@ -148,46 +148,28 @@ fn derive_parent_state<P>(
 where
     P: StateProvider,
 {
-    let touched_accounts = accessed_states
-        .accessed_accounts()
-        .iter()
-        .map(|(addr, slots)| {
-            (
-                *addr,
-                slots
-                    .iter()
-                    .map(|slot| B256::from_slice(&slot.to_be_bytes::<32>()))
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<HashMap<Address, Vec<B256>>>();
+    let mut before_proofs = HashMap::new();
+    let mut after_proofs = HashMap::new();
 
-    let multi_proof_targets =
-        MultiProofTargets::from_iter(touched_accounts.iter().map(|(addr, keys)| {
-            (
-                keccak256(addr),
-                B256Set::from_iter(keys.iter().map(keccak256)),
-            )
-        }));
+    // Iterate through accessed accounts
+    for (address, slots) in accessed_states.accessed_accounts().iter() {
+        // Convert slots to keys
+        let keys = slots
+            .iter()
+            .map(|slot| B256::from_slice(&slot.to_be_bytes::<32>()))
+            .collect::<Vec<_>>();
 
-    let multi_proof_before = provider.multiproof(
-        TrieInput::from_state(HashedPostState::from_bundle_state::<KeccakKeyHasher>([])),
-        multi_proof_targets.clone(),
-    )?;
+        // Get proof before execution
+        let root_before = HashedPostState::from_bundle_state::<KeccakKeyHasher>([]);
+        let proof_before = provider.proof(TrieInput::from_state(root_before), *address, &keys)?;
 
-    let multi_proof_after = provider.multiproof(
-        TrieInput::from_state(exec_outcome.hash_state_slow::<KeccakKeyHasher>()),
-        multi_proof_targets,
-    )?;
+        // Get proof after execution
+        let root_after = exec_outcome.hash_state_slow::<KeccakKeyHasher>();
+        let proof_after = provider.proof(TrieInput::from_state(root_after), *address, &keys)?;
 
-    // Iterate through accessed accounts and put account proofs for each of them.
-    let num_accs = touched_accounts.len();
-    let mut before_proofs = HashMap::with_capacity(num_accs);
-    let mut after_proofs = HashMap::with_capacity(num_accs);
-    for (address, keys) in touched_accounts.iter() {
         // Store proofs in the maps
-        before_proofs.insert(*address, multi_proof_before.account_proof(*address, keys)?);
-        after_proofs.insert(*address, multi_proof_after.account_proof(*address, keys)?);
+        before_proofs.insert(*address, proof_before);
+        after_proofs.insert(*address, proof_after);
     }
 
     let parent_state =
@@ -222,11 +204,10 @@ where
 
     // wrap in a cache-backed provider and run the executor
     let cache_provider = CacheDBProvider::new(history_provider);
-    let cache_db = CacheDB::new(&cache_provider);
-    ctx.block_executor()
-        .clone()
-        .executor(cache_db)
-        .execute(&current_block)?;
+    let _cache_db = CacheDB::new(&cache_provider);
+
+    // TODO: Abishek Use the executor to run the block execution
+    // ctx.executor(cache_db).execute(&current_block)?;
 
     Ok(cache_provider.get_accessed_state())
 }

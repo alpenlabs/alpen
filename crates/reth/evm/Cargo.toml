@@ -7,16 +7,16 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-alpen-reth-primitives.workspace = true
-strata-crypto.workspace = true
-strata-primitives.workspace = true
+# alpen-reth-primitives.workspace = true
+# strata-crypto.workspace = true
+# strata-primitives.workspace = true
 
-alloy-sol-types.workspace = true
-reth-evm.workspace = true
-reth-primitives.workspace = true
-revm.workspace = true
-revm-primitives.workspace = true
+# alloy-sol-types.workspace = true
+# reth-evm.workspace = true
+# reth-primitives.workspace = true
+# revm.workspace = true
+# revm-primitives.workspace = true
 
 [dev-dependencies]
-secp256k1.workspace = true
-strata-crypto.workspace = true
+# secp256k1.workspace = true
+# strata-crypto.workspace = true
