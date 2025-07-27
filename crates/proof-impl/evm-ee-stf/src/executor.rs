@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use alloy_consensus::{BlockHeader, EthBlock, Header, TxReceipt};
-use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
 use reth_chainspec::ChainSpec;
-use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome, Executor};
+use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
 use reth_primitives_traits::block::Block;
@@ -11,7 +10,9 @@ use reth_trie::KeccakKeyHasher;
 use revm::database::WrapDatabaseRef;
 use revm_primitives::alloy_primitives::Bloom;
 use rsp_client_executor::{
-    error::ClientError, io::EthClientExecutorInput, profile_report, BlockValidator, FromInput,
+    error::ClientError,
+    io::{EthClientExecutorInput, WitnessInput},
+    profile_report, BlockValidator, FromInput,
 };
 
 use crate::EvmBlockStfOutput;
@@ -27,16 +28,17 @@ pub const COLLECT_WITHDRAWAL_INTENTS: &str = "collect withdrawal intents";
 
 pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOutput, ClientError> {
     let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
-    let evm_config =
-        EthEvmConfig::new_with_evm_factory(chain_spec.clone(), AlpenEvmFactory::default());
+    let evm_config = EthEvmConfig::new(chain_spec.clone());
+
+    let sealed_headers = input.sealed_headers().collect::<Vec<_>>();
 
     // Initialize the witnessed database with verified storage proofs.
     let db = profile_report!(INIT_WITNESS_DB, {
-        let trie_db = input.witness_db().unwrap();
+        let trie_db = input.witness_db(&sealed_headers).unwrap();
         WrapDatabaseRef(trie_db)
     });
 
-    let block_executor = BasicBlockExecutor::new(evm_config, db);
+    let mut block_executor = BasicBlockExecutor::new(evm_config, db);
     let block = profile_report!(RECOVER_SENDERS, {
         EthPrimitives::from_input_block(input.current_block.clone())
             .try_into_recovered()
@@ -48,7 +50,7 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
         EthPrimitives::validate_header(block.sealed_block().sealed_header(), chain_spec.clone())
     })?;
 
-    let execution_output = profile_report!(BLOCK_EXECUTION, { block_executor.execute(&block) })?;
+    let execution_output = todo!(); // profile_report!(BLOCK_EXECUTION, { block_executor.execute_one(&block) })?;
 
     // Validate the block post execution.
     profile_report!(VALIDATE_EXECUTION, {
@@ -65,14 +67,16 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
     });
 
     // Accumulate withdrawal intents from the executed transactions.
-    let withdrawal_intents = profile_report!(COLLECT_WITHDRAWAL_INTENTS, {
-        let transactions = block.into_transactions();
-        let executed_txns = transactions.iter();
-        let receipts_vec = execution_output.receipts.clone();
-        let receipts = receipts_vec.iter();
-        let tx_receipt_pairs = executed_txns.zip(receipts);
-        collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>()
-    });
+    // let withdrawal_intents = profile_report!(COLLECT_WITHDRAWAL_INTENTS, {
+    //     let transactions = block.into_transactions();
+    //     let executed_txns = transactions.iter();
+    //     let receipts_vec = execution_output.receipts.clone();
+    //     let receipts = receipts_vec.iter();
+    //     let tx_receipt_pairs = executed_txns.zip(receipts);
+    //     collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>()
+    // });
+    // TODO: MdTeach
+    let withdrawal_intents = Vec::new();
 
     // Convert the output to an execution outcome.
     let executor_outcome = ExecutionOutcome::new(
