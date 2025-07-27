@@ -6,12 +6,13 @@ use revm::{
         result::{EVMError, HaltReason},
         TxEnv,
     },
-    handler::EthPrecompiles,
     inspector::NoOpInspector,
     interpreter::interpreter::EthInterpreter,
     Context, Inspector, MainBuilder, MainContext,
 };
 use revm_primitives::hardfork::SpecId;
+
+use crate::precompiles::AlpenEvmPrecompiles;
 
 /// Custom EVM configuration.
 #[derive(Debug, Clone, Default)]
@@ -29,14 +30,15 @@ impl EvmFactory for AlpenEvmFactory {
     type Precompiles = PrecompilesMap;
 
     fn create_evm<DB: Database>(&self, db: DB, input: EvmEnv) -> Self::Evm<DB, NoOpInspector> {
+        let precompiles =
+            PrecompilesMap::from_static(AlpenEvmPrecompiles::new(input.cfg_env.spec).precompiles());
+
         let evm = Context::mainnet()
             .with_db(db)
             .with_cfg(input.cfg_env)
             .with_block(input.block_env)
             .build_mainnet_with_inspector(NoOpInspector {})
-            .with_precompiles(PrecompilesMap::from_static(
-                EthPrecompiles::default().precompiles,
-            ));
+            .with_precompiles(precompiles);
 
         EthEvm::new(evm, false)
     }
