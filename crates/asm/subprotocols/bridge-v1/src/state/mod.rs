@@ -698,7 +698,7 @@ mod tests {
         errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
         state::withdrawal::{WithdrawOutput, WithdrawalCommand},
         txs::{
-            deposit::{parse::DepositInfo, test::create_test_deposit_tx},
+            deposit::{parse::DepositInfo, create::create_test_deposit_tx},
             withdrawal_fulfillment::{WithdrawalInfo, create_withdrawal_fulfillment_tx},
         },
     };

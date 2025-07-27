@@ -124,7 +124,7 @@ mod tests {
     use strata_l1_txfmt::ParseConfig;
 
     use super::*;
-    use crate::txs::{deposit::test::TEST_MAGIC_BYTES, withdrawal_fulfillment::extract_withdrawal_info};
+    use crate::txs::{deposit::create::TEST_MAGIC_BYTES, withdrawal_fulfillment::extract_withdrawal_info};
     
     use crate::txs::withdrawal_fulfillment::create_withdrawal_fulfillment_tx;
 

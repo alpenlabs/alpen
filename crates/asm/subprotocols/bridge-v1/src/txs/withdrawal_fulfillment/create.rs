@@ -2,7 +2,7 @@ use bitcoin::{OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Witness, script:
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE},
-    txs::{deposit::test::TEST_MAGIC_BYTES, withdrawal_fulfillment::WithdrawalInfo},
+    txs::{deposit::create::TEST_MAGIC_BYTES, withdrawal_fulfillment::WithdrawalInfo},
 };
 
 /// Creates a withdrawal fulfillment transaction for testing purposes.

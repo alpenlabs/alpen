@@ -32,8 +32,8 @@
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod parse;
 #[cfg(test)]
-mod test;
+mod create;
 
 pub use parse::{WithdrawalInfo, extract_withdrawal_info};
 #[cfg(test)]
-pub use test::create_withdrawal_fulfillment_tx;
+pub use create::create_withdrawal_fulfillment_tx;

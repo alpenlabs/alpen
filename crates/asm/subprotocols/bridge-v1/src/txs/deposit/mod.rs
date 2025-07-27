@@ -38,7 +38,7 @@
 //! transactions) can mint tokens, preserving the 1-of-N trust assumption for withdrawals.
 pub mod parse;
 #[cfg(test)]
-pub mod test;
+pub mod create;
 pub mod validation;
 
 pub const DEPOSIT_OUTPUT_INDEX: u32 = 1;

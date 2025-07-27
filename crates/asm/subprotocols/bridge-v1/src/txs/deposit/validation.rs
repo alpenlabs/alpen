@@ -167,7 +167,7 @@ mod tests {
     use strata_primitives::{buf::Buf32, l1::XOnlyPk};
 
     use super::*;
-    use crate::txs::deposit::test::create_test_deposit_tx;
+    use crate::txs::deposit::create::create_test_deposit_tx;
 
     // Test data constants
     const TEST_DEPOSIT_IDX: u32 = 123;
