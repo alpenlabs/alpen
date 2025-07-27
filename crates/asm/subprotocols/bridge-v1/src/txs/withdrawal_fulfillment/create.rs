@@ -27,8 +27,6 @@ use crate::{
 pub fn create_withdrawal_fulfillment_tx(withdrawal_info: &WithdrawalInfo) -> Transaction {
     // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
 
-    use bitcoin::hashes::Hash;
-
     let mut tagged_payload = Vec::new();
     tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
     tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID
@@ -37,7 +35,7 @@ pub fn create_withdrawal_fulfillment_tx(withdrawal_info: &WithdrawalInfo) -> Tra
     // Auxiliary data: [OPERATOR_IDX][DEPOSIT_IDX][DEPOSIT_TXID]
     tagged_payload.extend_from_slice(&withdrawal_info.operator_idx.to_be_bytes()); // 4 bytes
     tagged_payload.extend_from_slice(&withdrawal_info.deposit_idx.to_be_bytes()); // 4 bytes
-    tagged_payload.extend_from_slice(&withdrawal_info.deposit_txid.as_raw_hash().to_byte_array()); // 32 bytes
+    tagged_payload.extend_from_slice(withdrawal_info.deposit_txid.inner_raw().as_bytes()); // 32 bytes
 
     // Create OP_RETURN script with the tagged payload
     let op_return_script = ScriptBuf::new_op_return(
@@ -62,7 +60,7 @@ pub fn create_withdrawal_fulfillment_tx(withdrawal_info: &WithdrawalInfo) -> Tra
             // Withdrawal fulfillment output
             bitcoin::TxOut {
                 value: bitcoin::Amount::from_sat(withdrawal_info.withdrawal_amount.to_sat()),
-                script_pubkey: withdrawal_info.withdrawal_address.clone(),
+                script_pubkey: withdrawal_info.withdrawal_destination.clone(),
             },
         ],
     }

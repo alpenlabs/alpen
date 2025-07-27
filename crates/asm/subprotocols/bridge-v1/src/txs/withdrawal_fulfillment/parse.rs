@@ -1,6 +1,10 @@
+use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::{ScriptBuf, Txid, consensus::encode};
 use strata_asm_common::TxInputRef;
-use strata_primitives::{bridge::OperatorIdx, l1::BitcoinAmount};
+use strata_primitives::{
+    bridge::OperatorIdx,
+    l1::{BitcoinAmount, BitcoinTxid},
+};
 
 use crate::errors::WithdrawalParseError;
 
@@ -17,13 +21,28 @@ pub struct WithdrawalInfo {
 
     /// The transaction ID of the deposit that the operator wishes to claim for payout.
     /// This must match the deposit referenced by `deposit_idx` in the assignments table.
-    pub(crate) deposit_txid: Txid,
+    pub(crate) deposit_txid: BitcoinTxid,
 
     /// The Bitcoin script address where the withdrawn funds are being sent.
-    pub(crate) withdrawal_address: ScriptBuf,
+    pub(crate) withdrawal_destination: ScriptBuf,
 
     /// The amount of Bitcoin being withdrawn (may be less than the original deposit due to fees).
     pub(crate) withdrawal_amount: BitcoinAmount,
+}
+
+impl<'a> Arbitrary<'a> for WithdrawalInfo {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        use strata_primitives::bitcoin_bosd::Descriptor;
+
+        let withdrawal_destination = Descriptor::arbitrary(u)?.to_script();
+        Ok(WithdrawalInfo {
+            operator_idx: u32::arbitrary(u)?,
+            deposit_idx: u32::arbitrary(u)?,
+            deposit_txid: BitcoinTxid::arbitrary(u)?,
+            withdrawal_destination,
+            withdrawal_amount: BitcoinAmount::from_sat(u64::arbitrary(u)?),
+        })
+    }
 }
 
 /// Extracts withdrawal information from a Bitcoin bridge withdrawal transaction.
@@ -104,48 +123,37 @@ pub fn extract_withdrawal_info<'t>(
         .map_err(|_| WithdrawalParseError::InvalidDepositTxidBytes(deposit_txid_bytes.len()))?;
 
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
-    let withdrawal_address = withdrawal_fulfillment_output.script_pubkey.clone();
+    let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
     Ok(WithdrawalInfo {
         operator_idx,
         deposit_idx,
-        deposit_txid,
-        withdrawal_address,
+        deposit_txid: deposit_txid.into(),
+        withdrawal_destination,
         withdrawal_amount,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
 
-    use bitcoin::{Address, hashes::Hash};
     use strata_asm_common::TxInputRef;
     use strata_l1_txfmt::ParseConfig;
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::txs::{deposit::create::TEST_MAGIC_BYTES, withdrawal_fulfillment::extract_withdrawal_info};
-    
-    use crate::txs::withdrawal_fulfillment::create_withdrawal_fulfillment_tx;
-
-    fn generate_withdrawal_info() -> WithdrawalInfo {
-        WithdrawalInfo {
-            operator_idx: 42,
-            deposit_idx: 1337,
-            deposit_txid: Txid::from_byte_array([0xab; 32]),
-            withdrawal_address: Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
-                .unwrap()
-                .assume_checked()
-                .script_pubkey(),
-            withdrawal_amount: BitcoinAmount::from_sat(95_000),
-        }
-    }
+    use crate::txs::{
+        deposit::create::TEST_MAGIC_BYTES,
+        withdrawal_fulfillment::{create_withdrawal_fulfillment_tx, extract_withdrawal_info},
+    };
 
     #[test]
     fn test_create_withdrawal_fulfillment_tx_and_extract_info() {
-        let original_withdrawal_info = generate_withdrawal_info();
+        let mut arb = ArbitraryGenerator::new();
+        let info: WithdrawalInfo = arb.generate();
+
         // Create the withdrawal fulfillment transaction with proper SPS-50 format
-        let tx = create_withdrawal_fulfillment_tx(&original_withdrawal_info);
+        let tx = create_withdrawal_fulfillment_tx(&info);
 
         // Parse the transaction using the SPS-50 parser
         let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
@@ -156,6 +164,6 @@ mod tests {
         let extracted_info = extract_withdrawal_info(&tx_input_ref)
             .expect("Should successfully extract withdrawal info");
 
-        assert_eq!(extracted_info, original_withdrawal_info);
+        assert_eq!(extracted_info, info);
     }
 }

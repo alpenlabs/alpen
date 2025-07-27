@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use bitcoin::{OutPoint, taproot::TAPROOT_CONTROL_NODE_SIZE};
 use strata_asm_common::TxInputRef;
 use strata_primitives::{
@@ -17,7 +18,7 @@ pub const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
 pub const MIN_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
 
 /// Information extracted from a Bitcoin deposit transaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
 pub struct DepositInfo {
     /// The index of the deposit in the bridge's deposit table.
     pub deposit_idx: u32,
@@ -94,10 +95,7 @@ pub fn extract_deposit_info<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo
     );
 
     // Destination address is remaining bytes (bytes 36+)
-    // Must have at least 1 byte for destination address
-    if destination_address.is_empty() {
-        return Err(DepositError::InvalidAuxiliaryData(aux_data.len()));
-    }
+    // Allow empty destination address (0 bytes is valid)
 
     // Extract the deposit output (second output at index 1)
     let deposit_output = tx_input
@@ -125,21 +123,19 @@ pub fn extract_deposit_info<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        Amount, ScriptBuf, Transaction,
+        OutPoint, ScriptBuf, Transaction,
         secp256k1::{Secp256k1, SecretKey},
     };
     use strata_asm_common::TxInputRef;
     use strata_l1_txfmt::ParseConfig;
-    use strata_primitives::{buf::Buf32, l1::XOnlyPk};
+    use strata_primitives::{
+        buf::Buf32,
+        l1::{OutputRef, XOnlyPk},
+    };
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::txs::deposit::create::{TEST_MAGIC_BYTES, create_test_deposit_tx};
-
-    // Test data constants
-    const TEST_DEPOSIT_IDX: u32 = 123;
-    const TEST_TAPSCRIPT_ROOT: [u8; 32] = [0xAB; 32];
-    const TEST_DESTINATION: &[u8] = b"test_destination";
-    const TEST_DEPOSIT_AMOUNT: u64 = 1000000;
 
     // Helper function to create a test operator keypair
     fn create_test_operator_keypair() -> (XOnlyPk, SecretKey) {
@@ -147,42 +143,15 @@ mod tests {
         let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
         let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
         let (xonly_pk, _) = keypair.x_only_public_key();
-        let operators_pubkey = XOnlyPk::new(Buf32::new(xonly_pk.serialize())).expect("Valid public key");
+        let operators_pubkey =
+            XOnlyPk::new(Buf32::new(xonly_pk.serialize())).expect("Valid public key");
         (operators_pubkey, secret_key)
     }
 
-    // Helper function to create a test transaction and parse it (for success test)
-    fn create_and_parse_test_tx() -> TxInputRef<'static> {
-        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
-        let tx = create_test_deposit_tx(
-            TEST_DEPOSIT_IDX,
-            TEST_TAPSCRIPT_ROOT,
-            TEST_DESTINATION,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
-            &operators_pubkey,
-            &operators_privkey,
-        );
-
-        // Leak the transaction to get 'static lifetime for TxInputRef
-        let tx_static: &'static Transaction = Box::leak(Box::new(tx));
-        let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
-        let tag_data = parser
-            .try_parse_tx(tx_static)
-            .expect("Should parse transaction");
-        TxInputRef::new(tx_static, tag_data)
-    }
-
     // Helper function to create a test transaction (for mutation tests)
-    fn create_test_tx() -> Transaction {
-        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
-        create_test_deposit_tx(
-            TEST_DEPOSIT_IDX,
-            TEST_TAPSCRIPT_ROOT,
-            TEST_DESTINATION,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
-            &operators_pubkey,
-            &operators_privkey,
-        )
+    fn create_test_tx(deposit_info: &DepositInfo) -> Transaction {
+        let (_, operators_privkey) = create_test_operator_keypair();
+        create_test_deposit_tx(deposit_info, &operators_privkey)
     }
 
     // Helper function to create tagged payload with custom parameters
@@ -211,24 +180,41 @@ mod tests {
 
     #[test]
     fn test_extract_deposit_info_success() {
-        let tx_input = create_and_parse_test_tx();
+        let mut arb = ArbitraryGenerator::new();
+        let info: DepositInfo = arb.generate();
+        
+        let tx = create_test_tx(&info);
 
-        // Test the actual parsing logic by calling extract_deposit_info
-        let result = extract_deposit_info(&tx_input);
-        assert!(result.is_ok(), "Should successfully parse valid deposit info");
+        let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
+            .try_parse_tx(&tx)
+            .expect("Should parse transaction");
+        let tx_input = TxInputRef::new(&tx, tag_data_ref);
+        let deposit_info =
+            extract_deposit_info(&tx_input).expect("Should successfully extract deposit info");
 
-        let deposit_info = result.unwrap();
-        assert_eq!(deposit_info.deposit_idx, TEST_DEPOSIT_IDX);
-        assert_eq!(deposit_info.amt, Amount::from_sat(TEST_DEPOSIT_AMOUNT).into());
-        assert_eq!(deposit_info.address, TEST_DESTINATION);
-        assert_eq!(deposit_info.drt_tapnode_hash, Buf32::new(TEST_TAPSCRIPT_ROOT));
+        // The extracted info should match the original except for the outpoint,
+        // which will be calculated from the created transaction
+        assert_eq!(info.deposit_idx, deposit_info.deposit_idx);
+        assert_eq!(info.amt, deposit_info.amt);
+        assert_eq!(info.address, deposit_info.address);
+        assert_eq!(info.drt_tapnode_hash, deposit_info.drt_tapnode_hash);
+
+        // The outpoint should be from the created transaction with vout = 1 (DEPOSIT_OUTPUT_INDEX)
+        let expected_outpoint = OutputRef::from(OutPoint {
+            txid: tx.compute_txid(),
+            vout: DEPOSIT_OUTPUT_INDEX,
+        });
+        assert_eq!(expected_outpoint, deposit_info.outpoint);
     }
 
     #[test]
     fn test_extract_deposit_info_invalid_tx_type() {
         use crate::constants::BRIDGE_V1_SUBPROTOCOL_ID;
 
-        let mut tx = create_test_tx();
+        let mut arb = ArbitraryGenerator::new();
+        let info: DepositInfo = arb.generate();
+        
+        let mut tx = create_test_tx(&info);
 
         // Mutate the OP_RETURN output to have wrong transaction type
         let aux_data = vec![0u8; 40]; // Some dummy aux data
@@ -250,16 +236,23 @@ mod tests {
     fn test_extract_deposit_info_invalid_aux_data_too_short() {
         use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
-        let mut tx = create_test_tx();
+        let mut arb = ArbitraryGenerator::new();
+        let info: DepositInfo = arb.generate();
+        
+        let mut tx = create_test_tx(&info);
 
         // Mutate the OP_RETURN output to have short aux data
         let short_aux_data = vec![0u8; MIN_AUX_DATA_LEN - 1];
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, short_aux_data);
+        let tagged_payload =
+            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, short_aux_data);
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_mutated_tx(&tx);
         let result = extract_deposit_info(&tx_input);
-        assert!(result.is_err(), "Should fail with insufficient auxiliary data");
+        assert!(
+            result.is_err(),
+            "Should fail with insufficient auxiliary data"
+        );
 
         assert!(matches!(result, Err(DepositError::InvalidAuxiliaryData(_))));
         if let Err(DepositError::InvalidAuxiliaryData(len)) = result {
@@ -268,29 +261,35 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_deposit_info_no_destination() {
+    fn test_extract_deposit_info_empty_destination() {
         use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
-        let mut tx = create_test_tx();
+        let mut arb = ArbitraryGenerator::new();
+        let info: DepositInfo = arb.generate();
+        
+        let mut tx = create_test_tx(&info);
 
-        // Mutate the OP_RETURN output to have aux data with no destination (exactly MIN_AUX_DATA_LEN)
+        // Mutate the OP_RETURN output to have aux data with no destination (exactly
+        // MIN_AUX_DATA_LEN)
         let aux_data = vec![0u8; MIN_AUX_DATA_LEN];
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data);
+        let tagged_payload =
+            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data);
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_mutated_tx(&tx);
         let result = extract_deposit_info(&tx_input);
-        assert!(result.is_err(), "Should fail with empty destination");
+        assert!(result.is_ok(), "Should succeed with empty destination");
 
-        assert!(matches!(result, Err(DepositError::InvalidAuxiliaryData(_))));
-        if let Err(DepositError::InvalidAuxiliaryData(len)) = result {
-            assert_eq!(len, MIN_AUX_DATA_LEN);
-        }
+        let deposit_info = result.unwrap();
+        assert!(deposit_info.address.is_empty(), "Address should be empty");
     }
 
     #[test]
     fn test_extract_deposit_info_missing_output() {
-        let mut tx = create_test_tx();
+        let mut arb = ArbitraryGenerator::new();
+        let info: DepositInfo = arb.generate();
+        
+        let mut tx = create_test_tx(&info);
 
         // Remove the deposit output (keep only OP_RETURN at index 0)
         tx.output.truncate(1);
@@ -301,7 +300,7 @@ mod tests {
 
         assert!(matches!(result, Err(DepositError::MissingOutput(_))));
         if let Err(DepositError::MissingOutput(index)) = result {
-            assert_eq!(index, 1);
+            assert_eq!(index, DEPOSIT_OUTPUT_INDEX);
         }
     }
 }

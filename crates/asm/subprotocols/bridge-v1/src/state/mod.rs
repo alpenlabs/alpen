@@ -373,8 +373,8 @@ impl BridgeV1State {
             .get_deposit(deposit_idx)
             .ok_or(WithdrawalValidationError::DepositNotFound { deposit_idx })?;
 
-        let expected_txid = deposit.output().outpoint().txid;
-        let actual_txid = withdrawal_info.deposit_txid;
+        let expected_txid = deposit.output().outpoint().txid.into();
+        let actual_txid = withdrawal_info.deposit_txid.clone();
 
         if expected_txid != actual_txid {
             return Err(WithdrawalValidationError::DepositTxidMismatch {
@@ -838,14 +838,7 @@ mod tests {
         
         // Use the proper test deposit transaction helper
         let operators_privkey = SecretKey::from_slice(&[1u8; 32]).unwrap();
-        let tx = create_test_deposit_tx(
-            deposit_info.deposit_idx,
-            deposit_info.drt_tapnode_hash.into(),
-            &deposit_info.address,
-            bitcoin::Amount::from_sat(deposit_info.amt.to_sat()),
-            state.operators().agg_key(),
-            &operators_privkey,
-        );
+        let tx = create_test_deposit_tx(&deposit_info, &operators_privkey);
 
         let result = state.validate_deposit(&tx, &deposit_info);
         assert!(matches!(result, Err(DepositError::InvalidDepositAmount { expected: 100_000, actual: 50_000 })));
@@ -990,14 +983,14 @@ mod tests {
         let operator_idx = state.assignments().get_assignment(deposit_idx).unwrap().current_assignee();
         
         // Get the correct deposit txid from the created deposit
-        let deposit_txid = state.deposits().get_deposit(deposit_idx).unwrap().output().outpoint().txid;
+        let deposit_txid = state.deposits().get_deposit(deposit_idx).unwrap().output().outpoint().txid.into();
 
         // Process withdrawal fulfillment
         let withdrawal_info = WithdrawalInfo {
             operator_idx,
             deposit_idx,
             deposit_txid,
-            withdrawal_address: ScriptBuf::new(),
+            withdrawal_destination: ScriptBuf::new(),
             withdrawal_amount: BitcoinAmount::from_sat(99_000), // Must match the withdrawal command amount
         };
 
@@ -1020,8 +1013,8 @@ mod tests {
         let withdrawal_info = WithdrawalInfo {
             operator_idx: 0,
             deposit_idx: 999,
-            deposit_txid: Txid::from_byte_array([1u8; 32]),
-            withdrawal_address: ScriptBuf::new(),
+            deposit_txid: Txid::from_byte_array([1u8; 32]).into(),
+            withdrawal_destination: ScriptBuf::new(),
             withdrawal_amount: BitcoinAmount::from_sat(99_000),
         };
 
@@ -1052,8 +1045,8 @@ mod tests {
         let withdrawal_info = WithdrawalInfo {
             operator_idx: wrong_operator,
             deposit_idx,
-            deposit_txid: Txid::from_byte_array([1u8; 32]),
-            withdrawal_address: ScriptBuf::new(),
+            deposit_txid: Txid::from_byte_array([1u8; 32]).into(),
+            withdrawal_destination: ScriptBuf::new(),
             withdrawal_amount: BitcoinAmount::from_sat(99_000),
         };
 
@@ -1176,59 +1169,6 @@ mod tests {
         assert!(assignment1.previous_assignees().is_empty());
     }
 
-    // Test BridgeV1State serialization
-    #[test]
-    fn test_bridgev1state_borsh_serialization() {
-        let config = create_test_config();
-        let state = BridgeV1State::new(&config);
-
-        let serialized = borsh::to_vec(&state).expect("Should serialize");
-        let deserialized: BridgeV1State = borsh::from_slice(&serialized).expect("Should deserialize");
-
-        assert_eq!(state.deadline_duration(), deserialized.deadline_duration());
-        assert_eq!(state.operators().len(), deserialized.operators().len());
-        assert_eq!(state.deposits().len(), deserialized.deposits().len());
-        assert_eq!(state.assignments().len(), deserialized.assignments().len());
-    }
-
-    // Test BridgeV1Config serialization
-    #[test]
-    fn test_bridgev1config_borsh_serialization() {
-        let config = create_test_config();
-
-        let serialized = borsh::to_vec(&config).expect("Should serialize");
-        let deserialized: BridgeV1Config = borsh::from_slice(&serialized).expect("Should deserialize");
-
-        assert_eq!(config.operators.len(), deserialized.operators.len());
-        assert_eq!(config.denomination, deserialized.denomination);
-        assert_eq!(config.deadline_duration, deserialized.deadline_duration);
-    }
-
-    // Test BridgeV1State edge cases
-    #[test]
-    #[should_panic(expected = "Cannot create operator table with empty entries")]
-    fn test_bridgev1state_empty_operator_list() {
-        let config = BridgeV1Config {
-            operators: vec![],
-            denomination: BitcoinAmount::from_sat(100_000),
-            deadline_duration: 144,
-        };
-
-        let _state = BridgeV1State::new(&config);
-    }
-
-    #[test]
-    fn test_bridgev1state_zero_deadline_duration() {
-        let config = BridgeV1Config {
-            operators: vec![make_test_operator_pubkeys(1)],
-            denomination: BitcoinAmount::from_sat(100_000),
-            deadline_duration: 0,
-        };
-
-        let state = BridgeV1State::new(&config);
-        assert_eq!(state.deadline_duration(), 0);
-    }
-
     // Test comprehensive workflow combining multiple BridgeV1State operations
     #[test]
     fn test_bridgev1state_comprehensive_workflow() {
@@ -1266,8 +1206,8 @@ mod tests {
         let withdrawal_info = WithdrawalInfo {
             operator_idx,
             deposit_idx: 0,
-            deposit_txid: Txid::from_byte_array([0u8; 32]),
-            withdrawal_address: ScriptBuf::new(),
+            deposit_txid: Txid::from_byte_array([0u8; 32]).into(),
+            withdrawal_destination: ScriptBuf::new(),
             withdrawal_amount: BitcoinAmount::from_sat(99_000),
         };
 

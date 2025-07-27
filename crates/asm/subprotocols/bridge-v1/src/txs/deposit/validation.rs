@@ -164,7 +164,8 @@ mod tests {
         Amount,
         secp256k1::{Secp256k1, SecretKey},
     };
-    use strata_primitives::{buf::Buf32, l1::XOnlyPk};
+    use strata_primitives::{buf::Buf32, l1::{XOnlyPk, OutputRef}};
+    use bitcoin::OutPoint;
 
     use super::*;
     use crate::txs::deposit::create::create_test_deposit_tx;
@@ -186,17 +187,22 @@ mod tests {
         (operators_pubkey, secret_key)
     }
 
+    // Helper function to create a test DepositInfo struct
+    fn create_test_deposit_info() -> crate::txs::deposit::parse::DepositInfo {
+        crate::txs::deposit::parse::DepositInfo {
+            deposit_idx: TEST_DEPOSIT_IDX,
+            amt: Amount::from_sat(TEST_DEPOSIT_AMOUNT).into(),
+            address: TEST_DESTINATION.to_vec(),
+            outpoint: OutputRef::from(OutPoint::null()),
+            drt_tapnode_hash: Buf32::new(TEST_TAPSCRIPT_ROOT),
+        }
+    }
+
     // Helper function to create a test transaction using the standard test utility
     fn create_test_tx() -> Transaction {
-        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
-        create_test_deposit_tx(
-            TEST_DEPOSIT_IDX,
-            TEST_TAPSCRIPT_ROOT,
-            TEST_DESTINATION,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
-            &operators_pubkey,
-            &operators_privkey,
-        )
+        let (_, operators_privkey) = create_test_operator_keypair();
+        let deposit_info = create_test_deposit_info();
+        create_test_deposit_tx(&deposit_info, &operators_privkey)
     }
 
     #[test]
@@ -260,14 +266,8 @@ mod tests {
         let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
 
         // Create a signed transaction then remove the witness
-        let mut tx = create_test_deposit_tx(
-            TEST_DEPOSIT_IDX,
-            TEST_TAPSCRIPT_ROOT,
-            TEST_DESTINATION,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
-            &operators_pubkey,
-            &operators_privkey,
-        );
+        let deposit_info = create_test_deposit_info();
+        let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkey);
 
         // Clear the witness to test no witness case
         tx.input[0].witness.clear();
@@ -298,14 +298,8 @@ mod tests {
         let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
 
         // Create a signed transaction then replace with invalid signature
-        let mut tx = create_test_deposit_tx(
-            TEST_DEPOSIT_IDX,
-            TEST_TAPSCRIPT_ROOT,
-            TEST_DESTINATION,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
-            &operators_pubkey,
-            &operators_privkey,
-        );
+        let deposit_info = create_test_deposit_info();
+        let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkey);
 
         // Replace with invalid witness data
         tx.input[0].witness = Witness::from_slice(&[&[0u8; 64]]); // Dummy signature
@@ -335,14 +329,8 @@ mod tests {
         let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
 
         // Create a properly signed transaction using the test utility
-        let tx = create_test_deposit_tx(
-            TEST_DEPOSIT_IDX,
-            TEST_TAPSCRIPT_ROOT,
-            TEST_DESTINATION,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
-            &operators_pubkey,
-            &secret_key,
-        );
+        let deposit_info = create_test_deposit_info();
+        let tx = create_test_deposit_tx(&deposit_info, &secret_key);
 
         // Test the validation - this should succeed
         let result = validate_drt_spending_signature(

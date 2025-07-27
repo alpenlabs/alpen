@@ -1,5 +1,7 @@
-use bitcoin::Txid;
-use strata_primitives::{bridge::OperatorIdx, l1::BitcoinAmount};
+use strata_primitives::{
+    bridge::OperatorIdx,
+    l1::{BitcoinAmount, BitcoinTxid},
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -85,8 +87,11 @@ pub enum WithdrawalValidationError {
     },
 
     /// Deposit txid in withdrawal doesn't match the actual deposit
-    #[error("Deposit txid mismatch: expected {expected}, got {actual}")]
-    DepositTxidMismatch { expected: Txid, actual: Txid },
+    #[error("Deposit txid mismatch: expected {expected:?}, got {actual:?}")]
+    DepositTxidMismatch {
+        expected: BitcoinTxid,
+        actual: BitcoinTxid,
+    },
 
     /// Withdrawal amount doesn't match assignment amount
     #[error("Withdrawal amount mismatch: expected {expected}, got {actual}")]
@@ -103,7 +108,9 @@ pub enum WithdrawalCommandError {
     NoUnassignedDeposits,
 
     /// No eligible operators found for the deposit
-    #[error("No current multisig operator found in deposit's notary operators for deposit index {deposit_idx}")]
+    #[error(
+        "No current multisig operator found in deposit's notary operators for deposit index {deposit_idx}"
+    )]
     NoEligibleOperators { deposit_idx: u32 },
 
     /// Deposit not found for the given index

@@ -1,13 +1,12 @@
 //! Test utilities for creating deposit transactions.
 
 use bitcoin::{
-    Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey, TapNodeHash,
+    Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, TapNodeHash,
     absolute::LockTime, secp256k1::{Secp256k1, SecretKey, Keypair},
     key::TapTweak,
     sighash::{Prevouts, SighashCache, TapSighashType},
     hashes::Hash,
 };
-use strata_primitives::l1::XOnlyPk;
 
 pub const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
@@ -22,21 +21,13 @@ pub const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 /// signature validation against the provided operator public key and tapscript root.
 ///
 /// # Arguments
-/// - `deposit_idx`: The deposit index (4 bytes, big-endian u32)
-/// - `tapscript_root`: The tapscript root hash from the spent DRT (32 bytes)
-/// - `destination`: The destination address (variable length)
-/// - `deposit_amount`: The amount being deposited
-/// - `operators_pubkey`: The aggregated operator public key for the deposit output
+/// - `deposit_info`: The deposit information containing index, amount, destination, and tapscript root
 /// - `operators_privkey`: The private key corresponding to the operator public key
 ///
 /// # Returns
 /// A properly formatted and signed Bitcoin transaction that can be parsed by ParseConfig
 pub fn create_test_deposit_tx(
-    deposit_idx: u32,
-    tapscript_root: [u8; 32],
-    destination: &[u8],
-    deposit_amount: Amount,
-    operators_pubkey: &XOnlyPk,
+    deposit_info: &crate::txs::deposit::parse::DepositInfo,
     operators_privkey: &SecretKey,
 ) -> Transaction {
     use bitcoin::script::PushBytesBuf;
@@ -46,9 +37,9 @@ pub fn create_test_deposit_tx(
 
     // Create auxiliary data in the expected format for deposit transactions
     let mut aux_data = Vec::new();
-    aux_data.extend_from_slice(&deposit_idx.to_be_bytes()); // 4 bytes
-    aux_data.extend_from_slice(&tapscript_root); // 32 bytes  
-    aux_data.extend_from_slice(destination); // variable length
+    aux_data.extend_from_slice(&deposit_info.deposit_idx.to_be_bytes()); // 4 bytes
+    aux_data.extend_from_slice(deposit_info.drt_tapnode_hash.as_ref()); // 32 bytes  
+    aux_data.extend_from_slice(&deposit_info.address); // variable length
 
     // Create the complete SPS-50 tagged payload
     // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
@@ -60,17 +51,15 @@ pub fn create_test_deposit_tx(
 
     // Create P2TR script for deposit output locked to operators key (no merkle root)
     let secp = Secp256k1::new();
-    let operators_xonly = XOnlyPublicKey::from_slice(operators_pubkey.inner().as_bytes()).unwrap();
+    let keypair = Keypair::from_secret_key(&secp, operators_privkey);
+    let (operators_xonly, _) = keypair.x_only_public_key();
     let deposit_script = ScriptBuf::new_p2tr(&secp, operators_xonly, None);
 
-    // Create the keypair from the provided operators private key
-    let keypair = Keypair::from_secret_key(&secp, operators_privkey);
-    let (internal_key, _) = keypair.x_only_public_key();
-    
     // Create the UTXO being spent (DRT output) with proper taproot script
-    let merkle_root = TapNodeHash::from_byte_array(tapscript_root);
-    let drt_script_pubkey = ScriptBuf::new_p2tr(&secp, internal_key, Some(merkle_root));
+    let merkle_root = TapNodeHash::from_byte_array(*deposit_info.drt_tapnode_hash.as_ref());
+    let drt_script_pubkey = ScriptBuf::new_p2tr(&secp, operators_xonly, Some(merkle_root));
     
+    let deposit_amount: Amount = deposit_info.amt.into();
     let prev_txout = TxOut {
         value: deposit_amount,
         script_pubkey: drt_script_pubkey,
