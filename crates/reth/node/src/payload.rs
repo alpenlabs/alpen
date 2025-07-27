@@ -3,8 +3,9 @@ use std::convert::Infallible;
 use alloy_eips::{eip4895::Withdrawals, eip7685::Requests};
 use alloy_rpc_types::{
     engine::{
-        ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4, ExecutionPayloadV1,
-        ExecutionPayloadV2, PayloadAttributes as EthPayloadAttributes, PayloadId,
+        ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4, ExecutionPayloadEnvelopeV5,
+        ExecutionPayloadV1, ExecutionPayloadV2, PayloadAttributes as EthPayloadAttributes,
+        PayloadId,
     },
     Withdrawal,
 };
@@ -225,10 +226,11 @@ impl AlpenExecutionPayloadEnvelopeV4 {
     }
 }
 
+// TODO: Remove unwraps here @Abishek
 impl From<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV4 {
     fn from(value: AlpenBuiltPayload) -> Self {
         Self {
-            inner: value.inner.into(),
+            inner: value.inner.try_into_v4().unwrap(),
             withdrawal_intents: value.withdrawal_intents,
         }
     }
@@ -257,14 +259,23 @@ impl From<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV2 {
     }
 }
 
+// TODO: Remove unwraps here @Abishek
 impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV3 {
     fn from(value: AlpenBuiltPayload) -> Self {
-        value.inner.into()
+        value.inner.try_into_v3().unwrap()
     }
 }
 
+// TODO: Remove unwraps here @Abishek
 impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV4 {
     fn from(value: AlpenBuiltPayload) -> Self {
-        value.inner.into()
+        value.inner.try_into_v4().unwrap()
+    }
+}
+
+// TODO: Remove unwraps here @Abishek
+impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV5 {
+    fn from(value: AlpenBuiltPayload) -> Self {
+        value.inner.try_into_v5().unwrap()
     }
 }

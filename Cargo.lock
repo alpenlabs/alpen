@@ -1047,6 +1047,14 @@ dependencies = [
 [[package]]
 name = "alpen-reth-evm"
 version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-sol-types",
+ "alpen-reth-primitives",
+ "reth-primitives",
+ "revm",
+ "revm-primitives",
+ "strata-primitives",
+]
 
 [[package]]
 name = "alpen-reth-exex"
@@ -1101,7 +1109,6 @@ dependencies = [
  "reth-node-ethereum",
  "reth-payload-builder",
  "reth-primitives",
- "reth-primitives-traits",
  "reth-provider",
  "reth-revm",
  "reth-rpc-eth-types",

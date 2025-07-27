@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use alloy_consensus::Transaction;
-use alloy_eips::Typed2718;
 use alpen_reth_evm::collect_withdrawal_intents;
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
@@ -16,9 +15,8 @@ use reth_evm::{
 use reth_evm_ethereum::EthEvmConfig;
 use reth_node_api::{ConfigureEvm, FullNodeTypes, NodeTypes, PayloadBuilderAttributes};
 use reth_node_builder::{components::PayloadBuilderBuilder, BuilderContext, PayloadBuilderConfig};
-use reth_payload_builder::{EthBuiltPayload, PayloadBuilderError};
+use reth_payload_builder::{BlobSidecars, EthBuiltPayload, PayloadBuilderError};
 use reth_primitives::{EthPrimitives, InvalidTransactionError, Receipt};
-use reth_primitives_traits::SignedTransaction;
 use reth_provider::StateProviderFactory;
 use reth_revm::database::StateProviderDatabase;
 use reth_transaction_pool::{
@@ -40,7 +38,7 @@ use crate::{
 #[non_exhaustive]
 pub struct AlpenPayloadBuilderBuilder;
 
-impl<Node, Pool> PayloadBuilderBuilder<Node, Pool> for AlpenPayloadBuilderBuilder
+impl<Node, Pool> PayloadBuilderBuilder<Node, Pool, EthEvmConfig> for AlpenPayloadBuilderBuilder
 where
     Node: FullNodeTypes<
         Types: NodeTypes<
@@ -59,13 +57,17 @@ where
         self,
         ctx: &BuilderContext<Node>,
         pool: Pool,
+        evm_config: EthEvmConfig,
     ) -> eyre::Result<Self::PayloadBuilder> {
         let conf = ctx.payload_builder_config();
+        let chain = ctx.chain_spec().chain();
+        let gas_limit = conf.gas_limit_for(chain);
+
         Ok(AlpenPayloadBuilder::new(
             ctx.provider().clone(),
             pool,
-            ctx.chain_spec().clone(),
-            EthereumBuilderConfig::new().with_gas_limit(conf.gas_limit()),
+            evm_config,
+            EthereumBuilderConfig::new().with_gas_limit(gas_limit),
         ))
     }
 }
@@ -89,13 +91,13 @@ impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
     pub fn new(
         client: Client,
         pool: Pool,
-        chain_spec: Arc<ChainSpec>,
+        evm_config: EthEvmConfig,
         builder_config: EthereumBuilderConfig,
     ) -> Self {
         Self {
             client,
             pool,
-            evm_config: EthEvmConfig::new(chain_spec),
+            evm_config,
             builder_config,
         }
     }
