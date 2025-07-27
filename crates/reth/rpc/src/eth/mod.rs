@@ -22,7 +22,7 @@ use reth_provider::{
     ProviderBlock, ProviderHeader, ProviderReceipt, ProviderTx, StageCheckpointReader,
     StateProviderFactory,
 };
-use reth_rpc::eth::{core::EthApiInner, DevSigner};
+use reth_rpc::eth::{core::EthApiInner, helpers::types::EthRpcConverter, DevSigner};
 use reth_rpc_eth_api::{
     helpers::{
         AddDevSigners, EthApiSpec, EthFees, EthSigner, EthState, LoadBlock, LoadFee, LoadState,
@@ -65,6 +65,9 @@ impl<T> StrataNodeCore for T where T: RpcNodeCore<Provider: BlockReader> {}
 pub struct AlpenEthApi<N: StrataNodeCore> {
     /// Gateway to node's core components.
     inner: Arc<AlpenEthApiInner<N>>,
+
+    /// Converter for RPC types.
+    tx_resp_builder: EthRpcConverter,
 }
 
 impl<N> AlpenEthApi<N>
@@ -100,10 +103,10 @@ where
 {
     type Error = EthApiError;
     type NetworkTypes = alloy_network::Ethereum;
-    type TransactionCompat = Self;
+    type RpcConvert = EthRpcConverter;
 
-    fn tx_resp_builder(&self) -> &Self::TransactionCompat {
-        self
+    fn tx_resp_builder(&self) -> &Self::RpcConvert {
+        &self.tx_resp_builder
     }
 }
 
@@ -349,6 +352,7 @@ where
                 eth_api,
                 sequencer_client,
             }),
+            tx_resp_builder: Default::default(),
         })
     }
 }

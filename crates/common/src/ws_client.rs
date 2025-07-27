@@ -6,7 +6,6 @@ use core::fmt;
 use deadpool::managed::{self, Manager, Object, Pool, RecycleError, RecycleResult};
 use jsonrpsee::{
     core::{
-        async_trait,
         client::{BatchResponse, ClientT},
         params::BatchRequestBuilder,
         traits::ToRpcParams,
@@ -112,7 +111,6 @@ impl ManagedWsClient {
 ///
 /// This implementation allows `[ManagedWsClient`] to perform JSON-RPC operations,
 /// including notifications, method calls, and batch requests.
-#[async_trait]
 impl ClientT for ManagedWsClient {
     /// Send a [notification request](https://www.jsonrpc.org/specification#notification).
     ///
@@ -142,16 +140,20 @@ impl ClientT for ManagedWsClient {
     }
 
     /// Sends a batch request.
-    async fn batch_request<'a, R>(
+    fn batch_request<'a, R>(
         &self,
         batch: BatchRequestBuilder<'a>,
-    ) -> Result<BatchResponse<'a, R>, ClientError>
+    ) -> impl core::future::Future<Output = Result<BatchResponse<'a, R>, ClientError>> + Send
     where
         R: DeserializeOwned + fmt::Debug + 'a,
     {
-        self.get_ready_rpc_client()
-            .await?
-            .batch_request(batch)
-            .await
+        let pool = self.pool.clone();
+        async move {
+            pool.get()
+                .await
+                .map_err(|err| ClientError::Custom(err.to_string()))?
+                .batch_request(batch)
+                .await
+        }
     }
 }

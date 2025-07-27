@@ -5,13 +5,14 @@ use alloy_rpc_types_eth::{BlockId, TransactionReceipt};
 use reth_chainspec::{ChainSpec, ChainSpecProvider, EthChainSpec};
 use reth_node_api::BlockBody;
 use reth_primitives::{Receipt, TransactionMeta, TransactionSigned};
-use reth_provider::{BlockReader, HeaderProvider};
+use reth_provider::{BlockReader, HeaderProvider, ProviderTx};
 use reth_rpc_eth_api::{
     helpers::{EthBlocks, LoadBlock, LoadPendingBlock, LoadReceipt, SpawnBlocking},
     types::RpcTypes,
     RpcNodeCore, RpcReceipt,
 };
 use reth_rpc_eth_types::{EthApiError, EthReceiptBuilder};
+use reth_transaction_pool::{PoolTransaction, TransactionPool};
 
 use crate::{AlpenEthApi, StrataNodeCore};
 
@@ -72,7 +73,11 @@ where
 
 impl<N> LoadBlock for AlpenEthApi<N>
 where
-    Self: LoadPendingBlock + SpawnBlocking,
+    Self: LoadPendingBlock<
+            Pool: TransactionPool<
+                Transaction: PoolTransaction<Consensus = ProviderTx<Self::Provider>>,
+            >,
+        > + SpawnBlocking,
     N: StrataNodeCore,
 {
 }
