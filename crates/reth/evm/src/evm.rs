@@ -4,15 +4,16 @@ use reth_evm::{
 use revm::{
     context::{
         result::{EVMError, HaltReason},
-        TxEnv,
+        Evm as RevmEvm, TxEnv,
     },
+    handler::{instructions::EthInstructions, EthFrame, EthPrecompiles},
     inspector::NoOpInspector,
     interpreter::interpreter::EthInterpreter,
     Context, Inspector, MainBuilder, MainContext,
 };
 use revm_primitives::hardfork::SpecId;
 
-use crate::precompiles::AlpenEvmPrecompiles;
+use crate::{apis::AlpenAlloyEvm, precompiles::AlpenEvmPrecompiles};
 
 /// Custom EVM configuration.
 #[derive(Debug, Clone, Default)]
@@ -21,7 +22,7 @@ pub struct AlpenEvmFactory;
 
 impl EvmFactory for AlpenEvmFactory {
     type Evm<DB: Database, I: Inspector<EthEvmContext<DB>, EthInterpreter>> =
-        EthEvm<DB, I, Self::Precompiles>;
+        AlpenAlloyEvm<DB, I, Self::Precompiles>;
     type Tx = TxEnv;
     type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError>;
     type HaltReason = HaltReason;
@@ -40,7 +41,7 @@ impl EvmFactory for AlpenEvmFactory {
             .build_mainnet_with_inspector(NoOpInspector {})
             .with_precompiles(precompiles);
 
-        EthEvm::new(evm, false)
+        AlpenAlloyEvm::new(evm, false)
     }
 
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>, EthInterpreter>>(
@@ -49,7 +50,7 @@ impl EvmFactory for AlpenEvmFactory {
         input: EvmEnv,
         inspector: I,
     ) -> Self::Evm<DB, I> {
-        EthEvm::new(
+        AlpenAlloyEvm::new(
             self.create_evm(db, input)
                 .into_inner()
                 .with_inspector(inspector),
