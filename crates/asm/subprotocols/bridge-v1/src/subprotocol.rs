@@ -14,7 +14,7 @@ use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
     msgs::BridgeIncomingMsg,
     state::{BridgeV1Config, BridgeV1State},
-    txs::{deposit::parse::extract_deposit_info, withdrawal::extract_withdrawal_info},
+    txs::{deposit::parse::extract_deposit_info, withdrawal_fulfillment::extract_withdrawal_info},
 };
 
 /// Bridge V1 subprotocol implementation.

@@ -29,7 +29,7 @@ use crate::{
             parse::DepositInfo,
             validation::{validate_deposit_output_lock, validate_drt_spending_signature},
         },
-        withdrawal::WithdrawalInfo,
+        withdrawal_fulfillment::WithdrawalInfo,
     },
 };
 
@@ -698,13 +698,13 @@ mod tests {
         errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
         state::withdrawal::{WithdrawOutput, WithdrawalCommand},
         txs::{
-            deposit::parse::DepositInfo,
-            withdrawal::WithdrawalInfo,
+            deposit::{parse::DepositInfo, test::create_test_deposit_tx},
+            withdrawal_fulfillment::{WithdrawalInfo, create_withdrawal_fulfillment_tx},
         },
     };
     use bitcoin::{
         hashes::Hash, secp256k1::{Keypair, SecretKey, Secp256k1}, OutPoint, ScriptBuf, 
-        Transaction, Txid
+        Txid
     };
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
@@ -755,23 +755,6 @@ mod tests {
         }
     }
 
-    fn create_test_transaction() -> Transaction {
-        use bitcoin::{TxIn, TxOut, Witness, Sequence};
-        Transaction {
-            version: bitcoin::transaction::Version(2),
-            lock_time: bitcoin::absolute::LockTime::ZERO,
-            input: vec![TxIn {
-                previous_output: OutPoint::null(),
-                script_sig: ScriptBuf::new(),
-                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-                witness: Witness::from_slice(&[vec![0u8; 64]]), // Dummy witness
-            }],
-            output: vec![TxOut {
-                value: bitcoin::Amount::from_sat(100_000),
-                script_pubkey: ScriptBuf::new(),
-            }],
-        }
-    }
 
     fn create_test_withdrawal_command() -> WithdrawalCommand {
         let address = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
@@ -853,7 +836,16 @@ mod tests {
         let mut deposit_info = create_test_deposit_info(1);
         deposit_info.amt = BitcoinAmount::from_sat(50_000); // Wrong amount
         
-        let tx = create_test_transaction();
+        // Use the proper test deposit transaction helper
+        let operators_privkey = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let tx = create_test_deposit_tx(
+            deposit_info.deposit_idx,
+            deposit_info.drt_tapnode_hash.into(),
+            &deposit_info.address,
+            bitcoin::Amount::from_sat(deposit_info.amt.to_sat()),
+            state.operators().agg_key(),
+            &operators_privkey,
+        );
 
         let result = state.validate_deposit(&tx, &deposit_info);
         assert!(matches!(result, Err(DepositError::InvalidDepositAmount { expected: 100_000, actual: 50_000 })));
@@ -1009,7 +1001,7 @@ mod tests {
             withdrawal_amount: BitcoinAmount::from_sat(99_000), // Must match the withdrawal command amount
         };
 
-        let tx = create_test_transaction();
+        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
 
         let result = state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
         assert!(result.is_ok());
@@ -1279,7 +1271,7 @@ mod tests {
             withdrawal_amount: BitcoinAmount::from_sat(99_000),
         };
 
-        let tx = create_test_transaction();
+        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
 
         let result = state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
         assert!(result.is_ok());
