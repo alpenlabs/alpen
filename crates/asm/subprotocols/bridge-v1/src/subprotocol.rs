@@ -5,6 +5,7 @@
 
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    logging::{error, info, warn},
 };
 use strata_asm_logs::NewExportEntry;
 use strata_primitives::{buf::Buf32, l1::L1BlockId};
@@ -93,7 +94,7 @@ impl Subprotocol for BridgeV1Subproto {
         match state.reassign_expired_assignments(current_block) {
             Ok(reassigned_deposits) => {
                 if !reassigned_deposits.is_empty() {
-                    tracing::info!(
+                    info!(
                         count = reassigned_deposits.len(),
                         deposits = ?reassigned_deposits,
                         "Successfully reassigned expired assignments"
@@ -101,7 +102,7 @@ impl Subprotocol for BridgeV1Subproto {
                 }
             }
             Err(e) => {
-                tracing::error!(
+                error!(
                     error = %e,
                     "Failed to reassign expired assignments"
                 );
@@ -121,7 +122,7 @@ impl Subprotocol for BridgeV1Subproto {
                         &placeholder_id,
                         current_block_height,
                     ) {
-                        tracing::error!(
+                        error!(
                             error = %e,
                             "Failed to create withdrawal assignment"
                         );
@@ -138,7 +139,7 @@ impl BridgeV1Subproto {
         let deposit_info = match extract_deposit_info(tx) {
             Ok(info) => info,
             Err(e) => {
-                tracing::warn!(
+                warn!(
                     tx_id = %tx.tx().compute_txid(),
                     error = %e,
                     "Failed to extract deposit information from transaction"
@@ -150,7 +151,7 @@ impl BridgeV1Subproto {
         let deposit_idx = match state.process_deposit_tx(tx.tx(), &deposit_info) {
             Ok(idx) => idx,
             Err(e) => {
-                tracing::error!(
+                error!(
                     tx_id = %tx.tx().compute_txid(),
                     error = %e,
                     "Failed to process deposit"
@@ -159,7 +160,7 @@ impl BridgeV1Subproto {
             }
         };
 
-        tracing::info!(
+        info!(
             tx_id = %tx.tx().compute_txid(),
             deposit_idx = deposit_idx,
             amount = %deposit_info.amt,
@@ -176,7 +177,7 @@ impl BridgeV1Subproto {
         let withdrawal_info = match extract_withdrawal_info(tx) {
             Ok(info) => info,
             Err(e) => {
-                tracing::warn!(
+                warn!(
                     tx_id = %tx.tx().compute_txid(),
                     error = %e,
                     "Failed to extract withdrawal information from transaction"
@@ -189,7 +190,7 @@ impl BridgeV1Subproto {
             match state.process_withdrawal_fulfillment_tx(tx.tx(), &withdrawal_info) {
                 Ok(assignment) => assignment,
                 Err(e) => {
-                    tracing::warn!(
+                    warn!(
                         tx_id = %tx.tx().compute_txid(),
                         deposit_idx = withdrawal_info.deposit_idx,
                         operator_idx = withdrawal_info.operator_idx,
@@ -206,7 +207,7 @@ impl BridgeV1Subproto {
             NewExportEntry::new(container_id, withdrawal_processed_info.to_export_entry());
         relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
 
-        tracing::info!(
+        info!(
             tx_id = %tx.tx().compute_txid(),
             deposit_idx = withdrawal_info.deposit_idx,
             operator_idx = withdrawal_info.operator_idx,

@@ -17,7 +17,6 @@ rand_chacha.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
