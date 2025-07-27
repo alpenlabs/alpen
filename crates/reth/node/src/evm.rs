@@ -1,3 +1,4 @@
+use alpen_reth_evm::evm::AlpenEvmFactory;
 // use alpen_reth_evm::evm::AlpenEvmFactory;
 use reth_chainspec::ChainSpec;
 use reth_evm_ethereum::EthEvmConfig;
@@ -15,10 +16,11 @@ impl<Node> ExecutorBuilder<Node> for AlpenExecutorBuilder
 where
     Node: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec, Primitives = EthPrimitives>>,
 {
-    type EVM = EthEvmConfig;
+    type EVM = EthEvmConfig<ChainSpec, AlpenEvmFactory>;
 
     async fn build_evm(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::EVM> {
-        let evm_config = EthEvmConfig::new(ctx.chain_spec());
+        let evm_config =
+            EthEvmConfig::new_with_evm_factory(ctx.chain_spec(), AlpenEvmFactory::default());
         Ok(evm_config.clone())
     }
 }

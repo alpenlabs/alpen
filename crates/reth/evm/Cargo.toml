@@ -12,7 +12,7 @@ alpen-reth-primitives.workspace = true
 strata-primitives.workspace = true
 
 alloy-sol-types.workspace = true
-# reth-evm.workspace = true
+reth-evm.workspace = true
 reth-primitives.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true

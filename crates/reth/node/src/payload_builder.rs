@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_consensus::Transaction;
-use alpen_reth_evm::collect_withdrawal_intents;
+use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
 use reth_chainspec::{ChainSpec, ChainSpecProvider, EthChainSpec, EthereumHardforks};
@@ -38,7 +38,8 @@ use crate::{
 #[non_exhaustive]
 pub struct AlpenPayloadBuilderBuilder;
 
-impl<Node, Pool> PayloadBuilderBuilder<Node, Pool, EthEvmConfig> for AlpenPayloadBuilderBuilder
+impl<Node, Pool> PayloadBuilderBuilder<Node, Pool, EthEvmConfig<ChainSpec, AlpenEvmFactory>>
+    for AlpenPayloadBuilderBuilder
 where
     Node: FullNodeTypes<
         Types: NodeTypes<
@@ -57,7 +58,7 @@ where
         self,
         ctx: &BuilderContext<Node>,
         pool: Pool,
-        evm_config: EthEvmConfig,
+        evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
     ) -> eyre::Result<Self::PayloadBuilder> {
         let conf = ctx.payload_builder_config();
         let chain = ctx.chain_spec().chain();
@@ -81,7 +82,7 @@ pub struct AlpenPayloadBuilder<Pool, Client> {
     /// Transaction pool.
     pool: Pool,
     /// The type responsible for creating the evm.
-    evm_config: EthEvmConfig,
+    evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
     /// Payload builder configuration.
     builder_config: EthereumBuilderConfig,
 }
@@ -91,7 +92,7 @@ impl<Pool, Client> AlpenPayloadBuilder<Pool, Client> {
     pub fn new(
         client: Client,
         pool: Pool,
-        evm_config: EthEvmConfig,
+        evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
         builder_config: EthereumBuilderConfig,
     ) -> Self {
         Self {
@@ -157,7 +158,7 @@ type BestTransactionsIter<Pool> = Box<
 /// [default_ethereum_payload](reth_ethereum_payload_builder::default_ethereum_payload)
 #[inline]
 fn try_build_payload<Pool, Client, F>(
-    evm_config: EthEvmConfig,
+    evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
     client: Client,
     pool: Pool,
     builder_config: EthereumBuilderConfig,
