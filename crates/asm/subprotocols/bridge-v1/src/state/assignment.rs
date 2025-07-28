@@ -229,6 +229,13 @@ impl AssignmentEntry {
             );
         }
 
+        // If still no eligible operators, return error
+        if eligible_operators.is_empty() {
+            return Err(WithdrawalCommandError::NoEligibleOperators {
+                deposit_idx: self.deposit_entry.idx(),
+            });
+        }
+
         // Select a random index
         let random_index = (rng.next_u32() as usize) % eligible_operators.len();
         let new_assignee = eligible_operators[random_index];
@@ -327,25 +334,6 @@ impl AssignmentTable {
             .map(|i| &self.assignments[i])
     }
 
-    /// Retrieves a mutable reference to an assignment entry by its deposit index.
-    ///
-    /// Uses binary search for O(log n) lookup performance.
-    ///
-    /// # Parameters
-    ///
-    /// - `deposit_idx` - The deposit index to search for
-    ///
-    /// # Returns
-    ///
-    /// - `Some(&mut AssignmentEntry)` if the assignment exists
-    /// - `None` if no assignment for the given deposit index is found
-    pub fn get_assignment_mut(&mut self, deposit_idx: u32) -> Option<&mut AssignmentEntry> {
-        self.assignments
-            .binary_search_by_key(&deposit_idx, |entry| entry.deposit_idx())
-            .ok()
-            .map(|i| &mut self.assignments[i])
-    }
-
     /// Creates a new assignment entry with optimized insertion.
     ///
     /// This method is optimized for sequential insertion patterns. If the deposit
@@ -412,67 +400,61 @@ impl AssignmentTable {
         Some(self.assignments.remove(pos))
     }
 
-    /// Returns an iterator over all deposit indices that have assignments.
+    /// Reassigns all expired assignments to new randomly selected operators.
     ///
-    /// The indices are returned in sorted order due to the table's invariant.
+    /// Iterates through all assignments and reassigns those whose execution deadlines
+    /// have passed (current height >= exec_deadline). Each expired assignment is
+    /// reassigned using the provided seed for deterministic random operator selection.
     ///
-    /// # Returns
-    ///
-    /// Iterator yielding deposit indices for all assignments.
-    pub fn get_all_deposit_indices(&self) -> impl Iterator<Item = u32> + '_ {
-        self.assignments.iter().map(|e| e.deposit_idx())
-    }
-
-    /// Returns an iterator over assignments for a specific operator.
-    ///
-    /// Filters all assignments to return only those assigned to the specified operator.
+    /// This method handles bulk reassignment of expired assignments, ensuring that
+    /// withdrawals don't get stuck due to unresponsive operators. If any individual
+    /// reassignment fails (e.g., no eligible operators), the entire operation fails
+    /// and returns an error.
     ///
     /// # Parameters
     ///
-    /// - `operator_idx` - The operator index to filter by
+    /// - `current_height` - The current Bitcoin block height for expiration comparison
+    /// - `current_active_operators` - Slice of currently active operator indices
+    /// - `seed` - L1 block ID used as seed for deterministic random selection
     ///
     /// # Returns
     ///
-    /// Iterator yielding assignment entries assigned to the specified operator.
-    pub fn get_assignments_by_operator(
-        &self,
-        operator_idx: OperatorIdx,
-    ) -> impl Iterator<Item = &AssignmentEntry> + '_ {
-        self.assignments
-            .iter()
-            .filter(move |e| e.current_assignee == operator_idx)
-    }
-
-    /// Returns an iterator over assignments that have expired.
+    /// - `Ok(())` - If all expired assignments were successfully reassigned
+    /// - `Err(WithdrawalCommandError)` - If any reassignment failed due to lack of eligible
+    ///   operators
     ///
-    /// An assignment is considered expired if the current Bitcoin block height
-    /// is greater than or equal to its execution deadline.
+    /// # Example
     ///
-    /// # Parameters
+    /// ```rust,ignore
+    /// let current_height = BitcoinBlockHeight::from(1000);
+    /// let active_operators = vec![1, 2, 3];
+    /// let seed = L1BlockId::from([0u8; 32]);
     ///
-    /// - `current_height` - The current Bitcoin block height for comparison
-    ///
-    /// # Returns
-    ///
-    /// Iterator yielding expired assignment entries.
-    pub fn get_expired_assignments(
-        &self,
+    /// table.reassign_expired_assignments(current_height, &active_operators, seed)?;
+    /// ```
+    pub fn reassign_expired_assignments(
+        &mut self,
         current_height: BitcoinBlockHeight,
-    ) -> impl Iterator<Item = &AssignmentEntry> + '_ {
-        self.assignments
-            .iter()
-            .filter(move |e| e.exec_deadline <= current_height)
+        current_active_operators: &[OperatorIdx],
+        seed: L1BlockId,
+    ) -> Result<(), WithdrawalCommandError> {
+        for assignment in self
+            .assignments
+            .iter_mut()
+            .filter(|e| e.exec_deadline <= current_height)
+        {
+            assignment.reassign(seed, current_active_operators)?;
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use strata_primitives::{
-        bridge::BitcoinBlockHeight,
-        l1::L1BlockId,
-    };
+    use strata_primitives::{bridge::BitcoinBlockHeight, l1::L1BlockId};
     use strata_test_utils::ArbitraryGenerator;
+
+    use super::*;
 
     #[test]
     fn test_create_with_random_assignment_success() {
@@ -495,7 +477,7 @@ mod tests {
 
         assert!(result.is_ok());
         let assignment = result.unwrap();
-        
+
         // Verify assignment properties
         assert_eq!(assignment.deposit_idx(), deposit_entry.idx());
         assert_eq!(assignment.withdrawal_command(), &withdrawal_cmd);
@@ -530,7 +512,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn test_reassign_success() {
         let mut arb = ArbitraryGenerator::new();
@@ -554,7 +535,8 @@ mod tests {
             exec_deadline,
             &current_active_operators,
             seed1,
-        ).unwrap();
+        )
+        .unwrap();
 
         let original_assignee = assignment.current_assignee();
         assert_eq!(assignment.previous_assignees().len(), 0);
@@ -574,7 +556,7 @@ mod tests {
     fn test_reassign_all_operators_exhausted() {
         let mut arb = ArbitraryGenerator::new();
         let mut deposit_entry: DepositEntry = arb.generate();
-        
+
         // Force single operator for this test
         let single_operator: OperatorIdx = 1;
         let operators = vec![single_operator];
@@ -583,7 +565,8 @@ mod tests {
             deposit_entry.output().clone(),
             operators.clone(),
             deposit_entry.amt(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
         let exec_deadline: BitcoinBlockHeight = 100;
@@ -598,17 +581,17 @@ mod tests {
             exec_deadline,
             &current_active_operators,
             seed1,
-        ).unwrap();
+        )
+        .unwrap();
 
         // First reassignment should work (clears previous assignees and reassigns to same operator)
         let result = assignment.reassign(seed2, &current_active_operators);
         assert!(result.is_ok());
-        
+
         // Should have cleared previous assignees and reassigned to the same operator
         assert_eq!(assignment.previous_assignees().len(), 0);
         assert_eq!(assignment.current_assignee(), single_operator);
     }
-
 
     #[test]
     fn test_assignment_table_basic_operations() {
@@ -629,7 +612,8 @@ mod tests {
             exec_deadline,
             &current_active_operators,
             seed,
-        ).unwrap();
+        )
+        .unwrap();
 
         let deposit_idx = assignment.deposit_idx();
 
@@ -648,5 +632,77 @@ mod tests {
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().deposit_idx(), deposit_idx);
         assert!(table.is_empty());
+    }
+
+    #[test]
+    fn test_reassign_expired_assignments() {
+        let mut table = AssignmentTable::new_empty();
+        let mut arb = ArbitraryGenerator::new();
+
+        // Create test data
+        let current_height: BitcoinBlockHeight = 150;
+        let seed: L1BlockId = arb.generate();
+
+        // Create expired assignment (deadline < current_height)
+        let deposit_entry1: DepositEntry = arb.generate();
+        let withdrawal_cmd1: WithdrawalCommand = arb.generate();
+        let expired_deadline: BitcoinBlockHeight = 100; // Less than current_height
+        let current_active_operators1: Vec<OperatorIdx> =
+            deposit_entry1.notary_operators().to_vec();
+
+        let expired_assignment = AssignmentEntry::create_with_random_assignment(
+            deposit_entry1.clone(),
+            withdrawal_cmd1,
+            expired_deadline,
+            &current_active_operators1,
+            seed,
+        )
+        .unwrap();
+
+        let expired_deposit_idx = expired_assignment.deposit_idx();
+        let original_assignee = expired_assignment.current_assignee();
+        table.insert(expired_assignment);
+
+        // Create non-expired assignment (deadline > current_height)
+        let deposit_entry2: DepositEntry = arb.generate();
+        let withdrawal_cmd2: WithdrawalCommand = arb.generate();
+        let future_deadline: BitcoinBlockHeight = 200; // Greater than current_height
+        let current_active_operators2: Vec<OperatorIdx> =
+            deposit_entry2.notary_operators().to_vec();
+
+        let future_assignment = AssignmentEntry::create_with_random_assignment(
+            deposit_entry2.clone(),
+            withdrawal_cmd2,
+            future_deadline,
+            &current_active_operators2,
+            seed,
+        )
+        .unwrap();
+
+        let future_deposit_idx = future_assignment.deposit_idx();
+        let future_original_assignee = future_assignment.current_assignee();
+        table.insert(future_assignment);
+
+        // Reassign expired assignments
+        let result =
+            table.reassign_expired_assignments(current_height, &current_active_operators1, seed);
+
+        assert!(result.is_ok(), "Reassignment should succeed");
+
+        // Check that expired assignment was reassigned
+        let expired_assignment_after = table.get_assignment(expired_deposit_idx).unwrap();
+        assert_eq!(expired_assignment_after.previous_assignees().len(), 1);
+        assert_eq!(
+            expired_assignment_after.previous_assignees()[0],
+            original_assignee
+        );
+
+        // Check that non-expired assignment was not reassigned
+        let future_assignment_after = table.get_assignment(future_deposit_idx).unwrap();
+        assert_eq!(future_assignment_after.previous_assignees().len(), 0);
+        assert_eq!(
+            future_assignment_after.current_assignee(),
+            future_original_assignee
+        );
     }
 }
