@@ -1,12 +1,9 @@
-use reth_evm::{
-    eth::EthEvmContext, precompiles::PrecompilesMap, Database, EthEvm, EvmEnv, EvmFactory,
-};
+use reth_evm::{eth::EthEvmContext, precompiles::PrecompilesMap, Database, EvmEnv, EvmFactory};
 use revm::{
     context::{
         result::{EVMError, HaltReason},
-        Evm as RevmEvm, TxEnv,
+        TxEnv,
     },
-    handler::{instructions::EthInstructions, EthFrame, EthPrecompiles},
     inspector::NoOpInspector,
     interpreter::interpreter::EthInterpreter,
     Context, Inspector, MainBuilder, MainContext,
@@ -21,8 +18,7 @@ use crate::{apis::AlpenAlloyEvm, precompiles::AlpenEvmPrecompiles};
 pub struct AlpenEvmFactory;
 
 impl EvmFactory for AlpenEvmFactory {
-    type Evm<DB: Database, I: Inspector<EthEvmContext<DB>, EthInterpreter>> =
-        AlpenAlloyEvm<DB, I, Self::Precompiles>;
+    type Evm<DB: Database, I: Inspector<EthEvmContext<DB>, EthInterpreter>> = AlpenAlloyEvm<DB, I>;
     type Tx = TxEnv;
     type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError>;
     type HaltReason = HaltReason;
