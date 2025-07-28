@@ -79,6 +79,7 @@ impl<S: Schema> SledTree<S> {
     }
 
     fn decode_pair((k, v): (IVec, IVec)) -> Result<(S::Key, S::Value)> {
+        println!("{k:?}");
         let key = S::Key::decode_key(&k)?;
         let value = S::Value::decode_value(&v)?;
         Ok((key, value))
@@ -129,7 +130,7 @@ mod tests {
     use borsh::{BorshDeserialize, BorshSerialize};
 
     use super::*;
-    use crate::{Schema, TreeName, codec_derive::DefaultCodecDeriveBorsh};
+    use crate::{CodecError, CodecResult, Schema, TreeName};
 
     #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
     struct TestValue {
@@ -145,7 +146,6 @@ mod tests {
             }
         }
     }
-    impl DefaultCodecDeriveBorsh for TestValue {}
 
     #[derive(Debug)]
     struct TestSchema;
@@ -154,6 +154,33 @@ mod tests {
         const TREE_NAME: TreeName = TreeName("test");
         type Key = u32;
         type Value = TestValue;
+    }
+
+    impl KeyCodec<TestSchema> for u32 {
+        fn encode_key(&self) -> CodecResult<Vec<u8>> {
+            Ok(self.to_be_bytes().to_vec())
+        }
+
+        fn decode_key(buf: &[u8]) -> CodecResult<Self> {
+            if buf.len() != 4 {
+                return Err(CodecError::InvalidLength {
+                    expected: 4,
+                    got: buf.len(),
+                });
+            }
+            let mut bytes = [0; 4];
+            bytes.copy_from_slice(buf);
+            Ok(u32::from_be_bytes(bytes))
+        }
+    }
+
+    impl ValueCodec<TestSchema> for TestValue {
+        fn encode_value(&self) -> CodecResult<Vec<u8>> {
+            borsh::to_vec(self).map_err(CodecError::Serialization)
+        }
+        fn decode_value(buf: &[u8]) -> CodecResult<Self> {
+            borsh::from_slice(buf).map_err(CodecError::Deserialization)
+        }
     }
 
     fn create_test_tree() -> Result<SledTree<TestSchema>> {
@@ -244,6 +271,7 @@ mod tests {
 
         let items: Result<Vec<_>> = tree.iter().rev().collect();
         let items = items.unwrap();
+        println!("{items:?}");
 
         // Should be reverse sorted by key
         assert_eq!(items.len(), 3);

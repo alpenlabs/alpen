@@ -4,10 +4,16 @@ use crate::schema::Schema;
 pub enum CodecError {
     /// Unable to deserialize a key because it has a different length than
     /// expected.
-    InvalidLength { expected: usize, got: usize },
+    InvalidLength {
+        expected: usize,
+        got: usize,
+    },
     /// Deserialization Error.
     // TODO: make this better
     Deserialization(std::io::Error),
+
+    // TODO: make this better
+    Serialization(std::io::Error),
     /// I/O error.
     IO(std::io::Error),
     // TODO add other
@@ -21,6 +27,10 @@ impl std::fmt::Display for CodecError {
             }
             CodecError::Deserialization(err) => {
                 write!(f, "Deserialization error: {err}")
+            }
+
+            CodecError::Serialization(err) => {
+                write!(f, "Serialization error: {err}")
             }
             CodecError::IO(err) => {
                 write!(f, "I/O error: {err}")
