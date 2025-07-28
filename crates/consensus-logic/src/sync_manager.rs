@@ -112,7 +112,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // Start the fork choice manager thread.  If we haven't done genesis yet
     // this will just wait until the CSM says we have.
     let fcm_storage = storage.clone();
-    let _fcm_csm_controller = csm_controller.clone();
     let fcm_params = params.clone();
     let fcm_handle = executor.handle().clone();
     let st_ch = status_channel.clone();
@@ -136,11 +135,10 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         cupdate_tx,
         storage.checkpoint().clone(),
     )?;
-    let csm_engine = engine.clone();
     let st_ch = status_channel.clone();
 
     executor.spawn_critical("client_worker_task", move |shutdown| {
-        worker::client_worker_task(shutdown, client_worker_state, csm_engine, csm_rx, st_ch)
+        worker::client_worker_task(shutdown, client_worker_state, csm_rx, st_ch)
     });
 
     Ok(SyncManager {
