@@ -70,7 +70,7 @@ fn main() -> Result<()> {
 
     // Insert data using typed trees
     println!("Inserting user: {user:?}");
-    users.put(&user.id, &user)?;
+    users.insert(&user.id, &user)?;
 
     // Retrieve data
     println!("\nRetrieving user with id 1:");
