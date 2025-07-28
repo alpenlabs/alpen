@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use alloy_consensus::{BlockHeader, EthBlock, Header, TxReceipt};
+use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
 use reth_chainspec::ChainSpec;
-use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome};
+use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome, Executor};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
 use reth_primitives_traits::block::Block;
@@ -26,9 +27,10 @@ pub const ACCRUE_LOG_BLOOM: &str = "accrue logs bloom";
 pub const COMPUTE_STATE_ROOT: &str = "compute state root";
 pub const COLLECT_WITHDRAWAL_INTENTS: &str = "collect withdrawal intents";
 
-pub fn process_block(input: EthClientExecutorInput) -> Result<EvmBlockStfOutput, ClientError> {
+pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOutput, ClientError> {
     let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
-    let evm_config = EthEvmConfig::new(chain_spec.clone());
+    let evm_config =
+        EthEvmConfig::new_with_evm_factory(chain_spec.clone(), AlpenEvmFactory::default());
 
     let sealed_headers = input.sealed_headers().collect::<Vec<_>>();
 
@@ -50,7 +52,7 @@ pub fn process_block(input: EthClientExecutorInput) -> Result<EvmBlockStfOutput,
         EthPrimitives::validate_header(block.sealed_block().sealed_header(), chain_spec.clone())
     })?;
 
-    let execution_output = todo!(); // profile_report!(BLOCK_EXECUTION, { block_executor.execute_one(&block) })?;
+    let execution_output = profile_report!(BLOCK_EXECUTION, { block_executor.execute(&block) })?;
 
     // Validate the block post execution.
     profile_report!(VALIDATE_EXECUTION, {
@@ -67,16 +69,14 @@ pub fn process_block(input: EthClientExecutorInput) -> Result<EvmBlockStfOutput,
     });
 
     // Accumulate withdrawal intents from the executed transactions.
-    // let withdrawal_intents = profile_report!(COLLECT_WITHDRAWAL_INTENTS, {
-    //     let transactions = block.into_transactions();
-    //     let executed_txns = transactions.iter();
-    //     let receipts_vec = execution_output.receipts.clone();
-    //     let receipts = receipts_vec.iter();
-    //     let tx_receipt_pairs = executed_txns.zip(receipts);
-    //     collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>()
-    // });
-    // TODO: MdTeach
-    let withdrawal_intents = Vec::new();
+    let withdrawal_intents = profile_report!(COLLECT_WITHDRAWAL_INTENTS, {
+        let transactions = block.into_transactions();
+        let executed_txns = transactions.iter();
+        let receipts_vec = execution_output.receipts.clone();
+        let receipts = receipts_vec.iter();
+        let tx_receipt_pairs = executed_txns.zip(receipts);
+        collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>()
+    });
 
     // Convert the output to an execution outcome.
     let executor_outcome = ExecutionOutcome::new(
