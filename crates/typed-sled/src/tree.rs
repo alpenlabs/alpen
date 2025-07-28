@@ -6,7 +6,7 @@ use std::{
 
 use sled::{IVec, Iter, Tree};
 
-use crate::{KeyCodec, Schema, ValueCodec, error::Result};
+use crate::{KeyCodec, Schema, ValueCodec, batch::SledBatch, error::Result};
 
 pub struct SledTree<S: Schema> {
     inner: Arc<Tree>,
@@ -55,6 +55,10 @@ impl<S: Schema> SledTree<S> {
 
     pub fn last(&self) -> Result<Option<(S::Key, S::Value)>> {
         self.inner.last()?.map(Self::decode_pair).transpose()
+    }
+
+    pub fn apply_batch(&self, batch: SledBatch<S>) -> Result<()> {
+        Ok(self.inner.apply_batch(batch.inner)?)
     }
 
     /// Returns an iterator over all key-value pairs in the tree.
