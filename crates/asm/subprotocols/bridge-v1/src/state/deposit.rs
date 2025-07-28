@@ -335,13 +335,6 @@ mod tests {
     }
 
     #[test]
-    fn test_deposits_table_new_empty() {
-        let table = DepositsTable::new_empty();
-        assert_eq!(table.len(), 0);
-        assert!(table.is_empty());
-    }
-
-    #[test]
     fn test_deposits_table_insert_single() {
         let mut table = DepositsTable::new_empty();
         let entry: DepositEntry = ArbitraryGenerator::new().generate();
@@ -377,33 +370,22 @@ mod tests {
     }
 
     #[test]
-    fn test_deposits_table_insert_out_of_order() {
+    fn test_deposits_table_inserts_and_removals() {
         let mut table = DepositsTable::new_empty();
         let mut arb = ArbitraryGenerator::new();
 
         let len = 10;
+        assert_eq!(table.len(), 0);
+        assert!(table.is_empty());
         for _ in 0..len {
             let entry: DepositEntry = arb.generate();
             assert!(table.insert_deposit(entry).is_ok());
         }
-
         assert_eq!(table.len(), len);
 
         // Verify they are stored in sorted order
         let deposit_indices: Vec<_> = table.deposits().map(|e| e.deposit_idx).collect();
-        assert!(deposit_indices.is_sorted())
-    }
-
-    #[test]
-    fn test_deposits_table_remove_oldest() {
-        let mut table = DepositsTable::new_empty();
-        let mut arb = ArbitraryGenerator::new();
-
-        let len = 10;
-        for _ in 0..len {
-            let entry: DepositEntry = arb.generate();
-            assert!(table.insert_deposit(entry).is_ok());
-        }
+        assert!(deposit_indices.is_sorted());
 
         let mut removed_indices = Vec::new();
         for i in 0..len {
