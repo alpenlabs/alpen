@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use typed_sled::{
-    Schema, SledDb, SledTree, TreeName, codec_derive::DefaultCodecDeriveBorsh, error::Result,
+    CodecError, KeyCodec, Schema, SledDb, SledTree, TreeName, ValueCodec, error::Result,
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
@@ -21,25 +21,37 @@ struct Account {
 #[derive(Debug)]
 struct UserSchema;
 
+impl KeyCodec<UserSchema> for u32 {
+    fn encode_key(&self) -> typed_sled::CodecResult<Vec<u8>> {
+        Ok(self.to_be_bytes().to_vec())
+    }
+
+    fn decode_key(buf: &[u8]) -> typed_sled::CodecResult<Self> {
+        if buf.len() != 1 {
+            return Err(CodecError::InvalidLength {
+                expected: 1,
+                got: buf.len(),
+            });
+        }
+        let buf = [buf[0]];
+        Ok(u8::from_be_bytes(buf).into())
+    }
+}
+
+impl ValueCodec<UserSchema> for User {
+    fn encode_value(&self) -> typed_sled::CodecResult<Vec<u8>> {
+        borsh::to_vec(self).map_err(CodecError::Serialization)
+    }
+    fn decode_value(buf: &[u8]) -> typed_sled::CodecResult<Self> {
+        borsh::from_slice(buf).map_err(CodecError::Deserialization)
+    }
+}
+
 impl Schema for UserSchema {
     const TREE_NAME: TreeName = TreeName("users");
     type Key = u32;
     type Value = User;
 }
-
-#[derive(Debug)]
-struct AccountSchema;
-
-impl Schema for AccountSchema {
-    const TREE_NAME: TreeName = TreeName("accounts");
-    type Key = u32;
-    type Value = Account;
-}
-
-impl DefaultCodecDeriveBorsh for User {}
-impl DefaultCodecDeriveBorsh for Account {}
-impl DefaultCodecDeriveBorsh for UserSchema {}
-impl DefaultCodecDeriveBorsh for AccountSchema {}
 
 fn main() -> Result<()> {
     // Open the database
@@ -48,7 +60,6 @@ fn main() -> Result<()> {
 
     // Get typed trees for each schema
     let users: SledTree<UserSchema> = db.get_tree()?;
-    let accounts: SledTree<AccountSchema> = db.get_tree()?;
 
     // Create some data
     let user = User {
@@ -57,17 +68,9 @@ fn main() -> Result<()> {
         email: "alice@example.com".to_string(),
     };
 
-    let account = Account {
-        user_id: 1,
-        balance: 1000,
-    };
-
     // Insert data using typed trees
     println!("Inserting user: {user:?}");
     users.put(&user.id, &user)?;
-
-    println!("Inserting account: {account:?}");
-    accounts.put(&account.user_id, &account)?;
 
     // Retrieve data
     println!("\nRetrieving user with id 1:");
@@ -75,13 +78,6 @@ fn main() -> Result<()> {
         println!("Found user: {retrieved_user:?}");
     } else {
         println!("User not found");
-    }
-
-    println!("\nRetrieving account for user 1:");
-    if let Some(retrieved_account) = accounts.get(&1)? {
-        println!("Found account: {retrieved_account:?}");
-    } else {
-        println!("Account not found");
     }
 
     // Try to get non-existent data
