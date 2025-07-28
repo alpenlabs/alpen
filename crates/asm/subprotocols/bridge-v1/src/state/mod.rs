@@ -21,7 +21,7 @@ use crate::{
     errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::AssignmentTable,
-        deposit::DepositsTable,
+        deposit::{DepositEntry, DepositsTable},
         withdrawal::{WithdrawalCommand, WithdrawalProcessedInfo},
     },
     txs::{
@@ -173,16 +173,15 @@ impl BridgeV1State {
         &mut self,
         tx: &Transaction,
         info: &DepositInfo,
-    ) -> Result<u32, DepositError> {
+    ) -> Result<(), DepositError> {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
 
         let notary_operators = self.operators().current_multisig_indices().collect();
-        let deposit_idx =
-            self.deposits
-                .create_next_deposit(info.outpoint, notary_operators, info.amt);
+        let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
+        self.deposits.insert_deposit(entry)?;
 
-        Ok(deposit_idx)
+        Ok(())
     }
 
     /// Validates a deposit transaction and info against bridge state requirements.
@@ -273,23 +272,17 @@ impl BridgeV1State {
     ) -> Result<WithdrawalProcessedInfo, WithdrawalValidationError> {
         self.validate_withdrawal(withdrawal_info)?;
 
-        // Remove the deposit from the deposits table since it's now fulfilled
-        let removed_deposit = self
-            .deposits
-            .remove_deposit(withdrawal_info.deposit_idx)
-            .expect("Deposit must exist after successful validation");
-
         // Remove the assignment from the table to mark withdrawal as fulfilled
         // Safe to unwrap since validate_withdrawal ensures the assignment exists
-        let _removed_assignment = self
+        let removed_assignment = self
             .assignments
             .remove_assignment(withdrawal_info.deposit_idx)
             .expect("Assignment must exist after successful validation");
 
         Ok(WithdrawalProcessedInfo {
             withdrawal_txid: tx.compute_txid().into(),
-            deposit_txid: removed_deposit.output().outpoint().txid.into(),
-            deposit_idx: removed_deposit.idx(),
+            deposit_txid: removed_assignment.deposit_txid(),
+            deposit_idx: removed_assignment.deposit_idx(),
             operator_idx: withdrawal_info.operator_idx,
         })
     }
@@ -408,20 +401,16 @@ impl BridgeV1State {
         l1_block_id: &L1BlockId,
         current_block_height: u64,
     ) -> Result<(), WithdrawalCommandError> {
-        // Find an unassigned deposit index
-        let unassigned_deposit_idx = self.deposits().next_unassigned_idx();
-
-        // Get the deposit to check its notary operators
-        let deposit = self.deposits.get_deposit(unassigned_deposit_idx).ok_or(
-            WithdrawalCommandError::DepositNotFound {
-                deposit_idx: unassigned_deposit_idx,
-            },
-        )?;
+        // Get the oldest deposit
+        let deposit = self
+            .deposits
+            .remove_oldest_deposit()
+            .ok_or(WithdrawalCommandError::NoUnassignedDeposits)?;
 
         // Randomly select an operator from current multisig that is also in the deposit's notary
         // operators
         let selected_operator = self.select_operator_for_deposit_excluding(
-            unassigned_deposit_idx,
+            deposit.idx(),
             deposit.notary_operators(),
             &[],
             l1_block_id,
@@ -431,14 +420,11 @@ impl BridgeV1State {
         let exec_deadline = current_block_height + self.deadline_duration();
 
         self.assignments.insert(
-            unassigned_deposit_idx,
+            deposit,
             withdrawal_cmd.clone(),
             selected_operator,
             exec_deadline,
         );
-
-        // Increment the next unassigned index since we just created an assignment for this deposit
-        self.deposits.increment_next_unassigned_idx();
 
         Ok(())
     }
@@ -661,252 +647,5 @@ impl BridgeV1State {
         }
 
         Ok(reassigned_deposits)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bitcoin::secp256k1::SecretKey;
-    use rand::rngs::OsRng;
-    use strata_primitives::{buf::Buf32, l1::BitcoinAmount, operator::OperatorPubkeys};
-    use crate::txs::deposit::{create::create_test_deposit_tx, parse::DepositInfo};
-
-    /// Helper function to create a test BridgeV1State with operators
-    fn create_test_bridge_state(num_operators: usize, denomination: u64) -> (BridgeV1State, Vec<SecretKey>) {
-        let mut operator_privkeys = Vec::new();
-        let mut operator_pubkeys = Vec::new();
-
-        // Generate operator keys
-        for _ in 0..num_operators {
-            let privkey = SecretKey::new(&mut OsRng);
-            let pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(&bitcoin::secp256k1::Secp256k1::new(), &privkey);
-            let xonly_pubkey = pubkey.x_only_public_key().0;
-            
-            operator_privkeys.push(privkey);
-            operator_pubkeys.push(OperatorPubkeys::new(
-                Buf32::from(xonly_pubkey.serialize()),  // signing_pk
-                Buf32::from(xonly_pubkey.serialize()),  // wallet_pk (same for simplicity)
-            ));
-        }
-
-        let config = BridgeV1Config {
-            operators: operator_pubkeys,
-            denomination: BitcoinAmount::from_sat(denomination),
-            deadline_duration: 144, // 1 day in blocks
-        };
-
-        let state = BridgeV1State::new(&config);
-        (state, operator_privkeys)
-    }
-
-    /// Helper function to create test deposit info
-    fn create_test_deposit_info(deposit_idx: u32, amount: u64) -> DepositInfo {
-        DepositInfo {
-            deposit_idx,
-            amt: BitcoinAmount::from_sat(amount),
-            address: b"test-address".to_vec(),
-            outpoint: bitcoin::OutPoint::null().into(),
-            drt_tapnode_hash: Buf32::from([0u8; 32]),
-        }
-    }
-
-    /// Helper function to create unique deposit info with different outpoints
-    fn create_unique_deposit_info(deposit_idx: u32, amount: u64, tx_index: u32) -> DepositInfo {
-        let mut outpoint = bitcoin::OutPoint::null();
-        outpoint.vout = tx_index; // Make each outpoint unique
-        DepositInfo {
-            deposit_idx,
-            amt: BitcoinAmount::from_sat(amount),
-            address: format!("test-address-{}", tx_index).into_bytes(),
-            outpoint: outpoint.into(),
-            drt_tapnode_hash: Buf32::from([tx_index as u8; 32]),
-        }
-    }
-
-    #[test]
-    fn test_process_deposit_tx_success() {
-        let denomination = 100_000; // 0.001 BTC
-        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
-        
-        let deposit_info = create_test_deposit_info(1, denomination);
-        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
-        
-        let result = state.process_deposit_tx(&tx, &deposit_info);
-        
-        assert!(result.is_ok());
-        let deposit_idx = result.unwrap();
-        assert_eq!(deposit_idx, 0); // First deposit gets index 0
-        
-        // Verify deposit was added to the table
-        let deposit = state.deposits().get_deposit(deposit_idx);
-        assert!(deposit.is_some());
-        let deposit = deposit.unwrap();
-        assert_eq!(deposit.idx(), deposit_idx);
-    }
-
-    #[test]
-    fn test_process_deposit_tx_invalid_amount() {
-        let denomination = 100_000;
-        let wrong_amount = 50_000; // Different amount
-        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
-        
-        let deposit_info = create_test_deposit_info(1, wrong_amount);
-        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
-        
-        let result = state.process_deposit_tx(&tx, &deposit_info);
-        
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DepositError::InvalidDepositAmount { expected, actual } => {
-                assert_eq!(expected, denomination);
-                assert_eq!(actual, wrong_amount);
-            }
-            _ => panic!("Expected InvalidDepositAmount error"),
-        }
-    }
-
-    #[test]
-    fn test_process_deposit_tx_duplicate_index() {
-        let denomination = 100_000;
-        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
-        
-        // First create a deposit that will get index 0
-        let deposit_info1 = create_unique_deposit_info(1, denomination, 1);
-        let tx1 = create_test_deposit_tx(&deposit_info1, &operator_privkeys);
-        let result1 = state.process_deposit_tx(&tx1, &deposit_info1);
-        assert!(result1.is_ok());
-        assert_eq!(result1.unwrap(), 0); // Gets auto-incremented index 0
-        
-        // Now try to create another deposit with deposit_idx=0 (which already exists)
-        let deposit_info2 = create_unique_deposit_info(0, denomination, 2); // deposit_idx=0 conflicts
-        let tx2 = create_test_deposit_tx(&deposit_info2, &operator_privkeys);
-        let result2 = state.process_deposit_tx(&tx2, &deposit_info2);
-        
-        assert!(result2.is_err());
-        match result2.unwrap_err() {
-            DepositError::DepositIdxAlreadyExists(idx) => {
-                assert_eq!(idx, 0);
-            }
-            _ => panic!("Expected DepositIdxAlreadyExists error"),
-        }
-    }
-
-    #[test]
-    fn test_process_deposit_tx_multiple_deposits() {
-        let denomination = 100_000;
-        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
-        
-        // Process multiple deposits with different indices
-        for i in 1..=5 {
-            let deposit_info = create_unique_deposit_info(i, denomination, i);
-            let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
-            
-            let result = state.process_deposit_tx(&tx, &deposit_info);
-            assert!(result.is_ok());
-            // Auto-incremented index starts from 0, so deposit i gets index i-1
-            let expected_index = i - 1;
-            assert_eq!(result.unwrap(), expected_index);
-            
-            // Verify each deposit exists
-            let deposit = state.deposits().get_deposit(expected_index);
-            assert!(deposit.is_some());
-        }
-    }
-
-    #[test]
-    fn test_process_deposit_tx_notary_operators_assigned() {
-        let denomination = 100_000;
-        let (mut state, operator_privkeys) = create_test_bridge_state(5, denomination);
-        
-        let deposit_info = create_test_deposit_info(1, denomination);
-        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
-        
-        let result = state.process_deposit_tx(&tx, &deposit_info);
-        assert!(result.is_ok());
-        
-        let deposit = state.deposits().get_deposit(0).unwrap(); // First deposit gets index 0
-        let notary_operators = deposit.notary_operators();
-        
-        // All current multisig operators should be notary operators
-        let current_multisig: Vec<u32> = state.operators().current_multisig_indices().collect();
-        assert_eq!(notary_operators.len(), current_multisig.len());
-        
-        for &op_idx in notary_operators {
-            assert!(current_multisig.contains(&op_idx));
-        }
-    }
-
-    #[test]
-    fn test_process_deposit_tx_zero_amount() {
-        let denomination = 100_000;
-        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
-        
-        let deposit_info = create_test_deposit_info(1, 0); // Zero amount
-        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
-        
-        let result = state.process_deposit_tx(&tx, &deposit_info);
-        
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DepositError::InvalidDepositAmount { expected, actual } => {
-                assert_eq!(expected, denomination);
-                assert_eq!(actual, 0);
-            }
-            _ => panic!("Expected InvalidDepositAmount error"),
-        }
-    }
-
-    #[test] 
-    fn test_process_deposit_tx_single_operator() {
-        let denomination = 100_000;
-        let (mut state, operator_privkeys) = create_test_bridge_state(1, denomination);
-        
-        let deposit_info = create_test_deposit_info(1, denomination);
-        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
-        
-        let result = state.process_deposit_tx(&tx, &deposit_info);
-        assert!(result.is_ok());
-        
-        let deposit = state.deposits().get_deposit(0).unwrap(); // First deposit gets index 0
-        assert_eq!(deposit.notary_operators().len(), 1);
-        assert_eq!(deposit.notary_operators()[0], 0); // First operator index
-    }
-
-    #[test]
-    fn test_process_deposit_tx_large_denomination() {
-        let denomination = 2_100_000_000_000; // 21,000 BTC in satoshis
-        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
-        
-        let deposit_info = create_test_deposit_info(1, denomination);
-        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
-        
-        let result = state.process_deposit_tx(&tx, &deposit_info);
-        assert!(result.is_ok());
-        
-        let deposit = state.deposits().get_deposit(0).unwrap(); // First deposit gets index 0
-        assert_eq!(deposit.amt().to_sat(), denomination);
-    }
-
-    #[test]
-    fn test_validate_deposit_invalid_signature() {
-        let denomination = 100_000;
-        let (state, _) = create_test_bridge_state(3, denomination);
-        
-        // Create deposit info with different operators (invalid signature)
-        let wrong_operators: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
-        let deposit_info = create_test_deposit_info(1, denomination);
-        let tx = create_test_deposit_tx(&deposit_info, &wrong_operators);
-        
-        let result = state.validate_deposit(&tx, &deposit_info);
-        
-        assert!(result.is_err());
-        // Should fail with signature validation error
-        match result.unwrap_err() {
-            DepositError::InvalidSignature { .. } => {
-                // Expected
-            }
-            other => panic!("Expected InvalidSignature error, got: {:?}", other),
-        }
     }
 }

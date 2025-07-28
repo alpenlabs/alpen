@@ -4,7 +4,7 @@ use strata_primitives::{
 };
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum DepositError {
     /// The auxiliary data in the deposit transaction tag is malformed or has insufficient length.
     /// Expected at least 37 bytes (4 bytes deposit index + 32 bytes tapscript root + 1+ bytes
@@ -34,8 +34,18 @@ pub enum DepositError {
     InvalidDepositAmount { expected: u64, actual: u64 },
 
     /// A deposit with this index already exists in the deposits table.
+    /// This should not occur since deposit indices are guaranteed unique by the N/N multisig.
     #[error("Deposit index {0} already exists in deposits table")]
     DepositIdxAlreadyExists(u32),
+
+    /// Failed to create deposit in the deposits table.
+    #[error("Failed to create deposit with index {0}: deposit already exists")]
+    DepositCreationFailed(u32),
+
+    /// Cannot create deposit entry with empty operators list.
+    /// Each deposit must have at least one notary operator.
+    #[error("Cannot create deposit entry with empty operators: each deposit must have at least one notary operator")]
+    EmptyOperators,
 }
 
 #[derive(Debug, Error)]

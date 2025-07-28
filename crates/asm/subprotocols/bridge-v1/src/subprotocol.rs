@@ -148,8 +148,8 @@ impl BridgeV1Subproto {
             }
         };
 
-        let deposit_idx = match state.process_deposit_tx(tx.tx(), &deposit_info) {
-            Ok(idx) => idx,
+        match state.process_deposit_tx(tx.tx(), &deposit_info) {
+            Ok(_) => {}
             Err(e) => {
                 error!(
                     tx_id = %tx.tx().compute_txid(),
@@ -162,7 +162,7 @@ impl BridgeV1Subproto {
 
         info!(
             tx_id = %tx.tx().compute_txid(),
-            deposit_idx = deposit_idx,
+            idx = %deposit_info.deposit_idx,
             amount = %deposit_info.amt,
             "Successfully processed deposit"
         );
