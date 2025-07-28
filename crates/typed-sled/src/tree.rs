@@ -4,12 +4,12 @@ use std::{
     sync::Arc,
 };
 
-use sled::{IVec, Iter, Tree};
+use sled::{IVec, Iter, Tree, transaction::TransactionalTree};
 
 use crate::{KeyCodec, Schema, ValueCodec, batch::SledBatch, error::Result};
 
 pub struct SledTree<S: Schema> {
-    inner: Arc<Tree>,
+    pub(crate) inner: Arc<Tree>,
     _phantom: PhantomData<S>,
 }
 
@@ -21,7 +21,7 @@ impl<S: Schema> SledTree<S> {
         }
     }
 
-    pub fn put(&self, key: &S::Key, value: &S::Value) -> Result<()> {
+    pub fn insert(&self, key: &S::Key, value: &S::Value) -> Result<()> {
         let key = key.encode_key()?;
         let value = value.encode_value()?;
         self.inner.insert(key, value)?;
@@ -83,7 +83,6 @@ impl<S: Schema> SledTree<S> {
     }
 
     fn decode_pair((k, v): (IVec, IVec)) -> Result<(S::Key, S::Value)> {
-        println!("{k:?}");
         let key = S::Key::decode_key(&k)?;
         let value = S::Value::decode_value(&v)?;
         Ok((key, value))
@@ -96,6 +95,20 @@ impl<S: Schema> SledTree<S> {
             Bound::Unbounded => Bound::Unbounded,
         };
         Ok(bound)
+    }
+}
+
+pub struct SledTransactionalTree<S: Schema> {
+    inner: TransactionalTree,
+    _phantom: PhantomData<S>,
+}
+
+impl<S: Schema> SledTransactionalTree<S> {
+    pub fn new(inner: TransactionalTree) -> Self {
+        Self {
+            inner,
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -205,7 +218,7 @@ mod tests {
         let tree = create_test_tree().unwrap();
 
         // Insert test data
-        tree.put(
+        tree.insert(
             &1,
             &TestValue {
                 id: 1,
@@ -213,7 +226,7 @@ mod tests {
             },
         )
         .unwrap();
-        tree.put(
+        tree.insert(
             &3,
             &TestValue {
                 id: 3,
@@ -221,7 +234,7 @@ mod tests {
             },
         )
         .unwrap();
-        tree.put(
+        tree.insert(
             &2,
             &TestValue {
                 id: 2,
@@ -248,7 +261,7 @@ mod tests {
         let tree = create_test_tree().unwrap();
 
         // Insert test data
-        tree.put(
+        tree.insert(
             &1,
             &TestValue {
                 id: 1,
@@ -256,7 +269,7 @@ mod tests {
             },
         )
         .unwrap();
-        tree.put(
+        tree.insert(
             &3,
             &TestValue {
                 id: 3,
@@ -264,7 +277,7 @@ mod tests {
             },
         )
         .unwrap();
-        tree.put(
+        tree.insert(
             &2,
             &TestValue {
                 id: 2,
@@ -293,7 +306,7 @@ mod tests {
 
         // Insert test data
         for i in 1..=5 {
-            tree.put(&i, &TestValue::new_with_name(i)).unwrap();
+            tree.insert(&i, &TestValue::new_with_name(i)).unwrap();
         }
 
         let items: Result<Vec<_>> = tree.range(2..=4).unwrap().collect();
@@ -311,7 +324,7 @@ mod tests {
 
         // Insert test data
         for i in 1..=5 {
-            tree.put(&i, &TestValue::new_with_name(i)).unwrap();
+            tree.insert(&i, &TestValue::new_with_name(i)).unwrap();
         }
 
         let items: Result<Vec<_>> = tree.range(2..4).unwrap().collect();
@@ -328,7 +341,7 @@ mod tests {
 
         // Insert test data
         for i in 1..=5 {
-            tree.put(&i, &TestValue::new_with_name(i)).unwrap();
+            tree.insert(&i, &TestValue::new_with_name(i)).unwrap();
         }
 
         let items: Result<Vec<_>> = tree.range(3..).unwrap().collect();
@@ -346,7 +359,7 @@ mod tests {
 
         // Insert test data
         for i in 1..=5 {
-            tree.put(&i, &TestValue::new_with_name(i)).unwrap();
+            tree.insert(&i, &TestValue::new_with_name(i)).unwrap();
         }
 
         let items: Result<Vec<_>> = tree.range(..=3).unwrap().collect();
@@ -364,7 +377,7 @@ mod tests {
 
         // Insert test data
         for i in 1..=5 {
-            tree.put(&i, &TestValue::new_with_name(i)).unwrap();
+            tree.insert(&i, &TestValue::new_with_name(i)).unwrap();
         }
 
         let items: Result<Vec<_>> = tree.range(2..=4).unwrap().rev().collect();
@@ -384,7 +397,7 @@ mod tests {
         let keys = [100, 255, 256, 300, 500];
 
         for &key in &keys {
-            tree.put(&key, &TestValue::new_with_name(key)).unwrap();
+            tree.insert(&key, &TestValue::new_with_name(key)).unwrap();
         }
 
         // Test forward iteration - should be numerically ordered

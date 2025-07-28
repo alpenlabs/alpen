@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use sled::{Db, Tree};
+use sled::{Db, Transactional, Tree, transaction::ConflictableTransactionError};
 
 use crate::{
-    error::Result,
+    error::{Error, Result},
     schema::{Schema, TreeName},
-    tree::SledTree,
+    tree::{SledTransactionalTree, SledTree},
 };
 
 pub struct SledDb {
@@ -38,13 +38,18 @@ impl SledDb {
         Ok(SledTree::new(final_tree.clone()))
     }
 
-    // TODO: Implement proper transaction methods
-    // /// Transactional function for two Schemas.
-    // pub fn transaction<S1: Schema, S2: Schema>(
-    //     &self,
-    //     txfn: impl Fn(&(TransactionalTree, TransactionalTree)) -> DbResult<()>,
-    // ) -> DbResult<()> {
-    //     // Implementation needed for typed transactional operations
-    //     todo!("Implement typed transactions")
-    // }
+    pub fn transaction<F, S1: Schema, S2: Schema>(&self, func: F) -> Result<()>
+    where
+        F: Fn((&SledTransactionalTree<S1>, &SledTransactionalTree<S2>)) -> Result<()>,
+    {
+        let t1: SledTree<S1> = self.get_tree()?;
+        let t2: SledTree<S2> = self.get_tree()?;
+        (&*t1.inner, &*t2.inner)
+            .transaction(|(t1, t2)| {
+                let st1 = SledTransactionalTree::<S1>::new(t1.clone());
+                let st2 = SledTransactionalTree::<S2>::new(t2.clone());
+                func((&st1, &st2)).map_err(ConflictableTransactionError::Abort)
+            })
+            .map_err(|e| Error::TransactionError(e))
+    }
 }
