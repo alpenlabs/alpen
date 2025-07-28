@@ -191,28 +191,6 @@ impl OperatorTable {
         }
     }
 
-    /// Validates the operator table's internal invariants.
-    ///
-    /// Ensures that:
-    /// - The operators vector is sorted by operator index
-    /// - The `next_idx` is greater than the highest existing operator index
-    ///
-    /// # Panics
-    ///
-    /// Panics if any invariant is violated, indicating a bug in the table implementation.
-    #[allow(dead_code)] // FIXME: remove this.
-    fn sanity_check(&self) {
-        if !self.operators.is_sorted_by_key(|e| e.idx) {
-            panic!("bridge_state: operators list not sorted");
-        }
-
-        if let Some(e) = self.operators.last()
-            && self.next_idx <= e.idx
-        {
-            panic!("bridge_state: operators next_idx before last entry");
-        }
-    }
-
     /// Returns the number of registered operators.
     ///
     /// # Returns
@@ -285,30 +263,20 @@ impl OperatorTable {
         self.operators.get(pos as usize)
     }
 
-    /// Returns an iterator over all operator indices.
-    ///
-    /// The indices are returned in sorted order due to the table's invariant.
-    ///
-    /// # Returns
-    ///
-    /// Iterator yielding each registered operator's [`OperatorIdx`].
-    pub fn indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
-        self.operators.iter().map(|operator| operator.idx)
-    }
-
-    /// Returns an iterator over indices of operators in the current N/N multisig.
+    /// Returns indices of operators in the current N/N multisig.
     ///
     /// Only returns indices of operators where `is_in_current_multisig` is `true`.
     /// This is used for assignment creation and deposit processing.
     ///
     /// # Returns
     ///
-    /// Iterator yielding [`OperatorIdx`] for operators in the current multisig.
-    pub fn current_multisig_indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
+    /// Vector containing [`OperatorIdx`] for operators in the current multisig.
+    pub fn current_multisig_indices(&self) -> Vec<OperatorIdx> {
         self.operators
             .iter()
             .filter(|operator| operator.is_in_current_multisig)
             .map(|operator| operator.idx)
+            .collect()
     }
 
     /// Updates the multisig membership status for multiple operators, inserts new operators,
@@ -587,15 +555,6 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_table_indices() {
-        let operators = create_test_operator_pubkeys(3);
-        let table = OperatorTable::from_operator_list(&operators);
-
-        let indices: Vec<_> = table.indices().collect();
-        assert_eq!(indices, vec![0, 1, 2]);
-    }
-
-    #[test]
     fn test_operator_key_provider() {
         let operators = create_test_operator_pubkeys(2);
         let table = OperatorTable::from_operator_list(&operators);
@@ -612,31 +571,19 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_table_sanity_check() {
-        // Test with one operator (minimum required)
-        let operators = create_test_operator_pubkeys(1);
-        let table = OperatorTable::from_operator_list(&operators);
-        table.sanity_check(); // Should not panic on single operator table
-
-        let operators = create_test_operator_pubkeys(2);
-        let table = OperatorTable::from_operator_list(&operators);
-        table.sanity_check(); // Should not panic on valid table
-    }
-
-    #[test]
     fn test_current_multisig_indices() {
         let operators = create_test_operator_pubkeys(3);
         let mut table = OperatorTable::from_operator_list(&operators);
 
         // Initially, all operators should be in the current multisig set
-        let current_indices: Vec<_> = table.current_multisig_indices().collect();
+        let current_indices = table.current_multisig_indices();
         assert_eq!(current_indices, vec![0, 1, 2]);
 
         // Mark operator 1 as not in current multisig
         table.update_multisig_and_recalc_key(&[(1, false)], &[]);
 
         // Now only operators 0 and 2 should be in current multisig
-        let current_indices: Vec<_> = table.current_multisig_indices().collect();
+        let current_indices = table.current_multisig_indices();
         assert_eq!(current_indices, vec![0, 2]);
     }
 

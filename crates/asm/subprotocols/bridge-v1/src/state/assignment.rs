@@ -67,12 +67,28 @@ pub struct AssignmentEntry {
     exec_deadline: BitcoinBlockHeight,
 }
 
-fn select_eligible_operators(
+/// Filters and returns eligible operators for assignment or reassignment.
+///
+/// Returns a list of operators who meet all eligibility criteria:
+/// - Must be part of the deposit's notary operator set
+/// - Must not have previously been assigned to this withdrawal (prevents reassignment to failed operators)  
+/// - Must be currently active in the network
+///
+/// # Parameters
+///
+/// - `notary_operators` - The notary operators authorized for this deposit
+/// - `previous_assignees` - Operators who have previously been assigned but failed
+/// - `current_active_operators` - Operators currently active in the network
+///
+/// # Returns
+///
+/// Vector of [`OperatorIdx`] representing eligible operators for assignment.
+/// Returns empty vector if no operators meet all criteria.
+fn filter_eligible_operators(
     notary_operators: &[OperatorIdx],
     previous_assignees: &[OperatorIdx],
     current_active_operators: &[OperatorIdx],
 ) -> Vec<OperatorIdx> {
-    // Filter out previous assignees to get eligible operators
     notary_operators
         .iter()
         .filter(|&&op| !previous_assignees.contains(&op))
@@ -112,7 +128,7 @@ impl AssignmentEntry {
         let seed_bytes: [u8; 32] = Buf32::from(seed).into();
         let mut rng = ChaChaRng::from_seed(seed_bytes);
 
-        let eligible_operators = select_eligible_operators(
+        let eligible_operators = filter_eligible_operators(
             deposit_entry.notary_operators(),
             &[], // No previous assignees at creation
             current_active_operators,
@@ -213,7 +229,7 @@ impl AssignmentEntry {
         let seed_bytes: [u8; 32] = Buf32::from(seed).into();
         let mut rng = ChaChaRng::from_seed(seed_bytes);
 
-        let mut eligible_operators = select_eligible_operators(
+        let mut eligible_operators = filter_eligible_operators(
             self.deposit_entry.notary_operators(),
             &self.previous_assignees,
             current_active_operators,
@@ -222,7 +238,7 @@ impl AssignmentEntry {
         if eligible_operators.is_empty() {
             // If no eligible operators left, clear previous assignees
             self.previous_assignees.clear();
-            eligible_operators = select_eligible_operators(
+            eligible_operators = filter_eligible_operators(
                 self.deposit_entry.notary_operators(),
                 &self.previous_assignees,
                 current_active_operators,
@@ -370,7 +386,7 @@ impl AssignmentTable {
             .assignments
             .binary_search_by_key(&idx, |entry| entry.deposit_idx())
         {
-            Ok(_) => panic!("Assignment with deposit index {} already exists", idx),
+            Ok(_) => panic!("Assignment with deposit index {idx} already exists"),
             Err(pos) => {
                 // Insert the deposit entry at the found position
                 self.assignments.insert(pos, entry);
@@ -437,15 +453,17 @@ impl AssignmentTable {
         current_height: BitcoinBlockHeight,
         current_active_operators: &[OperatorIdx],
         seed: L1BlockId,
-    ) -> Result<(), WithdrawalCommandError> {
+    ) -> Result<Vec<u32>, WithdrawalCommandError> {
+        let mut reassigned_withdrawals = Vec::new();
         for assignment in self
             .assignments
             .iter_mut()
             .filter(|e| e.exec_deadline <= current_height)
         {
             assignment.reassign(seed, current_active_operators)?;
+            reassigned_withdrawals.push(assignment.deposit_idx());
         }
-        Ok(())
+        Ok(reassigned_withdrawals)
     }
 }
 
@@ -562,7 +580,7 @@ mod tests {
         let operators = vec![single_operator];
         deposit_entry = DepositEntry::new(
             deposit_entry.idx(),
-            deposit_entry.output().clone(),
+            *deposit_entry.output(),
             operators.clone(),
             deposit_entry.amt(),
         )

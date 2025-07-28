@@ -4,6 +4,7 @@
 //! Withdrawal commands define the Bitcoin outputs that operators should create
 //! when processing withdrawal requests from deposits.
 
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::ExportEntry;
 use serde::{Deserialize, Serialize};
@@ -28,7 +29,9 @@ use strata_primitives::{
 ///
 /// Future versions may include additional fee accounting information to help
 /// operators calculate appropriate transaction fees.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
+)]
 pub struct WithdrawalCommand {
     /// List of Bitcoin outputs to create in the withdrawal transaction.
     withdraw_outputs: Vec<WithdrawOutput>,
@@ -74,7 +77,9 @@ impl WithdrawalCommand {
 ///
 /// The destination uses Bitcoin Output Script Descriptors (BOSD) which provide
 /// a standardized way to specify Bitcoin addresses and locking conditions.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct WithdrawOutput {
     /// Bitcoin Output Script Descriptor specifying the destination address.
@@ -148,8 +153,9 @@ impl WithdrawalProcessedInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use strata_primitives::bitcoin_bosd::Descriptor;
+
+    use super::*;
 
     fn create_test_descriptor() -> Descriptor {
         // Create a simple test descriptor - this is just for testing
@@ -326,8 +332,14 @@ mod tests {
         let command1 = WithdrawalCommand::new(vec![output.clone()]);
         let command2 = command1.clone();
 
-        assert_eq!(command1.withdraw_outputs().len(), command2.withdraw_outputs().len());
-        assert_eq!(command1.withdraw_outputs()[0], command2.withdraw_outputs()[0]);
+        assert_eq!(
+            command1.withdraw_outputs().len(),
+            command2.withdraw_outputs().len()
+        );
+        assert_eq!(
+            command1.withdraw_outputs()[0],
+            command2.withdraw_outputs()[0]
+        );
     }
 
     #[test]
@@ -389,15 +401,15 @@ mod tests {
 
         let _export_entry = info.to_export_entry();
 
-        // Test that the export entry was created successfully 
+        // Test that the export entry was created successfully
         // (we can't access internal fields without knowing the ExportEntry API)
-        
+
         // The main test is that serialization works correctly
         let serialized = borsh::to_vec(&info).expect("Failed to serialize WithdrawalProcessedInfo");
         assert!(!serialized.is_empty());
 
         // Verify we can deserialize back to the original info
-        let deserialized_info: WithdrawalProcessedInfo = 
+        let deserialized_info: WithdrawalProcessedInfo =
             borsh::from_slice(&serialized).expect("Failed to deserialize payload");
 
         assert_eq!(deserialized_info.withdrawal_txid, withdrawal_txid);
@@ -496,7 +508,7 @@ mod tests {
         assert!(!serialized.is_empty());
 
         // Test deserialization
-        let deserialized: WithdrawalProcessedInfo = 
+        let deserialized: WithdrawalProcessedInfo =
             borsh::from_slice(&serialized).expect("Deserialization should succeed");
 
         assert_eq!(info, deserialized);
@@ -513,7 +525,7 @@ mod tests {
         assert!(!serialized.is_empty());
 
         // Test deserialization
-        let deserialized: WithdrawOutput = 
+        let deserialized: WithdrawOutput =
             borsh::from_slice(&serialized).expect("Deserialization should succeed");
 
         assert_eq!(output, deserialized);
@@ -530,7 +542,7 @@ mod tests {
         assert!(!serialized.is_empty());
 
         // Test deserialization
-        let deserialized: WithdrawalCommand = 
+        let deserialized: WithdrawalCommand =
             borsh::from_slice(&serialized).expect("Deserialization should succeed");
 
         assert_eq!(command, deserialized);
@@ -550,9 +562,8 @@ mod tests {
         assert_eq!(command.withdraw_outputs().len(), 100);
 
         // Test total value calculation
-        let expected_total = BitcoinAmount::from_sat(
-            (0..100).map(|i| 1000 + i as u64).sum::<u64>()
-        );
+        let expected_total =
+            BitcoinAmount::from_sat((0..100).map(|i| 1000 + i as u64).sum::<u64>());
         assert_eq!(command.get_total_value(), expected_total);
 
         // Test that all outputs are preserved
@@ -573,10 +584,7 @@ mod tests {
 
         // Test command with many zero-amount outputs
         let descriptor = create_test_descriptor();
-        let outputs = vec![
-            WithdrawOutput::new(descriptor.clone(), BitcoinAmount::from_sat(0));
-            10
-        ];
+        let outputs = vec![WithdrawOutput::new(descriptor.clone(), BitcoinAmount::from_sat(0)); 10];
         let command = WithdrawalCommand::new(outputs);
 
         assert_eq!(command.get_total_value(), BitcoinAmount::from_sat(0));

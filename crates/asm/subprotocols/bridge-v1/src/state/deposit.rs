@@ -393,7 +393,7 @@ mod tests {
             assert!(removed.is_some());
             let idx = removed.unwrap().idx();
             removed_indices.push(idx);
-            assert!(table.len() == (len - i - 1) as u32);
+            assert!(table.len() == (len - i - 1));
         }
         assert!(table.remove_oldest_deposit().is_none());
 

@@ -126,4 +126,8 @@ pub enum WithdrawalCommandError {
     /// Deposit not found for the given index
     #[error("Deposit not found for index {deposit_idx}")]
     DepositNotFound { deposit_idx: u32 },
+
+    /// Operator is not part of the deposit's notary operators
+    #[error("Operator {operator_idx} is not part of notary operators for deposit {deposit_idx}")]
+    OperatorNotInNotarySet { operator_idx: OperatorIdx, deposit_idx: u32 },
 }
