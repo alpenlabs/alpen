@@ -1,4 +1,4 @@
-use sled::{Error as SledError, transaction::TransactionError};
+use sled::{Error as SledError, transaction::UnabortableTransactionError};
 
 use crate::CodecError;
 
@@ -13,8 +13,9 @@ pub enum Error {
     SledError(#[from] SledError),
 
     /// Sled transaction error
-    #[error("Db transaction error: {0}")]
-    TransactionError(#[from] TransactionError),
+    #[error("Transaction error: {0}")]
+    TransactionError(#[from] UnabortableTransactionError),
+
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
