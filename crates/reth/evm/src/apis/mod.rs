@@ -1,8 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use reth_evm::{
-    eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
-};
+use reth_evm::{eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv};
 use revm::{
     context::{
         result::{EVMError, HaltReason, ResultAndState},
@@ -11,11 +9,11 @@ use revm::{
     handler::{
         evm::{ContextDbError, FrameInitResult},
         instructions::EthInstructions,
-        EthFrame, EthPrecompiles, EvmTr, FrameInitOrResult, FrameResult, PrecompileProvider,
+        EthFrame, EvmTr, FrameInitOrResult, FrameResult,
     },
-    inspector::{InspectorEvmTr, NoOpInspector},
-    interpreter::{interpreter::EthInterpreter, interpreter_action::FrameInit, InterpreterResult},
-    Context, ExecuteEvm, InspectEvm, Inspector, MainBuilder, MainContext,
+    inspector::InspectorEvmTr,
+    interpreter::{interpreter::EthInterpreter, interpreter_action::FrameInit},
+    Context, ExecuteEvm, InspectEvm, Inspector,
 };
 use revm_primitives::{hardfork::SpecId, Address, Bytes, TxKind, U256};
 
@@ -24,18 +22,18 @@ pub mod handler;
 pub mod validation;
 
 #[expect(missing_debug_implementations)]
-pub struct AlpenAlloyEvm<DB: Database, I, PRECOMPILE = EthPrecompiles> {
+pub struct AlpenAlloyEvm<DB: Database, I> {
     inner: RevmEvm<
         EthEvmContext<DB>,
         I,
         EthInstructions<EthInterpreter, EthEvmContext<DB>>,
-        PRECOMPILE,
+        PrecompilesMap,
         EthFrame,
     >,
     inspect: bool,
 }
 
-impl<DB: Database, I, PRECOMPILE> AlpenAlloyEvm<DB, I, PRECOMPILE> {
+impl<DB: Database, I> AlpenAlloyEvm<DB, I> {
     /// Creates a new Ethereum EVM instance.
     ///
     /// The `inspect` argument determines whether the configured [`Inspector`] of the given
@@ -45,7 +43,7 @@ impl<DB: Database, I, PRECOMPILE> AlpenAlloyEvm<DB, I, PRECOMPILE> {
             EthEvmContext<DB>,
             I,
             EthInstructions<EthInterpreter, EthEvmContext<DB>>,
-            PRECOMPILE,
+            PrecompilesMap,
             EthFrame,
         >,
         inspect: bool,
@@ -63,7 +61,7 @@ impl<DB: Database, I, PRECOMPILE> AlpenAlloyEvm<DB, I, PRECOMPILE> {
         EthEvmContext<DB>,
         I,
         EthInstructions<EthInterpreter, EthEvmContext<DB>>,
-        PRECOMPILE,
+        PrecompilesMap,
         EthFrame,
     > {
         self.inner
@@ -80,7 +78,7 @@ impl<DB: Database, I, PRECOMPILE> AlpenAlloyEvm<DB, I, PRECOMPILE> {
     }
 }
 
-impl<DB: Database, I, PRECOMPILE> Deref for AlpenAlloyEvm<DB, I, PRECOMPILE> {
+impl<DB: Database, I> Deref for AlpenAlloyEvm<DB, I> {
     type Target = EthEvmContext<DB>;
 
     #[inline]
@@ -89,25 +87,24 @@ impl<DB: Database, I, PRECOMPILE> Deref for AlpenAlloyEvm<DB, I, PRECOMPILE> {
     }
 }
 
-impl<DB: Database, I, PRECOMPILE> DerefMut for AlpenAlloyEvm<DB, I, PRECOMPILE> {
+impl<DB: Database, I> DerefMut for AlpenAlloyEvm<DB, I> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.ctx_mut()
     }
 }
 
-impl<DB, I, PRECOMPILE> Evm for AlpenAlloyEvm<DB, I, PRECOMPILE>
+impl<DB, I> Evm for AlpenAlloyEvm<DB, I>
 where
     DB: Database,
     I: Inspector<EthEvmContext<DB>>,
-    PRECOMPILE: PrecompileProvider<EthEvmContext<DB>, Output = InterpreterResult>,
 {
     type DB = DB;
     type Tx = TxEnv;
     type Error = EVMError<DB::Error>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
-    type Precompiles = PRECOMPILE;
+    type Precompiles = PrecompilesMap;
     type Inspector = I;
 
     fn block(&self) -> &BlockEnv {
@@ -123,9 +120,9 @@ where
         tx: Self::Tx,
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
         if self.inspect {
-            self.inner.inspect_tx(tx)
+            self.inspect_tx(tx)
         } else {
-            self.inner.transact(tx)
+            ExecuteEvm::transact(self, tx)
         }
     }
 
@@ -170,7 +167,7 @@ where
         // disable the nonce check
         core::mem::swap(&mut self.cfg.disable_nonce_check, &mut disable_nonce_check);
 
-        let mut res = self.transact(tx);
+        let mut res = ExecuteEvm::transact(self, tx);
 
         // swap back to the previous gas limit
         core::mem::swap(&mut self.block.gas_limit, &mut gas_limit);
@@ -250,8 +247,7 @@ where
     }
 
     fn ctx_precompiles(&mut self) -> (&mut Self::Context, &mut Self::Precompiles) {
-        // self.inner.ctx_precompiles()
-        todo!()
+        self.inner.ctx_precompiles()
     }
 
     /// Returns a mutable reference to the frame stack.
