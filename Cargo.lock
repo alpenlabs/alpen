@@ -1054,6 +1054,8 @@ dependencies = [
  "reth-primitives",
  "revm",
  "revm-primitives",
+ "secp256k1 0.29.1",
+ "strata-crypto",
  "strata-primitives",
 ]
 

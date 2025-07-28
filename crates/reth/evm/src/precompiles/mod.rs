@@ -1,10 +1,14 @@
+use std::sync::OnceLock;
+
 use revm::{
     context::{Cfg, ContextTr},
     handler::{EthPrecompiles, PrecompileProvider},
     interpreter::{InputsImpl, InterpreterResult},
-    precompile::Precompiles,
+    precompile::{bls12_381, Precompiles},
 };
 use revm_primitives::{hardfork::SpecId, Address};
+
+mod schnorr;
 
 /// A custom precompile that contains static precompiles.
 #[allow(missing_debug_implementations)]
@@ -17,8 +21,11 @@ impl AlpenEvmPrecompiles {
     /// Given a [`PrecompileProvider`] and cache for a specific precompiles, create a
     /// wrapper that can be used inside Evm.
     #[inline]
-    pub fn new(_spec: SpecId) -> Self {
-        Self::default()
+    pub fn new(spec: SpecId) -> Self {
+        let precompiles = load_precompiles();
+        Self {
+            inner: EthPrecompiles { precompiles, spec },
+        }
     }
 
     #[inline]
@@ -58,4 +65,19 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for AlpenEvmPrecompiles {
     fn contains(&self, address: &Address) -> bool {
         self.inner.contains(address)
     }
+}
+
+/// Returns precompiles for the spec.
+pub fn load_precompiles() -> &'static Precompiles {
+    static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
+    INSTANCE.get_or_init(|| {
+        let mut precompiles = Precompiles::berlin().clone();
+
+        // EIP-2537: Precompile for BLS12-381
+        precompiles.extend(bls12_381::precompiles());
+
+        // Custom precompile.
+        precompiles.extend([schnorr::SCHNORR_SIGNATURE_VALIDATION]);
+        precompiles
+    })
 }
