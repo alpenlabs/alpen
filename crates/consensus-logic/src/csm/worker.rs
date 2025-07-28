@@ -3,11 +3,9 @@
 use std::{sync::Arc, thread};
 
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry, CheckpointProvingStatus};
-use strata_eectl::engine::ExecEngineCtl;
 use strata_primitives::prelude::*;
 use strata_state::{
     client_state::{ClientState, ClientStateMut},
-    csm_status::CsmStatus,
     operation::{ClientUpdateOutput, SyncAction},
     sync_event::SyncEvent,
 };
@@ -152,23 +150,16 @@ impl WorkerState {
 
 /// Receives messages from channel to update consensus state with.
 // TODO consolidate all these channels into container/"io" types
-pub fn client_worker_task<E: ExecEngineCtl>(
+pub fn client_worker_task(
     shutdown: ShutdownGuard,
     mut state: WorkerState,
-    engine: Arc<E>,
     mut msg_rx: mpsc::Receiver<CsmMessage>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
     info!("started CSM worker");
 
     while let Some(msg) = msg_rx.blocking_recv() {
-        if let Err(e) = process_msg(
-            &mut state,
-            engine.as_ref(),
-            &msg,
-            &status_channel,
-            &shutdown,
-        ) {
+        if let Err(e) = process_msg(&mut state, &msg, &status_channel, &shutdown) {
             error!(err = %e, ?msg, "failed to process sync message, aborting!");
             return Err(e);
         }
@@ -186,7 +177,6 @@ pub fn client_worker_task<E: ExecEngineCtl>(
 
 fn process_msg(
     state: &mut WorkerState,
-    engine: &impl ExecEngineCtl,
     msg: &CsmMessage,
     status_channel: &StatusChannel,
     shutdown: &ShutdownGuard,
@@ -206,7 +196,7 @@ fn process_msg(
 
                 // FIXME: We should be explicit about what errors to retry instead of just
                 // retrying whenever this fails.
-                handle_sync_event_with_retry(state, engine, ev_idx, status_channel, shutdown)?;
+                handle_sync_event_with_retry(state, ev_idx, shutdown)?;
 
                 // Broadcast notifications and other stuffs
                 post_handle_sync_event_hook(
@@ -226,9 +216,7 @@ fn process_msg(
 /// after which we return with the most recent error.
 fn handle_sync_event_with_retry(
     state: &mut WorkerState,
-    engine: &impl ExecEngineCtl,
     ev_idx: u64,
-    status_channel: &StatusChannel,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
     // Fetch the sync event we're looking at.
@@ -249,7 +237,7 @@ fn handle_sync_event_with_retry(
         // TODO demote to trace after we figure out the current issues
         debug!("trying sync event");
 
-        let e = match handle_sync_event(state, engine, ev_idx, status_channel) {
+        let e = match handle_sync_event(state, ev_idx) {
             Err(e) => e,
             Ok(v) => {
                 // Happy case, we want this to happen.
@@ -280,12 +268,7 @@ fn handle_sync_event_with_retry(
     Ok(())
 }
 
-fn handle_sync_event(
-    state: &mut WorkerState,
-    engine: &impl ExecEngineCtl,
-    ev_idx: u64,
-    status_channel: &StatusChannel,
-) -> anyhow::Result<()> {
+fn handle_sync_event(state: &mut WorkerState, ev_idx: u64) -> anyhow::Result<()> {
     // Perform the main step of deciding what the output we're operating on.
     let outp = state.advance_consensus_state(ev_idx)?;
 
@@ -293,7 +276,7 @@ fn handle_sync_event(
     // the new state, so that any database changes from them are available when
     // things listening for the new state observe it.
     for action in outp.actions() {
-        apply_action(action.clone(), state, engine, status_channel)?;
+        apply_action(action.clone(), state)?;
     }
 
     // Store the outputs.
@@ -318,10 +301,6 @@ fn post_handle_sync_event_hook(
     state: &WorkerState,
     status_channel: &StatusChannel,
 ) -> anyhow::Result<()> {
-    // FIXME clean this up and make them take Arcs
-    let mut status = CsmStatus::default();
-    status.set_last_sync_ev_idx(ev_idx);
-    status.update_from_client_state(new_state.as_ref());
     status_channel.update_client_state(new_state.as_ref().clone());
 
     trace!(%ev_idx, "sending client update notif");
@@ -334,12 +313,7 @@ fn post_handle_sync_event_hook(
     Ok(())
 }
 
-fn apply_action(
-    action: SyncAction,
-    state: &WorkerState,
-    _engine: &impl ExecEngineCtl,
-    _status_channel: &StatusChannel,
-) -> anyhow::Result<()> {
+fn apply_action(action: SyncAction, state: &WorkerState) -> anyhow::Result<()> {
     let ckpt_db = state.storage.checkpoint();
     match action {
         SyncAction::FinalizeEpoch(epoch_comm) => {
