@@ -217,6 +217,7 @@ reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }
 reth-errors = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }
+reth-ethereum-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }
 reth-ethereum-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }
 reth-ethereum-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }
 reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.5.0" }

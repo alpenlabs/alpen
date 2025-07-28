@@ -1085,6 +1085,7 @@ dependencies = [
  "reth-chainspec",
  "reth-engine-local",
  "reth-errors",
+ "reth-ethereum-engine-primitives",
  "reth-ethereum-payload-builder",
  "reth-ethereum-primitives",
  "reth-evm",

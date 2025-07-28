@@ -128,6 +128,7 @@ pub fn prepare_block(
     // Prepare the execution segment, which right now is just talking to the EVM
     // but will be more advanced later.
     let slot = prev_slot + 1;
+
     let (exec_seg, block_acc) = prepare_exec_data(
         slot,
         ts,
