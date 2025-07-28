@@ -8,6 +8,21 @@ use sled::{IVec, Iter, Tree, transaction::TransactionalTree};
 
 use crate::{KeyCodec, Schema, ValueCodec, batch::SledBatch, error::Result};
 
+fn decode_pair<S: Schema>((k, v): (IVec, IVec)) -> Result<(S::Key, S::Value)> {
+    let key = S::Key::decode_key(&k)?;
+    let value = S::Value::decode_value(&v)?;
+    Ok((key, value))
+}
+
+fn key_bound<S: Schema>(k: Bound<&S::Key>) -> Result<Bound<Vec<u8>>> {
+    let bound = match k {
+        Bound::Included(k) => Bound::Included(k.encode_key()?),
+        Bound::Excluded(k) => Bound::Excluded(k.encode_key()?),
+        Bound::Unbounded => Bound::Unbounded,
+    };
+    Ok(bound)
+}
+
 pub struct SledTree<S: Schema> {
     pub(crate) inner: Arc<Tree>,
     _phantom: PhantomData<S>,
@@ -50,11 +65,11 @@ impl<S: Schema> SledTree<S> {
     }
 
     pub fn first(&self) -> Result<Option<(S::Key, S::Value)>> {
-        self.inner.first()?.map(Self::decode_pair).transpose()
+        self.inner.first()?.map(decode_pair::<S>).transpose()
     }
 
     pub fn last(&self) -> Result<Option<(S::Key, S::Value)>> {
-        self.inner.last()?.map(Self::decode_pair).transpose()
+        self.inner.last()?.map(decode_pair::<S>).transpose()
     }
 
     pub fn apply_batch(&self, batch: SledBatch<S>) -> Result<()> {
@@ -74,30 +89,16 @@ impl<S: Schema> SledTree<S> {
     where
         R: RangeBounds<S::Key>,
     {
-        let start = Self::key_bound(range.start_bound())?;
-        let end = Self::key_bound(range.end_bound())?;
+        let start = key_bound::<S>(range.start_bound())?;
+        let end = key_bound::<S>(range.end_bound())?;
         Ok(SledTreeIter {
             inner: self.inner.range((start, end)),
             _phantom: PhantomData,
         })
     }
-
-    fn decode_pair((k, v): (IVec, IVec)) -> Result<(S::Key, S::Value)> {
-        let key = S::Key::decode_key(&k)?;
-        let value = S::Value::decode_value(&v)?;
-        Ok((key, value))
-    }
-
-    fn key_bound(k: Bound<&S::Key>) -> Result<Bound<Vec<u8>>> {
-        let bound = match k {
-            Bound::Included(k) => Bound::Included(k.encode_key()?),
-            Bound::Excluded(k) => Bound::Excluded(k.encode_key()?),
-            Bound::Unbounded => Bound::Unbounded,
-        };
-        Ok(bound)
-    }
 }
 
+/// Typesafe wrapper to sled [`TransactionalTree`]
 pub struct SledTransactionalTree<S: Schema> {
     inner: TransactionalTree,
     _phantom: PhantomData<S>,
@@ -109,6 +110,26 @@ impl<S: Schema> SledTransactionalTree<S> {
             inner,
             _phantom: PhantomData,
         }
+    }
+
+    pub fn insert(&self, key: &S::Key, value: &S::Value) -> Result<()> {
+        let key = key.encode_key()?;
+        let value = value.encode_value()?;
+        self.inner.insert(key, value)?;
+        Ok(())
+    }
+
+    pub fn get(&self, key: &S::Key) -> Result<Option<S::Value>> {
+        let key = key.encode_key()?;
+        let val = self.inner.get(key)?;
+        let val = val.as_deref();
+        Ok(val.map(|v| S::Value::decode_value(v)).transpose()?)
+    }
+
+    pub fn remove(&self, key: &S::Key) -> Result<()> {
+        let key = key.encode_key()?;
+        self.inner.remove(key)?;
+        Ok(())
     }
 }
 
@@ -122,21 +143,17 @@ impl<S: Schema> Iterator for SledTreeIter<S> {
     type Item = Result<(S::Key, S::Value)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|result| {
-            result
-                .map_err(Into::into)
-                .and_then(SledTree::<S>::decode_pair)
-        })
+        self.inner
+            .next()
+            .map(|result| result.map_err(Into::into).and_then(decode_pair::<S>))
     }
 }
 
 impl<S: Schema> DoubleEndedIterator for SledTreeIter<S> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.inner.next_back().map(|result| {
-            result
-                .map_err(Into::into)
-                .and_then(SledTree::<S>::decode_pair)
-        })
+        self.inner
+            .next_back()
+            .map(|result| result.map_err(Into::into).and_then(decode_pair::<S>))
     }
 }
 
