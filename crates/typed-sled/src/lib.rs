@@ -53,6 +53,7 @@
 //! }
 //! ```
 
+pub mod batch;
 pub mod codec;
 pub mod db;
 pub mod error;
