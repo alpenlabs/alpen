@@ -26,7 +26,7 @@ pub const ACCRUE_LOG_BLOOM: &str = "accrue logs bloom";
 pub const COMPUTE_STATE_ROOT: &str = "compute state root";
 pub const COLLECT_WITHDRAWAL_INTENTS: &str = "collect withdrawal intents";
 
-pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOutput, ClientError> {
+pub fn process_block(input: EthClientExecutorInput) -> Result<EvmBlockStfOutput, ClientError> {
     let chain_spec: Arc<ChainSpec> = Arc::new((&input.genesis).try_into().unwrap());
     let evm_config = EthEvmConfig::new(chain_spec.clone());
 
@@ -38,7 +38,7 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
         WrapDatabaseRef(trie_db)
     });
 
-    let mut block_executor = BasicBlockExecutor::new(evm_config, db);
+    let block_executor = BasicBlockExecutor::new(evm_config, db);
     let block = profile_report!(RECOVER_SENDERS, {
         EthPrimitives::from_input_block(input.current_block.clone())
             .try_into_recovered()

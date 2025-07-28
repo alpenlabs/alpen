@@ -7,7 +7,6 @@ use alpen_reth_db::WitnessStore;
 use eyre::eyre;
 use futures_util::TryStreamExt;
 use reth_chainspec::EthChainSpec;
-use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
