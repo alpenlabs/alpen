@@ -33,6 +33,10 @@ fn main() {
     command.network.discovery.disable_discovery = true;
     // enable engine api v4
     command.engine.accept_execution_requests_hash = true;
+    // allow chain fork blocks to be created
+    command
+        .engine
+        .always_process_payload_attributes_on_canonical_head = true;
 
     if let Err(err) = run(command, |builder, ext| async move {
         let datadir = builder.config().datadir().data_dir().to_path_buf();

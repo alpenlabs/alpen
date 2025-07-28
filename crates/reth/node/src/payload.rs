@@ -12,6 +12,7 @@ use alloy_rpc_types::{
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_chain_state::ExecutedBlockWithTrieUpdates;
 use reth_engine_local::payload::UnsupportedLocalAttributes;
+use reth_ethereum_engine_primitives::BuiltPayloadConversionError;
 use reth_node_api::{BuiltPayload, PayloadAttributes, PayloadBuilderAttributes};
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
 use reth_primitives::{EthPrimitives, SealedBlock};
@@ -226,16 +227,6 @@ impl AlpenExecutionPayloadEnvelopeV4 {
     }
 }
 
-// TODO: Remove unwraps here @Abishek
-impl From<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV4 {
-    fn from(value: AlpenBuiltPayload) -> Self {
-        Self {
-            inner: value.inner.try_into_v4().unwrap(),
-            withdrawal_intents: value.withdrawal_intents,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlpenExecutionPayloadEnvelopeV2 {
@@ -259,23 +250,37 @@ impl From<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV2 {
     }
 }
 
-// TODO: Remove unwraps here @Abishek
-impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV3 {
-    fn from(value: AlpenBuiltPayload) -> Self {
-        value.inner.try_into_v3().unwrap()
+impl TryFrom<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV3 {
+    type Error = BuiltPayloadConversionError;
+
+    fn try_from(value: AlpenBuiltPayload) -> Result<Self, Self::Error> {
+        value.inner.try_into_v3()
     }
 }
 
-// TODO: Remove unwraps here @Abishek
-impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV4 {
-    fn from(value: AlpenBuiltPayload) -> Self {
-        value.inner.try_into_v4().unwrap()
+impl TryFrom<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV4 {
+    type Error = BuiltPayloadConversionError;
+
+    fn try_from(value: AlpenBuiltPayload) -> Result<Self, Self::Error> {
+        value.inner.try_into_v4()
     }
 }
 
-// TODO: Remove unwraps here @Abishek
-impl From<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV5 {
-    fn from(value: AlpenBuiltPayload) -> Self {
-        value.inner.try_into_v5().unwrap()
+impl TryFrom<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV4 {
+    type Error = BuiltPayloadConversionError;
+
+    fn try_from(value: AlpenBuiltPayload) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inner: value.inner.try_into_v4()?,
+            withdrawal_intents: value.withdrawal_intents,
+        })
+    }
+}
+
+impl TryFrom<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV5 {
+    type Error = BuiltPayloadConversionError;
+
+    fn try_from(value: AlpenBuiltPayload) -> Result<Self, Self::Error> {
+        value.inner.try_into_v5()
     }
 }

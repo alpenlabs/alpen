@@ -132,7 +132,6 @@ where
         current_block,
         parent_state,
         ancestor_headers: accessed_ancestors,
-        // state_requests: accessed_info.accessed_accounts().clone(),
         bytecodes: accessed_info.accessed_contracts().clone(),
         custom_beneficiary: None,
         opcode_tracking: false,
