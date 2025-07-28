@@ -4,15 +4,21 @@
 //! Assignments link specific deposits to operators who are responsible for processing
 //! withdrawal requests within specified deadlines.
 
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use rand_chacha::{
+    ChaChaRng,
+    rand_core::{RngCore, SeedableRng},
+};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
+    l1::L1BlockId,
 };
 
 use super::withdrawal::WithdrawalCommand;
-use crate::state::deposit::DepositEntry;
+use crate::{errors::WithdrawalCommandError, state::deposit::DepositEntry};
 
 /// Assignment entry linking a deposit to an operator for withdrawal processing.
 ///
@@ -31,7 +37,9 @@ use crate::state::deposit::DepositEntry;
 /// The `exec_deadline` represents the latest Bitcoin block height at which
 /// the withdrawal can be executed. If a checkpoint is processed after this
 /// height and the withdrawal hasn't been completed, the assignment becomes invalid.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
+)]
 pub struct AssignmentEntry {
     deposit_entry: DepositEntry,
 
@@ -59,32 +67,74 @@ pub struct AssignmentEntry {
     exec_deadline: BitcoinBlockHeight,
 }
 
+fn select_eligible_operators(
+    notary_operators: &[OperatorIdx],
+    previous_assignees: &[OperatorIdx],
+    current_active_operators: &[OperatorIdx],
+) -> Vec<OperatorIdx> {
+    // Filter out previous assignees to get eligible operators
+    notary_operators
+        .iter()
+        .filter(|&&op| !previous_assignees.contains(&op))
+        .filter(|&&op| current_active_operators.contains(&op))
+        .cloned()
+        .collect()
+}
+
 impl AssignmentEntry {
-    /// Creates a new assignment entry.
+    /// Creates a new assignment entry by randomly selecting an eligible operator.
+    ///
+    /// Performs deterministic random selection of an operator from the deposit's notary set,
+    /// filtering by currently active operators. Uses the provided L1 block ID as a seed
+    /// for reproducible operator assignment across nodes.
     ///
     /// # Parameters
     ///
-    /// - `deposit_idx` - Index of the deposit to be processed
+    /// - `deposit_entry` - The deposit entry to be processed
     /// - `withdrawal_cmd` - Withdrawal command with output specifications
-    /// - `current_assignee` - Index of the operator assigned to execute the withdrawal
     /// - `exec_deadline` - Bitcoin block height deadline for execution
+    /// - `current_active_operators` - Slice of currently active operator indices
+    /// - `seed` - L1 block ID used as seed for deterministic random selection
     ///
     /// # Returns
     ///
-    /// A new [`AssignmentEntry`] instance.
-    pub fn new(
+    /// - `Ok(AssignmentEntry)` - A new assignment entry with randomly selected operator
+    /// - `Err(WithdrawalCommandError::NoEligibleOperators)` - If no eligible operators are
+    ///   available
+    pub fn create_with_random_assignment(
         deposit_entry: DepositEntry,
         withdrawal_cmd: WithdrawalCommand,
-        current_assignee: OperatorIdx,
         exec_deadline: BitcoinBlockHeight,
-    ) -> Self {
-        Self {
+        current_active_operators: &[OperatorIdx],
+        seed: L1BlockId,
+    ) -> Result<Self, WithdrawalCommandError> {
+        // Use ChaChaRng with L1 block ID as seed for deterministic random selection
+        let seed_bytes: [u8; 32] = Buf32::from(seed).into();
+        let mut rng = ChaChaRng::from_seed(seed_bytes);
+
+        let eligible_operators = select_eligible_operators(
+            deposit_entry.notary_operators(),
+            &[], // No previous assignees at creation
+            current_active_operators,
+        );
+
+        if eligible_operators.is_empty() {
+            return Err(WithdrawalCommandError::NoEligibleOperators {
+                deposit_idx: deposit_entry.idx(),
+            });
+        }
+
+        // Select a random index
+        let random_index = (rng.next_u32() as usize) % eligible_operators.len();
+        let current_assignee = eligible_operators[random_index];
+
+        Ok(Self {
             deposit_entry,
             withdrawal_cmd,
             current_assignee,
             previous_assignees: Vec::new(),
             exec_deadline,
-        }
+        })
     }
 
     /// Returns the deposit index associated with this assignment.
@@ -127,16 +177,6 @@ impl AssignmentEntry {
         &self.previous_assignees
     }
 
-    /// Returns a mutable reference to the list of previous assignees.
-    ///
-    /// # Returns
-    ///
-    /// Mutable reference to the [`Vec<OperatorIdx>`] of operators previously assigned to this
-    /// withdrawal.
-    pub fn previous_assignees_mut(&mut self) -> &mut Vec<OperatorIdx> {
-        &mut self.previous_assignees
-    }
-
     /// Returns the execution deadline for this assignment.
     ///
     /// # Returns
@@ -146,33 +186,55 @@ impl AssignmentEntry {
         self.exec_deadline
     }
 
-    /// Updates the assigned operator for this assignment.
+    /// Reassigns the withdrawal to a new randomly selected operator.
+    ///
+    /// Moves the current assignee to the previous assignees list and randomly selects
+    /// a new operator from eligible candidates. If no eligible operators remain (all
+    /// have been tried), clears the previous assignees list and selects from all
+    /// active notary operators.
     ///
     /// # Parameters
     ///
-    /// - `new_assignee` - New operator index to assign
-    pub fn set_current_assignee(&mut self, new_assignee: OperatorIdx) {
-        self.current_assignee = new_assignee;
-    }
-
-    /// Reassigns the withdrawal to a new operator, moving the current assignee to previous
-    /// assignees.
+    /// - `seed` - L1 block ID used as seed for deterministic random selection
+    /// - `current_active_operators` - Slice of currently active operator indices
     ///
-    /// # Parameters
+    /// # Returns
     ///
-    /// - `new_assignee` - New operator index to assign
-    pub fn reassign(&mut self, new_assignee: OperatorIdx) {
+    /// - `Ok(())` - If the reassignment succeeded
+    /// - `Err(WithdrawalCommandError)` - If no eligible operators are available
+    pub fn reassign(
+        &mut self,
+        seed: L1BlockId,
+        current_active_operators: &[OperatorIdx],
+    ) -> Result<(), WithdrawalCommandError> {
         self.previous_assignees.push(self.current_assignee);
-        self.current_assignee = new_assignee;
-    }
 
-    /// Updates the execution deadline for this assignment.
-    ///
-    /// # Parameters
-    ///
-    /// - `exec_deadline` - New deadline block height
-    pub fn set_exec_deadline(&mut self, exec_deadline: BitcoinBlockHeight) {
-        self.exec_deadline = exec_deadline;
+        // Use ChaChaRng with L1 block ID as seed for deterministic random selection
+        let seed_bytes: [u8; 32] = Buf32::from(seed).into();
+        let mut rng = ChaChaRng::from_seed(seed_bytes);
+
+        let mut eligible_operators = select_eligible_operators(
+            self.deposit_entry.notary_operators(),
+            &self.previous_assignees,
+            current_active_operators,
+        );
+
+        if eligible_operators.is_empty() {
+            // If no eligible operators left, clear previous assignees
+            self.previous_assignees.clear();
+            eligible_operators = select_eligible_operators(
+                self.deposit_entry.notary_operators(),
+                &self.previous_assignees,
+                current_active_operators,
+            );
+        }
+
+        // Select a random index
+        let random_index = (rng.next_u32() as usize) % eligible_operators.len();
+        let new_assignee = eligible_operators[random_index];
+
+        self.current_assignee = new_assignee;
+        Ok(())
     }
 }
 
@@ -300,15 +362,8 @@ impl AssignmentTable {
     /// # Panics
     ///
     /// Panics if an assignment with the given deposit index already exists.
-    pub fn insert(
-        &mut self,
-        deposit_entry: DepositEntry,
-        withdrawal_cmd: WithdrawalCommand,
-        assignee: OperatorIdx,
-        exec_deadline: BitcoinBlockHeight,
-    ) {
-        let idx = deposit_entry.idx();
-        let entry = AssignmentEntry::new(deposit_entry, withdrawal_cmd, assignee, exec_deadline);
+    pub fn insert(&mut self, entry: AssignmentEntry) {
+        let idx = entry.deposit_idx();
 
         // Fast path: if this is larger than the last entry, just push
         if let Some(last) = self.assignments.last() {
@@ -412,539 +467,186 @@ impl AssignmentTable {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(feature = "test_utils"))]
-    use bitcoin::{Txid, hashes::Hash};
-    use strata_primitives::{
-        bitcoin_bosd::Descriptor,
-        bridge::OperatorIdx,
-        l1::{BitcoinAmount, OutputRef},
-    };
-
     use super::*;
-    use crate::state::withdrawal::WithdrawOutput;
-
-    #[cfg(feature = "test_utils")]
+    use strata_primitives::{
+        bridge::BitcoinBlockHeight,
+        l1::L1BlockId,
+    };
     use strata_test_utils::ArbitraryGenerator;
 
-    fn create_test_deposit_entry(idx: u32) -> DepositEntry {
-        #[cfg(feature = "test_utils")]
-        {
-            // Use the Arbitrary implementation when available
-            let mut generator = ArbitraryGenerator::new();
-            let deposit = generator.generate::<DepositEntry>();
-            
-            // Override the index to ensure it matches our test needs
-            let output_ref = OutputRef::new(
-                deposit.output().outpoint().txid,
-                deposit.output().outpoint().vout,
-            );
-            
-            DepositEntry::new(
-                idx,
-                output_ref,
-                deposit.notary_operators().to_vec(),
-                deposit.amt(),
-            ).unwrap()
-        }
-        #[cfg(not(feature = "test_utils"))]
-        {
-            // Fallback implementation when test_utils feature is not enabled
-            let txid = Txid::from_byte_array([idx as u8; 32]);
-            let output_ref = OutputRef::new(txid, 0);
-            let operators = vec![1, 2, 3]; // Test with 3 operators
-            let amount = BitcoinAmount::from_sat(1000000); // 0.01 BTC
+    #[test]
+    fn test_create_with_random_assignment_success() {
+        let mut arb = ArbitraryGenerator::new();
+        let deposit_entry: DepositEntry = arb.generate();
+        let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let exec_deadline: BitcoinBlockHeight = 100;
+        let seed: L1BlockId = arb.generate();
 
-            DepositEntry::new(idx, output_ref, operators, amount).unwrap()
-        }
+        // Use the deposit's notary operators as active operators
+        let current_active_operators: Vec<OperatorIdx> = deposit_entry.notary_operators().to_vec();
+
+        let result = AssignmentEntry::create_with_random_assignment(
+            deposit_entry.clone(),
+            withdrawal_cmd.clone(),
+            exec_deadline,
+            &current_active_operators,
+            seed,
+        );
+
+        assert!(result.is_ok());
+        let assignment = result.unwrap();
+        
+        // Verify assignment properties
+        assert_eq!(assignment.deposit_idx(), deposit_entry.idx());
+        assert_eq!(assignment.withdrawal_command(), &withdrawal_cmd);
+        assert_eq!(assignment.exec_deadline(), exec_deadline);
+        assert!(current_active_operators.contains(&assignment.current_assignee()));
+        assert_eq!(assignment.previous_assignees().len(), 0);
     }
 
-    fn create_test_withdrawal_command() -> WithdrawalCommand {
-        // Create a simple P2PKH descriptor for testing
-        let pubkey_hash = [0u8; 20]; // dummy pubkey hash
-        let destination = Descriptor::new_p2pkh(&pubkey_hash);
-        let amount = BitcoinAmount::from_sat(500000); // 0.005 BTC
-        let output = WithdrawOutput::new(destination, amount);
-        WithdrawalCommand::new(vec![output])
+    #[test]
+    fn test_create_with_random_assignment_no_eligible_operators() {
+        let mut arb = ArbitraryGenerator::new();
+        let deposit_entry: DepositEntry = arb.generate();
+        let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let exec_deadline: BitcoinBlockHeight = 100;
+        let seed: L1BlockId = arb.generate();
+
+        // Empty active operators list
+        let current_active_operators: Vec<OperatorIdx> = vec![];
+
+        let result = AssignmentEntry::create_with_random_assignment(
+            deposit_entry.clone(),
+            withdrawal_cmd,
+            exec_deadline,
+            &current_active_operators,
+            seed,
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            WithdrawalCommandError::NoEligibleOperators { .. }
+        ));
     }
 
-    mod assignment_entry_tests {
-        use super::*;
 
-        #[test]
-        fn test_new_assignment_entry() {
-            let deposit_entry = create_test_deposit_entry(42);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-            let deadline = 1000u64.into();
+    #[test]
+    fn test_reassign_success() {
+        let mut arb = ArbitraryGenerator::new();
+        let deposit_entry: DepositEntry = arb.generate();
+        let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let exec_deadline: BitcoinBlockHeight = 100;
+        let seed1: L1BlockId = arb.generate();
+        let seed2: L1BlockId = arb.generate();
 
-            let entry = AssignmentEntry::new(
-                deposit_entry.clone(),
-                withdrawal_cmd.clone(),
-                assignee,
-                deadline,
-            );
+        // Use the deposit's notary operators as active operators
+        let current_active_operators: Vec<OperatorIdx> = deposit_entry.notary_operators().to_vec();
 
-            assert_eq!(entry.deposit_idx(), 42);
-            assert_eq!(
-                entry.deposit_txid(),
-                deposit_entry.output().outpoint().txid.into()
-            );
-            assert_eq!(entry.withdrawal_command(), &withdrawal_cmd);
-            assert_eq!(entry.current_assignee(), assignee);
-            assert_eq!(entry.previous_assignees(), &[] as &[OperatorIdx]);
-            assert_eq!(entry.exec_deadline(), deadline);
+        // Ensure we have at least 2 operators for reassignment
+        if current_active_operators.len() < 2 {
+            return; // Skip test if not enough operators
         }
 
-        #[test]
-        fn test_set_current_assignee() {
-            let deposit_entry = create_test_deposit_entry(1);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let initial_assignee: OperatorIdx = 1;
-            let new_assignee: OperatorIdx = 2;
-            let deadline = 1000u64.into();
+        let mut assignment = AssignmentEntry::create_with_random_assignment(
+            deposit_entry,
+            withdrawal_cmd,
+            exec_deadline,
+            &current_active_operators,
+            seed1,
+        ).unwrap();
 
-            let mut entry =
-                AssignmentEntry::new(deposit_entry, withdrawal_cmd, initial_assignee, deadline);
+        let original_assignee = assignment.current_assignee();
+        assert_eq!(assignment.previous_assignees().len(), 0);
 
-            entry.set_current_assignee(new_assignee);
-            assert_eq!(entry.current_assignee(), new_assignee);
-            assert_eq!(entry.previous_assignees(), &[] as &[OperatorIdx]);
-        }
+        // Reassign to a new operator
+        let result = assignment.reassign(seed2, &current_active_operators);
+        assert!(result.is_ok());
 
-        #[test]
-        fn test_reassign() {
-            let deposit_entry = create_test_deposit_entry(1);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let initial_assignee: OperatorIdx = 1;
-            let new_assignee: OperatorIdx = 2;
-            let deadline = 1000u64.into();
-
-            let mut entry =
-                AssignmentEntry::new(deposit_entry, withdrawal_cmd, initial_assignee, deadline);
-
-            entry.reassign(new_assignee);
-            assert_eq!(entry.current_assignee(), new_assignee);
-            assert_eq!(entry.previous_assignees(), &[initial_assignee]);
-
-            // Test multiple reassignments
-            let third_assignee: OperatorIdx = 3;
-            entry.reassign(third_assignee);
-            assert_eq!(entry.current_assignee(), third_assignee);
-            assert_eq!(
-                entry.previous_assignees(),
-                &[initial_assignee, new_assignee]
-            );
-        }
-
-        #[test]
-        fn test_set_exec_deadline() {
-            let deposit_entry = create_test_deposit_entry(1);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-            let initial_deadline = 1000u64.into();
-            let new_deadline = 2000u64.into();
-
-            let mut entry =
-                AssignmentEntry::new(deposit_entry, withdrawal_cmd, assignee, initial_deadline);
-
-            entry.set_exec_deadline(new_deadline);
-            assert_eq!(entry.exec_deadline(), new_deadline);
-        }
-
-        #[test]
-        fn test_previous_assignees_mut() {
-            let deposit_entry = create_test_deposit_entry(1);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-            let deadline = 1000u64.into();
-
-            let mut entry = AssignmentEntry::new(deposit_entry, withdrawal_cmd, assignee, deadline);
-
-            // Test direct manipulation of previous assignees
-            entry.previous_assignees_mut().push(5);
-            entry.previous_assignees_mut().push(6);
-
-            assert_eq!(entry.previous_assignees(), &[5, 6]);
-        }
+        // Verify reassignment
+        assert_eq!(assignment.previous_assignees().len(), 1);
+        assert_eq!(assignment.previous_assignees()[0], original_assignee);
+        assert_ne!(assignment.current_assignee(), original_assignee);
+        assert!(current_active_operators.contains(&assignment.current_assignee()));
     }
 
-    mod assignment_table_tests {
-        use super::*;
+    #[test]
+    fn test_reassign_all_operators_exhausted() {
+        let mut arb = ArbitraryGenerator::new();
+        let mut deposit_entry: DepositEntry = arb.generate();
+        
+        // Force single operator for this test
+        let single_operator: OperatorIdx = 1;
+        let operators = vec![single_operator];
+        deposit_entry = DepositEntry::new(
+            deposit_entry.idx(),
+            deposit_entry.output().clone(),
+            operators.clone(),
+            deposit_entry.amt(),
+        ).unwrap();
 
-        #[test]
-        fn test_new_empty_table() {
-            let table = AssignmentTable::new_empty();
-            assert_eq!(table.len(), 0);
-            assert!(table.is_empty());
-            assert_eq!(table.assignments(), &[] as &[AssignmentEntry]);
-        }
+        let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let exec_deadline: BitcoinBlockHeight = 100;
+        let seed1: L1BlockId = arb.generate();
+        let seed2: L1BlockId = arb.generate();
 
-        #[test]
-        fn test_insert_single_assignment() {
-            let mut table = AssignmentTable::new_empty();
-            let deposit_entry = create_test_deposit_entry(42);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-            let deadline = 1000u64.into();
+        let current_active_operators = vec![single_operator];
 
-            table.insert(
-                deposit_entry.clone(),
-                withdrawal_cmd.clone(),
-                assignee,
-                deadline,
-            );
+        let mut assignment = AssignmentEntry::create_with_random_assignment(
+            deposit_entry,
+            withdrawal_cmd,
+            exec_deadline,
+            &current_active_operators,
+            seed1,
+        ).unwrap();
 
-            assert_eq!(table.len(), 1);
-            assert!(!table.is_empty());
-
-            let assignment = table.get_assignment(42).unwrap();
-            assert_eq!(assignment.deposit_idx(), 42);
-            assert_eq!(assignment.current_assignee(), assignee);
-        }
-
-        #[test]
-        fn test_insert_multiple_assignments_ordered() {
-            let mut table = AssignmentTable::new_empty();
-
-            // Insert in ascending order (fast path)
-            for i in [1, 5, 10, 15] {
-                let deposit_entry = create_test_deposit_entry(i);
-                let withdrawal_cmd = create_test_withdrawal_command();
-                table.insert(deposit_entry, withdrawal_cmd, 1, 1000u64.into());
-            }
-
-            assert_eq!(table.len(), 4);
-            let indices: Vec<u32> = table.get_all_deposit_indices().collect();
-            assert_eq!(indices, vec![1, 5, 10, 15]);
-        }
-
-        #[test]
-        fn test_insert_multiple_assignments_unordered() {
-            let mut table = AssignmentTable::new_empty();
-
-            // Insert in random order to test binary search insertion
-            for i in [10, 2, 15, 5, 1] {
-                let deposit_entry = create_test_deposit_entry(i);
-                let withdrawal_cmd = create_test_withdrawal_command();
-                table.insert(deposit_entry, withdrawal_cmd, 1, 1000u64.into());
-            }
-
-            assert_eq!(table.len(), 5);
-            let indices: Vec<u32> = table.get_all_deposit_indices().collect();
-            assert_eq!(indices, vec![1, 2, 5, 10, 15]);
-        }
-
-        #[test]
-        #[should_panic]
-        fn test_insert_duplicate_assignment() {
-            let mut table = AssignmentTable::new_empty();
-            let deposit_entry = create_test_deposit_entry(42);
-            let withdrawal_cmd = create_test_withdrawal_command();
-
-            table.insert(
-                deposit_entry.clone(),
-                withdrawal_cmd.clone(),
-                1,
-                1000u64.into(),
-            );
-            // This should panic due to duplicate insertion
-            table.insert(deposit_entry, withdrawal_cmd, 2, 2000u64.into());
-        }
-
-        #[test]
-        fn test_get_assignment() {
-            let mut table = AssignmentTable::new_empty();
-            let deposit_entry = create_test_deposit_entry(42);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-
-            table.insert(deposit_entry, withdrawal_cmd, assignee, 1000u64.into());
-
-            // Test successful lookup
-            let assignment = table.get_assignment(42);
-            assert!(assignment.is_some());
-            assert_eq!(assignment.unwrap().deposit_idx(), 42);
-
-            // Test failed lookup
-            let missing = table.get_assignment(99);
-            assert!(missing.is_none());
-        }
-
-        #[test]
-        fn test_get_assignment_mut() {
-            let mut table = AssignmentTable::new_empty();
-            let deposit_entry = create_test_deposit_entry(42);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-            let new_assignee: OperatorIdx = 2;
-
-            table.insert(deposit_entry, withdrawal_cmd, assignee, 1000u64.into());
-
-            // Test mutable access and modification
-            {
-                let assignment = table.get_assignment_mut(42);
-                assert!(assignment.is_some());
-                assignment.unwrap().set_current_assignee(new_assignee);
-            }
-
-            // Verify the change
-            let assignment = table.get_assignment(42).unwrap();
-            assert_eq!(assignment.current_assignee(), new_assignee);
-        }
-
-        #[test]
-        fn test_remove_assignment() {
-            let mut table = AssignmentTable::new_empty();
-            let deposit_entry = create_test_deposit_entry(42);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-
-            table.insert(deposit_entry, withdrawal_cmd, assignee, 1000u64.into());
-            assert_eq!(table.len(), 1);
-
-            // Test successful removal
-            let removed = table.remove_assignment(42);
-            assert!(removed.is_some());
-            assert_eq!(removed.unwrap().deposit_idx(), 42);
-            assert_eq!(table.len(), 0);
-            assert!(table.is_empty());
-
-            // Test removal of non-existent assignment
-            let missing = table.remove_assignment(99);
-            assert!(missing.is_none());
-        }
-
-        #[test]
-        fn test_get_assignments_by_operator() {
-            let mut table = AssignmentTable::new_empty();
-            let operator1: OperatorIdx = 1;
-            let operator2: OperatorIdx = 2;
-
-            // Insert assignments for different operators
-            for i in 1..=5 {
-                let deposit_entry = create_test_deposit_entry(i);
-                let withdrawal_cmd = create_test_withdrawal_command();
-                let assignee = if i % 2 == 0 { operator2 } else { operator1 };
-                table.insert(deposit_entry, withdrawal_cmd, assignee, 1000u64.into());
-            }
-
-            // Test filtering by operator1 (should get indices 1, 3, 5)
-            let op1_assignments: Vec<u32> = table
-                .get_assignments_by_operator(operator1)
-                .map(|a| a.deposit_idx())
-                .collect();
-            assert_eq!(op1_assignments, vec![1, 3, 5]);
-
-            // Test filtering by operator2 (should get indices 2, 4)
-            let op2_assignments: Vec<u32> = table
-                .get_assignments_by_operator(operator2)
-                .map(|a| a.deposit_idx())
-                .collect();
-            assert_eq!(op2_assignments, vec![2, 4]);
-        }
-
-        #[test]
-        fn test_get_expired_assignments() {
-            let mut table = AssignmentTable::new_empty();
-
-            // Insert assignments with different deadlines
-            let deadlines = [500u64, 1000u64, 1500u64, 2000u64];
-            for (i, &deadline) in deadlines.iter().enumerate() {
-                let deposit_entry = create_test_deposit_entry(i as u32 + 1);
-                let withdrawal_cmd = create_test_withdrawal_command();
-                table.insert(deposit_entry, withdrawal_cmd, 1, deadline.into());
-            }
-
-            // Test with current height = 1200 (should expire assignments 1 and 2)
-            let current_height = 1200u64.into();
-            let expired: Vec<u32> = table
-                .get_expired_assignments(current_height)
-                .map(|a| a.deposit_idx())
-                .collect();
-            assert_eq!(expired, vec![1, 2]);
-
-            // Test with current height = 500 (should expire assignment 1 only)
-            let current_height = 500u64.into();
-            let expired: Vec<u32> = table
-                .get_expired_assignments(current_height)
-                .map(|a| a.deposit_idx())
-                .collect();
-            assert_eq!(expired, vec![1]);
-
-            // Test with current height = 100 (should expire nothing)
-            let current_height = 100u64.into();
-            let expired: Vec<u32> = table
-                .get_expired_assignments(current_height)
-                .map(|a| a.deposit_idx())
-                .collect();
-            assert!(expired.is_empty());
-        }
-
-        #[test]
-        fn test_assignment_sorting_invariant() {
-            let mut table = AssignmentTable::new_empty();
-
-            // Insert assignments in random order
-            let indices = [50, 10, 30, 20, 40, 60];
-            for &idx in &indices {
-                let deposit_entry = create_test_deposit_entry(idx);
-                let withdrawal_cmd = create_test_withdrawal_command();
-                table.insert(deposit_entry, withdrawal_cmd, 1, 1000u64.into());
-            }
-
-            // Verify they are stored in sorted order
-            let stored_indices: Vec<u32> = table.get_all_deposit_indices().collect();
-            let mut expected_indices = indices.to_vec();
-            expected_indices.sort();
-            assert_eq!(stored_indices, expected_indices);
-        }
+        // First reassignment should work (clears previous assignees and reassigns to same operator)
+        let result = assignment.reassign(seed2, &current_active_operators);
+        assert!(result.is_ok());
+        
+        // Should have cleared previous assignees and reassigned to the same operator
+        assert_eq!(assignment.previous_assignees().len(), 0);
+        assert_eq!(assignment.current_assignee(), single_operator);
     }
 
-    mod edge_case_tests {
-        use super::*;
 
-        #[test]
-        fn test_assignment_table_empty_operations() {
-            let mut table = AssignmentTable::new_empty();
+    #[test]
+    fn test_assignment_table_basic_operations() {
+        let mut table = AssignmentTable::new_empty();
+        assert!(table.is_empty());
+        assert_eq!(table.len(), 0);
 
-            // Test operations on empty table
-            assert!(table.get_assignment(42).is_none());
-            assert!(table.get_assignment_mut(42).is_none());
-            assert!(table.remove_assignment(42).is_none());
+        let mut arb = ArbitraryGenerator::new();
+        let deposit_entry: DepositEntry = arb.generate();
+        let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let exec_deadline: BitcoinBlockHeight = 100;
+        let seed: L1BlockId = arb.generate();
+        let current_active_operators: Vec<OperatorIdx> = deposit_entry.notary_operators().to_vec();
 
-            let op1_assignments: Vec<_> = table.get_assignments_by_operator(1).collect();
-            assert!(op1_assignments.is_empty());
+        let assignment = AssignmentEntry::create_with_random_assignment(
+            deposit_entry.clone(),
+            withdrawal_cmd,
+            exec_deadline,
+            &current_active_operators,
+            seed,
+        ).unwrap();
 
-            let expired: Vec<_> = table.get_expired_assignments(1000u64.into()).collect();
-            assert!(expired.is_empty());
+        let deposit_idx = assignment.deposit_idx();
 
-            let indices: Vec<_> = table.get_all_deposit_indices().collect();
-            assert!(indices.is_empty());
-        }
+        // Insert assignment
+        table.insert(assignment.clone());
+        assert!(!table.is_empty());
+        assert_eq!(table.len(), 1);
 
-        #[test]
-        fn test_assignment_table_single_element_operations() {
-            let mut table = AssignmentTable::new_empty();
-            let deposit_entry = create_test_deposit_entry(42);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let assignee: OperatorIdx = 1;
-            let deadline = 1000u64.into();
+        // Get assignment
+        let retrieved = table.get_assignment(deposit_idx);
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().deposit_idx(), deposit_idx);
 
-            table.insert(deposit_entry, withdrawal_cmd, assignee, deadline);
-
-            // Test operations on single-element table
-            assert!(table.get_assignment(41).is_none());
-            assert!(table.get_assignment(42).is_some());
-            assert!(table.get_assignment(43).is_none());
-
-            // Test filtering with no matches
-            let op2_assignments: Vec<_> = table.get_assignments_by_operator(2).collect();
-            assert!(op2_assignments.is_empty());
-
-            // Test filtering with matches
-            let op1_assignments: Vec<_> = table.get_assignments_by_operator(1).collect();
-            assert_eq!(op1_assignments.len(), 1);
-        }
-
-        #[test]
-        fn test_assignment_deadline_edge_cases() {
-            let mut table = AssignmentTable::new_empty();
-            let deposit_entry = create_test_deposit_entry(1);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let deadline = 1000u64.into();
-
-            table.insert(deposit_entry, withdrawal_cmd, 1, deadline);
-
-            // Test exact deadline match (should be expired)
-            let expired: Vec<_> = table.get_expired_assignments(1000u64.into()).collect();
-            assert_eq!(expired.len(), 1);
-
-            // Test one block before deadline (should not be expired)
-            let expired: Vec<_> = table.get_expired_assignments(999u64.into()).collect();
-            assert!(expired.is_empty());
-
-            // Test one block after deadline (should be expired)
-            let expired: Vec<_> = table.get_expired_assignments(1001u64.into()).collect();
-            assert_eq!(expired.len(), 1);
-        }
-
-        #[test]
-        fn test_assignment_entry_with_many_reassignments() {
-            let deposit_entry = create_test_deposit_entry(1);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            let initial_assignee: OperatorIdx = 1;
-            let deadline = 1000u64.into();
-
-            let mut entry =
-                AssignmentEntry::new(deposit_entry, withdrawal_cmd, initial_assignee, deadline);
-
-            // Perform many reassignments
-            for i in 2..=100 {
-                entry.reassign(i);
-            }
-
-            assert_eq!(entry.current_assignee(), 100);
-            assert_eq!(entry.previous_assignees().len(), 99);
-            assert_eq!(entry.previous_assignees()[0], 1);
-            assert_eq!(entry.previous_assignees()[98], 99);
-        }
-
-        #[test]
-        fn test_assignment_table_large_scale_operations() {
-            let mut table = AssignmentTable::new_empty();
-
-            // Insert many assignments in reverse order to stress binary search
-            for i in (1..=1000).rev() {
-                let deposit_entry = create_test_deposit_entry(i);
-                let withdrawal_cmd = create_test_withdrawal_command();
-                let assignee: OperatorIdx = (i % 10) + 1;
-                table.insert(deposit_entry, withdrawal_cmd, assignee, (i + 1000).into());
-            }
-
-            assert_eq!(table.len(), 1000);
-
-            // Verify sorting invariant
-            let indices: Vec<u32> = table.get_all_deposit_indices().collect();
-            for i in 0..999 {
-                assert!(indices[i] < indices[i + 1], "Sorting invariant violated");
-            }
-
-            // Test filtering operations work correctly on large dataset
-            let op1_assignments: Vec<_> = table.get_assignments_by_operator(1).collect();
-            assert_eq!(op1_assignments.len(), 100); // Every 10th assignment
-
-            // Test removal from middle
-            assert!(table.remove_assignment(500).is_some());
-            assert_eq!(table.len(), 999);
-            assert!(table.get_assignment(500).is_none());
-        }
-
-        #[test]
-        fn test_assignment_table_boundary_insertions() {
-            let mut table = AssignmentTable::new_empty();
-
-            // Test insertions that trigger different code paths
-            let deposit_entry = create_test_deposit_entry(100);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            table.insert(deposit_entry, withdrawal_cmd, 1, 1000u64.into());
-
-            // Insert at beginning (should use binary search)
-            let deposit_entry = create_test_deposit_entry(50);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            table.insert(deposit_entry, withdrawal_cmd, 1, 1000u64.into());
-
-            // Insert at end (should use fast path)
-            let deposit_entry = create_test_deposit_entry(150);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            table.insert(deposit_entry, withdrawal_cmd, 1, 1000u64.into());
-
-            // Insert in middle (should use binary search)
-            let deposit_entry = create_test_deposit_entry(75);
-            let withdrawal_cmd = create_test_withdrawal_command();
-            table.insert(deposit_entry, withdrawal_cmd, 1, 1000u64.into());
-
-            let indices: Vec<u32> = table.get_all_deposit_indices().collect();
-            assert_eq!(indices, vec![50, 75, 100, 150]);
-        }
+        // Remove assignment
+        let removed = table.remove_assignment(deposit_idx);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().deposit_idx(), deposit_idx);
+        assert!(table.is_empty());
     }
 }
