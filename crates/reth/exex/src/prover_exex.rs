@@ -7,6 +7,7 @@ use alpen_reth_db::WitnessStore;
 use eyre::eyre;
 use futures_util::TryStreamExt;
 use reth_chainspec::EthChainSpec;
+use reth_evm::execute::{BasicBlockExecutor, Executor};
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
@@ -203,10 +204,11 @@ where
 
     // wrap in a cache-backed provider and run the executor
     let cache_provider = CacheDBProvider::new(history_provider);
-    let _cache_db = CacheDB::new(&cache_provider);
+    let cache_db = CacheDB::new(&cache_provider);
 
-    // TODO: Abishek Use the executor to run the block execution
-    // ctx.executor(cache_db).execute(&current_block)?;
+    let evm_config = ctx.evm_config();
+    let block_executor = BasicBlockExecutor::new(evm_config.clone(), cache_db);
+    let _execution_output = block_executor.execute(&current_block)?;
 
     Ok(cache_provider.get_accessed_state())
 }
