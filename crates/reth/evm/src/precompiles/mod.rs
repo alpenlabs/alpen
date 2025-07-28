@@ -3,11 +3,14 @@ use std::sync::OnceLock;
 use revm::{
     context::{Cfg, ContextTr},
     handler::{EthPrecompiles, PrecompileProvider},
-    interpreter::{InputsImpl, InterpreterResult},
-    precompile::{bls12_381, Precompiles},
+    interpreter::{Gas, InputsImpl, InstructionResult, InterpreterResult},
+    precompile::{bls12_381, PrecompileError, Precompiles},
 };
-use revm_primitives::{hardfork::SpecId, Address};
+use revm_primitives::{hardfork::SpecId, Address, Bytes};
 
+use crate::{constants::BRIDGEOUT_ADDRESS, precompiles::bridge::bridge_context_call};
+
+mod bridge;
 mod schnorr;
 
 /// A custom precompile that contains static precompiles.
@@ -18,8 +21,6 @@ pub struct AlpenEvmPrecompiles {
 }
 
 impl AlpenEvmPrecompiles {
-    /// Given a [`PrecompileProvider`] and cache for a specific precompiles, create a
-    /// wrapper that can be used inside Evm.
     #[inline]
     pub fn new(spec: SpecId) -> Self {
         let precompiles = load_precompiles();
@@ -49,11 +50,44 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for AlpenEvmPrecompiles {
         context: &mut CTX,
         address: &Address,
         inputs: &InputsImpl,
-        is_static: bool,
+        _is_static: bool,
         gas_limit: u64,
     ) -> Result<Option<Self::Output>, String> {
-        self.inner
-            .run(context, address, inputs, is_static, gas_limit)
+        let Some(precompile_fn) = self.inner.precompiles.get(address) else {
+            return Ok(None);
+        };
+
+        let raw_input_bytes = inputs.input.bytes(context);
+        let raw_input = raw_input_bytes.as_ref();
+
+        let mut result = InterpreterResult {
+            result: InstructionResult::Return,
+            gas: Gas::new(gas_limit),
+            output: Bytes::new(),
+        };
+
+        let res = match *address {
+            BRIDGEOUT_ADDRESS => bridge_context_call(raw_input, gas_limit, context),
+            _ => (precompile_fn)(raw_input, gas_limit),
+        };
+
+        match res {
+            Ok(output) => {
+                let underflow = result.gas.record_cost(output.gas_used);
+                assert!(underflow, "Gas underflow is not possible");
+                result.output = output.bytes;
+            }
+            Err(PrecompileError::Fatal(e)) => return Err(e),
+            Err(e) => {
+                result.result = if e.is_oog() {
+                    InstructionResult::PrecompileOOG
+                } else {
+                    InstructionResult::PrecompileError
+                };
+            }
+        }
+
+        Ok(Some(result))
     }
 
     #[inline]
@@ -77,7 +111,10 @@ pub fn load_precompiles() -> &'static Precompiles {
         precompiles.extend(bls12_381::precompiles());
 
         // Custom precompile.
-        precompiles.extend([schnorr::SCHNORR_SIGNATURE_VALIDATION]);
+        precompiles.extend([
+            schnorr::SCHNORR_SIGNATURE_VALIDATION,
+            bridge::BRIDGEOUT_PRECOMPILE,
+        ]);
         precompiles
     })
 }
