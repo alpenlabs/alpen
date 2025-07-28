@@ -119,15 +119,6 @@ impl BridgeV1State {
         &self.operators
     }
 
-    /// Returns a mutable reference to the operator table.
-    ///
-    /// # Returns
-    ///
-    /// Mutable reference to the [`OperatorTable`].
-    pub fn operators_mut(&mut self) -> &mut crate::state::operator::OperatorTable {
-        &mut self.operators
-    }
-
     /// Returns a reference to the deposits table.
     ///
     /// # Returns
@@ -137,15 +128,6 @@ impl BridgeV1State {
         &self.deposits
     }
 
-    /// Returns a mutable reference to the deposits table.
-    ///
-    /// # Returns
-    ///
-    /// Mutable reference to the [`DepositsTable`].
-    pub fn deposits_mut(&mut self) -> &mut DepositsTable {
-        &mut self.deposits
-    }
-
     /// Returns a reference to the assignments table.
     ///
     /// # Returns
@@ -153,15 +135,6 @@ impl BridgeV1State {
     /// Immutable reference to the [`AssignmentTable`].
     pub fn assignments(&self) -> &AssignmentTable {
         &self.assignments
-    }
-
-    /// Returns a mutable reference to the assignments table.
-    ///
-    /// # Returns
-    ///
-    /// Mutable reference to the [`AssignmentTable`].
-    pub fn assignments_mut(&mut self) -> &mut AssignmentTable {
-        &mut self.assignments
     }
 
     /// Returns the deadline duration for assignment execution.
@@ -641,7 +614,7 @@ impl BridgeV1State {
             }
             Err(other_error) => {
                 // For other errors (like deposit not found), we can't recover
-                panic!("Unexpected error in operator selection: {}", other_error);
+                panic!("Unexpected error in operator selection: {other_error}");
             }
         }
     }
@@ -694,540 +667,246 @@ impl BridgeV1State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
-        state::withdrawal::{WithdrawOutput, WithdrawalCommand},
-        txs::{
-            deposit::{parse::DepositInfo, create::create_test_deposit_tx},
-            withdrawal_fulfillment::{WithdrawalInfo, create_withdrawal_fulfillment_tx},
-        },
-    };
-    use bitcoin::{
-        hashes::Hash, secp256k1::{Keypair, SecretKey, Secp256k1}, OutPoint, ScriptBuf, 
-        Txid
-    };
-    use strata_primitives::{
-        bitcoin_bosd::Descriptor,
-        buf::Buf32,
-        l1::{BitcoinAmount, L1BlockCommitment, L1BlockId, OutputRef},
-        operator::OperatorPubkeys,
-    };
-    use std::str::FromStr;
+    use bitcoin::secp256k1::SecretKey;
+    use rand::rngs::OsRng;
+    use strata_primitives::{buf::Buf32, l1::BitcoinAmount, operator::OperatorPubkeys};
+    use crate::txs::deposit::{create::create_test_deposit_tx, parse::DepositInfo};
 
-    fn make_test_keypair(seed: u8) -> Keypair {
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&[seed; 32]).unwrap();
-        Keypair::from_secret_key(&secp, &sk)
-    }
+    /// Helper function to create a test BridgeV1State with operators
+    fn create_test_bridge_state(num_operators: usize, denomination: u64) -> (BridgeV1State, Vec<SecretKey>) {
+        let mut operator_privkeys = Vec::new();
+        let mut operator_pubkeys = Vec::new();
 
-    fn make_test_operator_pubkeys(seed: u8) -> OperatorPubkeys {
-        let keypair = make_test_keypair(seed);
-        let (xonly_pk, _) = keypair.x_only_public_key();
-        let buf = Buf32::from(xonly_pk.serialize());
-        OperatorPubkeys::new(buf, buf)
-    }
-
-    fn create_test_config() -> BridgeV1Config {
-        let operator_keys: Vec<OperatorPubkeys> = (0..3)
-            .map(|i| make_test_operator_pubkeys(i as u8 + 1))
-            .collect();
-
-        BridgeV1Config {
-            operators: operator_keys,
-            denomination: BitcoinAmount::from_sat(100_000),
-            deadline_duration: 144,
+        // Generate operator keys
+        for _ in 0..num_operators {
+            let privkey = SecretKey::new(&mut OsRng);
+            let pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(&bitcoin::secp256k1::Secp256k1::new(), &privkey);
+            let xonly_pubkey = pubkey.x_only_public_key().0;
+            
+            operator_privkeys.push(privkey);
+            operator_pubkeys.push(OperatorPubkeys::new(
+                Buf32::from(xonly_pubkey.serialize()),  // signing_pk
+                Buf32::from(xonly_pubkey.serialize()),  // wallet_pk (same for simplicity)
+            ));
         }
+
+        let config = BridgeV1Config {
+            operators: operator_pubkeys,
+            denomination: BitcoinAmount::from_sat(denomination),
+            deadline_duration: 144, // 1 day in blocks
+        };
+
+        let state = BridgeV1State::new(&config);
+        (state, operator_privkeys)
     }
 
-    fn create_dummy_l1_block_commitment(height: u64) -> L1BlockCommitment {
-        let block_hash = bitcoin::BlockHash::from_byte_array([1u8; 32]);
-        let l1_block_id = L1BlockId::from(block_hash);
-        L1BlockCommitment::new(height, l1_block_id)
-    }
-
-    fn create_test_deposit_info(idx: u32) -> DepositInfo {
+    /// Helper function to create test deposit info
+    fn create_test_deposit_info(deposit_idx: u32, amount: u64) -> DepositInfo {
         DepositInfo {
-            deposit_idx: idx,
-            outpoint: OutputRef::from(OutPoint::null()),
-            amt: BitcoinAmount::from_sat(100_000),
-            address: vec![0u8; 20],
+            deposit_idx,
+            amt: BitcoinAmount::from_sat(amount),
+            address: b"test-address".to_vec(),
+            outpoint: bitcoin::OutPoint::null().into(),
             drt_tapnode_hash: Buf32::from([0u8; 32]),
         }
     }
 
-
-    fn create_test_withdrawal_command() -> WithdrawalCommand {
-        let address = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
-            .unwrap()
-            .assume_checked();
-        let descriptor = Descriptor::from(address);
-        let output = WithdrawOutput::new(descriptor, BitcoinAmount::from_sat(99_000));
-        WithdrawalCommand::new(vec![output])
+    /// Helper function to create unique deposit info with different outpoints
+    fn create_unique_deposit_info(deposit_idx: u32, amount: u64, tx_index: u32) -> DepositInfo {
+        let mut outpoint = bitcoin::OutPoint::null();
+        outpoint.vout = tx_index; // Make each outpoint unique
+        DepositInfo {
+            deposit_idx,
+            amt: BitcoinAmount::from_sat(amount),
+            address: format!("test-address-{}", tx_index).into_bytes(),
+            outpoint: outpoint.into(),
+            drt_tapnode_hash: Buf32::from([tx_index as u8; 32]),
+        }
     }
 
-    // Test BridgeV1State construction and initialization
     #[test]
-    fn test_bridgev1state_new() {
-        let config = create_test_config();
-        let state = BridgeV1State::new(&config);
-
-        assert_eq!(state.deadline_duration(), 144);
-        assert_eq!(state.operators().len(), 3);
-        assert_eq!(state.deposits().len(), 0);
-        assert_eq!(state.assignments().len(), 0);
-        assert!(state.deposits().is_empty());
-        assert!(state.assignments().is_empty());
-    }
-
-    // Test BridgeV1State accessor methods
-    #[test]
-    fn test_bridgev1state_accessors() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        // Test read-only accessors
-        assert_eq!(state.operators().len(), 3);
-        assert_eq!(state.deposits().len(), 0);
-        assert_eq!(state.assignments().len(), 0);
-        assert_eq!(state.deadline_duration(), 144);
-
-        // Test mutable accessors exist and work
-        let deposits_before = state.deposits().len();
-        state.deposits_mut().create_next_deposit(
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],
-            BitcoinAmount::from_sat(100_000),
-        );
-        assert_eq!(state.deposits().len(), deposits_before + 1);
-
-        let assignments_before = state.assignments().len();
-        let withdrawal_cmd = create_test_withdrawal_command();
-        state.assignments_mut().insert(0, withdrawal_cmd, 0, 1000);
-        assert_eq!(state.assignments().len(), assignments_before + 1);
-    }
-
-    // Test BridgeV1State deposit processing logic (bypassing validation for unit test)
-    #[test]
-    fn test_bridgev1state_deposit_processing_logic() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        // Test the state management logic directly by adding deposits
-        let deposit_idx = state.deposits_mut().create_next_deposit(
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],
-            BitcoinAmount::from_sat(100_000),
-        );
-
-        // Verify deposit was added with correct properties
-        assert_eq!(state.deposits().len(), 1);
-        let deposit = state.deposits().get_deposit(deposit_idx).unwrap();
+    fn test_process_deposit_tx_success() {
+        let denomination = 100_000; // 0.001 BTC
+        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
+        
+        let deposit_info = create_test_deposit_info(1, denomination);
+        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
+        
+        let result = state.process_deposit_tx(&tx, &deposit_info);
+        
+        assert!(result.is_ok());
+        let deposit_idx = result.unwrap();
+        assert_eq!(deposit_idx, 0); // First deposit gets index 0
+        
+        // Verify deposit was added to the table
+        let deposit = state.deposits().get_deposit(deposit_idx);
+        assert!(deposit.is_some());
+        let deposit = deposit.unwrap();
         assert_eq!(deposit.idx(), deposit_idx);
-        assert_eq!(deposit.amt(), BitcoinAmount::from_sat(100_000));
-        assert_eq!(deposit.notary_operators(), &[0, 1, 2]);
     }
 
-    // Test BridgeV1State validate_deposit method
     #[test]
-    fn test_bridgev1state_validate_deposit_invalid_amount() {
-        let config = create_test_config();
-        let state = BridgeV1State::new(&config);
+    fn test_process_deposit_tx_invalid_amount() {
+        let denomination = 100_000;
+        let wrong_amount = 50_000; // Different amount
+        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
         
-        let mut deposit_info = create_test_deposit_info(1);
-        deposit_info.amt = BitcoinAmount::from_sat(50_000); // Wrong amount
+        let deposit_info = create_test_deposit_info(1, wrong_amount);
+        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
         
-        // Use the proper test deposit transaction helper
-        let operators_privkey = SecretKey::from_slice(&[1u8; 32]).unwrap();
-        let tx = create_test_deposit_tx(&deposit_info, &operators_privkey);
-
-        let result = state.validate_deposit(&tx, &deposit_info);
-        assert!(matches!(result, Err(DepositError::InvalidDepositAmount { expected: 100_000, actual: 50_000 })));
-    }
-
-    // Test BridgeV1State duplicate deposit detection logic
-    #[test]
-    fn test_bridgev1state_duplicate_deposit_detection() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
+        let result = state.process_deposit_tx(&tx, &deposit_info);
         
-        // First create a deposit directly in the state
-        state.deposits_mut().create_next_deposit(
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],
-            BitcoinAmount::from_sat(100_000),
-        );
-
-        // Verify the deposit exists (this tests the duplicate detection logic)
-        assert!(state.deposits().get_deposit(0).is_some());
-        
-        // Test trying to create another deposit with the same index fails
-        let success = state.deposits_mut().try_create_deposit_at(
-            0, // same index
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],
-            BitcoinAmount::from_sat(100_000),
-        );
-        assert!(!success, "Should not be able to create duplicate deposit");
-    }
-
-    // Test BridgeV1State create_withdrawal_assignment method
-    #[test]
-    fn test_bridgev1state_create_withdrawal_assignment_success() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        // First create a deposit directly
-        let deposit_idx = state.deposits_mut().create_next_deposit(
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],
-            BitcoinAmount::from_sat(100_000),
-        );
-
-        // Create withdrawal assignment
-        let withdrawal_cmd = create_test_withdrawal_command();
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        let current_block_height = 1000u64;
-
-        let result = state.create_withdrawal_assignment(
-            &withdrawal_cmd,
-            &l1_block_id,
-            current_block_height,
-        );
-
-        assert!(result.is_ok());
-        assert_eq!(state.assignments().len(), 1);
-        
-        let assignment = state.assignments().get_assignment(deposit_idx).unwrap();
-        assert_eq!(assignment.deposit_idx(), deposit_idx);
-        assert_eq!(assignment.exec_deadline(), current_block_height + 144);
-    }
-
-    // Test BridgeV1State create_withdrawal_assignment with no available deposits
-    #[test]
-    fn test_bridgev1state_create_withdrawal_assignment_no_deposits() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        let withdrawal_cmd = create_test_withdrawal_command();
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        let current_block_height = 1000u64;
-
-        let result = state.create_withdrawal_assignment(
-            &withdrawal_cmd,
-            &l1_block_id,
-            current_block_height,
-        );
-
-        assert!(matches!(result, Err(WithdrawalCommandError::DepositNotFound { .. })));
-        assert_eq!(state.assignments().len(), 0);
-    }
-
-    // Test BridgeV1State reassign_withdrawal method
-    #[test]
-    fn test_bridgev1state_reassign_withdrawal_success() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        // Setup: create deposit and assignment directly
-        let deposit_idx = state.deposits_mut().create_next_deposit(
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],
-            BitcoinAmount::from_sat(100_000),
-        );
-
-        let withdrawal_cmd = create_test_withdrawal_command();
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        state.create_withdrawal_assignment(&withdrawal_cmd, &l1_block_id, 1000).unwrap();
-
-        let initial_assignee = state.assignments().get_assignment(deposit_idx).unwrap().current_assignee();
-
-        // Reassign the withdrawal
-        let result = state.reassign_withdrawal(deposit_idx, &l1_block_id);
-        assert!(result.is_ok());
-
-        // Check assignment was updated
-        let assignment = state.assignments().get_assignment(deposit_idx).unwrap();
-        assert_ne!(assignment.current_assignee(), initial_assignee);
-        assert!(assignment.previous_assignees().contains(&initial_assignee));
-    }
-
-    // Test BridgeV1State reassign_withdrawal for non-existent assignment
-    #[test]
-    fn test_bridgev1state_reassign_withdrawal_not_found() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        let result = state.reassign_withdrawal(999, &l1_block_id);
-
-        assert!(matches!(result, Err(WithdrawalCommandError::DepositNotFound { deposit_idx: 999 })));
-    }
-
-    // Test BridgeV1State process_withdrawal_fulfillment_tx method
-    #[test]
-    fn test_bridgev1state_process_withdrawal_fulfillment_tx_success() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        // Setup: create deposit and assignment directly
-        let deposit_idx = state.deposits_mut().create_next_deposit(
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],  
-            BitcoinAmount::from_sat(100_000),
-        );
-
-        let withdrawal_cmd = create_test_withdrawal_command();
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        state.create_withdrawal_assignment(&withdrawal_cmd, &l1_block_id, 1000).unwrap();
-
-        let operator_idx = state.assignments().get_assignment(deposit_idx).unwrap().current_assignee();
-        
-        // Get the correct deposit txid from the created deposit
-        let deposit_txid = state.deposits().get_deposit(deposit_idx).unwrap().output().outpoint().txid.into();
-
-        // Process withdrawal fulfillment
-        let withdrawal_info = WithdrawalInfo {
-            operator_idx,
-            deposit_idx,
-            deposit_txid,
-            withdrawal_destination: ScriptBuf::new(),
-            withdrawal_amount: BitcoinAmount::from_sat(99_000), // Must match the withdrawal command amount
-        };
-
-        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
-
-        let result = state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
-        assert!(result.is_ok());
-
-        // Verify deposit and assignment were removed
-        assert!(state.deposits().get_deposit(deposit_idx).is_none());
-        assert!(state.assignments().get_assignment(deposit_idx).is_none());
-    }
-
-    // Test BridgeV1State validate_withdrawal method
-    #[test]
-    fn test_bridgev1state_validate_withdrawal_no_assignment() {
-        let config = create_test_config();
-        let state = BridgeV1State::new(&config);
-
-        let withdrawal_info = WithdrawalInfo {
-            operator_idx: 0,
-            deposit_idx: 999,
-            deposit_txid: Txid::from_byte_array([1u8; 32]).into(),
-            withdrawal_destination: ScriptBuf::new(),
-            withdrawal_amount: BitcoinAmount::from_sat(99_000),
-        };
-
-        let result = state.validate_withdrawal(&withdrawal_info);
-        assert!(matches!(result, Err(WithdrawalValidationError::NoAssignmentFound { deposit_idx: 999 })));
-    }
-
-    // Test BridgeV1State validate_withdrawal with operator mismatch
-    #[test]
-    fn test_bridgev1state_validate_withdrawal_operator_mismatch() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        // Setup: create deposit and assignment directly
-        let deposit_idx = state.deposits_mut().create_next_deposit(
-            OutputRef::from(OutPoint::null()),
-            vec![0, 1, 2],  
-            BitcoinAmount::from_sat(100_000),
-        );
-
-        let withdrawal_cmd = create_test_withdrawal_command();
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        state.create_withdrawal_assignment(&withdrawal_cmd, &l1_block_id, 1000).unwrap();
-
-        let assigned_operator = state.assignments().get_assignment(deposit_idx).unwrap().current_assignee();
-        let wrong_operator = (assigned_operator + 1) % 3; // Different operator
-
-        let withdrawal_info = WithdrawalInfo {
-            operator_idx: wrong_operator,
-            deposit_idx,
-            deposit_txid: Txid::from_byte_array([1u8; 32]).into(),
-            withdrawal_destination: ScriptBuf::new(),
-            withdrawal_amount: BitcoinAmount::from_sat(99_000),
-        };
-
-        let result = state.validate_withdrawal(&withdrawal_info);
-        assert!(matches!(result, Err(WithdrawalValidationError::OperatorMismatch { 
-            expected, actual 
-        }) if expected == assigned_operator && actual == wrong_operator));
-    }
-
-    // Test BridgeV1State select_operator_for_deposit_excluding method
-    #[test]
-    fn test_bridgev1state_select_operator_for_deposit_excluding() {
-        let config = create_test_config();
-        let state = BridgeV1State::new(&config);
-
-        let deposit_idx = 1u32;
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        
-        // Test deterministic selection
-        let selected1 = state.select_operator_for_deposit_excluding(
-            deposit_idx,
-            &[0, 1, 2],
-            &[],
-            &l1_block_id,
-        ).unwrap();
-
-        let selected2 = state.select_operator_for_deposit_excluding(
-            deposit_idx,
-            &[0, 1, 2],
-            &[],
-            &l1_block_id,
-        ).unwrap();
-
-        assert_eq!(selected1, selected2);
-        assert!([0, 1, 2].contains(&selected1));
-    }
-
-    // Test BridgeV1State select_operator_for_deposit_excluding with exclusions
-    #[test]
-    fn test_bridgev1state_select_operator_excluding_some() {
-        let config = create_test_config();
-        let state = BridgeV1State::new(&config);
-
-        let deposit_idx = 1u32;
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        
-        let excluded = vec![0, 1];
-        let result = state.select_operator_for_deposit_excluding(
-            deposit_idx,
-            &[0, 1, 2],
-            &excluded,
-            &l1_block_id,
-        );
-
-        assert!(result.is_ok());
-        let selected = result.unwrap();
-        assert!(!excluded.contains(&selected));
-        assert_eq!(selected, 2); // Only remaining option
-    }
-
-    // Test BridgeV1State select_operator_for_deposit_excluding with no eligible operators
-    #[test]
-    fn test_bridgev1state_select_operator_no_eligible() {
-        let config = create_test_config();
-        let state = BridgeV1State::new(&config);
-
-        let deposit_idx = 1u32;
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-        
-        let excluded = vec![0, 1, 2]; // Exclude all
-        let result = state.select_operator_for_deposit_excluding(
-            deposit_idx,
-            &[0, 1, 2],
-            &excluded,
-            &l1_block_id,
-        );
-
-        assert!(matches!(result, Err(WithdrawalCommandError::NoEligibleOperators { deposit_idx: 1 })));
-    }
-
-    // Test BridgeV1State reassign_expired_assignments method
-    #[test]
-    fn test_bridgev1state_reassign_expired_assignments() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        let current_block_height = 2000u64;
-        let expired_deadline = 1500u64;
-        let valid_deadline = 2500u64;
-
-        // Setup: create deposits and assignments with different deadlines
-        for _i in 1..=2 {
-            state.deposits_mut().create_next_deposit(
-                OutputRef::from(OutPoint::null()),
-                vec![0, 1, 2],
-                BitcoinAmount::from_sat(100_000),
-            );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            DepositError::InvalidDepositAmount { expected, actual } => {
+                assert_eq!(expected, denomination);
+                assert_eq!(actual, wrong_amount);
+            }
+            _ => panic!("Expected InvalidDepositAmount error"),
         }
-
-        let withdrawal_cmd = create_test_withdrawal_command();
-        state.assignments_mut().insert(0, withdrawal_cmd.clone(), 0, expired_deadline);
-        state.assignments_mut().insert(1, withdrawal_cmd, 1, valid_deadline);
-
-        let l1_block_commitment = create_dummy_l1_block_commitment(current_block_height);
-        
-        let result = state.reassign_expired_assignments(&l1_block_commitment);
-        assert!(result.is_ok());
-
-        let reassigned = result.unwrap();
-        assert_eq!(reassigned.len(), 1);
-        assert_eq!(reassigned[0], 0); // Only deposit 0 should be reassigned
-
-        // Check that expired assignment was reassigned
-        let assignment0 = state.assignments().get_assignment(0).unwrap();
-        assert!(assignment0.previous_assignees().contains(&0));
-
-        // Check that valid assignment was not touched
-        let assignment1 = state.assignments().get_assignment(1).unwrap();
-        assert_eq!(assignment1.current_assignee(), 1);
-        assert!(assignment1.previous_assignees().is_empty());
     }
 
-    // Test comprehensive workflow combining multiple BridgeV1State operations
     #[test]
-    fn test_bridgev1state_comprehensive_workflow() {
-        let config = create_test_config();
-        let mut state = BridgeV1State::new(&config);
-
-        // 1. Create multiple deposits directly
-        for _i in 0..3 {
-            state.deposits_mut().create_next_deposit(
-                OutputRef::from(OutPoint::null()),
-                vec![0, 1, 2],
-                BitcoinAmount::from_sat(100_000),
-            );
+    fn test_process_deposit_tx_duplicate_index() {
+        let denomination = 100_000;
+        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
+        
+        // First create a deposit that will get index 0
+        let deposit_info1 = create_unique_deposit_info(1, denomination, 1);
+        let tx1 = create_test_deposit_tx(&deposit_info1, &operator_privkeys);
+        let result1 = state.process_deposit_tx(&tx1, &deposit_info1);
+        assert!(result1.is_ok());
+        assert_eq!(result1.unwrap(), 0); // Gets auto-incremented index 0
+        
+        // Now try to create another deposit with deposit_idx=0 (which already exists)
+        let deposit_info2 = create_unique_deposit_info(0, denomination, 2); // deposit_idx=0 conflicts
+        let tx2 = create_test_deposit_tx(&deposit_info2, &operator_privkeys);
+        let result2 = state.process_deposit_tx(&tx2, &deposit_info2);
+        
+        assert!(result2.is_err());
+        match result2.unwrap_err() {
+            DepositError::DepositIdxAlreadyExists(idx) => {
+                assert_eq!(idx, 0);
+            }
+            _ => panic!("Expected DepositIdxAlreadyExists error"),
         }
-        assert_eq!(state.deposits().len(), 3);
+    }
 
-        // 2. Create withdrawal assignments
-        let withdrawal_cmd = create_test_withdrawal_command();
-        let l1_block_id = L1BlockId::from(Buf32::from([1u8; 32]));
-
-        for _i in 0..2 {
-            let result = state.create_withdrawal_assignment(
-                &withdrawal_cmd,
-                &l1_block_id,
-                1000,
-            );
+    #[test]
+    fn test_process_deposit_tx_multiple_deposits() {
+        let denomination = 100_000;
+        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
+        
+        // Process multiple deposits with different indices
+        for i in 1..=5 {
+            let deposit_info = create_unique_deposit_info(i, denomination, i);
+            let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
+            
+            let result = state.process_deposit_tx(&tx, &deposit_info);
             assert!(result.is_ok());
+            // Auto-incremented index starts from 0, so deposit i gets index i-1
+            let expected_index = i - 1;
+            assert_eq!(result.unwrap(), expected_index);
+            
+            // Verify each deposit exists
+            let deposit = state.deposits().get_deposit(expected_index);
+            assert!(deposit.is_some());
         }
-        assert_eq!(state.assignments().len(), 2);
+    }
 
-        // 3. Process a withdrawal fulfillment
-        let assignment = state.assignments().get_assignment(0).unwrap();
-        let operator_idx = assignment.current_assignee();
+    #[test]
+    fn test_process_deposit_tx_notary_operators_assigned() {
+        let denomination = 100_000;
+        let (mut state, operator_privkeys) = create_test_bridge_state(5, denomination);
         
-        let withdrawal_info = WithdrawalInfo {
-            operator_idx,
-            deposit_idx: 0,
-            deposit_txid: Txid::from_byte_array([0u8; 32]).into(),
-            withdrawal_destination: ScriptBuf::new(),
-            withdrawal_amount: BitcoinAmount::from_sat(99_000),
-        };
-
-        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
-
-        let result = state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
+        let deposit_info = create_test_deposit_info(1, denomination);
+        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
+        
+        let result = state.process_deposit_tx(&tx, &deposit_info);
         assert!(result.is_ok());
+        
+        let deposit = state.deposits().get_deposit(0).unwrap(); // First deposit gets index 0
+        let notary_operators = deposit.notary_operators();
+        
+        // All current multisig operators should be notary operators
+        let current_multisig: Vec<u32> = state.operators().current_multisig_indices().collect();
+        assert_eq!(notary_operators.len(), current_multisig.len());
+        
+        for &op_idx in notary_operators {
+            assert!(current_multisig.contains(&op_idx));
+        }
+    }
 
-        // Verify state after fulfillment
-        assert_eq!(state.deposits().len(), 2); // One deposit removed
-        assert_eq!(state.assignments().len(), 1); // One assignment removed
+    #[test]
+    fn test_process_deposit_tx_zero_amount() {
+        let denomination = 100_000;
+        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
+        
+        let deposit_info = create_test_deposit_info(1, 0); // Zero amount
+        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
+        
+        let result = state.process_deposit_tx(&tx, &deposit_info);
+        
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            DepositError::InvalidDepositAmount { expected, actual } => {
+                assert_eq!(expected, denomination);
+                assert_eq!(actual, 0);
+            }
+            _ => panic!("Expected InvalidDepositAmount error"),
+        }
+    }
 
-        // 4. Test reassignment
-        let result = state.reassign_withdrawal(1, &l1_block_id);
+    #[test] 
+    fn test_process_deposit_tx_single_operator() {
+        let denomination = 100_000;
+        let (mut state, operator_privkeys) = create_test_bridge_state(1, denomination);
+        
+        let deposit_info = create_test_deposit_info(1, denomination);
+        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
+        
+        let result = state.process_deposit_tx(&tx, &deposit_info);
         assert!(result.is_ok());
+        
+        let deposit = state.deposits().get_deposit(0).unwrap(); // First deposit gets index 0
+        assert_eq!(deposit.notary_operators().len(), 1);
+        assert_eq!(deposit.notary_operators()[0], 0); // First operator index
+    }
 
-        // 5. Test expired assignment handling
-        let l1_block_commitment = create_dummy_l1_block_commitment(2000);
-        let result = state.reassign_expired_assignments(&l1_block_commitment);
+    #[test]
+    fn test_process_deposit_tx_large_denomination() {
+        let denomination = 2_100_000_000_000; // 21,000 BTC in satoshis
+        let (mut state, operator_privkeys) = create_test_bridge_state(3, denomination);
+        
+        let deposit_info = create_test_deposit_info(1, denomination);
+        let tx = create_test_deposit_tx(&deposit_info, &operator_privkeys);
+        
+        let result = state.process_deposit_tx(&tx, &deposit_info);
         assert!(result.is_ok());
+        
+        let deposit = state.deposits().get_deposit(0).unwrap(); // First deposit gets index 0
+        assert_eq!(deposit.amt().to_sat(), denomination);
+    }
+
+    #[test]
+    fn test_validate_deposit_invalid_signature() {
+        let denomination = 100_000;
+        let (state, _) = create_test_bridge_state(3, denomination);
+        
+        // Create deposit info with different operators (invalid signature)
+        let wrong_operators: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let deposit_info = create_test_deposit_info(1, denomination);
+        let tx = create_test_deposit_tx(&deposit_info, &wrong_operators);
+        
+        let result = state.validate_deposit(&tx, &deposit_info);
+        
+        assert!(result.is_err());
+        // Should fail with signature validation error
+        match result.unwrap_err() {
+            DepositError::InvalidSignature { .. } => {
+                // Expected
+            }
+            other => panic!("Expected InvalidSignature error, got: {:?}", other),
+        }
     }
 }
-

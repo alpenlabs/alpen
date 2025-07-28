@@ -160,55 +160,54 @@ pub fn validate_deposit_output_lock(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        Amount,
-        secp256k1::{Secp256k1, SecretKey},
-    };
-    use strata_primitives::{buf::Buf32, l1::{XOnlyPk, OutputRef}};
-    use bitcoin::OutPoint;
+    use bitcoin::secp256k1::{Secp256k1, SecretKey};
+    use strata_primitives::l1::XOnlyPk;
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::txs::deposit::create::create_test_deposit_tx;
 
-    // Test data constants
-    const TEST_DEPOSIT_IDX: u32 = 123;
-    const TEST_TAPSCRIPT_ROOT: [u8; 32] = [0xAB; 32];
-    const TEST_DESTINATION: &[u8] = b"test_destination";
-    const TEST_DEPOSIT_AMOUNT: u64 = 1000000;
+    // Helper function to create test operator keys with proper MuSig2 aggregation
+    fn create_test_operators() -> (XOnlyPk, Vec<SecretKey>) {
+        use bitcoin::secp256k1::PublicKey;
+        use musig2::KeyAggContext;
+        use strata_primitives::buf::Buf32;
 
-    // Helper function to create a test operator keypair
-    fn create_test_operator_keypair() -> (XOnlyPk, SecretKey) {
         let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
-        let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
-        let (xonly_pk, _) = keypair.x_only_public_key();
-        let operators_pubkey =
-            XOnlyPk::new(Buf32::new(xonly_pk.serialize())).expect("Valid public key");
-        (operators_pubkey, secret_key)
+
+        // Use single operator with the same key as the state test for consistency
+        let operators_privkeys: Vec<SecretKey> = vec![
+            SecretKey::from_slice(&[2u8; 32]).unwrap(),
+        ];
+
+        // Create MuSig2 context for consistent key aggregation (same as create_test_deposit_tx)
+        let pubkeys: Vec<PublicKey> = operators_privkeys
+            .iter()
+            .map(|sk| PublicKey::from_secret_key(&secp, sk))
+            .collect();
+
+        let key_agg_ctx = KeyAggContext::new(pubkeys).expect("Failed to create KeyAggContext");
+
+        // Use MuSig2 aggregated key to ensure consistency with create_test_deposit_tx
+        let aggregated_xonly: bitcoin::secp256k1::XOnlyPublicKey = key_agg_ctx.aggregated_pubkey();
+        let operators_pubkey = XOnlyPk::new(Buf32::new(aggregated_xonly.serialize()))
+            .expect("Valid aggregated public key");
+
+        (operators_pubkey, operators_privkeys)
     }
 
-    // Helper function to create a test DepositInfo struct
-    fn create_test_deposit_info() -> crate::txs::deposit::parse::DepositInfo {
-        crate::txs::deposit::parse::DepositInfo {
-            deposit_idx: TEST_DEPOSIT_IDX,
-            amt: Amount::from_sat(TEST_DEPOSIT_AMOUNT).into(),
-            address: TEST_DESTINATION.to_vec(),
-            outpoint: OutputRef::from(OutPoint::null()),
-            drt_tapnode_hash: Buf32::new(TEST_TAPSCRIPT_ROOT),
-        }
-    }
-
-    // Helper function to create a test transaction using the standard test utility
-    fn create_test_tx() -> Transaction {
-        let (_, operators_privkey) = create_test_operator_keypair();
-        let deposit_info = create_test_deposit_info();
-        create_test_deposit_tx(&deposit_info, &operators_privkey)
+    // Helper function to create a test transaction and return both tx and aggregated pubkey
+    fn create_test_tx_with_agg_pubkey() -> (Transaction, XOnlyPk) {
+        let (operators_pubkey, operators_privkeys) = create_test_operators();
+        let deposit_info: crate::txs::deposit::parse::DepositInfo =
+            ArbitraryGenerator::new().generate();
+        let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
+        (tx, operators_pubkey)
     }
 
     #[test]
     fn test_validate_deposit_output_lock_success() {
-        let (operators_pubkey, _) = create_test_operator_keypair();
-        let tx = create_test_tx();
+        let (tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
 
         // This should succeed
         let result = validate_deposit_output_lock(&tx, &operators_pubkey);
@@ -220,8 +219,7 @@ mod tests {
 
     #[test]
     fn test_validate_deposit_output_lock_missing_output() {
-        let (operators_pubkey, _) = create_test_operator_keypair();
-        let mut tx = create_test_tx();
+        let (mut tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
 
         // Remove the deposit output (keep only OP_RETURN at index 0)
         tx.output.truncate(1);
@@ -242,8 +240,7 @@ mod tests {
     fn test_validate_deposit_output_lock_wrong_script() {
         use bitcoin::ScriptBuf;
 
-        let (operators_pubkey, _) = create_test_operator_keypair();
-        let mut tx = create_test_tx();
+        let (mut tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
 
         // Mutate the deposit output to have wrong script (empty script instead of P2TR)
         tx.output[1].script_pubkey = ScriptBuf::new();
@@ -262,21 +259,21 @@ mod tests {
 
     #[test]
     fn test_validate_drt_spending_signature_no_witness() {
-        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
-        let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
+        let (operators_pubkey, operators_privkeys) = create_test_operators();
 
         // Create a signed transaction then remove the witness
-        let deposit_info = create_test_deposit_info();
-        let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkey);
+        let deposit_info: crate::txs::deposit::parse::DepositInfo =
+            ArbitraryGenerator::new().generate();
+        let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
 
         // Clear the witness to test no witness case
         tx.input[0].witness.clear();
 
         let result = validate_drt_spending_signature(
             &tx,
-            drt_tapnode_hash,
+            deposit_info.drt_tapnode_hash,
             &operators_pubkey,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+            deposit_info.amt.into(),
         );
 
         assert!(
@@ -294,21 +291,21 @@ mod tests {
     fn test_validate_drt_spending_signature_invalid_signature() {
         use bitcoin::Witness;
 
-        let (operators_pubkey, operators_privkey) = create_test_operator_keypair();
-        let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
+        let (operators_pubkey, operators_privkeys) = create_test_operators();
 
         // Create a signed transaction then replace with invalid signature
-        let deposit_info = create_test_deposit_info();
-        let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkey);
+        let deposit_info: crate::txs::deposit::parse::DepositInfo =
+            ArbitraryGenerator::new().generate();
+        let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
 
         // Replace with invalid witness data
         tx.input[0].witness = Witness::from_slice(&[&[0u8; 64]]); // Dummy signature
 
         let result = validate_drt_spending_signature(
             &tx,
-            drt_tapnode_hash,
+            deposit_info.drt_tapnode_hash,
             &operators_pubkey,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+            deposit_info.amt.into(),
         );
 
         assert!(result.is_err(), "Should fail with invalid signature");
@@ -319,38 +316,30 @@ mod tests {
 
     #[test]
     fn test_validate_drt_spending_signature_success() {
-        // Create a specific keypair that we'll use consistently
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
-        let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
-        let (internal_key, _) = keypair.x_only_public_key();
-        let operators_pubkey = XOnlyPk::new(Buf32::new(internal_key.serialize())).unwrap();
+        // Create deposit info and transaction with consistent parameters
+        let deposit_info: crate::txs::deposit::parse::DepositInfo =
+            ArbitraryGenerator::new().generate();
+        let (operators_pubkey, operators_privkeys) = create_test_operators();
+        let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
 
-        let drt_tapnode_hash = Buf32::new(TEST_TAPSCRIPT_ROOT);
+        // Transaction created with proper MuSig2 signature
 
-        // Create a properly signed transaction using the test utility
-        let deposit_info = create_test_deposit_info();
-        let tx = create_test_deposit_tx(&deposit_info, &secret_key);
-
-        // Test the validation - this should succeed
+        // Test the validation using the same tapnode hash from deposit_info
         let result = validate_drt_spending_signature(
             &tx,
-            drt_tapnode_hash,
+            deposit_info.drt_tapnode_hash,
             &operators_pubkey,
-            Amount::from_sat(TEST_DEPOSIT_AMOUNT),
+            deposit_info.amt.into(),
         );
 
-        assert!(
-            result.is_ok(),
-            "Should succeed with valid signature: {result:?}"
-        );
+        assert!(result.is_ok(), "Valid signature should pass validation");
     }
 
     #[test]
     fn test_create_valid_p2tr_script() {
         use bitcoin::{ScriptBuf, XOnlyPublicKey};
 
-        let (operators_pubkey, _) = create_test_operator_keypair();
+        let (operators_pubkey, _) = create_test_operators();
         let secp = Secp256k1::new();
 
         let operators_xonly =

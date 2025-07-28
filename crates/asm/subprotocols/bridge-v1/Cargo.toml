@@ -27,3 +27,5 @@ strata-primitives.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+musig2.workspace = true
+rand.workspace = true

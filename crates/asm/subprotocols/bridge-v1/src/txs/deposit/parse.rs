@@ -151,7 +151,7 @@ mod tests {
     // Helper function to create a test transaction (for mutation tests)
     fn create_test_tx(deposit_info: &DepositInfo) -> Transaction {
         let (_, operators_privkey) = create_test_operator_keypair();
-        create_test_deposit_tx(deposit_info, &operators_privkey)
+        create_test_deposit_tx(deposit_info, &[operators_privkey])
     }
 
     // Helper function to create tagged payload with custom parameters
