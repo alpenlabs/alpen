@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use crate::schema::Schema;
 
 /// Errors that can occur during key/value encoding or decoding.
@@ -12,31 +14,50 @@ pub enum CodecError {
     /// Value serialization failed using borsh.
     SerializationFailed {
         schema: &'static str,
-        source: std::io::Error,
+        source: Box<dyn Error>,
     },
     /// Value deserialization failed using borsh.
     DeserializationFailed {
         schema: &'static str,
-        source: std::io::Error,
+        source: Box<dyn Error>,
     },
     /// I/O error during codec operations.
     IO(std::io::Error),
+
+    /// Other
+    Other(String),
 }
 
 impl std::fmt::Display for CodecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CodecError::InvalidKeyLength { schema, expected, actual } => {
-                write!(f, "Invalid key length for schema '{schema}': expected {expected} bytes, got {actual}")
+            CodecError::InvalidKeyLength {
+                schema,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "Invalid key length for schema '{schema}': expected {expected} bytes, got {actual}"
+                )
             }
             CodecError::SerializationFailed { schema, source } => {
-                write!(f, "Failed to serialize value for schema '{schema}': {source}")
+                write!(
+                    f,
+                    "Failed to serialize value for schema '{schema}': {source}"
+                )
             }
             CodecError::DeserializationFailed { schema, source } => {
-                write!(f, "Failed to deserialize value for schema '{schema}': {source}")
+                write!(
+                    f,
+                    "Failed to deserialize value for schema '{schema}': {source}"
+                )
             }
             CodecError::IO(err) => {
                 write!(f, "I/O error: {err}")
+            }
+            CodecError::Other(err) => {
+                write!(f, "Other error: {err}")
             }
         }
     }
@@ -45,8 +66,8 @@ impl std::fmt::Display for CodecError {
 impl std::error::Error for CodecError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            CodecError::SerializationFailed { source, .. } => Some(source),
-            CodecError::DeserializationFailed { source, .. } => Some(source),
+            CodecError::SerializationFailed { source, .. } => Some(source.as_ref()),
+            CodecError::DeserializationFailed { source, .. } => Some(source.as_ref()),
             CodecError::IO(err) => Some(err),
             _ => None,
         }

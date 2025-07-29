@@ -26,6 +26,7 @@ fn key_bound<S: Schema>(k: Bound<&S::Key>) -> Result<Bound<Vec<u8>>> {
 }
 
 /// Type-safe wrapper around a sled tree with schema-enforced operations.
+#[derive(Debug)]
 pub struct SledTree<S: Schema> {
     pub(crate) inner: Arc<Tree>,
     _phantom: PhantomData<S>,
@@ -228,13 +229,13 @@ mod tests {
         fn encode_value(&self) -> CodecResult<Vec<u8>> {
             borsh::to_vec(self).map_err(|e| CodecError::SerializationFailed {
                 schema: TestSchema::TREE_NAME.0,
-                source: e,
+                source: e.into(),
             })
         }
         fn decode_value(buf: &[u8]) -> CodecResult<Self> {
             borsh::from_slice(buf).map_err(|e| CodecError::DeserializationFailed {
                 schema: TestSchema::TREE_NAME.0,
-                source: e,
+                source: e.into(),
             })
         }
     }
