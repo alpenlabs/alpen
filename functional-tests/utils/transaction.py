@@ -69,7 +69,7 @@ class TransactionBuilder(_TransactionFaucet):
             tx.setdefault("accessList", [{"address": tx["to"], "storageKeys": []}])
 
             tx.setdefault(
-                "gasPrice", self.w3.eth.gas_price if from_rpc else self.w3.to_wei("1", "gwei")
+                "gasPrice", self.w3.eth.gas_price if not from_rpc else self.w3.to_wei("1", "gwei"))
             )
 
         elif tx_type == TransactionType.EIP1559:
