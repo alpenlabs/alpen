@@ -5,9 +5,11 @@ use sled::{
 
 use crate::{Schema, SledTree, tree::SledTransactionalTree};
 
+/// Trait for performing transactions on typed sled trees.
 pub trait SledTransactional {
     type View;
 
+    /// Executes a function within a transaction context.
     fn transaction<F, R, E>(&self, func: F) -> TransactionResult<R, E>
     where
         F: Fn(Self::View) -> ConflictableTransactionResult<R, E>;

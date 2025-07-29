@@ -4,13 +4,14 @@ use sled::Batch;
 
 use crate::{KeyCodec, Schema, ValueCodec, error::Result};
 
-/// Typesafe wrapper to a sled [`Batch`].
+/// Type-safe wrapper around a sled batch for atomic operations.
 pub struct SledBatch<S: Schema> {
     pub(crate) inner: Batch,
     _phantom: PhantomData<S>,
 }
 
 impl<S: Schema> SledBatch<S> {
+    /// Creates a new empty batch.
     pub fn new() -> Self {
         Self {
             inner: Batch::default(),
@@ -18,6 +19,7 @@ impl<S: Schema> SledBatch<S> {
         }
     }
 
+    /// Adds an insert operation to the batch.
     pub fn insert(&mut self, key: S::Key, value: S::Value) -> Result<()> {
         let key = key.encode_key()?;
         let value = value.encode_value()?;
@@ -25,6 +27,7 @@ impl<S: Schema> SledBatch<S> {
         Ok(())
     }
 
+    /// Adds a remove operation to the batch.
     pub fn remove(&mut self, key: S::Key) -> Result<()> {
         let key = key.encode_key()?;
         self.inner.remove(key);

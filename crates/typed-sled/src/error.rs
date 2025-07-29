@@ -2,6 +2,7 @@ use sled::{Error as SledError, transaction::UnabortableTransactionError};
 
 use crate::CodecError;
 
+/// The main error type for typed-sled operations.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Codec error
@@ -18,4 +19,5 @@ pub enum Error {
 
 }
 
+/// A type alias for `Result<T, Error>`.
 pub type Result<T> = core::result::Result<T, Error>;
