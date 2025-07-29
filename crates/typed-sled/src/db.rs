@@ -9,6 +9,7 @@ use crate::{
     tree::SledTree,
 };
 
+/// A type-safe wrapper around sled database with schema-based tree management.
 pub struct SledDb {
     /// Mapping of treenames to sled tree.
     inner_trees: DashMap<TreeName, Arc<Tree>>,
@@ -17,6 +18,7 @@ pub struct SledDb {
 }
 
 impl SledDb {
+    /// Creates a new typed sled database wrapper.
     pub fn new(inner_db: Arc<Db>) -> Result<Self> {
         Ok(Self {
             inner_db,
@@ -24,6 +26,7 @@ impl SledDb {
         })
     }
 
+    /// Gets or creates a typed tree for the given schema.
     pub fn get_tree<S: Schema>(&self) -> Result<SledTree<S>> {
         if let Some(tree) = self.inner_trees.get(&S::TREE_NAME) {
             return Ok(SledTree::new(tree.clone()));

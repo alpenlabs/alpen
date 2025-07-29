@@ -8,12 +8,14 @@ use sled::{IVec, Iter, Tree, transaction::TransactionalTree};
 
 use crate::{KeyCodec, Schema, ValueCodec, batch::SledBatch, error::Result};
 
+/// Decodes a raw key-value pair into typed schema types.
 fn decode_pair<S: Schema>((k, v): (IVec, IVec)) -> Result<(S::Key, S::Value)> {
     let key = S::Key::decode_key(&k)?;
     let value = S::Value::decode_value(&v)?;
     Ok((key, value))
 }
 
+/// Converts a typed key bound to a raw byte bound.
 fn key_bound<S: Schema>(k: Bound<&S::Key>) -> Result<Bound<Vec<u8>>> {
     let bound = match k {
         Bound::Included(k) => Bound::Included(k.encode_key()?),
@@ -23,12 +25,14 @@ fn key_bound<S: Schema>(k: Bound<&S::Key>) -> Result<Bound<Vec<u8>>> {
     Ok(bound)
 }
 
+/// Type-safe wrapper around a sled tree with schema-enforced operations.
 pub struct SledTree<S: Schema> {
     pub(crate) inner: Arc<Tree>,
     _phantom: PhantomData<S>,
 }
 
 impl<S: Schema> SledTree<S> {
+    /// Creates a new typed tree wrapper.
     pub fn new(inner: Arc<Tree>) -> Self {
         Self {
             inner,
@@ -36,6 +40,7 @@ impl<S: Schema> SledTree<S> {
         }
     }
 
+    /// Inserts a key-value pair into the tree.
     pub fn insert(&self, key: &S::Key, value: &S::Value) -> Result<()> {
         let key = key.encode_key()?;
         let value = value.encode_value()?;
@@ -45,6 +50,7 @@ impl<S: Schema> SledTree<S> {
         Ok(())
     }
 
+    /// Retrieves a value for the given key.
     pub fn get(&self, key: &S::Key) -> Result<Option<S::Value>> {
         let key = key.encode_key()?;
         let val = self.inner.get(key)?;
@@ -52,6 +58,7 @@ impl<S: Schema> SledTree<S> {
         Ok(val.map(|v| S::Value::decode_value(v)).transpose()?)
     }
 
+    /// Removes a key-value pair from the tree.
     pub fn remove(&self, key: &S::Key) -> Result<()> {
         let key = key.encode_key()?;
         self.inner.remove(key)?;
@@ -60,18 +67,22 @@ impl<S: Schema> SledTree<S> {
         Ok(())
     }
 
+    /// Returns true if the tree contains no key-value pairs.
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
+    /// Returns the first key-value pair in the tree.
     pub fn first(&self) -> Result<Option<(S::Key, S::Value)>> {
         self.inner.first()?.map(decode_pair::<S>).transpose()
     }
 
+    /// Returns the last key-value pair in the tree.
     pub fn last(&self) -> Result<Option<(S::Key, S::Value)>> {
         self.inner.last()?.map(decode_pair::<S>).transpose()
     }
 
+    /// Applies a batch of operations atomically.
     pub fn apply_batch(&self, batch: SledBatch<S>) -> Result<()> {
         Ok(self.inner.apply_batch(batch.inner)?)
     }
@@ -98,13 +109,14 @@ impl<S: Schema> SledTree<S> {
     }
 }
 
-/// Typesafe wrapper to sled [`TransactionalTree`]
+/// Type-safe wrapper around sled's transactional tree.
 pub struct SledTransactionalTree<S: Schema> {
     inner: TransactionalTree,
     _phantom: PhantomData<S>,
 }
 
 impl<S: Schema> SledTransactionalTree<S> {
+    /// Creates a new transactional tree wrapper.
     pub fn new(inner: TransactionalTree) -> Self {
         Self {
             inner,
@@ -112,6 +124,7 @@ impl<S: Schema> SledTransactionalTree<S> {
         }
     }
 
+    /// Inserts a key-value pair in the transaction.
     pub fn insert(&self, key: &S::Key, value: &S::Value) -> Result<()> {
         let key = key.encode_key()?;
         let value = value.encode_value()?;
@@ -119,6 +132,7 @@ impl<S: Schema> SledTransactionalTree<S> {
         Ok(())
     }
 
+    /// Retrieves a value for the given key within the transaction.
     pub fn get(&self, key: &S::Key) -> Result<Option<S::Value>> {
         let key = key.encode_key()?;
         let val = self.inner.get(key)?;
@@ -126,6 +140,7 @@ impl<S: Schema> SledTransactionalTree<S> {
         Ok(val.map(|v| S::Value::decode_value(v)).transpose()?)
     }
 
+    /// Removes a key-value pair within the transaction.
     pub fn remove(&self, key: &S::Key) -> Result<()> {
         let key = key.encode_key()?;
         self.inner.remove(key)?;
