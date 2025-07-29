@@ -19,7 +19,7 @@
 //! use std::sync::Arc;
 //!
 //! use borsh::{BorshDeserialize, BorshSerialize};
-//! use typed_sled::{DbResult, Schema, SledDb};
+//! use typed_sled::{error::Result, CodecError, KeyCodec, ValueCodec, Schema, SledDb, TreeName};
 //!
 //! #[derive(BorshSerialize, BorshDeserialize, Debug)]
 //! struct User {
@@ -31,22 +31,56 @@
 //! struct UserSchema;
 //!
 //! impl Schema for UserSchema {
-//!     const TREE_NAME: &'static str = "users";
+//!     const TREE_NAME: TreeName = TreeName("users");
 //!     type Key = u32;
 //!     type Value = User;
 //! }
 //!
-//! fn main() -> DbResult<()> {
+//! impl KeyCodec<UserSchema> for u32 {
+//!     fn encode_key(&self) -> typed_sled::CodecResult<Vec<u8>> {
+//!         Ok(self.to_be_bytes().to_vec())
+//!     }
+//!     fn decode_key(buf: &[u8]) -> typed_sled::CodecResult<Self> {
+//!         if buf.len() != 4 {
+//!             return Err(CodecError::InvalidKeyLength {
+//!                 schema: UserSchema::TREE_NAME.0,
+//!                 expected: 4,
+//!                 actual: buf.len(),
+//!             });
+//!         }
+//!         let mut bytes = [0; 4];
+//!         bytes.copy_from_slice(buf);
+//!         Ok(u32::from_be_bytes(bytes))
+//!     }
+//! }
+//!
+//! impl ValueCodec<UserSchema> for User {
+//!     fn encode_value(&self) -> typed_sled::CodecResult<Vec<u8>> {
+//!         borsh::to_vec(self).map_err(|e| CodecError::SerializationFailed {
+//!             schema: UserSchema::TREE_NAME.0,
+//!             source: e,
+//!         })
+//!     }
+//!     fn decode_value(buf: &[u8]) -> typed_sled::CodecResult<Self> {
+//!         borsh::from_slice(buf).map_err(|e| CodecError::DeserializationFailed {
+//!             schema: UserSchema::TREE_NAME.0,
+//!             source: e,
+//!         })
+//!     }
+//! }
+//!
+//! fn main() -> Result<()> {
 //!     let sled_db = Arc::new(sled::open("mydb").unwrap());
-//!     let db = SledDb::new(sled_db, &["users"])?;
+//!     let db = SledDb::new(sled_db)?;
+//!     let tree = db.get_tree::<UserSchema>()?;
 //!
 //!     let user = User {
 //!         id: 1,
 //!         name: "Alice".to_string(),
 //!     };
-//!     db.put::<UserSchema>(&1, &user)?;
+//!     tree.insert(&1, &user)?;
 //!
-//!     let retrieved = db.get::<UserSchema>(&1)?;
+//!     let retrieved = tree.get(&1)?;
 //!     println!("{:?}", retrieved);
 //!
 //!     Ok(())

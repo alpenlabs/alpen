@@ -32,6 +32,9 @@ impl<S1: Schema> SledTransactional for (SledTree<S1>,) {
 }
 */
 
+/// Implements [`SledTransactional`] trait for various [`SledTree`] tuples. This provides a
+/// similar interface to what [sled provides]
+/// (https://docs.rs/sled/latest/sled/struct.Tree.html#method.transaction).
 macro_rules! impl_sled_transactional {
     ($(($idx:tt, $schema:ident, $var:ident)),+) => {
         impl<$($schema: Schema),+> SledTransactional for ($(SledTree<$schema>),+,) {
