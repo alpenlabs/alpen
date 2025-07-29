@@ -27,23 +27,31 @@ impl KeyCodec<UserSchema> for u32 {
     }
 
     fn decode_key(buf: &[u8]) -> typed_sled::CodecResult<Self> {
-        if buf.len() != 1 {
-            return Err(CodecError::InvalidLength {
-                expected: 1,
-                got: buf.len(),
+        if buf.len() != 4 {
+            return Err(CodecError::InvalidKeyLength {
+                schema: UserSchema::TREE_NAME.0,
+                expected: 4,
+                actual: buf.len(),
             });
         }
-        let buf = [buf[0]];
-        Ok(u8::from_be_bytes(buf).into())
+        let mut bytes = [0; 4];
+        bytes.copy_from_slice(buf);
+        Ok(u32::from_be_bytes(bytes))
     }
 }
 
 impl ValueCodec<UserSchema> for User {
     fn encode_value(&self) -> typed_sled::CodecResult<Vec<u8>> {
-        borsh::to_vec(self).map_err(CodecError::Serialization)
+        borsh::to_vec(self).map_err(|e| CodecError::SerializationFailed {
+            schema: UserSchema::TREE_NAME.0,
+            source: e,
+        })
     }
     fn decode_value(buf: &[u8]) -> typed_sled::CodecResult<Self> {
-        borsh::from_slice(buf).map_err(CodecError::Deserialization)
+        borsh::from_slice(buf).map_err(|e| CodecError::DeserializationFailed {
+            schema: UserSchema::TREE_NAME.0,
+            source: e,
+        })
     }
 }
 

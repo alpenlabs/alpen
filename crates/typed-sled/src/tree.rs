@@ -212,9 +212,10 @@ mod tests {
 
         fn decode_key(buf: &[u8]) -> CodecResult<Self> {
             if buf.len() != 4 {
-                return Err(CodecError::InvalidLength {
+                return Err(CodecError::InvalidKeyLength {
+                    schema: TestSchema::TREE_NAME.0,
                     expected: 4,
-                    got: buf.len(),
+                    actual: buf.len(),
                 });
             }
             let mut bytes = [0; 4];
@@ -225,10 +226,16 @@ mod tests {
 
     impl ValueCodec<TestSchema> for TestValue {
         fn encode_value(&self) -> CodecResult<Vec<u8>> {
-            borsh::to_vec(self).map_err(CodecError::Serialization)
+            borsh::to_vec(self).map_err(|e| CodecError::SerializationFailed {
+                schema: TestSchema::TREE_NAME.0,
+                source: e,
+            })
         }
         fn decode_value(buf: &[u8]) -> CodecResult<Self> {
-            borsh::from_slice(buf).map_err(CodecError::Deserialization)
+            borsh::from_slice(buf).map_err(|e| CodecError::DeserializationFailed {
+                schema: TestSchema::TREE_NAME.0,
+                source: e,
+            })
         }
     }
 
