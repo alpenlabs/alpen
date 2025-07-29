@@ -20,6 +20,7 @@ alloy-rpc-types.workspace = true
 anyhow.workspace = true
 arbitrary.workspace = true
 borsh.workspace = true
+http = "1.0"
 jsonrpsee = { workspace = true, features = ["jsonrpsee-http-client"] }
 reth-primitives = { workspace = true, features = [
   "alloy-compat",
@@ -31,7 +32,6 @@ reth-rpc-layer.workspace = true
 revm-primitives.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tower.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
