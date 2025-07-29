@@ -19,7 +19,7 @@
 //! use std::sync::Arc;
 //!
 //! use borsh::{BorshDeserialize, BorshSerialize};
-//! use typed_sled::{error::Result, CodecError, KeyCodec, ValueCodec, Schema, SledDb, TreeName};
+//! use typed_sled::{CodecError, KeyCodec, Schema, SledDb, TreeName, ValueCodec, error::Result};
 //!
 //! #[derive(BorshSerialize, BorshDeserialize, Debug)]
 //! struct User {
@@ -58,13 +58,13 @@
 //!     fn encode_value(&self) -> typed_sled::CodecResult<Vec<u8>> {
 //!         borsh::to_vec(self).map_err(|e| CodecError::SerializationFailed {
 //!             schema: UserSchema::TREE_NAME.0,
-//!             source: e,
+//!             source: e.into(),
 //!         })
 //!     }
 //!     fn decode_value(buf: &[u8]) -> typed_sled::CodecResult<Self> {
 //!         borsh::from_slice(buf).map_err(|e| CodecError::DeserializationFailed {
 //!             schema: UserSchema::TREE_NAME.0,
-//!             source: e,
+//!             source: e.into(),
 //!         })
 //!     }
 //! }

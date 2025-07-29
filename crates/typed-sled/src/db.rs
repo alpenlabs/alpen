@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// A type-safe wrapper around sled database with schema-based tree management.
+#[derive(Debug)]
 pub struct SledDb {
     /// Mapping of treenames to sled tree.
     inner_trees: DashMap<TreeName, Arc<Tree>>,
