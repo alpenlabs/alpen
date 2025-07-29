@@ -7,12 +7,12 @@ use alloy::{
 use argh::FromArgs;
 use bdk_wallet::{bitcoin::Address, KeychainKind};
 use indicatif::ProgressBar;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{
     alpen::AlpenWallet,
     constants::SATS_TO_WEI,
-    errors::{DisplayableError, DisplayedError},
     link::{OnchainObject, PrettyPrint},
     seed::Seed,
     settings::Settings,
