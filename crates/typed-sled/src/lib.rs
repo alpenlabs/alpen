@@ -58,6 +58,7 @@ pub mod codec;
 pub mod db;
 pub mod error;
 pub mod schema;
+pub mod transaction;
 pub mod tree;
 
 // Re-export main types
