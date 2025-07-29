@@ -53,7 +53,7 @@ impl EngineRpcClient {
         }
     }
 
-    fn create_client(&self) -> impl SubscriptionClientT + Clone + Send + Sync + Unpin + 'static {
+    fn create_client(&self) -> impl EngineApiClient<AlpenEngineTypes> {
         let middleware = tower::ServiceBuilder::new().layer(AuthClientLayer::new(self.secret));
         HttpClientBuilder::default()
             .set_http_middleware(middleware)
