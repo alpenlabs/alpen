@@ -59,9 +59,9 @@ pub fn next_u32(instructions: &mut Instructions<'_>) -> Option<u32> {
 }
 
 /// Returns the aggregated public key from an iterator of operator public keys.
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if any key in the iterator is not a valid x-only public key.
 pub fn generate_agg_pubkey<'k>(
     keys: impl Iterator<Item = &'k Buf32>,

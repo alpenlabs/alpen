@@ -5,12 +5,15 @@
 //! notary operators. We preserve the historical operator set that controlled each deposit
 //! since the operator set may change over time.
 
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},
 };
+
+use crate::errors::DepositValidationError;
 
 /// Bitcoin deposit entry containing UTXO reference and historical multisig operators.
 ///
@@ -72,20 +75,20 @@ impl DepositEntry {
     /// # Returns
     ///
     /// - `Ok(DepositEntry)` if the parameters are valid
-    /// - `Err(DepositError::EmptyOperators)` if the operators list is empty
+    /// - `Err(DepositValidationError::EmptyOperators)` if the operators list is empty
     ///
     /// # Errors
     ///
-    /// Returns [`DepositError::EmptyOperators`] if the operators vector is empty.
+    /// Returns [`DepositValidationError::EmptyOperators`] if the operators vector is empty.
     /// Each deposit must have at least one notary operator.
     pub fn new(
         idx: u32,
         output: OutputRef,
         operators: Vec<OperatorIdx>,
         amt: BitcoinAmount,
-    ) -> Result<Self, crate::errors::DepositError> {
+    ) -> Result<Self, DepositValidationError> {
         if operators.is_empty() {
-            return Err(crate::errors::DepositError::EmptyOperators);
+            return Err(crate::errors::DepositValidationError::EmptyOperators);
         }
 
         Ok(Self {
@@ -137,7 +140,7 @@ impl DepositEntry {
     }
 }
 
-impl<'a> arbitrary::Arbitrary<'a> for DepositEntry {
+impl<'a> Arbitrary<'a> for DepositEntry {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // Generate a random deposit index
         let deposit_idx: u32 = u.arbitrary()?;
@@ -264,7 +267,8 @@ impl DepositsTable {
     /// # Returns
     ///
     /// - `Ok(())` if the deposit was successfully inserted
-    /// - `Err(DepositError::DepositIdxAlreadyExists)` if a deposit with this index already exists
+    /// - `Err(DepositValidationError::DepositIdxAlreadyExists)` if a deposit with this index
+    ///   already exists
     ///
     /// # Example
     ///
@@ -277,10 +281,10 @@ impl DepositsTable {
     pub fn insert_deposit(
         &mut self,
         entry: DepositEntry,
-    ) -> Result<(), crate::errors::DepositError> {
+    ) -> Result<(), crate::errors::DepositValidationError> {
         let idx = entry.deposit_idx;
         match self.get_deposit(idx) {
-            Some(_) => Err(crate::errors::DepositError::DepositIdxAlreadyExists(idx)),
+            Some(_) => Err(crate::errors::DepositValidationError::DepositIdxAlreadyExists(idx)),
             None => {
                 // Perform binary search to find the insertion point
                 let pos = self
@@ -330,7 +334,7 @@ mod tests {
         let result = DepositEntry::new(1, output, operators, amount);
         assert!(matches!(
             result,
-            Err(crate::errors::DepositError::EmptyOperators)
+            Err(crate::errors::DepositValidationError::EmptyOperators)
         ));
     }
 
@@ -365,7 +369,7 @@ mod tests {
         let result = table.insert_deposit(entry2.clone());
         assert!(matches!(
             result,
-            Err(crate::errors::DepositError::DepositIdxAlreadyExists(idx)) if idx == deposit_idx
+            Err(crate::errors::DepositValidationError::DepositIdxAlreadyExists(idx)) if idx == deposit_idx
         ));
     }
 

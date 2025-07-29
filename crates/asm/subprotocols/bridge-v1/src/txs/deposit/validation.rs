@@ -8,7 +8,7 @@ use bitcoin::{
 use secp256k1::Message;
 use strata_primitives::{buf::Buf32, l1::XOnlyPk};
 
-use crate::{errors::DepositError, txs::deposit::DEPOSIT_OUTPUT_INDEX};
+use crate::{errors::DepositValidationError, txs::deposit::DEPOSIT_OUTPUT_INDEX};
 
 /// Validates that the DRT spending signature in the deposit transaction is valid.
 ///
@@ -37,8 +37,8 @@ use crate::{errors::DepositError, txs::deposit::DEPOSIT_OUTPUT_INDEX};
 /// # Returns
 ///
 /// - `Ok(())` - If the signature is cryptographically valid for the given public key
-/// - `Err(DepositError::InvalidSignature)` - If signature validation fails with details about the
-///   failure
+/// - `Err(DepositValidationError::InvalidSignature)` - If signature validation fails with details
+///   about the failure
 ///
 /// # Implementation Details
 ///
@@ -50,7 +50,7 @@ pub fn validate_drt_spending_signature(
     drt_tapnode_hash: Buf32,
     operators_pubkey: &XOnlyPk,
     deposit_amount: Amount,
-) -> Result<(), DepositError> {
+) -> Result<(), DepositValidationError> {
     // Initialize necessary variables and dependencies
     let secp = secp256k1::SECP256K1;
 
@@ -63,7 +63,7 @@ pub fn validate_drt_spending_signature(
 
     // Check if witness is present.
     if input.witness.is_empty() {
-        return Err(DepositError::InvalidSignature {
+        return Err(DepositValidationError::InvalidSignature {
             reason: "No witness data found in transaction input".to_string(),
         });
     }
@@ -72,7 +72,7 @@ pub fn validate_drt_spending_signature(
     // rust-bitcoin taproot::Signature handles both both 64-byte (SIGHASH_DEFAULT)
     // and 65-byte (explicit sighash) signatures.
     let taproot_sig = taproot::Signature::from_slice(sig_witness).map_err(|e| {
-        DepositError::InvalidSignature {
+        DepositValidationError::InvalidSignature {
             reason: format!("Failed to parse taproot signature: {e}"),
         }
     })?;
@@ -105,7 +105,7 @@ pub fn validate_drt_spending_signature(
 
     // Verify the Schnorr signature
     secp.verify_schnorr(&schnorr_sig, &msg, &tweaked_key.to_x_only_public_key())
-        .map_err(|e| DepositError::InvalidSignature {
+        .map_err(|e| DepositValidationError::InvalidSignature {
             reason: format!("Schnorr signature verification failed: {e}"),
         })?;
 
@@ -119,6 +119,12 @@ pub fn validate_drt_spending_signature(
 /// (key-spend only). This ensures the deposited funds can only be spent by the N/N
 /// operator set.
 ///
+/// # Panics
+///
+/// This function will panic if the deposit output at `DEPOSIT_OUTPUT_INDEX` is missing.
+/// This is safe because this validation is only called on transactions that have already
+/// been parsed and verified to have the proper deposit transaction structure.
+///
 /// # Parameters
 ///
 /// - `tx` - The deposit transaction to validate
@@ -127,21 +133,26 @@ pub fn validate_drt_spending_signature(
 /// # Returns
 ///
 /// - `Ok(())` - If the deposit output is properly locked to the operator key
-/// - `Err(DepositError)` - If the output is missing, has wrong script type, or wrong key
+/// - `Err(DepositValidationError::InvalidSignature)` - If the output has wrong script type or wrong
+///   key
 pub fn validate_deposit_output_lock(
     tx: &Transaction,
     operators_agg_pubkey: &XOnlyPk,
-) -> Result<(), DepositError> {
-    // Get the deposit output
+) -> Result<(), DepositValidationError> {
+    // Get the deposit output at the expected index.
+    // This expect is safe because we only validate transactions that have already been
+    // parsed and confirmed to have proper deposit transaction structure. If there's no
+    // deposit output at this index, it means the transaction wasn't properly validated
+    // during parsing, which indicates a programming error.
     let deposit_output = tx
         .output
         .get(DEPOSIT_OUTPUT_INDEX as usize)
-        .ok_or(DepositError::MissingOutput(DEPOSIT_OUTPUT_INDEX))?;
+        .expect("invalid deposit tx structure");
 
     // Extract the internal key from the P2TR script
     let secp = secp256k1::SECP256K1;
     let operators_pubkey = XOnlyPublicKey::from_slice(operators_agg_pubkey.inner().as_bytes())
-        .map_err(|_| DepositError::InvalidSignature {
+        .map_err(|_| DepositValidationError::InvalidSignature {
             reason: "Invalid operator public key".to_string(),
         })?;
 
@@ -150,7 +161,7 @@ pub fn validate_deposit_output_lock(
 
     // Verify the deposit output script matches the expected P2TR script
     if deposit_output.script_pubkey != expected_script {
-        return Err(DepositError::InvalidSignature {
+        return Err(DepositValidationError::InvalidSignature {
             reason: "Deposit output is not locked to the aggregated operator key".to_string(),
         });
     }
@@ -160,30 +171,36 @@ pub fn validate_deposit_output_lock(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::secp256k1::{Secp256k1, SecretKey};
-    use strata_primitives::l1::XOnlyPk;
+    use bitcoin::{
+        Witness,
+        secp256k1::{PublicKey, Secp256k1, SecretKey},
+    };
+    use musig2::KeyAggContext;
+    use rand::Rng;
+    use strata_primitives::{buf::Buf32, l1::XOnlyPk};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::txs::deposit::create::create_test_deposit_tx;
+    use crate::txs::deposit::{create::create_test_deposit_tx, parse::DepositInfo};
 
     // Helper function to create test operator keys with proper MuSig2 aggregation
     fn create_test_operators() -> (XOnlyPk, Vec<SecretKey>) {
-        use bitcoin::secp256k1::PublicKey;
-        use musig2::KeyAggContext;
-        use strata_primitives::buf::Buf32;
-
         let secp = Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+        let num_operators = rng.gen_range(2..=5);
 
-        // Use single operator with the same key as the state test for consistency
-        let operators_privkeys: Vec<SecretKey> = vec![
-            SecretKey::from_slice(&[2u8; 32]).unwrap(),
-        ];
+        // Generate random operator keys
+        let operators_privkeys: Vec<SecretKey> = (0..num_operators)
+            .map(|_| SecretKey::new(&mut rng))
+            .collect();
 
         // Create MuSig2 context for consistent key aggregation (same as create_test_deposit_tx)
         let pubkeys: Vec<PublicKey> = operators_privkeys
             .iter()
             .map(|sk| PublicKey::from_secret_key(&secp, sk))
+            .map(|pk| {
+                PublicKey::from_x_only_public_key(pk.x_only_public_key().0, secp256k1::Parity::Even)
+            })
             .collect();
 
         let key_agg_ctx = KeyAggContext::new(pubkeys).expect("Failed to create KeyAggContext");
@@ -199,8 +216,7 @@ mod tests {
     // Helper function to create a test transaction and return both tx and aggregated pubkey
     fn create_test_tx_with_agg_pubkey() -> (Transaction, XOnlyPk) {
         let (operators_pubkey, operators_privkeys) = create_test_operators();
-        let deposit_info: crate::txs::deposit::parse::DepositInfo =
-            ArbitraryGenerator::new().generate();
+        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
         let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
         (tx, operators_pubkey)
     }
@@ -218,22 +234,15 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "invalid deposit tx structure")]
     fn test_validate_deposit_output_lock_missing_output() {
         let (mut tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
 
         // Remove the deposit output (keep only OP_RETURN at index 0)
         tx.output.truncate(1);
 
-        let result = validate_deposit_output_lock(&tx, &operators_pubkey);
-        assert!(
-            result.is_err(),
-            "Should fail when deposit output is missing"
-        );
-
-        assert!(matches!(result, Err(DepositError::MissingOutput(_))));
-        if let Err(DepositError::MissingOutput(index)) = result {
-            assert_eq!(index, DEPOSIT_OUTPUT_INDEX);
-        }
+        // This should panic since we removed the deposit output
+        validate_deposit_output_lock(&tx, &operators_pubkey).unwrap();
     }
 
     #[test]
@@ -251,8 +260,11 @@ mod tests {
             "Should fail when deposit output has wrong script"
         );
 
-        assert!(matches!(result, Err(DepositError::InvalidSignature { .. })));
-        if let Err(DepositError::InvalidSignature { reason }) = result {
+        assert!(matches!(
+            result,
+            Err(DepositValidationError::InvalidSignature { .. })
+        ));
+        if let Err(DepositValidationError::InvalidSignature { reason }) = result {
             assert!(reason.contains("not locked to the aggregated operator key"));
         }
     }
@@ -262,8 +274,7 @@ mod tests {
         let (operators_pubkey, operators_privkeys) = create_test_operators();
 
         // Create a signed transaction then remove the witness
-        let deposit_info: crate::txs::deposit::parse::DepositInfo =
-            ArbitraryGenerator::new().generate();
+        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
         let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
 
         // Clear the witness to test no witness case
@@ -281,16 +292,17 @@ mod tests {
             "Should fail when no witness data is present"
         );
 
-        assert!(matches!(result, Err(DepositError::InvalidSignature { .. })));
-        if let Err(DepositError::InvalidSignature { reason }) = result {
+        assert!(matches!(
+            result,
+            Err(DepositValidationError::InvalidSignature { .. })
+        ));
+        if let Err(DepositValidationError::InvalidSignature { reason }) = result {
             assert!(reason.contains("No witness data found"));
         }
     }
 
     #[test]
     fn test_validate_drt_spending_signature_invalid_signature() {
-        use bitcoin::Witness;
-
         let (operators_pubkey, operators_privkeys) = create_test_operators();
 
         // Create a signed transaction then replace with invalid signature
@@ -311,14 +323,16 @@ mod tests {
         assert!(result.is_err(), "Should fail with invalid signature");
 
         // The exact error depends on whether signature parsing or verification fails first
-        assert!(matches!(result, Err(DepositError::InvalidSignature { .. })));
+        assert!(matches!(
+            result,
+            Err(DepositValidationError::InvalidSignature { .. })
+        ));
     }
 
     #[test]
     fn test_validate_drt_spending_signature_success() {
         // Create deposit info and transaction with consistent parameters
-        let deposit_info: crate::txs::deposit::parse::DepositInfo =
-            ArbitraryGenerator::new().generate();
+        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
         let (operators_pubkey, operators_privkeys) = create_test_operators();
         let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
 
@@ -337,8 +351,6 @@ mod tests {
 
     #[test]
     fn test_create_valid_p2tr_script() {
-        use bitcoin::{ScriptBuf, XOnlyPublicKey};
-
         let (operators_pubkey, _) = create_test_operators();
         let secp = Secp256k1::new();
 

@@ -23,10 +23,10 @@ use strata_primitives::{
 /// # Future Enhancements
 ///
 /// This is where we will add support for:
-/// - **Batching**: Multiple outputs in a single withdrawal command to enable
-///   efficient processing of multiple withdrawals in one transaction
-/// - **Fee Handling**: Additional fee accounting information to help operators
-///   calculate appropriate transaction fees
+/// - **Batching**: Multiple outputs in a single withdrawal command to enable efficient processing
+///   of multiple withdrawals in one transaction
+/// - **Fee Handling**: Additional fee accounting information to help operators calculate
+///   appropriate transaction fees
 #[derive(
     Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
 )]
@@ -119,17 +119,23 @@ impl WithdrawOutput {
     }
 }
 
-/// Information about a successfully processed withdrawal.
-/// Information that gives operator claim to the locked deposit UTXO
-/// This claim should only be created after the operator has made front payment to the correct user
-/// within the deadline
+/// Represents an operator's claim to unlock a deposit UTXO after successful withdrawal processing.
 ///
-/// This structure holds the essential information from a withdrawal transaction
-/// that needs to be stored in the MohoState for later use by the Bridge proof.
-/// The Bridge proof uses this information to prove that operators have correctly
-/// front-paid users and can now withdraw the corresponding locked funds.
+/// This structure is created when an operator successfully processes a withdrawal by making
+/// the required front payment to the user within the specified deadline. It serves as proof
+/// that the operator has fulfilled their obligation and is now entitled to claim the
+/// corresponding locked deposit funds.
+///
+/// The claim contains all necessary information to:
+/// - Link the withdrawal transaction to the original deposit
+/// - Identify which operator performed the withdrawal
+/// - Enable the Bridge proof to verify the operator's right to withdraw locked funds
+///
+/// This data is stored in the MohoState and used by the Bridge proof system to validate
+/// that operators have correctly front-paid users before allowing them to withdraw the
+/// corresponding deposit UTXOs.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct OperatorClaimInfo {
+pub struct OperatorClaimUnlock {
     /// The transaction ID of the withdrawal transaction
     pub withdrawal_txid: BitcoinTxid,
 
@@ -143,7 +149,7 @@ pub struct OperatorClaimInfo {
     pub operator_idx: OperatorIdx,
 }
 
-impl OperatorClaimInfo {
+impl OperatorClaimUnlock {
     pub fn to_export_entry(&self) -> ExportEntry {
         let payload = borsh::to_vec(&self).expect("Failed to serialize WithdrawalProcessedInfo");
         ExportEntry::new(self.deposit_idx, payload)

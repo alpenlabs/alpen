@@ -1,30 +1,38 @@
 use bitcoin::ScriptBuf;
+use strata_l1_txfmt::TxType;
 use strata_primitives::{
     bridge::OperatorIdx,
     l1::{BitcoinAmount, BitcoinTxid},
 };
 use thiserror::Error;
 
+use crate::{
+    constants::DEPOSIT_TX_TYPE,
+    txs::{
+        deposit::parse::MIN_DEPOSIT_TX_AUX_DATA_LEN,
+        withdrawal_fulfillment::parse::WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN,
+    },
+};
+
 #[derive(Debug, Error, Clone)]
-pub enum DepositError {
-    /// The auxiliary data in the deposit transaction tag is malformed or has insufficient length.
-    /// Expected at least 37 bytes (4 bytes deposit index + 32 bytes tapscript root + 1+ bytes
-    /// destination address).
+pub enum DepositTxParseError {
+    /// The auxiliary data in the deposit transaction tag has insufficient length.
     #[error(
-        "Invalid deposit auxiliary data: expected at least 37 bytes (deposit index + tapscript root + destination), got {0} bytes"
+        "Auxiliary data too short: expected at least {MIN_DEPOSIT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
     )]
     InvalidAuxiliaryData(usize),
 
     /// The transaction type byte in the tag does not match the expected deposit transaction type.
-    #[error("Invalid transaction type: expected deposit transaction type {expected}, got {actual}")]
-    InvalidTxType { expected: u8, actual: u8 },
+    #[error("Invalid transaction type: expected type to be {DEPOSIT_TX_TYPE}, got {0}")]
+    InvalidTxType(TxType),
 
-    /// Transaction is missing the required deposit output at the expected index.
-    #[error(
-        "Missing deposit output at index {0}: deposit transactions must have exactly 2 outputs (OP_RETURN tag + P2TR deposit)"
-    )]
-    MissingOutput(u32),
+    /// Transaction is missing the required P2TR deposit output at index 1.
+    #[error("Missing P2TR deposit output")]
+    MissingDepositOutput,
+}
 
+#[derive(Debug, Error, Clone)]
+pub enum DepositValidationError {
     /// Signature validation failed during deposit verification.
     /// This indicates the transaction was not signed by the expected operator set.
     #[error("Deposit signature validation failed: {reason}")]
@@ -39,47 +47,22 @@ pub enum DepositError {
     #[error("Deposit index {0} already exists in deposits table")]
     DepositIdxAlreadyExists(u32),
 
-    /// Failed to create deposit in the deposits table.
-    #[error("Failed to create deposit with index {0}: deposit already exists")]
-    DepositCreationFailed(u32),
-
     /// Cannot create deposit entry with empty operators list.
     /// Each deposit must have at least one notary operator.
-    #[error(
-        "Cannot create deposit entry with empty operators: each deposit must have at least one notary operator"
-    )]
+    #[error("Cannot create deposit entry with empty operators.")]
     EmptyOperators,
 }
 
 #[derive(Debug, Error)]
 pub enum WithdrawalParseError {
-    /// Transaction has insufficient outputs
-    #[error("Transaction has insufficient outputs: expected at least 2, got {0}")]
-    InsufficientOutputs(usize),
+    /// The auxiliary data in the withdrawal fulfillment transaction doesn't have correct length.
+    #[error(
+        "Invalid auxiliary data: expected {WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
+    )]
+    InvalidAuxiliaryData(usize),
 
-    /// Metadata script size mismatch
-    #[error("Metadata script size mismatch: expected {expected}, got {actual}")]
-    InvalidMetadataSize { expected: usize, actual: usize },
-
-    /// Invalid tag bytes conversion
-    #[error("Tag bytes conversion error: expected 4 bytes, got {0}")]
-    InvalidTagBytes(usize),
-
-    /// Tag mismatch
-    #[error("Tag mismatch: expected {expected}, got {actual}")]
-    TagMismatch { expected: String, actual: String },
-
-    /// Invalid operator index bytes
-    #[error("Operator index bytes conversion error: expected 4 bytes, got {0}")]
-    InvalidOperatorIdxBytes(usize),
-
-    /// Invalid deposit index bytes
-    #[error("Deposit index bytes conversion error: expected 4 bytes, got {0}")]
-    InvalidDepositIdxBytes(usize),
-
-    /// Invalid deposit txid bytes
-    #[error("Deposit txid bytes conversion error: expected 32 bytes, got {0}")]
-    InvalidDepositTxidBytes(usize),
+    #[error("Transaction is missing output that fulfilled user withdrawal request")]
+    MissingUserFulfillmentOutput,
 }
 
 #[derive(Debug, Error)]
@@ -88,20 +71,12 @@ pub enum WithdrawalValidationError {
     #[error("No assignment found for deposit index {deposit_idx}")]
     NoAssignmentFound { deposit_idx: u32 },
 
-    /// Deposit not found in deposits table
-    #[error("Deposit not found for deposit index {deposit_idx}")]
-    DepositNotFound { deposit_idx: u32 },
-
     /// Operator performing withdrawal doesn't match assigned operator
     #[error("Operator mismatch: expected {expected}, got {actual}")]
     OperatorMismatch {
         expected: OperatorIdx,
         actual: OperatorIdx,
     },
-
-    /// Deposit index in withdrawal doesn't match the actual deposit
-    #[error("Deposit txid mismatch: expected {expected:?}, got {actual:?}")]
-    DepositIdxMismatch { expected: u32, actual: u32 },
 
     /// Deposit txid in withdrawal doesn't match the actual deposit
     #[error("Deposit txid mismatch: expected {expected:?}, got {actual:?}")]
@@ -117,7 +92,7 @@ pub enum WithdrawalValidationError {
         actual: BitcoinAmount,
     },
 
-    /// Withdrawal amount doesn't match assignment amount
+    /// Withdrawal destination doesn't match assignment destination
     #[error("Withdrawal destination mismatch: expected {expected}, got {actual}")]
     DestinationMismatch {
         expected: ScriptBuf,
@@ -136,17 +111,6 @@ pub enum WithdrawalCommandError {
         "No current multisig operator found in deposit's notary operators for deposit index {deposit_idx}"
     )]
     NoEligibleOperators { deposit_idx: u32 },
-
-    /// Deposit not found for the given index
-    #[error("Deposit not found for index {deposit_idx}")]
-    DepositNotFound { deposit_idx: u32 },
-
-    /// Operator is not part of the deposit's notary operators
-    #[error("Operator {operator_idx} is not part of notary operators for deposit {deposit_idx}")]
-    OperatorNotInNotarySet {
-        operator_idx: OperatorIdx,
-        deposit_idx: u32,
-    },
 
     /// Deposit amount doesn't match withdrawal command total value
     #[error(

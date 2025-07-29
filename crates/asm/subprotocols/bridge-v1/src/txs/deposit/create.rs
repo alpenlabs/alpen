@@ -13,6 +13,8 @@ use rand::{RngCore, rngs::OsRng};
 use strata_l1tx::utils::generate_agg_pubkey;
 use strata_primitives::buf::Buf32;
 
+use crate::txs::deposit::parse::DepositInfo;
+
 pub const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
 /// Creates a MuSig2 signature from multiple operators.
@@ -152,7 +154,7 @@ fn create_musig2_signature(
 /// # Returns
 /// The properly formatted and signed Bitcoin transaction
 pub fn create_test_deposit_tx(
-    deposit_info: &crate::txs::deposit::parse::DepositInfo,
+    deposit_info: &DepositInfo,
     operators_privkeys: &[SecretKey],
 ) -> Transaction {
     use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};

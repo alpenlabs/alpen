@@ -1,8 +1,11 @@
-use bitcoin::{OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Witness, script::PushBytesBuf};
+use bitcoin::{
+    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
+    script::PushBytesBuf, transaction::Version,
+};
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE},
-    txs::{deposit::create::TEST_MAGIC_BYTES, withdrawal_fulfillment::WithdrawalInfo},
+    txs::{deposit::create::TEST_MAGIC_BYTES, withdrawal_fulfillment::parse::WithdrawalInfo},
 };
 
 /// Creates a withdrawal fulfillment transaction for testing purposes.
@@ -43,8 +46,8 @@ pub fn create_withdrawal_fulfillment_tx(withdrawal_info: &WithdrawalInfo) -> Tra
     );
 
     Transaction {
-        version: bitcoin::transaction::Version(2),
-        lock_time: bitcoin::absolute::LockTime::ZERO,
+        version: Version(2),
+        lock_time: LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::null(), // Dummy input
             script_sig: ScriptBuf::new(),
@@ -53,13 +56,13 @@ pub fn create_withdrawal_fulfillment_tx(withdrawal_info: &WithdrawalInfo) -> Tra
         }],
         output: vec![
             // OP_RETURN output with SPS-50 tagged payload
-            bitcoin::TxOut {
-                value: bitcoin::Amount::from_sat(0),
+            TxOut {
+                value: Amount::from_sat(0),
                 script_pubkey: op_return_script,
             },
             // Withdrawal fulfillment output
-            bitcoin::TxOut {
-                value: bitcoin::Amount::from_sat(withdrawal_info.withdrawal_amount.to_sat()),
+            TxOut {
+                value: Amount::from_sat(withdrawal_info.withdrawal_amount.to_sat()),
                 script_pubkey: withdrawal_info.withdrawal_destination.clone(),
             },
         ],

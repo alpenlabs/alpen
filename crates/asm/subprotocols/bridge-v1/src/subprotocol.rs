@@ -14,7 +14,10 @@ use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
     msgs::BridgeIncomingMsg,
     state::{BridgeV1Config, BridgeV1State},
-    txs::{deposit::parse::extract_deposit_info, withdrawal_fulfillment::extract_withdrawal_info},
+    txs::{
+        deposit::parse::extract_deposit_info,
+        withdrawal_fulfillment::parse::extract_withdrawal_info,
+    },
 };
 
 /// Bridge V1 subprotocol implementation.
@@ -36,7 +39,7 @@ impl Subprotocol for BridgeV1Subproto {
 
     type GenesisConfig = BridgeV1Config;
 
-    fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
+    fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
         Ok(BridgeV1State::new(&genesis_config))
     }
 
@@ -48,7 +51,7 @@ impl Subprotocol for BridgeV1Subproto {
     ///    - **Deposit transactions** (`DEPOSIT_TX_TYPE`): Validates and records Bitcoin deposits in
     ///      the bridge state, making them available for withdrawal assignment
     ///    - **Withdrawal transactions** (`WITHDRAWAL_TX_TYPE`): Validates and processes withdrawal
-    ///      fulfillments, removing completed assignments and deposits from the state
+    ///      fulfillments, removing completed assignments from the state
     /// 2. After processing all transactions, reassigns any expired assignments to new operators
     ///    that haven't previously failed on the same withdrawal
     ///
@@ -135,7 +138,7 @@ impl Subprotocol for BridgeV1Subproto {
 
 impl BridgeV1Subproto {
     /// Processes a deposit transaction with error logging.
-    fn process_deposit_tx(state: &mut BridgeV1State, tx: &strata_asm_common::TxInputRef<'_>) {
+    fn process_deposit_tx(state: &mut BridgeV1State, tx: &TxInputRef<'_>) {
         let deposit_info = match extract_deposit_info(tx) {
             Ok(info) => info,
             Err(e) => {
@@ -171,8 +174,8 @@ impl BridgeV1Subproto {
     /// Processes a withdrawal fulfillment transaction with error logging.
     fn process_withdrawal_tx(
         state: &mut BridgeV1State,
-        tx: &strata_asm_common::TxInputRef<'_>,
-        relayer: &mut impl strata_asm_common::MsgRelayer,
+        tx: &TxInputRef<'_>,
+        relayer: &mut impl MsgRelayer,
     ) {
         let withdrawal_info = match extract_withdrawal_info(tx) {
             Ok(info) => info,

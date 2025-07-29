@@ -6,7 +6,18 @@ use strata_primitives::{
     l1::{BitcoinAmount, BitcoinTxid},
 };
 
-use crate::errors::WithdrawalParseError;
+use crate::{
+    errors::WithdrawalParseError,
+    txs::withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
+};
+
+const OPERATOR_IDX_SIZE: usize = std::mem::size_of::<OperatorIdx>();
+const DEPOSIT_IDX_SIZE: usize = std::mem::size_of::<u32>();
+const DEPOSIT_TXID_SIZE: usize = std::mem::size_of::<Txid>();
+
+/// Minimum length of auxiliary data
+pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
+    OPERATOR_IDX_SIZE + DEPOSIT_IDX_SIZE + DEPOSIT_TXID_SIZE;
 
 /// Information extracted from a Bitcoin withdrawal transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,50 +88,42 @@ impl<'a> Arbitrary<'a> for WithdrawalInfo {
 pub fn extract_withdrawal_info<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalInfo, WithdrawalParseError> {
-    if tx.tx().output.len() < 2 {
-        return Err(WithdrawalParseError::InsufficientOutputs(
-            tx.tx().output.len(),
+    let withdrawal_fulfillment_output = &tx
+        .tx()
+        .output
+        .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
+        .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
+    let withdrawal_auxdata = tx.tag().aux_data();
+
+    if withdrawal_auxdata.len() != WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN {
+        return Err(WithdrawalParseError::InvalidAuxiliaryData(
+            withdrawal_auxdata.len(),
         ));
     }
 
-    let withdrawal_fulfillment_output = &tx.tx().output[1];
-    let withdrawal_metadata = tx.tag().aux_data();
-
-    const OPERATOR_IDX_SIZE: usize = std::mem::size_of::<OperatorIdx>();
-    const DEPOSIT_IDX_SIZE: usize = std::mem::size_of::<u32>();
-    const DEPOSIT_TXID_SIZE: usize = std::mem::size_of::<Txid>();
-
-    let expected_metadata_size: usize = OPERATOR_IDX_SIZE + DEPOSIT_IDX_SIZE + DEPOSIT_TXID_SIZE;
-
-    if withdrawal_metadata.len() != expected_metadata_size {
-        return Err(WithdrawalParseError::InvalidMetadataSize {
-            expected: expected_metadata_size,
-            actual: withdrawal_metadata.len(),
-        });
-    }
-
     let mut offset = 0;
-    let operator_idx_bytes = &withdrawal_metadata[offset..offset + OPERATOR_IDX_SIZE];
+    let operator_idx_bytes = &withdrawal_auxdata[offset..offset + OPERATOR_IDX_SIZE];
 
     offset += OPERATOR_IDX_SIZE;
-    let deposit_idx_bytes = &withdrawal_metadata[offset..offset + DEPOSIT_IDX_SIZE];
+    let deposit_idx_bytes = &withdrawal_auxdata[offset..offset + DEPOSIT_IDX_SIZE];
 
     offset += DEPOSIT_IDX_SIZE;
-    let deposit_txid_bytes = &withdrawal_metadata[offset..offset + DEPOSIT_TXID_SIZE];
+    let deposit_txid_bytes = &withdrawal_auxdata[offset..offset + DEPOSIT_TXID_SIZE];
 
-    let operator_idx =
-        u32::from_be_bytes(operator_idx_bytes.try_into().map_err(|_| {
-            WithdrawalParseError::InvalidOperatorIdxBytes(operator_idx_bytes.len())
-        })?);
+    let operator_idx = u32::from_be_bytes(
+        operator_idx_bytes
+            .try_into()
+            .expect("operator index is exactly 4 bytes"),
+    );
 
     let deposit_idx = u32::from_be_bytes(
         deposit_idx_bytes
             .try_into()
-            .map_err(|_| WithdrawalParseError::InvalidDepositIdxBytes(deposit_idx_bytes.len()))?,
+            .expect("deposit index is exactly 4 bytes"),
     );
 
-    let deposit_txid: Txid = encode::deserialize(deposit_txid_bytes)
-        .map_err(|_| WithdrawalParseError::InvalidDepositTxidBytes(deposit_txid_bytes.len()))?;
+    let deposit_txid: Txid =
+        encode::deserialize(deposit_txid_bytes).expect("deposit txid is exactly 32 bytes");
 
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
@@ -144,7 +147,7 @@ mod tests {
     use super::*;
     use crate::txs::{
         deposit::create::TEST_MAGIC_BYTES,
-        withdrawal_fulfillment::{create_withdrawal_fulfillment_tx, extract_withdrawal_info},
+        withdrawal_fulfillment::create::create_withdrawal_fulfillment_tx,
     };
 
     #[test]

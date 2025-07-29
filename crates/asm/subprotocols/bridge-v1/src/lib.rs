@@ -1,7 +1,7 @@
 //! Bridge V1 Subprotocol
 //!
 //! This crate implements the Strata-Bridge subprotocol.
-//! 
+//!
 //! The bridge manages Bitcoin deposits, operator assignments,
 //! and withdrawal processing between Bitcoin L1 and the orchestration layer.
 //!
@@ -16,13 +16,8 @@
 //!
 //! # Usage
 //!
-//! The main entry point is [`BridgeV1Subproto`] which implements the [`Subprotocol`]
+//! The main entry point is [`subprotocol::BridgeV1Subproto`] which implements the `Subprotocol`
 //! trait for integration with the Anchor State Machine.
-
-#[cfg(test)]
-use musig2 as _;
-#[cfg(test)]
-use rand as _;
 
 pub mod constants;
 pub mod errors;
@@ -30,7 +25,3 @@ pub mod msgs;
 pub mod state;
 pub mod subprotocol;
 pub mod txs;
-
-// Suppress unused dependency warning - this may be used by other parts of the codebase
-#[cfg(test)]
-use strata_test_utils as _;

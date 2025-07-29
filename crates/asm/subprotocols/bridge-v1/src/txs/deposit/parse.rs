@@ -6,7 +6,9 @@ use strata_primitives::{
     l1::{BitcoinAmount, OutputRef},
 };
 
-use crate::{constants::DEPOSIT_TX_TYPE, errors::DepositError, txs::deposit::DEPOSIT_OUTPUT_INDEX};
+use crate::{
+    constants::DEPOSIT_TX_TYPE, errors::DepositTxParseError, txs::deposit::DEPOSIT_OUTPUT_INDEX,
+};
 
 /// Length of the deposit index field in the auxiliary data (4 bytes for u32)
 pub const DEPOSIT_IDX_LEN: usize = size_of::<u32>();
@@ -15,7 +17,7 @@ pub const DEPOSIT_IDX_LEN: usize = size_of::<u32>();
 pub const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
 
 /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
-pub const MIN_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
+pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
 
 /// Information extracted from a Bitcoin deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
@@ -63,19 +65,18 @@ pub struct DepositInfo {
 /// - `Ok(DepositInfo)` - Successfully parsed deposit information
 /// - `Err(DepositError)` - If the transaction structure is invalid, signature verification fails,
 ///   or any parsing step encounters malformed data
-pub fn extract_deposit_info<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositError> {
+pub fn extract_deposit_info<'a>(
+    tx_input: &TxInputRef<'a>,
+) -> Result<DepositInfo, DepositTxParseError> {
     if tx_input.tag().tx_type() != DEPOSIT_TX_TYPE {
-        return Err(DepositError::InvalidTxType {
-            expected: DEPOSIT_TX_TYPE,
-            actual: tx_input.tag().tx_type(),
-        });
+        return Err(DepositTxParseError::InvalidTxType(tx_input.tag().tx_type()));
     }
 
     let aux_data = tx_input.tag().aux_data();
 
     // Validate minimum auxiliary data length (must have at least the fixed fields)
-    if aux_data.len() < MIN_AUX_DATA_LEN {
-        return Err(DepositError::InvalidAuxiliaryData(aux_data.len()));
+    if aux_data.len() < MIN_DEPOSIT_TX_AUX_DATA_LEN {
+        return Err(DepositTxParseError::InvalidAuxiliaryData(aux_data.len()));
     }
 
     // Parse deposit index (bytes 0-3)
@@ -83,16 +84,15 @@ pub fn extract_deposit_info<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo
     let deposit_idx = u32::from_be_bytes(
         deposit_idx_bytes
             .try_into()
-            .expect("Expected deposit index to be 4 bytes"),
+            .expect("deposit index is exactly 4 bytes because we validate aux_data length early"),
     );
 
     // Parse tapscript root hash (bytes 4-35)
     let (tapscript_root_bytes, destination_address) = rest.split_at(TAPSCRIPT_ROOT_LEN);
-    let tapscript_root = Buf32::new(
-        tapscript_root_bytes
-            .try_into()
-            .expect("Expected tapscript root to be 32 bytes"),
-    );
+    let tapscript_root =
+        Buf32::new(tapscript_root_bytes.try_into().expect(
+            "tapscript root is exactly 32 bytes because we validate aux_data length early",
+        ));
 
     // Destination address is remaining bytes (bytes 36+)
     // Allow empty destination address (0 bytes is valid)
@@ -102,7 +102,7 @@ pub fn extract_deposit_info<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo
         .tx()
         .output
         .get(DEPOSIT_OUTPUT_INDEX as usize)
-        .ok_or(DepositError::MissingOutput(1))?;
+        .ok_or(DepositTxParseError::MissingDepositOutput)?;
 
     // Create outpoint reference for the deposit output
     let deposit_outpoint = OutputRef::from(OutPoint {
@@ -182,7 +182,7 @@ mod tests {
     fn test_extract_deposit_info_success() {
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
-        
+
         let tx = create_test_tx(&info);
 
         let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
@@ -213,7 +213,7 @@ mod tests {
 
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
-        
+
         let mut tx = create_test_tx(&info);
 
         // Mutate the OP_RETURN output to have wrong transaction type
@@ -225,10 +225,12 @@ mod tests {
         let result = extract_deposit_info(&tx_input);
         assert!(result.is_err(), "Should fail with invalid transaction type");
 
-        assert!(matches!(result, Err(DepositError::InvalidTxType { .. })));
-        if let Err(DepositError::InvalidTxType { expected, actual }) = result {
-            assert_eq!(expected, DEPOSIT_TX_TYPE);
-            assert_eq!(actual, tx_input.tag().tx_type());
+        assert!(matches!(
+            result,
+            Err(DepositTxParseError::InvalidTxType { .. })
+        ));
+        if let Err(DepositTxParseError::InvalidTxType(tx_type)) = result {
+            assert_eq!(tx_type, tx_input.tag().tx_type());
         }
     }
 
@@ -238,11 +240,11 @@ mod tests {
 
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
-        
+
         let mut tx = create_test_tx(&info);
 
         // Mutate the OP_RETURN output to have short aux data
-        let short_aux_data = vec![0u8; MIN_AUX_DATA_LEN - 1];
+        let short_aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN - 1];
         let tagged_payload =
             create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, short_aux_data);
         mutate_op_return_output(&mut tx, tagged_payload);
@@ -254,9 +256,12 @@ mod tests {
             "Should fail with insufficient auxiliary data"
         );
 
-        assert!(matches!(result, Err(DepositError::InvalidAuxiliaryData(_))));
-        if let Err(DepositError::InvalidAuxiliaryData(len)) = result {
-            assert_eq!(len, MIN_AUX_DATA_LEN - 1);
+        assert!(matches!(
+            result,
+            Err(DepositTxParseError::InvalidAuxiliaryData(_))
+        ));
+        if let Err(DepositTxParseError::InvalidAuxiliaryData(len)) = result {
+            assert_eq!(len, MIN_DEPOSIT_TX_AUX_DATA_LEN - 1);
         }
     }
 
@@ -266,12 +271,12 @@ mod tests {
 
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
-        
+
         let mut tx = create_test_tx(&info);
 
         // Mutate the OP_RETURN output to have aux data with no destination (exactly
         // MIN_AUX_DATA_LEN)
-        let aux_data = vec![0u8; MIN_AUX_DATA_LEN];
+        let aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN];
         let tagged_payload =
             create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data);
         mutate_op_return_output(&mut tx, tagged_payload);
@@ -288,7 +293,7 @@ mod tests {
     fn test_extract_deposit_info_missing_output() {
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
-        
+
         let mut tx = create_test_tx(&info);
 
         // Remove the deposit output (keep only OP_RETURN at index 0)
@@ -298,9 +303,9 @@ mod tests {
         let result = extract_deposit_info(&tx_input);
         assert!(result.is_err(), "Should fail with missing deposit output");
 
-        assert!(matches!(result, Err(DepositError::MissingOutput(_))));
-        if let Err(DepositError::MissingOutput(index)) = result {
-            assert_eq!(index, DEPOSIT_OUTPUT_INDEX);
-        }
+        assert!(matches!(
+            result,
+            Err(DepositTxParseError::MissingDepositOutput)
+        ));
     }
 }

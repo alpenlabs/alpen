@@ -8,20 +8,20 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::l1::{BitcoinAmount, L1BlockId};
 
 use crate::{
-    errors::{DepositError, WithdrawalCommandError, WithdrawalValidationError},
+    errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
-        withdrawal::{OperatorClaimInfo, WithdrawalCommand},
+        withdrawal::{OperatorClaimUnlock, WithdrawalCommand},
     },
     txs::{
         deposit::{
             parse::DepositInfo,
             validation::{validate_deposit_output_lock, validate_drt_spending_signature},
         },
-        withdrawal_fulfillment::WithdrawalInfo,
+        withdrawal_fulfillment::parse::WithdrawalInfo,
     },
 };
 
@@ -149,7 +149,7 @@ impl BridgeV1State {
         &mut self,
         tx: &Transaction,
         info: &DepositInfo,
-    ) -> Result<(), DepositError> {
+    ) -> Result<(), DepositValidationError> {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
 
@@ -185,10 +185,14 @@ impl BridgeV1State {
     /// - The DRT spending signature is invalid or doesn't match the aggregated operator key
     /// - The deposit output lock is incorrect
     /// - A deposit with the same index already exists
-    fn validate_deposit(&self, tx: &Transaction, info: &DepositInfo) -> Result<(), DepositError> {
+    fn validate_deposit(
+        &self,
+        tx: &Transaction,
+        info: &DepositInfo,
+    ) -> Result<(), DepositValidationError> {
         // Verify the deposit amount matches the bridge's expected amount
         if info.amt.to_sat() != self.denomination.to_sat() {
-            return Err(DepositError::InvalidDepositAmount {
+            return Err(DepositValidationError::InvalidDepositAmount {
                 expected: self.denomination.to_sat(),
                 actual: info.amt.to_sat(),
             });
@@ -207,7 +211,9 @@ impl BridgeV1State {
 
         // Verify this deposit index hasn't been used before
         if self.deposits().get_deposit(info.deposit_idx).is_some() {
-            return Err(DepositError::DepositIdxAlreadyExists(info.deposit_idx));
+            return Err(DepositValidationError::DepositIdxAlreadyExists(
+                info.deposit_idx,
+            ));
         }
 
         Ok(())
@@ -341,7 +347,7 @@ impl BridgeV1State {
         &mut self,
         tx: &Transaction,
         withdrawal_info: &WithdrawalInfo,
-    ) -> Result<OperatorClaimInfo, WithdrawalValidationError> {
+    ) -> Result<OperatorClaimUnlock, WithdrawalValidationError> {
         self.validate_withdrawal(withdrawal_info)?;
 
         // Remove the assignment from the table to mark withdrawal as fulfilled
@@ -351,7 +357,7 @@ impl BridgeV1State {
             .remove_assignment(withdrawal_info.deposit_idx)
             .expect("Assignment must exist after successful validation");
 
-        Ok(OperatorClaimInfo {
+        Ok(OperatorClaimUnlock {
             withdrawal_txid: tx.compute_txid().into(),
             deposit_txid: removed_assignment.deposit_txid(),
             deposit_idx: removed_assignment.deposit_idx(),
@@ -459,7 +465,7 @@ mod tests {
         },
         txs::{
             deposit::{create::create_test_deposit_tx, parse::DepositInfo},
-            withdrawal_fulfillment::{WithdrawalInfo, create_withdrawal_fulfillment_tx},
+            withdrawal_fulfillment::create::create_withdrawal_fulfillment_tx,
         },
     };
 
@@ -635,9 +641,9 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DepositError::InvalidDepositAmount { .. })
+            Err(DepositValidationError::InvalidDepositAmount { .. })
         ));
-        if let Err(DepositError::InvalidDepositAmount { expected, actual }) = result {
+        if let Err(DepositValidationError::InvalidDepositAmount { expected, actual }) = result {
             assert_eq!(expected, bridge_state.denomination.to_sat());
             assert_eq!(actual, deposit_info.amt.to_sat());
         }
@@ -663,7 +669,10 @@ mod tests {
         let result = bridge_state.process_deposit_tx(&tx, &deposit_info);
         assert!(result.is_err(), "Invalid signature should fail validation");
 
-        assert!(matches!(result, Err(DepositError::InvalidSignature { .. })));
+        assert!(matches!(
+            result,
+            Err(DepositValidationError::InvalidSignature { .. })
+        ));
 
         // Verify no deposit was added
         assert_eq!(bridge_state.deposits().len(), 0);

@@ -71,7 +71,8 @@ pub struct AssignmentEntry {
 ///
 /// Returns a list of operators who meet all eligibility criteria:
 /// - Must be part of the deposit's notary operator set
-/// - Must not have previously been assigned to this withdrawal (prevents reassignment to failed operators)  
+/// - Must not have previously been assigned to this withdrawal (prevents reassignment to failed
+///   operators)
 /// - Must be currently active in the network
 ///
 /// # Parameters
