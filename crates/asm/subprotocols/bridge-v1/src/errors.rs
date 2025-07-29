@@ -1,3 +1,4 @@
+use bitcoin::ScriptBuf;
 use strata_primitives::{
     bridge::OperatorIdx,
     l1::{BitcoinAmount, BitcoinTxid},
@@ -44,7 +45,9 @@ pub enum DepositError {
 
     /// Cannot create deposit entry with empty operators list.
     /// Each deposit must have at least one notary operator.
-    #[error("Cannot create deposit entry with empty operators: each deposit must have at least one notary operator")]
+    #[error(
+        "Cannot create deposit entry with empty operators: each deposit must have at least one notary operator"
+    )]
     EmptyOperators,
 }
 
@@ -96,6 +99,10 @@ pub enum WithdrawalValidationError {
         actual: OperatorIdx,
     },
 
+    /// Deposit index in withdrawal doesn't match the actual deposit
+    #[error("Deposit txid mismatch: expected {expected:?}, got {actual:?}")]
+    DepositIdxMismatch { expected: u32, actual: u32 },
+
     /// Deposit txid in withdrawal doesn't match the actual deposit
     #[error("Deposit txid mismatch: expected {expected:?}, got {actual:?}")]
     DepositTxidMismatch {
@@ -108,6 +115,13 @@ pub enum WithdrawalValidationError {
     AmountMismatch {
         expected: BitcoinAmount,
         actual: BitcoinAmount,
+    },
+
+    /// Withdrawal amount doesn't match assignment amount
+    #[error("Withdrawal destination mismatch: expected {expected}, got {actual}")]
+    DestinationMismatch {
+        expected: ScriptBuf,
+        actual: ScriptBuf,
     },
 }
 
@@ -129,5 +143,17 @@ pub enum WithdrawalCommandError {
 
     /// Operator is not part of the deposit's notary operators
     #[error("Operator {operator_idx} is not part of notary operators for deposit {deposit_idx}")]
-    OperatorNotInNotarySet { operator_idx: OperatorIdx, deposit_idx: u32 },
+    OperatorNotInNotarySet {
+        operator_idx: OperatorIdx,
+        deposit_idx: u32,
+    },
+
+    /// Deposit amount doesn't match withdrawal command total value
+    #[error(
+        "Deposit amount mismatch: deposit has {deposit_amount} satoshis, withdrawal command requests {withdrawal_amount} satoshis"
+    )]
+    DepositWithdrawalAmountMismatch {
+        deposit_amount: u64,
+        withdrawal_amount: u64,
+    },
 }

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
-    l1::L1BlockId,
+    l1::{BitcoinTxid, L1BlockId},
 };
 
 use super::withdrawal::WithdrawalCommand;
@@ -162,7 +162,7 @@ impl AssignmentEntry {
         self.deposit_entry.idx()
     }
 
-    pub fn deposit_txid(&self) -> Buf32 {
+    pub fn deposit_txid(&self) -> BitcoinTxid {
         self.deposit_entry.output().outpoint().txid.into()
     }
 
