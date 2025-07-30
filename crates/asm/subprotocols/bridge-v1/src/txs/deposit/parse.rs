@@ -11,10 +11,10 @@ use crate::{
 };
 
 /// Length of the deposit index field in the auxiliary data (4 bytes for u32)
-pub const DEPOSIT_IDX_LEN: usize = size_of::<u32>();
+const DEPOSIT_IDX_LEN: usize = 4;
 
 /// Length of the tapscript root hash in the auxiliary data (32 bytes)
-pub const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
+const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
 
 /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
 pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;

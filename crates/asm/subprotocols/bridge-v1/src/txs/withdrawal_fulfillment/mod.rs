@@ -31,7 +31,13 @@
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 #[cfg(test)]
-pub mod create;
-pub mod parse;
+mod create;
+mod parse;
 
 pub const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
+
+#[cfg(test)]
+pub use create::create_withdrawal_fulfillment_tx;
+pub use parse::{
+    WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN, WithdrawalFulfillmentInfo, extract_withdrawal_info,
+};

@@ -4,20 +4,16 @@
 //! with the Strata Anchor State Machine (ASM).
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
-    logging::{error, info, warn},
+    AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    logging::{error, info},
 };
-use strata_asm_logs::NewExportEntry;
 use strata_primitives::{buf::Buf32, l1::L1BlockId};
 
 use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    constants::BRIDGE_V1_SUBPROTOCOL_ID,
     msgs::BridgeIncomingMsg,
     state::{BridgeV1Config, BridgeV1State},
-    txs::{
-        deposit::parse::extract_deposit_info,
-        withdrawal_fulfillment::parse::extract_withdrawal_info,
-    },
+    txs::{handle_parsed_tx, parse_tx},
 };
 
 /// Bridge V1 subprotocol implementation.
@@ -82,27 +78,28 @@ impl Subprotocol for BridgeV1Subproto {
         _aux_inputs: &[Self::AuxInput],
         relayer: &mut impl MsgRelayer,
     ) {
-        // Process each transaction based on its type
+        // Process each transaction
         for tx in txs {
-            match tx.tag().tx_type() {
-                DEPOSIT_TX_TYPE => Self::process_deposit_tx(state, tx),
-                WITHDRAWAL_TX_TYPE => Self::process_withdrawal_tx(state, tx, relayer),
-                _ => continue, // Ignore unsupported transaction types
+            // Parse transaction to extract structured data (deposit/withdrawal info)
+            // then handle the parsed transaction to update state and emit events
+            match parse_tx(tx).and_then(|parsed_tx| handle_parsed_tx(state, parsed_tx, relayer)) {
+                // `tx_id` is computed inside macro, because logging is compiled to noop in ZkVM
+                Ok(()) => info!(tx_id = %tx.tx().compute_txid(), "Successfully processed tx"),
+                Err(e) => {
+                    error!(tx_id = %tx.tx().compute_txid(), error = %e, "Failed to process tx")
+                }
             }
         }
 
         // After processing all transactions, reassign expired assignments
         let current_block = &anchor_pre.chain_view.pow_state.last_verified_block;
-
         match state.reassign_expired_assignments(current_block) {
             Ok(reassigned_deposits) => {
-                if !reassigned_deposits.is_empty() {
-                    info!(
-                        count = reassigned_deposits.len(),
-                        deposits = ?reassigned_deposits,
-                        "Successfully reassigned expired assignments"
-                    );
-                }
+                info!(
+                    count = reassigned_deposits.len(),
+                    deposits = ?reassigned_deposits,
+                    "Successfully reassigned expired assignments"
+                );
             }
             Err(e) => {
                 error!(
@@ -116,7 +113,7 @@ impl Subprotocol for BridgeV1Subproto {
     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]) {
         for msg in msgs {
             match msg {
-                BridgeIncomingMsg::ProcessWithdrawal(withdrawal_cmd) => {
+                BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
                     // TODO: Pass actual L1BlockId instead of placeholder
                     let placeholder_id = L1BlockId::from(Buf32::zero());
                     let current_block_height = 0;
@@ -133,89 +130,5 @@ impl Subprotocol for BridgeV1Subproto {
                 }
             }
         }
-    }
-}
-
-impl BridgeV1Subproto {
-    /// Processes a deposit transaction with error logging.
-    fn process_deposit_tx(state: &mut BridgeV1State, tx: &TxInputRef<'_>) {
-        let deposit_info = match extract_deposit_info(tx) {
-            Ok(info) => info,
-            Err(e) => {
-                warn!(
-                    tx_id = %tx.tx().compute_txid(),
-                    error = %e,
-                    "Failed to extract deposit information from transaction"
-                );
-                return;
-            }
-        };
-
-        match state.process_deposit_tx(tx.tx(), &deposit_info) {
-            Ok(_) => {}
-            Err(e) => {
-                error!(
-                    tx_id = %tx.tx().compute_txid(),
-                    error = %e,
-                    "Failed to process deposit"
-                );
-                return;
-            }
-        };
-
-        info!(
-            tx_id = %tx.tx().compute_txid(),
-            idx = %deposit_info.deposit_idx,
-            amount = %deposit_info.amt,
-            "Successfully processed deposit"
-        );
-    }
-
-    /// Processes a withdrawal fulfillment transaction with error logging.
-    fn process_withdrawal_tx(
-        state: &mut BridgeV1State,
-        tx: &TxInputRef<'_>,
-        relayer: &mut impl MsgRelayer,
-    ) {
-        let withdrawal_info = match extract_withdrawal_info(tx) {
-            Ok(info) => info,
-            Err(e) => {
-                warn!(
-                    tx_id = %tx.tx().compute_txid(),
-                    error = %e,
-                    "Failed to extract withdrawal information from transaction"
-                );
-                return;
-            }
-        };
-
-        let withdrawal_processed_info =
-            match state.process_withdrawal_fulfillment_tx(tx.tx(), &withdrawal_info) {
-                Ok(assignment) => assignment,
-                Err(e) => {
-                    warn!(
-                        tx_id = %tx.tx().compute_txid(),
-                        deposit_idx = withdrawal_info.deposit_idx,
-                        operator_idx = withdrawal_info.operator_idx,
-                        error = %e,
-                        "Withdrawal validation failed"
-                    );
-                    return;
-                }
-            };
-
-        // FIXME: This is a placeholder for the actual container ID logic.
-        let container_id = 0; // Replace with actual logic to determine container ID
-        let withdrawal_processed_log =
-            NewExportEntry::new(container_id, withdrawal_processed_info.to_export_entry());
-        relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
-
-        info!(
-            tx_id = %tx.tx().compute_txid(),
-            deposit_idx = withdrawal_info.deposit_idx,
-            operator_idx = withdrawal_info.operator_idx,
-            amount = %withdrawal_info.withdrawal_amount,
-            "Successfully processed withdrawal"
-        );
     }
 }

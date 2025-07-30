@@ -9,13 +9,31 @@ use thiserror::Error;
 use crate::{
     constants::DEPOSIT_TX_TYPE,
     txs::{
-        deposit::parse::MIN_DEPOSIT_TX_AUX_DATA_LEN,
-        withdrawal_fulfillment::parse::WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN,
+        deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
+        withdrawal_fulfillment::WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN,
     },
 };
 
+#[derive(Debug, Error)]
+pub(crate) enum BridgeSubprotocolError {
+    #[error("failed to parse deposit tx")]
+    DepositTxParse(#[from] DepositTxParseError),
+
+    #[error("failed to parse deposit tx")]
+    DepositTxProcess(#[from] DepositValidationError),
+
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxParse(#[from] WithdrawalParseError),
+
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxProcess(#[from] WithdrawalValidationError),
+
+    #[error("unsupported tx type {0}")]
+    UnsupportedTxType(TxType),
+}
+
 #[derive(Debug, Error, Clone)]
-pub enum DepositTxParseError {
+pub(crate) enum DepositTxParseError {
     /// The auxiliary data in the deposit transaction tag has insufficient length.
     #[error(
         "Auxiliary data too short: expected at least {MIN_DEPOSIT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
@@ -54,7 +72,7 @@ pub enum DepositValidationError {
 }
 
 #[derive(Debug, Error)]
-pub enum WithdrawalParseError {
+pub(crate) enum WithdrawalParseError {
     /// The auxiliary data in the withdrawal fulfillment transaction doesn't have correct length.
     #[error(
         "Invalid auxiliary data: expected {WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
@@ -66,7 +84,7 @@ pub enum WithdrawalParseError {
 }
 
 #[derive(Debug, Error)]
-pub enum WithdrawalValidationError {
+pub(crate) enum WithdrawalValidationError {
     /// No assignment found for the deposit
     #[error("No assignment found for deposit index {deposit_idx}")]
     NoAssignmentFound { deposit_idx: u32 },
@@ -101,7 +119,7 @@ pub enum WithdrawalValidationError {
 }
 
 #[derive(Debug, Error)]
-pub enum WithdrawalCommandError {
+pub(crate) enum WithdrawalCommandError {
     /// No unassigned deposits are available for processing
     #[error("No unassigned deposits available for withdrawal command processing")]
     NoUnassignedDeposits,

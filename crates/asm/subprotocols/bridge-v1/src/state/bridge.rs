@@ -17,11 +17,8 @@ use crate::{
         withdrawal::{OperatorClaimUnlock, WithdrawalCommand},
     },
     txs::{
-        deposit::{
-            parse::DepositInfo,
-            validation::{validate_deposit_output_lock, validate_drt_spending_signature},
-        },
-        withdrawal_fulfillment::parse::WithdrawalInfo,
+        deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
+        withdrawal_fulfillment::WithdrawalFulfillmentInfo,
     },
 };
 
@@ -346,7 +343,7 @@ impl BridgeV1State {
     pub fn process_withdrawal_fulfillment_tx(
         &mut self,
         tx: &Transaction,
-        withdrawal_info: &WithdrawalInfo,
+        withdrawal_info: &WithdrawalFulfillmentInfo,
     ) -> Result<OperatorClaimUnlock, WithdrawalValidationError> {
         self.validate_withdrawal(withdrawal_info)?;
 
@@ -391,7 +388,7 @@ impl BridgeV1State {
     /// - The withdrawal specifications don't match the assignment
     fn validate_withdrawal(
         &self,
-        withdrawal_info: &WithdrawalInfo,
+        withdrawal_info: &WithdrawalFulfillmentInfo,
     ) -> Result<(), WithdrawalValidationError> {
         let deposit_idx = withdrawal_info.deposit_idx;
 
@@ -464,8 +461,8 @@ mod tests {
             withdrawal::{WithdrawOutput, WithdrawalCommand},
         },
         txs::{
-            deposit::{create::create_test_deposit_tx, parse::DepositInfo},
-            withdrawal_fulfillment::create::create_withdrawal_fulfillment_tx,
+            deposit::{DepositInfo, create_test_deposit_tx},
+            withdrawal_fulfillment::create_withdrawal_fulfillment_tx,
         },
     };
 
@@ -578,8 +575,10 @@ mod tests {
     /// # Returns
     ///
     /// A WithdrawalInfo struct with matching operator, deposit, and withdrawal details
-    fn create_withdrawal_info_from_assignment(assignment: &AssignmentEntry) -> WithdrawalInfo {
-        WithdrawalInfo {
+    fn create_withdrawal_info_from_assignment(
+        assignment: &AssignmentEntry,
+    ) -> WithdrawalFulfillmentInfo {
+        WithdrawalFulfillmentInfo {
             operator_idx: assignment.current_assignee(),
             deposit_idx: assignment.deposit_idx(),
             deposit_txid: assignment.deposit_txid(),

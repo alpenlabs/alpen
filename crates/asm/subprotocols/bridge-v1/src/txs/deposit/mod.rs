@@ -37,8 +37,13 @@
 //! guarantees. It ensures that only properly authorized deposits (with presigned withdrawal
 //! transactions) can mint tokens, preserving the 1-of-N trust assumption for withdrawals.
 #[cfg(test)]
-pub mod create;
-pub mod parse;
-pub mod validation;
+mod create;
+mod parse;
+mod validation;
 
 pub const DEPOSIT_OUTPUT_INDEX: u32 = 1;
+
+#[cfg(test)]
+pub use create::{TEST_MAGIC_BYTES, create_test_deposit_tx};
+pub use parse::{DepositInfo, MIN_DEPOSIT_TX_AUX_DATA_LEN, extract_deposit_info};
+pub use validation::{validate_deposit_output_lock, validate_drt_spending_signature};

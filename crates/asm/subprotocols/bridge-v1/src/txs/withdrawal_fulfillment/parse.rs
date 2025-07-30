@@ -1,5 +1,5 @@
 use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::{ScriptBuf, Txid, consensus::encode};
+use bitcoin::{ScriptBuf, Txid, hashes::Hash};
 use strata_asm_common::TxInputRef;
 use strata_primitives::{
     bridge::OperatorIdx,
@@ -11,17 +11,21 @@ use crate::{
     txs::withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
 };
 
-const OPERATOR_IDX_SIZE: usize = std::mem::size_of::<OperatorIdx>();
-const DEPOSIT_IDX_SIZE: usize = std::mem::size_of::<u32>();
-const DEPOSIT_TXID_SIZE: usize = std::mem::size_of::<Txid>();
+const OPERATOR_IDX_SIZE: usize = 4;
+const DEPOSIT_IDX_SIZE: usize = 4;
+const DEPOSIT_TXID_SIZE: usize = 32;
 
-/// Minimum length of auxiliary data
+const OPERATOR_IDX_OFFSET: usize = 0;
+const DEPOSIT_IDX_OFFSET: usize = OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE;
+const DEPOSIT_TXID_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
+
+/// Minimum length of auxiliary data for withdrawal fulfillment transactions.
 pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
     OPERATOR_IDX_SIZE + DEPOSIT_IDX_SIZE + DEPOSIT_TXID_SIZE;
 
 /// Information extracted from a Bitcoin withdrawal transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WithdrawalInfo {
+pub struct WithdrawalFulfillmentInfo {
     /// The index of the operator who processed this withdrawal.
     pub(crate) operator_idx: OperatorIdx,
 
@@ -41,12 +45,12 @@ pub struct WithdrawalInfo {
     pub(crate) withdrawal_amount: BitcoinAmount,
 }
 
-impl<'a> Arbitrary<'a> for WithdrawalInfo {
+impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         use strata_primitives::bitcoin_bosd::Descriptor;
 
         let withdrawal_destination = Descriptor::arbitrary(u)?.to_script();
-        Ok(WithdrawalInfo {
+        Ok(WithdrawalFulfillmentInfo {
             operator_idx: u32::arbitrary(u)?,
             deposit_idx: u32::arbitrary(u)?,
             deposit_txid: BitcoinTxid::arbitrary(u)?,
@@ -87,7 +91,7 @@ impl<'a> Arbitrary<'a> for WithdrawalInfo {
 /// - Any of the metadata fields cannot be parsed correctly
 pub fn extract_withdrawal_info<'t>(
     tx: &TxInputRef<'t>,
-) -> Result<WithdrawalInfo, WithdrawalParseError> {
+) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
     let withdrawal_fulfillment_output = &tx
         .tx()
         .output
@@ -101,34 +105,28 @@ pub fn extract_withdrawal_info<'t>(
         ));
     }
 
-    let mut offset = 0;
-    let operator_idx_bytes = &withdrawal_auxdata[offset..offset + OPERATOR_IDX_SIZE];
-
-    offset += OPERATOR_IDX_SIZE;
-    let deposit_idx_bytes = &withdrawal_auxdata[offset..offset + DEPOSIT_IDX_SIZE];
-
-    offset += DEPOSIT_IDX_SIZE;
-    let deposit_txid_bytes = &withdrawal_auxdata[offset..offset + DEPOSIT_TXID_SIZE];
-
-    let operator_idx = u32::from_be_bytes(
-        operator_idx_bytes
-            .try_into()
-            .expect("operator index is exactly 4 bytes"),
+    let mut operator_idx_bytes = [0u8; OPERATOR_IDX_SIZE];
+    operator_idx_bytes.copy_from_slice(
+        &withdrawal_auxdata[OPERATOR_IDX_OFFSET..OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE],
     );
+    let operator_idx = u32::from_be_bytes(operator_idx_bytes);
 
-    let deposit_idx = u32::from_be_bytes(
-        deposit_idx_bytes
-            .try_into()
-            .expect("deposit index is exactly 4 bytes"),
+    let mut deposit_idx_bytes = [0u8; DEPOSIT_IDX_SIZE];
+    deposit_idx_bytes.copy_from_slice(
+        &withdrawal_auxdata[DEPOSIT_IDX_OFFSET..DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE],
     );
+    let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
 
-    let deposit_txid: Txid =
-        encode::deserialize(deposit_txid_bytes).expect("deposit txid is exactly 32 bytes");
+    let mut deposit_txid_bytes = [0u8; DEPOSIT_TXID_SIZE];
+    deposit_txid_bytes.copy_from_slice(
+        &withdrawal_auxdata[DEPOSIT_TXID_OFFSET..DEPOSIT_TXID_OFFSET + DEPOSIT_TXID_SIZE],
+    );
+    let deposit_txid = Txid::from_byte_array(deposit_txid_bytes);
 
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
-    Ok(WithdrawalInfo {
+    Ok(WithdrawalFulfillmentInfo {
         operator_idx,
         deposit_idx,
         deposit_txid: deposit_txid.into(),
@@ -146,14 +144,28 @@ mod tests {
 
     use super::*;
     use crate::txs::{
-        deposit::create::TEST_MAGIC_BYTES,
-        withdrawal_fulfillment::create::create_withdrawal_fulfillment_tx,
+        deposit::TEST_MAGIC_BYTES, withdrawal_fulfillment::create::create_withdrawal_fulfillment_tx,
     };
+
+    /// Tests that our hardcoded size constants match the actual type sizes.
+    /// This is necessary to catch if the underlying types change size in the future,
+    /// which would break the wire format compatibility for auxiliary data parsing.
+    #[test]
+    fn test_valid_size() {
+        let operator_idx_size: usize = std::mem::size_of::<OperatorIdx>();
+        assert_eq!(operator_idx_size, OPERATOR_IDX_SIZE);
+
+        let deposit_idx_size: usize = std::mem::size_of::<u32>();
+        assert_eq!(deposit_idx_size, DEPOSIT_IDX_SIZE);
+
+        let deposit_txid_size: usize = std::mem::size_of::<Txid>();
+        assert_eq!(deposit_txid_size, DEPOSIT_TXID_SIZE)
+    }
 
     #[test]
     fn test_create_withdrawal_fulfillment_tx_and_extract_info() {
         let mut arb = ArbitraryGenerator::new();
-        let info: WithdrawalInfo = arb.generate();
+        let info: WithdrawalFulfillmentInfo = arb.generate();
 
         // Create the withdrawal fulfillment transaction with proper SPS-50 format
         let tx = create_withdrawal_fulfillment_tx(&info);
