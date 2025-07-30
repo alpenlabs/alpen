@@ -162,7 +162,7 @@ fn handle_block(
         }
     } else {
         // If it's below the expected height then it's possible it's
-        // just a tracking inconsistentcy, let's make sure we don't
+        // just a tracking inconsistency, let's make sure we don't
         // already have it.
         if height < next_exp_height {
             if let Some(istate) = state.state().get_internal_state(height) {
