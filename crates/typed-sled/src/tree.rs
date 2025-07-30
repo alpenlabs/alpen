@@ -73,6 +73,12 @@ impl<S: Schema> SledTree<S> {
         self.inner.is_empty()
     }
 
+    /// Returns `true` if the `SledTree` contains a value for the specified key
+    pub fn contains_key(&self, key: &S::Key) -> Result<bool> {
+        let key = key.encode_key()?;
+        Ok(self.inner.contains_key(key)?)
+    }
+
     /// Returns the first key-value pair in the tree.
     pub fn first(&self) -> Result<Option<(S::Key, S::Value)>> {
         self.inner.first()?.map(decode_pair::<S>).transpose()
