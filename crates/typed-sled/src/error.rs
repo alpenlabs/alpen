@@ -16,7 +16,6 @@ pub enum Error {
     /// Sled transaction error
     #[error("Transaction error: {0}")]
     TransactionError(#[from] UnabortableTransactionError),
-
 }
 
 /// A type alias for `Result<T, Error>`.
