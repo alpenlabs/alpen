@@ -1,77 +1,38 @@
-use std::error::Error;
+use thiserror::Error;
 
 use crate::schema::Schema;
 
 /// Errors that can occur during key/value encoding or decoding.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum CodecError {
     /// Key has invalid length for the expected type.
+    #[error("Invalid key length for schema '{schema}': expected {expected} bytes, got {actual}")]
     InvalidKeyLength {
         schema: &'static str,
         expected: usize,
         actual: usize,
     },
     /// Value serialization failed using borsh.
+    #[error("Failed to serialize value for schema '{schema}'")]
     SerializationFailed {
         schema: &'static str,
-        source: Box<dyn Error>,
+        #[source]
+        source: Box<dyn std::error::Error>,
     },
     /// Value deserialization failed using borsh.
+    #[error("Failed to deserialize value for schema '{schema}'")]
     DeserializationFailed {
         schema: &'static str,
-        source: Box<dyn Error>,
+        #[source]
+        source: Box<dyn std::error::Error>,
     },
     /// I/O error during codec operations.
-    IO(std::io::Error),
+    #[error("I/O error")]
+    IO(#[from] std::io::Error),
 
     /// Other
+    #[error("Other error: {0}")]
     Other(String),
-}
-
-impl std::fmt::Display for CodecError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CodecError::InvalidKeyLength {
-                schema,
-                expected,
-                actual,
-            } => {
-                write!(
-                    f,
-                    "Invalid key length for schema '{schema}': expected {expected} bytes, got {actual}"
-                )
-            }
-            CodecError::SerializationFailed { schema, source } => {
-                write!(
-                    f,
-                    "Failed to serialize value for schema '{schema}': {source}"
-                )
-            }
-            CodecError::DeserializationFailed { schema, source } => {
-                write!(
-                    f,
-                    "Failed to deserialize value for schema '{schema}': {source}"
-                )
-            }
-            CodecError::IO(err) => {
-                write!(f, "I/O error: {err}")
-            }
-            CodecError::Other(err) => {
-                write!(f, "Other error: {err}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for CodecError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            CodecError::SerializationFailed { source, .. } => Some(source.as_ref()),
-            CodecError::DeserializationFailed { source, .. } => Some(source.as_ref()),
-            CodecError::IO(err) => Some(err),
-            _ => None,
-        }
-    }
 }
 
 pub type CodecResult<T> = Result<T, CodecError>;
