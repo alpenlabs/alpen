@@ -85,7 +85,9 @@ impl<S: Schema> SledTree<S> {
 
     /// Applies a batch of operations atomically.
     pub fn apply_batch(&self, batch: SledBatch<S>) -> Result<()> {
-        Ok(self.inner.apply_batch(batch.inner)?)
+        self.inner.apply_batch(batch.inner)?;
+        let _ = self.inner.flush();
+        Ok(())
     }
 
     /// Returns an iterator over all key-value pairs in the tree.
