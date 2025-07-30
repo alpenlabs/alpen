@@ -135,6 +135,9 @@ class StrataFactory(flexitest.Factory):
         svc.start()
         _inject_service_create_rpc(svc, rpc_url, "sequencer")
 
+        def _datadir_path():
+            return datadir
+
         def snapshot_dir_path(idx: int):
             return f"{datadir}.{idx}"
 
@@ -150,6 +153,7 @@ class StrataFactory(flexitest.Factory):
             os.rename(datadir, f"{datadir}.b.{idx}")
             os.rename(snapshot_dir, datadir)
 
+        svc.datadir_path = _datadir_path
         svc.snapshot_datadir = _snapshot_datadir
         svc.restore_snapshot = _restore_snapshot
 

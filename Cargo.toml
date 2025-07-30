@@ -59,6 +59,7 @@ default-members = [
   "bin/prover-client",
   "bin/alpen-reth",
   "bin/strata-client",
+  "bin/strata-dbtool",
   "bin/strata-sequencer-client",
   "crates/util/python-utils",
 ]
