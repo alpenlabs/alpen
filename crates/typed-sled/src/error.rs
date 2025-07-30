@@ -1,4 +1,9 @@
-use sled::{Error as SledError, transaction::UnabortableTransactionError};
+// re-export `ConflictableTransactionError`
+pub use sled::transaction::ConflictableTransactionError;
+use sled::{
+    Error as SledError,
+    transaction::{ConflictableTransactionResult, UnabortableTransactionError},
+};
 
 use crate::CodecError;
 
@@ -16,6 +21,12 @@ pub enum Error {
     /// Sled transaction error
     #[error("Transaction error: {0}")]
     TransactionError(#[from] UnabortableTransactionError),
+}
+
+impl From<Error> for ConflictableTransactionError<Error> {
+    fn from(value: Error) -> Self {
+        ConflictableTransactionError::Abort(value)
+    }
 }
 
 /// A type alias for `Result<T, Error>`.
