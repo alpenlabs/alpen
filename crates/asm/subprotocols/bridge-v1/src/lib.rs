@@ -27,4 +27,6 @@ mod subprotocol;
 mod txs;
 
 pub use constants::BRIDGE_V1_SUBPROTOCOL_ID;
+pub use errors::*;
+pub use state::{BridgeV1Config, BridgeV1State};
 pub use subprotocol::BridgeV1Subproto;

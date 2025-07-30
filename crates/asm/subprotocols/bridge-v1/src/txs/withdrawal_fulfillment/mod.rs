@@ -34,10 +34,10 @@
 mod create;
 mod parse;
 
-pub const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
+pub(crate) const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
 
 #[cfg(test)]
-pub use create::create_withdrawal_fulfillment_tx;
-pub use parse::{
+pub(crate) use create::create_withdrawal_fulfillment_tx;
+pub(crate) use parse::{
     WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN, WithdrawalFulfillmentInfo, extract_withdrawal_info,
 };

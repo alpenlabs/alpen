@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Debug, Error)]
-pub(crate) enum BridgeSubprotocolError {
+pub enum BridgeSubprotocolError {
     #[error("failed to parse deposit tx")]
     DepositTxParse(#[from] DepositTxParseError),
 
@@ -33,7 +33,7 @@ pub(crate) enum BridgeSubprotocolError {
 }
 
 #[derive(Debug, Error, Clone)]
-pub(crate) enum DepositTxParseError {
+pub enum DepositTxParseError {
     /// The auxiliary data in the deposit transaction tag has insufficient length.
     #[error(
         "Auxiliary data too short: expected at least {MIN_DEPOSIT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
@@ -72,7 +72,7 @@ pub enum DepositValidationError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum WithdrawalParseError {
+pub enum WithdrawalParseError {
     /// The auxiliary data in the withdrawal fulfillment transaction doesn't have correct length.
     #[error(
         "Invalid auxiliary data: expected {WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
@@ -84,7 +84,7 @@ pub(crate) enum WithdrawalParseError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum WithdrawalValidationError {
+pub enum WithdrawalValidationError {
     /// No assignment found for the deposit
     #[error("No assignment found for deposit index {deposit_idx}")]
     NoAssignmentFound { deposit_idx: u32 },
@@ -119,7 +119,7 @@ pub(crate) enum WithdrawalValidationError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum WithdrawalCommandError {
+pub enum WithdrawalCommandError {
     /// No unassigned deposits are available for processing
     #[error("No unassigned deposits available for withdrawal command processing")]
     NoUnassignedDeposits,

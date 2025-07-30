@@ -15,7 +15,7 @@ use strata_primitives::buf::Buf32;
 
 use crate::txs::deposit::parse::DepositInfo;
 
-pub const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
+pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
 /// Creates a MuSig2 signature from multiple operators.
 ///
@@ -153,7 +153,7 @@ fn create_musig2_signature(
 ///
 /// # Returns
 /// The properly formatted and signed Bitcoin transaction
-pub fn create_test_deposit_tx(
+pub(crate) fn create_test_deposit_tx(
     deposit_info: &DepositInfo,
     operators_privkeys: &[SecretKey],
 ) -> Transaction {

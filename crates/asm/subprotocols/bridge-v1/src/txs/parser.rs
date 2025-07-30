@@ -30,7 +30,7 @@ use crate::{
 /// Returns an error if:
 /// - The transaction type is not supported by the bridge subprotocol
 /// - The transaction data extraction fails (malformed transaction structure)
-pub fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, BridgeSubprotocolError> {
+pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, BridgeSubprotocolError> {
     match tx.tag().tx_type() {
         DEPOSIT_TX_TYPE => {
             let info = extract_deposit_info(tx)?;

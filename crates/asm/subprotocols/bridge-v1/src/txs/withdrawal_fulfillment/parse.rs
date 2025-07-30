@@ -20,7 +20,7 @@ const DEPOSIT_IDX_OFFSET: usize = OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE;
 const DEPOSIT_TXID_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
 
 /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
-pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
+pub(crate) const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
     OPERATOR_IDX_SIZE + DEPOSIT_IDX_SIZE + DEPOSIT_TXID_SIZE;
 
 /// Information extracted from a Bitcoin withdrawal transaction.
@@ -89,7 +89,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// - The transaction has fewer than 2 outputs (missing withdrawal fulfillment or OP_RETURN)
 /// - The auxiliary data size doesn't match the expected metadata size
 /// - Any of the metadata fields cannot be parsed correctly
-pub fn extract_withdrawal_info<'t>(
+pub(crate) fn extract_withdrawal_info<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
     let withdrawal_fulfillment_output = &tx

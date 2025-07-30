@@ -45,7 +45,7 @@ use crate::{errors::DepositValidationError, txs::deposit::DEPOSIT_OUTPUT_INDEX};
 /// Currently uses manual signature verification due to limitations in the bitcoin
 /// crate's consensus validation. Future versions should migrate to using the
 /// built-in `tx.verify()` method once bitcoinconsensus supports Taproot.
-pub fn validate_drt_spending_signature(
+pub(crate) fn validate_drt_spending_signature(
     tx: &Transaction,
     drt_tapnode_hash: Buf32,
     operators_pubkey: &XOnlyPk,
@@ -135,7 +135,7 @@ pub fn validate_drt_spending_signature(
 /// - `Ok(())` - If the deposit output is properly locked to the operator key
 /// - `Err(DepositValidationError::InvalidSignature)` - If the output has wrong script type or wrong
 ///   key
-pub fn validate_deposit_output_lock(
+pub(crate) fn validate_deposit_output_lock(
     tx: &Transaction,
     operators_agg_pubkey: &XOnlyPk,
 ) -> Result<(), DepositValidationError> {

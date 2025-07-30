@@ -7,7 +7,7 @@ use crate::{
     txs::{ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx},
 };
 
-pub fn handle_parsed_tx<'t>(
+pub(crate) fn handle_parsed_tx<'t>(
     state: &mut BridgeV1State,
     parsed_tx: ParsedTx<'t>,
     relayer: &mut impl MsgRelayer,

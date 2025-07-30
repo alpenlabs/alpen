@@ -1,9 +1,9 @@
-pub mod assignment;
-pub mod bridge;
-pub mod config;
-pub mod deposit;
-pub mod operator;
-pub mod withdrawal;
+pub(crate) mod assignment;
+pub(crate) mod bridge;
+pub(crate) mod config;
+pub(crate) mod deposit;
+pub(crate) mod operator;
+pub(crate) mod withdrawal;
 
 pub use bridge::BridgeV1State;
 pub use config::BridgeV1Config;
