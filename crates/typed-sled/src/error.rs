@@ -1,9 +1,6 @@
 // re-export `ConflictableTransactionError`
 pub use sled::transaction::ConflictableTransactionError;
-use sled::{
-    Error as SledError,
-    transaction::{ConflictableTransactionResult, UnabortableTransactionError},
-};
+use sled::{CompareAndSwapError, Error as SledError, transaction::UnabortableTransactionError};
 
 use crate::CodecError;
 
@@ -21,6 +18,10 @@ pub enum Error {
     /// Sled transaction error
     #[error("Transaction error: {0}")]
     TransactionError(#[from] UnabortableTransactionError),
+
+    /// CAS error
+    #[error("CAS error: {0}")]
+    CASError(#[from] CompareAndSwapError),
 }
 
 impl From<Error> for ConflictableTransactionError<Error> {

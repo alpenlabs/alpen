@@ -89,6 +89,20 @@ impl<S: Schema> SledTree<S> {
         self.inner.last()?.map(decode_pair::<S>).transpose()
     }
 
+    /// Compares and swaps only if the value equals the old value.
+    pub fn compare_and_swap(
+        &self,
+        key: S::Key,
+        old: Option<S::Value>,
+        new: Option<S::Value>,
+    ) -> Result<()> {
+        let key = key.encode_key()?;
+        let old = old.as_ref().map(S::Value::encode_value).transpose()?;
+        let new = new.as_ref().map(S::Value::encode_value).transpose()?;
+        self.inner.compare_and_swap(key, old, new)??;
+        Ok(())
+    }
+
     /// Applies a batch of operations atomically.
     pub fn apply_batch(&self, batch: SledBatch<S>) -> Result<()> {
         self.inner.apply_batch(batch.inner)?;
@@ -147,6 +161,12 @@ impl<S: Schema> SledTransactionalTree<S> {
         let val = self.inner.get(key)?;
         let val = val.as_deref();
         Ok(val.map(|v| S::Value::decode_value(v)).transpose()?)
+    }
+
+    /// Returns `true` if the `SledTree` contains a value for the specified key
+    pub fn contains_key(&self, key: &S::Key) -> Result<bool> {
+        let key = key.encode_key()?;
+        Ok(self.inner.get(key)?.is_some())
     }
 
     /// Removes a key-value pair within the transaction.
