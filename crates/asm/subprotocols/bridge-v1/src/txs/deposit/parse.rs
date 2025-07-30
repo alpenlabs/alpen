@@ -34,7 +34,7 @@ pub struct DepositInfo {
     /// The outpoint of the deposit transaction.
     pub outpoint: OutputRef,
 
-    /// The tapnode hash (merkle root) from the Deposit Request Transaction (DRT) being spent.
+    /// The merkle root of the Script Tree from the Deposit Request Transaction (DRT) being spent.
     ///
     /// This value is extracted from the auxiliary data and represents the merkle root of the
     /// tapscript tree from the DRT that this deposit transaction is spending. It is combined
@@ -46,7 +46,7 @@ pub struct DepositInfo {
     /// authorization, which would mint tokens but break the peg since there would be no presigned
     /// withdrawal transactions. This would require N-of-N trust for withdrawals instead of the
     /// intended 1-of-N trust assumption with presigned transactions.
-    pub drt_tapnode_hash: Buf32,
+    pub drt_tapscript_merkle_root: Buf32,
 }
 
 /// Extracts deposit information from a Bitcoin bridge deposit transaction.
@@ -116,7 +116,7 @@ pub(crate) fn extract_deposit_info<'a>(
         amt: deposit_output.value.into(),
         address: destination_address.to_vec(),
         outpoint: deposit_outpoint,
-        drt_tapnode_hash: tapscript_root,
+        drt_tapscript_merkle_root: tapscript_root,
     })
 }
 
@@ -197,7 +197,10 @@ mod tests {
         assert_eq!(info.deposit_idx, deposit_info.deposit_idx);
         assert_eq!(info.amt, deposit_info.amt);
         assert_eq!(info.address, deposit_info.address);
-        assert_eq!(info.drt_tapnode_hash, deposit_info.drt_tapnode_hash);
+        assert_eq!(
+            info.drt_tapscript_merkle_root,
+            deposit_info.drt_tapscript_merkle_root
+        );
 
         // The outpoint should be from the created transaction with vout = 1 (DEPOSIT_OUTPUT_INDEX)
         let expected_outpoint = OutputRef::from(OutPoint {

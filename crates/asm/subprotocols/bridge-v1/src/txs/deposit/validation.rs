@@ -282,7 +282,7 @@ mod tests {
 
         let result = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapnode_hash,
+            deposit_info.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         );
@@ -315,7 +315,7 @@ mod tests {
 
         let result = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapnode_hash,
+            deposit_info.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         );
@@ -341,7 +341,7 @@ mod tests {
         // Test the validation using the same tapnode hash from deposit_info
         let result = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapnode_hash,
+            deposit_info.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         );

@@ -84,37 +84,21 @@ impl BridgeV1State {
     }
 
     /// Returns a reference to the operator table.
-    ///
-    /// # Returns
-    ///
-    /// Immutable reference to the [`OperatorTable`].
-    pub fn operators(&self) -> &crate::state::operator::OperatorTable {
+    pub fn operators(&self) -> &OperatorTable {
         &self.operators
     }
 
     /// Returns a reference to the deposits table.
-    ///
-    /// # Returns
-    ///
-    /// Immutable reference to the [`DepositsTable`].
     pub fn deposits(&self) -> &DepositsTable {
         &self.deposits
     }
 
     /// Returns a reference to the assignments table.
-    ///
-    /// # Returns
-    ///
-    /// Immutable reference to the [`AssignmentTable`].
     pub fn assignments(&self) -> &AssignmentTable {
         &self.assignments
     }
 
     /// Returns the deadline duration for assignment execution.
-    ///
-    /// # Returns
-    ///
-    /// The duration (in blocks) for assignment execution deadlines.
     pub fn deadline_duration(&self) -> u64 {
         self.deadline_duration
     }
@@ -198,7 +182,7 @@ impl BridgeV1State {
         // Validate the DRT spending signature against the aggregated operator key
         validate_drt_spending_signature(
             tx,
-            info.drt_tapnode_hash,
+            info.drt_tapscript_merkle_root,
             self.operators().agg_key(),
             info.amt.into(),
         )?;

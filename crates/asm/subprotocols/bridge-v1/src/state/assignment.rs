@@ -155,50 +155,31 @@ impl AssignmentEntry {
     }
 
     /// Returns the deposit index associated with this assignment.
-    ///
-    /// # Returns
-    ///
-    /// The deposit index as [`u32`].
     pub fn deposit_idx(&self) -> u32 {
         self.deposit_entry.idx()
     }
 
+    /// Returns the deposit txid associated with this assignment.
     pub fn deposit_txid(&self) -> BitcoinTxid {
         self.deposit_entry.output().outpoint().txid.into()
     }
 
     /// Returns a reference to the withdrawal command.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the [`WithdrawalCommand`] containing output specifications.
     pub fn withdrawal_command(&self) -> &WithdrawalCommand {
         &self.withdrawal_cmd
     }
 
     /// Returns the index of the currently assigned operator.
-    ///
-    /// # Returns
-    ///
-    /// The [`OperatorIdx`] of the operator currently responsible for this assignment.
     pub fn current_assignee(&self) -> OperatorIdx {
         self.current_assignee
     }
 
     /// Returns a reference to the list of previous assignees.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the [`Vec<OperatorIdx>`] of operators previously assigned to this withdrawal.
     pub fn previous_assignees(&self) -> &[OperatorIdx] {
         &self.previous_assignees
     }
 
     /// Returns the execution deadline for this assignment.
-    ///
-    /// # Returns
-    ///
-    /// The [`BitcoinBlockHeight`] deadline for withdrawal execution.
     pub fn exec_deadline(&self) -> BitcoinBlockHeight {
         self.exec_deadline
     }
@@ -289,14 +270,7 @@ pub struct AssignmentTable {
 }
 
 impl AssignmentTable {
-    /// Creates a new empty assignment table.
-    ///
-    /// Initializes the table with no assignments, ready for operator
-    /// assignment management.
-    ///
-    /// # Returns
-    ///
-    /// A new empty [`AssignmentTable`].
+    /// Creates a new empty assignment table with no assignments
     pub fn new_empty() -> Self {
         Self {
             assignments: Vec::new(),
@@ -304,30 +278,16 @@ impl AssignmentTable {
     }
 
     /// Returns the number of assignments in the table.
-    ///
-    /// # Returns
-    ///
-    /// The total count of assignments as [`u32`].
     pub fn len(&self) -> u32 {
         self.assignments.len() as u32
     }
 
     /// Returns whether the assignment table is empty.
-    ///
-    /// # Returns
-    ///
-    /// `true` if no assignments exist, `false` otherwise.
     pub fn is_empty(&self) -> bool {
         self.assignments.is_empty()
     }
 
     /// Returns a slice of all assignment entries.
-    ///
-    /// The entries are guaranteed to be sorted by deposit index.
-    ///
-    /// # Returns
-    ///
-    /// Slice reference to all [`AssignmentEntry`] instances in the table.
     pub fn assignments(&self) -> &[AssignmentEntry] {
         &self.assignments
     }

@@ -11,7 +11,7 @@ use bitcoin::{
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
 use rand::{RngCore, rngs::OsRng};
 use strata_l1tx::utils::generate_agg_pubkey;
-use strata_primitives::buf::Buf32;
+use strata_primitives::{buf::Buf32, crypto::EvenSecretKey};
 
 use crate::txs::deposit::parse::DepositInfo;
 
@@ -23,7 +23,6 @@ pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 /// coordinate to create a single aggregated signature.
 ///
 /// # Arguments
-/// - `key_agg_ctx`: The key aggregation context containing all operator public keys
 /// - `operators_privkeys`: Private keys of all operators participating in signing
 /// - `message`: The message to be signed (typically a sighash)
 /// - `tweak`: Optional tweak for taproot spending (merkle root)
@@ -31,7 +30,7 @@ pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 /// # Returns
 /// The aggregated MuSig2 signature
 fn create_musig2_signature(
-    operators_privkeys: &[bitcoin::secp256k1::SecretKey],
+    operators_privkeys: &[SecretKey],
     message: &[u8; 32],
     tweak: Option<[u8; 32]>,
 ) -> musig2::CompactSignature {
@@ -41,16 +40,9 @@ fn create_musig2_signature(
     let adjusted_keys: Vec<(PublicKey, SecretKey)> = operators_privkeys
         .iter()
         .map(|sk| {
-            let pk = PublicKey::from_secret_key(&secp, sk);
-            let (x_only, parity) = pk.x_only_public_key();
-            let adjusted_pk =
-                PublicKey::from_x_only_public_key(x_only, bitcoin::secp256k1::Parity::Even);
-            let adjusted_sk = if parity == bitcoin::secp256k1::Parity::Odd {
-                sk.negate()
-            } else {
-                *sk
-            };
-            (adjusted_pk, adjusted_sk)
+            let even_sk = EvenSecretKey::from(*sk);
+            let pk = PublicKey::from_secret_key(&secp, &even_sk);
+            (pk, *even_sk.as_ref())
         })
         .collect();
 
@@ -162,7 +154,7 @@ pub(crate) fn create_test_deposit_tx(
     // Create auxiliary data in the expected format for deposit transactions
     let mut aux_data = Vec::new();
     aux_data.extend_from_slice(&deposit_info.deposit_idx.to_be_bytes()); // 4 bytes
-    aux_data.extend_from_slice(deposit_info.drt_tapnode_hash.as_ref()); // 32 bytes  
+    aux_data.extend_from_slice(deposit_info.drt_tapscript_merkle_root.as_ref()); // 32 bytes  
     aux_data.extend_from_slice(&deposit_info.address); // variable length
 
     // Create the complete SPS-50 tagged payload
@@ -182,7 +174,8 @@ pub(crate) fn create_test_deposit_tx(
     let deposit_script = ScriptBuf::new_p2tr(&secp, aggregated_xonly, None);
 
     // Create the UTXO being spent (DRT output) with aggregated key for MuSig2
-    let merkle_root = TapNodeHash::from_byte_array(*deposit_info.drt_tapnode_hash.as_ref());
+    let merkle_root =
+        TapNodeHash::from_byte_array(*deposit_info.drt_tapscript_merkle_root.as_ref());
     let drt_script_pubkey = ScriptBuf::new_p2tr(&secp, aggregated_xonly, Some(merkle_root));
 
     let deposit_amount: Amount = deposit_info.amt.into();

@@ -76,7 +76,6 @@ impl WithdrawalCommand {
 #[derive(
     Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
 )]
-#[serde(rename_all = "snake_case")]
 pub struct WithdrawOutput {
     /// Bitcoin Output Script Descriptor specifying the destination address.
     pub destination: Descriptor,

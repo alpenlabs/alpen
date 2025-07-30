@@ -100,41 +100,21 @@ impl DepositEntry {
     }
 
     /// Returns the unique deposit identifier.
-    ///
-    /// # Returns
-    ///
-    /// The deposit index as [`u32`].
     pub fn idx(&self) -> u32 {
         self.deposit_idx
     }
 
     /// Returns a reference to the Bitcoin UTXO being tracked.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the [`OutputRef`] containing transaction hash and output index.
     pub fn output(&self) -> &OutputRef {
         &self.output
     }
 
     /// Returns the historical set of operators that formed the N/N multisig.
-    ///
-    /// This preserves the specific operators who controlled the multisig when the
-    /// deposit was locked. Any one honest operator from this set can properly
-    /// process user withdrawals.
-    ///
-    /// # Returns
-    ///
-    /// Slice of [`OperatorIdx`] values representing the multisig operators.
     pub fn notary_operators(&self) -> &[OperatorIdx] {
         &self.notary_operators
     }
 
     /// Returns the amount of Bitcoin locked in this deposit.
-    ///
-    /// # Returns
-    ///
-    /// The deposit amount as [`BitcoinAmount`] (in satoshis).
     pub fn amt(&self) -> BitcoinAmount {
         self.amt
     }

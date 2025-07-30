@@ -12,7 +12,7 @@
 //! - **Operators**: Entities that process withdrawals and maintain bridge security
 //! - **Deposits**: Bitcoin UTXOs locked to N/N multisig operator addresses
 //! - **Assignments**: Task assignments linking deposits to specific operators
-//! - **Withdrawals**: Commands for operators to release funds back to Bitcoin
+//! - **Withdrawals**: Commands for operators to release funds from the multisig.
 //!
 //! # Usage
 //!
