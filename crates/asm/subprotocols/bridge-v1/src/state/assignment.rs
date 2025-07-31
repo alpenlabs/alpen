@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
-    l1::{BitcoinTxid, L1BlockId},
+    l1::{BitcoinAmount, BitcoinTxid, L1BlockId},
 };
 
 use super::withdrawal::WithdrawalCommand;
@@ -202,6 +202,7 @@ impl AssignmentEntry {
     /// - `Err(WithdrawalCommandError)` - If no eligible operators are available
     pub fn reassign(
         &mut self,
+        new_operator_fee: BitcoinAmount,
         seed: L1BlockId,
         current_active_operators: &[OperatorIdx],
     ) -> Result<(), WithdrawalCommandError> {
@@ -239,6 +240,7 @@ impl AssignmentEntry {
         let new_assignee = eligible_operators[random_index];
 
         self.current_assignee = new_assignee;
+        self.withdrawal_cmd.update_fee(new_operator_fee);
         Ok(())
     }
 }
@@ -411,6 +413,7 @@ impl AssignmentTable {
     /// ```
     pub fn reassign_expired_assignments(
         &mut self,
+        operator_fee: BitcoinAmount,
         current_height: BitcoinBlockHeight,
         current_active_operators: &[OperatorIdx],
         seed: L1BlockId,
@@ -421,7 +424,7 @@ impl AssignmentTable {
             .iter_mut()
             .filter(|e| e.exec_deadline <= current_height)
         {
-            assignment.reassign(seed, current_active_operators)?;
+            assignment.reassign(operator_fee, seed, current_active_operators)?;
             reassigned_withdrawals.push(assignment.deposit_idx());
         }
         Ok(reassigned_withdrawals)
@@ -502,6 +505,7 @@ mod tests {
 
         // Use the deposit's notary operators as active operators
         let current_active_operators: Vec<OperatorIdx> = deposit_entry.notary_operators().to_vec();
+        let new_fee = BitcoinAmount::from_sat(20_000);
 
         // Ensure we have at least 2 operators for reassignment
         if current_active_operators.len() < 2 {
@@ -521,7 +525,7 @@ mod tests {
         assert_eq!(assignment.previous_assignees().len(), 0);
 
         // Reassign to a new operator
-        let result = assignment.reassign(seed2, &current_active_operators);
+        let result = assignment.reassign(new_fee, seed2, &current_active_operators);
         assert!(result.is_ok());
 
         // Verify reassignment
@@ -548,6 +552,7 @@ mod tests {
         .unwrap();
 
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let new_operator_fee: BitcoinAmount = arb.generate();
         let exec_deadline: BitcoinBlockHeight = 100;
         let seed1: L1BlockId = arb.generate();
         let seed2: L1BlockId = arb.generate();
@@ -564,7 +569,7 @@ mod tests {
         .unwrap();
 
         // First reassignment should work (clears previous assignees and reassigns to same operator)
-        let result = assignment.reassign(seed2, &current_active_operators);
+        let result = assignment.reassign(new_operator_fee, seed2, &current_active_operators);
         assert!(result.is_ok());
 
         // Should have cleared previous assignees and reassigned to the same operator
@@ -621,6 +626,7 @@ mod tests {
         // Create test data
         let current_height: BitcoinBlockHeight = 150;
         let seed: L1BlockId = arb.generate();
+        let new_operator_fee: BitcoinAmount = arb.generate();
 
         // Create expired assignment (deadline < current_height)
         let deposit_entry1: DepositEntry = arb.generate();
@@ -663,8 +669,12 @@ mod tests {
         table.insert(future_assignment);
 
         // Reassign expired assignments
-        let result =
-            table.reassign_expired_assignments(current_height, &current_active_operators1, seed);
+        let result = table.reassign_expired_assignments(
+            new_operator_fee,
+            current_height,
+            &current_active_operators1,
+            seed,
+        );
 
         assert!(result.is_ok(), "Reassignment should succeed");
 

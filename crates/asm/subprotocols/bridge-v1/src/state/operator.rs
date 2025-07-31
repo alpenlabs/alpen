@@ -187,37 +187,21 @@ impl OperatorTable {
     }
 
     /// Returns the number of registered operators.
-    ///
-    /// # Returns
-    ///
-    /// The total count of operators in the table as [`u32`].
     pub fn len(&self) -> u32 {
         self.operators.len() as u32
     }
 
     /// Returns whether the operator table is empty.
-    ///
-    /// In practice, this will typically return `false` since bridge operation
-    /// requires at least one registered operator.
-    ///
-    /// # Returns
-    ///
-    /// `true` if no operators are registered, `false` otherwise.
     pub fn is_empty(&self) -> bool {
         self.operators.is_empty()
     }
 
     /// Returns a slice of all registered operator entries.
-    ///
-    /// The entries are guaranteed to be sorted by operator index.
-    ///
-    /// # Returns
-    ///
-    /// Slice reference to all [`OperatorEntry`] instances in the table.
     pub fn operators(&self) -> &[OperatorEntry] {
         &self.operators
     }
 
+    /// Returns the aggregated public key of the current active operators
     pub fn agg_key(&self) -> &XOnlyPk {
         &self.agg_key
     }
@@ -239,23 +223,6 @@ impl OperatorTable {
             .binary_search_by_key(&idx, |e| e.idx)
             .ok()
             .map(|i| &self.operators[i])
-    }
-
-    /// Retrieves an operator entry by its position in the internal vector.
-    ///
-    /// This method accesses operators by their storage position rather than their
-    /// logical index. Useful for iteration or when the position is known.
-    ///
-    /// # Parameters
-    ///
-    /// - `pos` - The position in the internal vector (0-based)
-    ///
-    /// # Returns
-    ///
-    /// - `Some(&OperatorEntry)` if the position is valid
-    /// - `None` if the position is out of bounds
-    pub fn get_entry_at_pos(&self, pos: u32) -> Option<&OperatorEntry> {
-        self.operators.get(pos as usize)
     }
 
     /// Returns indices of operators in the current N/N multisig.

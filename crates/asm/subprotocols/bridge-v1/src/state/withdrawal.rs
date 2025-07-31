@@ -17,49 +17,56 @@ use strata_primitives::{
 /// Command specifying a Bitcoin output for a withdrawal operation.
 ///
 /// This structure instructs operators on how to construct the Bitcoin transaction
-/// output when processing a withdrawal. Currently contains a single output with
-/// destination and amount.
+/// output when processing a withdrawal. It currently contains a single output specifying the
+/// destination and amount, along with the operator fee that will be deducted.
 ///
-/// # Future Enhancements
+/// ## Fee Structure
 ///
-/// This is where we will add support for:
-/// - **Batching**: Multiple outputs in a single withdrawal command to enable efficient processing
-///   of multiple withdrawals in one transaction
-/// - **Fee Handling**: Additional fee accounting information to help operators calculate
-///   appropriate transaction fees
+/// The operator fee is deducted from the withdrawal amount before creating the Bitcoin
+/// output. This means the user receives the net amount (withdrawal amount minus operator
+/// fee) in their Bitcoin transaction, while the operator keeps the fee as compensation
+/// for processing the withdrawal.
+///
+/// ## Future Enhancements
+///
+/// - **Batching**: Support for multiple outputs in a single withdrawal command to enable efficient
+///   processing of multiple withdrawals in one Bitcoin transaction
 #[derive(
     Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
 )]
 pub struct WithdrawalCommand {
-    /// List of Bitcoin outputs to create in the withdrawal transaction.
+    /// Bitcoin output to create in the withdrawal transaction.
     output: WithdrawOutput,
+
+    /// Amount the operator can take as fees for processing withdrawal.
+    operator_fee: BitcoinAmount,
 }
 
 impl WithdrawalCommand {
-    /// Creates a new withdrawal command with the specified outputs.
-    ///
-    /// # Parameters
-    ///
-    /// - `withdraw_outputs` - Vector of withdrawal outputs specifying destinations and amounts
-    ///
-    /// # Returns
-    ///
-    /// A new [`WithdrawalCommand`] instance.
-    pub fn new(output: WithdrawOutput) -> Self {
-        Self { output }
+    /// Creates a new withdrawal command with the specified output and operator fee.
+    pub fn new(output: WithdrawOutput, operator_fee: BitcoinAmount) -> Self {
+        Self {
+            output,
+            operator_fee,
+        }
     }
 
-    /// Returns a slice of all withdrawal outputs.
-    ///
-    /// # Returns
-    ///
-    /// Slice reference to all [`WithdrawOutput`] instances in this command.
+    /// Returns a reference to the destination descriptor for this withdrawal.
     pub fn destination(&self) -> &Descriptor {
         &self.output.destination
     }
 
-    pub fn amt(&self) -> BitcoinAmount {
-        self.output.amt
+    /// Updates the operator fee for this withdrawal command.
+    pub fn update_fee(&mut self, new_fee: BitcoinAmount) {
+        self.operator_fee = new_fee
+    }
+
+    /// Calculates the net amount the user will receive after operator fee deduction.
+    ///
+    /// This is the amount that will actually be sent to the user's Bitcoin address,
+    /// which equals the withdrawal amount minus the operator fee.
+    pub fn net_amount(&self) -> BitcoinAmount {
+        self.output.amt().saturating_sub(self.operator_fee)
     }
 }
 
@@ -86,33 +93,16 @@ pub struct WithdrawOutput {
 
 impl WithdrawOutput {
     /// Creates a new withdrawal output with the specified destination and amount.
-    ///
-    /// # Parameters
-    ///
-    /// - `destination` - Bitcoin descriptor specifying the destination address
-    /// - `amt` - Amount to withdraw in satoshis
-    ///
-    /// # Returns
-    ///
-    /// A new [`WithdrawOutput`] instance.
     pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
         Self { destination, amt }
     }
 
     /// Returns a reference to the destination descriptor.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the [`Descriptor`] specifying where funds should be sent.
     pub fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
     /// Returns the withdrawal amount.
-    ///
-    /// # Returns
-    ///
-    /// The withdrawal amount as [`BitcoinAmount`] (in satoshis).
     pub fn amt(&self) -> BitcoinAmount {
         self.amt
     }

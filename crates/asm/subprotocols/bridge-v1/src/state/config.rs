@@ -12,8 +12,10 @@ use strata_primitives::{l1::BitcoinAmount, operator::OperatorPubkeys};
 pub struct BridgeV1Config {
     /// Initial operator public keys for the bridge
     pub operators: Vec<OperatorPubkeys>,
-    /// Expected deposit denomination for validation
+    /// The amount of bitcoin expected to be locked in the N/N multisig.
     pub denomination: BitcoinAmount,
     /// Duration in blocks for assignment execution deadlines
     pub deadline_duration: u64,
+    /// Amount the operator can take as fees for processing withdrawal.
+    pub operator_fee: BitcoinAmount,
 }

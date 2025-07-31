@@ -14,7 +14,7 @@ use crate::{
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
-        withdrawal::{OperatorClaimUnlock, WithdrawalCommand},
+        withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
     },
     txs::{
         deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
@@ -55,6 +55,9 @@ pub struct BridgeV1State {
 
     /// The duration (in blocks) for assignment execution deadlines.
     deadline_duration: u64,
+
+    /// Amount the operator can take as fees for processing withdrawal.
+    operator_fee: BitcoinAmount,
 }
 
 impl BridgeV1State {
@@ -80,6 +83,7 @@ impl BridgeV1State {
             assignments: AssignmentTable::new_empty(),
             denomination: config.denomination,
             deadline_duration: config.deadline_duration,
+            operator_fee: config.operator_fee,
         }
     }
 
@@ -229,7 +233,7 @@ impl BridgeV1State {
     /// - The deposit for the unassigned index is not found
     pub fn create_withdrawal_assignment(
         &mut self,
-        withdrawal_cmd: &WithdrawalCommand,
+        withdrawal_output: &WithdrawOutput,
         l1_block_id: &L1BlockId,
         current_block_height: u64,
     ) -> Result<(), WithdrawalCommandError> {
@@ -242,16 +246,17 @@ impl BridgeV1State {
         // Create assignment with deadline calculated from current block height + deadline duration
         let exec_deadline = current_block_height + self.deadline_duration();
 
-        if deposit.amt() != withdrawal_cmd.amt() {
+        if deposit.amt() != withdrawal_output.amt() {
             return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch {
                 deposit_amount: deposit.amt().to_sat(),
-                withdrawal_amount: withdrawal_cmd.amt().to_sat(),
+                withdrawal_amount: withdrawal_output.amt().to_sat(),
             });
         }
 
+        let withdrawal_cmd = WithdrawalCommand::new(withdrawal_output.clone(), self.operator_fee);
         let entry = AssignmentEntry::create_with_random_assignment(
             deposit,
-            withdrawal_cmd.clone(),
+            withdrawal_cmd,
             exec_deadline,
             &self.operators().current_multisig_indices(),
             *l1_block_id,
@@ -290,6 +295,7 @@ impl BridgeV1State {
         let l1_block_id = current_block.blkid();
 
         self.assignments.reassign_expired_assignments(
+            self.operator_fee,
             current_block_height,
             &self.operators().current_multisig_indices(),
             *l1_block_id,
@@ -403,7 +409,7 @@ impl BridgeV1State {
         }
 
         // Validate withdrawal amount against assignment command
-        let expected_amount = assignment.withdrawal_command().amt();
+        let expected_amount = assignment.withdrawal_command().net_amount();
         let actual_amount = withdrawal_info.withdrawal_amount;
         if expected_amount != actual_amount {
             return Err(WithdrawalValidationError::AmountMismatch {
@@ -440,10 +446,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        state::{
-            config::BridgeV1Config,
-            withdrawal::{WithdrawOutput, WithdrawalCommand},
-        },
+        state::{config::BridgeV1Config, withdrawal::WithdrawOutput},
         txs::{
             deposit::{DepositInfo, create_test_deposit_tx},
             withdrawal_fulfillment::create_withdrawal_fulfillment_tx,
@@ -491,6 +494,7 @@ mod tests {
             denomination,
             operators,
             deadline_duration: 144, // ~24 hours
+            operator_fee: BitcoinAmount::from_sat(100_000),
         };
         let bridge_state = BridgeV1State::new(&config);
         (bridge_state, privkeys)
@@ -539,9 +543,8 @@ mod tests {
             let l1blk: L1BlockCommitment = arb.generate();
             let mut output: WithdrawOutput = arb.generate();
             output.amt = state.denomination;
-            let cmd = WithdrawalCommand::new(output);
             state
-                .create_withdrawal_assignment(&cmd, l1blk.blkid(), l1blk.height())
+                .create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height())
                 .unwrap();
         }
     }
@@ -567,7 +570,7 @@ mod tests {
             deposit_idx: assignment.deposit_idx(),
             deposit_txid: assignment.deposit_txid(),
             withdrawal_destination: assignment.withdrawal_command().destination().to_script(),
-            withdrawal_amount: assignment.withdrawal_command().amt(),
+            withdrawal_amount: assignment.withdrawal_command().net_amount(),
         }
     }
 
@@ -683,8 +686,7 @@ mod tests {
             let l1blk: L1BlockCommitment = arb.generate();
             let mut output: WithdrawOutput = arb.generate();
             output.amt = state.denomination;
-            let cmd = WithdrawalCommand::new(output);
-            let res = state.create_withdrawal_assignment(&cmd, l1blk.blkid(), l1blk.height());
+            let res = state.create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height());
             assert!(res.is_ok());
 
             let unassigned_deposit_count = state.deposits.len();
@@ -695,8 +697,7 @@ mod tests {
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
-        let cmd = WithdrawalCommand::new(output);
-        let res = state.create_withdrawal_assignment(&cmd, l1blk.blkid(), l1blk.height());
+        let res = state.create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height());
         assert!(res.is_err());
     }
 
@@ -714,8 +715,7 @@ mod tests {
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
-        let cmd = WithdrawalCommand::new(output);
-        let res = state.create_withdrawal_assignment(&cmd, l1blk.blkid(), l1blk.height());
+        let res = state.create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height());
         assert!(res.is_err());
         // TODO: check for error type
     }

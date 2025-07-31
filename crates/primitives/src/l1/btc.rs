@@ -302,6 +302,10 @@ impl BitcoinAmount {
             }
         }
     }
+
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        Self::from_sat(self.to_sat().saturating_sub(rhs.to_sat()))
+    }
 }
 
 impl Add for BitcoinAmount {
