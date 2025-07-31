@@ -5,7 +5,7 @@ use strata_primitives::l1::L1Status;
 use strata_state::{
     bridge_state::{DepositsTable, OperatorTable},
     chain_state::Chainstate,
-    client_state::{ClientState, L1Checkpoint, SyncState},
+    client_state::{ClientState, L1Checkpoint},
     id::L2BlockId,
 };
 use thiserror::Error;
@@ -78,11 +78,6 @@ impl StatusChannel {
     /// Gets the last finalized [`L1Checkpoint`] from the current client state.
     pub fn get_last_checkpoint(&self) -> Option<L1Checkpoint> {
         self.receiver.cl.borrow().get_last_checkpoint().cloned()
-    }
-
-    /// Gets the latest [`SyncState`].
-    pub fn get_cur_sync_state(&self) -> SyncState {
-        self.receiver.cl.borrow().sync().clone()
     }
 
     /// Returns a clone of the most recent tip block's chainstate, if present.

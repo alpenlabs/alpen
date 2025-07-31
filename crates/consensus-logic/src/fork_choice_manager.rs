@@ -283,7 +283,9 @@ pub fn init_forkchoice_manager(
 
     // TODO: get finalized block id without depending on client state
     // or ensure client state and chain state are in-sync during startup
-    let sync_state = init_csm_state.sync();
+    let genesis_blkid = init_csm_state
+        .genesis_blkid()
+        .expect("csm state should be init");
     // let chain_tip_height = storage.chainstate().get_last_write_idx_blocking()?;
 
     // XXX right now we have to do some special casing for if we don't have an
@@ -301,7 +303,7 @@ pub fn init_forkchoice_manager(
     let csm_finalized_epoch = init_csm_state
         .get_declared_final_epoch()
         .cloned()
-        .unwrap_or_else(|| EpochCommitment::new(0, 0, *sync_state.genesis_blkid()));
+        .unwrap_or_else(|| EpochCommitment::new(0, 0, genesis_blkid));
 
     // pick whatever is the earliest
     let finalized_epoch = if chainstate_last_epoch.epoch() < csm_finalized_epoch.epoch() {

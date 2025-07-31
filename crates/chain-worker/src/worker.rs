@@ -356,7 +356,7 @@ fn wait_for_genesis_and_resolve_tip(
 
     let cur_tip = match init_state.get_declared_final_epoch().cloned() {
         Some(epoch) => epoch.to_block_commitment(),
-        None => L2BlockCommitment::new(0, *init_state.sync().genesis_blkid()),
+        None => L2BlockCommitment::new(0, init_state.genesis_blkid().expect("after genesis")),
     };
 
     Ok(cur_tip)

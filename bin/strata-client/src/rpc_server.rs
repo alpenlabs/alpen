@@ -97,10 +97,11 @@ impl StrataRpcImpl {
     async fn get_cur_states(&self) -> Result<(ClientState, Arc<Chainstate>), Error> {
         let cs = self.get_client_state().await;
 
-        let chs = self
-            .status_channel
-            .get_cur_tip_chainstate()
-            .ok_or(Error::BeforeGenesis)?;
+        if !cs.has_genesis_occurred() {
+            return Ok((cs, None));
+        }
+
+        let chs = self.status_channel.get_cur_tip_chainstate().clone();
 
         Ok((cs, chs))
     }
