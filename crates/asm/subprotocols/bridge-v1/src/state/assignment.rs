@@ -15,6 +15,7 @@ use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
     l1::{BitcoinAmount, BitcoinTxid, L1BlockId},
+    sorted_vec::SortedVec,
 };
 
 use super::withdrawal::WithdrawalCommand;
@@ -23,24 +24,12 @@ use crate::{errors::WithdrawalCommandError, state::deposit::DepositEntry};
 /// Assignment entry linking a deposit to an operator for withdrawal processing.
 ///
 /// Each assignment represents a task assigned to a specific operator to process
-/// a withdrawal from a particular deposit. The assignment includes:
-///
-/// - **`deposit_idx`** - Reference to the deposit being processed
-/// - **`withdrawal_cmd`** - Specification of outputs and amounts for withdrawal
-/// - **`current_assignee`** - Operator currently responsible for executing the withdrawal
-/// - **`previous_assignees`** - List of operators who were previously assigned but failed to
-///   execute
-/// - **`exec_deadline`** - Bitcoin block height deadline for execution
-///
-/// # Execution Deadline
-///
-/// The `exec_deadline` represents the latest Bitcoin block height at which
-/// the withdrawal can be executed. If a checkpoint is processed after this
-/// height and the withdrawal hasn't been completed, the assignment becomes invalid.
+/// a withdrawal from a particular deposit.
 #[derive(
     Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
 )]
 pub struct AssignmentEntry {
+    /// Deposit entry that has been assigned
     deposit_entry: DepositEntry,
 
     /// Withdrawal command specifying outputs and amounts.
@@ -65,6 +54,18 @@ pub struct AssignmentEntry {
     /// If a checkpoint is processed at or after this height without
     /// the withdrawal being completed, the assignment becomes invalid.
     exec_deadline: BitcoinBlockHeight,
+}
+
+impl PartialOrd for AssignmentEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AssignmentEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.deposit_entry.cmp(&other.deposit_entry)
+    }
 }
 
 /// Filters and returns eligible operators for assignment or reassignment.
@@ -268,14 +269,14 @@ pub struct AssignmentTable {
     /// Vector of assignment entries, sorted by deposit index.
     ///
     /// **Invariant**: MUST be sorted by `AssignmentEntry::deposit_idx` field.
-    assignments: Vec<AssignmentEntry>,
+    assignments: SortedVec<AssignmentEntry>,
 }
 
 impl AssignmentTable {
     /// Creates a new empty assignment table with no assignments
     pub fn new_empty() -> Self {
         Self {
-            assignments: Vec::new(),
+            assignments: SortedVec::new_empty(),
         }
     }
 
@@ -291,92 +292,56 @@ impl AssignmentTable {
 
     /// Returns a slice of all assignment entries.
     pub fn assignments(&self) -> &[AssignmentEntry] {
-        &self.assignments
+        self.assignments.as_slice()
     }
 
     /// Retrieves an assignment entry by its deposit index.
-    ///
-    /// Uses binary search for O(log n) lookup performance.
-    ///
-    /// # Parameters
-    ///
-    /// - `deposit_idx` - The deposit index to search for
-    ///
     /// # Returns
     ///
     /// - `Some(&AssignmentEntry)` if the assignment exists
     /// - `None` if no assignment for the given deposit index is found
     pub fn get_assignment(&self, deposit_idx: u32) -> Option<&AssignmentEntry> {
         self.assignments
+            .as_slice()
             .binary_search_by_key(&deposit_idx, |entry| entry.deposit_idx())
             .ok()
-            .map(|i| &self.assignments[i])
+            .map(|i| &self.assignments.as_slice()[i])
     }
 
     /// Creates a new assignment entry with optimized insertion.
-    ///
-    /// This method is optimized for sequential insertion patterns. If the deposit
-    /// index is larger than the last entry, it performs a fast append operation.
-    /// Otherwise, it uses binary search to find the correct insertion position.
-    ///
-    /// # Parameters
-    ///
-    /// - `deposit_idx` - Deposit index for the assignment
-    /// - `withdrawal_cmd` - Withdrawal command with output specifications
-    /// - `assignee` - Operator index assigned to execute the withdrawal
-    /// - `exec_deadline` - Bitcoin block height deadline for execution
     ///
     /// # Panics
     ///
     /// Panics if an assignment with the given deposit index already exists.
     pub fn insert(&mut self, entry: AssignmentEntry) {
-        let idx = entry.deposit_idx();
-
-        // Fast path: if this is larger than the last entry, just push
-        if let Some(last) = self.assignments.last() {
-            if idx > last.deposit_idx() {
-                self.assignments.push(entry);
-                return;
-            }
-        } else {
-            // Empty table, just push
-            self.assignments.push(entry);
-            return;
+        // Check if entry already exists
+        if self.get_assignment(entry.deposit_idx()).is_some() {
+            panic!(
+                "Assignment with deposit index {} already exists",
+                entry.deposit_idx()
+            );
         }
 
-        // Perform binary search to find the insertion point
-        match self
-            .assignments
-            .binary_search_by_key(&idx, |entry| entry.deposit_idx())
-        {
-            Ok(_) => panic!("Assignment with deposit index {idx} already exists"),
-            Err(pos) => {
-                // Insert the deposit entry at the found position
-                self.assignments.insert(pos, entry);
-            }
-        }
+        // SortedVec handles the insertion and maintains order
+        self.assignments.insert(entry);
     }
 
     /// Removes an assignment by its deposit index.
-    ///
-    /// Uses binary search to locate and remove the assignment efficiently.
-    ///
-    /// # Parameters
-    ///
-    /// - `deposit_idx` - The deposit index of the assignment to remove
     ///
     /// # Returns
     ///
     /// - `Some(AssignmentEntry)` if the assignment was found and removed
     /// - `None` if no assignment with the given deposit index exists
     pub fn remove_assignment(&mut self, deposit_idx: u32) -> Option<AssignmentEntry> {
-        let pos = self
-            .assignments
-            .binary_search_by_key(&deposit_idx, |entry| entry.deposit_idx())
-            .ok()?;
+        // Find the assignment first
+        let assignment = self.get_assignment(deposit_idx)?.clone();
 
-        // Remove the assignment and return it
-        Some(self.assignments.remove(pos))
+        // Remove it using SortedVec's remove method
+        if self.assignments.remove(&assignment) {
+            Some(assignment)
+        } else {
+            None
+        }
     }
 
     /// Reassigns all expired assignments to new randomly selected operators.
@@ -419,6 +384,8 @@ impl AssignmentTable {
         seed: L1BlockId,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
         let mut reassigned_withdrawals = Vec::new();
+
+        // Using iter_mut since we're only modifying non-sorting fields
         for assignment in self
             .assignments
             .iter_mut()
@@ -427,6 +394,7 @@ impl AssignmentTable {
             assignment.reassign(operator_fee, seed, current_active_operators)?;
             reassigned_withdrawals.push(assignment.deposit_idx());
         }
+
         Ok(reassigned_withdrawals)
     }
 }

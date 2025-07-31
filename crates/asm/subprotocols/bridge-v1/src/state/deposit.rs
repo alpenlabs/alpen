@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},
+    sorted_vec::SortedVec,
 };
 
 use crate::errors::DepositValidationError;
@@ -60,6 +61,18 @@ pub struct DepositEntry {
 
     /// Amount of Bitcoin locked in this deposit (in satoshis).
     amt: BitcoinAmount,
+}
+
+impl PartialOrd for DepositEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DepositEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.idx().cmp(&other.idx())
+    }
 }
 
 impl DepositEntry {
@@ -165,7 +178,7 @@ pub struct DepositsTable {
     /// Vector of deposit entries, sorted by deposit index.
     ///
     /// **Invariant**: MUST be sorted by `DepositEntry::deposit_idx` field.
-    deposits: Vec<DepositEntry>,
+    deposits: SortedVec<DepositEntry>,
 }
 
 impl DepositsTable {
@@ -178,7 +191,7 @@ impl DepositsTable {
     /// A new empty [`DepositsTable`].
     pub fn new_empty() -> Self {
         Self {
-            deposits: Vec::new(),
+            deposits: SortedVec::new_empty(),
         }
     }
 
@@ -218,9 +231,10 @@ impl DepositsTable {
     /// - `None` if no deposit with the given index is found
     pub fn get_deposit(&self, deposit_idx: u32) -> Option<&DepositEntry> {
         self.deposits
+            .as_slice()
             .binary_search_by_key(&deposit_idx, |entry| entry.deposit_idx)
             .ok()
-            .map(|pos| &self.deposits[pos])
+            .map(|pos| &self.deposits.as_slice()[pos])
     }
 
     /// Returns an iterator over all deposit entries.
@@ -266,14 +280,8 @@ impl DepositsTable {
         match self.get_deposit(idx) {
             Some(_) => Err(crate::errors::DepositValidationError::DepositIdxAlreadyExists(idx)),
             None => {
-                // Perform binary search to find the insertion point
-                let pos = self
-                    .deposits
-                    .binary_search_by_key(&idx, |entry| entry.deposit_idx)
-                    .unwrap_or_else(|e| e);
-
-                // Insert the deposit entry at the found position
-                self.deposits.insert(pos, entry);
+                // SortedVec handles insertion and maintains sorted order
+                self.deposits.insert(entry);
                 Ok(())
             }
         }
@@ -293,7 +301,10 @@ impl DepositsTable {
         if self.deposits.is_empty() {
             None
         } else {
-            Some(self.deposits.remove(0))
+            // Get the first (oldest) deposit and remove it
+            let oldest = self.deposits.as_slice()[0].clone();
+            self.deposits.remove(&oldest);
+            Some(oldest)
         }
     }
 }

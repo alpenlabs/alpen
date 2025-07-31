@@ -5,7 +5,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_l1tx::utils::generate_agg_pubkey;
-use strata_primitives::{bridge::OperatorIdx, buf::Buf32, l1::XOnlyPk, operator::OperatorPubkeys};
+use strata_primitives::{
+    bridge::OperatorIdx, buf::Buf32, l1::XOnlyPk, operator::OperatorPubkeys, sorted_vec::SortedVec,
+};
 
 /// Bridge operator entry containing identification and cryptographic keys.
 ///
@@ -42,6 +44,18 @@ pub struct OperatorEntry {
     /// Whether this operator is part of the current N/N multisig set.
     /// Operators not in the current multisig are preserved but not assigned new tasks.
     is_in_current_multisig: bool,
+}
+
+impl PartialOrd for OperatorEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for OperatorEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.idx().cmp(&other.idx())
+    }
 }
 
 impl OperatorEntry {
@@ -115,7 +129,7 @@ pub struct OperatorTable {
     /// Vector of registered operators, sorted by operator index.
     ///
     /// **Invariant**: MUST be sorted by `OperatorEntry::idx` field.
-    operators: Vec<OperatorEntry>,
+    operators: SortedVec<OperatorEntry>,
 
     /// Aggregated public key derived from operator wallet keys that are part of the current N/N
     /// multisig.
@@ -172,16 +186,18 @@ impl OperatorTable {
             .into();
         Self {
             next_idx: entries.len() as OperatorIdx,
-            operators: entries
-                .iter()
-                .enumerate()
-                .map(|(i, e)| OperatorEntry {
-                    idx: i as OperatorIdx,
-                    signing_pk: *e.signing_pk(),
-                    wallet_pk: *e.wallet_pk(),
-                    is_in_current_multisig: true,
-                })
-                .collect(),
+            operators: SortedVec::new_unchecked(
+                entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| OperatorEntry {
+                        idx: i as OperatorIdx,
+                        signing_pk: *e.signing_pk(),
+                        wallet_pk: *e.wallet_pk(),
+                        is_in_current_multisig: true,
+                    })
+                    .collect(),
+            ),
             agg_key: agg_operator_key,
         }
     }
@@ -198,7 +214,7 @@ impl OperatorTable {
 
     /// Returns a slice of all registered operator entries.
     pub fn operators(&self) -> &[OperatorEntry] {
-        &self.operators
+        self.operators.as_slice()
     }
 
     /// Returns the aggregated public key of the current active operators
@@ -220,9 +236,10 @@ impl OperatorTable {
     /// - `None` if no operator with the given index is found
     pub fn get_operator(&self, idx: u32) -> Option<&OperatorEntry> {
         self.operators
+            .as_slice()
             .binary_search_by_key(&idx, |e| e.idx)
             .ok()
-            .map(|i| &self.operators[i])
+            .map(|i| &self.operators.as_slice()[i])
     }
 
     /// Returns indices of operators in the current N/N multisig.
@@ -244,14 +261,15 @@ impl OperatorTable {
     /// Updates the multisig membership status for multiple operators, inserts new operators,
     /// and recalculates the aggregated key.
     ///
-    /// This is the central method for updating multisig membership. All other methods that modify
-    /// the multisig set should call this method internally to ensure the aggregated key is
-    /// correctly recalculated.
-    ///
     /// # Parameters
     ///
     /// - `updates` - Slice of (operator_index, is_in_multisig) pairs for existing operators
     /// - `inserts` - Slice of new operators to insert (marked as in multisig by default)
+    ///
+    /// # Processing Order
+    ///
+    /// Inserts are processed before updates. If an operator index appears in both parameters,
+    /// the update will override the insert's `is_in_multisig` value.
     ///
     /// # Panics
     ///
@@ -271,20 +289,16 @@ impl OperatorTable {
                 is_in_current_multisig: true,
             };
 
-            // Insert in correct position to maintain sorted order
-            let insert_pos = self
-                .operators
-                .binary_search_by_key(&idx, |e| e.idx)
-                .unwrap_or_else(|pos| pos);
-            self.operators.insert(insert_pos, entry);
+            // SortedVec handles insertion and maintains sorted order
+            self.operators.insert(entry);
 
             self.next_idx += 1;
         }
 
-        // Handle updates
+        // Handle updates using iter_mut since we're only modifying non-sorting fields
         for &(idx, is_in_multisig) in updates {
-            if let Ok(pos) = self.operators.binary_search_by_key(&idx, |e| e.idx) {
-                self.operators[pos].is_in_current_multisig = is_in_multisig;
+            if let Some(operator) = self.operators.iter_mut().find(|op| op.idx == idx) {
+                operator.is_in_current_multisig = is_in_multisig;
             }
         }
 

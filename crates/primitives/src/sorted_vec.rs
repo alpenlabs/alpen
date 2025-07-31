@@ -55,6 +55,18 @@ impl<T> SortedVec<T> {
         self.inner.iter()
     }
 
+    /// Exposes `iter_mut` method of the inner vector
+    ///
+    /// # Safety
+    ///
+    /// This method allows mutable access to the elements. It is the caller's
+    /// responsibility to ensure that any modifications do not break the sorted
+    /// order invariant. Modifying the sorting key of elements will result in
+    /// undefined behavior for other methods that rely on the sorted order.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.inner.iter_mut()
+    }
+
     /// Consumes the [`SortedVec`] and returns the inner [`Vec`].
     pub fn into_inner(self) -> Vec<T> {
         self.inner
