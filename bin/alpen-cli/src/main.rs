@@ -11,7 +11,6 @@ pub mod recovery;
 pub mod seed;
 pub mod settings;
 pub mod signet;
-pub mod taproot;
 
 use cmd::{
     backup::backup, balance::balance, change_pwd::change_pwd, config::config, deposit::deposit,

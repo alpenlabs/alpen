@@ -14,6 +14,8 @@ use bdk_wallet::{
 use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
+use shrex::encode;
+use strata_primitives::crypto::even_kp;
 
 use crate::{
     alpen::AlpenWallet,
@@ -24,7 +26,6 @@ use crate::{
     seed::Seed,
     settings::Settings,
     signet::{get_fee_rate, log_fee_rate, SignetWallet},
-    taproot::{ExtractP2trPubkey, NotTaprootAddress},
 };
 
 /// Deposits 10 BTC from signet into Alpen
@@ -64,12 +65,6 @@ pub async fn deposit(
     l1w.sync()
         .await
         .internal_error("Failed to sync signet wallet")?;
-    let recovery_address = l1w.reveal_next_address(KeychainKind::External).address;
-    let recovery_address_pk = recovery_address
-        .extract_p2tr_pubkey()
-        .expect("internal keychain should be taproot");
-    l1w.persist()
-        .internal_error("Failed to persist signet wallet")?;
 
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
     println!(
@@ -78,20 +73,21 @@ pub async fn deposit(
         alpen_address.to_string().cyan(),
     );
 
+    let (secret_key, recovery_public_key) = even_kp(SECP256K1.generate_keypair(&mut OsRng));
+    let recovery_public_key = recovery_public_key.x_only_public_key().0;
+
     println!(
-        "Recovery address: {}",
-        recovery_address.to_string().yellow()
+        "Recovery public key: {}",
+        encode(&recovery_public_key.serialize()).yellow()
     );
 
-    let (secret_key, _) = SECP256K1.generate_keypair(&mut OsRng);
-    let recovery_private_key = PrivateKey::new(secret_key, settings.network);
+    let recovery_private_key = PrivateKey::new(secret_key.into(), settings.network);
 
     let bridge_in_desc = bridge_in_descriptor(
         settings.bridge_musig2_pubkey,
         recovery_private_key,
         settings.recover_delay,
-    )
-    .expect("valid bridge in descriptor");
+    );
 
     let desc = bridge_in_desc
         .clone()
@@ -132,7 +128,7 @@ pub async fn deposit(
     // <recovery_address_pk>
     // <alpen_address>
     let magic_bytes = settings.magic_bytes.as_bytes();
-    let recovery_address_pk_bytes = recovery_address_pk.serialize();
+    let recovery_address_pk_bytes = recovery_public_key.serialize();
     let alpen_address_bytes = alpen_address.as_slice();
     let mut op_return_data = Vec::with_capacity(
         magic_bytes.len() + recovery_address_pk_bytes.len() + alpen_address_bytes.len(),
@@ -211,15 +207,13 @@ fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
     private_key: PrivateKey,
     recover_delay: u32,
-) -> Result<DescriptorTemplateOut, NotTaprootAddress> {
-    let desc = bdk_wallet::descriptor!(
+) -> DescriptorTemplateOut {
+    bdk_wallet::descriptor!(
         tr(bridge_pubkey,
             and_v(v:pk(private_key),older(recover_delay))
         )
     )
-    .expect("valid descriptor");
-
-    Ok(desc)
+    .expect("valid descriptor")
 }
 
 #[cfg(test)]
@@ -247,8 +241,7 @@ mod tests {
         let recovery_private_key = PrivateKey::new(secret_key, Network::Bitcoin);
 
         let (desc, _key_map, _network) =
-            bridge_in_descriptor(bridge_pubkey, recovery_private_key, RECOVER_DELAY)
-                .expect("good descriptor");
+            bridge_in_descriptor(bridge_pubkey, recovery_private_key, RECOVER_DELAY);
         assert!(desc.sanity_check().is_ok());
         let Descriptor::Tr(tr_desc) = desc else {
             panic!("should be taproot descriptor")
