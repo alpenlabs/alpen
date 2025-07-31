@@ -71,6 +71,14 @@ impl Subprotocol for BridgeV1Subproto {
     /// After all transactions are processed, the function identifies and reassigns expired
     /// assignments using the current Bitcoin block height from the anchor state. This ensures
     /// that failed operators don't block withdrawals indefinitely.
+    ///
+    /// # Panics
+    ///
+    /// **CRITICAL**: This function panics if expired assignment reassignment fails, as this
+    /// indicates a violation of the bridge's 1/N honesty assumption. The bridge protocol assumes at
+    /// least one honest operator remains active to fulfill withdrawals. Failure to reassign
+    /// expired assignments means no honest operators are available, representing an
+    /// unrecoverable protocol breach that poses significant risk of fund loss.
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
@@ -102,14 +110,35 @@ impl Subprotocol for BridgeV1Subproto {
                 );
             }
             Err(e) => {
-                error!(
-                    error = %e,
-                    "Failed to reassign expired assignments"
-                );
+                // PANIC: Failure to reassign expired assignments indicates a violation of the
+                // bridge's fundamental 1/N honesty assumption. This means no honest operators
+                // remain available to fulfill withdrawals, representing an unrecoverable
+                // protocol breach that poses significant risk of fund loss.
+                panic!("Failed to reassign expired assignments {e}");
             }
         }
     }
 
+    /// Processes incoming bridge messages
+    ///
+    /// This function handles messages sent to the bridge subprotocol. Currently processes:
+    ///
+    /// - **`DispatchWithdrawal`**: Creates withdrawal assignments by selecting available operators
+    ///   to fulfill pending withdrawals. The assignment process ensures proper operator selection
+    ///   based on availability, stake, and previous failure history.
+    ///
+    /// # Panics
+    ///
+    /// **CRITICAL**: This function panics if withdrawal assignment creation fails, as this
+    /// indicates one of two catastrophic system failures:
+    ///
+    /// 1. **1/N Honest Assumption Violated**: No honest operators remain active, breaking the
+    ///    fundamental security assumption of the bridge protocol
+    /// 2. **Peg Mechanism Failure**: The bridge's peg to Bitcoin has been compromised, potentially
+    ///    due to operator collusion or critical implementation bugs
+    ///
+    /// Both conditions represent unrecoverable protocol violations where continued operation
+    /// poses significant risk of fund loss.
     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]) {
         for msg in msgs {
             match msg {
@@ -122,10 +151,9 @@ impl Subprotocol for BridgeV1Subproto {
                         &placeholder_id,
                         current_block_height,
                     ) {
-                        error!(
-                            error = %e,
-                            "Failed to create withdrawal assignment"
-                        );
+                        // PANIC: Withdrawal assignment failure indicates catastrophic system
+                        // compromise.
+                        panic!("Failed to create withdrawal assignment: {e}",);
                     }
                 }
             }
