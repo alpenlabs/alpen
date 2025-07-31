@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use bitcoin::ScriptBuf;
 use strata_l1_txfmt::TxType;
 use strata_primitives::{
@@ -7,12 +9,25 @@ use strata_primitives::{
 use thiserror::Error;
 
 use crate::{
-    constants::DEPOSIT_TX_TYPE,
+    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
     txs::{
         deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
         withdrawal_fulfillment::WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN,
     },
 };
+
+/// A generic "expected vs got" error.
+#[derive(Debug, Error, Clone)]
+#[error("(expected {expected:?}, got {got:?})")]
+pub struct Mismatch<T>
+where
+    T: Debug + Clone,
+{
+    /// The value that was expected.
+    pub expected: T,
+    /// The value that was actually encountered.
+    pub got: T,
+}
 
 #[derive(Debug, Error)]
 pub enum BridgeSubprotocolError {
@@ -57,8 +72,8 @@ pub enum DepositValidationError {
     InvalidSignature { reason: String },
 
     /// The deposit amount does not match the expected amount for this bridge configuration.
-    #[error("Invalid deposit amount: expected {expected} satoshis, got {actual} satoshis")]
-    InvalidDepositAmount { expected: u64, actual: u64 },
+    #[error("Invalid deposit amount")]
+    MismatchDepositAmount(Mismatch<u64>),
 
     /// A deposit with this index already exists in the deposits table.
     /// This should not occur since deposit indices are guaranteed unique by the N/N multisig.
@@ -79,6 +94,11 @@ pub enum WithdrawalParseError {
     )]
     InvalidAuxiliaryData(usize),
 
+    /// The transaction type byte in the tag does not match the expected withdrawal fulfillment
+    /// transaction type.
+    #[error("Invalid transaction type: expected type to be {WITHDRAWAL_TX_TYPE}, got {0}")]
+    InvalidTxType(TxType),
+
     #[error("Transaction is missing output that fulfilled user withdrawal request")]
     MissingUserFulfillmentOutput,
 }
@@ -90,32 +110,20 @@ pub enum WithdrawalValidationError {
     NoAssignmentFound { deposit_idx: u32 },
 
     /// Operator performing withdrawal doesn't match assigned operator
-    #[error("Operator mismatch: expected {expected}, got {actual}")]
-    OperatorMismatch {
-        expected: OperatorIdx,
-        actual: OperatorIdx,
-    },
+    #[error("Operator mismatch {0}")]
+    OperatorMismatch(Mismatch<OperatorIdx>),
 
     /// Deposit txid in withdrawal doesn't match the actual deposit
-    #[error("Deposit txid mismatch: expected {expected:?}, got {actual:?}")]
-    DepositTxidMismatch {
-        expected: BitcoinTxid,
-        actual: BitcoinTxid,
-    },
+    #[error("Deposit txid mismatch {0}")]
+    DepositTxidMismatch(Mismatch<BitcoinTxid>),
 
     /// Withdrawal amount doesn't match assignment amount
-    #[error("Withdrawal amount mismatch: expected {expected}, got {actual}")]
-    AmountMismatch {
-        expected: BitcoinAmount,
-        actual: BitcoinAmount,
-    },
+    #[error("Withdrawal amount mismatch {0}")]
+    AmountMismatch(Mismatch<BitcoinAmount>),
 
     /// Withdrawal destination doesn't match assignment destination
-    #[error("Withdrawal destination mismatch: expected {expected}, got {actual}")]
-    DestinationMismatch {
-        expected: ScriptBuf,
-        actual: ScriptBuf,
-    },
+    #[error("Withdrawal destination mismatch {0}")]
+    DestinationMismatch(Mismatch<ScriptBuf>),
 }
 
 #[derive(Debug, Error)]
@@ -131,11 +139,6 @@ pub enum WithdrawalCommandError {
     NoEligibleOperators { deposit_idx: u32 },
 
     /// Deposit amount doesn't match withdrawal command total value
-    #[error(
-        "Deposit amount mismatch: deposit has {deposit_amount} satoshis, withdrawal command requests {withdrawal_amount} satoshis"
-    )]
-    DepositWithdrawalAmountMismatch {
-        deposit_amount: u64,
-        withdrawal_amount: u64,
-    },
+    #[error("Deposit amount mismatch {0}")]
+    DepositWithdrawalAmountMismatch(Mismatch<u64>),
 }

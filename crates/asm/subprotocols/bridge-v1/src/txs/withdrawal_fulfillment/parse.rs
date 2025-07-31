@@ -7,7 +7,7 @@ use strata_primitives::{
 };
 
 use crate::{
-    errors::WithdrawalParseError,
+    constants::WITHDRAWAL_TX_TYPE, errors::WithdrawalParseError,
     txs::withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
 };
 
@@ -92,6 +92,10 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 pub(crate) fn extract_withdrawal_info<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
+    if tx.tag().tx_type() != WITHDRAWAL_TX_TYPE {
+        return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
+    }
+
     let withdrawal_fulfillment_output = &tx
         .tx()
         .output

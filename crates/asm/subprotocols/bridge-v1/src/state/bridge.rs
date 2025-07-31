@@ -8,7 +8,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::l1::{BitcoinAmount, L1BlockId};
 
 use crate::{
-    errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
+    errors::{DepositValidationError, Mismatch, WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
@@ -177,10 +177,10 @@ impl BridgeV1State {
     ) -> Result<(), DepositValidationError> {
         // Verify the deposit amount matches the bridge's expected amount
         if info.amt.to_sat() != self.denomination.to_sat() {
-            return Err(DepositValidationError::InvalidDepositAmount {
+            return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
                 expected: self.denomination.to_sat(),
-                actual: info.amt.to_sat(),
-            });
+                got: info.amt.to_sat(),
+            }));
         }
 
         // Validate the DRT spending signature against the aggregated operator key
@@ -247,10 +247,12 @@ impl BridgeV1State {
         let exec_deadline = current_block_height + self.deadline_duration();
 
         if deposit.amt() != withdrawal_output.amt() {
-            return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch {
-                deposit_amount: deposit.amt().to_sat(),
-                withdrawal_amount: withdrawal_output.amt().to_sat(),
-            });
+            return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch(
+                Mismatch {
+                    expected: deposit.amt().to_sat(),
+                    got: withdrawal_output.amt().to_sat(),
+                },
+            ));
         }
 
         let withdrawal_cmd = WithdrawalCommand::new(withdrawal_output.clone(), self.operator_fee);
@@ -392,40 +394,40 @@ impl BridgeV1State {
         let expected_operator = assignment.current_assignee();
         let actual_operator = withdrawal_info.operator_idx;
         if expected_operator != actual_operator {
-            return Err(WithdrawalValidationError::OperatorMismatch {
+            return Err(WithdrawalValidationError::OperatorMismatch(Mismatch {
                 expected: expected_operator,
-                actual: actual_operator,
-            });
+                got: actual_operator,
+            }));
         }
 
         // Validate that the deposit txid matches the assignment
         let expected_txid = assignment.deposit_txid();
         let actual_txid = withdrawal_info.deposit_txid.clone();
         if expected_txid != actual_txid {
-            return Err(WithdrawalValidationError::DepositTxidMismatch {
+            return Err(WithdrawalValidationError::DepositTxidMismatch(Mismatch {
                 expected: expected_txid,
-                actual: actual_txid,
-            });
+                got: actual_txid,
+            }));
         }
 
         // Validate withdrawal amount against assignment command
         let expected_amount = assignment.withdrawal_command().net_amount();
         let actual_amount = withdrawal_info.withdrawal_amount;
         if expected_amount != actual_amount {
-            return Err(WithdrawalValidationError::AmountMismatch {
+            return Err(WithdrawalValidationError::AmountMismatch(Mismatch {
                 expected: expected_amount,
-                actual: actual_amount,
-            });
+                got: actual_amount,
+            }));
         }
 
         // Validate withdrawal destination against assignment command
         let expected_destination = assignment.withdrawal_command().destination().to_script();
         let actual_destination = withdrawal_info.withdrawal_destination.clone();
         if expected_destination != actual_destination {
-            return Err(WithdrawalValidationError::DestinationMismatch {
+            return Err(WithdrawalValidationError::DestinationMismatch(Mismatch {
                 expected: expected_destination,
-                actual: actual_destination,
-            });
+                got: actual_destination,
+            }));
         }
 
         Ok(())
@@ -627,11 +629,11 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DepositValidationError::InvalidDepositAmount { .. })
+            Err(DepositValidationError::MismatchDepositAmount(_))
         ));
-        if let Err(DepositValidationError::InvalidDepositAmount { expected, actual }) = result {
-            assert_eq!(expected, bridge_state.denomination.to_sat());
-            assert_eq!(actual, deposit_info.amt.to_sat());
+        if let Err(DepositValidationError::MismatchDepositAmount(mismatch)) = result {
+            assert_eq!(mismatch.expected, bridge_state.denomination.to_sat());
+            assert_eq!(mismatch.got, deposit_info.amt.to_sat());
         }
 
         // Verify no deposit was added
@@ -763,11 +765,11 @@ mod tests {
         assert!(res.is_err());
         assert!(matches!(
             res,
-            Err(WithdrawalValidationError::OperatorMismatch { .. })
+            Err(WithdrawalValidationError::OperatorMismatch(_))
         ));
-        if let Err(WithdrawalValidationError::OperatorMismatch { expected, actual }) = res {
-            assert_eq!(expected, correct_operator_idx);
-            assert_eq!(actual, withdrawal_info.operator_idx);
+        if let Err(WithdrawalValidationError::OperatorMismatch(mismatch)) = res {
+            assert_eq!(mismatch.expected, correct_operator_idx);
+            assert_eq!(mismatch.got, withdrawal_info.operator_idx);
         }
     }
 
@@ -794,11 +796,11 @@ mod tests {
         assert!(res.is_err());
         assert!(matches!(
             res,
-            Err(WithdrawalValidationError::DepositTxidMismatch { .. })
+            Err(WithdrawalValidationError::DepositTxidMismatch(_))
         ));
-        if let Err(WithdrawalValidationError::DepositTxidMismatch { expected, actual }) = res {
-            assert_eq!(expected, correct_deposit_txid);
-            assert_eq!(actual, withdrawal_info.deposit_txid);
+        if let Err(WithdrawalValidationError::DepositTxidMismatch(mismatch)) = res {
+            assert_eq!(mismatch.expected, correct_deposit_txid);
+            assert_eq!(mismatch.got, withdrawal_info.deposit_txid);
         }
     }
 
@@ -825,11 +827,11 @@ mod tests {
         assert!(res.is_err());
         assert!(matches!(
             res,
-            Err(WithdrawalValidationError::DestinationMismatch { .. })
+            Err(WithdrawalValidationError::DestinationMismatch(_))
         ));
-        if let Err(WithdrawalValidationError::DestinationMismatch { expected, actual }) = res {
-            assert_eq!(expected, correct_withdrawal_destination);
-            assert_eq!(actual, withdrawal_info.withdrawal_destination);
+        if let Err(WithdrawalValidationError::DestinationMismatch(mismatch)) = res {
+            assert_eq!(mismatch.expected, correct_withdrawal_destination);
+            assert_eq!(mismatch.got, withdrawal_info.withdrawal_destination);
         }
     }
 
@@ -856,11 +858,11 @@ mod tests {
         assert!(res.is_err());
         assert!(matches!(
             res,
-            Err(WithdrawalValidationError::AmountMismatch { .. })
+            Err(WithdrawalValidationError::AmountMismatch(_))
         ));
-        if let Err(WithdrawalValidationError::AmountMismatch { expected, actual }) = res {
-            assert_eq!(expected, correct_withdrawal_amount);
-            assert_eq!(actual, withdrawal_info.withdrawal_amount);
+        if let Err(WithdrawalValidationError::AmountMismatch(mismatch)) = res {
+            assert_eq!(mismatch.expected, correct_withdrawal_amount);
+            assert_eq!(mismatch.got, withdrawal_info.withdrawal_amount);
         }
     }
 
