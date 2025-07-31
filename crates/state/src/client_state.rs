@@ -30,16 +30,9 @@ use crate::{
     Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Deserialize, Serialize,
 )]
 pub struct ClientState {
-    /// If we are after genesis.
-    pub(super) chain_active: bool,
-
     /// State of the client tracking a genesised chain, after knowing about a
     /// valid chain.
-    pub(super) sync_state: Option<SyncState>,
-
-    /// L1 block we start watching the chain from.  We can't access anything
-    /// before this chain height.
-    pub(super) horizon_l1_height: u64,
+    pub(super) genesis_blockid: Option<L2BlockId>,
 
     /// Height at which we'll create the L2 genesis block from.
     pub(super) genesis_l1_height: u64,
@@ -61,9 +54,7 @@ impl ClientState {
         let rparams = params.rollup();
         let genesis_l1_height = rparams.genesis_l1_height;
         Self {
-            chain_active: false,
-            sync_state: None,
-            horizon_l1_height: rparams.horizon_l1_height,
+            genesis_blockid: None,
             genesis_l1_height,
             finalization_depth: rparams.l1_reorg_safe_depth as u64,
             declared_final_epoch: None,
@@ -71,33 +62,19 @@ impl ClientState {
         }
     }
 
-    /// If the chain is "active", meaning we are after genesis (although we
-    /// don't necessarily know what it is, that's dictated by the `SyncState`).
-    pub fn is_chain_active(&self) -> bool {
-        self.chain_active
-    }
-
-    /// Returns a ref to the inner sync state, if it exists.
-    pub fn sync(&self) -> Option<&SyncState> {
-        self.sync_state.as_ref()
+    /// Returns a genesis block id, if already known.
+    pub fn genesis_blkid(&self) -> Option<L2BlockId> {
+        self.genesis_blockid
     }
 
     /// Returns if genesis has occurred.
     pub fn has_genesis_occurred(&self) -> bool {
-        self.chain_active
+        self.genesis_blockid.is_some()
     }
 
     /// Overwrites the sync state.
-    pub fn set_sync_state(&mut self, ss: SyncState) {
-        self.sync_state = Some(ss);
-    }
-
-    /// Returns a mut ref to the inner sync state.  Only valid if we've observed
-    /// genesis.  Only meant to be called when applying sync writes.
-    pub fn expect_sync_mut(&mut self) -> &mut SyncState {
-        self.sync_state
-            .as_mut()
-            .expect("clientstate: missing sync state")
+    pub fn set_genesis_block(&mut self, genesis_blkid: L2BlockId) {
+        self.genesis_blockid = Some(genesis_blkid);
     }
 
     pub fn most_recent_l1_block(&self) -> Option<&L1BlockId> {
@@ -205,49 +182,6 @@ impl ClientState {
     /// Gets the final epoch that we've externally declared.
     pub fn get_declared_final_epoch(&self) -> Option<&EpochCommitment> {
         self.declared_final_epoch.as_ref()
-    }
-}
-
-type L1BlockHeight = u64;
-
-/// Relates to our view of the L2 chain, does not exist before genesis.
-// TODO maybe include tip height and finalized height?  or their headers?
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
-pub struct SyncState {
-    /// The genesis blockid.  This does not change and is here for legacy reasons.
-    pub(super) genesis_blkid: L2BlockId,
-
-    /// L2 checkpoint blocks that have been confirmed on L1 and proven along with L1 block height.
-    /// These are ordered by height
-    // What do we do with this?
-    pub(super) confirmed_checkpoint_blocks: Vec<(L1BlockHeight, L2BlockId)>,
-}
-
-impl SyncState {
-    pub fn from_genesis_blkid(gblkid: L2BlockId) -> Self {
-        Self {
-            genesis_blkid: gblkid,
-            confirmed_checkpoint_blocks: Vec::new(),
-        }
-    }
-
-    /// Gets the genesis blkid.
-    pub fn genesis_blkid(&self) -> &L2BlockId {
-        &self.genesis_blkid
-    }
-
-    pub fn confirmed_checkpoint_blocks(&self) -> &[(u64, L2BlockId)] {
-        &self.confirmed_checkpoint_blocks
-    }
-
-    /// See if there's a checkpoint block at given l1_height
-    pub fn get_confirmed_checkpt_block_at(&self, l1_height: u64) -> Option<L2BlockId> {
-        self.confirmed_checkpoint_blocks
-            .iter()
-            .find(|(h, _)| *h == l1_height)
-            .map(|e| e.1)
     }
 }
 
@@ -409,13 +343,8 @@ impl ClientStateMut {
     // Semantical mutation fns.
     // TODO remove logs from this, break down into simpler logical units
 
-    // TODO remove sync state
-    pub fn set_sync_state(&mut self, ss: SyncState) {
-        self.state.set_sync_state(ss);
-    }
-
-    pub fn activate_chain(&mut self) {
-        self.state.chain_active = true;
+    pub fn set_genesis_block(&mut self, genesis_blkid: L2BlockId) {
+        self.state.set_genesis_block(genesis_blkid);
     }
 
     /// Rolls back blocks and stuff to a particular height.
