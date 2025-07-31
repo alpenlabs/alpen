@@ -30,14 +30,11 @@
 //!    - The withdrawal amount (may be less than deposit due to fees)
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
-#[cfg(test)]
-mod create;
 mod parse;
 
 pub(crate) const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
 
-#[cfg(test)]
-pub(crate) use create::create_withdrawal_fulfillment_tx;
 pub(crate) use parse::{
-    WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN, WithdrawalFulfillmentInfo, extract_withdrawal_info,
+    WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN, WithdrawalFulfillmentInfo,
+    parse_withdrawal_fulfillment_tx,
 };

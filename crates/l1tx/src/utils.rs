@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use bitcoin::{
+    key::Parity,
     opcodes::all::OP_PUSHNUM_1,
     script::{Instruction, Instructions},
     secp256k1::{PublicKey, SECP256K1},
@@ -60,19 +61,22 @@ pub fn next_u32(instructions: &mut Instructions<'_>) -> Option<u32> {
 
 /// Returns the aggregated public key from an iterator of operator public keys.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if any key in the iterator is not a valid x-only public key.
+/// Returns an error if any key in the iterator is not a valid x-only public key.
 pub fn generate_agg_pubkey<'k>(
     keys: impl Iterator<Item = &'k Buf32>,
 ) -> anyhow::Result<XOnlyPublicKey> {
-    let keys = keys.map(|op| {
-        PublicKey::from_x_only_public_key(
-            XOnlyPublicKey::from_slice(op.as_ref()).expect("slice not an x-only public key"),
-            bitcoin::key::Parity::Even,
-        )
-    });
-    let agg_pubkey = KeyAggContext::new(keys)?
+    let public_keys = keys
+        .enumerate()
+        .map(|(i, op)| {
+            XOnlyPublicKey::from_slice(op.as_ref())
+                .map_err(|e| anyhow!("invalid x-only public key at index {i}: {e})"))
+                .map(|x_only| PublicKey::from_x_only_public_key(x_only, Parity::Even))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let agg_pubkey = KeyAggContext::new(public_keys)?
         .aggregated_pubkey::<PublicKey>()
         .x_only_public_key()
         .0;

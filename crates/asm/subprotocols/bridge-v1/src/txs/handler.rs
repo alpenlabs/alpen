@@ -7,6 +7,21 @@ use crate::{
     txs::{ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx},
 };
 
+/// Handles parsed transactions and update the bridge state accordingly.
+///
+/// # Transaction Types and Log Behavior:
+/// - **Deposit**: Processes the deposit transaction without emitting logs
+/// - **WithdrawalFulfillment**: Processes the withdrawal and emits a withdrawal processed log via
+///   the relayer to notify other components of the processed withdrawal
+///
+/// # Arguments
+/// * `state` - Mutable reference to the bridge state to be updated
+/// * `parsed_tx` - The parsed transaction to handle
+/// * `relayer` - The message relayer used for emitting logs
+///
+/// # Returns
+/// * `Ok(())` if the transaction was processed successfully
+/// * `Err(BridgeSubprotocolError)` if an error occurred during processing
 pub(crate) fn handle_parsed_tx<'t>(
     state: &mut BridgeV1State,
     parsed_tx: ParsedTx<'t>,
@@ -22,7 +37,6 @@ pub(crate) fn handle_parsed_tx<'t>(
             let ParsedWithdrawalFulfillmentTx { tx, info } = parsed_withdrawal_fulfillment;
             let unlock = state.process_withdrawal_fulfillment_tx(tx, &info)?;
 
-            // FIXME: This is a placeholder for the actual container ID logic.
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log =
                 NewExportEntry::new(container_id, unlock.to_export_entry());

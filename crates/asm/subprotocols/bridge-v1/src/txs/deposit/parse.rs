@@ -49,7 +49,7 @@ pub struct DepositInfo {
     pub drt_tapscript_merkle_root: Buf32,
 }
 
-/// Extracts deposit information from a Bitcoin bridge deposit transaction.
+/// Parses deposit transaction to extract [`DepositInfo`].
 ///
 /// Parses a deposit transaction following the SPS-50 specification and extracts
 /// the deposit information including amount, destination address, and validation data.
@@ -65,7 +65,7 @@ pub struct DepositInfo {
 /// - `Ok(DepositInfo)` - Successfully parsed deposit information
 /// - `Err(DepositError)` - If the transaction structure is invalid, signature verification fails,
 ///   or any parsing step encounters malformed data
-pub(crate) fn extract_deposit_info<'a>(
+pub(crate) fn parse_deposit_tx<'a>(
     tx_input: &TxInputRef<'a>,
 ) -> Result<DepositInfo, DepositTxParseError> {
     if tx_input.tag().tx_type() != DEPOSIT_TX_TYPE {
@@ -123,7 +123,7 @@ pub(crate) fn extract_deposit_info<'a>(
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        OutPoint, ScriptBuf, Transaction,
+        OutPoint, Transaction,
         secp256k1::{Secp256k1, SecretKey},
     };
     use strata_asm_common::TxInputRef;
@@ -135,7 +135,13 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::txs::deposit::create::{TEST_MAGIC_BYTES, create_test_deposit_tx};
+    use crate::{
+        constants::BRIDGE_V1_SUBPROTOCOL_ID,
+        txs::test_utils::{
+            TEST_MAGIC_BYTES, create_tagged_payload, create_test_deposit_tx,
+            mutate_op_return_output, parse_tx,
+        },
+    };
 
     // Helper function to create a test operator keypair
     fn create_test_operator_keypair() -> (XOnlyPk, SecretKey) {
@@ -154,32 +160,8 @@ mod tests {
         create_test_deposit_tx(deposit_info, &[operators_privkey])
     }
 
-    // Helper function to create tagged payload with custom parameters
-    fn create_tagged_payload(subprotocol_id: u8, tx_type: u8, aux_data: Vec<u8>) -> Vec<u8> {
-        let mut tagged_payload = Vec::new();
-        tagged_payload.extend_from_slice(TEST_MAGIC_BYTES);
-        tagged_payload.push(subprotocol_id); // 1 byte subprotocol ID
-        tagged_payload.push(tx_type); // 1 byte transaction type
-        tagged_payload.extend_from_slice(&aux_data);
-        tagged_payload
-    }
-
-    // Helper function to mutate transaction OP_RETURN output
-    fn mutate_op_return_output(tx: &mut Transaction, tagged_payload: Vec<u8>) {
-        use bitcoin::script::PushBytesBuf;
-        tx.output[0].script_pubkey =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(tagged_payload).unwrap());
-    }
-
-    // Helper function to parse mutated transaction
-    fn parse_mutated_tx(tx: &Transaction) -> TxInputRef<'_> {
-        let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
-        let tag_data = parser.try_parse_tx(tx).expect("Should parse transaction");
-        TxInputRef::new(tx, tag_data)
-    }
-
     #[test]
-    fn test_extract_deposit_info_success() {
+    fn test_parse_deposit_tx_success() {
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
 
@@ -190,7 +172,7 @@ mod tests {
             .expect("Should parse transaction");
         let tx_input = TxInputRef::new(&tx, tag_data_ref);
         let deposit_info =
-            extract_deposit_info(&tx_input).expect("Should successfully extract deposit info");
+            parse_deposit_tx(&tx_input).expect("Should successfully extract deposit info");
 
         // The extracted info should match the original except for the outpoint,
         // which will be calculated from the created transaction
@@ -211,9 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_deposit_info_invalid_tx_type() {
-        use crate::constants::BRIDGE_V1_SUBPROTOCOL_ID;
-
+    fn test_parse_deposit_invalid_tx_type() {
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
 
@@ -224,8 +204,8 @@ mod tests {
         let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
         mutate_op_return_output(&mut tx, tagged_payload);
 
-        let tx_input = parse_mutated_tx(&tx);
-        let result = extract_deposit_info(&tx_input);
+        let tx_input = parse_tx(&tx);
+        let result = parse_deposit_tx(&tx_input);
         assert!(result.is_err(), "Should fail with invalid transaction type");
 
         assert!(matches!(
@@ -238,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_deposit_info_invalid_aux_data_too_short() {
+    fn test_parse_deposit_aux_data_too_short() {
         use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
         let mut arb = ArbitraryGenerator::new();
@@ -252,8 +232,8 @@ mod tests {
             create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, short_aux_data);
         mutate_op_return_output(&mut tx, tagged_payload);
 
-        let tx_input = parse_mutated_tx(&tx);
-        let result = extract_deposit_info(&tx_input);
+        let tx_input = parse_tx(&tx);
+        let result = parse_deposit_tx(&tx_input);
         assert!(
             result.is_err(),
             "Should fail with insufficient auxiliary data"
@@ -269,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_deposit_info_empty_destination() {
+    fn test_parse_deposit_empty_destination() {
         use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
         let mut arb = ArbitraryGenerator::new();
@@ -284,8 +264,8 @@ mod tests {
             create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data);
         mutate_op_return_output(&mut tx, tagged_payload);
 
-        let tx_input = parse_mutated_tx(&tx);
-        let result = extract_deposit_info(&tx_input);
+        let tx_input = parse_tx(&tx);
+        let result = parse_deposit_tx(&tx_input);
         assert!(result.is_ok(), "Should succeed with empty destination");
 
         let deposit_info = result.unwrap();
@@ -293,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_deposit_info_missing_output() {
+    fn test_parse_deposit_missing_output() {
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
 
@@ -302,8 +282,8 @@ mod tests {
         // Remove the deposit output (keep only OP_RETURN at index 0)
         tx.output.truncate(1);
 
-        let tx_input = parse_mutated_tx(&tx);
-        let result = extract_deposit_info(&tx_input);
+        let tx_input = parse_tx(&tx);
+        let result = parse_deposit_tx(&tx_input);
         assert!(result.is_err(), "Should fail with missing deposit output");
 
         assert!(matches!(

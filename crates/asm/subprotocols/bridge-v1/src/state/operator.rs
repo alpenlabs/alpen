@@ -164,17 +164,6 @@ impl OperatorTable {
     /// # Panics
     ///
     /// Panics if `entries` is empty. At least one operator is required.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let operators = vec![
-    ///     OperatorPubkeys::new(signing_key1, wallet_key1),
-    ///     OperatorPubkeys::new(signing_key2, wallet_key2),
-    /// ];
-    /// let table = OperatorTable::from_operator_list(&operators);
-    /// assert_eq!(table.len(), 2);
-    /// ```
     pub fn from_operator_list(entries: &[OperatorPubkeys]) -> Self {
         if entries.is_empty() {
             panic!(

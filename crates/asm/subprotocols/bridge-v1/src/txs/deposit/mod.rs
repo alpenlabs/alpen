@@ -36,14 +36,10 @@
 //! The tapscript root hash from the DRT is critical for maintaining the bridge's security
 //! guarantees. It ensures that only properly authorized deposits (with presigned withdrawal
 //! transactions) can mint tokens, preserving the 1-of-N trust assumption for withdrawals.
-#[cfg(test)]
-mod create;
 mod parse;
 mod validation;
 
 pub(crate) const DEPOSIT_OUTPUT_INDEX: u32 = 1;
 
-#[cfg(test)]
-pub(crate) use create::{TEST_MAGIC_BYTES, create_test_deposit_tx};
-pub(crate) use parse::{DepositInfo, MIN_DEPOSIT_TX_AUX_DATA_LEN, extract_deposit_info};
+pub(crate) use parse::{DepositInfo, MIN_DEPOSIT_TX_AUX_DATA_LEN, parse_deposit_tx};
 pub(crate) use validation::{validate_deposit_output_lock, validate_drt_spending_signature};

@@ -450,8 +450,8 @@ mod tests {
     use crate::{
         state::{config::BridgeV1Config, withdrawal::WithdrawOutput},
         txs::{
-            deposit::{DepositInfo, create_test_deposit_tx},
-            withdrawal_fulfillment::create_withdrawal_fulfillment_tx,
+            deposit::DepositInfo,
+            test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
         },
     };
 
@@ -736,7 +736,7 @@ mod tests {
         for _ in 0..count {
             let assignment = bridge_state.assignments().assignments().first().unwrap();
             let withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-            let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
+            let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
             let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
             assert!(res.is_ok());
         }
@@ -759,7 +759,7 @@ mod tests {
 
         let correct_operator_idx = withdrawal_info.operator_idx;
         withdrawal_info.operator_idx = arb.generate();
-        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
+        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
 
         assert!(res.is_err());
@@ -790,7 +790,7 @@ mod tests {
 
         let correct_deposit_txid = withdrawal_info.deposit_txid;
         withdrawal_info.deposit_txid = arb.generate();
-        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
+        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
 
         assert!(res.is_err());
@@ -821,7 +821,7 @@ mod tests {
 
         let correct_withdrawal_destination = withdrawal_info.withdrawal_destination.clone();
         withdrawal_info.withdrawal_destination = arb.generate::<Descriptor>().to_script();
-        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
+        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
 
         assert!(res.is_err());
@@ -852,7 +852,7 @@ mod tests {
 
         let correct_withdrawal_amount = withdrawal_info.withdrawal_amount;
         withdrawal_info.withdrawal_amount = arb.generate();
-        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
+        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
 
         assert!(res.is_err());
@@ -882,7 +882,7 @@ mod tests {
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
         withdrawal_info.deposit_idx = arb.generate();
 
-        let tx = create_withdrawal_fulfillment_tx(&withdrawal_info);
+        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
 
         assert!(res.is_err());

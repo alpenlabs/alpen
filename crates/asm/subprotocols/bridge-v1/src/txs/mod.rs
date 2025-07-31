@@ -5,6 +5,8 @@ use crate::txs::{deposit::DepositInfo, withdrawal_fulfillment::WithdrawalFulfill
 pub(crate) mod deposit;
 mod handler;
 mod parser;
+#[cfg(test)]
+pub(crate) mod test_utils;
 pub(crate) mod withdrawal_fulfillment;
 
 pub(crate) use handler::handle_parsed_tx;

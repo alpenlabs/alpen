@@ -4,8 +4,8 @@ use crate::{
     constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
     errors::BridgeSubprotocolError,
     txs::{
-        ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx, deposit::extract_deposit_info,
-        withdrawal_fulfillment::extract_withdrawal_info,
+        ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx, deposit::parse_deposit_tx,
+        withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
     },
 };
 
@@ -33,12 +33,12 @@ use crate::{
 pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, BridgeSubprotocolError> {
     match tx.tag().tx_type() {
         DEPOSIT_TX_TYPE => {
-            let info = extract_deposit_info(tx)?;
+            let info = parse_deposit_tx(tx)?;
             let parsed_tx = ParsedDepositTx { tx: tx.tx(), info };
             Ok(ParsedTx::Deposit(parsed_tx))
         }
         WITHDRAWAL_TX_TYPE => {
-            let info = extract_withdrawal_info(tx)?;
+            let info = parse_withdrawal_fulfillment_tx(tx)?;
             let parsed_tx = ParsedWithdrawalFulfillmentTx { tx: tx.tx(), info };
             Ok(ParsedTx::WithdrawalFulfillment(parsed_tx))
         }

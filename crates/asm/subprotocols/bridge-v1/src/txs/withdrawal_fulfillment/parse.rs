@@ -60,7 +60,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
     }
 }
 
-/// Extracts withdrawal information from a Bitcoin bridge withdrawal transaction.
+/// Parses withdrawal fulfillment transaction to extract [`WithdrawalFulfillmentInfo`].
 ///
 /// Parses a withdrawal transaction following the SPS-50 specification and extracts
 /// the withdrawal information including operator index, deposit references, recipient address,
@@ -89,18 +89,13 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// - The transaction has fewer than 2 outputs (missing withdrawal fulfillment or OP_RETURN)
 /// - The auxiliary data size doesn't match the expected metadata size
 /// - Any of the metadata fields cannot be parsed correctly
-pub(crate) fn extract_withdrawal_info<'t>(
+pub(crate) fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
     if tx.tag().tx_type() != WITHDRAWAL_TX_TYPE {
         return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
     }
 
-    let withdrawal_fulfillment_output = &tx
-        .tx()
-        .output
-        .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
-        .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
     let withdrawal_auxdata = tx.tag().aux_data();
 
     if withdrawal_auxdata.len() != WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN {
@@ -109,6 +104,11 @@ pub(crate) fn extract_withdrawal_info<'t>(
         ));
     }
 
+    let withdrawal_fulfillment_output = &tx
+        .tx()
+        .output
+        .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
+        .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
     let mut operator_idx_bytes = [0u8; OPERATOR_IDX_SIZE];
     operator_idx_bytes.copy_from_slice(
         &withdrawal_auxdata[OPERATOR_IDX_OFFSET..OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE],
@@ -147,8 +147,12 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::txs::{
-        deposit::TEST_MAGIC_BYTES, withdrawal_fulfillment::create::create_withdrawal_fulfillment_tx,
+    use crate::{
+        BRIDGE_V1_SUBPROTOCOL_ID,
+        txs::test_utils::{
+            TEST_MAGIC_BYTES, create_tagged_payload, create_test_withdrawal_fulfillment_tx,
+            mutate_op_return_output, parse_tx,
+        },
     };
 
     /// Tests that our hardcoded size constants match the actual type sizes.
@@ -167,12 +171,12 @@ mod tests {
     }
 
     #[test]
-    fn test_create_withdrawal_fulfillment_tx_and_extract_info() {
+    fn test_parse_withdrawal_fulfillment_tx_success() {
         let mut arb = ArbitraryGenerator::new();
         let info: WithdrawalFulfillmentInfo = arb.generate();
 
         // Create the withdrawal fulfillment transaction with proper SPS-50 format
-        let tx = create_withdrawal_fulfillment_tx(&info);
+        let tx = create_test_withdrawal_fulfillment_tx(&info);
 
         // Parse the transaction using the SPS-50 parser
         let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
@@ -180,9 +184,105 @@ mod tests {
         let tx_input_ref = TxInputRef::new(&tx, tag_data);
 
         // Extract withdrawal info using the actual parser
-        let extracted_info = extract_withdrawal_info(&tx_input_ref)
+        let extracted_info = parse_withdrawal_fulfillment_tx(&tx_input_ref)
             .expect("Should successfully extract withdrawal info");
 
         assert_eq!(extracted_info, info);
+    }
+
+    #[test]
+    fn test_parse_withdrawal_fulfillment_tx_invalid_type() {
+        let mut arb = ArbitraryGenerator::new();
+        let info: WithdrawalFulfillmentInfo = arb.generate();
+
+        let mut tx = create_test_withdrawal_fulfillment_tx(&info);
+
+        // Mutate the OP_RETURN output to have wrong transaction type
+        let aux_data = vec![0u8; 40]; // Some dummy aux data
+        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
+        mutate_op_return_output(&mut tx, tagged_payload);
+
+        let tx_input = parse_tx(&tx);
+        let result = parse_withdrawal_fulfillment_tx(&tx_input);
+        assert!(result.is_err(), "Should fail with invalid transaction type");
+
+        assert!(matches!(
+            result,
+            Err(WithdrawalParseError::InvalidTxType { .. })
+        ));
+        if let Err(WithdrawalParseError::InvalidTxType(tx_type)) = result {
+            assert_eq!(tx_type, tx_input.tag().tx_type());
+        }
+    }
+
+    #[test]
+    fn test_parse_withdrawal_fulfillment_tx_withdrawal_output_missing() {
+        let mut arb = ArbitraryGenerator::new();
+        let info: WithdrawalFulfillmentInfo = arb.generate();
+
+        // Create the withdrawal fulfillment transaction with proper SPS-50 format
+        let mut tx = create_test_withdrawal_fulfillment_tx(&info);
+        // Remove the deposit output (keep only OP_RETURN at index 0)
+        tx.output.truncate(1);
+
+        // Parse the transaction using the SPS-50 parser
+        let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
+        let tag_data = parser.try_parse_tx(&tx).expect("Should parse transaction");
+        let tx_input_ref = TxInputRef::new(&tx, tag_data);
+
+        // Extract withdrawal info using the actual parser
+        let result = parse_withdrawal_fulfillment_tx(&tx_input_ref);
+        assert!(
+            result.is_err(),
+            "Should fail with missing withdrawal output"
+        );
+        assert!(matches!(
+            result,
+            Err(WithdrawalParseError::MissingUserFulfillmentOutput)
+        ))
+    }
+
+    #[test]
+    fn test_parse_withdrawal_fulfillment_tx_invalid_aux_data() {
+        let mut arb = ArbitraryGenerator::new();
+        let info: WithdrawalFulfillmentInfo = arb.generate();
+
+        let mut tx = create_test_withdrawal_fulfillment_tx(&info);
+
+        // Mutate the OP_RETURN output to have shorter aux len
+        let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
+        let tagged_payload =
+            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, aux_data);
+        mutate_op_return_output(&mut tx, tagged_payload);
+
+        let tx_input = parse_tx(&tx);
+        let result = parse_withdrawal_fulfillment_tx(&tx_input);
+        assert!(result.is_err(), "Should fail with invalid transaction type");
+
+        assert!(matches!(
+            result,
+            Err(WithdrawalParseError::InvalidAuxiliaryData { .. })
+        ));
+        if let Err(WithdrawalParseError::InvalidAuxiliaryData(len)) = result {
+            assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1);
+        }
+
+        // Mutate the OP_RETURN output to have longer aux len
+        let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
+        let tagged_payload =
+            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, aux_data);
+        mutate_op_return_output(&mut tx, tagged_payload);
+
+        let tx_input = parse_tx(&tx);
+        let result = parse_withdrawal_fulfillment_tx(&tx_input);
+        assert!(result.is_err(), "Should fail with invalid transaction type");
+
+        assert!(matches!(
+            result,
+            Err(WithdrawalParseError::InvalidAuxiliaryData { .. })
+        ));
+        if let Err(WithdrawalParseError::InvalidAuxiliaryData(len)) = result {
+            assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1);
+        }
     }
 }

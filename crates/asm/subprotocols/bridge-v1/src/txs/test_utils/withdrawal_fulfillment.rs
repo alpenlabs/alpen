@@ -5,7 +5,7 @@ use bitcoin::{
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE},
-    txs::{deposit::TEST_MAGIC_BYTES, withdrawal_fulfillment::parse::WithdrawalFulfillmentInfo},
+    txs::{test_utils::TEST_MAGIC_BYTES, withdrawal_fulfillment::WithdrawalFulfillmentInfo},
 };
 
 /// Creates a withdrawal fulfillment transaction for testing purposes.
@@ -26,8 +26,7 @@ use crate::{
 /// # Returns
 ///
 /// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
-#[cfg(test)]
-pub(crate) fn create_withdrawal_fulfillment_tx(
+pub(crate) fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
     // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]

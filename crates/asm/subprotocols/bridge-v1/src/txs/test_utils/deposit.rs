@@ -13,9 +13,7 @@ use rand::{RngCore, rngs::OsRng};
 use strata_l1tx::utils::generate_agg_pubkey;
 use strata_primitives::{buf::Buf32, crypto::EvenSecretKey};
 
-use crate::txs::deposit::parse::DepositInfo;
-
-pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
+use crate::txs::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 
 /// Creates a MuSig2 signature from multiple operators.
 ///

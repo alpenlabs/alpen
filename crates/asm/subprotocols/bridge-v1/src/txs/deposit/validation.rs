@@ -181,7 +181,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::txs::deposit::{create::create_test_deposit_tx, parse::DepositInfo};
+    use crate::txs::{deposit::parse::DepositInfo, test_utils::create_test_deposit_tx};
 
     // Helper function to create test operator keys with proper MuSig2 aggregation
     fn create_test_operators() -> (XOnlyPk, Vec<SecretKey>) {
