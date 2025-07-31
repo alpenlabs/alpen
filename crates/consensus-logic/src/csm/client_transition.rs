@@ -126,14 +126,11 @@ fn handle_block(
         // Do genesis here.
         let istate = process_genesis_trigger_block(block_mf, params.rollup())?;
         state.accept_l1_block_state(block, istate);
-        state.activate_chain();
 
         // Also have to set this.
         let pregenesis_mfs = vec![block_mf.clone()];
         let (genesis_block, _) = make_l2_genesis(params, pregenesis_mfs);
-        state.set_sync_state(SyncState::from_genesis_blkid(
-            genesis_block.block().header().get_blockid(),
-        ));
+        state.set_genesis_block(genesis_block.block().header().get_blockid());
 
         state.push_action(SyncAction::L2Genesis(*block.blkid()));
     } else if height == next_exp_height {
@@ -411,7 +408,7 @@ mod tests {
                     expected_actions: &[],
                 }],
                 state_assertions: Box::new(move |state| {
-                    assert!(!state.is_chain_active());
+                    assert!(!state.has_genesis_occurred());
                 }),
             },
             TestCase {
@@ -421,7 +418,7 @@ mod tests {
                     expected_actions: &[],
                 }],
                 state_assertions: Box::new(move |state| {
-                    assert!(!state.is_chain_active());
+                    assert!(!state.has_genesis_occurred());
                     /*assert_eq!(
                         state.most_recent_l1_block(),
                         Some(&l1_chain[1].blkid())
@@ -438,7 +435,7 @@ mod tests {
                     expected_actions: &[SyncAction::L2Genesis(*l1_blocks[2].blkid())],
                 }],
                 state_assertions: Box::new(move |state| {
-                    assert!(state.is_chain_active());
+                    assert!(state.has_genesis_occurred());
                     assert_eq!(state.next_exp_l1_block(), genesis + 1);
                 }),
             },
@@ -451,7 +448,7 @@ mod tests {
                 state_assertions: Box::new({
                     let l1_chain = l1_chain.clone();
                     move |state| {
-                        assert!(state.is_chain_active());
+                        assert!(state.has_genesis_occurred());
                         assert_eq!(
                             state.most_recent_l1_block(),
                             Some(l1_chain[(genesis + 1 - horizon) as usize].blkid(),)
@@ -469,7 +466,7 @@ mod tests {
                 state_assertions: Box::new({
                     let l1_chain = l1_chain.clone();
                     move |state| {
-                        assert!(state.is_chain_active());
+                        assert!(state.has_genesis_occurred());
                         assert_eq!(
                             state.most_recent_l1_block(),
                             Some(l1_chain[(genesis + 2 - horizon) as usize].blkid())
@@ -485,7 +482,7 @@ mod tests {
                     expected_actions: &[],
                 }],
                 state_assertions: Box::new(move |state| {
-                    assert!(state.is_chain_active());
+                    assert!(state.has_genesis_occurred());
                     assert_eq!(state.next_exp_l1_block(), genesis + 4);
                 }),
             },

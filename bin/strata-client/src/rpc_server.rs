@@ -97,7 +97,7 @@ impl StrataRpcImpl {
     async fn get_cur_states(&self) -> Result<(ClientState, Option<Arc<Chainstate>>), Error> {
         let cs = self.get_client_state().await;
 
-        if cs.sync().is_none() {
+        if !cs.has_genesis_occurred() {
             return Ok((cs, None));
         }
 
