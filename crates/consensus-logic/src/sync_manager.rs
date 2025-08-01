@@ -129,12 +129,8 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     });
 
     // Prepare the client worker state and start the thread for that.
-    let client_worker_state = worker::WorkerState::open(
-        params.clone(),
-        storage.clone(),
-        cupdate_tx,
-        storage.checkpoint().clone(),
-    )?;
+    let client_worker_state =
+        worker::WorkerState::open(params.clone(), storage.clone(), cupdate_tx)?;
     let st_ch = status_channel.clone();
 
     executor.spawn_critical("client_worker_task", move |shutdown| {
