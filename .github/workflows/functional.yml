@@ -129,7 +129,7 @@ jobs:
           toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@9ca1734d8940023f074414ee621fd530c4ce10f2 # v2.55.3
+        uses: taiki-e/install-action@e8c1cf74a696e981aec979a6703471e61b400895 # v2.57.4
         with:
           tool: cargo-llvm-cov
 
