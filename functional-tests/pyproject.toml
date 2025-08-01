@@ -8,7 +8,7 @@ authors = []
 python = "^3.10"
 flexitest = { git = "https://codeberg.org/treyd/flexitest.git" }
 strata_utils = { path = "../crates/util/python-utils", develop = true }
-bitcoinlib = "^0.7.4"
+bitcoinlib = "^0.7.5"
 websockets = "^15.0"
 web3 = "^7.12.1"
 py-solc-x = "^2.0.4"
@@ -16,8 +16,8 @@ locust = "^2.37.14"
 toml = "^0.10.2"
 
 [tool.poetry.group.dev.dependencies]
-ruff = "0.12.4"
-maturin = "1.9.1"
+ruff = "0.12.7"
+maturin = "1.9.2"
 ty = "^0.0.1a14"
 
 [tool.ruff]
