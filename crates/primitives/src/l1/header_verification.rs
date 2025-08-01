@@ -100,7 +100,9 @@ pub struct EpochTimestamps {
 
 impl HeaderVerificationState {
     fn next_target(&mut self, header: &Header, params: &Params) -> u32 {
-        if !(self.last_verified_block.height() + 1).is_multiple_of(params.difficulty_adjustment_interval()) {
+        if !(self.last_verified_block.height() + 1)
+            .is_multiple_of(params.difficulty_adjustment_interval())
+        {
             return self.next_block_target;
         }
 
@@ -274,7 +276,11 @@ impl HeaderVerificationState {
                     found: old_header.prev_blockhash.into(),
                 });
             }
-            if self.last_verified_block.height().is_multiple_of(params.difficulty_adjustment_interval()) {
+            if self
+                .last_verified_block
+                .height()
+                .is_multiple_of(params.difficulty_adjustment_interval())
+            {
                 self.epoch_timestamps.current = self.epoch_timestamps.previous;
             }
             self.last_verified_block = L1BlockCommitment::new(
