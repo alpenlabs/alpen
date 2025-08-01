@@ -448,7 +448,7 @@ pub async fn fetch_verification_state(
 
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
     // next_block_target, else next_block_target will be current block's target
-    let next_block_target = if (block_height + 1) % btc_params.difficulty_adjustment_interval() == 0
+    let next_block_target = if (block_height + 1).is_multiple_of(btc_params.difficulty_adjustment_interval())
     {
         CompactTarget::from_next_work_required(
             block_header.bits,

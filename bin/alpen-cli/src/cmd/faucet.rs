@@ -168,7 +168,7 @@ pub async fn faucet(
         solution.to_le_bytes(),
     ) {
         solution += 1;
-        if counter % 100 == 0 {
+        if counter.is_multiple_of(100) {
             pb.set_message(format!("Trying {solution}"));
         }
         counter += 1;
