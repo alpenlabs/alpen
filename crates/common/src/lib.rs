@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod logging;
 pub mod retry;
+mod service;
 
 #[cfg(feature = "debug-utils")]
 mod bail_manager;
