@@ -10,7 +10,7 @@ use strata_state::{
     sync_event::SyncEvent,
 };
 use strata_status::StatusChannel;
-use strata_storage::{CheckpointDbManager, NodeStorage};
+use strata_storage::NodeStorage;
 use strata_tasks::ShutdownGuard;
 use tokio::{
     sync::{broadcast, mpsc},
@@ -40,9 +40,6 @@ pub struct WorkerState {
     /// Node storage handle.
     storage: Arc<NodeStorage>,
 
-    /// Checkpoint manager.
-    checkpoint_manager: Arc<CheckpointDbManager>,
-
     /// Current state index.
     cur_state_idx: u64,
 
@@ -60,7 +57,6 @@ impl WorkerState {
         params: Arc<Params>,
         storage: Arc<NodeStorage>,
         cupdate_tx: broadcast::Sender<Arc<ClientUpdateNotif>>,
-        checkpoint_manager: Arc<CheckpointDbManager>,
     ) -> anyhow::Result<Self> {
         let csman = storage.client_state();
 
@@ -83,7 +79,6 @@ impl WorkerState {
             cur_state_idx,
             cur_state,
             cupdate_tx,
-            checkpoint_manager,
         })
     }
 
@@ -95,11 +90,6 @@ impl WorkerState {
     /// Gets a ref to the consensus state from the inner state tracker.
     pub fn cur_state(&self) -> &Arc<ClientState> {
         &self.cur_state
-    }
-
-    /// Gets a reference to checkpoint manager
-    pub fn checkpoint_db(&self) -> &CheckpointDbManager {
-        self.checkpoint_manager.as_ref()
     }
 
     fn get_sync_event(&self, idx: u64) -> anyhow::Result<Option<SyncEvent>> {

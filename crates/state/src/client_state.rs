@@ -72,7 +72,7 @@ impl ClientState {
         self.genesis_blockid.is_some()
     }
 
-    /// Overwrites the sync state.
+    /// Overwrites the genesis block.
     pub fn set_genesis_block(&mut self, genesis_blkid: L2BlockId) {
         self.genesis_blockid = Some(genesis_blkid);
     }
