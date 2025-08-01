@@ -11,7 +11,9 @@ use reth_trie::KeccakKeyHasher;
 use revm::database::WrapDatabaseRef;
 use revm_primitives::alloy_primitives::Bloom;
 use rsp_client_executor::{
-    error::ClientError, io::EthClientExecutorInput, profile_report, BlockValidator, FromInput,
+    error::ClientError,
+    io::{EthClientExecutorInput, WitnessInput},
+    profile_report, BlockValidator, FromInput,
 };
 
 use crate::EvmBlockStfOutput;
@@ -30,9 +32,11 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
     let evm_config =
         EthEvmConfig::new_with_evm_factory(chain_spec.clone(), AlpenEvmFactory::default());
 
+    let sealed_headers = input.sealed_headers().collect::<Vec<_>>();
+
     // Initialize the witnessed database with verified storage proofs.
     let db = profile_report!(INIT_WITNESS_DB, {
-        let trie_db = input.witness_db().unwrap();
+        let trie_db = input.witness_db(&sealed_headers).unwrap();
         WrapDatabaseRef(trie_db)
     });
 

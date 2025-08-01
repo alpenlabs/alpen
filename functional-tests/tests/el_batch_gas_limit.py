@@ -32,8 +32,6 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        seq_signer = ctx.get_service("sequencer_signer")
-        seq_signer.stop()
         # FIXME: process is NOT terminated immediately so need to wait
         time.sleep(1)
 
@@ -49,9 +47,6 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         assert GAS_PER_TX * TX_COUNT > EPOCH_GAS_LIMIT
 
         original_block_no = web3.eth.get_block_number()
-
-        # re-start block production
-        seq_signer.start()
 
         # we expect txns to be included in immediate next blocks
         # wait for txns to be included in new blocks until we get consecutive empty blocks

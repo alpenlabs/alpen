@@ -21,6 +21,7 @@ anyhow.workspace = true
 arbitrary.workspace = true
 borsh.workspace = true
 jsonrpsee = { workspace = true, features = ["jsonrpsee-http-client"] }
+jsonrpsee-http-client.workspace = true
 reth-primitives = { workspace = true, features = [
   "alloy-compat",
   "serde-bincode-compat",

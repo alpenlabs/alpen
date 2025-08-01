@@ -15,7 +15,7 @@ use reth_provider::{
 use reth_rpc_eth_api::{
     helpers::{LoadPendingBlock, SpawnBlocking},
     types::RpcTypes,
-    EthApiTypes, FromEthApiError, FromEvmError, RpcNodeCore,
+    EthApiTypes, FromEthApiError, FromEvmError, RpcConvert, RpcNodeCore,
 };
 use reth_rpc_eth_types::{EthApiError, PendingBlock};
 use reth_transaction_pool::{PoolTransaction, TransactionPool};
@@ -30,6 +30,7 @@ where
                 Header = alloy_rpc_types_eth::Header<ProviderHeader<Self::Provider>>,
             >,
             Error: FromEvmError<Self::Evm>,
+            RpcConvert: RpcConvert<Network = Self::NetworkTypes>,
         >,
     N: RpcNodeCore<
         Provider: BlockReaderIdExt<
@@ -41,13 +42,14 @@ where
                       + StateProviderFactory,
         Pool: TransactionPool<Transaction: PoolTransaction<Consensus = ProviderTx<N::Provider>>>,
         Evm: ConfigureEvm<
-            Primitives: NodePrimitives<
-                SignedTx = ProviderTx<Self::Provider>,
-                BlockHeader = ProviderHeader<Self::Provider>,
-                Receipt = ProviderReceipt<Self::Provider>,
-                Block = ProviderBlock<Self::Provider>,
-            >,
-            NextBlockEnvCtx = NextBlockEnvAttributes,
+            Primitives = <Self as RpcNodeCore>::Primitives,
+            NextBlockEnvCtx: From<NextBlockEnvAttributes>,
+        >,
+        Primitives: NodePrimitives<
+            BlockHeader = ProviderHeader<Self::Provider>,
+            SignedTx = ProviderTx<Self::Provider>,
+            Receipt = ProviderReceipt<Self::Provider>,
+            Block = ProviderBlock<Self::Provider>,
         >,
     >,
 {
@@ -71,7 +73,8 @@ where
             gas_limit: parent.gas_limit(),
             parent_beacon_block_root: parent.parent_beacon_block_root(),
             withdrawals: None,
-        })
+        }
+        .into())
     }
 
     /// Returns the locally built pending block

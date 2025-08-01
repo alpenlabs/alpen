@@ -1,7 +1,7 @@
 use alpen_reth_primitives::WithdrawalIntentEvent;
 use revm::{
     context::{ContextTr, JournalTr, Transaction},
-    precompile::{PrecompileError, PrecompileOutput, PrecompileResult},
+    precompile::{PrecompileError, PrecompileOutput, PrecompileResult, PrecompileWithAddress},
 };
 use revm_primitives::{Bytes, Log, LogData, U256};
 use strata_primitives::bitcoin_bosd::Descriptor;
@@ -11,19 +11,11 @@ use crate::{
     utils::wei_to_sats,
 };
 
-/// Ensure that input is a valid BOSD [`Descriptor`].
-fn try_into_bosd(maybe_bosd: &Bytes) -> Result<Descriptor, PrecompileError> {
-    let desc = Descriptor::from_bytes(maybe_bosd.as_ref());
-    match desc {
-        Ok(valid_desc) => Ok(valid_desc),
-        Err(_) => Err(PrecompileError::other(
-            "Invalid BOSD: expected a valid BOSD descriptor",
-        )),
-    }
-}
+pub(crate) const BRIDGEOUT_PRECOMPILE: PrecompileWithAddress =
+    PrecompileWithAddress(BRIDGEOUT_ADDRESS, bridgeout_precompile);
 
 /// Placeholder for the `bridgeout` precompile; required for the precompile registry.
-pub(crate) fn bridgeout_precompile(_input: &Bytes, _gas_limit: u64) -> PrecompileResult {
+fn bridgeout_precompile(_input: &[u8], _gas_limit: u64) -> PrecompileResult {
     let gas_cost = 0;
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
 }
@@ -32,7 +24,7 @@ pub(crate) fn bridgeout_precompile(_input: &Bytes, _gas_limit: u64) -> Precompil
 /// Bridge out intent is created during block payload generation.
 /// This precompile validates transaction and burns the bridge out amount.
 pub(crate) fn bridge_context_call<CTX>(
-    destination: &Bytes,
+    destination: &[u8],
     _gas_limit: u64,
     evmctx: &mut CTX,
 ) -> PrecompileResult
@@ -62,17 +54,17 @@ where
     // Log the bridge withdrawal intent
     let evt = WithdrawalIntentEvent {
         amount,
-        destination: destination.clone(),
+        destination: Bytes::from(destination.to_vec()),
     };
     let logdata = LogData::from(&evt);
 
-    evmctx.journal().log(Log {
+    evmctx.journal_mut().log(Log {
         address: BRIDGEOUT_ADDRESS,
         data: logdata,
     });
 
     let mut account = evmctx
-        .journal()
+        .journal_mut()
         .load_account(BRIDGEOUT_ADDRESS) // Error case should never occur
         .map_err(|_| PrecompileError::Fatal("Failed to load BRIDGEOUT_ADDRESS account".into()))?;
 
@@ -83,4 +75,15 @@ where
     let gas_cost = 0;
 
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
+}
+
+/// Ensure that input is a valid BOSD [`Descriptor`].
+fn try_into_bosd(maybe_bosd: &[u8]) -> Result<Descriptor, PrecompileError> {
+    let desc = Descriptor::from_bytes(maybe_bosd);
+    match desc {
+        Ok(valid_desc) => Ok(valid_desc),
+        Err(_) => Err(PrecompileError::other(
+            "Invalid BOSD: expected a valid BOSD descriptor",
+        )),
+    }
 }

@@ -1752,6 +1752,7 @@ dependencies = [
  "serde",
  "strata-crypto",
  "strata-primitives",
+ "thiserror 2.0.12",
  "tracing",
 ]
 
@@ -1989,7 +1990,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc12#0504e55379b75488b5d8bd59afc086c6d7de59ef"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "arbitrary",
  "async-trait",
@@ -2002,7 +2003,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc12#0504e55379b75488b5d8bd59afc086c6d7de59ef"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "bincode",
  "borsh",
@@ -2013,7 +2014,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-risc0-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc12#0504e55379b75488b5d8bd59afc086c6d7de59ef"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "bytemuck",
  "hex",
@@ -2029,9 +2030,10 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc12#0504e55379b75488b5d8bd59afc086c6d7de59ef"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "blake3",
+ "borsh",
  "hex",
  "serde",
  "sha2",
@@ -2043,7 +2045,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-guest-env"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc12#0504e55379b75488b5d8bd59afc086c6d7de59ef"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc14#1c31aa3b24234cd1d5c781e520563428fec7bbba"
 dependencies = [
  "bincode",
  "cfg-if",
