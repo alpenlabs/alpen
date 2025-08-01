@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::Serialize;
 use strata_mmr::CompactMmr;
 use strata_primitives::{
     batch::EpochSummary,
@@ -180,7 +181,9 @@ pub trait L2BlockDatabase {
 }
 
 /// Gets the status of a block.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize, Serialize,
+)]
 pub enum BlockStatus {
     /// Block's validity hasn't been checked yet.
     Unchecked,
