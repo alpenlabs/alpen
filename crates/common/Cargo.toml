@@ -7,16 +7,17 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+anyhow.workspace = true
 deadpool.workspace = true
 jsonrpsee = { workspace = true, features = ["client"] }
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
 serde.workspace = true
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true }
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
 
 [features]
-debug-utils = ["tokio"]
+debug-utils = []
