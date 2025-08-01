@@ -51,6 +51,7 @@ members = [
   "crates/test-utils/l2",
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
+  "crates/typed-sled",
   "crates/util/mmr",
   "crates/util/shrex",
   "crates/db-tests",
