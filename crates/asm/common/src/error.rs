@@ -53,8 +53,8 @@ pub enum AsmError {
     #[error("failed to serialize TypeId {0:?} data: {1}")]
     TypeIdSerialization(TypeId, #[source] borsh::io::Error),
 
-    /// L1Header do not follow consensus rules.
-    #[error("L1Header do not follow consensus rules")]
+    /// L1Header does not follow consensus rules.
+    #[error("L1Header does not follow consensus rules")]
     InvalidL1Header(#[source] L1VerificationError),
 
     #[error("msg format error {0:?}")]
