@@ -13,6 +13,7 @@ moho-runtime-interface.workspace = true
 moho-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
+strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
 strata-primitives.workspace = true
 
