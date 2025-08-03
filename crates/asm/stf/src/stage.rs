@@ -4,37 +4,39 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AuxPayload, GenesisConfigRegistry, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmSpec, AuxPayload, GenesisProvider, Stage, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
 
 /// Stage that loads each subprotocol from the anchor state we're basing off of.
-pub(crate) struct SubprotoLoaderStage<'a, 'x> {
+pub(crate) struct SubprotoLoaderStage<'a, 'x, S: AsmSpec> {
     anchor_state: &'a AnchorState,
     manager: &'a mut SubprotoManager,
     aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
-    genesis_registry: &'a GenesisConfigRegistry,
+    _phantom: std::marker::PhantomData<S>,
 }
 
-impl<'a, 'x> SubprotoLoaderStage<'a, 'x> {
+impl<'a, 'x, S: AsmSpec> SubprotoLoaderStage<'a, 'x, S> {
     pub(crate) fn new(
         anchor_state: &'a AnchorState,
         manager: &'a mut SubprotoManager,
         aux_bundle: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
-        genesis_registry: &'a GenesisConfigRegistry,
     ) -> Self {
         Self {
             anchor_state,
             manager,
             aux_bundle,
-            genesis_registry,
+            _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl Stage for SubprotoLoaderStage<'_, '_> {
-    fn process_subprotocol<S: Subprotocol>(&mut self) {
+impl<Spec: AsmSpec> Stage<Spec> for SubprotoLoaderStage<'_, '_, Spec> {
+    fn process_subprotocol<S: Subprotocol>(&mut self)
+    where
+        Spec: GenesisProvider<S>,
+    {
         // Load or create the subprotocol state.
         // OPTIMIZE: Linear scan is done every time to find the section
         let state = match self.anchor_state.find_section(S::ID) {
@@ -44,21 +46,11 @@ impl Stage for SubprotoLoaderStage<'_, '_> {
             // State not found in the anchor state, which occurs in two scenarios:
             // 1. During genesis block processing, before any state initialization
             // 2. When introducing a new subprotocol to an existing chain
-            // In either case, we must initialize a fresh state from the provided configuration in
-            // genesis_registry
+            // In either case, we must initialize a fresh state from the provided configuration
+            // in the AsmSpec
             None => {
-                // Deserialize genesis config from registry, or use default if not found
-                let genesis_config: S::GenesisConfig =
-                    self.genesis_registry.get(S::ID).unwrap_or_else(|| {
-                        // This is expected behavior: forces upper layer ASM managers to provide
-                        // genesis config for subprotocols that require specific genesis types.
-                        // For subprotocols that use () or empty structs as GenesisConfig, this
-                        // fallback will work fine. For subprotocols with non-empty genesis config
-                        // requirements, this will panic, ensuring proper configuration is provided.
-                        borsh::from_slice(&[])
-                            .expect("asm: subprotocol requires genesis config but none provided")
-                    });
-
+                // Get the type-safe genesis config from the AsmSpec
+                let genesis_config = Spec::genesis_config_for::<S>();
                 S::init(genesis_config).expect("asm: failed to initialize subprotocol state")
             }
         };
@@ -101,8 +93,11 @@ impl<'a, 'b, 'm> PreProcessStage<'a, 'b, 'm> {
     }
 }
 
-impl Stage for PreProcessStage<'_, '_, '_> {
-    fn process_subprotocol<S: Subprotocol>(&mut self) {
+impl<Spec: AsmSpec> Stage<Spec> for PreProcessStage<'_, '_, '_> {
+    fn process_subprotocol<S: Subprotocol>(&mut self)
+    where
+        Spec: GenesisProvider<S>,
+    {
         let txs = self
             .tx_bufs
             .get(&S::ID)
@@ -134,8 +129,11 @@ impl<'a, 'b, 'm> ProcessStage<'a, 'b, 'm> {
     }
 }
 
-impl Stage for ProcessStage<'_, '_, '_> {
-    fn process_subprotocol<S: Subprotocol>(&mut self) {
+impl<Spec: AsmSpec> Stage<Spec> for ProcessStage<'_, '_, '_> {
+    fn process_subprotocol<S: Subprotocol>(&mut self)
+    where
+        Spec: GenesisProvider<S>,
+    {
         let txs = self
             .tx_bufs
             .get(&S::ID)
@@ -157,8 +155,11 @@ impl<'m> FinishStage<'m> {
     }
 }
 
-impl Stage for FinishStage<'_> {
-    fn process_subprotocol<S: Subprotocol>(&mut self) {
+impl<Spec: AsmSpec> Stage<Spec> for FinishStage<'_> {
+    fn process_subprotocol<S: Subprotocol>(&mut self)
+    where
+        Spec: GenesisProvider<S>,
+    {
         self.manager.invoke_process_msgs::<S>();
     }
 }

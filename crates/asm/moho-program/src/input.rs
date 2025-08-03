@@ -10,7 +10,7 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
-use strata_asm_common::{AuxPayload, GenesisConfigRegistry};
+use strata_asm_common::AuxPayload;
 
 /// Private input to process the next state.
 ///
@@ -21,20 +21,16 @@ pub struct AsmStepInput {
     pub block: L1Block,
     /// Auxiliary input required to run the ASM STF
     pub aux_bundle: BTreeMap<u8, Vec<AuxPayload>>,
-    /// Genesis configuration registry for subprotocol initialization
-    pub genesis_registry: GenesisConfigRegistry,
 }
 
 impl AsmStepInput {
     pub fn new(
         block: L1Block,
         aux_bundle: BTreeMap<u8, Vec<AuxPayload>>,
-        genesis_registry: GenesisConfigRegistry,
     ) -> Self {
         AsmStepInput {
             block,
             aux_bundle,
-            genesis_registry,
         }
     }
 
