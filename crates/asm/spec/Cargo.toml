@@ -16,5 +16,6 @@ strata-primitives.workspace = true
 zkaleido.workspace = true
 
 [build-dependencies]
-serde = { workspace = true, features = ["derive"] }
+hex.workspace = true
 serde_json.workspace = true
+strata-primitives.workspace = true

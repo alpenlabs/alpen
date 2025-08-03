@@ -46,7 +46,8 @@ use crate::{
 ///
 /// # Type Parameters
 ///
-/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis configs
+/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
+///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 pub fn pre_process_asm<'b, S: AsmSpec>(
     pre_state: &AnchorState,
@@ -69,8 +70,7 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
     let aux = BTreeMap::new();
 
-    let mut loader_stage =
-        SubprotoLoaderStage::<S>::new(pre_state, &mut manager, &aux);
+    let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, &aux);
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.

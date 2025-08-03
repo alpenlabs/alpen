@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AsmSpec, AuxPayload, GenesisProvider, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmSpec, AuxPayload, GenesisProvider, Stage, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
 
 use crate::manager::SubprotoManager;

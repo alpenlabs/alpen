@@ -1,0 +1,23 @@
+{
+  "rollup_name": "ALPN",
+  "block_time": 15000,
+  "da_tag": "strata-da",
+  "checkpoint_tag": "strata-ckpt",
+  "cred_rule": "unchecked",
+  "horizon_l1_height": 90,
+  "genesis_l1_height": 100,
+  "operator_config": {
+    "static": []
+  },
+  "evm_genesis_block_hash": "46c0dc60fb131be4ccc55306a345fcc20e44233324950f978ba5f185aa2af4dc",
+  "evm_genesis_block_state_root": "351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
+  "l1_reorg_safe_depth": 4,
+  "target_l2_batch_size": 64,
+  "address_length": 20,
+  "deposit_amount": 1000000000,
+  "rollup_vk": "native",
+  "dispatch_assignment_dur": 64,
+  "proof_publish_mode": "strict",
+  "max_deposits_in_block": 16,
+  "network": "signet"
+}
