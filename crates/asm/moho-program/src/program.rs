@@ -43,7 +43,7 @@ impl MohoProgram for AsmStfProgram {
             aux_input: &input.aux_bundle,
         };
 
-        asm_stf::<StrataAsmSpec>(pre_state, stf_input, &input.genesis_registry).unwrap()
+        asm_stf::<StrataAsmSpec>(pre_state, stf_input).unwrap()
     }
 
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State {
