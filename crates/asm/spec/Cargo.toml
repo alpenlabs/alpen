@@ -7,9 +7,14 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+hex.workspace = true
 strata-asm-common.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
 strata-asm-proto-core.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 zkaleido.workspace = true
+
+[build-dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true

@@ -13173,6 +13173,9 @@ dependencies = [
 name = "strata-asm-spec"
 version = "0.1.0"
 dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-core",
