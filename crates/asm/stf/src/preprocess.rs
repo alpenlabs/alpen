@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, GenesisConfigRegistry};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
 
 use crate::{
     manager::SubprotoManager,
@@ -31,7 +31,6 @@ use crate::{
 ///
 /// * `pre_state` - The previous anchor state to transition from
 /// * `block` - The new L1 Bitcoin block to process
-/// * `genesis_registry` - Genesis configuration registry for subprotocol initialization
 ///
 /// # Returns
 ///
@@ -47,12 +46,11 @@ use crate::{
 ///
 /// # Type Parameters
 ///
-/// * `S` - The ASM specification type that defines magic bytes and subprotocol behavior
+/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 pub fn pre_process_asm<'b, S: AsmSpec>(
     pre_state: &AnchorState,
     block: &'b Block,
-    genesis_registry: &GenesisConfigRegistry,
 ) -> AsmResult<AsmPreProcessOutput<'b>> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -72,7 +70,7 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     let aux = BTreeMap::new();
 
     let mut loader_stage =
-        SubprotoLoaderStage::new(pre_state, &mut manager, &aux, genesis_registry);
+        SubprotoLoaderStage::<S>::new(pre_state, &mut manager, &aux);
     S::call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
