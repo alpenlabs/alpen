@@ -26,7 +26,7 @@ use strata_primitives::{
 /// # Bitcoin Compatibility
 ///
 /// The `wallet_pk` follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
-/// standards, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
+/// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
 /// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
@@ -35,10 +35,10 @@ pub struct OperatorEntry {
     /// Global operator index.
     idx: OperatorIdx,
 
-    /// Pubkey used to verify signed messages from the operator.
+    /// Public key used to verify signed messages from the operator.
     signing_pk: Buf32,
 
-    /// Wallet pubkey used to compute MuSig2 pubkey from a set of operators.
+    /// Wallet public key used to compute MuSig2 public key from a set of operators.
     wallet_pk: Buf32,
 
     /// Whether this operator is part of the current N/N multisig set.
@@ -83,7 +83,7 @@ impl OperatorEntry {
     /// Returns the wallet public key for Bitcoin transactions.
     ///
     /// This key is used in MuSig2 aggregation for Bitcoin transaction signatures
-    /// and follows BIP 340 standards for Taproot compatibility.
+    /// and follows BIP 340 standard for Taproot compatibility.
     ///
     /// # Returns
     ///

@@ -1,11 +1,6 @@
-//! Bridge state types.
-//!
-//! This just implements a very simple n-of-n multisig bridge.  It will be
-//! extended to a more sophisticated design when we have that specced out.
-
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::l1::{BitcoinAmount, L1BlockId};
+use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
     errors::{DepositValidationError, Mismatch, WithdrawalCommandError, WithdrawalValidationError},
@@ -107,44 +102,6 @@ impl BridgeV1State {
         self.deadline_duration
     }
 
-    /// Processes a deposit transaction by validating and adding it to the deposits table.
-    ///
-    /// This function takes already parsed deposit transaction information, validates it against the
-    /// current state, and creates a new deposit entry in the deposits table if
-    /// validation passes. Only operators that are part of the current N/N multisig set
-    /// are included as notary operators for the deposit.
-    ///
-    /// # Parameters
-    ///
-    /// - `tx` - The deposit transaction
-    /// - `info` - Parsed deposit information containing amount, destination, and outpoint
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(u32)` - The deposit index assigned to the newly created deposit entry
-    /// - `Err(DepositError)` - If validation fails for any reason
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - The deposit amount is zero or negative
-    /// - The internal key doesn't match the current aggregated operator key
-    /// - The deposit index already exists in the deposits table
-    pub fn process_deposit_tx(
-        &mut self,
-        tx: &Transaction,
-        info: &DepositInfo,
-    ) -> Result<(), DepositValidationError> {
-        // Validate the deposit first
-        self.validate_deposit(tx, info)?;
-
-        let notary_operators = self.operators().current_multisig_indices();
-        let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
-        self.deposits.insert_deposit(entry)?;
-
-        Ok(())
-    }
-
     /// Validates a deposit transaction and info against bridge state requirements.
     ///
     /// This function performs comprehensive validation of a deposit by verifying:
@@ -204,14 +161,52 @@ impl BridgeV1State {
         Ok(())
     }
 
-    /// Creates a withdrawal assignment by selecting an unassigned deposit and assigning it to an
-    /// operator.
+    /// Processes a deposit transaction by validating and adding it to the deposits table.
+    ///
+    /// This function takes already parsed deposit transaction information, validates it against the
+    /// current state, and creates a new deposit entry in the deposits table if
+    /// validation passes. Only operators that are part of the current N/N multisig set
+    /// are included as notary operators for the deposit.
+    ///
+    /// # Parameters
+    ///
+    /// - `tx` - The deposit transaction
+    /// - `info` - Parsed deposit information containing amount, destination, and outpoint
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(u32)` - The deposit index assigned to the newly created deposit entry
+    /// - `Err(DepositError)` - If validation fails for any reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The deposit amount is zero or negative
+    /// - The internal key doesn't match the current aggregated operator key
+    /// - The deposit index already exists in the deposits table
+    pub fn process_deposit_tx(
+        &mut self,
+        tx: &Transaction,
+        info: &DepositInfo,
+    ) -> Result<(), DepositValidationError> {
+        // Validate the deposit first
+        self.validate_deposit(tx, info)?;
+
+        let notary_operators = self.operators().current_multisig_indices();
+        let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
+        self.deposits.insert_deposit(entry)?;
+
+        Ok(())
+    }
+
+    /// Creates a withdrawal assignment by selecting an unassigned deposit UTXO and assigning it to
+    /// an operator.
     ///
     /// This function handles incoming withdrawal commands by:
-    /// 1. Finding a deposit that has not been assigned yet
+    /// 1. Finding a deposit UTXO that has not been assigned yet
     /// 2. Randomly selecting an operator from the current multisig set that is also a notary
-    ///    operator for that deposit
-    /// 3. Creating an assignment linking the deposit to the selected operator with a deadline
+    ///    operator for that deposit UTXO
+    /// 3. Creating an assignment linking the deposit UTXO to the selected operator with a deadline
     ///    calculated from the current block height plus the configured deadline duration
     ///
     /// # Parameters
@@ -228,14 +223,13 @@ impl BridgeV1State {
     /// # Errors
     ///
     /// Returns error if:
-    /// - No unassigned deposits are available
+    /// - No unassigned deposit UTXOs are available
     /// - No current multisig operators are notary operators for any unassigned deposit
-    /// - The deposit for the unassigned index is not found
+    /// - The deposit UTXO for the unassigned index is not found
     pub fn create_withdrawal_assignment(
         &mut self,
         withdrawal_output: &WithdrawOutput,
-        l1_block_id: &L1BlockId,
-        current_block_height: u64,
+        l1_block: &L1BlockCommitment,
     ) -> Result<(), WithdrawalCommandError> {
         // Get the oldest deposit
         let deposit = self
@@ -244,7 +238,7 @@ impl BridgeV1State {
             .ok_or(WithdrawalCommandError::NoUnassignedDeposits)?;
 
         // Create assignment with deadline calculated from current block height + deadline duration
-        let exec_deadline = current_block_height + self.deadline_duration();
+        let exec_deadline = l1_block.height() + self.deadline_duration();
 
         if deposit.amt() != withdrawal_output.amt() {
             return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch(
@@ -261,7 +255,7 @@ impl BridgeV1State {
             withdrawal_cmd,
             exec_deadline,
             &self.operators().current_multisig_indices(),
-            *l1_block_id,
+            *l1_block.blkid(),
         )?;
 
         self.assignments.insert(entry);
@@ -291,7 +285,7 @@ impl BridgeV1State {
     /// reassigned deposits before the error are returned in the error context if needed.
     pub fn reassign_expired_assignments(
         &mut self,
-        current_block: &strata_primitives::l1::L1BlockCommitment,
+        current_block: &L1BlockCommitment,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
         let current_block_height = current_block.height();
         let l1_block_id = current_block.blkid();
@@ -304,57 +298,7 @@ impl BridgeV1State {
         )
     }
 
-    /// Processes a withdrawal fulfillment transaction by validating it, removing the deposit, and
-    /// removing the assignment.
-    ///
-    /// This function takes already parsed withdrawal transaction information, validates it against
-    /// the current state using the assignment table, removes the corresponding deposit from the
-    /// deposits table, and removes the assignment entry to mark the withdrawal as fulfilled.
-    /// The withdrawal processing information is returned to the caller for storage in MohoState
-    /// and later use by Bridge proof.
-    ///
-    /// # Parameters
-    ///
-    /// - `tx` - The withdrawal fulfillment transaction
-    /// - `withdrawal_info` - Parsed withdrawal information containing operator, deposit details,
-    ///   and withdrawal amounts
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(WithdrawalProcessedInfo)` - The processed withdrawal information if transaction passes
-    ///   validation
-    /// - `Err(WithdrawalValidationError)` - If validation fails for any reason
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - No assignment exists for the referenced deposit
-    /// - The operator doesn't match the assigned operator
-    /// - The withdrawal specifications don't match the assignment
-    /// - The deposit referenced in the withdrawal doesn't exist
-    pub fn process_withdrawal_fulfillment_tx(
-        &mut self,
-        tx: &Transaction,
-        withdrawal_info: &WithdrawalFulfillmentInfo,
-    ) -> Result<OperatorClaimUnlock, WithdrawalValidationError> {
-        self.validate_withdrawal(withdrawal_info)?;
-
-        // Remove the assignment from the table to mark withdrawal as fulfilled
-        // Safe to unwrap since validate_withdrawal ensures the assignment exists
-        let removed_assignment = self
-            .assignments
-            .remove_assignment(withdrawal_info.deposit_idx)
-            .expect("Assignment must exist after successful validation");
-
-        Ok(OperatorClaimUnlock {
-            withdrawal_txid: tx.compute_txid().into(),
-            deposit_txid: removed_assignment.deposit_txid(),
-            deposit_idx: removed_assignment.deposit_idx(),
-            operator_idx: withdrawal_info.operator_idx,
-        })
-    }
-
-    /// Validates the parsed withdrawal it against assignment information.
+    /// Validates the parsed withdrawal fulfillment information against assignment information.
     ///
     /// This function takes already parsed withdrawal information and validates it
     /// against the corresponding assignment entry. It checks that:
@@ -378,7 +322,7 @@ impl BridgeV1State {
     /// - No assignment exists for the referenced deposit
     /// - The operator doesn't match the assigned operator
     /// - The withdrawal specifications don't match the assignment
-    fn validate_withdrawal(
+    fn validate_withdrawal_fulfillment(
         &self,
         withdrawal_info: &WithdrawalFulfillmentInfo,
     ) -> Result<(), WithdrawalValidationError> {
@@ -431,6 +375,55 @@ impl BridgeV1State {
         }
 
         Ok(())
+    }
+
+    /// Processes a withdrawal fulfillment transaction by validating it, and removing the
+    /// assignment from AssignmentTable.
+    ///
+    /// This function takes already parsed withdrawal transaction information, validates it against
+    /// the current state using the assignment table, removes the assignment entry to mark the
+    /// withdrawal as fulfilled. The withdrawal processing information is returned to the caller
+    /// for storage in MohoState and later use by Bridge proof.
+    ///
+    /// # Parameters
+    ///
+    /// - `tx` - The withdrawal fulfillment transaction
+    /// - `withdrawal_info` - Parsed withdrawal information containing operator, deposit details,
+    ///   and withdrawal amounts
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(WithdrawalProcessedInfo)` - The processed withdrawal information if transaction passes
+    ///   validation
+    /// - `Err(WithdrawalValidationError)` - If validation fails for any reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - No assignment exists for the referenced deposit
+    /// - The operator doesn't match the assigned operator
+    /// - The withdrawal specifications don't match the assignment
+    /// - The deposit referenced in the withdrawal doesn't exist
+    pub fn process_withdrawal_fulfillment_tx(
+        &mut self,
+        tx: &Transaction,
+        withdrawal_info: &WithdrawalFulfillmentInfo,
+    ) -> Result<OperatorClaimUnlock, WithdrawalValidationError> {
+        self.validate_withdrawal_fulfillment(withdrawal_info)?;
+
+        // Remove the assignment from the table to mark withdrawal as fulfilled
+        // Safe to unwrap since validate_withdrawal ensures the assignment exists
+        let removed_assignment = self
+            .assignments
+            .remove_assignment(withdrawal_info.deposit_idx)
+            .expect("Assignment must exist after successful validation");
+
+        Ok(OperatorClaimUnlock {
+            withdrawal_txid: tx.compute_txid().into(),
+            deposit_txid: removed_assignment.deposit_txid(),
+            deposit_idx: removed_assignment.deposit_idx(),
+            operator_idx: withdrawal_info.operator_idx,
+        })
     }
 }
 
@@ -545,9 +538,7 @@ mod tests {
             let l1blk: L1BlockCommitment = arb.generate();
             let mut output: WithdrawOutput = arb.generate();
             output.amt = state.denomination;
-            state
-                .create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height())
-                .unwrap();
+            state.create_withdrawal_assignment(&output, &l1blk).unwrap();
         }
     }
 
@@ -688,7 +679,7 @@ mod tests {
             let l1blk: L1BlockCommitment = arb.generate();
             let mut output: WithdrawOutput = arb.generate();
             output.amt = state.denomination;
-            let res = state.create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height());
+            let res = state.create_withdrawal_assignment(&output, &l1blk);
             assert!(res.is_ok());
 
             let unassigned_deposit_count = state.deposits.len();
@@ -699,7 +690,7 @@ mod tests {
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
-        let res = state.create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height());
+        let res = state.create_withdrawal_assignment(&output, &l1blk);
         assert!(res.is_err());
     }
 
@@ -717,7 +708,7 @@ mod tests {
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
-        let res = state.create_withdrawal_assignment(&output, l1blk.blkid(), l1blk.height());
+        let res = state.create_withdrawal_assignment(&output, &l1blk);
         assert!(res.is_err());
         // TODO: check for error type
     }

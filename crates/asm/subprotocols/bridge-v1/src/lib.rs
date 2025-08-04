@@ -1,9 +1,9 @@
 //! Bridge V1 Subprotocol
 //!
-//! This crate implements the Strata-Bridge subprotocol.
+//! This crate implements the Strata bridge subprotocol.
 //!
-//! The bridge manages Bitcoin deposits, operator assignments,
-//! and withdrawal processing between Bitcoin L1 and the orchestration layer.
+//! The bridge manages Bitcoin deposits, operators, withdrawal assignments,
+//! between Bitcoin L1 and the orchestration layer.
 //!
 //! # Architecture
 //!

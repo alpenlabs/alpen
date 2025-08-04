@@ -47,6 +47,10 @@ pub enum BridgeSubprotocolError {
     UnsupportedTxType(TxType),
 }
 
+/// Errors that can occur when parsing deposit transactions.
+///
+/// When these parsing errors occur, they are logged and the transaction is skipped.
+/// No further processing is performed on transactions that fail to parse.
 #[derive(Debug, Error, Clone)]
 pub enum DepositTxParseError {
     /// The auxiliary data in the deposit transaction tag has insufficient length.
@@ -64,6 +68,10 @@ pub enum DepositTxParseError {
     MissingDepositOutput,
 }
 
+/// Errors that can occur when validating deposit transactions.
+///
+/// When these validation errors occur, they are logged and the transaction is skipped.
+/// No further processing is performed on transactions that fail to validate.
 #[derive(Debug, Error, Clone)]
 pub enum DepositValidationError {
     /// Signature validation failed during deposit verification.
@@ -86,6 +94,10 @@ pub enum DepositValidationError {
     EmptyOperators,
 }
 
+/// Errors that can occur when parsing withdrawal fulfillment transactions.
+///
+/// When these parsing errors occur, they are logged and the transaction is skipped.
+/// No further processing is performed on transactions that fail to parse.
 #[derive(Debug, Error)]
 pub enum WithdrawalParseError {
     /// The auxiliary data in the withdrawal fulfillment transaction doesn't have correct length.
@@ -103,6 +115,10 @@ pub enum WithdrawalParseError {
     MissingUserFulfillmentOutput,
 }
 
+/// Errors that can occur when validating withdrawal fulfillment transactions.
+///
+/// When these validation errors occur, they are logged and the transaction is skipped.
+/// No further processing is performed on transactions that fail to validate.
 #[derive(Debug, Error)]
 pub enum WithdrawalValidationError {
     /// No assignment found for the deposit
@@ -126,6 +142,10 @@ pub enum WithdrawalValidationError {
     DestinationMismatch(Mismatch<ScriptBuf>),
 }
 
+/// Errors that can occur when processing withdrawal commands.
+///
+/// These errors indicate critical system issues that require investigation.
+/// Unlike parsing errors, these failures suggest broken system invariants.
 #[derive(Debug, Error)]
 pub enum WithdrawalCommandError {
     /// No unassigned deposits are available for processing

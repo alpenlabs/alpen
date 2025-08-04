@@ -7,7 +7,10 @@ use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     logging::{error, info},
 };
-use strata_primitives::{buf::Buf32, l1::L1BlockId};
+use strata_primitives::{
+    buf::Buf32,
+    l1::{L1BlockCommitment, L1BlockId},
+};
 
 use crate::{
     constants::BRIDGE_V1_SUBPROTOCOL_ID,
@@ -111,9 +114,9 @@ impl Subprotocol for BridgeV1Subproto {
             }
             Err(e) => {
                 // PANIC: Failure to reassign expired assignments indicates a violation of the
-                // bridge's fundamental 1/N honesty assumption. This means no honest operators
-                // remain available to fulfill withdrawals, representing an unrecoverable
-                // protocol breach that poses significant risk of fund loss.
+                // bridge's fundamental 1/N honesty assumption. This means no operators remain
+                // available to fulfill withdrawals, representing an unrecoverable protocol breach
+                // that poses significant risk of fund loss.
                 panic!("Failed to reassign expired assignments {e}");
             }
         }
@@ -144,13 +147,8 @@ impl Subprotocol for BridgeV1Subproto {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
                     // TODO: Pass actual L1BlockId instead of placeholder
-                    let placeholder_id = L1BlockId::from(Buf32::zero());
-                    let current_block_height = 0;
-                    if let Err(e) = state.create_withdrawal_assignment(
-                        withdrawal_cmd,
-                        &placeholder_id,
-                        current_block_height,
-                    ) {
+                    let l1blk = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
+                    if let Err(e) = state.create_withdrawal_assignment(withdrawal_cmd, &l1blk) {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.
                         panic!("Failed to create withdrawal assignment: {e}",);

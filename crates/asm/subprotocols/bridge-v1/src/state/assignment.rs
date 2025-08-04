@@ -1,8 +1,8 @@
 //! Operator Assignment Management
 //!
 //! This module contains types and tables for managing operator assignments to deposits.
-//! Assignments link specific deposits to operators who are responsible for processing
-//! withdrawal requests within specified deadlines.
+//! Assignments link specific deposit UTXOs to operators who are responsible for processing
+//! the corresponding withdrawal requests within specified deadlines.
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -21,10 +21,10 @@ use strata_primitives::{
 use super::withdrawal::WithdrawalCommand;
 use crate::{errors::WithdrawalCommandError, state::deposit::DepositEntry};
 
-/// Assignment entry linking a deposit to an operator for withdrawal processing.
+/// Assignment entry linking a deposit UTXO to an operator for withdrawal processing.
 ///
-/// Each assignment represents a task assigned to a specific operator to process
-/// a withdrawal from a particular deposit.
+/// Each assignment represents a task, assigned to a specific operator to process
+/// a withdrawal of from a particular deposit UTXO.
 #[derive(
     Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
 )]
@@ -37,8 +37,8 @@ pub struct AssignmentEntry {
 
     /// Index of the operator currently assigned to execute this withdrawal.
     ///
-    /// This operator fronts the funds for the withdrawal and will be
-    /// reimbursed by the bridge notaries upon successful execution.
+    /// If they successfully front the withdrawal based on `withdrawal_cmd`
+    /// within the `exec_deadline`, they are able to unlock their claim.
     current_assignee: OperatorIdx,
 
     /// List of operators who were previously assigned to this withdrawal.
@@ -50,9 +50,8 @@ pub struct AssignmentEntry {
 
     /// Bitcoin block height deadline for withdrawal execution.
     ///
-    /// The withdrawal must be executed before this block height.
-    /// If a checkpoint is processed at or after this height without
-    /// the withdrawal being completed, the assignment becomes invalid.
+    /// The withdrawal fulfillment transaction must be executed before this block height for the
+    /// operator to be eligible for [`ClaimUnlock`](super::withdrawal::OperatorClaimUnlock).
     exec_deadline: BitcoinBlockHeight,
 }
 
