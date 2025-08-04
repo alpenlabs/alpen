@@ -11,13 +11,14 @@ pub const DEFAULT_ENGINE_CALL_MAX_RETRIES: u16 = 4;
 ///
 /// Retries the given `operation` up to `max_retries` times with delays
 /// increasing according to the provided config that implements [`Backoff`] trait.
+/// The operation will be executed at most `max_retries` times total.
 ///
 /// Logs a warning on each failure and an error if all retries are exhausted.
 ///
 /// # Parameters
 ///
 /// - `name`: Identifier used in logs for the operation.
-/// - `max_retries`: Maximum number of retry attempts.
+/// - `max_retries`: Maximum number of retry attempts (total executions will be max_retries).
 /// - `backoff`: Backoff configuration for computing delay.
 /// - `operation`: Closure returning `Result`; retried on `Err`.
 ///
@@ -72,10 +73,10 @@ where
 {
     let mut delay = backoff.base_delay_ms();
 
-    for attempt in 0..=max_retries {
+    for attempt in 0..max_retries {
         match operation() {
             Ok(value) => return Ok(value),
-            Err(err) if attempt < max_retries => {
+            Err(err) if attempt < max_retries - 1 => {
                 warn!(
                     "Attempt {} failed with {:?} while running {}. Retrying in {:?}",
                     attempt + 1,
@@ -96,8 +97,17 @@ where
         }
     }
 
-    // This point should be unreachable
-    unreachable!()
+    // Final attempt
+    match operation() {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            error!(
+                "Max retries exceeded while running {}, returning with the last error",
+                name
+            );
+            Err(err)
+        }
+    }
 }
 
 pub trait Backoff {
@@ -154,16 +164,16 @@ mod tests {
         );
 
         assert_eq!(result, Err("fail"));
-        assert_eq!(*counter.lock().unwrap(), 1 + max_retries);
-        assert_eq!(sleep_log.lock().unwrap().len(), max_retries as usize);
-        assert_eq!(sleep_log.lock().unwrap().to_vec(), vec![128, 64]);
+        assert_eq!(*counter.lock().unwrap(), max_retries);
+        assert_eq!(sleep_log.lock().unwrap().len(), (max_retries - 1) as usize);
+        assert_eq!(sleep_log.lock().unwrap().to_vec(), vec![128]);
     }
 
     #[test]
     fn succeeds_after_retries() {
         let backoff = HalfBackoff;
         let attempts_counter = Arc::new(Mutex::new(0));
-        let success_at_attempt = 2; // Succeeds on the 3rd attempt (0-indexed)
+        let success_at_attempt = 1; // Succeeds on the 2nd attempt (0-indexed)
         let sleep_log = Arc::new(Mutex::new(Vec::new()));
         let max_retries = 3;
 
@@ -194,6 +204,6 @@ mod tests {
         assert_eq!(result, Ok("success"));
         assert_eq!(*attempts_counter.lock().unwrap(), success_at_attempt + 1);
         assert_eq!(sleep_log.lock().unwrap().len(), success_at_attempt);
-        assert_eq!(sleep_log.lock().unwrap().to_vec(), vec![128, 64]);
+        assert_eq!(sleep_log.lock().unwrap().to_vec(), vec![128]);
     }
 }
