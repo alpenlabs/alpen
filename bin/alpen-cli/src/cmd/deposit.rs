@@ -3,7 +3,12 @@ use std::{str::FromStr, time::Duration};
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
 use argh::FromArgs;
 use bdk_wallet::{
-    bitcoin::{script::PushBytesBuf, secp256k1::SECP256K1, PrivateKey, XOnlyPublicKey},
+    bitcoin::{
+        key::Keypair,
+        script::PushBytesBuf,
+        secp256k1::{SecretKey, SECP256K1},
+        PrivateKey, XOnlyPublicKey,
+    },
     chain::ChainOracle,
     coin_selection::InsufficientFunds,
     descriptor::IntoWalletDescriptor,
@@ -16,7 +21,7 @@ use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_primitives::crypto::even_kp;
+use strata_primitives::crypto::EvenSecretKey;
 
 use crate::{
     alpen::AlpenWallet,
@@ -73,15 +78,19 @@ pub async fn deposit(
         alpen_address.to_string().cyan(),
     );
 
-    let (secret_key, recovery_public_key) = even_kp(SECP256K1.generate_keypair(&mut OsRng));
-    let recovery_public_key = recovery_public_key.x_only_public_key().0;
+    let secret_key: EvenSecretKey = {
+        let keypair = Keypair::new(SECP256K1, &mut OsRng);
+        SecretKey::from_keypair(&keypair).into()
+    };
+
+    let recovery_public_key = secret_key.x_only_public_key(SECP256K1).0;
 
     println!(
         "Recovery public key: {}",
         encode(&recovery_public_key.serialize()).yellow()
     );
 
-    let recovery_private_key = PrivateKey::new(secret_key.into(), settings.network);
+    let recovery_private_key = PrivateKey::new(*secret_key, settings.network);
 
     let bridge_in_desc = bridge_in_descriptor(
         settings.bridge_musig2_pubkey,
