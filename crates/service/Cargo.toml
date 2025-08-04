@@ -1,0 +1,16 @@
+[package]
+name = "strata-service"
+version = "0.3.0-alpha.1"
+edition = "2021"
+
+[dependencies]
+strata-tasks.workspace = true
+
+anyhow.workspace = true
+futures.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

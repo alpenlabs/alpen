@@ -41,6 +41,7 @@ members = [
   "crates/rpc/types",
   "crates/rpc/utils",
   "crates/sequencer",
+  "crates/service",
   "crates/state",
   "crates/status",
   "crates/storage",
@@ -132,6 +133,7 @@ strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
+strata-service = { path = "crates/service" }
 strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }

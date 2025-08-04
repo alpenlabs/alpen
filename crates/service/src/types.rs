@@ -33,6 +33,7 @@ pub trait Service {
     fn get_status(s: &Self::State) -> Self::Status;
 }
 
+/// Trait for service states which exposes common properties.
 pub trait ServiceState {
     /// Name for a service that can be printed in logs.
     ///
@@ -40,6 +41,7 @@ pub trait ServiceState {
     fn name(&self) -> &str;
 }
 
+/// Trait for async service impls to define their per-input logic.
 pub trait AsyncService: Service + Sync + Send + 'static
 where
     Self::Input: AsyncServiceInput,
@@ -50,6 +52,7 @@ where
     ) -> anyhow::Result<Response>;
 }
 
+/// Trait for blocking service impls to define their per-input logic.
 pub trait SyncService: Service + Sync + Send + 'static
 where
     Self::Input: SyncServiceInput,
@@ -60,12 +63,13 @@ where
     ) -> anyhow::Result<Response>;
 }
 
-/// Generic service input type.
+/// Generic service input trait.
 pub trait ServiceInput {
     /// The message type.
     type Msg: Debug;
 }
 
+/// Common inputs for async service input sources.
 pub trait AsyncServiceInput: ServiceInput + Sync + Send + 'static {
     /// Receives the "next input".  If returns `Ok(None)` then there is no more
     /// input and we should exit.
@@ -74,6 +78,7 @@ pub trait AsyncServiceInput: ServiceInput + Sync + Send + 'static {
     async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>>;
 }
 
+/// Common inputs for blocking service input sources.
 pub trait SyncServiceInput: ServiceInput + Sync + Send + 'static {
     /// Receives the "next input".  If returns `Ok(None)` then there is no more
     /// input and we should exit.
