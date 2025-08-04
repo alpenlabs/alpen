@@ -62,6 +62,16 @@ fn validate_checkpoint(
         return None;
     }
 
+    // Also check if the proof has a valid size.
+    // FIXME: We should actually be checking the validity of proof, but this is done
+    // for a hotfix.
+    let proof_size = signed_checkpoint.checkpoint().proof().as_bytes().len();
+    const PROOF_SIZE_WITH_PUBLIC_PARAMS: usize = 396;
+    // We are allowing proof of size 0 because we support empty proofs.
+    if proof_size != 0 && proof_size < PROOF_SIZE_WITH_PUBLIC_PARAMS {
+        return None;
+    }
+
     Some(signed_checkpoint)
 }
 
