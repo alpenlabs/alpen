@@ -1,5 +1,6 @@
 //! Async service worker task.
 
+use futures::FutureExt;
 use tokio::sync::watch;
 use tracing::*;
 
@@ -10,6 +11,26 @@ pub async fn worker_task<S: AsyncService>(
     mut state: S::State,
     mut inp: S::Input,
     status_tx: watch::Sender<S::Status>,
+    shutdown_guard: strata_tasks::ShutdownGuard,
+) -> anyhow::Result<()>
+where
+    S::Input: AsyncServiceInput,
+{
+    let mut exit_fut = Box::pin(shutdown_guard.wait_for_shutdown().fuse());
+    let mut wkr_fut = Box::pin(worker_task_inner::<S>(&mut state, &mut inp, &status_tx).fuse());
+
+    futures::select! {
+        _ = exit_fut => (),
+        res = wkr_fut => res?,
+    };
+
+    Ok(())
+}
+
+async fn worker_task_inner<S: AsyncService>(
+    state: &mut S::State,
+    inp: &mut S::Input,
+    status_tx: &watch::Sender<S::Status>,
 ) -> anyhow::Result<()>
 where
     S::Input: AsyncServiceInput,
@@ -21,10 +42,7 @@ where
         let input_span = debug_span!("handlemsg", %service, ?input);
 
         // Process the input.
-        let res = match S::process_input(&mut state, &input)
-            .instrument(input_span)
-            .await
-        {
+        let res = match S::process_input(state, &input).instrument(input_span).await {
             Ok(res) => res,
             Err(e) => {
                 // TODO support optional retry

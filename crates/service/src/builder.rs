@@ -38,8 +38,8 @@ where
         let init_status = S::get_status(&state);
         let (status_tx, status_rx) = watch::channel(init_status);
 
-        let worker_fut = async_worker::worker_task::<S>(state, inp, status_tx);
-        texec.spawn_critical_async(&name, worker_fut);
+        let worker_fut_cls = move |g| async_worker::worker_task::<S>(state, inp, status_tx, g);
+        texec.spawn_critical_async_with_shutdown(&name, worker_fut_cls);
 
         Ok(ServiceMonitor::new(status_rx))
     }

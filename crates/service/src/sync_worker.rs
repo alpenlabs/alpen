@@ -9,7 +9,7 @@ pub fn worker_task<S: SyncService>(
     mut state: S::State,
     mut inp: S::Input,
     status_tx: watch::Sender<S::Status>,
-    _shutdown_guard: strata_tasks::ShutdownGuard,
+    shutdown_guard: strata_tasks::ShutdownGuard,
 ) -> anyhow::Result<()>
 where
     S::Input: SyncServiceInput,
@@ -18,6 +18,12 @@ where
 
     // This is preliminary, we'll make it more sophisticated in the future.
     while let Some(input) = inp.recv_next()? {
+        // Check after getting a new input.
+        if shutdown_guard.should_shutdown() {
+            debug!("got shutdown notification");
+            break;
+        }
+
         let input_span = debug_span!("handlemsg", %service, ?input);
         let _g = input_span.enter();
 
@@ -30,6 +36,12 @@ where
                 break;
             }
         };
+
+        // Also check after processing input before trying to get a new one.
+        if shutdown_guard.should_shutdown() {
+            debug!("got shutdown notification");
+            break;
+        }
 
         // Update the status.
         let status = S::get_status(&state);
