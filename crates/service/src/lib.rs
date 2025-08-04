@@ -9,5 +9,5 @@ mod types;
 
 pub use adapters::*;
 pub use builder::ServiceBuilder;
-pub use status::{StatusHandle, StatusMonitor};
+pub use status::{ServiceMonitor, StatusMonitor};
 pub use types::*;
