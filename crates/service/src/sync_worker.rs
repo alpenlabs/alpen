@@ -5,7 +5,7 @@ use tracing::*;
 
 use super::*;
 
-pub fn worker_task<S: SyncService>(
+pub(crate) fn worker_task<S: SyncService>(
     mut state: S::State,
     mut inp: S::Input,
     status_tx: watch::Sender<S::Status>,

@@ -4,17 +4,21 @@ use tokio::sync::watch;
 
 use crate::*;
 
+/// Builder to help with constructing service workers.
+#[derive(Debug)]
 pub struct ServiceBuilder<S: Service> {
     state: Option<S::State>,
     inp: Option<S::Input>,
 }
 
 impl<S: Service> ServiceBuilder<S> {
+    /// Sets the service's state.
     pub fn with_state(mut self, s: S::State) -> Self {
         self.state = Some(s);
         self
     }
 
+    /// Sets the input that will be used with the service.
     pub fn with_input(mut self, inp: S::Input) -> Self {
         self.inp = Some(inp);
         self

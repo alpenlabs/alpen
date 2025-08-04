@@ -7,7 +7,7 @@ use tracing::*;
 use super::*;
 
 /// Async worker task.
-pub async fn worker_task<S: AsyncService>(
+pub(crate) async fn worker_task<S: AsyncService>(
     mut state: S::State,
     mut inp: S::Input,
     status_tx: watch::Sender<S::Status>,
