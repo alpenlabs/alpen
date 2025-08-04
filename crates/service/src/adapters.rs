@@ -1,9 +1,8 @@
-use std::{fmt::Debug, sync::Arc};
+#![allow(missing_debug_implementations)] // none of these make sense to be debug
 
-use futures::{
-    pin_mut,
-    stream::{Stream, StreamExt},
-};
+use std::{fmt::Debug, future::Future, sync::Arc};
+
+use futures::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 
 use super::*;
@@ -23,16 +22,16 @@ impl<I> IterInput<I> {
     }
 }
 
-impl<I: Iterator> ServiceInput for IterInput<I>
+impl<I: Iterator + Sync + Send + 'static> ServiceInput for IterInput<I>
 where
-    I::Item: Debug,
+    I::Item: Debug + Sync + Send + 'static,
 {
     type Msg = I::Item;
 }
 
 impl<I: Iterator + Sync + Send + 'static> SyncServiceInput for IterInput<I>
 where
-    I::Item: Debug,
+    I::Item: Debug + Sync + Send + 'static,
 {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         // We fuse it off ourselves just in case, it'd be weird not to.
@@ -58,14 +57,14 @@ impl<I> SyncAsyncInput<I> {
     }
 }
 
-impl<I: ServiceInput> ServiceInput for SyncAsyncInput<I>
+impl<I: ServiceInput + Sync + Send + 'static> ServiceInput for SyncAsyncInput<I>
 where
-    I::Msg: Debug,
+    I::Msg: Debug + Sync + Send + 'static,
 {
     type Msg = I::Msg;
 }
 
-impl<I: AsyncServiceInput> SyncServiceInput for SyncAsyncInput<I> {
+impl<I: AsyncServiceInput + Sync + Send + 'static> SyncServiceInput for SyncAsyncInput<I> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         self.handle.block_on(self.inner.recv_next())
     }
@@ -86,37 +85,39 @@ impl<I> AsyncSyncInput<I> {
     }
 }
 
-impl<I: ServiceInput> ServiceInput for AsyncSyncInput<I>
+impl<I: ServiceInput + Sync + Send + 'static> ServiceInput for AsyncSyncInput<I>
 where
-    I::Msg: Debug,
+    I::Msg: Debug + Sync + Send + 'static,
 {
     type Msg = I::Msg;
 }
 
-impl<I: SyncServiceInput> AsyncServiceInput for AsyncSyncInput<I>
+impl<I: SyncServiceInput + Sync + Send + 'static> AsyncServiceInput for AsyncSyncInput<I>
 where
-    I::Msg: Debug + Send,
+    I::Msg: Debug + Sync + Send + 'static,
 {
-    async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
+    fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
         let inner = self.inner.clone();
-        let res = tokio::task::spawn_blocking(move || {
-            let mut inner_lock = inner.blocking_lock();
-            inner_lock.recv_next()
-        })
-        .await;
+        async move {
+            let res = tokio::task::spawn_blocking(move || {
+                let mut inner_lock = inner.blocking_lock();
+                inner_lock.recv_next()
+            })
+            .await;
 
-        match res {
-            Ok(res) => res,
-            // TODO don't use anyhow::bail! here
-            Err(je) => {
-                if je.is_cancelled() {
-                    // How could this ever happen?
-                    anyhow::bail!("wait for input cancelled")
-                } else if je.is_panic() {
-                    let _panic = je.into_panic(); // TODO do something with this
-                    anyhow::bail!("input sleep paniced")
-                } else {
-                    anyhow::bail!("failed for unknown reason");
+            match res {
+                Ok(res) => res,
+                // TODO don't use anyhow::bail! here
+                Err(je) => {
+                    if je.is_cancelled() {
+                        // How could this ever happen?
+                        anyhow::bail!("wait for input cancelled")
+                    } else if je.is_panic() {
+                        let _panic = je.into_panic(); // TODO do something with this
+                        anyhow::bail!("input sleep paniced")
+                    } else {
+                        anyhow::bail!("failed for unknown reason");
+                    }
                 }
             }
         }
@@ -138,27 +139,29 @@ impl<T> TokioMpscInput<T> {
     }
 }
 
-impl<T: Debug> ServiceInput for TokioMpscInput<T> {
+impl<T: Debug + Sync + Send + 'static> ServiceInput for TokioMpscInput<T> {
     type Msg = T;
 }
 
-impl<T: Debug + Send + 'static> AsyncServiceInput for TokioMpscInput<T> {
-    async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
-        // We fuse it off ourselves just in case, it'd be weird not to.
-        if self.closed {
-            return Ok(None);
-        }
+impl<T: Debug + Sync + Send + 'static> AsyncServiceInput for TokioMpscInput<T> {
+    fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
+        async move {
+            // We fuse it off ourselves just in case, it'd be weird not to.
+            if self.closed {
+                return Ok(None);
+            }
 
-        let item = self.rx.recv().await;
-        self.closed |= item.is_none();
-        Ok(item)
+            let item = self.rx.recv().await;
+            self.closed |= item.is_none();
+            Ok(item)
+        }
     }
 }
 
 /// This impl is technically redundant since we can use the type as an
 /// [``Iterator``], but someone might find it useful and it's easy enough to
 /// implement.
-impl<T: Debug + Send + 'static> SyncServiceInput for TokioMpscInput<T> {
+impl<T: Debug + Sync + Send + 'static> SyncServiceInput for TokioMpscInput<T> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         // We fuse it off ourselves just in case, it'd be weird not to.
         if self.closed {
@@ -186,26 +189,28 @@ impl<S> StreamInput<S> {
     }
 }
 
-impl<S: Stream> ServiceInput for StreamInput<S>
+impl<S: Stream + Sync + Send + 'static> ServiceInput for StreamInput<S>
 where
-    S::Item: Debug,
+    S::Item: Debug + Sync + Send + 'static,
 {
     type Msg = S::Item;
 }
 
 impl<S: Stream + Unpin + Sync + Send + 'static> AsyncServiceInput for StreamInput<S>
 where
-    S::Item: Debug,
+    S::Item: Debug + Sync + Send + 'static,
 {
-    async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
-        // We fuse it off ourselves just in case, it'd be weird not to.
-        if self.closed {
-            return Ok(None);
-        }
+    fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
+        async move {
+            // We fuse it off ourselves just in case, it'd be weird not to.
+            if self.closed {
+                return Ok(None);
+            }
 
-        let item = self.stream.next().await;
-        self.closed |= item.is_none();
-        Ok(item)
+            let item = self.stream.next().await;
+            self.closed |= item.is_none();
+            Ok(item)
+        }
     }
 }
 

@@ -14648,6 +14648,7 @@ dependencies = [
  "anyhow",
  "futures",
  "serde",
+ "serde_json",
  "strata-tasks",
  "tokio",
  "tracing",

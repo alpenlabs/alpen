@@ -9,6 +9,7 @@ pub fn worker_task<S: SyncService>(
     mut state: S::State,
     mut inp: S::Input,
     status_tx: watch::Sender<S::Status>,
+    _shutdown_guard: strata_tasks::ShutdownGuard,
 ) -> anyhow::Result<()>
 where
     S::Input: SyncServiceInput,

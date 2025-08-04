@@ -1,6 +1,6 @@
-//! Service worker common types.
+//! Core service worker types.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, future::Future};
 
 use serde::Serialize;
 
@@ -15,7 +15,7 @@ pub enum Response {
 }
 
 /// Abstract service trait.
-pub trait Service {
+pub trait Service: Sync + Send + 'static {
     /// The in-memory state of the service.
     type State: ServiceState;
 
@@ -27,14 +27,14 @@ pub trait Service {
     ///
     /// This implements [``Serialize``] so that we can unify different types of
     /// services into a single metrics collection system.
-    type Status: Debug + Serialize;
+    type Status: Clone + Debug + Sync + Send + Serialize + 'static;
 
     /// Gets the status from the current state.
     fn get_status(s: &Self::State) -> Self::Status;
 }
 
 /// Trait for service states which exposes common properties.
-pub trait ServiceState {
+pub trait ServiceState: Sync + Send + 'static {
     /// Name for a service that can be printed in logs.
     ///
     /// This SHOULD NOT change after the service worker has been started.
@@ -42,18 +42,18 @@ pub trait ServiceState {
 }
 
 /// Trait for async service impls to define their per-input logic.
-pub trait AsyncService: Service + Sync + Send + 'static
+pub trait AsyncService: Service
 where
     Self::Input: AsyncServiceInput,
 {
-    async fn process_input(
+    fn process_input(
         state: &mut Self::State,
         input: &<Self::Input as ServiceInput>::Msg,
-    ) -> anyhow::Result<Response>;
+    ) -> impl Future<Output = anyhow::Result<Response>> + Send;
 }
 
 /// Trait for blocking service impls to define their per-input logic.
-pub trait SyncService: Service + Sync + Send + 'static
+pub trait SyncService: Service
 where
     Self::Input: SyncServiceInput,
 {
@@ -64,22 +64,22 @@ where
 }
 
 /// Generic service input trait.
-pub trait ServiceInput {
+pub trait ServiceInput: Sync + Send + 'static {
     /// The message type.
-    type Msg: Debug;
+    type Msg: Sync + Send + Debug + 'static;
 }
 
 /// Common inputs for async service input sources.
-pub trait AsyncServiceInput: ServiceInput + Sync + Send + 'static {
+pub trait AsyncServiceInput: ServiceInput {
     /// Receives the "next input".  If returns `Ok(None)` then there is no more
     /// input and we should exit.
     ///
     /// This is like a specialized `TryStream`.
-    async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>>;
+    fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send;
 }
 
 /// Common inputs for blocking service input sources.
-pub trait SyncServiceInput: ServiceInput + Sync + Send + 'static {
+pub trait SyncServiceInput: ServiceInput {
     /// Receives the "next input".  If returns `Ok(None)` then there is no more
     /// input and we should exit.
     ///
