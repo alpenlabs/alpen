@@ -30,7 +30,7 @@ where
         self,
         name: &'static str,
         texec: &strata_tasks::TaskExecutor,
-    ) -> anyhow::Result<StatusHandle<S>> {
+    ) -> anyhow::Result<ServiceMonitor<S>> {
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
         let inp = self.inp.expect("service/builder: missing input");
@@ -41,7 +41,7 @@ where
         let worker_fut = async_worker::worker_task::<S>(state, inp, status_tx);
         texec.spawn_critical_async(&name, worker_fut);
 
-        Ok(StatusHandle::new(status_rx))
+        Ok(ServiceMonitor::new(status_rx))
     }
 }
 
@@ -54,7 +54,7 @@ where
         self,
         name: &'static str,
         texec: &strata_tasks::TaskExecutor,
-    ) -> anyhow::Result<StatusHandle<S>> {
+    ) -> anyhow::Result<ServiceMonitor<S>> {
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
         let inp = self.inp.expect("service/builder: missing input");
@@ -65,6 +65,6 @@ where
         let worker_cls = move |g| sync_worker::worker_task::<S>(state, inp, status_tx, g);
         texec.spawn_critical(name, worker_cls);
 
-        Ok(StatusHandle::new(status_rx))
+        Ok(ServiceMonitor::new(status_rx))
     }
 }
