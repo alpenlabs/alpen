@@ -1,7 +1,7 @@
 #![allow(missing_debug_implementations)] // none of these make sense to be debug
 #![allow(clippy::manual_async_fn)] // clippy is just wrong about this, the types don't work
 
-use std::{collections::*, fmt::Debug, future::Future, sync::Arc};
+use std::{any::Any, collections::*, fmt::Debug, future::Future, sync::Arc};
 
 use futures::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
@@ -108,20 +108,33 @@ where
 
             match res {
                 Ok(res) => res,
-                // TODO don't use anyhow::bail! here
                 Err(je) => {
-                    if je.is_cancelled() {
+                    let e = if je.is_cancelled() {
                         // How could this ever happen?
-                        anyhow::bail!("wait for input cancelled")
+                        ServiceError::WaitCancelled
                     } else if je.is_panic() {
-                        let _panic = je.into_panic(); // TODO do something with this
-                        anyhow::bail!("input sleep paniced")
+                        let panic = je.into_panic();
+                        ServiceError::BlockingThreadPanic(try_conv_panic(&panic))
                     } else {
-                        anyhow::bail!("failed for unknown reason");
-                    }
+                        ServiceError::UnknownInputErr
+                    };
+
+                    Err(e.into())
                 }
             }
         }
+    }
+}
+
+fn try_conv_panic(panic: &dyn Any) -> Option<String> {
+    if let Some(s) = panic.downcast_ref::<String>() {
+        Some(s.clone())
+    } else if let Some(s) = panic.downcast_ref::<&String>() {
+        Some((*s).clone())
+    } else if let Some(s) = panic.downcast_ref::<&str>() {
+        Some(s.to_string())
+    } else {
+        None
     }
 }
 

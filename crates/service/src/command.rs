@@ -25,8 +25,7 @@ impl<S: Service> CommandHandle<S> {
     /// Sends a message on the channel and returns immediately.
     pub async fn send(&self, m: S::Msg) -> anyhow::Result<()> {
         if self.tx.send(m).await.is_err() {
-            // FIXME typed errors
-            anyhow::bail!("service/cmd: worker exited")
+            return Err(ServiceError::WorkerExited.into());
         }
 
         Ok(())
@@ -35,8 +34,7 @@ impl<S: Service> CommandHandle<S> {
     /// Sends a message on the channel and returns immediately.
     pub fn send_blocking(&self, m: S::Msg) -> anyhow::Result<()> {
         if self.tx.blocking_send(m).is_err() {
-            // FIXME typed errors
-            anyhow::bail!("service/cmd: worker exited");
+            return Err(ServiceError::WorkerExited.into());
         }
 
         Ok(())
@@ -70,6 +68,5 @@ impl<S: Service> CommandHandle<S> {
 }
 
 fn coerce_callback_result<R>(v: Result<R, oneshot::error::RecvError>) -> anyhow::Result<R> {
-    // FIXME typed errors
-    v.map_err(|_| anyhow::format_err!("service/cmd: worked exited before receiving response"))
+    v.map_err(|_| ServiceError::WorkerExitedWithoutResponse.into())
 }
