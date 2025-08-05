@@ -52,7 +52,7 @@ where
         };
 
         // Update the status.
-        let status = S::get_status(&state);
+        let status = S::get_status(state);
         let _ = status_tx.send(status);
 
         if res == Response::ShouldExit {

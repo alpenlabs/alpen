@@ -1,4 +1,5 @@
 #![allow(missing_debug_implementations)] // none of these make sense to be debug
+#![allow(clippy::manual_async_fn)] // clippy is just wrong about this, the types don't work
 
 use std::{collections::*, fmt::Debug, future::Future, sync::Arc};
 
