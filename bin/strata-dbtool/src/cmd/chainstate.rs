@@ -12,7 +12,11 @@ use super::{
     checkpoint::get_latest_checkpoint_entry,
     l2::{get_highest_l2_slot, get_l2_block_slot, get_latest_l2_block_id},
 };
-use crate::{cli::OutputFormat, utils::block_id::parse_l2_block_id};
+use crate::{
+    cli::OutputFormat,
+    output::{chainstate::ChainstateInfo, output},
+    utils::block_id::parse_l2_block_id,
+};
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-chainstate")]
@@ -94,49 +98,21 @@ pub(crate) fn get_chainstate(
     let finalized_epoch = top_level_state.finalized_epoch();
     let l1_view_state = top_level_state.l1_view();
 
-    // Print in porcelain format
-    println!("chainstate.block_id {block_id:?}");
-    println!("chainstate.current_slot {block_slot}");
-    println!("chainstate.current_epoch {}", top_level_state.cur_epoch());
-    println!(
-        "chainstate.is_epoch_finishing {}",
-        top_level_state.is_epoch_finishing()
-    );
-    println!("chainstate.previous_epoch.epoch {}", prev_epoch.epoch());
-    println!(
-        "chainstate.previous_epoch.last_slot {}",
-        prev_epoch.last_slot()
-    );
-    println!(
-        "chainstate.previous_epoch.last_blkid {:?}",
-        prev_epoch.last_blkid()
-    );
-    println!(
-        "chainstate.finalized_epoch.epoch {}",
-        finalized_epoch.epoch()
-    );
-    println!(
-        "chainstate.finalized_epoch.last_slot {}",
-        finalized_epoch.last_slot()
-    );
-    println!(
-        "chainstate.finalized_epoch.last_blkid {:?}",
-        finalized_epoch.last_blkid()
-    );
-    println!(
-        "chainstate.l1_next_expected_height {}",
-        l1_view_state.next_expected_height()
-    );
-    println!(
-        "chainstate.l1_safe_block_height {}",
-        l1_view_state.safe_height()
-    );
-    println!(
-        "chainstate.l1_safe_block_blkid {:?}",
-        l1_view_state.safe_blkid()
-    );
+    // Create the output data structure
+    let chainstate_info = ChainstateInfo {
+        block_id: &block_id,
+        current_slot: block_slot,
+        current_epoch: top_level_state.cur_epoch(),
+        is_epoch_finishing: top_level_state.is_epoch_finishing(),
+        previous_epoch: prev_epoch,
+        finalized_epoch,
+        l1_next_expected_height: l1_view_state.next_expected_height(),
+        l1_safe_block_height: l1_view_state.safe_height(),
+        l1_safe_block_blkid: l1_view_state.safe_blkid(),
+    };
 
-    Ok(())
+    // Use the output utility
+    output(&chainstate_info, args.output_format)
 }
 
 /// Revert chainstate to specified block.

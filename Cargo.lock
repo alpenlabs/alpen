@@ -13683,6 +13683,8 @@ dependencies = [
  "argh",
  "hex",
  "rockbound",
+ "serde",
+ "serde_json",
  "strata-cli-common",
  "strata-consensus-logic",
  "strata-db",

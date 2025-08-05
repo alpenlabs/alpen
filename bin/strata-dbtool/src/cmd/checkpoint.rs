@@ -7,7 +7,14 @@ use strata_db::{
 use strata_primitives::l1::ProtocolOperation;
 
 use super::l1::{get_l1_block_id_at_height, get_l1_block_manifest, get_l1_chain_tip};
-use crate::{cli::OutputFormat, cmd::client_state::get_latest_client_state_update};
+use crate::{
+    cli::OutputFormat,
+    cmd::client_state::get_latest_client_state_update,
+    output::{
+        checkpoint::{CheckpointInfo, CheckpointsSummaryInfo, EpochInfo},
+        output,
+    },
+};
 
 /// Get the last epoch index from the database.
 ///
@@ -72,69 +79,16 @@ pub(crate) fn get_checkpoint(
             )
         })?;
 
-    // Print in porcelain format
-    println!("checkpoint.index {checkpoint_idx}");
-    println!("checkpoint.proving_status {:?}", entry.proving_status);
-    println!(
-        "checkpoint.confirmation_status {:?}",
-        entry.confirmation_status
-    );
+    // Create the output data structure
+    let checkpoint_info = CheckpointInfo {
+        checkpoint_index: checkpoint_idx,
+        checkpoint: &entry.checkpoint,
+        confirmation_status: &entry.confirmation_status,
+        proving_status: &entry.proving_status,
+    };
 
-    let checkpoint = &entry.checkpoint;
-    let batch_info = checkpoint.batch_info();
-    println!("checkpoint.batch.epoch {}", batch_info.epoch());
-    println!(
-        "checkpoint.batch.l1_range.start.height {}",
-        batch_info.l1_range.0.height()
-    );
-    println!(
-        "checkpoint.batch.l1_range.start.blkid {:?}",
-        batch_info.l1_range.0.blkid()
-    );
-    println!(
-        "checkpoint.batch.l1_range.end.height {}",
-        batch_info.l1_range.1.height()
-    );
-    println!(
-        "checkpoint.batch.l1_range.end.blkid {:?}",
-        batch_info.l1_range.1.blkid()
-    );
-    println!(
-        "checkpoint.batch.l2_range.start.slot {}",
-        batch_info.l2_range.0.slot()
-    );
-    println!(
-        "checkpoint.batch.l2_range.start.blkid {:?}",
-        batch_info.l2_range.0.blkid()
-    );
-    println!(
-        "checkpoint.batch.l2_range.end.slot {}",
-        batch_info.l2_range.1.slot()
-    );
-    println!(
-        "checkpoint.batch.l2_range.end.blkid {:?}",
-        batch_info.l2_range.1.blkid()
-    );
-
-    let batch_transition = checkpoint.batch_transition();
-    println!(
-        "checkpoint.batch_transition.chainstate.pre_root {:?}",
-        batch_transition.chainstate_transition.pre_state_root
-    );
-    println!(
-        "checkpoint.batch_transition.chainstate.post_root {:?}",
-        batch_transition.chainstate_transition.post_state_root
-    );
-    println!(
-        "checkpoint.batch_transition.tx_filter.pre_config_hash {:?}",
-        batch_transition.tx_filters_transition.pre_config_hash
-    );
-    println!(
-        "checkpoint.batch_transition.tx_filter.post_config_hash {:?}",
-        batch_transition.tx_filters_transition.post_config_hash
-    );
-
-    Ok(())
+    // Use the output utility
+    output(&checkpoint_info, args.output_format)
 }
 
 /// Get latest checkpoint entry.
@@ -160,7 +114,7 @@ pub(crate) fn get_latest_checkpoint_entry(
 /// Get summary of all checkpoints.
 pub(crate) fn get_checkpoints_summary(
     db: &impl DatabaseBackend,
-    _args: GetCheckpointsSummaryArgs,
+    args: GetCheckpointsSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let chkpt_db = db.checkpoint_db();
     let last_idx = chkpt_db
@@ -222,23 +176,28 @@ pub(crate) fn get_checkpoints_summary(
 
     let checkpoints_in_l1_blocks = found_checkpoints as u64;
 
-    // Print in porcelain format
-    println!("checkpoints_summary.expected_checkpoints_count {expected_checkpoints_count}");
-    println!("checkpoints_summary.checkpoints_found_in_db {checkpoints_found_in_db}");
-    println!("checkpoints_summary.checkpoints_in_l1_blocks {checkpoints_in_l1_blocks}");
+    // Convert unexpected checkpoints to the expected format
+    let unexpected_checkpoints_info: Vec<crate::output::checkpoint::UnexpectedCheckpointInfo> =
+        unexpected_checkpoints
+            .into_iter()
+            .map(|(checkpoint_index, l1_height)| {
+                crate::output::checkpoint::UnexpectedCheckpointInfo {
+                    checkpoint_index,
+                    l1_height,
+                }
+            })
+            .collect();
 
-    if !unexpected_checkpoints.is_empty() {
-        println!(
-            "checkpoints_summary.unexpected_checkpoints_count {}",
-            unexpected_checkpoints.len()
-        );
-        for (checkpoint_index, l1_height) in unexpected_checkpoints {
-            println!("checkpoints_summary.unexpected_checkpoint.index {checkpoint_index}");
-            println!("checkpoints_summary.unexpected_checkpoint.l1_height {l1_height}");
-        }
-    }
+    // Create the output data structure
+    let summary_info = CheckpointsSummaryInfo {
+        expected_checkpoints_count,
+        checkpoints_found_in_db,
+        checkpoints_in_l1_blocks,
+        unexpected_checkpoints: unexpected_checkpoints_info,
+    };
 
-    Ok(())
+    // Use the output utility
+    output(&summary_info, args.output_format)
 }
 
 /// Get epoch summary at specified index.
@@ -272,28 +231,12 @@ pub(crate) fn get_epoch_summary(
             )
         })?;
 
-    // Print in porcelain format
-    println!("epoch_summary.epoch_index {epoch_idx}");
-    println!(
-        "epoch_summary.epoch_commitment.epoch {}",
-        epoch_summary.get_epoch_commitment().epoch()
-    );
-    println!(
-        "epoch_summary.epoch_commitment.last_slot {}",
-        epoch_summary.get_epoch_commitment().last_slot()
-    );
-    println!(
-        "epoch_summary.epoch_commitment.last_blkid {:?}",
-        epoch_summary.get_epoch_commitment().last_blkid()
-    );
-    println!(
-        "epoch_summary.new_l1.height {}",
-        epoch_summary.new_l1().height()
-    );
-    println!(
-        "epoch_summary.new_l1.blkid {:?}",
-        epoch_summary.new_l1().blkid()
-    );
+    // Create the output data structure
+    let epoch_info = EpochInfo {
+        epoch_index: epoch_idx,
+        epoch_summary: &epoch_summary,
+    };
 
-    Ok(())
+    // Use the output utility
+    output(&epoch_info, args.output_format)
 }

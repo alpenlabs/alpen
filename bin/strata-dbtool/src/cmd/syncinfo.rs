@@ -7,7 +7,10 @@ use super::{
     l1::get_l1_chain_tip,
     l2::{get_highest_l2_slot, get_latest_l2_block_id},
 };
-use crate::cli::OutputFormat;
+use crate::{
+    cli::OutputFormat,
+    output::{output, syncinfo::SyncInfo},
+};
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-syncinfo")]
@@ -21,7 +24,7 @@ pub(crate) struct GetSyncinfoArgs {
 /// Show the latest sync information.
 pub(crate) fn get_syncinfo(
     db: &impl DatabaseBackend,
-    _args: GetSyncinfoArgs,
+    args: GetSyncinfoArgs,
 ) -> Result<(), DisplayedError> {
     let l2_db = db.l2_db();
 
@@ -61,41 +64,22 @@ pub(crate) fn get_syncinfo(
     // Get L1 safe block
     let safe_block = top_level_state.l1_view().get_safe_block();
 
-    // Print in porcelain format
-    println!("syncinfo.l1_tip_height {l1_tip_height}");
-    println!("syncinfo.l1_tip_block_id {l1_tip_block_id:?}");
-    println!("syncinfo.l2_tip_height {l2_tip_height}");
-    println!("syncinfo.l2_tip_block_id {l2_tip_block_id:?}");
-    println!("syncinfo.l2_tip_block_status {l2_tip_block_status:?}");
-    println!("syncinfo.l2_finalized_block_id {l2_finalized_block_id:?}");
-    println!("syncinfo.current_epoch {current_epoch}");
-    println!("syncinfo.current_slot {current_slot}");
-    println!("syncinfo.previous_block.slot {}", prev_block.slot());
-    println!("syncinfo.previous_block.blkid {:?}", prev_block.blkid());
-    println!("syncinfo.previous_epoch.epoch {}", prev_epoch.epoch());
-    println!(
-        "syncinfo.previous_epoch.last_slot {}",
-        prev_epoch.last_slot()
-    );
-    println!(
-        "syncinfo.previous_epoch.last_blkid {:?}",
-        prev_epoch.last_blkid()
-    );
-    println!("syncinfo.finalized_epoch.epoch {}", finalized_epoch.epoch());
-    println!(
-        "syncinfo.finalized_epoch.last_slot {}",
-        finalized_epoch.last_slot()
-    );
-    println!(
-        "syncinfo.finalized_epoch.last_blkid {:?}",
-        finalized_epoch.last_blkid()
-    );
-    println!("syncinfo.safe_block.height {}", safe_block.height());
-    println!("syncinfo.safe_block.blkid {:?}", safe_block.blkid());
-    println!(
-        "syncinfo.last_epoch {}",
-        last_epoch.map_or("None".to_string(), |e| e.to_string())
-    );
+    // Create the output data structure
+    let sync_info = SyncInfo {
+        l1_tip_height,
+        l1_tip_block_id: &l1_tip_block_id,
+        l2_tip_height,
+        l2_tip_block_id: &l2_tip_block_id,
+        l2_tip_block_status: &l2_tip_block_status,
+        l2_finalized_block_id,
+        current_epoch,
+        current_slot,
+        previous_block: prev_block,
+        previous_epoch: prev_epoch,
+        finalized_epoch,
+        safe_block: &safe_block,
+    };
 
-    Ok(())
+    // Use the output utility
+    output(&sync_info, args.output_format)
 }

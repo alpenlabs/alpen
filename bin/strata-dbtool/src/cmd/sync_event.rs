@@ -7,7 +7,14 @@ use strata_state::sync_event::SyncEvent;
 use tracing::warn;
 
 use super::l1::get_l1_chain_tip;
-use crate::{cli::OutputFormat, cmd::client_state::get_latest_client_state_update};
+use crate::{
+    cli::OutputFormat,
+    cmd::client_state::get_latest_client_state_update,
+    output::{
+        output,
+        sync_event::{SyncEventInfo, SyncEventsSummaryInfo},
+    },
+};
 
 /// Shows details about a sync event
 #[derive(FromArgs, PartialEq, Debug)]
@@ -50,41 +57,20 @@ pub(crate) fn get_sync_event(
             )
         })?;
 
-    // Print in porcelain format
-    println!("sync_event.event_index {event_index}");
+    // Create the output data structure
+    let event_info = SyncEventInfo {
+        event_index,
+        event: &sync_event,
+    };
 
-    match &sync_event {
-        SyncEvent::L1Block(l1_commitment) => {
-            println!("sync_event.event L1Block");
-            println!(
-                "sync_event.event.l1_block_commitment.height {}",
-                l1_commitment.height()
-            );
-            println!(
-                "sync_event.event.l1_block_commitment.blkid {:?}",
-                l1_commitment.blkid()
-            );
-        }
-        SyncEvent::L1Revert(l1_commitment) => {
-            println!("sync_event.event L1Revert");
-            println!(
-                "sync_event.event.l1_block_commitment.height {}",
-                l1_commitment.height()
-            );
-            println!(
-                "sync_event.event.l1_block_commitment.blkid {:?}",
-                l1_commitment.blkid()
-            );
-        }
-    }
-
-    Ok(())
+    // Use the output utility
+    output(&event_info, args.output_format)
 }
 
 /// Get summary of L1 manifests in the database.
 pub(crate) fn get_sync_events_summary(
     db: &impl DatabaseBackend,
-    _args: GetSyncEventsSummaryArgs,
+    args: GetSyncEventsSummaryArgs,
 ) -> Result<(), DisplayedError> {
     // Check sync events present for all L1 blocks
     let sync_db = db.sync_event_db();
@@ -124,28 +110,12 @@ pub(crate) fn get_sync_events_summary(
         }
     }
 
-    // Print in porcelain format
-    if let Some(last_idx) = last_idx {
-        println!("sync_events_summary.last_event_index {last_idx}");
-    }
+    let output_data = SyncEventsSummaryInfo {
+        last_event_index: last_idx,
+        expected_l1_blocks_count: l1_tip_height.saturating_sub(horizon_l1_height) + 1,
+        all_sync_events_in_db,
+        missing_heights,
+    };
 
-    println!(
-        "sync_events_summary.expected_l1_blocks_count {}",
-        l1_tip_height.saturating_sub(horizon_l1_height) + 1
-    );
-    println!(
-        "sync_events_summary.all_sync_events_in_db {}",
-        if all_sync_events_in_db {
-            "true"
-        } else {
-            "false"
-        }
-    );
-
-    // Add missing heights if any
-    for height in &missing_heights {
-        println!("Missing SyncEvent::L1Block for height {height}");
-    }
-
-    Ok(())
+    output(&output_data, args.output_format)
 }
