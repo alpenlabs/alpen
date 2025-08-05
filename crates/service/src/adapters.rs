@@ -57,14 +57,14 @@ impl<I> SyncAsyncInput<I> {
     }
 }
 
-impl<I: ServiceInput + Sync + Send + 'static> ServiceInput for SyncAsyncInput<I>
+impl<I: ServiceInput> ServiceInput for SyncAsyncInput<I>
 where
     I::Msg: Debug + Sync + Send + 'static,
 {
     type Msg = I::Msg;
 }
 
-impl<I: AsyncServiceInput + Sync + Send + 'static> SyncServiceInput for SyncAsyncInput<I> {
+impl<I: AsyncServiceInput> SyncServiceInput for SyncAsyncInput<I> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         self.handle.block_on(self.inner.recv_next())
     }
@@ -85,14 +85,14 @@ impl<I> AsyncSyncInput<I> {
     }
 }
 
-impl<I: ServiceInput + Sync + Send + 'static> ServiceInput for AsyncSyncInput<I>
+impl<I: ServiceInput> ServiceInput for AsyncSyncInput<I>
 where
     I::Msg: Debug + Sync + Send + 'static,
 {
     type Msg = I::Msg;
 }
 
-impl<I: SyncServiceInput + Sync + Send + 'static> AsyncServiceInput for AsyncSyncInput<I>
+impl<I: SyncServiceInput> AsyncServiceInput for AsyncSyncInput<I>
 where
     I::Msg: Debug + Sync + Send + 'static,
 {
