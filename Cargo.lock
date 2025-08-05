@@ -13684,6 +13684,7 @@ dependencies = [
  "hex",
  "rockbound",
  "strata-cli-common",
+ "strata-consensus-logic",
  "strata-db",
  "strata-db-store-rocksdb",
  "strata-primitives",

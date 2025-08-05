@@ -18,6 +18,7 @@ tracing-subscriber.workspace = true
 hex.workspace = true
 
 strata-cli-common.workspace = true
+strata-consensus-logic.workspace = true
 strata-db.workspace = true
 strata-db-store-rocksdb.workspace = true
 strata-primitives.workspace = true

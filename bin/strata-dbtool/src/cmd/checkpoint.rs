@@ -1,6 +1,9 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{CheckpointDatabase, DatabaseBackend};
+use strata_db::{
+    traits::{CheckpointDatabase, DatabaseBackend},
+    types::CheckpointEntry,
+};
 use strata_primitives::l1::ProtocolOperation;
 
 use super::l1::{get_l1_block_id_at_height, get_l1_block_manifest, get_l1_chain_tip};
@@ -132,6 +135,26 @@ pub(crate) fn get_checkpoint(
     );
 
     Ok(())
+}
+
+/// Get latest checkpoint entry.
+pub(crate) fn get_latest_checkpoint_entry(
+    db: &impl DatabaseBackend,
+) -> Result<CheckpointEntry, DisplayedError> {
+    let chkpt_db = db.checkpoint_db();
+    let last_idx = chkpt_db
+        .get_last_checkpoint_idx()
+        .internal_error("Failed to get last checkpoint index")?
+        .expect("valid checkpoint index");
+
+    let checkpoint_entry = chkpt_db
+        .get_checkpoint(last_idx)
+        .internal_error("Failed to get last checkpoint")?
+        .ok_or_else(|| {
+            DisplayedError::InternalError("No checkpoint found".to_string(), Box::new(last_idx))
+        })?;
+
+    Ok(checkpoint_entry)
 }
 
 /// Get summary of all checkpoints.
