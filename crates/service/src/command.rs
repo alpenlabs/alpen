@@ -23,18 +23,18 @@ impl<S: Service> CommandHandle<S> {
     }
 
     /// Sends a message on the channel and returns immediately.
-    pub async fn send(&self, m: S::Msg) -> anyhow::Result<()> {
+    pub async fn send(&self, m: S::Msg) -> Result<(), ServiceError> {
         if self.tx.send(m).await.is_err() {
-            return Err(ServiceError::WorkerExited.into());
+            return Err(ServiceError::WorkerExited);
         }
 
         Ok(())
     }
 
     /// Sends a message on the channel and returns immediately.
-    pub fn send_blocking(&self, m: S::Msg) -> anyhow::Result<()> {
+    pub fn send_blocking(&self, m: S::Msg) -> Result<(), ServiceError> {
         if self.tx.blocking_send(m).is_err() {
-            return Err(ServiceError::WorkerExited.into());
+            return Err(ServiceError::WorkerExited);
         }
 
         Ok(())
@@ -45,7 +45,7 @@ impl<S: Service> CommandHandle<S> {
     pub async fn send_and_wait<R>(
         &self,
         mfn: impl Fn(oneshot::Sender<R>) -> S::Msg,
-    ) -> anyhow::Result<R> {
+    ) -> Result<R, ServiceError> {
         let (ret_tx, ret_rx) = oneshot::channel();
         let m = mfn(ret_tx);
 
@@ -58,7 +58,7 @@ impl<S: Service> CommandHandle<S> {
     pub fn send_and_wait_blocking<R>(
         &self,
         mfn: impl Fn(oneshot::Sender<R>) -> S::Msg,
-    ) -> anyhow::Result<R> {
+    ) -> Result<R, ServiceError> {
         let (ret_tx, ret_rx) = oneshot::channel();
         let m = mfn(ret_tx);
 
@@ -67,6 +67,6 @@ impl<S: Service> CommandHandle<S> {
     }
 }
 
-fn coerce_callback_result<R>(v: Result<R, oneshot::error::RecvError>) -> anyhow::Result<R> {
-    v.map_err(|_| ServiceError::WorkerExitedWithoutResponse.into())
+fn coerce_callback_result<R>(v: Result<R, oneshot::error::RecvError>) -> Result<R, ServiceError> {
+    v.map_err(|_| ServiceError::WorkerExitedWithoutResponse)
 }
