@@ -12,12 +12,6 @@ struct User {
     email: String,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
-struct Account {
-    user_id: u32,
-    balance: u64,
-}
-
 #[derive(Debug)]
 struct UserSchema;
 

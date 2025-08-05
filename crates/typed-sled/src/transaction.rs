@@ -17,7 +17,7 @@ pub trait SledTransactional {
 
 /* Definition of implementations like this for various tuple arities
  *
-impl<S1: Schema> SledTransactional for (SledTree<S1>,) {
+impl<S1: Schema> SledTransactional for (&SledTree<S1>,) {
     type View = (SledTransactionalTree<S1>,);
 
     fn transaction<F, R, E>(&self, func: F) -> TransactionResult<R, E>
@@ -37,7 +37,22 @@ impl<S1: Schema> SledTransactional for (SledTree<S1>,) {
 /// (https://docs.rs/sled/latest/sled/struct.Tree.html#method.transaction).
 macro_rules! impl_sled_transactional {
     ($(($idx:tt, $schema:ident, $var:ident)),+) => {
+        /// Impl for owned `SledTree`
         impl<$($schema: Schema),+> SledTransactional for ($(SledTree<$schema>),+,) {
+            type View = ($(SledTransactionalTree<$schema>),+,);
+
+            fn transaction<F, R, E>(&self, func: F) -> TransactionResult<R, E>
+            where
+                F: Fn(Self::View) -> ConflictableTransactionResult<R, E>,
+            {
+                ($(&*self.$idx.inner),+,).transaction(|($($var),+,)| {
+                    func(($(SledTransactionalTree::<$schema>::new($var.clone())),+,))
+                })
+            }
+        }
+
+        // Impl for `SledTree` reference
+        impl<$($schema: Schema),+> SledTransactional for ($(&SledTree<$schema>),+,) {
             type View = ($(SledTransactionalTree<$schema>),+,);
 
             fn transaction<F, R, E>(&self, func: F) -> TransactionResult<R, E>
