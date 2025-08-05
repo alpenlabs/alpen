@@ -1,14 +1,13 @@
 use argh::FromArgs;
-use hex::FromHex;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{DatabaseBackend, L1Database};
-use strata_primitives::{
-    buf::Buf32,
-    l1::{L1BlockId, ProtocolOperation},
-};
+use strata_primitives::l1::{L1BlockId, ProtocolOperation};
 use tracing::warn;
 
-use crate::{cli::OutputFormat, cmd::client_state::get_latest_client_state_update};
+use crate::{
+    cli::OutputFormat, cmd::client_state::get_latest_client_state_update,
+    utils::block_id::parse_l1_block_id,
+};
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-l1-manifest")]
@@ -75,18 +74,8 @@ pub(crate) fn get_l1_manifest(
     db: &impl DatabaseBackend,
     args: GetL1ManifestArgs,
 ) -> Result<(), DisplayedError> {
-    // Convert String to L1BlockId
-    let hex_str = args.block_id.strip_prefix("0x").unwrap_or(&args.block_id);
-    if hex_str.len() != 64 {
-        return Err(DisplayedError::UserError(
-            "Block-id must be 32-byte / 64-char hex".into(),
-            Box::new(args.block_id.to_owned()),
-        ));
-    }
-
-    let bytes: [u8; 32] =
-        <[u8; 32]>::from_hex(hex_str).user_error(format!("Invalid 32-byte hex {hex_str}"))?;
-    let block_id = L1BlockId::from(Buf32::from(bytes));
+    // Parse block ID using utility function
+    let block_id = parse_l1_block_id(&args.block_id)?;
 
     // Get block manifest using helper function
     let l1_block_manifest = get_l1_block_manifest(db, block_id)?.ok_or_else(|| {
