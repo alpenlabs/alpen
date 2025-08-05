@@ -129,15 +129,11 @@ where
 }
 
 fn try_conv_panic(panic: &dyn Any) -> Option<String> {
-    if let Some(s) = panic.downcast_ref::<String>() {
-        Some(s.clone())
-    } else if let Some(s) = panic.downcast_ref::<&String>() {
-        Some((*s).clone())
-    } else if let Some(s) = panic.downcast_ref::<&str>() {
-        Some(s.to_string())
-    } else {
-        None
-    }
+    panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&String>().cloned().cloned())
+        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
 }
 
 /// Adapter for using a mpsc receiver as a input.
