@@ -4,26 +4,15 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::*;
 
-/// Stupid macro to improve readability because I don't want to wait on the
-/// nightly feature to stabilize.
-///
-/// Another case where having intra-file C-style textual macros would be really
-/// nice even in Rust.
-macro_rules! msg {
-    ($s:ty) => {
-        <<$s>::Input as ServiceInput>::Msg
-    };
-}
-
 /// Handle to send inputs to a command task.
 #[derive(Debug)]
 pub struct CommandHandle<S: Service> {
-    tx: mpsc::Sender<<S::Input as ServiceInput>::Msg>,
+    tx: mpsc::Sender<S::Msg>,
 }
 
 impl<S: Service> CommandHandle<S> {
     /// Constructs a new instance.
-    pub(crate) fn new(tx: mpsc::Sender<msg!(S)>) -> Self {
+    pub(crate) fn new(tx: mpsc::Sender<S::Msg>) -> Self {
         Self { tx }
     }
 
@@ -34,7 +23,7 @@ impl<S: Service> CommandHandle<S> {
     }
 
     /// Sends a message on the channel and returns immediately.
-    pub async fn send(&self, m: msg!(S)) -> anyhow::Result<()> {
+    pub async fn send(&self, m: S::Msg) -> anyhow::Result<()> {
         if self.tx.send(m).await.is_err() {
             // FIXME typed errors
             anyhow::bail!("service/cmd: worker exited")
@@ -44,7 +33,7 @@ impl<S: Service> CommandHandle<S> {
     }
 
     /// Sends a message on the channel and returns immediately.
-    pub fn send_blocking(&self, m: msg!(S)) -> anyhow::Result<()> {
+    pub fn send_blocking(&self, m: S::Msg) -> anyhow::Result<()> {
         if self.tx.blocking_send(m).is_err() {
             // FIXME typed errors
             anyhow::bail!("service/cmd: worker exited");
@@ -57,7 +46,7 @@ impl<S: Service> CommandHandle<S> {
     /// waits for a response.
     pub async fn send_and_wait<R>(
         &self,
-        mfn: impl Fn(oneshot::Sender<R>) -> msg!(S),
+        mfn: impl Fn(oneshot::Sender<R>) -> S::Msg,
     ) -> anyhow::Result<R> {
         let (ret_tx, ret_rx) = oneshot::channel();
         let m = mfn(ret_tx);
@@ -70,7 +59,7 @@ impl<S: Service> CommandHandle<S> {
     /// waits for a response.
     pub fn send_and_wait_blocking<R>(
         &self,
-        mfn: impl Fn(oneshot::Sender<R>) -> msg!(S),
+        mfn: impl Fn(oneshot::Sender<R>) -> S::Msg,
     ) -> anyhow::Result<R> {
         let (ret_tx, ret_rx) = oneshot::channel();
         let m = mfn(ret_tx);

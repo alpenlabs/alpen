@@ -19,9 +19,8 @@ pub trait Service: Sync + Send + 'static {
     /// The in-memory state of the service.
     type State: ServiceState;
 
-    /// The input handle type, which lets us see the status type.
-    // Make display?
-    type Input: ServiceInput;
+    /// The input message type that the service operates on.
+    type Msg: ServiceMsg;
 
     /// The status type derived from the state.
     ///
@@ -41,32 +40,34 @@ pub trait ServiceState: Sync + Send + 'static {
     fn name(&self) -> &str;
 }
 
+/// Trait for service messages, which we want to treat like simple dumb data
+/// containers.
+///
+/// This is also `Debug` for debug purposes.
+pub trait ServiceMsg: Debug + Sync + Send + 'static {
+    // nothing yet
+}
+
+/// Blanket auto-impl for any type that impls these traits.
+impl<T: Debug + Sync + Send + 'static> ServiceMsg for T {}
+
 /// Trait for async service impls to define their per-input logic.
-pub trait AsyncService: Service
-where
-    Self::Input: AsyncServiceInput,
-{
+pub trait AsyncService: Service {
     fn process_input(
         state: &mut Self::State,
-        input: &<Self::Input as ServiceInput>::Msg,
+        input: &Self::Msg,
     ) -> impl Future<Output = anyhow::Result<Response>> + Send;
 }
 
 /// Trait for blocking service impls to define their per-input logic.
-pub trait SyncService: Service
-where
-    Self::Input: SyncServiceInput,
-{
-    fn process_input(
-        state: &mut Self::State,
-        input: &<Self::Input as ServiceInput>::Msg,
-    ) -> anyhow::Result<Response>;
+pub trait SyncService: Service {
+    fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response>;
 }
 
 /// Generic service input trait.
 pub trait ServiceInput: Sync + Send + 'static {
     /// The message type.
-    type Msg: Debug + Sync + Send + 'static;
+    type Msg: ServiceMsg;
 }
 
 /// Common inputs for async service input sources.

@@ -5,14 +5,14 @@ use tracing::*;
 
 use super::*;
 
-pub(crate) fn worker_task<S: SyncService>(
+pub(crate) fn worker_task<S: SyncService, I>(
     mut state: S::State,
-    mut inp: S::Input,
+    mut inp: I,
     status_tx: watch::Sender<S::Status>,
     shutdown_guard: strata_tasks::ShutdownGuard,
 ) -> anyhow::Result<()>
 where
-    S::Input: SyncServiceInput,
+    I: SyncServiceInput<Msg = S::Msg>,
 {
     let service = state.name().to_owned();
 

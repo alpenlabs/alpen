@@ -7,17 +7,17 @@ use tracing::*;
 use super::*;
 
 /// Async worker task.
-pub(crate) async fn worker_task<S: AsyncService>(
+pub(crate) async fn worker_task<S: AsyncService, I>(
     mut state: S::State,
-    mut inp: S::Input,
+    mut inp: I,
     status_tx: watch::Sender<S::Status>,
     shutdown_guard: strata_tasks::ShutdownGuard,
 ) -> anyhow::Result<()>
 where
-    S::Input: AsyncServiceInput,
+    I: AsyncServiceInput<Msg = S::Msg>,
 {
     let mut exit_fut = Box::pin(shutdown_guard.wait_for_shutdown().fuse());
-    let mut wkr_fut = Box::pin(worker_task_inner::<S>(&mut state, &mut inp, &status_tx).fuse());
+    let mut wkr_fut = Box::pin(worker_task_inner::<S, I>(&mut state, &mut inp, &status_tx).fuse());
 
     futures::select! {
         _ = exit_fut => (),
@@ -27,13 +27,13 @@ where
     Ok(())
 }
 
-async fn worker_task_inner<S: AsyncService>(
+async fn worker_task_inner<S: AsyncService, I>(
     state: &mut S::State,
-    inp: &mut S::Input,
+    inp: &mut I,
     status_tx: &watch::Sender<S::Status>,
 ) -> anyhow::Result<()>
 where
-    S::Input: AsyncServiceInput,
+    I: AsyncServiceInput<Msg = S::Msg>,
 {
     let service = state.name().to_owned();
 

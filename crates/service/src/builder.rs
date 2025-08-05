@@ -8,12 +8,12 @@ use crate::*;
 
 /// Builder to help with constructing service workers.
 #[derive(Debug)]
-pub struct ServiceBuilder<S: Service> {
+pub struct ServiceBuilder<S: Service, I> {
     state: Option<S::State>,
-    inp: Option<S::Input>,
+    inp: Option<I>,
 }
 
-impl<S: Service> ServiceBuilder<S> {
+impl<S: Service, I> ServiceBuilder<S, I> {
     /// Constructs an uninitialized service builder.
     pub fn new() -> Self {
         Self::default()
@@ -22,12 +22,6 @@ impl<S: Service> ServiceBuilder<S> {
     /// Sets the service's state.
     pub fn with_state(mut self, s: S::State) -> Self {
         self.state = Some(s);
-        self
-    }
-
-    /// Sets the input that will be used with the service.
-    pub fn with_input(mut self, inp: S::Input) -> Self {
-        self.inp = Some(inp);
         self
     }
 
@@ -40,9 +34,17 @@ impl<S: Service> ServiceBuilder<S> {
     }
 }
 
-impl<S: Service + AsyncService> ServiceBuilder<S>
+impl<S: Service, I: ServiceInput<Msg = S::Msg>> ServiceBuilder<S, I> {
+    /// Sets the input that will be used with the service.
+    pub fn with_input(mut self, inp: I) -> Self {
+        self.inp = Some(inp);
+        self
+    }
+}
+
+impl<S: AsyncService, I> ServiceBuilder<S, I>
 where
-    S::Input: AsyncServiceInput + Sync + Send,
+    I: AsyncServiceInput<Msg = S::Msg>,
 {
     /// Launches the async service task in an executor.
     pub async fn launch_async(
@@ -57,16 +59,16 @@ where
         let init_status = S::get_status(&state);
         let (status_tx, status_rx) = watch::channel(init_status);
 
-        let worker_fut_cls = move |g| async_worker::worker_task::<S>(state, inp, status_tx, g);
+        let worker_fut_cls = move |g| async_worker::worker_task::<S, I>(state, inp, status_tx, g);
         texec.spawn_critical_async_with_shutdown(&name, worker_fut_cls);
 
         Ok(ServiceMonitor::new(status_rx))
     }
 }
 
-impl<S: Service + SyncService> ServiceBuilder<S>
+impl<S: SyncService, I> ServiceBuilder<S, I>
 where
-    S::Input: SyncServiceInput,
+    I: SyncServiceInput<Msg = S::Msg>,
 {
     /// Launches the service thread in an executor.
     pub fn launch_sync(
@@ -81,7 +83,7 @@ where
         let init_status = S::get_status(&state);
         let (status_tx, status_rx) = watch::channel(init_status);
 
-        let worker_cls = move |g| sync_worker::worker_task::<S>(state, inp, status_tx, g);
+        let worker_cls = move |g| sync_worker::worker_task::<S, I>(state, inp, status_tx, g);
         texec.spawn_critical(name, worker_cls);
 
         Ok(ServiceMonitor::new(status_rx))
@@ -89,11 +91,7 @@ where
 }
 
 /// Specialized impl to construct a command worker and return a command handle.
-impl<S, T> ServiceBuilder<S>
-where
-    S: Service<Input = TokioMpscInput<T>>,
-    T: Debug + Sync + Send + 'static,
-{
+impl<T: ServiceMsg, S: Service<Msg = T>> ServiceBuilder<S, TokioMpscInput<T>> {
     /// Returns a command input handle that can be used to send inputs to the
     /// worker when it's launched.
     ///
@@ -119,7 +117,7 @@ where
     }
 }
 
-impl<S: Service> Default for ServiceBuilder<S> {
+impl<S: Service, I> Default for ServiceBuilder<S, I> {
     fn default() -> Self {
         Self {
             state: None,

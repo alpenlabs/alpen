@@ -24,14 +24,14 @@ impl<I> IterInput<I> {
 
 impl<I: Iterator + Sync + Send + 'static> ServiceInput for IterInput<I>
 where
-    I::Item: Debug + Sync + Send + 'static,
+    I::Item: ServiceMsg,
 {
     type Msg = I::Item;
 }
 
 impl<I: Iterator + Sync + Send + 'static> SyncServiceInput for IterInput<I>
 where
-    I::Item: Debug + Sync + Send + 'static,
+    I::Item: ServiceMsg,
 {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         // We fuse it off ourselves just in case, it'd be weird not to.
@@ -59,7 +59,7 @@ impl<I> SyncAsyncInput<I> {
 
 impl<I: ServiceInput> ServiceInput for SyncAsyncInput<I>
 where
-    I::Msg: Debug + Sync + Send + 'static,
+    I::Msg: ServiceMsg,
 {
     type Msg = I::Msg;
 }
@@ -87,14 +87,14 @@ impl<I> AsyncSyncInput<I> {
 
 impl<I: ServiceInput> ServiceInput for AsyncSyncInput<I>
 where
-    I::Msg: Debug + Sync + Send + 'static,
+    I::Msg: ServiceMsg,
 {
     type Msg = I::Msg;
 }
 
 impl<I: SyncServiceInput> AsyncServiceInput for AsyncSyncInput<I>
 where
-    I::Msg: Debug + Sync + Send + 'static,
+    I::Msg: ServiceMsg,
 {
     fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
         let inner = self.inner.clone();
@@ -139,11 +139,11 @@ impl<T> TokioMpscInput<T> {
     }
 }
 
-impl<T: Debug + Sync + Send + 'static> ServiceInput for TokioMpscInput<T> {
+impl<T: ServiceMsg> ServiceInput for TokioMpscInput<T> {
     type Msg = T;
 }
 
-impl<T: Debug + Sync + Send + 'static> AsyncServiceInput for TokioMpscInput<T> {
+impl<T: ServiceMsg> AsyncServiceInput for TokioMpscInput<T> {
     fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
         async move {
             // We fuse it off ourselves just in case, it'd be weird not to.
@@ -161,7 +161,7 @@ impl<T: Debug + Sync + Send + 'static> AsyncServiceInput for TokioMpscInput<T> {
 /// This impl is technically redundant since we can use the type as an
 /// [``Iterator``], but someone might find it useful and it's easy enough to
 /// implement.
-impl<T: Debug + Sync + Send + 'static> SyncServiceInput for TokioMpscInput<T> {
+impl<T: ServiceMsg> SyncServiceInput for TokioMpscInput<T> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         // We fuse it off ourselves just in case, it'd be weird not to.
         if self.closed {
@@ -191,14 +191,14 @@ impl<S> StreamInput<S> {
 
 impl<S: Stream + Sync + Send + 'static> ServiceInput for StreamInput<S>
 where
-    S::Item: Debug + Sync + Send + 'static,
+    S::Item: ServiceMsg,
 {
     type Msg = S::Item;
 }
 
 impl<S: Stream + Unpin + Sync + Send + 'static> AsyncServiceInput for StreamInput<S>
 where
-    S::Item: Debug + Sync + Send + 'static,
+    S::Item: ServiceMsg,
 {
     fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
         async move {
@@ -244,17 +244,17 @@ impl<T> VecInput<T> {
     }
 }
 
-impl<T: Debug + Sync + Send + 'static> ServiceInput for VecInput<T> {
+impl<T: ServiceMsg> ServiceInput for VecInput<T> {
     type Msg = T;
 }
 
-impl<T: Debug + Sync + Send + 'static> SyncServiceInput for VecInput<T> {
+impl<T: ServiceMsg> SyncServiceInput for VecInput<T> {
     fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         Ok(self.items.pop_front())
     }
 }
 
-impl<T: Debug + Sync + Send + 'static> AsyncServiceInput for VecInput<T> {
+impl<T: ServiceMsg> AsyncServiceInput for VecInput<T> {
     fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
         async { Ok(self.items.pop_front()) }
     }
