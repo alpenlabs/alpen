@@ -114,7 +114,9 @@ where
                         ServiceError::WaitCancelled
                     } else if je.is_panic() {
                         let panic = je.into_panic();
-                        ServiceError::BlockingThreadPanic(try_conv_panic(&panic))
+                        ServiceError::BlockingThreadPanic(
+                            try_conv_panic(&panic).unwrap_or_default(),
+                        )
                     } else {
                         ServiceError::UnknownInputErr
                     };
