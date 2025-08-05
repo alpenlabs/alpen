@@ -66,7 +66,7 @@ where
 /// Generic service input trait.
 pub trait ServiceInput: Sync + Send + 'static {
     /// The message type.
-    type Msg: Sync + Send + Debug + 'static;
+    type Msg: Debug + Sync + Send + 'static;
 }
 
 /// Common inputs for async service input sources.
