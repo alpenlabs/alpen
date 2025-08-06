@@ -186,8 +186,8 @@ class BasicEnvConfig(flexitest.EnvConfig):
         # The default genesis trigger height is 100, so we need at least that many blocks
         min_blocks_needed = settings.genesis_trigger + 10  # Add a buffer
         print(
-            f"Generating {min_blocks_needed} blocks for genesis trigger "
-            f"height {settings.genesis_trigger}"
+            f"Generating {min_blocks_needed} blocks for genesis trigger height "
+            f"{settings.genesis_trigger}"
         )
         brpc.proxy.generatetoaddress(min_blocks_needed, seqaddr)
 
