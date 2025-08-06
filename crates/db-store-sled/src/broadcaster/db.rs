@@ -9,9 +9,8 @@ use strata_db::{
 use strata_primitives::buf::Buf32;
 use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
 
-use crate::utils::second;
-
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
+use crate::utils::second;
 
 #[derive(Debug)]
 pub struct L1BroadcastDBSled {
