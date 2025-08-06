@@ -399,4 +399,184 @@ mod tests {
         assert_eq!(range_items[0].0, 256);
         assert_eq!(range_items[1].0, 300);
     }
+
+    #[test]
+    fn test_basic_insert_get_operations() {
+        let tree = create_test_tree().unwrap();
+
+        // Test insert and get
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        let value = tree.get(&1).unwrap();
+        assert!(value.is_some());
+        assert_test_values_eq(&TestValue::alice(), &value.unwrap());
+
+        // Test get non-existent key
+        let non_existent = tree.get(&999).unwrap();
+        assert!(non_existent.is_none());
+    }
+
+    #[test]
+    fn test_remove_operations() {
+        let tree = create_test_tree().unwrap();
+
+        // Insert and verify
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        assert!(tree.contains_key(&1).unwrap());
+
+        // Remove and verify
+        tree.remove(&1).unwrap();
+        assert!(!tree.contains_key(&1).unwrap());
+        assert!(tree.get(&1).unwrap().is_none());
+
+        // Remove non-existent key should not error
+        tree.remove(&999).unwrap();
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let tree = create_test_tree().unwrap();
+
+        // New tree should be empty
+        assert!(tree.is_empty());
+
+        // After insert, should not be empty
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        assert!(!tree.is_empty());
+
+        // After remove, should be empty again
+        tree.remove(&1).unwrap();
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn test_contains_key() {
+        let tree = create_test_tree().unwrap();
+
+        // Key should not exist initially
+        assert!(!tree.contains_key(&1).unwrap());
+
+        // Insert and check
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        assert!(tree.contains_key(&1).unwrap());
+
+        // Remove and check
+        tree.remove(&1).unwrap();
+        assert!(!tree.contains_key(&1).unwrap());
+    }
+
+    #[test]
+    fn test_first_and_last() {
+        let tree = create_test_tree().unwrap();
+
+        // Empty tree should return None
+        assert!(tree.first().unwrap().is_none());
+        assert!(tree.last().unwrap().is_none());
+
+        // Insert data out of order
+        tree.insert(&3, &TestValue::charlie()).unwrap();
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        tree.insert(&2, &TestValue::bob()).unwrap();
+
+        // First should be key 1
+        let first = tree.first().unwrap().unwrap();
+        assert_eq!(first.0, 1);
+        assert_test_values_eq(&first.1, &TestValue::alice());
+
+        // Last should be key 3
+        let last = tree.last().unwrap().unwrap();
+        assert_eq!(last.0, 3);
+        assert_test_values_eq(&last.1, &TestValue::charlie());
+    }
+
+    #[test]
+    fn test_compare_and_swap() {
+        let tree = create_test_tree().unwrap();
+
+        // CAS on non-existent key with None expected
+        tree.compare_and_swap(1, None, Some(TestValue::alice()))
+            .unwrap();
+        let value = tree.get(&1).unwrap().unwrap();
+        assert_test_values_eq(&value, &TestValue::alice());
+
+        // CAS with correct old value
+        tree.compare_and_swap(1, Some(TestValue::alice()), Some(TestValue::bob()))
+            .unwrap();
+        let value = tree.get(&1).unwrap().unwrap();
+        assert_test_values_eq(&value, &TestValue::bob());
+
+        // CAS to remove (set to None)
+        tree.compare_and_swap(1, Some(TestValue::bob()), None)
+            .unwrap();
+        assert!(!tree.contains_key(&1).unwrap());
+    }
+
+    #[test]
+    fn test_overwrite_existing_key() {
+        let tree = create_test_tree().unwrap();
+
+        // Insert initial value
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        let value = tree.get(&1).unwrap().unwrap();
+        assert_test_values_eq(&value, &TestValue::alice());
+
+        // Overwrite with new value
+        tree.insert(&1, &TestValue::bob()).unwrap();
+        let value = tree.get(&1).unwrap().unwrap();
+        assert_test_values_eq(&value, &TestValue::bob());
+    }
+
+    #[test]
+    fn test_multiple_concurrent_operations() {
+        let tree = create_test_tree().unwrap();
+
+        // Insert multiple keys
+        for i in 1..=10 {
+            tree.insert(&i, &TestValue::new_with_name(i)).unwrap();
+        }
+
+        // Verify all keys exist
+        for i in 1..=10 {
+            assert!(tree.contains_key(&i).unwrap());
+            let value = tree.get(&i).unwrap().unwrap();
+            assert_test_values_eq(&value, &TestValue::new_with_name(i));
+        }
+
+        // Remove even keys
+        for i in (2..=10).step_by(2) {
+            tree.remove(&i).unwrap();
+        }
+
+        // Verify odd keys remain, even keys are gone
+        for i in 1..=10 {
+            if i % 2 == 1 {
+                assert!(tree.contains_key(&i).unwrap());
+            } else {
+                assert!(!tree.contains_key(&i).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn test_range_edge_cases() {
+        let tree = create_test_tree().unwrap();
+
+        // Insert data
+        for i in 1..=10 {
+            tree.insert(&i, &TestValue::new_with_name(i)).unwrap();
+        }
+
+        // Test empty range
+        let items: Result<Vec<_>> = tree.range(5..5).unwrap().collect();
+        assert!(items.unwrap().is_empty());
+
+        // Test range beyond data
+        let items: Result<Vec<_>> = tree.range(15..20).unwrap().collect();
+        assert!(items.unwrap().is_empty());
+
+        // Test single item range
+        let items: Result<Vec<_>> = tree.range(5..=5).unwrap().collect();
+        let items = items.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].0, 5);
+    }
 }
