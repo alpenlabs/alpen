@@ -5,9 +5,9 @@
 //! creating tasks, fetching inputs, and performing the proof computation using various supported
 //! ZKVMs.
 //!
-//! The operations are designed to interact with a [`ProofDb`] for storing and retrieving proofs,
-//! a [`TaskTracker`] for managing task dependencies, and [`ZkVmHost`] host for ZKVM-specific
-//! computations.
+//! The operations are designed to interact with a [`ProofDatabase`] for storing and retrieving
+//! proofs, a [`TaskTracker`] for managing task dependencies, and [`ZkVmHost`] host for
+//! ZKVM-specific computations.
 //!
 //! Supported ZKVMs:
 //!
@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use strata_db::traits::ProofDatabase;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::proof::{ProofContext, ProofKey};
 use tokio::sync::Mutex;
 use tracing::{error, info, instrument};
@@ -66,7 +66,7 @@ pub(crate) trait ProvingOp {
         &self,
         params: Self::Params,
         task_tracker: Arc<Mutex<TaskTracker>>,
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let proof_ctx = self.construct_proof_ctx(&params)?;
 
@@ -117,7 +117,7 @@ pub(crate) trait ProvingOp {
     async fn create_deps_tasks(
         &self,
         params: Self::Params,
-        db: &ProofDb,
+        db: &ProofDBSled,
         task_tracker: Arc<Mutex<TaskTracker>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         Ok(vec![])
@@ -136,7 +136,7 @@ pub(crate) trait ProvingOp {
     async fn fetch_input(
         &self,
         task_id: &ProofKey,
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<<Self::Program as ZkVmProgram>::Input, ProvingTaskError>;
 
     /// Executes the proof computation for the specified task.
@@ -153,7 +153,7 @@ pub(crate) trait ProvingOp {
     async fn prove(
         &self,
         task_id: &ProofKey,
-        db: &ProofDb,
+        db: &ProofDBSled,
         host: &impl ZkVmHost,
     ) -> Result<(), ProvingTaskError> {
         info!("Starting proof generation");
@@ -190,12 +190,11 @@ pub(crate) trait ProvingOp {
 mod tests {
     use std::sync::Arc;
 
-    use strata_db_store_rocksdb::{
-        prover::db::ProofDb, test_utils::get_rocksdb_tmp_instance_for_prover,
-    };
+    use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
     use strata_primitives::{buf::Buf32, evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment};
     use strata_rpc_types::ProofKey;
     use tokio::sync::Mutex;
+    use typed_sled::SledDb;
     use zkaleido::ZkVmProgram;
 
     use super::ProvingOp;
@@ -255,7 +254,7 @@ mod tests {
         async fn fetch_input(
             &self,
             _task_id: &strata_rpc_types::ProofKey,
-            _db: &strata_db_store_rocksdb::prover::db::ProofDb,
+            _db: &strata_db_store_sled::prover::ProofDBSled,
         ) -> Result<<Self::Program as zkaleido::ZkVmProgram>::Input, crate::errors::ProvingTaskError>
         {
             todo!()
@@ -264,7 +263,7 @@ mod tests {
         async fn create_deps_tasks(
             &self,
             params: Self::Params,
-            db: &ProofDb,
+            db: &ProofDBSled,
             task_tracker: Arc<Mutex<TaskTracker>>,
         ) -> Result<Vec<ProofKey>, ProvingTaskError> {
             let child = ParentOps;
@@ -298,7 +297,7 @@ mod tests {
         async fn fetch_input(
             &self,
             _task_id: &strata_rpc_types::ProofKey,
-            _db: &strata_db_store_rocksdb::prover::db::ProofDb,
+            _db: &strata_db_store_sled::prover::ProofDBSled,
         ) -> Result<<Self::Program as zkaleido::ZkVmProgram>::Input, crate::errors::ProvingTaskError>
         {
             todo!()
@@ -307,7 +306,7 @@ mod tests {
         async fn create_deps_tasks(
             &self,
             params: Self::Params,
-            db: &ProofDb,
+            db: &ProofDBSled,
             task_tracker: Arc<Mutex<TaskTracker>>,
         ) -> Result<Vec<ProofKey>, ProvingTaskError> {
             let child = ChildOps;
@@ -340,16 +339,18 @@ mod tests {
         async fn fetch_input(
             &self,
             _task_id: &strata_rpc_types::ProofKey,
-            _db: &strata_db_store_rocksdb::prover::db::ProofDb,
+            _db: &strata_db_store_sled::prover::ProofDBSled,
         ) -> Result<<Self::Program as zkaleido::ZkVmProgram>::Input, crate::errors::ProvingTaskError>
         {
             todo!()
         }
     }
 
-    fn setup_db() -> ProofDb {
-        let (db, db_ops) = get_rocksdb_tmp_instance_for_prover().unwrap();
-        ProofDb::new(db, db_ops)
+    fn setup_db() -> ProofDBSled {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = Arc::new(SledDb::new(db).unwrap());
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        ProofDBSled::new(sled_db, config).unwrap()
     }
 
     #[tokio::test]

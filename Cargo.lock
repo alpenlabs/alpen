@@ -1057,10 +1057,13 @@ dependencies = [
  "rockbound",
  "serde",
  "serde_json",
+ "sled",
  "strata-db",
  "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-proofimpl-evm-ee-stf",
  "tempfile",
+ "typed-sled",
 ]
 
 [[package]]
@@ -14142,7 +14145,7 @@ dependencies = [
  "reqwest 0.12.23",
  "strata-config",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-l1tx",
  "strata-primitives",
  "strata-state",
@@ -14230,7 +14233,7 @@ dependencies = [
  "strata-config",
  "strata-consensus-logic",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-eectl",
  "strata-evmexec",
  "strata-primitives",
@@ -14290,13 +14293,14 @@ dependencies = [
  "strata-chaintsn",
  "strata-common",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-eectl",
  "strata-primitives",
  "strata-state",
  "strata-status",
  "strata-storage",
  "strata-tasks",
+ "strata-test-utils-btc",
  "strata-test-utils-l2",
  "thiserror 2.0.16",
  "threadpool",
@@ -14375,6 +14379,21 @@ dependencies = [
  "tempfile",
  "tracing",
  "zkaleido",
+]
+
+[[package]]
+name = "strata-db-store-sled"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "sled",
+ "strata-db",
+ "strata-db-tests",
+ "strata-primitives",
+ "strata-state",
+ "typed-sled",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc15)",
 ]
 
 [[package]]
@@ -14636,12 +14655,12 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "jsonrpsee",
- "rockbound",
  "serde",
  "serde_json",
+ "sled",
  "strata-common",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-l1tx",
  "strata-primitives",
  "strata-proofimpl-btc-blockspace",
@@ -15948,6 +15967,16 @@ name = "typed-arena"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
+
+[[package]]
+name = "typed-sled"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/typed-sled#c9a69eba46eac4aafd00d9f57d79ee1349427ebf"
+dependencies = [
+ "dashmap 6.1.0",
+ "sled",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "typeid"

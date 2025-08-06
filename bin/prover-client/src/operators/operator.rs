@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use jsonrpsee::http_client::HttpClient;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::{params::RollupParams, proof::ProofContext};
 use strata_rpc_types::ProofKey;
 use strata_zkvm_hosts::{resolve_host, ZkVmHostInstance};
@@ -85,7 +85,7 @@ impl ProofOperator {
     pub(crate) async fn prove(
         operator: &impl ProvingOp,
         proof_key: &ProofKey,
-        db: &ProofDb,
+        db: &ProofDBSled,
         host: ZkVmHostInstance,
     ) -> Result<(), ProvingTaskError> {
         match host {
@@ -105,7 +105,7 @@ impl ProofOperator {
     pub(crate) async fn process_proof(
         &self,
         proof_key: &ProofKey,
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<(), ProvingTaskError> {
         let host = resolve_host(proof_key);
 

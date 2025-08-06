@@ -1,6 +1,11 @@
 //! Database for Reth.
 
 pub mod rocksdb;
+pub mod sled;
+
+// Suppress unused crate dependency warning for sled
+#[allow(unused_extern_crates)]
+extern crate sled as _;
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
 pub use strata_db::{errors, DbResult};

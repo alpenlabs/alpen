@@ -124,3 +124,9 @@ impl From<anyhow::Error> for DbError {
         Self::Other(value.to_string())
     }
 }
+
+impl From<typed_sled::error::Error> for DbError {
+    fn from(value: typed_sled::error::Error) -> Self {
+        Self::Other(format!("sled error: {value:?}"))
+    }
+}

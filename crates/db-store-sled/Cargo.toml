@@ -1,0 +1,26 @@
+[package]
+name = "strata-db-store-sled"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-db.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+typed-sled.workspace = true
+zkaleido.workspace = true
+
+anyhow.workspace = true
+borsh.workspace = true
+sled.workspace = true
+
+[dev-dependencies]
+strata-db-tests.workspace = true
+sled = "0.34.7"
+
+[lints]
+workspace = true
+
+[features]
+default = ["test_utils"]
+test_utils = []

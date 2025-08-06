@@ -203,6 +203,11 @@ impl DatabaseBackend for RocksDbBackend {
     fn prover_db(&self) -> Arc<impl strata_db::traits::ProofDatabase> {
         self.prover_db.clone()
     }
+
+    fn broadcast_db(&self) -> Arc<impl strata_db::traits::L1BroadcastDatabase> {
+        let x: Arc<L1BroadcastDb> = todo!();
+        x
+    }
 }
 
 pub fn init_core_dbs(
