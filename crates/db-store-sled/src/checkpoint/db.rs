@@ -99,4 +99,3 @@ mod tests {
 
     checkpoint_db_tests!(setup_db());
 }
-

@@ -64,4 +64,3 @@ mod tests {
 
     client_state_db_tests!(setup_db());
 }
-

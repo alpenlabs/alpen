@@ -111,4 +111,3 @@ mod tests {
 
     l1_writer_db_tests!(setup_db());
 }
-
