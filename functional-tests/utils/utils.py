@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional, TypeVar
 from bitcoinlib.services.bitcoind import BitcoindClient
 from strata_utils import convert_to_xonly_pk, get_balance, musig_aggregate_pks
 
+from factory.config import BitcoindConfig
 from factory.seqrpc import JsonrpcClient
 from utils.constants import *
 
@@ -350,7 +351,7 @@ def generate_opxpub_from_seed(path: str) -> str:
     return res
 
 
-def generate_params(settings: RollupParamsSettings, seqpubkey: str, opxprivs: list[str]) -> str:
+def generate_params(settings: RollupParamsSettings, seqpubkey: str, opxprivs: list[str], bitcoind_config: BitcoindConfig = None) -> str:
     """Generates a params file from config values."""
     # fmt: off
     cmd = [
@@ -363,6 +364,15 @@ def generate_params(settings: RollupParamsSettings, seqpubkey: str, opxprivs: li
         "--genesis-trigger-height", str(settings.genesis_trigger),
         "--seqkey", seqpubkey,
     ]
+    
+    # Add Bitcoin RPC configuration if provided
+    if bitcoind_config is not None:
+        cmd.extend([
+            "--bitcoin-rpc-url", bitcoind_config.rpc_url,
+            "--bitcoin-rpc-user", bitcoind_config.rpc_user,
+            "--bitcoin-rpc-password", bitcoind_config.rpc_password,
+        ])
+    
     if settings.proof_timeout is not None:
         cmd.extend(["--proof-timeout", str(settings.proof_timeout)])
 
@@ -384,9 +394,12 @@ def generate_simple_params(
     base_path: str,
     settings: RollupParamsSettings,
     operator_cnt: int,
+    bitcoind_config: BitcoindConfig = None,
 ) -> dict:
     """
     Creates a network with params data and a list of operator seed paths.
+    
+    If bitcoind_config is provided, will fetch the L1 block hash from Bitcoin RPC.
 
     Result options are `params` and `opseedpaths`.
     """
@@ -401,9 +414,11 @@ def generate_simple_params(
         with open(p) as f:
             opxprivs.append(f.read().strip())
 
-    params = generate_params(settings, seqkey, opxprivs)
+    params = generate_params(settings, seqkey, opxprivs, bitcoind_config)
     print(f"Params {params}")
     return {"params": params, "opseedpaths": opseedpaths}
+
+
 
 
 def broadcast_tx(btcrpc: BitcoindClient, outputs: list[dict], options: dict) -> str:

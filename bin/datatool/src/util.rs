@@ -17,6 +17,7 @@ use bitcoin::{
     secp256k1::SECP256K1,
     Network,
 };
+use bitcoind_async_client::{client::Client, traits::Reader};
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use shrex::Hex;
@@ -26,6 +27,7 @@ use strata_primitives::{
     buf::Buf32,
     crypto::EvenSecretKey,
     keys::ZeroizableXpriv,
+    l1::L1BlockId,
     operator::OperatorPubkeys,
     params::{ProofPublishMode, RollupParams},
     proof::RollupVerifyingKey,
@@ -61,13 +63,13 @@ pub(super) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
 }
 
 /// Executes a `gen*` subcommand.
-pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result<()> {
+pub(super) async fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result<()> {
     match cmd {
         Subcommand::Xpriv(subc) => exec_genxpriv(subc, ctx),
         Subcommand::SeqPubkey(subc) => exec_genseqpubkey(subc, ctx),
         Subcommand::SeqPrivkey(subc) => exec_genseqprivkey(subc, ctx),
         Subcommand::OpXpub(subc) => exec_genopxpub(subc, ctx),
-        Subcommand::Params(subc) => exec_genparams(subc, ctx),
+        Subcommand::Params(subc) => exec_genparams(subc, ctx).await,
     }
 }
 
@@ -230,7 +232,7 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
 ///
 /// Generates the params for a Strata network.
 /// Either writes to a file or prints to stdout depending on the provided options.
-fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
+async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     // Parse the sequencer key, trimming whitespace for convenience.
     let seqkey = match cmd.seqkey.as_ref().map(|s| s.trim()) {
         Some(seqkey) => {
@@ -277,6 +279,29 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
 
     let evm_genesis_info = get_genesis_block_info(&chainspec_json)?;
 
+    // Create Bitcoin RPC client and fetch genesis L1 block hash
+    let genesis_trigger_height = cmd.genesis_trigger_height.unwrap_or(100);
+    let bitcoin_client = Client::new(
+        cmd.bitcoin_rpc_url,
+        cmd.bitcoin_rpc_user,
+        cmd.bitcoin_rpc_password,
+        None,
+        None,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
+
+    let genesis_l1_blkid = bitcoin_client
+        .get_block_hash(genesis_trigger_height)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to fetch L1 block hash at height {}: {}",
+                genesis_trigger_height,
+                e
+            )
+        })
+        .map(L1BlockId::from)?;
+
     let config = ParamsConfig {
         name: cmd.name.unwrap_or_else(|| "strata-testnet".to_string()),
         checkpoint_tag: cmd.checkpoint_tag.unwrap_or("strata-ckpt".to_string()),
@@ -294,6 +319,7 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         deposit_sats,
         proof_timeout: cmd.proof_timeout,
         evm_genesis_info,
+        genesis_l1_blkid,
     };
 
     let params = match construct_params(config) {
@@ -415,6 +441,8 @@ pub(crate) struct ParamsConfig {
     proof_timeout: Option<u32>,
     /// evm chain config json.
     evm_genesis_info: BlockInfo,
+    /// L1 block hash at the genesis trigger height.
+    genesis_l1_blkid: L1BlockId,
 }
 
 /// Constructs the parameters for a Strata network.
@@ -456,6 +484,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         // TODO do we want to remove this?
         horizon_l1_height: config.horizon_height,
         genesis_l1_height: config.genesis_trigger,
+        genesis_l1_blkid: config.genesis_l1_blkid,
         operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),

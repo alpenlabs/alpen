@@ -156,16 +156,6 @@ class BasicEnvConfig(flexitest.EnvConfig):
         )
         if custom_chain != self.custom_chain:
             settings = settings.with_chainconfig(custom_chain)
-        params_gen_data = generate_simple_params(initdir, settings, self.n_operators)
-        params = params_gen_data["params"]
-        # Instantiaze the generated rollup config so it's convenient to work with.
-        rollup_cfg = RollupConfig.model_validate_json(params)
-
-        # Construct the bridge pubkey from the config.
-        # Technically, we could use utils::get_bridge_pubkey, but this makes sequencer
-        # a dependency of pre-funding logic and just complicates the env setup.
-        bridge_pk = get_bridge_pubkey_from_cfg(rollup_cfg)
-        # TODO also grab operator keys and launch operators
 
         # reth needs some time to startup, start it first
         secret_dir = ctx.make_service_dir("secret")
@@ -191,6 +181,30 @@ class BasicEnvConfig(flexitest.EnvConfig):
         walletname = bitcoind.get_prop("walletname")
         brpc.proxy.createwallet(walletname)
         seqaddr = brpc.proxy.getnewaddress()
+
+        # Generate enough blocks to ensure we can fetch the genesis trigger block
+        # The default genesis trigger height is 100, so we need at least that many blocks
+        min_blocks_needed = settings.genesis_trigger + 10  # Add a buffer
+        print(f"Generating {min_blocks_needed} blocks for genesis trigger height {settings.genesis_trigger}")
+        brpc.proxy.generatetoaddress(min_blocks_needed, seqaddr)
+
+        # Now generate params with Bitcoin RPC available
+        bitcoin_rpc_port = bitcoind.get_prop("rpc_port")
+        bitcoind_config = BitcoindConfig(
+            rpc_url=f"http://localhost:{bitcoin_rpc_port}",
+            rpc_user=bitcoind.get_prop("rpc_user"),
+            rpc_password=bitcoind.get_prop("rpc_password"),
+        )
+        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, bitcoind_config)
+        params = params_gen_data["params"]
+        # Instantiaze the generated rollup config so it's convenient to work with.
+        rollup_cfg = RollupConfig.model_validate_json(params)
+
+        # Construct the bridge pubkey from the config.
+        # Technically, we could use utils::get_bridge_pubkey, but this makes sequencer
+        # a dependency of pre-funding logic and just complicates the env setup.
+        bridge_pk = get_bridge_pubkey_from_cfg(rollup_cfg)
+        # TODO also grab operator keys and launch operators
 
         if self.pre_generate_blocks > 0:
             if self.pre_fund_addrs:

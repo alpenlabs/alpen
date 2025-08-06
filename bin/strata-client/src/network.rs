@@ -7,8 +7,9 @@ use std::{
 
 use strata_primitives::{
     block_credential::CredRule,
+    l1::L1BlockId,
     operator::OperatorPubkeys,
-    params::{OperatorConfig, RollupParams},
+    params::{OperatorConfig, ProofPublishMode, RollupParams},
     prelude::*,
     proof::RollupVerifyingKey,
 };
@@ -47,6 +48,7 @@ fn get_deprecated_fallback() -> RollupParams {
         cred_rule: CredRule::Unchecked,
         horizon_l1_height: 3,
         genesis_l1_height: 5,
+        genesis_l1_blkid: L1BlockId::from(Buf32::zero()), // Use placeholder for deprecated fallback
         operator_config: OperatorConfig::Static(vec![opkeys]),
         evm_genesis_block_hash:
             "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"

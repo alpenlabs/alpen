@@ -200,6 +200,15 @@ pub(crate) struct SubcParams {
 
     #[argh(option, description = "path to evm chain config json")]
     pub(crate) chain_config: Option<PathBuf>,
+
+    #[argh(option, description = "bitcoin RPC URL (required)")]
+    pub(crate) bitcoin_rpc_url: String,
+
+    #[argh(option, description = "bitcoin RPC username (required)")]
+    pub(crate) bitcoin_rpc_user: String,
+
+    #[argh(option, description = "bitcoin RPC password (required)")]
+    pub(crate) bitcoin_rpc_password: String,
 }
 
 pub(crate) struct CmdContext {
