@@ -4,7 +4,7 @@ use alloy_rpc_types::engine::JwtSecret;
 use bitcoin::{Address, Network};
 use bitcoind_async_client::{traits::Wallet, Client};
 use format_serde_error::SerdeError;
-use strata_config::Config;
+use strata_config::{BitcoindConfig, Config};
 use strata_evmexec::{engine::RpcExecEngineCtl, fetch_init_fork_choice_state, EngineRpcClient};
 use strata_primitives::{
     l1::L1Status,
@@ -120,20 +120,20 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
 }
 
 // TODO: remove this after builder is done
-pub(crate) fn create_bitcoin_rpc_client(config: &Config) -> anyhow::Result<Arc<Client>> {
+pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Client>> {
     // Set up Bitcoin client RPC.
-    let bitcoind_url = format!("http://{}", config.bitcoind.rpc_url);
+    let bitcoind_url = format!("http://{}", config.rpc_url);
     let btc_rpc = Client::new(
         bitcoind_url,
-        config.bitcoind.rpc_user.clone(),
-        config.bitcoind.rpc_password.clone(),
-        config.bitcoind.retry_count,
-        config.bitcoind.retry_interval,
+        config.rpc_user.clone(),
+        config.rpc_password.clone(),
+        config.retry_count,
+        config.retry_interval,
     )
     .map_err(anyhow::Error::from)?;
 
     // TODO remove this
-    if config.bitcoind.network != Network::Regtest {
+    if config.network != Network::Regtest {
         warn!("network not set to regtest, ignoring");
     }
     Ok(btc_rpc.into())

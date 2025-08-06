@@ -355,7 +355,7 @@ def generate_params(
     settings: RollupParamsSettings,
     seqpubkey: str,
     opxprivs: list[str],
-    bitcoind_config: BitcoindConfig = None,
+    bitcoind_config: BitcoindConfig,
 ) -> str:
     """Generates a params file from config values."""
     # fmt: off
@@ -370,13 +370,12 @@ def generate_params(
         "--seqkey", seqpubkey,
     ]
 
-    # Add Bitcoin RPC configuration if provided
-    if bitcoind_config is not None:
-        cmd.extend([
-            "--bitcoin-rpc-url", bitcoind_config.rpc_url,
-            "--bitcoin-rpc-user", bitcoind_config.rpc_user,
-            "--bitcoin-rpc-password", bitcoind_config.rpc_password,
-        ])
+    # Add Bitcoin RPC configuration
+    cmd.extend([
+        "--bitcoin-rpc-url", bitcoind_config.rpc_url,
+        "--bitcoin-rpc-user", bitcoind_config.rpc_user,
+        "--bitcoin-rpc-password", bitcoind_config.rpc_password,
+    ])
 
     if settings.proof_timeout is not None:
         cmd.extend(["--proof-timeout", str(settings.proof_timeout)])
@@ -399,7 +398,7 @@ def generate_simple_params(
     base_path: str,
     settings: RollupParamsSettings,
     operator_cnt: int,
-    bitcoind_config: BitcoindConfig = None,
+    bitcoind_config: BitcoindConfig,
 ) -> dict:
     """
     Creates a network with params data and a list of operator seed paths.
