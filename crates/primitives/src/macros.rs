@@ -41,29 +41,35 @@ pub(crate) mod internal {
             impl $name {
                 pub const LEN: usize = $len;
 
-                #[allow(clippy::missing_const_for_fn)]
-                pub fn new(data: [u8; $len]) -> Self {
+                pub const fn new(data: [u8; $len]) -> Self {
                     Self(data)
                 }
 
-                pub fn as_slice(&self) -> &[u8] {
+                pub const fn as_slice(&self) -> &[u8] {
                     &self.0
                 }
 
-                pub fn as_mut_slice(&mut self) -> &mut [u8] {
+                pub const fn as_mut_slice(&mut self) -> &mut [u8] {
                     &mut self.0
                 }
 
-                pub fn as_bytes(&self) -> &[u8] {
+                pub const fn as_bytes(&self) -> &[u8] {
                     self.0.as_slice()
                 }
 
-                pub fn zero() -> Self {
-                    Self([0; $len].into())
+                pub const fn zero() -> Self {
+                    Self::new([0; $len])
                 }
 
-                pub fn is_zero(&self) -> bool {
-                    self.0.iter().all(|v| *v == 0)
+                pub const fn is_zero(&self) -> bool {
+                    let mut i = 0;
+                    while i < $len {
+                        if self.0[i] != 0 {
+                            return false;
+                        }
+                        i += 1;
+                    }
+                    true
                 }
             }
 
