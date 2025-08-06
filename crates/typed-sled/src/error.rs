@@ -8,19 +8,19 @@ use crate::CodecError;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Codec error
-    #[error("Codec Error: {0}")]
+    #[error("codec: {0}")]
     CodecError(#[from] CodecError),
 
     /// Sled database error
-    #[error("Database error: {0}")]
+    #[error("sled: {0}")]
     SledError(#[from] SledError),
 
     /// Sled transaction error
-    #[error("Transaction error: {0}")]
+    #[error("sled tx: {0}")]
     TransactionError(#[from] UnabortableTransactionError),
 
     /// CAS error
-    #[error("CAS error: {0}")]
+    #[error("sled cas: {0}")]
     CASError(#[from] CompareAndSwapError),
 }
 

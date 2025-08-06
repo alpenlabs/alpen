@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from gevent import monkey
 
-# This important for locust to work with flexitest.
+# This is important for locust to work with flexitest.
 # Because of this line, ruff linter is disabled for the whole file :(
 # Currently, it's not possible to disable ruff for the block of code.
 monkey.patch_all()

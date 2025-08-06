@@ -6,32 +6,32 @@ use crate::schema::Schema;
 #[derive(Debug, Error)]
 pub enum CodecError {
     /// Key has invalid length for the expected type.
-    #[error("Invalid key length for schema '{schema}': expected {expected} bytes, got {actual}")]
+    #[error("invalid key length in '{schema}' (expected {expected} bytes, got {actual})")]
     InvalidKeyLength {
         schema: &'static str,
         expected: usize,
         actual: usize,
     },
     /// Value serialization failed.
-    #[error("Failed to serialize value for schema '{schema}'")]
+    #[error("failed to serialize schema '{schema}' value")]
     SerializationFailed {
         schema: &'static str,
         #[source]
         source: Box<dyn std::error::Error>,
     },
     /// Value deserialization failed.
-    #[error("Failed to deserialize value for schema '{schema}'")]
+    #[error("failed to deserialize schema '{schema}' value")]
     DeserializationFailed {
         schema: &'static str,
         #[source]
         source: Box<dyn std::error::Error>,
     },
     /// I/O error during codec operations.
-    #[error("I/O error")]
+    #[error("io: {0}")]
     IO(#[from] std::io::Error),
 
     /// Other
-    #[error("Other error: {0}")]
+    #[error("other: {0}")]
     Other(String),
 }
 

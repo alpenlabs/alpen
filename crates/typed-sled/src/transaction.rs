@@ -1,9 +1,125 @@
+use std::time::Duration;
+
 use sled::{
     Transactional,
-    transaction::{ConflictableTransactionResult, TransactionResult},
+    transaction::{ConflictableTransactionResult, TransactionError, TransactionResult},
 };
 
 use crate::{Schema, SledTree, tree::SledTransactionalTree};
+
+/// Backoff policy trait for retry logic.
+pub trait Backoff {
+    /// Base delay in ms.
+    fn base_delay_ms(&self) -> u64;
+
+    /// Generates next delay given current delay.
+    fn next_delay_ms(&self, curr_delay_ms: u64) -> u64;
+}
+
+/// Exponential backoff strategy.
+#[derive(Debug, Clone)]
+pub struct ExponentialBackoff {
+    pub base_delay_ms: u64,
+    pub multiplier: f64,
+    pub max_delay_ms: u64,
+}
+
+impl ExponentialBackoff {
+    pub fn new(base_delay_ms: u64, multiplier: f64, max_delay_ms: u64) -> Self {
+        Self {
+            base_delay_ms,
+            multiplier,
+            max_delay_ms,
+        }
+    }
+}
+
+impl Default for ExponentialBackoff {
+    fn default() -> Self {
+        Self {
+            base_delay_ms: 10,
+            multiplier: 2.0,
+            max_delay_ms: 5000,
+        }
+    }
+}
+
+impl Backoff for ExponentialBackoff {
+    fn base_delay_ms(&self) -> u64 {
+        self.base_delay_ms
+    }
+
+    fn next_delay_ms(&self, curr_delay_ms: u64) -> u64 {
+        let next = (curr_delay_ms as f64 * self.multiplier) as u64;
+        std::cmp::min(next, self.max_delay_ms)
+    }
+}
+
+/// Linear backoff strategy.
+#[derive(Debug, Clone)]
+pub struct LinearBackoff {
+    pub base_delay_ms: u64,
+    pub increment_ms: u64,
+    pub max_delay_ms: u64,
+}
+
+impl LinearBackoff {
+    pub fn new(base_delay_ms: u64, increment_ms: u64, max_delay_ms: u64) -> Self {
+        Self {
+            base_delay_ms,
+            increment_ms,
+            max_delay_ms,
+        }
+    }
+}
+
+impl Default for LinearBackoff {
+    fn default() -> Self {
+        Self {
+            base_delay_ms: 10,
+            increment_ms: 10,
+            max_delay_ms: 1000,
+        }
+    }
+}
+
+impl Backoff for LinearBackoff {
+    fn base_delay_ms(&self) -> u64 {
+        self.base_delay_ms
+    }
+
+    fn next_delay_ms(&self, curr_delay_ms: u64) -> u64 {
+        std::cmp::min(curr_delay_ms + self.increment_ms, self.max_delay_ms)
+    }
+}
+
+/// Constant backoff strategy.
+#[derive(Debug, Clone)]
+pub struct ConstantBackoff {
+    pub delay_ms: u64,
+}
+
+impl ConstantBackoff {
+    pub fn new(delay_ms: u64) -> Self {
+        Self { delay_ms }
+    }
+}
+
+impl Default for ConstantBackoff {
+    fn default() -> Self {
+        Self { delay_ms: 100 }
+    }
+}
+
+impl Backoff for ConstantBackoff {
+    fn base_delay_ms(&self) -> u64 {
+        self.delay_ms
+    }
+
+    fn next_delay_ms(&self, _curr_delay_ms: u64) -> u64 {
+        self.delay_ms
+    }
+}
 
 /// Trait for performing transactions on typed sled trees.
 pub trait SledTransactional {
@@ -13,6 +129,42 @@ pub trait SledTransactional {
     fn transaction<F, R, E>(&self, func: F) -> TransactionResult<R, E>
     where
         F: Fn(Self::View) -> ConflictableTransactionResult<R, E>;
+
+    /// Executes a function within a transaction context with retry and backoff.
+    /// Only retries on storage conflicts, not on user aborts.
+    fn transaction_with_retry<F, R, E, B>(
+        &self,
+        backoff: B,
+        max_retries: usize,
+        func: F,
+    ) -> TransactionResult<R, E>
+    where
+        F: Fn(Self::View) -> ConflictableTransactionResult<R, E>,
+        B: Backoff,
+    {
+        let mut attempts = 0;
+        let mut delay_ms = backoff.base_delay_ms();
+
+        loop {
+            match self.transaction(&func) {
+                Ok(result) => return Ok(result),
+                Err(TransactionError::Abort(err)) => {
+                    // User explicitly aborted, don't retry
+                    return Err(TransactionError::Abort(err));
+                }
+                Err(TransactionError::Storage(storage_err)) => {
+                    if attempts >= max_retries {
+                        return Err(TransactionError::Storage(storage_err));
+                    }
+
+                    // Only retry on storage conflicts (like write conflicts)
+                    std::thread::sleep(Duration::from_millis(delay_ms));
+                    delay_ms = backoff.next_delay_ms(delay_ms);
+                    attempts += 1;
+                }
+            }
+        }
+    }
 }
 
 /* Definition of implementations like this for various tuple arities
@@ -255,5 +407,112 @@ mod tests {
             });
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_retry_with_exponential_backoff() {
+        let db = create_test_db().unwrap();
+        let tree1 = db.get_tree::<TestSchema1>().unwrap();
+
+        let backoff = ExponentialBackoff::new(1, 2.0, 100);
+        let result: TransactionResult<(), crate::error::Error> =
+            (&tree1,).transaction_with_retry(backoff, 3, |(tx_tree1,)| {
+                let value = TestValue::alice();
+                tx_tree1.insert(&1, &value)?;
+                Ok(())
+            });
+
+        assert!(result.is_ok());
+        assert!(tree1.contains_key(&1).unwrap());
+    }
+
+    #[test]
+    fn test_retry_with_linear_backoff() {
+        let db = create_test_db().unwrap();
+        let tree1 = db.get_tree::<TestSchema1>().unwrap();
+
+        let backoff = LinearBackoff::new(1, 2, 50);
+        let result: TransactionResult<(), crate::error::Error> =
+            (&tree1,).transaction_with_retry(backoff, 3, |(tx_tree1,)| {
+                let value = TestValue::alice();
+                tx_tree1.insert(&1, &value)?;
+                Ok(())
+            });
+
+        assert!(result.is_ok());
+        assert!(tree1.contains_key(&1).unwrap());
+    }
+
+    #[test]
+    fn test_retry_with_constant_backoff() {
+        let db = create_test_db().unwrap();
+        let tree1 = db.get_tree::<TestSchema1>().unwrap();
+
+        let backoff = ConstantBackoff::new(5);
+        let result: TransactionResult<(), crate::error::Error> =
+            (&tree1,).transaction_with_retry(backoff, 2, |(tx_tree1,)| {
+                let value = TestValue::alice();
+                tx_tree1.insert(&1, &value)?;
+                Ok(())
+            });
+
+        assert!(result.is_ok());
+        assert!(tree1.contains_key(&1).unwrap());
+    }
+
+    #[test]
+    fn test_retry_respects_max_retries_on_abort() {
+        let db = create_test_db().unwrap();
+        let tree1 = db.get_tree::<TestSchema1>().unwrap();
+
+        let backoff = ConstantBackoff::new(1);
+        let result: TransactionResult<(), &'static str> =
+            (&tree1,).transaction_with_retry(backoff, 3, |(tx_tree1,)| {
+                let _ = tx_tree1.insert(&1, &TestValue::alice());
+                Err(sled::transaction::ConflictableTransactionError::Abort(
+                    "intentional abort",
+                ))
+            });
+
+        // Should immediately fail on abort, not retry
+        assert!(result.is_err());
+        assert!(matches!(result, Err(TransactionError::Abort(_))));
+
+        // Data should not be persisted due to abort
+        assert!(!tree1.contains_key(&1).unwrap());
+    }
+
+    #[test]
+    fn test_backoff_strategies() {
+        let exp_backoff = ExponentialBackoff::new(10, 2.0, 1000);
+        assert_eq!(exp_backoff.base_delay_ms(), 10);
+        assert_eq!(exp_backoff.next_delay_ms(10), 20);
+        assert_eq!(exp_backoff.next_delay_ms(500), 1000); // capped at max
+
+        let linear_backoff = LinearBackoff::new(5, 3, 50);
+        assert_eq!(linear_backoff.base_delay_ms(), 5);
+        assert_eq!(linear_backoff.next_delay_ms(5), 8);
+        assert_eq!(linear_backoff.next_delay_ms(48), 50); // capped at max
+
+        let const_backoff = ConstantBackoff::new(100);
+        assert_eq!(const_backoff.base_delay_ms(), 100);
+        assert_eq!(const_backoff.next_delay_ms(100), 100);
+        assert_eq!(const_backoff.next_delay_ms(999), 100);
+    }
+
+    #[test]
+    fn test_default_backoff_strategies() {
+        let exp_default = ExponentialBackoff::default();
+        assert_eq!(exp_default.base_delay_ms(), 10);
+        assert_eq!(exp_default.multiplier, 2.0);
+        assert_eq!(exp_default.max_delay_ms, 5000);
+
+        let linear_default = LinearBackoff::default();
+        assert_eq!(linear_default.base_delay_ms(), 10);
+        assert_eq!(linear_default.increment_ms, 10);
+        assert_eq!(linear_default.max_delay_ms, 1000);
+
+        let const_default = ConstantBackoff::default();
+        assert_eq!(const_default.delay_ms, 100);
     }
 }

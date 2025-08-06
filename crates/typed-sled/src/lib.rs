@@ -1,8 +1,8 @@
 //! # typed-sled
 //!
-//! A type-safe wrapper around the sled embedded database.
+//! A type-safe wrapper around the [`sled`] embedded database.
 //!
-//! This library provides a schema-based approach to working with sled,
+//! This library provides a schema-based approach to working with [`sled`],
 //! ensuring compile-time type safety for keys and values while leveraging
 //! efficient binary serialization.
 //!
