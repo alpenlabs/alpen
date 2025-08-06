@@ -33,7 +33,7 @@ tracing.workspace = true
 borsh.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
-strata-db-store-rocksdb = { workspace = true, features = ["test_utils"] }
+strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-l1tx.workspace = true
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true

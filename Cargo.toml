@@ -19,6 +19,7 @@ members = [
   "crates/crypto",
   "crates/db",
   "crates/db-store-rocksdb",
+  "crates/db-store-sled",
   "crates/db-tests",
   "crates/eectl",
   "crates/evmexec",
@@ -121,6 +122,7 @@ strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-crypto = { path = "crates/crypto", default-features = false }
 strata-db = { path = "crates/db" }
 strata-db-store-rocksdb = { path = "crates/db-store-rocksdb" }
+strata-db-store-sled = { path = "crates/db-store-sled" }
 strata-db-tests = { path = "crates/db-tests" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
@@ -154,6 +156,9 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 # strata-common
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
+
+# sled wrapper
+typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 
 # moho
 moho-runtime-impl = { git = "https://github.com/alpenlabs/moho" }
@@ -326,6 +331,7 @@ serde_with = "3.3.0"
 sha2 = "0.10"
 shrex = { version = "1", features = ["serde"] }
 shrex_macros = "1"
+sled = "0.34.7"
 tempfile = "3.10.1"
 terrors = "0.3.0"
 thiserror = "2.0.11"

@@ -31,6 +31,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
+    fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
 }
 
 /// Database interface to control our view of L1 data.
