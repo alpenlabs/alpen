@@ -1219,6 +1219,7 @@ dependencies = [
  "keyring",
  "make_buf",
  "rand_core 0.6.4",
+ "rayon",
  "reqwest 0.12.15",
  "serde",
  "sha2 0.10.8",

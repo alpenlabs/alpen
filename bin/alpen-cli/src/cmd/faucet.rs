@@ -1,9 +1,14 @@
-use std::{fmt, str::FromStr};
+use std::{
+    fmt,
+    str::FromStr,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+};
 
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
 use argh::FromArgs;
 use bdk_wallet::{bitcoin::Address, KeychainKind};
 use indicatif::ProgressBar;
+use rayon::prelude::*;
 use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -148,28 +153,61 @@ pub async fn faucet(
         challenge.difficulty, challenge.nonce
     );
 
-    let mut solution = 0u64;
+    // Create the base hasher that will be cloned for each attempt
     let prehash = {
         let mut hasher = Sha256::new();
         hasher.update(b"alpen faucet 2024");
         hasher.update(challenge.nonce.0);
         hasher
     };
+
     let pb = ProgressBar::new_spinner();
-    let mut counter = 0u64;
-    while !pow_valid(
-        prehash.clone(),
-        challenge.difficulty,
-        solution.to_le_bytes(),
-    ) {
-        solution += 1;
-        if counter % 100 == 0 {
-            pb.set_message(format!("Trying {solution}"));
-        }
-        counter += 1;
-    }
+    let found = AtomicBool::new(false);
+    let attempts = AtomicU64::new(0);
+
+    // Solve using parallel chunks
+    const CHUNK_SIZE: u64 = 1_000_000;
+    let solution = (0u64..)
+        .step_by(CHUNK_SIZE as usize)
+        .par_bridge()
+        .find_map_any(|chunk_start| {
+            // Check if solution already found by another thread
+            if found.load(Ordering::Relaxed) {
+                return None;
+            }
+
+            let chunk_end = chunk_start + CHUNK_SIZE;
+
+            // Try all solutions in this chunk
+            for solution in chunk_start..chunk_end {
+                // Update progress counter
+                let current_attempts = attempts.fetch_add(1, Ordering::Relaxed);
+                if current_attempts % 100_000 == 0 {
+                    pb.set_message(format!("Trying {current_attempts}"));
+                }
+
+                // Check if solution already found
+                if found.load(Ordering::Relaxed) {
+                    return None;
+                }
+
+                // Test this solution
+                if pow_valid(
+                    prehash.clone(),
+                    challenge.difficulty,
+                    solution.to_le_bytes(),
+                ) {
+                    found.store(true, Ordering::Relaxed);
+                    return Some(solution);
+                }
+            }
+            None
+        })
+        .expect("Solution search terminated without finding a valid solution");
+
     pb.finish_with_message(format!(
-        "✔ Solved challenge after {solution} attempts. Claiming now."
+        "✔ Solved challenge after {} attempts. Claiming now.",
+        attempts.load(Ordering::Relaxed)
     ));
 
     println!("Claiming to {network_type} address {address}");
