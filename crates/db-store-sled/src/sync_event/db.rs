@@ -98,4 +98,3 @@ mod tests {
 
     sync_event_db_tests!(setup_db());
 }
-
