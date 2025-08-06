@@ -8,6 +8,7 @@ strata-db.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 typed-sled.workspace = true
+zkaleido.workspace = true
 
 anyhow.workspace = true
 bincode.workspace = true
