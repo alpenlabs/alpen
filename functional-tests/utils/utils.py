@@ -351,7 +351,12 @@ def generate_opxpub_from_seed(path: str) -> str:
     return res
 
 
-def generate_params(settings: RollupParamsSettings, seqpubkey: str, opxprivs: list[str], bitcoind_config: BitcoindConfig = None) -> str:
+def generate_params(
+        settings: RollupParamsSettings, 
+        seqpubkey: str, 
+        opxprivs: list[str], 
+        bitcoind_config: BitcoindConfig = None
+    ) -> str:
     """Generates a params file from config values."""
     # fmt: off
     cmd = [

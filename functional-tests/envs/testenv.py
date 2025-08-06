@@ -185,7 +185,10 @@ class BasicEnvConfig(flexitest.EnvConfig):
         # Generate enough blocks to ensure we can fetch the genesis trigger block
         # The default genesis trigger height is 100, so we need at least that many blocks
         min_blocks_needed = settings.genesis_trigger + 10  # Add a buffer
-        print(f"Generating {min_blocks_needed} blocks for genesis trigger height {settings.genesis_trigger}")
+        print(
+            f"Generating {min_blocks_needed} blocks for genesis trigger "
+            f"height {settings.genesis_trigger}"
+        )
         brpc.proxy.generatetoaddress(min_blocks_needed, seqaddr)
 
         # Now generate params with Bitcoin RPC available
@@ -195,7 +198,9 @@ class BasicEnvConfig(flexitest.EnvConfig):
             rpc_user=bitcoind.get_prop("rpc_user"),
             rpc_password=bitcoind.get_prop("rpc_password"),
         )
-        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, bitcoind_config)
+        params_gen_data = generate_simple_params(
+            initdir, settings, self.n_operators, bitcoind_config
+        )
         params = params_gen_data["params"]
         # Instantiaze the generated rollup config so it's convenient to work with.
         rollup_cfg = RollupConfig.model_validate_json(params)

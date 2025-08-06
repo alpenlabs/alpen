@@ -5,14 +5,7 @@ use std::{
     fs,
 };
 
-use strata_primitives::{
-    block_credential::CredRule,
-    l1::L1BlockId,
-    operator::OperatorPubkeys,
-    params::{OperatorConfig, ProofPublishMode, RollupParams},
-    prelude::*,
-    proof::RollupVerifyingKey,
-};
+use strata_primitives::params::RollupParams;
 use tracing::warn;
 
 /// Rollup params we initialize with if not overridden.  Optionally set at compile time.
@@ -27,46 +20,7 @@ pub(crate) fn get_default_rollup_params() -> anyhow::Result<RollupParams> {
     if let Some(s) = DEFAULT_NETWORK_ROLLUP_PARAMS {
         Ok(serde_json::from_str(s)?)
     } else {
-        // TODO remove
-        Ok(get_deprecated_fallback())
-    }
-}
-
-/// Deprecated fallback we can load params from if not set any other way.
-fn get_deprecated_fallback() -> RollupParams {
-    warn!("using deprecated fallback rollup params, should only be for testing!");
-
-    // FIXME this is broken, where are the keys?
-    let opkeys = OperatorPubkeys::new(Buf32::zero(), Buf32::zero());
-
-    // TODO: load default params from a json during compile time
-    RollupParams {
-        rollup_name: "strata".to_string(),
-        da_tag: "strata-da".to_string(),
-        checkpoint_tag: "strata-ckpt".to_string(),
-        block_time: 1000,
-        cred_rule: CredRule::Unchecked,
-        horizon_l1_height: 3,
-        genesis_l1_height: 5,
-        genesis_l1_blkid: L1BlockId::from(Buf32::zero()), // Use placeholder for deprecated fallback
-        operator_config: OperatorConfig::Static(vec![opkeys]),
-        evm_genesis_block_hash:
-            "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"
-                .parse()
-                .unwrap(),
-        evm_genesis_block_state_root:
-            "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f"
-                .parse()
-                .unwrap(),
-        l1_reorg_safe_depth: 4,
-        target_l2_batch_size: 64,
-        address_length: 20,
-        deposit_amount: 1_000_000_000,
-        rollup_vk: RollupVerifyingKey::NativeVerifyingKey,
-        dispatch_assignment_dur: 64,
-        proof_publish_mode: ProofPublishMode::Timeout(5),
-        max_deposits_in_block: 16,
-        network: bitcoin::Network::Regtest,
+        anyhow::bail!("No default network rollup parameters available. Set STRATA_NETWORK_PARAMS environment variable.")
     }
 }
 
