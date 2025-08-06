@@ -24,9 +24,9 @@ use strata_consensus_logic::{
     sync_manager::{self, SyncManager},
 };
 use strata_db::{traits::BroadcastDatabase, DbError};
-use strata_db_store_rocksdb::{
+use strata_db_store_sled::{
     broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
-    open_rocksdb_database, DbOpsConfig, RBL1WriterDb, RocksDbBackend, ROCKSDB_NAME,
+    open_sled_database, SledOpsConfig, L1WriterDBSled, SledBackend, SLED_NAME,
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
@@ -97,12 +97,12 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     // TODO switch to num_cpus
     let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
 
-    // Open and initialize rocksdb.
-    let rbdb = open_rocksdb_database(&config.client.datadir, ROCKSDB_NAME)?;
-    let ops_config = DbOpsConfig::new(config.client.db_retry_count);
+    // Open and initialize sled.
+    let sled_db = open_sled_database(&config.client.datadir, SLED_NAME)?;
+    let ops_config = SledOpsConfig::new(config.client.db_retry_count);
 
     // Initialize core databases
-    let database = init_core_dbs(rbdb.clone(), ops_config);
+    let database = init_core_dbs(sled_db.clone(), ops_config);
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
@@ -130,7 +130,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     if config.client.is_sequencer {
         // If we're a sequencer, start the sequencer db and duties task.
-        let broadcast_database = init_broadcaster_database(rbdb.clone(), ops_config);
+        let broadcast_database = init_broadcaster_database(sled_db.clone(), ops_config);
         let broadcast_handle = start_broadcaster_tasks(
             broadcast_database,
             ctx.pool.clone(),
@@ -139,7 +139,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             params.clone(),
             config.btcio.broadcaster.poll_interval_ms,
         );
-        let writer_db = init_writer_database(rbdb.clone(), ops_config);
+        let writer_db = init_writer_database(sled_db.clone(), ops_config);
 
         // TODO: split writer tasks from this
         start_sequencer_tasks(
@@ -218,7 +218,7 @@ fn init_logging(rt: &Handle) {
 #[expect(missing_debug_implementations)]
 pub struct CoreContext {
     pub runtime: Handle,
-    pub database: Arc<RocksDbBackend>,
+    pub database: Arc<SledBackend>,
     pub storage: Arc<NodeStorage>,
     pub pool: threadpool::ThreadPool,
     pub params: Arc<Params>,
@@ -300,7 +300,7 @@ fn start_core_tasks(
     pool: threadpool::ThreadPool,
     config: &Config,
     params: Arc<Params>,
-    database: Arc<RocksDbBackend>,
+    database: Arc<SledBackend>,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<CoreContext> {
@@ -362,7 +362,7 @@ fn start_sequencer_tasks(
     ctx: CoreContext,
     config: &Config,
     executor: &TaskExecutor,
-    writer_db: Arc<RBL1WriterDb>,
+    writer_db: Arc<L1WriterDBSled>,
     checkpoint_handle: Arc<CheckpointHandle>,
     broadcast_handle: Arc<L1BroadcastHandle>,
     methods: &mut Methods,
