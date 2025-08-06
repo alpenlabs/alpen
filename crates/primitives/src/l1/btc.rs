@@ -302,6 +302,10 @@ impl BitcoinAmount {
             }
         }
     }
+
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        Self::from_sat(self.to_sat().saturating_sub(rhs.to_sat()))
+    }
 }
 
 impl Add for BitcoinAmount {
@@ -773,6 +777,12 @@ impl XOnlyPk {
     /// Checks if the [`Buf32`] is a valid [`XOnlyPublicKey`].
     fn is_valid_xonly_public_key(buf: &Buf32) -> bool {
         XOnlyPublicKey::from_slice(buf.as_bytes()).is_ok()
+    }
+}
+
+impl From<XOnlyPublicKey> for XOnlyPk {
+    fn from(value: XOnlyPublicKey) -> Self {
+        Self(Buf32(value.serialize()))
     }
 }
 
