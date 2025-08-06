@@ -1,5 +1,5 @@
 [package]
-name = "db-store-sled"
+name = "strata-db-store-sled"
 version = "0.1.0"
 edition = "2024"
 
@@ -13,6 +13,7 @@ zkaleido.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 borsh.workspace = true
+sled = "0.34.7"
 
 [dev-dependencies]
 strata-db-tests.workspace = true

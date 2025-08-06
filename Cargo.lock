@@ -3333,22 +3333,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "db-store-sled"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "borsh",
- "sled",
- "strata-db",
- "strata-db-tests",
- "strata-primitives",
- "strata-state",
- "typed-sled",
- "zkaleido",
-]
-
-[[package]]
 name = "deadpool"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13545,7 +13529,7 @@ dependencies = [
  "strata-config",
  "strata-consensus-logic",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-eectl",
  "strata-evmexec",
  "strata-primitives",
@@ -13689,6 +13673,22 @@ dependencies = [
  "strata-state",
  "tempfile",
  "tracing",
+ "zkaleido",
+]
+
+[[package]]
+name = "strata-db-store-sled"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "borsh",
+ "sled",
+ "strata-db",
+ "strata-db-tests",
+ "strata-primitives",
+ "strata-state",
+ "typed-sled",
  "zkaleido",
 ]
 
