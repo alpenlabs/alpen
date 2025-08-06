@@ -8,6 +8,7 @@ pub mod macros;
 pub mod prover;
 pub mod sync_event;
 pub mod utils;
+pub mod writer;
 
 // Re-exports
 pub use broadcaster::db::{BroadcastDb, L1BroadcastDBSled};
@@ -17,3 +18,4 @@ pub use client_state::db::ClientStateDBSled;
 pub use l1::db::L1DBSled;
 pub use prover::db::ProofDBSled;
 pub use sync_event::db::SyncEventDBSled;
+pub use writer::db::L1WriterDBSled;
