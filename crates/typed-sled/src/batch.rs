@@ -5,6 +5,7 @@ use sled::Batch;
 use crate::{KeyCodec, Schema, ValueCodec, error::Result};
 
 /// Type-safe wrapper around a sled batch for atomic operations.
+#[derive(Debug)]
 pub struct SledBatch<S: Schema> {
     pub(crate) inner: Batch,
     _phantom: PhantomData<S>,

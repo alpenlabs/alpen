@@ -3,8 +3,13 @@ name = "typed-sled"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
-borsh.workspace = true
 dashmap = "6.1.0"
 sled = "0.34.7"
 thiserror.workspace = true
+
+[dev-dependencies]
+borsh.workspace = true

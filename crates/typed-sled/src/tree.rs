@@ -138,6 +138,15 @@ pub struct SledTransactionalTree<S: Schema> {
     _phantom: PhantomData<S>,
 }
 
+impl<S: Schema> std::fmt::Debug for SledTransactionalTree<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SledTransactionalTree")
+            .field("tree_name", &S::TREE_NAME.0)
+            .field("schema", &std::any::type_name::<S>())
+            .finish()
+    }
+}
+
 impl<S: Schema> SledTransactionalTree<S> {
     /// Creates a new transactional tree wrapper.
     pub fn new(inner: TransactionalTree) -> Self {
@@ -183,6 +192,15 @@ pub struct SledTreeIter<S: Schema> {
     _phantom: PhantomData<S>,
 }
 
+impl<S: Schema> std::fmt::Debug for SledTreeIter<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SledTreeIter")
+            .field("tree_name", &S::TREE_NAME.0)
+            .field("schema", &std::any::type_name::<S>())
+            .finish()
+    }
+}
+
 impl<S: Schema> Iterator for SledTreeIter<S> {
     type Item = Result<(S::Key, S::Value)>;
 
@@ -217,7 +235,7 @@ mod tests {
     }
 
     impl TestValue {
-        pub fn new_with_name(id: u32) -> Self {
+        pub(crate) fn new_with_name(id: u32) -> Self {
             Self {
                 id,
                 name: format!("Item {id}"),

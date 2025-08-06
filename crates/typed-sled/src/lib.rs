@@ -9,7 +9,7 @@
 //! ## Features
 //!
 //! - **Type Safety**: Schema-based table definitions with associated key/value types
-//! - **Serialization**: Borsh-based efficient binary encoding
+//! - **Serialization**: Flexible codec system for efficient binary encoding
 //! - **Transactions**: Multi-table atomic operations
 //! - **Error Handling**: Comprehensive error types with proper error chaining
 //!

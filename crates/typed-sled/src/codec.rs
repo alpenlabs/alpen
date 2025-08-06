@@ -12,14 +12,14 @@ pub enum CodecError {
         expected: usize,
         actual: usize,
     },
-    /// Value serialization failed using borsh.
+    /// Value serialization failed.
     #[error("Failed to serialize value for schema '{schema}'")]
     SerializationFailed {
         schema: &'static str,
         #[source]
         source: Box<dyn std::error::Error>,
     },
-    /// Value deserialization failed using borsh.
+    /// Value deserialization failed.
     #[error("Failed to deserialize value for schema '{schema}'")]
     DeserializationFailed {
         schema: &'static str,
