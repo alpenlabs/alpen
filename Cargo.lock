@@ -3345,6 +3345,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "typed-sled",
+ "zkaleido",
 ]
 
 [[package]]
