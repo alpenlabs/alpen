@@ -26,7 +26,7 @@ fn key_bound<S: Schema>(k: Bound<&S::Key>) -> Result<Bound<Vec<u8>>> {
 }
 
 /// Type-safe wrapper around a sled tree with schema-enforced operations.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SledTree<S: Schema> {
     pub(crate) inner: Arc<Tree>,
     _phantom: PhantomData<S>,
@@ -221,75 +221,11 @@ impl<S: Schema> DoubleEndedIterator for SledTreeIter<S> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use borsh::{BorshDeserialize, BorshSerialize};
-
     use super::*;
-    use crate::{CodecError, CodecResult, Schema, TreeName};
+    use crate::test_utils::*;
 
-    #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
-    struct TestValue {
-        id: u32,
-        name: String,
-    }
-
-    impl TestValue {
-        pub(crate) fn new_with_name(id: u32) -> Self {
-            Self {
-                id,
-                name: format!("Item {id}"),
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    struct TestSchema;
-
-    impl Schema for TestSchema {
-        const TREE_NAME: TreeName = TreeName("test");
-        type Key = u32;
-        type Value = TestValue;
-    }
-
-    impl KeyCodec<TestSchema> for u32 {
-        fn encode_key(&self) -> CodecResult<Vec<u8>> {
-            Ok(self.to_be_bytes().to_vec())
-        }
-
-        fn decode_key(buf: &[u8]) -> CodecResult<Self> {
-            if buf.len() != 4 {
-                return Err(CodecError::InvalidKeyLength {
-                    schema: TestSchema::TREE_NAME.0,
-                    expected: 4,
-                    actual: buf.len(),
-                });
-            }
-            let mut bytes = [0; 4];
-            bytes.copy_from_slice(buf);
-            Ok(u32::from_be_bytes(bytes))
-        }
-    }
-
-    impl ValueCodec<TestSchema> for TestValue {
-        fn encode_value(&self) -> CodecResult<Vec<u8>> {
-            borsh::to_vec(self).map_err(|e| CodecError::SerializationFailed {
-                schema: TestSchema::TREE_NAME.0,
-                source: e.into(),
-            })
-        }
-        fn decode_value(buf: &[u8]) -> CodecResult<Self> {
-            borsh::from_slice(buf).map_err(|e| CodecError::DeserializationFailed {
-                schema: TestSchema::TREE_NAME.0,
-                source: e.into(),
-            })
-        }
-    }
-
-    fn create_test_tree() -> Result<SledTree<TestSchema>> {
-        let sled_db = sled::Config::new().temporary(true).open().unwrap();
-        let tree = Arc::new(sled_db.open_tree("test").unwrap());
-        Ok(SledTree::new(tree))
+    fn create_test_tree() -> Result<SledTree<TestSchema1>> {
+        create_temp_tree::<TestSchema1>()
     }
 
     #[test]
@@ -304,30 +240,9 @@ mod tests {
         let tree = create_test_tree().unwrap();
 
         // Insert test data
-        tree.insert(
-            &1,
-            &TestValue {
-                id: 1,
-                name: "Alice".to_string(),
-            },
-        )
-        .unwrap();
-        tree.insert(
-            &3,
-            &TestValue {
-                id: 3,
-                name: "Charlie".to_string(),
-            },
-        )
-        .unwrap();
-        tree.insert(
-            &2,
-            &TestValue {
-                id: 2,
-                name: "Bob".to_string(),
-            },
-        )
-        .unwrap();
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        tree.insert(&3, &TestValue::charlie()).unwrap();
+        tree.insert(&2, &TestValue::bob()).unwrap();
 
         let items: Result<Vec<_>> = tree.iter().collect();
         let items = items.unwrap();
@@ -337,9 +252,9 @@ mod tests {
         assert_eq!(items[0].0, 1);
         assert_eq!(items[1].0, 2);
         assert_eq!(items[2].0, 3);
-        assert_eq!(items[0].1.name, "Alice");
-        assert_eq!(items[1].1.name, "Bob");
-        assert_eq!(items[2].1.name, "Charlie");
+        assert_test_values_eq(&items[0].1, &TestValue::alice());
+        assert_test_values_eq(&items[1].1, &TestValue::bob());
+        assert_test_values_eq(&items[2].1, &TestValue::charlie());
     }
 
     #[test]
@@ -347,30 +262,9 @@ mod tests {
         let tree = create_test_tree().unwrap();
 
         // Insert test data
-        tree.insert(
-            &1,
-            &TestValue {
-                id: 1,
-                name: "Alice".to_string(),
-            },
-        )
-        .unwrap();
-        tree.insert(
-            &3,
-            &TestValue {
-                id: 3,
-                name: "Charlie".to_string(),
-            },
-        )
-        .unwrap();
-        tree.insert(
-            &2,
-            &TestValue {
-                id: 2,
-                name: "Bob".to_string(),
-            },
-        )
-        .unwrap();
+        tree.insert(&1, &TestValue::alice()).unwrap();
+        tree.insert(&3, &TestValue::charlie()).unwrap();
+        tree.insert(&2, &TestValue::bob()).unwrap();
 
         let items: Result<Vec<_>> = tree.iter().rev().collect();
         let items = items.unwrap();
@@ -381,9 +275,9 @@ mod tests {
         assert_eq!(items[0].0, 3);
         assert_eq!(items[1].0, 2);
         assert_eq!(items[2].0, 1);
-        assert_eq!(items[0].1.name, "Charlie");
-        assert_eq!(items[1].1.name, "Bob");
-        assert_eq!(items[2].1.name, "Alice");
+        assert_test_values_eq(&items[0].1, &TestValue::charlie());
+        assert_test_values_eq(&items[1].1, &TestValue::bob());
+        assert_test_values_eq(&items[2].1, &TestValue::alice());
     }
 
     #[test]

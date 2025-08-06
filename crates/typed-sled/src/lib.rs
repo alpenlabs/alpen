@@ -95,6 +95,9 @@ pub mod schema;
 pub mod transaction;
 pub mod tree;
 
+#[cfg(test)]
+mod test_utils;
+
 // Re-export main types
 pub use codec::{CodecError, CodecResult, KeyCodec, ValueCodec};
 pub use db::SledDb;
