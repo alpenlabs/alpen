@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use super::*;
 
-/// Adapter for using an [``Iterator``] as a [`SyncServiceInput``].
+/// Adapter for using an [`Iterator`] as a [`SyncServiceInput`].
 pub struct IterInput<I> {
     iter: I,
     closed: bool,
