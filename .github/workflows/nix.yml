@@ -1,0 +1,143 @@
+name: Nix
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+
+permissions: {}
+
+jobs:
+  self-care:
+    name: Flake self-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check Nix flake inputs
+        uses: DeterminateSystems/flake-checker-action@3164002371bc90729c68af0e24d5aacf20d7c9f6 # v12
+        with:
+          fail-mode: true
+          ignore-missing-flake-lock: false
+
+  build-packages:
+    name: "${{ matrix.os-name }} - Build ${{ matrix.package }}"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        package:
+          # TODO: add more packages
+          - alpen-cli
+        include:
+          - os: ubuntu-latest
+            os-name: "Linux"
+          - os: macos-latest
+            os-name: "Apple Silicon"
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4
+        with:
+          persist-credentials: false
+
+      - name: Cleanup space
+        uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@379b47b8e270e906339a489d56466ccfd2f69d8c # v3.8.5
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
+        with:
+          # restore and save a cache using this key
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          # if there's no cache hit, restore a cache by this prefix
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          # collect garbage until the Nix store size (in bytes) is at most this number
+          # before trying to save a new cache
+          # 1G = 1073741824
+          gc-max-store-size-linux: 1G
+          # do purge caches
+          purge: true
+          # purge all versions of the cache
+          purge-prefixes: nix-${{ runner.os }}-
+          # created more than this number of seconds ago
+          purge-created: 0
+          # or, last accessed more than this number of seconds ago
+          # relative to the start of the `Post Restore and save Nix store` phase
+          purge-last-accessed: 0
+          # except any version with the key that is the same as the `primary-key`
+          purge-primary-key: never
+
+      - name: "Build ${{ matrix.package }}"
+        run: nix build -L --show-trace .#${{ matrix.package }}
+
+  devshell:
+    name: "${{ matrix.os-name }} - Test devshells"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os-name: "Linux"
+          - os: macos-latest
+            os-name: "Apple Silicon"
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4
+        with:
+          persist-credentials: false
+
+      - name: Cleanup space
+        uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@379b47b8e270e906339a489d56466ccfd2f69d8c # v3.8.5
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
+        with:
+          # restore and save a cache using this key
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          # if there's no cache hit, restore a cache by this prefix
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          # collect garbage until the Nix store size (in bytes) is at most this number
+          # before trying to save a new cache
+          # 1G = 1073741824
+          gc-max-store-size-linux: 1G
+          # do purge caches
+          purge: true
+          # purge all versions of the cache
+          purge-prefixes: nix-${{ runner.os }}-
+          # created more than this number of seconds ago
+          purge-created: 0
+          # or, last accessed more than this number of seconds ago
+          # relative to the start of the `Post Restore and save Nix store` phase
+          purge-last-accessed: 0
+          # except any version with the key that is the same as the `primary-key`
+          purge-primary-key: never
+
+      - name: "Test devshell"
+        run: nix develop --command bash -c 'just build'
