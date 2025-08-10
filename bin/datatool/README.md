@@ -18,7 +18,7 @@ strata-datatool genopxpub -f operator1.bin
 strata-datatool genopxpub -f operator2.bin
 
 # Take the generated pubkeys and generate the params file with it.
-# Note: L1 block hash and genesis trigger height are required parameters
+# Note: Genesis L1 block hash and height are required parameters
 strata-datatool genparams \
     -n 'hello-world-network' \
     -s XGUgTAJNpexzrjgnbMvGtDBCZEwxd6KQE4PNDWE6YLZYBTGoS \

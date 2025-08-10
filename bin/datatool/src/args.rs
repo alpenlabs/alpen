@@ -172,7 +172,11 @@ pub(crate) struct SubcParams {
     #[argh(option, description = "horizon height (default 90)", short = 'h')]
     pub(crate) horizon_height: Option<u64>,
 
-    #[argh(option, description = "genesis L1 block height (required)", short = 'H')]
+    #[argh(
+        option,
+        description = "genesis L1 block height (required)",
+        short = 'H'
+    )]
     pub(crate) genesis_l1_height: u64,
 
     #[argh(option, description = "genesis L1 block hash (required)", short = 'G')]
