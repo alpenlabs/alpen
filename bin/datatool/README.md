@@ -18,29 +18,16 @@ strata-datatool genopxpub -f operator1.bin
 strata-datatool genopxpub -f operator2.bin
 
 # Take the generated pubkeys and generate the params file with it.
-# Note: Bitcoin RPC connection is required to fetch the L1 block hash
+# Note: L1 block hash and genesis trigger height are required parameters
 strata-datatool genparams \
     -n 'hello-world-network' \
     -s XGUgTAJNpexzrjgnbMvGtDBCZEwxd6KQE4PNDWE6YLZYBTGoS \
     -b tpubDASVk1m5cxpmUbwVEZEQb8maDVx9kDxBhSLCqsKHJJmZ8htSegpHx7G3RFudZCdDLtNKTosQiBLbbFsVA45MemurWenzn16Y1ft7NkQekcD \
     -b tpubDBX9KQsqK2LMCszkDHvANftHzhJdhipe9bi9MNUD3S2bsY1ikWEZxE53VBgYN8WoNXk9g9eRzhx6UfJcQr3XqkA27aSxXvKu5TYFZJEAjCd \
-    --bitcoin-rpc-url http://localhost:18443 \
-    --bitcoin-rpc-user bitcoinrpc \
-    --bitcoin-rpc-password yourpassword \
-    --genesis-trigger-height 100 \
+    --genesis-l1-hash 00000000000000000000000000000000000000000000000000000000000000ff \
+    --genesis-l1-height 100 \
     -o params.json
 ```
-
-## Bitcoin RPC Configuration
-
-The `genparams` command requires access to a running Bitcoin node to fetch the L1 block hash at the specified genesis trigger height. This ensures that the generated `RollupParams` contains the correct `genesis_l1_blkid` field.
-
-### Required Parameters
-
-- `--bitcoin-rpc-url`: The URL of your Bitcoin RPC server 
-- `--bitcoin-rpc-user`: Username for Bitcoin RPC authentication 
-- `--bitcoin-rpc-password`: Password for Bitcoin RPC authentication 
-- `--genesis-trigger-height`: The L1 block height from which to fetch the block hash (default: `100`)
 
 ## Envvars
 

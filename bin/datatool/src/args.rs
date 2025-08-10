@@ -172,12 +172,11 @@ pub(crate) struct SubcParams {
     #[argh(option, description = "horizon height (default 90)", short = 'h')]
     pub(crate) horizon_height: Option<u64>,
 
-    #[argh(
-        option,
-        description = "genesis trigger height (default 100)",
-        short = 'g'
-    )]
-    pub(crate) genesis_trigger_height: Option<u64>,
+    #[argh(option, description = "genesis L1 block height (required)", short = 'H')]
+    pub(crate) genesis_l1_height: u64,
+
+    #[argh(option, description = "genesis L1 block hash (required)", short = 'G')]
+    pub(crate) genesis_l1_hash: String,
 
     #[argh(
         option,
@@ -200,15 +199,6 @@ pub(crate) struct SubcParams {
 
     #[argh(option, description = "path to evm chain config json")]
     pub(crate) chain_config: Option<PathBuf>,
-
-    #[argh(option, description = "bitcoin RPC URL (required)")]
-    pub(crate) bitcoin_rpc_url: String,
-
-    #[argh(option, description = "bitcoin RPC username (required)")]
-    pub(crate) bitcoin_rpc_user: String,
-
-    #[argh(option, description = "bitcoin RPC password (required)")]
-    pub(crate) bitcoin_rpc_password: String,
 }
 
 pub(crate) struct CmdContext {
