@@ -1,17 +1,27 @@
-use strata_asm_common::{AsmSpec, GenesisProvider, Stage};
-use strata_asm_proto_bridge_v1::{BridgeV1GenesisConfig, BridgeV1Subproto};
-use strata_asm_proto_core::{CoreGenesisConfig, OLCoreSubproto};
+//! # Strata ASM Specification
+//!
+//! This crate provides the Anchor State Machine (ASM) specification for the Strata protocol.
+//! The ASM specification defines which subprotocols are enabled, their genesis configurations,
+//! and protocol-level parameters like magic bytes.
 
-/// Runtime configuration for the Strata ASM specification.
+use strata_asm_common::{AsmSpec, GenesisProvider, Stage};
+use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
+use strata_asm_proto_core::{CoreGenesisConfig, OLCoreSubproto};
+use strata_l1_txfmt::MagicBytes;
+
+/// ASM specification for the Strata protocol.
+///
+/// Implements the [`AsmSpec`] trait to define subprotocol processing order,
+/// magic bytes for L1 transaction filtering, and genesis configurations.
 #[derive(Debug)]
 pub struct StrataAsmSpec {
-    magic_bytes: strata_l1_txfmt::MagicBytes,
+    magic_bytes: MagicBytes,
     core_genesis: CoreGenesisConfig,
-    bridge_v1_genesis: BridgeV1GenesisConfig,
+    bridge_v1_genesis: BridgeV1Config,
 }
 
 impl AsmSpec for StrataAsmSpec {
-    fn magic_bytes(&self) -> strata_l1_txfmt::MagicBytes {
+    fn magic_bytes(&self) -> MagicBytes {
         self.magic_bytes
     }
 
@@ -28,7 +38,6 @@ impl AsmSpec for StrataAsmSpec {
     }
 }
 
-// Implement GenesisProvider for each subprotocol
 impl GenesisProvider<OLCoreSubproto> for StrataAsmSpec {
     fn genesis_config(&self) -> &CoreGenesisConfig {
         &self.core_genesis
@@ -36,17 +45,17 @@ impl GenesisProvider<OLCoreSubproto> for StrataAsmSpec {
 }
 
 impl GenesisProvider<BridgeV1Subproto> for StrataAsmSpec {
-    fn genesis_config(&self) -> &BridgeV1GenesisConfig {
+    fn genesis_config(&self) -> &BridgeV1Config {
         &self.bridge_v1_genesis
     }
 }
 
 impl StrataAsmSpec {
-    /// Create a new StrataAsmSpec with specified configurations
+    /// Creates a new ASM specification.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
         core_genesis: CoreGenesisConfig,
-        bridge_v1_genesis: BridgeV1GenesisConfig,
+        bridge_v1_genesis: BridgeV1Config,
     ) -> Self {
         Self {
             magic_bytes,

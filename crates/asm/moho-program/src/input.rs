@@ -24,14 +24,8 @@ pub struct AsmStepInput {
 }
 
 impl AsmStepInput {
-    pub fn new(
-        block: L1Block,
-        aux_bundle: BTreeMap<u8, Vec<AuxPayload>>,
-    ) -> Self {
-        AsmStepInput {
-            block,
-            aux_bundle,
-        }
+    pub fn new(block: L1Block, aux_bundle: BTreeMap<u8, Vec<AuxPayload>>) -> Self {
+        AsmStepInput { block, aux_bundle }
     }
 
     pub fn compute_ref(&self) -> StateReference {

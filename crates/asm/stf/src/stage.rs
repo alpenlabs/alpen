@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AsmSpec, AuxPayload, GenesisProvider, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmSpec, AuxPayload, GenesisProvider, Stage, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
@@ -51,7 +52,8 @@ impl<Spec: AsmSpec> Stage<Spec> for SubprotoLoaderStage<'_, '_, Spec> {
             None => {
                 // Get the type-safe genesis config from the AsmSpec
                 let genesis_config = spec.genesis_config_for::<S>();
-                S::init((*genesis_config).clone()).expect("asm: failed to initialize subprotocol state")
+                S::init((*genesis_config).clone())
+                    .expect("asm: failed to initialize subprotocol state")
             }
         };
 
