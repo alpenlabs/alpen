@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_state::sync_event::SyncEvent;
 
-use crate::{define_table_with_seek_key_codec, define_table_without_codec, impl_borsh_value_codec};
+use crate::{define_table_with_integer_key, define_table_without_codec, impl_borsh_value_codec};
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct SyncEventWithTimestamp {
@@ -29,7 +29,7 @@ impl SyncEventWithTimestamp {
     }
 }
 
-define_table_with_seek_key_codec!(
+define_table_with_integer_key!(
     /// A table to store Sync Events. Maps event index to event
     (SyncEventSchema) u64 => SyncEventWithTimestamp
 );
