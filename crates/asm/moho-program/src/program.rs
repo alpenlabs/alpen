@@ -1,12 +1,12 @@
-use moho_runtime_interface::MohoProgram;
-use moho_types::{ExportState, InnerStateCommitment, InnerVerificationKey, StateReference};
+use moho_types::{ExportState, InnerStateCommitment, StateReference};
 use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, asm_stf, group_txs_by_subprotocol};
 use strata_primitives::hash::compute_borsh_hash;
+use zkaleido::VerifyingKey;
 
-use crate::input::AsmStepInput;
+use crate::{input::AsmStepInput, traits::MohoProgram};
 
 #[derive(Debug)]
 pub struct AsmStfProgram;
@@ -15,6 +15,8 @@ impl MohoProgram for AsmStfProgram {
     type State = AnchorState;
 
     type StepInput = AsmStepInput;
+
+    type Spec = StrataAsmSpec;
 
     type StepOutput = AsmStfOutput;
 
@@ -30,13 +32,15 @@ impl MohoProgram for AsmStfProgram {
         InnerStateCommitment::new(compute_borsh_hash(state).into())
     }
 
-    fn process_transition(pre_state: &AnchorState, input: &AsmStepInput) -> AsmStfOutput {
+    fn process_transition(
+        pre_state: &AnchorState,
+        spec: &StrataAsmSpec,
+        input: &AsmStepInput,
+    ) -> AsmStfOutput {
         // 1. Validate the input
         assert!(input.validate_block());
 
-        let spec = StrataAsmSpec::strata_default();
-        let protocol_txs =
-            group_txs_by_subprotocol(spec.magic_bytes(), &input.block.0.txdata);
+        let protocol_txs = group_txs_by_subprotocol(spec.magic_bytes(), &input.block.0.txdata);
 
         let stf_input = AsmStfInput {
             protocol_txs,
@@ -44,14 +48,14 @@ impl MohoProgram for AsmStfProgram {
             aux_input: &input.aux_bundle,
         };
 
-        asm_stf(&spec, pre_state, stf_input).unwrap()
+        asm_stf(spec, pre_state, stf_input).unwrap()
     }
 
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State {
         &output.state
     }
 
-    fn extract_next_vk(output: &Self::StepOutput) -> Option<InnerVerificationKey> {
+    fn extract_next_vk(output: &Self::StepOutput) -> Option<VerifyingKey> {
         // Iterate through each AsmLog; if we find an AsmStfUpdate, grab its vk and return it.
         output.logs.iter().find_map(|log| {
             log.try_into_log::<AsmStfUpdate>()

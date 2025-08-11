@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use moho_types::InnerVerificationKey;
 use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
+use zkaleido::VerifyingKey;
 
 use crate::constants::ASM_STF_UPDATE_LOG_TYPE;
 
@@ -9,12 +9,12 @@ use crate::constants::ASM_STF_UPDATE_LOG_TYPE;
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AsmStfUpdate {
     /// New execution environment state transition function verification key.
-    pub new_vk: InnerVerificationKey,
+    pub new_vk: VerifyingKey,
 }
 
 impl AsmStfUpdate {
     /// Create a new AsmStfUpdate instance.
-    pub fn new(new_vk: InnerVerificationKey) -> Self {
+    pub fn new(new_vk: VerifyingKey) -> Self {
         Self { new_vk }
     }
 }
