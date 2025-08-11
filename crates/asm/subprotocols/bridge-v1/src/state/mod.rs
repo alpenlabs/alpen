@@ -7,3 +7,4 @@ pub(crate) mod withdrawal;
 
 pub use bridge::BridgeV1State;
 pub use config::BridgeV1Config;
+pub use withdrawal::WithdrawOutput;

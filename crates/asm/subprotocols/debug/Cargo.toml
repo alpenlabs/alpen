@@ -1,0 +1,25 @@
+[package]
+name = "strata-asm-proto-debug"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+
+[dependencies]
+borsh = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+strata-asm-common = { workspace = true }
+strata-asm-logs = { workspace = true }
+strata-l1-txfmt = { workspace = true }
+strata-msg-fmt = { workspace = true }
+strata-primitives = { workspace = true }
+
+# Bridge subprotocol for inter-protocol messaging
+strata-asm-proto-bridge-v1 = { workspace = true }
+
+[dev-dependencies]
+strata-test-utils = { workspace = true }
