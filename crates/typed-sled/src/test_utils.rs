@@ -3,8 +3,6 @@
 //! This module provides common test infrastructure that can be reused across
 //! all test modules, eliminating code duplication and ensuring consistency.
 
-use std::sync::Arc;
-
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{CodecError, CodecResult, KeyCodec, Schema, SledDb, TreeName, ValueCodec};
@@ -132,8 +130,8 @@ where
 }
 
 /// Creates a temporary sled database for testing
-pub(crate) fn create_temp_sled_db() -> Arc<sled::Db> {
-    Arc::new(sled::Config::new().temporary(true).open().unwrap())
+pub(crate) fn create_temp_sled_db() -> sled::Db {
+    sled::Config::new().temporary(true).open().unwrap()
 }
 
 /// Creates a typed sled database wrapper for testing
@@ -145,7 +143,7 @@ pub(crate) fn create_test_db() -> crate::error::Result<SledDb> {
 /// Creates a temporary tree for direct tree testing (bypassing SledDb wrapper)
 pub(crate) fn create_temp_tree<S: Schema>() -> crate::error::Result<crate::SledTree<S>> {
     let sled_db = create_temp_sled_db();
-    let tree = Arc::new(sled_db.open_tree(S::TREE_NAME.into_inner())?);
+    let tree = sled_db.open_tree(S::TREE_NAME.into_inner())?;
     Ok(crate::SledTree::new(tree))
 }
 

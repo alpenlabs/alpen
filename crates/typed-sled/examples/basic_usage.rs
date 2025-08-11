@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use dashmap as _;
 use thiserror as _;
@@ -59,7 +57,7 @@ impl Schema for UserSchema {
 
 fn main() -> Result<()> {
     // Open the database
-    let sled_db = Arc::new(sled::open("example_db").unwrap());
+    let sled_db = sled::open("example_db").unwrap();
     let db = SledDb::new(sled_db)?;
 
     // Get typed trees for each schema

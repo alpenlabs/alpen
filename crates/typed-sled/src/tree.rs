@@ -1,7 +1,6 @@
 use std::{
     marker::PhantomData,
     ops::{Bound, RangeBounds},
-    sync::Arc,
 };
 
 use sled::{IVec, Iter, Tree, transaction::TransactionalTree};
@@ -28,13 +27,13 @@ fn key_bound<S: Schema>(k: Bound<&S::Key>) -> Result<Bound<Vec<u8>>> {
 /// Type-safe wrapper around a sled tree with schema-enforced operations.
 #[derive(Debug, Clone)]
 pub struct SledTree<S: Schema> {
-    pub(crate) inner: Arc<Tree>,
+    pub(crate) inner: Tree,
     _phantom: PhantomData<S>,
 }
 
 impl<S: Schema> SledTree<S> {
     /// Creates a new typed tree wrapper.
-    pub fn new(inner: Arc<Tree>) -> Self {
+    pub fn new(inner: Tree) -> Self {
         Self {
             inner,
             _phantom: PhantomData,

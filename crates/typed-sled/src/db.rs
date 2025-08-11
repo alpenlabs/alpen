@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use dashmap::DashMap;
 use sled::{Db, Tree};
 
@@ -13,14 +11,14 @@ use crate::{
 #[derive(Debug)]
 pub struct SledDb {
     /// Mapping of treenames to sled tree.
-    inner_trees: DashMap<TreeName, Arc<Tree>>,
+    inner_trees: DashMap<TreeName, Tree>,
     /// The actual sled db.
-    inner_db: Arc<Db>,
+    inner_db: Db,
 }
 
 impl SledDb {
     /// Creates a new typed sled database wrapper.
-    pub fn new(inner_db: Arc<Db>) -> Result<Self> {
+    pub fn new(inner_db: Db) -> Result<Self> {
         Ok(Self {
             inner_db,
             inner_trees: DashMap::new(),
@@ -35,7 +33,7 @@ impl SledDb {
 
         // Create the tree
         let tree_name = S::TREE_NAME.into_inner();
-        let tree = Arc::new(self.inner_db.open_tree(tree_name)?);
+        let tree = self.inner_db.open_tree(tree_name)?;
 
         let entry = self.inner_trees.entry(S::TREE_NAME);
         let final_tree = entry.or_insert(tree);
@@ -80,14 +78,11 @@ mod tests {
         let db = create_test_db().unwrap();
 
         // Get tree twice
-        let tree1 = db.get_tree::<TestSchema1>().unwrap();
-        let tree2 = db.get_tree::<TestSchema1>().unwrap();
+        let _tree1 = db.get_tree::<TestSchema1>().unwrap();
+        let _tree2 = db.get_tree::<TestSchema1>().unwrap();
 
         // Should only have one cached entry
         assert_eq!(db.inner_trees.len(), 1);
-
-        // Both trees should reference the same underlying Arc<Tree>
-        assert_eq!(Arc::as_ptr(&tree1.inner), Arc::as_ptr(&tree2.inner));
     }
 
     #[test]
@@ -95,9 +90,9 @@ mod tests {
         let db = create_test_db().unwrap();
 
         // Get trees for different schemas
-        let tree1 = db.get_tree::<TestSchema1>().unwrap();
-        let tree2 = db.get_tree::<TestSchema2>().unwrap();
-        let tree3 = db.get_tree::<TestSchema3>().unwrap();
+        db.get_tree::<TestSchema1>().unwrap();
+        db.get_tree::<TestSchema2>().unwrap();
+        db.get_tree::<TestSchema3>().unwrap();
 
         // Should have three cached entries
         assert_eq!(db.inner_trees.len(), 3);
@@ -106,10 +101,6 @@ mod tests {
         assert!(db.inner_trees.contains_key(&TestSchema1::TREE_NAME));
         assert!(db.inner_trees.contains_key(&TestSchema2::TREE_NAME));
         assert!(db.inner_trees.contains_key(&TestSchema3::TREE_NAME));
-
-        // Trees should have different underlying Arc<Tree> instances
-        assert_ne!(Arc::as_ptr(&tree1.inner), Arc::as_ptr(&tree2.inner));
-        assert_ne!(Arc::as_ptr(&tree2.inner), Arc::as_ptr(&tree3.inner));
     }
 
     #[test]
@@ -155,12 +146,6 @@ mod tests {
 
         // Verify only one tree was cached (all threads got the same tree)
         assert_eq!(db.inner_trees.len(), 1);
-
-        // All trees should reference the same underlying Arc<Tree>
-        let first_tree_ptr = Arc::as_ptr(&trees[0].inner);
-        for tree in &trees[1..] {
-            assert_eq!(Arc::as_ptr(&tree.inner), first_tree_ptr);
-        }
 
         // Verify all data from different threads is accessible
         for i in 0..10 {

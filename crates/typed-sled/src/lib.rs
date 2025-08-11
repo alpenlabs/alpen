@@ -16,8 +16,6 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use std::sync::Arc;
-//!
 //! use borsh::{BorshDeserialize, BorshSerialize};
 //! use typed_sled::{CodecError, KeyCodec, Schema, SledDb, TreeName, ValueCodec, error::Result};
 //!
@@ -70,7 +68,7 @@
 //! }
 //!
 //! fn main() -> Result<()> {
-//!     let sled_db = Arc::new(sled::open("mydb").unwrap());
+//!     let sled_db = sled::open("mydb").unwrap();
 //!     let db = SledDb::new(sled_db)?;
 //!     let tree = db.get_tree::<UserSchema>()?;
 //!

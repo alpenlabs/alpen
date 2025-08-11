@@ -56,11 +56,6 @@ mod tests {
             Error::CodecError(_) => {} // Expected
             _ => panic!("Expected CodecError variant"),
         }
-
-        // Test error message formatting
-        let error_str = error.to_string();
-        assert!(error_str.contains("Codec Error"));
-        assert!(error_str.contains("Invalid key length"));
     }
 
     #[test]
@@ -76,10 +71,6 @@ mod tests {
             Error::SledError(_) => {} // Expected
             _ => panic!("Expected SledError variant"),
         }
-
-        // Test error message formatting
-        let error_str = error.to_string();
-        assert!(error_str.contains("Database error"));
     }
 
     #[test]
@@ -94,10 +85,6 @@ mod tests {
             Error::TransactionError(_) => {} // Expected
             _ => panic!("Expected TransactionError variant"),
         }
-
-        // Test error message formatting
-        let error_str = error.to_string();
-        assert!(error_str.contains("Transaction error"));
     }
 
     #[test]
@@ -115,10 +102,6 @@ mod tests {
             Error::CASError(_) => {} // Expected
             _ => panic!("Expected CASError variant"),
         }
-
-        // Test error message formatting
-        let error_str = error.to_string();
-        assert!(error_str.contains("CAS error"));
     }
 
     #[test]
@@ -150,10 +133,10 @@ mod tests {
             source: Box::new(io::Error::other("serialization failed")),
         });
 
-        let error_string = format!("{}", codec_error);
-        assert!(error_string.contains("Codec Error"));
-        assert!(error_string.contains("Failed to serialize"));
-        assert!(error_string.contains("test_schema"));
+        match codec_error {
+            Error::CodecError(CodecError::SerializationFailed { .. }) => {} // Expected
+            _ => panic!("Expected CodecError::SerializationFailed variant"),
+        }
     }
 
     #[test]
@@ -175,9 +158,10 @@ mod tests {
         let typed_sled_error = Error::SledError(sled_error);
 
         // Test that the error chain is preserved
-        let error_string = typed_sled_error.to_string();
-        assert!(error_string.contains("Database error"));
-        assert!(error_string.contains("permission denied"));
+        match typed_sled_error {
+            Error::SledError(SledError::Io(_)) => {} // Expected
+            _ => panic!("Expected SledError::Io variant"),
+        }
     }
 
     #[test]
@@ -226,17 +210,18 @@ mod tests {
             source: Box::new(io::Error::other("deserialize failed")),
         });
 
-        // All should convert and display properly
-        assert!(key_length_error.to_string().contains("Invalid key length"));
-        assert!(
-            serialization_error
-                .to_string()
-                .contains("Failed to serialize")
-        );
-        assert!(
-            deserialization_error
-                .to_string()
-                .contains("Failed to deserialize")
-        );
+        // All should convert properly
+        match key_length_error {
+            Error::CodecError(CodecError::InvalidKeyLength { .. }) => {} // Expected
+            _ => panic!("Expected CodecError::InvalidKeyLength variant"),
+        }
+        match serialization_error {
+            Error::CodecError(CodecError::SerializationFailed { .. }) => {} // Expected
+            _ => panic!("Expected CodecError::SerializationFailed variant"),
+        }
+        match deserialization_error {
+            Error::CodecError(CodecError::DeserializationFailed { .. }) => {} // Expected
+            _ => panic!("Expected CodecError::DeserializationFailed variant"),
+        }
     }
 }

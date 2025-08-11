@@ -197,7 +197,7 @@ macro_rules! impl_sled_transactional {
             where
                 F: Fn(Self::View) -> ConflictableTransactionResult<R, E>,
             {
-                ($(&*self.$idx.inner),+,).transaction(|($($var),+,)| {
+                ($(&self.$idx.inner),+,).transaction(|($($var),+,)| {
                     func(($(SledTransactionalTree::<$schema>::new($var.clone())),+,))
                 })
             }
@@ -211,7 +211,7 @@ macro_rules! impl_sled_transactional {
             where
                 F: Fn(Self::View) -> ConflictableTransactionResult<R, E>,
             {
-                ($(&*self.$idx.inner),+,).transaction(|($($var),+,)| {
+                ($(&self.$idx.inner),+,).transaction(|($($var),+,)| {
                     func(($(SledTransactionalTree::<$schema>::new($var.clone())),+,))
                 })
             }
