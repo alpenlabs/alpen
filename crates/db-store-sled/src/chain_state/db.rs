@@ -141,7 +141,7 @@ mod tests {
 
     fn setup_db() -> ChainstateDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(Arc::new(db)).unwrap();
+        let sled_db = SledDb::new(db).unwrap();
         ChainstateDBSled::new(sled_db.into()).unwrap()
     }
 

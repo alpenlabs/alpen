@@ -92,7 +92,7 @@ mod tests {
 
     fn setup_db() -> SyncEventDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(Arc::new(db)).unwrap();
+        let sled_db = SledDb::new(db).unwrap();
         SyncEventDBSled::new(sled_db.into()).unwrap()
     }
 
