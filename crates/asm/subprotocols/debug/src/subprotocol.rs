@@ -5,12 +5,11 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLog, AsmLogEntry, InterprotoMsg, MsgRelayer, Subprotocol,
+    logging, AnchorState, AsmError, AsmLog, AsmLogEntry, InterprotoMsg, MsgRelayer, Subprotocol,
     SubprotocolId, TxInputRef,
 };
 use strata_asm_proto_bridge_v1::{BridgeIncomingMsg, WithdrawOutput};
 use strata_msg_fmt::TypeId;
-use tracing::{debug, info, warn};
 
 use crate::{
     constants::DEBUG_SUBPROTOCOL_ID,
@@ -38,7 +37,7 @@ impl Subprotocol for DebugSubproto {
     type AuxInput = DebugAuxInput;
 
     fn init(_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
-        info!("Initializing debug subprotocol state");
+        logging::info!("Initializing debug subprotocol state");
         Ok(())
     }
 
@@ -50,7 +49,7 @@ impl Subprotocol for DebugSubproto {
         relayer: &mut impl MsgRelayer,
     ) {
         for tx_ref in txs {
-            debug!(
+            logging::debug!(
                 tx_type = tx_ref.tag().tx_type(),
                 "Processing debug transaction"
             );
@@ -58,11 +57,11 @@ impl Subprotocol for DebugSubproto {
             match parse_debug_tx(tx_ref) {
                 Ok(parsed_tx) => {
                     if let Err(e) = process_parsed_debug_tx(parsed_tx, relayer) {
-                        warn!("Failed to process debug transaction: {}", e);
+                        logging::warn!("Failed to process debug transaction: {}", e);
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to parse debug transaction: {}", e);
+                    logging::warn!("Failed to parse debug transaction: {}", e);
                 }
             }
         }
@@ -72,7 +71,7 @@ impl Subprotocol for DebugSubproto {
         for msg in msgs {
             match msg {
                 DebugIncomingMsg::TestMessage(content) => {
-                    info!("Received test message: {}", content);
+                    logging::info!("Received test message: {}", content);
                     // Just log the message for now
                 }
             }
@@ -130,7 +129,7 @@ fn process_parsed_debug_tx(
 ) -> Result<(), AsmError> {
     match parsed_tx {
         ParsedDebugTx::OlMsg(info) => {
-            info!(
+            logging::info!(
                 type_id = info.type_id,
                 payload_len = info.payload.len(),
                 "Processing OL message injection"
@@ -145,11 +144,11 @@ fn process_parsed_debug_tx(
             let log_entry = AsmLogEntry::from_log(&log)?;
             relayer.emit_log(log_entry);
 
-            info!("Successfully emitted OL message log");
+            logging::info!("Successfully emitted OL message log");
         }
 
         ParsedDebugTx::FakeWithdraw(info) => {
-            info!(amount = info.amt.to_sat(), "Processing fake withdrawal");
+            logging::info!(amount = info.amt.to_sat(), "Processing fake withdrawal");
 
             // Create withdrawal output using the bridge's type
             let withdrawal_output = WithdrawOutput::new(info.dest, info.amt);
@@ -161,11 +160,11 @@ fn process_parsed_debug_tx(
             let wrapper = BridgeMessageWrapper(bridge_msg);
             relayer.relay_msg(&wrapper);
 
-            info!("Successfully sent fake withdrawal to bridge");
+            logging::info!("Successfully sent fake withdrawal to bridge");
         }
 
         ParsedDebugTx::UnlockDeposit(info) => {
-            info!(deposit_id = info.deposit_id, "Processing unlock deposit");
+            logging::info!(deposit_id = info.deposit_id, "Processing unlock deposit");
 
             // TODO: Clarify and implement proper deposit unlock mechanism
             // Currently just emitting a log, but this should be updated once
@@ -183,7 +182,7 @@ fn process_parsed_debug_tx(
             let log_entry = AsmLogEntry::from_log(&log)?;
             relayer.emit_log(log_entry);
 
-            info!("Successfully emitted deposit unlock log");
+            logging::info!("Successfully emitted deposit unlock log");
         }
     }
 
