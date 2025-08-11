@@ -93,7 +93,7 @@ mod tests {
 
     fn setup_db() -> CheckpointDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(Arc::new(db)).unwrap();
+        let sled_db = SledDb::new(db).unwrap();
         CheckpointDBSled::new(sled_db.into()).unwrap()
     }
 

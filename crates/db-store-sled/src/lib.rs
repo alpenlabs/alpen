@@ -52,7 +52,7 @@ pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Resul
 
     let sled_db = sled::open(&database_dir).context("opening sled database")?;
 
-    let typed_sled = SledDb::new(Arc::new(sled_db))
+    let typed_sled = SledDb::new(sled_db)
         .map_err(|e| anyhow::anyhow!("Failed to create typed sled db: {}", e))?;
     Ok(Arc::new(typed_sled))
 }
