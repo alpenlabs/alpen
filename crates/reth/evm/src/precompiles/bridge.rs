@@ -1,9 +1,7 @@
 use alpen_reth_primitives::WithdrawalIntentEvent;
-use revm::{
-    context::{ContextTr, JournalTr, Transaction},
-    precompile::{PrecompileError, PrecompileOutput, PrecompileResult, PrecompileWithAddress},
-};
-use revm_primitives::{Bytes, Log, LogData, U256};
+use reth_evm::precompiles::PrecompileInput;
+use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
+use revm_primitives::{Bytes, LogData, U256};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{
@@ -11,30 +9,16 @@ use crate::{
     utils::wei_to_sats,
 };
 
-pub(crate) const BRIDGEOUT_PRECOMPILE: PrecompileWithAddress =
-    PrecompileWithAddress(BRIDGEOUT_ADDRESS, bridgeout_precompile);
-
-/// Placeholder for the `bridgeout` precompile; required for the precompile registry.
-fn bridgeout_precompile(_input: &[u8], _gas_limit: u64) -> PrecompileResult {
-    let gas_cost = 0;
-    Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
-}
-
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
 /// This precompile validates transaction and burns the bridge out amount.
-pub(crate) fn bridge_context_call<CTX>(
-    destination: &[u8],
-    _gas_limit: u64,
-    evmctx: &mut CTX,
-) -> PrecompileResult
-where
-    CTX: ContextTr,
-{
+pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let destination = input.data;
+
     // Validate that this is a valid BOSD
     let _ = try_into_bosd(destination)?;
 
-    let withdrawal_amount = evmctx.tx().value();
+    let withdrawal_amount = input.value;
 
     // Verify that the transaction value matches the required withdrawal amount
     if withdrawal_amount < FIXED_WITHDRAWAL_WEI {
@@ -56,15 +40,15 @@ where
         amount,
         destination: Bytes::from(destination.to_vec()),
     };
-    let logdata = LogData::from(&evt);
 
-    evmctx.journal_mut().log(Log {
-        address: BRIDGEOUT_ADDRESS,
-        data: logdata,
-    });
+    let _logdata = LogData::from(&evt);
+    // input.internals.db_mut()..log(Log {
+    //     address: BRIDGEOUT_ADDRESS,
+    //     data: logdata,
+    // });
 
-    let mut account = evmctx
-        .journal_mut()
+    let mut account = input
+        .internals
         .load_account(BRIDGEOUT_ADDRESS) // Error case should never occur
         .map_err(|_| PrecompileError::Fatal("Failed to load BRIDGEOUT_ADDRESS account".into()))?;
 

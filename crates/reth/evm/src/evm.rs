@@ -10,7 +10,7 @@ use revm::{
 };
 use revm_primitives::hardfork::SpecId;
 
-use crate::{apis::AlpenAlloyEvm, precompiles::AlpenEvmPrecompiles};
+use crate::{apis::AlpenAlloyEvm, precompiles::factory};
 
 /// Custom EVM configuration.
 #[derive(Debug, Clone, Default)]
@@ -27,8 +27,7 @@ impl EvmFactory for AlpenEvmFactory {
     type Precompiles = PrecompilesMap;
 
     fn create_evm<DB: Database>(&self, db: DB, input: EvmEnv) -> Self::Evm<DB, NoOpInspector> {
-        let precompiles =
-            PrecompilesMap::from_static(AlpenEvmPrecompiles::new(input.cfg_env.spec).precompiles());
+        let precompiles = factory::create_precompiles_map(input.cfg_env.spec);
 
         let evm = Context::mainnet()
             .with_db(db)
