@@ -3,7 +3,6 @@
 
 mod aux;
 mod error;
-mod genesis;
 mod log;
 mod msg;
 mod spec;
@@ -13,7 +12,6 @@ mod tx;
 
 pub use aux::*;
 pub use error::*;
-pub use genesis::*;
 pub use log::*;
 pub use msg::*;
 pub use spec::*;
