@@ -5,18 +5,18 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{CodecError, CodecResult, KeyCodec, Schema, SledDb, TreeName, ValueCodec};
+use crate::{CodecError, CodecResult, Schema, SledDb, TreeName, ValueCodec};
 
 /// Common test value type used across all tests.
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
-pub struct TestValue {
+pub(crate) struct TestValue {
     pub id: u32,
     pub name: String,
 }
 
 impl TestValue {
     /// Creates a test value for "Alice"
-    pub fn alice() -> Self {
+    pub(crate) fn alice() -> Self {
         Self {
             id: 1,
             name: "Alice".to_string(),
@@ -24,7 +24,7 @@ impl TestValue {
     }
 
     /// Creates a test value for "Bob"
-    pub fn bob() -> Self {
+    pub(crate) fn bob() -> Self {
         Self {
             id: 2,
             name: "Bob".to_string(),
@@ -32,7 +32,7 @@ impl TestValue {
     }
 
     /// Creates a test value for "Charlie"
-    pub fn charlie() -> Self {
+    pub(crate) fn charlie() -> Self {
         Self {
             id: 3,
             name: "Charlie".to_string(),
@@ -40,7 +40,7 @@ impl TestValue {
     }
 
     /// Creates a test value with a generated name based on id
-    pub fn new_with_name(id: u32) -> Self {
+    pub(crate) fn new_with_name(id: u32) -> Self {
         Self {
             id,
             name: format!("Item {}", id),
@@ -48,7 +48,7 @@ impl TestValue {
     }
 
     /// Creates a test value with custom id and name
-    pub fn new(id: u32, name: &str) -> Self {
+    pub(crate) fn new(id: u32, name: &str) -> Self {
         Self {
             id,
             name: name.to_string(),
@@ -84,30 +84,6 @@ impl Schema for TestSchema3 {
     const TREE_NAME: TreeName = TreeName("test3");
     type Key = u32;
     type Value = TestValue;
-}
-
-// Generic codec implementations that work for any schema with Key=u32, Value=TestValue
-
-impl<S> KeyCodec<S> for u32
-where
-    S: Schema<Key = u32, Value = TestValue>,
-{
-    fn encode_key(&self) -> CodecResult<Vec<u8>> {
-        Ok(self.to_be_bytes().to_vec())
-    }
-
-    fn decode_key(buf: &[u8]) -> CodecResult<Self> {
-        if buf.len() != 4 {
-            return Err(CodecError::InvalidKeyLength {
-                schema: S::TREE_NAME.0,
-                expected: 4,
-                actual: buf.len(),
-            });
-        }
-        let mut bytes = [0; 4];
-        bytes.copy_from_slice(buf);
-        Ok(u32::from_be_bytes(bytes))
-    }
 }
 
 impl<S> ValueCodec<S> for TestValue

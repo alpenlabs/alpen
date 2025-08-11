@@ -1,9 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use dashmap as _;
 use thiserror as _;
-use typed_sled::{
-    CodecError, KeyCodec, Schema, SledDb, SledTree, TreeName, ValueCodec, error::Result,
-};
+use typed_sled::{CodecError, Schema, SledDb, SledTree, TreeName, ValueCodec, error::Result};
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
 struct User {
@@ -14,25 +12,6 @@ struct User {
 
 #[derive(Debug)]
 struct UserSchema;
-
-impl KeyCodec<UserSchema> for u32 {
-    fn encode_key(&self) -> typed_sled::CodecResult<Vec<u8>> {
-        Ok(self.to_be_bytes().to_vec())
-    }
-
-    fn decode_key(buf: &[u8]) -> typed_sled::CodecResult<Self> {
-        if buf.len() != 4 {
-            return Err(CodecError::InvalidKeyLength {
-                schema: UserSchema::TREE_NAME.0,
-                expected: 4,
-                actual: buf.len(),
-            });
-        }
-        let mut bytes = [0; 4];
-        bytes.copy_from_slice(buf);
-        Ok(u32::from_be_bytes(bytes))
-    }
-}
 
 impl ValueCodec<UserSchema> for User {
     fn encode_value(&self) -> typed_sled::CodecResult<Vec<u8>> {
