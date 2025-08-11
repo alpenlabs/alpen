@@ -15,6 +15,7 @@ pub trait MohoProgram {
     /// Private input to process the next state.
     type StepInput: BorshDeserialize + BorshSerialize;
 
+    /// The specification type that defines program behavior and configuration.
     type Spec;
 
     /// Output after processing the step input

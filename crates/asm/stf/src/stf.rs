@@ -2,9 +2,7 @@
 //! glues together block‐level validation, a set of pluggable subprotocols, and the global chain
 //! view into a single deterministic state transition.
 
-use strata_asm_common::{
-    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState,
-};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
 
 use crate::{
     manager::SubprotoManager,
@@ -39,7 +37,8 @@ use crate::{
 ///
 /// # Type Parameters
 ///
-/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis configs
+/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
+///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 /// * `'x` - Lifetime parameter tied to the auxiliary input data
 pub fn asm_stf<'b, 'x, S: AsmSpec>(
@@ -57,8 +56,7 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
-    let mut loader_stage =
-        SubprotoLoaderStage::<S>::new(pre_state, &mut manager, input.aux_input);
+    let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, input.aux_input);
     spec.call_subprotocols(&mut loader_stage);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
