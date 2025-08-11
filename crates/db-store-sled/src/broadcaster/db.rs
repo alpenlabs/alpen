@@ -121,7 +121,7 @@ mod tests {
 
     fn setup_db() -> L1BroadcastDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(Arc::new(db)).unwrap();
+        let sled_db = SledDb::new(db).unwrap();
         L1BroadcastDBSled::new(sled_db.into()).unwrap()
     }
 
