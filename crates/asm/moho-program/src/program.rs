@@ -34,8 +34,9 @@ impl MohoProgram for AsmStfProgram {
         // 1. Validate the input
         assert!(input.validate_block());
 
+        let spec = StrataAsmSpec::strata_default();
         let protocol_txs =
-            group_txs_by_subprotocol(StrataAsmSpec::MAGIC_BYTES, &input.block.0.txdata);
+            group_txs_by_subprotocol(spec.magic_bytes(), &input.block.0.txdata);
 
         let stf_input = AsmStfInput {
             protocol_txs,
@@ -43,7 +44,7 @@ impl MohoProgram for AsmStfProgram {
             aux_input: &input.aux_bundle,
         };
 
-        asm_stf::<StrataAsmSpec>(pre_state, stf_input).unwrap()
+        asm_stf(&spec, pre_state, stf_input).unwrap()
     }
 
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State {
