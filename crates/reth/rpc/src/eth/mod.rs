@@ -215,7 +215,7 @@ where
     }
 
     #[inline]
-    fn fee_history_cache(&self) -> &FeeHistoryCache {
+    fn fee_history_cache(&self) -> &FeeHistoryCache<ProviderHeader<N::Provider>> {
         self.inner.eth_api.fee_history_cache()
     }
 }
@@ -241,7 +241,11 @@ where
 
 impl<N> EthFees for AlpenEthApi<N>
 where
-    Self: LoadFee,
+    Self: LoadFee<
+        Provider: ChainSpecProvider<
+            ChainSpec: EthChainSpec<Header = ProviderHeader<Self::Provider>>,
+        >,
+    >,
     N: StrataNodeCore,
 {
 }

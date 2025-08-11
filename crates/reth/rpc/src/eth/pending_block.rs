@@ -1,5 +1,7 @@
 //! Loads Strata pending block for a RPC response.
 
+use std::sync::Arc;
+
 use alloy_consensus::BlockHeader;
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::B256;
@@ -82,8 +84,8 @@ where
         &self,
     ) -> Result<
         Option<(
-            RecoveredBlock<ProviderBlock<Self::Provider>>,
-            Vec<ProviderReceipt<Self::Provider>>,
+            Arc<RecoveredBlock<ProviderBlock<Self::Provider>>>,
+            Arc<Vec<ProviderReceipt<Self::Provider>>>,
         )>,
         Self::Error,
     > {
@@ -106,6 +108,6 @@ where
             .map_err(Self::Error::from_eth_err)?
             .ok_or(EthApiError::ReceiptsNotFound(block_id.into()))?;
 
-        Ok(Some((block, receipts)))
+        Ok(Some((Arc::new(block), Arc::new(receipts))))
     }
 }

@@ -208,7 +208,6 @@ where
     let evm_config = ctx.evm_config();
     let block_executor = BasicBlockExecutor::new(evm_config.clone(), cache_db);
     let _execution_output = block_executor.execute(&current_block)?;
-
     Ok(cache_provider.get_accessed_state())
 }
 
