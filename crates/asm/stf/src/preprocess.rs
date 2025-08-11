@@ -50,6 +50,7 @@ use crate::{
 ///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 pub fn pre_process_asm<'b, S: AsmSpec>(
+    spec: &S,
     pre_state: &AnchorState,
     block: &'b Block,
 ) -> AsmResult<AsmPreProcessOutput<'b>> {
@@ -62,7 +63,7 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 2. Filter and group transactions by subprotocol based on magic bytes.
     // Only transactions relevant to registered subprotocols are processed further.
-    let grouped_relevant_txs = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
+    let grouped_relevant_txs = group_txs_by_subprotocol(spec.magic_bytes(), &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
@@ -71,13 +72,13 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     let aux = BTreeMap::new();
 
     let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, &aux);
-    S::call_subprotocols(&mut loader_stage);
+    spec.call_subprotocols(&mut loader_stage);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
     let mut pre_process_stage =
         PreProcessStage::new(&grouped_relevant_txs, &mut manager, pre_state);
-    S::call_subprotocols(&mut pre_process_stage);
+    spec.call_subprotocols(&mut pre_process_stage);
 
     // 5. Flatten the grouped transactions back into a single collection.
     // The grouping was needed for per-subprotocol processing, but the output needs a flat list.

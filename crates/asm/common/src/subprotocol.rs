@@ -76,7 +76,7 @@ pub trait Subprotocol: 'static {
 
     /// Genesis configuration type for initializing the subprotocol state.
     /// This should contain all necessary parameters for proper subprotocol initialization.
-    type GenesisConfig: Any + BorshDeserialize + BorshSerialize;
+    type GenesisConfig: Any + BorshDeserialize + BorshSerialize + Clone;
 
     /// Constructs a new state using the provided genesis configuration.
     ///

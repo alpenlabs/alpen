@@ -87,7 +87,7 @@ mod tests {
     use super::*;
     use crate::{AnchorState, MsgRelayer, TxInputRef};
 
-    #[derive(Debug, PartialEq, BorshSerialize, BorshDeserialize)]
+    #[derive(Debug, PartialEq, Clone, BorshSerialize, BorshDeserialize)]
     struct TestConfig {
         value: u32,
     }

@@ -43,6 +43,7 @@ use crate::{
 /// * `'b` - Lifetime parameter tied to the input block reference
 /// * `'x` - Lifetime parameter tied to the auxiliary input data
 pub fn asm_stf<'b, 'x, S: AsmSpec>(
+    spec: &S,
     pre_state: &AnchorState,
     input: AsmStfInput<'b, 'x>,
 ) -> AsmResult<AsmStfOutput> {
@@ -58,17 +59,17 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
     // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
     let mut loader_stage =
         SubprotoLoaderStage::<S>::new(pre_state, &mut manager, input.aux_input);
-    S::call_subprotocols(&mut loader_stage);
+    spec.call_subprotocols(&mut loader_stage);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
     let mut process_stage = ProcessStage::new(input.protocol_txs, &mut manager, pre_state);
-    S::call_subprotocols(&mut process_stage);
+    spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
     // This stage handles cross-protocol communication and finalizes state changes.
     let mut finish_stage = FinishStage::new(&mut manager);
-    S::call_subprotocols(&mut finish_stage);
+    spec.call_subprotocols(&mut finish_stage);
 
     // 5. Construct the final `AnchorState` and output.
     // Export the updated state sections and logs from all subprotocols to build the result.

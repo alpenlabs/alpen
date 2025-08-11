@@ -33,7 +33,7 @@ impl<'a, 'x, S: AsmSpec> SubprotoLoaderStage<'a, 'x, S> {
 }
 
 impl<Spec: AsmSpec> Stage<Spec> for SubprotoLoaderStage<'_, '_, Spec> {
-    fn process_subprotocol<S: Subprotocol>(&mut self)
+    fn process_subprotocol<S: Subprotocol>(&mut self, spec: &Spec)
     where
         Spec: GenesisProvider<S>,
     {
@@ -50,8 +50,8 @@ impl<Spec: AsmSpec> Stage<Spec> for SubprotoLoaderStage<'_, '_, Spec> {
             // in the AsmSpec
             None => {
                 // Get the type-safe genesis config from the AsmSpec
-                let genesis_config = Spec::genesis_config_for::<S>();
-                S::init(genesis_config).expect("asm: failed to initialize subprotocol state")
+                let genesis_config = spec.genesis_config_for::<S>();
+                S::init((*genesis_config).clone()).expect("asm: failed to initialize subprotocol state")
             }
         };
 
@@ -94,7 +94,7 @@ impl<'a, 'b, 'm> PreProcessStage<'a, 'b, 'm> {
 }
 
 impl<Spec: AsmSpec> Stage<Spec> for PreProcessStage<'_, '_, '_> {
-    fn process_subprotocol<S: Subprotocol>(&mut self)
+    fn process_subprotocol<S: Subprotocol>(&mut self, _spec: &Spec)
     where
         Spec: GenesisProvider<S>,
     {
@@ -130,7 +130,7 @@ impl<'a, 'b, 'm> ProcessStage<'a, 'b, 'm> {
 }
 
 impl<Spec: AsmSpec> Stage<Spec> for ProcessStage<'_, '_, '_> {
-    fn process_subprotocol<S: Subprotocol>(&mut self)
+    fn process_subprotocol<S: Subprotocol>(&mut self, _spec: &Spec)
     where
         Spec: GenesisProvider<S>,
     {
@@ -156,7 +156,7 @@ impl<'m> FinishStage<'m> {
 }
 
 impl<Spec: AsmSpec> Stage<Spec> for FinishStage<'_> {
-    fn process_subprotocol<S: Subprotocol>(&mut self)
+    fn process_subprotocol<S: Subprotocol>(&mut self, _spec: &Spec)
     where
         Spec: GenesisProvider<S>,
     {
