@@ -15264,6 +15264,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-sled"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/typed-sled#c0bf2c9135cac6d27ab1b2ede39cffe288eb1fd5"
+dependencies = [
+ "dashmap 6.1.0",
+ "sled",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "typeid"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

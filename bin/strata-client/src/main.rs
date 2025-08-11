@@ -26,7 +26,7 @@ use strata_consensus_logic::{
 use strata_db::{traits::BroadcastDatabase, DbError};
 use strata_db_store_sled::{
     broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
-    open_sled_database, SledOpsConfig, L1WriterDBSled, SledBackend, SLED_NAME,
+    open_sled_database, L1WriterDBSled, SledBackend, SledOpsConfig, SLED_NAME,
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
