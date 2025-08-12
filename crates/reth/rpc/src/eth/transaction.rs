@@ -1,22 +1,22 @@
 //! Loads and formats Strata transaction RPC response.
 
+
 use alloy_primitives::{Bytes, B256};
-use reth_provider::{BlockReader, BlockReaderIdExt, ProviderTx, TransactionsProvider};
 use reth_rpc_eth_api::{
-    helpers::{EthSigner, EthTransactions, LoadTransaction, SpawnBlocking},
-    FromEthApiError, FullEthApiTypes, RpcNodeCore, RpcNodeCoreExt,
+    helpers::{spec::SignersForRpc, EthTransactions, LoadTransaction},
+    FromEthApiError, RpcConvert, RpcNodeCore,
 };
-use reth_rpc_eth_types::utils::recover_raw_transaction;
+use reth_rpc_eth_types::{utils::recover_raw_transaction, EthApiError};
 use reth_transaction_pool::{PoolTransaction, TransactionOrigin, TransactionPool};
 
 use crate::{AlpenEthApi, SequencerClient, StrataNodeCore};
 
-impl<N> EthTransactions for AlpenEthApi<N>
+impl<N, Rpc> EthTransactions for AlpenEthApi<N, Rpc>
 where
-    Self: LoadTransaction<Provider: BlockReaderIdExt>,
-    N: StrataNodeCore<Provider: BlockReader<Transaction = ProviderTx<Self::Provider>>>,
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
 {
-    fn signers(&self) -> &parking_lot::RwLock<Vec<Box<dyn EthSigner<ProviderTx<Self::Provider>>>>> {
+    fn signers(&self) -> &SignersForRpc<Self::Provider, Self::NetworkTypes> {
         self.inner.eth_api.signers()
     }
 
@@ -46,17 +46,17 @@ where
     }
 }
 
-impl<N> LoadTransaction for AlpenEthApi<N>
+impl<N, Rpc> LoadTransaction for AlpenEthApi<N, Rpc>
 where
-    Self: SpawnBlocking + FullEthApiTypes + RpcNodeCoreExt,
-    N: StrataNodeCore<Provider: TransactionsProvider, Pool: TransactionPool>,
-    Self::Pool: TransactionPool,
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
 {
 }
 
-impl<N> AlpenEthApi<N>
+impl<N, Rpc> AlpenEthApi<N, Rpc>
 where
     N: StrataNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
 {
     /// Returns the [`SequencerClient`] if one is set.
     pub fn raw_tx_forwarder(&self) -> Option<SequencerClient> {

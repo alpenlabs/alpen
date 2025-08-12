@@ -1,4 +1,8 @@
-use alpen_reth_rpc::{eth::AlpenEthApiBuilder, AlpenEthApi, SequencerClient};
+use alloy_network::Ethereum;
+use alpen_reth_rpc::{
+    eth::{AlpenEthApiBuilder, AlpenRpcConvert},
+    AlpenEthApi, SequencerClient,
+};
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmFactory, EvmFactoryFor, NextBlockEnvAttributes};
 use reth_node_api::{FullNodeComponents, NodeAddOns};
@@ -175,7 +179,7 @@ where
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type Handle = RpcHandle<N, AlpenEthApi<N>>;
+    type Handle = RpcHandle<N, AlpenEthApi<N, AlpenRpcConvert<N, Ethereum>>>;
 
     async fn launch_add_ons(
         self,
@@ -201,7 +205,7 @@ where
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type EthApi = AlpenEthApi<N>;
+    type EthApi = AlpenEthApi<N, AlpenRpcConvert<N, Ethereum>>;
 
     fn hooks_mut(&mut self) -> &mut reth_node_builder::rpc::RpcHooks<N, Self::EthApi> {
         self.rpc_add_ons.hooks_mut()

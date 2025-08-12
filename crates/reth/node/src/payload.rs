@@ -11,7 +11,6 @@ use alloy_rpc_types::{
 };
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_chain_state::ExecutedBlockWithTrieUpdates;
-use reth_engine_local::payload::UnsupportedLocalAttributes;
 use reth_ethereum_engine_primitives::BuiltPayloadConversionError;
 use reth_node_api::{BuiltPayload, PayloadAttributes, PayloadBuilderAttributes};
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
@@ -51,8 +50,6 @@ impl AlpenPayloadAttributes {
         }
     }
 }
-
-impl UnsupportedLocalAttributes for AlpenPayloadAttributes {}
 
 impl PayloadAttributes for AlpenPayloadAttributes {
     fn timestamp(&self) -> u64 {
