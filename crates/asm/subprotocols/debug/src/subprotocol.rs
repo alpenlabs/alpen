@@ -22,19 +22,13 @@ use crate::{
 /// L1 transactions that inject mock data into the ASM.
 pub struct DebugSubproto;
 
-/// Auxiliary input type for the debug subprotocol.
-///
-/// The debug subprotocol doesn't require any auxiliary input.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct DebugAuxInput;
-
 impl Subprotocol for DebugSubproto {
     const ID: SubprotocolId = DEBUG_SUBPROTOCOL_ID;
 
-    type Msg = DebugIncomingMsg;
+    type Msg = ();
     type GenesisConfig = ();
     type State = ();
-    type AuxInput = DebugAuxInput;
+    type AuxInput = ();
 
     fn init(_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
         logging::info!("Initializing debug subprotocol state");
@@ -67,23 +61,9 @@ impl Subprotocol for DebugSubproto {
         }
     }
 
-    fn process_msgs(_state: &mut Self::State, msgs: &[Self::Msg]) {
-        for msg in msgs {
-            match msg {
-                DebugIncomingMsg::TestMessage(content) => {
-                    logging::info!("Received test message: {}", content);
-                    // Just log the message for now
-                }
-            }
-        }
+    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
+        // No messages to process for the debug subprotocol
     }
-}
-
-/// Messages that can be sent to the debug subprotocol.
-#[derive(Debug, Clone)]
-pub enum DebugIncomingMsg {
-    /// A test message for debugging purposes.
-    TestMessage(String),
 }
 
 /// Log type for OL message injection.

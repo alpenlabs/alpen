@@ -37,5 +37,5 @@ mod constants;
 mod subprotocol;
 mod txs;
 
-pub use subprotocol::{DebugAuxInput, DebugIncomingMsg, DebugSubproto};
+pub use subprotocol::DebugSubproto;
 pub use txs::{FakeWithdrawInfo, OlMsgInfo, UnlockDepositInfo};
