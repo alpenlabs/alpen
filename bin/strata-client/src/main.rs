@@ -114,7 +114,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
-    let bitcoin_client = create_bitcoin_rpc_client(&config)?;
+    let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
 
     // Check if we have to do genesis.
     if genesis::check_needs_client_init(storage.as_ref())? {

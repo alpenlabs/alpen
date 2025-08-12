@@ -15,7 +15,7 @@ use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
-    Network,
+    BlockHash, Network,
 };
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
@@ -26,6 +26,7 @@ use strata_primitives::{
     buf::Buf32,
     crypto::EvenSecretKey,
     keys::ZeroizableXpriv,
+    l1::L1BlockId,
     operator::OperatorPubkeys,
     params::{ProofPublishMode, RollupParams},
     proof::RollupVerifyingKey,
@@ -277,6 +278,11 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
 
     let evm_genesis_info = get_genesis_block_info(&chainspec_json)?;
 
+    // Parse the provided L1 block hash
+    let block_hash = BlockHash::from_str(&cmd.genesis_l1_hash)
+        .map_err(|e| anyhow::anyhow!("Invalid L1 block hash: {}", e))?;
+    let genesis_l1_blkid = L1BlockId::from(block_hash);
+
     let config = ParamsConfig {
         name: cmd.name.unwrap_or_else(|| "strata-testnet".to_string()),
         checkpoint_tag: cmd.checkpoint_tag.unwrap_or("strata-ckpt".to_string()),
@@ -286,7 +292,7 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         block_time_sec: cmd.block_time.unwrap_or(15),
         epoch_slots: cmd.epoch_slots.unwrap_or(64),
         horizon_height: cmd.horizon_height.unwrap_or(90),
-        genesis_trigger: cmd.genesis_trigger_height.unwrap_or(100),
+        genesis_trigger: cmd.genesis_l1_height,
         seqkey,
         opkeys,
         rollup_vk,
@@ -294,6 +300,7 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         deposit_sats,
         proof_timeout: cmd.proof_timeout,
         evm_genesis_info,
+        genesis_l1_blkid,
     };
 
     let params = match construct_params(config) {
@@ -415,6 +422,8 @@ pub(crate) struct ParamsConfig {
     proof_timeout: Option<u32>,
     /// evm chain config json.
     evm_genesis_info: BlockInfo,
+    /// L1 block hash at the genesis trigger height.
+    genesis_l1_blkid: L1BlockId,
 }
 
 /// Constructs the parameters for a Strata network.
@@ -456,6 +465,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         // TODO do we want to remove this?
         horizon_l1_height: config.horizon_height,
         genesis_l1_height: config.genesis_trigger,
+        genesis_l1_blkid: config.genesis_l1_blkid,
         operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),

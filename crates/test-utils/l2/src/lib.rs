@@ -8,7 +8,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_primitives::{
     block_credential,
-    buf::Buf64,
+    buf::{Buf32, Buf64},
     operator::OperatorPubkeys,
     params::{OperatorConfig, Params, ProofPublishMode, RollupParams, SyncParams},
     proof::RollupVerifyingKey,
@@ -105,6 +105,10 @@ fn gen_params_with_seed(seed: u64) -> Params {
             cred_rule: block_credential::CredRule::Unchecked,
             horizon_l1_height: 40318,
             genesis_l1_height: 40320, // we have mainnet blocks from this height test-utils
+            genesis_l1_blkid: "0000000045861e169b5a961b7034f8de9e98022e7a39100dde3ae3ea240d7245"
+                .parse::<Buf32>()
+                .unwrap()
+                .into(), // mainnet block at height 40320
             operator_config: OperatorConfig::Static(vec![opkeys]),
             evm_genesis_block_hash:
                 "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"

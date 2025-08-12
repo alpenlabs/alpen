@@ -350,7 +350,13 @@ def generate_opxpub_from_seed(path: str) -> str:
     return res
 
 
-def generate_params(settings: RollupParamsSettings, seqpubkey: str, opxprivs: list[str]) -> str:
+def generate_params(
+    settings: RollupParamsSettings,
+    seqpubkey: str,
+    opxprivs: list[str],
+    btc_rpc: BitcoindClient,
+) -> str:
+    genesis_l1_blockhash = btc_rpc.proxy.getblockhash(settings.genesis_trigger)
     """Generates a params file from config values."""
     # fmt: off
     cmd = [
@@ -360,9 +366,11 @@ def generate_params(settings: RollupParamsSettings, seqpubkey: str, opxprivs: li
         "--block-time", str(settings.block_time_sec),
         "--epoch-slots", str(settings.epoch_slots),
         "--horizon-height", str(settings.horizon_height),
-        "--genesis-trigger-height", str(settings.genesis_trigger),
+        "--genesis-l1-height", str(settings.genesis_trigger),
+        "--genesis-l1-hash", genesis_l1_blockhash,
         "--seqkey", seqpubkey,
     ]
+
     if settings.proof_timeout is not None:
         cmd.extend(["--proof-timeout", str(settings.proof_timeout)])
 
@@ -384,9 +392,12 @@ def generate_simple_params(
     base_path: str,
     settings: RollupParamsSettings,
     operator_cnt: int,
+    bitcoind_client: BitcoindClient,
 ) -> dict:
     """
     Creates a network with params data and a list of operator seed paths.
+
+    If bitcoind_config is provided, will fetch the L1 block hash from Bitcoin RPC.
 
     Result options are `params` and `opseedpaths`.
     """
@@ -401,7 +412,7 @@ def generate_simple_params(
         with open(p) as f:
             opxprivs.append(f.read().strip())
 
-    params = generate_params(settings, seqkey, opxprivs)
+    params = generate_params(settings, seqkey, opxprivs, bitcoind_client)
     print(f"Params {params}")
     return {"params": params, "opseedpaths": opseedpaths}
 

@@ -174,10 +174,13 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
-        description = "genesis trigger height (default 100)",
-        short = 'g'
+        description = "genesis L1 block height (required)",
+        short = 'H'
     )]
-    pub(crate) genesis_trigger_height: Option<u64>,
+    pub(crate) genesis_l1_height: u64,
+
+    #[argh(option, description = "genesis L1 block hash (required)", short = 'G')]
+    pub(crate) genesis_l1_hash: String,
 
     #[argh(
         option,
