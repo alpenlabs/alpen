@@ -14,7 +14,6 @@ class ContractBridgeOutWithNoValueTest(BridgePrecompileMixin):
 
     def main(self, _ctx: flexitest.RunContext):
         # no need to deposit as we are just calling the contract with no value
-        return
         tx_receipt = self.txs.call_contract(
             self.withdraw_contract_id, "withdrawWithoutBalance", self.bosd
         )

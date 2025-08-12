@@ -17,23 +17,17 @@ use std::{
 use alloy_network::Ethereum;
 use alloy_primitives::U256;
 use reth_evm::ConfigureEvm;
-use reth_node_api::{
-    FullNodeComponents, FullNodeTypes, HeaderTy, NodeTypes,
-};
+use reth_node_api::{FullNodeComponents, FullNodeTypes, HeaderTy, NodeTypes};
 use reth_node_builder::rpc::{EthApiBuilder, EthApiCtx};
-use reth_provider::{
-    BlockReader, ChainSpecProvider, ProviderHeader, ProviderTx,
-};
+use reth_provider::{BlockReader, ChainSpecProvider, ProviderHeader, ProviderTx};
 use reth_rpc::{
-    eth::{
-        core::EthApiInner,
-        DevSigner,
-    },
+    eth::{core::EthApiInner, DevSigner},
     RpcTypes,
 };
 use reth_rpc_eth_api::{
     helpers::{
-        pending_block::BuildPendingEnv, spec::SignersForApi, AddDevSigners, EthApiSpec, EthFees, EthState, LoadFee, LoadState, SpawnBlocking, Trace,
+        pending_block::BuildPendingEnv, spec::SignersForApi, AddDevSigners, EthApiSpec, EthFees,
+        EthState, LoadFee, LoadState, SpawnBlocking, Trace,
     },
     EthApiTypes, FromEvmError, FullEthApiServer, RpcConvert, RpcConverter, RpcNodeCore,
     RpcNodeCoreExt, SignableTxRequest,
