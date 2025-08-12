@@ -1,7 +1,7 @@
 use alpen_reth_primitives::WithdrawalIntentEvent;
 use reth_evm::precompiles::PrecompileInput;
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
-use revm_primitives::{Bytes, LogData, U256};
+use revm_primitives::{Bytes, Log, LogData, U256};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{
@@ -41,18 +41,18 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
         destination: Bytes::from(destination.to_vec()),
     };
 
-    let _logdata = LogData::from(&evt);
-    // input.internals.db_mut()..log(Log {
-    //     address: BRIDGEOUT_ADDRESS,
-    //     data: logdata,
-    // });
+    // Create a log entry for the bridge out intent
+    let logdata = LogData::from(&evt);
+    input.internals.log(Log {
+        address: BRIDGEOUT_ADDRESS,
+        data: logdata,
+    });
 
+    // Burn value sent to bridge by adjusting the account balance of bridge precompile
     let mut account = input
         .internals
         .load_account(BRIDGEOUT_ADDRESS) // Error case should never occur
         .map_err(|_| PrecompileError::Fatal("Failed to load BRIDGEOUT_ADDRESS account".into()))?;
-
-    // Burn value sent to bridge by adjusting the account balance of bridge precompile
     account.info.balance = U256::ZERO;
 
     // TODO: Properly calculate and deduct gas for the bridge out operation
