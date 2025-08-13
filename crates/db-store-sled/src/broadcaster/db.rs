@@ -10,7 +10,7 @@ use strata_primitives::buf::Buf32;
 use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
-use crate::utils::second;
+use crate::utils::{get_default_backoff, second};
 
 #[derive(Debug)]
 pub struct L1BroadcastDBSled {
@@ -37,9 +37,10 @@ impl L1BroadcastDBSled {
 impl L1BroadcastDatabase for L1BroadcastDBSled {
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>> {
         let next = self.get_next_idx()?;
+        let backoff = get_default_backoff();
 
         let nxt = (&self.tx_tree, &self.tx_id_tree)
-            .transaction(|(txtree, txidtree)| {
+            .transaction_with_retry(backoff, 3, |(txtree, txidtree)| {
                 let mut nxt = next;
                 if txtree.get(&txid)?.is_none() {
                     // Fetch next empty idx
