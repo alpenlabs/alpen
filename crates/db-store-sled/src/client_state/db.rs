@@ -5,12 +5,12 @@ use strata_state::operation::*;
 use typed_sled::{SledDb, SledTree};
 
 use super::schemas::ClientUpdateOutputSchema;
-use crate::{utils::first, SledDbConfig};
+use crate::{SledDbConfig, utils::first};
 
 #[derive(Debug)]
 pub struct ClientStateDBSled {
     client_update_tree: SledTree<ClientUpdateOutputSchema>,
-    config: SledDbConfig
+    config: SledDbConfig,
 }
 
 impl ClientStateDBSled {

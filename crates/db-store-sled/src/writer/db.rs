@@ -7,17 +7,17 @@ use strata_db::{
     types::{BundledPayloadEntry, IntentEntry},
 };
 use strata_primitives::buf::Buf32;
-use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
+use typed_sled::{SledDb, SledTree};
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
-use crate::{utils::first, SledDbConfig};
+use crate::{SledDbConfig, utils::{first, find_next_available_id}};
 
 #[derive(Debug)]
 pub struct L1WriterDBSled {
     payload_tree: SledTree<PayloadSchema>,
     intent_tree: SledTree<IntentSchema>,
     intent_idx_tree: SledTree<IntentIdxSchema>,
-    config: SledDbConfig
+    config: SledDbConfig,
 }
 
 impl L1WriterDBSled {
@@ -57,16 +57,13 @@ impl L1WriterDatabase for L1WriterDBSled {
             .map(first)
             .map(|x| x + 1)
             .unwrap_or(0);
-        (&self.intent_idx_tree, &self.intent_tree)
-            .transaction(|(iit, it)| {
-                let _item = iit.get(&next_idx)?; // Just fetch the item to mark it in tx. If changed from
-                // outside, this transaction fails.
-                iit.insert(&next_idx, &intent_id)?;
-                it.insert(&intent_id, &intent_entry)?;
-
-                Ok(())
-            })
-            .map_err(|e| DbError::Other(e.to_string()))
+        self.config.with_retry((&self.intent_idx_tree, &self.intent_tree), |view| {
+            let (iit, it) = (view.0, view.1);
+            let nxt = find_next_available_id(&iit, next_idx)?;
+            iit.insert(&nxt, &intent_id)?;
+            it.insert(&intent_id, &intent_entry)?;
+            Ok(())
+        })
     }
 
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>> {
