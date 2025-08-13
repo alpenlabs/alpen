@@ -7,7 +7,7 @@ use strata_db::{
     types::L1TxEntry,
 };
 use strata_primitives::buf::Buf32;
-use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
+use typed_sled::{SledDb, SledTree};
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 use crate::{SledDbConfig, utils::second};
@@ -40,23 +40,18 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>> {
         let next = self.get_next_idx()?;
 
-        let nxt = (&self.tx_tree, &self.tx_id_tree)
-            .transaction_with_retry(
-                self.config.backoff.as_ref(),
-                self.config.retry_count as usize,
-                |(txtree, txidtree)| {
-                    let mut nxt = next;
-                    if txtree.get(&txid)?.is_none() {
-                        while txidtree.get(&nxt)?.is_some() {
-                            nxt += 1;
-                        }
-                        txidtree.insert(&nxt, &txid)?;
-                    }
-                    txtree.insert(&txid, &txentry)?;
-                    Ok(nxt)
-                },
-            )
-            .map_err(|e| DbError::Other(e.to_string()))?;
+        let nxt = self.config.with_retry((&self.tx_tree, &self.tx_id_tree), |view| {
+            let (txtree, txidtree) = (view.0, view.1);
+            let mut nxt = next;
+            if txtree.get(&txid)?.is_none() {
+                while txidtree.get(&nxt)?.is_some() {
+                    nxt += 1;
+                }
+                txidtree.insert(&nxt, &txid)?;
+            }
+            txtree.insert(&txid, &txentry)?;
+            Ok(nxt)
+        })?;
         Ok(Some(nxt))
     }
 

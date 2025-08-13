@@ -21,11 +21,12 @@ pub use client_state::db::ClientStateDBSled;
 pub use l1::db::L1DBSled;
 pub use l2::db::L2DBSled;
 pub use prover::db::ProofDBSled;
-use strata_db::traits::DatabaseBackend;
+use sled::transaction::ConflictableTransactionResult;
+use strata_db::{DbError, DbResult, traits::DatabaseBackend};
 pub use sync_event::db::SyncEventDBSled;
 use typed_sled::{
     SledDb,
-    transaction::{Backoff, ConstantBackoff},
+    transaction::{Backoff, ConstantBackoff, SledTransactional},
 };
 pub use writer::db::L1WriterDBSled;
 
@@ -52,6 +53,17 @@ impl SledDbConfig {
             retry_count,
             backoff: Arc::new(const_backoff),
         }
+    }
+
+    /// Execute a transaction with retry logic using this config's settings
+    pub fn with_retry<Trees, F, R>(&self, trees: Trees, f: F) -> DbResult<R>
+    where
+        Trees: SledTransactional,
+        F: Fn(Trees::View) -> ConflictableTransactionResult<R, typed_sled::error::Error>,
+    {
+        trees
+            .transaction_with_retry(self.backoff.as_ref(), self.retry_count.into(), f)
+            .map_err(|e| DbError::Other(format!("{:?}", e)))
     }
 }
 

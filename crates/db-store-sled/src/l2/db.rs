@@ -8,8 +8,9 @@ use strata_state::{block::L2BlockBundle, header::L2Header, id::L2BlockId};
 use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
 
 use crate::{
+    SledDbConfig,
     l2::schemas::{L2BlockHeightSchema, L2BlockSchema, L2BlockStatusSchema},
-    utils::first, SledDbConfig,
+    utils::first,
 };
 
 #[derive(Debug)]

@@ -6,11 +6,12 @@ use strata_db::{
 };
 use strata_primitives::buf::Buf32;
 use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
-use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
+use typed_sled::{SledDb, SledTree};
 
 use crate::{
     SledDbConfig,
     chain_state::schemas::{StateInstanceEntry, StateInstanceSchema, WriteBatchSchema},
+    utils::find_next_available_id,
 };
 
 #[derive(Debug)]
@@ -41,10 +42,14 @@ impl ChainstateDBSled {
 impl ChainstateDatabase for ChainstateDBSled {
     fn create_new_inst(&self, toplevel: Chainstate) -> DbResult<StateInstanceId> {
         let entry = StateInstanceEntry::new(toplevel);
-        // TODO: check if we need equivalent of optimistic transaction used in rocksdb impl
         let next_id = self.next_state_id_or_zero()?;
-        self.state_tree.insert(&next_id, &entry)?;
-        Ok(next_id)
+        let result = self.config.with_retry((&self.state_tree,), |view| {
+            let st_tree = view.0;
+            let nxt = find_next_available_id(&st_tree, next_id)?;
+            st_tree.insert(&nxt, &entry)?;
+            Ok(nxt)
+        })?;
+        Ok(result)
     }
 
     fn clone_inst(&self, id: StateInstanceId) -> DbResult<StateInstanceId> {
@@ -56,20 +61,15 @@ impl ChainstateDatabase for ChainstateDBSled {
         if next_id == 0 {
             return Err(DbError::MissingStateInstance);
         }
-        let next = (&self.state_tree,)
-            .transaction_with_retry(
-                self.config.backoff.as_ref(),
-                self.config.retry_count.into(),
-                |(st_tree,)| {
-                    let mut nxt = next_id;
-                    while st_tree.get(&nxt)?.is_some() {
-                        nxt += 1;
-                    }
-                    st_tree.insert(&nxt, &entry)?;
-                    Ok(nxt)
-                },
-            )
-            .map_err(|e| DbError::Other(e.to_string()))?;
+        let next = self.config.with_retry((&self.state_tree,), |view| {
+            let st_tree = view.0;
+            let mut nxt = next_id;
+            while st_tree.get(&nxt)?.is_some() {
+                nxt += 1;
+            }
+            st_tree.insert(&nxt, &entry)?;
+            Ok(nxt)
+        })?;
         Ok(next)
     }
 

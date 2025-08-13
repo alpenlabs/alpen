@@ -5,9 +5,8 @@ use strata_primitives::proof::{ProofContext, ProofKey};
 use typed_sled::{SledDb, SledTree};
 use zkaleido::ProofReceiptWithMetadata;
 
-use crate::SledDbConfig;
-
 use super::schemas::{ProofDepsSchema, ProofSchema};
+use crate::SledDbConfig;
 
 #[derive(Debug)]
 pub struct ProofDBSled {
