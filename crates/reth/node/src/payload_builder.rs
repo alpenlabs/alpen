@@ -20,9 +20,8 @@ use reth_primitives::{EthPrimitives, InvalidTransactionError, Receipt};
 use reth_provider::StateProviderFactory;
 use reth_revm::database::StateProviderDatabase;
 use reth_transaction_pool::{
-    error::{Eip4844PoolTransactionError, InvalidPoolTransactionError},
-    BestTransactions, BestTransactionsAttributes, PoolTransaction, TransactionPool,
-    ValidPoolTransaction,
+    error::InvalidPoolTransactionError, BestTransactions, BestTransactionsAttributes,
+    PoolTransaction, TransactionPool, ValidPoolTransaction,
 };
 use revm::{context::Block, database::State};
 use revm_primitives::U256;
@@ -160,7 +159,7 @@ type BestTransactionsIter<Pool> = Box<
 fn try_build_payload<Pool, Client, F>(
     evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
     client: Client,
-    pool: Pool,
+    _pool: Pool,
     builder_config: EthereumBuilderConfig,
     args: BuildArguments<AlpenPayloadBuilderAttributes, AlpenBuiltPayload>,
     best_txs: F,
@@ -232,17 +231,6 @@ where
         PayloadBuilderError::Internal(err.into())
     })?;
 
-    // initialize empty blob sidecars at first. If cancun is active then this will be populated by
-    // blob sidecars if any.
-    let mut blob_sidecars = BlobSidecars::Empty;
-
-    let mut block_blob_count = 0;
-
-    let blob_params = chain_spec.blob_params_at_timestamp(attributes.timestamp);
-    let max_blob_count = blob_params
-        .as_ref()
-        .map(|params| params.max_blob_count)
-        .unwrap_or_default();
     while let Some(pool_tx) = best_txs.next() {
         // ensure we still have capacity for this transaction
         if cumulative_gas_used + pool_tx.gas_limit() > block_gas_limit {
@@ -263,60 +251,6 @@ where
 
         // convert tx to a signed transaction
         let tx = pool_tx.to_consensus();
-
-        // There's only limited amount of blob space available per block, so we need to check if
-        // the EIP-4844 can still fit in the block
-        let mut blob_tx_sidecar = None;
-        if let Some(blob_tx) = tx.as_eip4844() {
-            let tx_blob_count = blob_tx.tx().blob_versioned_hashes.len() as u64;
-
-            if block_blob_count + tx_blob_count > max_blob_count {
-                // we can't fit this _blob_ transaction into the block, so we mark it as
-                // invalid, which removes its dependent transactions from
-                // the iterator. This is similar to the gas limit condition
-                // for regular transactions above.
-                trace!(target: "payload_builder", tx=?tx.hash(), ?block_blob_count, "skipping blob transaction because it would exceed the max blob count per block");
-                best_txs.mark_invalid(
-                    &pool_tx,
-                    InvalidPoolTransactionError::Eip4844(
-                        Eip4844PoolTransactionError::TooManyEip4844Blobs {
-                            have: block_blob_count + tx_blob_count,
-                            permitted: max_blob_count,
-                        },
-                    ),
-                );
-                continue;
-            }
-
-            let blob_sidecar_result = 'sidecar: {
-                let Some(sidecar) = pool
-                    .get_blob(*tx.hash())
-                    .map_err(PayloadBuilderError::other)?
-                else {
-                    break 'sidecar Err(Eip4844PoolTransactionError::MissingEip4844BlobSidecar);
-                };
-
-                if chain_spec.is_osaka_active_at_timestamp(attributes.timestamp) {
-                    if sidecar.is_eip7594() {
-                        Ok(sidecar)
-                    } else {
-                        Err(Eip4844PoolTransactionError::UnexpectedEip4844SidecarAfterOsaka)
-                    }
-                } else if sidecar.is_eip4844() {
-                    Ok(sidecar)
-                } else {
-                    Err(Eip4844PoolTransactionError::UnexpectedEip7594SidecarBeforeOsaka)
-                }
-            };
-
-            blob_tx_sidecar = match blob_sidecar_result {
-                Ok(sidecar) => Some(sidecar),
-                Err(error) => {
-                    best_txs.mark_invalid(&pool_tx, InvalidPoolTransactionError::Eip4844(error));
-                    continue;
-                }
-            };
-        }
 
         let gas_used = match builder.execute_transaction(tx.clone()) {
             Ok(gas_used) => gas_used,
@@ -343,27 +277,12 @@ where
             Err(err) => return Err(PayloadBuilderError::evm(err)),
         };
 
-        // add to the total blob gas used if the transaction successfully executed
-        if let Some(blob_tx) = tx.as_eip4844() {
-            block_blob_count += blob_tx.tx().blob_versioned_hashes.len() as u64;
-
-            // if we've reached the max blob count, we can skip blob txs entirely
-            if block_blob_count == max_blob_count {
-                best_txs.skip_blobs();
-            }
-        }
-
         // update and add to total fees
         let miner_fee = tx
             .effective_tip_per_gas(base_fee)
             .expect("fee is always valid; execution succeeded");
         total_fees += U256::from(miner_fee) * U256::from(gas_used);
         cumulative_gas_used += gas_used;
-
-        // Add blob tx sidecar to the payload.
-        if let Some(sidecar) = blob_tx_sidecar {
-            blob_sidecars.push_sidecar_variant(sidecar.as_ref().clone());
-        }
     }
 
     // check if we have a better block
@@ -391,8 +310,9 @@ where
     debug!(target: "payload_builder", id=%attributes.id, sealed_block_header = ?sealed_block.sealed_header(), "sealed built block");
 
     let eth_payload = EthBuiltPayload::new(attributes.id, sealed_block, total_fees, requests)
-        // add blob sidecars from the executed txs
-        .with_sidecars(blob_sidecars);
+        // Blob transactions are not supported in the Alpen environment.
+        // Using empty blob sidecars to maintain compatibility with the Engine API.
+        .with_sidecars(BlobSidecars::Empty);
 
     // collect receipts from the executed transactions
     let receipts: Vec<Receipt> = execution_result.receipts;
