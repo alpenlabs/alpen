@@ -9,7 +9,7 @@ use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
 
 use crate::{
     l2::schemas::{L2BlockHeightSchema, L2BlockSchema, L2BlockStatusSchema},
-    utils::first,
+    utils::first, SledDbConfig,
 };
 
 #[derive(Debug)]
@@ -17,14 +17,16 @@ pub struct L2DBSled {
     blk_tree: SledTree<L2BlockSchema>,
     blk_status_tree: SledTree<L2BlockStatusSchema>,
     blk_height_tree: SledTree<L2BlockHeightSchema>,
+    config: SledDbConfig,
 }
 
 impl L2DBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             blk_tree: db.get_tree()?,
             blk_status_tree: db.get_tree()?,
             blk_height_tree: db.get_tree()?,
+            config,
         })
     }
 }
@@ -131,7 +133,8 @@ mod tests {
     fn setup_db() -> L2DBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        L2DBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        L2DBSled::new(sled_db.into(), config).unwrap()
     }
 
     l2_db_tests!(setup_db());

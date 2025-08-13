@@ -5,19 +5,23 @@ use strata_primitives::proof::{ProofContext, ProofKey};
 use typed_sled::{SledDb, SledTree};
 use zkaleido::ProofReceiptWithMetadata;
 
+use crate::SledDbConfig;
+
 use super::schemas::{ProofDepsSchema, ProofSchema};
 
 #[derive(Debug)]
 pub struct ProofDBSled {
     proof_tree: SledTree<ProofSchema>,
     proof_deps_tree: SledTree<ProofDepsSchema>,
+    config: SledDbConfig,
 }
 
 impl ProofDBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             proof_tree: db.get_tree()?,
             proof_deps_tree: db.get_tree()?,
+            config,
         })
     }
 }
@@ -78,7 +82,8 @@ mod tests {
     fn setup_db() -> ProofDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        ProofDBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        ProofDBSled::new(sled_db.into(), config).unwrap()
     }
 
     proof_db_tests!(setup_db());

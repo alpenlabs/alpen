@@ -10,21 +10,23 @@ use strata_primitives::buf::Buf32;
 use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
-use crate::utils::first;
+use crate::{utils::first, SledDbConfig};
 
 #[derive(Debug)]
 pub struct L1WriterDBSled {
     payload_tree: SledTree<PayloadSchema>,
     intent_tree: SledTree<IntentSchema>,
     intent_idx_tree: SledTree<IntentIdxSchema>,
+    config: SledDbConfig
 }
 
 impl L1WriterDBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             payload_tree: db.get_tree()?,
             intent_tree: db.get_tree()?,
             intent_idx_tree: db.get_tree()?,
+            config,
         })
     }
 }
@@ -106,7 +108,8 @@ mod tests {
     fn setup_db() -> L1WriterDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        L1WriterDBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        L1WriterDBSled::new(sled_db.into(), config).unwrap()
     }
 
     l1_writer_db_tests!(setup_db());

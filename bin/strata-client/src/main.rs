@@ -26,7 +26,7 @@ use strata_consensus_logic::{
 use strata_db::{traits::BroadcastDatabase, DbError};
 use strata_db_store_sled::{
     broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
-    open_sled_database, L1WriterDBSled, SledBackend, SledOpsConfig, SLED_NAME,
+    open_sled_database, L1WriterDBSled, SledBackend, SledDbConfig, SLED_NAME,
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
@@ -99,10 +99,13 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // Open and initialize sled.
     let sled_db = open_sled_database(&config.client.datadir, SLED_NAME)?;
-    let ops_config = SledOpsConfig::new(config.client.db_retry_count);
+    // Create config with retry delay.
+    let retry_delay_ms = 200u64;
+    let db_config =
+        SledDbConfig::new_with_constant_backoff(config.client.db_retry_count, retry_delay_ms);
 
     // Initialize core databases
-    let database = init_core_dbs(sled_db.clone(), ops_config);
+    let database = init_core_dbs(sled_db.clone(), db_config.clone());
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
@@ -130,7 +133,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     if config.client.is_sequencer {
         // If we're a sequencer, start the sequencer db and duties task.
-        let broadcast_database = init_broadcaster_database(sled_db.clone(), ops_config);
+        let broadcast_database = init_broadcaster_database(sled_db.clone(), db_config.clone());
         let broadcast_handle = start_broadcaster_tasks(
             broadcast_database,
             ctx.pool.clone(),
@@ -139,7 +142,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             params.clone(),
             config.btcio.broadcaster.poll_interval_ms,
         );
-        let writer_db = init_writer_database(sled_db.clone(), ops_config);
+        let writer_db = init_writer_database(sled_db.clone(), db_config);
 
         // TODO: split writer tasks from this
         start_sequencer_tasks(

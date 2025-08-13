@@ -5,17 +5,19 @@ use strata_state::operation::*;
 use typed_sled::{SledDb, SledTree};
 
 use super::schemas::ClientUpdateOutputSchema;
-use crate::utils::first;
+use crate::{utils::first, SledDbConfig};
 
 #[derive(Debug)]
 pub struct ClientStateDBSled {
     client_update_tree: SledTree<ClientUpdateOutputSchema>,
+    config: SledDbConfig
 }
 
 impl ClientStateDBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             client_update_tree: db.get_tree()?,
+            config,
         })
     }
 }
@@ -59,7 +61,8 @@ mod tests {
     fn setup_db() -> ClientStateDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        ClientStateDBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        ClientStateDBSled::new(sled_db.into(), config).unwrap()
     }
 
     client_state_db_tests!(setup_db());
