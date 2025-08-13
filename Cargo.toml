@@ -252,9 +252,9 @@ reth-trie = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0", default-features = false }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 
-rsp-client-executor = { git = "https://github.com/alpenlabs/rsp", rev = "c2f23c04688ca62810a4989107e75ad6adc11d89" }
-rsp-mpt = { git = "https://github.com/alpenlabs/rsp", rev = "c2f23c04688ca62810a4989107e75ad6adc11d89" }
-rsp-primitives = { git = "https://github.com/alpenlabs/rsp", rev = "c2f23c04688ca62810a4989107e75ad6adc11d89" }
+rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
+rsp-mpt = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
+rsp-primitives = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
 sp1-helper = "5.0.0"
 sp1-sdk = "5.0.0"
 

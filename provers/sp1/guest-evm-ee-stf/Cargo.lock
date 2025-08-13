@@ -3937,7 +3937,7 @@ dependencies = [
 [[package]]
 name = "rsp-client-executor"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/rsp?rev=c2f23c04688ca62810a4989107e75ad6adc11d89#c2f23c04688ca62810a4989107e75ad6adc11d89"
+source = "git+https://github.com/succinctlabs/rsp?tag=reth-1.6.0#2a99f35a9b81452eb53af3848e50addfd481363c"
 dependencies = [
  "alloy-consensus",
  "alloy-evm",
@@ -3963,13 +3963,13 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "thiserror 2.0.12",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "rsp-mpt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/rsp?rev=c2f23c04688ca62810a4989107e75ad6adc11d89#c2f23c04688ca62810a4989107e75ad6adc11d89"
+source = "git+https://github.com/succinctlabs/rsp?tag=reth-1.6.0#2a99f35a9b81452eb53af3848e50addfd481363c"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -3978,13 +3978,13 @@ dependencies = [
  "reth-trie",
  "rlp",
  "serde",
- "thiserror 2.0.12",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "rsp-primitives"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/rsp?rev=c2f23c04688ca62810a4989107e75ad6adc11d89#c2f23c04688ca62810a4989107e75ad6adc11d89"
+source = "git+https://github.com/succinctlabs/rsp?tag=reth-1.6.0#2a99f35a9b81452eb53af3848e50addfd481363c"
 dependencies = [
  "alloy-eips",
  "alloy-genesis",
@@ -3997,7 +3997,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "thiserror 2.0.12",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

@@ -36,6 +36,10 @@ impl AlpenEvmPrecompiles {
 pub fn load_precompiles() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
     INSTANCE.get_or_init(|| {
+        // Alpen EVM supports all Ethereum precompiles up to the Pectra fork.
+        // However, we want to disable the point evaluation precompile introduced in the Cancun
+        // fork. Therefore, we start with the Berlin precompiles and manually add the ones
+        // needed for Pectra.
         let mut precompiles = Precompiles::berlin().clone();
 
         // EIP-2537: Precompile for BLS12-381
