@@ -10,19 +10,21 @@ use strata_primitives::buf::Buf32;
 use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
-use crate::utils::{get_default_backoff, second};
+use crate::{SledDbConfig, utils::second};
 
 #[derive(Debug)]
 pub struct L1BroadcastDBSled {
     tx_id_tree: SledTree<BcastL1TxIdSchema>,
     tx_tree: SledTree<BcastL1TxSchema>,
+    config: SledDbConfig,
 }
 
 impl L1BroadcastDBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             tx_id_tree: db.get_tree()?,
             tx_tree: db.get_tree()?,
+            config,
         })
     }
 
@@ -37,21 +39,23 @@ impl L1BroadcastDBSled {
 impl L1BroadcastDatabase for L1BroadcastDBSled {
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>> {
         let next = self.get_next_idx()?;
-        let backoff = get_default_backoff();
 
         let nxt = (&self.tx_tree, &self.tx_id_tree)
-            .transaction_with_retry(backoff, 3, |(txtree, txidtree)| {
-                let mut nxt = next;
-                if txtree.get(&txid)?.is_none() {
-                    // Fetch next empty idx
-                    while txidtree.get(&nxt)?.is_some() {
-                        nxt += 1;
+            .transaction_with_retry(
+                self.config.backoff.as_ref(),
+                self.config.retry_count as usize,
+                |(txtree, txidtree)| {
+                    let mut nxt = next;
+                    if txtree.get(&txid)?.is_none() {
+                        while txidtree.get(&nxt)?.is_some() {
+                            nxt += 1;
+                        }
+                        txidtree.insert(&nxt, &txid)?;
                     }
-                    txidtree.insert(&nxt, &txid)?;
-                }
-                txtree.insert(&txid, &txentry)?;
-                Ok(nxt)
-            })
+                    txtree.insert(&txid, &txentry)?;
+                    Ok(nxt)
+                },
+            )
             .map_err(|e| DbError::Other(e.to_string()))?;
         Ok(Some(nxt))
     }
@@ -123,7 +127,8 @@ mod tests {
     fn setup_db() -> L1BroadcastDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        L1BroadcastDBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 100);
+        L1BroadcastDBSled::new(sled_db.into(), config).unwrap()
     }
 
     l1_broadcast_db_tests!(setup_db());

@@ -6,19 +6,21 @@ use strata_state::batch::EpochSummary;
 use typed_sled::{SledDb, SledTree};
 
 use super::schemas::*;
-use crate::utils::first;
+use crate::{SledDbConfig, utils::first};
 
 #[derive(Debug)]
 pub struct CheckpointDBSled {
     checkpoint_tree: SledTree<CheckpointSchema>,
     epoch_summary_tree: SledTree<EpochSummarySchema>,
+    config: SledDbConfig,
 }
 
 impl CheckpointDBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             checkpoint_tree: db.get_tree()?,
             epoch_summary_tree: db.get_tree()?,
+            config,
         })
     }
 }
@@ -94,7 +96,8 @@ mod tests {
     fn setup_db() -> CheckpointDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        CheckpointDBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        CheckpointDBSled::new(sled_db.into(), config).unwrap()
     }
 
     checkpoint_db_tests!(setup_db());

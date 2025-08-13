@@ -5,17 +5,19 @@ use strata_state::sync_event::SyncEvent;
 use typed_sled::{SledDb, SledTree, batch::SledBatch};
 
 use super::schemas::{SyncEventSchema, SyncEventWithTimestamp};
-use crate::utils::first;
+use crate::{utils::first, SledDbConfig};
 
 #[derive(Debug)]
 pub struct SyncEventDBSled {
     sync_event_tree: SledTree<SyncEventSchema>,
+    config: SledDbConfig,
 }
 
 impl SyncEventDBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             sync_event_tree: db.get_tree()?,
+            config,
         })
     }
 
@@ -93,7 +95,8 @@ mod tests {
     fn setup_db() -> SyncEventDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        SyncEventDBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        SyncEventDBSled::new(sled_db.into(), config).unwrap()
     }
 
     sync_event_db_tests!(setup_db());

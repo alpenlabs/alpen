@@ -6,21 +6,26 @@ use strata_db::{
 };
 use strata_primitives::buf::Buf32;
 use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
-use typed_sled::{SledDb, SledTree};
+use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
 
-use crate::chain_state::schemas::{StateInstanceEntry, StateInstanceSchema, WriteBatchSchema};
+use crate::{
+    SledDbConfig,
+    chain_state::schemas::{StateInstanceEntry, StateInstanceSchema, WriteBatchSchema},
+};
 
 #[derive(Debug)]
 pub struct ChainstateDBSled {
     state_tree: SledTree<StateInstanceSchema>,
     write_batch_tree: SledTree<WriteBatchSchema>,
+    config: SledDbConfig,
 }
 
 impl ChainstateDBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             state_tree: db.get_tree()?,
             write_batch_tree: db.get_tree()?,
+            config,
         })
     }
 
@@ -51,8 +56,21 @@ impl ChainstateDatabase for ChainstateDBSled {
         if next_id == 0 {
             return Err(DbError::MissingStateInstance);
         }
-        self.state_tree.insert(&next_id, &entry)?;
-        Ok(next_id)
+        let next = (&self.state_tree,)
+            .transaction_with_retry(
+                self.config.backoff.as_ref(),
+                self.config.retry_count.into(),
+                |(st_tree,)| {
+                    let mut nxt = next_id;
+                    while st_tree.get(&nxt)?.is_some() {
+                        nxt += 1;
+                    }
+                    st_tree.insert(&nxt, &entry)?;
+                    Ok(nxt)
+                },
+            )
+            .map_err(|e| DbError::Other(e.to_string()))?;
+        Ok(next)
     }
 
     fn del_inst(&self, id: StateInstanceId) -> DbResult<()> {
@@ -104,7 +122,7 @@ impl ChainstateDatabase for ChainstateDBSled {
         // Since we have a really simple state merge concept now, we can just
         // fudge the details on this one.
 
-        let _inst_entry = self
+        let last_entry = self
             .state_tree
             .get(&state_id)?
             .ok_or(DbError::MissingStateInstance)?;
@@ -125,7 +143,8 @@ impl ChainstateDatabase for ChainstateDBSled {
         // Applying the last write batch is really simple.
         if let Some(last_wb) = last_wb {
             let entry = StateInstanceEntry::new(last_wb.into_toplevel());
-            self.state_tree.insert(&state_id, &entry)?;
+            self.state_tree
+                .compare_and_swap(state_id, Some(last_entry), Some(entry))?;
         }
 
         Ok(())
@@ -142,7 +161,8 @@ mod tests {
     fn setup_db() -> ChainstateDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        ChainstateDBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        ChainstateDBSled::new(sled_db.into(), config).unwrap()
     }
 
     chain_state_db_tests!(setup_db());

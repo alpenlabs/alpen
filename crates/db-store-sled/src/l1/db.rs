@@ -5,7 +5,7 @@ use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
 use typed_sled::{SledDb, SledTree, batch::SledBatch, transaction::SledTransactional};
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
-use crate::utils::first;
+use crate::{SledDbConfig, utils::first};
 
 #[derive(Debug)]
 pub struct L1DBSled {
@@ -13,15 +13,17 @@ pub struct L1DBSled {
     l1_canonical_tree: SledTree<L1CanonicalBlockSchema>,
     l1_blks_height_tree: SledTree<L1BlocksByHeightSchema>,
     txn_tree: SledTree<TxnSchema>,
+    config: SledDbConfig,
 }
 
 impl L1DBSled {
-    pub fn new(db: Arc<SledDb>) -> DbResult<Self> {
+    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             l1_blk_tree: db.get_tree()?,
             l1_canonical_tree: db.get_tree()?,
             l1_blks_height_tree: db.get_tree()?,
             txn_tree: db.get_tree()?,
+            config,
         })
     }
 
@@ -157,7 +159,8 @@ mod tests {
     fn setup_db() -> L1DBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let sled_db = SledDb::new(db).unwrap();
-        L1DBSled::new(sled_db.into()).unwrap()
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        L1DBSled::new(sled_db.into(), config).unwrap()
     }
 
     l1_db_tests!(setup_db());

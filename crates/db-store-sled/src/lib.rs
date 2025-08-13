@@ -23,20 +23,35 @@ pub use l2::db::L2DBSled;
 pub use prover::db::ProofDBSled;
 use strata_db::traits::DatabaseBackend;
 pub use sync_event::db::SyncEventDBSled;
-use typed_sled::SledDb;
+use typed_sled::{
+    SledDb,
+    transaction::{Backoff, ConstantBackoff},
+};
 pub use writer::db::L1WriterDBSled;
 
 pub const SLED_NAME: &str = "strata-client";
 
 /// database operations configuration
-#[derive(Clone, Copy, Debug)]
-pub struct SledOpsConfig {
+#[derive(Debug, Clone)]
+pub struct SledDbConfig {
     pub retry_count: u16,
+    pub backoff: Arc<dyn Backoff>,
 }
 
-impl SledOpsConfig {
-    pub fn new(retry_count: u16) -> Self {
-        Self { retry_count }
+impl SledDbConfig {
+    pub fn new(retry_count: u16, backoff: Arc<dyn Backoff>) -> Self {
+        Self {
+            retry_count,
+            backoff,
+        }
+    }
+
+    pub fn new_with_constant_backoff(retry_count: u16, delay: u64) -> Self {
+        let const_backoff = ConstantBackoff::new(delay);
+        Self {
+            retry_count,
+            backoff: Arc::new(const_backoff),
+        }
     }
 }
 
@@ -61,7 +76,7 @@ pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Resul
 pub fn open_sled_backend(
     datadir: &Path,
     dbname: &'static str,
-    ops_config: SledOpsConfig,
+    ops_config: SledDbConfig,
 ) -> anyhow::Result<Arc<SledBackend>> {
     let sled_db = open_sled_database(datadir, dbname)?;
     Ok(init_sled_backend(sled_db, ops_config))
@@ -139,52 +154,58 @@ impl DatabaseBackend for SledBackend {
     }
 }
 
-pub fn init_core_dbs(sled_db: Arc<SledDb>, _ops_config: SledOpsConfig) -> Arc<SledBackend> {
-    init_sled_backend(sled_db, _ops_config)
+pub fn init_core_dbs(sled_db: Arc<SledDb>, db_config: SledDbConfig) -> Arc<SledBackend> {
+    init_sled_backend(sled_db, db_config)
 }
 
-pub fn init_broadcaster_database(
-    sled_db: Arc<SledDb>,
-    _ops_config: SledOpsConfig,
-) -> Arc<BroadcastDb> {
+pub fn init_broadcaster_database(sled_db: Arc<SledDb>, config: SledDbConfig) -> Arc<BroadcastDb> {
     let l1_broadcast_db =
-        L1BroadcastDBSled::new(sled_db).expect("Failed to create L1BroadcastDBSled");
+        L1BroadcastDBSled::new(sled_db, config).expect("Failed to create L1BroadcastDBSled");
     BroadcastDb::new(l1_broadcast_db.into()).into()
 }
 
-pub fn init_writer_database(
-    sled_db: Arc<SledDb>,
-    _ops_config: SledOpsConfig,
-) -> Arc<L1WriterDBSled> {
-    L1WriterDBSled::new(sled_db)
+pub fn init_writer_database(sled_db: Arc<SledDb>, config: SledDbConfig) -> Arc<L1WriterDBSled> {
+    L1WriterDBSled::new(sled_db, config)
         .expect("Failed to create L1WriterDBSled")
         .into()
 }
 
-pub fn init_prover_database(sled_db: Arc<SledDb>, _ops_config: SledOpsConfig) -> Arc<ProofDBSled> {
-    ProofDBSled::new(sled_db)
+pub fn init_prover_database(sled_db: Arc<SledDb>, config: SledDbConfig) -> Arc<ProofDBSled> {
+    ProofDBSled::new(sled_db, config)
         .expect("Failed to create ProofDBSled")
         .into()
 }
 
 /// Initialize a complete Sled backend with all database types
-pub fn init_sled_backend(sled_db: Arc<SledDb>, _ops_config: SledOpsConfig) -> Arc<SledBackend> {
-    let l1_db = Arc::new(L1DBSled::new(sled_db.clone()).expect("Failed to create L1DBSled"));
-    let l2_db = Arc::new(L2DBSled::new(sled_db.clone()).expect("Failed to create L2DBSled"));
-    let sync_event_db =
-        Arc::new(SyncEventDBSled::new(sled_db.clone()).expect("Failed to create SyncEventDBSled"));
+pub fn init_sled_backend(sled_db: Arc<SledDb>, config: SledDbConfig) -> Arc<SledBackend> {
+    let l1_db = Arc::new(
+        L1DBSled::new(sled_db.clone(), config.clone()).expect("Failed to create L1DBSled"),
+    );
+    let l2_db = Arc::new(
+        L2DBSled::new(sled_db.clone(), config.clone()).expect("Failed to create L2DBSled"),
+    );
+    let sync_event_db = Arc::new(
+        SyncEventDBSled::new(sled_db.clone(), config.clone())
+            .expect("Failed to create SyncEventDBSled"),
+    );
     let client_state_db = Arc::new(
-        ClientStateDBSled::new(sled_db.clone()).expect("Failed to create ClientStateDBSled"),
+        ClientStateDBSled::new(sled_db.clone(), config.clone())
+            .expect("Failed to create ClientStateDBSled"),
     );
     let chain_state_db = Arc::new(
-        ChainstateDBSled::new(sled_db.clone()).expect("Failed to create ChainstateDBSled"),
+        ChainstateDBSled::new(sled_db.clone(), config.clone())
+            .expect("Failed to create ChainstateDBSled"),
     );
     let checkpoint_db = Arc::new(
-        CheckpointDBSled::new(sled_db.clone()).expect("Failed to create CheckpointDBSled"),
+        CheckpointDBSled::new(sled_db.clone(), config.clone())
+            .expect("Failed to create CheckpointDBSled"),
     );
-    let writer_db =
-        Arc::new(L1WriterDBSled::new(sled_db.clone()).expect("Failed to create L1WriterDBSled"));
-    let prover_db = Arc::new(ProofDBSled::new(sled_db).expect("Failed to create ProofDBSled"));
+    let writer_db = Arc::new(
+        L1WriterDBSled::new(sled_db.clone(), config.clone())
+            .expect("Failed to create L1WriterDBSled"),
+    );
+    let prover_db =
+        Arc::new(ProofDBSled::new(sled_db, config.clone()).expect("Failed to create ProofDBSled"));
 
     Arc::new(SledBackend::new(
         l1_db,
