@@ -17,7 +17,7 @@ We accept contributions in the following forms (non-exhaustive):
   or pull requests are good candidates for discussions. Please be polite
   and present civilized arguments in discussions.
 - **Security Reports**: If you believe you have found a vulnerability,
-  please provide details [here]([https://immunefi.com/bug-bounty/alpen-labs/information/]) instead.
+  please provide details [here](https://immunefi.com/bug-bounty/alpen-labs/information/) instead.
 
 ## Code of Conduct
 
