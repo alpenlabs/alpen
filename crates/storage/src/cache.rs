@@ -3,7 +3,7 @@
 use std::{hash::Hash, num::NonZeroUsize, sync::Arc};
 
 use strata_db::{DbError, DbResult};
-use tokio::sync::{broadcast, broadcast::error::SendError, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tracing::*;
 
 use crate::exec::DbRecv;
@@ -183,16 +183,16 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         trace!("re-acquired slot lock");
         match fetch_res {
             Ok(Ok(v)) => {
-                send_completion_and_assign_slot_ready(Ok(v.clone()), &mut slot_guard, complete_tx);
+                // Store value in slot and broadcast
+                *slot_guard = SlotState::Ready(v.clone());
+                let _ = complete_tx.send(Ok(v.clone()));
                 Ok(v)
             }
 
             Ok(Err(err)) => {
-                send_completion_and_assign_slot_ready(
-                    Err(err.clone()),
-                    &mut slot_guard,
-                    complete_tx,
-                );
+                // Store error in slot and broadcast
+                *slot_guard = SlotState::Error(err.clone());
+                let _ = complete_tx.send(Err(err.clone()));
                 drop(slot_guard);
                 let mut cache_guard = self.cache.lock().await;
                 trace!("re-acquired cache lock");
@@ -204,11 +204,8 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
             Err(_) => {
                 // Send the error to waiting tasks and update slot
                 let error = DbError::WorkerFailedStrangely;
-                send_completion_and_assign_slot_ready(
-                    Err(error.clone()),
-                    &mut slot_guard,
-                    complete_tx,
-                );
+                *slot_guard = SlotState::Error(error.clone());
+                let _ = complete_tx.send(Err(error.clone()));
                 drop(slot_guard);
                 let mut cache_guard = self.cache.lock().await;
                 trace!("re-acquired cache lock");
@@ -274,49 +271,22 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         trace!("re-acquired slot lock");
         match fetch_res {
             Ok(v) => {
-                // Fill in the lock state and send down the complete tx.
-                send_completion_and_assign_slot_ready(Ok(v.clone()), &mut slot_guard, complete_tx);
+                // Store value in slot and broadcast
+                *slot_guard = SlotState::Ready(v.clone());
+                let _ = complete_tx.send(Ok(v.clone()));
                 Ok(v)
             }
 
             Err(e) => {
-                // Send the error to waiting tasks and update slot
-                send_completion_and_assign_slot_ready(Err(e.clone()), &mut slot_guard, complete_tx);
+                // Store error in slot and broadcast
+                *slot_guard = SlotState::Error(e.clone());
+                let _ = complete_tx.send(Err(e.clone()));
                 drop(slot_guard);
                 let mut cache_guard = self.cache.blocking_lock();
                 trace!("re-acquired cache lock");
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
                 Err(e)
-            }
-        }
-    }
-}
-
-/// Convenience function to send completion result on channel and update cache slot.
-fn send_completion_and_assign_slot_ready<T: Clone>(
-    result: DbResult<T>,
-    slot_state: &mut SlotState<T>,
-    tx: broadcast::Sender<DbResult<T>>,
-) {
-    // We need to clone for the channel since we also need to store in slot
-    match tx.send(result.clone()) {
-        Ok(waiter_cnt) => {
-            trace!(%waiter_cnt, "notified cache waiters");
-
-            // Store in slot state
-            match result {
-                Ok(v) => *slot_state = SlotState::Ready(v.clone()),
-                Err(e) => *slot_state = SlotState::Error(e),
-            }
-        }
-
-        Err(SendError(result)) => {
-            // In this (likely) case, there's no readers, so we can keep the
-            // value and avoid making an additional clone.
-            match result {
-                Ok(v) => *slot_state = SlotState::Ready(v),
-                Err(e) => *slot_state = SlotState::Error(e),
             }
         }
     }
