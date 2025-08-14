@@ -20,7 +20,7 @@ pub(crate) enum SlotState<T> {
     Ready(T),
 
     /// A database fetch is happening in the background and it will be updated.
-    Pending(broadcast::Receiver<T>),
+    Pending(broadcast::Receiver<DbResult<T>>),
 
     /// An unspecified error happened fetching from the database.
     Error,
@@ -153,7 +153,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
                 // Now wait on the channel without holding any locks
                 trace!("waiting for database fetch to complete");
                 match receiver.recv().await {
-                    Ok(v) => return Ok(v),
+                    Ok(result) => return result,
                     Err(_e) => return Err(DbError::WorkerFailedStrangely),
                 }
             }
@@ -183,30 +183,38 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         trace!("re-acquired slot lock");
         match fetch_res {
             Ok(Ok(v)) => {
-                send_completion_and_assign_slot_ready(&v, &mut slot_guard, complete_tx);
+                send_completion_and_assign_slot_ready(Ok(v.clone()), &mut slot_guard, complete_tx);
                 Ok(v)
             }
 
-            Ok(Err(e)) => {
-                // Important ordering for the locks.
-                *slot_guard = SlotState::Error;
+            Ok(Err(err)) => {
+                send_completion_and_assign_slot_ready(
+                    Err(err.clone()),
+                    &mut slot_guard,
+                    complete_tx,
+                );
                 drop(slot_guard);
                 let mut cache_guard = self.cache.lock().await;
                 trace!("re-acquired cache lock");
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
-                Err(e)
+                Err(err)
             }
 
             Err(_) => {
-                // Important ordering for the locks.
-                *slot_guard = SlotState::Error;
+                // Send the error to waiting tasks and update slot
+                let error = DbError::WorkerFailedStrangely;
+                send_completion_and_assign_slot_ready(
+                    Err(error.clone()),
+                    &mut slot_guard,
+                    complete_tx,
+                );
                 drop(slot_guard);
                 let mut cache_guard = self.cache.lock().await;
                 trace!("re-acquired cache lock");
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
-                Err(DbError::WorkerFailedStrangely)
+                Err(error)
             }
         }
     }
@@ -240,7 +248,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
                 // Now wait on the channel without holding any locks
                 trace!("waiting for database fetch to complete");
                 match receiver.blocking_recv() {
-                    Ok(v) => return Ok(v),
+                    Ok(result) => return result,
                     Err(_e) => return Err(DbError::WorkerFailedStrangely),
                 }
             }
@@ -267,13 +275,13 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         match fetch_res {
             Ok(v) => {
                 // Fill in the lock state and send down the complete tx.
-                send_completion_and_assign_slot_ready(&v, &mut slot_guard, complete_tx);
+                send_completion_and_assign_slot_ready(Ok(v.clone()), &mut slot_guard, complete_tx);
                 Ok(v)
             }
 
             Err(e) => {
-                // Important ordering for the locks.
-                *slot_guard = SlotState::Error;
+                // Send the error to waiting tasks and update slot
+                send_completion_and_assign_slot_ready(Err(e.clone()), &mut slot_guard, complete_tx);
                 drop(slot_guard);
                 let mut cache_guard = self.cache.blocking_lock();
                 trace!("re-acquired cache lock");
@@ -285,27 +293,31 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     }
 }
 
-/// Convenience function to cafefully avoid making extra clones when sending on
-/// a channel and updating a cache slot.
+/// Convenience function to send completion result on channel and update cache slot.
 fn send_completion_and_assign_slot_ready<T: Clone>(
-    v: &T,
+    result: DbResult<T>,
     slot_state: &mut SlotState<T>,
-    tx: broadcast::Sender<T>,
+    tx: broadcast::Sender<DbResult<T>>,
 ) {
-    // Try sending it on the channel first with a new clone.
-    match tx.send(v.clone()) {
+    // We need to clone for the channel since we also need to store in slot
+    match tx.send(result.clone()) {
         Ok(waiter_cnt) => {
             trace!(%waiter_cnt, "notified cache waiters");
 
-            // If it's consumed, then we do have to make another clone to store
-            // in the lock.
-            *slot_state = SlotState::Ready(v.clone());
+            // Store in slot state
+            match result {
+                Ok(v) => *slot_state = SlotState::Ready(v.clone()),
+                Err(_) => *slot_state = SlotState::Error,
+            }
         }
 
-        Err(SendError(vv)) => {
+        Err(SendError(result)) => {
             // In this (likely) case, there's no readers, so we can keep the
             // value and avoid making an additional clone.
-            *slot_state = SlotState::Ready(vv);
+            match result {
+                Ok(v) => *slot_state = SlotState::Ready(v),
+                Err(_) => *slot_state = SlotState::Error,
+            }
         }
     }
 }
