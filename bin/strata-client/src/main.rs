@@ -24,12 +24,11 @@ use strata_consensus_logic::{
     sync_manager::{self, SyncManager},
 };
 use strata_db::{
-    traits::{ DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
+    traits::{DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
     DbError,
 };
 use strata_db_store_sled::{
-    init_core_dbs, open_sled_database, SledBackend, SledDbConfig,
-    SLED_NAME,
+    init_core_dbs, open_sled_database, SledBackend, SledDbConfig, SLED_NAME,
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
