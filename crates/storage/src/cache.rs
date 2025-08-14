@@ -435,10 +435,10 @@ mod tests {
                 assert_eq!(val2, 100);
             }
             Ok(Ok((Err(e), _))) | Ok(Ok((_, Err(e)))) => {
-                panic!("Database error: {:?}", e);
+                panic!("Database error: {e:?}");
             }
             Ok(Err(e)) => {
-                panic!("Task join error: {:?}", e);
+                panic!("Task join error: {e:?}");
             }
             Err(_) => {
                 // Timeout occurred - indicates deadlock
@@ -491,15 +491,15 @@ mod tests {
                 assert_eq!(val2, 100);
             }
             (Some(Ok(Err(e))), _) | (_, Some(Ok(Err(e)))) => {
-                panic!("Database error: {:?}", e);
+                panic!("Database error: {e:?}");
             }
             (Some(Err(e)), _) | (_, Some(Err(e))) => {
-                panic!("Thread panic: {:?}", e);
+                panic!("Thread panic: {e:?}");
             }
             _ => {
                 // Timeout occurred - indicates deadlock
                 if elapsed >= timeout_duration {
-                    panic!("DEADLOCK DETECTED: Tasks timed out after {:?}", elapsed);
+                    panic!("DEADLOCK DETECTED: Tasks timed out after {elapsed:?}");
                 } else {
                     panic!("Thread join failed unexpectedly");
                 }
@@ -571,13 +571,11 @@ mod tests {
         // Both tasks should get the same specific DbError::NonExistentEntry
         assert!(
             matches!(error1, DbError::NonExistentEntry),
-            "Task 1 should get DbError::NonExistentEntry, got: {:?}",
-            error1
+            "Task 1 should get DbError::NonExistentEntry, got: {error1:?}",
         );
         assert!(
             matches!(error2, DbError::NonExistentEntry),
-            "Task 2 should also get DbError::NonExistentEntry, got: {:?}",
-            error2
+            "Task 2 should also get DbError::NonExistentEntry, got: {error1:?}",
         );
     }
 
@@ -618,13 +616,11 @@ mod tests {
         // Both tasks should get the same specific DbError::NonExistentEntry
         assert!(
             matches!(error1, DbError::NonExistentEntry),
-            "Task 1 should get DbError::NonExistentEntry, got: {:?}",
-            error1
+            "Task 1 should get DbError::NonExistentEntry, got: {error1:?}"
         );
         assert!(
             matches!(error2, DbError::NonExistentEntry),
-            "Task 2 should also get DbError::NonExistentEntry, got: {:?}",
-            error2
+            "Task 2 should also get DbError::NonExistentEntry, got: {error1:?}"
         );
     }
 }
