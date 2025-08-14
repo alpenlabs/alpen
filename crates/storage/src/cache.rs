@@ -335,6 +335,8 @@ fn safely_remove_cache_slot<K: Eq + Hash, V>(
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Arc, time::Duration};
+
     use strata_db::DbError;
 
     use super::CacheTable;
@@ -406,5 +408,147 @@ mod tests {
         cache.purge_blocking(&42);
         let len = cache.get_len_blocking();
         assert_eq!(len, 0);
+    }
+
+    #[tokio::test]
+    async fn test_deadlock_scenario() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(3.try_into().unwrap()));
+        let key = 42u64;
+
+        // Task 1: Creates a pending slot and starts a slow fetch
+        let cache1 = cache.clone();
+        let task1 = tokio::spawn(async move {
+            cache1
+                .get_or_fetch(&key, || {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    // Spawn a task that will complete after a delay
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        tx.send(Ok(100)).unwrap();
+                    });
+                    rx
+                })
+                .await
+        });
+
+        // Small delay to ensure task1 creates the pending slot first
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Task 2: Tries to read from the same key (will find pending slot)
+        let cache2 = cache.clone();
+        let task2 = tokio::spawn(async move {
+            cache2
+                .get_or_fetch(&key, || {
+                    // This should never be called since the slot already exists
+                    panic!("This fetch function should not be called");
+                })
+                .await
+        });
+
+        // Use timeout to detect deadlock - in deadlock scenario this will timeout
+        let timeout_result = tokio::time::timeout(Duration::from_secs(2), async {
+            let (result1, result2) = tokio::join!(task1, task2);
+            match (result1, result2) {
+                (Ok(val1), Ok(val2)) => Ok((val1, val2)),
+                (Err(e), _) | (_, Err(e)) => Err(e),
+            }
+        })
+        .await;
+
+        match timeout_result {
+            Ok(Ok((Ok(val1), Ok(val2)))) => {
+                // No deadlock - both tasks completed successfully
+                assert_eq!(val1, 100);
+                assert_eq!(val2, 100);
+                println!("No deadlock detected - both tasks completed");
+            }
+            Ok(Ok((Err(e), _))) | Ok(Ok((_, Err(e)))) => {
+                panic!("Database error: {:?}", e);
+            }
+            Ok(Err(e)) => {
+                panic!("Task join error: {:?}", e);
+            }
+            Err(_) => {
+                // Timeout occurred - indicates deadlock
+                panic!("DEADLOCK DETECTED: Tasks timed out after 2 seconds");
+            }
+        }
+    }
+
+    #[test]
+    fn test_deadlock_scenario_blocking() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(3.try_into().unwrap()));
+        let key = 42u64;
+
+        // Task 1: Creates a pending slot and starts a slow fetch
+        let cache1 = cache.clone();
+        let handle1 = std::thread::spawn(move || {
+            cache1.get_or_fetch_blocking(&key, || {
+                // Simulate slow database operation
+                std::thread::sleep(Duration::from_millis(100));
+                Ok(100)
+            })
+        });
+
+        // Small delay to ensure task1 creates the pending slot first
+        std::thread::sleep(Duration::from_millis(10));
+
+        // Task 2: Tries to read from the same key (will find pending slot)
+        let cache2 = cache.clone();
+        let handle2 = std::thread::spawn(move || {
+            cache2.get_or_fetch_blocking(&key, || {
+                // This should never be called since the slot already exists
+                panic!("This fetch function should not be called");
+            })
+        });
+
+        // Use timeout to detect deadlock - in deadlock scenario this will timeout
+        let start_time = std::time::Instant::now();
+        let timeout_duration = Duration::from_secs(2);
+
+        // Wait for both threads with timeout
+        let result1 = wait_for_thread_with_timeout(handle1, timeout_duration);
+        let result2 = wait_for_thread_with_timeout(handle2, timeout_duration);
+
+        let elapsed = start_time.elapsed();
+
+        match (result1, result2) {
+            (Some(Ok(Ok(val1))), Some(Ok(Ok(val2)))) => {
+                // No deadlock - both tasks completed successfully
+                assert_eq!(val1, 100);
+                assert_eq!(val2, 100);
+                println!("No deadlock detected - both tasks completed");
+            }
+            (Some(Ok(Err(e))), _) | (_, Some(Ok(Err(e)))) => {
+                panic!("Database error: {:?}", e);
+            }
+            (Some(Err(e)), _) | (_, Some(Err(e))) => {
+                panic!("Thread panic: {:?}", e);
+            }
+            _ => {
+                // Timeout occurred - indicates deadlock
+                if elapsed >= timeout_duration {
+                    panic!("DEADLOCK DETECTED: Tasks timed out after {:?}", elapsed);
+                } else {
+                    panic!("Thread join failed unexpectedly");
+                }
+            }
+        }
+    }
+
+    fn wait_for_thread_with_timeout<T>(
+        handle: std::thread::JoinHandle<T>,
+        timeout: Duration,
+    ) -> Option<std::thread::Result<T>> {
+        let start = std::time::Instant::now();
+        loop {
+            if handle.is_finished() {
+                return Some(handle.join()); // Thread is finished, try to join
+            }
+            if start.elapsed() >= timeout {
+                return None; // Timeout reached
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 }
