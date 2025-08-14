@@ -542,4 +542,109 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
     }
+
+    #[tokio::test]
+    async fn test_concurrent_error_propagation() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(3.try_into().unwrap()));
+        let key = 42u64;
+
+        // Task 1: Creates a pending slot and will return a specific DbError
+        let cache1 = cache.clone();
+        let task1 = tokio::spawn(async move {
+            cache1
+                .get_or_fetch(&key, || {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    // Spawn a task that will return a specific error after delay
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tx.send(Err(DbError::NonExistentEntry)).unwrap(); // Specific error
+                    });
+                    rx
+                })
+                .await
+        });
+
+        // Small delay to ensure task1 creates the pending slot first
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Task 2: Tries to read from the same key (will find pending slot)
+        let cache2 = cache.clone();
+        let task2 = tokio::spawn(async move {
+            cache2
+                .get_or_fetch(&key, || {
+                    // This should never be called since the slot already exists
+                    panic!("This fetch function should not be called");
+                })
+                .await
+        });
+
+        // Wait for both tasks to complete
+        let (result1, result2) = tokio::join!(task1, task2);
+
+        let error1 = result1
+            .expect("Task 1 should not panic")
+            .expect_err("Task 1 should return error");
+        let error2 = result2
+            .expect("Task 2 should not panic")
+            .expect_err("Task 2 should return error");
+
+        // Both tasks should get the same specific DbError::NonExistentEntry
+        assert!(
+            matches!(error1, DbError::NonExistentEntry),
+            "Task 1 should get DbError::NonExistentEntry, got: {:?}",
+            error1
+        );
+        assert!(
+            matches!(error2, DbError::NonExistentEntry),
+            "Task 2 should also get DbError::NonExistentEntry, got: {:?}",
+            error2
+        );
+    }
+
+    #[test]
+    fn test_concurrent_error_propagation_blocking() {
+        let cache = Arc::new(CacheTable::<u64, u64>::new(3.try_into().unwrap()));
+        let key = 42u64;
+
+        // Task 1: Creates a pending slot and will return a specific DbError
+        let cache1 = cache.clone();
+        let handle1 = std::thread::spawn(move || {
+            cache1.get_or_fetch_blocking(&key, || {
+                // Simulate slow database operation that returns specific error
+                std::thread::sleep(Duration::from_millis(50));
+                Err(DbError::NonExistentEntry) // Specific error
+            })
+        });
+
+        // Small delay to ensure task1 creates the pending slot first
+        std::thread::sleep(Duration::from_millis(10));
+
+        // Task 2: Tries to read from the same key (will find pending slot)
+        let cache2 = cache.clone();
+        let handle2 = std::thread::spawn(move || {
+            cache2.get_or_fetch_blocking(&key, || {
+                // This should never be called since the slot already exists
+                panic!("This fetch function should not be called");
+            })
+        });
+
+        // Wait for both threads to complete
+        let result1 = handle1.join().expect("Thread 1 should not panic");
+        let result2 = handle2.join().expect("Thread 2 should not panic");
+
+        let error1 = result1.expect_err("Task 1 should return error");
+        let error2 = result2.expect_err("Task 2 should return error");
+
+        // Both tasks should get the same specific DbError::NonExistentEntry
+        assert!(
+            matches!(error1, DbError::NonExistentEntry),
+            "Task 1 should get DbError::NonExistentEntry, got: {:?}",
+            error1
+        );
+        assert!(
+            matches!(error2, DbError::NonExistentEntry),
+            "Task 2 should also get DbError::NonExistentEntry, got: {:?}",
+            error2
+        );
+    }
 }
