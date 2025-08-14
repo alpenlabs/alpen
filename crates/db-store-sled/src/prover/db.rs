@@ -12,7 +12,7 @@ use crate::SledDbConfig;
 pub struct ProofDBSled {
     proof_tree: SledTree<ProofSchema>,
     proof_deps_tree: SledTree<ProofDepsSchema>,
-    config: SledDbConfig,
+    _config: SledDbConfig,
 }
 
 impl ProofDBSled {
@@ -20,7 +20,7 @@ impl ProofDBSled {
         Ok(Self {
             proof_tree: db.get_tree()?,
             proof_deps_tree: db.get_tree()?,
-            config,
+            _config: config,
         })
     }
 }

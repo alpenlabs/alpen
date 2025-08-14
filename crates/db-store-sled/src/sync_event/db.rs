@@ -5,7 +5,10 @@ use strata_state::sync_event::SyncEvent;
 use typed_sled::{SledDb, SledTree, batch::SledBatch};
 
 use super::schemas::{SyncEventSchema, SyncEventWithTimestamp};
-use crate::{SledDbConfig, utils::{first, find_next_available_id}};
+use crate::{
+    SledDbConfig,
+    utils::{find_next_available_id, first},
+};
 
 #[derive(Debug)]
 pub struct SyncEventDBSled {
@@ -34,12 +37,13 @@ impl SyncEventDatabase for SyncEventDBSled {
         };
 
         let event = SyncEventWithTimestamp::new(ev);
-        let result = self.config.with_retry((&self.sync_event_tree,), |view| {
-            let se_tree = view.0;
-            let nxt = find_next_available_id(&se_tree, id)?;
-            se_tree.insert(&nxt, &event)?;
-            Ok(nxt)
-        })?;
+        let result = self
+            .config
+            .with_retry((&self.sync_event_tree,), |(se_tree,)| {
+                let nxt = find_next_available_id(&se_tree, id)?;
+                se_tree.insert(&nxt, &event)?;
+                Ok(nxt)
+            })?;
         Ok(result)
     }
 

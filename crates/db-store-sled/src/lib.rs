@@ -1,3 +1,5 @@
+//! Sled store for the Alpen codebase.
+
 pub mod broadcaster;
 pub mod chain_state;
 pub mod checkpoint;

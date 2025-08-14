@@ -10,32 +10,33 @@ use crate::{SledDbConfig, utils::first};
 #[derive(Debug)]
 pub struct ClientStateDBSled {
     client_update_tree: SledTree<ClientUpdateOutputSchema>,
-    config: SledDbConfig,
+    _config: SledDbConfig,
 }
 
 impl ClientStateDBSled {
     pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         Ok(Self {
             client_update_tree: db.get_tree()?,
-            config,
+            _config: config,
         })
+    }
+
+    fn get_next_idx(&self) -> DbResult<u64> {
+        match self.client_update_tree.last()? {
+            Some((idx, _)) => Ok(idx + 1),
+            None => Ok(0),
+        }
     }
 }
 
 impl ClientStateDatabase for ClientStateDBSled {
     fn put_client_update(&self, idx: u64, output: ClientUpdateOutput) -> DbResult<()> {
-        let expected_idx = match self.client_update_tree.last()?.map(first) {
-            Some(last_idx) => last_idx + 1,
-            // We don't have a separate way to insert the init client state, so
-            // we special case this here.
-            None => 0,
-        };
-
-        if idx != expected_idx {
+        let next = self.get_next_idx()?;
+        if idx != next {
             return Err(DbError::OooInsert("consensus_store", idx));
         }
-
-        self.client_update_tree.insert(&idx, &output)?;
+        self.client_update_tree
+            .compare_and_swap(idx, None, Some(output))?;
         Ok(())
     }
 

@@ -48,8 +48,8 @@ macro_rules! define_table_with_default_codec {
 
 /// Variation of [`define_table_with_default_codec`].
 ///
-/// It is generally used for schemas with integer keys. [`KeyCodec`] is implemented for all the
-/// integer types and this macro leverages that.
+/// It is generally used for schemas with integer keys. [`typed_sled::codec::KeyCodec`] is
+/// implemented for all the integer types and this macro leverages that.
 #[macro_export]
 macro_rules! define_table_with_integer_key {
     ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {

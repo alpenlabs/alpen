@@ -61,8 +61,7 @@ impl ChainstateDatabase for ChainstateDBSled {
         if next_id == 0 {
             return Err(DbError::MissingStateInstance);
         }
-        let next = self.config.with_retry((&self.state_tree,), |view| {
-            let st_tree = view.0;
+        let next = self.config.with_retry((&self.state_tree,), |(st_tree,)| {
             let mut nxt = next_id;
             while st_tree.get(&nxt)?.is_some() {
                 nxt += 1;

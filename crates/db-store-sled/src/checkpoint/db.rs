@@ -12,7 +12,7 @@ use crate::{SledDbConfig, utils::first};
 pub struct CheckpointDBSled {
     checkpoint_tree: SledTree<CheckpointSchema>,
     epoch_summary_tree: SledTree<EpochSummarySchema>,
-    config: SledDbConfig,
+    _config: SledDbConfig,
 }
 
 impl CheckpointDBSled {
@@ -20,7 +20,7 @@ impl CheckpointDBSled {
         Ok(Self {
             checkpoint_tree: db.get_tree()?,
             epoch_summary_tree: db.get_tree()?,
-            config,
+            _config: config,
         })
     }
 }
