@@ -23,10 +23,13 @@ use strata_consensus_logic::{
     genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
 };
-use strata_db::{traits::BroadcastDatabase, DbError};
+use strata_db::{
+    traits::{ DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
+    DbError,
+};
 use strata_db_store_sled::{
-    broadcaster::db::BroadcastDb, init_broadcaster_database, init_core_dbs, init_writer_database,
-    open_sled_database, L1WriterDBSled, SledBackend, SledDbConfig, SLED_NAME,
+    init_core_dbs, open_sled_database, SledBackend, SledDbConfig,
+    SLED_NAME,
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
@@ -124,7 +127,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         pool,
         &config,
         params.clone(),
-        database,
+        database.clone(),
         storage.clone(),
         bitcoin_client,
     )?;
@@ -133,7 +136,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     if config.client.is_sequencer {
         // If we're a sequencer, start the sequencer db and duties task.
-        let broadcast_database = init_broadcaster_database(sled_db.clone(), db_config.clone());
+        let broadcast_database = database.broadcast_db();
         let broadcast_handle = start_broadcaster_tasks(
             broadcast_database,
             ctx.pool.clone(),
@@ -142,7 +145,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             params.clone(),
             config.btcio.broadcaster.poll_interval_ms,
         );
-        let writer_db = init_writer_database(sled_db.clone(), db_config);
+        let writer_db = DatabaseBackend::writer_db(database.as_ref());
 
         // TODO: split writer tasks from this
         start_sequencer_tasks(
@@ -365,7 +368,7 @@ fn start_sequencer_tasks(
     ctx: CoreContext,
     config: &Config,
     executor: &TaskExecutor,
-    writer_db: Arc<L1WriterDBSled>,
+    writer_db: Arc<impl L1WriterDatabase>,
     checkpoint_handle: Arc<CheckpointHandle>,
     broadcast_handle: Arc<L1BroadcastHandle>,
     methods: &mut Methods,
@@ -445,7 +448,7 @@ fn start_sequencer_tasks(
 }
 
 fn start_broadcaster_tasks(
-    broadcast_database: Arc<BroadcastDb>,
+    broadcast_database: Arc<impl L1BroadcastDatabase>,
     pool: threadpool::ThreadPool,
     executor: &TaskExecutor,
     bitcoin_client: Arc<Client>,
@@ -453,9 +456,8 @@ fn start_broadcaster_tasks(
     broadcast_poll_interval: u64,
 ) -> Arc<L1BroadcastHandle> {
     // Set up L1 broadcaster.
-    let broadcast_ctx = strata_storage::ops::l1tx_broadcast::Context::new(
-        broadcast_database.l1_broadcast_db().clone(),
-    );
+    let broadcast_ctx =
+        strata_storage::ops::l1tx_broadcast::Context::new(broadcast_database.clone());
     let broadcast_ops = Arc::new(broadcast_ctx.into_ops(pool));
     // start broadcast task
     let broadcast_handle = spawn_broadcaster_task(
