@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use strata_db::{DbResult, errors::DbError, traits::*};
 use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
-use typed_sled::{SledDb, SledTree, batch::SledBatch, transaction::SledTransactional};
+use typed_sled::{SledDb, SledTree, batch::SledBatch};
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
 use crate::{SledDbConfig, utils::first};
@@ -37,17 +37,20 @@ impl L1Database for L1DBSled {
         let blockid = mf.blkid();
         let height = mf.height();
 
-        (&self.l1_blk_tree, &self.txn_tree, &self.l1_blks_height_tree)
-            .transaction(|(bt, tt, bht)| {
-                let mut blocks_at_height = bht.get(&height)?.unwrap_or_default();
-                blocks_at_height.push(*blockid);
+        self.config
+            .with_retry(
+                (&self.l1_blk_tree, &self.txn_tree, &self.l1_blks_height_tree),
+                |(bt, tt, bht)| {
+                    let mut blocks_at_height = bht.get(&height)?.unwrap_or_default();
+                    blocks_at_height.push(*blockid);
 
-                bt.insert(blockid, &mf)?;
-                tt.insert(blockid, mf.txs_vec())?;
-                bht.insert(&height, &blocks_at_height)?;
+                    bt.insert(blockid, &mf)?;
+                    tt.insert(blockid, mf.txs_vec())?;
+                    bht.insert(&height, &blocks_at_height)?;
 
-                Ok(())
-            })
+                    Ok(())
+                },
+            )
             .map_err(|e| DbError::Other(e.to_string()))
     }
 
@@ -72,26 +75,29 @@ impl L1Database for L1DBSled {
             return Ok(());
         };
 
-        (
-            &self.l1_blk_tree,
-            &self.txn_tree,
-            &self.l1_blks_height_tree,
-            &self.l1_canonical_tree,
-        )
-            .transaction(|(bt, tt, bht, ct)| {
-                for height in start_height..=end_height {
-                    let blocks = bht.get(&height)?.unwrap_or_default();
+        self.config
+            .with_retry(
+                (
+                    &self.l1_blk_tree,
+                    &self.txn_tree,
+                    &self.l1_blks_height_tree,
+                    &self.l1_canonical_tree,
+                ),
+                |(bt, tt, bht, ct)| {
+                    for height in start_height..=end_height {
+                        let blocks = bht.get(&height)?.unwrap_or_default();
 
-                    bht.remove(&height)?;
-                    ct.remove(&height)?;
-                    for blockid in blocks {
-                        bt.remove(&blockid)?;
-                        tt.remove(&blockid)?;
+                        bht.remove(&height)?;
+                        ct.remove(&height)?;
+                        for blockid in blocks {
+                            bt.remove(&blockid)?;
+                            tt.remove(&blockid)?;
+                        }
                     }
-                }
 
-                Ok(())
-            })
+                    Ok(())
+                },
+            )
             .map_err(|e| DbError::Other(e.to_string()))?;
         Ok(())
     }

@@ -5,7 +5,7 @@ use strata_db::{
     traits::{BlockStatus, L2BlockDatabase},
 };
 use strata_state::{block::L2BlockBundle, header::L2Header, id::L2BlockId};
-use typed_sled::{SledDb, SledTree, transaction::SledTransactional};
+use typed_sled::{SledDb, SledTree};
 
 use crate::{
     SledDbConfig,
@@ -37,18 +37,21 @@ impl L2BlockDatabase for L2DBSled {
         let block_id = bundle.block().header().get_blockid();
         let block_height = bundle.block().header().slot();
 
-        (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree)
-            .transaction(|(bt, bst, bht)| {
-                let mut block_height_data = bht.get(&block_height)?.unwrap_or(Vec::new());
-                if !block_height_data.contains(&block_id) {
-                    block_height_data.push(block_id);
-                }
+        self.config
+            .with_retry(
+                (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree),
+                |(bt, bst, bht)| {
+                    let mut block_height_data = bht.get(&block_height)?.unwrap_or(Vec::new());
+                    if !block_height_data.contains(&block_id) {
+                        block_height_data.push(block_id);
+                    }
 
-                bt.insert(&block_id, &bundle)?;
-                bst.insert(&block_id, &BlockStatus::Unchecked)?;
-                bht.insert(&block_height, &block_height_data)?;
-                Ok(())
-            })
+                    bt.insert(&block_id, &bundle)?;
+                    bst.insert(&block_id, &BlockStatus::Unchecked)?;
+                    bht.insert(&block_height, &block_height_data)?;
+                    Ok(())
+                },
+            )
             .map_err(|e| DbError::Other(e.to_string()))?;
         Ok(())
     }
@@ -61,17 +64,20 @@ impl L2BlockDatabase for L2DBSled {
 
         let block_height = bundle.block().header().slot();
 
-        (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree)
-            .transaction(|(bt, bst, bht)| {
-                let mut block_height_data = bht.get(&block_height)?.unwrap_or(Vec::new());
-                block_height_data.retain(|&block_id| block_id != id);
+        self.config
+            .with_retry(
+                (&self.blk_tree, &self.blk_status_tree, &self.blk_height_tree),
+                |(bt, bst, bht)| {
+                    let mut block_height_data = bht.get(&block_height)?.unwrap_or(Vec::new());
+                    block_height_data.retain(|&block_id| block_id != id);
 
-                bt.remove(&id)?;
-                bst.remove(&id)?;
-                bht.insert(&block_height, &block_height_data)?;
+                    bt.remove(&id)?;
+                    bst.remove(&id)?;
+                    bht.insert(&block_height, &block_height_data)?;
 
-                Ok(true)
-            })
+                    Ok(true)
+                },
+            )
             .map_err(|e| DbError::Other(e.to_string()))
     }
 

@@ -10,7 +10,10 @@ use strata_primitives::buf::Buf32;
 use typed_sled::{SledDb, SledTree};
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
-use crate::{SledDbConfig, utils::{first, find_next_available_id}};
+use crate::{
+    SledDbConfig,
+    utils::{find_next_available_id, first},
+};
 
 #[derive(Debug)]
 pub struct L1WriterDBSled {
@@ -57,13 +60,13 @@ impl L1WriterDatabase for L1WriterDBSled {
             .map(first)
             .map(|x| x + 1)
             .unwrap_or(0);
-        self.config.with_retry((&self.intent_idx_tree, &self.intent_tree), |view| {
-            let (iit, it) = (view.0, view.1);
-            let nxt = find_next_available_id(&iit, next_idx)?;
-            iit.insert(&nxt, &intent_id)?;
-            it.insert(&intent_id, &intent_entry)?;
-            Ok(())
-        })
+        self.config
+            .with_retry((&self.intent_idx_tree, &self.intent_tree), |(iit, it)| {
+                let nxt = find_next_available_id(&iit, next_idx)?;
+                iit.insert(&nxt, &intent_id)?;
+                it.insert(&intent_id, &intent_entry)?;
+                Ok(())
+            })
     }
 
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>> {
