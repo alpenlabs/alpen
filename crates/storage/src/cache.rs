@@ -26,46 +26,6 @@ pub(crate) enum SlotState<T> {
     Error,
 }
 
-impl<T: Clone> SlotState<T> {
-    /// Tries to read a value from the slot, asynchronously.
-    pub(crate) async fn get_async(&self) -> DbResult<T> {
-        match self {
-            Self::Ready(v) => Ok(v.clone()),
-            Self::Pending(ch) => {
-                // When we see this log get triggered and but feels like the corresponding fetch is
-                // hanging for this read then it means that this code wasn't implemented
-                // correctly.
-                // TODO figure out how to test this
-                trace!("waiting for database fetch to complete");
-                match ch.resubscribe().recv().await {
-                    Ok(v) => Ok(v),
-                    Err(_e) => Err(DbError::WorkerFailedStrangely),
-                }
-            }
-            Self::Error => Err(DbError::CacheLoadFail),
-        }
-    }
-
-    /// Tries to read a value from the slot, blockingly.
-    pub(crate) fn get_blocking(&self) -> DbResult<T> {
-        match self {
-            Self::Ready(v) => Ok(v.clone()),
-            Self::Pending(ch) => {
-                // When we see this log get triggered and but feels like the corresponding fetch is
-                // hanging for this read then it means that this code wasn't implemented
-                // correctly.
-                // TODO figure out how to test this
-                trace!("waiting for database fetch to complete");
-                match ch.resubscribe().blocking_recv() {
-                    Ok(v) => Ok(v),
-                    Err(_e) => Err(DbError::WorkerFailedStrangely),
-                }
-            }
-            Self::Error => Err(DbError::CacheLoadFail),
-        }
-    }
-}
-
 /// Wrapper around a LRU cache that handles cache reservations and asynchronously waiting for
 /// database operations in the background without keeping a global lock on the cache.
 pub(crate) struct CacheTable<K, V> {
@@ -176,10 +136,26 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
         // See below comment about control flow.
         let (slot, complete_tx) = {
             let mut cache_guard = self.cache.lock().await;
+            trace!("acquired cache lock");
             if let Some(entry_guard) = cache_guard.get(k).cloned() {
                 drop(cache_guard);
-                let entry_guard = entry_guard.read().await;
-                return entry_guard.get_async().await;
+
+                // Get the state and extract what we need before dropping the lock
+                let mut receiver = {
+                    let entry_guard = entry_guard.read().await;
+                    match &*entry_guard {
+                        SlotState::Ready(v) => return Ok(v.clone()),
+                        SlotState::Pending(ch) => ch.resubscribe(),
+                        SlotState::Error => return Err(DbError::CacheLoadFail),
+                    }
+                }; // read lock dropped here
+
+                // Now wait on the channel without holding any locks
+                trace!("waiting for database fetch to complete");
+                match receiver.recv().await {
+                    Ok(v) => return Ok(v),
+                    Err(_e) => return Err(DbError::WorkerFailedStrangely),
+                }
             }
 
             // Create a new cache slot and insert and lock it.
@@ -250,8 +226,23 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
             let mut cache_guard = self.cache.blocking_lock();
             if let Some(entry_guard) = cache_guard.get(k).cloned() {
                 drop(cache_guard);
-                let entry_guard = entry_guard.blocking_read();
-                return entry_guard.get_blocking();
+
+                // Get the state and extract what we need before dropping the lock
+                let mut receiver = {
+                    let entry_guard = entry_guard.blocking_read();
+                    match &*entry_guard {
+                        SlotState::Ready(v) => return Ok(v.clone()),
+                        SlotState::Pending(ch) => ch.resubscribe(),
+                        SlotState::Error => return Err(DbError::CacheLoadFail),
+                    }
+                }; // read lock dropped here
+
+                // Now wait on the channel without holding any locks
+                trace!("waiting for database fetch to complete");
+                match receiver.blocking_recv() {
+                    Ok(v) => return Ok(v),
+                    Err(_e) => return Err(DbError::WorkerFailedStrangely),
+                }
             }
 
             // Create a new cache slot and insert and lock it.
