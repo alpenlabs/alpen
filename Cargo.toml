@@ -287,7 +287,7 @@ borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.6.0"
 cfg-if = "1.0.0"
 chrono = "0.4.38"
-clap = { version="4.5.39", default-features = false, features = ["derive"] }
+clap = { version = "4.5.39", default-features = false, features = ["derive"] }
 deadpool = "0.12.1"
 digest = "0.10"
 ethnum = "1.5.0"
@@ -328,6 +328,7 @@ serde_with = "3.3.0"
 sha2 = "0.10"
 shrex = { version = "1", features = ["serde"] }
 shrex_macros = "1"
+sled = "0.34.7"
 tempfile = "3.10.1"
 terrors = "0.3.0"
 thiserror = "2.0.11"

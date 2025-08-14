@@ -10,6 +10,7 @@ workspace = true
 alpen-reth-statediff.workspace = true
 strata-db.workspace = true
 strata-db-store-rocksdb.workspace = true
+strata-db-store-sled.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
 anyhow.workspace = true
@@ -17,6 +18,8 @@ bincode.workspace = true
 borsh.workspace = true
 revm-primitives.workspace = true
 rockbound.workspace = true
+sled.workspace = true
+typed-sled.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
