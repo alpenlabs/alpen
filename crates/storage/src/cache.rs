@@ -22,8 +22,8 @@ pub(crate) enum SlotState<T> {
     /// A database fetch is happening in the background and it will be updated.
     Pending(broadcast::Receiver<DbResult<T>>),
 
-    /// An unspecified error happened fetching from the database.
-    Error,
+    /// An error happened fetching from the database.
+    Error(DbError),
 }
 
 /// Wrapper around a LRU cache that handles cache reservations and asynchronously waiting for
@@ -146,7 +146,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
                     match &*entry_guard {
                         SlotState::Ready(v) => return Ok(v.clone()),
                         SlotState::Pending(ch) => ch.resubscribe(),
-                        SlotState::Error => return Err(DbError::CacheLoadFail),
+                        SlotState::Error(e) => return Err(e.clone()),
                     }
                 }; // read lock dropped here
 
@@ -241,7 +241,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
                     match &*entry_guard {
                         SlotState::Ready(v) => return Ok(v.clone()),
                         SlotState::Pending(ch) => ch.resubscribe(),
-                        SlotState::Error => return Err(DbError::CacheLoadFail),
+                        SlotState::Error(e) => return Err(e.clone()),
                     }
                 }; // read lock dropped here
 
@@ -307,7 +307,7 @@ fn send_completion_and_assign_slot_ready<T: Clone>(
             // Store in slot state
             match result {
                 Ok(v) => *slot_state = SlotState::Ready(v.clone()),
-                Err(_) => *slot_state = SlotState::Error,
+                Err(e) => *slot_state = SlotState::Error(e),
             }
         }
 
@@ -316,7 +316,7 @@ fn send_completion_and_assign_slot_ready<T: Clone>(
             // value and avoid making an additional clone.
             match result {
                 Ok(v) => *slot_state = SlotState::Ready(v),
-                Err(_) => *slot_state = SlotState::Error,
+                Err(e) => *slot_state = SlotState::Error(e),
             }
         }
     }
