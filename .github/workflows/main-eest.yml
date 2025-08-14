@@ -104,6 +104,7 @@ jobs:
           sleep 15  # Wait for the service to start
 
       - name: Run tests
+        id: runtests
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           git clone https://github.com/alpenlabs/execution-spec-tests
@@ -114,7 +115,7 @@ jobs:
           uv run solc-select use 0.8.24 --always-install
           uv run execute remote \
             -m state_test \
-            --fork=Shanghai \
+            --fork=Pectra \
             --rpc-endpoint=http://localhost:12603 \
             --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
             --rpc-chain-id 2892 \
@@ -132,3 +133,9 @@ jobs:
         if: always()
         run: |
           screen -S basic_env -X quit
+      
+      - name: Check tests execution
+        if: steps.runtests.outcome == 'failure'
+        run: |
+          echo "Functional tests failed"
+          exit 1
