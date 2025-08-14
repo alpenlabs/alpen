@@ -433,7 +433,6 @@ mod tests {
                 // No deadlock - both tasks completed successfully
                 assert_eq!(val1, 100);
                 assert_eq!(val2, 100);
-                println!("No deadlock detected - both tasks completed");
             }
             Ok(Ok((Err(e), _))) | Ok(Ok((_, Err(e)))) => {
                 panic!("Database error: {:?}", e);
@@ -490,7 +489,6 @@ mod tests {
                 // No deadlock - both tasks completed successfully
                 assert_eq!(val1, 100);
                 assert_eq!(val2, 100);
-                println!("No deadlock detected - both tasks completed");
             }
             (Some(Ok(Err(e))), _) | (_, Some(Ok(Err(e)))) => {
                 panic!("Database error: {:?}", e);
