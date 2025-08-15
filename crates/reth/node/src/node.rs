@@ -1,4 +1,8 @@
-use alpen_reth_rpc::{eth::AlpenEthApiBuilder, AlpenEthApi, SequencerClient};
+use alloy_network::Ethereum;
+use alpen_reth_rpc::{
+    eth::{AlpenEthApiBuilder, AlpenRpcConvert},
+    AlpenEthApi, SequencerClient,
+};
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmFactory, EvmFactoryFor, NextBlockEnvAttributes};
 use reth_node_api::{FullNodeComponents, NodeAddOns};
@@ -73,9 +77,9 @@ where
         ComponentsBuilder::default()
             .node_types::<N>()
             .pool(AlpenEthereumPoolBuilder::default())
+            .executor(AlpenExecutorBuilder::default())
             .payload(BasicPayloadServiceBuilder::default())
             .network(EthereumNetworkBuilder::default())
-            .executor(AlpenExecutorBuilder::default())
             .consensus(EthereumConsensusBuilder::default())
     }
 
@@ -117,6 +121,7 @@ impl AlpenRethAddOnsBuilder {
                 AlpenEthApiBuilder::default().with_sequencer(sequencer_client_clone),
                 AlpenEngineValidatorBuilder::default(),
                 BasicEngineApiBuilder::default(),
+                Default::default(),
             ),
         }
     }
@@ -174,7 +179,7 @@ where
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type Handle = RpcHandle<N, AlpenEthApi<N>>;
+    type Handle = RpcHandle<N, AlpenEthApi<N, AlpenRpcConvert<N, Ethereum>>>;
 
     async fn launch_add_ons(
         self,
@@ -182,9 +187,7 @@ where
     ) -> eyre::Result<Self::Handle> {
         let Self { rpc_add_ons } = self;
 
-        rpc_add_ons
-            .launch_add_ons_with(ctx, move |_, _, _| Ok(()))
-            .await
+        rpc_add_ons.launch_add_ons_with(ctx, move |_| Ok(())).await
     }
 }
 
@@ -202,7 +205,7 @@ where
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type EthApi = AlpenEthApi<N>;
+    type EthApi = AlpenEthApi<N, AlpenRpcConvert<N, Ethereum>>;
 
     fn hooks_mut(&mut self) -> &mut reth_node_builder::rpc::RpcHooks<N, Self::EthApi> {
         self.rpc_add_ons.hooks_mut()

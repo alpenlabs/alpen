@@ -1,13 +1,19 @@
 use std::{collections::HashSet, sync::Arc};
 
 use alloy_consensus::{BlockHeader, Header};
-use alloy_primitives::map::foldhash::{HashMap, HashMapExt};
+use alloy_primitives::{
+    keccak256,
+    map::{
+        foldhash::{HashMap, HashMapExt},
+        B256Set,
+    },
+};
 use alloy_rpc_types::BlockNumHash;
 use alpen_reth_db::WitnessStore;
 use eyre::eyre;
 use futures_util::TryStreamExt;
 use reth_chainspec::EthChainSpec;
-use reth_evm::execute::{BlockExecutorProvider, Executor};
+use reth_evm::execute::{BasicBlockExecutor, Executor};
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{Block as _, FullNodeComponents, NodeTypes};
 use reth_primitives::EthPrimitives;
@@ -15,13 +21,13 @@ use reth_provider::{BlockReader, Chain, ExecutionOutcome, StateProvider, StatePr
 use reth_revm::{db::CacheDB, primitives::FixedBytes};
 use reth_trie::{HashedPostState, MultiProofTargets, TrieInput};
 use reth_trie_common::KeccakKeyHasher;
-use revm_primitives::{alloy_primitives::B256, keccak256, map::B256Set, Address};
+use revm_primitives::{alloy_primitives::B256, Address};
 use rsp_mpt::EthereumState;
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 use tracing::{debug, error};
 
 use crate::{
-    alloy2reth::IntoRspGenesis,
+    alloy2reth::IntoRspChainConfig,
     cache_db_provider::{AccessedState, CacheDBProvider},
 };
 
@@ -97,7 +103,7 @@ where
     Node: FullNodeComponents,
     Node::Types: NodeTypes<Primitives = EthPrimitives>,
 {
-    let genesis = ctx.config.chain.genesis().clone().try_into_rsp()?;
+    let genesis = ctx.config.chain.genesis().config.clone().into_rsp();
 
     // fetch current block
     let current_block = ctx
@@ -132,7 +138,6 @@ where
         current_block,
         parent_state,
         ancestor_headers: accessed_ancestors,
-        state_requests: accessed_info.accessed_accounts().clone(),
         bytecodes: accessed_info.accessed_contracts().clone(),
         custom_beneficiary: None,
         opcode_tracking: false,
@@ -223,11 +228,10 @@ where
     // wrap in a cache-backed provider and run the executor
     let cache_provider = CacheDBProvider::new(history_provider);
     let cache_db = CacheDB::new(&cache_provider);
-    ctx.block_executor()
-        .clone()
-        .executor(cache_db)
-        .execute(&current_block)?;
 
+    let evm_config = ctx.evm_config();
+    let block_executor = BasicBlockExecutor::new(evm_config.clone(), cache_db);
+    let _execution_output = block_executor.execute(&current_block)?;
     Ok(cache_provider.get_accessed_state())
 }
 

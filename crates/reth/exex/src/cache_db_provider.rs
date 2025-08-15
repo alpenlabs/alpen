@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashSet};
+use std::{cell::RefCell, collections::HashSet, fmt};
 
 use alloy_primitives::map::foldhash::HashMap;
 use reth_provider::{errors::db::DatabaseError, AccountReader, ProviderError, StateProvider};
@@ -20,6 +20,19 @@ pub(crate) struct CacheDBProvider {
     accessed_blkd_ids: RefCell<HashSet<u64>>,
 }
 
+impl fmt::Debug for CacheDBProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CacheDBProvider")
+            .field("accounts_cached", &self.accounts.borrow().len())
+            .field("storage_addresses", &self.storage.borrow().len())
+            .field("bytecodes_cached", &self.bytecodes.borrow().len())
+            .field(
+                "accessed_block_ids_count",
+                &self.accessed_blkd_ids.borrow().len(),
+            )
+            .finish_non_exhaustive()
+    }
+}
 #[derive(Debug)]
 pub(crate) struct AccessedState {
     accessed_accounts: HashMap<Address, Vec<Uint<256, 4>>>,

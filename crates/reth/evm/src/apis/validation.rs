@@ -13,7 +13,7 @@ use revm_primitives::hardfork::SpecId;
 /// of `validate_tx_env` to explicitly disable EIP-4844 transactions, which are not supported in
 /// Alpen.
 ///
-/// <https://github.com/bluealloy/revm/blob/bb8661596763f222dc67601e930d29c656310cef/crates/handler/src/validation.rs#L13>
+/// <https://github.com/bluealloy/revm/blob/v78/crates/handler/src/validation.rs#L11>
 pub fn validate_env<CTX: ContextTr, ERROR: From<InvalidHeader> + From<InvalidTransaction>>(
     context: CTX,
 ) -> Result<(), ERROR> {
@@ -34,7 +34,7 @@ pub fn validate_env<CTX: ContextTr, ERROR: From<InvalidHeader> + From<InvalidTra
 /// This function is excerpted from `revm`, with a key difference: it explicitly
 /// invalidates EIP-4844 transactions, which are not supported in Alpen.
 ///
-/// See original: <https://github.com/bluealloy/revm/blob/bb8661596763f222dc67601e930d29c656310cef/crates/handler/src/validation.rs#L102>
+/// See original: <https://github.com/bluealloy/revm/blob/v78/crates/handler/src/validation.rs#L87>
 pub fn validate_tx_env<CTX: ContextTr, Error>(
     context: CTX,
     spec_id: SpecId,
@@ -49,15 +49,34 @@ pub fn validate_tx_env<CTX: ContextTr, Error>(
         Some(context.block().basefee() as u128)
     };
 
-    match TransactionType::from(tx_type) {
-        TransactionType::Legacy => {
-            // Check chain_id only if it is present in the legacy transaction.
-            // EIP-155: Simple replay attack protection
-            if let Some(chain_id) = tx.chain_id() {
-                if chain_id != context.cfg().chain_id() {
-                    return Err(InvalidTransaction::InvalidChainId);
-                }
+    let tx_type = TransactionType::from(tx_type);
+
+    // Check chain_id if config is enabled.
+    // EIP-155: Simple replay attack protection
+    if context.cfg().tx_chain_id_check() {
+        if let Some(chain_id) = tx.chain_id() {
+            if chain_id != context.cfg().chain_id() {
+                return Err(InvalidTransaction::InvalidChainId);
             }
+        } else if !tx_type.is_legacy() && !tx_type.is_custom() {
+            // Legacy transaction are the only one that can omit chain_id.
+            return Err(InvalidTransaction::MissingChainId);
+        }
+    }
+
+    // EIP-7825: Transaction Gas Limit Cap
+    let cap = context.cfg().tx_gas_limit_cap();
+    if tx.gas_limit() > cap {
+        return Err(InvalidTransaction::TxGasLimitGreaterThanCap {
+            gas_limit: tx.gas_limit(),
+            cap,
+        });
+    }
+
+    let disable_priority_fee_check = context.cfg().is_priority_fee_check_disabled();
+
+    match tx_type {
+        TransactionType::Legacy => {
             // Gas price must be at least the basefee.
             if let Some(base_fee) = base_fee {
                 if tx.gas_price() < base_fee {
@@ -71,10 +90,6 @@ pub fn validate_tx_env<CTX: ContextTr, Error>(
                 return Err(InvalidTransaction::Eip2930NotSupported);
             }
 
-            if Some(context.cfg().chain_id()) != tx.chain_id() {
-                return Err(InvalidTransaction::InvalidChainId);
-            }
-
             // Gas price must be at least the basefee.
             if let Some(base_fee) = base_fee {
                 if tx.gas_price() < base_fee {
@@ -86,15 +101,11 @@ pub fn validate_tx_env<CTX: ContextTr, Error>(
             if !spec_id.is_enabled_in(SpecId::LONDON) {
                 return Err(InvalidTransaction::Eip1559NotSupported);
             }
-
-            if Some(context.cfg().chain_id()) != tx.chain_id() {
-                return Err(InvalidTransaction::InvalidChainId);
-            }
-
             validate_priority_fee_tx(
                 tx.max_fee_per_gas(),
                 tx.max_priority_fee_per_gas().unwrap_or_default(),
                 base_fee,
+                disable_priority_fee_check,
             )?;
         }
         // EIP-4844 transactions are not supported in alpen
@@ -107,14 +118,11 @@ pub fn validate_tx_env<CTX: ContextTr, Error>(
                 return Err(InvalidTransaction::Eip7702NotSupported);
             }
 
-            if Some(context.cfg().chain_id()) != tx.chain_id() {
-                return Err(InvalidTransaction::InvalidChainId);
-            }
-
             validate_priority_fee_tx(
                 tx.max_fee_per_gas(),
                 tx.max_priority_fee_per_gas().unwrap_or_default(),
                 base_fee,
+                disable_priority_fee_check,
             )?;
 
             let auth_list_len = tx.authorization_list_len();
@@ -123,6 +131,32 @@ pub fn validate_tx_env<CTX: ContextTr, Error>(
                 return Err(InvalidTransaction::EmptyAuthorizationList);
             }
         }
+        /* // TODO(EOF) EOF removed from spec.
+        TransactionType::Eip7873 => {
+            // Check if EIP-7873 transaction is enabled.
+            if !spec_id.is_enabled_in(SpecId::OSAKA) {
+            return Err(InvalidTransaction::Eip7873NotSupported);
+            }
+            // validate chain id
+            if Some(context.cfg().chain_id()) != tx.chain_id() {
+                return Err(InvalidTransaction::InvalidChainId);
+            }
+
+            // validate initcodes.
+            validate_eip7873_initcodes(tx.initcodes())?;
+
+            // InitcodeTransaction is invalid if the to is nil.
+            if tx.kind().is_create() {
+                return Err(InvalidTransaction::Eip7873MissingTarget);
+            }
+
+            validate_priority_fee_tx(
+                tx.max_fee_per_gas(),
+                tx.max_priority_fee_per_gas().unwrap_or_default(),
+                base_fee,
+            )?;
+        }
+        */
         TransactionType::Custom => {
             // Custom transaction type check is not done here.
         }
@@ -134,12 +168,12 @@ pub fn validate_tx_env<CTX: ContextTr, Error>(
         return Err(InvalidTransaction::CallerGasLimitMoreThanBlock);
     }
 
-    // EIP-3860: Limit and meter initcode
-    if spec_id.is_enabled_in(SpecId::SHANGHAI) && tx.kind().is_create() {
-        let max_initcode_size = context.cfg().max_code_size().saturating_mul(2);
-        if context.tx().input().len() > max_initcode_size {
-            return Err(InvalidTransaction::CreateInitCodeSizeLimit);
-        }
+    // EIP-3860: Limit and meter initcode. Still valid with EIP-7907 and increase of initcode size.
+    if spec_id.is_enabled_in(SpecId::SHANGHAI)
+        && tx.kind().is_create()
+        && context.tx().input().len() > context.cfg().max_initcode_size()
+    {
+        return Err(InvalidTransaction::CreateInitCodeSizeLimit);
     }
 
     Ok(())
