@@ -1,6 +1,5 @@
 //! Database for Reth.
 
-pub mod rocksdb;
 pub mod sled;
 
 // Suppress unused crate dependency warning for sled
