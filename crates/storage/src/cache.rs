@@ -60,14 +60,12 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     }
 
     /// Removes the entry for a particular cache entry.
-    #[allow(dead_code)]
     pub(crate) async fn purge_async(&self, k: &K) {
         let mut cache = self.cache.lock().await;
         cache.pop(k);
     }
 
     /// Removes the entry for a particular cache entry.
-    #[allow(dead_code)]
     pub(crate) fn purge_blocking(&self, k: &K) {
         let mut cache = self.cache.blocking_lock();
         cache.pop(k);
@@ -123,7 +121,6 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     ///
     /// This might remove slots that are in the process of being filled.  Those
     /// operations will complete, but we won't retain those values.
-    #[allow(dead_code)]
     pub(crate) fn blocking_clear(&self) -> usize {
         let mut cache = self.cache.blocking_lock();
         let len = cache.len();
@@ -132,14 +129,12 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     }
 
     /// Inserts an entry into the table, dropping the previous value.
-    #[allow(dead_code)]
     pub(crate) async fn insert_async(&self, k: K, v: V) {
         let slot = Arc::new(RwLock::new(SlotState::Ready(v)));
         self.cache.lock().await.put(k, slot);
     }
 
     /// Inserts an entry into the table, dropping the previous value.
-    #[allow(dead_code)]
     pub(crate) fn insert_blocking(&self, k: K, v: V) {
         let slot = Arc::new(RwLock::new(SlotState::Ready(v)));
         self.cache.blocking_lock().put(k, slot);
@@ -317,7 +312,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 }
 
 /// Convenience function to safely remove a cache slot key from the cache, iff
-/// it matches an expected value.  Returns if it did the removal.
+/// it matches an expected value. Returns if it did the removal.
 fn safely_remove_cache_slot<K: Eq + Hash, V>(
     cache: &mut lru::LruCache<K, CacheSlot<V>>,
     key: &K,
