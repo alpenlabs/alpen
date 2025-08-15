@@ -82,6 +82,28 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
     ///
     /// This might remove slots that are in the process of being filled.  Those
     /// operations will complete, but we won't retain those values.
+    pub(crate) async fn purge_if_async(&self, mut pred: impl FnMut(&K) -> bool) -> usize {
+        let mut cache = self.cache.lock().await;
+        let keys_to_remove = cache
+            .iter()
+            .map(|(k, _v)| k)
+            .filter(|k| pred(k)) // why can't I just pass pred?
+            .cloned()
+            .collect::<Vec<_>>();
+        keys_to_remove.iter().for_each(|k| {
+            cache.pop(k);
+        });
+        keys_to_remove.len()
+    }
+    /// Removes all entries for which the predicate fails.  Returns the number
+    /// of entries removed.
+    ///
+    /// This unfortunately has to clone as many keys from the cache as pass the
+    /// predicate, which means it's capped at the maximum size of the cache, so
+    /// that's not *so* bad.
+    ///
+    /// This might remove slots that are in the process of being filled.  Those
+    /// operations will complete, but we won't retain those values.
     pub(crate) fn purge_if_blocking(&self, mut pred: impl FnMut(&K) -> bool) -> usize {
         let mut cache = self.cache.blocking_lock();
         let keys_to_remove = cache
@@ -143,6 +165,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
                 // Get the state and extract what we need before dropping the lock
                 let mut receiver = {
                     let entry_guard = entry_guard.read().await;
+                    trace!("acquired slot read lock");
                     match &*entry_guard {
                         SlotState::Ready(v) => return Ok(v.clone()),
                         SlotState::Pending(ch) => ch.resubscribe(),
@@ -180,7 +203,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
         // And then re-acquire the lock on the slot before handling the result.
         let mut slot_guard = slot.write().await;
-        trace!("re-acquired slot lock");
+        trace!("acquired slot write lock");
         match fetch_res {
             Ok(Ok(v)) => {
                 // Store value in slot and broadcast
@@ -235,6 +258,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
                 // Get the state and extract what we need before dropping the lock
                 let mut receiver = {
                     let entry_guard = entry_guard.blocking_read();
+                    trace!("acquired slot read lock");
                     match &*entry_guard {
                         SlotState::Ready(v) => return Ok(v.clone()),
                         SlotState::Pending(ch) => ch.resubscribe(),

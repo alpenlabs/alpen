@@ -26,7 +26,7 @@ impl SyncEventManager {
 
     pub async fn write_sync_event_async(&self, ev: SyncEvent) -> DbResult<u64> {
         let idx = self.ops.write_sync_event_async(ev.clone()).await?;
-        self.event_cache.insert_blocking(idx, Some(ev));
+        self.event_cache.insert_async(idx, Some(ev)).await;
         Ok(idx)
     }
 

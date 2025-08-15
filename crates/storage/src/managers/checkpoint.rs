@@ -29,7 +29,8 @@ impl CheckpointDbManager {
     pub async fn insert_epoch_summary(&self, summary: EpochSummary) -> DbResult<()> {
         self.ops.insert_epoch_summary_async(summary).await?;
         self.summary_cache
-            .insert_blocking(summary.get_epoch_commitment(), Some(summary));
+            .insert_async(summary.get_epoch_commitment(), Some(summary))
+            .await;
         Ok(())
     }
 
@@ -85,7 +86,7 @@ impl CheckpointDbManager {
 
     pub async fn put_checkpoint(&self, idx: u64, entry: CheckpointEntry) -> DbResult<()> {
         self.ops.put_checkpoint_async(idx, entry).await?;
-        self.checkpoint_cache.purge_blocking(&idx);
+        self.checkpoint_cache.purge_async(&idx).await;
         Ok(())
     }
 
