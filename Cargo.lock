@@ -1023,8 +1023,9 @@ dependencies = [
  "reth-db",
  "reth-node-builder",
  "reth-node-core",
- "rockbound",
+ "sled",
  "tracing",
+ "typed-sled",
 ]
 
 [[package]]
@@ -1032,19 +1033,14 @@ name = "alpen-reth-db"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
- "anyhow",
  "bincode",
- "borsh",
  "revm-primitives",
- "rockbound",
  "serde",
  "serde_json",
  "sled",
  "strata-db",
- "strata-db-store-rocksdb",
  "strata-db-store-sled",
  "strata-proofimpl-evm-ee-stf",
- "tempfile",
  "typed-sled",
 ]
 
