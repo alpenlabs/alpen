@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
-use strata_db::{traits::L1BroadcastDatabase, types::L1TxEntry};
+use strata_db::{
+    traits::{DatabaseBackend, L1BroadcastDatabase},
+    types::L1TxEntry,
+};
 use strata_db_store_sled::{
-    test_utils::{get_test_sled_config, get_test_sled_db},
-    L1BroadcastDBSled, L1WriterDBSled,
+    test_utils::{get_test_sled_backend, get_test_sled_config, get_test_sled_db},
+    L1BroadcastDBSled,
 };
 use strata_storage::ops::{
     l1tx_broadcast::Context as BContext,
@@ -12,17 +15,10 @@ use strata_storage::ops::{
 
 use crate::broadcaster::L1BroadcastHandle;
 
-/// Returns [`Arc`] of [`L1WriterDBSled`] for testing
-pub(crate) fn get_db() -> Arc<L1WriterDBSled> {
-    let sdb = get_test_sled_db();
-    let sconf = get_test_sled_config();
-    Arc::new(L1WriterDBSled::new(sdb.into(), sconf).unwrap())
-}
-
 /// Returns [`Arc`] of [`EnvelopeDataOps`] for testing
 pub(crate) fn get_envelope_ops() -> Arc<EnvelopeDataOps> {
     let pool = threadpool::Builder::new().num_threads(2).build();
-    let db = get_db();
+    let db = get_test_sled_backend().writer_db();
     let ops = Context::new(db).into_ops(pool);
     Arc::new(ops)
 }

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
-use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use sled::transaction::ConflictableTransactionResult;
+use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use typed_sled::{transaction::SledTransactional, SledDb, SledTree};
 
 use super::schema::{BlockHashByNumber, BlockStateDiffSchema, BlockWitnessSchema};
@@ -106,17 +106,22 @@ impl StateDiffStore for WitnessDB {
         state_diff: &BlockStateDiff,
     ) -> DbResult<()> {
         (&self.block_hash_by_number_tree, &self.state_diff_tree)
-            .transaction(|(bht, sdt)| -> ConflictableTransactionResult<(), typed_sled::error::Error> {
-                bht.insert(&block_number, &block_hash.to_vec())?;
-                let serialized = match bincode::serialize(state_diff) {
-                    Ok(data) => data,
-                    Err(err) => return Err(sled::transaction::ConflictableTransactionError::Abort(
-                        sled::Error::Unsupported(format!("Serialization failed: {}", err)).into()
-                    )),
-                };
-                sdt.insert(&block_hash, &serialized)?;
-                Ok(())
-            })
+            .transaction(
+                |(bht, sdt)| -> ConflictableTransactionResult<(), typed_sled::error::Error> {
+                    bht.insert(&block_number, &block_hash.to_vec())?;
+                    let serialized = match bincode::serialize(state_diff) {
+                        Ok(data) => data,
+                        Err(err) => {
+                            return Err(sled::transaction::ConflictableTransactionError::Abort(
+                                sled::Error::Unsupported(format!("Serialization failed: {}", err))
+                                    .into(),
+                            ))
+                        }
+                    };
+                    sdt.insert(&block_hash, &serialized)?;
+                    Ok(())
+                },
+            )
             .map_err(|e| DbError::Other(format!("{:?}", e)))?;
         Ok(())
     }
