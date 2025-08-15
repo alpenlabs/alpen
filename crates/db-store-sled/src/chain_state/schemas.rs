@@ -16,7 +16,7 @@ define_table_with_integer_key!(
     /// Table to store state instance data.
     (StateInstanceSchema) StateInstanceId => StateInstanceEntry
 );
-// TODO: copied over from db-store-rocksdb. needs to go to somewhere common.
+
 /// Describes the entry for a state in the database.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub(crate) struct StateInstanceEntry {
