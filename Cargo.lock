@@ -14352,6 +14352,7 @@ dependencies = [
  "strata-cli-common",
  "strata-consensus-logic",
  "strata-db",
+ "strata-db-store-sled",
  "strata-primitives",
  "strata-state",
  "tracing-subscriber 0.3.20",
@@ -15901,7 +15902,7 @@ checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 [[package]]
 name = "typed-sled"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/typed-sled#c9a69eba46eac4aafd00d9f57d79ee1349427ebf"
+source = "git+https://github.com/alpenlabs/typed-sled#04e4207b1a0d62235b602effb11da7f1d1c35a99"
 dependencies = [
  "dashmap 6.1.0",
  "sled",

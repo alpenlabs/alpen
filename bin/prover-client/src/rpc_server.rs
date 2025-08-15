@@ -167,6 +167,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
             .checkpoint_operator()
             .create_task(latest_ckp_idx, self.task_tracker.clone(), &self.db)
             .await
+            .inspect_err(|e| tracing::error!(%e, "prover client Error"))
             .map_err(to_jsonrpsee_error(
                 "failed to create task for latest checkpoint",
             ))

@@ -78,8 +78,8 @@ pub enum DbError {
     #[error("tried to revert to index {0} above current tip {1}")]
     RevertAboveCurrent(u64, u64),
 
-    #[error("IO Error")]
-    IoError,
+    #[error("IO Error: {0}")]
+    IoError(String),
 
     #[error("operation timed out")]
     TimedOut,

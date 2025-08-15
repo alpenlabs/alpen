@@ -1,29 +1,16 @@
-use std::sync::Arc;
-
 use strata_db::{DbResult, errors::DbError, traits::ProofDatabase};
 use strata_primitives::proof::{ProofContext, ProofKey};
-use typed_sled::{SledDb, SledTree};
 use zkaleido::ProofReceiptWithMetadata;
 
 use super::schemas::{ProofDepsSchema, ProofSchema};
-use crate::SledDbConfig;
+use crate::define_sled_database;
 
-#[derive(Debug)]
-pub struct ProofDBSled {
-    proof_tree: SledTree<ProofSchema>,
-    proof_deps_tree: SledTree<ProofDepsSchema>,
-    _config: SledDbConfig,
-}
-
-impl ProofDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            proof_tree: db.get_tree()?,
-            proof_deps_tree: db.get_tree()?,
-            _config: config,
-        })
+define_sled_database!(
+    pub struct ProofDBSled {
+        proof_tree: ProofSchema,
+        proof_deps_tree: ProofDepsSchema,
     }
-}
+);
 
 impl ProofDatabase for ProofDBSled {
     fn put_proof(&self, proof_key: ProofKey, proof: ProofReceiptWithMetadata) -> DbResult<()> {
@@ -77,13 +64,7 @@ mod tests {
     use strata_db_tests::proof_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> ProofDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        ProofDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    proof_db_tests!(setup_db());
+    sled_db_test_setup!(ProofDBSled, proof_db_tests);
 }

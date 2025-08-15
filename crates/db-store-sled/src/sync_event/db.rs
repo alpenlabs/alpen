@@ -1,29 +1,20 @@
-use std::sync::Arc;
-
 use strata_db::{DbResult, errors::DbError, traits::SyncEventDatabase};
 use strata_state::sync_event::SyncEvent;
-use typed_sled::{SledDb, SledTree, batch::SledBatch};
+use typed_sled::batch::SledBatch;
 
 use super::schemas::{SyncEventSchema, SyncEventWithTimestamp};
 use crate::{
-    SledDbConfig,
+    define_sled_database,
     utils::{find_next_available_id, first},
 };
 
-#[derive(Debug)]
-pub struct SyncEventDBSled {
-    sync_event_tree: SledTree<SyncEventSchema>,
-    config: SledDbConfig,
-}
+define_sled_database!(
+    pub struct SyncEventDBSled {
+        sync_event_tree: SyncEventSchema,
+    }
+);
 
 impl SyncEventDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            sync_event_tree: db.get_tree()?,
-            config,
-        })
-    }
-
     fn get_last_key(&self) -> DbResult<Option<u64>> {
         Ok(self.sync_event_tree.last()?.map(first))
     }
@@ -99,13 +90,7 @@ mod tests {
     use strata_db_tests::sync_event_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> SyncEventDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        SyncEventDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    sync_event_db_tests!(setup_db());
+    sled_db_test_setup!(SyncEventDBSled, sync_event_db_tests);
 }

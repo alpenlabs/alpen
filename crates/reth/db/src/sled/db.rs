@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
-use sled::transaction::ConflictableTransactionResult;
+use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use typed_sled::{transaction::SledTransactional, SledDb, SledTree};
 
@@ -112,7 +112,7 @@ impl StateDiffStore for WitnessDB {
                     let serialized = match bincode::serialize(state_diff) {
                         Ok(data) => data,
                         Err(err) => {
-                            return Err(sled::transaction::ConflictableTransactionError::Abort(
+                            return Err(ConflictableTransactionError::Abort(
                                 sled::Error::Unsupported(format!("Serialization failed: {}", err))
                                     .into(),
                             ))

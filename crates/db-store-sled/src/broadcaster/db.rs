@@ -1,31 +1,20 @@
-use std::sync::Arc;
-
 use strata_db::{DbResult, errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry};
 use strata_primitives::buf::Buf32;
-use typed_sled::{SledDb, SledTree};
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 use crate::{
-    SledDbConfig,
-    utils::{find_next_available_id, second},
+    define_sled_database,
+    utils::{find_next_available_id, first, second},
 };
 
-#[derive(Debug)]
-pub struct L1BroadcastDBSled {
-    tx_id_tree: SledTree<BcastL1TxIdSchema>,
-    tx_tree: SledTree<BcastL1TxSchema>,
-    config: SledDbConfig,
-}
+define_sled_database!(
+    pub struct L1BroadcastDBSled {
+        tx_id_tree: BcastL1TxIdSchema,
+        tx_tree: BcastL1TxSchema,
+    }
+);
 
 impl L1BroadcastDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            tx_id_tree: db.get_tree()?,
-            tx_tree: db.get_tree()?,
-            config,
-        })
-    }
-
     fn get_next_idx(&self) -> DbResult<u64> {
         match self.tx_id_tree.last()? {
             Some((idx, _)) => Ok(idx + 1),
@@ -61,6 +50,41 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
         }
     }
 
+    fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool> {
+        let old_item = self.tx_tree.get(&txid)?;
+        let exists = old_item.is_some();
+        if exists {
+            self.tx_tree.compare_and_swap(txid, old_item, None)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_tx_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = self.tx_id_tree.last()?.map(first);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        let deleted_indices =
+            self.config
+                .with_retry((&self.tx_tree, &self.tx_id_tree), |(txtree, txidtree)| {
+                    let mut deleted_indices = Vec::new();
+                    for idx in start_idx..=last_idx {
+                        if let Some(txid) = txidtree.get(&idx)? {
+                            txidtree.remove(&idx)?;
+                            txtree.remove(&txid)?;
+                            deleted_indices.push(idx);
+                        }
+                    }
+                    Ok(deleted_indices)
+                })?;
+        Ok(deleted_indices)
+    }
+
     fn get_tx_entry_by_id(&self, txid: Buf32) -> DbResult<Option<L1TxEntry>> {
         Ok(self.tx_tree.get(&txid)?)
     }
@@ -94,13 +118,7 @@ mod tests {
     use strata_db_tests::l1_broadcast_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> L1BroadcastDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 100);
-        L1BroadcastDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    l1_broadcast_db_tests!(setup_db());
+    sled_db_test_setup!(L1BroadcastDBSled, l1_broadcast_db_tests);
 }

@@ -1,16 +1,13 @@
+import time
+
 import flexitest
 
-from envs import testenv
-from envs.testenv import BasicEnvConfig
-from utils import (
-    ProverClientSettings,
-    RollupParamsSettings,
-    wait_until,
-)
+from envs.testenv import BasicEnvConfig, StrataTestBase
+from utils import ProverClientSettings, RollupParamsSettings, wait_until
 
 
 @flexitest.register
-class ProverClientRestartTest(testenv.StrataTestBase):
+class ProverClientRestartTest(StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         # A separate standalone env for this test as it involves a restart
         # and the rollup settings are non-standard.
@@ -40,15 +37,8 @@ class ProverClientRestartTest(testenv.StrataTestBase):
             error_with="Prover did not start on time",
         )
 
-        # Test on with the latest checkpoint
+        # Prover starts, proof is generated and checkpoint advances
         latest_checkpoint = sequencer_rpc.strata_getLatestCheckpointIndex()
-        self.prove_latest_checkpoint(prover_client_rpc)
-
-        self.debug("restart prover client")
-        prover_client.stop()
-        prover_client.start()
-        prover_client_rpc = prover_client.create_rpc()
-
         self.debug("prover client restarted, waiting for the new checkpoint")
         wait_until(
             lambda: sequencer_rpc.strata_getLatestCheckpointIndex() == latest_checkpoint + 1,
@@ -56,15 +46,15 @@ class ProverClientRestartTest(testenv.StrataTestBase):
             step=5.0,
         )
 
-        self.prove_latest_checkpoint(prover_client_rpc)
+        # Restart the prover client
+        prover_client.stop()
+        time.sleep(0.5)
+        latest_checkpoint = sequencer_rpc.strata_getLatestCheckpointIndex()
+        prover_client.start()
 
-    def prove_latest_checkpoint(self, prover_client_rpc):
-        task_ids = prover_client_rpc.dev_strata_proveLatestCheckPoint()
-        prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
-        self.debug(f"got task ids: {task_ids}")
-        task_id = task_ids[0]
-        self.debug(f"using task id: {task_id}")
-        assert task_id is not None
-
-        is_proof_generation_completed = prover_waiter.wait_for_proof_completion(task_id)
-        assert is_proof_generation_completed
+        # After restarting prover, proof is generated and checkpoint advances
+        wait_until(
+            lambda: sequencer_rpc.strata_getLatestCheckpointIndex() == latest_checkpoint + 1,
+            timeout=180,
+            step=5.0,
+        )

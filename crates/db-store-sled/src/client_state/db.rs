@@ -1,26 +1,16 @@
-use std::sync::Arc;
-
 use strata_db::{DbResult, errors::*, traits::*};
 use strata_state::operation::*;
-use typed_sled::{SledDb, SledTree};
 
 use super::schemas::ClientUpdateOutputSchema;
-use crate::{SledDbConfig, utils::first};
+use crate::{define_sled_database, utils::first};
 
-#[derive(Debug)]
-pub struct ClientStateDBSled {
-    client_update_tree: SledTree<ClientUpdateOutputSchema>,
-    _config: SledDbConfig,
-}
+define_sled_database!(
+    pub struct ClientStateDBSled {
+        client_update_tree: ClientUpdateOutputSchema,
+    }
+);
 
 impl ClientStateDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            client_update_tree: db.get_tree()?,
-            _config: config,
-        })
-    }
-
     fn get_next_idx(&self) -> DbResult<u64> {
         match self.client_update_tree.last()? {
             Some((idx, _)) => Ok(idx + 1),
@@ -58,13 +48,7 @@ mod tests {
     use strata_db_tests::client_state_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> ClientStateDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        ClientStateDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    client_state_db_tests!(setup_db());
+    sled_db_test_setup!(ClientStateDBSled, client_state_db_tests);
 }

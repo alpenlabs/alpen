@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use strata_db::{
     DbResult,
     errors::DbError,
@@ -7,32 +5,20 @@ use strata_db::{
     types::{BundledPayloadEntry, IntentEntry},
 };
 use strata_primitives::buf::Buf32;
-use typed_sled::{SledDb, SledTree};
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 use crate::{
-    SledDbConfig,
+    define_sled_database,
     utils::{find_next_available_id, first},
 };
 
-#[derive(Debug)]
-pub struct L1WriterDBSled {
-    payload_tree: SledTree<PayloadSchema>,
-    intent_tree: SledTree<IntentSchema>,
-    intent_idx_tree: SledTree<IntentIdxSchema>,
-    config: SledDbConfig,
-}
-
-impl L1WriterDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            payload_tree: db.get_tree()?,
-            intent_tree: db.get_tree()?,
-            intent_idx_tree: db.get_tree()?,
-            config,
-        })
+define_sled_database!(
+    pub struct L1WriterDBSled {
+        payload_tree: PayloadSchema,
+        intent_tree: IntentSchema,
+        intent_idx_tree: IntentIdxSchema,
     }
-}
+);
 
 impl L1WriterDatabase for L1WriterDBSled {
     fn put_payload_entry(&self, idx: u64, entry: BundledPayloadEntry) -> DbResult<()> {
@@ -96,6 +82,70 @@ impl L1WriterDatabase for L1WriterDBSled {
             .map(|x| x + 1)
             .unwrap_or(0))
     }
+
+    fn del_payload_entry(&self, idx: u64) -> DbResult<bool> {
+        let exists = self.payload_tree.contains_key(&idx)?;
+        if exists {
+            self.payload_tree.remove(&idx)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = self.payload_tree.last()?.map(first);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        let deleted_indices = self.config.with_retry((&self.payload_tree,), |(ptree,)| {
+            let mut deleted_indices = Vec::new();
+            for idx in start_idx..=last_idx {
+                if ptree.contains_key(&idx)? {
+                    ptree.remove(&idx)?;
+                    deleted_indices.push(idx);
+                }
+            }
+            Ok(deleted_indices)
+        })?;
+        Ok(deleted_indices)
+    }
+
+    fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
+        let old_item = self.intent_tree.get(&id)?;
+        let exists = old_item.is_some();
+        if exists {
+            self.intent_tree.compare_and_swap(id, old_item, None)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = self.intent_idx_tree.last()?.map(first);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        self.config
+            .with_retry((&self.intent_idx_tree, &self.intent_tree), |(iit, it)| {
+                let mut deleted_indices = Vec::new();
+                for idx in start_idx..=last_idx {
+                    if let Some(intent_id) = iit.get(&idx)? {
+                        iit.remove(&idx)?;
+                        it.remove(&intent_id)?;
+                        deleted_indices.push(idx);
+                    }
+                }
+                Ok(deleted_indices)
+            })
+    }
 }
 
 #[cfg(feature = "test_utils")]
@@ -104,13 +154,7 @@ mod tests {
     use strata_db_tests::l1_writer_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> L1WriterDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        L1WriterDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    l1_writer_db_tests!(setup_db());
+    sled_db_test_setup!(L1WriterDBSled, l1_writer_db_tests);
 }
