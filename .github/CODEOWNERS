@@ -30,7 +30,7 @@ flake.lock             @alpenlabs/ci
 /crates/crypto/      @alpenlabs/crypto @alpenlabs/rust
 /crates/proof*/      @alpenlabs/prover
 /crates/reth/        @alpenlabs/evm
-/crates/rocksdb*/    @alpenlabs/database
+/crates/db-store*/   @alpenlabs/database
 /crates/rpc/         @alpenlabs/chain-core @alpenlabs/btc
 /crates/sequencer/   @alpenlabs/chain-core
 /crates/state/       @alpenlabs/chain-core
