@@ -19,7 +19,7 @@ use crate::{
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RollupParams {
     /// Rollup name
-    pub rollup_name: MagicBytes,
+    pub magic_bytes: MagicBytes,
 
     /// Block time in milliseconds.
     pub block_time: u64,
@@ -87,10 +87,6 @@ impl RollupParams {
                 self.horizon_l1_height,
                 self.genesis_l1_height,
             ));
-        }
-
-        if self.rollup_name.is_empty() {
-            return Err(ParamsError::EmptyRollupName);
         }
 
         match &self.operator_config {

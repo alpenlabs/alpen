@@ -66,7 +66,7 @@ impl TxFilterConfig {
             XOnlyPk::new(int_pubkey.serialize().into()).expect("Aggregated pubkey should be valid");
 
         let deposit_config = DepositTxParams {
-            magic_bytes: rollup_params.rollup_name,
+            magic_bytes: rollup_params.magic_bytes,
             address_length: rollup_params.address_length,
             deposit_amount: rollup_params.deposit_amount,
             address,
