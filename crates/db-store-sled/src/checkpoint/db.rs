@@ -1,29 +1,16 @@
-use std::sync::Arc;
-
 use strata_db::{DbError, DbResult, traits::CheckpointDatabase, types::CheckpointEntry};
 use strata_primitives::epoch::EpochCommitment;
 use strata_state::batch::EpochSummary;
-use typed_sled::{SledDb, SledTree};
 
 use super::schemas::*;
-use crate::{SledDbConfig, utils::first};
+use crate::{define_sled_database, utils::first};
 
-#[derive(Debug)]
-pub struct CheckpointDBSled {
-    checkpoint_tree: SledTree<CheckpointSchema>,
-    epoch_summary_tree: SledTree<EpochSummarySchema>,
-    _config: SledDbConfig,
-}
-
-impl CheckpointDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            checkpoint_tree: db.get_tree()?,
-            epoch_summary_tree: db.get_tree()?,
-            _config: config,
-        })
-    }
-}
+define_sled_database!(
+    pub struct CheckpointDBSled {
+        checkpoint_tree: CheckpointSchema,
+        epoch_summary_tree: EpochSummarySchema,
+    }, config: _config
+);
 
 impl CheckpointDatabase for CheckpointDBSled {
     fn insert_epoch_summary(&self, summary: EpochSummary) -> DbResult<()> {
@@ -92,13 +79,7 @@ mod tests {
     use strata_db_tests::checkpoint_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> CheckpointDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        CheckpointDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    checkpoint_db_tests!(setup_db());
+    sled_db_test_setup!(CheckpointDBSled, checkpoint_db_tests);
 }

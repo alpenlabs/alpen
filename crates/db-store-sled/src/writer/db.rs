@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use strata_db::{
     DbResult,
     errors::DbError,
@@ -7,32 +5,20 @@ use strata_db::{
     types::{BundledPayloadEntry, IntentEntry},
 };
 use strata_primitives::buf::Buf32;
-use typed_sled::{SledDb, SledTree};
 
 use super::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 use crate::{
-    SledDbConfig,
+    define_sled_database,
     utils::{find_next_available_id, first},
 };
 
-#[derive(Debug)]
-pub struct L1WriterDBSled {
-    payload_tree: SledTree<PayloadSchema>,
-    intent_tree: SledTree<IntentSchema>,
-    intent_idx_tree: SledTree<IntentIdxSchema>,
-    config: SledDbConfig,
-}
-
-impl L1WriterDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            payload_tree: db.get_tree()?,
-            intent_tree: db.get_tree()?,
-            intent_idx_tree: db.get_tree()?,
-            config,
-        })
-    }
-}
+define_sled_database!(
+    pub struct L1WriterDBSled {
+        payload_tree: PayloadSchema,
+        intent_tree: IntentSchema,
+        intent_idx_tree: IntentIdxSchema,
+    }, config: config
+);
 
 impl L1WriterDatabase for L1WriterDBSled {
     fn put_payload_entry(&self, idx: u64, entry: BundledPayloadEntry) -> DbResult<()> {
@@ -104,13 +90,7 @@ mod tests {
     use strata_db_tests::l1_writer_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> L1WriterDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        L1WriterDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    l1_writer_db_tests!(setup_db());
+    sled_db_test_setup!(L1WriterDBSled, l1_writer_db_tests);
 }

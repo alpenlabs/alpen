@@ -14,7 +14,7 @@ pub fn get_test_sled_db() -> SledDb {
 }
 
 pub fn get_test_sled_config() -> SledDbConfig {
-    SledDbConfig::new_with_constant_backoff(3, 200)
+    SledDbConfig::test()
 }
 
 pub fn get_test_sled_backend() -> Arc<SledBackend> {

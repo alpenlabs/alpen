@@ -1,31 +1,20 @@
-use std::sync::Arc;
-
 use strata_db::{DbResult, errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry};
 use strata_primitives::buf::Buf32;
-use typed_sled::{SledDb, SledTree};
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 use crate::{
-    SledDbConfig,
+    define_sled_database,
     utils::{find_next_available_id, second},
 };
 
-#[derive(Debug)]
-pub struct L1BroadcastDBSled {
-    tx_id_tree: SledTree<BcastL1TxIdSchema>,
-    tx_tree: SledTree<BcastL1TxSchema>,
-    config: SledDbConfig,
-}
+define_sled_database!(
+    pub struct L1BroadcastDBSled {
+        tx_id_tree: BcastL1TxIdSchema,
+        tx_tree: BcastL1TxSchema,
+    }, config: config
+);
 
 impl L1BroadcastDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            tx_id_tree: db.get_tree()?,
-            tx_tree: db.get_tree()?,
-            config,
-        })
-    }
-
     fn get_next_idx(&self) -> DbResult<u64> {
         match self.tx_id_tree.last()? {
             Some((idx, _)) => Ok(idx + 1),
@@ -94,13 +83,7 @@ mod tests {
     use strata_db_tests::l1_broadcast_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> L1BroadcastDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 100);
-        L1BroadcastDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    l1_broadcast_db_tests!(setup_db());
+    sled_db_test_setup!(L1BroadcastDBSled, l1_broadcast_db_tests);
 }
