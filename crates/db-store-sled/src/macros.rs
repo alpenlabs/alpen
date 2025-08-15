@@ -87,3 +87,48 @@ macro_rules! impl_borsh_value_codec {
         }
     };
 }
+
+#[macro_export]
+macro_rules! sled_db_test_setup {
+    ($db_type:ty, $test_macro:ident) => {
+        fn setup_db() -> $db_type {
+            let db = sled::Config::new().temporary(true).open().unwrap();
+            let sled_db = typed_sled::SledDb::new(db).unwrap();
+            let config = $crate::SledDbConfig::test();
+            <$db_type>::new(sled_db.into(), config).unwrap()
+        }
+
+        $test_macro!(setup_db());
+    };
+}
+
+#[macro_export]
+macro_rules! define_sled_database {
+    (
+        $(#[$meta:meta])*
+        pub struct $db_name:ident {
+            $($field:ident: $schema:ty),* $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug)]
+        pub struct $db_name {
+            $(
+                $field: typed_sled::SledTree<$schema>,
+            )*
+            #[allow(dead_code)]
+            config: $crate::SledDbConfig,
+        }
+
+        impl $db_name {
+            pub fn new(db: std::sync::Arc<typed_sled::SledDb>, config: $crate::SledDbConfig) -> strata_db::DbResult<Self> {
+                Ok(Self {
+                    $(
+                        $field: db.get_tree()?,
+                    )*
+                    config,
+                })
+            }
+        }
+    };
+}

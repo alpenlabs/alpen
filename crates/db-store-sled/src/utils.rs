@@ -1,3 +1,4 @@
+use strata_db::errors::DbError;
 use typed_sled::tree::SledTransactionalTree;
 
 pub fn second<A, B>((_, b): (A, B)) -> B {
@@ -6,6 +7,11 @@ pub fn second<A, B>((_, b): (A, B)) -> B {
 
 pub fn first<A, B>((a, _): (A, B)) -> A {
     a
+}
+
+/// Converts any error that implements Display and Debug into a DbError::Other
+pub fn to_db_error<E: std::fmt::Display + std::fmt::Debug>(e: E) -> DbError {
+    DbError::Other(e.to_string())
 }
 
 /// Find next available ID starting from the given ID, checking for conflicts within a transaction

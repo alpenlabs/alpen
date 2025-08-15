@@ -1,32 +1,23 @@
-use std::sync::Arc;
-
 use strata_db::{DbResult, errors::DbError, traits::*};
 use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
-use typed_sled::{SledDb, SledTree, batch::SledBatch};
+use typed_sled::batch::SledBatch;
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
-use crate::{SledDbConfig, utils::first};
+use crate::{
+    define_sled_database,
+    utils::{first, to_db_error},
+};
 
-#[derive(Debug)]
-pub struct L1DBSled {
-    l1_blk_tree: SledTree<L1BlockSchema>,
-    l1_canonical_tree: SledTree<L1CanonicalBlockSchema>,
-    l1_blks_height_tree: SledTree<L1BlocksByHeightSchema>,
-    txn_tree: SledTree<TxnSchema>,
-    config: SledDbConfig,
-}
+define_sled_database!(
+    pub struct L1DBSled {
+        l1_blk_tree: L1BlockSchema,
+        l1_canonical_tree: L1CanonicalBlockSchema,
+        l1_blks_height_tree: L1BlocksByHeightSchema,
+        txn_tree: TxnSchema,
+    }
+);
 
 impl L1DBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            l1_blk_tree: db.get_tree()?,
-            l1_canonical_tree: db.get_tree()?,
-            l1_blks_height_tree: db.get_tree()?,
-            txn_tree: db.get_tree()?,
-            config,
-        })
-    }
-
     pub fn get_latest_block(&self) -> DbResult<Option<(u64, L1BlockId)>> {
         Ok(self.l1_canonical_tree.last()?)
     }
@@ -51,7 +42,7 @@ impl L1Database for L1DBSled {
                     Ok(())
                 },
             )
-            .map_err(|e| DbError::Other(e.to_string()))
+            .map_err(to_db_error)
     }
 
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()> {
@@ -98,7 +89,7 @@ impl L1Database for L1DBSled {
                     Ok(())
                 },
             )
-            .map_err(|e| DbError::Other(e.to_string()))?;
+            .map_err(to_db_error)?;
         Ok(())
     }
 
@@ -161,13 +152,7 @@ mod tests {
     use strata_db_tests::l1_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> L1DBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        L1DBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    l1_db_tests!(setup_db());
+    sled_db_test_setup!(L1DBSled, l1_db_tests);
 }

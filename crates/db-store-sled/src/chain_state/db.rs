@@ -1,35 +1,24 @@
-use std::sync::Arc;
-
 use strata_db::{
     DbError, DbResult,
     chainstate::{ChainstateDatabase, StateInstanceId, WriteBatchId},
 };
 use strata_primitives::buf::Buf32;
 use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
-use typed_sled::{SledDb, SledTree};
 
 use crate::{
-    SledDbConfig,
     chain_state::schemas::{StateInstanceEntry, StateInstanceSchema, WriteBatchSchema},
+    define_sled_database,
     utils::find_next_available_id,
 };
 
-#[derive(Debug)]
-pub struct ChainstateDBSled {
-    state_tree: SledTree<StateInstanceSchema>,
-    write_batch_tree: SledTree<WriteBatchSchema>,
-    config: SledDbConfig,
-}
+define_sled_database!(
+    pub struct ChainstateDBSled {
+        state_tree: StateInstanceSchema,
+        write_batch_tree: WriteBatchSchema,
+    }
+);
 
 impl ChainstateDBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            state_tree: db.get_tree()?,
-            write_batch_tree: db.get_tree()?,
-            config,
-        })
-    }
-
     fn next_state_id_or_zero(&self) -> DbResult<u64> {
         let next_id = match self.state_tree.last()? {
             Some((id, _)) => id + 1,
@@ -156,13 +145,7 @@ mod tests {
     use strata_db_tests::chain_state_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> ChainstateDBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        ChainstateDBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    chain_state_db_tests!(setup_db());
+    sled_db_test_setup!(ChainstateDBSled, chain_state_db_tests);
 }

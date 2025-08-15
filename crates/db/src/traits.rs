@@ -274,14 +274,6 @@ pub trait ProofDatabase: Send + Sync + 'static {
     fn del_proof_deps(&self, proof_context: ProofContext) -> DbResult<bool>;
 }
 
-// TODO remove this trait, just like the high level `Database` trait
-pub trait BroadcastDatabase: Send + Sync + 'static {
-    type L1BroadcastDB: L1BroadcastDatabase;
-
-    /// Return a reference to the L1 broadcast db implementation
-    fn l1_broadcast_db(&self) -> &Arc<Self::L1BroadcastDB>;
-}
-
 /// A trait encapsulating the provider and store traits for interacting with the broadcast
 /// transactions([`L1TxEntry`]), their indices and ids
 pub trait L1BroadcastDatabase: Send + Sync + 'static {

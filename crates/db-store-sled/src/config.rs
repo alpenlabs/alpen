@@ -1,8 +1,15 @@
 use std::sync::Arc;
 
 use sled::transaction::ConflictableTransactionResult;
-use strata_db::{DbError, DbResult};
+use strata_db::DbResult;
 use typed_sled::transaction::{Backoff, ConstantBackoff, SledTransactional};
+
+use crate::utils::to_db_error;
+
+// Configuration constants
+pub(crate) const DEFAULT_RETRY_COUNT: u16 = 3;
+pub(crate) const DEFAULT_RETRY_DELAY_MS: u64 = 150;
+pub(crate) const TEST_RETRY_DELAY_MS: u64 = 50; // Faster for tests
 
 /// database operations configuration
 #[derive(Debug, Clone)]
@@ -27,6 +34,16 @@ impl SledDbConfig {
         }
     }
 
+    /// Create production configuration with default values
+    pub fn production() -> Self {
+        Self::new_with_constant_backoff(DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS)
+    }
+
+    /// Create test configuration with faster retry delays
+    pub fn test() -> Self {
+        Self::new_with_constant_backoff(DEFAULT_RETRY_COUNT, TEST_RETRY_DELAY_MS)
+    }
+
     /// Execute a transaction with retry logic using this config's settings
     pub fn with_retry<Trees, F, R>(&self, trees: Trees, f: F) -> DbResult<R>
     where
@@ -35,6 +52,6 @@ impl SledDbConfig {
     {
         trees
             .transaction_with_retry(self.backoff.as_ref(), self.retry_count.into(), f)
-            .map_err(|e| DbError::Other(format!("{:?}", e)))
+            .map_err(to_db_error)
     }
 }

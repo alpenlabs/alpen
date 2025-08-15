@@ -20,9 +20,6 @@ tracing-subscriber.workspace = true
 strata-cli-common.workspace = true
 strata-consensus-logic.workspace = true
 strata-db.workspace = true
-<<<<<<< HEAD
-strata-db-store-rocksdb.workspace = true
-=======
->>>>>>> dfcb671c (Remove rocksdb)
+strata-db-store-sled.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true

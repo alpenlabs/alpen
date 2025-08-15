@@ -107,7 +107,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         SledDbConfig::new_with_constant_backoff(config.client.db_retry_count, retry_delay_ms);
 
     // Initialize core databases
-    let database = init_core_dbs(sled_db.clone(), db_config.clone());
+    let database = init_core_dbs(sled_db.clone(), db_config.clone())?;
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();

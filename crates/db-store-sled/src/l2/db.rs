@@ -1,36 +1,22 @@
-use std::sync::Arc;
-
 use strata_db::{
     DbError, DbResult,
     traits::{BlockStatus, L2BlockDatabase},
 };
 use strata_state::{block::L2BlockBundle, header::L2Header, id::L2BlockId};
-use typed_sled::{SledDb, SledTree};
 
 use crate::{
-    SledDbConfig,
+    define_sled_database,
     l2::schemas::{L2BlockHeightSchema, L2BlockSchema, L2BlockStatusSchema},
-    utils::first,
+    utils::{first, to_db_error},
 };
 
-#[derive(Debug)]
-pub struct L2DBSled {
-    blk_tree: SledTree<L2BlockSchema>,
-    blk_status_tree: SledTree<L2BlockStatusSchema>,
-    blk_height_tree: SledTree<L2BlockHeightSchema>,
-    config: SledDbConfig,
-}
-
-impl L2DBSled {
-    pub fn new(db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
-        Ok(Self {
-            blk_tree: db.get_tree()?,
-            blk_status_tree: db.get_tree()?,
-            blk_height_tree: db.get_tree()?,
-            config,
-        })
+define_sled_database!(
+    pub struct L2DBSled {
+        blk_tree: L2BlockSchema,
+        blk_status_tree: L2BlockStatusSchema,
+        blk_height_tree: L2BlockHeightSchema,
     }
-}
+);
 
 impl L2BlockDatabase for L2DBSled {
     fn put_block_data(&self, bundle: L2BlockBundle) -> DbResult<()> {
@@ -52,7 +38,7 @@ impl L2BlockDatabase for L2DBSled {
                     Ok(())
                 },
             )
-            .map_err(|e| DbError::Other(e.to_string()))?;
+            .map_err(to_db_error)?;
         Ok(())
     }
 
@@ -78,7 +64,7 @@ impl L2BlockDatabase for L2DBSled {
                     Ok(true)
                 },
             )
-            .map_err(|e| DbError::Other(e.to_string()))
+            .map_err(to_db_error)
     }
 
     fn set_block_status(&self, id: L2BlockId, status: BlockStatus) -> DbResult<()> {
@@ -136,13 +122,7 @@ mod tests {
     use strata_db_tests::l2_db_tests;
 
     use super::*;
+    use crate::sled_db_test_setup;
 
-    fn setup_db() -> L2DBSled {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::new_with_constant_backoff(3, 200);
-        L2DBSled::new(sled_db.into(), config).unwrap()
-    }
-
-    l2_db_tests!(setup_db());
+    sled_db_test_setup!(L2DBSled, l2_db_tests);
 }
