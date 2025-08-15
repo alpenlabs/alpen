@@ -23,9 +23,7 @@ impl KeyCodec<BlockWitnessSchema> for B256 {
     fn encode_key(&self) -> Result<Vec<u8>, typed_sled::codec::CodecError> {
         use bincode::Options;
 
-        let bincode_options = bincode::options()
-            .with_fixint_encoding()
-            .with_big_endian();
+        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
         bincode_options.serialize(self).map_err(|err| {
             typed_sled::codec::CodecError::SerializationFailed {
@@ -38,16 +36,14 @@ impl KeyCodec<BlockWitnessSchema> for B256 {
     fn decode_key(data: &[u8]) -> Result<Self, typed_sled::codec::CodecError> {
         use bincode::Options;
 
-        let bincode_options = bincode::options()
-            .with_fixint_encoding()
-            .with_big_endian();
+        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
-        bincode_options.deserialize_from(&mut &data[..]).map_err(|err| {
-            typed_sled::codec::CodecError::SerializationFailed {
+        bincode_options
+            .deserialize_from(&mut &data[..])
+            .map_err(|err| typed_sled::codec::CodecError::SerializationFailed {
                 schema: "BlockWitnessSchema",
                 source: err.into(),
-            }
-        })
+            })
     }
 }
 
@@ -55,9 +51,7 @@ impl KeyCodec<BlockStateDiffSchema> for B256 {
     fn encode_key(&self) -> Result<Vec<u8>, typed_sled::codec::CodecError> {
         use bincode::Options;
 
-        let bincode_options = bincode::options()
-            .with_fixint_encoding()
-            .with_big_endian();
+        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
         bincode_options.serialize(self).map_err(|err| {
             typed_sled::codec::CodecError::SerializationFailed {
@@ -70,16 +64,14 @@ impl KeyCodec<BlockStateDiffSchema> for B256 {
     fn decode_key(data: &[u8]) -> Result<Self, typed_sled::codec::CodecError> {
         use bincode::Options;
 
-        let bincode_options = bincode::options()
-            .with_fixint_encoding()
-            .with_big_endian();
+        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
-        bincode_options.deserialize_from(&mut &data[..]).map_err(|err| {
-            typed_sled::codec::CodecError::SerializationFailed {
+        bincode_options
+            .deserialize_from(&mut &data[..])
+            .map_err(|err| typed_sled::codec::CodecError::SerializationFailed {
                 schema: "BlockStateDiffSchema",
                 source: err.into(),
-            }
-        })
+            })
     }
 }
 
