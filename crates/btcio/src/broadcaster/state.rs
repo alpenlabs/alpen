@@ -97,25 +97,16 @@ async fn filter_unfinalized_from_db(
 #[cfg(test)]
 mod test {
     use bitcoin::{consensus, Transaction};
-    use strata_db::{traits::L1BroadcastDatabase, types::L1TxStatus};
-    use strata_db_store_sled::{
-        test_utils::{get_test_sled_config, get_test_sled_db},
-        L1BroadcastDBSled,
-    };
+    use strata_db::{traits::DatabaseBackend, types::L1TxStatus};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;
     use crate::test_utils::SOME_TX;
 
-    fn get_db() -> Arc<impl L1BroadcastDatabase> {
-        let sdb = get_test_sled_db();
-        let sconf = get_test_sled_config();
-        Arc::new(L1BroadcastDBSled::new(sdb.into(), sconf).unwrap())
-    }
-
     fn get_ops() -> Arc<BroadcastDbOps> {
         let pool = threadpool::Builder::new().num_threads(2).build();
-        let db = get_db();
+        let db = get_test_sled_backend().broadcast_db();
         let ops = Context::new(db).into_ops(pool);
         Arc::new(ops)
     }

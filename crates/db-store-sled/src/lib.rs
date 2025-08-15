@@ -19,7 +19,7 @@ pub mod writer;
 use std::{path::Path, sync::Arc};
 
 // Re-exports
-pub use broadcaster::db::{BroadcastDb, L1BroadcastDBSled};
+pub use broadcaster::db::L1BroadcastDBSled;
 pub use chain_state::db::ChainstateDBSled;
 pub use checkpoint::db::CheckpointDBSled;
 pub use client_state::db::ClientStateDBSled;

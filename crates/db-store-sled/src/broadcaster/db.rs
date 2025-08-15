@@ -1,11 +1,6 @@
 use std::sync::Arc;
 
-use strata_db::{
-    DbResult,
-    errors::DbError,
-    traits::{self, L1BroadcastDatabase},
-    types::L1TxEntry,
-};
+use strata_db::{DbResult, errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry};
 use strata_primitives::buf::Buf32;
 use typed_sled::{SledDb, SledTree};
 
@@ -90,25 +85,6 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
 
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>> {
         Ok(self.tx_tree.last()?.map(second))
-    }
-}
-
-#[derive(Debug)]
-pub struct BroadcastDb {
-    l1_broadcast_db: Arc<L1BroadcastDBSled>,
-}
-
-impl BroadcastDb {
-    pub fn new(l1_broadcast_db: Arc<L1BroadcastDBSled>) -> Self {
-        Self { l1_broadcast_db }
-    }
-}
-
-impl traits::BroadcastDatabase for BroadcastDb {
-    type L1BroadcastDB = L1BroadcastDBSled;
-
-    fn l1_broadcast_db(&self) -> &Arc<Self::L1BroadcastDB> {
-        &self.l1_broadcast_db
     }
 }
 

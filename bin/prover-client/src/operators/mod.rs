@@ -5,9 +5,9 @@
 //! creating tasks, fetching inputs, and performing the proof computation using various supported
 //! ZKVMs.
 //!
-//! The operations are designed to interact with a [`ProofDb`] for storing and retrieving proofs,
-//! a [`TaskTracker`] for managing task dependencies, and [`ZkVmHost`] host for ZKVM-specific
-//! computations.
+//! The operations are designed to interact with a [`ProofDatabase`] for storing and retrieving
+//! proofs, a [`TaskTracker`] for managing task dependencies, and [`ZkVmHost`] host for
+//! ZKVM-specific computations.
 //!
 //! Supported ZKVMs:
 //!
