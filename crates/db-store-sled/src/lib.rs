@@ -41,7 +41,8 @@ pub fn open_sled_backend(
     ops_config: SledDbConfig,
 ) -> anyhow::Result<Arc<SledBackend>> {
     let sled_db = open_sled_database(datadir, dbname)?;
-    Ok(init_sled_backend(sled_db, ops_config))
+    init_sled_backend(sled_db, ops_config)
+        .map_err(|e| anyhow::anyhow!("Failed to initialize sled backend: {}", e))
 }
 
 /// Complete Sled backend with all database types
