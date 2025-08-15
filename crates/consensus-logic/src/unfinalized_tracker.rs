@@ -408,7 +408,7 @@ mod tests {
     use std::collections::HashSet;
 
     use strata_db::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
-    use strata_db_store_rocksdb::test_utils::get_rocksdb_backend;
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_primitives::{epoch::EpochCommitment, l2::L2BlockId};
     use strata_state::header::L2Header;
     use strata_storage::L2BlockManager;
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_load_unfinalized_blocks() {
-        let db = get_rocksdb_backend();
+        let db = get_test_sled_backend();
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let db = get_rocksdb_backend();
+        let db = get_test_sled_backend();
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_update_finalized_tip() {
-        let db = get_rocksdb_backend();
+        let db = get_test_sled_backend();
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());

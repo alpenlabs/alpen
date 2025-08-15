@@ -12,7 +12,7 @@ zkaleido.workspace = true
 
 anyhow.workspace = true
 borsh.workspace = true
-sled = "0.34.7"
+sled.workspace = true
 
 [dev-dependencies]
 strata-db-tests.workspace = true
