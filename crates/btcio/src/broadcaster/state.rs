@@ -97,26 +97,26 @@ async fn filter_unfinalized_from_db(
 #[cfg(test)]
 mod test {
     use bitcoin::{consensus, Transaction};
-    use strata_db::{traits::BroadcastDatabase, types::L1TxStatus};
-    use strata_db_store_rocksdb::{
-        broadcaster::db::{BroadcastDb, L1BroadcastDb},
-        test_utils::get_rocksdb_tmp_instance,
+    use strata_db::{traits::L1BroadcastDatabase, types::L1TxStatus};
+    use strata_db_store_sled::{
+        test_utils::{get_test_sled_config, get_test_sled_db},
+        L1BroadcastDBSled,
     };
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;
     use crate::test_utils::SOME_TX;
 
-    fn get_db() -> Arc<impl BroadcastDatabase> {
-        let (db, dbops) = get_rocksdb_tmp_instance().unwrap();
-        let bcastdb = Arc::new(L1BroadcastDb::new(db, dbops));
-        Arc::new(BroadcastDb::new(bcastdb))
+    fn get_db() -> Arc<impl L1BroadcastDatabase> {
+        let sdb = get_test_sled_db();
+        let sconf = get_test_sled_config();
+        Arc::new(L1BroadcastDBSled::new(sdb.into(), sconf).unwrap())
     }
 
     fn get_ops() -> Arc<BroadcastDbOps> {
         let pool = threadpool::Builder::new().num_threads(2).build();
         let db = get_db();
-        let ops = Context::new(db.l1_broadcast_db().clone()).into_ops(pool);
+        let ops = Context::new(db).into_ops(pool);
         Arc::new(ops)
     }
 

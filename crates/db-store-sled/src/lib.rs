@@ -11,6 +11,8 @@ pub mod l2;
 pub mod macros;
 pub mod prover;
 pub mod sync_event;
+#[cfg(feature = "test_utils")]
+pub mod test_utils;
 pub mod utils;
 pub mod writer;
 
