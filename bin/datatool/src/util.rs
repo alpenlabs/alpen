@@ -299,8 +299,9 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
             ));
         }
 
-        // Convert to MagicBytes (safe since we validated length is 4)
-        name_bytes.try_into().unwrap()
+        let mut magic_bytes: [u8; 4] = [0; 4];
+        magic_bytes.copy_from_slice(name_bytes);
+        magic_bytes
     } else {
         *b"alpn"
     };
