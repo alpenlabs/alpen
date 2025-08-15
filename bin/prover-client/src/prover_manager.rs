@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use strata_db::traits::ProofDatabase;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use tokio::{spawn, sync::Mutex, time::sleep};
 use tracing::{error, info, warn};
@@ -50,7 +50,7 @@ pub(crate) struct ProverManager {
     pub(crate) operator: Arc<ProofOperator>,
 
     /// Database for the prover manager.
-    pub(crate) db: Arc<ProofDb>,
+    pub(crate) db: Arc<ProofDBSled>,
 
     /// Configuration for the prover manager.
     pub(crate) config: ProverManagerConfig,
@@ -64,7 +64,7 @@ impl ProverManager {
     pub(crate) fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,
-        db: Arc<ProofDb>,
+        db: Arc<ProofDBSled>,
         config: ProverManagerConfig,
     ) -> Self {
         Self {
@@ -164,7 +164,7 @@ async fn make_proof(
     operator: Arc<ProofOperator>,
     task_tracker: Arc<Mutex<TaskTracker>>,
     task: ProofKey,
-    db: Arc<ProofDb>,
+    db: Arc<ProofDBSled>,
     delay_seconds: u64,
     max_retry_counter: u64,
 ) -> Result<(), ProvingTaskError> {
