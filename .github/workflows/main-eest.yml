@@ -135,6 +135,10 @@ jobs:
           screen -S basic_env -X quit
       
       - name: Check tests execution
+        # the purpose of the workflow is twofold:
+        # - run the EF tests
+        # - make sure EE proof is completed with EF txns (regardless if some tests have failed)
+        # Thus, we check the whole logic here. 
         if: steps.runtests.outcome == 'failure'
         run: |
           echo "Functional tests failed"
