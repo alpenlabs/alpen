@@ -450,6 +450,7 @@ pub async fn fetch_verification_state(
         epoch_start_timestamp: current_epoch_start_header.time,
         block_timestamp_history: timestamp_history,
         params: btc_params,
+        total_accumulated_pow: 0,
     };
 
     trace!(%block_height, ?header_verification_state, "HeaderVerificationState");
