@@ -59,7 +59,7 @@ impl ClientState {
     // TODO do we need this or should we load it at run time from the rollup params?
     pub fn from_genesis_params(params: &Params) -> Self {
         let rparams = params.rollup();
-        let genesis_l1_height = rparams.genesis_l1_height;
+        let genesis_l1_height = rparams.genesis_l1_view.blk.height();
         Self {
             chain_active: false,
             sync_state: None,

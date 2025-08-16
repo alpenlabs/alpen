@@ -15,10 +15,11 @@ use bitcoind_async_client::{
     },
     ClientResult,
 };
-use strata_btcio::reader::query::fetch_verification_state;
+use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_primitives::{
     buf::Buf32,
     l1::{HeaderVerificationState, L1BlockManifest, L1HeaderRecord},
+    params::GenesisL1View,
 };
 
 #[derive(Debug)]
@@ -317,6 +318,10 @@ impl BtcChainSegment {
             blocks.push(block);
         }
         Ok(blocks)
+    }
+
+    pub fn fetch_genesis_l1_view(&self, height: u64) -> Result<GenesisL1View, Error> {
+        block_on(fetch_genesis_l1_view(self, height))
     }
 
     pub fn get_verification_state(&self, height: u64) -> Result<HeaderVerificationState, Error> {

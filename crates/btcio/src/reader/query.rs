@@ -322,7 +322,7 @@ async fn fetch_and_process_block<R: Reader>(
 
 /// Processes a bitcoin Block to return corresponding `L1Event` and `BlockHash`.
 async fn process_block<R: Reader>(
-    ctx: &ReaderContext<R>,
+    _ctx: &ReaderContext<R>,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
     height: u64,
@@ -345,13 +345,7 @@ async fn process_block<R: Reader>(
     status_updates.push(L1StatusUpdate::CurHeight(height));
     status_updates.push(L1StatusUpdate::CurTip(l1blkid.to_string()));
 
-    let l1_verification_state = if height == ctx.params.rollup.genesis_l1_height {
-        Some(fetch_verification_state(ctx.client.as_ref(), height).await?)
-    } else {
-        None
-    };
-
-    let block_ev = L1Event::BlockData(block_data, state.epoch(), l1_verification_state);
+    let block_ev = L1Event::BlockData(block_data, state.epoch(), None);
     let l1_events = vec![block_ev];
 
     Ok((l1_events, l1blkid))
@@ -384,20 +378,10 @@ async fn fetch_block_timestamps_ascending(
     Ok(timestamps)
 }
 
-/// Returns the [`HeaderVerificationState`] after applying the given block height. This state can be
-/// used to verify the next block header.
-///
-/// This function assumes that `block_height` is valid and gathers all necessary
-/// blockchain data, such as difficulty adjustment headers, block timestamps, and target
-/// values, to compute the verification state.
-///
-/// It calculates the current and previous epoch adjustment headers, fetches the required
-/// timestamps (including a safe margin for potential reorg depth), and determines the next
-/// block's target.
-pub async fn fetch_verification_state(
+pub async fn fetch_genesis_l1_view(
     client: &impl Reader,
     block_height: u64,
-) -> anyhow::Result<HeaderVerificationState> {
+) -> anyhow::Result<GenesisL1View> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
     let btc_params = BtcParams::from(bitcoin::params::Params::from(network));
@@ -450,6 +434,26 @@ pub async fn fetch_verification_state(
         last_11_timestamps: timestamps,
     };
 
+    Ok(genesis_l1_view)
+}
+
+/// Returns the [`HeaderVerificationState`] after applying the given block height. This state can be
+/// used to verify the next block header.
+///
+/// This function assumes that `block_height` is valid and gathers all necessary
+/// blockchain data, such as difficulty adjustment headers, block timestamps, and target
+/// values, to compute the verification state.
+///
+/// It calculates the current and previous epoch adjustment headers, fetches the required
+/// timestamps (including a safe margin for potential reorg depth), and determines the next
+/// block's target.
+pub async fn fetch_verification_state(
+    client: &impl Reader,
+    block_height: u64,
+) -> anyhow::Result<HeaderVerificationState> {
+    // Create BTC parameters based on the current network.
+    let network = client.network().await?;
+    let genesis_l1_view = fetch_genesis_l1_view(client, block_height).await?;
     // Build the header verification state structure.
     let header_verification_state = HeaderVerificationState::new(network, genesis_l1_view);
 

@@ -8,7 +8,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_primitives::{
     block_credential,
-    buf::{Buf32, Buf64},
+    buf::Buf64,
     operator::OperatorPubkeys,
     params::{OperatorConfig, Params, ProofPublishMode, RollupParams, SyncParams},
     proof::RollupVerifyingKey,
@@ -96,6 +96,9 @@ pub fn gen_params() -> Params {
 
 fn gen_params_with_seed(seed: u64) -> Params {
     let opkeys = make_dummy_operator_pubkeys_with_seed(seed);
+    let genesis_l1_view = BtcChainSegment::load()
+        .fetch_genesis_l1_view(40320)
+        .unwrap();
     Params {
         rollup: RollupParams {
             magic_bytes: *b"ALPN",
@@ -104,11 +107,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
             block_time: 1000,
             cred_rule: block_credential::CredRule::Unchecked,
             horizon_l1_height: 40318,
-            genesis_l1_height: 40320, // we have mainnet blocks from this height test-utils
-            genesis_l1_blkid: "0000000045861e169b5a961b7034f8de9e98022e7a39100dde3ae3ea240d7245"
-                .parse::<Buf32>()
-                .unwrap()
-                .into(), // mainnet block at height 40320
+            genesis_l1_view,
             operator_config: OperatorConfig::Static(vec![opkeys]),
             evm_genesis_block_hash:
                 "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"
@@ -164,7 +163,8 @@ pub fn gen_client_state(params: Option<&Params>) -> ClientState {
 pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
     let btc_chain = BtcChainSegment::load();
     // Build the genesis block and genesis consensus states.
-    let pregenesis_mfs = vec![btc_chain.get_block_manifest(params.rollup().genesis_l1_height)];
+    let pregenesis_mfs =
+        vec![btc_chain.get_block_manifest(params.rollup().genesis_l1_view.blk.height())];
     make_l2_genesis(params, pregenesis_mfs)
 }
 
