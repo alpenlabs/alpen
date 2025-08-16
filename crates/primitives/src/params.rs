@@ -33,9 +33,6 @@ pub struct RollupParams {
     /// Rule we use to decide if a block is correctly signed.
     pub cred_rule: CredRule,
 
-    /// Block height from which to watch for L1 transactions
-    pub horizon_l1_height: u64,
-
     pub genesis_l1_view: GenesisL1View,
 
     /// Config for how the genesis operator table is set up.

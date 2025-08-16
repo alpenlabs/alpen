@@ -106,7 +106,6 @@ fn gen_params_with_seed(seed: u64) -> Params {
             da_tag: "strata-da".to_string(),
             block_time: 1000,
             cred_rule: block_credential::CredRule::Unchecked,
-            horizon_l1_height: 40318,
             genesis_l1_view,
             operator_config: OperatorConfig::Static(vec![opkeys]),
             evm_genesis_block_hash:

@@ -68,8 +68,10 @@ pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block =
-        calculate_target_next_block(storage.l1().as_ref(), params.rollup().horizon_l1_height)?;
+    let target_next_block = calculate_target_next_block(
+        storage.l1().as_ref(),
+        params.rollup().genesis_l1_view.height(),
+    )?;
 
     let seq_pubkey = match params.rollup.cred_rule {
         CredRule::Unchecked => None,
@@ -171,18 +173,18 @@ async fn init_reader_state<R: Reader>(
 
     let lookback = ctx.params.rollup().l1_reorg_safe_depth as usize * 2;
     let client = ctx.client.as_ref();
-    let hor_height = ctx.params.rollup().horizon_l1_height;
-    let pre_hor = hor_height.saturating_sub(1);
+    let genesis_height = ctx.params.rollup().genesis_l1_view.height();
+    let pre_genesis = genesis_height.saturating_sub(1);
     let target = target_next_block as i64;
 
     // Do some math to figure out where our start and end are.
     let chain_info = client.get_blockchain_info().await?;
     let start_height = (target - lookback as i64)
-        .max(pre_hor as i64)
+        .max(pre_genesis as i64)
         .min(chain_info.blocks as i64) as u64;
     let end_height = chain_info
         .blocks
-        .min(pre_hor.max(target_next_block.saturating_sub(1)));
+        .min(pre_genesis.max(target_next_block.saturating_sub(1)));
     debug!(%start_height, %end_height, "queried L1 client, have init range");
 
     // Loop through the range we've determined to be okay and pull the blocks we want to look back

@@ -37,10 +37,6 @@ pub struct ClientState {
     /// valid chain.
     pub(super) sync_state: Option<SyncState>,
 
-    /// L1 block we start watching the chain from.  We can't access anything
-    /// before this chain height.
-    pub(super) horizon_l1_height: u64,
-
     /// Height at which we'll create the L2 genesis block from.
     pub(super) genesis_l1_height: u64,
 
@@ -63,7 +59,6 @@ impl ClientState {
         Self {
             chain_active: false,
             sync_state: None,
-            horizon_l1_height: rparams.horizon_l1_height,
             genesis_l1_height,
             finalization_depth: rparams.l1_reorg_safe_depth as u64,
             declared_final_epoch: None,

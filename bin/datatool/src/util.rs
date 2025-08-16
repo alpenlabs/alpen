@@ -327,7 +327,6 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
         // TODO make these consts
         block_time_sec: cmd.block_time.unwrap_or(15),
         epoch_slots: cmd.epoch_slots.unwrap_or(64),
-        horizon_height: cmd.horizon_height.unwrap_or(90),
         seqkey,
         opkeys,
         rollup_vk,
@@ -440,8 +439,6 @@ pub(crate) struct ParamsConfig {
     block_time_sec: u64,
     /// Number of slots in an epoch.
     epoch_slots: u32,
-    /// Height at which the we start reading L1 (< genesis_trigger).
-    horizon_height: u64,
     /// View of the L1 at genesis
     genesis_l1_view: GenesisL1View,
     /// Sequencer's key.
@@ -495,7 +492,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         cred_rule: cr,
         // TODO do we want to remove this?
         genesis_l1_view: config.genesis_l1_view,
-        horizon_l1_height: config.horizon_height,
         operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
