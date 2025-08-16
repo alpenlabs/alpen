@@ -129,12 +129,11 @@ fn handle_block(
         state.activate_chain();
 
         // Also have to set this.
+        // FIXME:
         let (genesis_block, _) = make_l2_genesis(params);
         state.set_sync_state(SyncState::from_genesis_blkid(
             genesis_block.block().header().get_blockid(),
         ));
-
-        state.push_action(SyncAction::L2Genesis(*block.blkid()));
     } else if height == next_exp_height {
         // Do normal L1 block extension here.
         let prev_istate = state

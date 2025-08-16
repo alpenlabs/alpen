@@ -6,10 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{batch::Checkpoint, epoch::EpochCommitment};
 
-use crate::{
-    client_state::{CheckpointL1Ref, ClientState},
-    l1::L1BlockId,
-};
+use crate::client_state::{CheckpointL1Ref, ClientState};
 
 /// Output of a consensus state transition. Right now it consists of full [`ClientState`] and
 /// sync actions.
@@ -59,11 +56,6 @@ pub enum SyncAction {
     ///
     /// This also implicitly finalizes all blocks preceding the epoch terminal.
     FinalizeEpoch(EpochCommitment),
-
-    /// Indicates to the worker that it's safe to perform the L2 genesis
-    /// operations and start the chain sync work, using a particular L1 block
-    /// as the genesis lock-in block.
-    L2Genesis(L1BlockId),
 
     /// Checkpoint is included in L1 at given L1 reference.
     UpdateCheckpointInclusion {
