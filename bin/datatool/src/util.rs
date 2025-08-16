@@ -494,9 +494,8 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         checkpoint_tag: config.checkpoint_tag,
         cred_rule: cr,
         // TODO do we want to remove this?
+        genesis_l1_view: config.genesis_l1_view,
         horizon_l1_height: config.horizon_height,
-        genesis_l1_height: config.genesis_l1_view.blk.height(),
-        genesis_l1_blkid: *config.genesis_l1_view.blk.blkid(),
         operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),

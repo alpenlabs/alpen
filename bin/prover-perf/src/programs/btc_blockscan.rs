@@ -15,7 +15,7 @@ fn prepare_input() -> BlockScanProofInput {
     let tx_filters = TxFilterConfig::derive_from(rollup_params).unwrap();
 
     let btc_blocks = BtcChainSegment::load()
-        .get_blocks(rollup_params.genesis_l1_height + 1, 3)
+        .get_blocks(rollup_params.genesis_l1_view.blk.height() + 1, 3)
         .expect("failed to get blocks");
     BlockScanProofInput {
         btc_blocks,

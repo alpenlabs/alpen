@@ -52,7 +52,7 @@ pub fn init_genesis_chainstate(
     debug!("preparing database genesis chainstate!");
 
     let horizon_blk_height = params.rollup.horizon_l1_height;
-    let genesis_blk_height = params.rollup.genesis_l1_height;
+    let genesis_blk_height = params.rollup.genesis_l1_view.blk.height();
 
     // Query the pre-genesis blocks we need before we do anything else.
     let l1_db = storage.l1();
@@ -149,7 +149,7 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     );
 
     // This has to be empty since everyone should have an unambiguous view of the genesis block.
-    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_height);
+    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_view.blk.height());
 
     // TODO this is a total stub, we have to fill it in with something
     let exec_seg = ExecSegment::new(genesis_update);
@@ -183,7 +183,7 @@ fn make_genesis_chainstate(
         ExecEnvState::from_base_input(geui.clone(), params.rollup.evm_genesis_block_state_root);
 
     let horizon_blk_height = params.rollup.horizon_l1_height;
-    let genesis_blk_height = params.rollup.genesis_l1_height;
+    let genesis_blk_height = params.rollup.genesis_l1_view.blk.height();
     let genesis_mf = pregenesis_mfs
         .last()
         .expect("genesis block must be present")

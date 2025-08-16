@@ -80,7 +80,7 @@ pub fn process_event(
 
             // If the block is before genesis we don't care about it.
             // TODO maybe put back pre-genesis tracking?
-            let genesis_trigger = params.rollup().genesis_l1_height;
+            let genesis_trigger = params.rollup().genesis_l1_view.blk.height();
             if height < genesis_trigger {
                 #[cfg(test)]
                 eprintln!(
@@ -122,7 +122,7 @@ fn handle_block(
 
     // We probably should have gotten the L1Genesis message by now but
     // let's just do this anyways.
-    if height == params.rollup().genesis_l1_height {
+    if height == params.rollup().genesis_l1_view.blk.height() {
         // Do genesis here.
         let istate = process_genesis_trigger_block(block_mf, params.rollup())?;
         state.accept_l1_block_state(block, istate);
@@ -378,7 +378,7 @@ mod tests {
         let mut state = gen_client_state(Some(&params));
 
         let horizon = params.rollup().horizon_l1_height as u64;
-        let genesis = params.rollup().genesis_l1_height as u64;
+        let genesis = params.rollup().genesis_l1_view.blk.height();
 
         let chain = BtcChainSegment::load();
         let _l1_verification_state = chain.get_verification_state(genesis + 1).unwrap();
