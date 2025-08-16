@@ -19,18 +19,21 @@ use strata_state::{
     prelude::*,
     state_op::WriteBatch,
 };
-use strata_storage::{ClientStateManager, L2BlockManager, NodeStorage};
+use strata_storage::{L2BlockManager, NodeStorage};
 use tracing::*;
 
 /// Inserts into the database an initial basic client state that we can begin
 /// waiting for genesis with.
-pub fn init_client_state(params: &Params, csman: &ClientStateManager) -> anyhow::Result<()> {
+pub fn init_client_state(params: &Params, storage: &NodeStorage) -> anyhow::Result<()> {
     debug!("initializing client state in database!");
 
-    let init_state = ClientState::from_genesis_params(params);
+    let (gblkid, _) = init_genesis_chainstate(params, storage)?;
+    let init_state = ClientState::from_genesis_params(params, gblkid);
 
     // Write the state into the database.
-    csman.put_update_blocking(0, ClientUpdateOutput::new_state(init_state))?;
+    storage
+        .client_state()
+        .put_update_blocking(0, ClientUpdateOutput::new_state(init_state))?;
     // TODO: status channel should probably be updated.
 
     Ok(())
@@ -46,7 +49,7 @@ pub fn init_client_state(params: &Params, csman: &ClientStateManager) -> anyhow:
 pub fn init_genesis_chainstate(
     params: &Params,
     storage: &NodeStorage,
-) -> anyhow::Result<Chainstate> {
+) -> anyhow::Result<(L2BlockId, Chainstate)> {
     debug!("preparing database genesis chainstate!");
 
     // Build the genesis block and genesis consensus states.
@@ -70,7 +73,7 @@ pub fn init_genesis_chainstate(
     // states or something
 
     info!("finished genesis insertions");
-    Ok(gchstate)
+    Ok((gid, gchstate))
 }
 
 pub fn construct_operator_table(opconfig: &OperatorConfig) -> OperatorTable {

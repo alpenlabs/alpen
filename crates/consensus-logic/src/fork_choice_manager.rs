@@ -283,7 +283,7 @@ pub fn init_forkchoice_manager(
 
     // TODO: get finalized block id without depending on client state
     // or ensure client state and chain state are in-sync during startup
-    let sync_state = init_csm_state.sync().expect("csm state should be init");
+    let sync_state = init_csm_state.sync();
     // let chain_tip_height = storage.chainstate().get_last_write_idx_blocking()?;
 
     // XXX right now we have to do some special casing for if we don't have an

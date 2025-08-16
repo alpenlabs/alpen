@@ -126,7 +126,6 @@ fn handle_block(
         // Do genesis here.
         let istate = process_genesis_trigger_block(block_mf, params.rollup())?;
         state.accept_l1_block_state(block, istate);
-        state.activate_chain();
 
         // Also have to set this.
         // FIXME:

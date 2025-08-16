@@ -283,10 +283,7 @@ pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     let init_state = handle.block_on(status_channel.wait_until_genesis())?;
     let finalized_tip = match init_state.get_declared_final_epoch().cloned() {
         Some(epoch) => epoch.to_block_commitment(),
-        None => L2BlockCommitment::new(
-            0,
-            *init_state.sync().expect("after genesis").genesis_blkid(),
-        ),
+        None => L2BlockCommitment::new(0, *init_state.sync().genesis_blkid()),
     };
 
     let cur_tip = context.fetch_cur_tip()?;

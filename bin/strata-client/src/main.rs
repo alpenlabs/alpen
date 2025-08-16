@@ -109,9 +109,9 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
 
     // Check if we have to do genesis.
-    if genesis::check_needs_client_init(storage.as_ref())? {
+    if genesis::check_needs_client_init(&storage)? {
         info!("need to init client state!");
-        genesis::init_client_state(&params, storage.client_state())?;
+        genesis::init_client_state(&params, &storage)?;
     }
 
     info!("init finished, starting main tasks");
