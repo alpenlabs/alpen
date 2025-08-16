@@ -17,5 +17,6 @@ inst_ops_simple! {
         put_checkpoint(idx: u64, entry: CheckpointEntry) => ();
         get_checkpoint(idx: u64) => Option<CheckpointEntry>;
         get_last_checkpoint_idx() => Option<u64>;
+        get_latest_unproven_checkpoint_idx() => Option<u64>;
     }
 }

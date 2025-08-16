@@ -188,6 +188,10 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
 
     /// Get last written checkpoint index.
     fn get_last_checkpoint_idx(&self) -> DbResult<Option<u64>>;
+
+    /// Get the latest checkpoint index that has PendingProof status.
+    /// Returns the highest index checkpoint that still needs proof generation.
+    fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>>;
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
