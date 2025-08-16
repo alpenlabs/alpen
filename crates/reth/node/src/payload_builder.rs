@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use alloy_consensus::Transaction;
+use alloy_consensus::{BlockHeader, Transaction};
 use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
@@ -25,7 +25,7 @@ use reth_transaction_pool::{
 };
 use revm::{context::Block, database::State};
 use revm_primitives::U256;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     engine::AlpenEngineTypes,
@@ -320,6 +320,23 @@ where
     let tx_receipt_pairs = txns.iter().zip(receipts.iter());
     let withdrawal_intents: Vec<WithdrawalIntent> =
         collect_withdrawal_intents(tx_receipt_pairs).collect();
+
+    if !withdrawal_intents.is_empty() {
+        info!(
+            num_withdrawal_intents = withdrawal_intents.len(),
+            block_number = block.header().number(),
+            "Collected withdrawal intents from block execution"
+        );
+
+        for intent in &withdrawal_intents {
+            debug!(
+                amount_sats = intent.amt,
+                destination = %intent.destination,
+                txid = %intent.withdrawal_txid,
+                "Withdrawal intent details"
+            );
+        }
+    }
 
     let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
 

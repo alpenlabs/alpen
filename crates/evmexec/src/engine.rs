@@ -128,15 +128,29 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             .el_ops()
             .iter()
             .map(|op| match op {
-                Op::Deposit(deposit_data) => Ok(Withdrawal {
-                    index: deposit_data.intent_idx(),
-                    address: address_from_slice(deposit_data.dest_addr()).ok_or_else(|| {
-                        EngineError::InvalidAddress(deposit_data.dest_addr().to_vec())
-                    })?,
-                    amount: sats_to_gwei(deposit_data.amt())
-                        .ok_or(EngineError::AmountConversion(deposit_data.amt()))?,
-                    ..Default::default()
-                }),
+                Op::Deposit(deposit_data) => {
+                    let address =
+                        address_from_slice(deposit_data.dest_addr()).ok_or_else(|| {
+                            EngineError::InvalidAddress(deposit_data.dest_addr().to_vec())
+                        })?;
+                    let amount = sats_to_gwei(deposit_data.amt())
+                        .ok_or(EngineError::AmountConversion(deposit_data.amt()))?;
+
+                    info!(
+                        intent_idx = deposit_data.intent_idx(),
+                        address = ?address,
+                        amount_sats = deposit_data.amt(),
+                        amount_gwei = ?amount,
+                        "Minting tokens for deposit in EVM"
+                    );
+
+                    Ok(Withdrawal {
+                        index: deposit_data.intent_idx(),
+                        address,
+                        amount,
+                        ..Default::default()
+                    })
+                }
             })
             .collect::<Result<_, EngineError>>()?;
 

@@ -308,7 +308,7 @@ fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<L1BlockMa
 /// Prepares the execution segment for the block.
 #[allow(clippy::too_many_arguments)]
 fn prepare_exec_data<E: ExecEngineCtl>(
-    _slot: u64,
+    slot: u64,
     timestamp: u64,
     prev_l2_blkid: L2BlockId,
     _prev_global_sr: Buf32,
@@ -325,6 +325,14 @@ fn prepare_exec_data<E: ExecEngineCtl>(
     // construct el_ops by looking at chainstate
     let pending_deposits = prev_chstate.exec_env_state().pending_deposits();
     let el_ops = construct_ops_from_deposit_intents(pending_deposits, params.max_deposits_in_block);
+
+    if !el_ops.is_empty() {
+        info!(
+            num_deposit_ops = el_ops.len(),
+            slot, "Creating EVM operations for pending deposits"
+        );
+    }
+
     let payload_env = PayloadEnv::new(
         timestamp,
         prev_l2_blkid,
@@ -357,6 +365,16 @@ fn prepare_exec_data<E: ExecEngineCtl>(
     // Reassemble it into an exec update.
     let exec_update = payload_data.exec_update().clone();
     let _applied_ops = payload_data.ops();
+
+    // Log withdrawal intents if any
+    let withdrawals = exec_update.output().withdrawals();
+    if !withdrawals.is_empty() {
+        info!(
+            num_withdrawal_intents = withdrawals.len(),
+            slot, "Received withdrawal intents from EVM execution"
+        );
+    }
+
     let exec_seg = ExecSegment::new(exec_update);
 
     // And the accessory.

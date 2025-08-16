@@ -1,4 +1,4 @@
-use bitcoin::{consensus::serialize, hashes::Hash, Block};
+use bitcoin::{consensus::serialize, hashes::Hash, hex::DisplayHex, Block};
 use bitcoind_async_client::traits::Reader;
 use strata_primitives::{
     buf::Buf32,
@@ -110,11 +110,71 @@ fn generate_l1txs(blockdata: &BlockData) -> Vec<L1Tx> {
         .relevant_txs()
         .iter()
         .map(|tx_entry| {
-            generate_l1_tx(
-                blockdata.block(),
-                *tx_entry.index(),
-                tx_entry.item().protocol_ops().to_vec(),
-            )
+            let protocol_ops = tx_entry.item().protocol_ops().to_vec();
+
+            // Log important protocol operations
+            for op in &protocol_ops {
+                use strata_primitives::l1::ProtocolOperation;
+                match op {
+                    ProtocolOperation::Deposit(info) => {
+                        info!(
+                            block_height = blockdata.block_num(),
+                            tx_index = tx_entry.index(),
+                            deposit_idx = info.deposit_idx,
+                            amount_sats = info.amt.to_sat(),
+                            outpoint = ?info.outpoint,
+                            dest_addr = &info.address.to_lower_hex_string(),
+                            "Deposit detected in L1 block"
+                        );
+                    }
+                    ProtocolOperation::WithdrawalFulfillment(info) => {
+                        info!(
+                            block_height = blockdata.block_num(),
+                            tx_index = tx_entry.index(),
+                            deposit_idx = info.deposit_idx,
+                            operator_idx = info.operator_idx,
+                            amount_sats = info.amt.to_sat(),
+                            txid = %info.txid,
+                            "Withdrawal fulfillment detected in L1 block"
+                        );
+                    }
+                    ProtocolOperation::DepositSpent(info) => {
+                        info!(
+                            block_height = blockdata.block_num(),
+                            tx_index = tx_entry.index(),
+                            deposit_idx = info.deposit_idx,
+                            "Deposit UTXO spent detected in L1 block"
+                        );
+                    }
+                    ProtocolOperation::Checkpoint(checkpoint) => {
+                        debug!(
+                            block_height = blockdata.block_num(),
+                            tx_index = tx_entry.index(),
+                            epoch = checkpoint.checkpoint().batch_info().epoch(),
+                            "Checkpoint detected in L1 block"
+                        );
+                    }
+                    ProtocolOperation::DaCommitment(commitment) => {
+                        debug!(
+                            block_height = blockdata.block_num(),
+                            tx_index = tx_entry.index(),
+                            commitment = %commitment.to_hash(),
+                            "DA commitment detected in L1 block"
+                        );
+                    }
+                    ProtocolOperation::DepositRequest(info) => {
+                        debug!(
+                            block_height = blockdata.block_num(),
+                            tx_index = tx_entry.index(),
+                            amount_sats = info.amt,
+                            dest_addr = &info.address.to_lower_hex_string(),
+                            "Deposit request detected in L1 block"
+                        );
+                    }
+                }
+            }
+
+            generate_l1_tx(blockdata.block(), *tx_entry.index(), protocol_ops)
         })
         .collect()
 }

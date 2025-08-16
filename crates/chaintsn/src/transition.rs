@@ -4,6 +4,7 @@
 
 use std::{cmp::max, collections::HashMap};
 
+use bitcoin::hex::DisplayHex;
 use rand_core::{RngCore, SeedableRng};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_primitives::{
@@ -238,6 +239,15 @@ fn process_l1_deposit(
     let requested_idx = info.deposit_idx;
     let outpoint = info.outpoint;
 
+    info!(
+        deposit_idx = requested_idx,
+        amount_sats = info.amt.to_sat(),
+        outpoint = ?outpoint,
+        dest_addr = &info.address.to_lower_hex_string(),
+        l1_block_height = src_block_mf.height(),
+        "Processing deposit from L1"
+    );
+
     // Create the deposit entry to track it on the bridge side.
     //
     // Right now all operators sign all deposits, take them all.
@@ -250,10 +260,19 @@ fn process_l1_deposit(
         let deposit_intent = DepositIntent::new(info.amt, info.address.clone());
         state.insert_deposit_intent(0, deposit_intent);
 
-        // Logging so we know if it got there.
-        trace!(?outpoint, "handled deposit");
+        info!(
+            deposit_idx = requested_idx,
+            amount_sats = info.amt.to_sat(),
+            outpoint = ?outpoint,
+            dest_addr = &info.address.to_lower_hex_string(),
+            "Deposit processed: entry created and intent queued for EVM minting"
+        );
     } else {
-        warn!(?outpoint, %requested_idx, "ignoring deposit that would have overwritten entry");
+        warn!(
+            deposit_idx = requested_idx,
+            outpoint = ?outpoint,
+            "Failed to process deposit: entry already exists"
+        );
     }
 
     Ok(())
@@ -265,7 +284,20 @@ fn process_withdrawal_fulfillment(
     state: &mut StateCache,
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
+    info!(
+        deposit_idx = info.deposit_idx,
+        operator_idx = info.operator_idx,
+        amount_sats = info.amt.to_sat(),
+        txid = %info.txid,
+        "Processing withdrawal fulfillment from L1"
+    );
+
     if !state.is_valid_withdrawal_fulfillment(info.deposit_idx, info.operator_idx) {
+        warn!(
+            deposit_idx = info.deposit_idx,
+            operator_idx = info.operator_idx,
+            "Invalid withdrawal fulfillment: deposit not assigned to operator"
+        );
         return Err(OpError::InvalidDeposit {
             deposit_idx: info.deposit_idx,
             operator_idx: info.operator_idx,
@@ -273,14 +305,33 @@ fn process_withdrawal_fulfillment(
     }
 
     state.mark_deposit_fulfilled(info);
+
+    info!(
+        deposit_idx = info.deposit_idx,
+        operator_idx = info.operator_idx,
+        amount_sats = info.amt.to_sat(),
+        txid = %info.txid,
+        "Withdrawal fulfillment processed: deposit marked as fulfilled"
+    );
+
     Ok(())
 }
 
 /// Locked deposit on L1 has been spent.
 fn process_deposit_spent(state: &mut StateCache, info: &DepositSpendInfo) -> Result<(), OpError> {
-    // Currently, we are not tracking how this was spent, only that it was.
+    info!(
+        deposit_idx = info.deposit_idx,
+        "Processing deposit spent event from L1"
+    );
 
+    // Currently, we are not tracking how this was spent, only that it was.
     state.mark_deposit_reimbursed(info.deposit_idx);
+
+    info!(
+        deposit_idx = info.deposit_idx,
+        "Deposit spent processed: deposit marked as reimbursed"
+    );
+
     Ok(())
 }
 
