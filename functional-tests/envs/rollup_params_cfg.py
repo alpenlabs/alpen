@@ -57,7 +57,6 @@ class RollupConfig(BaseModel):
     magic_bytes: Annotated[list[int], Field(min_length=4, max_length=4)]
     block_time: int
     cred_rule: CredRule
-    horizon_l1_height: int
     operator_config: OperatorConfig
     evm_genesis_block_hash: StrBuf32
     evm_genesis_block_state_root: StrBuf32

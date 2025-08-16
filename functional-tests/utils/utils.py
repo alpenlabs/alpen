@@ -6,11 +6,11 @@ import time
 from dataclasses import dataclass
 from threading import Thread
 from typing import Any, Callable, Optional, TypeVar
-from factory.config import BitcoindConfig
 
 from bitcoinlib.services.bitcoind import BitcoindClient
 from strata_utils import convert_to_xonly_pk, get_balance, musig_aggregate_pks
 
+from factory.config import BitcoindConfig
 from factory.seqrpc import JsonrpcClient
 from utils.constants import *
 
