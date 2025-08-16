@@ -16,9 +16,8 @@ use strata_l1tx::{
 use strata_primitives::{
     block_credential::CredRule,
     l1::{
-        get_relative_difficulty_adjustment_height, BtcParams, EpochTimestamps,
-        HeaderVerificationState, L1BlockCommitment, L1BlockId, TimestampStore,
-        TIMESTAMPS_FOR_MEDIAN,
+        get_relative_difficulty_adjustment_height, BtcParams, HeaderVerificationState,
+        L1BlockCommitment, L1BlockId, TimestampStore, TIMESTAMPS_FOR_MEDIAN,
     },
     params::Params,
 };
@@ -347,14 +346,7 @@ async fn process_block<R: Reader>(
     status_updates.push(L1StatusUpdate::CurTip(l1blkid.to_string()));
 
     let l1_verification_state = if height == ctx.params.rollup.genesis_l1_height {
-        Some(
-            fetch_verification_state(
-                ctx.client.as_ref(),
-                height,
-                ctx.params.rollup.l1_reorg_safe_depth,
-            )
-            .await?,
-        )
+        Some(fetch_verification_state(ctx.client.as_ref(), height).await?)
     } else {
         None
     };
@@ -405,7 +397,6 @@ async fn fetch_block_timestamps_ascending(
 pub async fn fetch_verification_state(
     client: &impl Reader,
     block_height: u64,
-    l1_reorg_safe_depth: u32,
 ) -> anyhow::Result<HeaderVerificationState> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
@@ -419,31 +410,16 @@ pub async fn fetch_verification_state(
         .get_block_header_at(current_epoch_start_height)
         .await?;
 
-    // Determine the previous difficulty adjustment header.
-    // If the current adjustment height is high enough, subtract the adjustment interval;
-    // otherwise, reuse the current adjustment header.
-    let previous_epoch_start_height =
-        if current_epoch_start_height > btc_params.difficulty_adjustment_interval() {
-            current_epoch_start_height - btc_params.difficulty_adjustment_interval()
-        } else {
-            current_epoch_start_height
-        };
-    let previous_epoch_start_header = client
-        .get_block_header_at(previous_epoch_start_height)
-        .await?;
-
     // Fetch the block header at the height
     let block_header = client.get_block_header_at(block_height).await?;
 
-    // Increase the count to include additional timestamps to safely cover potential reorg depths.
-    let total_timestamp_count = TIMESTAMPS_FOR_MEDIAN + l1_reorg_safe_depth as usize;
+    // Fetch timestamps
     let timestamps =
-        fetch_block_timestamps_ascending(client, block_height, total_timestamp_count).await?;
-
-    // Calculate the ring buffer 'head' index.
-    // This index indicates where the next timestamp would be inserted.
-    let ring_buffer_head = (block_height as usize) % total_timestamp_count;
-    let timestamp_history = TimestampStore::new_with_head(&timestamps, ring_buffer_head);
+        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
+    let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
+        "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
+    );
+    let timestamp_history = TimestampStore::new(timestamps);
 
     // Compute the block ID for the verified block.
     let block_id: L1BlockId = block_header.block_hash().into();
@@ -471,10 +447,7 @@ pub async fn fetch_verification_state(
     let header_verification_state = HeaderVerificationState {
         last_verified_block: L1BlockCommitment::new(block_height, block_id),
         next_block_target,
-        epoch_timestamps: EpochTimestamps {
-            current: current_epoch_start_header.time,
-            previous: previous_epoch_start_header.time,
-        },
+        epoch_start_timestamp: current_epoch_start_header.time,
         block_timestamp_history: timestamp_history,
         params: btc_params,
     };
@@ -543,28 +516,22 @@ mod test {
     #[tokio::test()]
     async fn test_header_verification_state() {
         let (bitcoind, client) = get_bitcoind_and_client();
-        let reorg_safe_depth = 5;
 
         let _ = mine_blocks(&bitcoind, 115, None).unwrap();
 
         let len = 2;
         let height = 100;
-        let mut header_vs = fetch_verification_state(&client, height, reorg_safe_depth)
-            .await
-            .unwrap();
+        let mut header_vs = fetch_verification_state(&client, height).await.unwrap();
 
         for h in height + 1..height + len {
             let block = client.get_block_at(h).await.unwrap();
             header_vs.check_and_update(&block.header).unwrap();
         }
 
-        let new_header_vs = fetch_verification_state(
-            &client,
-            header_vs.last_verified_block.height(),
-            reorg_safe_depth,
-        )
-        .await
-        .unwrap();
+        let new_header_vs =
+            fetch_verification_state(&client, header_vs.last_verified_block.height())
+                .await
+                .unwrap();
 
         assert_eq!(header_vs, new_header_vs);
     }
