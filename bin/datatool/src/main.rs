@@ -29,9 +29,10 @@ use args::CmdContext;
 use rand_core::OsRng;
 use util::{exec_subc, resolve_network};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args: args::Args = argh::from_env();
-    let inner = || -> anyhow::Result<()> {
+    let inner = async || -> anyhow::Result<()> {
         let network = resolve_network(args.bitcoin_network.as_deref())?;
 
         let mut ctx = CmdContext {
@@ -40,10 +41,10 @@ fn main() {
             rng: OsRng,
         };
 
-        exec_subc(args.subc, &mut ctx)?;
+        exec_subc(args.subc, &mut ctx).await?;
         Ok(())
     };
-    if let Err(e) = inner() {
+    if let Err(e) = inner().await {
         eprintln!("ERROR\n{e:?}");
     }
 }
