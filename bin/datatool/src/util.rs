@@ -15,8 +15,9 @@ use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
-    BlockHash, Network,
+    Network,
 };
+use bitcoind_async_client::{traits::Reader, Client};
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use shrex::Hex;
@@ -63,13 +64,13 @@ pub(super) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
 }
 
 /// Executes a `gen*` subcommand.
-pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result<()> {
+pub(super) async fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result<()> {
     match cmd {
         Subcommand::Xpriv(subc) => exec_genxpriv(subc, ctx),
         Subcommand::SeqPubkey(subc) => exec_genseqpubkey(subc, ctx),
         Subcommand::SeqPrivkey(subc) => exec_genseqprivkey(subc, ctx),
         Subcommand::OpXpub(subc) => exec_genopxpub(subc, ctx),
-        Subcommand::Params(subc) => exec_genparams(subc, ctx),
+        Subcommand::Params(subc) => exec_genparams(subc, ctx).await,
     }
 }
 
@@ -232,7 +233,7 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
 ///
 /// Generates the params for a Strata network.
 /// Either writes to a file or prints to stdout depending on the provided options.
-fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
+async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     // Parse the sequencer key, trimming whitespace for convenience.
     let seqkey = match cmd.seqkey.as_ref().map(|s| s.trim()) {
         Some(seqkey) => {
@@ -279,10 +280,28 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
 
     let evm_genesis_info = get_genesis_block_info(&chainspec_json)?;
 
-    // Parse the provided L1 block hash
-    let block_hash = BlockHash::from_str(&cmd.genesis_l1_hash)
-        .map_err(|e| anyhow::anyhow!("Invalid L1 block hash: {}", e))?;
-    let genesis_l1_blkid = L1BlockId::from(block_hash);
+    // Create Bitcoin RPC client and fetch genesis L1 block hash
+    let genesis_l1_height = cmd.genesis_l1_height;
+    let bitcoin_client = Client::new(
+        cmd.bitcoin_rpc_url,
+        cmd.bitcoin_rpc_user,
+        cmd.bitcoin_rpc_password,
+        None,
+        None,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
+
+    let genesis_l1_blkid = bitcoin_client
+        .get_block_hash(genesis_l1_height)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to fetch L1 block hash at height {}: {}",
+                genesis_l1_height,
+                e
+            )
+        })
+        .map(L1BlockId::from)?;
 
     let magic: MagicBytes = if let Some(name_str) = &cmd.name {
         // Validate that the name is ASCII
