@@ -208,6 +208,37 @@ impl CheckpointDatabase for RBCheckpointDB {
 
         Ok(deleted_epochs)
     }
+
+    fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
+        use strata_db::types::CheckpointProvingStatus;
+
+        let mut iterator = self.db.iter::<CheckpointSchema>()?;
+        iterator.seek_to_last();
+
+        let mut latest_proven_idx = None;
+        const MAX_SCAN: usize = 1000;
+
+        for (scanned, item) in iterator.rev().enumerate() {
+            if scanned >= MAX_SCAN {
+                break;
+            }
+
+            let (idx, entry) = item?.into_tuple();
+            if entry.proving_status == CheckpointProvingStatus::ProofReady {
+                latest_proven_idx = Some(idx);
+                break;
+            }
+        }
+
+        let next_to_prove = latest_proven_idx.map_or(0, |idx| idx + 1);
+
+        match self.db.get::<CheckpointSchema>(&next_to_prove)? {
+            Some(entry) if entry.proving_status == CheckpointProvingStatus::PendingProof => {
+                Ok(Some(next_to_prove))
+            }
+            _ => Ok(None),
+        }
+    }
 }
 
 #[cfg(feature = "test_utils")]

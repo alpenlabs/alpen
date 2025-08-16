@@ -205,6 +205,10 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     /// This method deletes all checkpoints with epoch index >= start_epoch.
     /// Returns a vector of deleted epoch indices.
     fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
+
+    /// Get the latest checkpoint index that has PendingProof status.
+    /// Returns the highest index checkpoint that still needs proof generation.
+    fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>>;
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
