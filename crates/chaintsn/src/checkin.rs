@@ -1,6 +1,6 @@
 //! L1 check-in logic.
 
-use bitcoin::{block::Header, consensus, params::Params};
+use bitcoin::{block::Header, consensus};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_primitives::{
     batch::SignedCheckpoint,
@@ -95,7 +95,7 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
 
         // PoW checks are done when we try to update the HeaderVerificationState
         let header: Header = consensus::deserialize(mf.header()).expect("invalid bitcoin header");
-        state.update_header_vs(&header, &Params::new(params.network))?;
+        state.update_header_vs(&header)?;
 
         process_protocol_ops(state, &mf, params)?;
     }

@@ -7,7 +7,7 @@ use super::{error::L1VerificationError, timestamp_store::TimestampStore, L1Block
 use crate::{
     buf::Buf32,
     hash::compute_borsh_hash,
-    l1::{utils::compute_block_hash, L1BlockCommitment},
+    l1::{utils::compute_block_hash, BtcParams, L1BlockCommitment},
 };
 
 /// A struct containing all necessary information for validating a Bitcoin block header.
@@ -67,6 +67,13 @@ pub struct HeaderVerificationState {
     /// most recent 11 timestamps. However, it retains additional timestamps to support chain reorg
     /// scenarios.
     pub block_timestamp_history: TimestampStore,
+
+    /// Bitcoin network parameters used for header verification.
+    ///
+    /// Contains network-specific configuration including difficulty adjustment intervals,
+    /// target block spacing, and other consensus parameters required for validating block headers
+    /// according to the Bitcoin protocol rules.
+    pub params: BtcParams,
 }
 
 /// `EpochTimestamps` stores the timestamps corresponding to the boundaries of difficulty adjustment
@@ -99,24 +106,24 @@ pub struct EpochTimestamps {
 }
 
 impl HeaderVerificationState {
-    fn next_target(&mut self, header: &Header, params: &Params) -> u32 {
+    fn next_target(&mut self, header: &Header) -> u32 {
         if !(self.last_verified_block.height() + 1)
-            .is_multiple_of(params.difficulty_adjustment_interval())
+            .is_multiple_of(self.params.difficulty_adjustment_interval())
         {
             return self.next_block_target;
         }
 
         let timespan = header.time - self.epoch_timestamps.current;
 
-        CompactTarget::from_next_work_required(header.bits, timespan as u64, params).to_consensus()
+        CompactTarget::from_next_work_required(header.bits, timespan as u64, &self.params)
+            .to_consensus()
     }
 
-    // Note/TODO: Figure out a better way so we don't have to params each time.
-    fn update_timestamps(&mut self, timestamp: u32, params: &Params) {
+    fn update_timestamps(&mut self, timestamp: u32) {
         self.block_timestamp_history.insert(timestamp);
 
         let new_block_num = self.last_verified_block.height();
-        if new_block_num.is_multiple_of(params.difficulty_adjustment_interval()) {
+        if new_block_num.is_multiple_of(self.params.difficulty_adjustment_interval()) {
             self.epoch_timestamps.previous = self.epoch_timestamps.current;
             self.epoch_timestamps.current = timestamp;
         }
@@ -133,11 +140,7 @@ impl HeaderVerificationState {
     /// # Errors
     ///
     /// Returns a [`L1VerificationError`] if any of the checks fail.
-    pub fn check_and_update_full(
-        &mut self,
-        header: &Header,
-        params: &Params,
-    ) -> Result<(), L1VerificationError> {
+    pub fn check_and_update_full(&mut self, header: &Header) -> Result<(), L1VerificationError> {
         // Check continuity
         let prev_blockhash: L1BlockId =
             Buf32::from(header.prev_blockhash.as_raw_hash().to_byte_array()).into();
@@ -181,10 +184,10 @@ impl HeaderVerificationState {
             L1BlockCommitment::new(self.last_verified_block.height() + 1, block_hash_raw.into());
 
         // Update the timestamps
-        self.update_timestamps(header.time, params);
+        self.update_timestamps(header.time);
 
         // Set the target for the next block
-        self.next_block_target = self.next_target(header, params);
+        self.next_block_target = self.next_target(header);
 
         Ok(())
     }
@@ -197,7 +200,6 @@ impl HeaderVerificationState {
     pub fn check_and_update_continuity(
         &mut self,
         header: &Header,
-        params: &Params,
     ) -> Result<(), L1VerificationError> {
         // Check continuity
         let prev_blockhash: L1BlockId =
@@ -216,7 +218,7 @@ impl HeaderVerificationState {
             L1BlockCommitment::new(self.last_verified_block.height() + 1, block_hash_raw.into());
 
         // Update the timestamps
-        self.update_timestamps(header.time, params);
+        self.update_timestamps(header.time);
 
         Ok(())
     }
@@ -228,10 +230,9 @@ impl HeaderVerificationState {
     pub fn check_and_update_continuity_new(
         &self,
         header: &Header,
-        params: &Params,
     ) -> Result<HeaderVerificationState, L1VerificationError> {
         let mut vs = self.clone();
-        vs.check_and_update_continuity(header, params)?;
+        vs.check_and_update_continuity(header)?;
         Ok(vs)
     }
 
@@ -260,7 +261,6 @@ impl HeaderVerificationState {
         &mut self,
         old_headers: &[Header],
         new_headers: &[Header],
-        params: &Params,
     ) -> Result<(), L1VerificationError> {
         if new_headers.len() < old_headers.len() {
             return Err(L1VerificationError::ReorgLengthError {
@@ -279,7 +279,7 @@ impl HeaderVerificationState {
             if self
                 .last_verified_block
                 .height()
-                .is_multiple_of(params.difficulty_adjustment_interval())
+                .is_multiple_of(self.params.difficulty_adjustment_interval())
             {
                 self.epoch_timestamps.current = self.epoch_timestamps.previous;
             }
@@ -292,7 +292,7 @@ impl HeaderVerificationState {
         }
 
         for new_header in new_headers {
-            self.check_and_update_full(new_header, params)?;
+            self.check_and_update_full(new_header)?;
         }
 
         Ok(())
@@ -331,7 +331,7 @@ mod tests {
 
         for header_idx in r1 + 1..chain.end {
             verification_state
-                .check_and_update_full(&chain.get_block_header_at(header_idx).unwrap(), &MAINNET)
+                .check_and_update_full(&chain.get_block_header_at(header_idx).unwrap())
                 .unwrap()
         }
     }
@@ -367,15 +367,11 @@ mod tests {
             .unwrap();
 
         for header in &headers {
-            verification_state
-                .check_and_update_full(header, &MAINNET)
-                .unwrap();
+            verification_state.check_and_update_full(header).unwrap();
         }
         let before_vs = verification_state.clone();
 
-        verification_state
-            .reorg(&headers, &headers, &MAINNET)
-            .unwrap();
+        verification_state.reorg(&headers, &headers).unwrap();
 
         // We use the same headers for reorg to check if they are consistent
         assert_eq!(before_vs, verification_state);
