@@ -8,6 +8,7 @@ use crate::{
     buf::Buf32,
     hash::compute_borsh_hash,
     l1::{utils::compute_block_hash, BtcParams, L1BlockCommitment},
+    params::GenesisL1View,
 };
 
 /// A struct containing all necessary information for validating a Bitcoin block header.
@@ -46,13 +47,13 @@ pub struct HeaderVerificationState {
     /// Contains network-specific configuration including difficulty adjustment intervals,
     /// target block spacing, and other consensus parameters required for validating block headers
     /// according to the Bitcoin protocol rules.
-    pub params: BtcParams,
+    params: BtcParams,
 
     /// Commitment to the last verified block, containing both its height and block hash.
     pub last_verified_block: L1BlockCommitment,
 
     /// [Target](bitcoin::pow::CompactTarget) for the next block to verify
-    pub next_block_target: u32,
+    next_block_target: u32,
 
     /// Timestamp of the block at the start of a [difficulty adjustment
     /// interval](bitcoin::consensus::params::Params::difficulty_adjustment_interval).
@@ -63,35 +64,29 @@ pub struct HeaderVerificationState {
     ///
     /// This field represents the timestamp of the starting block of the interval
     /// (e.g., block 0, 2016, 4032, etc.).
-    pub epoch_start_timestamp: u32,
+    epoch_start_timestamp: u32,
 
     /// A ring buffer that maintains a history of block timestamps.
     ///
     /// This buffer is used to compute the median block time for consensus rules by considering the
     /// most recent 11 timestamps. However, it retains additional timestamps to support chain reorg
     /// scenarios.
-    pub block_timestamp_history: TimestampStore,
+    block_timestamp_history: TimestampStore,
 
     /// Total accumulated proof of work
-    pub total_accumulated_pow: u128,
+    total_accumulated_pow: u128,
 }
 
 impl HeaderVerificationState {
-    pub fn new(
-        network: Network,
-        genesis_block: L1BlockCommitment,
-        next_block_target: u32,
-        epoch_start_timestamp: u32,
-        timestamp_store: TimestampStore,
-    ) -> Self {
+    pub fn new(network: Network, genesis_view: GenesisL1View) -> Self {
         let params = Params::new(network).into();
 
         Self {
             params,
-            last_verified_block: genesis_block,
-            next_block_target,
-            epoch_start_timestamp,
-            block_timestamp_history: timestamp_store,
+            last_verified_block: genesis_view.blk,
+            next_block_target: genesis_view.next_target,
+            epoch_start_timestamp: genesis_view.epoch_start_timestamp,
+            block_timestamp_history: TimestampStore::new(genesis_view.last_11_timestamps),
             total_accumulated_pow: 0,
         }
     }
