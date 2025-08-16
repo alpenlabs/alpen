@@ -53,7 +53,7 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
-        .check_and_update_continuity(input.header, &Params::MAINNET)
+        .check_and_update_continuity(input.header)
         .map_err(AsmError::InvalidL1Header)?;
 
     let mut manager = SubprotoManager::new();

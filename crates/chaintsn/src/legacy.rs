@@ -1,6 +1,6 @@
 //! Legacy routines extracted from `StateCache`.
 
-use bitcoin::{block::Header, params::Params};
+use bitcoin::block::Header;
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     l1::*,
@@ -40,12 +40,11 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
     pub fn update_header_vs(
         &mut self,
         header: &Header,
-        params: &Params,
     ) -> Result<(), L1VerificationError> {
         self.state_mut()
             .l1_view_mut()
             .header_vs_mut()
-            .check_and_update_full(header, params)
+            .check_and_update_full(header)
     }
 
     /// Writes a deposit intent into an execution environment's input queue.

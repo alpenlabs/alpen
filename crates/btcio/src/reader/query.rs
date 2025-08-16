@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::bail;
-use bitcoin::{params::Params as BtcParams, Block, BlockHash, CompactTarget};
+use bitcoin::{Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use secp256k1::XOnlyPublicKey;
 use strata_config::btcio::ReaderConfig;
@@ -17,7 +17,7 @@ use strata_primitives::{
     block_credential::CredRule,
     l1::{
         get_relative_difficulty_adjustment_height, EpochTimestamps, HeaderVerificationState,
-        L1BlockCommitment, L1BlockId, TimestampStore, TIMESTAMPS_FOR_MEDIAN,
+        L1BlockCommitment, L1BlockId, TimestampStore, TIMESTAMPS_FOR_MEDIAN, BtcParams,
     },
     params::Params,
 };
@@ -407,12 +407,13 @@ pub async fn fetch_verification_state(
     l1_reorg_safe_depth: u32,
 ) -> anyhow::Result<HeaderVerificationState> {
     // Create BTC parameters based on the current network.
-    let btc_params = BtcParams::new(client.network().await?);
+    let network = client.network().await?;
+    let btc_params = BtcParams::from(bitcoin::params::Params::from(network));
 
     // Get the difficulty adjustment block just before the given block height,
     // representing the start of the current epoch.
     let current_epoch_start_height =
-        get_relative_difficulty_adjustment_height(0, block_height, &btc_params);
+        get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
     let current_epoch_start_header = client
         .get_block_header_at(current_epoch_start_height)
         .await?;
@@ -453,7 +454,7 @@ pub async fn fetch_verification_state(
             CompactTarget::from_next_work_required(
                 block_header.bits,
                 (block_header.time - current_epoch_start_header.time) as u64,
-                btc_params,
+                &btc_params,
             )
             .to_consensus()
         } else {
@@ -474,6 +475,7 @@ pub async fn fetch_verification_state(
             previous: previous_epoch_start_header.time,
         },
         block_timestamp_history: timestamp_history,
+        params: btc_params,
     };
 
     trace!(%block_height, ?header_verification_state, "HeaderVerificationState");
@@ -553,7 +555,7 @@ mod test {
         for h in height + 1..height + len {
             let block = client.get_block_at(h).await.unwrap();
             header_vs
-                .check_and_update_continuity(&block.header, &REGTEST)
+                .check_and_update_continuity(&block.header)
                 .unwrap();
         }
 

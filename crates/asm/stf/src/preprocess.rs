@@ -58,7 +58,7 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
-        .check_and_update_continuity(&block.header, &Params::MAINNET)
+        .check_and_update_continuity(&block.header)
         .map_err(AsmError::InvalidL1Header)?;
 
     // 2. Filter and group transactions by subprotocol based on magic bytes.

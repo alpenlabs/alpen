@@ -4,7 +4,7 @@
 //! decide to expand the chain state in the future such that we can't keep it
 //! entire in memory.
 
-use bitcoin::{block::Header, params::Params};
+use bitcoin::block::Header;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
@@ -168,13 +168,12 @@ impl StateCache {
     pub fn update_header_vs(
         &mut self,
         header: &Header,
-        params: &Params,
     ) -> Result<(), L1VerificationError> {
         let state = self.state_mut();
         state
             .l1_state
             .header_vs
-            .check_and_update_full(header, params)
+            .check_and_update_full(header)
     }
 
     /// Writes a deposit intent into an execution environment's input queue.
