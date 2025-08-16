@@ -17,9 +17,9 @@ use strata_primitives::{
     block_credential::CredRule,
     l1::{
         get_relative_difficulty_adjustment_height, BtcParams, HeaderVerificationState,
-        L1BlockCommitment, L1BlockId, TimestampStore, TIMESTAMPS_FOR_MEDIAN,
+        L1BlockCommitment, L1BlockId, TIMESTAMPS_FOR_MEDIAN,
     },
-    params::Params,
+    params::{GenesisL1View, Params},
 };
 use strata_state::sync_event::EventSubmitter;
 use strata_status::StatusChannel;
@@ -419,7 +419,6 @@ pub async fn fetch_verification_state(
     let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
         "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
     );
-    let timestamp_history = TimestampStore::new(timestamps);
 
     // Compute the block ID for the verified block.
     let block_id: L1BlockId = block_header.block_hash().into();
@@ -443,15 +442,16 @@ pub async fn fetch_verification_state(
                 .to_consensus()
         };
 
-    // Build the header verification state structure.
-    let header_verification_state = HeaderVerificationState {
-        last_verified_block: L1BlockCommitment::new(block_height, block_id),
-        next_block_target,
+    // Build the genesis L1 veiw structure.
+    let genesis_l1_view = GenesisL1View {
+        blk: L1BlockCommitment::new(block_height, block_id),
+        next_target: next_block_target,
         epoch_start_timestamp: current_epoch_start_header.time,
-        block_timestamp_history: timestamp_history,
-        params: btc_params,
-        total_accumulated_pow: 0,
+        last_11_timestamps: timestamps,
     };
+
+    // Build the header verification state structure.
+    let header_verification_state = HeaderVerificationState::new(network, genesis_l1_view);
 
     trace!(%block_height, ?header_verification_state, "HeaderVerificationState");
 
