@@ -212,32 +212,43 @@ impl CheckpointDatabase for RBCheckpointDB {
     fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
         use strata_db::types::CheckpointProvingStatus;
 
-        let mut iterator = self.db.iter::<CheckpointSchema>()?;
-        iterator.seek_to_last();
+        // Use read transaction for consistency
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| {
+                    let mut iterator = txn.iter::<CheckpointSchema>()?;
+                    iterator.seek_to_last();
 
-        let mut latest_proven_idx = None;
-        const MAX_SCAN: usize = 1000;
+                    let mut latest_proven_idx = None;
+                    const MAX_SCAN: usize = 1000;
 
-        for (scanned, item) in iterator.rev().enumerate() {
-            if scanned >= MAX_SCAN {
-                break;
-            }
+                    for (scanned, item) in iterator.rev().enumerate() {
+                        if scanned >= MAX_SCAN {
+                            break;
+                        }
 
-            let (idx, entry) = item?.into_tuple();
-            if entry.proving_status == CheckpointProvingStatus::ProofReady {
-                latest_proven_idx = Some(idx);
-                break;
-            }
-        }
+                        let (idx, entry) = item?.into_tuple();
+                        if entry.proving_status == CheckpointProvingStatus::ProofReady {
+                            latest_proven_idx = Some(idx);
+                            break;
+                        }
+                    }
 
-        let next_to_prove = latest_proven_idx.map_or(0, |idx| idx + 1);
+                    // Use saturating_add to prevent overflow
+                    let next_to_prove = latest_proven_idx.map_or(0, |idx| idx.saturating_add(1));
 
-        match self.db.get::<CheckpointSchema>(&next_to_prove)? {
-            Some(entry) if entry.proving_status == CheckpointProvingStatus::PendingProof => {
-                Ok(Some(next_to_prove))
-            }
-            _ => Ok(None),
-        }
+                    Ok::<_, anyhow::Error>(match txn.get::<CheckpointSchema>(&next_to_prove)? {
+                        Some(entry)
+                            if entry.proving_status == CheckpointProvingStatus::PendingProof =>
+                        {
+                            Some(next_to_prove)
+                        }
+                        _ => None,
+                    })
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))
     }
 }
 

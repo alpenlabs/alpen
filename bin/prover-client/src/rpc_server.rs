@@ -136,8 +136,10 @@ impl StrataProverClientApiServer for ProverClientRpc {
             .cl_client()
             .get_latest_unproven_checkpoint_index()
             .await
-            .map_err(to_jsonrpsee_error("failed to fetch latest unproven checkpoint idx"))?;
-            
+            .map_err(to_jsonrpsee_error(
+                "failed to fetch latest unproven checkpoint idx",
+            ))?;
+
         let checkpoint_idx = match latest_unproven_idx {
             Some(idx) => {
                 info!(unproven_checkpoint = %idx, "proving latest unproven checkpoint");
@@ -148,7 +150,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
                 return Ok(vec![]);
             }
         };
-        
+
         self.operator
             .checkpoint_operator()
             .create_task(checkpoint_idx, self.task_tracker.clone(), &self.db)

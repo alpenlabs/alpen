@@ -94,6 +94,7 @@ impl CheckpointHandle {
     }
 
     pub fn get_latest_unproven_checkpoint_idx_blocking(&self) -> DbResult<Option<u64>> {
-        self.db_manager.get_latest_unproven_checkpoint_idx_blocking()
+        self.db_manager
+            .get_latest_unproven_checkpoint_idx_blocking()
     }
 }
