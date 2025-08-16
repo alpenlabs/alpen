@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use bitcoin::{block::Header, hashes::Hash, params::Params, BlockHash, CompactTarget};
+use bitcoin::{block::Header, hashes::Hash, params::Params, BlockHash, CompactTarget, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +41,13 @@ use crate::{
     Serialize,
 )]
 pub struct HeaderVerificationState {
+    /// Bitcoin network parameters used for header verification.
+    ///
+    /// Contains network-specific configuration including difficulty adjustment intervals,
+    /// target block spacing, and other consensus parameters required for validating block headers
+    /// according to the Bitcoin protocol rules.
+    pub params: BtcParams,
+
     /// Commitment to the last verified block, containing both its height and block hash.
     pub last_verified_block: L1BlockCommitment,
 
@@ -65,15 +72,35 @@ pub struct HeaderVerificationState {
     /// scenarios.
     pub block_timestamp_history: TimestampStore,
 
-    /// Bitcoin network parameters used for header verification.
-    ///
-    /// Contains network-specific configuration including difficulty adjustment intervals,
-    /// target block spacing, and other consensus parameters required for validating block headers
-    /// according to the Bitcoin protocol rules.
-    pub params: BtcParams,
+    /// Total accumulated proof of work
+    pub total_accumulated_pow: u128,
 }
 
 impl HeaderVerificationState {
+    pub fn new(
+        network: Network,
+        genesis_block: L1BlockCommitment,
+        next_block_target: u32,
+        epoch_start_timestamp: u32,
+        timestamp_store: TimestampStore,
+    ) -> Self {
+        let params = Params::new(network).into();
+
+        Self {
+            params,
+            last_verified_block: genesis_block,
+            next_block_target,
+            epoch_start_timestamp,
+            block_timestamp_history: timestamp_store,
+            total_accumulated_pow: 0,
+        }
+    }
+
+    /// Calculates the next difficulty target based on the current header.
+    ///
+    /// If this is a difficulty adjustment block (height + 1 is multiple of adjustment interval),
+    /// calculates a new target using the timespan between epoch start and current block.
+    /// Otherwise, returns the current target unchanged.
     fn next_target(&mut self, header: &Header) -> u32 {
         if !(self.last_verified_block.height() + 1)
             .is_multiple_of(self.params.difficulty_adjustment_interval())
@@ -87,6 +114,11 @@ impl HeaderVerificationState {
             .to_consensus()
     }
 
+    /// Updates the timestamp history and epoch start timestamp if necessary.
+    ///
+    /// Adds the new timestamp to the ring buffer history. If the current block height
+    /// is at a difficulty adjustment boundary, updates the epoch start timestamp to
+    /// track the beginning of the new difficulty adjustment period.
     fn update_timestamps(&mut self, timestamp: u32) {
         self.block_timestamp_history.insert(timestamp);
 
@@ -155,6 +187,9 @@ impl HeaderVerificationState {
 
         // Set the target for the next block
         self.next_block_target = self.next_target(header);
+
+        // Update total accumulated PoW
+        self.total_accumulated_pow += header.difficulty(&self.params);
 
         Ok(())
     }
