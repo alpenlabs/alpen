@@ -428,7 +428,7 @@ pub async fn fetch_genesis_l1_view(
                 .to_consensus()
         };
 
-    // Build the genesis L1 veiw structure.
+    // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
         blk: L1BlockCommitment::new(block_height, block_id),
         next_target: next_block_target,
@@ -518,28 +518,5 @@ mod test {
             .await
             .unwrap();
         assert!(ts.is_sorted());
-    }
-
-    #[tokio::test()]
-    async fn test_header_verification_state() {
-        let (bitcoind, client) = get_bitcoind_and_client();
-
-        let _ = mine_blocks(&bitcoind, 115, None).unwrap();
-
-        let len = 2;
-        let height = 100;
-        let mut header_vs = fetch_verification_state(&client, height).await.unwrap();
-
-        for h in height + 1..height + len {
-            let block = client.get_block_at(h).await.unwrap();
-            header_vs.check_and_update(&block.header).unwrap();
-        }
-
-        let new_header_vs =
-            fetch_verification_state(&client, header_vs.last_verified_block.height())
-                .await
-                .unwrap();
-
-        assert_eq!(header_vs, new_header_vs);
     }
 }

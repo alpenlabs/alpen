@@ -178,7 +178,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
 
         bitcoind = btc_fac.create_regtest_bitcoin()
         bitcoind_config = BitcoindConfig(
-            rpc_url=f"http://localhost:{bitcoind.get_prop("rpc_port")}",
+            rpc_url=f"http://localhost:{bitcoind.get_prop('rpc_port')}",
             rpc_user=bitcoind.get_prop("rpc_user"),
             rpc_password=bitcoind.get_prop("rpc_password"),
         )
@@ -201,7 +201,9 @@ class BasicEnvConfig(flexitest.EnvConfig):
         brpc.proxy.generatetoaddress(min_blocks_needed, seqaddr)
 
         # Now generate params with Bitcoin RPC available
-        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, bitcoind_config)
+        params_gen_data = generate_simple_params(
+            initdir, settings, self.n_operators, bitcoind_config
+        )
         params = params_gen_data["params"]
         # Instantiaze the generated rollup config so it's convenient to work with.
         rollup_cfg = RollupConfig.model_validate_json(params)
@@ -310,7 +312,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
 
         bitcoind = btc_fac.create_regtest_bitcoin()
         bitcoind_config = BitcoindConfig(
-            rpc_url=f"http://localhost:{bitcoind.get_prop("rpc_port")}",
+            rpc_url=f"http://localhost:{bitcoind.get_prop('rpc_port')}",
             rpc_user=bitcoind.get_prop("rpc_user"),
             rpc_password=bitcoind.get_prop("rpc_password"),
         )
@@ -335,7 +337,9 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         # set up network params
         initdir = ctx.make_service_dir("_init")
         settings = self.rollup_settings or RollupParamsSettings.new_default().fast_batch()
-        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, bitcoind_config)
+        params_gen_data = generate_simple_params(
+            initdir, settings, self.n_operators, bitcoind_config
+        )
         params = params_gen_data["params"]
         # Instantiaze the generated rollup config so it's convenient to work with.
         rollup_cfg = RollupConfig.model_validate_json(params)
@@ -508,7 +512,9 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
 
     def _generate_params(self, init_dir: str, bitcoind_config: BitcoindConfig) -> dict[str, str]:
         settings_fast = RollupParamsSettings.new_default().fast_batch()
-        params_data = generate_simple_params(init_dir, settings_fast, self.n_operators, bitcoind_config)
+        params_data = generate_simple_params(
+            init_dir, settings_fast, self.n_operators, bitcoind_config
+        )
         params_fast = params_data["params"]
         params_dict = json.loads(params_fast)
         strict_dict = copy.deepcopy(params_dict)

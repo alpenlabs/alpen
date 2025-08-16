@@ -218,7 +218,7 @@ mod test {
         Arc::new(gen_params())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_unpublished_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::Unpublished);
@@ -243,7 +243,7 @@ mod test {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_published_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::Published);
@@ -300,7 +300,7 @@ mod test {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_confirmed_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::Confirmed { confirmations: 1 });
@@ -358,7 +358,7 @@ mod test {
     }
 
     /// The updated status should be Finalized for a finalized tx.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_finalized_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::Finalized { confirmations: 1 });
@@ -397,7 +397,7 @@ mod test {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_excluded_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::InvalidInputs);
@@ -436,7 +436,7 @@ mod test {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_process_unfinalized_entries() {
         let ops = get_ops();
         // Add a couple of txs

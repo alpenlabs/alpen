@@ -616,7 +616,7 @@ async fn fetch_genesis_l1_view(
                 .to_consensus()
         };
 
-    // Build the genesis L1 veiw structure.
+    // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
         blk: L1BlockCommitment::new(block_height, block_id),
         next_target: next_block_target,
