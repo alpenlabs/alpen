@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from threading import Thread
 from typing import Any, Callable, Optional, TypeVar
+from factory.config import BitcoindConfig
 
 from bitcoinlib.services.bitcoind import BitcoindClient
 from strata_utils import convert_to_xonly_pk, get_balance, musig_aggregate_pks
@@ -354,9 +355,8 @@ def generate_params(
     settings: RollupParamsSettings,
     seqpubkey: str,
     opxprivs: list[str],
-    btc_rpc: BitcoindClient,
+    bitcoind_config: BitcoindConfig,
 ) -> str:
-    genesis_l1_blockhash = btc_rpc.proxy.getblockhash(settings.genesis_trigger)
     """Generates a params file from config values."""
     # fmt: off
     cmd = [
@@ -367,9 +367,15 @@ def generate_params(
         "--epoch-slots", str(settings.epoch_slots),
         "--horizon-height", str(settings.horizon_height),
         "--genesis-l1-height", str(settings.genesis_trigger),
-        "--genesis-l1-hash", genesis_l1_blockhash,
         "--seqkey", seqpubkey,
     ]
+
+    # Add Bitcoin RPC configuration
+    cmd.extend([
+        "--bitcoin-rpc-url", bitcoind_config.rpc_url,
+        "--bitcoin-rpc-user", bitcoind_config.rpc_user,
+        "--bitcoin-rpc-password", bitcoind_config.rpc_password,
+    ])
 
     if settings.proof_timeout is not None:
         cmd.extend(["--proof-timeout", str(settings.proof_timeout)])
@@ -392,7 +398,7 @@ def generate_simple_params(
     base_path: str,
     settings: RollupParamsSettings,
     operator_cnt: int,
-    bitcoind_client: BitcoindClient,
+    bitcoind_config: BitcoindConfig,
 ) -> dict:
     """
     Creates a network with params data and a list of operator seed paths.
@@ -412,7 +418,7 @@ def generate_simple_params(
         with open(p) as f:
             opxprivs.append(f.read().strip())
 
-    params = generate_params(settings, seqkey, opxprivs, bitcoind_client)
+    params = generate_params(settings, seqkey, opxprivs, bitcoind_config)
     print(f"Params {params}")
     return {"params": params, "opseedpaths": opseedpaths}
 

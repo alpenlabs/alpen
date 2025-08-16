@@ -177,6 +177,11 @@ class BasicEnvConfig(flexitest.EnvConfig):
         reth_port = reth.get_prop("rpc_port")
 
         bitcoind = btc_fac.create_regtest_bitcoin()
+        bitcoind_config = BitcoindConfig(
+            rpc_url=f"http://localhost:{bitcoind.get_prop("rpc_port")}",
+            rpc_user=bitcoind.get_prop("rpc_user"),
+            rpc_password=bitcoind.get_prop("rpc_password"),
+        )
         svcs["bitcoin"] = bitcoind
         time.sleep(BLOCK_GENERATION_INTERVAL_SECS)
 
@@ -196,7 +201,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
         brpc.proxy.generatetoaddress(min_blocks_needed, seqaddr)
 
         # Now generate params with Bitcoin RPC available
-        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, brpc)
+        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, bitcoind_config)
         params = params_gen_data["params"]
         # Instantiaze the generated rollup config so it's convenient to work with.
         rollup_cfg = RollupConfig.model_validate_json(params)
@@ -246,12 +251,6 @@ class BasicEnvConfig(flexitest.EnvConfig):
             secret=reth_secret_path,
         )
 
-        bitcoin_rpc_port = bitcoind.get_prop("rpc_port")
-        bitcoind_config = BitcoindConfig(
-            rpc_url=f"localhost:{bitcoin_rpc_port}",
-            rpc_user=bitcoind.get_prop("rpc_user"),
-            rpc_password=bitcoind.get_prop("rpc_password"),
-        )
         sequencer = seq_fac.create_sequencer_node(bitcoind_config, reth_config, seqaddr, params)
 
         reth_rpc_http_port = reth.get_prop("eth_rpc_http_port")
@@ -310,6 +309,11 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         logger = logging.getLogger(__name__)
 
         bitcoind = btc_fac.create_regtest_bitcoin()
+        bitcoind_config = BitcoindConfig(
+            rpc_url=f"http://localhost:{bitcoind.get_prop("rpc_port")}",
+            rpc_user=bitcoind.get_prop("rpc_user"),
+            rpc_password=bitcoind.get_prop("rpc_password"),
+        )
         # wait for services to to startup
         time.sleep(BLOCK_GENERATION_INTERVAL_SECS)
 
@@ -331,7 +335,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         # set up network params
         initdir = ctx.make_service_dir("_init")
         settings = self.rollup_settings or RollupParamsSettings.new_default().fast_batch()
-        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, brpc)
+        params_gen_data = generate_simple_params(initdir, settings, self.n_operators, bitcoind_config)
         params = params_gen_data["params"]
         # Instantiaze the generated rollup config so it's convenient to work with.
         rollup_cfg = RollupConfig.model_validate_json(params)
@@ -362,12 +366,6 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         )
         reth_rpc_http_port = reth.get_prop("eth_rpc_http_port")
 
-        bitcoin_rpc_port = bitcoind.get_prop("rpc_port")
-        bitcoind_config = BitcoindConfig(
-            rpc_url=f"localhost:{bitcoin_rpc_port}",
-            rpc_user=bitcoind.get_prop("rpc_user"),
-            rpc_password=bitcoind.get_prop("rpc_password"),
-        )
         sequencer = seq_fac.create_sequencer_node(bitcoind_config, reth_config, seqaddr, params)
 
         seq_host = sequencer.get_prop("rpc_host")
@@ -451,7 +449,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
 
         # 2. Prepare rollup parameters
         init_dir = ctx.make_service_dir("_init")
-        params = self._generate_params(init_dir, brpc)
+        params = self._generate_params(init_dir, bitcoind_cfg)
         rollup_cfg_strict = RollupConfig.model_validate_json(params["strict"])
         bridge_pk = get_bridge_pubkey_from_cfg(rollup_cfg_strict)
 
@@ -508,9 +506,9 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
         }
         return BasicLiveEnv(services, bridge_pk, rollup_cfg_strict)
 
-    def _generate_params(self, init_dir: str, bitcoind: BitcoindClient) -> dict[str, str]:
+    def _generate_params(self, init_dir: str, bitcoind_config: BitcoindConfig) -> dict[str, str]:
         settings_fast = RollupParamsSettings.new_default().fast_batch()
-        params_data = generate_simple_params(init_dir, settings_fast, self.n_operators, bitcoind)
+        params_data = generate_simple_params(init_dir, settings_fast, self.n_operators, bitcoind_config)
         params_fast = params_data["params"]
         params_dict = json.loads(params_fast)
         strict_dict = copy.deepcopy(params_dict)
@@ -534,7 +532,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             generate_blocks(rpc, BLOCK_GENERATION_INTERVAL_SECS, addr)
 
         cfg = BitcoindConfig(
-            rpc_url=f"localhost:{bitcoind.get_prop('rpc_port')}/wallet/{wallet}",
+            rpc_url=f"http://localhost:{bitcoind.get_prop('rpc_port')}/wallet/{wallet}",
             rpc_user=bitcoind.get_prop("rpc_user"),
             rpc_password=bitcoind.get_prop("rpc_password"),
         )

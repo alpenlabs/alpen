@@ -122,9 +122,8 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
 // TODO: remove this after builder is done
 pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Client>> {
     // Set up Bitcoin client RPC.
-    let bitcoind_url = format!("http://{}", config.rpc_url);
     let btc_rpc = Client::new(
-        bitcoind_url,
+        config.rpc_url.clone(),
         config.rpc_user.clone(),
         config.rpc_password.clone(),
         config.retry_count,

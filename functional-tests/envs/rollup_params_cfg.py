@@ -58,7 +58,6 @@ class RollupConfig(BaseModel):
     block_time: int
     cred_rule: CredRule
     horizon_l1_height: int
-    genesis_l1_height: int
     operator_config: OperatorConfig
     evm_genesis_block_hash: StrBuf32
     evm_genesis_block_state_root: StrBuf32

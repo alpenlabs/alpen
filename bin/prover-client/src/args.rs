@@ -264,13 +264,6 @@ impl ResolvedConfig {
         self.reth_rpc.to_string()
     }
 
-    /// Formats and returns the `bitcoind` RPC URL prefixed with `http://`.
-    ///
-    /// Useful for establishing a connection to the bitcoind RPC endpoint.
-    pub(crate) fn get_btc_rpc_url(&self) -> String {
-        format!("http://{}", self.bitcoind_url)
-    }
-
     /// Returns a map of proof VMs to the number of workers assigned to each, depending on enabled
     /// features.
     ///
