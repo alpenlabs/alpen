@@ -2,7 +2,6 @@
 //! glues together block‐level validation, a set of pluggable subprotocols, and the global chain
 //! view into a single deterministic state transition.
 
-use bitcoin::params::Params;
 use strata_asm_common::{
     AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, GenesisConfigRegistry,
 };
@@ -53,7 +52,7 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
-        .check_and_update_continuity(input.header)
+        .check_and_update(input.header)
         .map_err(AsmError::InvalidL1Header)?;
 
     let mut manager = SubprotoManager::new();

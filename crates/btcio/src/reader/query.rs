@@ -16,8 +16,9 @@ use strata_l1tx::{
 use strata_primitives::{
     block_credential::CredRule,
     l1::{
-        get_relative_difficulty_adjustment_height, EpochTimestamps, HeaderVerificationState,
-        L1BlockCommitment, L1BlockId, TimestampStore, TIMESTAMPS_FOR_MEDIAN, BtcParams,
+        get_relative_difficulty_adjustment_height, BtcParams, EpochTimestamps,
+        HeaderVerificationState, L1BlockCommitment, L1BlockId, TimestampStore,
+        TIMESTAMPS_FOR_MEDIAN,
     },
     params::Params,
 };
@@ -486,7 +487,7 @@ pub async fn fetch_verification_state(
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod test {
-    use bitcoin::{hashes::Hash, params::REGTEST};
+    use bitcoin::hashes::Hash;
     use strata_primitives::buf::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -554,9 +555,7 @@ mod test {
 
         for h in height + 1..height + len {
             let block = client.get_block_at(h).await.unwrap();
-            header_vs
-                .check_and_update_continuity(&block.header)
-                .unwrap();
+            header_vs.check_and_update(&block.header).unwrap();
         }
 
         let new_header_vs = fetch_verification_state(

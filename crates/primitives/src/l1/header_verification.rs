@@ -140,7 +140,7 @@ impl HeaderVerificationState {
     /// # Errors
     ///
     /// Returns a [`L1VerificationError`] if any of the checks fail.
-    pub fn check_and_update_full(&mut self, header: &Header) -> Result<(), L1VerificationError> {
+    pub fn check_and_update(&mut self, header: &Header) -> Result<(), L1VerificationError> {
         // Check continuity
         let prev_blockhash: L1BlockId =
             Buf32::from(header.prev_blockhash.as_raw_hash().to_byte_array()).into();
@@ -190,50 +190,6 @@ impl HeaderVerificationState {
         self.next_block_target = self.next_target(header);
 
         Ok(())
-    }
-
-    /// Checks header continuity and updates the state accordingly.
-    ///
-    /// This function verifies that the header's previous block hash matches the expected value,
-    /// updates the block number, the block hash, the timestamp store, and the total accumulated
-    /// PoW.
-    pub fn check_and_update_continuity(
-        &mut self,
-        header: &Header,
-    ) -> Result<(), L1VerificationError> {
-        // Check continuity
-        let prev_blockhash: L1BlockId =
-            Buf32::from(header.prev_blockhash.as_raw_hash().to_byte_array()).into();
-        if prev_blockhash != *self.last_verified_block.blkid() {
-            return Err(L1VerificationError::ContinuityError {
-                expected: *self.last_verified_block.blkid(),
-                found: prev_blockhash,
-            });
-        }
-
-        let block_hash_raw = compute_block_hash(header);
-
-        // Increase the last verified block number by 1 and set the new block hash
-        self.last_verified_block =
-            L1BlockCommitment::new(self.last_verified_block.height() + 1, block_hash_raw.into());
-
-        // Update the timestamps
-        self.update_timestamps(header.time);
-
-        Ok(())
-    }
-
-    /// Checks header continuity and returns a new verification state with the updated values.
-    ///
-    /// This is a non-mutating version that clones the state, applies the continuity check, and
-    /// returns the updated state.
-    pub fn check_and_update_continuity_new(
-        &self,
-        header: &Header,
-    ) -> Result<HeaderVerificationState, L1VerificationError> {
-        let mut vs = self.clone();
-        vs.check_and_update_continuity(header)?;
-        Ok(vs)
     }
 
     /// Calculate the hash of the verification state
@@ -292,7 +248,7 @@ impl HeaderVerificationState {
         }
 
         for new_header in new_headers {
-            self.check_and_update_full(new_header)?;
+            self.check_and_update(new_header)?;
         }
 
         Ok(())
@@ -331,7 +287,7 @@ mod tests {
 
         for header_idx in r1 + 1..chain.end {
             verification_state
-                .check_and_update_full(&chain.get_block_header_at(header_idx).unwrap())
+                .check_and_update(&chain.get_block_header_at(header_idx).unwrap())
                 .unwrap()
         }
     }
@@ -367,7 +323,7 @@ mod tests {
             .unwrap();
 
         for header in &headers {
-            verification_state.check_and_update_full(header).unwrap();
+            verification_state.check_and_update(header).unwrap();
         }
         let before_vs = verification_state.clone();
 
