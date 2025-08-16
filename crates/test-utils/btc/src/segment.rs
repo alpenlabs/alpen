@@ -133,7 +133,7 @@ impl BtcChainSegment {
 
     pub fn get_block_manifest(&self, height: u64) -> L1BlockManifest {
         let rec = self.get_header_record(height).unwrap();
-        let header_vs = self.get_verification_state(height, 0).unwrap();
+        let header_vs = self.get_verification_state(height).unwrap();
         L1BlockManifest::new(rec, Some(header_vs), Vec::new(), 1, height)
     }
 }
@@ -264,7 +264,7 @@ impl BtcChainSegment {
             serialize(&header),
             Buf32::from(header.merkle_root.as_raw_hash().to_byte_array()),
         );
-        let header_vs = self.get_verification_state(height, 0).unwrap();
+        let header_vs = self.get_verification_state(height).unwrap();
         Ok(L1BlockManifest::new(
             header_record,
             Some(header_vs),
@@ -319,12 +319,8 @@ impl BtcChainSegment {
         Ok(blocks)
     }
 
-    pub fn get_verification_state(
-        &self,
-        height: u64,
-        l1_reorg_safe_depth: u32,
-    ) -> Result<HeaderVerificationState, Error> {
-        block_on(fetch_verification_state(self, height, l1_reorg_safe_depth))
+    pub fn get_verification_state(&self, height: u64) -> Result<HeaderVerificationState, Error> {
+        block_on(fetch_verification_state(self, height))
     }
 }
 
