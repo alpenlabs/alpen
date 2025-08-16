@@ -6,10 +6,6 @@ use strata_primitives::l1::{HeaderVerificationState, L1BlockCommitment, L1BlockI
 /// L1 segment of CL blocks.
 #[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct L1ViewState {
-    /// The first block we decide we're able to look at.  This probably won't
-    /// change unless we want to do Bitcoin history expiry or something.
-    pub(crate) horizon_height: u64,
-
     /// The actual first block we ever looked at.
     pub(crate) genesis_height: u64,
 
@@ -19,13 +15,8 @@ pub struct L1ViewState {
 
 impl L1ViewState {
     /// Creates a new instance with the genesis trigger L1 block already ingested.
-    pub fn new_at_genesis(
-        horizon_height: u64,
-        genesis_height: u64,
-        header_vs: HeaderVerificationState,
-    ) -> Self {
+    pub fn new_at_genesis(genesis_height: u64, header_vs: HeaderVerificationState) -> Self {
         Self {
-            horizon_height,
             genesis_height,
             header_vs,
         }
@@ -60,9 +51,8 @@ impl L1ViewState {
 
 impl<'a> Arbitrary<'a> for L1ViewState {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let hh = u8::arbitrary(u)? as u64;
-        let gh = hh + u16::arbitrary(u)? as u64;
+        let gh = u16::arbitrary(u)? as u64;
         let header_vs = HeaderVerificationState::arbitrary(u)?;
-        Ok(Self::new_at_genesis(hh, gh, header_vs))
+        Ok(Self::new_at_genesis(gh, header_vs))
     }
 }

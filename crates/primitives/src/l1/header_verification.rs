@@ -78,7 +78,7 @@ pub struct HeaderVerificationState {
 }
 
 impl HeaderVerificationState {
-    pub fn new(network: Network, genesis_view: GenesisL1View) -> Self {
+    pub fn new(network: Network, genesis_view: &GenesisL1View) -> Self {
         let params = Params::new(network).into();
 
         Self {

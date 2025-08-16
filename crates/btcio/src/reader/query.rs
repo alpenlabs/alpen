@@ -345,7 +345,7 @@ async fn process_block<R: Reader>(
     status_updates.push(L1StatusUpdate::CurHeight(height));
     status_updates.push(L1StatusUpdate::CurTip(l1blkid.to_string()));
 
-    let block_ev = L1Event::BlockData(block_data, state.epoch(), None);
+    let block_ev = L1Event::BlockData(block_data, state.epoch());
     let l1_events = vec![block_ev];
 
     Ok((l1_events, l1blkid))
@@ -455,7 +455,7 @@ pub async fn fetch_verification_state(
     let network = client.network().await?;
     let genesis_l1_view = fetch_genesis_l1_view(client, block_height).await?;
     // Build the header verification state structure.
-    let header_verification_state = HeaderVerificationState::new(network, genesis_l1_view);
+    let header_verification_state = HeaderVerificationState::new(network, &genesis_l1_view);
 
     trace!(%block_height, ?header_verification_state, "HeaderVerificationState");
 

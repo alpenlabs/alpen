@@ -14,13 +14,7 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
             L1Tx::new(proof, arb.generate(), vec![parsed_tx])
         })
         .collect();
-    let mf = L1BlockManifest::new(
-        arb.generate(),
-        arb.generate(),
-        txs.clone(),
-        arb.generate(),
-        arb.generate(),
-    );
+    let mf = L1BlockManifest::new(arb.generate(), txs.clone(), arb.generate(), arb.generate());
 
     // Insert block data
     let res = db.put_block_data(mf.clone());
@@ -37,13 +31,7 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
             L1Tx::new(proof, arb.generate(), vec![parsed_tx])
         })
         .collect();
-    let mf = L1BlockManifest::new(
-        arb.generate(),
-        arb.generate(),
-        txs.clone(),
-        arb.generate(),
-        arb.generate(),
-    );
+    let mf = L1BlockManifest::new(arb.generate(), txs.clone(), arb.generate(), arb.generate());
 
     // Insert block data
     let res = db.put_block_data(mf.clone());
@@ -58,13 +46,7 @@ pub fn test_insert_into_canonical_chain(db: &impl L1Database) {
     for height in &heights {
         let mut arb = ArbitraryGenerator::new();
         let txs: Vec<L1Tx> = (0..10).map(|_| arb.generate()).collect();
-        let mf = L1BlockManifest::new(
-            arb.generate(),
-            arb.generate(),
-            txs,
-            arb.generate(),
-            arb.generate(),
-        );
+        let mf = L1BlockManifest::new(arb.generate(), txs, arb.generate(), arb.generate());
         let blockid = *mf.blkid();
         db.put_block_data(mf).unwrap();
         assert!(db.set_canonical_chain_entry(*height, blockid).is_ok());
@@ -281,13 +263,7 @@ fn insert_block_data(
             L1Tx::new(proof, arb.generate(), vec![parsed_tx])
         })
         .collect();
-    let mf = L1BlockManifest::new(
-        arb.generate(),
-        arb.generate(),
-        txs.clone(),
-        arb.generate(),
-        arb.generate(),
-    );
+    let mf = L1BlockManifest::new(arb.generate(), txs.clone(), arb.generate(), arb.generate());
 
     // Insert block data
     let res = db.put_block_data(mf.clone());

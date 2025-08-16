@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::{
     block_credential::CredRule,
-    l1::{BitcoinAddress, L1BlockCommitment, XOnlyPk, TIMESTAMPS_FOR_MEDIAN},
+    l1::{BitcoinAddress, L1BlockCommitment, L1BlockId, XOnlyPk, TIMESTAMPS_FOR_MEDIAN},
     operator::OperatorPubkeys,
     prelude::Buf32,
     proof::RollupVerifyingKey,
@@ -82,6 +82,16 @@ pub struct GenesisL1View {
     pub next_target: u32,
     pub epoch_start_timestamp: u32,
     pub last_11_timestamps: [u32; TIMESTAMPS_FOR_MEDIAN],
+}
+
+impl GenesisL1View {
+    pub fn height(&self) -> u64 {
+        self.blk.height()
+    }
+
+    pub fn blkid(&self) -> L1BlockId {
+        *self.blk.blkid()
+    }
 }
 
 impl RollupParams {
