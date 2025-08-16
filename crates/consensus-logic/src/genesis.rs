@@ -2,7 +2,7 @@ use strata_db::errors::DbError;
 use strata_primitives::{
     buf::{Buf32, Buf64},
     evm_exec::create_evm_extra_payload,
-    l1::HeaderVerificationState,
+    l1::{HeaderVerificationState, TIMESTAMPS_FOR_MEDIAN},
     params::{OperatorConfig, Params},
 };
 use strata_state::{
@@ -130,11 +130,8 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     let exec_payload = vec![];
     let accessory = L2BlockAccessory::new(exec_payload, 0);
 
-    // Assemble the genesis header template, pulling in data from whatever
-    // sources we need.
-    // FIXME this isn't the right timestamp to start the blockchain, this should
-    // definitely be pulled from the database or the rollup parameters maybe
-    let genesis_ts = params.rollup().horizon_l1_height;
+    let genesis_ts =
+        params.rollup().genesis_l1_view.last_11_timestamps[TIMESTAMPS_FOR_MEDIAN - 1] as u64;
     let zero_blkid = L2BlockId::from(Buf32::zero());
     let genesis_sr = Buf32::zero();
     let header = L2BlockHeader::new(0, 0, genesis_ts, zero_blkid, &body, genesis_sr);

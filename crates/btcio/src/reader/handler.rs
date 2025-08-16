@@ -53,9 +53,9 @@ async fn handle_blockdata<R: Reader>(
     let mut sync_evs = Vec::new();
 
     // Bail out fast if we don't have to care.
-    let horizon = params.rollup().horizon_l1_height;
-    if height < horizon {
-        warn!(%height, %horizon, "ignoring BlockData for block before horizon");
+    let genesis = params.rollup().genesis_l1_view.height();
+    if height < genesis {
+        warn!(%height, %genesis, "ignoring BlockData for block before genesis");
         return Ok(sync_evs);
     }
 
