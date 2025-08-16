@@ -129,8 +129,7 @@ fn handle_block(
         state.activate_chain();
 
         // Also have to set this.
-        let pregenesis_mfs = vec![block_mf.clone()];
-        let (genesis_block, _) = make_l2_genesis(params, pregenesis_mfs);
+        let (genesis_block, _) = make_l2_genesis(params);
         state.set_sync_state(SyncState::from_genesis_blkid(
             genesis_block.block().header().get_blockid(),
         ));
@@ -318,7 +317,7 @@ mod tests {
 
         fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error> {
             let rec = self.chainseg.get_header_record(height).unwrap();
-            Ok(L1BlockManifest::new(rec, None, Vec::new(), 0, height))
+            Ok(L1BlockManifest::new(rec, Vec::new(), 0, height))
         }
 
         fn get_l2_block_data(&self, blkid: &L2BlockId) -> Result<L2BlockBundle, Error> {
@@ -385,8 +384,7 @@ mod tests {
 
         let l1_chain = chain.get_header_records(horizon, 10).unwrap();
 
-        let pregenesis_mfs = chain.get_block_manifests(genesis, 1).unwrap();
-        let (genesis_block, _) = genesis::make_l2_genesis(&params, pregenesis_mfs);
+        let (genesis_block, _) = genesis::make_l2_genesis(&params);
         let _genesis_blockid = genesis_block.header().get_blockid();
 
         let l1_blocks = l1_chain

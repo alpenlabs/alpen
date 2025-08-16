@@ -161,11 +161,7 @@ pub fn gen_client_state(params: Option<&Params>) -> ClientState {
 
 /// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.
 pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
-    let btc_chain = BtcChainSegment::load();
-    // Build the genesis block and genesis consensus states.
-    let pregenesis_mfs =
-        vec![btc_chain.get_block_manifest(params.rollup().genesis_l1_view.blk.height())];
-    make_l2_genesis(params, pregenesis_mfs)
+    make_l2_genesis(params)
 }
 
 /// Generates random valid [`SignedCheckpoint`].
