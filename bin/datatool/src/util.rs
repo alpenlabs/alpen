@@ -15,7 +15,7 @@ use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
-    Network,
+    CompactTarget, Network,
 };
 use bitcoind_async_client::{traits::Reader, Client};
 use rand_core::CryptoRngCore;
@@ -28,9 +28,12 @@ use strata_primitives::{
     buf::Buf32,
     crypto::EvenSecretKey,
     keys::ZeroizableXpriv,
-    l1::L1BlockId,
+    l1::{
+        get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId,
+        TIMESTAMPS_FOR_MEDIAN,
+    },
     operator::OperatorPubkeys,
-    params::{ProofPublishMode, RollupParams},
+    params::{GenesisL1View, ProofPublishMode, RollupParams},
     proof::RollupVerifyingKey,
 };
 use zeroize::Zeroize;
@@ -280,8 +283,7 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
 
     let evm_genesis_info = get_genesis_block_info(&chainspec_json)?;
 
-    // Create Bitcoin RPC client and fetch genesis L1 block hash
-    let genesis_l1_height = cmd.genesis_l1_height;
+    // Create Bitcoin RPC client and fetch genesis L1 view
     let bitcoin_client = Client::new(
         cmd.bitcoin_rpc_url,
         cmd.bitcoin_rpc_user,
@@ -291,17 +293,8 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
     )
     .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
 
-    let genesis_l1_blkid = bitcoin_client
-        .get_block_hash(genesis_l1_height)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to fetch L1 block hash at height {}: {}",
-                genesis_l1_height,
-                e
-            )
-        })
-        .map(L1BlockId::from)?;
+    let genesis_l1_view =
+        fetch_genesis_l1_view(&bitcoin_client, cmd.genesis_l1_height.unwrap_or(100)).await?;
 
     let magic: MagicBytes = if let Some(name_str) = &cmd.name {
         // Validate that the name is ASCII
@@ -330,11 +323,11 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
         checkpoint_tag: cmd.checkpoint_tag.unwrap_or("strata-ckpt".to_string()),
         da_tag: cmd.da_tag.unwrap_or("strata-da".to_string()),
         bitcoin_network: ctx.bitcoin_network,
+        genesis_l1_view,
         // TODO make these consts
         block_time_sec: cmd.block_time.unwrap_or(15),
         epoch_slots: cmd.epoch_slots.unwrap_or(64),
         horizon_height: cmd.horizon_height.unwrap_or(90),
-        genesis_trigger: cmd.genesis_l1_height,
         seqkey,
         opkeys,
         rollup_vk,
@@ -342,7 +335,6 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
         deposit_sats,
         proof_timeout: cmd.proof_timeout,
         evm_genesis_info,
-        genesis_l1_blkid,
     };
 
     let params = match construct_params(config) {
@@ -450,8 +442,8 @@ pub(crate) struct ParamsConfig {
     epoch_slots: u32,
     /// Height at which the we start reading L1 (< genesis_trigger).
     horizon_height: u64,
-    /// Height at which the genesis block is triggered.
-    genesis_trigger: u64,
+    /// View of the L1 at genesis
+    genesis_l1_view: GenesisL1View,
     /// Sequencer's key.
     seqkey: Option<Buf32>,
     /// Operators' master keys.
@@ -464,8 +456,6 @@ pub(crate) struct ParamsConfig {
     proof_timeout: Option<u32>,
     /// evm chain config json.
     evm_genesis_info: BlockInfo,
-    /// L1 block hash at the genesis trigger height.
-    genesis_l1_blkid: L1BlockId,
 }
 
 /// Constructs the parameters for a Strata network.
@@ -497,7 +487,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         )
     });
 
-    // TODO add in bitcoin network
     Ok(RollupParams {
         magic_bytes: config.magic,
         block_time: config.block_time_sec * 1000,
@@ -506,8 +495,8 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         cred_rule: cr,
         // TODO do we want to remove this?
         horizon_l1_height: config.horizon_height,
-        genesis_l1_height: config.genesis_trigger,
-        genesis_l1_blkid: config.genesis_l1_blkid,
+        genesis_l1_height: config.genesis_l1_view.blk.height(),
+        genesis_l1_blkid: *config.genesis_l1_view.blk.blkid(),
         operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
@@ -582,4 +571,90 @@ fn get_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
         blockhash: genesis_hash,
         stateroot: genesis_stateroot,
     })
+}
+
+async fn fetch_genesis_l1_view(
+    client: &impl Reader,
+    block_height: u64,
+) -> anyhow::Result<GenesisL1View> {
+    // Create BTC parameters based on the current network.
+    let network = client.network().await?;
+    let btc_params = BtcParams::from(bitcoin::params::Params::from(network));
+
+    // Get the difficulty adjustment block just before the given block height,
+    // representing the start of the current epoch.
+    let current_epoch_start_height =
+        get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
+    let current_epoch_start_header = client
+        .get_block_header_at(current_epoch_start_height)
+        .await?;
+
+    // Fetch the block header at the height
+    let block_header = client.get_block_header_at(block_height).await?;
+
+    // Fetch timestamps
+    let timestamps =
+        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
+    let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
+        "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
+    );
+
+    // Compute the block ID for the verified block.
+    let block_id: L1BlockId = block_header.block_hash().into();
+
+    // If (block_height + 1) is the start of the new epoch, we need to calculate the
+    // next_block_target, else next_block_target will be current block's target
+    let next_block_target =
+        if (block_height + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
+            CompactTarget::from_next_work_required(
+                block_header.bits,
+                (block_header.time - current_epoch_start_header.time) as u64,
+                &btc_params,
+            )
+            .to_consensus()
+        } else {
+            client
+                .get_block_header_at(block_height)
+                .await?
+                .target()
+                .to_compact_lossy()
+                .to_consensus()
+        };
+
+    // Build the genesis L1 veiw structure.
+    let genesis_l1_view = GenesisL1View {
+        blk: L1BlockCommitment::new(block_height, block_id),
+        next_target: next_block_target,
+        epoch_start_timestamp: current_epoch_start_header.time,
+        last_11_timestamps: timestamps,
+    };
+
+    Ok(genesis_l1_view)
+}
+
+/// Retrieves the timestamps for a specified number of blocks starting from the given block height,
+/// moving backwards. For each block from `height` down to `height - count + 1`, it fetches the
+/// block’s timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
+/// placeholder value of 0. The resulting vector is then reversed so that timestamps are returned in
+/// ascending order (oldest first).
+async fn fetch_block_timestamps_ascending(
+    client: &impl Reader,
+    height: u64,
+    count: usize,
+) -> anyhow::Result<Vec<u32>> {
+    let mut timestamps = Vec::with_capacity(count);
+
+    for i in 0..count {
+        let current_height = height.saturating_sub(i as u64);
+        // If we've gone past block 1, push 0 as a placeholder.
+        if current_height < 1 {
+            timestamps.push(0);
+        } else {
+            let header = client.get_block_header_at(current_height).await?;
+            timestamps.push(header.time);
+        }
+    }
+
+    timestamps.reverse();
+    Ok(timestamps)
 }

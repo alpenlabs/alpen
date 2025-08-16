@@ -177,7 +177,7 @@ pub(crate) struct SubcParams {
         description = "genesis L1 block height (default 100)",
         short = 'g'
     )]
-    pub(crate) genesis_l1_height: u64,
+    pub(crate) genesis_l1_height: Option<u64>,
 
     #[argh(
         option,
