@@ -7,7 +7,7 @@ use bdk_wallet::{bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Tra
 use pyo3::prelude::*;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
-use crate::{error::Error, taproot::{new_bitcoind_client, sync_wallet, taproot_wallet}};
+use crate::{constants::MAGIC_BYTES, error::Error, taproot::{new_bitcoind_client, sync_wallet, taproot_wallet}};
 use super::types::WithdrawalMetadata;
 use std::str::FromStr;
 
@@ -73,9 +73,8 @@ fn create_withdrawal_fulfillment_inner(
     let deposit_txid = parse_deposit_txid(&deposit_txid)?;
 
     // Create withdrawal metadata
-    let tag = *b"ALPN"; // Alpen rollup tag
     let metadata = WithdrawalMetadata::new(
-        tag,
+        *MAGIC_BYTES,
         operator_idx,
         deposit_idx,
         deposit_txid,

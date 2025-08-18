@@ -4,19 +4,10 @@
 //! adapted from the mock-bridge implementation for use in python-utils.
 
 use bdk_wallet::bitcoin::{
-    consensus, opcodes::all::OP_RETURN, script::{Builder, PushBytesBuf},
-    Amount, OutPoint, Psbt, ScriptBuf, TapNodeHash, Transaction, TxOut, Txid,
+    consensus, script::PushBytesBuf,
+    Amount, OutPoint, Psbt, ScriptBuf, TapNodeHash, TxOut, Txid,
     XOnlyPublicKey,
 };
-use pyo3::prelude::*;
-
-/// Data structure for a deposit request transaction (DRT). This is exposed to Python
-#[derive(Debug, Clone)]
-#[pyclass]
-pub(crate) struct DepositRequestTransaction {
-    pub transaction: Vec<u8>,
-    pub deposit_request_data: DepositRequestData,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DepositRequestData {

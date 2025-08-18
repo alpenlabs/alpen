@@ -38,7 +38,7 @@ impl MusigSigner {
     ///
     /// # Arguments
     /// * `deposit_tx` - The deposit transaction containing the PSBT to sign
-    /// * `operator_keys` - Vector of operator secret keys for multi-signature
+    /// * `keypairs` - Vector of operator keypairs for multi-signature
     /// * `input_index` - Index of the input to sign (usually 0 for deposit transactions)
     ///
     /// # Returns
@@ -67,9 +67,6 @@ impl MusigSigner {
         let mut ctx = KeyAggContext::new(full_pubkeys.iter().cloned())
             .map_err(|e| Error::BridgeBuilder(format!("Key aggregation failed: {}", e)))?;
 
-        let a: XOnlyPublicKey = ctx.aggregated_pubkey();
-
-
         // Apply taproot tweak based on witness type
         match witness {
             TaprootWitness::Key => {
@@ -90,10 +87,6 @@ impl MusigSigner {
             }
         }
 
-        // Show the aggregated pubkey after tweaking
-        let post_tweak_agg_pubkey: XOnlyPublicKey = ctx.aggregated_pubkey();
-
-
         // Create sighash for the transaction
         let sighash = self.create_sighash(&psbt.unsigned_tx, prevouts, input_index)?;
 
@@ -112,8 +105,7 @@ impl MusigSigner {
             thread_rng().fill_bytes(&mut nonce_seed);
 
             let first_round: FirstRound = FirstRound::new(ctx.clone(), nonce_seed, signer_index, spices)
-                .map_err(|e| Error::BridgeBuilder(format!("First round creation failed: {}", e)))?
-                .into();
+                .map_err(|e| Error::BridgeBuilder(format!("First round creation failed: {}", e)))?;
 
             let pub_nonce = first_round.our_public_nonce();
             pub_nonces.push(pub_nonce);

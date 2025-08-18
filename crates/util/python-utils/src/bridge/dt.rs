@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 use secp256k1::{All, Keypair, Secp256k1, SECP256K1};
 
 use crate::{
-    bridge::drt::DEPOSIT_REQUEST_DATA_STORAGE, constants::{ BRIDGE_OUT_AMOUNT, GENERAL_WALLET_KEY_PATH, NETWORK}, error::Error, taproot::musig_aggregate_pks_inner
+    bridge::drt::DEPOSIT_REQUEST_DATA_STORAGE, constants::{ BRIDGE_OUT_AMOUNT, GENERAL_WALLET_KEY_PATH, MAGIC_BYTES, NETWORK}, error::Error, taproot::musig_aggregate_pks_inner
 };
 
 use super::{
@@ -31,7 +31,6 @@ use bdk_wallet::bitcoin::{
 /// # Arguments
 /// * `deposit_index` - Index of the deposit request data in the storage
 /// * `operator_keys` - Vector of operator secret keys as hex strings for MuSig2 signing
-/// * `internal_key` - The aggregated operator public key as hex string
 ///
 /// # Returns
 /// * `PyResult<Vec<u8>>` - The signed and serialized deposit transaction
@@ -72,14 +71,9 @@ fn create_deposit_transaction_inner(
         storage[index].clone()
     };
 
-
-
     let agg_pubkey = parse_keys(&operator_keys)?;
-
-
     let operator_secret_keys = parse_operator_keys(operator_keys)?;
 
-    // Extract the full public keys (not X-only) with correct parity
     // Create the deposit transaction PSBT
     let mut deposit_tx = build_deposit_tx(&deposit_request_data, agg_pubkey)?;
 
@@ -145,7 +139,6 @@ fn build_deposit_tx(
     data: &crate::bridge::types::DepositRequestData,
     internal_key: UntweakedPublicKey,
 ) -> Result<DepositTx, Error> {
-    let tag = "ALPN"; // Alpen rollup tag
     let deposit_amount = BRIDGE_OUT_AMOUNT;
 
     let prevouts = vec![TxOut {
@@ -173,7 +166,7 @@ fn build_deposit_tx(
         input_amount: data.total_amount,
     };
 
-    let metadata = AuxiliaryData::new(String::from(tag), deposit_metadata);
+    let metadata = AuxiliaryData::new(String::from_utf8(MAGIC_BYTES.to_vec()).expect("invalid magic bytes"), deposit_metadata);
 
     let metadata_script = create_metadata_script(&metadata)?;
     let metadata_amount = Amount::from_int_btc(0);
