@@ -206,7 +206,7 @@ impl AuxiliaryData {
         buf.extend_from_slice(self.tag.as_bytes());
         buf.extend_from_slice(&self.metadata.stake_index.to_be_bytes());
         buf.extend_from_slice(&self.metadata.ee_address);
-        buf.extend_from_slice(&self.metadata.takeback_hash.as_ref());
+        buf.extend_from_slice(self.metadata.takeback_hash.as_ref());
         buf.extend_from_slice(&self.metadata.input_amount.to_sat().to_be_bytes());
         buf
     }

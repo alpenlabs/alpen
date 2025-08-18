@@ -68,7 +68,7 @@ impl MusigSigner {
             .map_err(|e| Error::BridgeBuilder(format!("Key aggregation failed: {}", e)))?;
 
         let a: XOnlyPublicKey = ctx.aggregated_pubkey();
-        println!("Public key before signing deposit PSBT:  {}", a);
+
 
         // Apply taproot tweak based on witness type
         match witness {
@@ -92,7 +92,7 @@ impl MusigSigner {
 
         // Show the aggregated pubkey after tweaking
         let post_tweak_agg_pubkey: XOnlyPublicKey = ctx.aggregated_pubkey();
-        println!("DEBUG: MuSig post-tweak aggregated pubkey: {}", post_tweak_agg_pubkey);
+
 
         // Create sighash for the transaction
         let sighash = self.create_sighash(&psbt.unsigned_tx, prevouts, input_index)?;
@@ -372,15 +372,15 @@ mod tests {
         let signer = MusigSigner::new();
         let deposit_tx = create_test_deposit_tx();
         let operator_keys = create_deterministic_test_operator_keys();
-        println!("Operator keys: {:?}", operator_keys);
+
 
         let result = signer.sign_deposit_psbt(&deposit_tx, operator_keys, 0);
-        println!("Result: {:?}", result);
+
 
         // Similar to single signer test - accept success or expected MuSig failures
         match result {
             Ok(signature) => {
-                println!("Signature: {:?}", signature);
+
                 assert_eq!(signature.sighash_type, TapSighashType::Default);
                 assert_eq!(signature.signature.as_ref().len(), 64);
             }

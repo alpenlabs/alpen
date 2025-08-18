@@ -46,9 +46,9 @@ pub(crate) fn deposit_request_transaction(
 
     let agg_key = parse_keys(&operator_keys)?;
 
-    println!("===================================");
-    println!("{}", agg_key);
-    println!("===================================");
+
+
+
 
     let signed_tx = deposit_request_transaction_inner(
         el_address.as_str(),
@@ -155,7 +155,6 @@ fn deposit_request_transaction_inner(
     {
         let mut storage = DEPOSIT_REQUEST_DATA_STORAGE.lock().unwrap();
         let stake_index = storage.len() as u32; // Use the position in vector as stake index
-        println!("ASH: stake index::::: {}", stake_index);
 
         // Create the outpoint for the first output of the transaction (index 0)
         let deposit_request_outpoint = bdk_wallet::bitcoin::OutPoint {
@@ -172,7 +171,7 @@ fn deposit_request_transaction_inner(
             original_script_pubkey: bridge_in_address.script_pubkey(),
         };
 
-        println!("pushed {:?}", deposit_request_data);
+
         storage.push(deposit_request_data);
     }
 

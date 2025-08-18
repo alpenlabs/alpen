@@ -72,11 +72,11 @@ fn create_deposit_transaction_inner(
         storage[index].clone()
     };
 
-    println!("{:?}", deposit_request_data);
+
 
     let agg_pubkey = parse_keys(&operator_keys)?;
-    println!("-----------x-------------x-----------");
-    println!("AGG PUBKEY {}", agg_pubkey);
+
+
     let operator_secret_keys = parse_operator_keys(operator_keys)?;
 
     // Extract the full public keys (not X-only) with correct parity
@@ -283,7 +283,7 @@ pub(crate) fn parse_keys(operator_keys: &[String]) -> Result<XOnlyPublicKey, Err
 
 
     let x_only_keys: Vec<XOnlyPublicKey> = result.iter().map(|pair| XOnlyPublicKey::from_keypair(pair).0).collect();
-    x_only_keys.iter().for_each(|val| { println!("key:: {}", val);});
+
 
     musig_aggregate_pks_inner(x_only_keys)
 }
@@ -296,7 +296,7 @@ pub(crate) fn parse_operator_keys(operator_keys: Vec<String>) -> Result<Vec<Keyp
         .into_iter()
         .enumerate()
         .map(|(i, key)| {
-            println!("DEBUG: Parsing xpriv {}: {}", i, key);
+
             let xpriv = Xpriv::from_str(&key)
                 .map_err(|e| Error::BridgeBuilder(format!("Invalid operator key {}: {}", i, e)))
                 .unwrap();

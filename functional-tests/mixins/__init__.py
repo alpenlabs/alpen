@@ -27,7 +27,7 @@ class BaseMixin(testenv.StrataTestBase):
         # It's an account on behalf of which all the transactions are done.
         w3 = self._new_w3()
         funded_acc = FundedAccount(w3)
-        funded_acc.fund_me(genesis_account)
+        # funded_acc.fund_me(genesis_account)
         # Setting transactions api with default DEBUG level.
         self._txs = EthTransactions(funded_acc, self.debug)
         self._w3 = w3
