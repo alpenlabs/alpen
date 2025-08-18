@@ -13,7 +13,10 @@ use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
 
 use crate::{
-    WorkerContext, WorkerError, WorkerExecCtxImpl, WorkerResult, WorkerShared,
+    traits::WorkerContext,
+    errors::{WorkerError, WorkerResult},
+    context::WorkerExecCtxImpl,
+    handle::WorkerShared,
     message::ChainWorkerMessage,
 };
 
