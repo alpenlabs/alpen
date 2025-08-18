@@ -81,7 +81,7 @@ impl Subprotocol for OLCoreSubproto {
 
     type GenesisConfig = CoreGenesisConfig;
 
-    fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
+    fn init(genesis_config: &Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
         // Construct genesis EpochSummary from the complete L1 block information
         // At genesis time, we have the complete L1 block commitment (ID + height)
         let genesis_epoch_summary = EpochSummary::new(
@@ -94,7 +94,7 @@ impl Subprotocol for OLCoreSubproto {
 
         // Initialize the Core subprotocol state from genesis configuration
         Ok(CoreOLState {
-            checkpoint_vk: genesis_config.checkpoint_vk,
+            checkpoint_vk: genesis_config.checkpoint_vk.clone(),
             verified_checkpoint: genesis_epoch_summary,
             last_checkpoint_ref: *genesis_config.genesis_l1_block.blkid(),
             sequencer_pubkey: genesis_config.sequencer_pubkey,

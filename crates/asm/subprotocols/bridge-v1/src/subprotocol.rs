@@ -38,8 +38,8 @@ impl Subprotocol for BridgeV1Subproto {
 
     type GenesisConfig = BridgeV1Config;
 
-    fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
-        Ok(BridgeV1State::new(&genesis_config))
+    fn init(genesis_config: &Self::GenesisConfig) -> Result<Self::State, AsmError> {
+        Ok(BridgeV1State::new(genesis_config))
     }
 
     /// Processes transactions for the Bridge V1 subprotocol and handles expired assignment

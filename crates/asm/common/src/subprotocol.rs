@@ -86,7 +86,7 @@ pub trait Subprotocol: 'static {
     ///
     /// # Returns
     /// The initialized state or an error if initialization fails
-    fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError>;
+    fn init(genesis_config: &Self::GenesisConfig) -> Result<Self::State, AsmError>;
 
     /// Pre-processes a batch of L1 transactions by registering any required off-chain inputs.
     ///

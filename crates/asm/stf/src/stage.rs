@@ -52,8 +52,7 @@ impl<Spec: AsmSpec> Stage<Spec> for SubprotoLoaderStage<'_, '_, Spec> {
             None => {
                 // Get the type-safe genesis config from the AsmSpec
                 let genesis_config = spec.genesis_config_for::<S>();
-                S::init((*genesis_config).clone())
-                    .expect("asm: failed to initialize subprotocol state")
+                S::init(genesis_config).expect("asm: failed to initialize subprotocol state")
             }
         };
 
