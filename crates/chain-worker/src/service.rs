@@ -76,7 +76,7 @@ pub struct ChainWorkerServiceState<W> {
 
     context: W,
     chain_exec: ChainExecutor,
-    exec_ctl_handle: Option<ExecCtlHandle>,
+    exec_ctl_handle: ExecCtlHandle,
     cur_tip: L2BlockCommitment,
     status_channel: StatusChannel,
     runtime_handle: Handle,
@@ -98,7 +98,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             params,
             context,
             chain_exec: ChainExecutor::new(rollup_params),
-            exec_ctl_handle: Some(exec_ctl_handle),
+            exec_ctl_handle,
             cur_tip: L2BlockCommitment::new(0, L2BlockId::default()),
             status_channel,
             runtime_handle,
@@ -167,11 +167,9 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             .fetch_header(parent_blkid)?
             .ok_or(WorkerError::MissingL2Block(*parent_blkid))?;
 
-        if let Some(exec_ctl) = &self.exec_ctl_handle {
-            exec_ctl
-                .try_exec_el_payload_blocking(*block)
-                .map_err(|_| WorkerError::InvalidExecPayload(*block))?;
-        }
+        self.exec_ctl_handle
+            .try_exec_el_payload_blocking(*block)
+            .map_err(|_| WorkerError::InvalidExecPayload(*block))?;
 
         let header_ctx = strata_chaintsn::context::L2HeaderAndParent::new(
             bundle.header().header().clone(),
@@ -238,21 +236,17 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
         self.cur_tip = tip;
 
-        if let Some(exec_ctl) = &self.exec_ctl_handle {
-            exec_ctl
-                .update_safe_tip_blocking(tip)
-                .map_err(WorkerError::ExecEnvEngine)?;
-        }
+        self.exec_ctl_handle
+            .update_safe_tip_blocking(tip)
+            .map_err(WorkerError::ExecEnvEngine)?;
 
         Ok(())
     }
 
     fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        if let Some(exec_ctl) = &self.exec_ctl_handle {
-            exec_ctl
-                .update_finalized_tip_blocking(epoch.to_block_commitment())
-                .map_err(WorkerError::ExecEnvEngine)?;
-        }
+        self.exec_ctl_handle
+            .update_finalized_tip_blocking(epoch.to_block_commitment())
+            .map_err(WorkerError::ExecEnvEngine)?;
 
         Ok(())
     }
