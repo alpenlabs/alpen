@@ -13,16 +13,16 @@ use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
 
 use crate::{
-    traits::WorkerContext,
-    errors::{WorkerError, WorkerResult},
     context::WorkerExecCtxImpl,
+    errors::{WorkerError, WorkerResult},
     handle::WorkerShared,
     message::ChainWorkerMessage,
+    traits::WorkerContext,
 };
 
 /// Chain worker service implementation using the service framework.
 #[derive(Debug)]
-pub struct ChainWorkerService<W> {
+pub(crate) struct ChainWorkerService<W> {
     _phantom: std::marker::PhantomData<W>,
 }
 
@@ -33,8 +33,8 @@ impl<W: WorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W>
 
     fn get_status(state: &Self::State) -> Self::Status {
         ChainWorkerStatus {
-            current_tip: state.cur_tip,
             is_initialized: state.is_initialized(),
+            cur_tip: state.cur_tip,
             last_finalized_epoch: state.last_finalized_epoch,
         }
     }
@@ -71,7 +71,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 
 /// Service state for the chain worker.
 #[derive(Debug)]
-pub struct ChainWorkerServiceState<W> {
+pub(crate) struct ChainWorkerServiceState<W> {
     #[allow(unused)]
     shared: Arc<Mutex<WorkerShared>>,
 
@@ -89,7 +89,7 @@ pub struct ChainWorkerServiceState<W> {
 }
 
 impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
-    pub fn new(
+    pub(crate) fn new(
         shared: Arc<Mutex<WorkerShared>>,
         context: W,
         params: Arc<Params>,
@@ -290,7 +290,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServi
 /// Status information for the chain worker service.
 #[derive(Clone, Debug, Serialize)]
 pub struct ChainWorkerStatus {
-    pub current_tip: L2BlockCommitment,
     pub is_initialized: bool,
+    pub cur_tip: L2BlockCommitment,
     pub last_finalized_epoch: Option<EpochCommitment>,
 }
