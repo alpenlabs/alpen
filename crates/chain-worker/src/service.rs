@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use strata_chainexec::{ChainExecutor, ExecContext, ExecResult};
+use strata_chainexec::ChainExecutor;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_primitives::{params::Params, prelude::*};
 use strata_service::{Response, Service, ServiceState, SyncService};
@@ -46,29 +46,17 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
         match input {
             ChainWorkerMessage::TryExecBlock(l2bc, completion) => {
                 let res = state.try_exec_block(l2bc);
-                if let Ok(mut guard) = completion.blocking_lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(res);
-                    }
-                }
+                completion.send_blocking(res);
             }
 
             ChainWorkerMessage::UpdateSafeTip(l2bc, completion) => {
                 let res = state.update_cur_tip(*l2bc);
-                if let Ok(mut guard) = completion.blocking_lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(res);
-                    }
-                }
+                completion.send_blocking(res);
             }
 
             ChainWorkerMessage::FinalizeEpoch(epoch, completion) => {
                 let res = state.finalize_epoch(*epoch);
-                if let Ok(mut guard) = completion.blocking_lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(res);
-                    }
-                }
+                completion.send_blocking(res);
             }
         }
 
@@ -79,7 +67,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 /// Service state for the chain worker.
 pub struct ChainWorkerServiceState<W> {
     shared: Arc<Mutex<WorkerShared>>,
-    context: Option<W>,
+    context: W,
     chain_exec: Option<ChainExecutor>,
     exec_ctl_handle: Option<ExecCtlHandle>,
     cur_tip: L2BlockCommitment,
@@ -100,7 +88,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     ) -> Self {
         Self {
             shared,
-            context: Some(context),
+            context,
             chain_exec: None,
             exec_ctl_handle: Some(exec_ctl_handle),
             cur_tip: L2BlockCommitment::new(0, L2BlockId::default()),
@@ -150,10 +138,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             return Err(WorkerError::Unexpected("worker not initialized".to_string()));
         }
 
-        let context = self
-            .context
-            .as_ref()
-            .ok_or(WorkerError::Unexpected("missing context".to_string()))?;
+        let context = &self.context;
         let chain_exec = self
             .chain_exec
             .as_ref()
@@ -196,7 +181,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             self.handle_complete_epoch(block.blkid(), bundle.block(), &output)?;
         }
 
-        context.store_block_output(block.blkid(), &output)?;
+        self.context.store_block_output(block.blkid(), &output)?;
 
         Ok(())
     }
@@ -207,10 +192,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         block: &L2Block,
         last_block_output: &strata_chainexec::BlockExecutionOutput,
     ) -> WorkerResult<()> {
-        let context = self
-            .context
-            .as_ref()
-            .ok_or(WorkerError::Unexpected("missing context".to_string()))?;
+        let context = &self.context;
 
         let output_tl_chs = last_block_output.write_batch().new_toplevel_state();
         let prev_epoch_idx = output_tl_chs.cur_epoch();

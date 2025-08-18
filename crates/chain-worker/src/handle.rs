@@ -27,7 +27,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerHandle<W> {
     /// Tries to execute a block, returns the result.
     pub async fn try_exec_block(&self, block: L2BlockCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait(|tx| ChainWorkerMessage::TryExecBlock(block, tokio::sync::Mutex::new(Some(tx))))
+            .send_and_wait(|completion| ChainWorkerMessage::TryExecBlock(block, completion))
             .await
             .map_err(convert_service_error)?
     }
@@ -35,14 +35,14 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerHandle<W> {
     /// Tries to execute a block, returns the result.
     pub fn try_exec_block_blocking(&self, block: L2BlockCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|tx| ChainWorkerMessage::TryExecBlock(block, tokio::sync::Mutex::new(Some(tx))))
+            .send_and_wait_blocking(|completion| ChainWorkerMessage::TryExecBlock(block, completion))
             .map_err(convert_service_error)?
     }
 
     /// Finalize an epoch, making whatever database changes necessary.
     pub async fn finalize_epoch(&self, epoch: EpochCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait(|tx| ChainWorkerMessage::FinalizeEpoch(epoch, tokio::sync::Mutex::new(Some(tx))))
+            .send_and_wait(|completion| ChainWorkerMessage::FinalizeEpoch(epoch, completion))
             .await
             .map_err(convert_service_error)?
     }
@@ -50,14 +50,14 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerHandle<W> {
     /// Finalize an epoch, making whatever database changes necessary.
     pub fn finalize_epoch_blocking(&self, epoch: EpochCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|tx| ChainWorkerMessage::FinalizeEpoch(epoch, tokio::sync::Mutex::new(Some(tx))))
+            .send_and_wait_blocking(|completion| ChainWorkerMessage::FinalizeEpoch(epoch, completion))
             .map_err(convert_service_error)?
     }
 
     /// Update the safe tip, making whatever database changes necessary.
     pub async fn update_safe_tip(&self, safe_tip: L2BlockCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait(|tx| ChainWorkerMessage::UpdateSafeTip(safe_tip, tokio::sync::Mutex::new(Some(tx))))
+            .send_and_wait(|completion| ChainWorkerMessage::UpdateSafeTip(safe_tip, completion))
             .await
             .map_err(convert_service_error)?
     }
@@ -65,7 +65,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerHandle<W> {
     /// Update the safe tip, making whatever database changes necessary.
     pub fn update_safe_tip_blocking(&self, safe_tip: L2BlockCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|tx| ChainWorkerMessage::UpdateSafeTip(safe_tip, tokio::sync::Mutex::new(Some(tx))))
+            .send_and_wait_blocking(|completion| ChainWorkerMessage::UpdateSafeTip(safe_tip, completion))
             .map_err(convert_service_error)?
     }
 }
