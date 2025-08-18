@@ -44,6 +44,12 @@ pub enum WorkerError {
     #[error("missing required dependency: {0}")]
     MissingDependency(&'static str),
 
+    #[error("shutdown before genesis")]
+    ShutdownBeforeGenesis,
+
+    #[error("worker not initialized")]
+    NotInitialized,
+
     #[error("unexpected error: {0}")]
     Unexpected(String),
 
@@ -77,6 +83,12 @@ impl From<WorkerError> for strata_chainexec::Error {
             }
             WorkerError::MissingDependency(dep) => {
                 ExecError::Unexpected(format!("missing dependency: {dep}"))
+            }
+            WorkerError::ShutdownBeforeGenesis => {
+                ExecError::Unexpected("shutdown before genesis".to_owned())
+            }
+            WorkerError::NotInitialized => {
+                ExecError::Unexpected("worker not initialized".to_owned())
             }
             WorkerError::Unexpected(msg) => ExecError::Unexpected(msg),
             WorkerError::Unimplemented => ExecError::Unimplemented,

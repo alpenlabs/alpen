@@ -3,17 +3,18 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use strata_chainexec::ChainExecutor;
+use strata_chainexec::{BlockExecutionOutput, ChainExecutor};
 use strata_eectl::handle::ExecCtlHandle;
-use strata_primitives::{params::Params, prelude::*};
+use strata_primitives::{batch::EpochSummary, params::Params, prelude::*};
 use strata_service::{Response, Service, ServiceState, SyncService};
 use strata_state::{block::L2Block, header::L2Header};
 use strata_status::StatusChannel;
 use tokio::{runtime::Handle, sync::Mutex};
+use tracing::*;
 
 use crate::{
-    message::ChainWorkerMessage, WorkerContext, WorkerError, WorkerResult, WorkerShared,
-    WorkerExecCtxImpl,
+    WorkerContext, WorkerError, WorkerExecCtxImpl, WorkerResult, WorkerShared,
+    message::ChainWorkerMessage,
 };
 
 /// Chain worker service implementation using the service framework.
@@ -67,12 +68,16 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 /// Service state for the chain worker.
 #[derive(Debug)]
 pub struct ChainWorkerServiceState<W> {
+    #[allow(unused)]
     shared: Arc<Mutex<WorkerShared>>,
+
+    #[allow(unused)]
+    params: Arc<Params>,
+
     context: W,
-    chain_exec: Option<ChainExecutor>,
+    chain_exec: ChainExecutor,
     exec_ctl_handle: Option<ExecCtlHandle>,
     cur_tip: L2BlockCommitment,
-    params: Arc<Params>,
     status_channel: StatusChannel,
     runtime_handle: Handle,
     initialized: bool,
@@ -87,13 +92,14 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         status_channel: StatusChannel,
         runtime_handle: Handle,
     ) -> Self {
+        let rollup_params = params.rollup.clone();
         Self {
             shared,
+            params,
             context,
-            chain_exec: None,
+            chain_exec: ChainExecutor::new(rollup_params),
             exec_ctl_handle: Some(exec_ctl_handle),
             cur_tip: L2BlockCommitment::new(0, L2BlockId::default()),
-            params,
             status_channel,
             runtime_handle,
             initialized: false,
@@ -104,13 +110,21 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         self.initialized
     }
 
+    fn check_initialized(&self) -> WorkerResult<()> {
+        if !self.is_initialized() {
+            Err(WorkerError::NotInitialized)
+        } else {
+            Ok(())
+        }
+    }
+
     fn wait_for_genesis_and_resolve_tip(&self) -> WorkerResult<L2BlockCommitment> {
-        tracing::info!("waiting until genesis");
+        info!("waiting until genesis");
 
         let init_state = self
             .runtime_handle
             .block_on(self.status_channel.wait_until_genesis())
-            .map_err(|e| WorkerError::Unexpected(format!("failed to wait for genesis: {e}")))?;
+            .map_err(|_| WorkerError::ShutdownBeforeGenesis)?;
 
         let cur_tip = match init_state.get_declared_final_epoch().cloned() {
             Some(epoch) => epoch.to_block_commitment(),
@@ -125,28 +139,22 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
 
     fn initialize_with_tip(&mut self, cur_tip: L2BlockCommitment) -> anyhow::Result<()> {
         let blkid = *cur_tip.blkid();
-        tracing::info!(%blkid, "starting chain worker");
+        info!(%blkid, "initializing chain worker");
 
         self.cur_tip = cur_tip;
-        self.chain_exec = Some(ChainExecutor::new(self.params.rollup().clone()));
         self.initialized = true;
 
         Ok(())
     }
 
     fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
-        if !self.is_initialized() {
-            return Err(WorkerError::Unexpected("worker not initialized".to_string()));
-        }
+        self.check_initialized()?;
 
         let context = &self.context;
-        let chain_exec = self
-            .chain_exec
-            .as_ref()
-            .ok_or(WorkerError::Unexpected("missing chain executor".to_string()))?;
+        let chain_exec = &self.chain_exec;
 
         let blkid = block.blkid();
-        tracing::debug!(%blkid, "Trying to execute block");
+        debug!(%blkid, "Trying to execute block");
 
         let bundle = context
             .fetch_block(block.blkid())?
@@ -178,7 +186,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let output = chain_exec.verify_block(&header_ctx, bundle.body(), &exec_ctx)?;
 
         if is_epoch_terminal {
-            tracing::debug!(%is_epoch_terminal);
+            debug!(%is_epoch_terminal);
             self.handle_complete_epoch(block.blkid(), bundle.block(), &output)?;
         }
 
@@ -191,7 +199,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         &mut self,
         blkid: &L2BlockId,
         block: &L2Block,
-        last_block_output: &strata_chainexec::BlockExecutionOutput,
+        last_block_output: &BlockExecutionOutput,
     ) -> WorkerResult<()> {
         let context = &self.context;
 
@@ -213,7 +221,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
 
         let epoch_final_state = last_block_output.computed_state_root();
 
-        let summary = strata_primitives::batch::EpochSummary::new(
+        let summary = EpochSummary::new(
             prev_epoch_idx,
             terminal,
             prev_terminal,
@@ -221,7 +229,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             *epoch_final_state,
         );
 
-        tracing::debug!(?summary, "completed chain epoch");
+        debug!(?summary, "completed chain epoch");
         context.store_summary(summary)?;
 
         Ok(())
