@@ -52,15 +52,18 @@ fn validate_checkpoint(
     signed_checkpoint: SignedCheckpoint,
     filter_conf: &TxFilterConfig,
 ) -> Option<SignedCheckpoint> {
+    let checkpoint = signed_checkpoint.checkpoint();
+    let epoch = checkpoint.batch_info().epoch();
+
     if !verify_signed_checkpoint_sig(&signed_checkpoint, &filter_conf.sequencer_cred_rule) {
-        warn!("invalid checkpoint signature");
+        warn!(epoch, "invalid checkpoint signature");
         return None;
     }
 
     if let Err(err) =
         borsh::from_slice::<Chainstate>(signed_checkpoint.checkpoint().sidecar().chainstate())
     {
-        warn!(?err, "invalid chainstate in checkpoint");
+        warn!(?err, epoch, "invalid chainstate in checkpoint");
         return None;
     }
 
@@ -68,8 +71,22 @@ fn validate_checkpoint(
     // FIXME: We should actually be checking the validity of proof, but this is done
     // for a hotfix.
     let proof_size = signed_checkpoint.checkpoint().proof().as_bytes().len();
+
+    // Special debugging for the 1-byte proof investigation
+    if proof_size == 1 {
+        warn!(
+            epoch,
+            proof_size, "🚨 BUG INVESTIGATION: Found 1-byte proof checkpoint!"
+        );
+    }
     // We are allowing proof of size 0 because we support empty proofs.
     if proof_size != 0 && proof_size < PROOF_SIZE_WITH_PUBLIC_PARAMS {
+        warn!(
+            epoch,
+            proof_size,
+            min_size = PROOF_SIZE_WITH_PUBLIC_PARAMS,
+            "rejecting checkpoint with invalid proof size"
+        );
         return None;
     }
 

@@ -1,0 +1,37 @@
+[package]
+name = "checkpoint-validator"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "checkpoint-validator"
+path = "src/main.rs"
+
+[dependencies]
+# CLI argument parsing
+argh = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+borsh = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Bitcoin
+bitcoin = "0.32"
+
+# Hex encoding/decoding
+hex = "0.4"
+
+# Strata crates
+strata-primitives = { path = "../../crates/primitives" }
+strata-l1tx = { path = "../../crates/l1tx" }
+strata-consensus-logic = { path = "../../crates/consensus-logic" }
+strata-state = { path = "../../crates/state" }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
