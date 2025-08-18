@@ -45,18 +45,6 @@ pub(crate) struct DepositRequestData {
     pub original_script_pubkey: ScriptBuf,
 }
 
-/// Internal Rust representation of DepositRequestData with proper Bitcoin types
-#[derive(Debug, Clone)]
-pub(crate) struct DepositRequestDataInternal {
-    pub deposit_request_outpoint: OutPoint,
-    pub stake_index: u32,
-    pub el_address: [u8; 20],
-    pub total_amount: Amount,
-    pub x_only_public_key: XOnlyPublicKey,
-    pub original_script_pubkey: ScriptBuf,
-}
-
-
 /// Deposit Transaction structure with PSBT and metadata
 #[derive(Debug, Clone)]
 pub(crate) struct DepositTx {
@@ -101,9 +89,11 @@ pub(crate) struct AuxiliaryData {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TaprootWitness {
     /// Use the keypath spend
+    #[allow(dead_code)]
     Key,
 
     /// Use the script path spend with script and control block
+    #[allow(dead_code)]
     Script {
         script_buf: ScriptBuf,
         control_block: bdk_wallet::bitcoin::taproot::ControlBlock,

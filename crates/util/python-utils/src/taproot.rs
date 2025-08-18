@@ -8,10 +8,7 @@ use bdk_wallet::{
     bitcoin::{
         consensus::serialize, key::Parity, secp256k1::SECP256K1, Address, AddressType, FeeRate,
         PublicKey, Transaction, XOnlyPublicKey,
-    },
-    descriptor::IntoWalletDescriptor,
-    miniscript::ToPublicKey,
-    KeychainKind, Wallet,
+    }, descriptor::IntoWalletDescriptor, miniscript::ToPublicKey, KeychainKind, Wallet
 };
 use musig2::KeyAggContext;
 use pyo3::prelude::*;
@@ -19,9 +16,8 @@ use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
 
 use crate::{
     constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
-    error::Error,
-    parse::{parse_pk, parse_xonly_pk},
-    bridge::parse_keys, utils::bridge_in_descriptor
+    error::Error, parse::{parse_pk, parse_xonly_pk},
+    utils::bridge_in_descriptor
 };
 
 /// Extracts the public key from a Taproot address.
@@ -65,6 +61,7 @@ pub(crate) fn taproot_wallet() -> Result<Wallet, Error> {
 }
 
 /// The bridge wallet used to get the recovery path of the deposit request transaction (DRT).
+#[allow(dead_code)]
 pub(crate) fn bridge_wallet(
     bridge_pubkey: XOnlyPublicKey,
     recovery_address: Address,
@@ -134,18 +131,6 @@ pub(crate) fn musig_aggregate_pks_inner(pks: Vec<XOnlyPublicKey>) -> Result<XOnl
     let result = key_agg_ctx.aggregated_pubkey();
 
     Ok(result)
-}
-
-/// Test function to compare aggregation methods
-#[pyfunction]
-pub(crate) fn test_key_aggregation_comparison(
-    rust_xonly_pubkeys: Vec<String>
-) {
-
-
-    let c = parse_keys(&rust_xonly_pubkeys).unwrap();
-
-
 }
 
 /// Gets a (receiving/external) address from the [`taproot_wallet`] at the given `index`.

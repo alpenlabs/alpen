@@ -2,9 +2,9 @@ use std::{str::FromStr, sync::LazyLock, sync::Mutex};
 
 use bdk_wallet::{
     bitcoin::{
-        self, consensus::encode::serialize, script::PushBytesBuf, taproot::{LeafVersion, TaprootBuilder}, Address, FeeRate, ScriptBuf, TapNodeHash, Transaction, XOnlyPublicKey
+        self, consensus::encode::serialize, script::PushBytesBuf, taproot::{TaprootBuilder}, Address, FeeRate, ScriptBuf, Transaction, XOnlyPublicKey
     },
-    miniscript::{self, miniscript::Tap, Miniscript},
+    miniscript::{self, Miniscript},
     template::DescriptorTemplateOut,
     KeychainKind, TxOrdering, Wallet,
 };
@@ -14,7 +14,10 @@ use secp256k1::{Secp256k1, SECP256K1};
 use strata_primitives::constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY};
 
 use crate::{
-    bridge::{parse_keys, types::DepositRequestData}, constants::{BRIDGE_IN_AMOUNT, MAGIC_BYTES, NETWORK, XPRIV}, error::Error, parse::{parse_address, parse_el_address, parse_xonly_pk}, taproot::{musig_aggregate_pks_inner, new_bitcoind_client, sync_wallet, taproot_wallet, ExtractP2trPubkey}
+    bridge::{parse_keys, types::DepositRequestData},
+    constants::{BRIDGE_IN_AMOUNT, MAGIC_BYTES, NETWORK, XPRIV},
+    error::Error, parse::{parse_address, parse_el_address, parse_xonly_pk},
+    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet, ExtractP2trPubkey}
 };
 
 /// Static vector to store DepositRequestData instances
@@ -379,6 +382,7 @@ pub(crate) fn get_balance_inner(
 ///
 /// The balance in satoshis where 1 BTC = 100_000_000 satoshis.
 #[pyfunction]
+#[allow(dead_code)]
 pub(crate) fn get_balance_recovery(
     address: String,
     musig_bridge_pk: String,
@@ -405,6 +409,7 @@ pub(crate) fn get_balance_recovery(
 /// # Returns
 ///
 /// The balance in satoshis where 1 BTC = 100_000_000 satoshis.
+#[allow(dead_code)]
 pub(crate) fn get_balance_recovery_inner(
     address: &str,
     musig_bridge_pk: &str,

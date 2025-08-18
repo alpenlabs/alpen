@@ -15,8 +15,7 @@ use bridge::{
 use schnorr::{sign_schnorr_sig, verify_schnorr_sig};
 use taproot::{
     convert_to_xonly_pk, drain_wallet, extract_p2tr_pubkey, get_address, get_change_address,
-    musig_aggregate_pks, unspendable_address, test_key_aggregation_comparison,
-};
+    musig_aggregate_pks, unspendable_address };
 use utils::{
     address_to_descriptor, is_valid_bosd, opreturn_to_string, string_to_opreturn_descriptor,
     xonlypk_to_descriptor,
@@ -43,7 +42,6 @@ fn strata_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(unspendable_address, m)?)?;
     m.add_function(wrap_pyfunction!(drain_wallet, m)?)?;
     m.add_function(wrap_pyfunction!(convert_to_xonly_pk, m)?)?;
-    m.add_function(wrap_pyfunction!(test_key_aggregation_comparison, m)?)?;
     m.add_function(wrap_pyfunction!(get_recovery_address, m)?)?;
     m.add_function(wrap_pyfunction!(get_balance, m)?)?;
     m.add_function(wrap_pyfunction!(take_back_transaction, m)?)?;

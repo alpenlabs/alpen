@@ -23,6 +23,7 @@ use super::types::{DepositTx, TaprootWitness};
 
 /// MuSig2 signer for bridge transactions
 pub(crate) struct MusigSigner {
+    #[allow(dead_code)]
     secp: Secp256k1<All>,
 }
 

@@ -1,7 +1,8 @@
-use std::str::FromStr as _;
+use std::str::FromStr;
 
-use bdk_wallet::{bitcoin::{taproot::LeafVersion, Address, TapNodeHash, XOnlyPublicKey}, miniscript::{Miniscript, Tap}, template::DescriptorTemplateOut};
+use bdk_wallet::{bitcoin::{taproot::LeafVersion, Address, TapNodeHash}, miniscript::{Miniscript, Tap}, template::DescriptorTemplateOut};
 use pyo3::prelude::*;
+use secp256k1::XOnlyPublicKey;
 use shrex::decode_alloc;
 use strata_primitives::{bitcoin_bosd::Descriptor, constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY}};
 
@@ -20,20 +21,28 @@ use crate::{error::Error, taproot::ExtractP2trPubkey};
 /// # Returns
 ///
 /// The descriptor and the script hash for the recovery path.
+///
+/// required for testing
+#[allow(dead_code)]
 pub(crate) fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
     recovery_address: Address,
 ) -> Result<(DescriptorTemplateOut, TapNodeHash), Error> {
     let recovery_xonly_pubkey = recovery_address.extract_p2tr_pubkey()?;
-let desc = bdk_wallet::descriptor!( tr(UNSPENDABLE_PUBLIC_KEY, {
+
+    let desc = bdk_wallet::descriptor!(
+        tr(UNSPENDABLE_PUBLIC_KEY, {
             pk(bridge_pubkey),
             and_v(v:pk(recovery_xonly_pubkey),older(RECOVER_DELAY))
         })
     )
     .expect("valid descriptor");
 
+    // we have to do this to obtain the script hash
+    // i have tried to extract it directly from the desc above
+    // it is a massive pita
     let recovery_script = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
-        "and_v(v:pk({recovery_xonly_pubkey}),older({RECOVER_DELAY}))",
+        "and_v(v:pk({recovery_xonly_pubkey}),older(1008))",
     ))
     .expect("valid recovery script")
     .encode();
