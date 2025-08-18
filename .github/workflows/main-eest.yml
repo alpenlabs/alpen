@@ -115,7 +115,7 @@ jobs:
           uv run solc-select use 0.8.24 --always-install
           uv run execute remote \
             -m state_test \
-            --fork=Pectra \
+            --fork=Prague \
             --rpc-endpoint=http://localhost:12603 \
             --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
             --rpc-chain-id 2892 \
