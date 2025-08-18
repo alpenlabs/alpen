@@ -32,6 +32,7 @@ impl<W: WorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W>
         ChainWorkerStatus {
             current_tip: state.cur_tip,
             is_initialized: state.is_initialized(),
+            last_finalized_epoch: state.last_finalized_epoch,
         }
     }
 }
@@ -78,6 +79,7 @@ pub struct ChainWorkerServiceState<W> {
     chain_exec: ChainExecutor,
     exec_ctl_handle: ExecCtlHandle,
     cur_tip: L2BlockCommitment,
+    last_finalized_epoch: Option<EpochCommitment>,
     status_channel: StatusChannel,
     runtime_handle: Handle,
     initialized: bool,
@@ -100,6 +102,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             chain_exec: ChainExecutor::new(rollup_params),
             exec_ctl_handle,
             cur_tip: L2BlockCommitment::new(0, L2BlockId::default()),
+            last_finalized_epoch: None,
             status_channel,
             runtime_handle,
             initialized: false,
@@ -147,6 +150,16 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         Ok(())
     }
 
+    /// Prepares context for a block we're about to execute.
+    fn prepare_block_context<'w>(
+        &'w self,
+        _l2bc: &L2BlockCommitment,
+    ) -> WorkerResult<WorkerExecCtxImpl<'w, W>> {
+        Ok(WorkerExecCtxImpl {
+            worker_context: &self.context,
+        })
+    }
+
     fn try_exec_block(&mut self, block: &L2BlockCommitment) -> WorkerResult<()> {
         self.check_initialized()?;
 
@@ -177,9 +190,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             parent_header,
         );
 
-        let exec_ctx = WorkerExecCtxImpl {
-            worker_context: context,
-        };
+        let exec_ctx = self.prepare_block_context(block)?;
 
         let output = chain_exec.verify_block(&header_ctx, bundle.body(), &exec_ctx)?;
 
@@ -193,6 +204,17 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         Ok(())
     }
 
+    /// Takes the block and post-state and inserts database entries to reflect
+    /// the epoch being finished on-chain.
+    ///
+    /// There's some bookkeeping here that's slightly weird since in the way it
+    /// works now, the last block of an epoch brings the post-state to the new
+    /// epoch.  So the epoch's final state actually has cur_epoch be the *next*
+    /// epoch.  And the index we assign to the summary here actually uses the
+    /// "prev epoch", since that's what the epoch in question is here.
+    ///
+    /// This will be simplified if/when we out the per-block and per-epoch
+    /// processing into two separate stages.
     fn handle_complete_epoch(
         &mut self,
         blkid: &L2BlockId,
@@ -233,6 +255,8 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         Ok(())
     }
 
+    /// Updates the current tip as managed by the worker.  This does not persist
+    /// in the client's database necessarily.
     fn update_cur_tip(&mut self, tip: L2BlockCommitment) -> WorkerResult<()> {
         self.cur_tip = tip;
 
@@ -247,6 +271,8 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         self.exec_ctl_handle
             .update_finalized_tip_blocking(epoch.to_block_commitment())
             .map_err(WorkerError::ExecEnvEngine)?;
+
+        self.last_finalized_epoch = Some(epoch);
 
         Ok(())
     }
@@ -263,4 +289,5 @@ impl<W: WorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServi
 pub struct ChainWorkerStatus {
     pub current_tip: L2BlockCommitment,
     pub is_initialized: bool,
+    pub last_finalized_epoch: Option<EpochCommitment>,
 }
