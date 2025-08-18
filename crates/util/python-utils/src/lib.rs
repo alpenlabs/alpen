@@ -11,11 +11,13 @@ mod taproot;
 mod utils;
 
 use bridge::{
-    deposit_request_transaction, create_deposit_transaction, create_withdrawal_fulfillment };
+    create_deposit_transaction, create_withdrawal_fulfillment, deposit_request_transaction,
+};
 use schnorr::{sign_schnorr_sig, verify_schnorr_sig};
 use taproot::{
     convert_to_xonly_pk, drain_wallet, extract_p2tr_pubkey, get_address, get_change_address,
-    musig_aggregate_pks, unspendable_address };
+    musig_aggregate_pks, unspendable_address,
+};
 use utils::{
     address_to_descriptor, is_valid_bosd, opreturn_to_string, string_to_opreturn_descriptor,
     xonlypk_to_descriptor,
@@ -32,7 +34,7 @@ fn strata_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Note: Old DRT functions removed - using bridge implementation instead
 
     // New bridge functions
-    m.add_function(wrap_pyfunction!(deposit_request_transaction,m)?)?;
+    m.add_function(wrap_pyfunction!(deposit_request_transaction, m)?)?;
     m.add_function(wrap_pyfunction!(create_deposit_transaction, m)?)?;
     m.add_function(wrap_pyfunction!(create_withdrawal_fulfillment, m)?)?;
     m.add_function(wrap_pyfunction!(get_address, m)?)?;

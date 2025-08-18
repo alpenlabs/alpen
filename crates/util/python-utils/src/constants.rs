@@ -33,7 +33,7 @@ pub(crate) static CHANGE_DESCRIPTOR: LazyLock<&'static str> =
     LazyLock::new(|| Box::leak(format!("tr({XPRIV}/86'/1'/0'/1/*)").into_boxed_str()));
 
 /// Getting private key for the corresponding xpriv
-pub(crate) const GENERAL_WALLET_KEY_PATH: [ChildNumber;3] = [
+pub(crate) const GENERAL_WALLET_KEY_PATH: [ChildNumber; 3] = [
     ChildNumber::Hardened { index: 20_000 },
     ChildNumber::Hardened { index: 20 },
     ChildNumber::Hardened { index: 101 },

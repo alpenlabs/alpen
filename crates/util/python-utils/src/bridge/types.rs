@@ -4,8 +4,7 @@
 //! adapted from the mock-bridge implementation for use in python-utils.
 
 use bdk_wallet::bitcoin::{
-    consensus, script::PushBytesBuf,
-    Amount, OutPoint, Psbt, ScriptBuf, TapNodeHash, TxOut, Txid,
+    consensus, script::PushBytesBuf, Amount, OutPoint, Psbt, ScriptBuf, TapNodeHash, TxOut, Txid,
     XOnlyPublicKey,
 };
 
@@ -100,18 +99,12 @@ pub(crate) enum TaprootWitness {
     },
 
     /// Use the keypath spend tweaked with some known hash
-    Tweaked {
-        tweak: TapNodeHash,
-    },
+    Tweaked { tweak: TapNodeHash },
 }
 
 // DepositTx implementations
 impl DepositTx {
-    pub(crate) fn new(
-        psbt: Psbt,
-        prevouts: Vec<TxOut>,
-        witnesses: Vec<TaprootWitness>,
-    ) -> Self {
+    pub(crate) fn new(psbt: Psbt, prevouts: Vec<TxOut>, witnesses: Vec<TaprootWitness>) -> Self {
         Self {
             psbt,
             prevouts,
@@ -169,7 +162,8 @@ impl WithdrawalMetadata {
         let data = self.op_return_data();
         let mut push_data = PushBytesBuf::new();
 
-        push_data.extend_from_slice(&data)
+        push_data
+            .extend_from_slice(&data)
             .expect("metadata should be within push data limits");
 
         push_data

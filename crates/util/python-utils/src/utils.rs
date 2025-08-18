@@ -1,13 +1,19 @@
 use std::str::FromStr;
 
-use bdk_wallet::{bitcoin::{taproot::LeafVersion, Address, TapNodeHash}, miniscript::{Miniscript, Tap}, template::DescriptorTemplateOut};
+use bdk_wallet::{
+    bitcoin::{taproot::LeafVersion, Address, TapNodeHash},
+    miniscript::{Miniscript, Tap},
+    template::DescriptorTemplateOut,
+};
 use pyo3::prelude::*;
 use secp256k1::XOnlyPublicKey;
 use shrex::decode_alloc;
-use strata_primitives::{bitcoin_bosd::Descriptor, constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY}};
+use strata_primitives::{
+    bitcoin_bosd::Descriptor,
+    constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY},
+};
 
 use crate::{error::Error, taproot::ExtractP2trPubkey};
-
 
 /// The descriptor for the bridge-in transaction.
 ///

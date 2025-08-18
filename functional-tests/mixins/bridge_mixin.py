@@ -1,16 +1,17 @@
-import flexitest
 import threading
+
+import flexitest
 from strata_utils import (
-    deposit_request_transaction,
-    is_valid_bosd,
     create_deposit_transaction,
     create_withdrawal_fulfillment,
+    deposit_request_transaction,
+    is_valid_bosd,
 )
 
 from envs.rollup_params_cfg import RollupConfig
 from utils import *
-from utils.utils import wait_until, wait_until_with_value
 from utils.constants import PRECOMPILE_BRIDGEOUT_ADDRESS
+from utils.utils import wait_until, wait_until_with_value
 from utils.wait import StrataWaiter
 
 from . import BaseMixin
@@ -74,24 +75,35 @@ class BridgeMixin(BaseMixin):
             expected_deposit_count = initial_deposits + 1
             wait_until(
                 lambda: len(self.seqrpc.strata_getCurrentDeposits()) >= expected_deposit_count,
-                error_with=f"Timeout waiting for deposit to appear (expected {expected_deposit_count})",
+                error_with=(
+                    f"Timeout waiting for deposit to appear (expected {expected_deposit_count})"
+                ),
                 timeout=30,
-                step=1
+                step=1,
             )
 
             # Verify balance increased by deposit amount
             expected_balance = initial_balance + (deposit_amount * SATS_TO_WEI)
             wait_until(
                 lambda: int(self.rethrpc.eth_getBalance(el_address), 16) >= expected_balance,
-                error_with=f"Timeout waiting for EL balance to reflect deposit (expected >= {expected_balance})",
+                error_with=(
+                    f"Timeout waiting for EL balance to reflect deposit "
+                    f"(expected >= {expected_balance})"
+                ),
                 timeout=30,
-                step=1
+                step=1,
             )
 
             final_balance = int(self.rethrpc.eth_getBalance(el_address), 16)
             balance_increase = final_balance - initial_balance
-            self.info(f"Deposit {deposit_id} confirmed: DT txid={dt_tx_id}, balance increased by {balance_increase}")
-            print(f"Deposit {deposit_id}: Balance {initial_balance} -> {final_balance} (+{balance_increase})")
+            self.info(
+                f"Deposit {deposit_id} confirmed: DT txid={dt_tx_id}, "
+                f"balance increased by {balance_increase}"
+            )
+            print(
+                f"Deposit {deposit_id}: Balance {initial_balance} -> "
+                f"{final_balance} (+{balance_increase})"
+            )
 
             return drt_tx_id, deposit_id, dt_tx_id
 
@@ -138,7 +150,10 @@ class BridgeMixin(BaseMixin):
             self.btcrpc.proxy.generatetoaddress(10, seq_addr)
             withdrawal_height_end = self.btcrpc.proxy.getblockcount()
 
-            self.info(f"Withdrawal L2 transaction in L1 height range: {withdrawal_height_start + 1} - {withdrawal_height_end}")
+            self.info(
+                f"Withdrawal L2 transaction in L1 height range: "
+                f"{withdrawal_height_start + 1} - {withdrawal_height_end}"
+            )
 
             # Wait for L1 blocks to be processed by the sequencer
             strata_waiter = StrataWaiter(self.seqrpc, self.logger, timeout=60, interval=1)
@@ -147,7 +162,10 @@ class BridgeMixin(BaseMixin):
             # Wait for checkpoint that covers the withdrawal L2 transaction
             initial_checkpoint_idx = self.seqrpc.strata_getLatestCheckpointIndex() or 0
             self.info(f"Initial checkpoint index: {initial_checkpoint_idx}")
-            self.info(f"Waiting for checkpoint that includes L1 height range {withdrawal_height_start + 1}-{withdrawal_height_end}")
+            self.info(
+                f"Waiting for checkpoint that includes L1 height range "
+                f"{withdrawal_height_start + 1}-{withdrawal_height_end}"
+            )
 
             def check_checkpoint_covers_withdrawal():
                 latest_checkpoint_idx = self.seqrpc.strata_getLatestCheckpointIndex()
@@ -161,30 +179,45 @@ class BridgeMixin(BaseMixin):
                     self.info(f"Checkpoint {latest_checkpoint_idx} info not available yet")
                     return False
 
-                l1_start = checkpoint_info['l1_range'][0]['height']
-                l1_end = checkpoint_info['l1_range'][1]['height']
-                covers_range = l1_start <= withdrawal_height_start and l1_end >= withdrawal_height_end
+                l1_start = checkpoint_info["l1_range"][0]["height"]
+                l1_end = checkpoint_info["l1_range"][1]["height"]
+                covers_range = (
+                    l1_start <= withdrawal_height_start and l1_end >= withdrawal_height_end
+                )
 
-                self.info(f"Checkpoint {latest_checkpoint_idx}: L1 range [{l1_start}, {l1_end}], covers withdrawal [{withdrawal_height_start + 1}, {withdrawal_height_end}]: {covers_range}")
+                self.info(
+                    f"Checkpoint {latest_checkpoint_idx}: L1 range [{l1_start}, {l1_end}], "
+                    f"covers withdrawal [{withdrawal_height_start + 1}, {withdrawal_height_end}]: "
+                    f"{covers_range}"
+                )
 
                 return covers_range
 
             # Wait for checkpoint that covers our withdrawal transaction
             wait_until(
                 check_checkpoint_covers_withdrawal,
-                error_with=f"Timeout waiting for checkpoint to cover withdrawal transaction at L1 heights {withdrawal_height_start + 1}-{withdrawal_height_end}",
+                error_with=(
+                    f"Timeout waiting for checkpoint to cover withdrawal transaction at "
+                    f"L1 heights {withdrawal_height_start + 1}-{withdrawal_height_end}"
+                ),
                 timeout=120,
-                step=3
+                step=3,
             )
 
             # Now wait for withdrawal intent to appear
             expected_intent_count = initial_intents + 1
-            self.info(f"Checkpoint created, now waiting for withdrawal intent to appear (expected {expected_intent_count})")
+            self.info(
+                f"Checkpoint created, now waiting for withdrawal intent to appear "
+                f"(expected {expected_intent_count})"
+            )
             wait_until(
                 lambda: len(self.seqrpc.strata_getWithdrawalIntent()) >= expected_intent_count,
-                error_with=f"Timeout waiting for withdrawal intent after checkpoint creation (expected {expected_intent_count})",
+                error_with=(
+                    f"Timeout waiting for withdrawal intent after checkpoint creation "
+                    f"(expected {expected_intent_count})"
+                ),
                 timeout=60,
-                step=2
+                step=2,
             )
 
             total_gas_used = tx_receipt["gasUsed"] * tx_receipt["effectiveGasPrice"]
@@ -254,9 +287,7 @@ class BridgeMixin(BaseMixin):
 
         # Create the deposit request transaction
         tx = bytes(
-            deposit_request_transaction(
-                el_address, priv_keys, btc_url, btc_user, btc_password
-            )
+            deposit_request_transaction(el_address, priv_keys, btc_url, btc_user, btc_password)
         ).hex()
 
         # Send the transaction to the Bitcoin network
@@ -267,7 +298,7 @@ class BridgeMixin(BaseMixin):
         self.btcrpc.proxy.generatetoaddress(6, seq_addr)
         # Wait for DRT maturation
         strata_waiter = StrataWaiter(self.seqrpc, self.logger, timeout=30, interval=1)
-        strata_waiter.wait_until_l1_height_at(current_height+6)
+        strata_waiter.wait_until_l1_height_at(current_height + 6)
 
         # time to mature DT
         self.btcrpc.proxy.generatetoaddress(6, seq_addr)
@@ -275,7 +306,9 @@ class BridgeMixin(BaseMixin):
         strata_waiter.wait_until_l1_height_at(current_height + 12)
         return drt_tx_id
 
-    def managed_deposit(self, ctx: flexitest.RunContext, el_address: str, priv_keys) -> tuple[int, str]:
+    def managed_deposit(
+        self, ctx: flexitest.RunContext, el_address: str, priv_keys
+    ) -> tuple[int, str]:
         """
         Bridge manager deposit: creates deposit transaction with auto-incremented ID
         Returns (deposit_id, tx_id)
@@ -333,14 +366,14 @@ class BridgeMixin(BaseMixin):
                 try:
                     # Create withdrawal fulfillment transaction on Bitcoin
                     tx = create_withdrawal_fulfillment(
-                        intent['destination'],
-                        intent['amt'],
-                        intent['operator_idx'],
-                        intent['deposit_idx'],
-                        intent['deposit_txid'],
+                        intent["destination"],
+                        intent["amt"],
+                        intent["operator_idx"],
+                        intent["deposit_idx"],
+                        intent["deposit_txid"],
                         btc_url,
                         btc_user,
-                        btc_password
+                        btc_password,
                     )
 
                     tx_hex = bytes(tx).hex()
@@ -360,16 +393,25 @@ class BridgeMixin(BaseMixin):
 
             # Wait for withdrawal intents to be processed and removed
             expected_final_count = initial_intent_count - len(fulfillment_txids)
-            self.info(f"Waiting for withdrawal intents to be processed (expecting {expected_final_count} remaining)")
+            self.info(
+                f"Waiting for withdrawal intents to be processed "
+                f"(expecting {expected_final_count} remaining)"
+            )
 
             wait_until(
                 lambda: len(self.seqrpc.strata_getWithdrawalIntent()) <= expected_final_count,
-                error_with=f"Timeout waiting for withdrawal intents to be processed (expected <= {expected_final_count})",
+                error_with=(
+                    f"Timeout waiting for withdrawal intents to be processed "
+                    f"(expected <= {expected_final_count})"
+                ),
                 timeout=60,
-                step=2
+                step=2,
             )
 
             final_intent_count = len(self.seqrpc.strata_getWithdrawalIntent())
-            self.info(f"Withdrawal fulfillment complete: {initial_intent_count} -> {final_intent_count} intents")
+            self.info(
+                f"Withdrawal fulfillment complete: {initial_intent_count} -> "
+                f"{final_intent_count} intents"
+            )
 
             return fulfillment_txids

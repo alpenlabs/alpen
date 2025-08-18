@@ -4,26 +4,29 @@
 //! into actual bridge deposits with MuSig2 multi-signature support.
 
 use bdk_wallet::bitcoin::{
-    bip32::Xpriv,  consensus::serialize, key::UntweakedPublicKey, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, Amount, Network, Psbt, TapNodeHash, TapSighashType, TxOut
+    bip32::Xpriv,
+    consensus::serialize,
+    key::UntweakedPublicKey,
+    taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
+    Amount, Network, Psbt, TapNodeHash, TapSighashType, TxOut,
 };
-use pyo3::prelude::*;
-use secp256k1::{All, Keypair, Secp256k1, SECP256K1};
-
-use crate::{
-    bridge::drt::DEPOSIT_REQUEST_DATA_STORAGE, constants::{ BRIDGE_OUT_AMOUNT, GENERAL_WALLET_KEY_PATH, MAGIC_BYTES, NETWORK}, error::Error, taproot::musig_aggregate_pks_inner
-};
-
-use super::{
-    musig_signer::MusigSigner,
-    types::{
-        AuxiliaryData, DepositTx, DepositTxMetadata, TaprootWitness,
-    },
-};
-
 // Import utility functions that we'll need from mock-bridge patterns
 use bdk_wallet::bitcoin::{
     script::PushBytesBuf, Address, ScriptBuf, Transaction, TxIn, TxOut as BitcoinTxOut,
     XOnlyPublicKey,
+};
+use pyo3::prelude::*;
+use secp256k1::{All, Keypair, Secp256k1, SECP256K1};
+
+use super::{
+    musig_signer::MusigSigner,
+    types::{AuxiliaryData, DepositTx, DepositTxMetadata, TaprootWitness},
+};
+use crate::{
+    bridge::drt::DEPOSIT_REQUEST_DATA_STORAGE,
+    constants::{BRIDGE_OUT_AMOUNT, GENERAL_WALLET_KEY_PATH, MAGIC_BYTES, NETWORK},
+    error::Error,
+    taproot::musig_aggregate_pks_inner,
 };
 
 /// Creates a deposit transaction (DT) from deposit request data
@@ -39,12 +42,7 @@ pub(crate) fn create_deposit_transaction(
     deposit_index: u32,
     operator_keys: Vec<String>,
 ) -> PyResult<Vec<u8>> {
-
-
-    let signed_tx = create_deposit_transaction_inner(
-        deposit_index,
-        operator_keys,
-    )?;
+    let signed_tx = create_deposit_transaction_inner(deposit_index, operator_keys)?;
 
     let signed_tx = serialize(&signed_tx);
     Ok(signed_tx)
@@ -166,7 +164,10 @@ fn build_deposit_tx(
         input_amount: data.total_amount,
     };
 
-    let metadata = AuxiliaryData::new(String::from_utf8(MAGIC_BYTES.to_vec()).expect("invalid magic bytes"), deposit_metadata);
+    let metadata = AuxiliaryData::new(
+        String::from_utf8(MAGIC_BYTES.to_vec()).expect("invalid magic bytes"),
+        deposit_metadata,
+    );
 
     let metadata_script = create_metadata_script(&metadata)?;
     let metadata_amount = Amount::from_int_btc(0);
@@ -209,8 +210,9 @@ fn build_deposit_tx(
 
 /// Builds the timelock miniscript for takeback functionality
 fn build_timelock_miniscript(recovery_xonly_pubkey: XOnlyPublicKey) -> Result<ScriptBuf, Error> {
-    use bdk_wallet::miniscript::{miniscript::Tap, Miniscript};
     use std::str::FromStr;
+
+    use bdk_wallet::miniscript::{miniscript::Tap, Miniscript};
 
     let script = format!("and_v(v:pk({}),older({}))", recovery_xonly_pubkey, 1008);
     let miniscript = Miniscript::<XOnlyPublicKey, Tap>::from_str(&script)
@@ -250,7 +252,8 @@ fn finalize_and_extract_tx(mut deposit_tx: DepositTx) -> Result<Transaction, Err
         }
     }
 
-    psbt.clone().extract_tx()
+    psbt.clone()
+        .extract_tx()
         .map_err(|e| Error::BridgeBuilder(format!("Transaction extraction failed: {}", e)))
 }
 
@@ -274,9 +277,10 @@ pub(crate) fn parse_keys(operator_keys: &[String]) -> Result<XOnlyPublicKey, Err
         })
         .collect();
 
-
-    let x_only_keys: Vec<XOnlyPublicKey> = result.iter().map(|pair| XOnlyPublicKey::from_keypair(pair).0).collect();
-
+    let x_only_keys: Vec<XOnlyPublicKey> = result
+        .iter()
+        .map(|pair| XOnlyPublicKey::from_keypair(pair).0)
+        .collect();
 
     musig_aggregate_pks_inner(x_only_keys)
 }
@@ -289,7 +293,6 @@ pub(crate) fn parse_operator_keys(operator_keys: Vec<String>) -> Result<Vec<Keyp
         .into_iter()
         .enumerate()
         .map(|(i, key)| {
-
             let xpriv = Xpriv::from_str(&key)
                 .map_err(|e| Error::BridgeBuilder(format!("Invalid operator key {}: {}", i, e)))
                 .unwrap();

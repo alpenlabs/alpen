@@ -1,16 +1,15 @@
 import os
 
 import flexitest
+from strata_utils import (
+    extract_p2tr_pubkey,
+    get_address,
+    xonlypk_to_descriptor,
+)
 
+from envs import net_settings, testenv
 from mixins import bridge_mixin
 from utils import *
-from envs import net_settings, testenv
-from strata_utils import (
-        extract_p2tr_pubkey,
-        xonlypk_to_descriptor,
-        get_address,
-)
-import time
 
 
 @flexitest.register
@@ -25,7 +24,7 @@ class BridgeTest(bridge_mixin.BridgeMixin):
                 101,
                 prover_client_settings=ProverClientSettings.new_with_proving(),
                 rollup_settings=net_settings.get_fast_batch_settings(),
-                auto_generate_blocks=True
+                auto_generate_blocks=True,
             )
         )
 
@@ -34,15 +33,16 @@ class BridgeTest(bridge_mixin.BridgeMixin):
         print(path)
         priv_keys = []
         opkeys = sorted(
-                filter(lambda file: file.startswith("opkey"), os.listdir(path)),
-                key=lambda x: int(''.join(filter(str.isdigit, x))))
+            filter(lambda file: file.startswith("opkey"), os.listdir(path)),
+            key=lambda x: int("".join(filter(str.isdigit, x))),
+        )
         print(opkeys)
         for filename in opkeys:
             if not filename.startswith("op"):
                 continue
 
             full_path = os.path.join(path, filename)
-            with open(full_path, "r") as f:
+            with open(full_path) as f:
                 content = f.read().strip()
                 priv_keys.append(content)
 

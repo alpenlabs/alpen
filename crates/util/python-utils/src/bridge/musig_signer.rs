@@ -18,8 +18,8 @@ use musig2::{
 use rand::{thread_rng, RngCore};
 use secp256k1::Parity;
 
-use crate::error::Error;
 use super::types::{DepositTx, TaprootWitness};
+use crate::error::Error;
 
 /// MuSig2 signer for bridge transactions
 pub(crate) struct MusigSigner {
@@ -59,7 +59,7 @@ impl MusigSigner {
             // Convert to even-Y x-only
             let (xonly, parity) = XOnlyPublicKey::from_keypair(kp);
             assert_eq!(parity, secp256k1::Parity::Even); // xonly is always even
-            // Convert back to full pubkey with even Y (if API requires full pubkeys)
+                                                         // Convert back to full pubkey with even Y (if API requires full pubkeys)
             let even_full = xonly.public_key(Parity::Even);
             full_pubkeys.push(even_full);
         }
@@ -71,17 +71,18 @@ impl MusigSigner {
         // Apply taproot tweak based on witness type
         match witness {
             TaprootWitness::Key => {
-                ctx = ctx.with_unspendable_taproot_tweak().map_err(|e| {
-                    Error::BridgeBuilder(format!("Taproot tweak failed: {}", e))
-                })?;
+                ctx = ctx
+                    .with_unspendable_taproot_tweak()
+                    .map_err(|e| Error::BridgeBuilder(format!("Taproot tweak failed: {}", e)))?;
             }
             TaprootWitness::Tweaked { tweak } => {
-                ctx = ctx.with_taproot_tweak(tweak.as_ref()).map_err(|e| {
-                    Error::BridgeBuilder(format!("Taproot tweak failed: {}", e))
-                })?;
+                ctx = ctx
+                    .with_taproot_tweak(tweak.as_ref())
+                    .map_err(|e| Error::BridgeBuilder(format!("Taproot tweak failed: {}", e)))?;
             }
             TaprootWitness::Script { .. } => {
-                // Script path spending doesn't use key aggregation, this shouldn't be used for MuSig
+                // Script path spending doesn't use key aggregation, this shouldn't be used for
+                // MuSig
                 return Err(Error::BridgeBuilder(
                     "Script path spending not supported with MuSig".to_string(),
                 ));
@@ -105,8 +106,10 @@ impl MusigSigner {
             let mut nonce_seed = [0u8; 32];
             thread_rng().fill_bytes(&mut nonce_seed);
 
-            let first_round: FirstRound = FirstRound::new(ctx.clone(), nonce_seed, signer_index, spices)
-                .map_err(|e| Error::BridgeBuilder(format!("First round creation failed: {}", e)))?;
+            let first_round: FirstRound =
+                FirstRound::new(ctx.clone(), nonce_seed, signer_index, spices).map_err(|e| {
+                    Error::BridgeBuilder(format!("First round creation failed: {}", e))
+                })?;
 
             let pub_nonce = first_round.our_public_nonce();
             pub_nonces.push(pub_nonce);
@@ -132,9 +135,7 @@ impl MusigSigner {
 
         for (i, first_round) in first_rounds.into_iter().enumerate() {
             if !first_round.is_complete() {
-                return Err(Error::BridgeBuilder(
-                    "First round not complete".to_string(),
-                ));
+                return Err(Error::BridgeBuilder("First round not complete".to_string()));
             }
 
             // Use the same keypair index as in the first round
@@ -158,10 +159,7 @@ impl MusigSigner {
                     second_round
                         .receive_signature(j, *partial_sig)
                         .map_err(|e| {
-                            Error::BridgeBuilder(format!(
-                                "Signature exchange failed: {}",
-                                e
-                            ))
+                            Error::BridgeBuilder(format!("Signature exchange failed: {}", e))
                         })?;
                 }
             }
@@ -173,15 +171,12 @@ impl MusigSigner {
             .next()
             .ok_or_else(|| Error::BridgeBuilder("No second rounds available".to_string()))?
             .finalize()
-            .map_err(|e| {
-                Error::BridgeBuilder(format!("Signature aggregation failed: {}", e))
-            })?;
+            .map_err(|e| Error::BridgeBuilder(format!("Signature aggregation failed: {}", e)))?;
 
         // Convert to Bitcoin taproot signature
         let taproot_sig = Signature {
-            signature: schnorr::Signature::from_slice(&aggregated_sig.serialize()).map_err(
-                |e| Error::BridgeBuilder(format!("Invalid signature format: {}", e)),
-            )?,
+            signature: schnorr::Signature::from_slice(&aggregated_sig.serialize())
+                .map_err(|e| Error::BridgeBuilder(format!("Invalid signature format: {}", e)))?,
             sighash_type: TapSighashType::Default,
         };
 
@@ -212,15 +207,17 @@ impl Default for MusigSigner {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{bridge::types::DepositRequestData, constants::BRIDGE_IN_AMOUNT};
+    use std::str::FromStr;
+
     use bdk_wallet::bitcoin::{
         key::UntweakedPublicKey,
         secp256k1::{SecretKey, XOnlyPublicKey},
-        Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness, Psbt,
+        Amount, OutPoint, Psbt, ScriptBuf, Transaction, TxIn, TxOut, Witness,
     };
     use secp256k1::SECP256K1;
-    use std::str::FromStr;
+
+    use super::*;
+    use crate::{bridge::types::DepositRequestData, constants::BRIDGE_IN_AMOUNT};
 
     fn create_test_deposit_tx() -> DepositTx {
         let _internal_key = UntweakedPublicKey::from_str(
@@ -262,7 +259,8 @@ mod tests {
                 value: BRIDGE_IN_AMOUNT,
                 script_pubkey: ScriptBuf::new(),
             }],
-        }).unwrap();
+        })
+        .unwrap();
 
         let prevouts = vec![TxOut {
             value: BRIDGE_IN_AMOUNT,
@@ -270,7 +268,7 @@ mod tests {
         }];
 
         let witnesses = vec![TaprootWitness::Tweaked {
-            tweak: bdk_wallet::bitcoin::TapNodeHash::from_byte_array([0u8; 32])
+            tweak: bdk_wallet::bitcoin::TapNodeHash::from_byte_array([0u8; 32]),
         }];
 
         DepositTx::new(psbt, prevouts, witnesses)
@@ -296,7 +294,10 @@ mod tests {
         let mut keys = Vec::new();
         for seed in [1u64, 2u64, 3u64] {
             let mut rng = ChaCha20Rng::seed_from_u64(seed);
-            keys.push( Keypair::from_secret_key(SECP256K1, &SecretKey::new(&mut rng)));
+            keys.push(Keypair::from_secret_key(
+                SECP256K1,
+                &SecretKey::new(&mut rng),
+            ));
         }
         keys
     }
@@ -333,8 +334,13 @@ mod tests {
     fn test_single_signer_musig_basic() {
         let signer = MusigSigner::new();
         let deposit_tx = create_test_deposit_tx();
-        let operator_keys = vec![Keypair::from_secret_key(SECP256K1,
-            &SecretKey::from_str("1111111111111111111111111111111111111111111111111111111111111111").unwrap())];
+        let operator_keys = vec![Keypair::from_secret_key(
+            SECP256K1,
+            &SecretKey::from_str(
+                "1111111111111111111111111111111111111111111111111111111111111111",
+            )
+            .unwrap(),
+        )];
 
         // Test that we can at least get past the initial validation
         let result = signer.sign_deposit_psbt(&deposit_tx, operator_keys, 0);
@@ -366,14 +372,11 @@ mod tests {
         let deposit_tx = create_test_deposit_tx();
         let operator_keys = create_deterministic_test_operator_keys();
 
-
         let result = signer.sign_deposit_psbt(&deposit_tx, operator_keys, 0);
-
 
         // Similar to single signer test - accept success or expected MuSig failures
         match result {
             Ok(signature) => {
-
                 assert_eq!(signature.sighash_type, TapSighashType::Default);
                 assert_eq!(signature.signature.as_ref().len(), 64);
             }
@@ -414,8 +417,9 @@ mod tests {
         let deposit_tx = create_test_deposit_tx();
         let operator_keys = create_test_operator_keys();
 
-        // Try to sign with an invalid input index (the DepositTx has only 1 input, so index 1 is invalid)
-        // The function should panic or return an error when accessing an invalid index
+        // Try to sign with an invalid input index (the DepositTx has only 1 input, so index 1 is
+        // invalid) The function should panic or return an error when accessing an invalid
+        // index
         let result =
             std::panic::catch_unwind(|| signer.sign_deposit_psbt(&deposit_tx, operator_keys, 1));
 
@@ -440,23 +444,44 @@ mod tests {
 
         // Test with keys in different orders
         let keys1 = vec![
-            Keypair::from_secret_key(SECP256K1, &SecretKey::from_str("1111111111111111111111111111111111111111111111111111111111111111")
-                .unwrap()),
-            Keypair::from_secret_key(SECP256K1, &SecretKey::from_str("2222222222222222222222222222222222222222222222222222222222222222")
-                .unwrap()),
+            Keypair::from_secret_key(
+                SECP256K1,
+                &SecretKey::from_str(
+                    "1111111111111111111111111111111111111111111111111111111111111111",
+                )
+                .unwrap(),
+            ),
+            Keypair::from_secret_key(
+                SECP256K1,
+                &SecretKey::from_str(
+                    "2222222222222222222222222222222222222222222222222222222222222222",
+                )
+                .unwrap(),
+            ),
         ];
 
         let keys2 = vec![
-            Keypair::from_secret_key(SECP256K1, &SecretKey::from_str("2222222222222222222222222222222222222222222222222222222222222222")
-                .unwrap()),
-            Keypair::from_secret_key(SECP256K1, &SecretKey::from_str("1111111111111111111111111111111111111111111111111111111111111111")
-                .unwrap()),
+            Keypair::from_secret_key(
+                SECP256K1,
+                &SecretKey::from_str(
+                    "2222222222222222222222222222222222222222222222222222222222222222",
+                )
+                .unwrap(),
+            ),
+            Keypair::from_secret_key(
+                SECP256K1,
+                &SecretKey::from_str(
+                    "1111111111111111111111111111111111111111111111111111111111111111",
+                )
+                .unwrap(),
+            ),
         ];
 
         let result1 = signer.sign_deposit_psbt(&deposit_tx, keys1, 0);
         let result2 = signer.sign_deposit_psbt(&deposit_tx, keys2, 0);
 
-        // Both attempts should behave consistently (either both succeed or both fail with similar errors)
+        // Both attempts should behave consistently (either both succeed or both fail with similar
+        // errors)
         match (&result1, &result2) {
             (Ok(sig1), Ok(sig2)) => {
                 assert_eq!(sig1.sighash_type, sig2.sighash_type);
@@ -506,10 +531,13 @@ mod tests {
     fn test_musig_signature_format() {
         let signer = MusigSigner::new();
         let deposit_tx = create_test_deposit_tx();
-        let operator_keys = vec![
-            Keypair::from_secret_key(SECP256K1, &SecretKey::from_str("1111111111111111111111111111111111111111111111111111111111111111")
-                .unwrap())];
-
+        let operator_keys = vec![Keypair::from_secret_key(
+            SECP256K1,
+            &SecretKey::from_str(
+                "1111111111111111111111111111111111111111111111111111111111111111",
+            )
+            .unwrap(),
+        )];
 
         let result = signer.sign_deposit_psbt(&deposit_tx, operator_keys, 0);
 

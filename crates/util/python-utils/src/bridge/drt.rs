@@ -1,8 +1,12 @@
-use std::{str::FromStr, sync::LazyLock, sync::Mutex};
+use std::{
+    str::FromStr,
+    sync::{LazyLock, Mutex},
+};
 
 use bdk_wallet::{
     bitcoin::{
-        self, consensus::encode::serialize, script::PushBytesBuf, taproot::{TaprootBuilder}, Address, FeeRate, ScriptBuf, Transaction, XOnlyPublicKey
+        self, consensus::encode::serialize, script::PushBytesBuf, taproot::TaprootBuilder, Address,
+        FeeRate, ScriptBuf, Transaction, XOnlyPublicKey,
     },
     miniscript::{self, Miniscript},
     template::DescriptorTemplateOut,
@@ -16,14 +20,14 @@ use strata_primitives::constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY};
 use crate::{
     bridge::{parse_keys, types::DepositRequestData},
     constants::{BRIDGE_IN_AMOUNT, MAGIC_BYTES, NETWORK, XPRIV},
-    error::Error, parse::{parse_address, parse_el_address, parse_xonly_pk},
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet, ExtractP2trPubkey}
+    error::Error,
+    parse::{parse_address, parse_el_address, parse_xonly_pk},
+    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet, ExtractP2trPubkey},
 };
 
 /// Static vector to store DepositRequestData instances
-pub(crate) static DEPOSIT_REQUEST_DATA_STORAGE: LazyLock<Mutex<Vec<DepositRequestData>>> = LazyLock::new(|| {
-    Mutex::new(Vec::new())
-});
+pub(crate) static DEPOSIT_REQUEST_DATA_STORAGE: LazyLock<Mutex<Vec<DepositRequestData>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Generates a deposit request transaction (DRT).
 ///
@@ -126,8 +130,7 @@ fn deposit_request_transaction_inner(
         builder.ordering(TxOrdering::Untouched);
         builder.add_recipient(bridge_in_address.script_pubkey(), BRIDGE_IN_AMOUNT);
 
-        builder.add_data(&PushBytesBuf::try_from(op_return_data)
-            .expect("not a valid push bytes"));
+        builder.add_data(&PushBytesBuf::try_from(op_return_data).expect("not a valid push bytes"));
 
         builder.fee_rate(fee_rate);
         builder.finish().expect("drt: invalid psbt")
@@ -155,7 +158,6 @@ fn deposit_request_transaction_inner(
             x_only_public_key: recovery_address_pk,
             original_script_pubkey: bridge_in_address.script_pubkey(),
         };
-
 
         storage.push(deposit_request_data);
     }
@@ -462,7 +464,6 @@ fn build_op_return_script(
     data
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::sync::Once;
@@ -482,7 +483,7 @@ mod tests {
 
     const EL_ADDRESS: &str = "deedf001900dca3ebeefdeadf001900dca3ebeef";
     const MUSIG_BRIDGE_PK: &str =
-            "14ced579c6a92533fa68ccc16da93b41073993cfc6cc982320645d8e9a63ee65";
+        "14ced579c6a92533fa68ccc16da93b41073993cfc6cc982320645d8e9a63ee65";
 
     /// Initializes logging for a given test.
     ///
@@ -542,9 +543,14 @@ mod tests {
         mine_blocks(&bitcoind, 101, Some(address)).unwrap();
         debug!("mined 101 blocks");
 
-        let signed_tx =
-            deposit_request_transaction_inner(EL_ADDRESS, create_test_operator_keys(), &url, &user, &password)
-                .unwrap();
+        let signed_tx = deposit_request_transaction_inner(
+            EL_ADDRESS,
+            create_test_operator_keys(),
+            &url,
+            &user,
+            &password,
+        )
+        .unwrap();
         trace!(?signed_tx, "signed drt tx");
 
         let txid = client.send_raw_transaction(&signed_tx).await.unwrap();
@@ -599,9 +605,14 @@ mod tests {
         let coinbase_outpoint = coinbase_utxo.outpoint.to_string();
         trace!(%coinbase_outpoint, "coinbase outpoint");
 
-        let signed_tx =
-            deposit_request_transaction_inner(EL_ADDRESS, create_test_operator_keys(), &url, &user, &password)
-                .unwrap();
+        let signed_tx = deposit_request_transaction_inner(
+            EL_ADDRESS,
+            create_test_operator_keys(),
+            &url,
+            &user,
+            &password,
+        )
+        .unwrap();
         trace!(?signed_tx, "signed drt tx");
 
         let txid = client.send_raw_transaction(&signed_tx).await.unwrap();
@@ -627,7 +638,6 @@ mod tests {
         let txid = client.send_raw_transaction(&recovery_tx).await.unwrap();
         assert_eq!(txid, recovery_tx.compute_txid());
     }
-
 
     #[test]
     fn recovery_wallet_address() {
@@ -760,9 +770,14 @@ mod tests {
         let coinbase_outpoint = coinbase_utxo.outpoint.to_string();
         trace!(%coinbase_outpoint, "coinbase outpoint");
 
-        let signed_tx =
-            deposit_request_transaction_inner(EL_ADDRESS, create_test_operator_keys(), &url, &user, &password)
-                .unwrap();
+        let signed_tx = deposit_request_transaction_inner(
+            EL_ADDRESS,
+            create_test_operator_keys(),
+            &url,
+            &user,
+            &password,
+        )
+        .unwrap();
         trace!(?signed_tx, "signed drt tx");
 
         // Getting the balance pre-DRT

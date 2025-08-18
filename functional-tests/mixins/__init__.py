@@ -22,7 +22,7 @@ class BaseMixin(testenv.StrataTestBase):
 
         # Genesis account is from the genesis alloc.
         # It's only used to distribute funds to other accounts.
-        genesis_account = GenesisAccount(self._new_w3())
+        GenesisAccount(self._new_w3())
         # Funded account is a fresh account with funds from genesis acc.
         # It's an account on behalf of which all the transactions are done.
         w3 = self._new_w3()

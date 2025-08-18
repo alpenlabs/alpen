@@ -3,13 +3,21 @@
 //! Handles the creation of withdrawal fulfillment transactions that allow operators
 //! to fulfill withdrawal requests by sending Bitcoin to users.
 
-use bdk_wallet::{bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction, Txid}, TxOrdering};
+use std::str::FromStr;
+
+use bdk_wallet::{
+    bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction, Txid},
+    TxOrdering,
+};
 use pyo3::prelude::*;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
-use crate::{constants::MAGIC_BYTES, error::Error, taproot::{new_bitcoind_client, sync_wallet, taproot_wallet}};
 use super::types::WithdrawalMetadata;
-use std::str::FromStr;
+use crate::{
+    constants::MAGIC_BYTES,
+    error::Error,
+    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+};
 
 /// Creates a withdrawal fulfillment transaction
 ///
@@ -34,12 +42,10 @@ pub(crate) fn create_withdrawal_fulfillment(
     bitcoind_user: &str,
     bitcoind_password: &str,
 ) -> PyResult<Vec<u8>> {
-
     let recipient_script = recipient_bosd
         .parse::<Descriptor>()
         .expect("Not a valid bosd")
         .to_script();
-
 
     let tx = create_withdrawal_fulfillment_inner(
         recipient_script,
@@ -49,7 +55,7 @@ pub(crate) fn create_withdrawal_fulfillment(
         deposit_txid,
         bitcoind_url,
         bitcoind_user,
-        bitcoind_password
+        bitcoind_password,
     )?;
 
     let serialized_tx = serialize(&tx);
@@ -73,24 +79,18 @@ fn create_withdrawal_fulfillment_inner(
     let deposit_txid = parse_deposit_txid(&deposit_txid)?;
 
     // Create withdrawal metadata
-    let metadata = WithdrawalMetadata::new(
-        *MAGIC_BYTES,
-        operator_idx,
-        deposit_idx,
-        deposit_txid,
-    );
+    let metadata = WithdrawalMetadata::new(*MAGIC_BYTES, operator_idx, deposit_idx, deposit_txid);
 
     // Create withdrawal fulfillment transaction
-    let withdrawal_fulfillment =
-        create_withdrawal_transaction(
-            metadata,
-            recipient_script,
-            amount,
-            bitcoind_url,
-            bitcoind_user,
-            bitcoind_password,
-            )
-        .unwrap();
+    let withdrawal_fulfillment = create_withdrawal_transaction(
+        metadata,
+        recipient_script,
+        amount,
+        bitcoind_url,
+        bitcoind_user,
+        bitcoind_password,
+    )
+    .unwrap();
 
     Ok(withdrawal_fulfillment)
 }
@@ -104,7 +104,6 @@ fn create_withdrawal_transaction(
     bitcoind_user: &str,
     bitcoind_password: &str,
 ) -> Result<Transaction, Error> {
-
     let mut wallet = taproot_wallet()?;
     let client = new_bitcoind_client(
         bitcoind_url,
@@ -122,16 +121,20 @@ fn create_withdrawal_transaction(
         let mut builder = wallet.build_tx();
 
         builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(recipient_script,amount);
+        builder.add_recipient(recipient_script, amount);
         builder.add_data(&metadata.op_return_script());
 
         builder.fee_rate(fee_rate);
-        builder.finish().expect("withdrawal fulfillment: invalid psbt")
+        builder
+            .finish()
+            .expect("withdrawal fulfillment: invalid psbt")
     };
 
     wallet.sign(&mut psbt, Default::default()).unwrap();
 
-    let tx = psbt.extract_tx().expect("withdrawal fulfillment: invalid transaction");
+    let tx = psbt
+        .extract_tx()
+        .expect("withdrawal fulfillment: invalid transaction");
 
     Ok(tx)
 }

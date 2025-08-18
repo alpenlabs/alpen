@@ -8,7 +8,10 @@ use bdk_wallet::{
     bitcoin::{
         consensus::serialize, key::Parity, secp256k1::SECP256K1, Address, AddressType, FeeRate,
         PublicKey, Transaction, XOnlyPublicKey,
-    }, descriptor::IntoWalletDescriptor, miniscript::ToPublicKey, KeychainKind, Wallet
+    },
+    descriptor::IntoWalletDescriptor,
+    miniscript::ToPublicKey,
+    KeychainKind, Wallet,
 };
 use musig2::KeyAggContext;
 use pyo3::prelude::*;
@@ -16,8 +19,9 @@ use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
 
 use crate::{
     constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
-    error::Error, parse::{parse_pk, parse_xonly_pk},
-    utils::bridge_in_descriptor
+    error::Error,
+    parse::{parse_pk, parse_xonly_pk},
+    utils::bridge_in_descriptor,
 };
 
 /// Extracts the public key from a Taproot address.
@@ -124,7 +128,6 @@ pub(crate) fn new_bitcoind_client(
 ///
 /// These should all be X-only public keys, assuming that all are [`Parity::Even`].
 pub(crate) fn musig_aggregate_pks_inner(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
-
     let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
 
     let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
@@ -162,7 +165,6 @@ pub(crate) fn get_change_address(index: u32) -> PyResult<String> {
 /// These should all be X-only public keys.
 #[pyfunction]
 pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
-
     let pks = pks
         .into_iter()
         .map(|pk| parse_xonly_pk(&pk).map_err(|_| Error::XOnlyPublicKey))
@@ -180,7 +182,6 @@ pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
 /// This only works for even keys (i.e. starts with `"02"`) and will return an error otherwise.
 #[pyfunction]
 pub(crate) fn convert_to_xonly_pk(pk: String) -> PyResult<String> {
-
     let pk = parse_pk(&pk)?;
     let x_only_pk = convert_to_xonly_pk_inner(pk)?;
     let result = x_only_pk.to_string();
