@@ -16,7 +16,17 @@ where
 {
     let service = state.name().to_owned();
 
-    // This is preliminary, we'll make it more sophisticated in the future.
+    // Perform startup logic.  If this errors we propagate it immediately and
+    // crash the task.
+    {
+        let launch_span = debug_span!("onlaunch", %service);
+        let _g = launch_span.enter();
+        S::on_launch(&mut state)?;
+    }
+
+    // Process each message in a loop.  We do a shutdown check after each
+    // possibly long-running call.
+    let mut err = None;
     while let Some(input) = inp.recv_next()? {
         // Check after getting a new input.
         if shutdown_guard.should_shutdown() {
@@ -33,6 +43,7 @@ where
             Err(e) => {
                 // TODO support optional retry
                 error!(?input, %e, "failed to process message");
+                err = Some(e);
                 break;
             }
         };
@@ -52,5 +63,14 @@ where
         }
     }
 
+    // Perform shutdown handling.
+    handle_shutdown::<S>(&mut state, err.as_ref());
+
     Ok(())
+}
+
+fn handle_shutdown<S: SyncService>(state: &mut S::State, err: Option<&anyhow::Error>) {
+    if let Err(e) = S::before_shutdown(state, err) {
+        error!(%e, "unhandled error while shutting down");
+    }
 }

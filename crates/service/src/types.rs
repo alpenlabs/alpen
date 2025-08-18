@@ -53,15 +53,51 @@ impl<T: Debug + Sync + Send + 'static> ServiceMsg for T {}
 
 /// Trait for async service impls to define their per-input logic.
 pub trait AsyncService: Service {
+    /// Called in the worker task after launching.
+    fn on_launch(_state: &mut Self::State) -> impl Future<Output = anyhow::Result<()>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Called for each input.
     fn process_input(
-        state: &mut Self::State,
-        input: &Self::Msg,
-    ) -> impl Future<Output = anyhow::Result<Response>> + Send;
+        _state: &mut Self::State,
+        _input: &Self::Msg,
+    ) -> impl Future<Output = anyhow::Result<Response>> + Send {
+        async { Ok(Response::Continue) }
+    }
+
+    /// Called when about to shut down, for whatever reason.
+    ///
+    /// Passed an error, if shutting down due to input handling error.
+    fn before_shutdown(
+        _state: &mut Self::State,
+        _err: Option<&anyhow::Error>,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send {
+        async { Ok(()) }
+    }
 }
 
 /// Trait for blocking service impls to define their per-input logic.
 pub trait SyncService: Service {
-    fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response>;
+    /// Called in the worker thread after launching.
+    fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Called for each input.
+    fn process_input(_state: &mut Self::State, _input: &Self::Msg) -> anyhow::Result<Response> {
+        Ok(Response::Continue)
+    }
+
+    /// Called when about to shut down, for whatever reason.
+    ///
+    /// Passed an error, if shutting down due to input handling error.
+    fn before_shutdown(
+        _state: &mut Self::State,
+        _err: Option<&anyhow::Error>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Generic service input trait.
