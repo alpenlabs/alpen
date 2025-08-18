@@ -84,8 +84,8 @@ impl ClientStateManager {
         let state = Arc::new(update.state().clone());
         self.ops.put_client_update_blocking(idx, update.clone())?;
         self.maybe_update_cur_state_blocking(idx, &state);
-        self.update_cache.insert(idx, Some(update));
-        self.state_cache.insert(idx, state.clone());
+        self.update_cache.insert_blocking(idx, Some(update));
+        self.state_cache.insert_blocking(idx, state.clone());
         Ok(state)
     }
 
