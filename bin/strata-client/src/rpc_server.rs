@@ -31,7 +31,7 @@ use strata_rpc_api::{
 use strata_rpc_types::{
     errors::RpcServerError as Error, DaBlob, HexBytes, HexBytes32, HexBytes64, L2BlockStatus,
     RpcBlockHeader, RpcChainState, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcClientStatus,
-    RpcDepositEntry, RpcExecUpdate, RpcL1Status, RpcSyncStatus,
+    RpcDepositEntry, RpcExecUpdate, RpcL1Status, RpcSyncStatus, RpcWithdrawalIntent,
 };
 use strata_rpc_utils::to_jsonrpsee_error;
 use strata_sequencer::{
@@ -42,15 +42,7 @@ use strata_sequencer::{
     duty::{extractor::extract_duties, types::Duty},
 };
 use strata_state::{
-    batch::{Checkpoint, SignedCheckpoint},
-    block::{L2Block, L2BlockBundle},
-    bridge_ops::WithdrawalIntent,
-    chain_state::Chainstate,
-    client_state::ClientState,
-    header::L2Header,
-    id::L2BlockId,
-    operation::ClientUpdateOutput,
-    sync_event::SyncEvent,
+    batch::{Checkpoint, SignedCheckpoint}, block::{L2Block, L2BlockBundle}, bridge_ops::WithdrawalIntent, bridge_state::DepositState, chain_state::Chainstate, client_state::ClientState, header::L2Header, id::L2BlockId, operation::ClientUpdateOutput, sync_event::SyncEvent
 };
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -430,6 +422,42 @@ impl StrataApiServer for StrataRpcImpl {
             .ok_or(Error::UnknownIdx(deposit_id))
             .map(RpcDepositEntry::from_deposit_entry)?)
     }
+
+    async fn get_current_withdrawal_intent(&self) -> RpcResult<Vec<RpcWithdrawalIntent>> {
+        let deps =  self
+            .status_channel
+            .get_cur_tip_chainstate()
+            .ok_or(Error::BeforeGenesis)?;
+
+        let pending_withdraws = deps
+            .deposits_table()
+            .deposits()
+            .filter_map(|entry| {
+                if let DepositState::Dispatched(dispatched_state) = entry.deposit_state()  {
+                    let withdraw_output = dispatched_state
+                            .cmd()
+                            .withdraw_outputs()
+                            .get(0)
+                            .expect("Withdraw output is supposed to have single element");
+
+                    Some(RpcWithdrawalIntent {
+                        amt:withdraw_output.amt(),
+                        destination:withdraw_output.destination().clone(),
+                        operator_idx:dispatched_state.assignee(),
+                        deposit_idx: entry.idx(),
+                        deposit_txid: entry.output().0.txid
+                    })
+                } else {
+                    None
+                }
+            }
+                )
+            .collect();
+
+
+        Ok(pending_withdraws)
+  }
+
 
     // FIXME: remove deprecated
     #[allow(deprecated)]

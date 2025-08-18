@@ -7,7 +7,7 @@ use strata_primitives::{batch::EpochSummary, bridge::PublickeyTable, epoch::Epoc
 use strata_rpc_types::{
     types::{RpcBlockHeader, RpcClientStatus, RpcL1Status},
     HexBytes, HexBytes32, HexBytes64, L2BlockStatus, RpcChainState, RpcCheckpointConfStatus,
-    RpcCheckpointInfo, RpcDepositEntry, RpcExecUpdate, RpcSyncStatus,
+    RpcCheckpointInfo, RpcDepositEntry, RpcExecUpdate, RpcSyncStatus, RpcWithdrawalIntent,
 };
 use strata_sequencer::{
     block_template::{BlockCompletionData, BlockGenerationConfig, BlockTemplate},
@@ -81,6 +81,9 @@ pub trait StrataApi {
 
     #[method(name = "getCurrentDepositById")]
     async fn get_current_deposit_by_id(&self, deposit_id: u32) -> RpcResult<RpcDepositEntry>;
+
+    #[method(name = "getWithdrawalIntent")]
+    async fn get_current_withdrawal_intent(&self) -> RpcResult<Vec<RpcWithdrawalIntent>>;
 
     // block sync methods
     #[method(name = "syncStatus")]

@@ -19,9 +19,9 @@ use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
 
 use crate::{
     constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
-    drt::bridge_in_descriptor,
     error::Error,
     parse::{parse_pk, parse_xonly_pk},
+    bridge::parse_keys, utils::bridge_in_descriptor
 };
 
 /// Extracts the public key from a Taproot address.
@@ -127,9 +127,25 @@ pub(crate) fn new_bitcoind_client(
 ///
 /// These should all be X-only public keys, assuming that all are [`Parity::Even`].
 pub(crate) fn musig_aggregate_pks_inner(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
+    println!("DEBUG: Python musig_aggregate_pks_inner input X-only keys: {:?}", pks);
     let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
+    println!("DEBUG: Python X-only keys with even parity: {:?}", pks);
     let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
-    Ok(key_agg_ctx.aggregated_pubkey())
+    let result = key_agg_ctx.aggregated_pubkey();
+    println!("DEBUG: Python musig_aggregate_pks_inner result: {:?}", result);
+    Ok(result)
+}
+
+/// Test function to compare aggregation methods
+#[pyfunction]
+pub(crate) fn test_key_aggregation_comparison(
+    rust_xonly_pubkeys: Vec<String>
+) {
+
+    println!("----------------------------------------");
+    let c = parse_keys(&rust_xonly_pubkeys).unwrap();
+    println!("Key {}", c);
+    println!("========================================");
 }
 
 /// Gets a (receiving/external) address from the [`taproot_wallet`] at the given `index`.
@@ -161,11 +177,15 @@ pub(crate) fn get_change_address(index: u32) -> PyResult<String> {
 /// These should all be X-only public keys.
 #[pyfunction]
 pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
+    println!("DEBUG: Python musig_aggregate_pks input: {:?}", pks);
     let pks = pks
         .into_iter()
         .map(|pk| parse_xonly_pk(&pk).map_err(|_| Error::XOnlyPublicKey))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(musig_aggregate_pks_inner(pks)?.to_string())
+    println!("DEBUG: Python parsed X-only keys: {:?}", pks);
+    let result = musig_aggregate_pks_inner(pks)?.to_string();
+    println!("DEBUG: Python musig_aggregate_pks result: {}", result);
+    Ok(result)
 }
 
 /// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].
@@ -175,9 +195,12 @@ pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
 /// This only works for even keys (i.e. starts with `"02"`) and will return an error otherwise.
 #[pyfunction]
 pub(crate) fn convert_to_xonly_pk(pk: String) -> PyResult<String> {
+    println!("DEBUG: Python convert_to_xonly_pk input: {}", pk);
     let pk = parse_pk(&pk)?;
     let x_only_pk = convert_to_xonly_pk_inner(pk)?;
-    Ok(x_only_pk.to_string())
+    let result = x_only_pk.to_string();
+    println!("DEBUG: Python convert_to_xonly_pk result: {}", result);
+    Ok(result)
 }
 
 /// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].

@@ -8,9 +8,7 @@ workspace = true
 
 [lib]
 name = "strata_utils"
-# "cdylib" is necessary to produce a shared library for Python to import from.
-#
-# Downstream Rust code (including code in `bin/`, `examples/`, and `tests/`) will not be able
+# "cdylib" is necessary to produce a shared library for Python to import from. Downstream Rust code (including code in `bin/`, `examples/`, and `tests/`) will not be able
 # to `use foo;` unless the "rlib" or "lib" crate type is also included, e.g.:
 # crate-type = ["cdylib", "rlib"]
 crate-type = ["cdylib"]
@@ -25,6 +23,7 @@ bdk_wallet.workspace = true
 musig2.workspace = true
 # "abi3-py310" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.10
 pyo3 = { version = ">=0.24.1", features = ["extension-module", "abi3-py310"] }
+rand.workspace = true
 revm-primitives.workspace = true
 # TODO: secp256k1 is not used directly in this crate, but through the chain of re-imports from bdk.
 # However, removing this from the dependency list makes it fail to build.

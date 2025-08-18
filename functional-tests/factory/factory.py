@@ -41,6 +41,7 @@ class BitcoinFactory(flexitest.Factory):
             f"-port={p2p_port}",
             "-printtoconsole",
             "-fallbackfee=0.00001",
+            "-minrelaytxfee=0",
             f"-datadir={datadir}",
             f"-rpcport={rpc_port}",
             f"-rpcuser={BD_USERNAME}",
@@ -397,7 +398,7 @@ risc0 = 20
 [timing]
 # Polling and timing configuration (in milliseconds and seconds)
 polling_interval_ms = {settings.polling_interval}
-checkpoint_poll_interval_s = 10
+checkpoint_poll_interval_s = 1
 
 [retry]
 # Retry policy configuration

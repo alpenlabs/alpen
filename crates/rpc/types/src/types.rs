@@ -8,12 +8,7 @@ use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_primitives::{
-    bridge::OperatorIdx,
-    buf::Buf32,
-    epoch::EpochCommitment,
-    l1::{BitcoinAmount, L1BlockCommitment, OutputRef},
-    l2::L2BlockCommitment,
-    prelude::L1Status,
+    bitcoin_bosd::Descriptor, bridge::OperatorIdx, buf::Buf32, epoch::EpochCommitment, l1::{BitcoinAmount, L1BlockCommitment, OutputRef}, l2::L2BlockCommitment, prelude::L1Status
 };
 use strata_state::{
     batch::BatchInfo,
@@ -361,6 +356,21 @@ impl From<CheckpointEntry> for RpcCheckpointInfo {
         item.confirmation_status = value.confirmation_status.into();
         item
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Deposit entry for RPC corresponding to [`WithdrawalIntent`]
+pub struct RpcWithdrawalIntent {
+    /// Corresponding deposit id
+    pub deposit_idx: u32,
+    /// Corresponding deposit txid
+    pub deposit_txid: Txid,
+    /// Quantity of L1 asset, for Bitcoin this is sats.
+    pub amt: BitcoinAmount,
+    /// Destination [`Descriptor`] for the withdrawal
+    pub destination: Descriptor,
+    /// operator index
+    pub operator_idx: OperatorIdx
 }
 
 /// Deposit entry for RPC corresponding to [`DepositEntry`].

@@ -32,6 +32,12 @@ pub(crate) enum Error {
 
     /// Error with BitcoinD response.
     BitcoinD,
+
+    /// Invalid Execution Layer address length (must be 20 bytes).
+    InvalidElAddress,
+
+    /// Bridge transaction builder error.
+    BridgeBuilder(String),
 }
 
 /// Converts an `Error` into a `PyErr` to be raised in Python.
@@ -48,6 +54,8 @@ impl From<Error> for PyErr {
             Error::OpReturnTooLong => "OP_RETURN bigger than 80 bytes",
             Error::RpcClient => "Could not create RPC client",
             Error::BitcoinD => "Invalid BitcoinD response",
+            Error::InvalidElAddress => "Invalid Execution Layer address length (must be 20 bytes)",
+            Error::BridgeBuilder(ref msg) => msg,
         };
         PyErr::new::<PyValueError, _>(msg.to_owned())
     }

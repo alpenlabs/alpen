@@ -1,4 +1,4 @@
-use bdk_wallet::bitcoin::{Address, OutPoint, PublicKey, Txid, XOnlyPublicKey};
+use bdk_wallet::bitcoin::{Address, OutPoint, PrivateKey, PublicKey, Txid, XOnlyPublicKey};
 use revm_primitives::alloy_primitives::Address as RethAddress;
 
 use crate::error::Error;
