@@ -7,7 +7,7 @@ use strata_state::{chain_state::Chainstate, prelude::L2BlockHeader};
 use crate::WorkerContext;
 
 #[derive(Debug)]
-pub struct WorkerExecCtxImpl<'c, W> {
+pub(crate) struct WorkerExecCtxImpl<'c, W> {
     pub worker_context: &'c W,
 }
 

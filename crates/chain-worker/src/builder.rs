@@ -8,18 +8,18 @@ use strata_tasks::TaskExecutor;
 use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::{
-    service::{ChainWorkerService, ChainWorkerServiceState},
-    handle::{ChainWorkerHandle, WorkerShared},
-    traits::WorkerContext,
     errors::{WorkerError, WorkerResult},
+    handle::{ChainWorkerHandle, WorkerShared},
+    service::{ChainWorkerService, ChainWorkerServiceState},
+    traits::WorkerContext,
 };
 
-/// Builder for creating and launching a chain worker service.
+/// Builder for constructing and launching a chain worker service.
 ///
-/// This encapsulates all the initialization logic and dependencies needed
-/// to spawn a chain worker using the service framework, preventing implementation
-/// details from leaking into the caller. The builder launches the service and 
-/// returns a handle to it.
+/// This encapsulates all the initialization logic and dependencies needed to
+/// launch a chain worker using the service framework, preventing impl details
+/// from leaking into the caller.  The builder launches the service and returns
+/// a handle to it.
 #[derive(Debug)]
 pub struct ChainWorkerBuilder<W> {
     context: Option<W>,
@@ -96,10 +96,10 @@ impl<W> ChainWorkerBuilder<W> {
             .runtime_handle
             .ok_or(WorkerError::MissingDependency("runtime_handle"))?;
 
-        // Create shared state for the worker
+        // Create shared state for the worker.
         let shared = Arc::new(Mutex::new(WorkerShared::default()));
 
-        // Create the service state
+        // Create the service state.
         let service_state = ChainWorkerServiceState::new(
             shared.clone(),
             context,
@@ -109,19 +109,19 @@ impl<W> ChainWorkerBuilder<W> {
             runtime_handle,
         );
 
-        // Create the service builder and get command handle
-        let mut service_builder = ServiceBuilder::<ChainWorkerService<W>, _>::new()
-            .with_state(service_state);
+        // Create the service builder and get command handle.
+        let mut service_builder =
+            ServiceBuilder::<ChainWorkerService<W>, _>::new().with_state(service_state);
 
-        // Create the command handle before launching
+        // Create the command handle before launching.
         let command_handle = service_builder.create_command_handle(64);
 
-        // Launch the service using the sync worker
+        // Launch the service using the sync worker.
         let _service_monitor = service_builder
             .launch_sync("chain_worker", executor)
             .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 
-        // Create and return the handle
+        // Create and return the handle.
         let handle = ChainWorkerHandle::new(shared, command_handle);
 
         Ok(handle)
