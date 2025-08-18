@@ -17,7 +17,7 @@ pub fn test_set_and_get_block_data(db: &impl L2BlockDatabase) {
         .unwrap();
     assert_eq!(received_block, bundle);
 
-    // assert block status was set to `BlockStatus::Unchecked``
+    // assert block status was set to `BlockStatus::Unchecked`
     let block_status = db
         .get_block_status(block_hash)
         .expect("failed to retrieve block data")
@@ -76,7 +76,7 @@ pub fn test_set_and_get_block_status(db: &impl L2BlockDatabase) {
     db.put_block_data(bundle.clone())
         .expect("failed to put block data");
 
-    // assert block status was set to `BlockStatus::Valid``
+    // assert block status was set to `BlockStatus::Valid`
     db.set_block_status(block_hash, BlockStatus::Valid)
         .expect("failed to update block status");
     let block_status = db
@@ -85,7 +85,7 @@ pub fn test_set_and_get_block_status(db: &impl L2BlockDatabase) {
         .unwrap();
     assert_eq!(block_status, BlockStatus::Valid);
 
-    // assert block status was set to `BlockStatus::Invalid``
+    // assert block status was set to `BlockStatus::Invalid`
     db.set_block_status(block_hash, BlockStatus::Invalid)
         .expect("failed to update block status");
     let block_status = db
@@ -94,7 +94,7 @@ pub fn test_set_and_get_block_status(db: &impl L2BlockDatabase) {
         .unwrap();
     assert_eq!(block_status, BlockStatus::Invalid);
 
-    // assert block status was set to `BlockStatus::Unchecked``
+    // assert block status was set to `BlockStatus::Unchecked`
     db.set_block_status(block_hash, BlockStatus::Unchecked)
         .expect("failed to update block status");
     let block_status = db
