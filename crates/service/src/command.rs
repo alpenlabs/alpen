@@ -1,6 +1,9 @@
 //! Command worker types.
 
-use tokio::sync::{mpsc, oneshot};
+use std::fmt;
+
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tracing::warn;
 
 use crate::{Service, ServiceError};
 
@@ -44,10 +47,11 @@ impl<S: Service> CommandHandle<S> {
     /// waits for a response.
     pub async fn send_and_wait<R>(
         &self,
-        mfn: impl Fn(oneshot::Sender<R>) -> S::Msg,
+        mfn: impl Fn(CommandCompletionSender<R>) -> S::Msg,
     ) -> Result<R, ServiceError> {
         let (ret_tx, ret_rx) = oneshot::channel();
-        let m = mfn(ret_tx);
+        let completion = CommandCompletionSender::new(ret_tx);
+        let m = mfn(completion);
 
         self.send(m).await?;
         coerce_callback_result(ret_rx.await)
@@ -57,10 +61,11 @@ impl<S: Service> CommandHandle<S> {
     /// waits for a response.
     pub fn send_and_wait_blocking<R>(
         &self,
-        mfn: impl Fn(oneshot::Sender<R>) -> S::Msg,
+        mfn: impl Fn(CommandCompletionSender<R>) -> S::Msg,
     ) -> Result<R, ServiceError> {
         let (ret_tx, ret_rx) = oneshot::channel();
-        let m = mfn(ret_tx);
+        let completion = CommandCompletionSender::new(ret_tx);
+        let m = mfn(completion);
 
         self.send_blocking(m)?;
         coerce_callback_result(ret_rx.blocking_recv())
@@ -69,4 +74,53 @@ impl<S: Service> CommandHandle<S> {
 
 fn coerce_callback_result<R>(v: Result<R, oneshot::error::RecvError>) -> Result<R, ServiceError> {
     v.map_err(|_| ServiceError::WorkerExitedWithoutResponse)
+}
+
+/// A wrapper around a [`oneshot::Sender`] to allow it to be shared but only
+/// completed once.
+pub struct CommandCompletionSender<T> {
+    sender: Mutex<Option<oneshot::Sender<T>>>,
+}
+
+impl<T> CommandCompletionSender<T> {
+    /// Creates a new instance.
+    pub fn new(sender: oneshot::Sender<T>) -> Self {
+        Self {
+            sender: Mutex::new(Some(sender)),
+        }
+    }
+
+    /// Send the response.
+    ///
+    /// Logs a warning if the sender has already been consumed.
+    pub async fn send(&self, value: T) {
+        match self.sender.lock().await.take() {
+            Some(sender) => {
+                let _ = sender.send(value);
+            }
+            None => {
+                warn!("attempted to send response for already completed command");
+            }
+        }
+    }
+
+    /// Send the response.
+    ///
+    /// Logs a warning if the sender has already been consumed.
+    pub fn send_blocking(&self, value: T) {
+        match self.sender.blocking_lock().take() {
+            Some(sender) => {
+                let _ = sender.send(value);
+            }
+            None => {
+                warn!("attempted to send response for already completed command");
+            }
+        }
+    }
+}
+
+impl<T> fmt::Debug for CommandCompletionSender<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<completion>")
+    }
 }
