@@ -4,7 +4,7 @@ use futures::FutureExt;
 use tokio::sync::watch;
 use tracing::*;
 
-use super::*;
+use crate::{AsyncService, AsyncServiceInput, Response, ServiceState};
 
 /// Async worker task.
 pub(crate) async fn worker_task<S: AsyncService, I>(

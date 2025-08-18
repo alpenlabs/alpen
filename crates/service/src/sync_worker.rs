@@ -3,7 +3,7 @@
 use tokio::sync::watch;
 use tracing::*;
 
-use super::*;
+use crate::{Response, ServiceState, SyncService, SyncServiceInput};
 
 pub(crate) fn worker_task<S: SyncService, I>(
     mut state: S::State,

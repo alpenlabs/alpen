@@ -2,7 +2,7 @@
 
 use tokio::sync::watch;
 
-use super::Service;
+use crate::Service;
 
 /// Service status monitor handle.
 #[derive(Debug)]

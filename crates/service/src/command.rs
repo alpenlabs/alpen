@@ -2,7 +2,7 @@
 
 use tokio::sync::{mpsc, oneshot};
 
-use crate::*;
+use crate::{Service, ServiceError};
 
 /// Handle to send inputs to a command task.
 #[derive(Debug)]

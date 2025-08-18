@@ -6,7 +6,7 @@ use std::{any::Any, collections::*, fmt::Debug, future::Future, sync::Arc};
 use futures::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 
-use super::*;
+use crate::{AsyncServiceInput, ServiceError, ServiceInput, ServiceMsg, SyncServiceInput};
 
 /// Adapter for using an [`Iterator`] as a [`SyncServiceInput`].
 pub struct IterInput<I> {
