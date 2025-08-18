@@ -106,7 +106,7 @@ impl<T: ServiceMsg, S: Service<Msg = T>> ServiceBuilder<S, TokioMpscInput<T>> {
     /// # Panics
     ///
     /// If an input has already been set.
-    pub fn create_command_handle(&mut self, capacity: usize) -> CommandHandle<S> {
+    pub fn create_command_handle(&mut self, capacity: usize) -> CommandHandle<T> {
         if self.inp.is_some() {
             panic!("service/builder: input already created");
         }

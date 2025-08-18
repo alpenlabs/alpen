@@ -4,18 +4,18 @@ use strata_primitives::prelude::*;
 use strata_service::{CommandHandle, ServiceError};
 use tokio::sync::Mutex;
 
-use crate::{service::ChainWorkerService, WorkerContext, WorkerError, WorkerResult, message::ChainWorkerMessage};
+use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
 
 /// Handle for interacting with the chain worker service.
 #[derive(Debug)]
-pub struct ChainWorkerHandle<W: WorkerContext + Send + Sync + 'static> {
+pub struct ChainWorkerHandle {
     shared: Arc<Mutex<WorkerShared>>,
-    command_handle: CommandHandle<ChainWorkerService<W>>,
+    command_handle: CommandHandle<ChainWorkerMessage>,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerHandle<W> {
+impl ChainWorkerHandle {
     /// Create a new chain worker handle from shared state and a service command handle.
-    pub fn new(shared: Arc<Mutex<WorkerShared>>, command_handle: CommandHandle<ChainWorkerService<W>>) -> Self {
+    pub fn new(shared: Arc<Mutex<WorkerShared>>, command_handle: CommandHandle<ChainWorkerMessage>) -> Self {
         Self { shared, command_handle }
     }
 

@@ -65,6 +65,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 }
 
 /// Service state for the chain worker.
+#[derive(Debug)]
 pub struct ChainWorkerServiceState<W> {
     shared: Arc<Mutex<WorkerShared>>,
     context: W,
