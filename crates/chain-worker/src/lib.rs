@@ -17,4 +17,5 @@ mod traits;
 pub use builder::ChainWorkerBuilder;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::ChainWorkerHandle;
+pub use service::{ChainWorkerService, ChainWorkerServiceState, ChainWorkerStatus};
 pub use traits::WorkerContext;

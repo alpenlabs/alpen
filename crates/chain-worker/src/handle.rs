@@ -9,14 +9,21 @@ use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
 /// Handle for interacting with the chain worker service.
 #[derive(Debug)]
 pub struct ChainWorkerHandle {
+    #[allow(unused)]
     shared: Arc<Mutex<WorkerShared>>,
     command_handle: CommandHandle<ChainWorkerMessage>,
 }
 
 impl ChainWorkerHandle {
     /// Create a new chain worker handle from shared state and a service command handle.
-    pub fn new(shared: Arc<Mutex<WorkerShared>>, command_handle: CommandHandle<ChainWorkerMessage>) -> Self {
-        Self { shared, command_handle }
+    pub fn new(
+        shared: Arc<Mutex<WorkerShared>>,
+        command_handle: CommandHandle<ChainWorkerMessage>,
+    ) -> Self {
+        Self {
+            shared,
+            command_handle,
+        }
     }
 
     /// Returns the number of pending inputs that have not been processed yet.
@@ -35,7 +42,9 @@ impl ChainWorkerHandle {
     /// Tries to execute a block, returns the result.
     pub fn try_exec_block_blocking(&self, block: L2BlockCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|completion| ChainWorkerMessage::TryExecBlock(block, completion))
+            .send_and_wait_blocking(|completion| {
+                ChainWorkerMessage::TryExecBlock(block, completion)
+            })
             .map_err(convert_service_error)?
     }
 
@@ -50,7 +59,9 @@ impl ChainWorkerHandle {
     /// Finalize an epoch, making whatever database changes necessary.
     pub fn finalize_epoch_blocking(&self, epoch: EpochCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|completion| ChainWorkerMessage::FinalizeEpoch(epoch, completion))
+            .send_and_wait_blocking(|completion| {
+                ChainWorkerMessage::FinalizeEpoch(epoch, completion)
+            })
             .map_err(convert_service_error)?
     }
 
@@ -65,7 +76,9 @@ impl ChainWorkerHandle {
     /// Update the safe tip, making whatever database changes necessary.
     pub fn update_safe_tip_blocking(&self, safe_tip: L2BlockCommitment) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|completion| ChainWorkerMessage::UpdateSafeTip(safe_tip, completion))
+            .send_and_wait_blocking(|completion| {
+                ChainWorkerMessage::UpdateSafeTip(safe_tip, completion)
+            })
             .map_err(convert_service_error)?
     }
 }
@@ -82,33 +95,7 @@ fn convert_service_error(err: ServiceError) -> WorkerError {
         ServiceError::BlockingThreadPanic(msg) => {
             WorkerError::Unexpected(format!("blocking thread panicked: {}", msg))
         }
-        ServiceError::UnknownInputErr => {
-            WorkerError::Unexpected("unknown input error".to_string())
-        }
-    }
-}
-
-/// Input to the worker, reading inputs from the worker handle.
-#[derive(Debug)]
-pub struct ChainWorkerInput {
-    shared: Arc<Mutex<WorkerShared>>,
-    msg_rx: tokio::sync::mpsc::Receiver<ChainWorkerMessage>,
-}
-
-impl ChainWorkerInput {
-    pub fn new(
-        shared: Arc<Mutex<WorkerShared>>,
-        msg_rx: tokio::sync::mpsc::Receiver<ChainWorkerMessage>,
-    ) -> Self {
-        Self { shared, msg_rx }
-    }
-
-    pub fn shared(&self) -> &Mutex<WorkerShared> {
-        &self.shared
-    }
-
-    pub(crate) fn recv_next(&mut self) -> Option<ChainWorkerMessage> {
-        self.msg_rx.blocking_recv()
+        ServiceError::UnknownInputErr => WorkerError::Unexpected("unknown input error".to_string()),
     }
 }
 
