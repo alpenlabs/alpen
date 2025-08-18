@@ -16,7 +16,7 @@ name = "strata_utils"
 crate-type = ["cdylib"]
 
 [dependencies]
-shrex = { version = "0.3.0-alpha.1", path = "../shrex", features = ["serde"] }
+shrex.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
 
