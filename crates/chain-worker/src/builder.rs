@@ -9,7 +9,9 @@ use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::{
     service::{ChainWorkerService, ChainWorkerServiceState},
-    ChainWorkerHandle, WorkerContext, WorkerError, WorkerResult, WorkerShared,
+    handle::{ChainWorkerHandle, WorkerShared},
+    traits::WorkerContext,
+    errors::{WorkerError, WorkerResult},
 };
 
 /// Builder for creating and launching a chain worker service.
