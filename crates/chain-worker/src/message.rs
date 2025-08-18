@@ -1,7 +1,7 @@
 //! Messages from the handle to the worker.
 
 use strata_primitives::prelude::*;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 
 use crate::WorkerResult;
 
@@ -9,7 +9,7 @@ use crate::WorkerResult;
 /// completion to return a result.
 #[derive(Debug)]
 pub enum ChainWorkerMessage {
-    TryExecBlock(L2BlockCommitment, oneshot::Sender<WorkerResult<()>>),
-    FinalizeEpoch(EpochCommitment, oneshot::Sender<WorkerResult<()>>),
-    UpdateSafeTip(L2BlockCommitment, oneshot::Sender<WorkerResult<()>>),
+    TryExecBlock(L2BlockCommitment, Mutex<Option<oneshot::Sender<WorkerResult<()>>>>),
+    FinalizeEpoch(EpochCommitment, Mutex<Option<oneshot::Sender<WorkerResult<()>>>>),
+    UpdateSafeTip(L2BlockCommitment, Mutex<Option<oneshot::Sender<WorkerResult<()>>>>),
 }

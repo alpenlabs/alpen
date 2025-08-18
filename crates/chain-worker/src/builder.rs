@@ -2,23 +2,22 @@ use std::sync::Arc;
 
 use strata_eectl::handle::ExecCtlHandle;
 use strata_primitives::params::Params;
+use strata_service::ServiceBuilder;
 use strata_status::StatusChannel;
 use strata_tasks::TaskExecutor;
-use tokio::{
-    runtime::Handle,
-    sync::{Mutex, mpsc},
-};
+use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::{
-    ChainWorkerHandle, ChainWorkerMessage, WorkerContext, WorkerError, WorkerResult, WorkerShared,
-    worker,
+    service::{ChainWorkerService, ChainWorkerServiceState},
+    ChainWorkerHandle, WorkerContext, WorkerError, WorkerResult, WorkerShared,
 };
 
-/// Builder for creating and launching a chain worker task.
+/// Builder for creating and launching a chain worker service.
 ///
 /// This encapsulates all the initialization logic and dependencies needed
-/// to spawn a chain worker, preventing implementation details from leaking
-/// into the caller. The builder launches the task and returns a handle to it.
+/// to spawn a chain worker using the service framework, preventing implementation
+/// details from leaking into the caller. The builder launches the service and 
+/// returns a handle to it.
 #[derive(Debug)]
 pub struct ChainWorkerBuilder<W> {
     context: Option<W>,
@@ -70,14 +69,14 @@ impl<W> ChainWorkerBuilder<W> {
         self
     }
 
-    /// Launch the chain worker task and return a handle to it.
+    /// Launch the chain worker service and return a handle to it.
     ///
-    /// This method validates all required dependencies, creates the necessary
-    /// channels, spawns the worker task using the provided executor, and returns
+    /// This method validates all required dependencies, creates the service state,
+    /// uses ServiceBuilder to set up the service infrastructure, and returns
     /// a handle for interacting with the worker.
-    pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<ChainWorkerHandle>
+    pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<ChainWorkerHandle<W>>
     where
-        W: WorkerContext + Send + 'static,
+        W: WorkerContext + Send + Sync + 'static,
     {
         let context = self
             .context
@@ -95,28 +94,33 @@ impl<W> ChainWorkerBuilder<W> {
             .runtime_handle
             .ok_or(WorkerError::MissingDependency("runtime_handle"))?;
 
-        // Create the message channel for communication with the worker
-        let (msg_tx, msg_rx) = mpsc::channel::<ChainWorkerMessage>(64);
-
         // Create shared state for the worker
         let shared = Arc::new(Mutex::new(WorkerShared::default()));
 
-        // Create the handle that will be returned
-        let handle = ChainWorkerHandle::new(shared.clone(), msg_tx);
+        // Create the service state
+        let service_state = ChainWorkerServiceState::new(
+            shared.clone(),
+            context,
+            params,
+            exec_ctl_handle,
+            status_channel,
+            runtime_handle,
+        );
 
-        // Spawn the worker task
-        executor.spawn_critical("chain_worker_task", move |shutdown| {
-            worker::worker_task(
-                shutdown,
-                runtime_handle,
-                context,
-                status_channel,
-                params,
-                exec_ctl_handle,
-                msg_rx,
-                shared,
-            )
-        });
+        // Create the service builder and get command handle
+        let mut service_builder = ServiceBuilder::<ChainWorkerService<W>, _>::new()
+            .with_state(service_state);
+
+        // Create the command handle before launching
+        let command_handle = service_builder.create_command_handle(64);
+
+        // Launch the service using the sync worker
+        let _service_monitor = service_builder
+            .launch_sync("chain_worker", executor)
+            .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
+
+        // Create and return the handle
+        let handle = ChainWorkerHandle::new(shared, command_handle);
 
         Ok(handle)
     }

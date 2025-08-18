@@ -275,8 +275,8 @@ fn worker_task_inner<W: WorkerContext>(
     Ok(())
 }
 
-struct WorkerExecCtxImpl<'c, W> {
-    worker_context: &'c W,
+pub struct WorkerExecCtxImpl<'c, W> {
+    pub worker_context: &'c W,
 }
 
 impl<'c, W: WorkerContext> ExecContext for WorkerExecCtxImpl<'c, W> {
