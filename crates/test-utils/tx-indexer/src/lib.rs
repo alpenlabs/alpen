@@ -152,7 +152,7 @@ where
     let tapnode_hash = [0u8; 32]; // Taproot tweak
 
     let deposit_request_script = build_test_deposit_request_script(
-        deposit_config.magic_bytes.clone(),
+        deposit_config.magic_bytes.to_vec(),
         dummy_block.to_vec(),
         dest_addr.clone(),
     );

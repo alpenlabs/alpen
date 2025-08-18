@@ -181,7 +181,7 @@ pub fn build_test_deposit_script(
     dest_addr: Vec<u8>,
     tapnode_hash: &[u8; 32],
 ) -> ScriptBuf {
-    let mut data = dep_config.magic_bytes.clone();
+    let mut data = dep_config.magic_bytes.clone().to_vec();
     data.extend(&idx.to_be_bytes()[..]);
     data.extend(dest_addr);
     data.extend(tapnode_hash);

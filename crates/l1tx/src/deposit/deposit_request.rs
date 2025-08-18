@@ -142,7 +142,7 @@ mod tests {
         let test_taproot_addr = test_taproot_addr();
 
         let deposit_request_script = build_test_deposit_request_script(
-            config.magic_bytes.clone(),
+            config.magic_bytes.to_vec(),
             dummy_control_block.to_vec(),
             evm_addr.to_vec(),
         );
@@ -172,7 +172,7 @@ mod tests {
 
         let config = get_deposit_tx_config();
         let invalid_script = build_no_op_deposit_request_script(
-            config.magic_bytes.clone(),
+            config.magic_bytes.to_vec(),
             control_block.to_vec(),
             evm_addr.to_vec(),
         );
@@ -191,7 +191,7 @@ mod tests {
         let config = get_deposit_tx_config();
 
         let script = build_test_deposit_request_script(
-            config.magic_bytes.clone(),
+            config.magic_bytes.to_vec(),
             control_block.to_vec(),
             evm_addr.to_vec(),
         );
@@ -208,7 +208,7 @@ mod tests {
 
         let config = get_deposit_tx_config();
         let script_missing_control = build_test_deposit_request_script(
-            config.magic_bytes.clone(),
+            config.magic_bytes.to_vec(),
             control_block.to_vec(),
             evm_addr.to_vec(),
         );

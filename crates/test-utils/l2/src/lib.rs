@@ -98,7 +98,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
     let opkeys = make_dummy_operator_pubkeys_with_seed(seed);
     Params {
         rollup: RollupParams {
-            rollup_name: "ALPN".to_string(),
+            magic_bytes: *b"ALPN",
             checkpoint_tag: "strata-ckpt".to_string(),
             da_tag: "strata-da".to_string(),
             block_time: 1000,

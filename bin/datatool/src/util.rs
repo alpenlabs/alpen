@@ -21,6 +21,7 @@ use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use shrex::Hex;
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     block_credential,
     buf::Buf32,
@@ -283,8 +284,30 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Invalid L1 block hash: {}", e))?;
     let genesis_l1_blkid = L1BlockId::from(block_hash);
 
+    let magic: MagicBytes = if let Some(name_str) = &cmd.name {
+        // Validate that the name is ASCII
+        if !name_str.is_ascii() {
+            return Err(anyhow::anyhow!("Name must contain only ASCII characters"));
+        }
+
+        // Validate that the name is exactly 4 bytes
+        let name_bytes = name_str.as_bytes();
+        if name_bytes.len() != 4 {
+            return Err(anyhow::anyhow!(
+                "Name must be exactly 4 bytes long, got {}",
+                name_bytes.len()
+            ));
+        }
+
+        let mut magic_bytes: [u8; 4] = [0; 4];
+        magic_bytes.copy_from_slice(name_bytes);
+        magic_bytes
+    } else {
+        *b"alpn"
+    };
+
     let config = ParamsConfig {
-        name: cmd.name.unwrap_or_else(|| "strata-testnet".to_string()),
+        magic,
         checkpoint_tag: cmd.checkpoint_tag.unwrap_or("strata-ckpt".to_string()),
         da_tag: cmd.da_tag.unwrap_or("strata-da".to_string()),
         bitcoin_network: ctx.bitcoin_network,
@@ -394,7 +417,7 @@ fn resolve_xpriv(
 /// Inputs for constructing the network parameters.
 pub(crate) struct ParamsConfig {
     /// Name of the network.
-    name: String,
+    magic: MagicBytes,
     /// Tagname used to identify DA envelopes
     da_tag: String,
     /// Tagname used to identify Checkpoint envelopes
@@ -457,7 +480,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
 
     // TODO add in bitcoin network
     Ok(RollupParams {
-        rollup_name: config.name,
+        magic_bytes: config.magic,
         block_time: config.block_time_sec * 1000,
         da_tag: config.da_tag,
         checkpoint_tag: config.checkpoint_tag,

@@ -56,7 +56,7 @@ mod tests {
     fn test_check_magic_bytes_valid() {
         let config = get_deposit_tx_config();
         let script = Builder::new()
-            .push_slice(PushBytesBuf::try_from(config.magic_bytes.clone()).unwrap())
+            .push_slice(PushBytesBuf::from(config.magic_bytes))
             .push_opcode(OP_RETURN)
             .into_script();
         let mut instructions = script.instructions();

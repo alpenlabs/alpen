@@ -3,6 +3,7 @@
 use bitcoin::Network;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_l1_txfmt::MagicBytes;
 use thiserror::Error;
 
 use crate::{
@@ -18,7 +19,7 @@ use crate::{
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RollupParams {
     /// Rollup name
-    pub rollup_name: String,
+    pub magic_bytes: MagicBytes,
 
     /// Block time in milliseconds.
     pub block_time: u64,
@@ -88,10 +89,6 @@ impl RollupParams {
             ));
         }
 
-        if self.rollup_name.is_empty() {
-            return Err(ParamsError::EmptyRollupName);
-        }
-
         match &self.operator_config {
             OperatorConfig::Static(optbl) => {
                 if optbl.is_empty() {
@@ -145,8 +142,8 @@ impl RollupParams {
 /// Configuration common among deposit and deposit request transaction
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Deserialize, Serialize)]
 pub struct DepositTxParams {
-    /// Magic bytes we use to regonize a deposit with.
-    pub magic_bytes: Vec<u8>,
+    /// Magic bytes we use to recognize a deposit with.
+    pub magic_bytes: MagicBytes,
 
     /// Maximum EE address length.
     // TODO rename to be `max_addr_len`
