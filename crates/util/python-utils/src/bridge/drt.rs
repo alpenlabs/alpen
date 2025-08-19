@@ -18,7 +18,7 @@ use secp256k1::{Secp256k1, SECP256K1};
 use strata_primitives::constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY};
 
 use crate::{
-    bridge::{parse_keys, types::DepositRequestData},
+    bridge::{parse_operator_keys, types::DepositRequestData},
     constants::{BRIDGE_IN_AMOUNT, MAGIC_BYTES, NETWORK, XPRIV},
     error::Error,
     parse::{parse_address, parse_el_address, parse_xonly_pk},
@@ -50,7 +50,7 @@ pub(crate) fn deposit_request_transaction(
     bitcoind_user: String,
     bitcoind_password: String,
 ) -> PyResult<Vec<u8>> {
-    let agg_key = parse_keys(&operator_keys)?;
+    let (_,agg_key) = parse_operator_keys(&operator_keys)?;
 
     let signed_tx = deposit_request_transaction_inner(
         el_address.as_str(),

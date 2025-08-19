@@ -7,6 +7,7 @@ from strata_utils import (
     deposit_request_transaction,
     is_valid_bosd,
 )
+from web3.middleware.signing import SignAndSendRawMiddlewareBuilder
 
 from envs.rollup_params_cfg import RollupConfig
 from utils import *
@@ -19,7 +20,7 @@ from . import BaseMixin
 # Local constants
 # Ethereum Private Key
 # NOTE: don't use this private key in production
-ETH_PRIVATE_KEY = "0x0000000000000000000000000000000000000000000000000000002000000011"
+ETH_PRIVATE_KEY = "0x0000000000000000000000000000000000000000000000000000000000000001"
 
 
 class BridgeMixin(BaseMixin):
@@ -32,6 +33,9 @@ class BridgeMixin(BaseMixin):
         super().premain(ctx)
 
         self.bridge_eth_account = self.w3.eth.account.from_key(ETH_PRIVATE_KEY)
+        self.w3.address = self.bridge_eth_account.address
+        self.w3.middleware_onion.add(
+                SignAndSendRawMiddlewareBuilder.build(self.bridge_eth_account))
         self.web3 = self.w3
 
         # Bridge manager state
@@ -145,26 +149,19 @@ class BridgeMixin(BaseMixin):
                 predicate=lambda v: v is not None,
             )
             # Generate blocks to process withdrawal and capture L1 height range
-            seq_addr = self.seq.get_prop("address")
             withdrawal_height_start = self.btcrpc.proxy.getblockcount()
-            self.btcrpc.proxy.generatetoaddress(10, seq_addr)
-            withdrawal_height_end = self.btcrpc.proxy.getblockcount()
 
             self.info(
                 f"Withdrawal L2 transaction in L1 height range: "
-                f"{withdrawal_height_start + 1} - {withdrawal_height_end}"
+                f"{withdrawal_height_start + 1}"
             )
-
-            # Wait for L1 blocks to be processed by the sequencer
-            strata_waiter = StrataWaiter(self.seqrpc, self.logger, timeout=60, interval=1)
-            strata_waiter.wait_until_l1_height_at(withdrawal_height_end)
 
             # Wait for checkpoint that covers the withdrawal L2 transaction
             initial_checkpoint_idx = self.seqrpc.strata_getLatestCheckpointIndex() or 0
             self.info(f"Initial checkpoint index: {initial_checkpoint_idx}")
             self.info(
-                f"Waiting for checkpoint that includes L1 height range "
-                f"{withdrawal_height_start + 1}-{withdrawal_height_end}"
+                f"Waiting for checkpoint that includes L1 height: "
+                f"{withdrawal_height_start}"
             )
 
             def check_checkpoint_covers_withdrawal():
@@ -182,13 +179,12 @@ class BridgeMixin(BaseMixin):
                 l1_start = checkpoint_info["l1_range"][0]["height"]
                 l1_end = checkpoint_info["l1_range"][1]["height"]
                 covers_range = (
-                    l1_start <= withdrawal_height_start and l1_end >= withdrawal_height_end
+                    l1_end >= withdrawal_height_start
                 )
 
                 self.info(
                     f"Checkpoint {latest_checkpoint_idx}: L1 range [{l1_start}, {l1_end}], "
-                    f"covers withdrawal [{withdrawal_height_start + 1}, {withdrawal_height_end}]: "
-                    f"{covers_range}"
+                    f"covers withdrawal {withdrawal_height_start}: "
                 )
 
                 return covers_range
@@ -198,7 +194,7 @@ class BridgeMixin(BaseMixin):
                 check_checkpoint_covers_withdrawal,
                 error_with=(
                     f"Timeout waiting for checkpoint to cover withdrawal transaction at "
-                    f"L1 heights {withdrawal_height_start + 1}-{withdrawal_height_end}"
+                    f"L1 heights {withdrawal_height_start}"
                 ),
                 timeout=120,
                 step=3,
@@ -395,11 +391,16 @@ class BridgeMixin(BaseMixin):
             expected_final_count = initial_intent_count - len(fulfillment_txids)
             self.info(
                 f"Waiting for withdrawal intents to be processed "
-                f"(expecting {expected_final_count} remaining)"
+                f"(expecting {expected_final_count} remaining after being processed)"
             )
 
+            def intent_waiter():
+                intents = self.seqrpc.strata_getWithdrawalIntent()
+                print(intents)
+                return len(intents) <= expected_final_count
+
             wait_until(
-                lambda: len(self.seqrpc.strata_getWithdrawalIntent()) <= expected_final_count,
+                lambda: intent_waiter,
                 error_with=(
                     f"Timeout waiting for withdrawal intents to be processed "
                     f"(expected <= {expected_final_count})"

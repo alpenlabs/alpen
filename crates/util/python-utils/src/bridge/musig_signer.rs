@@ -56,7 +56,7 @@ impl MusigSigner {
 
         let mut full_pubkeys = Vec::new();
         for kp in &keypairs {
-            // Convert to even-Y x-only
+            // Convert to even x-only
             let (xonly, parity) = XOnlyPublicKey::from_keypair(kp);
             assert_eq!(parity, secp256k1::Parity::Even); // xonly is always even
                                                          // Convert back to full pubkey with even Y (if API requires full pubkeys)

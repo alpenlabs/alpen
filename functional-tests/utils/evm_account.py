@@ -88,9 +88,7 @@ class FundedAccount(AbstractAccount):
 
     def __init__(self, w3: web3.Web3):
         # Init the new account.
-        account = w3.eth.account.from_key(
-            "0x0000000000000000000000000000000000000000000000000000002000000011"
-        )
+        account = w3.eth.account.create()
         # Set the account onto web3 and init the signing middleware.
         w3.address = account.address
         w3.middleware_onion.add(SignAndSendRawMiddlewareBuilder.build(account))

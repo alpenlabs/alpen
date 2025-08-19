@@ -69,8 +69,7 @@ fn create_deposit_transaction_inner(
         storage[index].clone()
     };
 
-    let agg_pubkey = parse_keys(&operator_keys)?;
-    let operator_secret_keys = parse_operator_keys(operator_keys)?;
+    let (operator_secret_keys , agg_pubkey)= parse_operator_keys(&operator_keys)?;
 
     // Create the deposit transaction PSBT
     let mut deposit_tx = build_deposit_tx(&deposit_request_data, agg_pubkey)?;
@@ -258,7 +257,7 @@ fn finalize_and_extract_tx(mut deposit_tx: DepositTx) -> Result<Transaction, Err
 }
 
 /// Parses operator secret keys from hex strings
-pub(crate) fn parse_keys(operator_keys: &[String]) -> Result<XOnlyPublicKey, Error> {
+pub(crate) fn parse_operator_keys(operator_keys: &[String]) -> Result<(Vec<Keypair>, XOnlyPublicKey), Error> {
     use std::str::FromStr;
 
     let result: Vec<Keypair> = operator_keys
@@ -273,37 +272,12 @@ pub(crate) fn parse_keys(operator_keys: &[String]) -> Result<XOnlyPublicKey, Err
                 .derive_priv(SECP256K1, &GENERAL_WALLET_KEY_PATH)
                 .expect("good child key");
 
-            Keypair::from_secret_key(SECP256K1, &xp.private_key)
-        })
-        .collect();
-
-    let x_only_keys: Vec<XOnlyPublicKey> = result
-        .iter()
-        .map(|pair| XOnlyPublicKey::from_keypair(pair).0)
-        .collect();
-
-    musig_aggregate_pks_inner(x_only_keys)
-}
-
-/// Parses operator secret keys from hex strings
-pub(crate) fn parse_operator_keys(operator_keys: Vec<String>) -> Result<Vec<Keypair>, Error> {
-    use std::str::FromStr;
-
-    Ok(operator_keys
-        .into_iter()
-        .enumerate()
-        .map(|(i, key)| {
-            let xpriv = Xpriv::from_str(&key)
-                .map_err(|e| Error::BridgeBuilder(format!("Invalid operator key {}: {}", i, e)))
-                .unwrap();
-
-            let xp = xpriv
-                .derive_priv(SECP256K1, &GENERAL_WALLET_KEY_PATH)
-                .expect("good child key");
-
             let mut sk = xp.private_key;
             let pk = secp256k1::PublicKey::from_secret_key(SECP256K1, &sk);
 
+            // This is very important because datatool and bridge does this way.
+            // (x,P) and (x,-P) don't add to same group element, so in order to be consistent
+            // we are only choosing even one so
             // if not even
             if pk.serialize()[0] != 0x02 {
                 // Flip to even-Y equivalent
@@ -312,7 +286,14 @@ pub(crate) fn parse_operator_keys(operator_keys: Vec<String>) -> Result<Vec<Keyp
 
             Keypair::from_secret_key(SECP256K1, &sk)
         })
-        .collect())
+        .collect();
+
+    let x_only_keys: Vec<XOnlyPublicKey> = result
+        .iter()
+        .map(|pair| XOnlyPublicKey::from_keypair(pair).0)
+        .collect();
+
+    Ok((result,musig_aggregate_pks_inner(x_only_keys)?))
 }
 
 #[cfg(test)]
@@ -321,10 +302,10 @@ mod tests {
 
     #[test]
     fn test_parse_operator_keys() {
-        let keys = vec![
+        let keys = [
             "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
             "2222222222222222222222222222222222222222222222222222222222222222".to_string(),
         ];
-        assert!(parse_operator_keys(keys).is_ok());
+        assert!(parse_operator_keys(&keys).is_ok());
     }
 }
