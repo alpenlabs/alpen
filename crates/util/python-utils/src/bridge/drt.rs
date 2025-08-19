@@ -50,7 +50,7 @@ pub(crate) fn deposit_request_transaction(
     bitcoind_user: String,
     bitcoind_password: String,
 ) -> PyResult<Vec<u8>> {
-    let (_,agg_key) = parse_operator_keys(&operator_keys)?;
+    let (_, agg_key) = parse_operator_keys(&operator_keys)?;
 
     let signed_tx = deposit_request_transaction_inner(
         el_address.as_str(),

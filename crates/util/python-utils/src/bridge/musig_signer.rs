@@ -214,6 +214,7 @@ mod tests {
         secp256k1::{SecretKey, XOnlyPublicKey},
         Amount, OutPoint, Psbt, ScriptBuf, Transaction, TxIn, TxOut, Witness,
     };
+    use rand::SeedableRng;
     use secp256k1::SECP256K1;
 
     use super::*;

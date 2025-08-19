@@ -8,7 +8,13 @@ use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_primitives::{
-    bitcoin_bosd::Descriptor, bridge::OperatorIdx, buf::Buf32, epoch::EpochCommitment, l1::{BitcoinAmount, L1BlockCommitment, OutputRef}, l2::L2BlockCommitment, prelude::L1Status
+    bitcoin_bosd::Descriptor,
+    bridge::OperatorIdx,
+    buf::Buf32,
+    epoch::EpochCommitment,
+    l1::{BitcoinAmount, L1BlockCommitment, OutputRef},
+    l2::L2BlockCommitment,
+    prelude::L1Status,
 };
 use strata_state::{
     batch::BatchInfo,
@@ -370,7 +376,7 @@ pub struct RpcWithdrawalIntent {
     /// Destination [`Descriptor`] for the withdrawal
     pub destination: Descriptor,
     /// operator index
-    pub operator_idx: OperatorIdx
+    pub operator_idx: OperatorIdx,
 }
 
 /// Deposit entry for RPC corresponding to [`DepositEntry`].

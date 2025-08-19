@@ -34,8 +34,7 @@ class BridgeMixin(BaseMixin):
 
         self.bridge_eth_account = self.w3.eth.account.from_key(ETH_PRIVATE_KEY)
         self.w3.address = self.bridge_eth_account.address
-        self.w3.middleware_onion.add(
-                SignAndSendRawMiddlewareBuilder.build(self.bridge_eth_account))
+        self.w3.middleware_onion.add(SignAndSendRawMiddlewareBuilder.build(self.bridge_eth_account))
         self.web3 = self.w3
 
         # Bridge manager state
@@ -152,17 +151,13 @@ class BridgeMixin(BaseMixin):
             withdrawal_height_start = self.btcrpc.proxy.getblockcount()
 
             self.info(
-                f"Withdrawal L2 transaction in L1 height range: "
-                f"{withdrawal_height_start + 1}"
+                f"Withdrawal L2 transaction in L1 height range: {withdrawal_height_start + 1}"
             )
 
             # Wait for checkpoint that covers the withdrawal L2 transaction
             initial_checkpoint_idx = self.seqrpc.strata_getLatestCheckpointIndex() or 0
             self.info(f"Initial checkpoint index: {initial_checkpoint_idx}")
-            self.info(
-                f"Waiting for checkpoint that includes L1 height: "
-                f"{withdrawal_height_start}"
-            )
+            self.info(f"Waiting for checkpoint that includes L1 height: {withdrawal_height_start}")
 
             def check_checkpoint_covers_withdrawal():
                 latest_checkpoint_idx = self.seqrpc.strata_getLatestCheckpointIndex()
@@ -178,9 +173,7 @@ class BridgeMixin(BaseMixin):
 
                 l1_start = checkpoint_info["l1_range"][0]["height"]
                 l1_end = checkpoint_info["l1_range"][1]["height"]
-                covers_range = (
-                    l1_end >= withdrawal_height_start
-                )
+                covers_range = l1_end >= withdrawal_height_start
 
                 self.info(
                     f"Checkpoint {latest_checkpoint_idx}: L1 range [{l1_start}, {l1_end}], "

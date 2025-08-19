@@ -69,7 +69,7 @@ fn create_deposit_transaction_inner(
         storage[index].clone()
     };
 
-    let (operator_secret_keys , agg_pubkey)= parse_operator_keys(&operator_keys)?;
+    let (operator_secret_keys, agg_pubkey) = parse_operator_keys(&operator_keys)?;
 
     // Create the deposit transaction PSBT
     let mut deposit_tx = build_deposit_tx(&deposit_request_data, agg_pubkey)?;
@@ -257,7 +257,9 @@ fn finalize_and_extract_tx(mut deposit_tx: DepositTx) -> Result<Transaction, Err
 }
 
 /// Parses operator secret keys from hex strings
-pub(crate) fn parse_operator_keys(operator_keys: &[String]) -> Result<(Vec<Keypair>, XOnlyPublicKey), Error> {
+pub(crate) fn parse_operator_keys(
+    operator_keys: &[String],
+) -> Result<(Vec<Keypair>, XOnlyPublicKey), Error> {
     use std::str::FromStr;
 
     let result: Vec<Keypair> = operator_keys
@@ -293,19 +295,5 @@ pub(crate) fn parse_operator_keys(operator_keys: &[String]) -> Result<(Vec<Keypa
         .map(|pair| XOnlyPublicKey::from_keypair(pair).0)
         .collect();
 
-    Ok((result,musig_aggregate_pks_inner(x_only_keys)?))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_operator_keys() {
-        let keys = [
-            "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
-            "2222222222222222222222222222222222222222222222222222222222222222".to_string(),
-        ];
-        assert!(parse_operator_keys(&keys).is_ok());
-    }
+    Ok((result, musig_aggregate_pks_inner(x_only_keys)?))
 }

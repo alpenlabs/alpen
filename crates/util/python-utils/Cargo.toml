@@ -33,6 +33,7 @@ secp256k1.workspace = true
 pyo3-build-config = ">=0.24.1"
 
 [dev-dependencies]
+rand_chacha.workspace = true
 strata-common.workspace = true
 
 anyhow.workspace = true
