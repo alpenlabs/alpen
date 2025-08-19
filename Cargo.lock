@@ -12624,6 +12624,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "shrex_macros"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1aa93d8fdb16745a5ef6c63d88a183aabd1f10fef5824368ba3d754d49b7a65"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "shrex",
+ "syn 2.0.101",
+]
+
+[[package]]
 name = "signal-hook"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13979,6 +13991,7 @@ dependencies = [
  "revm-primitives",
  "secp256k1 0.29.1",
  "shrex",
+ "shrex_macros",
  "strata-common",
  "strata-crypto",
  "strata-primitives",
