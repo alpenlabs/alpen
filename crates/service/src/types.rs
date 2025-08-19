@@ -1,6 +1,6 @@
 //! Core service worker types.
 
-use std::{fmt::Debug, future::Future};
+use std::{any::Any, fmt::Debug, future::Future};
 
 use serde::Serialize;
 
@@ -26,7 +26,7 @@ pub trait Service: Sync + Send + 'static {
     ///
     /// This implements [``Serialize``] so that we can unify different types of
     /// services into a single metrics collection system.
-    type Status: Clone + Debug + Sync + Send + Serialize + 'static;
+    type Status: Any + Clone + Debug + Sync + Send + Serialize + 'static;
 
     /// Gets the status from the current state.
     fn get_status(s: &Self::State) -> Self::Status;
