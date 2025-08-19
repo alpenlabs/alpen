@@ -22,7 +22,7 @@ use crate::{
 
 /// Chain worker service implementation using the service framework.
 #[derive(Debug)]
-pub(crate) struct ChainWorkerService<W> {
+pub struct ChainWorkerService<W> {
     _phantom: std::marker::PhantomData<W>,
 }
 
@@ -71,7 +71,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 
 /// Service state for the chain worker.
 #[derive(Debug)]
-pub(crate) struct ChainWorkerServiceState<W> {
+pub struct ChainWorkerServiceState<W> {
     #[allow(unused)]
     shared: Arc<Mutex<WorkerShared>>,
 
