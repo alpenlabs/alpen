@@ -135,6 +135,25 @@ class StrataFactory(flexitest.Factory):
         svc.stop_timeout = 30
         svc.start()
         _inject_service_create_rpc(svc, rpc_url, "sequencer")
+
+        def snapshot_dir_path(idx: int):
+            return f"{datadir}.{idx}"
+
+        def _snapshot_datadir(idx: int):
+            snapshot_dir = snapshot_dir_path(idx)
+            os.makedirs(snapshot_dir, exist_ok=True)
+            shutil.copytree(datadir, snapshot_dir, dirs_exist_ok=True)
+
+        def _restore_snapshot(idx: int):
+            assert not svc.is_started(), "Should call restore only when service is stopped"
+            snapshot_dir = snapshot_dir_path(idx)
+            assert os.path.exists(snapshot_dir)
+            os.rename(datadir, f"{datadir}.b.{idx}")
+            os.rename(snapshot_dir, datadir)
+
+        svc.snapshot_datadir = _snapshot_datadir
+        svc.restore_snapshot = _restore_snapshot
+
         return svc
 
 
