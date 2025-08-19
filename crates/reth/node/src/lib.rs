@@ -2,7 +2,7 @@
 mod engine;
 mod evm;
 mod node;
-mod payload;
+pub mod payload;
 mod payload_builder;
 mod pool;
 

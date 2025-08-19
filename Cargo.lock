@@ -1027,6 +1027,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-reth-client"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types",
+ "alloy-rpc-types-engine",
+ "alpen-chainspec",
+ "alpen-reth-db",
+ "alpen-reth-exex",
+ "alpen-reth-node",
+ "clap",
+ "eyre",
+ "reth-chain-state",
+ "reth-chainspec",
+ "reth-cli-commands",
+ "reth-cli-runner",
+ "reth-cli-util",
+ "reth-db",
+ "reth-node-builder",
+ "reth-node-core",
+ "reth-payload-builder",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "alpen-reth-db"
 version = "0.3.0-alpha.1"
 dependencies = [

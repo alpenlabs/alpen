@@ -63,6 +63,7 @@ members = [
   "bin/alpen-cli",
   "bin/strata-client",
   "bin/alpen-reth",
+  "bin/alpen-reth-client",
   "bin/strata-sequencer-client",
   "bin/prover-client",
   "bin/prover-perf",
