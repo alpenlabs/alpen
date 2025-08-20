@@ -299,6 +299,17 @@ pub trait L1WriterDatabase {
     /// Get the next payload index
     fn get_next_payload_idx(&self) -> DbResult<u64>;
 
+    /// Delete a specific payload entry by its index.
+    ///
+    /// Returns true if the payload existed and was deleted, false otherwise.
+    fn del_payload_entry(&self, idx: u64) -> DbResult<bool>;
+
+    /// Delete payload entries from the specified index onwards (inclusive).
+    ///
+    /// This method deletes all payload entries with index >= start_idx.
+    /// Returns a vector of deleted payload indices.
+    fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
+
     /// Store the [`IntentEntry`].
     fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<()>;
 
@@ -310,6 +321,17 @@ pub trait L1WriterDatabase {
 
     /// Get  the next intent index
     fn get_next_intent_idx(&self) -> DbResult<u64>;
+
+    /// Delete a specific intent entry by its ID.
+    ///
+    /// Returns true if the intent existed and was deleted, false otherwise.
+    fn del_intent_entry(&self, id: Buf32) -> DbResult<bool>;
+
+    /// Delete intent entries from the specified index onwards (inclusive).
+    ///
+    /// This method deletes all intent entries with index >= start_idx.
+    /// Returns a vector of deleted intent indices.
+    fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 }
 
 pub trait ProofDatabase {
