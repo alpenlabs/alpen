@@ -301,7 +301,7 @@ mod tests {
     use std::str::FromStr;
 
     use bdk_wallet::KeychainKind;
-    use shrex::hex;
+    use shrex_macros::hex;
 
     use super::*;
 

@@ -16,7 +16,7 @@ name = "strata_utils"
 crate-type = ["cdylib"]
 
 [dependencies]
-shrex = { version = "0.3.0-alpha.1", path = "../shrex", features = ["serde"] }
+shrex.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
 
@@ -35,6 +35,7 @@ pyo3-build-config = ">=0.24.1"
 
 [dev-dependencies]
 strata-common.workspace = true
+shrex_macros.workspace = true
 
 anyhow.workspace = true
 bitcoind-async-client.workspace = true
