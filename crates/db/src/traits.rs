@@ -385,7 +385,16 @@ pub trait L1BroadcastDatabase {
     /// Updates an existing txentry
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()>;
 
-    // TODO: possibly add delete as well
+    /// Delete a specific tx entry by its ID.
+    ///
+    /// Returns true if the tx entry existed and was deleted, false otherwise.
+    fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool>;
+
+    /// Delete tx entries from the specified index onwards (inclusive).
+    ///
+    /// This method deletes all tx entries with index >= start_idx.
+    /// Returns a vector of deleted tx indices.
+    fn del_tx_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 
     /// Fetch [`L1TxEntry`] from db
     fn get_tx_entry_by_id(&self, txid: Buf32) -> DbResult<Option<L1TxEntry>>;
