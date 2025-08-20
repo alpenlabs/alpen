@@ -6,7 +6,8 @@ use tracing::warn;
 use super::TxFilterConfig;
 use crate::envelope::parser::parse_envelope_payloads;
 
-const PROOF_SIZE_WITH_PUBLIC_PARAMS: usize = 396;
+/// Proof size, which does not include public params.
+const PROOF_SIZE: usize = 260;
 
 /// Parses envelope from the given transaction. Currently, the only envelope recognizable is
 /// the checkpoint envelope.
@@ -64,15 +65,18 @@ fn validate_checkpoint(
         return None;
     }
 
-    // Also check if the proof has a valid size.
+    // Also check if the proof has valid size.
     // FIXME: We should actually be checking the validity of proof, but this is done
     // for a hotfix.
+    validate_proof_length(signed_checkpoint)
+}
+
+fn validate_proof_length(signed_checkpoint: SignedCheckpoint) -> Option<SignedCheckpoint> {
     let proof_size = signed_checkpoint.checkpoint().proof().as_bytes().len();
-    // We are allowing proof of size 0 because we support empty proofs.
-    if proof_size != 0 && proof_size < PROOF_SIZE_WITH_PUBLIC_PARAMS {
+    // We are allowing proof of size 0 because we also support empty proofs.
+    if proof_size != 0 && proof_size < PROOF_SIZE {
         return None;
     }
-
     Some(signed_checkpoint)
 }
 
@@ -87,9 +91,7 @@ mod test {
     use strata_test_utils::{l2::gen_params, ArbitraryGenerator};
 
     use super::TxFilterConfig;
-    use crate::filter::{
-        checkpoint::PROOF_SIZE_WITH_PUBLIC_PARAMS, parse_valid_checkpoint_envelopes,
-    };
+    use crate::filter::{checkpoint::PROOF_SIZE, parse_valid_checkpoint_envelopes};
 
     const TEST_ADDR: &str = "bcrt1q6u6qyya3sryhh42lahtnz2m7zuufe7dlt8j0j5";
 
@@ -110,7 +112,7 @@ mod test {
             .map(|_| {
                 let mut gen = ArbitraryGenerator::new();
                 let chainstate: Chainstate = gen.generate();
-                let proof = [1; PROOF_SIZE_WITH_PUBLIC_PARAMS].as_slice();
+                let proof = [1; PROOF_SIZE].as_slice();
                 let signed_checkpoint = SignedCheckpoint::new(
                     Checkpoint::new(
                         gen.generate(),
