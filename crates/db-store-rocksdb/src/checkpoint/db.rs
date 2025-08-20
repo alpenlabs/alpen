@@ -90,6 +90,74 @@ impl CheckpointDatabase for RBCheckpointDB {
         Ok(rockbound::utils::get_last::<EpochSummarySchema>(&*self.db)?.map(|(x, _)| x))
     }
 
+    fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        let epoch_idx = epoch.epoch();
+        let terminal = epoch.to_block_commitment();
+
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<bool, anyhow::Error> {
+                    let Some(mut summaries) =
+                        txn.get_for_update::<EpochSummarySchema>(&epoch_idx)?
+                    else {
+                        return Ok(false);
+                    };
+
+                    // Find the summary to delete
+                    let Ok(pos) = summaries.binary_search_by_key(&terminal, |s| *s.terminal())
+                    else {
+                        return Ok(false);
+                    };
+
+                    // Remove the summary from the vector
+                    summaries.remove(pos);
+
+                    // If vector is now empty, delete the entire entry
+                    if summaries.is_empty() {
+                        txn.delete::<EpochSummarySchema>(&epoch_idx)?;
+                    } else {
+                        // Otherwise, update with the remaining summaries
+                        txn.put::<EpochSummarySchema>(&epoch_idx, &summaries)?;
+                    }
+
+                    Ok(true)
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))
+    }
+
+    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>> {
+        let last_epoch = self.get_last_summarized_epoch()?;
+        let Some(last_epoch) = last_epoch else {
+            return Ok(Vec::new());
+        };
+
+        if start_epoch > last_epoch {
+            return Ok(Vec::new());
+        }
+
+        let mut deleted_epochs = Vec::new();
+
+        // Use batch operations for efficiency
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    for epoch in start_epoch..=last_epoch {
+                        if txn.get::<EpochSummarySchema>(&epoch)?.is_some() {
+                            txn.delete::<EpochSummarySchema>(&epoch)?;
+                            deleted_epochs.push(epoch);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(deleted_epochs)
+    }
+
     fn put_checkpoint(&self, epoch: u64, entry: CheckpointEntry) -> DbResult<()> {
         Ok(self.db.put::<CheckpointSchema>(&epoch, &entry)?)
     }
@@ -100,6 +168,45 @@ impl CheckpointDatabase for RBCheckpointDB {
 
     fn get_last_checkpoint_idx(&self) -> DbResult<Option<u64>> {
         Ok(rockbound::utils::get_last::<CheckpointSchema>(&*self.db)?.map(|(x, _)| x))
+    }
+
+    fn del_checkpoint(&self, epoch: u64) -> DbResult<bool> {
+        let exists = self.db.get::<CheckpointSchema>(&epoch)?.is_some();
+        if exists {
+            self.db.delete::<CheckpointSchema>(&epoch)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>> {
+        let last_epoch = self.get_last_checkpoint_idx()?;
+        let Some(last_epoch) = last_epoch else {
+            return Ok(Vec::new());
+        };
+
+        if start_epoch > last_epoch {
+            return Ok(Vec::new());
+        }
+
+        let mut deleted_epochs = Vec::new();
+
+        // Use batch operations for efficiency
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    for epoch in start_epoch..=last_epoch {
+                        if txn.get::<CheckpointSchema>(&epoch)?.is_some() {
+                            txn.delete::<CheckpointSchema>(&epoch)?;
+                            deleted_epochs.push(epoch);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(deleted_epochs)
     }
 }
 

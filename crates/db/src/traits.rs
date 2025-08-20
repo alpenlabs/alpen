@@ -179,6 +179,17 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Gets the index of the last epoch that we have a summary for, if any.
     fn get_last_summarized_epoch(&self) -> DbResult<Option<u64>>;
 
+    /// Delete a specific epoch summary by epoch commitment.
+    ///
+    /// Returns true if the epoch summary existed and was deleted, false otherwise.
+    fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
+    /// Delete epoch summaries from the specified epoch onwards (inclusive).
+    ///
+    /// This method deletes all epoch summaries with epoch index >= start_epoch.
+    /// Returns a vector of deleted epoch indices.
+    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
+
     /// Store a [`CheckpointEntry`]
     ///
     /// `batchidx` for the Checkpoint is expected to increase monotonically and
@@ -191,6 +202,17 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
 
     /// Get last written checkpoint index.
     fn get_last_checkpoint_idx(&self) -> DbResult<Option<u64>>;
+
+    /// Delete a specific checkpoint by epoch index.
+    ///
+    /// Returns true if the checkpoint existed and was deleted, false otherwise.
+    fn del_checkpoint(&self, epoch: u64) -> DbResult<bool>;
+
+    /// Delete checkpoint entries from the specified epoch onwards (inclusive).
+    ///
+    /// This method deletes all checkpoints with epoch index >= start_epoch.
+    /// Returns a vector of deleted epoch indices.
+    fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
