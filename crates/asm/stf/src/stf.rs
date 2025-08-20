@@ -3,9 +3,7 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::params::Params;
-use strata_asm_common::{
-    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, GenesisConfigRegistry,
-};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
 
 use crate::{
     manager::SubprotoManager,
@@ -25,7 +23,6 @@ use crate::{
 /// * `pre_state` - The current anchor state containing chain view and subprotocol states
 /// * `input` - The ASM STF input containing the block header, protocol transactions, and auxiliary
 ///   data
-/// * `genesis_registry` - genesis configuration registry for subprotocol initialization
 ///
 /// # Returns
 ///
@@ -41,13 +38,14 @@ use crate::{
 ///
 /// # Type Parameters
 ///
-/// * `S` - The ASM specification type that defines magic bytes and subprotocol behavior
+/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
+///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 /// * `'x` - Lifetime parameter tied to the auxiliary input data
 pub fn asm_stf<'b, 'x, S: AsmSpec>(
+    spec: &S,
     pre_state: &AnchorState,
     input: AsmStfInput<'b, 'x>,
-    genesis_registry: &GenesisConfigRegistry,
 ) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -59,19 +57,18 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
-    let mut loader_stage =
-        SubprotoLoaderStage::new(pre_state, &mut manager, input.aux_input, genesis_registry);
-    S::call_subprotocols(&mut loader_stage);
+    let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, input.aux_input);
+    spec.call_subprotocols(&mut loader_stage);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
     let mut process_stage = ProcessStage::new(input.protocol_txs, &mut manager, pre_state);
-    S::call_subprotocols(&mut process_stage);
+    spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
     // This stage handles cross-protocol communication and finalizes state changes.
     let mut finish_stage = FinishStage::new(&mut manager);
-    S::call_subprotocols(&mut finish_stage);
+    spec.call_subprotocols(&mut finish_stage);
 
     // 5. Construct the final `AnchorState` and output.
     // Export the updated state sections and logs from all subprotocols to build the result.
