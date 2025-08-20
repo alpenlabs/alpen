@@ -23,8 +23,6 @@ use zeroize::Zeroizing;
 use crate::constants::{
     AES_NONCE_LEN, AES_TAG_LEN, BIP44_ALPEN_EVM_WALLET_PATH, PW_SALT_LEN, SEED_LEN,
 };
-#[cfg(not(target_os = "linux"))]
-use crate::errors::{NoStorageAccess, PlatformFailure};
 
 #[expect(missing_debug_implementations)]
 pub struct BaseWallet(LoadParams, CreateParams);
