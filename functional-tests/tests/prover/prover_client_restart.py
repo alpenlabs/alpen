@@ -42,6 +42,12 @@ class ProverClientRestartTest(testenv.StrataTestBase):
 
         # Test on with the latest checkpoint
         latest_checkpoint = sequencer_rpc.strata_getLatestCheckpointIndex()
+        wait_until(
+            lambda: sequencer_rpc.strata_getLatestCheckpointIndex() == latest_checkpoint + 1,
+            timeout=180,
+        )
+        latest_checkpoint += 1
+
         self.prove_latest_checkpoint(prover_client_rpc)
 
         self.debug("restart prover client")
