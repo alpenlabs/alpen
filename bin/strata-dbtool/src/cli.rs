@@ -8,7 +8,6 @@ use crate::cmd::{
     client_state::GetClientStateUpdateArgs,
     l1::{GetL1ManifestArgs, GetL1SummaryArgs},
     l2::{GetL2BlockArgs, GetL2SummaryArgs},
-    sync_event::{GetSyncEventArgs, GetSyncEventsSummaryArgs},
     syncinfo::GetSyncinfoArgs,
 };
 
@@ -41,8 +40,6 @@ pub(crate) enum Command {
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),
     GetEpochSummary(GetEpochSummaryArgs),
     GetSyncinfo(GetSyncinfoArgs),
-    GetSyncEvent(GetSyncEventArgs),
-    GetSyncEventsSummary(GetSyncEventsSummaryArgs),
     GetChainstate(GetChainstateArgs),
     RevertChainstate(RevertChainstateArgs),
 }
