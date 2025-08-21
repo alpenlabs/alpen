@@ -51,35 +51,17 @@ pub(crate) struct GetEpochSummaryArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-/// Get checkpoint details by index.
-pub(crate) fn get_checkpoint(
+/// Get a checkpoint entry at a specific index.
+///
+/// Returns `None` if no checkpoint exists at that index.
+pub(crate) fn get_checkpoint_at_index(
     db: &impl Database,
-    args: GetCheckpointArgs,
-) -> Result<(), DisplayedError> {
+    index: u64,
+) -> Result<Option<CheckpointEntry>, DisplayedError> {
     let chkpt_db = db.checkpoint_db();
-    let checkpoint_idx = args.checkpoint_index;
-    let entry = chkpt_db
-        .get_checkpoint(checkpoint_idx)
-        .internal_error(format!(
-            "Failed to get checkpoint at index {checkpoint_idx}",
-        ))?
-        .ok_or_else(|| {
-            DisplayedError::UserError(
-                "No checkpoint found at index".to_string(),
-                Box::new(checkpoint_idx),
-            )
-        })?;
-
-    // Create the output data structure
-    let checkpoint_info = CheckpointInfo {
-        checkpoint_index: checkpoint_idx,
-        checkpoint: &entry.checkpoint,
-        confirmation_status: &entry.confirmation_status,
-        proving_status: &entry.proving_status,
-    };
-
-    // Use the output utility
-    output(&checkpoint_info, args.output_format)
+    chkpt_db
+        .get_checkpoint(index)
+        .internal_error(format!("Failed to get checkpoint at index {index}"))
 }
 
 /// Get latest checkpoint entry.
@@ -92,14 +74,52 @@ pub(crate) fn get_latest_checkpoint_entry(
         .internal_error("Failed to get last checkpoint index")?
         .expect("valid checkpoint index");
 
-    let checkpoint_entry = chkpt_db
-        .get_checkpoint(last_idx)
-        .internal_error("Failed to get last checkpoint")?
-        .ok_or_else(|| {
-            DisplayedError::InternalError("No checkpoint found".to_string(), Box::new(last_idx))
-        })?;
-
+    let checkpoint_entry = get_checkpoint_at_index(db, last_idx)?.ok_or_else(|| {
+        DisplayedError::InternalError("No checkpoint found".to_string(), Box::new(last_idx))
+    })?;
     Ok(checkpoint_entry)
+}
+
+/// Get the range of checkpoint indices (0 to latest).
+///
+/// Returns `None` if no checkpoints exist, otherwise returns `Some((0, latest_idx))`.
+pub(crate) fn get_checkpoint_index_range(
+    db: &impl Database,
+) -> Result<Option<(u64, u64)>, DisplayedError> {
+    let chkpt_db = db.checkpoint_db();
+    if let Some(last_idx) = chkpt_db
+        .get_last_checkpoint_idx()
+        .internal_error("Failed to get last checkpoint index")?
+    {
+        Ok(Some((0, last_idx)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Get checkpoint details by index.
+pub(crate) fn get_checkpoint(
+    db: &impl Database,
+    args: GetCheckpointArgs,
+) -> Result<(), DisplayedError> {
+    let checkpoint_idx = args.checkpoint_index;
+    let entry = get_checkpoint_at_index(db, checkpoint_idx)?.ok_or_else(|| {
+        DisplayedError::UserError(
+            "No checkpoint found at index".to_string(),
+            Box::new(checkpoint_idx),
+        )
+    })?;
+
+    // Create the output data structure
+    let checkpoint_info = CheckpointInfo {
+        checkpoint_index: checkpoint_idx,
+        checkpoint: &entry.checkpoint,
+        confirmation_status: &entry.confirmation_status,
+        proving_status: &entry.proving_status,
+    };
+
+    // Use the output utility
+    output(&checkpoint_info, args.output_format)
 }
 
 /// Get summary of all checkpoints.
