@@ -7,7 +7,6 @@ use strata_primitives::prelude::*;
 use strata_state::{
     client_state::{ClientState, ClientStateMut},
     operation::{ClientUpdateOutput, SyncAction},
-    sync_event::SyncEvent,
 };
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -18,12 +17,8 @@ use tokio::{
 };
 use tracing::*;
 
-use super::{
-    client_transition,
-    config::CsmExecConfig,
-    message::{ClientUpdateNotif, CsmMessage},
-};
-use crate::errors::Error;
+use super::{client_transition, config::CsmExecConfig};
+use crate::{errors::Error, genesis};
 
 /// Mutable worker state that we modify in the consensus worker task.
 ///
@@ -40,29 +35,18 @@ pub struct WorkerState {
     /// Node storage handle.
     storage: Arc<NodeStorage>,
 
-    /// Current state index.
-    cur_state_idx: u64,
-
     /// Current state ref.
     cur_state: Arc<ClientState>,
 
-    /// Broadcast channel used to publish state updates.
-    cupdate_tx: broadcast::Sender<Arc<ClientUpdateNotif>>,
+    // TODO(QQ): Ideally height for cur_state should be here.
+    last_height: u64,
 }
 
 impl WorkerState {
     /// Constructs a new instance by reconstructing the current consensus state
     /// from the provided database layer.
-    pub fn open(
-        params: Arc<Params>,
-        storage: Arc<NodeStorage>,
-        cupdate_tx: broadcast::Sender<Arc<ClientUpdateNotif>>,
-    ) -> anyhow::Result<Self> {
-        let csman = storage.client_state();
-
-        let (cur_state_idx, cur_state) = csman
-            .get_most_recent_state_blocking()
-            .ok_or(Error::MissingClientState(0))?;
+    pub fn open(params: Arc<Params>, storage: Arc<NodeStorage>) -> anyhow::Result<Self> {
+        let cur_state = storage.client_state()._get_most_recent_state_blocking();
 
         // TODO make configurable
         let config = CsmExecConfig {
@@ -71,36 +55,20 @@ impl WorkerState {
             retry_cnt_max: 20,
             retry_backoff_mult: 1120,
         };
+        let last_height = cur_state.height();
 
         Ok(Self {
             params,
             config,
             storage,
-            cur_state_idx,
             cur_state,
-            cupdate_tx,
+            last_height,
         })
-    }
-
-    /// Gets the index of the current state.
-    pub fn cur_event_idx(&self) -> u64 {
-        self.cur_state_idx
     }
 
     /// Gets a ref to the consensus state from the inner state tracker.
     pub fn cur_state(&self) -> &Arc<ClientState> {
         &self.cur_state
-    }
-
-    fn get_sync_event(&self, idx: u64) -> anyhow::Result<Option<SyncEvent>> {
-        Ok(self.storage.sync_event().get_sync_event_blocking(idx)?)
-    }
-
-    /// Fetches a sync event from storage.
-    fn get_sync_event_ok(&self, idx: u64) -> anyhow::Result<SyncEvent> {
-        Ok(self
-            .get_sync_event(idx)?
-            .ok_or(Error::MissingSyncEvent(idx))?)
     }
 
     /// Given the next event index, computes the state application if the
@@ -109,21 +77,16 @@ impl WorkerState {
     /// This is copied from the old `StateTracker` type which we removed to
     /// simplify things.
     // TODO maybe remove output return value
-    pub fn advance_consensus_state(&mut self, ev_idx: u64) -> anyhow::Result<ClientUpdateOutput> {
-        let prev_ev_idx = ev_idx - 1;
-        if prev_ev_idx != self.cur_state_idx {
-            return Err(Error::SkippedEventIdx(prev_ev_idx, self.cur_state_idx).into());
-        }
-
-        // Load the event from the database.
-        let ev = self.get_sync_event_ok(ev_idx)?;
-
-        debug!(%ev_idx, ?ev, "processing sync event");
+    pub fn advance_consensus_state(
+        &mut self,
+        block: &L1BlockCommitment,
+    ) -> anyhow::Result<ClientUpdateOutput> {
+        debug!(%block, "processing sync event");
 
         // Compute the state transition.
         let context = client_transition::StorageEventContext::new(&self.storage);
         let mut state_mut = ClientStateMut::new(self.cur_state.as_ref().clone());
-        client_transition::process_event(&mut state_mut, &ev, &context, &self.params)?;
+        client_transition::process_event(&mut state_mut, block, &context, &self.params)?;
 
         // Clone the state and apply the operations to it.
         let outp = state_mut.into_update();
@@ -131,10 +94,10 @@ impl WorkerState {
         Ok(outp)
     }
 
-    fn update_bookeeping(&mut self, ev_idx: u64, state: Arc<ClientState>) {
-        debug!(%ev_idx, ?state, "computed new consensus state");
+    fn update_bookeeping(&mut self, last_height: u64, state: Arc<ClientState>) {
+        debug!(%last_height, ?state, "computed new consensus state");
         self.cur_state = state;
-        self.cur_state_idx = ev_idx;
+        self.last_height = last_height;
     }
 }
 
@@ -143,12 +106,12 @@ impl WorkerState {
 pub fn client_worker_task(
     shutdown: ShutdownGuard,
     mut state: WorkerState,
-    mut msg_rx: mpsc::Receiver<CsmMessage>,
+    mut block_rx: mpsc::Receiver<L1BlockCommitment>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
     info!("started CSM worker");
 
-    while let Some(msg) = msg_rx.blocking_recv() {
+    while let Some(msg) = block_rx.blocking_recv() {
         if let Err(e) = process_msg(&mut state, &msg, &status_channel, &shutdown) {
             error!(err = %e, ?msg, "failed to process sync message, aborting!");
             return Err(e);
@@ -167,100 +130,106 @@ pub fn client_worker_task(
 
 fn process_msg(
     state: &mut WorkerState,
-    msg: &CsmMessage,
+    block: &L1BlockCommitment,
     status_channel: &StatusChannel,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
-    match msg {
-        CsmMessage::EventInput(idx) => {
-            strata_common::check_bail_trigger("sync_event");
+    strata_common::check_bail_trigger("sync_event");
 
-            // If we somehow missed a sync event we need to try to rerun those,
-            // just in case.
-            let cur_ev_idx = state.cur_event_idx();
-            let next_exp_idx = cur_ev_idx + 1;
-            for ev_idx in next_exp_idx..=*idx {
-                if ev_idx < *idx {
-                    warn!(%ev_idx, "Applying missed sync event.");
-                }
-
-                // FIXME: We should be explicit about what errors to retry instead of just
-                // retrying whenever this fails.
-                handle_sync_event_with_retry(state, ev_idx, shutdown)?;
-
-                // Broadcast notifications and other stuffs
-                post_handle_sync_event_hook(
-                    ev_idx,
-                    state.cur_state().clone(),
-                    state,
-                    status_channel,
-                )?;
-            }
-
-            Ok(())
-        }
-    }
-}
-
-/// Repeatedly calls `handle_sync_event`, retrying on failure, up to a limit
-/// after which we return with the most recent error.
-fn handle_sync_event_with_retry(
-    state: &mut WorkerState,
-    ev_idx: u64,
-    shutdown: &ShutdownGuard,
-) -> anyhow::Result<()> {
-    // Fetch the sync event we're looking at.
-    let Some(ev) = state.get_sync_event(ev_idx)? else {
-        error!(%ev_idx, "tried to process missing sync event, aborting handle_sync_event!");
-        return Ok(());
-    };
-
-    let span = debug_span!("sync-event", %ev_idx, %ev);
-    let _g = span.enter();
-
-    let mut tries = 0;
-    let mut wait_dur = state.config.retry_base_dur;
-
-    loop {
-        tries += 1;
-
-        // TODO demote to trace after we figure out the current issues
-        debug!("trying sync event");
-
-        let e = match handle_sync_event(state, ev_idx) {
-            Err(e) => e,
-            Ok(v) => {
-                // Happy case, we want this to happen.
-                trace!("completed sync event");
-                return Ok(v);
-            }
-        };
-
-        // If we hit the try limit, abort.
-        if tries > state.config.retry_cnt_max {
-            error!(err = %e, %tries, "failed to exec sync event, hit tries limit, aborting");
-            return Err(e);
-        }
-
-        // Sleep and increase the wait dur.
-        error!(err = %e, %tries, "failed to exec sync event, retrying...");
-        thread::sleep(wait_dur);
-        wait_dur = state.config.compute_retry_backoff(wait_dur);
-
-        if shutdown.should_shutdown() {
-            warn!("received shutdown signal");
-            break;
-        }
-    }
-
-    debug!(%ev_idx, %ev, "processed OK");
+    // FIXME: We should be explicit about what errors to retry instead of just
+    // retrying whenever this fails.
+    handle_new_block_with_retry(state, block, shutdown, status_channel)?;
 
     Ok(())
 }
 
-fn handle_sync_event(state: &mut WorkerState, ev_idx: u64) -> anyhow::Result<()> {
+/// Repeatedly calls `handle_sync_event`, retrying on failure, up to a limit
+/// after which we return with the most recent error.
+fn handle_new_block_with_retry(
+    state: &mut WorkerState,
+    block: &L1BlockCommitment,
+    shutdown: &ShutdownGuard,
+    status_channel: &StatusChannel,
+) -> anyhow::Result<()> {
+    let span = debug_span!("sync-event", %block);
+    let _g = span.enter();
+
+    // Blocks for which there's no client state. Some of the l1 blocks could have been skipped.
+    let start_height = state
+        .params
+        .rollup()
+        .genesis_l1_height
+        .max(state.last_height + 1);
+    let end_height = block.height();
+
+    let mut potentually_skipped_blocks = state
+        .storage
+        .l1()
+        .get_canonical_blockid_range(start_height, end_height)?
+        .iter()
+        .zip((start_height..end_height).into_iter())
+        .map(|(blk_id, height)| L1BlockCommitment::new(height, *blk_id))
+        .collect::<Vec<_>>();
+    potentually_skipped_blocks.push(*block);
+
+    debug!("trying sync event");
+
+    for next_block in potentually_skipped_blocks.iter() {
+        let mut tries = 0;
+        let mut wait_dur = state.config.retry_base_dur;
+        loop {
+            tries += 1;
+
+            // Check if client state is already present, and skip if so.
+            let next_client_state = state
+                .storage
+                .client_state()
+                ._get_state_blocking(*next_block)?;
+
+            if let Some(cs) = next_client_state {
+                state.update_bookeeping(next_block.height(), Arc::new(cs));
+                continue;
+            }
+
+            // Handle the block for which there's no client state.
+            let e = match handle_block(state, next_block) {
+                Err(e) => e,
+                Ok(v) => {
+                    // Happy case, we want this to happen.
+                    continue;
+                }
+            };
+
+            // If we hit the try limit, abort.
+            if tries > state.config.retry_cnt_max {
+                error!(err = %e, %tries, "failed to exec sync event, hit tries limit, aborting");
+                return Err(e);
+            }
+
+            // Sleep and increase the wait dur.
+            error!(err = %e, %tries, "failed to exec sync event, retrying...");
+            thread::sleep(wait_dur);
+            wait_dur = state.config.compute_retry_backoff(wait_dur);
+
+            if shutdown.should_shutdown() {
+                warn!("received shutdown signal");
+                break;
+            }
+        }
+    }
+
+    // Update status channel with the latest client state.
+    status_channel.update_client_state(state.cur_state().as_ref().clone());
+    trace!("completed sync event");
+
+    debug!(%block, "processed OK");
+
+    Ok(())
+}
+
+fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::Result<()> {
     // Perform the main step of deciding what the output we're operating on.
-    let outp = state.advance_consensus_state(ev_idx)?;
+    let outp = state.advance_consensus_state(block)?;
 
     // Apply the actions produced from the state transition before we publish
     // the new state, so that any database changes from them are available when
@@ -273,33 +242,11 @@ fn handle_sync_event(state: &mut WorkerState, ev_idx: u64) -> anyhow::Result<()>
     let clstate = state
         .storage
         .client_state()
-        .put_update_blocking(ev_idx, outp.clone())?;
+        ._put_update_blocking(block, outp.clone())?;
 
-    // Now update worker state bookkeeping
-    state.update_bookeeping(ev_idx, clstate);
+    // Set.
+    state.update_bookeeping(block.height(), clstate);
 
-    // Make sure that the new state index is set as expected.
-    assert_eq!(state.cur_event_idx(), ev_idx);
-
-    Ok(())
-}
-
-/// Apply send Update notification to listeners.
-fn post_handle_sync_event_hook(
-    ev_idx: u64,
-    new_state: Arc<ClientState>,
-    state: &WorkerState,
-    status_channel: &StatusChannel,
-) -> anyhow::Result<()> {
-    status_channel.update_client_state(new_state.as_ref().clone());
-
-    trace!(%ev_idx, "sending client update notif");
-    let update = ClientUpdateNotif::new(ev_idx, new_state);
-    if state.cupdate_tx.send(Arc::new(update)).is_err() {
-        // Is this actually useful?  Does this just error if there's no
-        // listeners?
-        warn!("failed to send broadcast for new CSM update");
-    }
     Ok(())
 }
 

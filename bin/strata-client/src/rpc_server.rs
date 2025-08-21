@@ -181,63 +181,64 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_client_status(&self) -> RpcResult<RpcClientStatus> {
-        let css = self.status_channel.get_chain_sync_status();
-        let cstate = self.status_channel.get_cur_client_state();
-
-        // Define default values for all of the fields that we'll fill in later.
-        let mut chain_tip = Buf32::zero();
-        let mut chain_tip_slot = 0;
-        let mut finalized_blkid = Buf32::zero();
-        let mut last_l1_block = Buf32::zero();
-        let mut buried_l1_height = 0;
-        let mut finalized_epoch = None;
-        let mut confirmed_epoch = None;
-        let mut tip_l1_block = None;
-        let mut buried_l1_block = None;
-
-        // Maybe set the chain tip fields.
-        // TODO remove this after actually removing the fields
-        if let Some(css) = css {
-            chain_tip = (*css.tip_blkid()).into();
-            chain_tip_slot = css.tip_slot();
-        }
-
-        // Maybe set last L1 block.
-        if let Some(block) = cstate.get_tip_l1_block() {
-            tip_l1_block = Some(block);
-            last_l1_block = (*block.blkid()).into(); // TODO remove
-        }
-
-        // Maybe set buried L1 block.
-        if let Some(block) = cstate.get_buried_l1_block() {
-            buried_l1_block = Some(block);
-            buried_l1_height = block.height(); // TODO remove
-        }
-
-        // Maybe set confirmed epoch.
-        if let Some(last_ckpt) = cstate.get_last_checkpoint() {
-            confirmed_epoch = Some(last_ckpt.batch_info.get_epoch_commitment());
-        }
-
-        // Maybe set finalized epoch.
-        if let Some(fin_ckpt) = cstate.get_apparent_finalized_checkpoint() {
-            finalized_epoch = Some(fin_ckpt.batch_info.get_epoch_commitment());
-            finalized_blkid = (*fin_ckpt.batch_info.final_l2_block().blkid()).into();
-        }
-
-        // FIXME: remove deprecated items
-        #[allow(deprecated)]
-        Ok(RpcClientStatus {
-            chain_tip: chain_tip.into(),
-            chain_tip_slot,
-            finalized_blkid: *finalized_blkid.as_ref(),
-            last_l1_block: last_l1_block.into(),
-            finalized_epoch,
-            confirmed_epoch,
-            buried_l1_height,
-            tip_l1_block,
-            buried_l1_block,
-        })
+        todo!("TODO(QQ): todo");
+        //let css = self.status_channel.get_chain_sync_status();
+        //let cstate = self.status_channel.get_cur_client_state();
+        //
+        //// Define default values for all of the fields that we'll fill in later.
+        //let mut chain_tip = Buf32::zero();
+        //let mut chain_tip_slot = 0;
+        //let mut finalized_blkid = Buf32::zero();
+        //let mut last_l1_block = Buf32::zero();
+        //let mut buried_l1_height = 0;
+        //let mut finalized_epoch = None;
+        //let mut confirmed_epoch = None;
+        //let mut tip_l1_block = None;
+        //let mut buried_l1_block = None;
+        //
+        //// Maybe set the chain tip fields.
+        //// TODO remove this after actually removing the fields
+        //if let Some(css) = css {
+        //    chain_tip = (*css.tip_blkid()).into();
+        //    chain_tip_slot = css.tip_slot();
+        //}
+        //
+        //// Maybe set last L1 block.
+        //if let Some(block) = cstate.get_tip_l1_block() {
+        //    tip_l1_block = Some(block);
+        //    last_l1_block = (*block.blkid()).into(); // TODO remove
+        //}
+        //
+        //// Maybe set buried L1 block.
+        //if let Some(block) = cstate.get_buried_l1_block() {
+        //    buried_l1_block = Some(block);
+        //    buried_l1_height = block.height(); // TODO remove
+        //}
+        //
+        //// Maybe set confirmed epoch.
+        //if let Some(last_ckpt) = cstate.get_last_checkpoint() {
+        //    confirmed_epoch = Some(last_ckpt.batch_info.get_epoch_commitment());
+        //}
+        //
+        //// Maybe set finalized epoch.
+        //if let Some(fin_ckpt) = cstate.get_apparent_finalized_checkpoint() {
+        //    finalized_epoch = Some(fin_ckpt.batch_info.get_epoch_commitment());
+        //    finalized_blkid = (*fin_ckpt.batch_info.final_l2_block().blkid()).into();
+        //}
+        //
+        //// FIXME: remove deprecated items
+        //#[allow(deprecated)]
+        //Ok(RpcClientStatus {
+        //    chain_tip: chain_tip.into(),
+        //    chain_tip_slot,
+        //    finalized_blkid: *finalized_blkid.as_ref(),
+        //    last_l1_block: last_l1_block.into(),
+        //    finalized_epoch,
+        //    confirmed_epoch,
+        //    buried_l1_height,
+        //    tip_l1_block,
+        //    buried_l1_block,
+        //})
     }
 
     async fn get_recent_block_headers(&self, count: u64) -> RpcResult<Vec<RpcBlockHeader>> {
@@ -596,9 +597,10 @@ impl StrataApiServer for StrataRpcImpl {
             }
         }
 
-        if let Some(l1_height) = cstate.get_verified_l1_height(block_slot) {
-            return Ok(L2BlockStatus::Verified(l1_height));
-        }
+        // TODO(QQ): fix it
+        //if let Some(l1_height) = cstate.get_verified_l1_height(block_slot) {
+        //    return Ok(L2BlockStatus::Verified(l1_height));
+        //}
 
         if block_slot < css.tip_slot() {
             return Ok(L2BlockStatus::Confirmed);
@@ -607,39 +609,16 @@ impl StrataApiServer for StrataRpcImpl {
         Ok(L2BlockStatus::Unknown)
     }
 
-    // FIXME: possibly create a separate rpc type corresponding to SyncEvent
-    async fn get_sync_event(&self, idx: u64) -> RpcResult<Option<SyncEvent>> {
-        let ev: Option<SyncEvent> = self
-            .storage
-            .sync_event()
-            .get_sync_event_async(idx)
-            .await
-            .map_err(Error::Db)?;
-
-        Ok(ev)
-    }
-
-    async fn get_last_sync_event_idx(&self) -> RpcResult<u64> {
-        let last = self
-            .storage
-            .sync_event()
-            .get_last_idx_async()
-            .await
-            .map_err(Error::Db)?;
-
-        // FIXME returning MAX if we haven't produced one yet, should figure
-        // something else out
-        Ok(last.unwrap_or(u64::MAX))
-    }
-
     // FIXME: possibly create a separate rpc type corresponding to ClientUpdateOutput
     async fn get_client_update_output(&self, idx: u64) -> RpcResult<Option<ClientUpdateOutput>> {
-        Ok(self
-            .storage
-            .client_state()
-            .get_update_async(idx)
-            .map_err(Error::Db)
-            .await?)
+        // TODO(QQ): fix
+        todo!("fix");
+        //Ok(self
+        //    .storage
+        //    .client_state()
+        //    ._get_update_async(idx)
+        //    .map_err(Error::Db)
+        //    .await?)
     }
 }
 
@@ -811,13 +790,9 @@ impl StrataSequencerApiServer for SequencerServerImpl {
             .ok_or(Error::BeforeGenesis)?;
         let client_state = self.status.get_cur_client_state();
 
-        let client_int_state = client_state
-            .get_last_internal_state()
-            .ok_or(Error::MissingInternalState)?;
-
         let duties = extract_duties(
             tip_blockid,
-            client_int_state,
+            &client_state,
             &self.checkpoint_handle,
             self.storage.l2().as_ref(),
             &self.params,
@@ -938,12 +913,13 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
     }
 
     async fn get_clientstate_at_idx(&self, idx: u64) -> RpcResult<Option<ClientState>> {
-        Ok(self
-            .storage
-            .client_state()
-            .get_state_async(idx)
-            .map_err(Error::Db)
-            .await?)
+        todo!("TODO(QQ): impl");
+        //Ok(self
+        //    .storage
+        //    .client_state()
+        //    .get_state_async(idx)
+        //    .map_err(Error::Db)
+        //    .await?)
     }
 
     async fn set_bail_context(&self, _ctx: String) -> RpcResult<()> {

@@ -11,7 +11,6 @@ use anyhow::Context;
 pub use managers::{
     chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
     client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
-    sync_event::SyncEventManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db::traits::DatabaseBackend;
@@ -26,7 +25,6 @@ pub struct NodeStorage {
 
     chainstate_manager: Arc<ChainstateManager>,
 
-    sync_event_manager: Arc<SyncEventManager>,
     client_state_manager: Arc<ClientStateManager>,
 
     // TODO maybe move this into a different one?
@@ -45,10 +43,6 @@ impl NodeStorage {
 
     pub fn chainstate(&self) -> &Arc<ChainstateManager> {
         &self.chainstate_manager
-    }
-
-    pub fn sync_event(&self) -> &Arc<SyncEventManager> {
-        &self.sync_event_manager
     }
 
     pub fn client_state(&self) -> &Arc<ClientStateManager> {
@@ -73,7 +67,6 @@ where
     let l1_db = db.l1_db();
     let l2_db = db.l2_db();
     let chainstate_db = db.chain_state_db();
-    let sync_event_db = db.sync_event_db();
     let client_state_db = db.client_state_db();
     let checkpoint_db = db.checkpoint_db();
 
@@ -81,9 +74,9 @@ where
     let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), l2_db));
     let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
 
-    let sync_event_manager = Arc::new(SyncEventManager::new(pool.clone(), sync_event_db));
     let client_state_manager = Arc::new(
-        ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?,
+        ClientStateManager::new(pool.clone(), client_state_db, l1_block_manager.clone())
+            .context("open client state")?,
     );
 
     // (see above)
@@ -95,7 +88,6 @@ where
 
         chainstate_manager,
 
-        sync_event_manager,
         client_state_manager,
 
         // (see above)

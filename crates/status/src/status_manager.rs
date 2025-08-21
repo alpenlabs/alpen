@@ -12,7 +12,7 @@ use thiserror::Error;
 use tokio::sync::watch::{self, error::RecvError};
 use tracing::warn;
 
-use crate::chain::*;
+use crate::{chain::*, status_manager};
 
 #[derive(Debug, Error)]
 pub enum StatusError {
@@ -77,7 +77,7 @@ impl StatusChannel {
 
     /// Gets the last finalized [`L1Checkpoint`] from the current client state.
     pub fn get_last_checkpoint(&self) -> Option<L1Checkpoint> {
-        self.receiver.cl.borrow().get_last_checkpoint().cloned()
+        self.receiver.cl.borrow().get_last_checkpoint()
     }
 
     /// Returns a clone of the most recent tip block's chainstate, if present.

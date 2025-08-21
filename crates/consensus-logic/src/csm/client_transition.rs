@@ -1,5 +1,7 @@
 //! Core state transition function.
 
+use std::cmp::Ordering;
+
 use bitcoin::Transaction;
 use strata_primitives::{
     batch::verify_signed_checkpoint_sig,
@@ -8,7 +10,7 @@ use strata_primitives::{
 };
 use strata_state::{
     block::L2BlockBundle, chain_state::Chainstate, client_state::*, header::L2Header,
-    id::L2BlockId, operation::*, sync_event::SyncEvent,
+    id::L2BlockId, operation::*,
 };
 use strata_storage::NodeStorage;
 use tracing::*;
@@ -19,6 +21,9 @@ use crate::{checkpoint_verification::verify_checkpoint, errors::*, genesis::make
 pub trait EventContext {
     fn get_l1_block_manifest(&self, blockid: &L1BlockId) -> Result<L1BlockManifest, Error>;
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error>;
+    fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error>;
+
+    fn get_most_recent_client_state(&self) -> Result<ClientState, Error>;
     fn get_l2_block_data(&self, blockid: &L2BlockId) -> Result<L2BlockBundle, Error>;
     fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error>;
 }
@@ -43,6 +48,14 @@ impl EventContext for StorageEventContext<'_> {
             .get_block_manifest(blockid)?
             .ok_or(Error::MissingL1Block(*blockid))
     }
+
+    fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
+        self.storage
+            .client_state()
+            ._get_state_blocking(*blockid)?
+            .ok_or(Error::MissingClientState(0))
+    }
+
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error> {
         self.storage
             .l1()
@@ -64,161 +77,135 @@ impl EventContext for StorageEventContext<'_> {
             .map(|wb| wb.into_toplevel())
             .ok_or(Error::MissingBlockChainstate(*blkid))
     }
+
+    fn get_most_recent_client_state(&self) -> Result<ClientState, Error> {
+        todo!()
+    }
 }
 
 /// Processes the event given the current consensus state, producing some
 /// output.  This can return database errors.
 pub fn process_event(
     state: &mut ClientStateMut,
-    ev: &SyncEvent,
+    block: &L1BlockCommitment,
     context: &impl EventContext,
     params: &Params,
 ) -> Result<(), Error> {
-    match ev {
-        SyncEvent::L1Block(block) => {
-            let height = block.height();
+    let height = block.height();
 
-            // If the block is before genesis we don't care about it.
-            // TODO maybe put back pre-genesis tracking?
-            let genesis_trigger = params.rollup().genesis_l1_view.blk.height();
-            if height < genesis_trigger {
-                #[cfg(test)]
-                eprintln!(
+    // If the block is before genesis we don't care about it.
+    // TODO maybe put back pre-genesis tracking?
+    let genesis_trigger = params.rollup().genesis_l1_height;
+    if height < genesis_trigger {
+        #[cfg(test)]
+        eprintln!(
                     "early L1 block at h={height} (gt={genesis_trigger}) you may have set up the test env wrong"
                 );
 
-                warn!(%height, "ignoring unexpected L1Block event before horizon");
-                return Ok(());
-            }
-
-            // This doesn't do any SPV checks to make sure we only go to a
-            // a longer chain, it just does it unconditionally.  This is fine,
-            // since we'll be refactoring this more deeply soonish.
-            let block_mf = context.get_l1_block_manifest(block.blkid())?;
-            handle_block(state, block, &block_mf, context, params)?;
-            Ok(())
-        }
-
-        SyncEvent::L1Revert(block) => {
-            // TODO move this logic out into this function
-            state.rollback_l1_blocks(*block);
-            Ok(())
-        }
+        warn!(%height, "ignoring unexpected L1Block event before horizon");
+        return Ok(());
     }
+
+    // This doesn't do any SPV checks to make sure we only go to a
+    // a longer chain, it just does it unconditionally.  This is fine,
+    // since we'll be refactoring this more deeply soonish.
+    let block_mf = context.get_l1_block_manifest(block.blkid())?;
+    handle_block(state, &block_mf, context, params)?;
+    Ok(())
 }
 
 fn handle_block(
     state: &mut ClientStateMut,
-    block: &L1BlockCommitment,
     block_mf: &L1BlockManifest,
-    _context: &impl EventContext,
+    context: &impl EventContext,
     params: &Params,
 ) -> Result<(), Error> {
+    let block: L1BlockCommitment = block_mf.into();
     let height = block.height();
-    let l1blkid = block.blkid();
-
-    let next_exp_height = state.state().next_exp_l1_block();
-    let old_final_epoch = state.state().get_declared_final_epoch().copied();
 
     // We probably should have gotten the L1Genesis message by now but
     // let's just do this anyways.
-    if height == params.rollup().genesis_l1_view.blk.height() {
-        // Do genesis here.
-        let istate = process_genesis_trigger_block(block_mf, params.rollup())?;
-        state.accept_l1_block_state(block, istate);
-
-        // Also have to set this.
-        let pregenesis_mfs = vec![block_mf.clone()];
-        let (genesis_block, _) = make_l2_genesis(params, pregenesis_mfs);
-        state.set_genesis_block(genesis_block.block().header().get_blockid());
-
+    if height == params.rollup().genesis_l1_height {
+        state.accept_l1_block_state(&block, None);
         state.push_action(SyncAction::L2Genesis(*block.blkid()));
-    } else if height == next_exp_height {
-        // Do normal L1 block extension here.
-        let prev_istate = state
-            .state()
-            .get_internal_state(height - 1)
-            .expect("clientstate: missing expected block state");
-
-        let (new_istate, sync_actions) =
-            process_l1_block(prev_istate, height, block_mf, params.rollup())?;
-        state.accept_l1_block_state(block, new_istate);
-        // Push actions from processing l1 block if any
-        state.push_actions(sync_actions.into_iter());
-
-        // TODO make max states configurable
-        let max_states = 20;
-        let total_states = state.state().internal_state_cnt();
-        if total_states > max_states {
-            let excess = total_states - max_states;
-            let base_block = state
-                .state()
-                .get_deepest_l1_block()
-                .expect("clienttsn: missing oldest state");
-            state.discard_old_l1_states(base_block.height() + excess as u64);
-        }
-    } else {
-        // If it's below the expected height then it's possible it's
-        // just a tracking inconsistentcy, let's make sure we don't
-        // already have it.
-        if height < next_exp_height {
-            if let Some(istate) = state.state().get_internal_state(height) {
-                let internal_blkid = istate.blkid();
-                if internal_blkid == l1blkid {
-                    warn!(%next_exp_height, %height, "ignoring possible duplicate in-chain block");
-                } else {
-                    error!(%next_exp_height, %height, %internal_blkid, "given competing L1 block without reorg event, possible chain tracking issue");
-                    return Err(Error::CompetingBlock(height, *internal_blkid, *l1blkid));
-                }
-            }
-        }
-
-        #[cfg(test)]
-        eprintln!("not sure what to do here h={height} exp={next_exp_height}");
-        return Err(Error::OutOfOrderL1Block(next_exp_height, height, *l1blkid));
+        return Ok(());
     }
 
-    // If there's a new epoch finalized that's better than the old one, update
-    // the declared one.
-    let new_final_epoch = state.state().get_apparent_finalized_epoch();
-    let new_declared = match (old_final_epoch, new_final_epoch) {
-        (None, Some(new)) => {
-            state.set_decl_final_epoch(new);
-            true
+    // Genesis should have happened (we don't see earlier block, equal case is handled above).
+    match height.cmp(&state.state().next_exp_l1_block()) {
+        Ordering::Less => {
+            // Canonical chain reorg case.
+            // Switch to the canonical block right before the chain fork.
+            // That block should be safe from reorgs (it'll always belong to canonical chain).
+            // Unconditionally take the new client state, even though it comes from the fork and
+            // the height less than expected.
+            // The reason for that is btcio specific - we receive blocks with less height only
+            // if btcio sees a longer fork of bitcoin.
+            // So eventually, we receive a longer chain.
+            state.take_client_state(context.get_client_state(&L1BlockCommitment::new(
+                height - 1,
+                block_mf.get_prev_blockid(),
+            ))?);
         }
-        (Some(old), Some(new)) if new.epoch() > old.epoch() => {
-            state.set_decl_final_epoch(new);
-            true
+        Ordering::Equal => {
+            // Canonical chain extension block.
         }
-        _ => false,
+        Ordering::Greater => {
+            // Indicates an error in the bookkeping, seems we didn't follow all the blocks.
+            panic!("consensus L1 block following skipped blocks?");
+        }
+    }
+
+    // Structly speaking, here we rely on the fact that l1_reorg_safe_depth depth looks
+    // at the canonical chain (and not on the fork).
+    // Otherwise, we are screwed (because we query buried_block by height).
+    let last_finalized_checkpoint = {
+        let depth = params.rollup().l1_reorg_safe_depth as u64;
+        let buried_h = height
+            .checked_sub(depth)
+            .expect("we should never see height less than depth");
+        let block = context.get_l1_block_manifest_at_height(buried_h).ok();
+        // TODO(QQ): a bit ugly, unwind it somehow.
+        if let Some(b) = block {
+            if let Some(cs) = context
+                .get_client_state(&L1BlockCommitment::new(b.height(), *b.blkid()))
+                .ok()
+            {
+                cs.get_last_checkpoint()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     };
 
-    // Emit the action to submit the finalized block, if we have new declared epoch
-    if new_declared {
-        if let Some(decl_epoch) = state.state().get_declared_final_epoch() {
-            state.push_action(SyncAction::FinalizeEpoch(*decl_epoch));
-        }
+    // Push actions from processing l1 block if any
+    let actions = process_l1_block(
+        height,
+        state.state().get_last_checkpoint(),
+        block_mf,
+        params.rollup(),
+    )?;
+    state.push_actions(actions.into_iter());
+
+    if let Some(decl_epoch) = state.state().get_declared_final_epoch() {
+        state.push_action(SyncAction::FinalizeEpoch(decl_epoch));
     }
+
+    // Set the new client state.
+    state.accept_l1_block_state(&block, last_finalized_checkpoint);
 
     Ok(())
 }
 
-fn process_genesis_trigger_block(
-    block_mf: &L1BlockManifest,
-    _params: &RollupParams,
-) -> Result<InternalState, Error> {
-    // TODO maybe more bookkeeping?
-    Ok(InternalState::new(*block_mf.blkid(), None))
-}
-
 fn process_l1_block(
-    state: &InternalState,
     height: u64,
+    prev_checkpoint: Option<L1Checkpoint>,
     block_mf: &L1BlockManifest,
     params: &RollupParams,
-) -> Result<(InternalState, Vec<SyncAction>), Error> {
+) -> Result<Vec<SyncAction>, Error> {
     let blkid = block_mf.blkid();
-    let mut checkpoint = state.last_checkpoint().cloned();
     let mut sync_actions = Vec::new();
 
     // Iterate through all of the protocol operations in all of the txs.
@@ -236,7 +223,7 @@ fn process_l1_block(
                 let ckpt = signed_ckpt.checkpoint();
 
                 // Now do the more thorough checks
-                if verify_checkpoint(ckpt, checkpoint.as_ref(), params).is_err() {
+                if verify_checkpoint(ckpt, prev_checkpoint.as_ref(), params).is_err() {
                     // If it's invalid then just print a warning and move on.
                     warn!(%height, "ignoring invalid checkpoint in L1 block");
                     continue;
@@ -251,9 +238,6 @@ fn process_l1_block(
                     ckpt_ref.clone(),
                 );
 
-                // If it all looks good then overwrite the saved checkpoint.
-                checkpoint = Some(l1ckpt);
-
                 // Emit a sync action to update checkpoint entry in db
                 sync_actions.push(SyncAction::UpdateCheckpointInclusion {
                     checkpoint: signed_ckpt.clone().into(),
@@ -262,9 +246,8 @@ fn process_l1_block(
             }
         }
     }
-    let istate = InternalState::new(*blkid, checkpoint);
 
-    Ok((istate, sync_actions))
+    Ok((sync_actions))
 }
 
 fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<CheckpointL1Ref, Error> {
@@ -284,7 +267,7 @@ fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<Checkp
 mod tests {
     use bitcoin::BlockHash;
     use strata_primitives::l1::L1BlockManifest;
-    use strata_state::l1::L1BlockId;
+    use strata_state::{l1::L1BlockId, sync_event::SyncEvent};
     use strata_test_utils_btc::segment::BtcChainSegment;
     use strata_test_utils_l2::{gen_client_state, gen_params};
 
@@ -318,12 +301,22 @@ mod tests {
             Ok(L1BlockManifest::new(rec, None, Vec::new(), 0, height))
         }
 
+        fn get_client_state(&self, blockid: &L1BlockId) -> Result<ClientState, Error> {
+            // TODO(QQ): populate with test data.
+            todo!()
+        }
+
         fn get_l2_block_data(&self, blkid: &L2BlockId) -> Result<L2BlockBundle, Error> {
             Err(Error::MissingL2Block(*blkid))
         }
 
         fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
             Err(Error::MissingBlockChainstate(*blkid))
+        }
+
+        fn get_most_recent_client_state(&self) -> Result<ClientState, Error> {
+            // TODO(QQ): populate with test data.
+            todo!()
         }
     }
 
@@ -349,7 +342,8 @@ mod tests {
                 let mut state_mut = ClientStateMut::new(state.clone());
                 let event = &test_event.event;
                 eprintln!("giving sync event {event}");
-                process_event(&mut state_mut, event, &context, params).unwrap();
+                // TODO(QQ): adjust
+                //process_event(&mut state_mut, event, &context, params).unwrap();
                 let output = state_mut.into_update();
                 outputs.push(output.clone());
 

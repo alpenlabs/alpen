@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use strata_chain_worker::ChainWorkerHandle;
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
-use strata_primitives::params::Params;
+use strata_primitives::{l1::L1BlockCommitment, params::Params};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
@@ -17,11 +17,7 @@ use tokio::{
 
 use crate::{
     chain_worker_context::ChainWorkerCtx,
-    csm::{
-        ctl::CsmController,
-        message::{ClientUpdateNotif, CsmMessage, ForkChoiceMessage},
-        worker,
-    },
+    csm::{ctl::CsmController, message::ForkChoiceMessage, worker},
     exec_worker_context::ExecWorkerCtx,
     fork_choice_manager::{self},
 };
@@ -32,7 +28,6 @@ pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
     csm_controller: Arc<CsmController>,
-    cupdate_rx: broadcast::Receiver<Arc<ClientUpdateNotif>>,
     status_channel: StatusChannel,
 }
 
@@ -53,13 +48,6 @@ impl SyncManager {
     /// Gets a clone of the CSM controller.
     pub fn get_csm_ctl(&self) -> Arc<CsmController> {
         self.csm_controller.clone()
-    }
-
-    /// Returns a new broadcast `Receiver` handle to the consensus update
-    /// notification queue.  Provides no guarantees about which position in the
-    /// queue will be returned on the first receive.
-    pub fn create_cstate_subscription(&self) -> broadcast::Receiver<Arc<ClientUpdateNotif>> {
-        self.cupdate_rx.resubscribe()
     }
 
     pub fn status_channel(&self) -> &StatusChannel {
@@ -88,18 +76,20 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
 ) -> anyhow::Result<SyncManager> {
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
-    let (csm_tx, csm_rx) = mpsc::channel::<CsmMessage>(64);
-    let csm_controller = Arc::new(CsmController::new(storage.sync_event().clone(), csm_tx));
-
-    // TODO should this be in an `Arc`?  it's already fairly compact so we might
-    // not be benefitting from the reduced cloning
-    let (cupdate_tx, cupdate_rx) = broadcast::channel::<Arc<ClientUpdateNotif>>(64);
+    let (btc_block_tx, btc_block_rx) = mpsc::channel::<L1BlockCommitment>(64);
+    let csm_controller = Arc::new(CsmController::new(btc_block_tx));
 
     let ex_storage = storage.clone();
     let ex_st_ch = status_channel.clone();
     let ex_handle = executor.handle().clone();
-    let ex_engine = engine.clone();
-    let ex_handle = spawn_exec_worker(executor, ex_handle, ex_storage, ex_st_ch, ex_engine)?;
+    let ex_handle = spawn_exec_worker(
+        executor,
+        ex_handle,
+        ex_storage,
+        ex_st_ch,
+        engine,
+        params.clone(),
+    )?;
 
     let cw_handle = executor.handle().clone();
     let cw_storage = storage.clone();
@@ -129,19 +119,17 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     });
 
     // Prepare the client worker state and start the thread for that.
-    let client_worker_state =
-        worker::WorkerState::open(params.clone(), storage.clone(), cupdate_tx)?;
+    let client_worker_state = worker::WorkerState::open(params.clone(), storage.clone())?;
     let st_ch = status_channel.clone();
 
     executor.spawn_critical("client_worker_task", move |shutdown| {
-        worker::client_worker_task(shutdown, client_worker_state, csm_rx, st_ch)
+        worker::client_worker_task(shutdown, client_worker_state, btc_block_rx, st_ch)
     });
 
     Ok(SyncManager {
         params,
         fc_manager_tx: fcm_tx,
         csm_controller,
-        cupdate_rx,
         status_channel,
     })
 }
@@ -152,9 +140,10 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
     engine: Arc<E>,
+    params: Arc<Params>,
 ) -> anyhow::Result<ExecCtlHandle> {
     // Create the worker context - this stays in consensus-logic since it implements WorkerContext
-    let context = ExecWorkerCtx::new(storage.l2().clone());
+    let context = ExecWorkerCtx::new(storage.l2().clone(), storage.client_state().clone(), params);
 
     let handle = strata_eectl::builder::ExecWorkerBuilder::new()
         .with_context(context)

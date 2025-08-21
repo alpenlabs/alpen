@@ -19,7 +19,7 @@ use strata_primitives::{
     },
     params::{GenesisL1View, Params},
 };
-use strata_state::sync_event::EventSubmitter;
+use strata_state::sync_event::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::{L1BlockManager, NodeStorage};
 use tracing::*;
@@ -55,7 +55,7 @@ pub(crate) struct ReaderContext<R: Reader> {
 }
 
 /// The main task that initializes the reader state and starts reading from bitcoin.
-pub async fn bitcoin_data_reader_task<E: EventSubmitter>(
+pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     client: Arc<impl Reader>,
     storage: Arc<NodeStorage>,
     config: Arc<ReaderConfig>,
@@ -94,7 +94,7 @@ fn calculate_target_next_block(
 async fn do_reader_task<R: Reader>(
     ctx: ReaderContext<R>,
     target_next_block: u64,
-    event_submitter: &impl EventSubmitter,
+    event_submitter: &impl BlockSubmitter,
 ) -> anyhow::Result<()> {
     info!(%target_next_block, "started L1 reader task!");
 
