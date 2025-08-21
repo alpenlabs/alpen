@@ -60,6 +60,47 @@ impl L1BroadcastDatabase for L1BroadcastDb {
             .map_err(|e| DbError::TransactionError(e.to_string()))
     }
 
+    fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool> {
+        let exists = self.db.get::<BcastL1TxSchema>(&txid)?.is_some();
+        if exists {
+            self.db.delete::<BcastL1TxSchema>(&txid)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_tx_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = get_last::<BcastL1TxIdSchema>(self.db.as_ref())?.map(|(x, _)| x);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        let mut deleted_indices = Vec::new();
+
+        // Use batch operations for efficiency
+        self.db
+            .with_optimistic_txn(
+                TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    for idx in start_idx..=last_idx {
+                        if let Some(txid) = txn.get::<BcastL1TxIdSchema>(&idx)? {
+                            // Delete both the index mapping and the tx entry
+                            txn.delete::<BcastL1TxIdSchema>(&idx)?;
+                            txn.delete::<BcastL1TxSchema>(&txid)?;
+                            deleted_indices.push(idx);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(deleted_indices)
+    }
+
     fn get_tx_entry_by_id(&self, txid: Buf32) -> DbResult<Option<L1TxEntry>> {
         Ok(self.db.get::<BcastL1TxSchema>(&txid)?)
     }

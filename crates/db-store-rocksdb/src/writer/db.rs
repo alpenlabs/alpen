@@ -51,6 +51,45 @@ impl L1WriterDatabase for RBL1WriterDb {
             .unwrap_or(0))
     }
 
+    fn del_payload_entry(&self, idx: u64) -> DbResult<bool> {
+        let exists = self.db.get::<PayloadSchema>(&idx)?.is_some();
+        if exists {
+            self.db.delete::<PayloadSchema>(&idx)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = get_last::<PayloadSchema>(&*self.db)?.map(|(x, _)| x);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        let mut deleted_indices = Vec::new();
+
+        // Use batch operations for efficiency
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    for idx in start_idx..=last_idx {
+                        if txn.get::<PayloadSchema>(&idx)?.is_some() {
+                            txn.delete::<PayloadSchema>(&idx)?;
+                            deleted_indices.push(idx);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(deleted_indices)
+    }
+
     fn put_intent_entry(&self, intent_id: Buf32, intent_entry: IntentEntry) -> DbResult<()> {
         self.db
             .with_optimistic_txn(
@@ -89,6 +128,47 @@ impl L1WriterDatabase for RBL1WriterDb {
         Ok(get_last::<IntentIdxSchema>(&*self.db)?
             .map(|(x, _)| x + 1)
             .unwrap_or(0))
+    }
+
+    fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
+        let exists = self.db.get::<IntentSchema>(&id)?.is_some();
+        if exists {
+            self.db.delete::<IntentSchema>(&id)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = get_last::<IntentIdxSchema>(&*self.db)?.map(|(x, _)| x);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        let mut deleted_indices = Vec::new();
+
+        // Use batch operations for efficiency
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    for idx in start_idx..=last_idx {
+                        if let Some(intent_id) = txn.get::<IntentIdxSchema>(&idx)? {
+                            // Delete both the index mapping and the intent entry
+                            txn.delete::<IntentIdxSchema>(&idx)?;
+                            txn.delete::<IntentSchema>(&intent_id)?;
+                            deleted_indices.push(idx);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(deleted_indices)
     }
 }
 
