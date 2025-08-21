@@ -103,7 +103,7 @@ impl L2Segment {
             el_proof_ins.iter().zip(el_proof_outs.iter()).enumerate()
         {
             // If it is a terminal block, fill L1Segment
-            let genesis_height = params.rollup().genesis_l1_height;
+            let genesis_height = params.rollup().genesis_l1_view.blk.height();
             let l1_segment = if idx == evm_segment.get_inputs().len() - 1 {
                 let starting_height = genesis_height + 1;
                 let len = 3;

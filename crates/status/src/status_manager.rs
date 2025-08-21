@@ -45,7 +45,7 @@ impl StatusChannel {
     ///
     /// * `cl_state` - Initial state for the client.
     /// * `l1_status` - Initial L1 status.
-    /// * `ch_state` - Optional initial FCM state.
+    /// * `ch_state` - initial FCM state.
     ///
     /// # Returns
     ///
@@ -81,14 +81,8 @@ impl StatusChannel {
     }
 
     /// Gets the latest [`SyncState`].
-    #[deprecated(note = "use `.get_cur_sync_state()`")]
-    pub fn sync_state(&self) -> Option<SyncState> {
-        self.receiver.cl.borrow().sync().cloned()
-    }
-
-    /// Gets the latest [`SyncState`].
-    pub fn get_cur_sync_state(&self) -> Option<SyncState> {
-        self.receiver.cl.borrow().sync().cloned()
+    pub fn get_cur_sync_state(&self) -> SyncState {
+        self.receiver.cl.borrow().sync().clone()
     }
 
     /// Returns a clone of the most recent tip block's chainstate, if present.
@@ -134,11 +128,7 @@ impl StatusChannel {
 
     /// Gets the current chain tip epoch, if present.
     pub fn get_cur_chain_epoch(&self) -> Option<u64> {
-        self.receiver
-            .chs
-            .borrow()
-            .to_owned()
-            .map(|ch| ch.cur_epoch())
+        self.receiver.chs.borrow().as_ref().map(|ch| ch.cur_epoch())
     }
 
     #[deprecated(note = "use `.get_cur_tip_chainstate()`")]

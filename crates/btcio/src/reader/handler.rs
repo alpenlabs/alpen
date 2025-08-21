@@ -2,10 +2,7 @@ use bitcoin::{consensus::serialize, hashes::Hash, Block};
 use bitcoind_async_client::traits::Reader;
 use strata_primitives::{
     buf::Buf32,
-    l1::{
-        generate_l1_tx, HeaderVerificationState, L1BlockCommitment, L1BlockManifest,
-        L1HeaderRecord, L1Tx,
-    },
+    l1::{generate_l1_tx, L1BlockCommitment, L1BlockManifest, L1HeaderRecord, L1Tx},
 };
 use strata_state::sync_event::{EventSubmitter, SyncEvent};
 use tracing::*;
@@ -33,9 +30,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
             vec![SyncEvent::L1Revert(block)]
         }
 
-        L1Event::BlockData(blockdata, epoch, hvs) => {
-            handle_blockdata(ctx, blockdata, hvs, epoch).await?
-        }
+        L1Event::BlockData(blockdata, epoch) => handle_blockdata(ctx, blockdata, epoch).await?,
     };
 
     // Write to sync event db.
@@ -48,7 +43,6 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
 async fn handle_blockdata<R: Reader>(
     ctx: &ReaderContext<R>,
     blockdata: BlockData,
-    hvs: Option<HeaderVerificationState>,
     epoch: u64,
 ) -> anyhow::Result<Vec<SyncEvent>> {
     let ReaderContext {
@@ -59,15 +53,15 @@ async fn handle_blockdata<R: Reader>(
     let mut sync_evs = Vec::new();
 
     // Bail out fast if we don't have to care.
-    let horizon = params.rollup().horizon_l1_height;
-    if height < horizon {
-        warn!(%height, %horizon, "ignoring BlockData for block before horizon");
+    let genesis = params.rollup().genesis_l1_view.height();
+    if height < genesis {
+        warn!(%height, %genesis, "ignoring BlockData for block before genesis");
         return Ok(sync_evs);
     }
 
     let txs: Vec<_> = generate_l1txs(&blockdata);
     let num_txs = txs.len();
-    let manifest = generate_block_manifest(blockdata.block(), hvs, txs, epoch, height);
+    let manifest = generate_block_manifest(blockdata.block(), txs, epoch, height);
     let l1blockid = *manifest.blkid();
 
     storage.l1().put_block_data_async(manifest).await?;
@@ -89,7 +83,6 @@ async fn handle_blockdata<R: Reader>(
 /// store in the database.
 fn generate_block_manifest(
     block: &Block,
-    hvs: Option<HeaderVerificationState>,
     txs: Vec<L1Tx>,
     epoch: u64,
     height: u64,
@@ -102,7 +95,7 @@ fn generate_block_manifest(
     let header = serialize(&block.header);
 
     let rec = L1HeaderRecord::new(blockid, header, Buf32::from(root));
-    L1BlockManifest::new(rec, hvs, txs, epoch, height)
+    L1BlockManifest::new(rec, txs, epoch, height)
 }
 
 fn generate_l1txs(blockdata: &BlockData) -> Vec<L1Tx> {

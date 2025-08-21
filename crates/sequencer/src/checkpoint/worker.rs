@@ -250,7 +250,7 @@ fn create_checkpoint_prep_data_from_summary(
     let l1_start_height = if let Some(ps) = prev_summary {
         ps.new_l1().height() + 1
     } else {
-        params.genesis_l1_height + 1
+        params.genesis_l1_view.blk.height() + 1
     };
 
     // Reconstruct the L1 range.

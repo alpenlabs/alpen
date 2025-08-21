@@ -2,7 +2,7 @@ use strata_db::errors::DbError;
 use strata_primitives::{
     buf::{Buf32, Buf64},
     evm_exec::create_evm_extra_payload,
-    l1::L1BlockManifest,
+    l1::{HeaderVerificationState, TIMESTAMPS_FOR_MEDIAN},
     params::{OperatorConfig, Params},
 };
 use strata_state::{
@@ -19,20 +19,21 @@ use strata_state::{
     prelude::*,
     state_op::WriteBatch,
 };
-use strata_storage::{ClientStateManager, L1BlockManager, L2BlockManager, NodeStorage};
+use strata_storage::{L2BlockManager, NodeStorage};
 use tracing::*;
-
-use crate::errors::Error;
 
 /// Inserts into the database an initial basic client state that we can begin
 /// waiting for genesis with.
-pub fn init_client_state(params: &Params, csman: &ClientStateManager) -> anyhow::Result<()> {
+pub fn init_client_state(params: &Params, storage: &NodeStorage) -> anyhow::Result<()> {
     debug!("initializing client state in database!");
 
-    let init_state = ClientState::from_genesis_params(params);
+    let (gblkid, _) = init_genesis_chainstate(params, storage)?;
+    let init_state = ClientState::from_genesis_params(params, gblkid);
 
     // Write the state into the database.
-    csman.put_update_blocking(0, ClientUpdateOutput::new_state(init_state))?;
+    storage
+        .client_state()
+        .put_update_blocking(0, ClientUpdateOutput::new_state(init_state))?;
     // TODO: status channel should probably be updated.
 
     Ok(())
@@ -48,19 +49,11 @@ pub fn init_client_state(params: &Params, csman: &ClientStateManager) -> anyhow:
 pub fn init_genesis_chainstate(
     params: &Params,
     storage: &NodeStorage,
-) -> anyhow::Result<Chainstate> {
+) -> anyhow::Result<(L2BlockId, Chainstate)> {
     debug!("preparing database genesis chainstate!");
 
-    let horizon_blk_height = params.rollup.horizon_l1_height;
-    let genesis_blk_height = params.rollup.genesis_l1_height;
-
-    // Query the pre-genesis blocks we need before we do anything else.
-    let l1_db = storage.l1();
-    let pregenesis_mfs =
-        load_pre_genesis_l1_manifests(l1_db.as_ref(), horizon_blk_height, genesis_blk_height)?;
-
     // Build the genesis block and genesis consensus states.
-    let (gblock, gchstate) = make_l2_genesis(params, pregenesis_mfs);
+    let (gblock, gchstate) = make_l2_genesis(params);
 
     // Now insert things into the database.
     let gid = gblock.header().get_blockid();
@@ -80,7 +73,7 @@ pub fn init_genesis_chainstate(
     // states or something
 
     info!("finished genesis insertions");
-    Ok(gchstate)
+    Ok((gid, gchstate))
 }
 
 pub fn construct_operator_table(opconfig: &OperatorConfig) -> OperatorTable {
@@ -89,29 +82,9 @@ pub fn construct_operator_table(opconfig: &OperatorConfig) -> OperatorTable {
     }
 }
 
-fn load_pre_genesis_l1_manifests(
-    l1man: &L1BlockManager,
-    horizon_height: u64,
-    genesis_height: u64,
-) -> anyhow::Result<Vec<L1BlockManifest>> {
-    let mut manifests = Vec::new();
-    for height in horizon_height..=genesis_height {
-        let Some(mf) = l1man.get_block_manifest_at_height(height)? else {
-            return Err(Error::MissingL1BlockHeight(height).into());
-        };
-
-        manifests.push(mf);
-    }
-
-    Ok(manifests)
-}
-
-pub fn make_l2_genesis(
-    params: &Params,
-    pregenesis_mfs: Vec<L1BlockManifest>,
-) -> (L2BlockBundle, Chainstate) {
+pub fn make_l2_genesis(params: &Params) -> (L2BlockBundle, Chainstate) {
     let gblock_provisional = make_genesis_block(params);
-    let gstate = make_genesis_chainstate(&gblock_provisional, pregenesis_mfs, params);
+    let gstate = make_genesis_chainstate(&gblock_provisional, params);
     let state_root = gstate.compute_state_root();
 
     let (block, accessory) = gblock_provisional.into_parts();
@@ -149,7 +122,7 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     );
 
     // This has to be empty since everyone should have an unambiguous view of the genesis block.
-    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_height);
+    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_view.blk.height());
 
     // TODO this is a total stub, we have to fill it in with something
     let exec_seg = ExecSegment::new(genesis_update);
@@ -160,11 +133,8 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     let exec_payload = vec![];
     let accessory = L2BlockAccessory::new(exec_payload, 0);
 
-    // Assemble the genesis header template, pulling in data from whatever
-    // sources we need.
-    // FIXME this isn't the right timestamp to start the blockchain, this should
-    // definitely be pulled from the database or the rollup parameters maybe
-    let genesis_ts = params.rollup().horizon_l1_height;
+    let genesis_ts =
+        params.rollup().genesis_l1_view.last_11_timestamps[TIMESTAMPS_FOR_MEDIAN - 1] as u64;
     let zero_blkid = L2BlockId::from(Buf32::zero());
     let genesis_sr = Buf32::zero();
     let header = L2BlockHeader::new(0, 0, genesis_ts, zero_blkid, &body, genesis_sr);
@@ -173,27 +143,14 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     L2BlockBundle::new(block, accessory)
 }
 
-fn make_genesis_chainstate(
-    gblock: &L2BlockBundle,
-    pregenesis_mfs: Vec<L1BlockManifest>,
-    params: &Params,
-) -> Chainstate {
+fn make_genesis_chainstate(gblock: &L2BlockBundle, params: &Params) -> Chainstate {
     let geui = gblock.exec_segment().update().input();
     let gees =
         ExecEnvState::from_base_input(geui.clone(), params.rollup.evm_genesis_block_state_root);
 
-    let horizon_blk_height = params.rollup.horizon_l1_height;
-    let genesis_blk_height = params.rollup.genesis_l1_height;
-    let genesis_mf = pregenesis_mfs
-        .last()
-        .expect("genesis block must be present")
-        .clone();
-    let gheader_vs = genesis_mf
-        .header_verification_state()
-        .as_ref()
-        .expect("genesis block must have HeaderVS")
-        .clone();
-    let l1vs = L1ViewState::new_at_genesis(horizon_blk_height, genesis_blk_height, gheader_vs);
+    let genesis_l1_view = &params.rollup().genesis_l1_view;
+    let gheader_vs = HeaderVerificationState::new(params.network(), genesis_l1_view);
+    let l1vs = L1ViewState::new_at_genesis(genesis_l1_view.height(), gheader_vs);
 
     let optbl = construct_operator_table(&params.rollup().operator_config);
     let gdata = GenesisStateData::new(l1vs, optbl, gees);
