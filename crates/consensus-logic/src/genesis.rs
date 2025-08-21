@@ -2,7 +2,7 @@ use strata_db::errors::DbError;
 use strata_primitives::{
     buf::{Buf32, Buf64},
     evm_exec::create_evm_extra_payload,
-    l1::L1BlockManifest,
+    l1::{L1BlockCommitment, L1BlockManifest},
     params::{OperatorConfig, Params},
 };
 use strata_state::{
@@ -20,20 +20,23 @@ use strata_state::{
     state_op::WriteBatch,
 };
 use strata_storage::{ClientStateManager, L1BlockManager, L2BlockManager, NodeStorage};
+use tokio::runtime::Handle;
 use tracing::*;
 
 use crate::errors::Error;
 
 /// Inserts into the database an initial basic client state that we can begin
 /// waiting for genesis with.
-pub fn init_client_state(params: &Params, csman: &ClientStateManager) -> anyhow::Result<()> {
+pub fn init_client_state(_params: &Params, csman: &ClientStateManager) -> anyhow::Result<()> {
     debug!("initializing client state in database!");
 
-    let init_state = ClientState::from_genesis_params(params);
+    let init_state = ClientState::new();
 
     // Write the state into the database.
-    csman.put_update_blocking(0, ClientUpdateOutput::new_state(init_state))?;
-    // TODO: status channel should probably be updated.
+    csman._put_update_blocking(
+        &L1BlockCommitment::default(),
+        ClientUpdateOutput::new_state(init_state),
+    )?;
 
     Ok(())
 }
@@ -202,17 +205,8 @@ fn make_genesis_chainstate(
 
 /// Check if the database needs to have client init done to it.
 pub fn check_needs_client_init(storage: &NodeStorage) -> anyhow::Result<bool> {
-    // Check if we've written any genesis state checkpoint.  These we perform a
-    // bit more carefully and check errors more granularly.
-    match storage.client_state().get_last_state_idx_blocking() {
-        Ok(_) => {}
-        Err(DbError::NotBootstrapped) => return Ok(true),
-
-        // TODO should we return an error here or skip?
-        Err(e) => return Err(e.into()),
-    }
-
-    Ok(false)
+    // Check if we've written any pre-genesis client state.
+    Ok(storage.client_state()._fetch_most_recent_state()?.is_none())
 }
 
 /// Checks if we have a genesis block written to the L2 block database.
@@ -226,4 +220,14 @@ pub fn check_needs_genesis(l2man: &L2BlockManager) -> anyhow::Result<bool> {
         // Again, how should we handle this?
         Err(e) => Err(e.into()),
     }
+}
+
+pub fn wait_for_genesis<T>(f: impl Fn() -> Option<L2BlockId>, handle: Handle) -> L2BlockId {
+    let genesis_block_id = handle.block_on(async {
+        while f().is_none() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        f().expect("genesis should be in")
+    });
+    genesis_block_id
 }

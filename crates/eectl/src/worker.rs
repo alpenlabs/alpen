@@ -6,8 +6,8 @@ use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
 use strata_db::DbError;
-use strata_primitives::l2::L2BlockCommitment;
-use strata_state::id::L2BlockId;
+use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
+use strata_state::{client_state::ClientState, id::L2BlockId};
 use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
 use tokio::runtime::Handle;
@@ -280,10 +280,22 @@ pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     exec_rx: ExecCtlInput,
 ) -> anyhow::Result<()> {
     info!("waiting until genesis");
-    let init_state = handle.block_on(status_channel.wait_until_genesis())?;
-    let finalized_tip = match init_state.get_declared_final_epoch().cloned() {
+
+    let genesis_block_id = handle.block_on(async {
+        while context.fetch_blkid_at_height(0).unwrap().is_none() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        context
+            .fetch_blkid_at_height(0)
+            .unwrap()
+            .expect("genesis should happen")
+    });
+
+    let init_state = context.fetch_latest_finalized_epoch()?;
+
+    let finalized_tip = match init_state {
         Some(epoch) => epoch.to_block_commitment(),
-        None => L2BlockCommitment::new(0, init_state.genesis_blkid().expect("after genesis")),
+        None => L2BlockCommitment::new(0, genesis_block_id),
     };
 
     let cur_tip = context.fetch_cur_tip()?;
@@ -318,6 +330,8 @@ pub trait ExecWorkerContext {
     /// Retrieves block ID at height, returning `None` if the height is valid but the block doesn't
     /// exist.
     fn fetch_blkid_at_height(&self, height: u64) -> EngineResult<Option<L2BlockId>>;
+
+    fn fetch_latest_finalized_epoch(&self) -> EngineResult<Option<EpochCommitment>>;
 }
 
 #[cfg(test)]

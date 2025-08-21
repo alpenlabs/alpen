@@ -15,27 +15,3 @@ pub enum ForkChoiceMessage {
     /// New block coming in from over the network to be considered.
     NewBlock(L2BlockId),
 }
-
-/// Package describing a new consensus state produced from a new sync event.
-#[derive(Clone, Debug)]
-pub struct ClientUpdateNotif {
-    sync_event_idx: u64,
-    new_state: Arc<ClientState>,
-}
-
-impl ClientUpdateNotif {
-    pub fn new(sync_event_idx: u64, new_state: Arc<ClientState>) -> Self {
-        Self {
-            sync_event_idx,
-            new_state,
-        }
-    }
-
-    pub fn sync_event_idx(&self) -> u64 {
-        self.sync_event_idx
-    }
-
-    pub fn new_state(&self) -> &ClientState {
-        &self.new_state
-    }
-}
