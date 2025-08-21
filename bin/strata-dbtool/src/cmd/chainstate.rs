@@ -3,7 +3,7 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_consensus_logic::chain_worker_context::conv_blkid_to_slot_wb_id;
 use strata_db::{
     chainstate::ChainstateDatabase,
-    traits::{BlockStatus, DatabaseBackend, L2BlockDatabase},
+    traits::{BlockStatus, DatabaseBackend, L1BroadcastDatabase, L2BlockDatabase},
 };
 use strata_primitives::l2::L2BlockId;
 use strata_state::state_op::WriteBatch;
@@ -14,6 +14,7 @@ use super::{
 };
 use crate::{
     cli::OutputFormat,
+    db::CommonDbBackend,
     output::{chainstate::ChainstateInfo, output},
     utils::block_id::parse_l2_block_id,
 };
@@ -117,11 +118,12 @@ pub(crate) fn get_chainstate(
 
 /// Revert chainstate to specified block.
 pub(crate) fn revert_chainstate(
-    db: &impl DatabaseBackend,
+    db: &CommonDbBackend<impl DatabaseBackend, impl L1BroadcastDatabase>,
     args: RevertChainstateArgs,
 ) -> Result<(), DisplayedError> {
+    let core_db = &db.core;
     let target_block_id = parse_l2_block_id(&args.block_id)?;
-    let target_slot = get_l2_block_slot(db, target_block_id)?.ok_or_else(|| {
+    let target_slot = get_l2_block_slot(core_db, target_block_id)?.ok_or_else(|| {
         DisplayedError::UserError(
             "L2 block with id not found".to_string(),
             Box::new(target_block_id),
@@ -129,10 +131,10 @@ pub(crate) fn revert_chainstate(
     })?;
 
     // Get the latest slot
-    let latest_slot = get_highest_l2_slot(db)?;
+    let latest_slot = get_highest_l2_slot(core_db)?;
 
     // Get latest write batch to check finalized epoch constraints
-    let write_batch = get_latest_l2_write_batch(db)?;
+    let write_batch = get_latest_l2_write_batch(core_db)?;
     let top_level_state = write_batch.new_toplevel_state();
     let finalized_slot = top_level_state.finalized_epoch().last_slot();
 
@@ -144,7 +146,7 @@ pub(crate) fn revert_chainstate(
     }
 
     // Check if target block is inside checkpointed epoch
-    let latest_checkpoint_entry = get_latest_checkpoint_entry(db)?;
+    let latest_checkpoint_entry = get_latest_checkpoint_entry(core_db)?;
     let checkpoint_last_slot = latest_checkpoint_entry
         .checkpoint
         .batch_info()
@@ -166,13 +168,16 @@ pub(crate) fn revert_chainstate(
 
     // Now delete write batches and optionally blocks
     for slot in target_slot + 1..=latest_slot {
-        let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or_default();
+        let l2_block_ids = core_db
+            .l2_db()
+            .get_blocks_at_height(slot)
+            .unwrap_or_default();
         for block_id in l2_block_ids.iter() {
             // Convert block ID to write batch ID
             let write_batch_id = conv_blkid_to_slot_wb_id(*block_id);
 
             // Check if write batch exists before deleting
-            let write_batch_exists = db
+            let write_batch_exists = core_db
                 .chain_state_db()
                 .get_write_batch(write_batch_id)
                 .internal_error("Failed to check write batch existence")?
@@ -180,7 +185,8 @@ pub(crate) fn revert_chainstate(
 
             if write_batch_exists {
                 println!("Revert chainstate deleting write batch {block_id:?} {slot}");
-                db.chain_state_db()
+                core_db
+                    .chain_state_db()
                     .del_write_batch(write_batch_id)
                     .internal_error(format!(
                         "Failed to delete write batch for block {}",
@@ -193,7 +199,8 @@ pub(crate) fn revert_chainstate(
 
             // Mark the status to unchecked
             println!("Revert chainstate marking block unchecked {block_id:?}");
-            db.l2_db()
+            core_db
+                .l2_db()
                 .set_block_status(*block_id, BlockStatus::Unchecked)
                 .internal_error(format!(
                     "Failed to update status for block with id {}",
@@ -203,7 +210,8 @@ pub(crate) fn revert_chainstate(
             // Delete blocks if requested
             if args.delete_blocks {
                 println!("Revert chainstate deleting block {block_id:?}");
-                db.l2_db()
+                core_db
+                    .l2_db()
                     .del_block_data(*block_id)
                     .internal_error(format!("Failed to delete block with id {}", *block_id))?;
             }
