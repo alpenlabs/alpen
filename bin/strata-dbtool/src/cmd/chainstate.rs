@@ -1,12 +1,16 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{BlockStatus, ChainstateDatabase, Database, L2BlockDatabase};
+use strata_db::traits::{
+    BlockStatus, ChainstateDatabase, Database, L1BroadcastDatabase, L1WriterDatabase,
+    L2BlockDatabase,
+};
 use strata_primitives::l2::L2BlockId;
 use strata_state::state_op::WriteBatchEntry;
 
 use super::{checkpoint::get_latest_checkpoint_entry, l2::get_l2_block_slot};
 use crate::{
     cli::OutputFormat,
+    db::CommonDbBackend,
     output::{chainstate::ChainstateInfo, output},
     utils::block_id::parse_l2_block_id,
 };
@@ -118,11 +122,12 @@ pub(crate) fn get_chainstate(
 
 /// Revert chainstate to specified block.
 pub(crate) fn revert_chainstate(
-    db: &impl Database,
+    db: &CommonDbBackend<impl Database, impl L1BroadcastDatabase, impl L1WriterDatabase>,
     args: RevertChainstateArgs,
 ) -> Result<(), DisplayedError> {
+    let core_db = &db.core;
     let target_block_id = parse_l2_block_id(&args.block_id)?;
-    let target_slot = get_l2_block_slot(db, target_block_id)?.ok_or_else(|| {
+    let target_slot = get_l2_block_slot(core_db, target_block_id)?.ok_or_else(|| {
         DisplayedError::UserError(
             "L2 block with id not found".to_string(),
             Box::new(target_block_id),
@@ -130,7 +135,7 @@ pub(crate) fn revert_chainstate(
     })?;
 
     // Get latest write batch to check finalized epoch constraints
-    let latest_write_batch = get_latest_l2_write_batch(db)
+    let latest_write_batch = get_latest_l2_write_batch(core_db)
         .internal_error("Failed to get latest write batch")?
         .ok_or_else(|| {
             DisplayedError::InternalError(
@@ -151,7 +156,7 @@ pub(crate) fn revert_chainstate(
     }
 
     // Check if target block is inside checkpointed epoch
-    let latest_checkpoint_entry = get_latest_checkpoint_entry(db)?;
+    let latest_checkpoint_entry = get_latest_checkpoint_entry(core_db)?;
     let checkpoint_last_slot = latest_checkpoint_entry
         .checkpoint
         .batch_info()
@@ -172,16 +177,21 @@ pub(crate) fn revert_chainstate(
     println!("Revert chainstate target slot {target_slot}");
 
     // Revert chainstate to target slot
-    db.chain_state_db()
+    core_db
+        .chain_state_db()
         .rollback_writes_to(target_slot)
         .internal_error(format!("Failed to rollback writes to {target_slot}"))?;
 
     for slot in target_slot + 1..=latest_slot {
-        let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or_default();
+        let l2_block_ids = core_db
+            .l2_db()
+            .get_blocks_at_height(slot)
+            .unwrap_or_default();
         for block_id in l2_block_ids.iter() {
             // Mark the status to unchecked
             println!("Revert chainstate marking block unchecked {block_id:?}");
-            db.l2_db()
+            core_db
+                .l2_db()
                 .set_block_status(*block_id, BlockStatus::Unchecked)
                 .internal_error(format!(
                     "Failed to update status for block with id {}",
@@ -191,7 +201,8 @@ pub(crate) fn revert_chainstate(
             // Delete blocks if requested
             if args.delete_blocks {
                 println!("Revert chainstate deleting block {block_id:?}");
-                db.l2_db()
+                core_db
+                    .l2_db()
                     .del_block_data(*block_id)
                     .internal_error(format!("Failed to delete block with id {}", *block_id))?;
             }
