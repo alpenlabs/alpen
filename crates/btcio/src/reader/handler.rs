@@ -7,7 +7,7 @@ use strata_primitives::{
         L1HeaderRecord, L1Tx,
     },
 };
-use strata_state::sync_event::BlockSubmitter;
+use strata_state::BlockSubmitter;
 use tracing::*;
 
 use super::{
