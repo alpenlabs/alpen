@@ -8,12 +8,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
     batch::BatchTransition, buf::Buf32, epoch::EpochCommitment, l1::L1BlockCommitment,
-    params::Params,
 };
 
 use crate::{
     batch::BatchInfo,
-    id::L2BlockId,
     l1::L1BlockId,
     operation::{ClientUpdateOutput, SyncAction},
 };

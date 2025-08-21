@@ -50,7 +50,6 @@ use strata_state::{
     header::L2Header,
     id::L2BlockId,
     operation::ClientUpdateOutput,
-    sync_event::SyncEvent,
 };
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;

@@ -11,9 +11,7 @@ use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
-use strata_state::{
-    block::L2BlockBundle, client_state::ClientState, operation::*, sync_event::SyncEvent,
-};
+use strata_state::{block::L2BlockBundle, client_state::ClientState, operation::*};
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
@@ -28,7 +26,6 @@ use crate::{
 pub trait DatabaseBackend: Send + Sync {
     fn l1_db(&self) -> Arc<impl L1Database>;
     fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
-    fn sync_event_db(&self) -> Arc<impl SyncEventDatabase>;
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
     fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
@@ -78,27 +75,6 @@ pub trait L1Database: Send + Sync + 'static {
     fn get_tx(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>>;
 
     // TODO DA queries
-}
-
-/// Provider and store to write and query sync events.  This does not provide notifications, that
-/// should be handled at a higher level.
-pub trait SyncEventDatabase: Send + Sync + 'static {
-    /// Atomically writes a new sync event, returning its index.
-    fn write_sync_event(&self, ev: SyncEvent) -> DbResult<u64>;
-
-    /// Atomically clears sync events in a range, defined as a half-open
-    /// interval.  This should only be used for deeply buried events where we'll
-    /// never need to look at them again.
-    fn clear_sync_event_range(&self, start_idx: u64, end_idx: u64) -> DbResult<()>;
-
-    /// Returns the index of the most recently written sync event.
-    fn get_last_idx(&self) -> DbResult<Option<u64>>;
-
-    /// Gets the sync event with some index, if it exists.
-    fn get_sync_event(&self, idx: u64) -> DbResult<Option<SyncEvent>>;
-
-    /// Gets the unix millis timestamp that a sync event was inserted.
-    fn get_event_timestamp(&self, idx: u64) -> DbResult<Option<u64>>;
 }
 
 /// Db for client state updates and checkpoints.
