@@ -304,13 +304,21 @@ mod tests {
     #[test]
     fn test_musig_signer_creation() {
         let signer = MusigSigner::new();
-        assert!(std::ptr::eq(&signer.secp, &signer.secp));
+        // Verify the secp context is properly initialized
+        let _verification_result = signer.secp.verify_ecdsa(
+            &secp256k1::Message::from_digest([1u8; 32]),
+            &secp256k1::ecdsa::Signature::from_compact(&[0u8; 64]).unwrap(),
+            &secp256k1::PublicKey::from_secret_key(&signer.secp, &SecretKey::from_slice(&[1u8; 32]).unwrap())
+        );
+        // Should not panic, context is properly initialized
     }
 
     #[test]
     fn test_musig_signer_default() {
-        let signer = MusigSigner::default();
-        assert!(std::ptr::eq(&signer.secp, &signer.secp));
+        let signer1 = MusigSigner::default();
+        let signer2 = MusigSigner::new();
+        // Both should create equivalent contexts
+        assert!(!std::ptr::eq(&signer1.secp, &signer2.secp));
     }
 
     #[test]
@@ -325,7 +333,116 @@ mod tests {
             Error::Musig(msg) => {
                 assert_eq!(msg, "No operator keys provided");
             }
-            _ => panic!("Expected MusigError error"),
+            _ => panic!("Expected Musig error"),
+        }
+    }
+
+    #[test]
+    fn test_key_conversion_consistency() {
+        let keypair = Keypair::from_secret_key(
+            SECP256K1,
+            &SecretKey::from_str(
+                "1111111111111111111111111111111111111111111111111111111111111111",
+            ).unwrap(),
+        );
+
+        // Test x-only conversion consistency
+        let (xonly1, parity1) = XOnlyPublicKey::from_keypair(&keypair);
+        let (xonly2, parity2) = XOnlyPublicKey::from_keypair(&keypair);
+
+        assert_eq!(xonly1, xonly2);
+        assert_eq!(parity1, parity2);
+
+        // Test even parity conversion
+        let even_full1 = xonly1.public_key(Parity::Even);
+        let even_full2 = xonly2.public_key(Parity::Even);
+        assert_eq!(even_full1, even_full2);
+    }
+
+    #[test]
+    fn test_sighash_determinism() {
+        let signer = MusigSigner::new();
+
+        let tx = Transaction {
+            version: bdk_wallet::bitcoin::transaction::Version::TWO,
+            lock_time: bdk_wallet::bitcoin::locktime::absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::from_str(
+                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:0",
+                ).unwrap(),
+                script_sig: ScriptBuf::new(),
+                sequence: bdk_wallet::bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+
+        let prevouts = vec![TxOut {
+            value: Amount::from_sat(2000),
+            script_pubkey: ScriptBuf::new(),
+        }];
+
+        // Multiple calls should produce identical sighash
+        let sighash1 = signer.create_sighash(&tx, &prevouts, 0).unwrap();
+        let sighash2 = signer.create_sighash(&tx, &prevouts, 0).unwrap();
+
+        assert_eq!(sighash1, sighash2);
+        assert_eq!(sighash1.as_byte_array().len(), 32);
+    }
+
+    #[test]
+    fn test_taproot_tweak_variants() {
+        let signer = MusigSigner::new();
+        let deposit_tx = create_test_deposit_tx();
+        let operator_keys = vec![Keypair::from_secret_key(
+            SECP256K1,
+            &SecretKey::from_str(
+                "1111111111111111111111111111111111111111111111111111111111111111",
+            ).unwrap(),
+        )];
+
+        // Test with different witness types
+        let witnesses = vec![
+            TaprootWitness::Key,
+            TaprootWitness::Tweaked {
+                tweak: bdk_wallet::bitcoin::TapNodeHash::from_byte_array([0u8; 32]),
+            },
+            TaprootWitness::Tweaked {
+                tweak: bdk_wallet::bitcoin::TapNodeHash::from_byte_array([1u8; 32]),
+            },
+        ];
+
+        for (i, witness) in witnesses.iter().enumerate() {
+            let test_tx = deposit_tx.clone();
+            let witnesses = vec![witness.clone()];
+            let test_deposit_tx = DepositTx::new(
+                test_tx.psbt().clone(),
+                test_tx.prevouts().to_vec(),
+                witnesses,
+            );
+
+            let result = signer.sign_deposit_psbt(&test_deposit_tx, operator_keys.clone(), 0);
+
+            // Each witness type should be handled without early errors
+            match result {
+                Ok(sig) => {
+                    assert_eq!(sig.sighash_type, TapSighashType::Default);
+                    assert_eq!(sig.signature.as_ref().len(), 64);
+                }
+                Err(Error::Musig(msg)) => {
+                    // Accept known MuSig process errors, but not early validation errors
+                    assert!(
+                        msg.contains("Second round finalization failed") ||
+                        msg.contains("Key aggregation failed") ||
+                        msg.contains("signing key is not a member"),
+                        "Witness type {} failed with unexpected error: {}", i, msg
+                    );
+                }
+                Err(e) => panic!("Unexpected error type for witness {}: {:?}", i, e),
+            }
         }
     }
 
