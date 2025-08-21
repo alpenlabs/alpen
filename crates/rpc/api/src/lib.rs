@@ -15,7 +15,6 @@ use strata_sequencer::{
 };
 use strata_state::{
     block::L2Block, client_state::ClientState, id::L2BlockId, operation::ClientUpdateOutput,
-    sync_event::SyncEvent,
 };
 use zkaleido::ProofReceipt;
 
