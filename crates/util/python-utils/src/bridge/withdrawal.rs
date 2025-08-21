@@ -147,15 +147,16 @@ fn parse_deposit_txid(txid_hex: &str) -> Result<Txid, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bdk_wallet::bitcoin::hashes::Hash;
+
+    use super::*;
 
     #[test]
     fn test_parse_deposit_txid_valid() {
         let txid = "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c";
         let parsed = parse_deposit_txid(txid);
         assert!(parsed.is_ok());
-        
+
         let expected = Txid::from_str(txid).unwrap();
         assert_eq!(parsed.unwrap(), expected);
     }
@@ -165,7 +166,7 @@ mod tests {
         let invalid_txid = "invalid_hex_string";
         let result = parse_deposit_txid(invalid_txid);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             Error::BridgeBuilder(msg) => {
                 assert_eq!(msg, "Invalid deposit transaction ID");
@@ -179,7 +180,7 @@ mod tests {
         let short_txid = "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c";
         let result = parse_deposit_txid(short_txid);
         assert!(result.is_err());
-        
+
         let long_txid = "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c00";
         let result = parse_deposit_txid(long_txid);
         assert!(result.is_err());
@@ -196,7 +197,7 @@ mod tests {
         let zero_txid = "0000000000000000000000000000000000000000000000000000000000000000";
         let result = parse_deposit_txid(zero_txid);
         assert!(result.is_ok());
-        
+
         let parsed = result.unwrap();
         assert_eq!(parsed, Txid::from_byte_array([0u8; 32]));
     }
@@ -205,10 +206,10 @@ mod tests {
     fn test_parse_deposit_txid_case_sensitivity() {
         let lowercase = "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c";
         let uppercase = "AE86B8C8912594427BF148EB7660A86378F2FB4AC9C8D2EA7D3CB7F3FCFD7C1C";
-        
+
         let result_lower = parse_deposit_txid(lowercase);
         let result_upper = parse_deposit_txid(uppercase);
-        
+
         assert!(result_lower.is_ok());
         assert!(result_upper.is_ok());
         assert_eq!(result_lower.unwrap(), result_upper.unwrap());
@@ -219,12 +220,12 @@ mod tests {
         let tag = *MAGIC_BYTES;
         let operator_idx = 42;
         let deposit_idx = 123;
-        let deposit_txid = Txid::from_str(
-            "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c"
-        ).unwrap();
+        let deposit_txid =
+            Txid::from_str("ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c")
+                .unwrap();
 
         let metadata = WithdrawalMetadata::new(tag, operator_idx, deposit_idx, deposit_txid);
-        
+
         // Test metadata fields
         assert_eq!(metadata.tag, tag);
         assert_eq!(metadata.operator_idx, operator_idx);
@@ -233,8 +234,8 @@ mod tests {
 
         // Test OP_RETURN data creation
         let op_return_data = metadata.op_return_data();
-        assert!(op_return_data.len() > 0);
-        
+        assert!(op_return_data.is_empty());
+
         let op_return_script = metadata.op_return_script();
         assert_eq!(op_return_script.as_bytes(), &op_return_data);
     }
@@ -245,7 +246,7 @@ mod tests {
         let amount = 50000u64;
         let amount_btc = Amount::from_sat(amount);
         assert_eq!(amount_btc.to_sat(), amount);
-        
+
         // Test extreme amounts
         assert_eq!(Amount::from_sat(0).to_sat(), 0);
         assert_eq!(Amount::from_sat(u64::MAX).to_sat(), u64::MAX);
@@ -254,13 +255,13 @@ mod tests {
     #[test]
     fn test_recipient_script_parsing() {
         // Test simpler BOSD descriptors that are more likely to be valid
-        // Note: The exact format depends on the strata_primitives::bitcoin_bosd::Descriptor implementation
-        
+        // Note: The exact format depends on the strata_primitives::bitcoin_bosd::Descriptor
+        // implementation
+
         // Test basic parsing functionality without specific descriptor formats
         // since the exact valid formats aren't documented in this context
-        let simple_descriptors = vec![
-            "tr(79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)",
-        ];
+        let simple_descriptors =
+            vec!["tr(79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)"];
 
         for bosd in simple_descriptors {
             match bosd.parse::<Descriptor>() {
@@ -274,7 +275,7 @@ mod tests {
                 }
             }
         }
-        
+
         // At least verify that the Descriptor type can be used
         assert!(std::mem::size_of::<Descriptor>() > 0);
     }
@@ -294,11 +295,11 @@ mod tests {
         }
     }
 
-    #[test] 
+    #[test]
     fn test_fee_rate_constants() {
         let fee_rate = FeeRate::from_sat_per_vb_unchecked(2);
         assert_eq!(fee_rate.to_sat_per_vb_floor(), 2);
-        
+
         // Test various fee rates
         for rate in [1, 2, 5, 10, 50, 100] {
             let fr = FeeRate::from_sat_per_vb_unchecked(rate);
@@ -310,10 +311,10 @@ mod tests {
     fn test_transaction_ordering() {
         // Verify the TxOrdering::Untouched option is available
         let ordering = TxOrdering::Untouched;
-        
+
         // Just verify the enum variant exists and can be matched
         match ordering {
-            TxOrdering::Untouched => {},
+            TxOrdering::Untouched => {}
             _ => panic!("Unexpected ordering variant"),
         }
     }
@@ -322,6 +323,6 @@ mod tests {
     // since they depend on external services and would make tests fragile.
     // These would include:
     // - create_withdrawal_fulfillment_inner
-    // - create_withdrawal_transaction  
+    // - create_withdrawal_transaction
     // - Actual wallet operations
 }

@@ -189,27 +189,28 @@ impl AuxiliaryData {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use bdk_wallet::bitcoin::{
-        hashes::Hash,
-        Transaction, TxIn, Witness,
-    };
     use std::str::FromStr;
+
+    use bdk_wallet::bitcoin::{hashes::Hash, Transaction, TxIn, Witness};
+
+    use super::*;
 
     fn create_test_deposit_request_data() -> DepositRequestData {
         DepositRequestData {
             deposit_request_outpoint: OutPoint::from_str(
                 "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:0",
-            ).unwrap(),
+            )
+            .unwrap(),
             stake_index: 42,
             ee_address: vec![
-                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
-                0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14,
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+                0x0f, 0x10, 0x11, 0x12, 0x13, 0x14,
             ],
             total_amount: Amount::from_sat(100000),
             x_only_public_key: XOnlyPublicKey::from_str(
                 "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
-            ).unwrap(),
+            )
+            .unwrap(),
             original_script_pubkey: ScriptBuf::new(),
         }
     }
@@ -232,7 +233,8 @@ mod tests {
             input: vec![TxIn {
                 previous_output: OutPoint::from_str(
                     "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:0",
-                ).unwrap(),
+                )
+                .unwrap(),
                 script_sig: ScriptBuf::new(),
                 sequence: bdk_wallet::bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
                 witness: Witness::new(),
@@ -264,9 +266,9 @@ mod tests {
         let tag = [0x01, 0x02, 0x03, 0x04];
         let operator_idx = 123;
         let deposit_idx = 456;
-        let deposit_txid = Txid::from_str(
-            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-        ).unwrap();
+        let deposit_txid =
+            Txid::from_str("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+                .unwrap();
 
         let metadata = WithdrawalMetadata::new(tag, operator_idx, deposit_idx, deposit_txid);
 
@@ -281,9 +283,9 @@ mod tests {
         let tag = [0xAB, 0xCD, 0xEF, 0x12];
         let operator_idx = 0x12345678;
         let deposit_idx = 0x87654321;
-        let deposit_txid = Txid::from_str(
-            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-        ).unwrap();
+        let deposit_txid =
+            Txid::from_str("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+                .unwrap();
 
         let metadata = WithdrawalMetadata::new(tag, operator_idx, deposit_idx, deposit_txid);
         let op_return_data = metadata.op_return_data();
@@ -311,9 +313,8 @@ mod tests {
             [0x01, 0x02, 0x03, 0x04],
             123,
             456,
-            Txid::from_str(
-                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            ).unwrap(),
+            Txid::from_str("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+                .unwrap(),
         );
 
         let script_data = metadata.op_return_script();
@@ -367,7 +368,10 @@ mod tests {
         assert_eq!(&serialized[11..43], &[0x77; 32]);
 
         // Verify amount (big-endian)
-        assert_eq!(&serialized[43..51], &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]);
+        assert_eq!(
+            &serialized[43..51],
+            &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]
+        );
     }
 
     #[test]
@@ -381,7 +385,9 @@ mod tests {
         assert_eq!(key_witness, TaprootWitness::Key);
         assert_eq!(
             tweaked_witness,
-            TaprootWitness::Tweaked { tweak: TapNodeHash::from_byte_array([0x42; 32]) }
+            TaprootWitness::Tweaked {
+                tweak: TapNodeHash::from_byte_array([0x42; 32])
+            }
         );
 
         // Test inequality

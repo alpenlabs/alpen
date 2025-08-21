@@ -308,7 +308,10 @@ mod tests {
         let _verification_result = signer.secp.verify_ecdsa(
             &secp256k1::Message::from_digest([1u8; 32]),
             &secp256k1::ecdsa::Signature::from_compact(&[0u8; 64]).unwrap(),
-            &secp256k1::PublicKey::from_secret_key(&signer.secp, &SecretKey::from_slice(&[1u8; 32]).unwrap())
+            &secp256k1::PublicKey::from_secret_key(
+                &signer.secp,
+                &SecretKey::from_slice(&[1u8; 32]).unwrap(),
+            ),
         );
         // Should not panic, context is properly initialized
     }
@@ -343,7 +346,8 @@ mod tests {
             SECP256K1,
             &SecretKey::from_str(
                 "1111111111111111111111111111111111111111111111111111111111111111",
-            ).unwrap(),
+            )
+            .unwrap(),
         );
 
         // Test x-only conversion consistency
@@ -369,7 +373,8 @@ mod tests {
             input: vec![TxIn {
                 previous_output: OutPoint::from_str(
                     "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:0",
-                ).unwrap(),
+                )
+                .unwrap(),
                 script_sig: ScriptBuf::new(),
                 sequence: bdk_wallet::bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
                 witness: Witness::new(),
@@ -401,7 +406,8 @@ mod tests {
             SECP256K1,
             &SecretKey::from_str(
                 "1111111111111111111111111111111111111111111111111111111111111111",
-            ).unwrap(),
+            )
+            .unwrap(),
         )];
 
         // Test with different witness types
@@ -435,10 +441,12 @@ mod tests {
                 Err(Error::Musig(msg)) => {
                     // Accept known MuSig process errors, but not early validation errors
                     assert!(
-                        msg.contains("Second round finalization failed") ||
-                        msg.contains("Key aggregation failed") ||
-                        msg.contains("signing key is not a member"),
-                        "Witness type {} failed with unexpected error: {}", i, msg
+                        msg.contains("Second round finalization failed")
+                            || msg.contains("Key aggregation failed")
+                            || msg.contains("signing key is not a member"),
+                        "Witness type {} failed with unexpected error: {}",
+                        i,
+                        msg
                     );
                 }
                 Err(e) => panic!("Unexpected error type for witness {}: {:?}", i, e),

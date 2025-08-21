@@ -300,7 +300,8 @@ pub(crate) fn parse_operator_keys(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::str::FromStr;
+
     use bdk_wallet::bitcoin::{
         address::AddressType,
         bip32::Xpriv,
@@ -310,8 +311,8 @@ mod tests {
         secp256k1::{schnorr, Message, SecretKey},
         Sequence,
     };
-    use std::str::FromStr;
 
+    use super::*;
     use crate::{
         bridge::types::DepositRequestData,
         constants::{BRIDGE_OUT_AMOUNT, GENERAL_WALLET_KEY_PATH, MAGIC_BYTES, NETWORK, XPRIV},
@@ -379,7 +380,9 @@ mod tests {
     fn test_build_taptree_empty_scripts() {
         // Build an internal key from XPRIV child to use as taproot internal key
         let xpriv = Xpriv::from_str(XPRIV).unwrap();
-        let child = xpriv.derive_priv(SECP256K1, &GENERAL_WALLET_KEY_PATH).unwrap();
+        let child = xpriv
+            .derive_priv(SECP256K1, &GENERAL_WALLET_KEY_PATH)
+            .unwrap();
         let sec = child.private_key;
         let pk = secp256k1::PublicKey::from_secret_key(SECP256K1, &sec);
         let xonly = XOnlyPublicKey::from(pk);
@@ -421,7 +424,9 @@ mod tests {
         let meta_spk = &deposit_tx.psbt().unsigned_tx.output[1].script_pubkey;
         let meta_bytes = meta_spk.as_bytes();
         assert_eq!(meta_bytes[0], OP_RETURN.to_u8());
-        assert!(meta_bytes.windows(MAGIC_BYTES.len()).any(|w| w == MAGIC_BYTES));
+        assert!(meta_bytes
+            .windows(MAGIC_BYTES.len())
+            .any(|w| w == MAGIC_BYTES));
 
         // Prevouts and witnesses
         assert_eq!(deposit_tx.prevouts().len(), 1);
@@ -432,7 +437,9 @@ mod tests {
         let expected_tweak = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
         assert_eq!(
             deposit_tx.witnesses()[0],
-            TaprootWitness::Tweaked { tweak: expected_tweak }
+            TaprootWitness::Tweaked {
+                tweak: expected_tweak
+            }
         );
     }
 
@@ -474,10 +481,9 @@ mod tests {
         let mut dep = DepositTx::new(psbt, prevouts, witnesses);
 
         // Fabricate a valid Schnorr signature for witness (content isn't validated on extraction)
-        let sec = SecretKey::from_str(
-            "1111111111111111111111111111111111111111111111111111111111111111",
-        )
-        .unwrap();
+        let sec =
+            SecretKey::from_str("1111111111111111111111111111111111111111111111111111111111111111")
+                .unwrap();
         let kp = secp256k1::Keypair::from_secret_key(SECP256K1, &sec);
         let msg = Message::from_digest([9u8; 32]);
         let sig64: schnorr::Signature = SECP256K1.sign_schnorr(&msg, &kp);
@@ -491,13 +497,13 @@ mod tests {
         let extracted = finalize_and_extract_tx(dep).expect("finalize and extract");
         assert_eq!(extracted.input.len(), 1);
         assert_eq!(extracted.input[0].witness.len(), 1);
-        assert!(extracted.input[0].witness.iter().next().unwrap().len() > 0);
+        assert!(extracted.input[0].witness.iter().next().unwrap().is_empty());
     }
 
     #[test]
     fn test_parse_operator_keys_from_xpriv() {
         // Should parse and derive an even-y keypair and aggregated x-only pk
-        let (pairs, agg1) = parse_operator_keys(&vec![XPRIV.to_string()]).expect("parse");
+        let (pairs, agg1) = parse_operator_keys(&[XPRIV.to_string()]).expect("parse");
         assert_eq!(pairs.len(), 1);
 
         // Derived public key should be even (compressed prefix 0x02)
@@ -505,7 +511,7 @@ mod tests {
         assert_eq!(full_pk.serialize()[0], 0x02);
 
         // Aggregated key should be deterministic for the same input
-        let (_, agg2) = parse_operator_keys(&vec![XPRIV.to_string()]).expect("parse");
+        let (_, agg2) = parse_operator_keys(&[XPRIV.to_string()]).expect("parse");
         assert_eq!(agg1, agg2);
     }
 
