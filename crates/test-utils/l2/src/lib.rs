@@ -155,8 +155,7 @@ pub fn gen_client_state(params: Option<&Params>) -> ClientState {
         Some(p) => p,
         None => &gen_params(),
     };
-    let (blk, _) = get_genesis_chainstate(params);
-    ClientState::from_genesis_params(params, blk.block().header().get_blockid())
+    ClientState::new()
 }
 
 /// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.

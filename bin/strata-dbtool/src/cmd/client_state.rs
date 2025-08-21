@@ -1,11 +1,12 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{ClientStateDatabase, DatabaseBackend};
+use strata_primitives::l1::L1BlockCommitment;
 use strata_state::operation::ClientUpdateOutput;
 
 use crate::{
     cli::OutputFormat,
-    output::{client_state::ClientStateUpdateInfo, output},
+    output::{client_state::ClientStateUpdateInfo, output, traits::FmtStub},
 };
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -30,17 +31,19 @@ pub(crate) fn get_client_state_update(
     let (client_state, sync_actions) = client_state_update.into_parts();
 
     // Create the output data structure
-    let client_state_info = ClientStateUpdateInfo {
-        update_index: update_idx,
-        is_chain_active: client_state.is_chain_active(),
-        genesis_l1_height: client_state.genesis_l1_height(),
-        latest_l1_block: client_state.most_recent_l1_block(),
-        next_expected_l1_height: client_state.next_exp_l1_block(),
-        tip_l1_block: client_state.get_tip_l1_block(),
-        deepest_l1_block: client_state.get_deepest_l1_block(),
-        last_internal_state: client_state.get_last_internal_state(),
-        sync_actions: &sync_actions,
-    };
+    //let client_state_info = ClientStateUpdateInfo {
+    //    update_index: update_idx,
+    //    is_chain_active: client_state.is_chain_active(),
+    //    horizon_l1_height: client_state.horizon_l1_height(),
+    //    genesis_l1_height: client_state.genesis_l1_height(),
+    //    latest_l1_block: client_state.most_recent_l1_block(),
+    //    next_expected_l1_height: client_state.next_exp_l1_block(),
+    //    tip_l1_block: client_state.get_tip_l1_block(),
+    //    deepest_l1_block: client_state.get_deepest_l1_block(),
+    //    last_internal_state: client_state.get_last_internal_state(),
+    //    sync_actions: &sync_actions,
+    //};
+    let client_state_info = FmtStub {};
 
     // Use the output utility
     output(&client_state_info, args.output_format)
@@ -51,14 +54,17 @@ pub(crate) fn get_latest_client_state_update(
     db: &impl DatabaseBackend,
     update_idx: Option<u64>,
 ) -> Result<(ClientUpdateOutput, u64), DisplayedError> {
+    //TODO(QQ):
     let client_state_db = db.client_state_db();
-    let last_update_idx = update_idx.unwrap_or(
-        client_state_db
-            .get_last_state_idx()
-            .internal_error("Failed to fetch last client state index")?,
-    );
+    let last_update_idx = 0;
+    //update_idx.unwrap_or(
+    //    client_state_db
+    //        .get_last_state_idx()
+    //        .internal_error("Failed to fetch last client state index")?,
+    //);
+
     let client_state = client_state_db
-        .get_client_update(last_update_idx)
+        .get_client_update(L1BlockCommitment::default())
         .internal_error("Failed to fetch client state")?
         .ok_or_else(|| {
             DisplayedError::UserError(

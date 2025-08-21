@@ -4,7 +4,7 @@ use strata_primitives::{
     buf::Buf32,
     l1::{generate_l1_tx, L1BlockCommitment, L1BlockManifest, L1HeaderRecord, L1Tx},
 };
-use strata_state::sync_event::BlockSubmitter;
+use strata_state::BlockSubmitter;
 use tracing::*;
 
 use super::{

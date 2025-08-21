@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use strata_primitives::l1::L1BlockCommitment;
-use strata_state::sync_event::BlockSubmitter;
+use strata_state::BlockSubmitter;
 use tokio::sync::mpsc;
 use tracing::*;
 

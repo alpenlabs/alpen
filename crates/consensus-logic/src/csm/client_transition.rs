@@ -267,7 +267,7 @@ fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<Checkp
 mod tests {
     use bitcoin::BlockHash;
     use strata_primitives::l1::L1BlockManifest;
-    use strata_state::{l1::L1BlockId, sync_event::SyncEvent};
+    use strata_state::l1::L1BlockId;
     use strata_test_utils_btc::segment::BtcChainSegment;
     use strata_test_utils_l2::{gen_client_state, gen_params};
 

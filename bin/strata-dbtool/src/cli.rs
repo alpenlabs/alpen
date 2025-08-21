@@ -10,7 +10,6 @@ use crate::cmd::{
     l1_broadcaster::{GetL1BroadcasterSummaryArgs, GetL1BroadcasterTxArgs},
     l1_writer::{GetL1WriterPayloadArgs, GetL1WriterSummaryArgs},
     l2::{GetL2BlockArgs, GetL2SummaryArgs},
-    sync_event::{GetSyncEventArgs, GetSyncEventsSummaryArgs},
     syncinfo::GetSyncinfoArgs,
 };
 
@@ -47,8 +46,6 @@ pub(crate) enum Command {
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),
     GetEpochSummary(GetEpochSummaryArgs),
     GetSyncinfo(GetSyncinfoArgs),
-    GetSyncEvent(GetSyncEventArgs),
-    GetSyncEventsSummary(GetSyncEventsSummaryArgs),
     GetChainstate(GetChainstateArgs),
     RevertChainstate(RevertChainstateArgs),
 }

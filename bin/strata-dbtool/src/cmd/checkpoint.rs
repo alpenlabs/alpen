@@ -161,7 +161,7 @@ pub(crate) fn get_checkpoints_summary(
 
     let (client_state_update, _) = get_latest_client_state_update(db, None)?;
     let (client_state, _) = client_state_update.into_parts();
-    let genesis_l1_height = client_state.genesis_l1_height();
+    let horizon_l1_height = 0u64; //TODO(QQ): client_state.horizon_l1_height();
 
     let mut found_checkpoints = 0;
     let mut unexpected_checkpoints = Vec::new();

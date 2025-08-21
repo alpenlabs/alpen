@@ -19,7 +19,7 @@ use strata_primitives::{
     },
     params::{GenesisL1View, Params},
 };
-use strata_state::sync_event::BlockSubmitter;
+use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::{L1BlockManager, NodeStorage};
 use tracing::*;
