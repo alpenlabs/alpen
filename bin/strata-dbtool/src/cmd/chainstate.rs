@@ -1,10 +1,13 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{
-    BlockStatus, ChainstateDatabase, Database, L1BroadcastDatabase, L1WriterDatabase,
-    L2BlockDatabase,
+use strata_db::{
+    traits::{
+        BlockStatus, ChainstateDatabase, CheckpointDatabase, Database, L1BroadcastDatabase,
+        L1WriterDatabase, L2BlockDatabase,
+    },
+    types::IntentStatus,
 };
-use strata_primitives::l2::L2BlockId;
+use strata_primitives::{batch::Checkpoint, l2::L2BlockId};
 use strata_state::state_op::WriteBatchEntry;
 
 use super::{checkpoint::get_latest_checkpoint_entry, l2::get_l2_block_slot};
@@ -76,6 +79,75 @@ pub(crate) fn get_l2_write_batch(
     }
 }
 
+/// Deletes L1 writer database entries and L1 broadcast database entries associated with a specific
+/// checkpoint
+fn delete_l1_entries_for_checkpoint<T: Database, B: L1BroadcastDatabase, W: L1WriterDatabase>(
+    db: &CommonDbBackend<T, B, W>,
+    epoch: u64,
+    checkpoint: &Checkpoint,
+) -> Result<(), DisplayedError> {
+    let l1_writer_db = db.writer_db();
+    let l1_broadcast_db = db.broadcast_db();
+    // Compute the checkpoint hash (same way as in complete_checkpoint_signature)
+    let checkpoint_hash = checkpoint.hash();
+
+    // Find the intent entry by this hash
+    if let Some(intent_entry) = l1_writer_db
+        .get_intent_by_id(checkpoint_hash)
+        .internal_error("Failed to get intent entry")?
+    {
+        // Delete based on status
+        match intent_entry.status {
+            IntentStatus::Bundled(bundle_idx) => {
+                // Get the payload entry to find commit and reveal txids
+                if let Some(payload_entry) = l1_writer_db
+                    .get_payload_entry_by_idx(bundle_idx)
+                    .internal_error("Failed to get payload entry")?
+                {
+                    // Delete commit transaction entry from broadcast DB
+                    if l1_broadcast_db
+                        .del_tx_entry(payload_entry.commit_txid)
+                        .is_ok()
+                    {
+                        println!("Deleted commit tx entry for checkpoint epoch {epoch}");
+                    }
+
+                    // Delete reveal transaction entry from broadcast DB
+                    if l1_broadcast_db
+                        .del_tx_entry(payload_entry.reveal_txid)
+                        .is_ok()
+                    {
+                        println!("Deleted reveal tx entry for checkpoint epoch {epoch}");
+                    }
+                }
+
+                // Delete the bundled payload entry from writer DB
+                l1_writer_db
+                    .del_payload_entry(bundle_idx)
+                    .internal_error("Failed to delete payload entry")?;
+                // Delete the intent entry from writer DB
+                l1_writer_db
+                    .del_intent_entry(checkpoint_hash)
+                    .internal_error("Failed to delete intent entry")?;
+                println!(
+                    "Deleted bundled L1 entries for checkpoint epoch {epoch} (bundle_idx: {bundle_idx})"
+                );
+            }
+            IntentStatus::Unbundled => {
+                // Just delete the intent entry from writer DB
+                l1_writer_db
+                    .del_intent_entry(checkpoint_hash)
+                    .internal_error("Failed to delete intent entry")?;
+                println!("Deleted unbundled L1 writer entry for checkpoint epoch {epoch}",);
+            }
+        }
+    } else {
+        println!("No L1 writer entry found for checkpoint epoch {epoch}");
+    }
+
+    Ok(())
+}
+
 /// Get chainstate at specified block.
 pub(crate) fn get_chainstate(
     db: &impl Database,
@@ -127,7 +199,7 @@ pub(crate) fn revert_chainstate(
 ) -> Result<(), DisplayedError> {
     let core_db = &db.core;
     let target_block_id = parse_l2_block_id(&args.block_id)?;
-    let target_slot = get_l2_block_slot(core_db, target_block_id)?.ok_or_else(|| {
+    let target_slot = get_l2_block_slot(&db.core, target_block_id)?.ok_or_else(|| {
         DisplayedError::UserError(
             "L2 block with id not found".to_string(),
             Box::new(target_block_id),
@@ -207,6 +279,57 @@ pub(crate) fn revert_chainstate(
                     .internal_error(format!("Failed to delete block with id {}", *block_id))?;
             }
         }
+    }
+
+    let target_epoch = top_level_state.cur_epoch();
+    let latest_checkpoint_epoch = latest_checkpoint_entry.checkpoint.batch_info().epoch;
+    if target_epoch < latest_checkpoint_epoch {
+        // Clean up checkpoints and related data from target epoch onwards
+        println!(
+            "Revert chainstate cleaning up checkpoints and L1 entries from epoch {target_epoch}"
+        );
+
+        // First, clean up L1 entries (writer and broadcast) for checkpoints that will be deleted
+        // We need to do this before deleting checkpoints since we need the checkpoint data
+        let mut deleted_l1_entries = 0;
+        for epoch in target_epoch..=latest_checkpoint_epoch {
+            if let Some(checkpoint_entry) = db
+                .core
+                .checkpoint_db()
+                .get_checkpoint(epoch)
+                .internal_error("Failed to get checkpoint")?
+            {
+                // Get the actual checkpoint data
+                let checkpoint = checkpoint_entry.checkpoint;
+
+                // Delete associated L1 entries
+                if let Err(e) = delete_l1_entries_for_checkpoint(db, epoch, &checkpoint) {
+                    println!(
+                        "Warning: Failed to delete L1 entries for checkpoint epoch {epoch}: {e:?}",
+                    );
+                } else {
+                    deleted_l1_entries += 1;
+                }
+            }
+        }
+
+        println!("Deleted L1 entries for {deleted_l1_entries} checkpoints");
+
+        // Now use bulk deletion methods for efficiency
+        let deleted_checkpoints = db
+            .core
+            .checkpoint_db()
+            .del_checkpoints_from_epoch(target_epoch)
+            .internal_error("Failed to delete checkpoints")?;
+
+        let deleted_summaries = db
+            .core
+            .checkpoint_db()
+            .del_epoch_summaries_from_epoch(target_epoch)
+            .internal_error("Failed to delete epoch summaries")?;
+
+        println!("Deleted checkpoints at epochs: {deleted_checkpoints:?}");
+        println!("Deleted epoch summaries at epochs: {deleted_summaries:?}");
     }
 
     println!("Revert chainstate completed");
