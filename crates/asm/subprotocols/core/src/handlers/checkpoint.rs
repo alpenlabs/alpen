@@ -36,7 +36,7 @@ use crate::{CoreOLState, OLCoreSubproto, error::*, messages, parsing, types, ver
 pub(crate) fn handle_checkpoint_transaction(
     state: &mut CoreOLState,
     tx: &TxInputRef<'_>,
-    _relayer: &mut impl MsgRelayer,
+    _relayer: &mut dyn MsgRelayer,
     anchor_pre: &AnchorState,
     aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
 ) -> Result<()> {

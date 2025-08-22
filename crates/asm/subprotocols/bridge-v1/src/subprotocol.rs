@@ -87,7 +87,7 @@ impl Subprotocol for BridgeV1Subproto {
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
         _aux_inputs: &[Self::AuxInput],
-        relayer: &mut impl MsgRelayer,
+        relayer: &mut dyn MsgRelayer,
     ) {
         // Process each transaction
         for tx in txs {

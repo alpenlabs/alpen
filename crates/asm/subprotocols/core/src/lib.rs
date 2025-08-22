@@ -104,7 +104,7 @@ impl Subprotocol for OLCoreSubproto {
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
-        _collector: &mut impl AuxInputCollector,
+        _collector: &mut dyn AuxInputCollector,
         _anchor_pre: &AnchorState,
     ) {
         // [PLACE_HOLDER]
@@ -120,7 +120,7 @@ impl Subprotocol for OLCoreSubproto {
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
         aux_inputs: &[Self::AuxInput],
-        relayer: &mut impl MsgRelayer,
+        relayer: &mut dyn MsgRelayer,
     ) {
         for tx in txs {
             let result = match tx.tag().tx_type() {

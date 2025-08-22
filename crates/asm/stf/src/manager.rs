@@ -1,88 +1,12 @@
 //! Subprotocol handler.
 
-use std::{any::Any, collections::BTreeMap};
+use std::{any::Any, collections::BTreeMap, ops::Sub};
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, AuxRequest, InterprotoMsg, MsgRelayer,
-    SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, AsmSpec, AsmSpec2, AuxInputCollector, AuxRequest,
+    InterprotoMsg, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
-
-/// Wrapper around the common subprotocol interface that handles the common
-/// buffering logic for interproto messages.
-pub(crate) struct HandlerImpl<S: Subprotocol, R, C> {
-    state: S::State,
-    interproto_msg_buf: Vec<S::Msg>,
-    aux_inputs: Vec<S::AuxInput>,
-
-    _r: std::marker::PhantomData<R>,
-    _c: std::marker::PhantomData<C>,
-}
-
-impl<S: Subprotocol + 'static, R: MsgRelayer + 'static, C: AuxInputCollector + 'static>
-    HandlerImpl<S, R, C>
-{
-    pub(crate) fn new(
-        state: S::State,
-        aux_inputs: Vec<S::AuxInput>,
-        interproto_msg_buf: Vec<S::Msg>,
-    ) -> Self {
-        Self {
-            state,
-            aux_inputs,
-            interproto_msg_buf,
-            _r: std::marker::PhantomData,
-            _c: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for HandlerImpl<S, R, C> {
-    fn id(&self) -> SubprotocolId {
-        S::ID
-    }
-
-    fn accept_msg(&mut self, msg: &dyn InterprotoMsg) {
-        let m = msg
-            .as_dyn_any()
-            .downcast_ref::<S::Msg>()
-            .expect("asm: incorrect interproto msg type");
-        self.interproto_msg_buf.push(m.clone());
-    }
-
-    fn pre_process_txs(
-        &mut self,
-        txs: &[TxInputRef<'_>],
-        collector: &mut dyn AuxInputCollector,
-        anchor_pre: &AnchorState,
-    ) {
-        let collector = collector
-            .as_mut_any()
-            .downcast_mut::<C>()
-            .expect("asm: handler");
-        S::pre_process_txs(&self.state, txs, collector, anchor_pre);
-    }
-
-    fn process_txs(
-        &mut self,
-        txs: &[TxInputRef<'_>],
-        relayer: &mut dyn MsgRelayer,
-        anchor_pre: &AnchorState,
-    ) {
-        let relayer = relayer
-            .as_mut_any()
-            .downcast_mut::<R>()
-            .expect("asm: handler");
-        S::process_txs(&mut self.state, txs, anchor_pre, &self.aux_inputs, relayer);
-    }
-
-    fn process_buffered_msgs(&mut self) {
-        S::process_msgs(&mut self.state, &self.interproto_msg_buf)
-    }
-
-    fn to_section(&self) -> SectionState {
-        SectionState::from_state::<S>(&self.state)
-    }
-}
 
 /// Manages subproto handlers and relays messages between them.
 pub(crate) struct SubprotoManager {
@@ -92,21 +16,9 @@ pub(crate) struct SubprotoManager {
 }
 
 impl SubprotoManager {
-    /// Inserts a subproto by creating a handler for it, wrapping a tstate.
-    pub(crate) fn insert_subproto<S: Subprotocol>(
-        &mut self,
-        state: S::State,
-        aux_inputs: Vec<S::AuxInput>,
-    ) {
-        let handler = HandlerImpl::<S, Self, Self>::new(state, aux_inputs, Vec::new());
-        assert_eq!(
-            handler.id(),
-            S::ID,
-            "asm: subproto handler impl ID doesn't match"
-        );
-        self.insert_handler(Box::new(handler));
+    pub(crate) fn subproto_ids(&self) -> Vec<SubprotocolId> {
+        self.handlers.keys().copied().collect()
     }
-
     /// Dispatches pre-processing to the appropriate handler.
     ///
     /// This method temporarily removes the handler from the internal map to satisfy
@@ -226,9 +138,10 @@ impl SubprotoManager {
 }
 
 impl SubprotoManager {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(spec: &impl AsmSpec2, pre_state: &AnchorState) -> Self {
+        let handlers = spec.load_subprotocol_handlers(pre_state);
         Self {
-            handlers: BTreeMap::new(),
+            handlers,
             logs: Vec::new(),
             aux_requests: Vec::new(),
         }

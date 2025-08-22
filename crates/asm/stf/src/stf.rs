@@ -3,11 +3,11 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::params::Params;
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, AsmSpec2, ChainViewState};
 
 use crate::{
     manager::SubprotoManager,
-    stage::{FinishStage, ProcessStage, SubprotoLoaderStage},
+    stage::{FinishStage, ProcessStage},
     types::{AsmStfInput, AsmStfOutput},
 };
 
@@ -42,7 +42,7 @@ use crate::{
 ///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 /// * `'x` - Lifetime parameter tied to the auxiliary input data
-pub fn asm_stf<'b, 'x, S: AsmSpec>(
+pub fn asm_stf<'b, 'x, S: AsmSpec2>(
     spec: &S,
     pre_state: &AnchorState,
     input: AsmStfInput<'b, 'x>,
@@ -54,11 +54,7 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
         .check_and_update_continuity(input.header, &Params::MAINNET)
         .map_err(AsmError::InvalidL1Header)?;
 
-    let mut manager = SubprotoManager::new();
-
-    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
-    let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, input.aux_input);
-    spec.call_subprotocols(&mut loader_stage);
+    let mut manager = SubprotoManager::new(spec, pre_state);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.

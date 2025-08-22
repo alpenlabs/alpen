@@ -107,7 +107,7 @@ pub trait Subprotocol: 'static {
     fn pre_process_txs(
         state: &Self::State,
         txs: &[TxInputRef<'_>],
-        collector: &mut impl AuxInputCollector,
+        collector: &mut dyn AuxInputCollector,
         anchor_pre: &AnchorState,
     ) {
         // Default implementation: no auxiliary input required
@@ -132,7 +132,7 @@ pub trait Subprotocol: 'static {
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
         aux_inputs: &[Self::AuxInput],
-        relayer: &mut impl MsgRelayer,
+        relayer: &mut dyn MsgRelayer,
     );
 
     /// Processes messages received from other subprotocols.
