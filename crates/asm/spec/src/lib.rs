@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AsmSpec, AsmSpec2, GenesisProvider, Stage, SubprotoHandler, Subprotocol,
+    AnchorState, AsmSpec, AuxPayload, GenesisProvider, SubprotoHandler, Subprotocol,
 };
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
 use strata_asm_proto_core::{CoreGenesisConfig, OLCoreSubproto};
@@ -17,33 +17,12 @@ use crate::handler::HandlerImpl;
 
 mod handler;
 
-/// ASM specification for the Strata protocol.
-///
-/// Implements the [`AsmSpec`] trait to define subprotocol processing order,
-/// magic bytes for L1 transaction filtering, and genesis configurations.
+/// Specification for the Strata ASM protocol
 #[derive(Debug)]
 pub struct StrataAsmSpec {
     magic_bytes: MagicBytes,
     core_genesis: CoreGenesisConfig,
     bridge_v1_genesis: BridgeV1Config,
-}
-
-impl AsmSpec for StrataAsmSpec {
-    fn magic_bytes(&self) -> MagicBytes {
-        self.magic_bytes
-    }
-
-    fn genesis_config_for<S: strata_asm_common::Subprotocol>(&self) -> &S::GenesisConfig
-    where
-        Self: GenesisProvider<S>,
-    {
-        <Self as GenesisProvider<S>>::genesis_config(self)
-    }
-
-    fn call_subprotocols(&self, stage: &mut impl Stage<Self>) {
-        stage.process_subprotocol::<OLCoreSubproto>(self);
-        stage.process_subprotocol::<BridgeV1Subproto>(self);
-    }
 }
 
 impl GenesisProvider<OLCoreSubproto> for StrataAsmSpec {
@@ -71,46 +50,44 @@ impl StrataAsmSpec {
             bridge_v1_genesis,
         }
     }
-}
 
-/// ASM specification for the Strata protocol using AsmSpec2.
-///
-/// Implements only the [`AsmSpec2`] trait for simplified subprotocol loading.
-#[derive(Debug)]
-pub struct StrataAsm2 {
-    magic_bytes: MagicBytes,
-    core_genesis: CoreGenesisConfig,
-    bridge_v1_genesis: BridgeV1Config,
-}
+    pub fn load_state_and_aux<S: Subprotocol>(
+        &self,
+        pre_state: &AnchorState,
+        aux_bundle: &BTreeMap<SubprotocolId, Vec<AuxPayload>>,
+    ) -> (S::State, Vec<S::AuxInput>)
+    where
+        Self: GenesisProvider<S>,
+    {
+        // Load Core subprotocol
+        let state = match pre_state.find_section(S::ID) {
+            Some(section) => section
+                .try_to_state::<S>()
+                .expect("asm: invalid core section state"),
+            None => {
+                let genesis_config = <Self as GenesisProvider<S>>::genesis_config(self);
+                S::init(genesis_config).expect("asm: failed to initialize core subprotocol")
+            }
+        };
 
-impl StrataAsm2 {
-    /// Creates a new ASM specification.
-    pub fn new(
-        magic_bytes: strata_l1_txfmt::MagicBytes,
-        core_genesis: CoreGenesisConfig,
-        bridge_v1_genesis: BridgeV1Config,
-    ) -> Self {
-        Self {
-            magic_bytes,
-            core_genesis,
-            bridge_v1_genesis,
-        }
+        // Extract auxiliary inputs for this subprotocol from the bundle
+        let aux_inputs = match aux_bundle.get(&S::ID) {
+            Some(payloads) => payloads
+                .iter()
+                .map(|payload| {
+                    payload
+                        .try_to_aux_input::<S>()
+                        .expect("asm: invalid aux input")
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+
+        (state, aux_inputs)
     }
 }
 
-impl GenesisProvider<OLCoreSubproto> for StrataAsm2 {
-    fn genesis_config(&self) -> &CoreGenesisConfig {
-        &self.core_genesis
-    }
-}
-
-impl GenesisProvider<BridgeV1Subproto> for StrataAsm2 {
-    fn genesis_config(&self) -> &BridgeV1Config {
-        &self.bridge_v1_genesis
-    }
-}
-
-impl AsmSpec2 for StrataAsm2 {
+impl AsmSpec for StrataAsmSpec {
     fn magic_bytes(&self) -> MagicBytes {
         self.magic_bytes
     }
@@ -118,48 +95,26 @@ impl AsmSpec2 for StrataAsm2 {
     fn load_subprotocol_handlers(
         &self,
         pre_state: &AnchorState,
+        aux_bundle: &BTreeMap<SubprotocolId, Vec<AuxPayload>>,
     ) -> BTreeMap<SubprotocolId, Box<dyn SubprotoHandler>> {
         let mut handlers: BTreeMap<SubprotocolId, Box<dyn SubprotoHandler>> = BTreeMap::new();
 
         // Load Core subprotocol
-        let core_state = match pre_state.find_section(OLCoreSubproto::ID) {
-            Some(section) => section
-                .try_to_state::<OLCoreSubproto>()
-                .expect("asm: invalid core section state"),
-            None => {
-                let genesis_config =
-                    <Self as GenesisProvider<OLCoreSubproto>>::genesis_config(self);
-                OLCoreSubproto::init(genesis_config)
-                    .expect("asm: failed to initialize core subprotocol")
-            }
-        };
+        let (core_state, aux_inputs) =
+            self.load_state_and_aux::<OLCoreSubproto>(pre_state, aux_bundle);
         handlers.insert(
             OLCoreSubproto::ID,
-            Box::new(HandlerImpl::<OLCoreSubproto>::new(
-                core_state,
-                vec![],
-                vec![],
-            )),
+            Box::new(HandlerImpl::<OLCoreSubproto>::new(core_state, aux_inputs)),
         );
 
         // Load BridgeV1 subprotocol
-        let bridge_state = match pre_state.find_section(BridgeV1Subproto::ID) {
-            Some(section) => section
-                .try_to_state::<BridgeV1Subproto>()
-                .expect("asm: invalid bridge v1 section state"),
-            None => {
-                let genesis_config =
-                    <Self as GenesisProvider<BridgeV1Subproto>>::genesis_config(self);
-                BridgeV1Subproto::init(genesis_config)
-                    .expect("asm: failed to initialize bridge v1 subprotocol")
-            }
-        };
+        let (bridge_state, aux_inputs) =
+            self.load_state_and_aux::<BridgeV1Subproto>(pre_state, aux_bundle);
         handlers.insert(
             BridgeV1Subproto::ID,
             Box::new(HandlerImpl::<BridgeV1Subproto>::new(
                 bridge_state,
-                vec![],
-                vec![],
+                aux_inputs,
             )),
         );
 

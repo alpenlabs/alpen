@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, AsmSpec2};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
 
 use crate::{
     manager::SubprotoManager, tx_filter::group_txs_by_subprotocol, types::AsmPreProcessOutput,
@@ -46,7 +46,7 @@ use crate::{
 /// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
 ///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
-pub fn pre_process_asm<'b, S: AsmSpec2>(
+pub fn pre_process_asm<'b, S: AsmSpec>(
     spec: &S,
     pre_state: &AnchorState,
     block: &'b Block,
@@ -64,10 +64,9 @@ pub fn pre_process_asm<'b, S: AsmSpec2>(
 
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
     // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
-    // FIXME:
-    // let aux = BTreeMap::new();
+    let aux = BTreeMap::new();
 
-    let mut manager = SubprotoManager::new(spec, pre_state);
+    let mut manager = SubprotoManager::new(spec, pre_state, &aux);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.

@@ -12,15 +12,11 @@ pub(crate) struct HandlerImpl<S: Subprotocol> {
 }
 
 impl<S: Subprotocol + 'static> HandlerImpl<S> {
-    pub(crate) fn new(
-        state: S::State,
-        aux_inputs: Vec<S::AuxInput>,
-        interproto_msg_buf: Vec<S::Msg>,
-    ) -> Self {
+    pub(crate) fn new(state: S::State, aux_inputs: Vec<S::AuxInput>) -> Self {
         Self {
             state,
             aux_inputs,
-            interproto_msg_buf,
+            interproto_msg_buf: Vec::new(),
         }
     }
 }

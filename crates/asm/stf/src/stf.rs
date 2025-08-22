@@ -3,7 +3,7 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::params::Params;
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec2, ChainViewState};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
 
 use crate::{
     manager::SubprotoManager,
@@ -41,7 +41,7 @@ use crate::{
 ///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 /// * `'x` - Lifetime parameter tied to the auxiliary input data
-pub fn asm_stf<'b, 'x, S: AsmSpec2>(
+pub fn asm_stf<'b, 'x, S: AsmSpec>(
     spec: &S,
     pre_state: &AnchorState,
     input: AsmStfInput<'b, 'x>,
@@ -53,7 +53,7 @@ pub fn asm_stf<'b, 'x, S: AsmSpec2>(
         .check_and_update_continuity(input.header, &Params::MAINNET)
         .map_err(AsmError::InvalidL1Header)?;
 
-    let mut manager = SubprotoManager::new(spec, pre_state);
+    let mut manager = SubprotoManager::new(spec, pre_state, input.aux_input);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     manager.invoke_process_txs(&input.protocol_txs, pre_state);

@@ -1,9 +1,12 @@
 //! Subprotocol handler.
 
-use std::{any::Any, collections::BTreeMap, ops::Sub};
+use std::{
+    any::Any,
+    collections::{BTreeMap, btree_map::Entry},
+};
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AsmSpec, AsmSpec2, AuxInputCollector, AuxRequest,
+    AnchorState, AsmError, AsmLogEntry, AsmSpec, AuxInputCollector, AuxPayload, AuxRequest,
     InterprotoMsg, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId,
     TxInputRef,
 };
@@ -46,7 +49,7 @@ impl SubprotoManager {
     /// This default implementation temporarily removes the handler to satisfy
     /// borrow-checker constraints, invokes `process_txs` with `self` as the relayer,
     /// and then reinserts the handler.
-    pub(crate) fn invoke_process_txs<'t, 's>(
+    pub(crate) fn invoke_process_txs<'t>(
         &mut self,
         txs: &BTreeMap<SubprotocolId, Vec<TxInputRef<'t>>>,
         anchor_pre: &AnchorState,
@@ -73,8 +76,6 @@ impl SubprotoManager {
     }
 
     fn insert_handler(&mut self, handler: Box<dyn SubprotoHandler>) {
-        use std::collections::btree_map::Entry;
-
         // We have to make sure we don't overwrite something there.
         let ent = self.handlers.entry(handler.id());
         if matches!(ent, Entry::Occupied(_)) {
@@ -143,8 +144,12 @@ impl SubprotoManager {
 }
 
 impl SubprotoManager {
-    pub(crate) fn new(spec: &impl AsmSpec2, pre_state: &AnchorState) -> Self {
-        let handlers = spec.load_subprotocol_handlers(pre_state);
+    pub(crate) fn new(
+        spec: &impl AsmSpec,
+        pre_state: &AnchorState,
+        aux_bundle: &BTreeMap<SubprotocolId, Vec<AuxPayload>>,
+    ) -> Self {
+        let handlers = spec.load_subprotocol_handlers(pre_state, aux_bundle);
         Self {
             handlers,
             logs: Vec::new(),
