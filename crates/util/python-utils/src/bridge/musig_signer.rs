@@ -193,4 +193,3 @@ impl Default for MusigSigner {
         Self::new()
     }
 }
-
