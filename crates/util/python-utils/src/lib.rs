@@ -10,9 +10,7 @@ mod schnorr;
 mod taproot;
 mod utils;
 
-use bridge::{
-    create_deposit_transaction, create_withdrawal_fulfillment, deposit_request_transaction,
-};
+use bridge::deposit_request_transaction;
 use schnorr::{sign_schnorr_sig, verify_schnorr_sig};
 use taproot::{
     convert_to_xonly_pk, drain_wallet, extract_p2tr_pubkey, get_address, get_change_address,
@@ -35,8 +33,6 @@ fn strata_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // New bridge functions
     m.add_function(wrap_pyfunction!(deposit_request_transaction, m)?)?;
-    m.add_function(wrap_pyfunction!(create_deposit_transaction, m)?)?;
-    m.add_function(wrap_pyfunction!(create_withdrawal_fulfillment, m)?)?;
     m.add_function(wrap_pyfunction!(get_address, m)?)?;
     m.add_function(wrap_pyfunction!(get_change_address, m)?)?;
     m.add_function(wrap_pyfunction!(musig_aggregate_pks, m)?)?;
