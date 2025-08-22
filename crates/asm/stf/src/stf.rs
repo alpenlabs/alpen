@@ -3,11 +3,10 @@
 //! view into a single deterministic state transition.
 
 use bitcoin::params::Params;
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, AsmSpec2, ChainViewState};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec2, ChainViewState};
 
 use crate::{
     manager::SubprotoManager,
-    stage::{FinishStage, ProcessStage},
     types::{AsmStfInput, AsmStfOutput},
 };
 
@@ -57,14 +56,11 @@ pub fn asm_stf<'b, 'x, S: AsmSpec2>(
     let mut manager = SubprotoManager::new(spec, pre_state);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
-    // This stage performs the actual state transitions for each subprotocol.
-    let mut process_stage = ProcessStage::new(input.protocol_txs, &mut manager, pre_state);
-    spec.call_subprotocols(&mut process_stage);
+    manager.invoke_process_txs(&input.protocol_txs, pre_state);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
     // This stage handles cross-protocol communication and finalizes state changes.
-    let mut finish_stage = FinishStage::new(&mut manager);
-    spec.call_subprotocols(&mut finish_stage);
+    manager.invoke_process_msgs();
 
     // 5. Construct the final `AnchorState` and output.
     // Export the updated state sections and logs from all subprotocols to build the result.

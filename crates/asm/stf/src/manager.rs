@@ -24,19 +24,21 @@ impl SubprotoManager {
     /// This method temporarily removes the handler from the internal map to satisfy
     /// Rust’s borrow rules, invokes its `pre_process_txs` implementation with
     /// `self` acting as the `AuxInputCollector`, and then reinserts the handler.
-    pub(crate) fn invoke_pre_process_txs<S: Subprotocol>(
+    pub(crate) fn invoke_pre_process_txs<'t>(
         &mut self,
-        txs: &[TxInputRef<'_>],
+        txs: &BTreeMap<SubprotocolId, Vec<TxInputRef<'t>>>,
         anchor_pre: &AnchorState,
     ) {
-        // We temporarily take the handler out of the map so we can call
-        // `process_txs` with `self` as the relayer without violating the
-        // borrow checker.
-        let mut h = self
-            .remove_handler(S::ID)
-            .expect("asm: unloaded subprotocol");
-        h.pre_process_txs(txs, self, anchor_pre);
-        self.insert_handler(h);
+        let ids = self.subproto_ids();
+        for id in ids {
+            // We temporarily take the handler out of the map so we can call
+            // `process_txs` with `self` as the relayer without violating the
+            // borrow checker.
+            let mut h = self.remove_handler(id).expect("asm: unloaded subprotocol");
+            let relevant_txs = txs.get(&id).map(|v| v.as_slice()).unwrap_or(&[]);
+            h.pre_process_txs(relevant_txs, self, anchor_pre);
+            self.insert_handler(h);
+        }
     }
 
     /// Dispatches transaction processing to the appropriate handler.
@@ -44,27 +46,30 @@ impl SubprotoManager {
     /// This default implementation temporarily removes the handler to satisfy
     /// borrow-checker constraints, invokes `process_txs` with `self` as the relayer,
     /// and then reinserts the handler.
-    pub(crate) fn invoke_process_txs<S: Subprotocol>(
+    pub(crate) fn invoke_process_txs<'t, 's>(
         &mut self,
-        txs: &[TxInputRef<'_>],
+        txs: &BTreeMap<SubprotocolId, Vec<TxInputRef<'t>>>,
         anchor_pre: &AnchorState,
     ) {
-        // We temporarily take the handler out of the map so we can call
-        // `process_txs` with `self` as the relayer without violating the
-        // borrow checker.
-        let mut h = self
-            .remove_handler(S::ID)
-            .expect("asm: unloaded subprotocol");
-        h.process_txs(txs, self, anchor_pre);
-        self.insert_handler(h);
+        let ids = self.subproto_ids();
+        for id in ids {
+            // We temporarily take the handler out of the map so we can call
+            // `process_txs` with `self` as the relayer without violating the
+            // borrow checker.
+            let mut h = self.remove_handler(id).expect("asm: unloaded subprotocol");
+            let relevant_txs = txs.get(&id).map(|v| v.as_slice()).unwrap_or(&[]);
+            h.process_txs(relevant_txs, self, anchor_pre);
+            self.insert_handler(h);
+        }
     }
 
     /// Dispatches buffered inter-protocol message processing to the handler.
-    pub(crate) fn invoke_process_msgs<S: Subprotocol>(&mut self) {
-        let h = self
-            .get_handler_mut(S::ID)
-            .expect("asm: unloaded subprotocol");
-        h.process_buffered_msgs()
+    pub(crate) fn invoke_process_msgs(&mut self) {
+        let ids = self.subproto_ids();
+        for id in ids {
+            let h = self.get_handler_mut(id).expect("asm: unloaded subprotocol");
+            h.process_buffered_msgs()
+        }
     }
 
     fn insert_handler(&mut self, handler: Box<dyn SubprotoHandler>) {

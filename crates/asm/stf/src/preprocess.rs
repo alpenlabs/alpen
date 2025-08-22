@@ -5,13 +5,10 @@
 use std::collections::BTreeMap;
 
 use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, AsmSpec2};
 
 use crate::{
-    manager::SubprotoManager,
-    stage::{PreProcessStage, SubprotoLoaderStage},
-    tx_filter::group_txs_by_subprotocol,
-    types::AsmPreProcessOutput,
+    manager::SubprotoManager, tx_filter::group_txs_by_subprotocol, types::AsmPreProcessOutput,
 };
 
 /// Pre-processes a Bitcoin block for the Anchor State Machine (ASM) state transition.
@@ -49,7 +46,7 @@ use crate::{
 /// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
 ///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
-pub fn pre_process_asm<'b, S: AsmSpec>(
+pub fn pre_process_asm<'b, S: AsmSpec2>(
     spec: &S,
     pre_state: &AnchorState,
     block: &'b Block,
@@ -65,20 +62,16 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     // Only transactions relevant to registered subprotocols are processed further.
     let grouped_relevant_txs = group_txs_by_subprotocol(spec.magic_bytes(), &block.txdata);
 
-    let mut manager = SubprotoManager::new();
-
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
     // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
-    let aux = BTreeMap::new();
+    // FIXME:
+    // let aux = BTreeMap::new();
 
-    let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, &aux);
-    spec.call_subprotocols(&mut loader_stage);
+    let mut manager = SubprotoManager::new(spec, pre_state);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
-    let mut pre_process_stage =
-        PreProcessStage::new(&grouped_relevant_txs, &mut manager, pre_state);
-    spec.call_subprotocols(&mut pre_process_stage);
+    manager.invoke_pre_process_txs(&grouped_relevant_txs, pre_state);
 
     // 5. Flatten the grouped transactions back into a single collection.
     // The grouping was needed for per-subprotocol processing, but the output needs a flat list.

@@ -7,7 +7,6 @@
 
 mod manager;
 mod preprocess;
-mod stage;
 mod stf;
 mod tx_filter;
 mod types;

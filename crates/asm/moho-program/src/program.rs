@@ -1,7 +1,7 @@
 use moho_types::{ExportState, InnerStateCommitment, StateReference};
-use strata_asm_common::{AnchorState, AsmSpec};
+use strata_asm_common::{AnchorState, AsmSpec2};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
-use strata_asm_spec::StrataAsmSpec;
+use strata_asm_spec::StrataAsm2;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, asm_stf, group_txs_by_subprotocol};
 use strata_primitives::hash::compute_borsh_hash;
 use zkaleido::VerifyingKey;
@@ -16,7 +16,7 @@ impl MohoProgram for AsmStfProgram {
 
     type StepInput = AsmStepInput;
 
-    type Spec = StrataAsmSpec;
+    type Spec = StrataAsm2;
 
     type StepOutput = AsmStfOutput;
 
@@ -34,7 +34,7 @@ impl MohoProgram for AsmStfProgram {
 
     fn process_transition(
         pre_state: &AnchorState,
-        spec: &StrataAsmSpec,
+        spec: &StrataAsm2,
         input: &AsmStepInput,
     ) -> AsmStfOutput {
         // 1. Validate the input
