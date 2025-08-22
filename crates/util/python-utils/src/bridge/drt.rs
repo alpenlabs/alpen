@@ -1,31 +1,41 @@
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    sync::{LazyLock, Mutex},
+};
 
 use bdk_wallet::{
     bitcoin::{
-        consensus::encode::serialize, hashes::Hash, taproot::LeafVersion, Address, FeeRate,
-        TapNodeHash, Transaction, XOnlyPublicKey,
+        self, consensus::encode::serialize, script::PushBytesBuf, taproot::TaprootBuilder, Address,
+        FeeRate, ScriptBuf, Transaction, XOnlyPublicKey,
     },
-    miniscript::{miniscript::Tap, Miniscript},
+    miniscript::{self, Miniscript},
     template::DescriptorTemplateOut,
     KeychainKind, TxOrdering, Wallet,
 };
 use pyo3::prelude::*;
 use revm_primitives::alloy_primitives::Address as RethAddress;
+use secp256k1::{Secp256k1, SECP256K1};
 use strata_primitives::constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY};
 
 use crate::{
+    bridge::types::DepositRequestData,
     constants::{BRIDGE_IN_AMOUNT, MAGIC_BYTES, NETWORK, XPRIV},
     error::Error,
     parse::{parse_address, parse_el_address, parse_xonly_pk},
-    taproot::{bridge_wallet, new_bitcoind_client, sync_wallet, taproot_wallet, ExtractP2trPubkey},
+    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet, ExtractP2trPubkey},
+    utils::parse_operator_keys,
 };
+
+/// Static vector to store DepositRequestData instances
+pub(crate) static DEPOSIT_REQUEST_DATA_STORAGE: LazyLock<Mutex<Vec<DepositRequestData>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Generates a deposit request transaction (DRT).
 ///
 /// # Arguments
 ///
 /// - `el_address`: Execution layer address of the account that will receive the funds.
-/// - `musig_bridge_pk`: MuSig bridge X-only public key.
+/// - `operator_keys`: Private keys of operator
 /// - `bitcoind_url`: URL of the `bitcoind` instance.
 /// - `bitcoind_user`: Username for the `bitcoind` instance.
 /// - `bitcoind_password`: Password for the `bitcoind` instance.
@@ -36,45 +46,56 @@ use crate::{
 #[pyfunction]
 pub(crate) fn deposit_request_transaction(
     el_address: String,
-    musig_bridge_pk: String,
+    operator_keys: Vec<String>,
     bitcoind_url: String,
     bitcoind_user: String,
     bitcoind_password: String,
 ) -> PyResult<Vec<u8>> {
+    let (_, agg_key) = parse_operator_keys(&operator_keys)?;
+
     let signed_tx = deposit_request_transaction_inner(
         el_address.as_str(),
-        musig_bridge_pk.as_str(),
+        agg_key,
         bitcoind_url.as_str(),
         bitcoind_user.as_str(),
         bitcoind_password.as_str(),
     )?;
     let signed_tx = serialize(&signed_tx);
+
     Ok(signed_tx)
 }
 
+fn build_timelock_miniscript(recovery_xonly_pubkey: XOnlyPublicKey) -> ScriptBuf {
+    let script = format!("and_v(v:pk({}),older({}))", recovery_xonly_pubkey, 1008);
+    let miniscript = Miniscript::<XOnlyPublicKey, miniscript::Tap>::from_str(&script).unwrap();
+    miniscript.encode()
+}
+
+fn generate_taproot_address(
+    agg_pubkey: XOnlyPublicKey,
+    secp: &Secp256k1<bitcoin::secp256k1::All>,
+    timelock_script: ScriptBuf,
+) -> Address {
+    let taproot_builder = TaprootBuilder::new()
+        .add_leaf(0, timelock_script.clone())
+        .expect("failed to add timelock script");
+
+    let taproot_info = taproot_builder.finalize(secp, agg_pubkey).unwrap();
+    let merkle_root = taproot_info.merkle_root();
+
+    Address::p2tr(secp, agg_pubkey, merkle_root, NETWORK)
+}
+
 /// Generates a deposit request transaction (DRT).
-///
-/// # Arguments
-///
-/// - `el_address`: Execution layer address of the account that will receive the funds.
-/// - `musig_bridge_pk`: MuSig bridge X-only public key.
-/// - `bitcoind_url`: URL of the `bitcoind` instance.
-/// - `bitcoind_user`: Username for the `bitcoind` instance.
-/// - `bitcoind_password`: Password for the `bitcoind` instance.
-///
-/// # Returns
-///
-/// A signed (with the `private_key`) and serialized transaction.
 fn deposit_request_transaction_inner(
     el_address: &str,
-    musig_bridge_pk: &str,
+    agg_pubkey: XOnlyPublicKey,
     bitcoind_url: &str,
     bitcoind_user: &str,
     bitcoind_password: &str,
 ) -> Result<Transaction, Error> {
     // Parse stuff
     let el_address = parse_el_address(el_address)?;
-    let musig_bridge_pk = parse_xonly_pk(musig_bridge_pk)?;
 
     // Instantiate the BitcoinD client
     let client = new_bitcoind_client(
@@ -87,22 +108,16 @@ fn deposit_request_transaction_inner(
     // Get the address and the bridge descriptor
     let mut wallet = taproot_wallet()?;
     let recovery_address = wallet.reveal_next_address(KeychainKind::External).address;
-    let (_, recovery_script_hash) = bridge_in_descriptor(musig_bridge_pk, recovery_address.clone())
-        .expect("drt: invalid bridge in descriptor");
+    let recovery_address_pk = recovery_address
+        .extract_p2tr_pubkey()
+        .expect("taproot wallet needed");
 
-    let mut bridge_wallet = bridge_wallet(musig_bridge_pk, recovery_address)?;
-    let bridge_in_address = bridge_wallet
-        .reveal_next_address(KeychainKind::External)
-        .address;
+    let timelock_script = build_timelock_miniscript(recovery_address_pk);
+
+    let bridge_in_address = generate_taproot_address(agg_pubkey, SECP256K1, timelock_script);
 
     // Magic bytes + TapNodeHash + Recovery Address
-    const MBL: usize = MAGIC_BYTES.len();
-    const TNHL: usize = TapNodeHash::LEN;
-    let mut op_return_data = [0u8; MBL + TNHL + RethAddress::len_bytes()];
-    op_return_data[..MBL].copy_from_slice(MAGIC_BYTES);
-    op_return_data[MBL..MBL + TNHL]
-        .copy_from_slice(recovery_script_hash.as_raw_hash().as_byte_array());
-    op_return_data[MBL + TNHL..].copy_from_slice(el_address.as_slice());
+    let op_return_data = build_op_return_script(MAGIC_BYTES, &el_address, &recovery_address_pk);
 
     // For regtest 2 sat/vbyte is enough
     let fee_rate = FeeRate::from_sat_per_vb_unchecked(2);
@@ -115,13 +130,39 @@ fn deposit_request_transaction_inner(
         // NOTE: the deposit won't be found by the sequencer if the order isn't correct.
         builder.ordering(TxOrdering::Untouched);
         builder.add_recipient(bridge_in_address.script_pubkey(), BRIDGE_IN_AMOUNT);
-        builder.add_data(&op_return_data);
+
+        builder.add_data(&PushBytesBuf::try_from(op_return_data).expect("not a valid push bytes"));
+
         builder.fee_rate(fee_rate);
         builder.finish().expect("drt: invalid psbt")
     };
     wallet.sign(&mut psbt, Default::default()).unwrap();
 
     let tx = psbt.extract_tx().expect("drt: invalid tx");
+
+    // Create DepositRequestData and add it to the static vector
+    {
+        let mut storage = DEPOSIT_REQUEST_DATA_STORAGE.lock().unwrap();
+        let stake_index = storage.len() as u32; // Use the position in vector as stake index
+
+        // Create the outpoint for the first output of the transaction (index 0)
+        let deposit_request_outpoint = bdk_wallet::bitcoin::OutPoint {
+            txid: tx.compute_txid(),
+            vout: 0,
+        };
+
+        let deposit_request_data = DepositRequestData {
+            deposit_request_outpoint,
+            stake_index,
+            ee_address: el_address.as_slice().to_vec(),
+            total_amount: BRIDGE_IN_AMOUNT,
+            x_only_public_key: recovery_address_pk,
+            original_script_pubkey: bridge_in_address.script_pubkey(),
+        };
+
+        storage.push(deposit_request_data);
+    }
+
     Ok(tx)
 }
 
@@ -134,10 +175,6 @@ fn deposit_request_transaction_inner(
 /// - `bitcoind_url`: URL of the `bitcoind` instance.
 /// - `bitcoind_user`: Username for the `bitcoind` instance.
 /// - `bitcoind_password`: Password for the `bitcoind` instance.
-///
-/// # Note
-///
-/// The take back script path is relative-timelocked to [`RECOVER_DELAY`] blocks.
 ///
 /// # Returns
 ///
@@ -170,10 +207,6 @@ pub(crate) fn take_back_transaction(
 /// - `bitcoind_url`: URL of the `bitcoind` instance.
 /// - `bitcoind_user`: Username for the `bitcoind` instance.
 /// - `bitcoind_password`: Password for the `bitcoind` instance.
-///
-/// # Note
-///
-/// The take back script path is relative-timelocked to [`RECOVER_DELAY`] blocks.
 ///
 /// # Returns
 ///
@@ -227,46 +260,6 @@ fn spend_recovery_path_inner(
 
     let tx = psbt.extract_tx().expect("valid tx");
     Ok(tx)
-}
-
-/// The descriptor for the bridge-in transaction.
-///
-/// # Note
-///
-/// The descriptor is a Tapscript that enforces the following conditions:
-///
-/// - The funds can be spent by the bridge operator.
-/// - The funds can be spent by the recovery address after a delay.
-///
-/// # Returns
-///
-/// The descriptor and the script hash for the recovery path.
-pub(crate) fn bridge_in_descriptor(
-    bridge_pubkey: XOnlyPublicKey,
-    recovery_address: Address,
-) -> Result<(DescriptorTemplateOut, TapNodeHash), Error> {
-    let recovery_xonly_pubkey = recovery_address.extract_p2tr_pubkey()?;
-
-    let desc = bdk_wallet::descriptor!(
-        tr(UNSPENDABLE_PUBLIC_KEY, {
-            pk(bridge_pubkey),
-            and_v(v:pk(recovery_xonly_pubkey),older(RECOVER_DELAY))
-        })
-    )
-    .expect("valid descriptor");
-
-    // we have to do this to obtain the script hash
-    // i have tried to extract it directly from the desc above
-    // it is a massive pita
-    let recovery_script = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
-        "and_v(v:pk({recovery_xonly_pubkey}),older(1008))",
-    ))
-    .expect("valid recovery script")
-    .encode();
-
-    let recovery_script_hash = TapNodeHash::from_script(&recovery_script, LeafVersion::TapScript);
-
-    Ok((desc, recovery_script_hash))
 }
 
 /// The descriptor for the take-back script path of the
@@ -392,6 +385,7 @@ pub(crate) fn get_balance_inner(
 ///
 /// The balance in satoshis where 1 BTC = 100_000_000 satoshis.
 #[pyfunction]
+#[allow(dead_code)]
 pub(crate) fn get_balance_recovery(
     address: String,
     musig_bridge_pk: String,
@@ -418,6 +412,7 @@ pub(crate) fn get_balance_recovery(
 /// # Returns
 ///
 /// The balance in satoshis where 1 BTC = 100_000_000 satoshis.
+#[allow(dead_code)]
 pub(crate) fn get_balance_recovery_inner(
     address: &str,
     musig_bridge_pk: &str,
@@ -458,6 +453,18 @@ pub(crate) fn get_balance_recovery_inner(
     Ok(balance)
 }
 
+fn build_op_return_script(
+    rollup_str: &[u8; 4],
+    evm_address: &RethAddress,
+    take_back_key: &XOnlyPublicKey,
+) -> Vec<u8> {
+    let mut data = rollup_str.to_vec();
+    data.extend(take_back_key.serialize());
+    data.extend(evm_address.as_slice());
+
+    data
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Once;
@@ -465,6 +472,7 @@ mod tests {
     use bdk_wallet::{bitcoin::Amount, KeychainKind, LocalOutput};
     use bitcoind_async_client::{traits::Broadcaster, Client};
     use corepc_node::Node;
+    use secp256k1::Keypair;
     use strata_common::logging;
     use tokio::time::{sleep, Duration};
     use tracing::{debug, info, trace};
@@ -485,6 +493,18 @@ mod tests {
         INIT.call_once(|| {
             logging::init(logging::LoggerConfig::with_base_name(name));
         });
+    }
+
+    /// create test operator keys
+    fn create_test_operator_keys() -> XOnlyPublicKey {
+        use rand::thread_rng;
+
+        // Generate cryptographically secure random keys using secp256k1
+        let _secp = Secp256k1::new();
+
+        let pair = Keypair::new(SECP256K1, &mut thread_rng());
+
+        pair.x_only_public_key().0
     }
 
     /// Get the authentication credentials for a given `bitcoind` instance.
@@ -524,9 +544,14 @@ mod tests {
         mine_blocks(&bitcoind, 101, Some(address)).unwrap();
         debug!("mined 101 blocks");
 
-        let signed_tx =
-            deposit_request_transaction_inner(EL_ADDRESS, MUSIG_BRIDGE_PK, &url, &user, &password)
-                .unwrap();
+        let signed_tx = deposit_request_transaction_inner(
+            EL_ADDRESS,
+            create_test_operator_keys(),
+            &url,
+            &user,
+            &password,
+        )
+        .unwrap();
         trace!(?signed_tx, "signed drt tx");
 
         let txid = client.send_raw_transaction(&signed_tx).await.unwrap();
@@ -581,9 +606,14 @@ mod tests {
         let coinbase_outpoint = coinbase_utxo.outpoint.to_string();
         trace!(%coinbase_outpoint, "coinbase outpoint");
 
-        let signed_tx =
-            deposit_request_transaction_inner(EL_ADDRESS, MUSIG_BRIDGE_PK, &url, &user, &password)
-                .unwrap();
+        let signed_tx = deposit_request_transaction_inner(
+            EL_ADDRESS,
+            create_test_operator_keys(),
+            &url,
+            &user,
+            &password,
+        )
+        .unwrap();
         trace!(?signed_tx, "signed drt tx");
 
         let txid = client.send_raw_transaction(&signed_tx).await.unwrap();
@@ -741,9 +771,14 @@ mod tests {
         let coinbase_outpoint = coinbase_utxo.outpoint.to_string();
         trace!(%coinbase_outpoint, "coinbase outpoint");
 
-        let signed_tx =
-            deposit_request_transaction_inner(EL_ADDRESS, MUSIG_BRIDGE_PK, &url, &user, &password)
-                .unwrap();
+        let signed_tx = deposit_request_transaction_inner(
+            EL_ADDRESS,
+            create_test_operator_keys(),
+            &url,
+            &user,
+            &password,
+        )
+        .unwrap();
         trace!(?signed_tx, "signed drt tx");
 
         // Getting the balance pre-DRT
