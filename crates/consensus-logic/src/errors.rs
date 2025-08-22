@@ -43,9 +43,6 @@ pub enum Error {
     #[error("invalid state transition on block {0:?}: {1}")]
     InvalidStateTsn(L2BlockId, TsnError),
 
-    #[error("client sync state unset")]
-    MissingClientSyncState,
-
     #[error("csm dropped")]
     CsmDropped,
 

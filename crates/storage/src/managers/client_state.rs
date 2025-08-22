@@ -4,16 +4,25 @@
 use std::sync::Arc;
 
 use strata_db::{traits::ClientStateDatabase, DbError, DbResult};
-use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
+use strata_primitives::l1::L1BlockCommitment;
+use strata_state::{client_state::ClientState, l1::L1BlockId, operation::ClientUpdateOutput};
 use threadpool::ThreadPool;
 use tokio::sync::Mutex;
 use tracing::*;
 
-use crate::{cache, ops};
+use crate::{
+    cache,
+    ops::{self, client_state::ClientStateOps},
+    L1BlockManager,
+};
 
 #[expect(missing_debug_implementations)]
 pub struct ClientStateManager {
     ops: ops::client_state::ClientStateOps,
+    // ClientState is only updated after new l1 blocks, so the atomocity (although would be
+    // ideal) is not strictly required.
+    // Alternatively, ClientState can be stored with some (rather ephemeral) id
+    l1_manager: Arc<L1BlockManager>,
 
     // TODO actually use caches
     update_cache: cache::CacheTable<u64, Option<ClientUpdateOutput>>,
@@ -23,93 +32,99 @@ pub struct ClientStateManager {
 }
 
 impl ClientStateManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl ClientStateDatabase + 'static>) -> DbResult<Self> {
+    pub fn new(
+        pool: ThreadPool,
+        db: Arc<impl ClientStateDatabase + 'static>,
+        l1_manager: Arc<L1BlockManager>,
+    ) -> DbResult<Self> {
         let ops = ops::client_state::Context::new(db).into_ops(pool);
         let update_cache = cache::CacheTable::new(64.try_into().unwrap());
         let state_cache = cache::CacheTable::new(64.try_into().unwrap());
 
-        // Figure out the current state so we can access it.
+        // Setup the tracker to point at the last or default pregenesis client state.
         let mut cur_state = CurStateTracker::new_empty();
-        match ops.get_last_state_idx_blocking() {
-            Ok(last_idx) => {
-                let last_state = ops
-                    .get_client_update_blocking(last_idx)?
-                    .ok_or(DbError::UnknownIdx(last_idx))?
-                    .into_state();
-                cur_state.set(last_idx, Arc::new(last_state));
-            }
-            Err(DbError::NotBootstrapped) => {
-                warn!("haven't bootstrapped yet, unable to prepopulate the cur state cache");
-            }
-            Err(e) => return Err(e),
+
+        let latest_cs = ops.get_latest_client_state_blocking()?;
+        if let Some((blk, cs)) = latest_cs {
+            cur_state.set(blk.height(), Arc::new(cs));
         }
 
         Ok(Self {
             ops,
+            l1_manager,
             update_cache,
             state_cache,
             cur_state: Mutex::new(cur_state),
         })
     }
 
-    pub fn get_last_state_idx_blocking(&self) -> DbResult<u64> {
-        self.ops.get_last_state_idx_blocking()
-    }
-
     // TODO convert to managing these with Arcs
-    pub async fn get_state_async(&self, idx: u64) -> DbResult<Option<ClientState>> {
-        self.ops
-            .get_client_update_async(idx)
-            .await
-            .map(|res| res.map(|update| update.into_state()))
-    }
-
-    pub fn get_state_blocking(&self, idx: u64) -> DbResult<Option<ClientState>> {
-        self.ops
-            .get_client_update_blocking(idx)
-            .map(|res| res.map(|update| update.into_state()))
-    }
-
-    pub async fn get_update_async(&self, idx: u64) -> DbResult<Option<ClientUpdateOutput>> {
-        self.ops.get_client_update_async(idx).await
-    }
-
-    pub fn put_update_blocking(
+    pub async fn _get_state_async(
         &self,
-        idx: u64,
+        block: L1BlockCommitment,
+    ) -> DbResult<Option<ClientState>> {
+        Ok(self
+            .ops
+            .get_client_update_async(block)
+            .await?
+            .map(|update| update.into_state()))
+    }
+
+    pub fn _get_state_blocking(&self, block: L1BlockCommitment) -> DbResult<Option<ClientState>> {
+        Ok(self
+            .ops
+            .get_client_update_blocking(block)?
+            .map(|update| update.into_state()))
+    }
+
+    // Primarily for lookups of canonical chain.
+    pub async fn _get_client_state_at_height_async(
+        &self,
+        height: u64,
+    ) -> DbResult<Vec<ClientState>> {
+        self.ops.get_client_states_at_height_async(height).await
+    }
+
+    pub fn _get_client_state_at_height_blocking(&self, height: u64) -> DbResult<Vec<ClientState>> {
+        self.ops.get_client_states_at_height_blocking(height)
+    }
+
+    pub fn _put_update_blocking(
+        &self,
+        block: &L1BlockCommitment,
         update: ClientUpdateOutput,
     ) -> DbResult<Arc<ClientState>> {
         // FIXME this is a lot of cloning, good thing the type isn't gigantic,
         // still feels bad though
         let state = Arc::new(update.state().clone());
-        self.ops.put_client_update_blocking(idx, update.clone())?;
-        self.maybe_update_cur_state_blocking(idx, &state);
-        self.update_cache.insert_blocking(idx, Some(update));
-        self.state_cache.insert_blocking(idx, state.clone());
+        let height = block.height();
+        self.ops
+            .put_client_update_blocking(*block, update.clone())?;
+        self._maybe_update_cur_state_blocking(height, &state);
+        self.update_cache.insert_blocking(height, Some(update));
+        self.state_cache.insert_blocking(height, state.clone());
         Ok(state)
     }
 
-    // TODO rollback and whatnot
-
-    // Internal functions.
-
-    fn maybe_update_cur_state_blocking(&self, idx: u64, state: &Arc<ClientState>) -> bool {
+    fn _maybe_update_cur_state_blocking(&self, height: u64, state: &Arc<ClientState>) -> bool {
         let mut cur = self.cur_state.blocking_lock();
-        cur.maybe_update(idx, state)
+        cur.maybe_update(height, state)
     }
 
-    // Convenience functions.
-
-    /// Gets the highest known state and its idx.
-    pub async fn get_most_recent_state(&self) -> Option<(u64, Arc<ClientState>)> {
-        let cur = self.cur_state.lock().await;
-        cur.get_clone().map(|state| (cur.get_idx(), state))
+    pub fn _get_most_recent_state_blocking(&self) -> Arc<ClientState> {
+        // TODO(QQ): make better.
+        Arc::new(
+            self.ops
+                .get_latest_client_state_blocking()
+                .unwrap()
+                .unwrap()
+                .1,
+        )
     }
 
-    /// Gets the highest known state and its idx.
-    pub fn get_most_recent_state_blocking(&self) -> Option<(u64, Arc<ClientState>)> {
-        let cur = self.cur_state.blocking_lock();
-        cur.get_clone().map(|state| (cur.get_idx(), state))
+    /// Returns either pre-genesis mock ClientState or the ClientState with the biggest height.
+    pub fn _fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
+        self.ops.get_latest_client_state_blocking()
     }
 }
 

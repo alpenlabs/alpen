@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use rockbound::{OptimisticTransactionDB, Schema, SchemaDBOperationsExt};
 use strata_db::{errors::*, traits::*, DbResult};
-use strata_state::operation::*;
+use strata_primitives::l1::L1BlockCommitment;
+use strata_state::{client_state::ClientState, l1::L1BlockId, operation::*};
 
 use super::schemas::ClientUpdateOutputSchema;
 use crate::DbOpsConfig;
@@ -21,50 +22,57 @@ impl ClientStateDb {
     pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
         Self { db, _ops: ops }
     }
-
-    fn get_last_idx<T>(&self) -> DbResult<Option<u64>>
-    where
-        T: Schema<Key = u64>,
-    {
-        let mut iterator = self.db.iter::<T>()?;
-        iterator.seek_to_last();
-        match iterator.rev().next() {
-            Some(res) => {
-                let (tip, _) = res?.into_tuple();
-                Ok(Some(tip))
-            }
-            None => Ok(None),
-        }
-    }
 }
 
 impl ClientStateDatabase for ClientStateDb {
-    fn put_client_update(&self, idx: u64, output: ClientUpdateOutput) -> DbResult<()> {
-        let expected_idx = match self.get_last_idx::<ClientUpdateOutputSchema>()? {
-            Some(last_idx) => last_idx + 1,
-
-            // We don't have a separate way to insert the init client state, so
-            // we special case this here.
-            None => 0,
-        };
-
-        if idx != expected_idx {
-            return Err(DbError::OooInsert("consensus_store", idx));
-        }
-
-        self.db.put::<ClientUpdateOutputSchema>(&idx, &output)?;
+    fn put_client_update(
+        &self,
+        block: L1BlockCommitment,
+        output: ClientUpdateOutput,
+    ) -> DbResult<()> {
+        self.db.put::<ClientUpdateOutputSchema>(&block, &output)?;
         Ok(())
     }
 
-    fn get_client_update(&self, idx: u64) -> DbResult<Option<ClientUpdateOutput>> {
-        Ok(self.db.get::<ClientUpdateOutputSchema>(&idx)?)
+    fn get_client_update(&self, block: L1BlockCommitment) -> DbResult<Option<ClientUpdateOutput>> {
+        Ok(self.db.get::<ClientUpdateOutputSchema>(&block)?)
     }
 
-    fn get_last_state_idx(&self) -> DbResult<u64> {
-        match self.get_last_idx::<ClientUpdateOutputSchema>()? {
-            Some(idx) => Ok(idx),
-            None => Err(DbError::NotBootstrapped),
-        }
+    fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
+        let mut iterator = self.db.iter::<ClientUpdateOutputSchema>()?;
+        iterator.seek_to_last();
+
+        let opt = match iterator.rev().next() {
+            Some(res) => {
+                let val = res.unwrap().into_tuple();
+                Some((val.0, val.1.into_state()))
+            }
+            None => None,
+        };
+
+        Ok(opt)
+    }
+
+    fn get_client_states_at_height(&self, height: u64) -> DbResult<Vec<ClientState>> {
+        // TODO(QQ): implement via iterators.
+        //let mut options = ReadOptions::default();
+        //options.set_iterate_lower_bound(
+        //    KeyEncoder::<L1BlockCommitment>::encode_key(&height)
+        //        .map_err(|err| DbError::CodecError(err.to_string()))?,
+        //);
+        //options.set_iterate_upper_bound(
+        //    KeyEncoder::<L1BlockCommitment>::encode_key(&height)
+        //        .map_err(|err| DbError::CodecError(err.to_string()))?,
+        //);
+        //
+        //let res = self
+        //    .db
+        //    .iter_with_opts::<L1BlockCommitment>(options)?
+        //    .map()
+        //    .collect::<Result<Vec<L1BlockId>, anyhow::Error>>()?;
+        //
+        let res = vec![];
+        Ok(res)
     }
 }
 

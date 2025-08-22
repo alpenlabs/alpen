@@ -16,7 +16,6 @@ use crate::{
         client_state::get_client_state_update,
         l1::{get_l1_manifest, get_l1_summary},
         l2::{get_l2_block, get_l2_summary},
-        sync_event::{get_sync_event, get_sync_events_summary},
         syncinfo::get_syncinfo,
     },
     db::{open_database, DbType},
@@ -48,8 +47,6 @@ fn main() {
         Command::GetCheckpointsSummary(args) => get_checkpoints_summary(&db, args),
         Command::GetEpochSummary(args) => get_epoch_summary(&db, args),
         Command::GetSyncinfo(args) => get_syncinfo(&db, args),
-        Command::GetSyncEvent(args) => get_sync_event(&db, args),
-        Command::GetSyncEventsSummary(args) => get_sync_events_summary(&db, args),
         Command::GetClientStateUpdate(args) => get_client_state_update(&db, args),
     };
 

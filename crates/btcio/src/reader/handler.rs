@@ -7,7 +7,7 @@ use strata_primitives::{
         L1HeaderRecord, L1Tx,
     },
 };
-use strata_state::sync_event::{EventSubmitter, SyncEvent};
+use strata_state::BlockSubmitter;
 use tracing::*;
 
 use super::{
@@ -18,9 +18,9 @@ use super::{
 pub(crate) async fn handle_bitcoin_event<R: Reader>(
     event: L1Event,
     ctx: &ReaderContext<R>,
-    event_submitter: &impl EventSubmitter,
+    event_submitter: &impl BlockSubmitter,
 ) -> anyhow::Result<()> {
-    let sync_evs = match event {
+    let new_block = match event {
         L1Event::RevertTo(block) => {
             // L1 reorgs will be handled in L2 STF, we just have to reflect
             // what the client is telling us in the database.
@@ -30,7 +30,9 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
                 .revert_canonical_chain_async(height)
                 .await?;
             debug!(%height, "reverted L1 block database");
-            vec![SyncEvent::L1Revert(block)]
+            // We don't submit events related to reverts,
+            // as long as we updated canonical chain in the db.
+            Option::None
         }
 
         L1Event::BlockData(blockdata, epoch, hvs) => {
@@ -38,9 +40,9 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
         }
     };
 
-    // Write to sync event db.
-    for ev in sync_evs {
-        event_submitter.submit_event_async(ev).await?;
+    // Dispatch sync events.
+    if let Some(block) = new_block {
+        event_submitter.submit_event_async(block).await?;
     }
     Ok(())
 }
@@ -50,19 +52,18 @@ async fn handle_blockdata<R: Reader>(
     blockdata: BlockData,
     hvs: Option<HeaderVerificationState>,
     epoch: u64,
-) -> anyhow::Result<Vec<SyncEvent>> {
+) -> anyhow::Result<Option<L1BlockCommitment>> {
     let ReaderContext {
         params, storage, ..
     } = ctx;
 
     let height = blockdata.block_num();
-    let mut sync_evs = Vec::new();
 
     // Bail out fast if we don't have to care.
     let horizon = params.rollup().horizon_l1_height;
     if height < horizon {
         warn!(%height, %horizon, "ignoring BlockData for block before horizon");
-        return Ok(sync_evs);
+        return Ok(Option::None);
     }
 
     let txs: Vec<_> = generate_l1txs(&blockdata);
@@ -79,10 +80,7 @@ async fn handle_blockdata<R: Reader>(
 
     // Create a sync event if it's something we care about.
     let blkid: Buf32 = blockdata.block().block_hash().into();
-    let block_commitment = L1BlockCommitment::new(height, blkid.into());
-    sync_evs.push(SyncEvent::L1Block(block_commitment));
-
-    Ok(sync_evs)
+    Ok(Option::Some(L1BlockCommitment::new(height, blkid.into())))
 }
 
 /// Given a block, generates a manifest of the parts we care about that we can
