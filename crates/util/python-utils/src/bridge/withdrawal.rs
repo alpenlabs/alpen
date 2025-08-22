@@ -144,4 +144,3 @@ fn parse_deposit_txid(txid_hex: &str) -> Result<Txid, Error> {
     Txid::from_str(txid_hex)
         .map_err(|_| Error::BridgeBuilder("Invalid deposit transaction ID".to_string()))
 }
-

@@ -8,13 +8,12 @@
 //! All transactions support MuSig2 multi-signature operations for operator keys.
 
 pub(crate) mod drt;
+#[allow(dead_code)]
 pub(crate) mod dt;
 pub(crate) mod musig_signer;
-#[allow(dead_code)]
 pub(crate) mod types;
+#[allow(dead_code)]
 pub(crate) mod withdrawal;
 
 // pub use musig_signer::MusigSigner; // Commented out - only used internally
 pub(crate) use drt::*;
-pub(crate) use dt::*;
-pub(crate) use withdrawal::*;

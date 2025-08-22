@@ -3,18 +3,23 @@
 //! Handles the creation of deposit transactions that convert DRT (Deposit Request Transactions)
 //! into actual bridge deposits with MuSig2 multi-signature support.
 
-use bdk_wallet::{bitcoin::{
-    consensus::serialize,
-    key::UntweakedPublicKey,
-    taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
-    Amount, Network, Psbt, TapNodeHash, TapSighashType, TxOut,
-    script::PushBytesBuf, Address, ScriptBuf, Transaction, TxIn,
-    TxOut as BitcoinTxOut,
-    XOnlyPublicKey,
-    opcodes::all::OP_RETURN, script::Builder
-}, miniscript::{miniscript::Tap, Miniscript}};
-use secp256k1::{All, Secp256k1};
+use std::str::FromStr;
+
+use bdk_wallet::{
+    bitcoin::{
+        consensus::serialize,
+        key::UntweakedPublicKey,
+        opcodes::all::OP_RETURN,
+        script::{Builder, PushBytesBuf},
+        taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
+        Address, Amount, Network, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxIn,
+        TxOut, TxOut as BitcoinTxOut, XOnlyPublicKey,
+    },
+    miniscript::{miniscript::Tap, Miniscript},
+};
 use pyo3::prelude::*;
+use secp256k1::{All, Secp256k1};
+
 use super::{musig_signer::MusigSigner, types::DepositTxMetadata};
 use crate::{
     bridge::drt::DEPOSIT_REQUEST_DATA_STORAGE,
@@ -22,8 +27,6 @@ use crate::{
     error::Error,
     utils::parse_operator_keys,
 };
-
-use std::str::FromStr;
 
 /// Creates a deposit transaction (DT) from deposit request data
 ///
@@ -196,8 +199,6 @@ fn build_deposit_tx(
 
 /// Builds the timelock miniscript for takeback functionality
 fn build_timelock_miniscript(recovery_xonly_pubkey: XOnlyPublicKey) -> Result<ScriptBuf, Error> {
-
-
     let script = format!("and_v(v:pk({}),older({}))", recovery_xonly_pubkey, 1008);
     let miniscript = Miniscript::<XOnlyPublicKey, Tap>::from_str(&script)
         .map_err(|e| Error::BridgeBuilder(format!("Failed to create miniscript: {}", e)))?;
@@ -206,7 +207,6 @@ fn build_timelock_miniscript(recovery_xonly_pubkey: XOnlyPublicKey) -> Result<Sc
 
 /// Creates the metadata script for OP_RETURN directly from metadata
 fn create_metadata_script_direct(metadata: &DepositTxMetadata) -> Result<ScriptBuf, Error> {
-
     let mut buf = Vec::new();
     buf.extend_from_slice(MAGIC_BYTES);
     buf.extend_from_slice(&metadata.stake_index.to_be_bytes());
@@ -243,4 +243,3 @@ fn finalize_and_extract_tx(mut psbt: Psbt) -> Result<Transaction, Error> {
         .extract_tx()
         .map_err(|e| Error::BridgeBuilder(format!("Transaction extraction failed: {}", e)))
 }
-
