@@ -31,7 +31,6 @@ pub(crate) enum Error {
     BitcoinD,
 
     /// Bridge transaction builder error.
-    #[allow(dead_code)]
     TxBuilder(String),
 
     /// Musig2 error

@@ -1,27 +1,40 @@
-use bdk_wallet::bitcoin::{OutPoint, PublicKey, Transaction, Txid, XOnlyPublicKey};
-use strata_l1tx::{
-    deposit::deposit_request::extract_deposit_request_info, utils::generate_taproot_address,
-};
+use bdk_wallet::bitcoin::{bip32::Xpriv, OutPoint, PublicKey, Transaction, Txid, XOnlyPublicKey};
+use secp256k1::SECP256K1;
+use strata_crypto::EvenSecretKey;
+use strata_l1tx::deposit::deposit_request::extract_deposit_request_info;
 use strata_primitives::{
-    buf::Buf32,
-    constants::EE_ADDRESS_LEN,
-    l1::{DepositRequestInfo, XOnlyPk},
+    constants::{EE_ADDRESS_LEN, STRATA_OP_WALLET_DERIVATION_PATH},
+    l1::{BitcoinAddress, DepositRequestInfo, XOnlyPk},
     params::DepositTxParams,
 };
 
 use crate::{
-    constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES, NETWORK},
+    constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES},
     error::Error,
 };
 
-#[expect(unused)]
+/// Parses operator EvenSecretKey from bytes
+pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<EvenSecretKey>, Error> {
+    Ok(operator_keys
+        .iter()
+        .map(|bytes| {
+            let xpriv = Xpriv::decode(bytes).expect("valid Xpriv bytes");
+
+            let derived_xpriv = xpriv
+                .derive_priv(SECP256K1, &STRATA_OP_WALLET_DERIVATION_PATH)
+                .expect("good child key");
+
+            EvenSecretKey::from(derived_xpriv.private_key)
+        })
+        .collect())
+}
+
+#[allow(unused)]
 pub(crate) fn parse_drt(
     tx: &Transaction,
-    op_wallet_pks: &[Buf32],
+    address: BitcoinAddress,
+    operators_pubkey: XOnlyPublicKey,
 ) -> Result<DepositRequestInfo, Error> {
-    let (address, operators_pubkey) = generate_taproot_address(op_wallet_pks, NETWORK)
-        .map_err(|e| Error::TxParser(e.to_string()))?;
-
     let config = DepositTxParams {
         magic_bytes: *MAGIC_BYTES,
         address_length: EE_ADDRESS_LEN,
