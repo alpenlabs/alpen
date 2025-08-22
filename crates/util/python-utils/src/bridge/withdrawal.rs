@@ -60,8 +60,7 @@ pub(crate) fn create_withdrawal_fulfillment(
         bitcoind_password,
     )?;
 
-    let serialized_tx = serialize(&tx);
-    Ok(serialized_tx)
+    Ok(serialize(&tx))
 }
 
 /// Internal implementation of withdrawal fulfillment creation
@@ -84,7 +83,7 @@ fn create_withdrawal_fulfillment_inner(
     let metadata = WithdrawalMetadata::new(*MAGIC_BYTES, operator_idx, deposit_idx, deposit_txid);
 
     // Create withdrawal fulfillment transaction
-    let withdrawal_fulfillment = create_withdrawal_transaction(
+    create_withdrawal_transaction(
         metadata,
         recipient_script,
         amount,
@@ -92,9 +91,6 @@ fn create_withdrawal_fulfillment_inner(
         bitcoind_user,
         bitcoind_password,
     )
-    .unwrap();
-
-    Ok(withdrawal_fulfillment)
 }
 
 /// Creates the raw withdrawal transaction
@@ -116,7 +112,6 @@ fn create_withdrawal_transaction(
 
     sync_wallet(&mut wallet, &client)?;
 
-    // Create outputs
     let fee_rate = FeeRate::from_sat_per_vb_unchecked(2);
 
     let mut psbt = {
@@ -129,14 +124,16 @@ fn create_withdrawal_transaction(
         builder.fee_rate(fee_rate);
         builder
             .finish()
-            .expect("withdrawal fulfillment: invalid psbt")
+            .map_err(|e| Error::TxBuilder(format!("Invalid PSBT: {e}")))?
     };
 
-    wallet.sign(&mut psbt, Default::default()).unwrap();
+    wallet
+        .sign(&mut psbt, Default::default())
+        .map_err(|e| Error::TxBuilder(format!("Signing failed: {e}")))?;
 
     let tx = psbt
         .extract_tx()
-        .expect("withdrawal fulfillment: invalid transaction");
+        .map_err(|e| Error::TxBuilder(format!("Transaction extraction failed: {e}")))?;
 
     Ok(tx)
 }
@@ -145,4 +142,44 @@ fn create_withdrawal_transaction(
 fn parse_deposit_txid(txid_hex: &str) -> Result<Txid, Error> {
     Txid::from_str(txid_hex)
         .map_err(|_| Error::TxBuilder("Invalid deposit transaction ID".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_deposit_txid_valid() {
+        let txid = "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c";
+        let parsed = parse_deposit_txid(txid);
+        assert!(parsed.is_ok());
+
+        let expected = Txid::from_str(txid).unwrap();
+        assert_eq!(parsed.unwrap(), expected);
+    }
+
+    #[test]
+    fn parse_deposit_txid_rejects_invalid_hex() {
+        let bad = "not_a_txid";
+        let err = parse_deposit_txid(bad).unwrap_err();
+        match err {
+            Error::TxBuilder(msg) => assert_eq!(msg, "Invalid deposit transaction ID"),
+            _ => panic!("expected Error::TxBuilder"),
+        }
+    }
+
+    #[test]
+    fn create_withdrawal_fulfillment_inner_rejects_invalid_txid() {
+        let result = create_withdrawal_fulfillment_inner(
+            ScriptBuf::new(),
+            1000,
+            1,
+            1,
+            "bad_txid".to_string(),
+            "http://127.0.0.1:18443",
+            "user",
+            "pass",
+        );
+        assert!(result.is_err());
+    }
 }

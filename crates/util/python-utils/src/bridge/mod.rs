@@ -12,5 +12,4 @@
 pub(crate) mod dt;
 pub(crate) mod musig_signer;
 pub(crate) mod types;
-#[allow(dead_code)]
 pub(crate) mod withdrawal;

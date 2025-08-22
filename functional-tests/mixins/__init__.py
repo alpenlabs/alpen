@@ -19,6 +19,7 @@ class BaseMixin(testenv.StrataTestBase):
         self.seqrpc = self.seq.create_rpc()
         self.btcrpc = self.btc.create_rpc()
         self.rethrpc = self.reth.create_rpc()
+        self.alpen_cli = ctx.alpen_cli
 
         # Genesis account is from the genesis alloc.
         # It's only used to distribute funds to other accounts.

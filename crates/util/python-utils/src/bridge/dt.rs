@@ -12,16 +12,16 @@ use bdk_wallet::{
         locktime::absolute::LockTime,
         opcodes::all::OP_RETURN,
         script::{Builder, PushBytesBuf},
-        taproot::{TaprootBuilder, TaprootSpendInfo},
+        taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
         transaction::Version,
-        Address, Amount, Network, OutPoint, Psbt, ScriptBuf, TapNodeHash, TapSighashType,
-        Transaction, TxIn, TxOut, TxOut as BitcoinTxOut, XOnlyPublicKey,
+        Address, Amount, Network, OutPoint, Psbt, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
+        Transaction, TxIn, TxOut, TxOut as BitcoinTxOut, Witness, XOnlyPublicKey,
     },
     miniscript::{miniscript::Tap, Miniscript},
 };
 use make_buf::make_buf;
-use pyo3::prelude::*;
-use secp256k1::{hashes::Hash, All, Secp256k1, SECP256K1};
+use pyo3::{exceptions::PyValueError, prelude::*};
+use secp256k1::{All, Secp256k1, SECP256K1};
 use strata_crypto::EvenSecretKey;
 use strata_l1tx::utils::generate_taproot_address;
 use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY, l1::DepositRequestInfo};
@@ -33,23 +33,28 @@ use crate::{
     parse::{parse_drt, parse_operator_keys},
 };
 
-/// Creates a deposit transaction (DT) from deposit request data
+/// Creates a deposit transaction (DT) from raw DRT transaction bytes
 ///
 /// # Arguments
-/// * `deposit_index` - Index of the deposit request data in the storage
-/// * `operator_keys` - Vector of operator secret keys as hex strings for MuSig2 signing
+/// * `tx_bytes` - Raw DRT transaction bytes
+/// * `operator_keys` - Vector of operator secret keys as bytes (78 bytes each)
+/// * `dt_index` - Deposit transaction index for metadata
 ///
 /// # Returns
 /// * `PyResult<Vec<u8>>` - The signed and serialized deposit transaction
+
 #[pyfunction]
 pub(crate) fn create_deposit_transaction(
     tx_bytes: Vec<u8>,
     operator_keys: Vec<[u8; 78]>,
     dt_index: u32,
 ) -> PyResult<Vec<u8>> {
-    let parsed_tx = deserialize::<Transaction>(&tx_bytes).expect("valid serialized transaction");
+    // Parse transaction
+    let parsed_tx = deserialize::<Transaction>(&tx_bytes)
+        .map_err(|e| PyValueError::new_err(format!("invalid transaction: {e}")))?;
 
-    let signers = parse_operator_keys(&operator_keys)?;
+    // Original logic using fixed_keys
+    let signers = parse_operator_keys(operator_keys.as_ref())?;
 
     let pubkeys = signers
         .iter()
@@ -64,8 +69,7 @@ pub(crate) fn create_deposit_transaction(
     let signed_tx =
         create_deposit_transaction_inner(&parsed_tx, drt_data, dt_index, signers, agg_pubkey)?;
 
-    let signed_tx = serialize(&signed_tx);
-    Ok(signed_tx)
+    Ok(serialize(&signed_tx))
 }
 
 /// Internal implementation of deposit transaction creation
@@ -95,7 +99,7 @@ fn create_deposit_transaction_inner(
 }
 
 fn build_taptree(
-    internal_key: bdk_wallet::bitcoin::key::UntweakedPublicKey,
+    internal_key: UntweakedPublicKey,
     network: Network,
     scripts: &[ScriptBuf],
 ) -> Result<(Address, TaprootSpendInfo), Error> {
@@ -152,12 +156,15 @@ fn build_deposit_tx(
     let tx_ins = vec![TxIn {
         previous_output: OutPoint::new(drt_tx.compute_txid(), 0),
         script_sig: ScriptBuf::default(),
-        sequence: bdk_wallet::bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
-        witness: bdk_wallet::bitcoin::Witness::new(),
+        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        witness: Witness::new(),
     }];
 
-    let takeback_script_hash =
-        TapNodeHash::from_slice(&drt_data.take_back_leaf_hash).expect("valid Tap node hash");
+    let key =
+        XOnlyPublicKey::from_slice(&drt_data.take_back_leaf_hash).expect("Valid XOnlyPublicKey");
+
+    let takeback_script = build_timelock_miniscript(key)?;
+    let takeback_script_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
 
     let deposit_metadata = DepositTxMetadata {
         stake_index: dt_index,
@@ -235,7 +242,7 @@ fn finalize_and_extract_tx(mut psbt: Psbt) -> Result<Transaction, Error> {
     // Finalize all inputs
     for input in &mut psbt.inputs {
         if input.tap_key_sig.is_some() {
-            input.final_script_witness = Some(bdk_wallet::bitcoin::Witness::new());
+            input.final_script_witness = Some(Witness::new());
             if let Some(sig) = &input.tap_key_sig {
                 input
                     .final_script_witness
@@ -249,4 +256,140 @@ fn finalize_and_extract_tx(mut psbt: Psbt) -> Result<Transaction, Error> {
     psbt.clone()
         .extract_tx()
         .map_err(|e| Error::TxBuilder(format!("Transaction extraction failed: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use bdk_wallet::bitcoin::{
+        bip32::Xpriv,
+        locktime::absolute::LockTime,
+        opcodes::all::OP_RETURN,
+        secp256k1::{schnorr, Message, SecretKey},
+        taproot::Signature,
+        Amount, OutPoint, Sequence, Witness,
+    };
+    use secp256k1::SECP256K1;
+    use strata_primitives::constants::STRATA_OP_WALLET_DERIVATION_PATH;
+
+    use super::*;
+    use crate::constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES, XPRIV};
+
+    #[test]
+    fn test_build_deposit_tx_structure() {
+        // Create test data directly without DepositRequestData
+        let outpoint = OutPoint::from_str(
+            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:0",
+        )
+        .unwrap();
+        let ee_address = vec![0x11; 20];
+        let total_amount = Amount::from_sat(1_000_001_000);
+
+        // Create a mock DRT transaction
+        let drt_tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: outpoint,
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: total_amount,
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+
+        // Create deposit request info from the data
+        let drt_data = DepositRequestInfo {
+            amt: total_amount.to_sat(),
+            address: ee_address.clone(),
+            take_back_leaf_hash: [
+                0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC, 0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87,
+                0x0B, 0x07, 0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9, 0x59, 0xF2, 0x81, 0x5B,
+                0x16, 0xF8, 0x17, 0x98,
+            ],
+        };
+
+        // Create internal key
+        let xpriv = Xpriv::from_str(XPRIV).unwrap();
+        let child = xpriv
+            .derive_priv(SECP256K1, &STRATA_OP_WALLET_DERIVATION_PATH)
+            .unwrap();
+        let internal_key = UntweakedPublicKey::from(child.private_key.public_key(SECP256K1));
+
+        let (psbt, prevouts, tweak) =
+            build_deposit_tx(&drt_tx, &drt_data, 0, internal_key).expect("build deposit psbt");
+
+        // Check PSBT structure: 1 input, 2 outputs (bridge + metadata)
+        assert_eq!(psbt.unsigned_tx.input.len(), 1);
+        assert_eq!(psbt.unsigned_tx.output.len(), 2);
+        assert_eq!(psbt.unsigned_tx.lock_time, LockTime::ZERO);
+
+        // Output[0] is bridge-out amount
+        assert_eq!(psbt.unsigned_tx.output[0].value, BRIDGE_OUT_AMOUNT);
+
+        // Output[1] should be OP_RETURN with metadata that contains MAGIC_BYTES
+        let meta_spk = &psbt.unsigned_tx.output[1].script_pubkey;
+        let meta_bytes = meta_spk.as_bytes();
+        assert_eq!(meta_bytes[0], OP_RETURN.to_u8());
+        assert!(meta_bytes
+            .windows(MAGIC_BYTES.len())
+            .any(|w| w == MAGIC_BYTES));
+
+        // Prevouts
+        assert_eq!(prevouts.len(), 1);
+        assert_eq!(prevouts[0].value, total_amount);
+
+        // Tweak should be Some (computed from the mock takeback hash)
+        assert!(tweak.is_some());
+    }
+
+    #[test]
+    fn test_finalize_and_extract_tx_adds_witness() {
+        // Minimal PSBT with one input and two outputs
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::from_str(
+                    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:0",
+                )
+                .unwrap(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+        let mut psbt = Psbt::from_unsigned_tx(tx).unwrap();
+        // Set required PSBT input fields
+        psbt.inputs[0].witness_utxo = Some(TxOut {
+            script_pubkey: ScriptBuf::new(),
+            value: Amount::from_sat(2000),
+        });
+        psbt.inputs[0].sighash_type = Some(TapSighashType::Default.into());
+
+        // No need for witnesses wrapper, work directly with PSBT
+
+        // Fabricate a valid Schnorr signature for witness (content isn't validated on extraction)
+        let sec = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let kp = secp256k1::Keypair::from_secret_key(SECP256K1, &sec);
+        let msg = Message::from_digest([9u8; 32]);
+        let sig64: schnorr::Signature = SECP256K1.sign_schnorr(&msg, &kp);
+        let tap_sig = Signature::from_slice(&sig64.serialize()).unwrap();
+
+        psbt.inputs[0].tap_key_sig = Some(tap_sig);
+
+        let extracted = finalize_and_extract_tx(psbt).expect("finalize and extract");
+        assert_eq!(extracted.input.len(), 1);
+        assert_eq!(extracted.input[0].witness.len(), 1);
+        // The witness should contain the signature (64 bytes for Schnorr)
+        assert_eq!(extracted.input[0].witness.iter().next().unwrap().len(), 64);
+    }
 }
