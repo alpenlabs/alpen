@@ -19,9 +19,9 @@ use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
 
 use crate::{
     constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
-    drt::bridge_in_descriptor,
     error::Error,
     parse::{parse_pk, parse_xonly_pk},
+    utils::bridge_in_descriptor,
 };
 
 /// Extracts the public key from a Taproot address.
@@ -65,6 +65,7 @@ pub(crate) fn taproot_wallet() -> Result<Wallet, Error> {
 }
 
 /// The bridge wallet used to get the recovery path of the deposit request transaction (DRT).
+#[allow(dead_code)]
 pub(crate) fn bridge_wallet(
     bridge_pubkey: XOnlyPublicKey,
     recovery_address: Address,
@@ -128,8 +129,11 @@ pub(crate) fn new_bitcoind_client(
 /// These should all be X-only public keys, assuming that all are [`Parity::Even`].
 pub(crate) fn musig_aggregate_pks_inner(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
     let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
+
     let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
-    Ok(key_agg_ctx.aggregated_pubkey())
+    let result = key_agg_ctx.aggregated_pubkey();
+
+    Ok(result)
 }
 
 /// Gets a (receiving/external) address from the [`taproot_wallet`] at the given `index`.
@@ -165,7 +169,10 @@ pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
         .into_iter()
         .map(|pk| parse_xonly_pk(&pk).map_err(|_| Error::XOnlyPublicKey))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(musig_aggregate_pks_inner(pks)?.to_string())
+
+    let result = musig_aggregate_pks_inner(pks)?.to_string();
+
+    Ok(result)
 }
 
 /// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].
@@ -177,7 +184,9 @@ pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
 pub(crate) fn convert_to_xonly_pk(pk: String) -> PyResult<String> {
     let pk = parse_pk(&pk)?;
     let x_only_pk = convert_to_xonly_pk_inner(pk)?;
-    Ok(x_only_pk.to_string())
+    let result = x_only_pk.to_string();
+
+    Ok(result)
 }
 
 /// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].

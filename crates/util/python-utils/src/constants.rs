@@ -1,13 +1,13 @@
 use std::sync::LazyLock;
 
-use bdk_wallet::bitcoin::{Amount, Network};
+use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
 
 /// Magic bytes to add to the metadata output in transactions to help identify them.
 pub(crate) const MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
 /// 10 BTC + 0.01 to cover fees in the following transaction where the operator spends it into the
 /// federation.
-pub(crate) const BRIDGE_IN_AMOUNT: Amount = Amount::from_sat(1_001_000_000);
+pub(crate) const BRIDGE_IN_AMOUNT: Amount = Amount::from_sat(1_000_001_000);
 
 /// Bridge outs are enforced to be exactly 10 BTC
 #[allow(dead_code)] // TODO: Remove this when bridge out is implemented
@@ -31,6 +31,13 @@ pub(crate) static DESCRIPTOR: LazyLock<&'static str> =
 /// The Taproot-enable wallet's internal descriptor.
 pub(crate) static CHANGE_DESCRIPTOR: LazyLock<&'static str> =
     LazyLock::new(|| Box::leak(format!("tr({XPRIV}/86'/1'/0'/1/*)").into_boxed_str()));
+
+/// Getting private key for the corresponding xpriv
+pub(crate) const GENERAL_WALLET_KEY_PATH: [ChildNumber; 3] = [
+    ChildNumber::Hardened { index: 20_000 },
+    ChildNumber::Hardened { index: 20 },
+    ChildNumber::Hardened { index: 101 },
+];
 
 #[cfg(test)]
 mod tests {
