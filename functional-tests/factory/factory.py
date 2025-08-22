@@ -1,7 +1,13 @@
 import logging
 import os
+import re
 import shutil
+import subprocess
+from subprocess import CalledProcessError
+from types import SimpleNamespace
 from typing import Optional
+import pty
+import contextlib
 
 import flexitest
 import web3
@@ -41,6 +47,7 @@ class BitcoinFactory(flexitest.Factory):
             f"-port={p2p_port}",
             "-printtoconsole",
             "-fallbackfee=0.00001",
+            "-minrelaytxfee=0",
             f"-datadir={datadir}",
             f"-rpcport={rpc_port}",
             f"-rpcuser={BD_USERNAME}",

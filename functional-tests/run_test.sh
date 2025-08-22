@@ -24,7 +24,7 @@ elif [ ! -z $CI_COVERAGE ]; then
     export PATH=$COV_TARGET_DIR/debug:$PATH
 else
     echo "Running strata client"
-    cargo build -F debug-utils
+    cargo build -F "debug-utils test-mode"
 fi
 
 poetry run python entry.py $@
