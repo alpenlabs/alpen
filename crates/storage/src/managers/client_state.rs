@@ -3,22 +3,21 @@
 
 use std::sync::Arc;
 
-use strata_db::{traits::ClientStateDatabase, DbError, DbResult};
+use strata_db::{traits::ClientStateDatabase, DbResult};
 use strata_primitives::l1::L1BlockCommitment;
-use strata_state::{client_state::ClientState, l1::L1BlockId, operation::ClientUpdateOutput};
+use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
 use threadpool::ThreadPool;
 use tokio::sync::Mutex;
-use tracing::*;
 
 use crate::{
     cache,
-    ops::{self, client_state::ClientStateOps},
+    ops::client_state::{ClientStateOps, Context},
     L1BlockManager,
 };
 
 #[expect(missing_debug_implementations)]
 pub struct ClientStateManager {
-    ops: ops::client_state::ClientStateOps,
+    ops: ClientStateOps,
     // ClientState is only updated after new l1 blocks, so the atomocity (although would be
     // ideal) is not strictly required.
     // Alternatively, ClientState can be stored with some (rather ephemeral) id
@@ -37,7 +36,7 @@ impl ClientStateManager {
         db: Arc<impl ClientStateDatabase + 'static>,
         l1_manager: Arc<L1BlockManager>,
     ) -> DbResult<Self> {
-        let ops = ops::client_state::Context::new(db).into_ops(pool);
+        let ops = Context::new(db).into_ops(pool);
         let update_cache = cache::CacheTable::new(64.try_into().unwrap());
         let state_cache = cache::CacheTable::new(64.try_into().unwrap());
 

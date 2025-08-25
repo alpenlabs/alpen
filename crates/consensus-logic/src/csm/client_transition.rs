@@ -8,14 +8,11 @@ use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
     prelude::*,
 };
-use strata_state::{
-    block::L2BlockBundle, chain_state::Chainstate, client_state::*, header::L2Header,
-    id::L2BlockId, operation::*,
-};
+use strata_state::{block::L2BlockBundle, client_state::*, id::L2BlockId, operation::*};
 use strata_storage::NodeStorage;
 use tracing::*;
 
-use crate::{checkpoint_verification::verify_checkpoint, errors::*, genesis::make_l2_genesis};
+use crate::{checkpoint_verification::verify_checkpoint, errors::*};
 
 /// Interface for external context necessary specifically for event validation.
 pub trait EventContext {
@@ -23,9 +20,7 @@ pub trait EventContext {
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error>;
     fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error>;
 
-    fn get_most_recent_client_state(&self) -> Result<ClientState, Error>;
     fn get_l2_block_data(&self, blockid: &L2BlockId) -> Result<L2BlockBundle, Error>;
-    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error>;
 }
 
 /// Event context using the main node storage interfaace.
@@ -68,18 +63,6 @@ impl EventContext for StorageEventContext<'_> {
             .l2()
             .get_block_data_blocking(blkid)?
             .ok_or(Error::MissingL2Block(*blkid))
-    }
-
-    fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
-        self.storage
-            .chainstate()
-            .get_slot_write_batch_blocking(*blkid)?
-            .map(|wb| wb.into_toplevel())
-            .ok_or(Error::MissingBlockChainstate(*blkid))
-    }
-
-    fn get_most_recent_client_state(&self) -> Result<ClientState, Error> {
-        todo!()
     }
 }
 
@@ -131,14 +114,13 @@ fn handle_block(
         return Ok(());
     }
 
-    // Genesis should have happened (we don't see earlier block, equal case is handled above).
+    // Actualize the previous state to handle the reorg.
     match height.cmp(&state.state().next_exp_l1_block()) {
         Ordering::Less => {
-            // Canonical chain reorg case.
-            // Switch to the canonical block right before the chain fork.
-            // That block should be safe from reorgs (it'll always belong to canonical chain).
-            // Unconditionally take the new client state, even though it comes from the fork and
-            // the height less than expected.
+            // Canonical chain reorg case: switch to the canonical block right before the chain
+            // fork.
+            // Unconditionally take the new client state, even though it comes
+            // from the fork and the height less than expected.
             // The reason for that is btcio specific - we receive blocks with less height only
             // if btcio sees a longer fork of bitcoin.
             // So eventually, we receive a longer chain.
@@ -148,7 +130,7 @@ fn handle_block(
             ))?);
         }
         Ordering::Equal => {
-            // Canonical chain extension block.
+            // Canonical chain extension block, nothing to actualize.
         }
         Ordering::Greater => {
             // Indicates an error in the bookkeping, seems we didn't follow all the blocks.
@@ -167,10 +149,7 @@ fn handle_block(
         let block = context.get_l1_block_manifest_at_height(buried_h).ok();
         // TODO(QQ): a bit ugly, unwind it somehow.
         if let Some(b) = block {
-            if let Some(cs) = context
-                .get_client_state(&L1BlockCommitment::new(b.height(), *b.blkid()))
-                .ok()
-            {
+            if let Ok(cs) = context.get_client_state(&b.into()) {
                 cs.get_last_checkpoint()
             } else {
                 None
@@ -205,7 +184,6 @@ fn process_l1_block(
     block_mf: &L1BlockManifest,
     params: &RollupParams,
 ) -> Result<Vec<SyncAction>, Error> {
-    let blkid = block_mf.blkid();
     let mut sync_actions = Vec::new();
 
     // Iterate through all of the protocol operations in all of the txs.
@@ -247,7 +225,7 @@ fn process_l1_block(
         }
     }
 
-    Ok((sync_actions))
+    Ok(sync_actions)
 }
 
 fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<CheckpointL1Ref, Error> {
@@ -301,22 +279,13 @@ mod tests {
             Ok(L1BlockManifest::new(rec, None, Vec::new(), 0, height))
         }
 
-        fn get_client_state(&self, blockid: &L1BlockId) -> Result<ClientState, Error> {
+        fn get_client_state(&self, _blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
             // TODO(QQ): populate with test data.
             todo!()
         }
 
         fn get_l2_block_data(&self, blkid: &L2BlockId) -> Result<L2BlockBundle, Error> {
             Err(Error::MissingL2Block(*blkid))
-        }
-
-        fn get_toplevel_chainstate(&self, blkid: &L2BlockId) -> Result<Chainstate, Error> {
-            Err(Error::MissingBlockChainstate(*blkid))
-        }
-
-        fn get_most_recent_client_state(&self) -> Result<ClientState, Error> {
-            // TODO(QQ): populate with test data.
-            todo!()
         }
     }
 

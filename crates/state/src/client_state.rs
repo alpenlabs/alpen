@@ -68,7 +68,7 @@ impl ClientState {
     /// Gets the final epoch that we've externally declared.
     pub fn get_declared_final_epoch(&self) -> Option<EpochCommitment> {
         self.get_last_checkpoint()
-            .and_then(|ckpt| Some(ckpt.batch_info.get_epoch_commitment()))
+            .map(|ckpt| ckpt.batch_info.get_epoch_commitment())
     }
 
     /// Returns the last known epoch as of this state.
