@@ -6,9 +6,11 @@
 use bdk_wallet::bitcoin::{
     consensus, script::PushBytesBuf, Amount, OutPoint, ScriptBuf, TapNodeHash, Txid, XOnlyPublicKey,
 };
+use pyo3::prelude::*;
 
+#[pyclass]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DepositRequestData {
+pub struct DepositRequestData {
     /// The deposit request transaction outpoints from the users.
     pub deposit_request_outpoint: OutPoint,
 
@@ -41,6 +43,29 @@ pub(crate) struct DepositRequestData {
     /// [`static@UNSPENDABLE_INTERNAL_KEY`]) + the [`Self::take_back_leaf_hash`] yields the same
     /// P2TR address.
     pub original_script_pubkey: ScriptBuf,
+}
+
+#[pymethods]
+impl DepositRequestData {
+    #[getter]
+    fn stake_index(&self) -> u32 {
+        self.stake_index
+    }
+
+    #[getter]
+    fn ee_address(&self) -> Vec<u8> {
+        self.ee_address.clone()
+    }
+
+    #[getter]
+    fn total_amount(&self) -> u64 {
+        self.total_amount.to_sat()
+    }
+
+    #[getter]
+    fn x_only_public_key(&self) -> String {
+        self.x_only_public_key.to_string()
+    }
 }
 
 /// Withdrawal fulfillment transaction metadata

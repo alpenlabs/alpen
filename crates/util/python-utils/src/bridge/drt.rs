@@ -1,7 +1,4 @@
-use std::{
-    str::FromStr,
-    sync::{LazyLock, Mutex},
-};
+use std::str::FromStr;
 
 use bdk_wallet::{
     bitcoin::{
@@ -26,10 +23,6 @@ use crate::{
     utils::parse_operator_keys,
 };
 
-/// Static vector to store DepositRequestData instances
-pub(crate) static DEPOSIT_REQUEST_DATA_STORAGE: LazyLock<Mutex<Vec<DepositRequestData>>> =
-    LazyLock::new(|| Mutex::new(Vec::new()));
-
 /// Generates a deposit request transaction (DRT).
 ///
 /// # Arguments
@@ -42,7 +35,9 @@ pub(crate) static DEPOSIT_REQUEST_DATA_STORAGE: LazyLock<Mutex<Vec<DepositReques
 ///
 /// # Returns
 ///
-/// A signed (with the `private_key`) and serialized transaction.
+/// A tuple containing:
+/// - A signed (with the `private_key`) and serialized transaction as bytes
+/// - The DepositRequestData struct
 #[pyfunction]
 pub(crate) fn deposit_request_transaction(
     el_address: String,
@@ -50,10 +45,10 @@ pub(crate) fn deposit_request_transaction(
     bitcoind_url: String,
     bitcoind_user: String,
     bitcoind_password: String,
-) -> PyResult<Vec<u8>> {
+) -> PyResult<(Vec<u8>, DepositRequestData)> {
     let (_, agg_key) = parse_operator_keys(&operator_keys)?;
 
-    let signed_tx = deposit_request_transaction_inner(
+    let (signed_tx, deposit_request_data) = deposit_request_transaction_inner(
         el_address.as_str(),
         agg_key,
         bitcoind_url.as_str(),
@@ -62,7 +57,7 @@ pub(crate) fn deposit_request_transaction(
     )?;
     let signed_tx = serialize(&signed_tx);
 
-    Ok(signed_tx)
+    Ok((signed_tx, deposit_request_data))
 }
 
 fn build_timelock_miniscript(recovery_xonly_pubkey: XOnlyPublicKey) -> ScriptBuf {
@@ -93,7 +88,7 @@ fn deposit_request_transaction_inner(
     bitcoind_url: &str,
     bitcoind_user: &str,
     bitcoind_password: &str,
-) -> Result<Transaction, Error> {
+) -> Result<(Transaction, DepositRequestData), Error> {
     // Parse stuff
     let el_address = parse_el_address(el_address)?;
 
@@ -140,30 +135,22 @@ fn deposit_request_transaction_inner(
 
     let tx = psbt.extract_tx().expect("drt: invalid tx");
 
-    // Create DepositRequestData and add it to the static vector
-    {
-        let mut storage = DEPOSIT_REQUEST_DATA_STORAGE.lock().unwrap();
-        let stake_index = storage.len() as u32; // Use the position in vector as stake index
+    // Create DepositRequestData - stake_index will be managed by Python side
+    let deposit_request_outpoint = bdk_wallet::bitcoin::OutPoint {
+        txid: tx.compute_txid(),
+        vout: 0,
+    };
 
-        // Create the outpoint for the first output of the transaction (index 0)
-        let deposit_request_outpoint = bdk_wallet::bitcoin::OutPoint {
-            txid: tx.compute_txid(),
-            vout: 0,
-        };
+    let deposit_request_data = DepositRequestData {
+        deposit_request_outpoint,
+        stake_index: 0, // This will be set by Python side when storing in the list
+        ee_address: el_address.as_slice().to_vec(),
+        total_amount: BRIDGE_IN_AMOUNT,
+        x_only_public_key: recovery_address_pk,
+        original_script_pubkey: bridge_in_address.script_pubkey(),
+    };
 
-        let deposit_request_data = DepositRequestData {
-            deposit_request_outpoint,
-            stake_index,
-            ee_address: el_address.as_slice().to_vec(),
-            total_amount: BRIDGE_IN_AMOUNT,
-            x_only_public_key: recovery_address_pk,
-            original_script_pubkey: bridge_in_address.script_pubkey(),
-        };
-
-        storage.push(deposit_request_data);
-    }
-
-    Ok(tx)
+    Ok((tx, deposit_request_data))
 }
 
 /// Spends the take back script path of the deposit request transaction (DRT).
@@ -544,7 +531,7 @@ mod tests {
         mine_blocks(&bitcoind, 101, Some(address)).unwrap();
         debug!("mined 101 blocks");
 
-        let signed_tx = deposit_request_transaction_inner(
+        let (signed_tx, _deposit_data) = deposit_request_transaction_inner(
             EL_ADDRESS,
             create_test_operator_keys(),
             &url,
@@ -606,7 +593,7 @@ mod tests {
         let coinbase_outpoint = coinbase_utxo.outpoint.to_string();
         trace!(%coinbase_outpoint, "coinbase outpoint");
 
-        let signed_tx = deposit_request_transaction_inner(
+        let (signed_tx, _deposit_data) = deposit_request_transaction_inner(
             EL_ADDRESS,
             create_test_operator_keys(),
             &url,
@@ -771,7 +758,7 @@ mod tests {
         let coinbase_outpoint = coinbase_utxo.outpoint.to_string();
         trace!(%coinbase_outpoint, "coinbase outpoint");
 
-        let signed_tx = deposit_request_transaction_inner(
+        let (signed_tx, _deposit_data) = deposit_request_transaction_inner(
             EL_ADDRESS,
             create_test_operator_keys(),
             &url,

@@ -10,7 +10,7 @@ mod schnorr;
 mod taproot;
 mod utils;
 
-use bridge::deposit_request_transaction;
+use bridge::{deposit_request_transaction, types::DepositRequestData};
 use schnorr::{sign_schnorr_sig, verify_schnorr_sig};
 use taproot::{
     convert_to_xonly_pk, drain_wallet, extract_p2tr_pubkey, get_address, get_change_address,
@@ -28,10 +28,8 @@ use crate::bridge::{get_balance, get_recovery_address, take_back_transaction};
 /// import the module.
 #[pymodule]
 fn strata_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(deposit_request_transaction, m)?)?;
-    // Note: Old DRT functions removed - using bridge implementation instead
+    m.add_class::<DepositRequestData>()?;
 
-    // New bridge functions
     m.add_function(wrap_pyfunction!(deposit_request_transaction, m)?)?;
     m.add_function(wrap_pyfunction!(get_address, m)?)?;
     m.add_function(wrap_pyfunction!(get_change_address, m)?)?;
