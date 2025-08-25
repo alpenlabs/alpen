@@ -82,12 +82,9 @@ impl WorkerState {
         // Compute the state transition.
         let context = client_transition::StorageEventContext::new(&self.storage);
         let mut state_mut = ClientStateMut::new(self.cur_state.as_ref().clone());
-        client_transition::process_event(&mut state_mut, block, &context, &self.params)?;
+        client_transition::process_block(&mut state_mut, block, &context, &self.params)?;
 
-        // Clone the state and apply the operations to it.
-        let outp = state_mut.into_update();
-
-        Ok(outp)
+        Ok(state_mut.into_update())
     }
 
     fn update_bookeeping(&mut self, last_height: u64, state: Arc<ClientState>) {
