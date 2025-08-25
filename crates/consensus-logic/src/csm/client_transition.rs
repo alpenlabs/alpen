@@ -57,9 +57,9 @@ impl EventContext for StorageEventContext<'_> {
     }
 }
 
-/// Processes the event given the current consensus state, producing some
+/// Processes the block given the current consensus state, producing some
 /// output.  This can return database errors.
-pub fn process_event(
+pub fn process_block(
     state: &mut ClientStateMut,
     block: &L1BlockCommitment,
     context: &impl EventContext,

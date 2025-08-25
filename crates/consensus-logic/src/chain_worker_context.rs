@@ -50,10 +50,9 @@ impl WorkerContext for ChainWorkerCtx {
     }
 
     fn fetch_block_ids(&self, height: u64) -> WorkerResult<Vec<L2BlockId>> {
-        Ok(self
-            .l2man
-            .get_blocks_at_height_blocking(0)
-            .map_err(conv_db_err)?)
+        self.l2man
+            .get_blocks_at_height_blocking(height)
+            .map_err(conv_db_err)
     }
 
     fn fetch_header(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockHeader>> {
