@@ -13,11 +13,7 @@ use strata_primitives::{
     constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY},
 };
 
-use crate::{
-    constants::GENERAL_WALLET_KEY_PATH,
-    error::Error,
-    taproot::{musig_aggregate_pks_inner, ExtractP2trPubkey},
-};
+use crate::{constants::GENERAL_WALLET_KEY_PATH, error::Error, taproot::ExtractP2trPubkey};
 
 /// The descriptor for the bridge-in transaction.
 ///
@@ -117,10 +113,8 @@ pub(crate) fn opreturn_to_string(s: &str) -> Result<String, Error> {
 }
 
 /// Parses operator secret keys from hex strings
-pub(crate) fn parse_operator_keys(
-    operator_keys: &[String],
-) -> Result<(Vec<Keypair>, XOnlyPublicKey), Error> {
-    let result: Vec<Keypair> = operator_keys
+pub(crate) fn parse_operator_keys(operator_keys: &[String]) -> Result<Vec<Keypair>, Error> {
+    Ok(operator_keys
         .iter()
         .enumerate()
         .map(|(i, key)| {
@@ -146,14 +140,7 @@ pub(crate) fn parse_operator_keys(
 
             Keypair::from_secret_key(SECP256K1, &sk)
         })
-        .collect();
-
-    let x_only_keys: Vec<XOnlyPublicKey> = result
-        .iter()
-        .map(|pair| XOnlyPublicKey::from_keypair(pair).0)
-        .collect();
-
-    Ok((result, musig_aggregate_pks_inner(x_only_keys)?))
+        .collect())
 }
 
 #[cfg(test)]

@@ -341,7 +341,7 @@ impl From<CheckpointEntry> for RpcCheckpointInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Deposit entry for RPC corresponding to [`WithdrawalIntent`]
-pub struct RpcWithdrawalIntent {
+pub struct RpcWithdrawalAssignment {
     /// Corresponding deposit id
     pub deposit_idx: u32,
     /// Corresponding deposit txid

@@ -1,5 +1,3 @@
-import threading
-
 import flexitest
 from strata_utils import (
     deposit_request_transaction,

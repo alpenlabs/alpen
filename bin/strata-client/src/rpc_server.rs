@@ -34,7 +34,7 @@ use strata_rpc_api::{
 use strata_rpc_types::{
     errors::RpcServerError as Error, DaBlob, HexBytes, HexBytes32, HexBytes64, L2BlockStatus,
     RpcBlockHeader, RpcChainState, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcClientStatus,
-    RpcDepositEntry, RpcExecUpdate, RpcL1Status, RpcSyncStatus, RpcWithdrawalIntent,
+    RpcDepositEntry, RpcExecUpdate, RpcL1Status, RpcSyncStatus, RpcWithdrawalAssignment,
 };
 use strata_rpc_utils::to_jsonrpsee_error;
 use strata_sequencer::{
@@ -429,7 +429,7 @@ impl StrataApiServer for StrataRpcImpl {
             .map(RpcDepositEntry::from_deposit_entry)?)
     }
 
-    async fn get_current_withdrawal_intent(&self) -> RpcResult<Vec<RpcWithdrawalIntent>> {
+    async fn get_current_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
         let deps = self
             .status_channel
             .get_cur_tip_chainstate()
@@ -446,7 +446,7 @@ impl StrataApiServer for StrataRpcImpl {
                         .first()
                         .expect("Withdraw output is supposed to have single element");
 
-                    Some(RpcWithdrawalIntent {
+                    Some(RpcWithdrawalAssignment {
                         amt: withdraw_output.amt(),
                         destination: withdraw_output.destination().clone(),
                         operator_idx: dispatched_state.assignee(),
