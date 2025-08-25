@@ -71,17 +71,13 @@ impl WorkerState {
         &self.cur_state
     }
 
-    /// Given the next event index, computes the state application if the
+    /// Given the next l1 block, computes the state application if the
     /// requisite data is available.  Returns the output and the new state.
-    ///
-    /// This is copied from the old `StateTracker` type which we removed to
-    /// simplify things.
-    // TODO maybe remove output return value
     pub fn advance_consensus_state(
         &mut self,
         block: &L1BlockCommitment,
     ) -> anyhow::Result<ClientUpdateOutput> {
-        debug!(%block, "processing sync event");
+        debug!(%block, "processing l1 block");
 
         // Compute the state transition.
         let context = client_transition::StorageEventContext::new(&self.storage);
@@ -101,7 +97,7 @@ impl WorkerState {
     }
 }
 
-/// Receives messages from channel to update consensus state with.
+/// Receives l1 blocks from channel to update consensus state with.
 // TODO consolidate all these channels into container/"io" types
 pub fn client_worker_task(
     shutdown: ShutdownGuard,
@@ -112,8 +108,8 @@ pub fn client_worker_task(
     info!("started CSM worker");
 
     while let Some(msg) = block_rx.blocking_recv() {
-        if let Err(e) = process_msg(&mut state, &msg, &status_channel, &shutdown) {
-            error!(err = %e, ?msg, "failed to process sync message, aborting!");
+        if let Err(e) = process_block(&mut state, &msg, &status_channel, &shutdown) {
+            error!(err = %e, ?msg, "failed to process the block, aborting!");
             return Err(e);
         }
 
@@ -128,30 +124,15 @@ pub fn client_worker_task(
     Ok(())
 }
 
-fn process_msg(
+fn process_block(
     state: &mut WorkerState,
-    block: &L1BlockCommitment,
+    incoming_block: &L1BlockCommitment,
     status_channel: &StatusChannel,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
     strata_common::check_bail_trigger("sync_event");
 
-    // FIXME: We should be explicit about what errors to retry instead of just
-    // retrying whenever this fails.
-    handle_new_block_with_retry(state, block, shutdown, status_channel)?;
-
-    Ok(())
-}
-
-/// Repeatedly calls `handle_sync_event`, retrying on failure, up to a limit
-/// after which we return with the most recent error.
-fn handle_new_block_with_retry(
-    state: &mut WorkerState,
-    block: &L1BlockCommitment,
-    shutdown: &ShutdownGuard,
-    status_channel: &StatusChannel,
-) -> anyhow::Result<()> {
-    let span = debug_span!("sync-event", %block);
+    let span = debug_span!("process-block", %incoming_block);
     let _g = span.enter();
 
     // Blocks for which there's no client state. Some of the l1 blocks could have been skipped.
@@ -160,19 +141,21 @@ fn handle_new_block_with_retry(
         .rollup()
         .genesis_l1_height
         .max(state.last_height + 1);
-    let end_height = block.height();
+    let end_height = incoming_block.height();
 
-    let mut potentually_skipped_blocks = state
-        .storage
-        .l1()
-        .get_canonical_blockid_range(start_height, end_height)?
-        .iter()
-        .zip((start_height..end_height).into_iter())
-        .map(|(blk_id, height)| L1BlockCommitment::new(height, *blk_id))
+    let mut potentually_skipped_blocks = (start_height..end_height)
+        .zip(
+            state
+                .storage
+                .l1()
+                .get_canonical_blockid_range(start_height, end_height)?
+                .iter(),
+        )
+        .map(|(height, blk_id)| L1BlockCommitment::new(height, *blk_id))
         .collect::<Vec<_>>();
-    potentually_skipped_blocks.push(*block);
+    potentually_skipped_blocks.push(*incoming_block);
 
-    debug!("trying sync event");
+    debug!("trying to process the block");
 
     for next_block in potentually_skipped_blocks.iter() {
         let mut tries = 0;
@@ -194,7 +177,7 @@ fn handle_new_block_with_retry(
             // Handle the block for which there's no client state.
             let e = match handle_block(state, next_block) {
                 Err(e) => e,
-                Ok(v) => {
+                Ok(_) => {
                     // Happy case, we want this to happen.
                     continue;
                 }
@@ -222,7 +205,7 @@ fn handle_new_block_with_retry(
     status_channel.update_client_state(state.cur_state().as_ref().clone());
     trace!("completed sync event");
 
-    debug!(%block, "processed OK");
+    debug!(%incoming_block, "processed OK");
 
     Ok(())
 }
