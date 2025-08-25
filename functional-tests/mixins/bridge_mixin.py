@@ -1,3 +1,5 @@
+import threading
+
 import flexitest
 from strata_utils import (
     deposit_request_transaction,
@@ -161,12 +163,11 @@ class BridgeMixin(BaseMixin):
         btc_password = self.btc.get_prop("rpc_password")
         seq_addr = self.seq.get_prop("address")
 
-        # Create the deposit request transaction
-        tx = bytes(
-            deposit_request_transaction(
-                el_address, musig_bridge_pk, btc_url, btc_user, btc_password
-            )
-        ).hex()
+        # Create the deposit request transaction and get data
+        tx_bytes, _ = deposit_request_transaction(
+            el_address, musig_bridge_pk, btc_url, btc_user, btc_password
+        )
+        tx = bytes(tx_bytes).hex()
 
         # Send the transaction to the Bitcoin network
         drt_tx_id: str = self.btcrpc.proxy.sendrawtransaction(tx)
