@@ -20,7 +20,6 @@ use crate::{
     error::Error,
     parse::{parse_address, parse_el_address, parse_xonly_pk},
     taproot::{new_bitcoind_client, sync_wallet, taproot_wallet, ExtractP2trPubkey},
-    utils::parse_operator_keys,
 };
 
 /// Generates a deposit request transaction (DRT).
@@ -41,12 +40,12 @@ use crate::{
 #[pyfunction]
 pub(crate) fn deposit_request_transaction(
     el_address: String,
-    operator_keys: Vec<String>,
+    agg_key: String,
     bitcoind_url: String,
     bitcoind_user: String,
     bitcoind_password: String,
 ) -> PyResult<(Vec<u8>, DepositRequestData)> {
-    let (_, agg_key) = parse_operator_keys(&operator_keys)?;
+    let agg_key = XOnlyPublicKey::from_str(&agg_key).expect("good XonlyPublicKey");
 
     let (signed_tx, deposit_request_data) = deposit_request_transaction_inner(
         el_address.as_str(),

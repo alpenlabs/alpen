@@ -21,7 +21,9 @@ use utils::{
     xonlypk_to_descriptor,
 };
 
-use crate::bridge::{get_balance, get_recovery_address, take_back_transaction};
+use crate::bridge::{
+    get_balance, get_recovery_address, take_back_transaction, types::OperatorKeys,
+};
 
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
@@ -29,6 +31,7 @@ use crate::bridge::{get_balance, get_recovery_address, take_back_transaction};
 #[pymodule]
 fn strata_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DepositRequestData>()?;
+    m.add_class::<OperatorKeys>()?;
 
     m.add_function(wrap_pyfunction!(deposit_request_transaction, m)?)?;
     m.add_function(wrap_pyfunction!(get_address, m)?)?;

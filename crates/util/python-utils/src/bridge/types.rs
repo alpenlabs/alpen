@@ -7,6 +7,9 @@ use bdk_wallet::bitcoin::{
     consensus, script::PushBytesBuf, Amount, OutPoint, ScriptBuf, TapNodeHash, Txid, XOnlyPublicKey,
 };
 use pyo3::prelude::*;
+use secp256k1::Keypair;
+
+use crate::{taproot::musig_aggregate_pks_inner, utils::parse_operator_keys};
 
 #[pyclass]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,15 +87,6 @@ pub(crate) struct WithdrawalMetadata {
     pub deposit_txid: Txid,
 }
 
-/// Deposit transaction metadata for OP_RETURN
-#[derive(Debug, Clone)]
-pub(crate) struct DepositTxMetadata {
-    pub stake_index: u32,
-    pub ee_address: Vec<u8>,
-    pub takeback_hash: TapNodeHash,
-    pub input_amount: Amount,
-}
-
 // WithdrawalMetadata implementations
 impl WithdrawalMetadata {
     pub(crate) fn new(
@@ -131,5 +125,42 @@ impl WithdrawalMetadata {
             .expect("metadata should be within push data limits");
 
         push_data
+    }
+}
+
+/// Deposit transaction metadata for OP_RETURN
+#[derive(Debug, Clone)]
+pub(crate) struct DepositTxMetadata {
+    pub stake_index: u32,
+    pub ee_address: Vec<u8>,
+    pub takeback_hash: TapNodeHash,
+    pub input_amount: Amount,
+}
+
+/// Keys
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct OperatorKeys {
+    keys: Vec<Keypair>,
+}
+
+#[pymethods]
+impl OperatorKeys {
+    #[new]
+    pub fn new(keys: Vec<String>) -> PyResult<Self> {
+        Ok(Self {
+            keys: parse_operator_keys(&keys)?,
+        })
+    }
+
+    #[getter]
+    pub fn agg_key(&self) -> PyResult<String> {
+        let x_only_keys: Vec<XOnlyPublicKey> = self
+            .keys
+            .iter()
+            .map(|pair| XOnlyPublicKey::from_keypair(pair).0)
+            .collect();
+
+        Ok(musig_aggregate_pks_inner(x_only_keys)?.to_string())
     }
 }
