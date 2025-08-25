@@ -28,7 +28,7 @@ use tracing::*;
 pub fn init_client_state(_params: &Params, storage: &NodeStorage) -> anyhow::Result<()> {
     debug!("initializing client state in database!");
 
-    let init_state = ClientState::new();
+    let init_state = ClientState::default();
 
     // Write the state into the database.
     storage
