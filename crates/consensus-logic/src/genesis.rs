@@ -30,7 +30,7 @@ use crate::errors::Error;
 pub fn init_client_state(_params: &Params, csman: &ClientStateManager) -> anyhow::Result<()> {
     debug!("initializing client state in database!");
 
-    let init_state = ClientState::new();
+    let init_state = ClientState::default();
 
     // Write the state into the database.
     csman._put_update_blocking(

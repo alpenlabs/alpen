@@ -16,18 +16,30 @@ use crate::{
     operation::{ClientUpdateOutput, SyncAction},
 };
 
-/// High level client's state of the network. This is local to the client, not
+/// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
 ///
 /// This is updated when we see a consensus-relevant message.  This is L2 blocks
 /// but also L1 blocks being published with relevant things in them, and
 /// various other events.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshSerialize,
+    BorshDeserialize,
+    Deserialize,
+    Serialize,
 )]
 pub struct ClientState {
-    // Last *finalized*
+    // Last *finalized* checkpoint.
     pub(crate) last_finalized_checkpoint: Option<L1Checkpoint>,
+
+    // Last *seen* checkpoint.
+    pub(crate) last_seen_checkpoint: Option<L1Checkpoint>,
 
     /// Height
     /// TODO(QQ): Currently weird, as it's already keyed by [`L1BlockCommitment`]
@@ -35,15 +47,6 @@ pub struct ClientState {
 }
 
 impl ClientState {
-    /// Creates the basic genesis client state from the genesis parameters.
-    // TODO do we need this or should we load it at run time from the rollup params?
-    pub fn new() -> Self {
-        Self {
-            last_finalized_checkpoint: None,
-            height: 0,
-        }
-    }
-
     /// Returns if genesis has occurred.
     pub fn has_genesis_occurred(&self) -> bool {
         self.height > 0
@@ -62,23 +65,14 @@ impl ClientState {
     /// This isn't durable, as it's possible it might be rolled back in the
     /// future, although it becomes less likely the longer it's buried.
     pub fn get_last_checkpoint(&self) -> Option<L1Checkpoint> {
-        self.last_finalized_checkpoint.clone()
+        self.last_seen_checkpoint.clone()
     }
 
     /// Gets the final epoch that we've externally declared.
     pub fn get_declared_final_epoch(&self) -> Option<EpochCommitment> {
-        self.get_last_checkpoint()
-            .map(|ckpt| ckpt.batch_info.get_epoch_commitment())
-    }
-
-    /// Returns the last known epoch as of this state.
-    ///
-    /// If there is no last epoch, returns a null epoch.
-    pub fn get_last_epoch(&self) -> EpochCommitment {
         self.last_finalized_checkpoint
             .as_ref()
-            .map(|ck| ck.batch_info.get_epoch_commitment())
-            .unwrap_or_else(EpochCommitment::null)
+            .map(|ckpt| ckpt.batch_info.get_epoch_commitment())
     }
 
     /// Gets the next epoch we expect to be confirmed.
@@ -89,6 +83,16 @@ impl ClientState {
         } else {
             last_epoch.epoch() + 1
         }
+    }
+
+    /// Returns the last known epoch as of this state.
+    ///
+    /// If there is no last epoch, returns a null epoch.
+    fn get_last_epoch(&self) -> EpochCommitment {
+        self.last_seen_checkpoint
+            .as_ref()
+            .map(|ck| ck.batch_info.get_epoch_commitment())
+            .unwrap_or_else(EpochCommitment::null)
     }
 }
 
@@ -243,8 +247,10 @@ impl ClientStateMut {
         &mut self,
         l1block: &L1BlockCommitment,
         last_finalized_checkpoint: Option<L1Checkpoint>,
+        last_seen_checkpoint: Option<L1Checkpoint>,
     ) {
         self.state.height = l1block.height();
         self.state.last_finalized_checkpoint = last_finalized_checkpoint;
+        self.state.last_seen_checkpoint = last_seen_checkpoint;
     }
 }

@@ -8,19 +8,17 @@ use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
     prelude::*,
 };
-use strata_state::{block::L2BlockBundle, client_state::*, id::L2BlockId, operation::*};
+use strata_state::{client_state::*, operation::*};
 use strata_storage::NodeStorage;
 use tracing::*;
 
 use crate::{checkpoint_verification::verify_checkpoint, errors::*};
 
-/// Interface for external context necessary specifically for event validation.
+/// Interface for external context necessary specifically for transitioning.
 pub trait EventContext {
     fn get_l1_block_manifest(&self, blockid: &L1BlockId) -> Result<L1BlockManifest, Error>;
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error>;
     fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error>;
-
-    fn get_l2_block_data(&self, blockid: &L2BlockId) -> Result<L2BlockBundle, Error>;
 }
 
 /// Event context using the main node storage interfaace.
@@ -44,13 +42,6 @@ impl EventContext for StorageEventContext<'_> {
             .ok_or(Error::MissingL1Block(*blockid))
     }
 
-    fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
-        self.storage
-            .client_state()
-            ._get_state_blocking(*blockid)?
-            .ok_or(Error::MissingClientState(0))
-    }
-
     fn get_l1_block_manifest_at_height(&self, height: u64) -> Result<L1BlockManifest, Error> {
         self.storage
             .l1()
@@ -58,11 +49,11 @@ impl EventContext for StorageEventContext<'_> {
             .ok_or(Error::MissingL1BlockHeight(height))
     }
 
-    fn get_l2_block_data(&self, blkid: &L2BlockId) -> Result<L2BlockBundle, Error> {
+    fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
         self.storage
-            .l2()
-            .get_block_data_blocking(blkid)?
-            .ok_or(Error::MissingL2Block(*blkid))
+            .client_state()
+            ._get_state_blocking(*blockid)?
+            .ok_or(Error::MissingClientState(0))
     }
 }
 
@@ -105,11 +96,17 @@ fn handle_block(
 ) -> Result<(), Error> {
     let block: L1BlockCommitment = block_mf.into();
     let height = block.height();
+    let rparams = params.rollup();
 
-    // We probably should have gotten the L1Genesis message by now but
-    // let's just do this anyways.
-    if height == params.rollup().genesis_l1_height {
-        state.accept_l1_block_state(&block, None);
+    // Skip blocks before the genesis height.
+    if height < rparams.genesis_l1_height {
+        return Ok(());
+    }
+
+    // Handle genesis height.
+    if height == rparams.genesis_l1_height {
+        // No checkpoints is expected at the genesis L1 height.
+        state.accept_l1_block_state(&block, None, None);
         state.push_action(SyncAction::L2Genesis(*block.blkid()));
         return Ok(());
     }
@@ -138,11 +135,24 @@ fn handle_block(
         }
     }
 
+    // Push actions from processing l1 block if any
+    let (recent_checkpoint, actions) = process_l1_block(
+        height,
+        state.state().get_last_checkpoint(),
+        block_mf,
+        params.rollup(),
+    )?;
+    state.push_actions(actions.into_iter());
+
+    if let Some(decl_epoch) = state.state().get_declared_final_epoch() {
+        state.push_action(SyncAction::FinalizeEpoch(decl_epoch));
+    }
+
     // Structly speaking, here we rely on the fact that l1_reorg_safe_depth depth looks
     // at the canonical chain (and not on the fork).
     // Otherwise, we are screwed (because we query buried_block by height).
     let last_finalized_checkpoint = {
-        let depth = params.rollup().l1_reorg_safe_depth as u64;
+        let depth = rparams.l1_reorg_safe_depth as u64;
         let buried_h = height
             .checked_sub(depth)
             .expect("we should never see height less than depth");
@@ -159,21 +169,8 @@ fn handle_block(
         }
     };
 
-    // Push actions from processing l1 block if any
-    let actions = process_l1_block(
-        height,
-        state.state().get_last_checkpoint(),
-        block_mf,
-        params.rollup(),
-    )?;
-    state.push_actions(actions.into_iter());
-
-    if let Some(decl_epoch) = state.state().get_declared_final_epoch() {
-        state.push_action(SyncAction::FinalizeEpoch(decl_epoch));
-    }
-
     // Set the new client state.
-    state.accept_l1_block_state(&block, last_finalized_checkpoint);
+    state.accept_l1_block_state(&block, last_finalized_checkpoint, recent_checkpoint);
 
     Ok(())
 }
@@ -183,8 +180,9 @@ fn process_l1_block(
     prev_checkpoint: Option<L1Checkpoint>,
     block_mf: &L1BlockManifest,
     params: &RollupParams,
-) -> Result<Vec<SyncAction>, Error> {
+) -> Result<(Option<L1Checkpoint>, Vec<SyncAction>), Error> {
     let mut sync_actions = Vec::new();
+    let mut new_checkpoint = prev_checkpoint.clone();
 
     // Iterate through all of the protocol operations in all of the txs.
     // TODO split out each proto op handling into a separate function
@@ -216,6 +214,8 @@ fn process_l1_block(
                     ckpt_ref.clone(),
                 );
 
+                new_checkpoint = Some(l1ckpt);
+
                 // Emit a sync action to update checkpoint entry in db
                 sync_actions.push(SyncAction::UpdateCheckpointInclusion {
                     checkpoint: signed_ckpt.clone().into(),
@@ -225,7 +225,7 @@ fn process_l1_block(
         }
     }
 
-    Ok(sync_actions)
+    Ok((new_checkpoint, sync_actions))
 }
 
 fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<CheckpointL1Ref, Error> {
@@ -282,10 +282,6 @@ mod tests {
         fn get_client_state(&self, _blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
             // TODO(QQ): populate with test data.
             todo!()
-        }
-
-        fn get_l2_block_data(&self, blkid: &L2BlockId) -> Result<L2BlockBundle, Error> {
-            Err(Error::MissingL2Block(*blkid))
         }
     }
 
