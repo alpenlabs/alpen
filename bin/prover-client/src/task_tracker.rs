@@ -1,7 +1,7 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use strata_db::traits::ProofDatabase;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use tracing::{info, warn};
 
@@ -78,7 +78,7 @@ impl TaskTracker {
         &mut self,
         proof_id: ProofContext,
         deps: Vec<ProofContext>,
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         info!(?proof_id, "Creating task for");
         let mut tasks = Vec::with_capacity(self.vms.len());
@@ -104,7 +104,7 @@ impl TaskTracker {
         &mut self,
         id: ProofKey,
         deps: &[ProofKey],
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<(), ProvingTaskError> {
         if self.tasks.contains_key(&id) {
             return Err(ProvingTaskError::TaskAlreadyFound(id));
@@ -288,12 +288,15 @@ impl TaskTracker {
 
 #[cfg(test)]
 mod tests {
-    use strata_db_store_rocksdb::test_utils::get_rocksdb_tmp_instance_for_prover;
+    use std::sync::Arc;
+
+    use strata_db_store_sled::SledDbConfig;
     use strata_primitives::{
         l2::L2BlockCommitment,
         proof::{ProofContext, ProofZkVm},
     };
     use strata_test_utils::ArbitraryGenerator;
+    use typed_sled::SledDb;
 
     use super::*;
 
@@ -319,9 +322,11 @@ mod tests {
         (key, deps)
     }
 
-    fn setup_db() -> ProofDb {
-        let (db, db_ops) = get_rocksdb_tmp_instance_for_prover().unwrap();
-        ProofDb::new(db, db_ops)
+    fn setup_db() -> ProofDBSled {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = Arc::new(SledDb::new(db).unwrap());
+        let config = SledDbConfig::new_with_constant_backoff(3, 200);
+        ProofDBSled::new(sled_db, config).unwrap()
     }
 
     #[test]

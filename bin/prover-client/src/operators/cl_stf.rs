@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use jsonrpsee::http_client::HttpClient;
 use strata_db::traits::ProofDatabase;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
@@ -153,7 +153,7 @@ impl ProvingOp for ClStfOperator {
     async fn fetch_input(
         &self,
         task_id: &ProofKey,
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<ClStfInput, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
             ProofContext::ClStf(start, end) => (*start, *end),
@@ -234,7 +234,7 @@ impl ProvingOp for ClStfOperator {
     async fn create_deps_tasks(
         &self,
         params: Self::Params,
-        db: &ProofDb,
+        db: &ProofDBSled,
         task_tracker: Arc<Mutex<TaskTracker>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let ClStfParams {

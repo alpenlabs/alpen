@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use jsonrpsee::http_client::HttpClient;
 use strata_db::traits::ProofDatabase;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::{
     l1::L1BlockCommitment,
     l2::L2BlockCommitment,
@@ -63,7 +63,7 @@ impl CheckpointOperator {
     async fn create_deps_tasks_inner(
         &self,
         checkpoint_info: RpcCheckpointInfo,
-        db: &ProofDb,
+        db: &ProofDBSled,
         task_tracker: Arc<Mutex<TaskTracker>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let ckp_idx = checkpoint_info.idx;
@@ -113,7 +113,7 @@ impl CheckpointOperator {
         l1_range: (L1BlockCommitment, L1BlockCommitment),
         l2_range: (L2BlockCommitment, L2BlockCommitment),
         task_tracker: Arc<Mutex<TaskTracker>>,
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let checkpoint_info = RpcCheckpointInfo {
             idx: checkpoint_idx,
@@ -179,7 +179,7 @@ impl CheckpointOperator {
         &self,
         checkpoint_index: u64,
         proof_key: &ProofKey,
-        proof_db: &ProofDb,
+        proof_db: &ProofDBSled,
     ) -> CheckpointResult<()> {
         if !self.enable_checkpoint_runner {
             return Ok(());
@@ -202,7 +202,7 @@ impl ProvingOp for CheckpointOperator {
     async fn fetch_input(
         &self,
         task_id: &ProofKey,
-        db: &ProofDb,
+        db: &ProofDBSled,
     ) -> Result<CheckpointProverInput, ProvingTaskError> {
         let deps = db
             .get_proof_deps(*task_id.context())
@@ -237,7 +237,7 @@ impl ProvingOp for CheckpointOperator {
     async fn create_deps_tasks(
         &self,
         ckp_idx: Self::Params,
-        db: &ProofDb,
+        db: &ProofDBSled,
         task_tracker: Arc<Mutex<TaskTracker>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let checkpoint_info = self.fetch_ckp_info(ckp_idx).await?;

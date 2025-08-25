@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use bitcoind_async_client::{traits::Reader, Client};
 use jsonrpsee::{core::RpcResult, http_client::HttpClient, RpcModule};
 use strata_db::traits::ProofDatabase;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::{
     evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, proof::Epoch,
 };
@@ -69,14 +69,14 @@ where
 pub(crate) struct ProverClientRpc {
     task_tracker: Arc<Mutex<TaskTracker>>,
     operator: Arc<ProofOperator>,
-    db: Arc<ProofDb>,
+    db: Arc<ProofDBSled>,
 }
 
 impl ProverClientRpc {
     pub(crate) fn new(
         task_tracker: Arc<Mutex<TaskTracker>>,
         operator: Arc<ProofOperator>,
-        db: Arc<ProofDb>,
+        db: Arc<ProofDBSled>,
     ) -> Self {
         Self {
             task_tracker,
@@ -167,6 +167,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
             .checkpoint_operator()
             .create_task(latest_ckp_idx, self.task_tracker.clone(), &self.db)
             .await
+            .inspect_err(|e| tracing::error!(%e, "prover client Error"))
             .map_err(to_jsonrpsee_error(
                 "failed to create task for latest checkpoint",
             ))

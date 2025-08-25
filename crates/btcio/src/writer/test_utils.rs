@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
-use strata_db::{traits::BroadcastDatabase, types::L1TxEntry};
-use strata_db_store_rocksdb::{
-    broadcaster::db::BroadcastDb, test_utils::get_rocksdb_tmp_instance, L1BroadcastDb, RBL1WriterDb,
+use strata_db::{
+    traits::{DatabaseBackend, L1BroadcastDatabase},
+    types::L1TxEntry,
+};
+use strata_db_store_sled::{
+    test_utils::{get_test_sled_backend, get_test_sled_config, get_test_sled_db},
+    L1BroadcastDBSled,
 };
 use strata_storage::ops::{
     l1tx_broadcast::Context as BContext,
@@ -11,32 +15,26 @@ use strata_storage::ops::{
 
 use crate::broadcaster::L1BroadcastHandle;
 
-/// Returns [`Arc`] of [`RBL1WriterDb`] for testing
-pub(crate) fn get_db() -> Arc<RBL1WriterDb> {
-    let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
-    Arc::new(RBL1WriterDb::new(db, db_ops))
-}
-
 /// Returns [`Arc`] of [`EnvelopeDataOps`] for testing
 pub(crate) fn get_envelope_ops() -> Arc<EnvelopeDataOps> {
     let pool = threadpool::Builder::new().num_threads(2).build();
-    let db = get_db();
+    let db = get_test_sled_backend().writer_db();
     let ops = Context::new(db).into_ops(pool);
     Arc::new(ops)
 }
 
 /// Returns [`Arc`] of [`BroadcastDatabase`] for testing
-pub(crate) fn get_broadcast_db() -> Arc<impl BroadcastDatabase> {
-    let (db, dbops) = get_rocksdb_tmp_instance().unwrap();
-    let bcastdb = Arc::new(L1BroadcastDb::new(db, dbops));
-    Arc::new(BroadcastDb::new(bcastdb))
+pub(crate) fn get_broadcast_db() -> Arc<impl L1BroadcastDatabase> {
+    let sdb = get_test_sled_db();
+    let sconf = get_test_sled_config();
+    Arc::new(L1BroadcastDBSled::new(sdb.into(), sconf).unwrap())
 }
 
 /// Returns [`Arc`] of [`L1BroadcastHandle`] for testing
 pub(crate) fn get_broadcast_handle() -> Arc<L1BroadcastHandle> {
     let pool = threadpool::Builder::new().num_threads(2).build();
     let db = get_broadcast_db();
-    let ops = BContext::new(db.l1_broadcast_db().clone()).into_ops(pool);
+    let ops = BContext::new(db).into_ops(pool);
     let (sender, _) = tokio::sync::mpsc::channel::<(u64, L1TxEntry)>(64);
     let handle = L1BroadcastHandle::new(sender, Arc::new(ops));
     Arc::new(handle)
