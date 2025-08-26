@@ -238,6 +238,7 @@ impl ClientStateMut {
 
     /// Accepts a new L1 block that extends the chain directly.
     ///
+    /// TODO(QQ): adjust comment, impl has changed.
     /// # Panics
     ///
     /// * If the blkids are inconsistent.
