@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use bitcoin::Transaction;
+use bitcoin::{block, Transaction};
 use strata_primitives::{
     batch::verify_signed_checkpoint_sig,
     l1::{L1BlockCommitment, L1BlockId},
@@ -53,7 +53,7 @@ impl EventContext for StorageEventContext<'_> {
         self.storage
             .client_state()
             .get_state_blocking(*blockid)?
-            .ok_or(Error::MissingClientState(0))
+            .ok_or(Error::MissingClientState(*blockid))
     }
 }
 
