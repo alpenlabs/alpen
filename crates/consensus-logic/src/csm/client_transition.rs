@@ -144,35 +144,41 @@ fn handle_block(
     )?;
     state.push_actions(actions.into_iter());
 
-    if let Some(decl_epoch) = state.state().get_declared_final_epoch() {
-        state.push_action(SyncAction::FinalizeEpoch(decl_epoch));
-    }
-
-    // Structly speaking, here we rely on the fact that l1_reorg_safe_depth depth looks
+    // Structly speaking, here we rely on the fact that depth looks
     // at the canonical chain (and not on the fork).
     // Otherwise, we are screwed (because we query buried_block by height).
-    let last_finalized_checkpoint = {
-        let depth = rparams.l1_reorg_safe_depth as u64;
-        let buried_h = height
-            .checked_sub(depth)
-            .expect("we should never see height less than depth");
-        let block = context.get_l1_block_manifest_at_height(buried_h).ok();
-        // TODO(QQ): a bit ugly, unwind it somehow.
-        if let Some(b) = block {
-            if let Ok(cs) = context.get_client_state(&b.into()) {
-                cs.get_last_checkpoint()
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    };
+    let depth = rparams.l1_reorg_safe_depth as u64;
+    let buried_height = height
+        .checked_sub(depth)
+        .expect("we should never see height less than depth");
+    let last_finalized_checkpoint = fetch_last_finalized_checkpoint(buried_height, context);
 
     // Set the new client state.
     state.accept_l1_block_state(&block, last_finalized_checkpoint, recent_checkpoint);
 
+    // Finalize the new epoch after the state transition (if any).
+    if let Some(decl_epoch) = state.state().get_declared_final_epoch() {
+        state.push_action(SyncAction::FinalizeEpoch(decl_epoch));
+    }
+
     Ok(())
+}
+
+fn fetch_last_finalized_checkpoint(
+    buried_height: u64,
+    context: &impl EventContext,
+) -> Option<L1Checkpoint> {
+    let block = context.get_l1_block_manifest_at_height(buried_height).ok();
+    // TODO(QQ): a bit ugly, unwind it somehow.
+    if let Some(b) = block {
+        if let Ok(cs) = context.get_client_state(&b.into()) {
+            cs.get_last_checkpoint()
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 fn process_l1_block(

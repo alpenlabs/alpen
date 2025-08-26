@@ -77,6 +77,7 @@ impl ClientStateManager {
     }
 
     // Primarily for lookups of canonical chain.
+    // TODO(QQ): not needed? remove?
     pub async fn _get_client_state_at_height_async(
         &self,
         height: u64,
@@ -110,15 +111,12 @@ impl ClientStateManager {
         cur.maybe_update(height, state)
     }
 
-    pub fn _get_most_recent_state_blocking(&self) -> Arc<ClientState> {
+    pub fn _get_most_recent_state_blocking(&self) -> (L1BlockCommitment, ClientState) {
         // TODO(QQ): make better.
-        Arc::new(
-            self.ops
-                .get_latest_client_state_blocking()
-                .unwrap()
-                .unwrap()
-                .1,
-        )
+        self.ops
+            .get_latest_client_state_blocking()
+            .unwrap()
+            .unwrap()
     }
 
     /// Returns either pre-genesis mock ClientState or the ClientState with the biggest height.

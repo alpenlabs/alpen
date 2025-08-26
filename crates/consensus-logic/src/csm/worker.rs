@@ -11,10 +11,7 @@ use strata_state::{
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::ShutdownGuard;
-use tokio::{
-    sync::{broadcast, mpsc},
-    time,
-};
+use tokio::time;
 use tracing::*;
 
 use super::{client_transition, config::CsmExecConfig};
@@ -29,9 +26,6 @@ pub struct WorkerState {
     /// Consensus parameters.
     params: Arc<Params>,
 
-    /// CSM worker config, *not* params.
-    config: CsmExecConfig,
-
     /// Node storage handle.
     storage: Arc<NodeStorage>,
 
@@ -39,30 +33,20 @@ pub struct WorkerState {
     cur_state: Arc<ClientState>,
 
     // TODO(QQ): Ideally height for cur_state should be here.
-    last_height: u64,
+    state_block: L1BlockCommitment,
 }
 
 impl WorkerState {
     /// Constructs a new instance by reconstructing the current consensus state
     /// from the provided database layer.
     pub fn open(params: Arc<Params>, storage: Arc<NodeStorage>) -> anyhow::Result<Self> {
-        let cur_state = storage.client_state()._get_most_recent_state_blocking();
-
-        // TODO make configurable
-        let config = CsmExecConfig {
-            retry_base_dur: time::Duration::from_millis(1000),
-            // These settings makes the last retry delay be 6 seconds.
-            retry_cnt_max: 20,
-            retry_backoff_mult: 1120,
-        };
-        let last_height = cur_state.height();
+        let (state_block, cur_state) = storage.client_state()._get_most_recent_state_blocking();
 
         Ok(Self {
             params,
-            config,
             storage,
-            cur_state,
-            last_height,
+            cur_state: Arc::new(cur_state),
+            state_block,
         })
     }
 
@@ -87,10 +71,10 @@ impl WorkerState {
         Ok(state_mut.into_update())
     }
 
-    fn update_bookeeping(&mut self, last_height: u64, state: Arc<ClientState>) {
-        debug!(%last_height, ?state, "computed new consensus state");
+    fn update_bookeeping(&mut self, state_block: L1BlockCommitment, state: Arc<ClientState>) {
+        debug!(%state_block, ?state, "computed new consensus state");
         self.cur_state = state;
-        self.last_height = last_height;
+        self.state_block = state_block;
     }
 }
 
@@ -104,8 +88,18 @@ pub fn client_worker_task(
 ) -> anyhow::Result<()> {
     info!("started CSM worker");
 
+    // TODO make configurable
+    let config = CsmExecConfig {
+        retry_base_dur: time::Duration::from_millis(1000),
+        // These settings makes the last retry delay be 6 seconds.
+        retry_cnt_max: 20,
+        retry_backoff_mult: 1120,
+    };
+
     while let Some(msg) = block_rx.blocking_recv() {
-        if let Err(e) = process_block(&mut state, &msg, &status_channel, &shutdown) {
+        if let Err(e) =
+            process_block_with_retries(&mut state, &msg, &status_channel, &config, &shutdown)
+        {
             error!(err = %e, ?msg, "failed to process the block, aborting!");
             return Err(e);
         }
@@ -121,23 +115,26 @@ pub fn client_worker_task(
     Ok(())
 }
 
-fn process_block(
+fn process_block_with_retries(
     state: &mut WorkerState,
     incoming_block: &L1BlockCommitment,
     status_channel: &StatusChannel,
+    config: &CsmExecConfig,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
-    strata_common::check_bail_trigger("sync_event");
+    strata_common::check_bail_trigger("csm_block_block");
 
-    let span = debug_span!("process-block", %incoming_block);
+    let span = debug_span!("csm-process-block", %incoming_block);
     let _g = span.enter();
 
-    // Blocks for which there's no client state. Some of the l1 blocks could have been skipped.
+    // Blocks for which there's no client state. Some of the l1 blocks could have been skipped due
+    // to the fact that updates from btcio are not persisted.
     let start_height = state
         .params
         .rollup()
         .genesis_l1_height
-        .max(state.last_height + 1);
+        .max(state.state_block.height() + 1);
+
     let end_height = incoming_block.height();
 
     let mut potentually_skipped_blocks = (start_height..end_height)
@@ -155,55 +152,62 @@ fn process_block(
     debug!("trying to process the block");
 
     for next_block in potentually_skipped_blocks.iter() {
-        let mut tries = 0;
-        let mut wait_dur = state.config.retry_base_dur;
-        loop {
-            tries += 1;
-
-            // Check if client state is already present, and skip if so.
-            let next_client_state = state
-                .storage
-                .client_state()
-                ._get_state_blocking(*next_block)?;
-
-            if let Some(cs) = next_client_state {
-                state.update_bookeeping(next_block.height(), Arc::new(cs));
-                continue;
-            }
-
-            // Handle the block for which there's no client state.
-            let e = match handle_block(state, next_block) {
-                Err(e) => e,
-                Ok(_) => {
-                    // Happy case, we want this to happen.
-                    continue;
-                }
-            };
-
-            // If we hit the try limit, abort.
-            if tries > state.config.retry_cnt_max {
-                error!(err = %e, %tries, "failed to exec sync event, hit tries limit, aborting");
-                return Err(e);
-            }
-
-            // Sleep and increase the wait dur.
-            error!(err = %e, %tries, "failed to exec sync event, retrying...");
-            thread::sleep(wait_dur);
-            wait_dur = state.config.compute_retry_backoff(wait_dur);
-
-            if shutdown.should_shutdown() {
-                warn!("received shutdown signal");
-                break;
-            }
-        }
+        process_block(state, next_block, config, shutdown)?;
     }
 
     // Update status channel with the latest client state.
     status_channel.update_client_state(state.cur_state().as_ref().clone());
-    trace!("completed sync event");
+    trace!("block is processed");
 
     debug!(%incoming_block, "processed OK");
 
+    Ok(())
+}
+
+fn process_block(
+    state: &mut WorkerState,
+    block: &L1BlockCommitment,
+    config: &CsmExecConfig,
+    shutdown: &ShutdownGuard,
+) -> anyhow::Result<()> {
+    let mut tries = 0;
+    let mut wait_dur = config.retry_base_dur;
+    loop {
+        tries += 1;
+
+        // Check if client state is already present, and skip if so.
+        let next_client_state = state.storage.client_state()._get_state_blocking(*block)?;
+
+        if let Some(cs) = next_client_state {
+            state.update_bookeeping(*block, Arc::new(cs));
+            return Ok(());
+        }
+
+        // Handle the block for which there's no client state.
+        let e = match handle_block(state, block) {
+            Err(e) => e,
+            Ok(_) => {
+                // Happy case, we want this to happen.
+                return Ok(());
+            }
+        };
+
+        // If we hit the try limit, abort.
+        if tries > config.retry_cnt_max {
+            error!(err = %e, %tries, "failed to exec sync event, hit tries limit, aborting");
+            return Err(e);
+        }
+
+        // Sleep and increase the wait dur.
+        error!(err = %e, %tries, "failed to exec sync event, retrying...");
+        thread::sleep(wait_dur);
+        wait_dur = config.compute_retry_backoff(wait_dur);
+
+        if shutdown.should_shutdown() {
+            warn!("received shutdown signal");
+            break;
+        }
+    }
     Ok(())
 }
 
@@ -215,7 +219,7 @@ fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::R
     // the new state, so that any database changes from them are available when
     // things listening for the new state observe it.
     for action in outp.actions() {
-        apply_action(action.clone(), state)?;
+        apply_action(action.clone(), &state.storage, &state.params)?;
     }
 
     // Store the outputs.
@@ -225,13 +229,17 @@ fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::R
         ._put_update_blocking(block, outp.clone())?;
 
     // Set.
-    state.update_bookeeping(block.height(), clstate);
+    state.update_bookeeping(*block, clstate);
 
     Ok(())
 }
 
-fn apply_action(action: SyncAction, state: &WorkerState) -> anyhow::Result<()> {
-    let ckpt_db = state.storage.checkpoint();
+fn apply_action(
+    action: SyncAction,
+    storage: &Arc<NodeStorage>,
+    params: &Arc<Params>,
+) -> anyhow::Result<()> {
+    let ckpt_db = storage.checkpoint();
     match action {
         SyncAction::FinalizeEpoch(epoch_comm) => {
             // For the fork choice manager this gets picked up later.  We don't have
