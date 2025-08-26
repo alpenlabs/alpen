@@ -2,9 +2,10 @@
 
 use std::{any::Any, collections::BTreeMap};
 
+use borsh::BorshDeserialize;
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, AuxPayload, AuxRequest, InterprotoMsg,
-    Loader, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, AuxRequest, InterprotoMsg, Loader,
+    MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -13,7 +14,6 @@ pub(crate) struct HandlerImpl<S: Subprotocol, R, C> {
     params: S::Params,
     state: S::State,
     interproto_msg_buf: Vec<S::Msg>,
-    aux_inputs: Vec<S::AuxInput>,
 
     _r: std::marker::PhantomData<R>,
     _c: std::marker::PhantomData<C>,
@@ -22,16 +22,10 @@ pub(crate) struct HandlerImpl<S: Subprotocol, R, C> {
 impl<S: Subprotocol + 'static, R: MsgRelayer + 'static, C: AuxInputCollector + 'static>
     HandlerImpl<S, R, C>
 {
-    pub(crate) fn new(
-        params: S::Params,
-        state: S::State,
-        aux_inputs: Vec<S::AuxInput>,
-        interproto_msg_buf: Vec<S::Msg>,
-    ) -> Self {
+    pub(crate) fn new(params: S::Params, state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
         Self {
             params,
             state,
-            aux_inputs,
             interproto_msg_buf,
             _r: std::marker::PhantomData,
             _c: std::marker::PhantomData,
@@ -52,6 +46,7 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
         self.interproto_msg_buf.push(m.clone());
     }
 
+    // TODO make this just return the aux request
     fn pre_process_txs(
         &mut self,
         txs: &[TxInputRef<'_>],
@@ -70,16 +65,23 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_pre: &AnchorState,
+        aux_input_data: &[u8],
     ) {
         let relayer = relayer
             .as_mut_any()
             .downcast_mut::<R>()
             .expect("asm: handler");
+
+        // TODO better error handling
+        let parsed_aux = <S::AuxInput as BorshDeserialize>::try_from_slice(aux_input_data)
+            .map_err(|e| AsmError::Deserialization(S::ID, e))
+            .unwrap();
+
         S::process_txs(
             &mut self.state,
             txs,
             anchor_pre,
-            &self.aux_inputs,
+            &parsed_aux,
             relayer,
             &self.params,
         );
@@ -99,20 +101,12 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
 pub(crate) struct SubprotoManager {
     handlers: BTreeMap<SubprotocolId, Box<dyn SubprotoHandler>>,
     logs: Vec<AsmLogEntry>,
-
-    // TODO make this not a vec
-    aux_requests: Vec<AuxRequest>,
 }
 
 impl SubprotoManager {
     /// Inserts a subproto by creating a handler for it, wrapping a tstate.
-    pub(crate) fn insert_subproto<S: Subprotocol>(
-        &mut self,
-        params: S::Params,
-        state: S::State,
-        aux_inputs: Vec<S::AuxInput>,
-    ) {
-        let handler = HandlerImpl::<S, Self, Self>::new(params, state, aux_inputs, Vec::new());
+    pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, params: S::Params, state: S::State) {
+        let handler = HandlerImpl::<S, Self, BasicAuxCollector>::new(params, state, Vec::new());
         assert_eq!(
             handler.id(),
             S::ID,
@@ -130,15 +124,20 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-    ) {
+    ) -> Option<AuxRequest> {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
         // borrow checker.
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.pre_process_txs(txs, self, anchor_pre);
+
+        // Invoke the preprocess function.
+        let mut acol = BasicAuxCollector::new();
+        h.pre_process_txs(txs, &mut acol, anchor_pre);
         self.insert_handler(h);
+
+        acol.into_request()
     }
 
     /// Dispatches transaction processing to the appropriate handler.
@@ -150,6 +149,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
+        aux_input_data: &[u8],
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
@@ -157,7 +157,7 @@ impl SubprotoManager {
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_txs(txs, self, anchor_pre);
+        h.process_txs(txs, self, anchor_pre, aux_input_data);
         self.insert_handler(h);
     }
 
@@ -233,10 +233,6 @@ impl SubprotoManager {
 
         (sections, self.logs)
     }
-
-    pub(crate) fn export_aux_requests(self) -> Vec<AuxRequest> {
-        self.aux_requests
-    }
 }
 
 impl SubprotoManager {
@@ -244,7 +240,6 @@ impl SubprotoManager {
         Self {
             handlers: BTreeMap::new(),
             logs: Vec::new(),
-            aux_requests: Vec::new(),
         }
     }
 }
@@ -266,9 +261,24 @@ impl MsgRelayer for SubprotoManager {
     }
 }
 
-impl AuxInputCollector for SubprotoManager {
+/// Shim for just remembering the aux request given to us.
+pub(crate) struct BasicAuxCollector {
+    req: Option<AuxRequest>,
+}
+
+impl BasicAuxCollector {
+    pub(crate) fn new() -> Self {
+        Self { req: None }
+    }
+
+    pub(crate) fn into_request(self) -> Option<AuxRequest> {
+        self.req
+    }
+}
+
+impl AuxInputCollector for BasicAuxCollector {
     fn request_aux_input(&mut self, req: AuxRequest) {
-        self.aux_requests.push(req);
+        self.req = Some(req);
     }
 
     fn as_mut_any(&mut self) -> &mut dyn Any {
@@ -280,22 +290,11 @@ impl AuxInputCollector for SubprotoManager {
 pub(crate) struct AnchorStateLoader<'c> {
     anchor: &'c AnchorState,
     man: &'c mut SubprotoManager,
-
-    // TODO make these values not be vecs
-    aux_bundle: &'c BTreeMap<SubprotocolId, Vec<AuxPayload>>,
 }
 
 impl<'c> AnchorStateLoader<'c> {
-    pub(crate) fn new(
-        anchor: &'c AnchorState,
-        man: &'c mut SubprotoManager,
-        aux_bundle: &'c BTreeMap<SubprotocolId, Vec<AuxPayload>>,
-    ) -> Self {
-        Self {
-            anchor,
-            man,
-            aux_bundle,
-        }
+    pub(crate) fn new(anchor: &'c AnchorState, man: &'c mut SubprotoManager) -> Self {
+        Self { anchor, man }
     }
 }
 
@@ -318,19 +317,6 @@ impl<'c> Loader for AnchorStateLoader<'c> {
             }
         };
 
-        // Extract auxiliary inputs for this subprotocol from the bundle
-        let aux_inputs = match self.aux_bundle.get(&S::ID) {
-            Some(payloads) => payloads
-                .iter()
-                .map(|payload| {
-                    payload
-                        .try_to_aux_input::<S>()
-                        .expect("asm: invalid aux input")
-                })
-                .collect(),
-            None => Vec::new(),
-        };
-
-        self.man.insert_subproto::<S>(params, state, aux_inputs);
+        self.man.insert_subproto::<S>(params, state);
     }
 }

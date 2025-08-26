@@ -68,16 +68,18 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
-    // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
-    // FIXME ^this should have been a red flag about the aux interface
-    let aux = BTreeMap::new();
-    let mut loader = AnchorStateLoader::new(pre_state, &mut manager, &aux);
+    let mut loader = AnchorStateLoader::new(pre_state, &mut manager);
     spec.load_subprotocols(&mut loader);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
-    let mut pre_process_stage =
-        PreProcessStage::new(&grouped_relevant_txs, &mut manager, pre_state);
+    let mut aux_req_dest = BTreeMap::new();
+    let mut pre_process_stage = PreProcessStage::new(
+        &mut manager,
+        pre_state,
+        &grouped_relevant_txs,
+        &mut aux_req_dest,
+    );
     spec.call_subprotocols(&mut pre_process_stage);
 
     // 5. Flatten the grouped transactions back into a single collection.
@@ -86,10 +88,9 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 6. Export auxiliary requests collected during pre-processing.
     // These requests will be fulfilled before running the main ASM state transition.
-    let aux_requests = manager.export_aux_requests();
     let output = AsmPreProcessOutput {
         txs: relevant_txs,
-        aux_requests,
+        aux_requests: aux_req_dest,
     };
 
     Ok(output)

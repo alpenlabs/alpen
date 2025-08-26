@@ -122,14 +122,14 @@ impl Subprotocol for OLCoreSubproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_inputs: &[Self::AuxInput],
+        aux_input: &Self::AuxInput,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
         for tx in txs {
             let result = match tx.tag().tx_type() {
                 OL_STF_CHECKPOINT_TX_TYPE => {
-                    handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_inputs)
+                    handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_input)
                 }
                 // [PLACE_HOLDER] Add other transaction types related to vk upgrade, etc.
                 _ => Err(CoreError::TxParsingError("unsupported tx type".to_string())),

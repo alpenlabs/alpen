@@ -48,6 +48,10 @@ impl AuxPayload {
         Self { id, data }
     }
 
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
     pub fn try_to_aux_input<S: Subprotocol>(&self) -> Result<S::AuxInput, AsmError> {
         if S::ID != self.id {
             return Err(Mismatched {

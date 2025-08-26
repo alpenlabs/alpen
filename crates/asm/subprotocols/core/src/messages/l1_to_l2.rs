@@ -94,7 +94,7 @@ pub(crate) fn validate_l1_to_l2_messages(
     _end_height: u64,
     _commitment_hash: &Buf32,
     _anchor_pre: &AnchorState,
-    _aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
+    _aux_input: &<OLCoreSubproto as Subprotocol>::AuxInput,
 ) -> Result<()> {
     // [PLACE_HOLDER] => Waiting for the design of L1 → L2 messaging system and defining what is
     // the l1_commitment should be and etc.

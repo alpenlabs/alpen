@@ -13423,6 +13423,7 @@ name = "strata-asm-stf"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "borsh",
  "strata-asm-common",
  "strata-l1-txfmt",
 ]

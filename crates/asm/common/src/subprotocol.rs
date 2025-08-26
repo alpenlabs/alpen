@@ -76,7 +76,7 @@ pub trait Subprotocol: 'static {
     /// example, block headers or other off-chain metadata). It must be serializable, verifiable,
     /// and correspond directly to the output of the collector. Implementations of
     /// `process_txs` are responsible for validating this data before using it in any state updates.
-    type AuxInput: Any + BorshSerialize + BorshDeserialize;
+    type AuxInput: Default + Any + BorshSerialize + BorshDeserialize;
 
     /// Constructs a new state using the provided genesis configuration.
     ///
@@ -135,7 +135,7 @@ pub trait Subprotocol: 'static {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_inputs: &[Self::AuxInput],
+        aux_input: &Self::AuxInput,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );
@@ -197,6 +197,7 @@ pub trait SubprotoHandler {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_state: &AnchorState,
+        aux_input_data: &[u8],
     );
 
     /// Accepts a message.  This is called while processing other subprotocols.

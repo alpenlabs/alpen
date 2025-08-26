@@ -57,12 +57,17 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
     let mut manager = SubprotoManager::new();
 
     // 2. LOAD: Initialize each subprotocol in the subproto manager with aux input data.
-    let mut loader = AnchorStateLoader::new(pre_state, &mut manager, &input.aux_input);
+    let mut loader = AnchorStateLoader::new(pre_state, &mut manager);
     spec.load_subprotocols(&mut loader);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
-    let mut process_stage = ProcessStage::new(input.protocol_txs, &mut manager, pre_state);
+    let mut process_stage = ProcessStage::new(
+        &mut manager,
+        pre_state,
+        input.protocol_txs,
+        &input.aux_input,
+    );
     spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.

@@ -20,8 +20,8 @@ impl AsmStfOutput {
 /// Output of preprocessing for ASM STF
 #[derive(Debug)]
 pub struct AsmPreProcessOutput<'t> {
-    pub aux_requests: Vec<AuxRequest>,
     pub txs: Vec<TxInputRef<'t>>,
+    pub aux_requests: BTreeMap<SubprotocolId, AuxRequest>,
 }
 
 /// Input for ASM STF
@@ -29,5 +29,5 @@ pub struct AsmPreProcessOutput<'t> {
 pub struct AsmStfInput<'b, 'x> {
     pub header: &'b Header,
     pub protocol_txs: BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
-    pub aux_input: &'x BTreeMap<SubprotocolId, Vec<AuxPayload>>,
+    pub aux_input: &'x BTreeMap<SubprotocolId, AuxPayload>,
 }

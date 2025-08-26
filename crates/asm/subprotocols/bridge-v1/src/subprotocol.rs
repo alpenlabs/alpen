@@ -86,9 +86,9 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_inputs: &[Self::AuxInput],
+        _aux_inputs: &Self::AuxInput,
         relayer: &mut impl MsgRelayer,
-        params: &Self::Params,
+        _params: &Self::Params,
     ) {
         // Process each transaction
         for tx in txs {
@@ -143,7 +143,7 @@ impl Subprotocol for BridgeV1Subproto {
     ///
     /// Both conditions represent unrecoverable protocol violations where continued operation
     /// poses significant risk of fund loss.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], params: &Self::Params) {
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _params: &Self::Params) {
         for msg in msgs {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
