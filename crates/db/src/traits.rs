@@ -94,8 +94,6 @@ pub trait ClientStateDatabase: Send + Sync + 'static {
     fn get_client_update(&self, block: L1BlockCommitment) -> DbResult<Option<ClientUpdateOutput>>;
 
     fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>>;
-
-    fn get_client_states_at_height(&self, height: u64) -> DbResult<Vec<ClientState>>;
 }
 
 /// L2 data store for CL blocks.  Does not store anything about what we think

@@ -33,7 +33,7 @@ pub fn init_client_state(_params: &Params, csman: &ClientStateManager) -> anyhow
     let init_state = ClientState::default();
 
     // Write the state into the database.
-    csman._put_update_blocking(
+    csman.put_update_blocking(
         &L1BlockCommitment::default(),
         ClientUpdateOutput::new_state(init_state),
     )?;
@@ -206,7 +206,7 @@ fn make_genesis_chainstate(
 /// Check if the database needs to have client init done to it.
 pub fn check_needs_client_init(storage: &NodeStorage) -> anyhow::Result<bool> {
     // Check if we've written any pre-genesis client state.
-    Ok(storage.client_state()._fetch_most_recent_state()?.is_none())
+    Ok(storage.client_state().fetch_most_recent_state()?.is_none())
 }
 
 /// Checks if we have a genesis block written to the L2 block database.

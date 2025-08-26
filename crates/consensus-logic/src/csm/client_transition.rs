@@ -52,7 +52,7 @@ impl EventContext for StorageEventContext<'_> {
     fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
         self.storage
             .client_state()
-            ._get_state_blocking(*blockid)?
+            .get_state_blocking(*blockid)?
             .ok_or(Error::MissingClientState(0))
     }
 }
@@ -121,10 +121,13 @@ fn handle_block(
             // The reason for that is btcio specific - we receive blocks with less height only
             // if btcio sees a longer fork of bitcoin.
             // So eventually, we receive a longer chain.
-            state.take_client_state(context.get_client_state(&L1BlockCommitment::new(
-                height - 1,
-                block_mf.get_prev_blockid(),
-            ))?);
+            let new_tip_block = L1BlockCommitment::new(height - 1, block_mf.get_prev_blockid());
+            let new_client_state = context.get_client_state(&block)?;
+            state.accept_l1_block_state(
+                &new_tip_block,
+                new_client_state.get_last_finalized_checkpoint(),
+                new_client_state.get_last_checkpoint(),
+            )
         }
         Ordering::Equal => {
             // Canonical chain extension block, nothing to actualize.
@@ -137,7 +140,6 @@ fn handle_block(
 
     // Push actions from processing l1 block if any
     let (recent_checkpoint, actions) = process_l1_block(
-        height,
         state.state().get_last_checkpoint(),
         block_mf,
         params.rollup(),
@@ -182,13 +184,13 @@ fn fetch_last_finalized_checkpoint(
 }
 
 fn process_l1_block(
-    height: u64,
     prev_checkpoint: Option<L1Checkpoint>,
     block_mf: &L1BlockManifest,
     params: &RollupParams,
 ) -> Result<(Option<L1Checkpoint>, Vec<SyncAction>), Error> {
     let mut sync_actions = Vec::new();
     let mut new_checkpoint = prev_checkpoint.clone();
+    let height = block_mf.height();
 
     // Iterate through all of the protocol operations in all of the txs.
     // TODO split out each proto op handling into a separate function

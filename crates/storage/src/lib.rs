@@ -75,8 +75,7 @@ where
     let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
 
     let client_state_manager = Arc::new(
-        ClientStateManager::new(pool.clone(), client_state_db, l1_block_manager.clone())
-            .context("open client state")?,
+        ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?,
     );
 
     // (see above)
