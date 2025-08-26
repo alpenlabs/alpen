@@ -12,16 +12,11 @@ use tokio::sync::Mutex;
 use crate::{
     cache,
     ops::client_state::{ClientStateOps, Context},
-    L1BlockManager,
 };
 
 #[expect(missing_debug_implementations)]
 pub struct ClientStateManager {
     ops: ClientStateOps,
-    // ClientState is only updated after new l1 blocks, so the atomocity (although would be
-    // ideal) is not strictly required.
-    // Alternatively, ClientState can be stored with some (rather ephemeral) id
-    l1_manager: Arc<L1BlockManager>,
 
     // TODO actually use caches
     update_cache: cache::CacheTable<u64, Option<ClientUpdateOutput>>,
@@ -31,11 +26,7 @@ pub struct ClientStateManager {
 }
 
 impl ClientStateManager {
-    pub fn new(
-        pool: ThreadPool,
-        db: Arc<impl ClientStateDatabase + 'static>,
-        l1_manager: Arc<L1BlockManager>,
-    ) -> DbResult<Self> {
+    pub fn new(pool: ThreadPool, db: Arc<impl ClientStateDatabase + 'static>) -> DbResult<Self> {
         let ops = Context::new(db).into_ops(pool);
         let update_cache = cache::CacheTable::new(64.try_into().unwrap());
         let state_cache = cache::CacheTable::new(64.try_into().unwrap());
@@ -50,7 +41,6 @@ impl ClientStateManager {
 
         Ok(Self {
             ops,
-            l1_manager,
             update_cache,
             state_cache,
             cur_state: Mutex::new(cur_state),
@@ -58,10 +48,7 @@ impl ClientStateManager {
     }
 
     // TODO convert to managing these with Arcs
-    pub async fn _get_state_async(
-        &self,
-        block: L1BlockCommitment,
-    ) -> DbResult<Option<ClientState>> {
+    pub async fn get_state_async(&self, block: L1BlockCommitment) -> DbResult<Option<ClientState>> {
         Ok(self
             .ops
             .get_client_update_async(block)
@@ -69,27 +56,14 @@ impl ClientStateManager {
             .map(|update| update.into_state()))
     }
 
-    pub fn _get_state_blocking(&self, block: L1BlockCommitment) -> DbResult<Option<ClientState>> {
+    pub fn get_state_blocking(&self, block: L1BlockCommitment) -> DbResult<Option<ClientState>> {
         Ok(self
             .ops
             .get_client_update_blocking(block)?
             .map(|update| update.into_state()))
     }
 
-    // Primarily for lookups of canonical chain.
-    // TODO(QQ): not needed? remove?
-    pub async fn _get_client_state_at_height_async(
-        &self,
-        height: u64,
-    ) -> DbResult<Vec<ClientState>> {
-        self.ops.get_client_states_at_height_async(height).await
-    }
-
-    pub fn _get_client_state_at_height_blocking(&self, height: u64) -> DbResult<Vec<ClientState>> {
-        self.ops.get_client_states_at_height_blocking(height)
-    }
-
-    pub fn _put_update_blocking(
+    pub fn put_update_blocking(
         &self,
         block: &L1BlockCommitment,
         update: ClientUpdateOutput,
@@ -100,27 +74,19 @@ impl ClientStateManager {
         let height = block.height();
         self.ops
             .put_client_update_blocking(*block, update.clone())?;
-        self._maybe_update_cur_state_blocking(height, &state);
+        self.maybe_update_cur_state_blocking(height, &state);
         self.update_cache.insert_blocking(height, Some(update));
         self.state_cache.insert_blocking(height, state.clone());
         Ok(state)
     }
 
-    fn _maybe_update_cur_state_blocking(&self, height: u64, state: &Arc<ClientState>) -> bool {
+    fn maybe_update_cur_state_blocking(&self, height: u64, state: &Arc<ClientState>) -> bool {
         let mut cur = self.cur_state.blocking_lock();
         cur.maybe_update(height, state)
     }
 
-    pub fn _get_most_recent_state_blocking(&self) -> (L1BlockCommitment, ClientState) {
-        // TODO(QQ): make better.
-        self.ops
-            .get_latest_client_state_blocking()
-            .unwrap()
-            .unwrap()
-    }
-
-    /// Returns either pre-genesis mock ClientState or the ClientState with the biggest height.
-    pub fn _fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
+    /// Returns either pre-genesis init [`ClientState`] or the one with the biggest height.
+    pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
         self.ops.get_latest_client_state_blocking()
     }
 }

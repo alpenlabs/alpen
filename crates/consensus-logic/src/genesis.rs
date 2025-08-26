@@ -162,7 +162,7 @@ fn make_genesis_chainstate(gblock: &L2BlockBundle, params: &Params) -> Chainstat
 /// Check if the database needs to have client init done to it.
 pub fn check_needs_client_init(storage: &NodeStorage) -> anyhow::Result<bool> {
     // Check if we've written any pre-genesis client state.
-    Ok(storage.client_state()._fetch_most_recent_state()?.is_none())
+    Ok(storage.client_state().fetch_most_recent_state()?.is_none())
 }
 
 /// Checks if we have a genesis block written to the L2 block database.

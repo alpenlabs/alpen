@@ -141,7 +141,9 @@ pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Resu
 pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
     // init client state
     let csman = storage.client_state();
-    let (_, cur_state) = csman._get_most_recent_state_blocking();
+    let (_, cur_state) = csman
+        .fetch_most_recent_state()?
+        .expect("missing init client state?");
 
     let l1_status = L1Status {
         ..Default::default()

@@ -40,7 +40,10 @@ pub(crate) fn find_checkpoint_in_event(ev: &L1Event) -> Option<&SignedCheckpoint
 pub(crate) async fn find_last_checkpoint_chainstate(
     storage: &NodeStorage,
 ) -> anyhow::Result<Option<Chainstate>> {
-    let (_, client_state) = storage.client_state()._get_most_recent_state_blocking();
+    let (_, client_state) = storage
+        .client_state()
+        .fetch_most_recent_state()?
+        .expect("missing initial client state?");
 
     let Some(last_checkpoint) = client_state.get_last_checkpoint() else {
         return Ok(None);

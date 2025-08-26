@@ -39,6 +39,7 @@ impl ClientStateDatabase for ClientStateDb {
     }
 
     fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
+        // Relying on the lexicographycal order of L1BlockCommitment.
         let mut iterator = self.db.iter::<ClientUpdateOutputSchema>()?;
         iterator.seek_to_last();
 
@@ -51,28 +52,6 @@ impl ClientStateDatabase for ClientStateDb {
         };
 
         Ok(opt)
-    }
-
-    fn get_client_states_at_height(&self, height: u64) -> DbResult<Vec<ClientState>> {
-        // TODO(QQ): implement via iterators.
-        //let mut options = ReadOptions::default();
-        //options.set_iterate_lower_bound(
-        //    KeyEncoder::<L1BlockCommitment>::encode_key(&height)
-        //        .map_err(|err| DbError::CodecError(err.to_string()))?,
-        //);
-        //options.set_iterate_upper_bound(
-        //    KeyEncoder::<L1BlockCommitment>::encode_key(&height)
-        //        .map_err(|err| DbError::CodecError(err.to_string()))?,
-        //);
-        //
-        //let res = self
-        //    .db
-        //    .iter_with_opts::<L1BlockCommitment>(options)?
-        //    .map()
-        //    .collect::<Result<Vec<L1BlockId>, anyhow::Error>>()?;
-        //
-        let res = vec![];
-        Ok(res)
     }
 }
 

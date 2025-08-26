@@ -416,7 +416,7 @@ pub fn tracker_task(
             .expect("genesis should be in")
     });
 
-    let (_, init_state) = storage.client_state()._fetch_most_recent_state()?.unwrap();
+    let (_, init_state) = storage.client_state().fetch_most_recent_state()?.unwrap();
     info!(?init_state, "starting forkchoice logic");
 
     // Now that we have the database state in order, we can actually init the

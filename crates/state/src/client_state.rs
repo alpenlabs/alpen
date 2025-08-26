@@ -68,6 +68,10 @@ impl ClientState {
         self.last_seen_checkpoint.clone()
     }
 
+    pub fn get_last_finalized_checkpoint(&self) -> Option<L1Checkpoint> {
+        self.last_finalized_checkpoint.clone()
+    }
+
     /// Gets the final epoch that we've externally declared.
     pub fn get_declared_final_epoch(&self) -> Option<EpochCommitment> {
         self.last_finalized_checkpoint
@@ -219,11 +223,6 @@ impl ClientStateMut {
         &self.state
     }
 
-    // TODO(QQ): it's very ugly, refactor?
-    pub fn take_client_state(&mut self, client_state: ClientState) {
-        self.state = client_state;
-    }
-
     pub fn into_update(self) -> ClientUpdateOutput {
         ClientUpdateOutput::new(self.state, self.actions)
     }
@@ -253,5 +252,10 @@ impl ClientStateMut {
         self.state.height = l1block.height();
         self.state.last_finalized_checkpoint = last_finalized_checkpoint;
         self.state.last_seen_checkpoint = last_seen_checkpoint;
+    }
+
+    // TODO(QQ): it's very ugly, refactor
+    pub fn take_client_state(&mut self, client_state: ClientState) {
+        self.state = client_state;
     }
 }

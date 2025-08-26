@@ -11,7 +11,7 @@ use strata_state::{
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::ShutdownGuard;
-use tokio::time;
+use tokio::{sync::mpsc, time};
 use tracing::*;
 
 use super::{client_transition, config::CsmExecConfig};
@@ -40,7 +40,10 @@ impl WorkerState {
     /// Constructs a new instance by reconstructing the current consensus state
     /// from the provided database layer.
     pub fn open(params: Arc<Params>, storage: Arc<NodeStorage>) -> anyhow::Result<Self> {
-        let (state_block, cur_state) = storage.client_state()._get_most_recent_state_blocking();
+        let (state_block, cur_state) = storage
+            .client_state()
+            .fetch_most_recent_state()?
+            .expect("missing initial client state?");
 
         Ok(Self {
             params,
@@ -176,7 +179,7 @@ fn process_block(
         tries += 1;
 
         // Check if client state is already present, and skip if so.
-        let next_client_state = state.storage.client_state()._get_state_blocking(*block)?;
+        let next_client_state = state.storage.client_state().get_state_blocking(*block)?;
 
         if let Some(cs) = next_client_state {
             state.update_bookeeping(*block, Arc::new(cs));
@@ -226,7 +229,7 @@ fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::R
     let clstate = state
         .storage
         .client_state()
-        ._put_update_blocking(block, outp.clone())?;
+        .put_update_blocking(block, outp.clone())?;
 
     // Set.
     state.update_bookeeping(*block, clstate);

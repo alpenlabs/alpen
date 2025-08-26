@@ -81,9 +81,9 @@ impl ExecWorkerContext for ExecWorkerCtx {
     }
 
     fn fetch_latest_finalized_epoch(&self) -> EngineResult<Option<EpochCommitment>> {
-        let (block, state) = self
+        let (_, state) = self
             .client
-            ._fetch_most_recent_state()?
+            .fetch_most_recent_state()?
             .expect("genesis should have happened.");
 
         Ok(state.get_declared_final_epoch())

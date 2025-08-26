@@ -10,10 +10,7 @@ use strata_primitives::{l1::L1BlockCommitment, params::Params};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
-use tokio::{
-    runtime::Handle,
-    sync::{broadcast, mpsc},
-};
+use tokio::{runtime::Handle, sync::mpsc};
 
 use crate::{
     chain_worker_context::ChainWorkerCtx,
