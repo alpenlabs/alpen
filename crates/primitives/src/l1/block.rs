@@ -71,8 +71,7 @@ pub struct L1BlockCommitment {
 
 impl fmt::Display for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Delegate to Debug formatting
-        write!(f, "{self:?}")
+        <Self as fmt::Debug>::fmt(self, f)
     }
 }
 

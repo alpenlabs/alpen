@@ -106,14 +106,6 @@ impl CurStateTracker {
         }
     }
 
-    fn get_idx(&self) -> u64 {
-        self.last_idx.unwrap_or_default()
-    }
-
-    fn get_clone(&self) -> Option<Arc<ClientState>> {
-        self.state.clone()
-    }
-
     fn set(&mut self, idx: u64, state: Arc<ClientState>) {
         self.last_idx = Some(idx);
         self.state = Some(state);
