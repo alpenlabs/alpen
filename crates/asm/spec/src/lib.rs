@@ -4,7 +4,7 @@
 //! The ASM specification defines which subprotocols are enabled, their genesis configurations,
 //! and protocol-level parameters like magic bytes.
 
-use strata_asm_common::{AsmSpec, GenesisProvider, Stage};
+use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
 use strata_asm_proto_core::{CoreGenesisConfig, OLCoreSubproto};
 use strata_l1_txfmt::MagicBytes;
@@ -16,6 +16,9 @@ use strata_l1_txfmt::MagicBytes;
 #[derive(Debug)]
 pub struct StrataAsmSpec {
     magic_bytes: MagicBytes,
+
+    // subproto params, which right now currently just contain the genesis data
+    // TODO rename these
     core_genesis: CoreGenesisConfig,
     bridge_v1_genesis: BridgeV1Config,
 }
@@ -25,33 +28,20 @@ impl AsmSpec for StrataAsmSpec {
         self.magic_bytes
     }
 
-    fn genesis_config_for<S: strata_asm_common::Subprotocol>(&self) -> &S::GenesisConfig
-    where
-        Self: GenesisProvider<S>,
-    {
-        <Self as GenesisProvider<S>>::genesis_config(self)
+    fn load_subprotocols(&self, loader: &mut impl Loader) {
+        // TODO avoid clone?
+        loader.load_subprotocol::<OLCoreSubproto>(self.core_genesis.clone());
+        loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
     }
 
-    fn call_subprotocols(&self, stage: &mut impl Stage<Self>) {
-        stage.process_subprotocol::<OLCoreSubproto>(self);
-        stage.process_subprotocol::<BridgeV1Subproto>(self);
-    }
-}
-
-impl GenesisProvider<OLCoreSubproto> for StrataAsmSpec {
-    fn genesis_config(&self) -> &CoreGenesisConfig {
-        &self.core_genesis
-    }
-}
-
-impl GenesisProvider<BridgeV1Subproto> for StrataAsmSpec {
-    fn genesis_config(&self) -> &BridgeV1Config {
-        &self.bridge_v1_genesis
+    fn call_subprotocols(&self, stage: &mut impl Stage) {
+        stage.invoke_subprotocol::<OLCoreSubproto>();
+        stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
 }
 
 impl StrataAsmSpec {
-    /// Creates a new ASM specification.
+    /// Creates a new ASM spec instance.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
         core_genesis: CoreGenesisConfig,

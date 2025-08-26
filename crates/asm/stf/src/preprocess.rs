@@ -8,8 +8,8 @@ use bitcoin::{block::Block, params::Params};
 use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, GenesisConfigRegistry};
 
 use crate::{
-    manager::SubprotoManager,
-    stage::{PreProcessStage, SubprotoLoaderStage},
+    manager::{AnchorStateLoader, SubprotoManager},
+    stage::PreProcessStage,
     tx_filter::group_txs_by_subprotocol,
     types::AsmPreProcessOutput,
 };
@@ -69,10 +69,10 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
     // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
+    // FIXME ^this should have been a red flag about the aux interface
     let aux = BTreeMap::new();
-
-    let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, &aux);
-    spec.call_subprotocols(&mut loader_stage);
+    let mut loader = AnchorStateLoader::new(pre_state, &mut manager, &aux);
+    spec.load_subprotocols(&mut loader);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.

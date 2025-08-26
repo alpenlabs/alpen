@@ -1,12 +1,13 @@
 //! The `asm_stf` crate implements the core Anchor State Machine state transition function (STF). It
 //! glues together block‐level validation, a set of pluggable subprotocols, and the global chain
 //! view into a single deterministic state transition.
+// TODO rename this module to `transition`
 
 use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
 
 use crate::{
-    manager::SubprotoManager,
-    stage::{FinishStage, ProcessStage, SubprotoLoaderStage},
+    manager::{AnchorStateLoader, SubprotoManager},
+    stage::{FinishStage, ProcessStage},
     types::{AsmStfInput, AsmStfOutput},
 };
 
@@ -55,9 +56,9 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
 
     let mut manager = SubprotoManager::new();
 
-    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
-    let mut loader_stage = SubprotoLoaderStage::<S>::new(pre_state, &mut manager, input.aux_input);
-    spec.call_subprotocols(&mut loader_stage);
+    // 2. LOAD: Initialize each subprotocol in the subproto manager with aux input data.
+    let mut loader = AnchorStateLoader::new(pre_state, &mut manager, &input.aux_input);
+    spec.load_subprotocols(&mut loader);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
@@ -66,6 +67,7 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
     // This stage handles cross-protocol communication and finalizes state changes.
+    // TODO probably have to iterate the interproto message processing phase
     let mut finish_stage = FinishStage::new(&mut manager);
     spec.call_subprotocols(&mut finish_stage);
 
