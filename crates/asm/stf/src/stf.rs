@@ -40,8 +40,6 @@ use crate::{
 ///
 /// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
 ///   configs
-/// * `'b` - Lifetime parameter tied to the input block reference
-/// * `'x` - Lifetime parameter tied to the auxiliary input data
 pub fn compute_asm_transition<'i, S: AsmSpec>(
     spec: &S,
     pre_state: &AnchorState,
