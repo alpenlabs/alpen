@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use rockbound::{OptimisticTransactionDB, Schema, SchemaDBOperationsExt};
-use strata_db::{errors::*, traits::*, DbResult};
+use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt};
+use strata_db::{traits::*, DbResult};
 use strata_primitives::l1::L1BlockCommitment;
-use strata_state::{client_state::ClientState, l1::L1BlockId, operation::*};
+use strata_state::{client_state::ClientState, operation::*};
 
 use super::schemas::ClientUpdateOutputSchema;
 use crate::DbOpsConfig;

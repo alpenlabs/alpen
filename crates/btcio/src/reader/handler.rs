@@ -18,7 +18,7 @@ use super::{
 pub(crate) async fn handle_bitcoin_event<R: Reader>(
     event: L1Event,
     ctx: &ReaderContext<R>,
-    event_submitter: &impl BlockSubmitter,
+    block_submitter: &impl BlockSubmitter,
 ) -> anyhow::Result<()> {
     let new_block = match event {
         L1Event::RevertTo(block) => {
@@ -40,9 +40,9 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
         }
     };
 
-    // Dispatch sync events.
+    // Dispatch new blocks.
     if let Some(block) = new_block {
-        event_submitter.submit_event_async(block).await?;
+        block_submitter.submit_block_async(block).await?;
     }
     Ok(())
 }
