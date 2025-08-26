@@ -1,17 +1,13 @@
 import time
+
 import flexitest
 
-from envs import testenv
-from envs.testenv import BasicEnvConfig
-from utils import (
-    ProverClientSettings,
-    RollupParamsSettings,
-    wait_until,
-)
+from envs.testenv import BasicEnvConfig, StrataTestBase
+from utils import ProverClientSettings, RollupParamsSettings, wait_until
 
 
 @flexitest.register
-class ProverClientRestartTest(testenv.StrataTestBase):
+class ProverClientRestartTest(StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         # A separate standalone env for this test as it involves a restart
         # and the rollup settings are non-standard.

@@ -19,21 +19,21 @@ pub mod writer;
 use std::{path::Path, sync::Arc};
 
 // Re-exports
-pub use broadcaster::db::L1BroadcastDBSled;
-pub use chain_state::db::ChainstateDBSled;
-pub use checkpoint::db::CheckpointDBSled;
-pub use client_state::db::ClientStateDBSled;
+use broadcaster::db::L1BroadcastDBSled;
+use chain_state::db::ChainstateDBSled;
+use checkpoint::db::CheckpointDBSled;
+use client_state::db::ClientStateDBSled;
 pub use config::SledDbConfig;
-pub use l1::db::L1DBSled;
-pub use l2::db::L2DBSled;
+use l1::db::L1DBSled;
+use l2::db::L2DBSled;
 use strata_db::{DbResult, traits::DatabaseBackend};
+use sync_event::SyncEventDBSled;
 use typed_sled::SledDb;
-pub use writer::db::L1WriterDBSled;
+use writer::db::L1WriterDBSled;
 
 pub use crate::{
     init::{init_core_dbs, open_sled_database},
     prover::ProofDBSled,
-    sync_event::SyncEventDBSled,
 };
 
 pub const SLED_NAME: &str = "strata-client";
