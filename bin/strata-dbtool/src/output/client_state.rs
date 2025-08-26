@@ -1,7 +1,7 @@
 //! Client state formatting implementations
 
 use strata_primitives::prelude::L1BlockCommitment;
-use strata_state::{client_state::InternalState, l1::L1BlockId, operation::SyncAction};
+use strata_state::{l1::L1BlockId, operation::SyncAction};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
@@ -18,8 +18,6 @@ pub(crate) struct ClientStateUpdateInfo<'a> {
     pub tip_l1_block: Option<L1BlockCommitment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deepest_l1_block: Option<L1BlockCommitment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_internal_state: Option<&'a InternalState>,
     pub sync_actions: &'a Vec<SyncAction>,
 }
 
@@ -78,12 +76,7 @@ impl<'a> Formattable for ClientStateUpdateInfo<'a> {
             ));
         }
 
-        if let Some(last_internal_state) = self.last_internal_state {
-            output.push(porcelain_field(
-                "client_state_update.client_state.last_internal_state.blkid",
-                format!("{:?}", last_internal_state.blkid()),
-            ));
-        }
+        // TODO(QQ): last internal state has been deleted.
 
         // Format sync actions
         for sync_action in self.sync_actions {

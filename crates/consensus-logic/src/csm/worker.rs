@@ -5,7 +5,7 @@ use std::{sync::Arc, thread};
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry, CheckpointProvingStatus};
 use strata_primitives::prelude::*;
 use strata_state::{
-    client_state::{ClientState, ClientStateMut},
+    client_state::ClientState,
     operation::{ClientUpdateOutput, SyncAction},
 };
 use strata_status::StatusChannel;
@@ -14,8 +14,8 @@ use strata_tasks::ShutdownGuard;
 use tokio::{sync::mpsc, time};
 use tracing::*;
 
-use super::{client_transition, config::CsmExecConfig};
-use crate::{errors::Error, genesis};
+use super::config::CsmExecConfig;
+use crate::{csm::client_transition, errors::Error, genesis};
 
 /// Mutable worker state that we modify in the consensus worker task.
 ///
@@ -61,17 +61,20 @@ impl WorkerState {
     /// Given the next l1 block, computes the state application if the
     /// requisite data is available.  Returns the output and the new state.
     pub fn advance_consensus_state(
-        &mut self,
-        block: &L1BlockCommitment,
-    ) -> anyhow::Result<ClientUpdateOutput> {
-        debug!(%block, "processing l1 block");
+        &self,
+        next_block: &L1BlockCommitment,
+    ) -> anyhow::Result<(ClientState, Vec<SyncAction>)> {
+        debug!(%next_block, "processing l1 block");
 
-        // Compute the state transition.
         let context = client_transition::StorageEventContext::new(&self.storage);
-        let mut state_mut = ClientStateMut::new(self.cur_state.as_ref().clone());
-        client_transition::process_block(&mut state_mut, block, &context, &self.params)?;
-
-        Ok(state_mut.into_update())
+        // Compute the state transition.
+        Ok(client_transition::process_block(
+            self.cur_state.as_ref().clone(),
+            self.state_block,
+            next_block,
+            &context,
+            &self.params,
+        )?)
     }
 
     fn update_bookeeping(&mut self, state_block: L1BlockCommitment, state: Arc<ClientState>) {
@@ -216,12 +219,12 @@ fn process_block(
 
 fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::Result<()> {
     // Perform the main step of deciding what the output we're operating on.
-    let outp = state.advance_consensus_state(block)?;
+    let (next_state, actions) = state.advance_consensus_state(block)?;
 
     // Apply the actions produced from the state transition before we publish
     // the new state, so that any database changes from them are available when
     // things listening for the new state observe it.
-    for action in outp.actions() {
+    for action in actions.iter() {
         apply_action(action.clone(), &state.storage, &state.params)?;
     }
 
@@ -229,7 +232,7 @@ fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::R
     let clstate = state
         .storage
         .client_state()
-        .put_update_blocking(block, outp.clone())?;
+        .put_update_blocking(block, ClientUpdateOutput::new(next_state, actions).clone())?;
 
     // Set.
     state.update_bookeeping(*block, clstate);
