@@ -60,11 +60,12 @@ impl EventContext for StorageEventContext<'_> {
 /// Processes the block given the current consensus state, producing some
 /// output.  This can return database errors.
 pub fn process_block(
-    state: &mut ClientStateMut,
+    cur_state: ClientState,
+    cur_block: L1BlockCommitment,
     block: &L1BlockCommitment,
     context: &impl EventContext,
     params: &Params,
-) -> Result<(), Error> {
+) -> Result<(ClientState, Vec<SyncAction>), Error> {
     let height = block.height();
 
     // If the block is before genesis we don't care about it.
@@ -77,57 +78,48 @@ pub fn process_block(
                 );
 
         warn!(%height, "ignoring unexpected L1Block event before horizon");
-        return Ok(());
+        return Ok((cur_state, vec![]));
     }
 
     // This doesn't do any SPV checks to make sure we only go to a
     // a longer chain, it just does it unconditionally.  This is fine,
     // since we'll be refactoring this more deeply soonish.
     let block_mf = context.get_l1_block_manifest(block.blkid())?;
-    handle_block(state, &block_mf, context, params)?;
-    Ok(())
+    handle_block(cur_state, cur_block, &block_mf, context, params)
 }
 
 fn handle_block(
-    state: &mut ClientStateMut,
-    block_mf: &L1BlockManifest,
+    mut cur_state: ClientState,
+    mut cur_block: L1BlockCommitment,
+    next_block_mf: &L1BlockManifest,
     context: &impl EventContext,
     params: &Params,
-) -> Result<(), Error> {
-    let block: L1BlockCommitment = block_mf.into();
-    let height = block.height();
+) -> Result<(ClientState, Vec<SyncAction>), Error> {
+    //let block: L1BlockCommitment = next_block_mf.into();
+    let next_block_height = next_block_mf.height();
     let rparams = params.rollup();
 
-    // Skip blocks before the genesis height.
-    if height < rparams.genesis_l1_height {
-        return Ok(());
-    }
-
     // Handle genesis height.
-    if height == rparams.genesis_l1_height {
+    if next_block_height == rparams.genesis_l1_height {
         // No checkpoints is expected at the genesis L1 height.
-        state.accept_l1_block_state(&block, None, None);
-        state.push_action(SyncAction::L2Genesis(*block.blkid()));
-        return Ok(());
+        return Ok((
+            ClientState::new(None, None, next_block_height),
+            vec![SyncAction::L2Genesis(*next_block_mf.blkid())],
+        ));
     }
 
     // Actualize the previous state to handle the reorg.
-    match height.cmp(&state.state().next_exp_l1_block()) {
+    match next_block_height.cmp(&(cur_block.height() + 1)) {
         Ordering::Less => {
             // Canonical chain reorg case: switch to the canonical block right before the chain
             // fork.
             // Unconditionally take the new client state, even though it comes
-            // from the fork and the height less than expected.
+            // from the fork and the height is less than expected.
             // The reason for that is btcio specific - we receive blocks with less height only
-            // if btcio sees a longer fork of bitcoin.
-            // So eventually, we receive a longer chain.
-            let new_tip_block = L1BlockCommitment::new(height - 1, block_mf.get_prev_blockid());
-            let new_client_state = context.get_client_state(&block)?;
-            state.accept_l1_block_state(
-                &new_tip_block,
-                new_client_state.get_last_finalized_checkpoint(),
-                new_client_state.get_last_checkpoint(),
-            )
+            // if btcio sees a longer fork of bitcoin, thus eventually we receive a longer chain.
+            cur_block =
+                L1BlockCommitment::new(next_block_height - 1, next_block_mf.get_prev_blockid());
+            cur_state = context.get_client_state(&cur_block)?;
         }
         Ordering::Equal => {
             // Canonical chain extension block, nothing to actualize.
@@ -137,33 +129,39 @@ fn handle_block(
             panic!("consensus L1 block following skipped blocks?");
         }
     }
-
-    // Push actions from processing l1 block if any
-    let (recent_checkpoint, actions) = process_l1_block(
-        state.state().get_last_checkpoint(),
-        block_mf,
-        params.rollup(),
-    )?;
-    state.push_actions(actions.into_iter());
+    let mut actions = vec![];
 
     // Structly speaking, here we rely on the fact that depth looks
     // at the canonical chain (and not on the fork).
     // Otherwise, we are screwed (because we query buried_block by height).
     let depth = rparams.l1_reorg_safe_depth as u64;
-    let buried_height = height
+    let buried_height = next_block_height
         .checked_sub(depth)
         .expect("we should never see height less than depth");
     let last_finalized_checkpoint = fetch_last_finalized_checkpoint(buried_height, context);
 
+    // Extract the most recent checkpoint as of seen next_block_mf.
+    // Also, populate sync actions.
+    let recent_checkpoint = extract_recent_checkpoint(
+        cur_state.get_last_checkpoint(),
+        next_block_mf,
+        params.rollup(),
+        &mut actions,
+    )?;
+
     // Set the new client state.
-    state.accept_l1_block_state(&block, last_finalized_checkpoint, recent_checkpoint);
+    let new_state = ClientState::new(
+        last_finalized_checkpoint,
+        recent_checkpoint,
+        next_block_height,
+    );
 
     // Finalize the new epoch after the state transition (if any).
-    if let Some(decl_epoch) = state.state().get_declared_final_epoch() {
-        state.push_action(SyncAction::FinalizeEpoch(decl_epoch));
+    if let Some(decl_epoch) = new_state.get_declared_final_epoch() {
+        actions.push(SyncAction::FinalizeEpoch(decl_epoch));
     }
 
-    Ok(())
+    Ok((new_state, actions))
 }
 
 fn fetch_last_finalized_checkpoint(
@@ -183,12 +181,12 @@ fn fetch_last_finalized_checkpoint(
     }
 }
 
-fn process_l1_block(
+fn extract_recent_checkpoint(
     prev_checkpoint: Option<L1Checkpoint>,
     block_mf: &L1BlockManifest,
     params: &RollupParams,
-) -> Result<(Option<L1Checkpoint>, Vec<SyncAction>), Error> {
-    let mut sync_actions = Vec::new();
+    sync_actions: &mut Vec<SyncAction>,
+) -> Result<Option<L1Checkpoint>, Error> {
     let mut new_checkpoint = prev_checkpoint.clone();
     let height = block_mf.height();
 
@@ -233,7 +231,7 @@ fn process_l1_block(
         }
     }
 
-    Ok((new_checkpoint, sync_actions))
+    Ok(new_checkpoint)
 }
 
 fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<CheckpointL1Ref, Error> {
@@ -312,7 +310,7 @@ mod tests {
 
             let mut outputs = Vec::new();
             for (i, test_event) in case.events.iter().enumerate() {
-                let mut state_mut = ClientStateMut::new(state.clone());
+                let mut state_mut = FullCheckpointState::new(state.clone());
                 let event = &test_event.event;
                 eprintln!("giving sync event {event}");
                 // TODO(QQ): adjust

@@ -10,11 +10,7 @@ use strata_primitives::{
     batch::BatchTransition, buf::Buf32, epoch::EpochCommitment, l1::L1BlockCommitment,
 };
 
-use crate::{
-    batch::BatchInfo,
-    l1::L1BlockId,
-    operation::{ClientUpdateOutput, SyncAction},
-};
+use crate::{batch::BatchInfo, l1::L1BlockId};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -47,17 +43,23 @@ pub struct ClientState {
 }
 
 impl ClientState {
+    pub fn new(
+        last_finalized_checkpoint: Option<L1Checkpoint>,
+        last_seen_checkpoint: Option<L1Checkpoint>,
+        height: u64,
+    ) -> Self {
+        ClientState {
+            last_finalized_checkpoint,
+            last_seen_checkpoint,
+            height,
+        }
+    }
+
     /// Returns if genesis has occurred.
     pub fn has_genesis_occurred(&self) -> bool {
+        // TODO(QQ): only used to determine it in the status channel.
+        // Add keyed L1BlockCommitment in there.
         self.height > 0
-    }
-
-    pub fn next_exp_l1_block(&self) -> u64 {
-        self.height + 1
-    }
-
-    pub fn height(&self) -> u64 {
-        self.height
     }
 
     /// Gets the last checkpoint as of the last internal state.
@@ -68,6 +70,7 @@ impl ClientState {
         self.last_seen_checkpoint.clone()
     }
 
+    /// Gets the last checkpoint that has already been finalized.
     pub fn get_last_finalized_checkpoint(&self) -> Option<L1Checkpoint> {
         self.last_finalized_checkpoint.clone()
     }
@@ -81,69 +84,10 @@ impl ClientState {
 
     /// Gets the next epoch we expect to be confirmed.
     pub fn get_next_expected_epoch_conf(&self) -> u64 {
-        let last_epoch = self.get_last_epoch();
-        if last_epoch.is_null() {
-            0
-        } else {
-            last_epoch.epoch() + 1
-        }
-    }
-
-    /// Returns the last known epoch as of this state.
-    ///
-    /// If there is no last epoch, returns a null epoch.
-    fn get_last_epoch(&self) -> EpochCommitment {
         self.last_seen_checkpoint
             .as_ref()
-            .map(|ck| ck.batch_info.get_epoch_commitment())
-            .unwrap_or_else(EpochCommitment::null)
-    }
-}
-
-/// This is the internal state that's produced as the output of a block and
-/// tracked internally.  When the L1 reorgs, we discard copies of this after the
-/// reorg.
-///
-/// Eventually, when we do away with global bookkeeping around client state,
-/// this will become the full client state that we determine on the fly based on
-/// what L1 blocks are available and what we have persisted.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Deserialize, Serialize,
-)]
-pub struct InternalState {
-    /// Corresponding block ID.  This entry is stored keyed by height, so we
-    /// always have that.
-    blkid: L1BlockId,
-
-    /// Last checkpoint as of this height.  Includes the height it was found at.
-    ///
-    /// At genesis, this is `None`.
-    last_checkpoint: Option<L1Checkpoint>,
-}
-
-impl InternalState {
-    pub fn new(blkid: L1BlockId, last_checkpoint: Option<L1Checkpoint>) -> Self {
-        Self {
-            blkid,
-            last_checkpoint,
-        }
-    }
-
-    /// Returns a ref to the L1 block ID that produced this state.
-    pub fn blkid(&self) -> &L1BlockId {
-        &self.blkid
-    }
-
-    /// Returns the last stored checkpoint, if there was one.
-    pub fn last_checkpoint(&self) -> Option<&L1Checkpoint> {
-        self.last_checkpoint.as_ref()
-    }
-
-    /// Returns the last witnessed L1 block from the last checkpointed state.
-    pub fn last_witnessed_l1_block(&self) -> Option<&L1BlockCommitment> {
-        self.last_checkpoint
-            .as_ref()
-            .map(|ck| ck.batch_info.final_l1_block())
+            .map(|ck| ck.batch_info.get_epoch_commitment().epoch() + 1)
+            .unwrap_or(0u64)
     }
 }
 
@@ -200,62 +144,5 @@ impl L1Checkpoint {
             batch_transition,
             l1_reference,
         }
-    }
-}
-
-/// Wrapper around [`ClientState`] used for modifying it and producing sync
-/// actions.
-#[derive(Debug)]
-pub struct ClientStateMut {
-    state: ClientState,
-    actions: Vec<SyncAction>,
-}
-
-impl ClientStateMut {
-    pub fn new(state: ClientState) -> Self {
-        Self {
-            state,
-            actions: Vec::new(),
-        }
-    }
-
-    pub fn state(&self) -> &ClientState {
-        &self.state
-    }
-
-    pub fn into_update(self) -> ClientUpdateOutput {
-        ClientUpdateOutput::new(self.state, self.actions)
-    }
-
-    pub fn push_action(&mut self, a: SyncAction) {
-        self.actions.push(a);
-    }
-
-    pub fn push_actions(&mut self, a: impl Iterator<Item = SyncAction>) {
-        self.actions.extend(a);
-    }
-
-    /// Accepts a new L1 block that extends the chain directly.
-    ///
-    /// TODO(QQ): adjust comment, impl has changed.
-    /// # Panics
-    ///
-    /// * If the blkids are inconsistent.
-    /// * If the block already has a corresponding state.
-    /// * If there isn't a preceding block.
-    pub fn accept_l1_block_state(
-        &mut self,
-        l1block: &L1BlockCommitment,
-        last_finalized_checkpoint: Option<L1Checkpoint>,
-        last_seen_checkpoint: Option<L1Checkpoint>,
-    ) {
-        self.state.height = l1block.height();
-        self.state.last_finalized_checkpoint = last_finalized_checkpoint;
-        self.state.last_seen_checkpoint = last_seen_checkpoint;
-    }
-
-    // TODO(QQ): it's very ugly, refactor
-    pub fn take_client_state(&mut self, client_state: ClientState) {
-        self.state = client_state;
     }
 }
