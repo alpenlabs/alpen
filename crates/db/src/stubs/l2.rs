@@ -52,8 +52,32 @@ impl L2BlockDatabase for StubL2Db {
     }
 
     fn del_block_data(&self, id: L2BlockId) -> DbResult<bool> {
-        let mut tbl = self.blocks.lock();
-        Ok(tbl.remove(&id).is_some())
+        // Remove from blocks, capturing the bundle to compute its height
+        let maybe_bundle = {
+            let mut blocks_tbl = self.blocks.lock();
+            blocks_tbl.remove(&id)
+        };
+
+        let Some(bundle) = maybe_bundle else {
+            return Ok(false);
+        };
+
+        // Remove id from heights[slot]
+        let slot = bundle.block().header().slot();
+        {
+            let mut heights_tbl = self.heights.lock();
+            if let Some(vec_ids) = heights_tbl.get_mut(&slot) {
+                vec_ids.retain(|&block_id| block_id != id);
+            }
+        }
+
+        // Remove status for this id, if any
+        {
+            let mut statuses_tbl = self.statuses.lock();
+            statuses_tbl.remove(&id);
+        }
+
+        Ok(true)
     }
 
     fn set_block_status(&self, id: L2BlockId, status: BlockStatus) -> DbResult<()> {
