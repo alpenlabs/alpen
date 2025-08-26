@@ -1,37 +1,70 @@
 //! Reth node for the Alpen codebase.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    os::macos::raw::stat,
+    sync::Arc,
+    time::{self, Duration},
+};
 
-use alloy_primitives::{Address, B256, U256};
-use alloy_rpc_types::{
-    engine::{ForkchoiceState, PayloadAttributes},
-    Withdrawal,
-};
-use alloy_rpc_types_engine::{
-    payload, ExecutionData, ExecutionPayload, ExecutionPayloadSidecar, ExecutionPayloadV3,
-};
+use alloy_genesis::Genesis;
+use alloy_primitives::{Address, FixedBytes, B256};
+use alloy_rpc_types::engine::{ForkchoiceState, PayloadAttributes};
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_reth_db::rocksdb::WitnessDB;
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
 use alpen_reth_node::{
     args::AlpenNodeArgs,
     payload::{AlpenBuiltPayload, AlpenPayloadBuilderAttributes},
-    AlpenEngineTypes, AlpenEthereumNode, AlpenExecutionPayloadEnvelopeV2,
-    AlpenExecutionPayloadEnvelopeV4, AlpenPayloadAttributes,
+    AlpenEngineTypes, AlpenEthereumNode, AlpenPayloadAttributes,
 };
-// use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
+use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
-use reth_chain_state::CanonicalInMemoryState;
+use futures::{
+    stream::{self, Stream},
+    StreamExt,
+};
+use reth_chain_state::CanonStateSubscriptions;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
 use reth_node_builder::{
-    BeaconConsensusEngineHandle, BuiltPayload, EngineApiMessageVersion, NodeBuilder, NodeHandle,
-    PayloadBuilderAttributes, PayloadTypes, WithLaunchContext,
+    BuiltPayload, EngineApiMessageVersion, FullNodeComponents, NodeBuilder, NodeComponents,
+    NodeHandle, NodeTypesWithDB, PayloadBuilderAttributes, PayloadTypes, WithLaunchContext,
 };
-use reth_node_core::args::LogArgs;
-use reth_payload_builder::{PayloadBuilderHandle, PayloadId};
-use tracing::{debug, info, warn};
+use reth_node_core::{args::LogArgs, primitives::account};
+use reth_provider::{
+    providers::{BlockchainProvider, ProviderNodeTypes},
+    BlockIdReader, BlockNumReader,
+};
+use tokio::{
+    sync::{mpsc, Semaphore},
+    time::MissedTickBehavior,
+};
+use tracing::{debug, error, info, warn};
+
+use crate::{
+    config::{Config, Params, SequencerConfig},
+    engine::{
+        AlpenRethExecEngine, ChainStateProvider, EnginePayloadAttributes, ExecutionEngine,
+        PayloadBuilderEngine, RethChainStateProvider,
+    },
+    mock_client::get_mocked_client,
+    ol_tracker::ol_tracker_stream,
+    traits::{ELSequencerClient, L1Client, OlClient},
+    types::{AccountId, AccountStateCommitment, ConsensusEvent, OlBlockId},
+    utils::{ClockProvider, ExponentialBackoff, RetryTracker, SystemClock},
+};
+
+mod config;
+mod engine;
+mod errors;
+mod mock_client;
+mod ol_tracker;
+mod rpc_client;
+mod traits;
+mod types;
+mod utils;
 
 fn main() {
     reth_cli_util::sigsegv_handler::install();
@@ -55,6 +88,22 @@ fn main() {
         .always_process_payload_attributes_on_canonical_head = true;
 
     command.rpc.http = true;
+
+    let genesis = command.ext.custom_chain.genesis.clone();
+
+    let config = Config {
+        params: Params {
+            account_id: FixedBytes::from([1u8; 32]).into(),
+            genesis_config: genesis,
+        },
+        finality_depth: 2,
+        sequencer_pubkey: FixedBytes::from([0u8; 32]),
+    };
+
+    let sequencer_config = Some(SequencerConfig {
+        target_blocktime_ms: 5000,
+        anchor_finality_depth: 1,
+    });
 
     if let Err(err) = run(
         command,
@@ -105,103 +154,69 @@ fn main() {
             node_builder = node_builder.on_node_started(|node| {
                 let task_executor = node.task_executor.clone();
 
-                task_executor.spawn_critical("block builder", async move {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+                let mocked_client = get_mocked_client();
+                let reth_engine = AlpenRethExecEngine::new(
+                    node.payload_builder_handle.clone(),
+                    node.beacon_engine_handle.clone(),
+                );
 
-                    // warn!("start sleep");
-                    // tokio::time::sleep(Duration::from_secs(10)).await;
-                    // warn!("wake up");
+                let mut ol_events_stream = Box::pin(ol_tracker_stream(
+                    config,
+                    mocked_client.clone(),
+                    mocked_client.clone(),
+                ));
 
-                    let canonical_state = node.provider().canonical_in_memory_state();
+                let (consensus_evt_tx, mut consensus_evt_rx) = mpsc::channel::<ConsensusEvent>(64);
 
-                    // dbg!(&canonical_state);
-
-                    let initial_state = ForkchoiceState {
-                        head_block_hash: canonical_state.chain_info().best_hash,
-                        safe_block_hash: canonical_state
-                            .get_safe_num_hash()
-                            .map_or(B256::ZERO, |numhash| numhash.hash),
-                        finalized_block_hash: canonical_state
-                            .get_finalized_num_hash()
-                            .map_or(B256::ZERO, |numhash| numhash.hash),
+                if let Some(sequencer_config) = sequencer_config {
+                    let chainstate_provider = RethChainStateProvider {
+                        canonical_in_memory_state: node.provider.canonical_in_memory_state(),
                     };
+                    task_executor.spawn_critical(
+                        "block_assembly",
+                        block_producer_worker(
+                            sequencer_config.clone(),
+                            chainstate_provider,
+                            SystemClock,
+                            reth_engine.clone(),
+                            consensus_evt_tx.clone(),
+                        ),
+                    );
 
-                    let mut state = initial_state.clone();
+                    // spawn batch prover worker
+                }
 
-                    loop {
-                        interval.tick().await;
+                let consensus_evt_rx = {
+                    let (tx, rx) = mpsc::channel(64);
 
-                        dbg!(&state);
+                    task_executor.spawn_critical("tap_mock_client", async move {
+                        while let Some(ev) = consensus_evt_rx.recv().await {
+                            let _ = tx.send(ev.clone()).await;
 
-                        let payload_attrs =
-                            AlpenPayloadAttributes::new_from_eth(PayloadAttributes {
-                                timestamp: now_millis(),
-                                // IMPORTANT: post cancun will payload build will fail without
-                                // parent_beacon_block_root
-                                parent_beacon_block_root: Some(B256::ZERO),
-                                prev_randao: B256::ZERO,
-                                suggested_fee_recipient: Address::ZERO,
-                                withdrawals: Some(vec![]),
-                            });
-
-                        let payload_builder_attrs = AlpenPayloadBuilderAttributes::try_new(
-                            state.head_block_hash,
-                            payload_attrs,
-                            0,
-                        )
-                        .unwrap();
-
-                        let payload_id = node
-                            .payload_builder_handle
-                            .send_new_payload(payload_builder_attrs)
-                            .await
-                            .expect("should send payload correctly")
-                            .unwrap();
-
-                        dbg!(&payload_id);
-
-                        // wait for payload to build
-                        let block = node
-                            .payload_builder_handle
-                            .resolve_kind(
-                                payload_id,
-                                reth_node_builder::PayloadKind::WaitForPending,
-                            )
-                            .await
-                            .expect("should resolve payload")
-                            .expect("should build payload")
-                            .block()
-                            .to_owned();
-
-                        let payload_status = node
-                            .beacon_engine_handle
-                            .new_payload(AlpenEngineTypes::block_to_payload(block))
-                            .await
-                            .expect("should send payload correctly");
-
-                        dbg!(&payload_status);
-
-                        if !payload_status.is_valid() {
-                            warn!("payload status invalid");
-                            continue;
+                            match ev {
+                                ConsensusEvent::Head(latest_state_commitment) => {
+                                    mocked_client
+                                        .set_latest_account_commitment(latest_state_commitment)
+                                        .await;
+                                }
+                                _ => {}
+                            }
                         }
+                    });
 
-                        let next_state = ForkchoiceState {
-                            head_block_hash: payload_status.latest_valid_hash.unwrap(),
-                            ..state
-                        };
+                    rx
+                };
 
-                        let res = node
-                            .beacon_engine_handle
-                            .fork_choice_updated(next_state, None, EngineApiMessageVersion::V4)
-                            .await
-                            .expect("fcu should succeed");
-
-                        dbg!(res);
-
-                        state = next_state
+                task_executor.spawn_critical("consensus_events_source", async move {
+                    while let Some(ev) = ol_events_stream.next().await {
+                        consensus_evt_tx.send(ev).await.unwrap();
                     }
                 });
+
+                task_executor.spawn_critical(
+                    "apply_consensus_events",
+                    blockhash_sync_worker(node.provider.clone(), consensus_evt_rx, reth_engine),
+                );
 
                 Ok(())
             });
@@ -280,224 +295,138 @@ where
     Ok(())
 }
 
-use std::time;
+async fn blockhash_sync_worker<N: NodeTypesWithDB + ProviderNodeTypes>(
+    provider: BlockchainProvider<N>,
+    mut rx: mpsc::Receiver<ConsensusEvent>,
+    engine: impl ExecutionEngine<AlpenBuiltPayload>,
+) {
+    let mut state = ForkchoiceState {
+        head_block_hash: provider.canonical_in_memory_state().chain_info().best_hash,
+        safe_block_hash: provider.safe_block_hash().unwrap().unwrap_or(B256::ZERO),
+        finalized_block_hash: provider
+            .finalized_block_hash()
+            .unwrap()
+            .unwrap_or(B256::ZERO),
+    };
 
-/// Returns the current time in milliseconds since UNIX_EPOCH.
-fn now_millis() -> u64 {
-    time::UNIX_EPOCH.elapsed().unwrap().as_millis() as u64
-}
+    while let Some(ev) = rx.recv().await {
+        let next_state = match ev {
+            ConsensusEvent::Head(account_state_commitment) => ForkchoiceState {
+                head_block_hash: account_state_commitment.inner(),
+                safe_block_hash: B256::ZERO,
+                finalized_block_hash: B256::ZERO,
+            },
+            ConsensusEvent::OlUpdated {
+                confirmed,
+                finalized,
+            } => {
+                let safe_block_hash: B256 = confirmed.inner();
+                let finalized_block_hash: B256 = finalized.inner();
 
-trait DepositIntent {
-    // unique identifier for deposit
-    fn index(&self) -> u64;
-    // deposit to address
-    fn address(&self) -> Address;
-    // deposit amount in gwei
-    fn amount(&self) -> u64;
-}
+                // Check that safe and finalized block are in current canonical
+                // chain
+                match (
+                    provider.block_number(safe_block_hash).unwrap(),
+                    provider.block_number(finalized_block_hash).unwrap(),
+                ) {
+                    (Some(safe_block_num), Some(finalized_block_num))
+                        if safe_block_num >= finalized_block_num =>
+                    {
+                        // happy path: both safe and finalized blocks are part
+                        // of canonical chain, in expected order
+                        ForkchoiceState {
+                            head_block_hash: state.head_block_hash,
+                            safe_block_hash,
+                            finalized_block_hash,
+                        }
+                    }
+                    (_, Some(_finalized_block_num)) => {
+                        // Case 1: finalized > safe; should not be possible, but
+                        // take both as finalized
+                        // Case 2: safe block not found, finalized is still
+                        // present in canonical chain
+                        //
+                        // Use finalized blockhash as safe blockhash
+                        ForkchoiceState {
+                            head_block_hash: state.head_block_hash,
+                            safe_block_hash: finalized_block_hash,
+                            finalized_block_hash,
+                        }
+                    }
+                    (_, None) => {
+                        // Finalized block not present in current canonical
+                        // chain.
+                        // TODO: reorg;
+                        // FIXME:
 
-trait EnginePayloadAttributes {
-    fn parent(&self) -> B256;
-    fn timestamp(&self) -> u64;
-    fn deposits(&self) -> &[impl DepositIntent];
-}
+                        warn!("OL reorg detected");
 
-trait EnginePayload {
-    type Payload: Clone;
+                        state
+                    }
+                }
+            }
+        };
 
-    fn payload(&self) -> &Self::Payload;
-}
+        if let Err(err) = engine.update_consenesus_state(next_state.clone()).await {
+            warn!("failed to update state; err: {}", err);
 
-enum EnginePayloadError {
-    Other,
-}
-
-trait ExecutionEngine<TBuildAttrs, TEnginePayload>
-where
-    TBuildAttrs: EnginePayloadAttributes,
-    TEnginePayload: EnginePayload,
-{
-    async fn build_payload(
-        &self,
-        build_attrs: TBuildAttrs,
-    ) -> Result<TEnginePayload, EnginePayloadError>;
-    async fn submit_payload(&self, payload: TEnginePayload) -> Result<(), EnginePayloadError>;
-    async fn set_head_blockhash(&self, blockhash: B256) -> Result<(), EnginePayloadError>;
-    async fn set_safe_blockhash(&self, blockhash: B256) -> Result<(), EnginePayloadError>;
-    async fn set_finalized_blockhash(&self, blockhash: B256) -> Result<(), EnginePayloadError>;
-}
-
-impl EnginePayload for AlpenBuiltPayload {
-    type Payload = Self;
-
-    fn payload(&self) -> &Self::Payload {
-        self
-    }
-}
-
-struct AlpenDepositData {
-    index: u64,
-    address: Address,
-    amount: u64,
-}
-
-impl DepositIntent for AlpenDepositData {
-    fn index(&self) -> u64 {
-        self.index
-    }
-
-    fn address(&self) -> Address {
-        self.address
-    }
-
-    fn amount(&self) -> u64 {
-        self.amount
-    }
-}
-
-struct AlpenEnginePayloadAttributes {
-    parent: B256,
-    timestamp: u64,
-    deposits: Vec<AlpenDepositData>,
-}
-
-impl EnginePayloadAttributes for AlpenEnginePayloadAttributes {
-    fn parent(&self) -> B256 {
-        self.parent
-    }
-
-    fn timestamp(&self) -> u64 {
-        self.timestamp
-    }
-
-    fn deposits(&self) -> &[impl DepositIntent] {
-        &self.deposits
-    }
-}
-
-struct AlpenRethExecEngine {
-    payload_builder_handle: PayloadBuilderHandle<AlpenEngineTypes>,
-    beacon_engine_handle: BeaconConsensusEngineHandle<AlpenEngineTypes>,
-    canonical_in_memory_state: CanonicalInMemoryState,
-}
-
-impl AlpenRethExecEngine {
-    fn latest_forkchoice_state(&self) -> ForkchoiceState {
-        ForkchoiceState {
-            head_block_hash: self.canonical_in_memory_state.chain_info().best_hash,
-            safe_block_hash: self
-                .canonical_in_memory_state
-                .get_safe_num_hash()
-                .map_or(B256::ZERO, |numhash| numhash.hash),
-            finalized_block_hash: self
-                .canonical_in_memory_state
-                .get_finalized_num_hash()
-                .map_or(B256::ZERO, |numhash| numhash.hash),
+            continue;
         }
+
+        state = next_state;
     }
 }
 
-impl ExecutionEngine<AlpenEnginePayloadAttributes, AlpenBuiltPayload> for AlpenRethExecEngine {
-    async fn build_payload(
-        &self,
-        build_attrs: AlpenEnginePayloadAttributes,
-    ) -> Result<AlpenBuiltPayload, EnginePayloadError> {
-        let payload_attrs = AlpenPayloadAttributes::new_from_eth(PayloadAttributes {
-            timestamp: build_attrs.timestamp(),
-            // IMPORTANT: post cancun will payload build will fail without
-            // parent_beacon_block_root
-            parent_beacon_block_root: Some(B256::ZERO),
-            prev_randao: B256::ZERO,
-            // TODO: get from config
-            suggested_fee_recipient: Address::ZERO,
-            withdrawals: Some(
-                build_attrs
-                    .deposits()
-                    .iter()
-                    .map(|deposit| Withdrawal {
-                        index: deposit.index(),
-                        validator_index: 0,
-                        address: deposit.address(),
-                        amount: deposit.amount(),
-                    })
-                    .collect(),
-            ),
-        });
+async fn block_producer_worker(
+    sequencer_config: SequencerConfig,
+    chainstate_provider: impl ChainStateProvider,
+    time: impl ClockProvider,
+    engine: impl PayloadBuilderEngine<AlpenBuiltPayload>,
+    tx: mpsc::Sender<ConsensusEvent>,
+) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(
+        sequencer_config.target_blocktime_ms as u64,
+    ));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
-        let payload_builder_attrs =
-            AlpenPayloadBuilderAttributes::try_new(build_attrs.parent(), payload_attrs, 0).unwrap();
+    loop {
+        interval.tick().await;
+        let build_ts = time.now_millis();
 
-        let payload_id = self
-            .payload_builder_handle
-            .send_new_payload(payload_builder_attrs)
-            .await
-            .expect("should send payload correctly")
-            .unwrap();
+        let head_block_hash = chainstate_provider.head_block_hash().hash;
 
-        let payload = self
-            .payload_builder_handle
-            .resolve_kind(payload_id, reth_node_builder::PayloadKind::WaitForPending)
-            .await
-            .expect("should resolve payload")
-            .expect("should build payload");
+        // TODO: check batch production criteria, add deposits to payload attributes
 
-        Ok(payload)
-    }
+        let build_attrs = EnginePayloadAttributes {
+            parent: head_block_hash,
+            timestamp: build_ts,
+            deposits: vec![],
+        };
 
-    async fn submit_payload(&self, payload: AlpenBuiltPayload) -> Result<(), EnginePayloadError> {
-        let payload_status = self
-            .beacon_engine_handle
-            .new_payload(AlpenEngineTypes::block_to_payload(
-                payload.block().to_owned(),
-            ))
-            .await
-            .expect("should send payload correctly");
-
-        // match payload_status.status {
-        //     payload::PayloadStatusEnum::Valid => todo!(),
-        //     payload::PayloadStatusEnum::Invalid { validation_error } => todo!(),
-        //     payload::PayloadStatusEnum::Syncing => todo!(),
-        //     payload::PayloadStatusEnum::Accepted => todo!(),
-        // }
-
-        Ok(())
-    }
-
-    async fn set_head_blockhash(&self, blockhash: B256) -> Result<(), EnginePayloadError> {
-        let mut forkchoice_state = self.latest_forkchoice_state();
-        forkchoice_state.head_block_hash = blockhash;
-
-        self.beacon_engine_handle
-            .fork_choice_updated(forkchoice_state, None, EngineApiMessageVersion::V4)
-            .await
-            .unwrap();
-
-        Ok(())
-    }
-
-    async fn set_safe_blockhash(&self, blockhash: B256) -> Result<(), EnginePayloadError> {
-        let mut forkchoice_state = self.latest_forkchoice_state();
-        forkchoice_state.safe_block_hash = blockhash;
-
-        self.beacon_engine_handle
-            .fork_choice_updated(forkchoice_state, None, EngineApiMessageVersion::V4)
-            .await
-            .unwrap();
-
-        Ok(())
-    }
-
-    async fn set_finalized_blockhash(&self, blockhash: B256) -> Result<(), EnginePayloadError> {
-        let mut forkchoice_state = self.latest_forkchoice_state();
-        forkchoice_state.finalized_block_hash = blockhash;
-
-        self.beacon_engine_handle
-            .fork_choice_updated(forkchoice_state, None, EngineApiMessageVersion::V4)
-            .await
-            .unwrap();
-
-        Ok(())
+        match build_next_block(&engine, build_attrs).await {
+            Ok(new_blockhash) => {
+                let _ = tx
+                    .send(ConsensusEvent::Head(AccountStateCommitment::from(
+                        new_blockhash,
+                    )))
+                    .await;
+                // TODO: send new block hash to network peers
+            }
+            Err(err) => {
+                warn!("err: {}", err);
+            }
+        };
     }
 }
 
-trait OlClient {}
+async fn build_next_block(
+    engine: &impl PayloadBuilderEngine<AlpenBuiltPayload>,
+    build_attrs: EnginePayloadAttributes,
+) -> eyre::Result<B256> {
+    let payload = engine.build_payload(build_attrs).await?;
+    let new_blockhash = payload.block().hash();
+
+    engine.submit_payload(payload).await?;
+
+    Ok(new_blockhash)
+}
