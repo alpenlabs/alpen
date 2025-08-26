@@ -21,9 +21,9 @@ pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Resul
 
     let sled_db = sled::open(&database_dir).context("opening sled database")?;
 
-    let typed_sled = SledDb::new(sled_db)
-        .map_err(|e| anyhow::anyhow!("Failed to create typed sled db: {}", e))?;
-    Ok(Arc::new(typed_sled))
+    let db =
+        SledDb::new(sled_db).map_err(|e| anyhow::anyhow!("Failed to create sled db: {}", e))?;
+    Ok(Arc::new(db))
 }
 
 pub fn init_core_dbs(sled_db: Arc<SledDb>, db_config: SledDbConfig) -> DbResult<Arc<SledBackend>> {
@@ -31,10 +31,7 @@ pub fn init_core_dbs(sled_db: Arc<SledDb>, db_config: SledDbConfig) -> DbResult<
 }
 
 /// Initialize a complete Sled backend with all database types
-pub(crate) fn init_sled_backend(
-    sled_db: Arc<SledDb>,
-    config: SledDbConfig,
-) -> DbResult<Arc<SledBackend>> {
+pub fn init_sled_backend(sled_db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Arc<SledBackend>> {
     // Create shared references to avoid excessive cloning
     let db_ref = &sled_db;
     let config_ref = &config;

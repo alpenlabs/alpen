@@ -30,7 +30,7 @@ use strata_db::traits::DatabaseBackend;
 pub use writer::db::L1WriterDBSled;
 
 pub use crate::init::{init_core_dbs, open_sled_database};
-use crate::{init::init_sled_backend, prover::ProofDBSled, sync_event::SyncEventDBSled};
+pub use crate::{init::init_sled_backend, prover::ProofDBSled, sync_event::SyncEventDBSled};
 
 pub const SLED_NAME: &str = "strata-client";
 
