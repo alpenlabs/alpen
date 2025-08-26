@@ -109,7 +109,6 @@ macro_rules! define_sled_database {
         pub struct $db_name:ident {
             $($field:ident: $schema:ty),* $(,)?
         }
-        $(, config: $config_usage:ident)?
     ) => {
         $(#[$meta])*
         #[derive(Debug)]
@@ -117,7 +116,8 @@ macro_rules! define_sled_database {
             $(
                 $field: typed_sled::SledTree<$schema>,
             )*
-            $($config_usage: $crate::SledDbConfig,)?
+            #[allow(dead_code)]
+            config: $crate::SledDbConfig,
         }
 
         impl $db_name {
@@ -126,7 +126,7 @@ macro_rules! define_sled_database {
                     $(
                         $field: db.get_tree()?,
                     )*
-                    $($config_usage: config,)?
+                    config,
                 })
             }
         }

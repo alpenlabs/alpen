@@ -15,7 +15,7 @@ define_sled_database!(
         blk_tree: L2BlockSchema,
         blk_status_tree: L2BlockStatusSchema,
         blk_height_tree: L2BlockHeightSchema,
-    }, config: config
+    }
 );
 
 impl L2BlockDatabase for L2DBSled {

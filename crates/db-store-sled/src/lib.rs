@@ -31,7 +31,7 @@ use typed_sled::SledDb;
 pub use writer::db::L1WriterDBSled;
 
 pub use crate::{
-    init::{init_core_dbs, init_sled_backend, open_sled_database},
+    init::{init_core_dbs, open_sled_database},
     prover::ProofDBSled,
     sync_event::SyncEventDBSled,
 };
@@ -45,8 +45,9 @@ pub fn open_sled_backend(
     ops_config: SledDbConfig,
 ) -> anyhow::Result<Arc<SledBackend>> {
     let sled_db = open_sled_database(datadir, dbname)?;
-    init_sled_backend(sled_db, ops_config)
+    SledBackend::new(sled_db, ops_config)
         .map_err(|e| anyhow::anyhow!("Failed to initialize sled backend: {}", e))
+        .map(Arc::new)
 }
 
 /// Complete Sled backend with all database types

@@ -23,11 +23,6 @@ pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Resul
     Ok(Arc::new(db))
 }
 
-pub fn init_core_dbs(sled_db: Arc<SledDb>, db_config: SledDbConfig) -> DbResult<Arc<SledBackend>> {
-    init_sled_backend(sled_db, db_config)
-}
-
-/// Initialize a complete Sled backend with all database types
-pub fn init_sled_backend(sled_db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Arc<SledBackend>> {
+pub fn init_core_dbs(sled_db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Arc<SledBackend>> {
     SledBackend::new(sled_db, config).map(Arc::new)
 }

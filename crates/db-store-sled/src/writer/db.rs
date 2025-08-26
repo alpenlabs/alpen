@@ -17,7 +17,7 @@ define_sled_database!(
         payload_tree: PayloadSchema,
         intent_tree: IntentSchema,
         intent_idx_tree: IntentIdxSchema,
-    }, config: config
+    }
 );
 
 impl L1WriterDatabase for L1WriterDBSled {

@@ -7,7 +7,7 @@ use crate::{define_sled_database, utils::first};
 define_sled_database!(
     pub struct ClientStateDBSled {
         client_update_tree: ClientUpdateOutputSchema,
-    }, config: _config
+    }
 );
 
 impl ClientStateDBSled {

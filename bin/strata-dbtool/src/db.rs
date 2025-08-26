@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::DatabaseBackend;
-use strata_db_store_sled::{init_sled_backend, open_sled_database, SledDbConfig, SLED_NAME};
+use strata_db_store_sled::{open_sled_database, SledBackend, SledDbConfig, SLED_NAME};
 
 pub(crate) enum DbType {
     Sled,
@@ -30,8 +30,9 @@ pub(crate) fn open_database(
                 .internal_error("Failed to open sled database")?;
 
             let config = SledDbConfig::new_with_constant_backoff(5, 200);
-            let backend =
-                init_sled_backend(sled_db, config).internal_error("Could not open sled backend")?;
+            let backend = SledBackend::new(sled_db, config)
+                .internal_error("Could not open sled backend")
+                .map(Arc::new)?;
 
             Ok(backend)
         }

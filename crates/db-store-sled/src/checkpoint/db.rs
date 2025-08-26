@@ -9,7 +9,7 @@ define_sled_database!(
     pub struct CheckpointDBSled {
         checkpoint_tree: CheckpointSchema,
         epoch_summary_tree: EpochSummarySchema,
-    }, config: _config
+    }
 );
 
 impl CheckpointDatabase for CheckpointDBSled {

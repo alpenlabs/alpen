@@ -15,7 +15,7 @@ define_sled_database!(
     pub struct ChainstateDBSled {
         state_tree: StateInstanceSchema,
         write_batch_tree: WriteBatchSchema,
-    }, config: config
+    }
 );
 
 impl ChainstateDBSled {

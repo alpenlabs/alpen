@@ -9,7 +9,7 @@ define_sled_database!(
     pub struct ProofDBSled {
         proof_tree: ProofSchema,
         proof_deps_tree: ProofDepsSchema,
-    }, config: _config
+    }
 );
 
 impl ProofDatabase for ProofDBSled {

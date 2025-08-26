@@ -11,7 +11,7 @@ use crate::{
 define_sled_database!(
     pub struct SyncEventDBSled {
         sync_event_tree: SyncEventSchema,
-    }, config: config
+    }
 );
 
 impl SyncEventDBSled {

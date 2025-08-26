@@ -11,7 +11,7 @@ define_sled_database!(
     pub struct L1BroadcastDBSled {
         tx_id_tree: BcastL1TxIdSchema,
         tx_tree: BcastL1TxSchema,
-    }, config: config
+    }
 );
 
 impl L1BroadcastDBSled {

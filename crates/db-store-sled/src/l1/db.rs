@@ -14,7 +14,7 @@ define_sled_database!(
         l1_canonical_tree: L1CanonicalBlockSchema,
         l1_blks_height_tree: L1BlocksByHeightSchema,
         txn_tree: TxnSchema,
-    }, config: config
+    }
 );
 
 impl L1DBSled {
