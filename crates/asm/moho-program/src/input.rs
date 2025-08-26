@@ -15,7 +15,7 @@ use strata_asm_common::AuxPayload;
 /// Private input to process the next state.
 ///
 /// This includes all the L1
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub struct AsmStepInput {
     /// The full Bitcoin L1 block
     pub block: L1Block,
@@ -28,11 +28,18 @@ impl AsmStepInput {
         AsmStepInput { block, aux_inputs }
     }
 
+    /// Computes the state reference.
+    ///
+    /// In concrete terms, this just computes the blkid/blockhash.
     pub fn compute_ref(&self) -> StateReference {
         let raw_ref = self.block.0.block_hash().to_raw_hash().to_byte_array();
         StateReference::new(raw_ref)
     }
 
+    /// Computes the previous state reference from the input.
+    ///
+    /// In concrete terms, this just extracts the parent blkid from the block's
+    /// header.
     pub fn compute_prev_ref(&self) -> StateReference {
         let parent_ref = self
             .block

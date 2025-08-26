@@ -2,7 +2,7 @@ use moho_types::{ExportState, InnerStateCommitment, StateReference};
 use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
-use strata_asm_stf::{AsmStfInput, AsmStfOutput, asm_stf, group_txs_by_subprotocol};
+use strata_asm_stf::{AsmStfInput, AsmStfOutput, compute_asm_transition, group_txs_by_subprotocol};
 use strata_primitives::hash::compute_borsh_hash;
 use zkaleido::VerifyingKey;
 
@@ -40,15 +40,16 @@ impl MohoProgram for AsmStfProgram {
         // 1. Validate the input
         assert!(input.validate_block());
 
+        // 2. Restructure the raw input to be formatted according to what we want.
         let protocol_txs = group_txs_by_subprotocol(spec.magic_bytes(), &input.block.0.txdata);
-
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &input.block.0.header,
             aux_input: &input.aux_inputs,
         };
 
-        asm_stf(spec, pre_state, stf_input).unwrap()
+        // 3. Actually invoke the ASM state transition function.
+        compute_asm_transition(spec, pre_state, stf_input).expect("asm: compute transition")
     }
 
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State {

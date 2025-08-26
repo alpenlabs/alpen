@@ -9,6 +9,7 @@ use crate::{AsmError, AsmResult};
 /// This trait provides a consistent interface for log entries that need to be
 /// serialized, stored, and later deserialized from the ASM state. Each log type
 /// has a unique type identifier and must be serializable.
+// TODO migrate from borsh for this
 pub trait AsmLog: BorshSerialize + BorshDeserialize {
     /// Unique type identifier for this log type.
     ///
@@ -35,7 +36,7 @@ pub trait AsmLog: BorshSerialize + BorshDeserialize {
 /// Create log entries using [`AsmLogEntry::from_log`] and retrieve typed data using
 /// [`AsmLogEntry::try_into_log`]. The type safety is enforced through the [`TypeId`]
 /// matching system.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct AsmLogEntry(pub OwnedMsg);
 
 impl AsmLogEntry {
@@ -43,15 +44,16 @@ impl AsmLogEntry {
         self.0.ty()
     }
 
-    /// Create an AsmLogEntry from any type that implements AsmLog
+    /// Create an AsmLogEntry from any type that implements AsmLog.
     pub fn from_log<T: AsmLog>(log: &T) -> AsmResult<Self> {
         let ty = TypeId::from(T::TY);
+        // TODO as above, migrate from borsh for this
         let body = borsh::to_vec(log).map_err(|e| AsmError::TypeIdSerialization(ty, e))?;
         let owned_msg = OwnedMsg::new(ty, body)?;
         Ok(AsmLogEntry(owned_msg))
     }
 
-    /// Try to deserialize the log entry to a specific AsmLog type
+    /// Try to deserialize the log entry to a specific AsmLog type.
     pub fn try_into_log<T: AsmLog>(&self) -> AsmResult<T> {
         let expected_ty = T::TY;
         let actual_ty = self.0.ty();
@@ -63,6 +65,7 @@ impl AsmLogEntry {
             }));
         }
 
+        // TODO as above, migrate from borsh for this
         borsh::from_slice(self.0.body())
             .map_err(|e| AsmError::TypeIdDeserialization(expected_ty, e))
     }

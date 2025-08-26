@@ -42,10 +42,10 @@ use crate::{
 ///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 /// * `'x` - Lifetime parameter tied to the auxiliary input data
-pub fn asm_stf<'b, 'x, S: AsmSpec>(
+pub fn compute_asm_transition<'i, S: AsmSpec>(
     spec: &S,
     pre_state: &AnchorState,
-    input: AsmStfInput<'b, 'x>,
+    input: AsmStfInput<'i>,
 ) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -72,7 +72,9 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
     // This stage handles cross-protocol communication and finalizes state changes.
-    // TODO probably have to iterate the interproto message processing phase
+    // TODO probably will have change this to repeat the interproto message
+    // processing phase until we have no more messages to deliver, or some
+    // bounded number of times
     let mut finish_stage = FinishStage::new(&mut manager);
     spec.call_subprotocols(&mut finish_stage);
 

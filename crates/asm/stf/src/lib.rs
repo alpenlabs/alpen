@@ -13,6 +13,6 @@ mod tx_filter;
 mod types;
 
 pub use preprocess::pre_process_asm;
-pub use stf::asm_stf;
+pub use stf::compute_asm_transition;
 pub use tx_filter::group_txs_by_subprotocol;
 pub use types::{AsmStfInput, AsmStfOutput};

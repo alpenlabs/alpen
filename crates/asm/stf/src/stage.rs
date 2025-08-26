@@ -10,21 +10,21 @@ use strata_asm_common::{
 use crate::manager::SubprotoManager;
 
 /// Stage to process txs pre-extracted from the block for each subprotocol.
-pub(crate) struct PreProcessStage<'a, 'b, 'm> {
-    manager: &'m mut SubprotoManager,
-    anchor_state: &'a AnchorState,
-    tx_bufs: &'b BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
+pub(crate) struct PreProcessStage<'c> {
+    manager: &'c mut SubprotoManager,
+    anchor_state: &'c AnchorState,
+    tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
 
     /// Aux requests table we write requests into.
-    aux_requests: &'m mut BTreeMap<SubprotocolId, AuxRequest>,
+    aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequest>,
 }
 
-impl<'a, 'b, 'm> PreProcessStage<'a, 'b, 'm> {
+impl<'c> PreProcessStage<'c> {
     pub(crate) fn new(
-        manager: &'m mut SubprotoManager,
-        anchor_state: &'a AnchorState,
-        tx_bufs: &'b BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
-        aux_requests: &'m mut BTreeMap<SubprotocolId, AuxRequest>,
+        manager: &'c mut SubprotoManager,
+        anchor_state: &'c AnchorState,
+        tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
+        aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequest>,
     ) -> Self {
         Self {
             manager,
@@ -35,7 +35,7 @@ impl<'a, 'b, 'm> PreProcessStage<'a, 'b, 'm> {
     }
 }
 
-impl Stage for PreProcessStage<'_, '_, '_> {
+impl Stage for PreProcessStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
         let txs = self
             .tx_bufs
@@ -54,19 +54,19 @@ impl Stage for PreProcessStage<'_, '_, '_> {
 }
 
 /// Stage to process txs pre-extracted from the block for each subprotocol.
-pub(crate) struct ProcessStage<'a, 'b, 'm> {
-    manager: &'m mut SubprotoManager,
-    anchor_state: &'a AnchorState,
-    tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
-    aux_inputs: &'m BTreeMap<SubprotocolId, AuxPayload>,
+pub(crate) struct ProcessStage<'c> {
+    manager: &'c mut SubprotoManager,
+    anchor_state: &'c AnchorState,
+    tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
+    aux_inputs: &'c BTreeMap<SubprotocolId, AuxPayload>,
 }
 
-impl<'a, 'b, 'm> ProcessStage<'a, 'b, 'm> {
+impl<'c> ProcessStage<'c> {
     pub(crate) fn new(
-        manager: &'m mut SubprotoManager,
-        anchor_state: &'a AnchorState,
-        tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'b>>>,
-        aux_inputs: &'m BTreeMap<SubprotocolId, AuxPayload>,
+        manager: &'c mut SubprotoManager,
+        anchor_state: &'c AnchorState,
+        tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
+        aux_inputs: &'c BTreeMap<SubprotocolId, AuxPayload>,
     ) -> Self {
         Self {
             manager,
@@ -77,7 +77,7 @@ impl<'a, 'b, 'm> ProcessStage<'a, 'b, 'm> {
     }
 }
 
-impl Stage for ProcessStage<'_, '_, '_> {
+impl Stage for ProcessStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
         let txs = self
             .tx_bufs
