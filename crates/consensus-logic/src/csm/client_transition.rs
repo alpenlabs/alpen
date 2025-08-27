@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use bitcoin::{block, Transaction};
+use bitcoin::Transaction;
 use strata_primitives::{
     batch::verify_signed_checkpoint_sig,
     l1::{L1BlockCommitment, L1BlockId},
@@ -68,7 +68,7 @@ pub fn process_block(
 ) -> Result<(ClientState, Vec<SyncAction>), Error> {
     let height = block.height();
 
-    // If the block is before genesis we don't care about it.
+    // Handle pre-genesis: if the block is before genesis we don't care about it.
     // TODO maybe put back pre-genesis tracking?
     let genesis_trigger = params.rollup().genesis_l1_height;
     if height < genesis_trigger {
@@ -81,35 +81,34 @@ pub fn process_block(
         return Ok((cur_state, vec![]));
     }
 
+    // Handle genesis height, no checkpoints are expected.
+    if height == genesis_trigger {
+        return Ok((
+            ClientState::new(None, None, block.height()),
+            vec![SyncAction::L2Genesis(*block.blkid())],
+        ));
+    }
+
     // This doesn't do any SPV checks to make sure we only go to a
     // a longer chain, it just does it unconditionally.  This is fine,
     // since we'll be refactoring this more deeply soonish.
     let block_mf = context.get_l1_block_manifest(block.blkid())?;
-    handle_block(cur_state, cur_block, &block_mf, context, params)
+    handle_block(cur_state, cur_block.height(), &block_mf, context, params)
 }
 
+// TODO(QQ): decouple checkpoint extraction, finalization and actions.
 fn handle_block(
     mut cur_state: ClientState,
-    mut cur_block: L1BlockCommitment,
+    cur_height: u64,
     next_block_mf: &L1BlockManifest,
     context: &impl EventContext,
     params: &Params,
 ) -> Result<(ClientState, Vec<SyncAction>), Error> {
-    //let block: L1BlockCommitment = next_block_mf.into();
     let next_block_height = next_block_mf.height();
     let rparams = params.rollup();
 
-    // Handle genesis height.
-    if next_block_height == rparams.genesis_l1_height {
-        // No checkpoints is expected at the genesis L1 height.
-        return Ok((
-            ClientState::new(None, None, next_block_height),
-            vec![SyncAction::L2Genesis(*next_block_mf.blkid())],
-        ));
-    }
-
     // Actualize the previous state to handle the reorg.
-    match next_block_height.cmp(&(cur_block.height() + 1)) {
+    match next_block_height.cmp(&(cur_height + 1)) {
         Ordering::Less => {
             // Canonical chain reorg case: switch to the canonical block right before the chain
             // fork.
@@ -117,9 +116,9 @@ fn handle_block(
             // from the fork and the height is less than expected.
             // The reason for that is btcio specific - we receive blocks with less height only
             // if btcio sees a longer fork of bitcoin, thus eventually we receive a longer chain.
-            cur_block =
+            let pre_fork_block =
                 L1BlockCommitment::new(next_block_height - 1, next_block_mf.get_prev_blockid());
-            cur_state = context.get_client_state(&cur_block)?;
+            cur_state = context.get_client_state(&pre_fork_block)?;
         }
         Ordering::Equal => {
             // Canonical chain extension block, nothing to actualize.
@@ -135,9 +134,7 @@ fn handle_block(
     // at the canonical chain (and not on the fork).
     // Otherwise, we are screwed (because we query buried_block by height).
     let depth = rparams.l1_reorg_safe_depth as u64;
-    let buried_height = next_block_height
-        .checked_sub(depth)
-        .expect("we should never see height less than depth");
+    let buried_height = next_block_height.checked_sub(depth);
     let last_finalized_checkpoint = fetch_last_finalized_checkpoint(buried_height, context);
 
     // Extract the most recent checkpoint as of seen next_block_mf.
@@ -149,36 +146,43 @@ fn handle_block(
         &mut actions,
     )?;
 
-    // Set the new client state.
-    let new_state = ClientState::new(
+    // Create the next client state.
+    let next_state = ClientState::new(
         last_finalized_checkpoint,
         recent_checkpoint,
         next_block_height,
     );
 
+    let old_final_epoch = cur_state.get_declared_final_epoch();
+    let new_final_epoch = next_state.get_declared_final_epoch();
+
+    let new_declared = match (old_final_epoch, new_final_epoch) {
+        (None, Some(new)) => Some(new),
+        (Some(old), Some(new)) if new.epoch() > old.epoch() => Some(new),
+        _ => None,
+    };
+
     // Finalize the new epoch after the state transition (if any).
-    if let Some(decl_epoch) = new_state.get_declared_final_epoch() {
+    if let Some(decl_epoch) = new_declared {
         actions.push(SyncAction::FinalizeEpoch(decl_epoch));
     }
 
-    Ok((new_state, actions))
+    Ok((next_state, actions))
 }
 
 fn fetch_last_finalized_checkpoint(
-    buried_height: u64,
+    buried_height: Option<u64>,
     context: &impl EventContext,
 ) -> Option<L1Checkpoint> {
-    let block = context.get_l1_block_manifest_at_height(buried_height).ok();
-    // TODO(QQ): a bit ugly, unwind it somehow.
-    if let Some(b) = block {
-        if let Ok(cs) = context.get_client_state(&b.into()) {
-            cs.get_last_checkpoint()
-        } else {
-            None
+    if let Some(buried_h) = buried_height {
+        let block = context.get_l1_block_manifest_at_height(buried_h).ok();
+        if let Some(b) = block {
+            if let Ok(cs) = context.get_client_state(&b.into()) {
+                return cs.get_last_checkpoint();
+            }
         }
-    } else {
-        None
     }
+    None
 }
 
 fn extract_recent_checkpoint(
