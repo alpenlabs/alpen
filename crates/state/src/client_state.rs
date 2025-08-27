@@ -3,6 +3,8 @@
 //! implement the consensus logic.
 // TODO move this to another crate that contains our sync logic
 
+use core::fmt;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -140,6 +142,12 @@ pub struct L1Checkpoint {
 
     /// L1 reference for this checkpoint.
     pub l1_reference: CheckpointL1Ref,
+}
+
+impl fmt::Display for L1Checkpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Debug>::fmt(self, f)
+    }
 }
 
 impl L1Checkpoint {
