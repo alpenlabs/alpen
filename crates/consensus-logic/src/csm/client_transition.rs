@@ -84,7 +84,7 @@ pub fn process_block(
     // Handle genesis height, no checkpoints are expected.
     if height == genesis_trigger {
         return Ok((
-            ClientState::new(None, None, block.height()),
+            ClientState::default(),
             vec![SyncAction::L2Genesis(*block.blkid())],
         ));
     }
@@ -147,11 +147,7 @@ fn handle_block(
     )?;
 
     // Create the next client state.
-    let next_state = ClientState::new(
-        last_finalized_checkpoint,
-        recent_checkpoint,
-        next_block_height,
-    );
+    let next_state = ClientState::new(last_finalized_checkpoint, recent_checkpoint);
 
     let old_final_epoch = cur_state.get_declared_final_epoch();
     let new_final_epoch = next_state.get_declared_final_epoch();

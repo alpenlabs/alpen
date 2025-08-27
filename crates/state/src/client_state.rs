@@ -36,30 +36,17 @@ pub struct ClientState {
 
     // Last *seen* checkpoint.
     pub(crate) last_seen_checkpoint: Option<L1Checkpoint>,
-
-    /// Height
-    /// TODO(QQ): Currently weird, as it's already keyed by [`L1BlockCommitment`]
-    pub(crate) height: u64,
 }
 
 impl ClientState {
     pub fn new(
         last_finalized_checkpoint: Option<L1Checkpoint>,
         last_seen_checkpoint: Option<L1Checkpoint>,
-        height: u64,
     ) -> Self {
         ClientState {
             last_finalized_checkpoint,
             last_seen_checkpoint,
-            height,
         }
-    }
-
-    /// Returns if genesis has occurred.
-    pub fn has_genesis_occurred(&self) -> bool {
-        // TODO(QQ): only used to determine it in the status channel.
-        // Add keyed L1BlockCommitment in there.
-        self.height > 0
     }
 
     /// Gets the last checkpoint as of the last internal state.
@@ -88,6 +75,28 @@ impl ClientState {
             .as_ref()
             .map(|ck| ck.batch_info.get_epoch_commitment().epoch() + 1)
             .unwrap_or(0u64)
+    }
+}
+
+/// A [`ClientState`] wrapper used in StatusChannel.
+/// Supplied with block to wait for genesis.
+/// TODO: to be reworked.
+#[derive(Debug, Clone, Default)]
+pub struct CheckpointState {
+    pub client_state: ClientState,
+    pub block: L1BlockCommitment,
+}
+
+impl CheckpointState {
+    pub fn new(client_state: ClientState, block: L1BlockCommitment) -> Self {
+        Self {
+            client_state,
+            block,
+        }
+    }
+
+    pub fn has_genesis_occurred(&self) -> bool {
+        self.block.height() > 0
     }
 }
 
