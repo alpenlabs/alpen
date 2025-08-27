@@ -11,7 +11,7 @@ pub(crate) trait Formattable {
 // TODO(QQ): remove, this is stub to ensure compilation
 
 #[derive(Serialize)]
-pub struct FmtStub {}
+pub(crate) struct FmtStub {}
 impl Formattable for FmtStub {
     fn format_porcelain(&self) -> String {
         "".to_string()
