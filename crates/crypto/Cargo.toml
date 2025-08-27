@@ -13,9 +13,12 @@ bitcoin.workspace = true
 borsh.workspace = true
 digest.workspace = true
 secp256k1.workspace = true
+serde.workspace = true
 sha2.workspace = true
 zeroize.workspace = true
 zkaleido.workspace = true
+zkaleido-risc0-groth16-verifier.workspace = true
+zkaleido-sp1-groth16-verifier.workspace = true
 
 [dev-dependencies]
 rand.workspace = true

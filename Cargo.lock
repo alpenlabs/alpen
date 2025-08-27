@@ -13614,10 +13614,13 @@ dependencies = [
  "digest 0.10.7",
  "rand 0.8.5",
  "secp256k1 0.29.1",
+ "serde",
  "sha2 0.10.9",
  "strata-primitives",
  "zeroize",
  "zkaleido",
+ "zkaleido-risc0-groth16-verifier",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
