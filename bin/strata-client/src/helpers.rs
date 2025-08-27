@@ -141,7 +141,7 @@ pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Resu
 pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
     // init client state
     let csman = storage.client_state();
-    let (_, cur_state) = csman
+    let (cur_block, cur_state) = csman
         .fetch_most_recent_state()?
         .expect("missing init client state?");
 
@@ -150,7 +150,7 @@ pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<Statu
     };
 
     // TODO avoid clone, change status channel to use arc
-    Ok(StatusChannel::new(cur_state, l1_status, None))
+    Ok(StatusChannel::new(cur_state, cur_block, l1_status, None))
 }
 
 pub(crate) fn init_engine_controller(

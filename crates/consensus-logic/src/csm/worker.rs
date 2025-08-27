@@ -32,15 +32,15 @@ pub struct WorkerState {
     /// Current state ref.
     cur_state: Arc<ClientState>,
 
-    // TODO(QQ): Ideally height for cur_state should be here.
-    state_block: L1BlockCommitment,
+    /// Current block that corresponds to cur_state
+    cur_block: L1BlockCommitment,
 }
 
 impl WorkerState {
     /// Constructs a new instance by reconstructing the current consensus state
     /// from the provided database layer.
     pub fn open(params: Arc<Params>, storage: Arc<NodeStorage>) -> anyhow::Result<Self> {
-        let (state_block, cur_state) = storage
+        let (cur_block, cur_state) = storage
             .client_state()
             .fetch_most_recent_state()?
             .expect("missing initial client state?");
@@ -49,13 +49,17 @@ impl WorkerState {
             params,
             storage,
             cur_state: Arc::new(cur_state),
-            state_block,
+            cur_block,
         })
     }
 
     /// Gets a ref to the consensus state from the inner state tracker.
     pub fn cur_state(&self) -> &Arc<ClientState> {
         &self.cur_state
+    }
+
+    pub fn cur_block(&self) -> L1BlockCommitment {
+        self.cur_block
     }
 
     /// Given the next l1 block, computes the state application if the
@@ -70,17 +74,17 @@ impl WorkerState {
         // Compute the state transition.
         Ok(client_transition::process_block(
             self.cur_state.as_ref().clone(),
-            self.state_block,
+            self.cur_block,
             next_block,
             &context,
             &self.params,
         )?)
     }
 
-    fn update_bookeeping(&mut self, state_block: L1BlockCommitment, state: Arc<ClientState>) {
-        debug!(%state_block, ?state, "computed new consensus state");
+    fn update_bookeeping(&mut self, block: L1BlockCommitment, state: Arc<ClientState>) {
+        debug!(%block, ?state, "computed new consensus state");
         self.cur_state = state;
-        self.state_block = state_block;
+        self.cur_block = block;
     }
 }
 
@@ -139,7 +143,7 @@ fn process_block_with_retries(
         .params
         .rollup()
         .genesis_l1_height
-        .max(state.state_block.height() + 1);
+        .max(state.cur_block.height() + 1);
 
     let end_height = incoming_block.height();
 
@@ -160,7 +164,7 @@ fn process_block_with_retries(
     }
 
     // Update status channel with the latest client state.
-    status_channel.update_client_state(state.cur_state().as_ref().clone());
+    status_channel.update_client_state(state.cur_state().as_ref().clone(), state.cur_block());
 
     debug!(%incoming_block, "processed OK");
 

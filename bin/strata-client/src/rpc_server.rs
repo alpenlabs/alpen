@@ -93,10 +93,11 @@ impl StrataRpcImpl {
     /// Gets a clone of the current client state and fetches the chainstate that
     /// of the L2 block that it considers the tip state.
     // TODO remove this RPC, we aren't supposed to be exposing this
-    async fn get_cur_states(&self) -> Result<(ClientState, Arc<Chainstate>), Error> {
+    async fn get_cur_states(&self) -> Result<(ClientState, Option<Arc<Chainstate>>), Error> {
+        let genesis = self.sync_manager.status_channel().has_genesis_occurred();
         let cs = self.get_client_state().await;
 
-        if !cs.has_genesis_occurred() {
+        if genesis {
             return Ok((cs, None));
         }
 

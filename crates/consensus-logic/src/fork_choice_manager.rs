@@ -23,7 +23,7 @@ use strata_state::{
     block::L2BlockBundle,
     block_validation::validate_block_structure,
     chain_state::Chainstate,
-    client_state::ClientState,
+    client_state::{CheckpointState, ClientState},
     prelude::*,
     state_op::{StateCache, WriteBatchEntry},
 };
@@ -539,7 +539,7 @@ pub fn forkchoice_manager_task_inner(
 fn wait_for_fcm_event(
     handle: &Handle,
     fcm_rx: &mut mpsc::Receiver<ForkChoiceMessage>,
-    cl_rx: &mut watch::Receiver<ClientState>,
+    cl_rx: &mut watch::Receiver<CheckpointState>,
 ) -> FcmEvent {
     handle.block_on(async {
         tokio::select! {
@@ -561,11 +561,11 @@ fn wait_for_fcm_event(
 
 /// Waits until there's a new client state and returns the client state.
 async fn wait_for_client_change(
-    cl_rx: &mut watch::Receiver<ClientState>,
+    cl_rx: &mut watch::Receiver<CheckpointState>,
 ) -> Result<ClientState, watch::error::RecvError> {
     cl_rx.changed().await?;
     let state = cl_rx.borrow_and_update().clone();
-    Ok(state)
+    Ok(state.client_state)
 }
 
 fn process_fc_message(
