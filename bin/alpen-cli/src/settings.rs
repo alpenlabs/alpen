@@ -17,12 +17,13 @@ use strata_primitives::constants::RECOVER_DELAY as DEFAULT_RECOVER_DELAY;
 use terrors::OneOf;
 
 #[cfg(feature = "test-mode")]
-use crate::{constants::SEED_LEN, seed::Seed};
+use crate::constants::SEED_LEN;
 use crate::{
     constants::{
         DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
         DEFAULT_FINALITY_DEPTH, DEFAULT_NETWORK, MAGIC_BYTES_LEN,
     },
+    seed::seed_provider::{secret_provider, SecretStore},
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -90,8 +91,7 @@ pub struct Settings {
     pub bridge_in_amount: Amount,
     pub bridge_out_amount: Amount,
     pub finality_depth: u32,
-    #[cfg(feature = "test-mode")]
-    pub seed: Seed,
+    pub secret_store: Arc<dyn SecretStore>,
 }
 
 pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
@@ -122,6 +122,12 @@ impl Settings {
             .map_err(OneOf::new)?
             .try_deserialize::<SettingsFromFile>()
             .map_err(OneOf::new)?;
+
+        #[cfg(feature = "test-mode")]
+        let secret_provider = secret_provider(&from_file);
+
+        #[cfg(not(feature = "test-mode"))]
+        let secret_provider = secret_provider();
 
         let sync_backend: Arc<dyn SignetBackend> = match (
             from_file.esplora.clone(),
@@ -183,8 +189,7 @@ impl Settings {
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
-            #[cfg(feature = "test-mode")]
-            seed: Seed::from_file(from_file.seed),
+            secret_store: secret_provider,
         })
     }
 }

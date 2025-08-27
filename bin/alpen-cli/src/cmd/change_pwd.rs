@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use argh::FromArgs;
 use rand_core::OsRng;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
@@ -12,7 +14,7 @@ pub struct ChangePwdArgs {}
 pub async fn change_pwd(
     _args: ChangePwdArgs,
     seed: Seed,
-    persister: impl EncryptedSeedPersister,
+    persister: Arc<dyn EncryptedSeedPersister>,
 ) -> Result<(), DisplayedError> {
     let mut new_pw =
         Password::read(true).internal_error("Failed to read the password entered by user")?;

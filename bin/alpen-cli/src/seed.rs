@@ -1,6 +1,6 @@
 #[cfg(target_os = "linux")]
 use std::io;
-use std::str::FromStr;
+use std::{fmt::Debug, str::FromStr, sync::Arc};
 
 use aes_gcm_siv::{aead::AeadMutInPlace, Aes256GcmSiv, KeyInit, Nonce, Tag};
 use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
@@ -17,8 +17,6 @@ use dialoguer::{Confirm, Input};
 use password::{HashVersion, IncorrectPassword, Password};
 use rand_core::{CryptoRngCore, OsRng};
 use sha2::{Digest, Sha256};
-#[cfg(feature = "test-mode")]
-use shrex::Hex;
 use terrors::OneOf;
 use zeroize::Zeroizing;
 
@@ -42,12 +40,6 @@ impl BaseWallet {
 pub struct Seed(Zeroizing<[u8; SEED_LEN]>);
 
 impl Seed {
-    #[cfg(feature = "test-mode")]
-    pub fn from_file(bytes: Hex<[u8; SEED_LEN]>) -> Self {
-        let bytes = Zeroizing::new(*bytes);
-        Self(bytes)
-    }
-
     fn gen<R: CryptoRngCore>(rng: &mut R) -> Self {
         let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
         rng.fill_bytes(bytes.as_mut());
@@ -167,7 +159,7 @@ impl EncryptedSeed {
 }
 
 pub fn load_or_create(
-    persister: &impl EncryptedSeedPersister,
+    persister: Arc<dyn EncryptedSeedPersister>,
 ) -> Result<Seed, OneOf<LoadOrCreateErr>> {
     println!("Loading encrypted seed...");
     let maybe_encrypted_seed = persister.load().map_err(OneOf::broaden)?;
@@ -266,7 +258,7 @@ type LoadOrCreateErr = (
     IncorrectPassword,
 );
 
-pub trait EncryptedSeedPersister {
+pub trait EncryptedSeedPersister: Debug {
     fn save(&self, seed: &EncryptedSeed) -> Result<(), PersisterErr>;
     fn load(&self) -> Result<Option<EncryptedSeed>, PersisterErr>;
     fn delete(&self) -> Result<(), PersisterErr>;
@@ -285,6 +277,7 @@ mod keychain;
 pub use keychain::*;
 
 pub mod password;
+pub mod seed_provider;
 
 #[cfg(test)]
 mod test {
