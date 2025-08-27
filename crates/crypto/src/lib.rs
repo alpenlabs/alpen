@@ -5,5 +5,6 @@ pub use strata_primitives::crypto::*;
 pub mod groth16_verifier;
 pub mod hashes;
 pub mod keys;
+pub mod merkle;
 pub mod signatures;
 pub mod verifiers;
