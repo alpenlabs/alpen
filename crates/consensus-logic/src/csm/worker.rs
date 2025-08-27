@@ -128,7 +128,7 @@ fn process_block_with_retries(
     config: &CsmExecConfig,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
-    strata_common::check_bail_trigger("csm_block_block");
+    strata_common::check_bail_trigger("csm_process_block");
 
     let span = debug_span!("csm-process-block", %incoming_block);
     let _g = span.enter();
@@ -155,15 +155,12 @@ fn process_block_with_retries(
         .collect::<Vec<_>>();
     potentually_skipped_blocks.push(*incoming_block);
 
-    debug!("trying to process the block");
-
     for next_block in potentually_skipped_blocks.iter() {
         process_block(state, next_block, config, shutdown)?;
     }
 
     // Update status channel with the latest client state.
     status_channel.update_client_state(state.cur_state().as_ref().clone());
-    trace!("block is processed");
 
     debug!(%incoming_block, "processed OK");
 
@@ -176,6 +173,7 @@ fn process_block(
     config: &CsmExecConfig,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
+    debug!("trying to process the block");
     let mut tries = 0;
     let mut wait_dur = config.retry_base_dur;
     loop {
