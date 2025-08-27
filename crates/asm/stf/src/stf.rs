@@ -60,12 +60,8 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
-    let mut process_stage = ProcessStage::new(
-        &mut manager,
-        pre_state,
-        input.protocol_txs,
-        &input.aux_input,
-    );
+    let mut process_stage =
+        ProcessStage::new(&mut manager, pre_state, input.protocol_txs, input.aux_input);
     spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.

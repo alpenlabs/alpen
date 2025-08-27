@@ -1,6 +1,6 @@
 //! Anchor State Machine (ASM) state transition logic for Strata.
 //!
-//! This crate defines [`asm_stf`], the function that advances the global
+//! This crate defines [`compute_asm_transition`], the function that advances the global
 //! `AnchorState` by validating a Bitcoin block, routing its transactions to
 //! registered subprotocols and finalising their execution.  The surrounding
 //! modules provide the handler and stage infrastructure used by the STF.
