@@ -9,12 +9,13 @@ workspace = true
 [dependencies]
 strata-primitives.workspace = true
 
+bitcoin.workspace = true
 borsh.workspace = true
 digest.workspace = true
 secp256k1.workspace = true
 sha2.workspace = true
+zeroize.workspace = true
 zkaleido.workspace = true
 
 [dev-dependencies]
-bitcoin.workspace = true
 rand.workspace = true

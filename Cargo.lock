@@ -13616,6 +13616,7 @@ dependencies = [
  "secp256k1 0.29.1",
  "sha2 0.10.9",
  "strata-primitives",
+ "zeroize",
  "zkaleido",
 ]
 
