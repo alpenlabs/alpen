@@ -65,3 +65,6 @@ keyring = { version = "3.3.0", default-features = false, features = [
 
 [dev-dependencies]
 toml = "0.8.20"
+
+[features]
+test-mode = []

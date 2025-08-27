@@ -17,6 +17,8 @@ use dialoguer::{Confirm, Input};
 use password::{HashVersion, IncorrectPassword, Password};
 use rand_core::{CryptoRngCore, OsRng};
 use sha2::{Digest, Sha256};
+#[cfg(feature = "test-mode")]
+use shrex::Hex;
 use terrors::OneOf;
 use zeroize::Zeroizing;
 
@@ -34,11 +36,18 @@ impl BaseWallet {
 }
 
 #[derive(Clone)]
-#[expect(missing_debug_implementations)]
+#[cfg_attr(feature = "test-mode", derive(Debug))]
+#[cfg_attr(not(feature = "test-mode"), expect(missing_debug_implementations))]
 // NOTE: This is not a BIP39 seed, instead random bytes of entropy.
 pub struct Seed(Zeroizing<[u8; SEED_LEN]>);
 
 impl Seed {
+    #[cfg(feature = "test-mode")]
+    pub fn from_file(bytes: Hex<[u8; SEED_LEN]>) -> Self {
+        let bytes = Zeroizing::new(*bytes);
+        Self(bytes)
+    }
+
     fn gen<R: CryptoRngCore>(rng: &mut R) -> Self {
         let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
         rng.fill_bytes(bytes.as_mut());
