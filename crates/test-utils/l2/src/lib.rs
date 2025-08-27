@@ -149,15 +149,6 @@ fn get_rollup_vk() -> RollupVerifyingKey {
     RollupVerifyingKey::SP1VerifyingKey(sp1_vk)
 }
 
-/// Gets the [`ClientState`] from consensus [`Params`].
-pub fn gen_client_state(params: Option<&Params>) -> ClientState {
-    let params = match params {
-        Some(p) => p,
-        None => &gen_params(),
-    };
-    ClientState::default()
-}
-
 /// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.
 pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
     make_l2_genesis(params)

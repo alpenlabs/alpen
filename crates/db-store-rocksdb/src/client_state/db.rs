@@ -67,14 +67,5 @@ mod tests {
         ClientStateDb::new(db, db_ops)
     }
 
-    #[test]
-    fn test_get_last_idx() {
-        let db = setup_db();
-        let idx = db
-            .get_last_idx::<ClientUpdateOutputSchema>()
-            .expect("test: insert");
-        assert_eq!(idx, None);
-    }
-
     client_state_db_tests!(setup_db());
 }

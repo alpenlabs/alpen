@@ -62,11 +62,11 @@ impl EventContext for StorageEventContext<'_> {
 pub fn process_block(
     cur_state: ClientState,
     cur_block: L1BlockCommitment,
-    block: &L1BlockCommitment,
+    next_block: &L1BlockCommitment,
     context: &impl EventContext,
     params: &Params,
 ) -> Result<(ClientState, Vec<SyncAction>), Error> {
-    let height = block.height();
+    let height = next_block.height();
 
     // Handle pre-genesis: if the block is before genesis we don't care about it.
     // TODO maybe put back pre-genesis tracking?
@@ -85,14 +85,14 @@ pub fn process_block(
     if height == genesis_trigger {
         return Ok((
             ClientState::default(),
-            vec![SyncAction::L2Genesis(*block.blkid())],
+            vec![SyncAction::L2Genesis(*next_block.blkid())],
         ));
     }
 
     // This doesn't do any SPV checks to make sure we only go to a
     // a longer chain, it just does it unconditionally.  This is fine,
     // since we'll be refactoring this more deeply soonish.
-    let block_mf = context.get_l1_block_manifest(block.blkid())?;
+    let block_mf = context.get_l1_block_manifest(next_block.blkid())?;
     handle_block(cur_state, cur_block.height(), &block_mf, context, params)
 }
 
@@ -249,11 +249,13 @@ fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<Checkp
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use bitcoin::BlockHash;
     use strata_primitives::l1::L1BlockManifest;
-    use strata_state::l1::L1BlockId;
+    use strata_state::{header::L2Header, l1::L1BlockId};
     use strata_test_utils_btc::segment::BtcChainSegment;
-    use strata_test_utils_l2::{gen_client_state, gen_params};
+    use strata_test_utils_l2::gen_params;
 
     use super::*;
     use crate::genesis;
@@ -261,13 +263,19 @@ mod tests {
     #[derive(Debug)]
     pub(crate) struct DummyEventContext {
         chainseg: BtcChainSegment,
+        state_storage: HashMap<L1BlockCommitment, ClientState>,
     }
 
     impl DummyEventContext {
         pub(crate) fn new() -> Self {
             Self {
                 chainseg: BtcChainSegment::load(),
+                state_storage: HashMap::new(),
             }
+        }
+
+        pub(crate) fn put_state(&mut self, block: L1BlockCommitment, state: ClientState) {
+            self.state_storage.insert(block, state);
         }
     }
 
@@ -285,64 +293,80 @@ mod tests {
             Ok(L1BlockManifest::new(rec, None, Vec::new(), 0, height))
         }
 
-        fn get_client_state(&self, _blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
-            // TODO(QQ): populate with test data.
-            todo!()
+        fn get_client_state(&self, blockid: &L1BlockCommitment) -> Result<ClientState, Error> {
+            Ok(self
+                .state_storage
+                .get(blockid)
+                .cloned()
+                .unwrap_or(ClientState::default()))
         }
     }
 
-    struct TestEvent<'a> {
-        event: SyncEvent,
+    struct TestBlock<'a> {
+        block: L1BlockCommitment,
         expected_actions: &'a [SyncAction],
     }
 
     struct TestCase<'a> {
         description: &'static str,
-        events: &'a [TestEvent<'a>], // List of events to process
-        state_assertions: Box<dyn Fn(&ClientState)>, // Closure to verify state after all events
+        // List of blocks to process
+        events: &'a [TestBlock<'a>],
+        // Closure to verify state after all blocks
+        #[allow(clippy::type_complexity)]
+        state_assertions: Box<dyn Fn((&ClientState, &L1BlockCommitment))>,
     }
 
-    fn run_test_cases(test_cases: &[TestCase<'_>], state: &mut ClientState, params: &Params) {
-        let context = DummyEventContext::new();
+    fn run_test_cases(
+        test_cases: &[TestCase<'_>],
+        cur_state: &mut ClientState,
+        cur_block: &mut L1BlockCommitment,
+        params: &Params,
+    ) {
+        let mut context = DummyEventContext::new();
+        context.put_state(*cur_block, cur_state.clone());
 
         for case in test_cases {
             println!("Running test case: {}", case.description);
 
-            let mut outputs = Vec::new();
             for (i, test_event) in case.events.iter().enumerate() {
-                let mut state_mut = FullCheckpointState::new(state.clone());
-                let event = &test_event.event;
-                eprintln!("giving sync event {event}");
-                // TODO(QQ): adjust
-                //process_event(&mut state_mut, event, &context, params).unwrap();
-                let output = state_mut.into_update();
-                outputs.push(output.clone());
-
+                let state_mut = cur_state.clone();
+                let next_block = test_event.block;
+                eprintln!("giving next block {next_block}");
+                let (new_state, actions) =
+                    process_block(state_mut, *cur_block, &next_block, &context, params).unwrap();
                 assert_eq!(
-                    output.actions(),
+                    actions,
                     test_event.expected_actions,
-                    "Failed on actions for event {} in test case: {}",
+                    "Failed on actions for block {} in test case: {}",
                     i + 1,
                     case.description
                 );
 
-                *state = output.into_state();
+                *cur_state = new_state;
+
+                if next_block.height() >= params.rollup().genesis_l1_height {
+                    *cur_block = next_block;
+                }
+
+                context.put_state(*cur_block, cur_state.clone());
             }
 
             // Run the state assertions after all events
-            (case.state_assertions)(state);
+            (case.state_assertions)((cur_state, cur_block));
         }
     }
 
     #[test]
     fn test_genesis() {
         let params = gen_params();
-        let mut state = gen_client_state(Some(&params));
+        let mut state = ClientState::default();
+        let mut block = L1BlockCommitment::default();
 
         let horizon = params.rollup().horizon_l1_height as u64;
         let genesis = params.rollup().genesis_l1_height as u64;
         let reorg_safe_depth = params.rollup().l1_reorg_safe_depth;
 
+        // TODO: Modify chain segment to include some checkpoints and make the tests more useful.
         let chain = BtcChainSegment::load();
         let _l1_verification_state = chain
             .get_verification_state(genesis + 1, reorg_safe_depth)
@@ -360,107 +384,87 @@ mod tests {
             .map(|(i, block)| L1BlockCommitment::new(horizon + i as u64, *block.blkid()))
             .collect::<Vec<_>>();
 
-        let _blkids: Vec<L1BlockId> = l1_chain.iter().map(|b| *b.blkid()).collect();
-
         let test_cases = [
             // These are kinda weird out because we got rid of pre-genesis
             // tracking and just discard these L1 blocks that are before
             // genesis.  We might re-add this later if the project demands it.
             TestCase {
                 description: "At horizon block",
-                events: &[TestEvent {
-                    event: SyncEvent::L1Block(l1_blocks[0]),
+                events: &[TestBlock {
+                    block: l1_blocks[0],
                     expected_actions: &[],
                 }],
-                state_assertions: Box::new(move |state| {
-                    assert!(!state.has_genesis_occurred());
+                state_assertions: Box::new(move |(_state, block)| {
+                    assert!(block.height() == 0);
                 }),
             },
             TestCase {
                 description: "At horizon block + 1",
-                events: &[TestEvent {
-                    event: SyncEvent::L1Block(l1_blocks[1]),
+                events: &[TestBlock {
+                    block: l1_blocks[1],
                     expected_actions: &[],
                 }],
-                state_assertions: Box::new(move |state| {
-                    assert!(!state.has_genesis_occurred());
-                    /*assert_eq!(
-                        state.most_recent_l1_block(),
-                        Some(&l1_chain[1].blkid())
-                    );*/
-                    // Because values for horizon is 40318, genesis is 40320
-                    assert_eq!(state.next_exp_l1_block(), genesis);
+                state_assertions: Box::new(move |(_state, block)| {
+                    assert!(block.height() == 0);
                 }),
             },
             TestCase {
                 // We're assuming no rollback here.
                 description: "At L2 genesis trigger L1 block reached we lock in",
-                events: &[TestEvent {
-                    event: SyncEvent::L1Block(l1_blocks[2]),
+                events: &[TestBlock {
+                    block: l1_blocks[2],
                     expected_actions: &[SyncAction::L2Genesis(*l1_blocks[2].blkid())],
                 }],
-                state_assertions: Box::new(move |state| {
-                    assert!(state.has_genesis_occurred());
-                    assert_eq!(state.next_exp_l1_block(), genesis + 1);
+                state_assertions: Box::new(move |(_state, block)| {
+                    assert!(block.height() > 0);
                 }),
             },
             TestCase {
                 description: "At genesis + 1",
-                events: &[TestEvent {
-                    event: SyncEvent::L1Block(l1_blocks[3]),
+                events: &[TestBlock {
+                    block: l1_blocks[3],
                     expected_actions: &[],
                 }],
                 state_assertions: Box::new({
                     let l1_chain = l1_chain.clone();
-                    move |state| {
-                        assert!(state.has_genesis_occurred());
+                    move |(_state, block)| {
+                        assert!(block.height() > 0);
                         assert_eq!(
-                            state.most_recent_l1_block(),
-                            Some(l1_chain[(genesis + 1 - horizon) as usize].blkid(),)
+                            block.blkid(),
+                            l1_chain[(genesis + 1 - horizon) as usize].blkid()
                         );
-                        assert_eq!(state.next_exp_l1_block(), genesis + 2);
                     }
                 }),
             },
             TestCase {
                 description: "At genesis + 2",
-                events: &[TestEvent {
-                    event: SyncEvent::L1Block(l1_blocks[4]),
+                events: &[TestBlock {
+                    block: l1_blocks[4],
                     expected_actions: &[],
                 }],
                 state_assertions: Box::new({
                     let l1_chain = l1_chain.clone();
-                    move |state| {
-                        assert!(state.has_genesis_occurred());
+                    move |(_state, block)| {
+                        assert!(block.height() > 0);
                         assert_eq!(
-                            state.most_recent_l1_block(),
-                            Some(l1_chain[(genesis + 2 - horizon) as usize].blkid())
+                            block.blkid(),
+                            l1_chain[(genesis + 2 - horizon) as usize].blkid()
                         );
-                        assert_eq!(state.next_exp_l1_block(), genesis + 3);
                     }
                 }),
             },
             TestCase {
                 description: "At genesis + 3, lock in genesis",
-                events: &[TestEvent {
-                    event: SyncEvent::L1Block(l1_blocks[5]),
+                events: &[TestBlock {
+                    block: l1_blocks[5],
                     expected_actions: &[],
                 }],
-                state_assertions: Box::new(move |state| {
-                    assert!(state.has_genesis_occurred());
-                    assert_eq!(state.next_exp_l1_block(), genesis + 4);
+                state_assertions: Box::new(move |(_state, block)| {
+                    assert!(block.height() > 0);
                 }),
-            },
-            TestCase {
-                description: "Rollback to genesis height",
-                events: &[TestEvent {
-                    event: SyncEvent::L1Revert(l1_blocks[4]),
-                    expected_actions: &[],
-                }],
-                state_assertions: Box::new(move |_state| {}),
             },
         ];
 
-        run_test_cases(&test_cases, &mut state, &params);
+        run_test_cases(&test_cases, &mut state, &mut block, &params);
     }
 }
