@@ -20,13 +20,12 @@ use bitcoin::{
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use shrex::Hex;
-use strata_crypto::keys::ZeroizableXpriv;
+use strata_crypto::keys::{EvenSecretKey, ZeroizableXpriv};
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     block_credential,
     buf::Buf32,
-    crypto::EvenSecretKey,
     l1::L1BlockId,
     operator::OperatorPubkeys,
     params::{ProofPublishMode, RollupParams},

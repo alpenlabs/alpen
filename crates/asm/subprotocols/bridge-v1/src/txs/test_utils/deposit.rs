@@ -10,8 +10,9 @@ use bitcoin::{
 };
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
 use rand::{RngCore, rngs::OsRng};
+use strata_crypto::keys::EvenSecretKey;
 use strata_l1tx::utils::generate_agg_pubkey;
-use strata_primitives::{buf::Buf32, crypto::EvenSecretKey};
+use strata_primitives::buf::Buf32;
 
 use crate::txs::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 

@@ -29,3 +29,4 @@ strata-primitives.workspace = true
 strata-test-utils.workspace = true
 musig2.workspace = true
 rand.workspace = true
+strata-crypto.workspace = true
