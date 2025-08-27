@@ -3,8 +3,6 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use strata_cli_common::errors::DisplayedError;
 use terrors::OneOf;
-#[cfg(feature = "test-mode")]
-use zeroize::Zeroizing;
 
 use super::{LoadOrCreateErr, Seed};
 use crate::{
@@ -23,23 +21,25 @@ pub trait SecretStore: Debug {
 mod impls {
     use std::path::Path;
 
-    use super::{
-        super::{load_or_create, EncryptedSeedPersister},
-        *,
+    use super::*;
+    #[cfg(target_os = "linux")]
+    use crate::seed::FilePersister;
+    #[cfg(not(target_os = "linux"))]
+    use crate::seed::KeychainPersister;
+    use crate::{
+        cmd::{change_pwd::change_pwd, reset::reset},
+        seed::{load_or_create, EncryptedSeedPersister},
     };
-    use crate::cmd::{change_pwd::change_pwd, reset::reset};
-
-    type DynPersister = Arc<dyn EncryptedSeedPersister>;
 
     #[derive(Debug)]
-    pub(super) struct UserSeedProvider {
-        pub(super) persister: DynPersister,
+    pub(super) struct UserSeedProvider<P: EncryptedSeedPersister + Clone + 'static> {
+        pub(super) persister: P,
     }
 
     #[async_trait(?Send)]
-    impl SecretStore for UserSeedProvider {
+    impl<P: EncryptedSeedPersister + Clone + 'static> SecretStore for UserSeedProvider<P> {
         fn get_secret(&self) -> Result<Seed, OneOf<LoadOrCreateErr>> {
-            load_or_create(self.persister.clone())
+            load_or_create(Arc::new(self.persister.clone()))
         }
 
         async fn reset(&self, args: ResetArgs, settings: &Settings) -> Result<(), DisplayedError> {
@@ -52,15 +52,13 @@ mod impls {
     }
 
     #[cfg(target_os = "linux")]
-    fn make_persister(seed_file: &Path) -> DynPersister {
-        let p = super::super::FilePersister::new(seed_file.to_owned());
-        Arc::new(p)
+    fn make_persister(seed_file: &Path) -> FilePersister {
+        FilePersister::new(seed_file.to_owned())
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn make_persister(_seed_file: &Path) -> DynPersister {
-        let p = super::super::KeychainPersister;
-        Arc::new(p)
+    fn make_persister(_seed_file: &Path) -> KeychainPersister {
+        KeychainPersister
     }
 
     pub fn secret_provider(seed_file: &Path) -> Arc<dyn SecretStore> {
@@ -73,6 +71,8 @@ pub use impls::secret_provider;
 
 #[cfg(feature = "test-mode")]
 mod test_impls {
+    use zeroize::Zeroizing;
+
     use super::*;
     use crate::settings::SettingsFromFile;
 

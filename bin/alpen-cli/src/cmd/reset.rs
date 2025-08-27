@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use argh::FromArgs;
 use colored::Colorize;
 use dialoguer::Confirm;
@@ -19,7 +17,7 @@ pub struct ResetArgs {
 
 pub async fn reset(
     args: ResetArgs,
-    persister: Arc<dyn EncryptedSeedPersister>,
+    persister: impl EncryptedSeedPersister,
     settings: &Settings,
 ) -> Result<(), DisplayedError> {
     let confirm = if args.assume_yes {

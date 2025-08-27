@@ -1,17 +1,19 @@
 use argh::FromArgs;
 use backup::BackupArgs;
 use balance::BalanceArgs;
+use change_pwd::ChangePwdArgs;
 use config::ConfigArgs;
 use deposit::DepositArgs;
 use drain::DrainArgs;
 use faucet::FaucetArgs;
 use receive::ReceiveArgs;
 use recover::RecoverArgs;
+use reset::ResetArgs;
 use scan::ScanArgs;
 use send::SendArgs;
 use withdraw::WithdrawArgs;
 
-use crate::cmd::{change_pwd::ChangePwdArgs, debug::DebugArgs, reset::ResetArgs};
+use crate::cmd::debug::DebugArgs;
 
 pub mod backup;
 pub mod balance;
