@@ -15,8 +15,11 @@ use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
-    CompactTarget, Network,
+    Network,
 };
+#[cfg(feature = "btc-client")]
+use bitcoin::CompactTarget;
+#[cfg(feature = "btc-client")]
 use bitcoind_async_client::{traits::Reader, Client};
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
@@ -28,13 +31,13 @@ use strata_primitives::{
     buf::Buf32,
     crypto::EvenSecretKey,
     keys::ZeroizableXpriv,
-    l1::{
-        get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId,
-        TIMESTAMPS_FOR_MEDIAN,
-    },
     operator::OperatorPubkeys,
     params::{GenesisL1View, ProofPublishMode, RollupParams},
     proof::RollupVerifyingKey,
+};
+#[cfg(feature = "btc-client")]
+use strata_primitives::l1::{
+    get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId, TIMESTAMPS_FOR_MEDIAN,
 };
 use zeroize::Zeroize;
 
@@ -283,18 +286,37 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
 
     let evm_genesis_info = get_genesis_block_info(&chainspec_json)?;
 
-    // Create Bitcoin RPC client and fetch genesis L1 view
-    let bitcoin_client = Client::new(
-        cmd.bitcoin_rpc_url,
-        cmd.bitcoin_rpc_user,
-        cmd.bitcoin_rpc_password,
-        None,
-        None,
-    )
-    .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
+    // Get genesis L1 view based on feature availability
+    let genesis_l1_view = if cfg!(feature = "btc-client") {
+        // When btc-client feature is enabled, fetch from Bitcoin RPC
+        #[cfg(feature = "btc-client")]
+        {
+            let bitcoin_client = Client::new(
+                cmd.bitcoin_rpc_url,
+                cmd.bitcoin_rpc_user,
+                cmd.bitcoin_rpc_password,
+                None,
+                None,
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
 
-    let genesis_l1_view =
-        fetch_genesis_l1_view(&bitcoin_client, cmd.genesis_l1_height.unwrap_or(100)).await?;
+            fetch_genesis_l1_view(&bitcoin_client, cmd.genesis_l1_height.unwrap_or(100)).await?
+        }
+        #[cfg(not(feature = "btc-client"))]
+        {
+            unreachable!("This branch should not be reachable when btc-client is disabled")
+        }
+    } else {
+        // When btc-client feature is disabled, load from file
+        #[cfg(not(feature = "btc-client"))]
+        {
+            load_genesis_l1_view_from_file(&cmd.genesis_l1_view_file)?
+        }
+        #[cfg(feature = "btc-client")]
+        {
+            unreachable!("This branch should not be reachable when btc-client is enabled")
+        }
+    };
 
     let magic: MagicBytes = if let Some(name_str) = &cmd.name {
         // Validate that the name is ASCII
@@ -568,6 +590,7 @@ fn get_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
     })
 }
 
+#[cfg(feature = "btc-client")]
 async fn fetch_genesis_l1_view(
     client: &impl Reader,
     block_height: u64,
@@ -629,9 +652,10 @@ async fn fetch_genesis_l1_view(
 
 /// Retrieves the timestamps for a specified number of blocks starting from the given block height,
 /// moving backwards. For each block from `height` down to `height - count + 1`, it fetches the
-/// block’s timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
+/// block's timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
 /// placeholder value of 0. The resulting vector is then reversed so that timestamps are returned in
 /// ascending order (oldest first).
+#[cfg(feature = "btc-client")]
 async fn fetch_block_timestamps_ascending(
     client: &impl Reader,
     height: u64,
@@ -652,4 +676,16 @@ async fn fetch_block_timestamps_ascending(
 
     timestamps.reverse();
     Ok(timestamps)
+}
+
+/// Load GenesisL1View from a JSON file
+#[cfg(not(feature = "btc-client"))]
+fn load_genesis_l1_view_from_file(file_path: &str) -> anyhow::Result<GenesisL1View> {
+    let content = fs::read_to_string(file_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read genesis L1 view file {}: {}", file_path, e))?;
+    
+    let genesis_l1_view: GenesisL1View = serde_json::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse genesis L1 view JSON: {}", e))?;
+    
+    Ok(genesis_l1_view)
 }
