@@ -11,6 +11,7 @@ strata-primitives.workspace = true
 
 borsh.workspace = true
 digest.workspace = true
+secp256k1.workspace = true
 sha2.workspace = true
 zkaleido.workspace = true
 

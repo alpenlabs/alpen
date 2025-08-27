@@ -13613,6 +13613,7 @@ dependencies = [
  "borsh",
  "digest 0.10.7",
  "rand 0.8.5",
+ "secp256k1 0.29.1",
  "sha2 0.10.9",
  "strata-primitives",
  "zkaleido",
