@@ -179,6 +179,17 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Gets the index of the last epoch that we have a summary for, if any.
     fn get_last_summarized_epoch(&self) -> DbResult<Option<u64>>;
 
+    /// Delete a specific epoch summary by epoch commitment.
+    ///
+    /// Returns true if the epoch summary existed and was deleted, false otherwise.
+    fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
+    /// Delete epoch summaries from the specified epoch onwards (inclusive).
+    ///
+    /// This method deletes all epoch summaries with epoch index >= start_epoch.
+    /// Returns a vector of deleted epoch indices.
+    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
+
     /// Store a [`CheckpointEntry`]
     ///
     /// `batchidx` for the Checkpoint is expected to increase monotonically and
@@ -191,6 +202,17 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
 
     /// Get last written checkpoint index.
     fn get_last_checkpoint_idx(&self) -> DbResult<Option<u64>>;
+
+    /// Delete a specific checkpoint by epoch index.
+    ///
+    /// Returns true if the checkpoint existed and was deleted, false otherwise.
+    fn del_checkpoint(&self, epoch: u64) -> DbResult<bool>;
+
+    /// Delete checkpoint entries from the specified epoch onwards (inclusive).
+    ///
+    /// This method deletes all checkpoints with epoch index >= start_epoch.
+    /// Returns a vector of deleted epoch indices.
+    fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
@@ -205,6 +227,17 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     /// Get the next payload index
     fn get_next_payload_idx(&self) -> DbResult<u64>;
 
+    /// Delete a specific payload entry by its index.
+    ///
+    /// Returns true if the payload existed and was deleted, false otherwise.
+    fn del_payload_entry(&self, idx: u64) -> DbResult<bool>;
+
+    /// Delete payload entries from the specified index onwards (inclusive).
+    ///
+    /// This method deletes all payload entries with index >= start_idx.
+    /// Returns a vector of deleted payload indices.
+    fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
+
     /// Store the [`IntentEntry`].
     fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<()>;
 
@@ -216,6 +249,17 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
 
     /// Get  the next intent index
     fn get_next_intent_idx(&self) -> DbResult<u64>;
+
+    /// Delete a specific intent entry by its ID.
+    ///
+    /// Returns true if the intent existed and was deleted, false otherwise.
+    fn del_intent_entry(&self, id: Buf32) -> DbResult<bool>;
+
+    /// Delete intent entries from the specified index onwards (inclusive).
+    ///
+    /// This method deletes all intent entries with index >= start_idx.
+    /// Returns a vector of deleted intent indices.
+    fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 }
 
 pub trait ProofDatabase: Send + Sync + 'static {
@@ -269,7 +313,16 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// Updates an existing txentry
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()>;
 
-    // TODO: possibly add delete as well
+    /// Delete a specific tx entry by its ID.
+    ///
+    /// Returns true if the tx entry existed and was deleted, false otherwise.
+    fn del_tx_entry(&self, txid: Buf32) -> DbResult<bool>;
+
+    /// Delete tx entries from the specified index onwards (inclusive).
+    ///
+    /// This method deletes all tx entries with index >= start_idx.
+    /// Returns a vector of deleted tx indices.
+    fn del_tx_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 
     /// Fetch [`L1TxEntry`] from db
     fn get_tx_entry_by_id(&self, txid: Buf32) -> DbResult<Option<L1TxEntry>>;

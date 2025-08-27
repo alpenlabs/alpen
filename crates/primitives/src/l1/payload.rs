@@ -125,7 +125,9 @@ impl PayloadSpec {
 }
 
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
 pub struct L1Payload {
     data: Vec<u8>,
     payload_type: L1PayloadType,
@@ -160,7 +162,9 @@ impl L1Payload {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
 pub enum L1PayloadType {
     Checkpoint,
     Da,

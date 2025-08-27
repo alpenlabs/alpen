@@ -116,6 +116,252 @@ pub fn test_256_checkpoints(db: &impl CheckpointDatabase) {
     }
 }
 
+pub fn test_del_epoch_summary_single(db: &impl CheckpointDatabase) {
+    let summary: EpochSummary = ArbitraryGenerator::new().generate();
+    let commitment = summary.get_epoch_commitment();
+
+    // Insert summary
+    db.insert_epoch_summary(summary).expect("test: insert");
+
+    // Verify it exists
+    assert!(db
+        .get_epoch_summary(commitment)
+        .expect("test: get")
+        .is_some());
+
+    // Delete it
+    let deleted = db.del_epoch_summary(commitment).expect("test: delete");
+    assert!(deleted, "Should return true when deleting existing summary");
+
+    // Verify it's gone
+    assert!(db
+        .get_epoch_summary(commitment)
+        .expect("test: get after delete")
+        .is_none());
+
+    // Delete again should return false
+    let deleted_again = db
+        .del_epoch_summary(commitment)
+        .expect("test: delete again");
+    assert!(
+        !deleted_again,
+        "Should return false when deleting non-existent summary"
+    );
+}
+
+pub fn test_del_epoch_summary_from_multiple(db: &impl CheckpointDatabase) {
+    let mut ag = ArbitraryGenerator::new();
+    let summary1: EpochSummary = ag.generate();
+    let epoch = summary1.epoch();
+    let summary2 = EpochSummary::new(
+        epoch,
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+    );
+
+    let commitment1 = summary1.get_epoch_commitment();
+    let commitment2 = summary2.get_epoch_commitment();
+
+    // Insert both summaries
+    db.insert_epoch_summary(summary1).expect("test: insert 1");
+    db.insert_epoch_summary(summary2).expect("test: insert 2");
+
+    // Verify both exist
+    assert!(db
+        .get_epoch_summary(commitment1)
+        .expect("test: get 1")
+        .is_some());
+    assert!(db
+        .get_epoch_summary(commitment2)
+        .expect("test: get 2")
+        .is_some());
+
+    // Delete first summary
+    let deleted = db.del_epoch_summary(commitment1).expect("test: delete 1");
+    assert!(deleted);
+
+    // Verify first is gone, second still exists
+    assert!(db
+        .get_epoch_summary(commitment1)
+        .expect("test: get 1 after delete")
+        .is_none());
+    assert!(db
+        .get_epoch_summary(commitment2)
+        .expect("test: get 2 after delete")
+        .is_some());
+
+    // Delete second summary
+    let deleted = db.del_epoch_summary(commitment2).expect("test: delete 2");
+    assert!(deleted);
+
+    // Verify both are gone
+    assert!(db
+        .get_epoch_summary(commitment1)
+        .expect("test: get 1 final")
+        .is_none());
+    assert!(db
+        .get_epoch_summary(commitment2)
+        .expect("test: get 2 final")
+        .is_none());
+}
+
+pub fn test_del_epoch_summaries_from_epoch(db: &impl CheckpointDatabase) {
+    let mut ag = ArbitraryGenerator::new();
+
+    // Create summaries for epochs 1, 2, 3
+    let summary1: EpochSummary = EpochSummary::new(
+        1,
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+    );
+    let summary2: EpochSummary = EpochSummary::new(
+        2,
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+    );
+    let summary3: EpochSummary = EpochSummary::new(
+        3,
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+        ag.generate(),
+    );
+
+    let commitment1 = summary1.get_epoch_commitment();
+    let commitment2 = summary2.get_epoch_commitment();
+    let commitment3 = summary3.get_epoch_commitment();
+
+    // Insert all summaries
+    db.insert_epoch_summary(summary1).expect("test: insert 1");
+    db.insert_epoch_summary(summary2).expect("test: insert 2");
+    db.insert_epoch_summary(summary3).expect("test: insert 3");
+
+    // Delete from epoch 2 onwards
+    let deleted_epochs = db
+        .del_epoch_summaries_from_epoch(2)
+        .expect("test: delete from epoch 2");
+    assert_eq!(deleted_epochs, vec![2, 3], "Should delete epochs 2 and 3");
+
+    // Verify epoch 1 still exists, epochs 2 and 3 are gone
+    assert!(db
+        .get_epoch_summary(commitment1)
+        .expect("test: get 1")
+        .is_some());
+    assert!(db
+        .get_epoch_summary(commitment2)
+        .expect("test: get 2")
+        .is_none());
+    assert!(db
+        .get_epoch_summary(commitment3)
+        .expect("test: get 3")
+        .is_none());
+
+    // Delete from epoch 0 onwards (should delete epoch 1)
+    let deleted_epochs = db
+        .del_epoch_summaries_from_epoch(0)
+        .expect("test: delete from epoch 0");
+    assert_eq!(deleted_epochs, vec![1], "Should delete epoch 1");
+
+    // Verify all are gone
+    assert!(db
+        .get_epoch_summary(commitment1)
+        .expect("test: get 1 final")
+        .is_none());
+}
+
+pub fn test_del_checkpoint_single(db: &impl CheckpointDatabase) {
+    let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
+    let epoch = 5;
+
+    // Insert checkpoint
+    db.put_checkpoint(epoch, checkpoint.clone())
+        .expect("test: insert");
+
+    // Verify it exists
+    assert!(db.get_checkpoint(epoch).expect("test: get").is_some());
+
+    // Delete it
+    let deleted = db.del_checkpoint(epoch).expect("test: delete");
+    assert!(
+        deleted,
+        "Should return true when deleting existing checkpoint"
+    );
+
+    // Verify it's gone
+    assert!(db
+        .get_checkpoint(epoch)
+        .expect("test: get after delete")
+        .is_none());
+
+    // Delete again should return false
+    let deleted_again = db.del_checkpoint(epoch).expect("test: delete again");
+    assert!(
+        !deleted_again,
+        "Should return false when deleting non-existent checkpoint"
+    );
+}
+
+pub fn test_del_checkpoints_from_epoch(db: &impl CheckpointDatabase) {
+    let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
+
+    // Insert checkpoints for epochs 1, 3, 5, 7
+    db.put_checkpoint(1, checkpoint.clone())
+        .expect("test: insert 1");
+    db.put_checkpoint(3, checkpoint.clone())
+        .expect("test: insert 3");
+    db.put_checkpoint(5, checkpoint.clone())
+        .expect("test: insert 5");
+    db.put_checkpoint(7, checkpoint.clone())
+        .expect("test: insert 7");
+
+    // Delete from epoch 4 onwards
+    let deleted_epochs = db
+        .del_checkpoints_from_epoch(4)
+        .expect("test: delete from epoch 4");
+    assert_eq!(deleted_epochs, vec![5, 7], "Should delete epochs 5 and 7");
+
+    // Verify epochs 1 and 3 still exist, epochs 5 and 7 are gone
+    assert!(db.get_checkpoint(1).expect("test: get 1").is_some());
+    assert!(db.get_checkpoint(3).expect("test: get 3").is_some());
+    assert!(db.get_checkpoint(5).expect("test: get 5").is_none());
+    assert!(db.get_checkpoint(7).expect("test: get 7").is_none());
+
+    // Delete from epoch 2 onwards
+    let deleted_epochs = db
+        .del_checkpoints_from_epoch(2)
+        .expect("test: delete from epoch 2");
+    assert_eq!(deleted_epochs, vec![3], "Should delete epoch 3");
+
+    // Verify only epoch 1 remains
+    assert!(db.get_checkpoint(1).expect("test: get 1 final").is_some());
+    assert!(db.get_checkpoint(3).expect("test: get 3 final").is_none());
+}
+
+pub fn test_del_checkpoints_empty_database(db: &impl CheckpointDatabase) {
+    // Delete from empty database should return empty vec
+    let deleted_epochs = db
+        .del_checkpoints_from_epoch(0)
+        .expect("test: delete from empty");
+    assert!(
+        deleted_epochs.is_empty(),
+        "Should return empty vec for empty database"
+    );
+
+    let deleted_epochs = db
+        .del_epoch_summaries_from_epoch(0)
+        .expect("test: delete summaries from empty");
+    assert!(
+        deleted_epochs.is_empty(),
+        "Should return empty vec for empty database"
+    );
+}
+
 #[macro_export]
 macro_rules! checkpoint_db_tests {
     ($setup_expr:expr) => {
@@ -165,6 +411,42 @@ macro_rules! checkpoint_db_tests {
         fn test_256_checkpoints() {
             let db = $setup_expr;
             $crate::checkpoint_tests::test_256_checkpoints(&db);
+        }
+
+        #[test]
+        fn test_del_epoch_summary_single() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_del_epoch_summary_single(&db);
+        }
+
+        #[test]
+        fn test_del_epoch_summary_from_multiple() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_del_epoch_summary_from_multiple(&db);
+        }
+
+        #[test]
+        fn test_del_epoch_summaries_from_epoch() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_del_epoch_summaries_from_epoch(&db);
+        }
+
+        #[test]
+        fn test_del_checkpoint_single() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_del_checkpoint_single(&db);
+        }
+
+        #[test]
+        fn test_del_checkpoints_from_epoch() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_del_checkpoints_from_epoch(&db);
+        }
+
+        #[test]
+        fn test_del_checkpoints_empty_database() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_del_checkpoints_empty_database(&db);
         }
     };
 }
