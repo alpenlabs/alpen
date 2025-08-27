@@ -1,3 +1,5 @@
+use std::fmt;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -285,6 +287,12 @@ pub struct BatchInfo {
 
     /// L2 block range(inclusive) the checkpoint covers
     pub l2_range: (L2BlockCommitment, L2BlockCommitment),
+}
+
+impl fmt::Display for BatchInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Debug>::fmt(self, f)
+    }
 }
 
 impl BatchInfo {

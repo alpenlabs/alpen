@@ -123,7 +123,7 @@ pub(crate) fn get_l1_summary(
     // Use helper function to get L1 tip
     let (l1_tip_height, l1_tip_block_id) = get_l1_chain_tip(db)?;
 
-    let (client_state_update, _) = get_latest_client_state_update(db, None)?;
+    let (client_state_update, _) = get_latest_client_state_update(db)?;
     let (client_state, _) = client_state_update.into_parts();
     let horizon_l1_height = 0u64; //TODO(QQ): client_state.horizon_l1_height();
     let genesis_l1_height = 0u64; //TODO(QQ): client_state.genesis_l1_height();

@@ -6,7 +6,9 @@ use strata_state::operation::ClientUpdateOutput;
 
 use crate::{
     cli::OutputFormat,
-    output::{output, traits::FmtStub},
+    cmd::l1::get_l1_block_manifest,
+    output::{client_state::ClientStateUpdateInfo, output},
+    utils::block_id::parse_l1_block_id,
 };
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -15,7 +17,7 @@ use crate::{
 pub(crate) struct GetClientStateUpdateArgs {
     /// client state update index; defaults to the latest
     #[argh(positional)]
-    pub(crate) update_index: Option<u64>,
+    pub(crate) block_id: String,
 
     /// output format: "json" or "porcelain"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -27,23 +29,30 @@ pub(crate) fn get_client_state_update(
     db: &impl DatabaseBackend,
     args: GetClientStateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    let (client_state_update, update_idx) = get_latest_client_state_update(db, args.update_index)?;
-    let (client_state, sync_actions) = client_state_update.into_parts();
+    let block_id = parse_l1_block_id(&args.block_id)?;
+    let block_mf = get_l1_block_manifest(db, block_id)?;
+    let block_commitment: L1BlockCommitment = block_mf
+        .ok_or(DisplayedError::InternalError("".to_string(), Box::new(())))?
+        .into();
+
+    let (client_state, actions) = db
+        .client_state_db()
+        .get_client_update(block_commitment)
+        .internal_error("Failed to fetch client state")?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                format!("No client state found at block {block_commitment}"),
+                Box::new(()),
+            )
+        })?
+        .into_parts();
 
     // Create the output data structure
-    //let client_state_info = ClientStateUpdateInfo {
-    //    update_index: update_idx,
-    //    is_chain_active: client_state.is_chain_active(),
-    //    horizon_l1_height: client_state.horizon_l1_height(),
-    //    genesis_l1_height: client_state.genesis_l1_height(),
-    //    latest_l1_block: client_state.most_recent_l1_block(),
-    //    next_expected_l1_height: client_state.next_exp_l1_block(),
-    //    tip_l1_block: client_state.get_tip_l1_block(),
-    //    deepest_l1_block: client_state.get_deepest_l1_block(),
-    //    last_internal_state: client_state.get_last_internal_state(),
-    //    sync_actions: &sync_actions,
-    //};
-    let client_state_info = FmtStub {};
+    let client_state_info = ClientStateUpdateInfo {
+        state: client_state,
+        sync_actions: &actions,
+        block: block_commitment,
+    };
 
     // Use the output utility
     output(&client_state_info, args.output_format)
@@ -52,26 +61,25 @@ pub(crate) fn get_client_state_update(
 /// Get the latest client state update from the database.
 pub(crate) fn get_latest_client_state_update(
     db: &impl DatabaseBackend,
-    update_idx: Option<u64>,
-) -> Result<(ClientUpdateOutput, u64), DisplayedError> {
-    //TODO(QQ):
+) -> Result<(ClientUpdateOutput, L1BlockCommitment), DisplayedError> {
     let client_state_db = db.client_state_db();
-    let last_update_idx = 0;
-    //update_idx.unwrap_or(
-    //    client_state_db
-    //        .get_last_state_idx()
-    //        .internal_error("Failed to fetch last client state index")?,
-    //);
+
+    let (latest_block, _) = client_state_db
+        .get_latest_client_state()
+        .internal_error("Failed to fetch client state")?
+        .ok_or_else(|| {
+            DisplayedError::InternalError("No client state found".to_string(), Box::new(()))
+        })?;
 
     let client_state = client_state_db
-        .get_client_update(L1BlockCommitment::default())
+        .get_client_update(latest_block)
         .internal_error("Failed to fetch client state")?
         .ok_or_else(|| {
             DisplayedError::UserError(
-                format!("No client state found at index {last_update_idx}"),
-                Box::new(last_update_idx),
+                format!("No client state found at index {latest_block}"),
+                Box::new(()),
             )
         })?;
 
-    Ok((client_state, last_update_idx))
+    Ok((client_state, latest_block))
 }
