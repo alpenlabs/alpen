@@ -17,7 +17,6 @@ pub mod errors;
 pub mod evm_exec;
 pub mod hash;
 pub mod indexed;
-pub mod keys;
 pub mod l1;
 pub mod l2;
 pub mod operator;

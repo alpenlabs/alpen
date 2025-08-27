@@ -13638,6 +13638,7 @@ dependencies = [
  "serde_json",
  "shrex",
  "sp1-verifier",
+ "strata-crypto",
  "strata-key-derivation",
  "strata-l1-txfmt",
  "strata-primitives",

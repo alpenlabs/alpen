@@ -1,2 +1,5 @@
-pub mod even_key;
-pub mod key;
+mod even_key;
+mod key;
+
+pub use even_key::{EvenPublicKey, EvenSecretKey};
+pub use key::{ZeroizableKeypair, ZeroizableXpriv};
