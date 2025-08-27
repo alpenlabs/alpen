@@ -2,7 +2,7 @@
 
 use strata_primitives::prelude::L1BlockCommitment;
 
-use super::{helpers::porcelain_field, traits::Formattable};
+use super::helpers::porcelain_field;
 
 /// Format L1 block commitment for porcelain output
 fn format_l1_block_commitment(l1_ref: &L1BlockCommitment, prefix: &str) -> Vec<String> {

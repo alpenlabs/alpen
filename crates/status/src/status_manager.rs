@@ -12,7 +12,7 @@ use thiserror::Error;
 use tokio::sync::watch::{self, error::RecvError};
 use tracing::warn;
 
-use crate::{chain::*, status_manager};
+use crate::chain::*;
 
 #[derive(Debug, Error)]
 pub enum StatusError {

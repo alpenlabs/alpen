@@ -17,7 +17,6 @@ use strata_state::{
     batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint},
     block::{L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle},
     chain_state::Chainstate,
-    client_state::ClientState,
     header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
 };
 use strata_test_utils::ArbitraryGenerator;

@@ -6,7 +6,7 @@ use strata_state::operation::ClientUpdateOutput;
 
 use crate::{
     cli::OutputFormat,
-    output::{client_state::ClientStateUpdateInfo, output, traits::FmtStub},
+    output::{output, traits::FmtStub},
 };
 
 #[derive(FromArgs, PartialEq, Debug)]

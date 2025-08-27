@@ -7,7 +7,7 @@ use strata_common::retry::{
 };
 use strata_db::DbError;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
-use strata_state::{client_state::ClientState, id::L2BlockId};
+use strata_state::id::L2BlockId;
 use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
 use tokio::runtime::Handle;
@@ -275,12 +275,13 @@ pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     shutdown: ShutdownGuard,
     handle: Handle,
     context: &impl ExecWorkerContext,
-    status_channel: StatusChannel,
+    _status_channel: StatusChannel,
     engine: Arc<E>,
     exec_rx: ExecCtlInput,
 ) -> anyhow::Result<()> {
     info!("waiting until genesis");
 
+    // TODO(QQ): maybe expose better waiting for L2 genesis through status channel.
     let genesis_block_id = handle.block_on(async {
         while context.fetch_blkid_at_height(0).unwrap().is_none() {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
