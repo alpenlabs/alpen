@@ -127,7 +127,7 @@ impl Settings {
         let secret_provider = secret_provider(&from_file);
 
         #[cfg(not(feature = "test-mode"))]
-        let secret_provider = secret_provider();
+        let secret_provider = secret_provider(&linux_seed_file);
 
         let sync_backend: Arc<dyn SignetBackend> = match (
             from_file.esplora.clone(),

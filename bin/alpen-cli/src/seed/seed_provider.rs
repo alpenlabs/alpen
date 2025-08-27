@@ -6,17 +6,7 @@ use terrors::OneOf;
 #[cfg(feature = "test-mode")]
 use zeroize::Zeroizing;
 
-#[cfg(all(target_os = "linux", not(feature = "test-mode")))]
-use super::FilePersister;
-#[cfg(all(not(target_os = "linux"), not(feature = "test-mode")))]
-use super::KeychainPersister;
-#[cfg(not(feature = "test-mode"))]
-use super::{load_or_create, EncryptedSeedPersister};
 use super::{LoadOrCreateErr, Seed};
-#[cfg(not(feature = "test-mode"))]
-use crate::cmd::{change_pwd::change_pwd, reset::reset};
-#[cfg(feature = "test-mode")]
-use crate::settings::SettingsFromFile;
 use crate::{
     cmd::{change_pwd::ChangePwdArgs, reset::ResetArgs},
     settings::Settings,
@@ -29,73 +19,98 @@ pub trait SecretStore: Debug {
     async fn change_pwd(&self, args: ChangePwdArgs, seed: Seed) -> Result<(), DisplayedError>;
 }
 
-#[derive(Debug)]
 #[cfg(not(feature = "test-mode"))]
-pub struct UserSeedProvider {
-    persister: Arc<dyn EncryptedSeedPersister>,
-}
+mod impls {
+    use std::path::Path;
 
-#[async_trait(?Send)]
-#[cfg(not(feature = "test-mode"))]
-impl SecretStore for UserSeedProvider {
-    fn get_secret(&self) -> Result<Seed, OneOf<LoadOrCreateErr>> {
-        load_or_create(self.persister.clone())
+    use super::{
+        super::{load_or_create, EncryptedSeedPersister},
+        *,
+    };
+    use crate::cmd::{change_pwd::change_pwd, reset::reset};
+
+    type DynPersister = Arc<dyn EncryptedSeedPersister>;
+
+    #[derive(Debug)]
+    pub(super) struct UserSeedProvider {
+        pub(super) persister: DynPersister,
     }
 
-    async fn reset(&self, args: ResetArgs, settings: &Settings) -> Result<(), DisplayedError> {
-        reset(args, self.persister.clone(), settings).await
+    #[async_trait(?Send)]
+    impl SecretStore for UserSeedProvider {
+        fn get_secret(&self) -> Result<Seed, OneOf<LoadOrCreateErr>> {
+            load_or_create(self.persister.clone())
+        }
+
+        async fn reset(&self, args: ResetArgs, settings: &Settings) -> Result<(), DisplayedError> {
+            reset(args, self.persister.clone(), settings).await
+        }
+
+        async fn change_pwd(&self, args: ChangePwdArgs, seed: Seed) -> Result<(), DisplayedError> {
+            change_pwd(args, seed, self.persister.clone()).await
+        }
     }
 
-    async fn change_pwd(&self, args: ChangePwdArgs, seed: Seed) -> Result<(), DisplayedError> {
-        change_pwd(args, seed, self.persister.clone()).await
-    }
-}
-
-#[cfg(feature = "test-mode")]
-#[derive(Debug)]
-pub struct TestSeedProvider {
-    seed: Seed,
-}
-
-#[async_trait(?Send)]
-#[cfg(feature = "test-mode")]
-impl SecretStore for TestSeedProvider {
-    fn get_secret(&self) -> Result<Seed, OneOf<LoadOrCreateErr>> {
-        Ok(self.seed.clone())
-    }
-
-    async fn reset(&self, _args: ResetArgs, _settings: &Settings) -> Result<(), DisplayedError> {
-        eprintln!("Reset is disabled for test mode");
-        std::process::exit(1);
-    }
-
-    async fn change_pwd(&self, _args: ChangePwdArgs, _seed: Seed) -> Result<(), DisplayedError> {
-        eprintln!("change password is disabled for test mode");
-        std::process::exit(1);
-    }
-}
-
-#[cfg(not(feature = "test-mode"))]
-pub fn secret_provider() -> Arc<dyn SecretStore> {
-    #[cfg(not(target_os = "linux"))]
-    let persister = KeychainPersister;
     #[cfg(target_os = "linux")]
-    let persister = FilePersister::new(settings.linux_seed_file.clone());
+    fn make_persister(seed_file: &Path) -> DynPersister {
+        let p = super::super::FilePersister::new(seed_file.to_owned());
+        Arc::new(p)
+    }
 
-    let usp = UserSeedProvider {
-        persister: Arc::new(persister),
-    };
+    #[cfg(not(target_os = "linux"))]
+    fn make_persister(_seed_file: &Path) -> DynPersister {
+        let p = super::super::KeychainPersister;
+        Arc::new(p)
+    }
 
-    Arc::new(usp)
+    pub fn secret_provider(seed_file: &Path) -> Arc<dyn SecretStore> {
+        let persister = make_persister(seed_file);
+        Arc::new(UserSeedProvider { persister })
+    }
 }
+#[cfg(not(feature = "test-mode"))]
+pub use impls::secret_provider;
 
 #[cfg(feature = "test-mode")]
-pub fn secret_provider(settings: &SettingsFromFile) -> Arc<dyn SecretStore> {
-    let bytes = &settings.seed;
+mod test_impls {
+    use super::*;
+    use crate::settings::SettingsFromFile;
 
-    let test_provider = TestSeedProvider {
-        seed: Seed(Zeroizing::new(**bytes)),
-    };
+    #[derive(Debug, Clone)]
+    pub(super) struct TestSeedProvider {
+        pub(super) seed: Seed,
+    }
 
-    Arc::new(test_provider)
+    #[async_trait(?Send)]
+    impl SecretStore for TestSeedProvider {
+        fn get_secret(&self) -> Result<Seed, OneOf<LoadOrCreateErr>> {
+            Ok(self.seed.clone())
+        }
+
+        async fn reset(
+            &self,
+            _args: ResetArgs,
+            _settings: &Settings,
+        ) -> Result<(), DisplayedError> {
+            eprintln!("Reset is disabled for test mode");
+            std::process::exit(1);
+        }
+
+        async fn change_pwd(
+            &self,
+            _args: ChangePwdArgs,
+            _seed: Seed,
+        ) -> Result<(), DisplayedError> {
+            eprintln!("change password is disabled for test mode");
+            std::process::exit(1);
+        }
+    }
+
+    pub fn secret_provider(settings: &SettingsFromFile) -> Arc<dyn SecretStore> {
+        let bytes = &settings.seed;
+        let seed = Seed(Zeroizing::new(**bytes));
+        Arc::new(TestSeedProvider { seed })
+    }
 }
+#[cfg(feature = "test-mode")]
+pub use test_impls::secret_provider;
