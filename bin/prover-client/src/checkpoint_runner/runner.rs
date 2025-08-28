@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use tokio::{
     sync::Mutex,
     time::{interval, Duration},
@@ -25,7 +25,7 @@ pub(crate) async fn checkpoint_proof_runner(
     operator: CheckpointOperator,
     poll_interval_s: u64,
     task_tracker: Arc<Mutex<TaskTracker>>,
-    db: Arc<ProofDb>,
+    db: Arc<ProofDBSled>,
 ) {
     info!(%poll_interval_s, "Checkpoint runner started");
     let mut ticker = interval(Duration::from_secs(poll_interval_s));
@@ -43,7 +43,7 @@ pub(crate) async fn checkpoint_proof_runner(
 async fn process_checkpoint(
     operator: &CheckpointOperator,
     task_tracker: &Arc<Mutex<TaskTracker>>,
-    db: &Arc<ProofDb>,
+    db: &Arc<ProofDBSled>,
     runner_state: &mut CheckpointRunnerState,
 ) -> anyhow::Result<()> {
     let res = fetch_latest_checkpoint_index(operator.cl_client()).await;

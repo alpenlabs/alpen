@@ -1023,8 +1023,9 @@ dependencies = [
  "reth-db",
  "reth-node-builder",
  "reth-node-core",
- "rockbound",
+ "sled",
  "tracing",
+ "typed-sled",
 ]
 
 [[package]]
@@ -1032,17 +1033,15 @@ name = "alpen-reth-db"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
- "anyhow",
  "bincode",
- "borsh",
  "revm-primitives",
- "rockbound",
  "serde",
  "serde_json",
+ "sled",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-proofimpl-evm-ee-stf",
- "tempfile",
+ "typed-sled",
 ]
 
 [[package]]
@@ -2050,26 +2049,6 @@ dependencies = [
 
 [[package]]
 name = "bindgen"
-version = "0.69.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "271383c67ccabffb7381723dea0672a673f292304fcb45c01cc648c7a8d58088"
-dependencies = [
- "bitflags 2.9.1",
- "cexpr",
- "clang-sys",
- "itertools 0.12.1",
- "lazy_static",
- "lazycell",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash 1.1.0",
- "shlex",
- "syn 2.0.101",
-]
-
-[[package]]
-name = "bindgen"
 version = "0.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f49d8fed880d473ea71efb9bf597651e77201bdd4893efe54c9e5d65ae04ce6f"
@@ -2084,24 +2063,6 @@ dependencies = [
  "quote",
  "regex",
  "rustc-hash 1.1.0",
- "shlex",
- "syn 2.0.101",
-]
-
-[[package]]
-name = "bindgen"
-version = "0.71.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
-dependencies = [
- "bitflags 2.9.1",
- "cexpr",
- "clang-sys",
- "itertools 0.13.0",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash 2.1.1",
  "shlex",
  "syn 2.0.101",
 ]
@@ -2520,16 +2481,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "bzip2-sys"
-version = "0.1.13+1.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14"
-dependencies = [
- "cc",
- "pkg-config",
 ]
 
 [[package]]
@@ -3329,7 +3280,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 2.0.101",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5896,12 +5847,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lazycell"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
-
-[[package]]
 name = "libc"
 version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5960,7 +5905,7 @@ version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e78a09b56be5adbcad5aa1197371688dc6bb249a26da3bca2011ee2fb987ebfb"
 dependencies = [
- "bindgen 0.70.1",
+ "bindgen",
  "errno",
  "libc",
 ]
@@ -5974,21 +5919,6 @@ dependencies = [
  "bitflags 2.9.1",
  "libc",
  "redox_syscall 0.5.12",
-]
-
-[[package]]
-name = "librocksdb-sys"
-version = "0.16.0+8.10.0"
-source = "git+https://github.com/rust-rocksdb/rust-rocksdb?rev=1cf906dc4087f06631820f13855e6b27bd21b972#1cf906dc4087f06631820f13855e6b27bd21b972"
-dependencies = [
- "bindgen 0.69.5",
- "bzip2-sys",
- "cc",
- "glob",
- "libc",
- "libz-sys",
- "lz4-sys",
- "zstd-sys",
 ]
 
 [[package]]
@@ -8013,20 +7943,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prometheus"
-version = "0.13.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d33c28a30771f7f96db69893f78b857f7450d7e0237e9c8fc6427a81bae7ed1"
-dependencies = [
- "cfg-if",
- "fnv",
- "lazy_static",
- "memchr",
- "parking_lot 0.12.3",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "proptest"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9702,7 +9618,7 @@ name = "reth-mdbx-sys"
 version = "1.6.0"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.6.0#d8451e54e7267f9f1634118d6d279b2216f7e2bb"
 dependencies = [
- "bindgen 0.70.1",
+ "bindgen",
  "cc",
 ]
 
@@ -11678,28 +11594,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rockbound"
-version = "1.0.0"
-source = "git+https://github.com/alpenlabs/rockbound?rev=v2.0.1-alpen.3#6f8210388379ed57489e0286ce739a9e259c410c"
-dependencies = [
- "anyhow",
- "once_cell",
- "prometheus",
- "rocksdb",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
-name = "rocksdb"
-version = "0.22.0"
-source = "git+https://github.com/rust-rocksdb/rust-rocksdb?rev=1cf906dc4087f06631820f13855e6b27bd21b972#1cf906dc4087f06631820f13855e6b27bd21b972"
-dependencies = [
- "libc",
- "librocksdb-sys",
-]
-
-[[package]]
 name = "rolling-file"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13168,7 +13062,7 @@ checksum = "e22fa911c322afa6ec75d7a5100f3bb4fbe28e823f1bb28e13774ea7c2b904ae"
 dependencies = [
  "anyhow",
  "bincode",
- "bindgen 0.70.1",
+ "bindgen",
  "cc",
  "cfg-if",
  "hex",
@@ -13443,7 +13337,7 @@ dependencies = [
  "secp256k1 0.29.1",
  "strata-config",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-l1tx",
  "strata-primitives",
  "strata-state",
@@ -13529,7 +13423,7 @@ dependencies = [
  "strata-config",
  "strata-consensus-logic",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-eectl",
  "strata-evmexec",
  "strata-primitives",
@@ -13589,7 +13483,7 @@ dependencies = [
  "strata-chaintsn",
  "strata-common",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-eectl",
  "strata-primitives",
  "strata-state",
@@ -13655,23 +13549,22 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "thiserror 2.0.12",
+ "typed-sled",
  "zkaleido",
 ]
 
 [[package]]
-name = "strata-db-store-rocksdb"
-version = "0.3.0-alpha.1"
+name = "strata-db-store-sled"
+version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
  "borsh",
- "rockbound",
+ "sled",
  "strata-db",
  "strata-db-tests",
  "strata-primitives",
  "strata-state",
- "tempfile",
- "tracing",
+ "typed-sled",
  "zkaleido",
 ]
 
@@ -13694,13 +13587,12 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "argh",
  "hex",
- "rockbound",
  "serde",
  "serde_json",
  "strata-cli-common",
  "strata-consensus-logic",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-primitives",
  "strata-state",
  "tracing",
@@ -13935,12 +13827,12 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "jsonrpsee",
- "rockbound",
  "serde",
  "serde_json",
+ "sled",
  "strata-common",
  "strata-db",
- "strata-db-store-rocksdb",
+ "strata-db-store-sled",
  "strata-l1tx",
  "strata-primitives",
  "strata-proofimpl-btc-blockspace",
@@ -13960,6 +13852,7 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
+ "typed-sled",
  "zkaleido",
  "zkaleido-risc0-host",
  "zkaleido-sp1-host",
@@ -15245,6 +15138,16 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "static_assertions",
+]
+
+[[package]]
+name = "typed-sled"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/typed-sled#04e4207b1a0d62235b602effb11da7f1d1c35a99"
+dependencies = [
+ "dashmap 6.1.0",
+ "sled",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -16702,7 +16605,6 @@ version = "2.0.15+zstd.1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb81183ddd97d0c74cedf1d50d85c8d08c1b8b68ee863bdee9e706eedba1a237"
 dependencies = [
- "bindgen 0.71.1",
  "cc",
  "pkg-config",
 ]
