@@ -6,7 +6,7 @@ use strata_eectl::{
     messages::ExecPayloadData,
     worker::{ExecEnvId, ExecWorkerContext},
 };
-use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, params::Params};
+use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_state::{header::L2Header, id::L2BlockId};
 use strata_storage::{ClientStateManager, L2BlockManager};
 
@@ -14,20 +14,11 @@ use strata_storage::{ClientStateManager, L2BlockManager};
 pub struct ExecWorkerCtx {
     l2man: Arc<L2BlockManager>,
     client: Arc<ClientStateManager>,
-    params: Arc<Params>,
 }
 
 impl ExecWorkerCtx {
-    pub fn new(
-        l2man: Arc<L2BlockManager>,
-        client: Arc<ClientStateManager>,
-        params: Arc<Params>,
-    ) -> Self {
-        Self {
-            l2man,
-            client,
-            params,
-        }
+    pub fn new(l2man: Arc<L2BlockManager>, client: Arc<ClientStateManager>) -> Self {
+        Self { l2man, client }
     }
 }
 

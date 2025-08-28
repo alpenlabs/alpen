@@ -79,11 +79,7 @@ pub trait L1Database: Send + Sync + 'static {
 
 /// Db for client state updates and checkpoints.
 pub trait ClientStateDatabase: Send + Sync + 'static {
-    /// Writes a new consensus output for a given input index.  These input
-    /// indexes correspond to indexes in [``SyncEventDatabase``] and
-    /// [``SyncEventDatabase``].  Will error if `idx - 1` does not exist (unless
-    /// `idx` is 0) or if trying to overwrite a state, as this is almost
-    /// certainly a bug.
+    /// Writes a new consensus output for a given l1 block.
     fn put_client_update(
         &self,
         block: L1BlockCommitment,
@@ -93,6 +89,7 @@ pub trait ClientStateDatabase: Send + Sync + 'static {
     /// Gets the output client state writes for some input index.
     fn get_client_update(&self, block: L1BlockCommitment) -> DbResult<Option<ClientUpdateOutput>>;
 
+    /// Gets latest client state (the entry that corresponds to the highest l1 block).
     fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>>;
 }
 
