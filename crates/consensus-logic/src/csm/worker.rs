@@ -132,7 +132,7 @@ fn process_block_with_retries(
     config: &CsmExecConfig,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
-    strata_common::check_bail_trigger("csm_process_block");
+    strata_common::check_bail_trigger("sync_event");
 
     let span = debug_span!("csm-process-block", %incoming_block);
     let _g = span.enter();

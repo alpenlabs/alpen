@@ -47,10 +47,10 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         # check if rpc is still working
         assert seqrpc.strata_clientStatus() is not None, "RPC server of sequencer crashed"
 
-        cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
+        cur_slot = seqrpc.strata_clientStatus()["tip_l1_block"]
         # wait for 2 seconds to allow block production if any
         seq_waiter.wait_until_client_ready(timeout=2, interval=2)
-        new_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
+        new_slot = seqrpc.strata_clientStatus()["tip_l1_block"]
 
         # block production should halt
         assert cur_slot == new_slot, "Block production didn't halt"
@@ -71,10 +71,10 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         seq_waiter.wait_until_client_ready()
 
         # check if new blocks are being created again
-        cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
+        cur_block = seqrpc.strata_clientStatus()["tip_l1_block"]
 
         seq_waiter.wait_until_chain_tip_exceeds(
-            cur_slot,
+            cur_block["height"],
             msg="New blocks are not being created",
         )
 

@@ -60,9 +60,9 @@ class ResubmitCheckpointTest(testenv.StrataTestBase):
         )
 
         # check if chain tip is being increased
-        cur_chain_tip = seqrpc.strata_clientStatus()["chain_tip_slot"]
+        cur_chain_tip = seqrpc.strata_clientStatus()["tip_l1_block"]["height"]
         wait_until(
-            lambda: seqrpc.strata_clientStatus()["chain_tip_slot"] > cur_chain_tip,
+            lambda: seqrpc.strata_clientStatus()["tip_l1_block"]["height"] > cur_chain_tip,
             "chain tip slot hasn't changed since resubmit of checkpoint blob",
         )
 
