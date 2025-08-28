@@ -63,6 +63,13 @@ impl ClientStateManager {
             .map(|update| update.into_state()))
     }
 
+    pub fn get_update_blocking(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> DbResult<Option<ClientUpdateOutput>> {
+        self.ops.get_client_update_blocking(*block)
+    }
+
     pub fn put_update_blocking(
         &self,
         block: &L1BlockCommitment,

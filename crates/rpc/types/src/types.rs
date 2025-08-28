@@ -130,37 +130,12 @@ impl Default for RpcL1Status {
 /// In reference to checkpointed client state tracked by the CSM.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RpcClientStatus {
-    /// Blockchain tip.
-    // TODO remove this since the CSM doesn't track this anymore, we're pulling it in indirectly
-    #[serde(with = "hex::serde")]
-    #[deprecated(note = "no longer tracked by client state")]
-    pub chain_tip: [u8; 32],
-
-    /// L1 chain tip slot.
-    // TODO remove this since the CSM doesn't track this anymore, we're pulling it in indirectly
-    #[deprecated(note = "no longer tracked by client state")]
-    pub chain_tip_slot: u64,
-
-    /// L2 block that's been finalized and proven on L1.
-    #[serde(with = "hex::serde")]
-    #[deprecated(note = "implied by finalized_epoch, use that instead")]
-    pub finalized_blkid: [u8; 32],
-
     /// Epoch that's been confirmed and buried on L1 and we can assume won't
     /// roll back.
     pub finalized_epoch: Option<EpochCommitment>,
 
     /// Epoch that's been confirmed on L1 but might still roll back.
     pub confirmed_epoch: Option<EpochCommitment>,
-
-    /// Recent L1 block that we might still reorg.
-    #[serde(with = "hex::serde")]
-    #[deprecated(note = "use `tip_l1_block`")]
-    pub last_l1_block: [u8; 32],
-
-    /// L1 block index we treat as being "buried" and won't reorg.
-    #[deprecated(note = "use `buried_l1_block`")]
-    pub buried_l1_height: u64,
 
     /// Tip L1 block that we're following.
     pub tip_l1_block: Option<L1BlockCommitment>,

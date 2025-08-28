@@ -137,6 +137,10 @@ impl StatusChannel {
         self.receiver.cl.borrow().client_state.clone()
     }
 
+    pub fn get_cur_checkpoint_state(&self) -> CheckpointState {
+        self.receiver.cl.borrow().clone()
+    }
+
     pub fn has_genesis_occurred(&self) -> bool {
         self.receiver.cl.borrow().has_genesis_occurred()
     }
@@ -158,7 +162,7 @@ impl StatusChannel {
     // Subscription functions.
 
     /// Create a subscription to the client state watcher.
-    pub fn subscribe_client_state(&self) -> watch::Receiver<CheckpointState> {
+    pub fn subscribe_checkpoint_state(&self) -> watch::Receiver<CheckpointState> {
         self.sender.cl.subscribe()
     }
 
@@ -169,7 +173,7 @@ impl StatusChannel {
 
     /// Waits until genesis and returns the client state where genesis was triggered.
     pub async fn wait_until_genesis(&self) -> Result<ClientState, RecvError> {
-        let mut rx = self.subscribe_client_state();
+        let mut rx = self.subscribe_checkpoint_state();
         let state = rx.wait_for(|state| state.has_genesis_occurred()).await?;
         Ok(state.client_state.clone())
     }
