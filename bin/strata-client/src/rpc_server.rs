@@ -210,7 +210,8 @@ impl StrataApiServer for StrataRpcImpl {
             let manifest = self
                 .storage
                 .l1()
-                .get_block_manifest_at_height(buried_height);
+                .get_block_manifest_at_height_async(buried_height)
+                .await;
 
             if let Ok(Some(block)) = manifest {
                 buried_l1_block = Some(block.into());
