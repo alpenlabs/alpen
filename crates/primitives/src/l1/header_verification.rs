@@ -7,7 +7,7 @@ use super::{error::L1VerificationError, timestamp_store::TimestampStore, L1Block
 use crate::{
     buf::Buf32,
     hash::compute_borsh_hash,
-    l1::{utils::compute_block_hash, BtcParams, L1BlockCommitment},
+    l1::{utils::compute_block_hash, work::BtcWork, BtcParams, L1BlockCommitment},
     params::GenesisL1View,
 };
 
@@ -74,7 +74,7 @@ pub struct HeaderVerificationState {
     block_timestamp_history: TimestampStore,
 
     /// Total accumulated proof of work
-    total_accumulated_pow: u128,
+    total_accumulated_pow: BtcWork,
 }
 
 impl HeaderVerificationState {
@@ -87,7 +87,7 @@ impl HeaderVerificationState {
             next_block_target: genesis_view.next_target,
             epoch_start_timestamp: genesis_view.epoch_start_timestamp,
             block_timestamp_history: TimestampStore::new(genesis_view.last_11_timestamps),
-            total_accumulated_pow: 0,
+            total_accumulated_pow: BtcWork::default(),
         }
     }
 
@@ -184,7 +184,7 @@ impl HeaderVerificationState {
         self.next_block_target = self.next_target(header);
 
         // Update total accumulated PoW
-        self.total_accumulated_pow += header.difficulty(&self.params);
+        self.total_accumulated_pow += header.work().into();
 
         Ok(())
     }
