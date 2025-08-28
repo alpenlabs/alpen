@@ -17,7 +17,7 @@ from factory.config import (
     RethELConfig,
 )
 from load.cfg import LoadConfig
-from load.service import LoadGeneratorService
+from load.service import DisposableService, LoadGeneratorService
 from utils import *
 from utils.constants import *
 
@@ -480,6 +480,76 @@ class LoadGeneratorFactory(flexitest.Factory):
         svc = LoadGeneratorService(datadir, load_cfg)
         svc.start()
         _inject_service_create_rpc(svc, rpc_url, name)
+        return svc
+
+class AlpenCliFactory(flexitest.Factory):
+    def __init__(self):
+        # doens't require any ports
+        super().__init__([])
+
+    def scan(svc: DisposableService):
+        # fmt: off
+        cmd = [
+            "alpen",
+            "scan",
+        ]
+        # fmt: on
+
+
+    def l1_address(svc: DisposableService):
+        # fmt: off
+        cmd = [
+            "alpen",
+            "--config",
+        ]
+        # fmt: on
+        pass
+
+    def l2_address(svc: DisposableService):
+        pass
+
+    def l1_balance(svc: DisposableService):
+        pass
+
+    def l2_balance(svc: DisposableService):
+        pass
+
+    def deposit(svc: DisposableService):
+        pass
+
+    def withdraw(svc: DisposableService):
+        pass
+
+
+    @flexitest.with_ectx("ctx")
+    def setup_environment(
+        self,
+        reth_endpoint: str,
+        bitcoin_config: BitcoindConfig,
+        ctx: flexitest.EnvContext,
+        pubkey: str,
+        magic_bytes: str,
+    ) -> flexitest.Service:
+        name = "alpen-cli"
+
+        datadir = ctx.make_service_dir(name)
+        config_file = os.path.join(datadir, "alpen-cli.toml")
+        config_content = f"""# Alpen-cli Configuration for functional test
+# Generated automatically by functional test factory
+        alpen_endpoing = "{reth_endpoint}"
+        bitcoind_rpc_endpoint = "{bitcoin_config.rpc_url}"
+        bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
+        bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
+        bridge_pubkey = "{pubkey}"
+        magic_bytes = "{magic_bytes}"
+"""
+        with open(config_file, "w") as f:
+            f.write(config_content)
+
+
+        svc = DisposableService({}, stdout=subprocess.PIPE)
+        # inject multiple commands
+
         return svc
 
 
