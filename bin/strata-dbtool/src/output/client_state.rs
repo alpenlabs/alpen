@@ -1,7 +1,7 @@
 //! Client state formatting implementations
 
 use strata_primitives::prelude::L1BlockCommitment;
-use strata_state::{client_state::ClientState, l1::L1BlockId, operation::SyncAction};
+use strata_state::{client_state::ClientState, operation::SyncAction};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 use crate::output::helpers::porcelain_optional;

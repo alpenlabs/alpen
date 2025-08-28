@@ -59,7 +59,7 @@ pub(crate) fn get_client_state_update(
 }
 
 /// Get the latest client state update from the database.
-pub(crate) fn get_latest_client_state_update(
+pub(crate) fn _get_latest_client_state_update(
     db: &impl DatabaseBackend,
 ) -> Result<(ClientUpdateOutput, L1BlockCommitment), DisplayedError> {
     let client_state_db = db.client_state_db();
