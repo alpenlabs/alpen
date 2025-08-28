@@ -8,6 +8,8 @@ mod utils;
 
 use std::str::FromStr;
 
+use strata_db::traits::DatabaseBackend;
+
 use crate::{
     cli::{Cli, Command},
     cmd::{
@@ -51,7 +53,9 @@ fn main() {
         Command::GetL1WriterPayload(args) => get_l1_writer_payload(db, args),
         Command::GetCheckpoint(args) => get_checkpoint(db, args),
         Command::GetCheckpointsSummary(args) => get_checkpoints_summary(db, args),
-        Command::GetL1BroadcasterSummary(args) => get_l1_broadcaster_summary(db.broadcast_db(), args)
+        Command::GetL1BroadcasterSummary(args) => {
+            get_l1_broadcaster_summary(db.broadcast_db(), args)
+        }
         Command::GetL1BroadcasterTx(args) => get_l1_broadcaster_tx(db.broadcast_db(), args),
         Command::GetEpochSummary(args) => get_epoch_summary(db, args),
         Command::GetSyncinfo(args) => get_syncinfo(db, args),

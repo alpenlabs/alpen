@@ -71,6 +71,97 @@ impl CheckpointDatabase for CheckpointDBSled {
     fn get_last_checkpoint_idx(&self) -> DbResult<Option<u64>> {
         Ok(self.checkpoint_tree.last()?.map(first))
     }
+
+    fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        let epoch_idx = epoch.epoch();
+        let terminal = epoch.to_block_commitment();
+
+        let Some(mut summaries) = self.epoch_summary_tree.get(&epoch_idx)? else {
+            return Ok(false);
+        };
+        let old_summaries = summaries.clone(); // for CAS
+
+        // Find the summary to delete
+        let Ok(pos) = summaries.binary_search_by_key(&terminal, |s| *s.terminal()) else {
+            return Ok(false);
+        };
+
+        // Remove the summary from the vector
+        summaries.remove(pos);
+
+        // If vector is now empty, delete the entire entry using CAS
+        if summaries.is_empty() {
+            self.epoch_summary_tree
+                .compare_and_swap(epoch_idx, Some(old_summaries), None)?;
+        } else {
+            // Otherwise, update with the remaining summaries
+            self.epoch_summary_tree.compare_and_swap(
+                epoch_idx,
+                Some(old_summaries),
+                Some(summaries),
+            )?;
+        }
+
+        Ok(true)
+    }
+
+    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>> {
+        let last_epoch = self.get_last_summarized_epoch()?;
+        let Some(last_epoch) = last_epoch else {
+            return Ok(Vec::new());
+        };
+
+        if start_epoch > last_epoch {
+            return Ok(Vec::new());
+        }
+
+        let deleted_epochs = self
+            .config
+            .with_retry((&self.epoch_summary_tree,), |(est,)| {
+                let mut deleted_epochs = Vec::new();
+                for epoch in start_epoch..=last_epoch {
+                    if est.contains_key(&epoch)? {
+                        est.remove(&epoch)?;
+                        deleted_epochs.push(epoch);
+                    }
+                }
+                Ok(deleted_epochs)
+            })?;
+        Ok(deleted_epochs)
+    }
+
+    fn del_checkpoint(&self, epoch: u64) -> DbResult<bool> {
+        let old_item = self.checkpoint_tree.get(&epoch)?;
+        let exists = old_item.is_some();
+        if exists {
+            self.checkpoint_tree
+                .compare_and_swap(epoch, old_item, None)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>> {
+        let last_epoch = self.get_last_checkpoint_idx()?;
+        let Some(last_epoch) = last_epoch else {
+            return Ok(Vec::new());
+        };
+
+        if start_epoch > last_epoch {
+            return Ok(Vec::new());
+        }
+
+        let deleted_epochs = self.config.with_retry((&self.checkpoint_tree,), |(ct,)| {
+            let mut deleted_epochs = Vec::new();
+            for epoch in start_epoch..=last_epoch {
+                if ct.contains_key(&epoch)? {
+                    ct.remove(&epoch)?;
+                    deleted_epochs.push(epoch);
+                }
+            }
+            Ok(deleted_epochs)
+        })?;
+        Ok(deleted_epochs)
+    }
 }
 
 #[cfg(feature = "test_utils")]

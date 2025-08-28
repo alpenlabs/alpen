@@ -82,6 +82,70 @@ impl L1WriterDatabase for L1WriterDBSled {
             .map(|x| x + 1)
             .unwrap_or(0))
     }
+
+    fn del_payload_entry(&self, idx: u64) -> DbResult<bool> {
+        let exists = self.payload_tree.contains_key(&idx)?;
+        if exists {
+            self.payload_tree.remove(&idx)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = self.payload_tree.last()?.map(first);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        let deleted_indices = self.config.with_retry((&self.payload_tree,), |(ptree,)| {
+            let mut deleted_indices = Vec::new();
+            for idx in start_idx..=last_idx {
+                if ptree.contains_key(&idx)? {
+                    ptree.remove(&idx)?;
+                    deleted_indices.push(idx);
+                }
+            }
+            Ok(deleted_indices)
+        })?;
+        Ok(deleted_indices)
+    }
+
+    fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
+        let old_item = self.intent_tree.get(&id)?;
+        let exists = old_item.is_some();
+        if exists {
+            self.intent_tree.compare_and_swap(id, old_item, None)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
+        let last_idx = self.intent_idx_tree.last()?.map(first);
+        let Some(last_idx) = last_idx else {
+            return Ok(Vec::new());
+        };
+
+        if start_idx > last_idx {
+            return Ok(Vec::new());
+        }
+
+        self.config
+            .with_retry((&self.intent_idx_tree, &self.intent_tree), |(iit, it)| {
+                let mut deleted_indices = Vec::new();
+                for idx in start_idx..=last_idx {
+                    if let Some(intent_id) = iit.get(&idx)? {
+                        iit.remove(&idx)?;
+                        it.remove(&intent_id)?;
+                        deleted_indices.push(idx);
+                    }
+                }
+                Ok(deleted_indices)
+            })
+    }
 }
 
 #[cfg(feature = "test_utils")]
