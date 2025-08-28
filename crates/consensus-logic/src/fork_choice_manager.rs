@@ -508,7 +508,7 @@ pub fn forkchoice_manager_task_inner(
     mut fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
-    let mut cl_rx = status_channel.subscribe_client_state();
+    let mut cl_rx = status_channel.subscribe_checkpoint_state();
     loop {
         // Check if we should shut down.
         if shutdown.should_shutdown() {
