@@ -33,7 +33,6 @@ pub(crate) fn get_client_state_update(
     let client_state_info = ClientStateUpdateInfo {
         update_index: update_idx,
         is_chain_active: client_state.is_chain_active(),
-        horizon_l1_height: client_state.horizon_l1_height(),
         genesis_l1_height: client_state.genesis_l1_height(),
         latest_l1_block: client_state.most_recent_l1_block(),
         next_expected_l1_height: client_state.next_exp_l1_block(),
