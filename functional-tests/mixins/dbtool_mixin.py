@@ -32,7 +32,7 @@ class DbtoolMixin(BaseMixin):
 
     def get_checkpoints_summary(self) -> dict[str, Any]:
         """Get checkpoints summary and return parsed data"""
-        return self.__run_dbtool_json_command("get-checkpoints-summary", "-o", "json")
+        return self.__run_dbtool_json_command("get-checkpoints-summary", "-o", "json", "1")
 
     def get_checkpoint(self, checkpoint_index: int) -> dict[str, Any]:
         """Get checkpoint data for specific index and return parsed data"""
