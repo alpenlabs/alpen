@@ -202,19 +202,31 @@ pub(crate) struct SubcParams {
     pub(crate) chain_config: Option<PathBuf>,
 
     #[cfg(feature = "btc-client")]
-    #[argh(option, description = "bitcoin RPC URL (required when btc-client feature is enabled)")]
+    #[argh(
+        option,
+        description = "bitcoin RPC URL (required when btc-client feature is enabled)"
+    )]
     pub(crate) bitcoin_rpc_url: String,
 
     #[cfg(feature = "btc-client")]
-    #[argh(option, description = "bitcoin RPC username (required when btc-client feature is enabled)")]
+    #[argh(
+        option,
+        description = "bitcoin RPC username (required when btc-client feature is enabled)"
+    )]
     pub(crate) bitcoin_rpc_user: String,
 
     #[cfg(feature = "btc-client")]
-    #[argh(option, description = "bitcoin RPC password (required when btc-client feature is enabled)")]
+    #[argh(
+        option,
+        description = "bitcoin RPC password (required when btc-client feature is enabled)"
+    )]
     pub(crate) bitcoin_rpc_password: String,
 
     #[cfg(not(feature = "btc-client"))]
-    #[argh(option, description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)")]
+    #[argh(
+        option,
+        description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
+    )]
     pub(crate) genesis_l1_view_file: String,
 }
 

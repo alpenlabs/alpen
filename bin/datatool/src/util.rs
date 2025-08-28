@@ -591,8 +591,10 @@ fn get_genesis_l1_view(cmd: &SubcParams) -> anyhow::Result<GenesisL1View> {
         )
         .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
 
-        tokio::runtime::Runtime::new()?
-            .block_on(fetch_genesis_l1_view(&bitcoin_client, cmd.genesis_l1_height.unwrap_or(100)))
+        tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
+            &bitcoin_client,
+            cmd.genesis_l1_height.unwrap_or(100),
+        ))
     }
 
     #[cfg(not(feature = "btc-client"))]
