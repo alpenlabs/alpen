@@ -14,8 +14,8 @@ use strata_sequencer::{
     duty::types::Duty,
 };
 use strata_state::{
-    block::L2Block, client_state::ClientState, id::L2BlockId, operation::ClientUpdateOutput,
-    sync_event::SyncEvent,
+    block::L2Block, client_state::ClientState, id::L2BlockId, l1::L1BlockId,
+    operation::ClientUpdateOutput,
 };
 use zkaleido::ProofReceipt;
 
@@ -135,17 +135,12 @@ pub trait StrataApi {
     #[method(name = "getL2BlockStatus")]
     async fn get_l2_block_status(&self, block_height: u64) -> RpcResult<L2BlockStatus>;
 
-    /// Gets the sync event by index, if it exists.
-    #[method(name = "getSyncEvent")]
-    async fn get_sync_event(&self, idx: u64) -> RpcResult<Option<SyncEvent>>;
-
-    /// Gets the index of the last written sync event.
-    #[method(name = "getLastSyncEventIdx")]
-    async fn get_last_sync_event_idx(&self) -> RpcResult<u64>;
-
-    /// Gets the client update output produced as a result of the sync event idx given.
+    /// Gets the client update output produced as a result of the l1 block processed.
     #[method(name = "getClientUpdateOutput")]
-    async fn get_client_update_output(&self, idx: u64) -> RpcResult<Option<ClientUpdateOutput>>;
+    async fn get_client_update_output(
+        &self,
+        block: L1BlockId,
+    ) -> RpcResult<Option<ClientUpdateOutput>>;
 }
 
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strataadmin"))]
@@ -216,9 +211,9 @@ pub trait StrataDebugApi {
     #[method(name = "debug_getChainstateById")]
     async fn get_chainstate_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<RpcChainState>>;
 
-    /// Get the ClientState at a certain index
-    #[method(name = "debug_getClientStateAtIdx")]
-    async fn get_clientstate_at_idx(&self, idx: u64) -> RpcResult<Option<ClientState>>;
+    /// Get the ClientState at a certain block
+    #[method(name = "debug_getClientStateAtBlock")]
+    async fn get_clientstate_at_block(&self, block: L1BlockId) -> RpcResult<Option<ClientState>>;
 
     /// for exiting the client based on context
     #[method(name = "debug_bail")]

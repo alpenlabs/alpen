@@ -17,6 +17,9 @@ pub trait WorkerContext {
     /// Fetches a whole block bundle.
     fn fetch_block(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockBundle>>;
 
+    /// Fetches ids for L2 blocks at a given height.
+    fn fetch_block_ids(&self, height: u64) -> WorkerResult<Vec<L2BlockId>>;
+
     /// Fetches a block's header.
     fn fetch_header(&self, blkid: &L2BlockId) -> WorkerResult<Option<L2BlockHeader>>;
 

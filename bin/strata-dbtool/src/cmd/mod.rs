@@ -5,5 +5,4 @@ pub(crate) mod l1;
 pub(crate) mod l1_broadcaster;
 pub(crate) mod l1_writer;
 pub(crate) mod l2;
-pub(crate) mod sync_event;
 pub(crate) mod syncinfo;

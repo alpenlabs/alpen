@@ -6,18 +6,19 @@ use strata_eectl::{
     messages::ExecPayloadData,
     worker::{ExecEnvId, ExecWorkerContext},
 };
-use strata_primitives::l2::L2BlockCommitment;
+use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_state::{header::L2Header, id::L2BlockId};
-use strata_storage::L2BlockManager;
+use strata_storage::{ClientStateManager, L2BlockManager};
 
 #[expect(missing_debug_implementations)]
 pub struct ExecWorkerCtx {
     l2man: Arc<L2BlockManager>,
+    client: Arc<ClientStateManager>,
 }
 
 impl ExecWorkerCtx {
-    pub fn new(l2man: Arc<L2BlockManager>) -> Self {
-        Self { l2man }
+    pub fn new(l2man: Arc<L2BlockManager>, client: Arc<ClientStateManager>) -> Self {
+        Self { l2man, client }
     }
 }
 
@@ -68,5 +69,14 @@ impl ExecWorkerContext for ExecWorkerCtx {
             .get_blocks_at_height_blocking(height)?
             .first()
             .cloned())
+    }
+
+    fn fetch_latest_finalized_epoch(&self) -> EngineResult<Option<EpochCommitment>> {
+        let (_, state) = self
+            .client
+            .fetch_most_recent_state()?
+            .expect("genesis should have happened.");
+
+        Ok(state.get_declared_final_epoch())
     }
 }

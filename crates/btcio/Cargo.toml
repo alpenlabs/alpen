@@ -23,7 +23,6 @@ hex = { workspace = true, optional = true }
 musig2 = { workspace = true, features = ["serde"], optional = true }
 rand.workspace = true
 reqwest.workspace = true
-secp256k1 = { workspace = true, features = ["rand-std"] }
 strata-l1tx.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true

@@ -5,7 +5,7 @@ use strata_db::traits::{DatabaseBackend, L1BroadcastDatabase};
 use strata_db_store_rocksdb::{
     l2::db::L2Db, open_rocksdb_database, prover::db::ProofDb, writer::db::RBL1WriterDb,
     ChainstateDb, ClientStateDb, DbOpsConfig, L1BroadcastDb, L1Db, RBCheckpointDB, RocksDbBackend,
-    SyncEventDb, ROCKSDB_NAME,
+    ROCKSDB_NAME,
 };
 
 pub(crate) enum DbType {
@@ -42,7 +42,6 @@ fn init_rocksdb_components(
 ) -> CommonDbBackend<RocksDbBackend, L1BroadcastDb> {
     let l1_db: Arc<_> = L1Db::new(rbdb.clone(), ops_config).into();
     let l2_db: Arc<_> = L2Db::new(rbdb.clone(), ops_config).into();
-    let sync_ev_db: Arc<_> = SyncEventDb::new(rbdb.clone(), ops_config).into();
     let clientstate_db: Arc<_> = ClientStateDb::new(rbdb.clone(), ops_config).into();
     let chainstate_db: Arc<_> = ChainstateDb::new(rbdb.clone(), ops_config).into();
     let checkpoint_db: Arc<_> = RBCheckpointDB::new(rbdb.clone(), ops_config).into();
@@ -52,7 +51,6 @@ fn init_rocksdb_components(
     let core = RocksDbBackend::new(
         l1_db,
         l2_db,
-        sync_ev_db,
         clientstate_db,
         chainstate_db,
         checkpoint_db,

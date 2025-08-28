@@ -534,8 +534,6 @@ mod tests {
         writer::builder::EnvelopeError,
     };
 
-    const BTC_TO_SATS: u64 = 100_000_000;
-
     #[allow(clippy::type_complexity)]
     fn get_mock_data() -> (
         Arc<WriterContext<TestBitcoinClient>>,

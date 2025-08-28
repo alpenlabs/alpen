@@ -7,7 +7,6 @@ pub mod client_state;
 pub mod l1;
 pub mod l2;
 pub mod prover;
-pub mod sync_event;
 pub mod writer;
 
 pub mod macros;
@@ -45,7 +44,6 @@ use l2::{
 };
 pub use prover::db::ProofDb;
 use rockbound::{schema::ColumnFamilyName, Schema, TransactionRetry};
-pub use sync_event::db::SyncEventDb;
 pub use writer::db::RBL1WriterDb;
 use writer::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 
@@ -54,7 +52,6 @@ use crate::{
     client_state::schemas::ClientUpdateOutputSchema,
     l1::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema},
     sequence::SequenceSchema,
-    sync_event::schemas::SyncEventSchema,
 };
 
 pub const ROCKSDB_NAME: &str = "strata-client";
@@ -68,7 +65,6 @@ pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
     TxnSchema::COLUMN_FAMILY_NAME,
     L1BlocksByHeightSchema::COLUMN_FAMILY_NAME,
     L1CanonicalBlockSchema::COLUMN_FAMILY_NAME,
-    SyncEventSchema::COLUMN_FAMILY_NAME,
     L2BlockSchema::COLUMN_FAMILY_NAME,
     L2BlockStatusSchema::COLUMN_FAMILY_NAME,
     L2BlockHeightSchema::COLUMN_FAMILY_NAME,
@@ -149,7 +145,6 @@ pub fn open_rocksdb_backend(
 pub struct RocksDbBackend {
     l1_db: Arc<L1Db>,
     l2_db: Arc<L2Db>,
-    sync_event_db: Arc<SyncEventDb>,
     client_state_db: Arc<ClientStateDb>,
     chain_state_db: Arc<ChainstateDb>,
     checkpoint_db: Arc<RBCheckpointDB>,
@@ -162,7 +157,6 @@ impl RocksDbBackend {
     pub fn new(
         l1_db: Arc<L1Db>,
         l2_db: Arc<L2Db>,
-        sync_event_db: Arc<SyncEventDb>,
         client_state_db: Arc<ClientStateDb>,
         chain_state_db: Arc<ChainstateDb>,
         checkpoint_db: Arc<RBCheckpointDB>,
@@ -172,7 +166,6 @@ impl RocksDbBackend {
         Self {
             l1_db,
             l2_db,
-            sync_event_db,
             client_state_db,
             chain_state_db,
             checkpoint_db,
@@ -189,10 +182,6 @@ impl DatabaseBackend for RocksDbBackend {
 
     fn l2_db(&self) -> Arc<impl strata_db::traits::L2BlockDatabase> {
         self.l2_db.clone()
-    }
-
-    fn sync_event_db(&self) -> Arc<impl strata_db::traits::SyncEventDatabase> {
-        self.sync_event_db.clone()
     }
 
     fn client_state_db(&self) -> Arc<impl strata_db::traits::ClientStateDatabase> {
@@ -252,7 +241,6 @@ pub fn init_rocksdb_backend(
 ) -> Arc<RocksDbBackend> {
     let l1_db = Arc::new(L1Db::new(rbdb.clone(), ops_config));
     let l2_db = Arc::new(L2Db::new(rbdb.clone(), ops_config));
-    let sync_event_db = Arc::new(SyncEventDb::new(rbdb.clone(), ops_config));
     let client_state_db = Arc::new(ClientStateDb::new(rbdb.clone(), ops_config));
     let chain_state_db = Arc::new(ChainstateDb::new(rbdb.clone(), ops_config));
     let checkpoint_db = Arc::new(RBCheckpointDB::new(rbdb.clone(), ops_config));
@@ -262,7 +250,6 @@ pub fn init_rocksdb_backend(
     Arc::new(RocksDbBackend::new(
         l1_db,
         l2_db,
-        sync_event_db,
         client_state_db,
         chain_state_db,
         checkpoint_db,

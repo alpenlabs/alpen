@@ -462,6 +462,7 @@ pub(crate) mod test_context {
         let status_channel = StatusChannel::new(
             ArbitraryGenerator::new().generate(),
             ArbitraryGenerator::new().generate(),
+            ArbitraryGenerator::new().generate(),
             None,
         );
         let params = Arc::new(gen_params());
