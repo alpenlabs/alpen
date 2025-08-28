@@ -12,13 +12,13 @@ use std::{
 
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
+#[cfg(feature = "btc-client")]
+use bitcoin::CompactTarget;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
     Network,
 };
-#[cfg(feature = "btc-client")]
-use bitcoin::CompactTarget;
 #[cfg(feature = "btc-client")]
 use bitcoind_async_client::{traits::Reader, Client};
 use rand_core::CryptoRngCore;
@@ -26,6 +26,11 @@ use reth_chainspec::ChainSpec;
 use shrex::Hex;
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_l1_txfmt::MagicBytes;
+#[cfg(feature = "btc-client")]
+use strata_primitives::l1::{
+    get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId,
+    TIMESTAMPS_FOR_MEDIAN,
+};
 use strata_primitives::{
     block_credential,
     buf::Buf32,
@@ -34,10 +39,6 @@ use strata_primitives::{
     operator::OperatorPubkeys,
     params::{GenesisL1View, ProofPublishMode, RollupParams},
     proof::RollupVerifyingKey,
-};
-#[cfg(feature = "btc-client")]
-use strata_primitives::l1::{
-    get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId, TIMESTAMPS_FOR_MEDIAN,
 };
 use zeroize::Zeroize;
 
@@ -70,13 +71,13 @@ pub(super) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
 }
 
 /// Executes a `gen*` subcommand.
-pub(super) async fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result<()> {
+pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result<()> {
     match cmd {
         Subcommand::Xpriv(subc) => exec_genxpriv(subc, ctx),
         Subcommand::SeqPubkey(subc) => exec_genseqpubkey(subc, ctx),
         Subcommand::SeqPrivkey(subc) => exec_genseqprivkey(subc, ctx),
         Subcommand::OpXpub(subc) => exec_genopxpub(subc, ctx),
-        Subcommand::Params(subc) => exec_genparams(subc, ctx).await,
+        Subcommand::Params(subc) => exec_genparams(subc, ctx),
     }
 }
 
@@ -239,7 +240,7 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
 ///
 /// Generates the params for a Strata network.
 /// Either writes to a file or prints to stdout depending on the provided options.
-async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
+fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     // Parse the sequencer key, trimming whitespace for convenience.
     let seqkey = match cmd.seqkey.as_ref().map(|s| s.trim()) {
         Some(seqkey) => {
@@ -248,6 +249,9 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
         }
         None => None,
     };
+
+    // Get genesis L1 view first (before moving other fields)
+    let genesis_l1_view = get_genesis_l1_view(&cmd)?;
 
     // Parse each of the operator keys.
     let mut opkeys = Vec::new();
@@ -284,39 +288,7 @@ async fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result
         None => DEFAULT_CHAIN_SPEC.into(),
     };
 
-    let evm_genesis_info = get_genesis_block_info(&chainspec_json)?;
-
-    // Get genesis L1 view based on feature availability
-    let genesis_l1_view = if cfg!(feature = "btc-client") {
-        // When btc-client feature is enabled, fetch from Bitcoin RPC
-        #[cfg(feature = "btc-client")]
-        {
-            let bitcoin_client = Client::new(
-                cmd.bitcoin_rpc_url,
-                cmd.bitcoin_rpc_user,
-                cmd.bitcoin_rpc_password,
-                None,
-                None,
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
-
-            fetch_genesis_l1_view(&bitcoin_client, cmd.genesis_l1_height.unwrap_or(100)).await?
-        }
-        #[cfg(not(feature = "btc-client"))]
-        {
-            unreachable!("This branch should not be reachable when btc-client is disabled")
-        }
-    } else {
-        // When btc-client feature is disabled, load from file
-        #[cfg(not(feature = "btc-client"))]
-        {
-            load_genesis_l1_view_from_file(&cmd.genesis_l1_view_file)?
-        }
-        #[cfg(feature = "btc-client")]
-        {
-            unreachable!("This branch should not be reachable when btc-client is enabled")
-        }
-    };
+    let evm_genesis_info = get_alpen_ee_genesis_block_info(&chainspec_json)?;
 
     let magic: MagicBytes = if let Some(name_str) = &cmd.name {
         // Validate that the name is ASCII
@@ -575,7 +547,7 @@ struct BlockInfo {
     stateroot: B256,
 }
 
-fn get_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
+fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
     let genesis: Genesis = serde_json::from_str(genesis_json)?;
 
     let chain_spec = ChainSpec::from_genesis(genesis);
@@ -588,6 +560,53 @@ fn get_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
         blockhash: genesis_hash,
         stateroot: genesis_stateroot,
     })
+}
+
+/// Retrieves the genesis L1 view either from a Bitcoin RPC client or from a local file.
+///
+/// When the `btc-client` feature is enabled, this function connects to a Bitcoin node
+/// using the RPC credentials from `cmd` and fetches the genesis L1 view at the specified
+/// block height (defaults to 100 if not provided).
+///
+/// When the `btc-client` feature is disabled, the function loads the genesis L1 view
+/// from a JSON file specified in `cmd.genesis_l1_view_file`.
+///
+/// # Arguments
+/// * `cmd` - Command parameters containing Bitcoin RPC connection details and file paths
+///
+/// # Returns
+/// * `Ok(GenesisL1View)` - The successfully retrieved genesis L1 view
+/// * `Err(anyhow::Error)` - If RPC connection fails, file reading fails, or JSON parsing fails
+fn get_genesis_l1_view(cmd: &SubcParams) -> anyhow::Result<GenesisL1View> {
+    #[cfg(feature = "btc-client")]
+    {
+        // When the btc-client feature is enabled, we can fetch the genesis L1 view from a Bitcoin
+        // node.
+        let bitcoin_client = Client::new(
+            cmd.bitcoin_rpc_url.clone(),
+            cmd.bitcoin_rpc_user.clone(),
+            cmd.bitcoin_rpc_password.clone(),
+            None,
+            None,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
+
+        tokio::runtime::Runtime::new()?
+            .block_on(fetch_genesis_l1_view(&bitcoin_client, cmd.genesis_l1_height.unwrap_or(100)))
+    }
+
+    #[cfg(not(feature = "btc-client"))]
+    {
+        // When the btc-client feature is disabled, we can only load the genesis L1 view from a
+        // file.
+        let content = fs::read_to_string(cmd.genesis_l1_view_file)
+            .map_err(|e| anyhow::anyhow!("Failed to read genesis L1 view file {}: {}", file, e))?;
+
+        let genesis_l1_view: GenesisL1View = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse genesis L1 view JSON: {}", e))?;
+
+        Ok(genesis_l1_view)
+    }
 }
 
 #[cfg(feature = "btc-client")]
@@ -647,7 +666,7 @@ async fn fetch_genesis_l1_view(
         last_11_timestamps: timestamps,
     };
 
-    Ok(genesis_l1_view)
+    Ok::<GenesisL1View, anyhow::Error>(genesis_l1_view)
 }
 
 /// Retrieves the timestamps for a specified number of blocks starting from the given block height,
@@ -676,16 +695,4 @@ async fn fetch_block_timestamps_ascending(
 
     timestamps.reverse();
     Ok(timestamps)
-}
-
-/// Load GenesisL1View from a JSON file
-#[cfg(not(feature = "btc-client"))]
-fn load_genesis_l1_view_from_file(file_path: &str) -> anyhow::Result<GenesisL1View> {
-    let content = fs::read_to_string(file_path)
-        .map_err(|e| anyhow::anyhow!("Failed to read genesis L1 view file {}: {}", file_path, e))?;
-    
-    let genesis_l1_view: GenesisL1View = serde_json::from_str(&content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse genesis L1 view JSON: {}", e))?;
-    
-    Ok(genesis_l1_view)
 }
