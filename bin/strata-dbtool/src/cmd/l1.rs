@@ -125,20 +125,19 @@ pub(crate) fn get_l1_summary(
 
     let (client_state_update, _) = get_latest_client_state_update(db, None)?;
     let (client_state, _) = client_state_update.into_parts();
-    let horizon_l1_height = client_state.horizon_l1_height();
     let genesis_l1_height = client_state.genesis_l1_height();
 
-    if horizon_l1_height == l1_tip_height {
+    if genesis_l1_height == l1_tip_height {
         warn!("Missing all l1 blocks from horizon to tip.");
         return Ok(());
     }
 
     // Use helper function to get horizon block ID
-    let horizon_l1_blkid = get_l1_block_id_at_height(db, horizon_l1_height)?;
+    let genesis_l1_blkid = get_l1_block_id_at_height(db, genesis_l1_height)?;
 
     // Check if all L1 blocks from L1 horizon to tip are present
     let mut missing_heights = Vec::new();
-    let all_l1_manifests_present = (horizon_l1_height..=l1_tip_height).all(|l1_height| {
+    let all_l1_manifests_present = (genesis_l1_height..=l1_tip_height).all(|l1_height| {
         let Some(block_id) = l1_db
             .get_canonical_blockid_at_height(l1_height)
             .ok()
@@ -159,10 +158,9 @@ pub(crate) fn get_l1_summary(
     let output_data = L1SummaryInfo {
         tip_height: l1_tip_height,
         tip_block_id: format!("{l1_tip_block_id:?}"),
-        horizon_height: horizon_l1_height,
-        horizon_block_id: format!("{horizon_l1_blkid:?}"),
+        horizon_block_id: format!("{genesis_l1_blkid:?}"),
         genesis_height: genesis_l1_height,
-        expected_block_count: l1_tip_height.saturating_sub(horizon_l1_height) + 1,
+        expected_block_count: l1_tip_height.saturating_sub(genesis_l1_height) + 1,
         all_manifests_present: all_l1_manifests_present,
         missing_blocks: missing_heights
             .into_iter()

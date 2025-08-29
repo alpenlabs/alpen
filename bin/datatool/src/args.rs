@@ -6,11 +6,31 @@ use argh::FromArgs;
 use bitcoin::Network;
 use rand_core::OsRng;
 
+use crate::util::resolve_network;
+
 /// Args.
 #[derive(FromArgs)]
 pub(crate) struct Args {
     #[argh(option, description = "network name [signet, regtest]", short = 'b')]
     pub(crate) bitcoin_network: Option<String>,
+
+    #[argh(
+        option,
+        description = "bitcoin RPC URL (required for Bitcoin operations when btc-client feature is enabled)"
+    )]
+    pub(crate) bitcoin_rpc_url: Option<String>,
+
+    #[argh(
+        option,
+        description = "bitcoin RPC username (required for Bitcoin operations when btc-client feature is enabled)"
+    )]
+    pub(crate) bitcoin_rpc_user: Option<String>,
+
+    #[argh(
+        option,
+        description = "bitcoin RPC password (required for Bitcoin operations when btc-client feature is enabled)"
+    )]
+    pub(crate) bitcoin_rpc_password: Option<String>,
 
     #[argh(
         option,
@@ -32,6 +52,8 @@ pub(crate) enum Subcommand {
     SeqPrivkey(SubcSeqPrivkey),
     OpXpub(SubcOpXpub),
     Params(SubcParams),
+    #[cfg(feature = "btc-client")]
+    GenL1View(SubcGenL1View),
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -169,18 +191,12 @@ pub(crate) struct SubcParams {
     #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
     pub(crate) deposit_sats: Option<String>,
 
-    #[argh(option, description = "horizon height (default 90)", short = 'h')]
-    pub(crate) horizon_height: Option<u64>,
-
     #[argh(
         option,
-        description = "genesis L1 block height (required)",
-        short = 'H'
+        description = "genesis L1 block height (default 100)",
+        short = 'g'
     )]
-    pub(crate) genesis_l1_height: u64,
-
-    #[argh(option, description = "genesis L1 block hash (required)", short = 'G')]
-    pub(crate) genesis_l1_hash: String,
+    pub(crate) genesis_l1_height: Option<u64>,
 
     #[argh(
         option,
@@ -203,6 +219,37 @@ pub(crate) struct SubcParams {
 
     #[argh(option, description = "path to evm chain config json")]
     pub(crate) chain_config: Option<PathBuf>,
+
+    #[argh(
+        option,
+        description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
+    )]
+    pub(crate) genesis_l1_view_file: Option<String>,
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(
+    subcommand,
+    name = "genl1view",
+    description = "generates the genesis L1 view at the given height"
+)]
+pub(crate) struct SubcGenL1View {
+    #[argh(option, description = "genesis L1 block height", short = 'g')]
+    pub(crate) genesis_l1_height: u64,
+
+    #[argh(
+        option,
+        description = "output file path .json (default stdout)",
+        short = 'o'
+    )]
+    pub(crate) output: Option<PathBuf>,
+}
+
+/// Bitcoin RPC connection configuration.
+pub(crate) struct BitcoindConfig {
+    pub(crate) rpc_url: String,
+    pub(crate) rpc_user: String,
+    pub(crate) rpc_password: String,
 }
 
 pub(crate) struct CmdContext {
@@ -215,4 +262,44 @@ pub(crate) struct CmdContext {
 
     /// Shared RNG, must be a cryptographically secure, high-entropy RNG.
     pub(crate) rng: OsRng,
+
+    /// Bitcoin RPC configuration (None if credentials not provided).
+    pub(crate) bitcoind_config: Option<BitcoindConfig>,
+}
+
+/// Resolves the command context and subcommand from the parsed command line arguments.
+pub(crate) fn resolve_context_and_subcommand(
+    args: Args,
+) -> anyhow::Result<(CmdContext, Subcommand)> {
+    let network = resolve_network(args.bitcoin_network.as_deref())?;
+
+    let bitcoind_config = create_bitcoind_config(&args);
+
+    let ctx = CmdContext {
+        datadir: args.datadir.unwrap_or_else(|| PathBuf::from(".")),
+        bitcoin_network: network,
+        rng: OsRng,
+        bitcoind_config,
+    };
+
+    Ok((ctx, args.subc))
+}
+
+/// Creates a Bitcoin RPC configuration if all required credentials are provided.
+///
+/// Returns `Some(BitcoindConfig)` if URL, username, and password are all provided,
+/// otherwise returns `None`.
+fn create_bitcoind_config(args: &Args) -> Option<BitcoindConfig> {
+    match (
+        &args.bitcoin_rpc_url,
+        &args.bitcoin_rpc_user,
+        &args.bitcoin_rpc_password,
+    ) {
+        (Some(url), Some(user), Some(password)) => Some(BitcoindConfig {
+            rpc_url: url.clone(),
+            rpc_user: user.clone(),
+            rpc_password: password.clone(),
+        }),
+        _ => None,
+    }
 }

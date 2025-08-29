@@ -15,7 +15,7 @@ use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
-    BlockHash, Network,
+    Network,
 };
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
@@ -27,15 +27,15 @@ use strata_primitives::{
     buf::Buf32,
     crypto::EvenSecretKey,
     keys::ZeroizableXpriv,
-    l1::L1BlockId,
     operator::OperatorPubkeys,
-    params::{ProofPublishMode, RollupParams},
+    params::{GenesisL1View, ProofPublishMode, RollupParams},
     proof::RollupVerifyingKey,
 };
 use zeroize::Zeroize;
 
 use crate::args::{
-    CmdContext, SubcOpXpub, SubcParams, SubcSeqPrivkey, SubcSeqPubkey, SubcXpriv, Subcommand,
+    CmdContext, SubcGenL1View, SubcOpXpub, SubcParams, SubcSeqPrivkey, SubcSeqPubkey, SubcXpriv,
+    Subcommand,
 };
 
 /// Sequencer key environment variable.
@@ -48,6 +48,9 @@ const OPKEY_ENVVAR: &str = "STRATA_OP_KEY";
 ///
 /// Right now this is [`Network::Signet`].
 const DEFAULT_NETWORK: Network = Network::Signet;
+
+/// The default L1 genesis height to use.
+const DEFAULT_L1_GENESIS_HEIGHT: u64 = 100;
 
 /// The default evm chainspec to use in params.
 const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;
@@ -70,6 +73,8 @@ pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
         Subcommand::SeqPrivkey(subc) => exec_genseqprivkey(subc, ctx),
         Subcommand::OpXpub(subc) => exec_genopxpub(subc, ctx),
         Subcommand::Params(subc) => exec_genparams(subc, ctx),
+        #[cfg(feature = "btc-client")]
+        Subcommand::GenL1View(subc) => exec_genl1view(subc, ctx),
     }
 }
 
@@ -228,6 +233,39 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
     Ok(())
 }
 
+/// Executes the `genl1view` subcommand.
+///
+/// Fetches the genesis L1 view from a Bitcoin node at the specified height.
+#[cfg(feature = "btc-client")]
+fn exec_genl1view(cmd: SubcGenL1View, ctx: &mut CmdContext) -> anyhow::Result<()> {
+    use crate::btc_client::fetch_genesis_l1_view_with_config;
+
+    let config = ctx
+        .bitcoind_config
+        .as_ref()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Bitcoin RPC configuration not provided. Please specify --bitcoin-rpc-url, --bitcoin-rpc-user, and --bitcoin-rpc-password"
+            )
+        })?;
+
+    let gl1view = tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
+        config,
+        cmd.genesis_l1_height,
+    ))?;
+
+    let params_buf = serde_json::to_string_pretty(&gl1view)?;
+
+    if let Some(out_path) = &cmd.output {
+        fs::write(out_path, params_buf)?;
+        eprintln!("wrote to file {out_path:?}");
+    } else {
+        println!("{params_buf}");
+    }
+
+    Ok(())
+}
+
 /// Executes the `genparams` subcommand.
 ///
 /// Generates the params for a Strata network.
@@ -241,6 +279,9 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         }
         None => None,
     };
+
+    // Get genesis L1 view first (before moving other fields)
+    let genesis_l1_view = retrieve_genesis_l1_view(&cmd, ctx)?;
 
     // Parse each of the operator keys.
     let mut opkeys = Vec::new();
@@ -277,12 +318,7 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         None => DEFAULT_CHAIN_SPEC.into(),
     };
 
-    let evm_genesis_info = get_genesis_block_info(&chainspec_json)?;
-
-    // Parse the provided L1 block hash
-    let block_hash = BlockHash::from_str(&cmd.genesis_l1_hash)
-        .map_err(|e| anyhow::anyhow!("Invalid L1 block hash: {}", e))?;
-    let genesis_l1_blkid = L1BlockId::from(block_hash);
+    let evm_genesis_info = get_alpen_ee_genesis_block_info(&chainspec_json)?;
 
     let magic: MagicBytes = if let Some(name_str) = &cmd.name {
         // Validate that the name is ASCII
@@ -311,11 +347,10 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         checkpoint_tag: cmd.checkpoint_tag.unwrap_or("strata-ckpt".to_string()),
         da_tag: cmd.da_tag.unwrap_or("strata-da".to_string()),
         bitcoin_network: ctx.bitcoin_network,
+        genesis_l1_view,
         // TODO make these consts
         block_time_sec: cmd.block_time.unwrap_or(15),
         epoch_slots: cmd.epoch_slots.unwrap_or(64),
-        horizon_height: cmd.horizon_height.unwrap_or(90),
-        genesis_trigger: cmd.genesis_l1_height,
         seqkey,
         opkeys,
         rollup_vk,
@@ -323,7 +358,6 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         deposit_sats,
         proof_timeout: cmd.proof_timeout,
         evm_genesis_info,
-        genesis_l1_blkid,
     };
 
     let params = match construct_params(config) {
@@ -429,10 +463,8 @@ pub(crate) struct ParamsConfig {
     block_time_sec: u64,
     /// Number of slots in an epoch.
     epoch_slots: u32,
-    /// Height at which the we start reading L1 (< genesis_trigger).
-    horizon_height: u64,
-    /// Height at which the genesis block is triggered.
-    genesis_trigger: u64,
+    /// View of the L1 at genesis
+    genesis_l1_view: GenesisL1View,
     /// Sequencer's key.
     seqkey: Option<Buf32>,
     /// Operators' master keys.
@@ -445,8 +477,6 @@ pub(crate) struct ParamsConfig {
     proof_timeout: Option<u32>,
     /// evm chain config json.
     evm_genesis_info: BlockInfo,
-    /// L1 block hash at the genesis trigger height.
-    genesis_l1_blkid: L1BlockId,
 }
 
 /// Constructs the parameters for a Strata network.
@@ -478,7 +508,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         )
     });
 
-    // TODO add in bitcoin network
     Ok(RollupParams {
         magic_bytes: config.magic,
         block_time: config.block_time_sec * 1000,
@@ -486,9 +515,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         checkpoint_tag: config.checkpoint_tag,
         cred_rule: cr,
         // TODO do we want to remove this?
-        horizon_l1_height: config.horizon_height,
-        genesis_l1_height: config.genesis_trigger,
-        genesis_l1_blkid: config.genesis_l1_blkid,
+        genesis_l1_view: config.genesis_l1_view,
         operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
@@ -550,7 +577,7 @@ struct BlockInfo {
     stateroot: B256,
 }
 
-fn get_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
+fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
     let genesis: Genesis = serde_json::from_str(genesis_json)?;
 
     let chain_spec = ChainSpec::from_genesis(genesis);
@@ -563,4 +590,53 @@ fn get_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
         blockhash: genesis_hash,
         stateroot: genesis_stateroot,
     })
+}
+
+/// Retrieves the genesis L1 view from a file or Bitcoin RPC client.
+///
+/// This function follows a priority order:
+/// 1. If `genesis_l1_view_file` is provided, load the genesis L1 view from that JSON file
+/// 2. If no file is provided and the `btc-client` feature is enabled, fetch the genesis L1 view
+///    from a Bitcoin node using the RPC credentials at the specified block height (defaults to
+///    [`DEFAULT_L1_GENESIS_HEIGHT`] if not provided)
+/// 3. If neither file nor Bitcoin client are available, return an error
+///
+/// # Arguments
+/// * `cmd` - Command parameters containing file path and Bitcoin RPC connection details
+/// * `ctx` - Command context containing the Bitcoin client (when btc-client feature is enabled)
+///
+/// # Returns
+/// * `Ok(GenesisL1View)` - The successfully retrieved genesis L1 view
+/// * `Err(anyhow::Error)` - If file reading fails, RPC connection fails, or neither option is
+///   available
+fn retrieve_genesis_l1_view(cmd: &SubcParams, ctx: &CmdContext) -> anyhow::Result<GenesisL1View> {
+    // Priority 1: Use file if provided
+    if let Some(ref file) = cmd.genesis_l1_view_file {
+        let content = fs::read_to_string(file).map_err(|e| {
+            anyhow::anyhow!("Failed to read genesis L1 view file {:?}: {}", file, e)
+        })?;
+
+        let genesis_l1_view: GenesisL1View = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse genesis L1 view JSON: {}", e))?;
+
+        return Ok(genesis_l1_view);
+    }
+
+    // Priority 2: Use Bitcoin client if available
+    #[cfg(feature = "btc-client")]
+    {
+        use crate::btc_client::fetch_genesis_l1_view_with_config;
+
+        if let Some(config) = &ctx.bitcoind_config {
+            return tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
+                config,
+                cmd.genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
+            ));
+        }
+    }
+
+    // Priority 3: Return error if neither option is available
+    Err(anyhow::anyhow!(
+        "Either provide --genesis-l1-view-file or specify Bitcoin RPC credentials (--bitcoin-rpc-url, --bitcoin-rpc-user, --bitcoin-rpc-password) when btc-client feature is enabled"
+    ))
 }

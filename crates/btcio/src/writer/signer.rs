@@ -69,7 +69,7 @@ mod test {
         writer::test_utils::{get_broadcast_handle, get_envelope_ops},
     };
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_create_and_sign_blob_envelopes() {
         let iops = get_envelope_ops();
         let bcast_handle = get_broadcast_handle();

@@ -3,7 +3,7 @@ use bitcoin::{hashes::Hash, BlockHash};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use super::{header_verification::HeaderVerificationState, L1HeaderRecord, L1Tx};
+use super::{L1HeaderRecord, L1Tx};
 use crate::{buf::Buf32, hash::sha256d, impl_buf_wrapper};
 
 /// ID of an L1 block, usually the hash of its header.
@@ -136,16 +136,6 @@ pub struct L1BlockManifest {
     /// The actual l1 record
     record: L1HeaderRecord,
 
-    /// Optional header verification state
-    ///
-    /// For the genesis block, this field is set to `Some` containing a
-    /// [HeaderVerificationState] that holds all necessary details for validating Bitcoin block
-    /// headers
-    /// For all subsequent blocks, this field is `None`. It is used during the initialization of
-    /// the Chainstate to bootstrap the header verification process.
-    // TODO: handle this properly: https://alpenlabs.atlassian.net/browse/STR-1104
-    verif_state: Option<HeaderVerificationState>,
-
     /// List of interesting transactions we took out.
     txs: Vec<L1Tx>,
 
@@ -157,16 +147,9 @@ pub struct L1BlockManifest {
 }
 
 impl L1BlockManifest {
-    pub fn new(
-        record: L1HeaderRecord,
-        verif_state: Option<HeaderVerificationState>,
-        txs: Vec<L1Tx>,
-        epoch: u64,
-        height: u64,
-    ) -> Self {
+    pub fn new(record: L1HeaderRecord, txs: Vec<L1Tx>, epoch: u64, height: u64) -> Self {
         Self {
             record,
-            verif_state,
             txs,
             epoch,
             height,
@@ -175,10 +158,6 @@ impl L1BlockManifest {
 
     pub fn record(&self) -> &L1HeaderRecord {
         &self.record
-    }
-
-    pub fn header_verification_state(&self) -> &Option<HeaderVerificationState> {
-        &self.verif_state
     }
 
     #[allow(clippy::missing_const_for_fn)]

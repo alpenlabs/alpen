@@ -10,7 +10,6 @@ use super::{helpers::porcelain_field, traits::Formattable};
 pub(crate) struct ClientStateUpdateInfo<'a> {
     pub update_index: u64,
     pub is_chain_active: bool,
-    pub horizon_l1_height: u64,
     pub genesis_l1_height: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_l1_block: Option<&'a L1BlockId>,
@@ -39,10 +38,6 @@ impl<'a> Formattable for ClientStateUpdateInfo<'a> {
             } else {
                 "false"
             },
-        ));
-        output.push(porcelain_field(
-            "client_state_update.client_state.horizon_l1_height",
-            self.horizon_l1_height,
         ));
         output.push(porcelain_field(
             "client_state_update.client_state.genesis_l1_height",
@@ -109,16 +104,6 @@ impl<'a> Formattable for ClientStateUpdateInfo<'a> {
                     output.push(porcelain_field(
                         "client_state_update.sync_action.last_blkid",
                         format!("{:?}", epoch.last_blkid()),
-                    ));
-                }
-                SyncAction::L2Genesis(block_id) => {
-                    output.push(porcelain_field(
-                        "client_state_update.sync_action",
-                        "L2Genesis",
-                    ));
-                    output.push(porcelain_field(
-                        "client_state_update.sync_action.blkid",
-                        format!("{block_id:?}"),
                     ));
                 }
                 SyncAction::UpdateCheckpointInclusion { .. } => {

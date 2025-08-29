@@ -10,7 +10,6 @@ use strata_primitives::{
     batch::BatchTransition, buf::Buf32, epoch::EpochCommitment, l1::L1BlockCommitment,
     params::Params,
 };
-use tracing::*;
 
 use crate::{
     batch::BatchInfo,
@@ -30,16 +29,9 @@ use crate::{
     Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Deserialize, Serialize,
 )]
 pub struct ClientState {
-    /// If we are after genesis.
-    pub(super) chain_active: bool,
-
     /// State of the client tracking a genesised chain, after knowing about a
     /// valid chain.
-    pub(super) sync_state: Option<SyncState>,
-
-    /// L1 block we start watching the chain from.  We can't access anything
-    /// before this chain height.
-    pub(super) horizon_l1_height: u64,
+    pub(super) sync_state: SyncState,
 
     /// Height at which we'll create the L2 genesis block from.
     pub(super) genesis_l1_height: u64,
@@ -57,13 +49,12 @@ pub struct ClientState {
 impl ClientState {
     /// Creates the basic genesis client state from the genesis parameters.
     // TODO do we need this or should we load it at run time from the rollup params?
-    pub fn from_genesis_params(params: &Params) -> Self {
+    pub fn from_genesis_params(params: &Params, gblkid: L2BlockId) -> Self {
         let rparams = params.rollup();
-        let genesis_l1_height = rparams.genesis_l1_height;
+        let sync_state = SyncState::from_genesis_blkid(gblkid);
+        let genesis_l1_height = rparams.genesis_l1_view.blk.height();
         Self {
-            chain_active: false,
-            sync_state: None,
-            horizon_l1_height: rparams.horizon_l1_height,
+            sync_state,
             genesis_l1_height,
             finalization_depth: rparams.l1_reorg_safe_depth as u64,
             declared_final_epoch: None,
@@ -71,33 +62,31 @@ impl ClientState {
         }
     }
 
-    /// If the chain is "active", meaning we are after genesis (although we
-    /// don't necessarily know what it is, that's dictated by the `SyncState`).
+    /// FIXME: remove usage of this
+    /// chain is always active
     pub fn is_chain_active(&self) -> bool {
-        self.chain_active
+        true
     }
 
     /// Returns a ref to the inner sync state, if it exists.
-    pub fn sync(&self) -> Option<&SyncState> {
-        self.sync_state.as_ref()
+    pub fn sync(&self) -> &SyncState {
+        &self.sync_state
     }
 
-    /// Returns if genesis has occurred.
+    /// FIXME: remove usage of this
     pub fn has_genesis_occurred(&self) -> bool {
-        self.chain_active
+        true
     }
 
     /// Overwrites the sync state.
     pub fn set_sync_state(&mut self, ss: SyncState) {
-        self.sync_state = Some(ss);
+        self.sync_state = ss;
     }
 
     /// Returns a mut ref to the inner sync state.  Only valid if we've observed
     /// genesis.  Only meant to be called when applying sync writes.
     pub fn expect_sync_mut(&mut self) -> &mut SyncState {
-        self.sync_state
-            .as_mut()
-            .expect("clientstate: missing sync state")
+        &mut self.sync_state
     }
 
     pub fn most_recent_l1_block(&self) -> Option<&L1BlockId> {
@@ -106,10 +95,6 @@ impl ClientState {
 
     pub fn next_exp_l1_block(&self) -> u64 {
         self.int_states.next_idx()
-    }
-
-    pub fn horizon_l1_height(&self) -> u64 {
-        self.horizon_l1_height
     }
 
     pub fn genesis_l1_height(&self) -> u64 {
@@ -414,10 +399,6 @@ impl ClientStateMut {
         self.state.set_sync_state(ss);
     }
 
-    pub fn activate_chain(&mut self) {
-        self.state.chain_active = true;
-    }
-
     /// Rolls back blocks and stuff to a particular height.
     ///
     /// # Panics
@@ -522,77 +503,4 @@ impl ClientStateMut {
     pub fn set_decl_final_epoch(&mut self, epoch: EpochCommitment) {
         self.state.declared_final_epoch = Some(epoch);
     }
-
-    /// Updates the buried L1 block.
-    // TODO remove this function
-    #[deprecated]
-    pub fn update_buried(&mut self, _new_idx: u64) {
-        debug!("call to update_buried, we don't do anything here anymore");
-
-        /*let l1v = self.state.l1_view_mut();
-
-        // Check that it's increasing.
-        let old_idx = l1v.buried_l1_height();
-
-        if new_idx < old_idx {
-            panic!("clientstate: emitted non-greater buried height");
-        }
-
-        // Check that it's not higher than what we know about.
-        if new_idx > l1v.tip_height() {
-            panic!("clientstate: new buried height above known L1 tip");
-        }
-
-        // If everything checks out we can just remove them.
-        let diff = (new_idx - old_idx) as usize;
-        let _blocks = l1v
-            .local_unaccepted_blocks
-            .drain(..diff)
-            .collect::<Vec<_>>();*/
-
-        // TODO merge these blocks into the L1 MMR in the client state if
-        // we haven't already
-    }
-
-    // FIXME remove all this since I think it's irrelevant now
-    /*/// Finalizes checkpoints based on L1 height.
-    // TODO This should probably be broken out to happen fallibly as part of the client transition
-    pub fn finalize_checkpoint(&mut self, l1height: u64) {
-        let l1v = self.state.l1_view_mut();
-
-        let finalized_checkpts: Vec<_> = l1v
-            .verified_checkpoints
-            .iter()
-            .take_while(|ckpt| ckpt.height <= l1height)
-            .collect();
-
-        let new_finalized = finalized_checkpts.last().cloned().cloned();
-        let total_finalized = finalized_checkpts.len();
-        debug!(?new_finalized, %total_finalized, "Finalized checkpoints");
-
-        // Remove the finalized from pending and then mark the last one as last_finalized
-        // checkpoint
-        l1v.verified_checkpoints.drain(..total_finalized);
-
-        if let Some(ckpt) = new_finalized {
-            // Check if heights match accordingly
-            if l1v
-                .last_finalized_checkpoint
-                .as_ref()
-                .is_some_and(|prev_ckpt| {
-                    ckpt.batch_info.epoch() != prev_ckpt.batch_info.epoch() + 1
-                })
-            {
-                panic!("clientstate: mismatched indices of pending checkpoint");
-            }
-
-            let epoch_idx = ckpt.batch_info.epoch;
-            let fin_block = ckpt.batch_info.l2_range.1;
-            l1v.last_finalized_checkpoint = Some(ckpt);
-
-            // Update finalized block in SyncState.
-            let fin_epoch = EpochCommitment::new(epoch_idx, fin_block.slot(), *fin_block.blkid());
-            self.state.expect_sync_mut().finalized_epoch = fin_epoch;
-        }
-    }*/
 }

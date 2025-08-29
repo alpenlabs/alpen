@@ -161,12 +161,12 @@ pub(crate) fn get_checkpoints_summary(
 
     let (client_state_update, _) = get_latest_client_state_update(db, None)?;
     let (client_state, _) = client_state_update.into_parts();
-    let horizon_l1_height = client_state.horizon_l1_height();
+    let genesis_l1_height = client_state.genesis_l1_height();
 
     let mut found_checkpoints = 0;
     let mut unexpected_checkpoints = Vec::new();
 
-    for l1_height in horizon_l1_height..=l1_tip_height {
+    for l1_height in genesis_l1_height..=l1_tip_height {
         // Use helper functions to get block ID and manifest
         let block_id = get_l1_block_id_at_height(db, l1_height)?;
         let Some(manifest) = get_l1_block_manifest(db, block_id)? else {

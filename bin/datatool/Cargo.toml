@@ -30,15 +30,18 @@ alloy-primitives.workspace = true
 anyhow.workspace = true
 argh.workspace = true
 bitcoin = { workspace = true, features = ["std"] }
+bitcoind-async-client = { workspace = true, optional = true }
 bytemuck = { version = "1.21.0", optional = true }
 rand_core.workspace = true
 reth-chainspec.workspace = true
 serde_json.workspace = true
 shrex.workspace = true
+tokio = { workspace = true, optional = true }
 zeroize.workspace = true
 
 [features]
-default = []
+default = ["btc-client"]
+btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
 risc0-builder = [
   "dep:strata-risc0-guest-builder",
   "dep:bytemuck",

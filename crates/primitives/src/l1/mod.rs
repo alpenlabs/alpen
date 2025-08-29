@@ -12,6 +12,7 @@ mod status;
 mod timestamp_store;
 mod tx;
 mod utils;
+mod work;
 
 pub use block::*;
 pub use btc::*;
@@ -26,3 +27,4 @@ pub use status::*;
 pub use timestamp_store::*;
 pub use tx::*;
 pub use utils::*;
+pub use work::*;

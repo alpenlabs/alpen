@@ -74,7 +74,7 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         .context("Failed to connect to the CL Sequencer client")?;
 
     let btc_client = Client::new(
-        config.get_btc_rpc_url(),
+        config.bitcoind_url.clone(),
         config.bitcoind_user.clone(),
         config.bitcoind_password.clone(),
         Some(config.bitcoin_retry_count),

@@ -27,7 +27,6 @@ pub(crate) struct L1BlockInfo<'a> {
 pub(crate) struct L1SummaryInfo {
     pub tip_height: u64,
     pub tip_block_id: String,
-    pub horizon_height: u64,
     pub horizon_block_id: String,
     pub genesis_height: u64,
     pub expected_block_count: u64,
@@ -122,7 +121,6 @@ impl Formattable for L1SummaryInfo {
         let mut output = vec![
             porcelain_field("tip_height", self.tip_height),
             porcelain_field("tip_block_id", &self.tip_block_id),
-            porcelain_field("horizon_height", self.horizon_height),
             porcelain_field("horizon_block_id", &self.horizon_block_id),
             porcelain_field("genesis_height", self.genesis_height),
             porcelain_field("expected_block_count", self.expected_block_count),

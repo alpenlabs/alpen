@@ -21,26 +21,18 @@ use zkaleido_risc0_groth16_verifier as _;
 use zkaleido_sp1_groth16_verifier as _;
 
 mod args;
+#[cfg(feature = "btc-client")]
+mod btc_client;
 mod util;
 
-use std::path::PathBuf;
-
-use args::CmdContext;
-use rand_core::OsRng;
-use util::{exec_subc, resolve_network};
+use args::resolve_context_and_subcommand;
+use util::exec_subc;
 
 fn main() {
     let args: args::Args = argh::from_env();
     let inner = || -> anyhow::Result<()> {
-        let network = resolve_network(args.bitcoin_network.as_deref())?;
-
-        let mut ctx = CmdContext {
-            datadir: args.datadir.unwrap_or_else(|| PathBuf::from(".")),
-            bitcoin_network: network,
-            rng: OsRng,
-        };
-
-        exec_subc(args.subc, &mut ctx)?;
+        let (mut ctx, subc) = resolve_context_and_subcommand(args)?;
+        exec_subc(subc, &mut ctx)?;
         Ok(())
     };
     if let Err(e) = inner() {

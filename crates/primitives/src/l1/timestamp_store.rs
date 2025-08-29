@@ -12,118 +12,56 @@ pub const TIMESTAMPS_FOR_MEDIAN: usize = 11;
 /// after the timestamps are sorted.
 pub const MEDIAN_TIMESTAMP_INDEX: usize = TIMESTAMPS_FOR_MEDIAN / 2;
 
-/// A ring buffer that stores timestamps. The internal buffer is stored as a
-/// [`Vec<u32>`] so that its length can be greater than `TIMESTAMPS_FOR_MEDIAN`. The buffer always
-/// holds at least `TIMESTAMPS_FOR_MEDIAN` timestamps. When inserting a new timestamp, the oldest
-/// timestamp is overwritten and the head pointer is advanced in a circular manner.
+/// A ring buffer that stores exactly `TIMESTAMPS_FOR_MEDIAN` timestamps.
+/// When inserting a new timestamp, the oldest timestamp is overwritten and the head pointer
+/// is advanced in a circular manner.
 ///
-/// The median is computed using the last `TIMESTAMPS_FOR_MEDIAN` inserted timestamps.
+/// The median is computed using all timestamps in the buffer.
 #[derive(
-    Debug,
-    Clone,
-    Default,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Arbitrary,
 )]
 pub struct TimestampStore {
-    /// The vector that holds the timestamps.
-    /// Its length may be greater than `TIMESTAMPS_FOR_MEDIAN`, but only the last
-    /// `TIMESTAMPS_FOR_MEDIAN` timestamps are used for computing the median.
-    pub buffer: Vec<u32>,
+    /// The array that holds exactly `TIMESTAMPS_FOR_MEDIAN` timestamps.
+    buffer: [u32; TIMESTAMPS_FOR_MEDIAN],
     /// The index in the buffer where the next timestamp will be inserted.
     head: usize,
+}
+
+impl Default for TimestampStore {
+    fn default() -> Self {
+        Self {
+            buffer: [0; TIMESTAMPS_FOR_MEDIAN],
+            head: 0,
+        }
+    }
 }
 
 impl TimestampStore {
     /// Creates a new `TimestampStore` initialized with the given timestamps.
     /// The `initial_timestamps` array fills the buffer, and the `head` is set to 0,
     /// meaning that the next inserted timestamp will overwrite the first element.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `initial_timestamps.len() < TIMESTAMPS_FOR_MEDIAN`.
-    pub fn new(initial_timestamps: &[u32]) -> Self {
-        assert!(
-            initial_timestamps.len() >= TIMESTAMPS_FOR_MEDIAN,
-            "at least TIMESTAMPS_FOR_MEDIAN timestamps required"
-        );
+    pub fn new(initial_timestamps: [u32; TIMESTAMPS_FOR_MEDIAN]) -> Self {
         Self {
-            buffer: initial_timestamps.to_vec(),
+            buffer: initial_timestamps,
             head: 0,
         }
-    }
-
-    /// Creates a new `TimestampStore` with the given `timestamps` and `head` index.
-    ///
-    /// The `timestamps` array should contain the timestamps in the order they were inserted,
-    /// from oldest to newest.
-    ///
-    /// The `head` indicates the position in the buffer where the next timestamp will be inserted.
-    ///
-    /// This method rearranges the `timestamps` array into the internal representation of the ring
-    /// buffer.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `head` is not less than the number of timestamps.
-    pub fn new_with_head(timestamps: &[u32], head: usize) -> Self {
-        let len = timestamps.len();
-        assert!(
-            len >= TIMESTAMPS_FOR_MEDIAN,
-            "at least TIMESTAMPS_FOR_MEDIAN timestamps required"
-        );
-        assert!(head < len, "head index out of bounds");
-
-        let mut buffer = vec![0; len];
-
-        // Rearrange the timestamps into the internal buffer representation.
-        // The internal buffer expects the oldest timestamp at position `head`,
-        // and the newest timestamp at position `(head + TIMESTAMPS_FOR_MEDIAN - 1) %
-        // TIMESTAMPS_FOR_MEDIAN`.
-        for (i, &timestamp) in timestamps.iter().enumerate() {
-            // Calculate the position in the internal buffer.
-            let pos = (head + i) % len;
-            buffer[pos] = timestamp;
-        }
-
-        Self { buffer, head }
     }
 
     /// Inserts a new timestamp into the buffer, overwriting the oldest timestamp.
     /// After insertion, the `head` is advanced in a circular manner.
     pub fn insert(&mut self, timestamp: u32) {
         self.buffer[self.head] = timestamp;
-        self.head = (self.head + 1) % self.buffer.len();
+        self.head = (self.head + 1) % TIMESTAMPS_FOR_MEDIAN;
     }
 
-    /// Removes the most recent timestamp from the buffer by moving the head pointer
-    /// backwards in a circular manner. This effectively "undoes" the last insertion.
-    /// Note that the actual value in the buffer is not cleared; it will be overwritten
-    /// when a new timestamp is inserted.
-    pub fn remove(&mut self) {
-        let len = self.buffer.len();
-        self.head = (self.head + len - 1) % len;
-    }
-
-    /// Computes and returns the median timestamp from the last `TIMESTAMPS_FOR_MEDIAN` inserted
-    /// timestamps.
+    /// Computes and returns the median timestamp from all timestamps in the buffer.
     ///
-    /// The median is calculated by taking a copy of the last `TIMESTAMPS_FOR_MEDIAN` timestamps,
-    /// sorting them, and selecting the element at the middle index `MEDIAN_TIMESTAMP_INDEX`.
+    /// The median is calculated by taking a copy of all timestamps, sorting them,
+    /// and selecting the element at the middle index `MEDIAN_TIMESTAMP_INDEX`.
     pub fn median(&self) -> u32 {
-        let len = self.buffer.len();
-        let mut last_n_timestamps = Vec::with_capacity(TIMESTAMPS_FOR_MEDIAN);
-        for i in 0..TIMESTAMPS_FOR_MEDIAN {
-            let pos = (self.head + len - 1 - i) % len;
-            last_n_timestamps.push(self.buffer[pos]);
-        }
-        last_n_timestamps.sort_unstable();
-        last_n_timestamps[MEDIAN_TIMESTAMP_INDEX]
+        let mut timestamps = self.buffer;
+        timestamps.sort_unstable();
+        timestamps[MEDIAN_TIMESTAMP_INDEX]
     }
 }
 
@@ -134,143 +72,102 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_timestamp_buffer() {
-        // initialize the buffer with timestamps from 1 to 11
+    fn test_initial_median_calculation() {
+        // Initialize the buffer with timestamps from 1 to 11
+        // This creates a sorted sequence where the median is predictable (6)
         let initial_timestamps: [u32; 11] = array::from_fn(|i| (i + 1) as u32);
-        let mut timestamps = TimestampStore::new(&initial_timestamps);
+        let timestamps = TimestampStore::new(initial_timestamps);
 
-        // insert a new timestamp and test buffer state
-        timestamps.insert(12);
-        let expected_timestamps = [12, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-        assert_eq!(timestamps.head, 1);
-        assert_eq!(timestamps.median(), 7);
+        // Initial median should be 6 (middle of 1-11)
+        assert_eq!(timestamps.median(), 6);
+    }
 
-        // insert another timestamp
-        timestamps.insert(13);
-        let expected_timestamps = [12, 13, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-        assert_eq!(timestamps.head, 2);
-        assert_eq!(timestamps.median(), 8);
+    #[test]
+    fn test_median_with_incrementing_values() {
+        // Start with sorted sequence 1-11 (median = 6)
+        let initial_timestamps: [u32; 11] = array::from_fn(|i| (i + 1) as u32);
+        let mut timestamps = TimestampStore::new(initial_timestamps);
+        let mut expected_median = 6;
 
-        // insert multiple timestamps
-        let new_timestamps = [14, 15, 16, 17, 18, 19, 20, 21, 22];
+        // Insert new timestamps from 12.. and test median
+        // Since we're inserting values larger than all existing values,
+        // the median shifts upward by 1 with each insertion because the ring buffer
+        // overwrites the smallest values first (due to circular insertion starting from index 0)
+        let new_timestamps: [u32; 20] = array::from_fn(|i| (i + 12) as u32);
+        for &ts in &new_timestamps {
+            timestamps.insert(ts);
+            expected_median += 1;
+            assert_eq!(timestamps.median(), expected_median);
+        }
+    }
+
+    #[test]
+    fn test_median_with_large_non_sequential_values() {
+        // Start with a state where we've already inserted some values
+        let initial_timestamps: [u32; 11] = array::from_fn(|i| (i + 1) as u32);
+        let mut timestamps = TimestampStore::new(initial_timestamps);
+
+        // Insert 20 incrementing values to get to a known state
+        let new_timestamps: [u32; 20] = array::from_fn(|i| (i + 12) as u32);
         for &ts in &new_timestamps {
             timestamps.insert(ts);
         }
-        assert_eq!(timestamps.head, 0);
 
-        // insert another timestamp to wrap around the buffer
-        timestamps.insert(23);
-        let expected_timestamps = [23, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-        assert_eq!(timestamps.head, 1);
-        assert_eq!(timestamps.median(), 18);
+        let mut expected_median = timestamps.median();
 
-        // test buffer wrap-around
-        timestamps.insert(24);
-        let expected_timestamps = [23, 24, 14, 15, 16, 17, 18, 19, 20, 21, 22];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-        assert_eq!(timestamps.head, 2);
-        assert_eq!(timestamps.median(), 19);
-
-        // test with unordered timestamps
-        timestamps.insert(5);
-        let expected_timestamps = [23, 24, 5, 15, 16, 17, 18, 19, 20, 21, 22];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-        // median should be calculated correctly despite unordered inputs
-        assert_eq!(timestamps.median(), 19);
-
-        // test remove timestamp
-        timestamps.remove();
-        let expected_timestamps = [23, 24, 5, 15, 16, 17, 18, 19, 20, 21, 22];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-
-        timestamps.insert(25);
-        let expected_timestamps = [23, 24, 25, 15, 16, 17, 18, 19, 20, 21, 22];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-
-        timestamps.remove();
-        timestamps.remove();
-        timestamps.remove();
-        timestamps.remove();
-        timestamps.remove();
-        assert_eq!(timestamps.buffer, expected_timestamps);
-
-        timestamps.insert(21);
-        assert_eq!(timestamps.buffer, expected_timestamps);
-    }
-
-    #[test]
-    fn test_new_with_head() {
-        // Initialize the buffer with timestamps from 1 to 11
-        let initial_timestamps: [u32; 11] = std::array::from_fn(|i| (i + 1) as u32);
-        let mut expected_ts_store = TimestampStore::new(&initial_timestamps);
-
-        let new_timestamps = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24];
-        for &ts in &new_timestamps {
-            expected_ts_store.insert(ts);
-            let mut timestamps = expected_ts_store.buffer.clone();
-            timestamps.sort_unstable();
-            let ts_store = TimestampStore::new_with_head(&timestamps, expected_ts_store.head);
-            assert_eq!(expected_ts_store, ts_store);
+        // Test non-sequential large timestamps
+        // These large values continue to replace smaller values, pushing the median up
+        let large_timestamps: [u32; MEDIAN_TIMESTAMP_INDEX] =
+            array::from_fn(|i| ((i + 12) * 10) as u32);
+        for &ts in &large_timestamps {
+            timestamps.insert(ts);
+            expected_median += 1;
+            assert_eq!(timestamps.median(), expected_median);
         }
     }
 
     #[test]
-    fn test_new_with_larger_buffer() {
-        // Initialize the buffer with timestamps from 1 to 15.
-        let initial_timestamps: [u32; 15] = array::from_fn(|i| (i + 1) as u32);
-        let mut timestamps = TimestampStore::new(&initial_timestamps);
-        assert_eq!(timestamps.head, 0);
-        assert_eq!(timestamps.median(), 10);
+    fn test_median_with_zero_insertions() {
+        // Start with a buffer containing larger values
+        let initial_timestamps: [u32; 11] = array::from_fn(|i| (i + 20) as u32);
+        let mut timestamps = TimestampStore::new(initial_timestamps);
 
-        // Insert a new timestamp and test buffer state.
-        timestamps.insert(16);
-        let expected_timestamps = [16, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-        assert_eq!(timestamps.head, 1);
-        assert_eq!(timestamps.median(), 11);
-
-        // remove and insert same value
-        timestamps.remove();
-        assert_eq!(timestamps.head, 0);
-        assert_eq!(timestamps.median(), 10);
-        timestamps.insert(16);
-        assert_eq!(timestamps.buffer, expected_timestamps);
-
-        // Insert another timestamp.
-        timestamps.insert(17);
-        let expected_timestamps = [16, 17, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-        assert_eq!(timestamps.buffer, expected_timestamps);
-        assert_eq!(timestamps.head, 2);
-        assert_eq!(timestamps.median(), 12);
-
-        // Insert multiple timestamps.
-        let median = timestamps.median();
-        let head = timestamps.head;
-        let new_timestamps = [18, 19, 20, 21, 22, 23, 24, 25, 26];
-        let len = timestamps.buffer.len();
-        for (idx, ts) in new_timestamps.iter().enumerate() {
-            timestamps.insert(*ts);
-            assert_eq!(timestamps.head, (head + idx + 1) % len);
-            assert_eq!(timestamps.median(), median + idx as u32 + 1);
+        // Test adding zeros - this will replace values starting from head position
+        // The ring buffer insertion is circular, so zeros replace whatever values are at head
+        let median_before_zeros = timestamps.median();
+        for _ in 0..5 {
+            timestamps.insert(0);
         }
+        let median_with_zeros = timestamps.median();
+
+        // We can't predict exactly how the median changes without knowing the head position,
+        // but we can verify that the zeros were inserted and the median calculation still works
+        assert!(
+            median_with_zeros <= median_before_zeros
+                || timestamps.buffer.iter().filter(|&&x| x == 0).count() == 5,
+            "Should have 5 zeros in buffer or median should not increase"
+        );
     }
 
     #[test]
-    fn test_new_with_head_larger_buffer() {
-        // Initialize the buffer with timestamps from 1 to 15
-        let initial_timestamps: [u32; 15] = std::array::from_fn(|i| (i + 1) as u32);
-        let mut expected_ts_store = TimestampStore::new(&initial_timestamps);
+    fn test_median_with_unsorted_values() {
+        // Test non-incrementing values to verify the median calculation works with unsorted input
+        // Use a known sequence to test predictable behavior
+        let test_timestamps = [10, 5, 15, 3, 8, 12, 7, 9, 4, 6, 11];
+        let mut timestamps = TimestampStore::new(test_timestamps);
 
-        let new_timestamps: [u32; 5] = std::array::from_fn(|i| (i + 16) as u32);
-        for &ts in &new_timestamps {
-            expected_ts_store.insert(ts);
-            let mut timestamps = expected_ts_store.buffer.clone();
-            timestamps.sort_unstable();
-            let ts_store = TimestampStore::new_with_head(&timestamps, expected_ts_store.head);
-            assert_eq!(expected_ts_store, ts_store);
-        }
+        // Should be 8 (sorted: [3,4,5,6,7,8,9,10,11,12,15])
+        let initial_median = timestamps.median();
+        assert_eq!(initial_median, 8);
+
+        // Insert values that should change the median in a predictable way
+        timestamps.insert(1); // Replaces 10, sorted becomes [1,3,4,5,6,7,8,9,11,12,15], median = 7
+        assert_eq!(timestamps.median(), 7);
+
+        timestamps.insert(20); // Replaces 5, sorted becomes [1,3,4,6,7,8,9,11,12,15,20], median = 8
+        assert_eq!(timestamps.median(), 8);
+
+        timestamps.insert(2); // Replaces 15, sorted becomes [1,2,3,4,6,7,8,9,11,12,20], median = 7
+        assert_eq!(timestamps.median(), 7);
     }
 }

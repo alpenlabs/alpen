@@ -25,7 +25,7 @@ use super::{
     config::CsmExecConfig,
     message::{ClientUpdateNotif, CsmMessage},
 };
-use crate::{errors::Error, genesis};
+use crate::errors::Error;
 
 /// Mutable worker state that we modify in the consensus worker task.
 ///
@@ -397,21 +397,6 @@ fn apply_action(
             ckpt_entry.confirmation_status = CheckpointConfStatus::Confirmed(l1_reference);
 
             ckpt_db.put_checkpoint_blocking(epoch, ckpt_entry)?;
-        }
-
-        SyncAction::L2Genesis(l1blkid) => {
-            info!(%l1blkid, "locking in genesis!");
-
-            // TODO: use l1blkid during chain state genesis ?
-
-            // Save the genesis chainstate and block.
-            let _chstate = genesis::init_genesis_chainstate(&state.params, &state.storage)
-                .map_err(|err| {
-                    error!(err = %err, "failed to compute chain genesis");
-                    Error::GenesisFailed(err.to_string())
-                })?;
-
-            // TODO do we have to do anything here?
         }
     }
 

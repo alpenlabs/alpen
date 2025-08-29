@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::{
     block_credential::CredRule,
-    l1::{BitcoinAddress, L1BlockId, XOnlyPk},
+    l1::{BitcoinAddress, L1BlockCommitment, L1BlockId, XOnlyPk, TIMESTAMPS_FOR_MEDIAN},
     operator::OperatorPubkeys,
     prelude::Buf32,
     proof::RollupVerifyingKey,
@@ -33,14 +33,7 @@ pub struct RollupParams {
     /// Rule we use to decide if a block is correctly signed.
     pub cred_rule: CredRule,
 
-    /// Block height from which to watch for L1 transactions
-    pub horizon_l1_height: u64,
-
-    /// Block height we'll construct the L2 genesis block from.
-    pub genesis_l1_height: u64,
-
-    /// Block hash we'll construct the L2 genesis block from.
-    pub genesis_l1_blkid: L1BlockId,
+    pub genesis_l1_view: GenesisL1View,
 
     /// Config for how the genesis operator table is set up.
     pub operator_config: OperatorConfig,
@@ -80,15 +73,26 @@ pub struct RollupParams {
     pub network: bitcoin::Network,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GenesisL1View {
+    pub blk: L1BlockCommitment,
+    pub next_target: u32,
+    pub epoch_start_timestamp: u32,
+    pub last_11_timestamps: [u32; TIMESTAMPS_FOR_MEDIAN],
+}
+
+impl GenesisL1View {
+    pub fn height(&self) -> u64 {
+        self.blk.height()
+    }
+
+    pub fn blkid(&self) -> L1BlockId {
+        *self.blk.blkid()
+    }
+}
+
 impl RollupParams {
     pub fn check_well_formed(&self) -> Result<(), ParamsError> {
-        if self.horizon_l1_height > self.genesis_l1_height {
-            return Err(ParamsError::HorizonAfterGenesis(
-                self.horizon_l1_height,
-                self.genesis_l1_height,
-            ));
-        }
-
         match &self.operator_config {
             OperatorConfig::Static(optbl) => {
                 if optbl.is_empty() {

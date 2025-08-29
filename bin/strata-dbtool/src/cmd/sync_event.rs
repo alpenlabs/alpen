@@ -81,9 +81,9 @@ pub(crate) fn get_sync_events_summary(
 
     let (client_state_update, _) = get_latest_client_state_update(db, None)?;
     let (client_state, _) = client_state_update.into_parts();
-    let horizon_l1_height = client_state.horizon_l1_height();
+    let genesis_l1_height = client_state.genesis_l1_height();
 
-    if horizon_l1_height == l1_tip_height {
+    if genesis_l1_height == l1_tip_height {
         warn!("Missing all l1 blocks from horizon to tip.");
     }
 
@@ -102,7 +102,7 @@ pub(crate) fn get_sync_events_summary(
         }
 
         // Now verify all expected heights are present
-        for expected_height in horizon_l1_height..=l1_tip_height {
+        for expected_height in genesis_l1_height..=l1_tip_height {
             if !observed_l1_heights.contains(&expected_height) {
                 missing_heights.push(expected_height);
                 all_sync_events_in_db = false;
@@ -112,7 +112,7 @@ pub(crate) fn get_sync_events_summary(
 
     let output_data = SyncEventsSummaryInfo {
         last_event_index: last_idx,
-        expected_l1_blocks_count: l1_tip_height.saturating_sub(horizon_l1_height) + 1,
+        expected_l1_blocks_count: l1_tip_height.saturating_sub(genesis_l1_height) + 1,
         all_sync_events_in_db,
         missing_heights,
     };

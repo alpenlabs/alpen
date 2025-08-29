@@ -624,7 +624,6 @@ mod tests {
         // send protocol op for first time. Should set deposit to fulfilled state
         let block_manifest = L1BlockManifest::new(
             arb.generate(),
-            None,
             vec![L1Tx::new(
                 arb.generate(),
                 arb.generate(),
@@ -651,7 +650,6 @@ mod tests {
         // Duplicate withdrawal fulfillment seen. Should be ignored and chainstate not updated
         let block_manifest = L1BlockManifest::new(
             arb.generate(),
-            None,
             vec![L1Tx::new(
                 arb.generate(),
                 arb.generate(),
