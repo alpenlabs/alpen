@@ -4,13 +4,38 @@ use std::path::PathBuf;
 
 use argh::FromArgs;
 use bitcoin::Network;
+#[cfg(feature = "btc-client")]
+use bitcoind_async_client::Client;
 use rand_core::OsRng;
+
+use crate::util::resolve_network;
 
 /// Args.
 #[derive(FromArgs)]
 pub(crate) struct Args {
     #[argh(option, description = "network name [signet, regtest]", short = 'b')]
     pub(crate) bitcoin_network: Option<String>,
+
+    #[cfg(feature = "btc-client")]
+    #[argh(
+        option,
+        description = "bitcoin RPC URL (required when btc-client feature is enabled)"
+    )]
+    pub(crate) bitcoin_rpc_url: String,
+
+    #[cfg(feature = "btc-client")]
+    #[argh(
+        option,
+        description = "bitcoin RPC username (required when btc-client feature is enabled)"
+    )]
+    pub(crate) bitcoin_rpc_user: String,
+
+    #[cfg(feature = "btc-client")]
+    #[argh(
+        option,
+        description = "bitcoin RPC password (required when btc-client feature is enabled)"
+    )]
+    pub(crate) bitcoin_rpc_password: String,
 
     #[argh(
         option,
@@ -240,4 +265,40 @@ pub(crate) struct CmdContext {
 
     /// Shared RNG, must be a cryptographically secure, high-entropy RNG.
     pub(crate) rng: OsRng,
+
+    /// Bitcoin RPC client (only available when btc-client feature is enabled).
+    #[cfg(feature = "btc-client")]
+    pub(crate) btc_client: Client,
+}
+
+/// Resolves the command context and subcommand from the parsed command line arguments.
+pub(crate) fn resolve_context_and_subcommand(
+    args: Args,
+) -> anyhow::Result<(CmdContext, Subcommand)> {
+    let network = resolve_network(args.bitcoin_network.as_deref())?;
+
+    #[cfg(feature = "btc-client")]
+    let btc_client = create_btc_client(&args)?;
+
+    let ctx = CmdContext {
+        datadir: args.datadir.unwrap_or_else(|| PathBuf::from(".")),
+        bitcoin_network: network,
+        rng: OsRng,
+        #[cfg(feature = "btc-client")]
+        btc_client,
+    };
+
+    Ok((ctx, args.subc))
+}
+
+#[cfg(feature = "btc-client")]
+fn create_btc_client(args: &Args) -> anyhow::Result<Client> {
+    Client::new(
+        args.bitcoin_rpc_url.clone(),
+        args.bitcoin_rpc_user.clone(),
+        args.bitcoin_rpc_password.clone(),
+        None,
+        None,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))
 }
