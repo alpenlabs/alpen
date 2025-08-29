@@ -4,7 +4,7 @@
 //! behind the `btc-client` feature flag.
 
 use bitcoin::CompactTarget;
-use bitcoind_async_client::traits::Reader;
+use bitcoind_async_client::{traits::Reader, Client};
 use strata_primitives::{
     l1::{
         get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId,
@@ -13,7 +13,21 @@ use strata_primitives::{
     params::GenesisL1View,
 };
 
-pub(crate) async fn fetch_genesis_l1_view(
+use crate::args::BitcoindConfig;
+
+/// Fetches genesis L1 view using the provided Bitcoin RPC configuration.
+/// 
+/// Creates a Bitcoin client from the config and fetches the genesis L1 view
+/// at the specified block height.
+pub(crate) async fn fetch_genesis_l1_view_with_config(
+    config: &BitcoindConfig,
+    block_height: u64,
+) -> anyhow::Result<GenesisL1View> {
+    let client = create_client(config)?;
+    fetch_genesis_l1_view(&client, block_height).await
+}
+
+async fn fetch_genesis_l1_view(
     client: &impl Reader,
     block_height: u64,
 ) -> anyhow::Result<GenesisL1View> {
@@ -97,4 +111,16 @@ async fn fetch_block_timestamps_ascending(
 
     timestamps.reverse();
     Ok(timestamps)
+}
+
+/// Creates a Bitcoin RPC client from the provided configuration.
+fn create_client(config: &BitcoindConfig) -> anyhow::Result<Client> {
+    Client::new(
+        config.rpc_url.clone(),
+        config.rpc_user.clone(),
+        config.rpc_password.clone(),
+        None,
+        None,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))
 }

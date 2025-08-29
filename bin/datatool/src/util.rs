@@ -235,13 +235,22 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
 
 /// Executes the `genl1view` subcommand.
 ///
-/// Generates the root xpub for an operator.
+/// Fetches the genesis L1 view from a Bitcoin node at the specified height.
 #[cfg(feature = "btc-client")]
 fn exec_genl1view(cmd: SubcGenL1View, ctx: &mut CmdContext) -> anyhow::Result<()> {
-    use crate::btc_client::fetch_genesis_l1_view;
+    use crate::btc_client::fetch_genesis_l1_view_with_config;
 
-    let gl1view = tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
-        &ctx.btc_client,
+    let config = ctx
+        .bitcoind_config
+        .as_ref()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Bitcoin RPC configuration not provided. Please specify --bitcoin-rpc-url, --bitcoin-rpc-user, and --bitcoin-rpc-password"
+            )
+        })?;
+
+    let gl1view = tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
+        config,
         cmd.genesis_l1_height,
     ))?;
 
@@ -616,17 +625,18 @@ fn retrieve_genesis_l1_view(cmd: &SubcParams, ctx: &CmdContext) -> anyhow::Resul
     // Priority 2: Use Bitcoin client if available
     #[cfg(feature = "btc-client")]
     {
-        use crate::btc_client::fetch_genesis_l1_view;
+        use crate::btc_client::fetch_genesis_l1_view_with_config;
 
-        tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
-            &ctx.btc_client,
-            cmd.genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
-        ))
+        if let Some(config) = &ctx.bitcoind_config {
+            return tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
+                config,
+                cmd.genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
+            ));
+        }
     }
 
     // Priority 3: Return error if neither option is available
-    #[cfg(not(feature = "btc-client"))]
     Err(anyhow::anyhow!(
-        "Either provide --genesis-l1-view-file or enable btc-client feature with Bitcoin RPC credentials"
+        "Either provide --genesis-l1-view-file or specify Bitcoin RPC credentials (--bitcoin-rpc-url, --bitcoin-rpc-user, --bitcoin-rpc-password) when btc-client feature is enabled"
     ))
 }
