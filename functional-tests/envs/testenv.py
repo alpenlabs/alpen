@@ -139,6 +139,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
         seq_fac = ctx.get_factory("sequencer")
         seq_signer_fac = ctx.get_factory("sequencer_signer")
         reth_fac = ctx.get_factory("reth")
+        alpen_cli = ctx.get_factory("alpen_cli")
 
         logger = logging.getLogger(__name__)
 
@@ -262,9 +263,15 @@ class BasicEnvConfig(flexitest.EnvConfig):
             seq_host, seq_port, epoch_gas_limit=self.epoch_gas_limit
         )
 
+        op_pk = rollup_cfg.operator_config.get_operators_pubkeys()
+        op_x_only_pks = [convert_to_xonly_pk(pk) for pk in op_pk]
+        agg_pubkey = musig_aggregate_pks(op_x_only_pks)
+        alpen_cli = alpen_cli.setup_environment(reth_config.rpc_url, bitcoind_config, agg_pubkey, rollup_cfg.rollup_name)
+
         svcs["sequencer"] = sequencer
         svcs["sequencer_signer"] = sequencer_signer
         svcs["reth"] = reth
+        svcs["alpen_cli"] = alpen_cli
 
         # Need to wait for at least `genesis_l1_height` blocks to be generated.
         # Sleeping some more for safety

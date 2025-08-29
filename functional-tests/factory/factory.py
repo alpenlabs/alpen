@@ -1,6 +1,8 @@
 import logging
 import os
+import re
 import shutil
+from subprocess import CalledProcessError
 from typing import Optional
 
 import flexitest
@@ -9,6 +11,7 @@ import web3.middleware
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from factory import seqrpc
+from factory import config
 from factory.config import (
     BitcoindConfig,
     ClientConfig,
@@ -487,38 +490,107 @@ class AlpenCliFactory(flexitest.Factory):
         # doens't require any ports
         super().__init__([])
 
-    def scan(svc: DisposableService):
+    def _run_and_extract_with_re(self, cmd, re_pattern) -> Optional[str]:
+        assert self.svc is not None, "service not initialized"
+        assert self.config_file is not None, "config path not set"
+
+        result = self.svc.basic_runner(cmd,
+                                  env={"CLI_CONFIG": self.config_file,
+                                       "PROJ_DIRS": self.datadir
+                                       },
+                                  capture_output=True
+                                  )
+        try:
+            result.check_returncode()
+        except CalledProcessError:
+            return None
+
+        output = result.stdout
+        m = re.search(re_pattern, output)
+        return m.group(0) if m else None
+
+    def _check_config(self) -> bool:
         # fmt: off
         cmd = [
+            "alpen",
+            "config",
+        ]
+        # fmt: on
+        return self._run_and_extract_with_re(cmd, re.escape(self.config_file)) == self.config_file
+
+    def _scan(self) -> Optional[str]:
+        cmd = [
+                # fmt: off
             "alpen",
             "scan",
         ]
         # fmt: on
+        return self._run_and_extract_with_re(cmd, r"Scan complete")
 
 
-    def l1_address(svc: DisposableService):
+    def _l2_balance(self) -> Optional[str]:
         # fmt: off
         cmd = [
             "alpen",
-            "--config",
+            "balance",
+            "alpen"
         ]
         # fmt: on
-        pass
+        return self._run_and_extract_with_re(cmd, r"^Total:\s+([0-9]+(?:\.[0-9]+)?)\s+BTC\b")
 
-    def l2_address(svc: DisposableService):
-        pass
 
-    def l1_balance(svc: DisposableService):
-        pass
+    def _l1_balance(self) -> Optional[str]:
+        # fmt: off
+        cmd = [
+            "alpen",
+            "balance",
+            "signet"
+        ]
+        # fmt: on
+        return self._run_and_extract_with_re(cmd, r"^Total:\s+([0-9]+(?:\.[0-9]+)?)\s+BTC\b")
 
-    def l2_balance(svc: DisposableService):
-        pass
 
-    def deposit(svc: DisposableService):
-        pass
+    def _l2_address(self) -> Optional[str]:
+        # fmt: off
+        cmd = [
+            "alpen",
+            "receive",
+            "alpen"
+        ]
+        # fmt: on
+        return self._run_and_extract_with_re(cmd, r"0x[0-9a-fA-F]{40}")
 
-    def withdraw(svc: DisposableService):
-        pass
+    def _l1_address(self):
+        # fmt: off
+        cmd = [
+            "alpen",
+            "receive",
+            "signet"
+        ]
+
+        # fmt: on
+        return self._run_and_extract_with_re(cmd, r"\b(?:bc1|tb1|bcrt1)[0-9a-z]{25,59}\b")
+
+
+    def _deposit(self) -> Optional[str]:
+        # fmt: off
+        cmd = [
+            "alpen",
+            "deposit",
+        ]
+        # fmt: on
+        return self._run_and_extract_with_re(cmd, r"\b[0-9a-f]{64}\b")
+
+
+    def _withdraw(self):
+        # fmt: off
+        cmd = [
+            "alpen",
+            "withdraw",
+        ]
+        # fmt: on
+        return self._run_and_extract_with_re(cmd, r"\b[0-9a-f]{64}\b")
+
 
 
     @flexitest.with_ectx("ctx")
@@ -526,31 +598,39 @@ class AlpenCliFactory(flexitest.Factory):
         self,
         reth_endpoint: str,
         bitcoin_config: BitcoindConfig,
-        ctx: flexitest.EnvContext,
         pubkey: str,
         magic_bytes: str,
+        ctx: flexitest.EnvContext,
     ) -> flexitest.Service:
-        name = "alpen-cli"
+        name = "alpen_cli"
 
-        datadir = ctx.make_service_dir(name)
-        config_file = os.path.join(datadir, "alpen-cli.toml")
+        self.datadir = ctx.make_service_dir(name)
+        self.config_file = os.path.join(self.datadir, "alpen-cli.toml")
         config_content = f"""# Alpen-cli Configuration for functional test
 # Generated automatically by functional test factory
-        alpen_endpoing = "{reth_endpoint}"
-        bitcoind_rpc_endpoint = "{bitcoin_config.rpc_url}"
-        bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
-        bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
-        bridge_pubkey = "{pubkey}"
-        magic_bytes = "{magic_bytes}"
+alpen_endpoint = "{reth_endpoint}"
+bitcoind_rpc_endpoint = "{bitcoin_config.rpc_url}"
+bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
+bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
+bridge_pubkey = "{pubkey}"
+magic_bytes = "{magic_bytes}"
+network = "regtest"
 """
-        with open(config_file, "w") as f:
+        with open(self.config_file, "w") as f:
             f.write(config_content)
 
-
-        svc = DisposableService({}, stdout=subprocess.PIPE)
+        self.svc = DisposableService({}, stdout=subprocess.PIPE)
         # inject multiple commands
+        self.svc.l2_address = lambda: self._l2_address()
+        self.svc.l1_address = lambda: self._l1_address()
+        self.svc.scan = lambda: self._scan()
+        self.svc.l2_balance = lambda: self._l2_balance()
+        self.svc.l1_balance = lambda: self._l1_balance()
+        self.svc.deposit = lambda: self._deposit()
+        self.svc.withdraw = lambda: self._withdraw()
 
-        return svc
+        assert self._check_config(), "config file path should match"
+        return self.svc
 
 
 def _inject_service_create_rpc(svc: flexitest.service.ProcService, rpc_url: str, name: str):
