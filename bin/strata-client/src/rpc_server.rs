@@ -228,7 +228,6 @@ impl StrataApiServer for StrataRpcImpl {
             finalized_epoch = Some(fin_ckpt.batch_info.get_epoch_commitment());
         }
 
-        // FIXME: remove deprecated items
         #[allow(deprecated)]
         Ok(RpcClientStatus {
             finalized_epoch,
