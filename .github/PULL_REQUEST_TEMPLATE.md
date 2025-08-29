@@ -37,6 +37,8 @@ Ensure all the following are checked:
 - [ ] My changes do not introduce new warnings.
 - [ ] I have added (where necessary) tests that prove my changes are effective or that my feature works.
 - [ ] New and existing tests pass with my changes.
+- [ ] I have [disclosed my use of AI](https://github.com/alpenlabs/alpen/blob/main/.github/CONTRIBUTING.md#ai-assistance-notice)
+      in the body of this PR.
 
 ## Related Issues
 
