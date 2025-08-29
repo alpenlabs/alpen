@@ -28,12 +28,6 @@ pub struct AlpenPayloadAttributes {
     pub batch_gas_limit: Option<u64>,
 }
 
-impl AlpenPayloadBuilderAttributes {
-    pub(crate) fn batch_gas_limit(&self) -> Option<u64> {
-        self.batch_gas_limit
-    }
-}
-
 impl AlpenPayloadAttributes {
     pub fn new_from_eth(payload_attributes: EthPayloadAttributes) -> Self {
         Self {
@@ -70,6 +64,12 @@ impl PayloadAttributes for AlpenPayloadAttributes {
 pub struct AlpenPayloadBuilderAttributes {
     pub(crate) inner: EthPayloadBuilderAttributes,
     pub(crate) batch_gas_limit: Option<u64>,
+}
+
+impl AlpenPayloadBuilderAttributes {
+    pub(crate) fn batch_gas_limit(&self) -> Option<u64> {
+        self.batch_gas_limit
+    }
 }
 
 impl PayloadBuilderAttributes for AlpenPayloadBuilderAttributes {
@@ -255,13 +255,13 @@ impl TryFrom<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV3 {
     }
 }
 
-impl TryFrom<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV4 {
-    type Error = BuiltPayloadConversionError;
+// impl TryFrom<AlpenBuiltPayload> for ExecutionPayloadEnvelopeV4 {
+//     type Error = BuiltPayloadConversionError;
 
-    fn try_from(value: AlpenBuiltPayload) -> Result<Self, Self::Error> {
-        value.inner.try_into_v4()
-    }
-}
+//     fn try_from(value: AlpenBuiltPayload) -> Result<Self, Self::Error> {
+//         value.inner.try_into_v4()
+//     }
+// }
 
 impl TryFrom<AlpenBuiltPayload> for AlpenExecutionPayloadEnvelopeV4 {
     type Error = BuiltPayloadConversionError;
