@@ -1,3 +1,5 @@
+//! Abstraction over secret storage with platform-specific providers (file, keychain, or test).
+
 use std::{fmt::Debug, sync::Arc};
 
 use async_trait::async_trait;
@@ -10,6 +12,7 @@ use crate::{
     settings::Settings,
 };
 
+/// Defines a common interface for retrieving, resetting, and updating encrypted seeds.
 #[async_trait(?Send)]
 pub trait SecretStore: Debug {
     fn get_secret(&self) -> Result<Seed, OneOf<LoadOrCreateErr>>;
@@ -31,6 +34,7 @@ mod impls {
         seed::{load_or_create, EncryptedSeedPersister},
     };
 
+    /// Provides access to a user’s seed using an encrypted persister (file or keychain).
     #[derive(Debug)]
     pub(super) struct UserSeedProvider<P: EncryptedSeedPersister + Clone + 'static> {
         pub(super) persister: P,
@@ -51,6 +55,7 @@ mod impls {
         }
     }
 
+    /// Creates a platform-appropriate persister (file on Linux, keychain otherwise).
     #[cfg(target_os = "linux")]
     fn make_persister(seed_file: &Path) -> FilePersister {
         FilePersister::new(seed_file.to_owned())
@@ -61,6 +66,7 @@ mod impls {
         KeychainPersister
     }
 
+    /// Returns a secret provider backed by the platform’s encrypted seed persister
     pub fn secret_provider(seed_file: &Path) -> Arc<dyn SecretStore> {
         let persister = make_persister(seed_file);
         Arc::new(UserSeedProvider { persister })
@@ -76,6 +82,7 @@ mod test_impls {
     use super::*;
     use crate::settings::SettingsFromFile;
 
+    /// Test-mode seed provider that returns a fixed seed and exits on reset or password change.
     #[derive(Debug, Clone)]
     pub(super) struct TestSeedProvider {
         pub(super) seed: Seed,
@@ -106,6 +113,7 @@ mod test_impls {
         }
     }
 
+    /// Returns a secret provider that uses in memory seed from test
     pub fn secret_provider(settings: &SettingsFromFile) -> Arc<dyn SecretStore> {
         let bytes = &settings.seed;
         let seed = Seed(Zeroizing::new(**bytes));
