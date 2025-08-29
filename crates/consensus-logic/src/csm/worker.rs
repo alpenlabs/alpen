@@ -161,10 +161,11 @@ fn process_block_with_retries(
 
     for next_block in potentually_skipped_blocks.iter() {
         process_block(state, next_block, config, shutdown)?;
+        status_channel.update_client_state(state.cur_state().as_ref().clone(), state.cur_block());
     }
 
     // Update status channel with the latest client state.
-    status_channel.update_client_state(state.cur_state().as_ref().clone(), state.cur_block());
+    //status_channel.update_client_state(state.cur_state().as_ref().clone(), state.cur_block());
 
     debug!(%incoming_block, "processed OK");
 
