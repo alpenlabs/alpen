@@ -134,10 +134,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
 
         let cur_tip = match init_state.get_declared_final_epoch().cloned() {
             Some(epoch) => epoch.to_block_commitment(),
-            None => L2BlockCommitment::new(
-                0,
-                *init_state.sync().expect("after genesis").genesis_blkid(),
-            ),
+            None => L2BlockCommitment::new(0, *init_state.sync().genesis_blkid()),
         };
 
         Ok(cur_tip)
