@@ -36,7 +36,6 @@ use zeroize::Zeroize;
 use crate::args::{
     CmdContext, SubcOpXpub, SubcParams, SubcSeqPrivkey, SubcSeqPubkey, SubcXpriv, Subcommand,
 };
-use crate::btc_client;
 
 /// Sequencer key environment variable.
 const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
@@ -48,6 +47,9 @@ const OPKEY_ENVVAR: &str = "STRATA_OP_KEY";
 ///
 /// Right now this is [`Network::Signet`].
 const DEFAULT_NETWORK: Network = Network::Signet;
+
+/// The default L1 genesis height to use.
+const DEFAULT_L1_GENESIS_HEIGHT: u64 = 100;
 
 /// The default evm chainspec to use in params.
 const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;
@@ -243,7 +245,7 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     };
 
     // Get genesis L1 view first (before moving other fields)
-    let genesis_l1_view = btc_client::get_genesis_l1_view(&cmd)?;
+    let genesis_l1_view = retrieve_genesis_l1_view(&cmd, ctx)?;
 
     // Parse each of the operator keys.
     let mut opkeys = Vec::new();
@@ -554,3 +556,51 @@ fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockIn
     })
 }
 
+/// Retrieves the genesis L1 view from a file or Bitcoin RPC client.
+///
+/// This function follows a priority order:
+/// 1. If `genesis_l1_view_file` is provided, load the genesis L1 view from that JSON file
+/// 2. If no file is provided and the `btc-client` feature is enabled, fetch the genesis L1 view
+///    from a Bitcoin node using the RPC credentials at the specified block height (defaults to
+///    [`DEFAULT_L1_GENESIS_HEIGHT`] if not provided)
+/// 3. If neither file nor Bitcoin client are available, return an error
+///
+/// # Arguments
+/// * `cmd` - Command parameters containing file path and Bitcoin RPC connection details
+/// * `ctx` - Command context containing the Bitcoin client (when btc-client feature is enabled)
+///
+/// # Returns
+/// * `Ok(GenesisL1View)` - The successfully retrieved genesis L1 view
+/// * `Err(anyhow::Error)` - If file reading fails, RPC connection fails, or neither option is
+///   available
+fn retrieve_genesis_l1_view(cmd: &SubcParams, ctx: &CmdContext) -> anyhow::Result<GenesisL1View> {
+    // Priority 1: Use file if provided
+    if let Some(ref file) = cmd.genesis_l1_view_file {
+        let content = fs::read_to_string(file).map_err(|e| {
+            anyhow::anyhow!("Failed to read genesis L1 view file {:?}: {}", file, e)
+        })?;
+
+        let genesis_l1_view: GenesisL1View = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse genesis L1 view JSON: {}", e))?;
+
+        return Ok(genesis_l1_view);
+    }
+
+    // Priority 2: Use Bitcoin client if available
+    #[cfg(feature = "btc-client")]
+    {
+        use crate::btc_client::fetch_genesis_l1_view;
+
+        let gl1view = tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
+            &ctx.btc_client,
+            cmd.genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
+        ))?;
+
+        return Ok(gl1view);
+    }
+
+    // Priority 3: Return error if neither option is available
+    Err(anyhow::anyhow!(
+        "Either provide --genesis-l1-view-file or enable btc-client feature with Bitcoin RPC credentials"
+    ))
+}

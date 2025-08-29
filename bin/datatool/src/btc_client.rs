@@ -3,73 +3,17 @@
 //! This module contains Bitcoin RPC client operations and is feature-gated
 //! behind the `btc-client` feature flag.
 
-use anyhow;
-#[cfg(feature = "btc-client")]
 use bitcoin::CompactTarget;
-#[cfg(feature = "btc-client")]
-use bitcoind_async_client::{traits::Reader, Client};
-#[cfg(feature = "btc-client")]
-use strata_primitives::l1::{
-    get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId,
-    TIMESTAMPS_FOR_MEDIAN,
+use bitcoind_async_client::traits::Reader;
+use strata_primitives::{
+    l1::{
+        get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId,
+        TIMESTAMPS_FOR_MEDIAN,
+    },
+    params::GenesisL1View,
 };
-use strata_primitives::params::GenesisL1View;
 
-use crate::args::SubcParams;
-
-/// Retrieves the genesis L1 view either from a Bitcoin RPC client or from a local file.
-///
-/// When the `btc-client` feature is enabled, this function connects to a Bitcoin node
-/// using the RPC credentials from `cmd` and fetches the genesis L1 view at the specified
-/// block height (defaults to 100 if not provided).
-///
-/// When the `btc-client` feature is disabled, the function loads the genesis L1 view
-/// from a JSON file specified in `cmd.genesis_l1_view_file`.
-///
-/// # Arguments
-/// * `cmd` - Command parameters containing Bitcoin RPC connection details and file paths
-///
-/// # Returns
-/// * `Ok(GenesisL1View)` - The successfully retrieved genesis L1 view
-/// * `Err(anyhow::Error)` - If RPC connection fails, file reading fails, or JSON parsing fails
-pub(crate) fn get_genesis_l1_view(cmd: &SubcParams) -> anyhow::Result<GenesisL1View> {
-    #[cfg(feature = "btc-client")]
-    {
-        // When the btc-client feature is enabled, we can fetch the genesis L1 view from a Bitcoin
-        // node.
-        let bitcoin_client = Client::new(
-            cmd.bitcoin_rpc_url.clone(),
-            cmd.bitcoin_rpc_user.clone(),
-            cmd.bitcoin_rpc_password.clone(),
-            None,
-            None,
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))?;
-
-        tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
-            &bitcoin_client,
-            cmd.genesis_l1_height.unwrap_or(100),
-        ))
-    }
-
-    #[cfg(not(feature = "btc-client"))]
-    {
-        // When the btc-client feature is disabled, we can only load the genesis L1 view from a
-        // file.
-        use std::fs;
-        
-        let content = fs::read_to_string(&cmd.genesis_l1_view_file)
-            .map_err(|e| anyhow::anyhow!("Failed to read genesis L1 view file {:?}: {}", cmd.genesis_l1_view_file, e))?;
-
-        let genesis_l1_view: GenesisL1View = serde_json::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse genesis L1 view JSON: {}", e))?;
-
-        Ok(genesis_l1_view)
-    }
-}
-
-#[cfg(feature = "btc-client")]
-async fn fetch_genesis_l1_view(
+pub(crate) async fn fetch_genesis_l1_view(
     client: &impl Reader,
     block_height: u64,
 ) -> anyhow::Result<GenesisL1View> {
@@ -133,7 +77,6 @@ async fn fetch_genesis_l1_view(
 /// block's timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
 /// placeholder value of 0. The resulting vector is then reversed so that timestamps are returned in
 /// ascending order (oldest first).
-#[cfg(feature = "btc-client")]
 async fn fetch_block_timestamps_ascending(
     client: &impl Reader,
     height: u64,

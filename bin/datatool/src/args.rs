@@ -194,9 +194,6 @@ pub(crate) struct SubcParams {
     #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
     pub(crate) deposit_sats: Option<String>,
 
-    #[argh(option, description = "horizon height (default 90)", short = 'h')]
-    pub(crate) horizon_height: Option<u64>,
-
     #[argh(
         option,
         description = "genesis L1 block height (default 100)",
@@ -226,33 +223,11 @@ pub(crate) struct SubcParams {
     #[argh(option, description = "path to evm chain config json")]
     pub(crate) chain_config: Option<PathBuf>,
 
-    #[cfg(feature = "btc-client")]
-    #[argh(
-        option,
-        description = "bitcoin RPC URL (required when btc-client feature is enabled)"
-    )]
-    pub(crate) bitcoin_rpc_url: String,
-
-    #[cfg(feature = "btc-client")]
-    #[argh(
-        option,
-        description = "bitcoin RPC username (required when btc-client feature is enabled)"
-    )]
-    pub(crate) bitcoin_rpc_user: String,
-
-    #[cfg(feature = "btc-client")]
-    #[argh(
-        option,
-        description = "bitcoin RPC password (required when btc-client feature is enabled)"
-    )]
-    pub(crate) bitcoin_rpc_password: String,
-
-    #[cfg(not(feature = "btc-client"))]
     #[argh(
         option,
         description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
     )]
-    pub(crate) genesis_l1_view_file: String,
+    pub(crate) genesis_l1_view_file: Option<String>,
 }
 
 pub(crate) struct CmdContext {
