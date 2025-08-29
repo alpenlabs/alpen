@@ -18,9 +18,13 @@ strata-datatool genopxpub -f operator1.bin
 strata-datatool genopxpub -f operator2.bin
 
 # Take the generated pubkeys and generate the params file with it.
-# Option 1: With btc-client feature (fetches genesis L1 view from Bitcoin node)
+# Option 1: With Bitcoin RPC connection (fetches genesis L1 view from Bitcoin node)
 cargo build --bin strata-datatool --features btc-client
-strata-datatool genparams \
+strata-datatool \
+    --bitcoin-rpc-url http://localhost:18332 \
+    --bitcoin-rpc-user rpcuser \
+    --bitcoin-rpc-password rpcpass \
+    genparams \
     -n 'hello-world-network' \
     -s XGUgTAJNpexzrjgnbMvGtDBCZEwxd6KQE4PNDWE6YLZYBTGoS \
     -b tpubDASVk1m5cxpmUbwVEZEQb8maDVx9kDxBhSLCqsKHJJmZ8htSegpHx7G3RFudZCdDLtNKTosQiBLbbFsVA45MemurWenzn16Y1ft7NkQekcD \
@@ -28,7 +32,7 @@ strata-datatool genparams \
     --genesis-l1-height 100 \
     -o params.json
 
-# Option 2: Without btc-client feature (using pre-generated genesis L1 view file)
+# Option 2: Using pre-generated genesis L1 view file (no Bitcoin RPC needed)
 strata-datatool genparams \
     -n 'hello-world-network' \
     -s XGUgTAJNpexzrjgnbMvGtDBCZEwxd6KQE4PNDWE6YLZYBTGoS \
@@ -37,9 +41,15 @@ strata-datatool genparams \
     --genesis-l1-view-file genesis_l1_view.json \
     -o params.json
 
-# Generate a genesis L1 view file (requires btc-client feature)
+# Generate a genesis L1 view file (requires Bitcoin RPC connection)
 cargo build --bin strata-datatool --features btc-client
-strata-datatool genl1view --genesis-l1-height 100 -o genesis_l1_view.json
+strata-datatool \
+    --bitcoin-rpc-url http://localhost:18332 \
+    --bitcoin-rpc-user rpcuser \
+    --bitcoin-rpc-password rpcpass \
+    genl1view \
+    --genesis-l1-height 100 \
+    --output genesis_l1_view.json
 ```
 
 ## Envvars

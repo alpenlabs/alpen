@@ -286,11 +286,15 @@ pub(crate) fn resolve_context_and_subcommand(
 }
 
 /// Creates a Bitcoin RPC configuration if all required credentials are provided.
-/// 
+///
 /// Returns `Some(BitcoindConfig)` if URL, username, and password are all provided,
 /// otherwise returns `None`.
 fn create_bitcoind_config(args: &Args) -> Option<BitcoindConfig> {
-    match (&args.bitcoin_rpc_url, &args.bitcoin_rpc_user, &args.bitcoin_rpc_password) {
+    match (
+        &args.bitcoin_rpc_url,
+        &args.bitcoin_rpc_user,
+        &args.bitcoin_rpc_password,
+    ) {
         (Some(url), Some(user), Some(password)) => Some(BitcoindConfig {
             rpc_url: url.clone(),
             rpc_user: user.clone(),

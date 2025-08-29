@@ -16,7 +16,7 @@ use strata_primitives::{
 use crate::args::BitcoindConfig;
 
 /// Fetches genesis L1 view using the provided Bitcoin RPC configuration.
-/// 
+///
 /// Creates a Bitcoin client from the config and fetches the genesis L1 view
 /// at the specified block height.
 pub(crate) async fn fetch_genesis_l1_view_with_config(
