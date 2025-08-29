@@ -33,6 +33,10 @@ class BaseMixin(testenv.StrataTestBase):
         self._w3 = w3
 
     @property
+    def ctx(self):
+        return self._ctx
+
+    @property
     def txs(self) -> EthTransactions:
         """The main API to spawn various ETH transactions."""
         return self._txs
