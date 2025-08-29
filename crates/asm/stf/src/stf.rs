@@ -1,14 +1,13 @@
 //! The `asm_stf` crate implements the core Anchor State Machine state transition function (STF). It
 //! glues together block‐level validation, a set of pluggable subprotocols, and the global chain
 //! view into a single deterministic state transition.
+// TODO rename this module to `transition`
 
-use strata_asm_common::{
-    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, GenesisConfigRegistry,
-};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
 
 use crate::{
-    manager::SubprotoManager,
-    stage::{FinishStage, ProcessStage, SubprotoLoaderStage},
+    manager::{AnchorStateLoader, SubprotoManager},
+    stage::{FinishStage, ProcessStage},
     types::{AsmStfInput, AsmStfOutput},
 };
 
@@ -24,7 +23,6 @@ use crate::{
 /// * `pre_state` - The current anchor state containing chain view and subprotocol states
 /// * `input` - The ASM STF input containing the block header, protocol transactions, and auxiliary
 ///   data
-/// * `genesis_registry` - genesis configuration registry for subprotocol initialization
 ///
 /// # Returns
 ///
@@ -40,13 +38,12 @@ use crate::{
 ///
 /// # Type Parameters
 ///
-/// * `S` - The ASM specification type that defines magic bytes and subprotocol behavior
-/// * `'b` - Lifetime parameter tied to the input block reference
-/// * `'x` - Lifetime parameter tied to the auxiliary input data
-pub fn asm_stf<'b, 'x, S: AsmSpec>(
+/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
+///   configs
+pub fn compute_asm_transition<'i, S: AsmSpec>(
+    spec: &S,
     pre_state: &AnchorState,
-    input: AsmStfInput<'b, 'x>,
-    genesis_registry: &GenesisConfigRegistry,
+    input: AsmStfInput<'i>,
 ) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -57,20 +54,23 @@ pub fn asm_stf<'b, 'x, S: AsmSpec>(
 
     let mut manager = SubprotoManager::new();
 
-    // 2. LOAD: Initialize each subprotocol in the subproto manager with auxiliary input data
-    let mut loader_stage =
-        SubprotoLoaderStage::new(pre_state, &mut manager, input.aux_input, genesis_registry);
-    S::call_subprotocols(&mut loader_stage);
+    // 2. LOAD: Initialize each subprotocol in the subproto manager with aux input data.
+    let mut loader = AnchorStateLoader::new(pre_state, &mut manager);
+    spec.load_subprotocols(&mut loader);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
-    let mut process_stage = ProcessStage::new(input.protocol_txs, &mut manager, pre_state);
-    S::call_subprotocols(&mut process_stage);
+    let mut process_stage =
+        ProcessStage::new(&mut manager, pre_state, input.protocol_txs, input.aux_input);
+    spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
     // This stage handles cross-protocol communication and finalizes state changes.
+    // TODO probably will have change this to repeat the interproto message
+    // processing phase until we have no more messages to deliver, or some
+    // bounded number of times
     let mut finish_stage = FinishStage::new(&mut manager);
-    S::call_subprotocols(&mut finish_stage);
+    spec.call_subprotocols(&mut finish_stage);
 
     // 5. Construct the final `AnchorState` and output.
     // Export the updated state sections and logs from all subprotocols to build the result.

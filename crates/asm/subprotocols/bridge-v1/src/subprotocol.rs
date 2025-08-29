@@ -32,14 +32,14 @@ impl Subprotocol for BridgeV1Subproto {
 
     type State = BridgeV1State;
 
+    type Params = BridgeV1Config;
+
     type Msg = BridgeIncomingMsg;
 
     type AuxInput = ();
 
-    type GenesisConfig = BridgeV1Config;
-
-    fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
-        Ok(BridgeV1State::new(&genesis_config))
+    fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
+        Ok(BridgeV1State::new(params))
     }
 
     /// Processes transactions for the Bridge V1 subprotocol and handles expired assignment
@@ -86,8 +86,9 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_inputs: &[Self::AuxInput],
+        _aux_inputs: &Self::AuxInput,
         relayer: &mut impl MsgRelayer,
+        _params: &Self::Params,
     ) {
         // Process each transaction
         for tx in txs {
@@ -142,7 +143,7 @@ impl Subprotocol for BridgeV1Subproto {
     ///
     /// Both conditions represent unrecoverable protocol violations where continued operation
     /// poses significant risk of fund loss.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]) {
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _params: &Self::Params) {
         for msg in msgs {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {

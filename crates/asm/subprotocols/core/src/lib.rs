@@ -34,6 +34,7 @@
 //! - Signature verification prevents unauthorized checkpoint submissions
 //! - State validation ensures proper progression of epochs and block heights
 //! - Rolling hash verification prevents L1→L2 message manipulation
+// TODO rename "core" to "checkpoint" all over the place
 
 // Module declarations
 mod constants;
@@ -62,6 +63,7 @@ use crate::{constants::OL_STF_CHECKPOINT_TX_TYPE, handlers::handle_checkpoint_tr
 /// is correctly verified against the last known checkpoint state anchored on L1.
 /// It manages the verifying key, tracks the latest verified checkpoint, and
 /// enforces administrative controls over batch producer and consensus manager keys.
+// TODO move to its own module, like in the other crate
 #[derive(Copy, Clone, Debug)]
 pub struct OLCoreSubproto;
 
@@ -69,6 +71,8 @@ impl Subprotocol for OLCoreSubproto {
     const ID: SubprotocolId = CORE_SUBPROTOCOL_ID;
 
     type State = CoreOLState;
+
+    type Params = CoreGenesisConfig;
 
     // [PLACE_HOLDER]
     // TODO: Define the message type for inter-subprotocol communication
@@ -79,25 +83,23 @@ impl Subprotocol for OLCoreSubproto {
     // TODO: Define the auxiliary input type for the Core subprotocol
     type AuxInput = ();
 
-    type GenesisConfig = CoreGenesisConfig;
-
-    fn init(genesis_config: Self::GenesisConfig) -> std::result::Result<Self::State, AsmError> {
+    fn init(params: &Self::Params) -> std::result::Result<Self::State, AsmError> {
         // Construct genesis EpochSummary from the complete L1 block information
         // At genesis time, we have the complete L1 block commitment (ID + height)
         let genesis_epoch_summary = EpochSummary::new(
-            0,                               // epoch: genesis is epoch 0
-            L2BlockCommitment::null(),       // terminal: no L2 blocks yet
-            L2BlockCommitment::null(),       // prev_terminal: no previous epoch
-            genesis_config.genesis_l1_block, // new_l1: complete L1 block commitment
-            Buf32::zero(),                   // final_state: genesis state (zero)
+            0,                         // epoch: genesis is epoch 0
+            L2BlockCommitment::null(), // terminal: no L2 blocks yet
+            L2BlockCommitment::null(), // prev_terminal: no previous epoch
+            params.genesis_l1_block,   // new_l1: complete L1 block commitment
+            Buf32::zero(),             // final_state: genesis state (zero)
         );
 
         // Initialize the Core subprotocol state from genesis configuration
         Ok(CoreOLState {
-            checkpoint_vk: genesis_config.checkpoint_vk,
+            checkpoint_vk: params.checkpoint_vk.clone(),
             verified_checkpoint: genesis_epoch_summary,
-            last_checkpoint_ref: *genesis_config.genesis_l1_block.blkid(),
-            sequencer_pubkey: genesis_config.sequencer_pubkey,
+            last_checkpoint_ref: *params.genesis_l1_block.blkid(),
+            sequencer_pubkey: params.sequencer_pubkey,
         })
     }
 
@@ -106,6 +108,7 @@ impl Subprotocol for OLCoreSubproto {
         _txs: &[TxInputRef<'_>],
         _collector: &mut impl AuxInputCollector,
         _anchor_pre: &AnchorState,
+        _params: &Self::Params,
     ) {
         // [PLACE_HOLDER]
         // TODO: Waiting for auxiliary input to be defined
@@ -119,13 +122,14 @@ impl Subprotocol for OLCoreSubproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_inputs: &[Self::AuxInput],
+        aux_input: &Self::AuxInput,
         relayer: &mut impl MsgRelayer,
+        _params: &Self::Params,
     ) {
         for tx in txs {
             let result = match tx.tag().tx_type() {
                 OL_STF_CHECKPOINT_TX_TYPE => {
-                    handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_inputs)
+                    handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_input)
                 }
                 // [PLACE_HOLDER] Add other transaction types related to vk upgrade, etc.
                 _ => Err(CoreError::TxParsingError("unsupported tx type".to_string())),
@@ -142,7 +146,7 @@ impl Subprotocol for OLCoreSubproto {
         }
     }
 
-    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg]) {
+    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg], _params: &Self::Params) {
         // [PLACE_HOLDER]
         // TODO: Implement message processing from upgrade subprotocol messages
         // to update verifying key and sequencer key.

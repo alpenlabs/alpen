@@ -9,15 +9,28 @@ use crate::Subprotocol;
 /// will always be processed in a consistent order as defined by an `AsmSpec`.
 pub trait AsmSpec {
     /// 4-byte magic identifier for the SPS-50 L1 transaction header.
-    const MAGIC_BYTES: MagicBytes;
+    fn magic_bytes(&self) -> MagicBytes;
 
-    /// Function that calls the loader with each subprotocol we intend to
+    /// Trigger to load the subprotocols into a manager.
+    fn load_subprotocols(&self, loader: &mut impl Loader);
+
+    /// Function that calls the stage with each subprotocol we intend to
     /// process, in the order we intend to process them.
-    fn call_subprotocols(stage: &mut impl Stage);
+    ///
+    /// This MUST NOT change its behavior depending on the stage we're
+    /// processing.
+    fn call_subprotocols(&self, stage: &mut impl Stage);
 }
 
-/// Implementation of a subprotocol handling stage.
+pub trait Loader {
+    /// Invoked by the ASM spec to perform logic to load the subprotocol for
+    /// execution in this ASM invocation.
+    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params);
+}
+
+/// Impl of a subprotocol execution stage.
 pub trait Stage {
-    /// Invoked by the ASM spec to perform logic relating to a specific subprotocol.
-    fn process_subprotocol<S: Subprotocol>(&mut self);
+    /// Invoked by the ASM spec to perform a the stage's logic with respect to
+    /// the subprotocol.
+    fn invoke_subprotocol<S: Subprotocol>(&mut self);
 }

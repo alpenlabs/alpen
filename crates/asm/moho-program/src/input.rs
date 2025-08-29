@@ -10,39 +10,36 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
-use strata_asm_common::{AuxPayload, GenesisConfigRegistry};
+use strata_asm_common::AuxPayload;
 
 /// Private input to process the next state.
 ///
 /// This includes all the L1
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub struct AsmStepInput {
     /// The full Bitcoin L1 block
     pub block: L1Block,
     /// Auxiliary input required to run the ASM STF
-    pub aux_bundle: BTreeMap<u8, Vec<AuxPayload>>,
-    /// Genesis configuration registry for subprotocol initialization
-    pub genesis_registry: GenesisConfigRegistry,
+    pub aux_inputs: BTreeMap<u8, AuxPayload>,
 }
 
 impl AsmStepInput {
-    pub fn new(
-        block: L1Block,
-        aux_bundle: BTreeMap<u8, Vec<AuxPayload>>,
-        genesis_registry: GenesisConfigRegistry,
-    ) -> Self {
-        AsmStepInput {
-            block,
-            aux_bundle,
-            genesis_registry,
-        }
+    pub fn new(block: L1Block, aux_inputs: BTreeMap<u8, AuxPayload>) -> Self {
+        AsmStepInput { block, aux_inputs }
     }
 
+    /// Computes the state reference.
+    ///
+    /// In concrete terms, this just computes the blkid/blockhash.
     pub fn compute_ref(&self) -> StateReference {
         let raw_ref = self.block.0.block_hash().to_raw_hash().to_byte_array();
         StateReference::new(raw_ref)
     }
 
+    /// Computes the previous state reference from the input.
+    ///
+    /// In concrete terms, this just extracts the parent blkid from the block's
+    /// header.
     pub fn compute_prev_ref(&self) -> StateReference {
         let parent_ref = self
             .block
@@ -54,6 +51,7 @@ impl AsmStepInput {
         StateReference::new(parent_ref)
     }
 
+    /// Checks that the block's merkle roots are consistent.
     pub fn validate_block(&self) -> bool {
         self.block.0.check_merkle_root() && self.block.0.check_witness_commitment()
     }

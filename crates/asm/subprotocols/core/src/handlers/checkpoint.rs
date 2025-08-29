@@ -38,7 +38,8 @@ pub(crate) fn handle_checkpoint_transaction(
     tx: &TxInputRef<'_>,
     _relayer: &mut impl MsgRelayer,
     anchor_pre: &AnchorState,
-    aux_inputs: &[<OLCoreSubproto as Subprotocol>::AuxInput],
+    // TODO make this the actual type
+    aux_input: &<OLCoreSubproto as Subprotocol>::AuxInput,
 ) -> Result<()> {
     // 1. Extract and validate signed checkpoint
     let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
@@ -77,7 +78,7 @@ pub(crate) fn handle_checkpoint_transaction(
         new_l1_height,
         expected_commitment,
         anchor_pre,
-        aux_inputs,
+        aux_input,
     )?;
 
     // 9. Validate L2→L1 messages

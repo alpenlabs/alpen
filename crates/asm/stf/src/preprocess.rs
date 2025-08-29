@@ -5,11 +5,11 @@
 use std::collections::BTreeMap;
 
 use bitcoin::block::Block;
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, GenesisConfigRegistry};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
 
 use crate::{
-    manager::SubprotoManager,
-    stage::{PreProcessStage, SubprotoLoaderStage},
+    manager::{AnchorStateLoader, SubprotoManager},
+    stage::PreProcessStage,
     tx_filter::group_txs_by_subprotocol,
     types::AsmPreProcessOutput,
 };
@@ -31,7 +31,6 @@ use crate::{
 ///
 /// * `pre_state` - The previous anchor state to transition from
 /// * `block` - The new L1 Bitcoin block to process
-/// * `genesis_registry` - Genesis configuration registry for subprotocol initialization
 ///
 /// # Returns
 ///
@@ -47,12 +46,13 @@ use crate::{
 ///
 /// # Type Parameters
 ///
-/// * `S` - The ASM specification type that defines magic bytes and subprotocol behavior
+/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
+///   configs
 /// * `'b` - Lifetime parameter tied to the input block reference
 pub fn pre_process_asm<'b, S: AsmSpec>(
+    spec: &S,
     pre_state: &AnchorState,
     block: &'b Block,
-    genesis_registry: &GenesisConfigRegistry,
 ) -> AsmResult<AsmPreProcessOutput<'b>> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
@@ -63,23 +63,24 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 2. Filter and group transactions by subprotocol based on magic bytes.
     // Only transactions relevant to registered subprotocols are processed further.
-    let grouped_relevant_txs = group_txs_by_subprotocol(S::MAGIC_BYTES, &block.txdata);
+    let grouped_relevant_txs = group_txs_by_subprotocol(spec.magic_bytes(), &block.txdata);
 
     let mut manager = SubprotoManager::new();
 
     // 3. LOAD: Initialize each subprotocol in the subproto manager.
-    // We use empty aux_payload in the loader stage as no auxiliary data is needed during loading.
-    let aux = BTreeMap::new();
-
-    let mut loader_stage =
-        SubprotoLoaderStage::new(pre_state, &mut manager, &aux, genesis_registry);
-    S::call_subprotocols(&mut loader_stage);
+    let mut loader = AnchorStateLoader::new(pre_state, &mut manager);
+    spec.load_subprotocols(&mut loader);
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
-    let mut pre_process_stage =
-        PreProcessStage::new(&grouped_relevant_txs, &mut manager, pre_state);
-    S::call_subprotocols(&mut pre_process_stage);
+    let mut aux_req_dest = BTreeMap::new();
+    let mut pre_process_stage = PreProcessStage::new(
+        &mut manager,
+        pre_state,
+        &grouped_relevant_txs,
+        &mut aux_req_dest,
+    );
+    spec.call_subprotocols(&mut pre_process_stage);
 
     // 5. Flatten the grouped transactions back into a single collection.
     // The grouping was needed for per-subprotocol processing, but the output needs a flat list.
@@ -87,10 +88,9 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 6. Export auxiliary requests collected during pre-processing.
     // These requests will be fulfilled before running the main ASM state transition.
-    let aux_requests = manager.export_aux_requests();
     let output = AsmPreProcessOutput {
         txs: relevant_txs,
-        aux_requests,
+        aux_requests: aux_req_dest,
     };
 
     Ok(output)
