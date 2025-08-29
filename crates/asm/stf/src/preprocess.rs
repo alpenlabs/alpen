@@ -4,8 +4,8 @@
 
 use std::collections::BTreeMap;
 
-use bitcoin::{block::Block, params::Params};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, GenesisConfigRegistry};
+use bitcoin::block::Block;
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
