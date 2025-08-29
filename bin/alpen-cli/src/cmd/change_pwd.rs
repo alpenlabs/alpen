@@ -12,7 +12,7 @@ pub struct ChangePwdArgs {}
 pub async fn change_pwd(
     _args: ChangePwdArgs,
     seed: Seed,
-    persister: impl EncryptedSeedPersister,
+    persister: &impl EncryptedSeedPersister,
 ) -> Result<(), DisplayedError> {
     let mut new_pw =
         Password::read(true).internal_error("Failed to read the password entered by user")?;

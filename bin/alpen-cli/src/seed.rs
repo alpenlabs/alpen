@@ -1,6 +1,6 @@
 #[cfg(target_os = "linux")]
 use std::io;
-use std::{fmt::Debug, str::FromStr, sync::Arc};
+use std::{fmt::Debug, str::FromStr};
 
 use aes_gcm_siv::{aead::AeadMutInPlace, Aes256GcmSiv, KeyInit, Nonce, Tag};
 use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
@@ -159,7 +159,7 @@ impl EncryptedSeed {
 }
 
 pub fn load_or_create(
-    persister: Arc<dyn EncryptedSeedPersister>,
+    persister: &impl EncryptedSeedPersister,
 ) -> Result<Seed, OneOf<LoadOrCreateErr>> {
     println!("Loading encrypted seed...");
     let maybe_encrypted_seed = persister.load().map_err(OneOf::broaden)?;

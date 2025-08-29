@@ -17,7 +17,7 @@ pub struct ResetArgs {
 
 pub async fn reset(
     args: ResetArgs,
-    persister: impl EncryptedSeedPersister,
+    persister: &impl EncryptedSeedPersister,
     settings: &Settings,
 ) -> Result<(), DisplayedError> {
     let confirm = if args.assume_yes {

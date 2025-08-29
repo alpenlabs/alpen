@@ -39,15 +39,15 @@ mod impls {
     #[async_trait(?Send)]
     impl<P: EncryptedSeedPersister + Clone + 'static> SecretStore for UserSeedProvider<P> {
         fn get_secret(&self) -> Result<Seed, OneOf<LoadOrCreateErr>> {
-            load_or_create(Arc::new(self.persister.clone()))
+            load_or_create(&self.persister)
         }
 
         async fn reset(&self, args: ResetArgs, settings: &Settings) -> Result<(), DisplayedError> {
-            reset(args, self.persister.clone(), settings).await
+            reset(args, &self.persister, settings).await
         }
 
         async fn change_pwd(&self, args: ChangePwdArgs, seed: Seed) -> Result<(), DisplayedError> {
-            change_pwd(args, seed, self.persister.clone()).await
+            change_pwd(args, seed, &self.persister).await
         }
     }
 
