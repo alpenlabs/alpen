@@ -26,9 +26,6 @@ strata-datatool genparams \
     -b tpubDASVk1m5cxpmUbwVEZEQb8maDVx9kDxBhSLCqsKHJJmZ8htSegpHx7G3RFudZCdDLtNKTosQiBLbbFsVA45MemurWenzn16Y1ft7NkQekcD \
     -b tpubDBX9KQsqK2LMCszkDHvANftHzhJdhipe9bi9MNUD3S2bsY1ikWEZxE53VBgYN8WoNXk9g9eRzhx6UfJcQr3XqkA27aSxXvKu5TYFZJEAjCd \
     --genesis-l1-height 100 \
-    --bitcoin-rpc-url http://localhost:18332 \
-    --bitcoin-rpc-user rpcuser \
-    --bitcoin-rpc-password rpcpass \
     -o params.json
 
 # Option 2: Without btc-client feature (using pre-generated genesis L1 view file)
@@ -39,6 +36,10 @@ strata-datatool genparams \
     -b tpubDBX9KQsqK2LMCszkDHvANftHzhJdhipe9bi9MNUD3S2bsY1ikWEZxE53VBgYN8WoNXk9g9eRzhx6UfJcQr3XqkA27aSxXvKu5TYFZJEAjCd \
     --genesis-l1-view-file genesis_l1_view.json \
     -o params.json
+
+# Generate a genesis L1 view file (requires btc-client feature)
+cargo build --bin strata-datatool --features btc-client
+strata-datatool genl1view --genesis-l1-height 100 -o genesis_l1_view.json
 ```
 
 ## Envvars

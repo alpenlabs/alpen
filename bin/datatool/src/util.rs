@@ -34,7 +34,8 @@ use strata_primitives::{
 use zeroize::Zeroize;
 
 use crate::args::{
-    CmdContext, SubcOpXpub, SubcParams, SubcSeqPrivkey, SubcSeqPubkey, SubcXpriv, Subcommand,
+    CmdContext, SubcGenL1View, SubcOpXpub, SubcParams, SubcSeqPrivkey, SubcSeqPubkey, SubcXpriv,
+    Subcommand,
 };
 
 /// Sequencer key environment variable.
@@ -72,6 +73,8 @@ pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
         Subcommand::SeqPrivkey(subc) => exec_genseqprivkey(subc, ctx),
         Subcommand::OpXpub(subc) => exec_genopxpub(subc, ctx),
         Subcommand::Params(subc) => exec_genparams(subc, ctx),
+        #[cfg(feature = "btc-client")]
+        Subcommand::GenL1View(subc) => exec_genl1view(subc, ctx),
     }
 }
 
@@ -225,6 +228,30 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
             .x_only_public_key(SECP256K1)
             .0;
         println!("{:?}", Hex(wallet_pk.serialize()));
+    }
+
+    Ok(())
+}
+
+/// Executes the `genl1view` subcommand.
+///
+/// Generates the root xpub for an operator.
+#[cfg(feature = "btc-client")]
+fn exec_genl1view(cmd: SubcGenL1View, ctx: &mut CmdContext) -> anyhow::Result<()> {
+    use crate::btc_client::fetch_genesis_l1_view;
+
+    let gl1view = tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
+        &ctx.btc_client,
+        cmd.genesis_l1_height,
+    ))?;
+
+    let params_buf = serde_json::to_string_pretty(&gl1view)?;
+
+    if let Some(out_path) = &cmd.output {
+        fs::write(out_path, params_buf)?;
+        eprintln!("wrote to file {out_path:?}");
+    } else {
+        println!("{params_buf}");
     }
 
     Ok(())
@@ -591,15 +618,14 @@ fn retrieve_genesis_l1_view(cmd: &SubcParams, ctx: &CmdContext) -> anyhow::Resul
     {
         use crate::btc_client::fetch_genesis_l1_view;
 
-        let gl1view = tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
+        tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view(
             &ctx.btc_client,
             cmd.genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
-        ))?;
-
-        return Ok(gl1view);
+        ))
     }
 
     // Priority 3: Return error if neither option is available
+    #[cfg(not(feature = "btc-client"))]
     Err(anyhow::anyhow!(
         "Either provide --genesis-l1-view-file or enable btc-client feature with Bitcoin RPC credentials"
     ))

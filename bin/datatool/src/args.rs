@@ -57,6 +57,8 @@ pub(crate) enum Subcommand {
     SeqPrivkey(SubcSeqPrivkey),
     OpXpub(SubcOpXpub),
     Params(SubcParams),
+    #[cfg(feature = "btc-client")]
+    GenL1View(SubcGenL1View),
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -228,6 +230,24 @@ pub(crate) struct SubcParams {
         description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
     )]
     pub(crate) genesis_l1_view_file: Option<String>,
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(
+    subcommand,
+    name = "genl1view",
+    description = "generates the genesis L1 view at the given height"
+)]
+pub(crate) struct SubcGenL1View {
+    #[argh(option, description = "genesis L1 block height", short = 'g')]
+    pub(crate) genesis_l1_height: u64,
+
+    #[argh(
+        option,
+        description = "output file path .json (default stdout)",
+        short = 'o'
+    )]
+    pub(crate) output: Option<PathBuf>,
 }
 
 pub(crate) struct CmdContext {
