@@ -21,6 +21,7 @@ use zkaleido_risc0_groth16_verifier as _;
 use zkaleido_sp1_groth16_verifier as _;
 
 mod args;
+mod btc_client;
 mod util;
 
 use std::path::PathBuf;
