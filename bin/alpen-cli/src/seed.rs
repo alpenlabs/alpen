@@ -1,6 +1,6 @@
 #[cfg(target_os = "linux")]
 use std::io;
-use std::str::FromStr;
+use std::{fmt::Debug, str::FromStr};
 
 use aes_gcm_siv::{aead::AeadMutInPlace, Aes256GcmSiv, KeyInit, Nonce, Tag};
 use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
@@ -34,7 +34,8 @@ impl BaseWallet {
 }
 
 #[derive(Clone)]
-#[expect(missing_debug_implementations)]
+#[cfg_attr(feature = "test-mode", derive(Debug))]
+#[cfg_attr(not(feature = "test-mode"), expect(missing_debug_implementations))]
 // NOTE: This is not a BIP39 seed, instead random bytes of entropy.
 pub struct Seed(Zeroizing<[u8; SEED_LEN]>);
 
@@ -257,7 +258,7 @@ type LoadOrCreateErr = (
     IncorrectPassword,
 );
 
-pub trait EncryptedSeedPersister {
+pub trait EncryptedSeedPersister: Debug {
     fn save(&self, seed: &EncryptedSeed) -> Result<(), PersisterErr>;
     fn load(&self) -> Result<Option<EncryptedSeed>, PersisterErr>;
     fn delete(&self) -> Result<(), PersisterErr>;
@@ -276,6 +277,7 @@ mod keychain;
 pub use keychain::*;
 
 pub mod password;
+pub mod seed_provider;
 
 #[cfg(test)]
 mod test {
