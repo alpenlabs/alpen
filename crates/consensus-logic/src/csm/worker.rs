@@ -15,7 +15,11 @@ use tokio::{sync::mpsc, time};
 use tracing::*;
 
 use super::config::CsmExecConfig;
-use crate::{csm::client_transition, errors::Error, genesis};
+use crate::{
+    csm::client_transition::{self, EventContext, StorageEventContext},
+    errors::Error,
+    genesis,
+};
 
 /// Mutable worker state that we modify in the consensus worker task.
 ///
@@ -62,19 +66,22 @@ impl WorkerState {
         self.cur_block
     }
 
-    /// Given the next l1 block, computes the state application if the
-    /// requisite data is available.  Returns the output and the new state.
+    /// Given the next l1 block, does the state transition, returning next [`ClientState`].
     pub fn advance_consensus_state(
         &self,
-        next_block: &L1BlockCommitment,
+        next_block: &L1BlockManifest,
     ) -> anyhow::Result<(ClientState, Vec<SyncAction>)> {
-        debug!(%next_block, "processing l1 block");
+        let id = next_block.blkid();
+        debug!(%id, "processing l1 block");
 
         let context = client_transition::StorageEventContext::new(&self.storage);
-        // Compute the state transition.
-        Ok(client_transition::process_block(
+
+        // Asserts that we indeed have parent of the next_block set as a state.
+        assert_eq!(next_block.get_prev_blockid(), *self.cur_block.blkid());
+        assert_eq!(self.cur_block.height() + 1, next_block.height());
+
+        Ok(client_transition::handle_block(
             self.cur_state.as_ref().clone(),
-            self.cur_block,
             next_block,
             &context,
             &self.params,
@@ -137,35 +144,71 @@ fn process_block_with_retries(
     let span = debug_span!("csm-process-block", %incoming_block);
     let _g = span.enter();
 
-    // Blocks for which there's no client state. Some of the l1 blocks could have been skipped due
-    // to the fact that updates from btcio are not persisted.
-    let start_height = state
-        .params
-        .rollup()
-        .genesis_l1_height
-        .max(state.cur_block.height() + 1);
+    let mut skipped_blocks: Vec<_> = vec![];
 
-    let end_height = incoming_block.height();
+    // Handle pre-genesis: if the block is before genesis we don't care about it.
+    let genesis_trigger = state.params.rollup().genesis_l1_height;
+    let height = incoming_block.height();
+    if incoming_block.height() < genesis_trigger {
+        #[cfg(test)]
+        eprintln!(
+                    "early L1 block at h={height} (gt={genesis_trigger}) you may have set up the test env wrong"
+                );
 
-    let mut potentually_skipped_blocks = (start_height..end_height)
-        .zip(
-            state
-                .storage
-                .l1()
-                .get_canonical_blockid_range(start_height, end_height)?
-                .iter(),
-        )
-        .map(|(height, blk_id)| L1BlockCommitment::new(height, *blk_id))
-        .collect::<Vec<_>>();
-    potentually_skipped_blocks.push(*incoming_block);
+        warn!(%height, "ignoring unexpected L1Block event before horizon");
+        return Ok(());
+    }
 
-    for next_block in potentually_skipped_blocks.iter() {
+    // Traverse back the chain of l1 blocks until we find an l1 block which has ClientState.
+    // Remember all the blocks along the way and pass it (in the reverse order) to process.
+    let (pivot_block, pivot_state) = {
+        let ctx = StorageEventContext::new(&state.storage);
+        let mut cur_block = *incoming_block;
+        let mut cur_state = ctx.get_client_state(&cur_block);
+
+        while cur_state.is_err() && cur_block.height() >= state.params.rollup().genesis_l1_height {
+            let cur_block_mf = ctx.get_l1_block_manifest(cur_block.blkid())?;
+            let prev_block_id = cur_block_mf.get_prev_blockid();
+
+            // Push the manifest that corresponds to the current (not processed) block.
+            skipped_blocks.push(cur_block_mf);
+
+            // Set the cur block and state to point at the parent's block.
+            cur_block = L1BlockCommitment::new(cur_block.height() - 1, prev_block_id);
+            cur_state = ctx.get_client_state(&cur_block);
+        }
+
+        if cur_block.height() < state.params.rollup().genesis_l1_height {
+            // we reached the height before genesis (while traversing the tree of ClientStates),
+            // for such a case there shouldn't be any ClientState besides the default one.
+            (Default::default(), Default::default())
+        } else {
+            (cur_block, cur_state.unwrap())
+        }
+    };
+
+    // Here pivot_block and pivot_state denote the first "parent" block that has ClientState
+    // or the default one if nothing was found during tranversing.
+    // P.S. default block and state are actually present in the db as a valid pre-genesis state.
+    state.update_bookeeping(pivot_block, Arc::new(pivot_state));
+
+    // An "expected" length of the skipped_blocks is 1 (given no reorgs and no blocks skipped),
+    // so log some information for other cases.
+    if skipped_blocks.is_empty() {
+        // At least incoming_block is expected to be present in the vec.
+        warn!(%incoming_block, "somehow the client state already present for the block");
+    } else if skipped_blocks.len() > 1 {
+        info!(
+            "CSM must handle additional parent blocks that were skipped, cnt: {:?}",
+            skipped_blocks.len() - 1,
+        );
+    }
+
+    // Traverse the whole unprocessed chain, starting from older blocks till incoming_block.
+    for next_block in skipped_blocks.iter().rev() {
         process_block(state, next_block, config, shutdown)?;
         status_channel.update_client_state(state.cur_state().as_ref().clone(), state.cur_block());
     }
-
-    // Update status channel with the latest client state.
-    //status_channel.update_client_state(state.cur_state().as_ref().clone(), state.cur_block());
 
     debug!(%incoming_block, "processed OK");
 
@@ -174,7 +217,7 @@ fn process_block_with_retries(
 
 fn process_block(
     state: &mut WorkerState,
-    block: &L1BlockCommitment,
+    block: &L1BlockManifest,
     config: &CsmExecConfig,
     shutdown: &ShutdownGuard,
 ) -> anyhow::Result<()> {
@@ -183,14 +226,6 @@ fn process_block(
     let mut wait_dur = config.retry_base_dur;
     loop {
         tries += 1;
-
-        // Check if client state is already present, and skip if so.
-        let next_client_state = state.storage.client_state().get_state_blocking(*block)?;
-
-        if let Some(cs) = next_client_state {
-            state.update_bookeeping(*block, Arc::new(cs));
-            return Ok(());
-        }
 
         // Handle the block for which there's no client state.
         let e = match handle_block(state, block) {
@@ -220,7 +255,8 @@ fn process_block(
     Ok(())
 }
 
-fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::Result<()> {
+fn handle_block(state: &mut WorkerState, block: &L1BlockManifest) -> anyhow::Result<()> {
+    let block_id: L1BlockCommitment = block.into();
     // Perform the main step of deciding what the output we're operating on.
     let (next_state, actions) = state.advance_consensus_state(block)?;
 
@@ -232,13 +268,13 @@ fn handle_block(state: &mut WorkerState, block: &L1BlockCommitment) -> anyhow::R
     }
 
     // Store the outputs.
-    let clstate = state
-        .storage
-        .client_state()
-        .put_update_blocking(block, ClientUpdateOutput::new(next_state, actions).clone())?;
+    let clstate = state.storage.client_state().put_update_blocking(
+        &block_id,
+        ClientUpdateOutput::new(next_state, actions).clone(),
+    )?;
 
     // Set.
-    state.update_bookeeping(*block, clstate);
+    state.update_bookeeping(block_id, clstate);
 
     Ok(())
 }
