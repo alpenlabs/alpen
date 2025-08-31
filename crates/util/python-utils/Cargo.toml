@@ -18,15 +18,16 @@ crate-type = ["cdylib"]
 [dependencies]
 shrex.workspace = true
 strata-crypto.workspace = true
+strata-l1tx.workspace = true
 strata-primitives.workspace = true
 
 bdk_bitcoind_rpc.workspace = true
 bdk_wallet.workspace = true
+make_buf.workspace = true
 musig2.workspace = true
 rand.workspace = true
 # "abi3-py310" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.10
 pyo3 = { version = ">=0.24.1", features = ["extension-module", "abi3-py310"] }
-revm-primitives.workspace = true
 # TODO: secp256k1 is not used directly in this crate, but through the chain of re-imports from bdk.
 # However, removing this from the dependency list makes it fail to build.
 secp256k1.workspace = true
@@ -35,14 +36,3 @@ secp256k1.workspace = true
 pyo3-build-config = ">=0.24.1"
 
 [dev-dependencies]
-strata-common.workspace = true
-shrex_macros.workspace = true
-
-anyhow.workspace = true
-bitcoind-async-client.workspace = true
-
-# update bitcoind version in CI to match corepc-node feature
-corepc-node = { version = "0.8.0", features = ["29_0"] }
-
-tokio.workspace = true
-tracing.workspace = true

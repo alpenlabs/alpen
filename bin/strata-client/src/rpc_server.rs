@@ -429,7 +429,7 @@ impl StrataApiServer for StrataRpcImpl {
             .map(RpcDepositEntry::from_deposit_entry)?)
     }
 
-    async fn get_current_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
+    async fn get_cur_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
         let deps = self
             .status_channel
             .get_cur_tip_chainstate()

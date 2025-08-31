@@ -1,19 +1,19 @@
 use std::str::FromStr;
 
 use bdk_wallet::{
-    bitcoin::{bip32::Xpriv, taproot::LeafVersion, Address, TapNodeHash},
+    bitcoin::{taproot::LeafVersion, Address, TapNodeHash},
     miniscript::{Miniscript, Tap},
     template::DescriptorTemplateOut,
 };
 use pyo3::prelude::*;
-use secp256k1::{Keypair, XOnlyPublicKey, SECP256K1};
+use secp256k1::XOnlyPublicKey;
 use shrex::decode_alloc;
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
     constants::{RECOVER_DELAY, UNSPENDABLE_PUBLIC_KEY},
 };
 
-use crate::{constants::GENERAL_WALLET_KEY_PATH, error::Error, taproot::ExtractP2trPubkey};
+use crate::{error::Error, taproot::ExtractP2trPubkey};
 
 /// The descriptor for the bridge-in transaction.
 ///
@@ -29,7 +29,6 @@ use crate::{constants::GENERAL_WALLET_KEY_PATH, error::Error, taproot::ExtractP2
 /// The descriptor and the script hash for the recovery path.
 ///
 /// required for testing
-#[allow(dead_code)]
 pub(crate) fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
     recovery_address: Address,
@@ -48,7 +47,7 @@ pub(crate) fn bridge_in_descriptor(
     // i have tried to extract it directly from the desc above
     // it is a massive pita
     let recovery_script = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
-        "and_v(v:pk({recovery_xonly_pubkey}),older(1008))",
+        "and_v(v:pk({recovery_xonly_pubkey}),older({RECOVER_DELAY}))",
     ))
     .expect("valid recovery script")
     .encode();
@@ -110,37 +109,6 @@ pub(crate) fn opreturn_to_string(s: &str) -> Result<String, Error> {
 
     let string = String::from_utf8(data_bytes).expect("could not convert to string");
     Ok(string)
-}
-
-/// Parses operator secret keys from hex strings
-pub(crate) fn parse_operator_keys(operator_keys: &[String]) -> Result<Vec<Keypair>, Error> {
-    Ok(operator_keys
-        .iter()
-        .enumerate()
-        .map(|(i, key)| {
-            let xpriv = Xpriv::from_str(key)
-                .map_err(|e| Error::BridgeBuilder(format!("Invalid operator key {}: {}", i, e)))
-                .unwrap();
-
-            let xp = xpriv
-                .derive_priv(SECP256K1, &GENERAL_WALLET_KEY_PATH)
-                .expect("good child key");
-
-            let mut sk = xp.private_key;
-            let pk = secp256k1::PublicKey::from_secret_key(SECP256K1, &sk);
-
-            // This is very important because datatool and bridge does this way.
-            // (x,P) and (x,-P) don't add to same group element, so in order to be consistent
-            // we are only choosing even one so
-            // if not even
-            if pk.serialize()[0] != 0x02 {
-                // Flip to even-Y equivalent
-                sk = sk.negate();
-            }
-
-            Keypair::from_secret_key(SECP256K1, &sk)
-        })
-        .collect())
 }
 
 #[cfg(test)]

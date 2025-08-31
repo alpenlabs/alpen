@@ -9,9 +9,9 @@ import flexitest
 import web3
 import web3.middleware
 from bitcoinlib.services.bitcoind import BitcoindClient
+from factory.service import DisposableService
 
 from factory import seqrpc
-from factory import config
 from factory.config import (
     BitcoindConfig,
     ClientConfig,
@@ -20,7 +20,7 @@ from factory.config import (
     RethELConfig,
 )
 from load.cfg import LoadConfig
-from load.service import DisposableService, LoadGeneratorService
+from load.service import LoadGeneratorService
 from utils import *
 from utils.constants import *
 
@@ -485,21 +485,21 @@ class LoadGeneratorFactory(flexitest.Factory):
         _inject_service_create_rpc(svc, rpc_url, name)
         return svc
 
+
 class AlpenCliFactory(flexitest.Factory):
     def __init__(self):
-        # doens't require any ports
+        # doesn't require any ports
         super().__init__([])
 
     def _run_and_extract_with_re(self, cmd, re_pattern) -> Optional[str]:
         assert self.svc is not None, "service not initialized"
         assert self.config_file is not None, "config path not set"
 
-        result = self.svc.basic_runner(cmd,
-                                  env={"CLI_CONFIG": self.config_file,
-                                       "PROJ_DIRS": self.datadir
-                                       },
-                                  capture_output=True
-                                  )
+        result = self.svc.basic_runner(
+            cmd,
+            env={"CLI_CONFIG": self.config_file, "PROJ_DIRS": self.datadir},
+            capture_output=True,
+        )
         try:
             result.check_returncode()
         except CalledProcessError:
@@ -520,13 +520,12 @@ class AlpenCliFactory(flexitest.Factory):
 
     def _scan(self) -> Optional[str]:
         cmd = [
-                # fmt: off
+            # fmt: off
             "alpen",
             "scan",
         ]
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"Scan complete")
-
 
     def _l2_balance(self) -> Optional[str]:
         # fmt: off
@@ -538,7 +537,6 @@ class AlpenCliFactory(flexitest.Factory):
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"^Total:\s+([0-9]+(?:\.[0-9]+)?)\s+BTC\b")
 
-
     def _l1_balance(self) -> Optional[str]:
         # fmt: off
         cmd = [
@@ -548,7 +546,6 @@ class AlpenCliFactory(flexitest.Factory):
         ]
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"^Total:\s+([0-9]+(?:\.[0-9]+)?)\s+BTC\b")
-
 
     def _l2_address(self) -> Optional[str]:
         # fmt: off
@@ -571,7 +568,6 @@ class AlpenCliFactory(flexitest.Factory):
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"\b(?:bc1|tb1|bcrt1)[0-9a-z]{25,59}\b")
 
-
     def _deposit(self) -> Optional[str]:
         # fmt: off
         cmd = [
@@ -581,7 +577,6 @@ class AlpenCliFactory(flexitest.Factory):
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"\b[0-9a-f]{64}\b")
 
-
     def _withdraw(self):
         # fmt: off
         cmd = [
@@ -590,8 +585,6 @@ class AlpenCliFactory(flexitest.Factory):
         ]
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"\b[0-9a-f]{64}\b")
-
-
 
     @flexitest.with_ectx("ctx")
     def setup_environment(

@@ -5,10 +5,7 @@ import time
 from typing import Optional
 
 import flexitest
-from strata_utils import (
-    get_address,
-    get_recovery_address,
-)
+from strata_utils import get_address
 
 from envs.rollup_params_cfg import RollupConfig
 from factory.config import BitcoindConfig, RethELConfig
@@ -92,15 +89,6 @@ class BasicLiveEnv(flexitest.LiveEnv):
         tr_addr: str = get_address(self._ext_btc_addr_idx)
         self._ext_btc_addr_idx += 1
         return tr_addr
-
-    def gen_rec_btc_address(self) -> str | list[str]:
-        """
-        Generates a unique bitcoin (recovery) taproot addresses that is funded with some BTC.
-        """
-
-        rec_tr_addr: str = get_recovery_address(self._rec_btc_addr_idx, self._bridge_pk)
-        self._rec_btc_addr_idx += 1
-        return rec_tr_addr
 
     def rollup_cfg(self) -> RollupConfig:
         return self._rollup_cfg
@@ -239,7 +227,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
                 brpc.proxy.sendmany(
                     "",
                     {
-                        (get_recovery_address(i, bridge_pk) if i < 10 else get_address(i - 10)): 20
+                        get_address(i): 20
                         for i in range(20)
                     },
                 )
@@ -263,10 +251,10 @@ class BasicEnvConfig(flexitest.EnvConfig):
             seq_host, seq_port, epoch_gas_limit=self.epoch_gas_limit
         )
 
-        op_pk = rollup_cfg.operator_config.get_operators_pubkeys()
-        op_x_only_pks = [convert_to_xonly_pk(pk) for pk in op_pk]
-        agg_pubkey = musig_aggregate_pks(op_x_only_pks)
-        alpen_cli = alpen_cli.setup_environment(reth_config.rpc_url, bitcoind_config, agg_pubkey, rollup_cfg.rollup_name)
+        agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
+        alpen_cli = alpen_cli.setup_environment(
+            reth_config.rpc_url, bitcoind_config, agg_pubkey, rollup_cfg.rollup_name
+        )
 
         svcs["sequencer"] = sequencer
         svcs["sequencer_signer"] = sequencer_signer

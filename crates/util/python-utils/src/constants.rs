@@ -5,12 +5,7 @@ use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
 /// Magic bytes to add to the metadata output in transactions to help identify them.
 pub(crate) const MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
-/// 10 BTC + 0.01 to cover fees in the following transaction where the operator spends it into the
-/// federation.
-pub(crate) const BRIDGE_IN_AMOUNT: Amount = Amount::from_sat(1_000_001_000);
-
 /// Bridge outs are enforced to be exactly 10 BTC
-#[allow(dead_code)] // TODO: Remove this when bridge out is implemented
 pub(crate) const BRIDGE_OUT_AMOUNT: Amount = Amount::from_int_btc(10);
 
 /// An xpriv that is good enough for testing purposes.
@@ -32,7 +27,11 @@ pub(crate) static DESCRIPTOR: LazyLock<&'static str> =
 pub(crate) static CHANGE_DESCRIPTOR: LazyLock<&'static str> =
     LazyLock::new(|| Box::leak(format!("tr({XPRIV}/86'/1'/0'/1/*)").into_boxed_str()));
 
-/// Getting private key for the corresponding xpriv
+/// Corresponds to address length of Execution environment.
+pub(crate) const EE_ADDRESS_LEN: u8 = 20;
+
+/// For getting private key for the corresponding xpriv.
+#[allow(dead_code)]
 pub(crate) const GENERAL_WALLET_KEY_PATH: [ChildNumber; 3] = [
     ChildNumber::Hardened { index: 20_000 },
     ChildNumber::Hardened { index: 20 },

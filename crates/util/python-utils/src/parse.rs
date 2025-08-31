@@ -1,14 +1,36 @@
-use bdk_wallet::bitcoin::{Address, OutPoint, PublicKey, Txid, XOnlyPublicKey};
-use revm_primitives::alloy_primitives::Address as RethAddress;
+use bdk_wallet::bitcoin::{OutPoint, PublicKey, Transaction, Txid, XOnlyPublicKey};
+use strata_l1tx::{
+    deposit::deposit_request::extract_deposit_request_info, utils::generate_taproot_address,
+};
+use strata_primitives::{
+    buf::Buf32,
+    l1::{DepositRequestInfo, XOnlyPk},
+    params::DepositTxParams,
+};
 
-use crate::error::Error;
+use crate::{
+    constants::{BRIDGE_OUT_AMOUNT, EE_ADDRESS_LEN, MAGIC_BYTES, NETWORK},
+    error::Error,
+};
 
-/// Parses a Execution Layer address.
-pub(crate) fn parse_el_address(el_address: &str) -> Result<RethAddress, Error> {
-    let el_address = el_address
-        .parse::<RethAddress>()
-        .map_err(|_| Error::ElAddress)?;
-    Ok(el_address)
+#[allow(unused)]
+pub(crate) fn parse_drt(
+    tx: &Transaction,
+    op_wallet_pks: &[Buf32],
+) -> Result<DepositRequestInfo, Error> {
+    let (address, operators_pubkey) = generate_taproot_address(op_wallet_pks, NETWORK)
+        .map_err(|e| Error::TxParser(e.to_string()))?;
+
+    let config = DepositTxParams {
+        magic_bytes: MAGIC_BYTES.to_vec(),
+        address_length: EE_ADDRESS_LEN,
+        deposit_amount: BRIDGE_OUT_AMOUNT.to_sat(),
+        address,
+        operators_pubkey: XOnlyPk::new(operators_pubkey.serialize().into())
+            .expect("good XOnlyPublicKey"),
+    };
+
+    extract_deposit_request_info(tx, &config).ok_or(Error::TxParser("Bad DRT".to_string()))
 }
 
 /// Parses an [`XOnlyPublicKey`] from a hex string.
@@ -21,14 +43,6 @@ pub(crate) fn parse_xonly_pk(x_only_pk: &str) -> Result<XOnlyPublicKey, Error> {
 /// Parses a [`PublicKey`] from a hex string.
 pub(crate) fn parse_pk(pk: &str) -> Result<PublicKey, Error> {
     pk.parse::<PublicKey>().map_err(|_| Error::PublicKey)
-}
-
-/// Parses an [`Address`] from a string.
-pub(super) fn parse_address(address: &str) -> Result<Address, Error> {
-    Ok(address
-        .parse::<Address<_>>()
-        .map_err(|_| Error::BitcoinAddress)?
-        .assume_checked())
 }
 
 /// Parses an [`OutPoint`] from a string.
@@ -45,14 +59,6 @@ pub(crate) fn parse_outpoint(outpoint: &str) -> Result<OutPoint, Error> {
 
 #[cfg(test)]
 mod tests {
-
-    #[test]
-    fn parse_el_address() {
-        let el_address = "deadf001900dca3ebeefdeadf001900dca3ebeef";
-        assert!(super::parse_el_address(el_address).is_ok());
-        let el_address = "0xdeadf001900dca3ebeefdeadf001900dca3ebeef";
-        assert!(super::parse_el_address(el_address).is_ok());
-    }
 
     #[test]
     fn parse_xonly_pk() {
@@ -78,11 +84,5 @@ mod tests {
             format!("ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c:{vout}")
         };
         assert!(super::parse_outpoint(&outpoint_with_vout_out_of_bonds).is_err());
-    }
-
-    #[test]
-    fn parse_address() {
-        let address = "bcrt1phcnl4zcl2fu047pv4wx6y058v8u0n02at6lthvm7pcf2wrvjm5tqatn90k";
-        assert!(super::parse_address(address).is_ok());
     }
 }

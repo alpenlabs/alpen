@@ -64,7 +64,7 @@ pub(crate) fn taproot_wallet() -> Result<Wallet, Error> {
         .map_err(|_| Error::Wallet))?
 }
 
-/// The bridge wallet used to get the recovery path of the deposit request transaction (DRT).
+/// The bridge wallet used for Withdrawal Fulfillment transaction.
 #[allow(dead_code)]
 pub(crate) fn bridge_wallet(
     bridge_pubkey: XOnlyPublicKey,
@@ -129,11 +129,8 @@ pub(crate) fn new_bitcoind_client(
 /// These should all be X-only public keys, assuming that all are [`Parity::Even`].
 pub(crate) fn musig_aggregate_pks_inner(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
     let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
-
     let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
-    let result = key_agg_ctx.aggregated_pubkey();
-
-    Ok(result)
+    Ok(key_agg_ctx.aggregated_pubkey())
 }
 
 /// Gets a (receiving/external) address from the [`taproot_wallet`] at the given `index`.
@@ -184,9 +181,7 @@ pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
 pub(crate) fn convert_to_xonly_pk(pk: String) -> PyResult<String> {
     let pk = parse_pk(&pk)?;
     let x_only_pk = convert_to_xonly_pk_inner(pk)?;
-    let result = x_only_pk.to_string();
-
-    Ok(result)
+    Ok(x_only_pk.to_string())
 }
 
 /// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].

@@ -83,7 +83,7 @@ pub trait StrataApi {
     async fn get_current_deposit_by_id(&self, deposit_id: u32) -> RpcResult<RpcDepositEntry>;
 
     #[method(name = "getCurWithdrawalAssignments")]
-    async fn get_current_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>>;
+    async fn get_cur_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>>;
 
     // block sync methods
     #[method(name = "syncStatus")]

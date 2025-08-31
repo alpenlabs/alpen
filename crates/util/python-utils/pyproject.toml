@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "strata_utils"
-version = "0.2.0-pre.11"
+version = "0.2.0-pre.1"
 license = { text = "MIT" }
 
 [tool.maturin]

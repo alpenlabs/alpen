@@ -339,14 +339,14 @@ impl From<CheckpointEntry> for RpcCheckpointInfo {
     }
 }
 
+/// Withdrawal assignment entry for RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Deposit entry for RPC corresponding to [`WithdrawalIntent`]
 pub struct RpcWithdrawalAssignment {
     /// Corresponding deposit id
     pub deposit_idx: u32,
     /// Corresponding deposit txid
     pub deposit_txid: Txid,
-    /// Quantity of L1 asset, for Bitcoin this is sats.
+    /// Quantity of L1 asset, for Bitcoin this is sats
     pub amt: BitcoinAmount,
     /// Destination [`Descriptor`] for the withdrawal
     pub destination: Descriptor,
