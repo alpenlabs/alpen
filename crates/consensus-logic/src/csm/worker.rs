@@ -76,12 +76,9 @@ impl WorkerState {
 
         let context = client_transition::StorageEventContext::new(&self.storage);
 
-        // Asserts that we indeed have parent of the next_block set as a state.
-        assert_eq!(next_block.get_prev_blockid(), *self.cur_block.blkid());
-        assert_eq!(self.cur_block.height() + 1, next_block.height());
-
         Ok(client_transition::handle_block(
             self.cur_state.as_ref().clone(),
+            &self.cur_block,
             next_block,
             &context,
             &self.params,
@@ -188,7 +185,7 @@ fn process_block_with_retries(
     };
 
     // Here pivot_block and pivot_state denote the first "parent" block that has ClientState
-    // or the default one if nothing was found during tranversing.
+    // or the default one if nothing was found during traversing.
     // P.S. default block and state are actually present in the db as a valid pre-genesis state.
     state.update_bookeeping(pivot_block, Arc::new(pivot_state));
 

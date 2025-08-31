@@ -34,7 +34,9 @@ class DbtoolMixin(BaseMixin):
     def get_checkpoints_summary(self) -> dict[str, Any]:
         """Get checkpoints summary and return parsed data"""
         genesis_height = str(self.ctx.env.rollup_cfg().genesis_l1_height)
-        return self.__run_dbtool_json_command("get-checkpoints-summary", genesis_height, "-o", "json")
+        return self.__run_dbtool_json_command(
+            "get-checkpoints-summary", genesis_height, "-o", "json"
+        )
 
     def get_checkpoint(self, checkpoint_index: int) -> dict[str, Any]:
         """Get checkpoint data for specific index and return parsed data"""

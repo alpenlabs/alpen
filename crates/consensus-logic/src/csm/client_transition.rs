@@ -58,6 +58,7 @@ impl EventContext for StorageEventContext<'_> {
 // TODO(QQ): decouple checkpoint extraction, finalization and actions.
 pub fn handle_block(
     cur_state: ClientState,
+    cur_block: &L1BlockCommitment,
     next_block_mf: &L1BlockManifest,
     context: &impl EventContext,
     params: &Params,
@@ -76,6 +77,12 @@ pub fn handle_block(
             vec![SyncAction::L2Genesis(*next_block_mf.blkid())],
         ));
     }
+
+    // Asserts that we indeed have parent of the next_block set as a state.
+    // The only case where this can be inaccurate is when cur_state is
+    // a default pre-genesis mock, but it's handled by genesis.
+    assert_eq!(next_block_mf.get_prev_blockid(), *cur_block.blkid());
+    assert_eq!(cur_block.height() + 1, next_block_mf.height());
 
     let mut actions = vec![];
 
@@ -281,7 +288,7 @@ mod tests {
                 let next_block = test_event.block.clone();
                 eprintln!("giving next block {:?}", next_block);
                 let (new_state, actions) =
-                    handle_block(state_mut, &next_block, &context, params).unwrap();
+                    handle_block(state_mut, cur_block, &next_block, &context, params).unwrap();
                 assert_eq!(
                     actions,
                     test_event.expected_actions,

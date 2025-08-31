@@ -2,8 +2,7 @@ import flexitest
 from web3 import Web3
 
 from envs import net_settings, testenv
-from utils import wait_until, ProverClientSettings
-
+from utils import ProverClientSettings, wait_until
 
 
 @flexitest.register
