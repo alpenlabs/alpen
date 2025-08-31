@@ -15,7 +15,7 @@ use crate::{
 #[argh(subcommand, name = "get-client-state-update")]
 /// Get client state update
 pub(crate) struct GetClientStateUpdateArgs {
-    /// client state update index; defaults to the latest
+    /// client state block_id
     #[argh(positional)]
     pub(crate) block_id: String,
 

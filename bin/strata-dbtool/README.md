@@ -56,10 +56,10 @@ strata-dbtool get-syncinfo
 Shows the latest client state update information.
 
 ```bash
-strata-dbtool get-client-state-update [<update_index>] [OPTIONS]
+strata-dbtool get-client-state-update [<block_id>] [OPTIONS]
 ```
 **Arguments:**
-- `update_index` - Client state update index (number), defaults to the latest
+- `block_id` -  Client state block_id.
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -197,7 +197,7 @@ strata-dbtool get-checkpoints-summary <height_from>  [OPTIONS]
 ```
 
 **Arguments:**
-- `height_from` - Start height to query checkpoints.
+- `height_from` - Start l1 height to query checkpoints from.
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
