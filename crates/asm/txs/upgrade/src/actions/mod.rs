@@ -7,7 +7,7 @@ pub mod updates;
 
 pub use cancel::CancelAction;
 pub use enact::EnactAction;
-pub use updates::UpgradeAction;
+pub use updates::UpdateAction;
 
 pub type UpdateId = u32;
 
@@ -19,5 +19,5 @@ pub enum MultisigAction {
     /// Execute a committed action
     Enact(EnactAction),
     /// Propose an upgrade
-    Upgrade(UpgradeAction),
+    Update(UpdateAction),
 }

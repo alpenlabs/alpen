@@ -13,8 +13,8 @@ pub enum UpgradeError {
     #[error("the specified role is not recognized")]
     UnknownRole,
 
-    /// The specified action ID does not correspond to any pending upgrade.
-    #[error("no pending upgrade found for action_id = {0:?}")]
+    /// The specified action ID does not correspond to any pending update.
+    #[error("no pending update found for action_id = {0:?}")]
     UnknownAction(UpdateId),
 
     /// Indicates a validation failure on multisig configuration or threshold.
@@ -27,18 +27,18 @@ pub enum UpgradeError {
 
     /// Indicates a failure when validating a vote.
     #[error(transparent)]
-    Action(#[from] UpgradeActionError),
+    Action(#[from] UpdateActionError),
 }
 
 /// Errors related to upgrade action.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum UpgradeActionError {
-    /// The upgrade action cannot be queued.
-    #[error("upgrade action cannot be queued")]
+pub enum UpdateActionError {
+    /// The update action cannot be queued.
+    #[error("update action cannot be queued")]
     CannotQueue,
 
-    /// The upgrade action cannot be directly scheduled.
-    #[error("upgrade action cannot be directly scheduled")]
+    /// The update action cannot be directly scheduled.
+    #[error("update action cannot be directly scheduled")]
     CannotSchedule,
 }
 

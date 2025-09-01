@@ -26,16 +26,16 @@ pub fn parse_tx_multisig_action_and_vote(
         ENACT_TX_TYPE => MultisigAction::Enact(EnactAction::extract_from_tx(tx)?),
 
         MULTISIG_CONFIG_UPDATE_TX_TYPE => {
-            MultisigAction::Upgrade(MultisigUpdate::extract_from_tx(tx)?.into())
+            MultisigAction::Update(MultisigUpdate::extract_from_tx(tx)?.into())
         }
         OPERATOR_UPDATE_TX_TYPE => {
-            MultisigAction::Upgrade(OperatorSetUpdate::extract_from_tx(tx)?.into())
+            MultisigAction::Update(OperatorSetUpdate::extract_from_tx(tx)?.into())
         }
         SEQUENCER_UPDATE_TX_TYPE => {
-            MultisigAction::Upgrade(SequencerUpdate::extract_from_tx(tx)?.into())
+            MultisigAction::Update(SequencerUpdate::extract_from_tx(tx)?.into())
         }
         VK_UPDATE_TX_TYPE => {
-            MultisigAction::Upgrade(VerifyingKeyUpdate::extract_from_tx(tx)?.into())
+            MultisigAction::Update(VerifyingKeyUpdate::extract_from_tx(tx)?.into())
         }
 
         _ => Err(UpgradeTxParseError::UnknownTxType)?,

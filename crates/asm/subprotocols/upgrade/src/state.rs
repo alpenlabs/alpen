@@ -5,7 +5,7 @@ use strata_primitives::roles::Role;
 
 use crate::{
     authority::MultisigAuthority,
-    upgrades::{committed::CommittedUpgrade, queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
+    updates::{committed::CommittedUpdate, queued::QueuedUpdate, scheduled::ScheduledUpdate},
 };
 
 /// Holds the state for the upgrade subprotocol, including the various
@@ -19,15 +19,15 @@ pub struct UpgradeSubprotoState {
 
     /// Actions that can still be cancelled by CancelTx while waiting
     /// for their block countdown to complete.
-    queued: Vec<QueuedUpgrade>,
+    queued: Vec<QueuedUpdate>,
 
     /// Actions that have completed their waiting period and can be
     /// enacted by EnactmentTx, but can no longer be cancelled.
-    committed: Vec<CommittedUpgrade>,
+    committed: Vec<CommittedUpdate>,
 
     /// Actions that will be executed automatically without requiring
     /// an EnactmentTx transaction.
-    scheduled: Vec<ScheduledUpgrade>,
+    scheduled: Vec<ScheduledUpdate>,
 
     /// UpdateId for the next update
     next_update_id: UpdateId,
@@ -52,27 +52,27 @@ impl UpgradeSubprotoState {
     }
 
     /// Find a queued upgrade by its ID.
-    pub fn find_queued(&self, id: &UpdateId) -> Option<&QueuedUpgrade> {
+    pub fn find_queued(&self, id: &UpdateId) -> Option<&QueuedUpdate> {
         self.queued.iter().find(|u| u.id() == id)
     }
 
     /// Find a committed upgrade by its ID.
-    pub fn find_committed(&self, id: &UpdateId) -> Option<&CommittedUpgrade> {
+    pub fn find_committed(&self, id: &UpdateId) -> Option<&CommittedUpdate> {
         self.committed.iter().find(|u| u.id() == id)
     }
 
     /// Find a scheduled upgrade by its ID.
-    pub fn find_scheduled(&self, id: &UpdateId) -> Option<&ScheduledUpgrade> {
+    pub fn find_scheduled(&self, id: &UpdateId) -> Option<&ScheduledUpdate> {
         self.scheduled.iter().find(|u| u.id() == id)
     }
 
     /// Queue a new upgrade.
-    pub fn enqueue(&mut self, upgrade: QueuedUpgrade) {
+    pub fn enqueue(&mut self, upgrade: QueuedUpdate) {
         self.queued.push(upgrade);
     }
 
     /// Schedule an upgrade to run without enactment.
-    pub fn schedule(&mut self, upgrade: ScheduledUpgrade) {
+    pub fn schedule(&mut self, upgrade: ScheduledUpdate) {
         self.scheduled.push(upgrade);
     }
 
@@ -113,7 +113,7 @@ impl UpgradeSubprotoState {
 
     /// Process all queued upgrades and collect those whose `activation_height` equals
     /// `current_height`
-    pub fn process_scheduled(&mut self, current_height: u64) -> Vec<ScheduledUpgrade> {
+    pub fn process_scheduled(&mut self, current_height: u64) -> Vec<ScheduledUpdate> {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled)
             .into_iter()
             .partition(|u| u.activation_height() <= current_height);
@@ -124,12 +124,12 @@ impl UpgradeSubprotoState {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_proto_upgrade_txs::actions::UpgradeAction;
+    use strata_asm_proto_upgrade_txs::actions::UpdateAction;
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{
         state::UpgradeSubprotoState,
-        upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
+        updates::{queued::QueuedUpdate, scheduled::ScheduledUpdate},
     };
 
     #[test]
@@ -138,8 +138,8 @@ mod tests {
         let mut state = UpgradeSubprotoState::default();
 
         let id = 1;
-        let update: UpgradeAction = arb.generate();
-        let upgrade = QueuedUpgrade::new(id, update, 100);
+        let update: UpdateAction = arb.generate();
+        let upgrade = QueuedUpdate::new(id, update, 100);
         state.enqueue(upgrade.clone());
 
         assert_eq!(state.find_queued(&id), Some(&upgrade));
@@ -154,8 +154,8 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let mut state = UpgradeSubprotoState::default();
         for (&id, &h) in ids.iter().zip(heights.iter()) {
-            let action: UpgradeAction = arb.generate();
-            state.enqueue(QueuedUpgrade::new(id, action, h));
+            let action: UpdateAction = arb.generate();
+            state.enqueue(QueuedUpdate::new(id, action, h));
         }
         state
     }
@@ -164,13 +164,13 @@ mod tests {
     fn seed_scheduled(
         ids: &[u32],
         heights: &[u64],
-    ) -> (UpgradeSubprotoState, Vec<ScheduledUpgrade>) {
+    ) -> (UpgradeSubprotoState, Vec<ScheduledUpdate>) {
         let mut arb = ArbitraryGenerator::new();
         let mut state = UpgradeSubprotoState::default();
         let mut upgrades = Vec::with_capacity(ids.len());
         for (&id, &h) in ids.iter().zip(heights.iter()) {
-            let action: UpgradeAction = arb.generate();
-            let upgrade = ScheduledUpgrade::new(id, action, h);
+            let action: UpdateAction = arb.generate();
+            let upgrade = ScheduledUpdate::new(id, action, h);
             state.schedule(upgrade.clone());
             upgrades.push(upgrade);
         }
