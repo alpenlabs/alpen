@@ -1,9 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_upgrade_txs::{
-    actions::{UpdateId, UpgradeAction},
-    roles::ProofType,
-};
+use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpgradeAction};
+use strata_primitives::roles::ProofType;
 
 use crate::{
     constants::{ASM_VK_QUEUE_DELAY, OL_STF_VK_QUEUE_DELAY},
