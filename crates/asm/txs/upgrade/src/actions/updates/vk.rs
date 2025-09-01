@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInput;
+use strata_asm_common::TxInputRef;
 use zkaleido::VerifyingKey;
 
 use crate::{error::UpgradeTxParseError, roles::ProofType};
@@ -36,8 +36,8 @@ impl VerifyingKeyUpdate {
     /// Extract a `VerifyingKeyUpdate` from a transaction input.
     ///
     /// Placeholder logic: replace with actual deserialization.
-    pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeTxParseError> {
-        // TODO: parse `TxInput` to obtain vk bytes and proof kind
+    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
+        // TODO: parse `TxInputRef` to obtain vk bytes and proof kind
         Ok(Self::new(VerifyingKey::default(), ProofType::OlStf))
     }
 }

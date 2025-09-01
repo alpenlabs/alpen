@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInput;
+use strata_asm_common::TxInputRef;
 use strata_primitives::buf::Buf32;
 
 use crate::error::UpgradeTxParseError;
@@ -30,8 +30,8 @@ impl SequencerUpdate {
     /// Extract a `SequencerUpdate` from a transaction input.
     ///
     /// Placeholder: replace with real parsing logic.
-    pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeTxParseError> {
-        // TODO: parse TxInput to obtain new sequencer Buf32
+    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
+        // TODO: parse TxInputRef to obtain new sequencer Buf32
         Ok(Self::new(Buf32::default()))
     }
 }

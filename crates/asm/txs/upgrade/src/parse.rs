@@ -1,4 +1,4 @@
-use strata_asm_common::TxInput;
+use strata_asm_common::TxInputRef;
 
 use crate::{
     actions::{
@@ -17,7 +17,7 @@ use crate::{
 };
 
 pub fn parse_tx_multisig_action_and_vote(
-    tx: &TxInput<'_>,
+    tx: &TxInputRef<'_>,
 ) -> Result<(MultisigAction, AggregatedVote), UpgradeTxParseError> {
     let vote = AggregatedVote::extract_from_tx(tx)?;
 
