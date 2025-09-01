@@ -65,7 +65,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
         with:
           toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
-      - uses: taiki-e/install-action@69810fea1670baa5ae2a69d28101209dc19bc23d # cargo-hack
+      - uses: taiki-e/install-action@14083e64ac8cf1f5e54356df00b9779b23e192a1 # cargo-hack
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           cache-on-failure: true
