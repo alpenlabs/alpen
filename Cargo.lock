@@ -14115,6 +14115,7 @@ dependencies = [
  "borsh",
  "strata-asm-common",
  "strata-asm-proto-upgrade-txs",
+ "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.12",
@@ -14127,6 +14128,7 @@ dependencies = [
  "arbitrary",
  "borsh",
  "strata-asm-common",
+ "strata-crypto",
  "strata-primitives",
  "thiserror 2.0.12",
  "zkaleido",
@@ -14334,7 +14336,10 @@ dependencies = [
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "arbitrary",
+ "borsh",
  "strata-primitives",
+ "thiserror 2.0.12",
  "zkaleido",
 ]
 

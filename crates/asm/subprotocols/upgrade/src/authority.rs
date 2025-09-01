@@ -1,12 +1,9 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_upgrade_txs::{
-    actions::MultisigAction,
-    crypto::{
-        aggregate_pubkeys, msg::MultisigPayload, multisig_config::MultisigConfig, verify_sig,
-        vote::AggregatedVote,
-    },
-    error::VoteValidationError,
+use strata_asm_proto_upgrade_txs::actions::MultisigAction;
+use strata_crypto::multisig::{
+    aggregate_pubkeys, config::MultisigConfig, errors::VoteValidationError, msg::MultisigPayload,
+    verify_sig, vote::AggregatedVote,
 };
 use strata_primitives::{hash::compute_borsh_hash, roles::Role};
 
@@ -75,11 +72,11 @@ impl MultisigAuthority {
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
         // 3. Compute the msg from the UpgradeAction
-        let msg = MultisigPayload::new(action.clone(), self.seqno);
-        let msg_hash = compute_borsh_hash(&msg);
+        let msg_hash = compute_borsh_hash(action);
+        let payload = MultisigPayload::new(msg_hash, self.seqno);
 
         // 4. Verify the aggregated signature against the aggregated pubkey
-        if !verify_sig(&aggregated_key, &msg_hash, vote.signature()) {
+        if !verify_sig(&aggregated_key, &payload, vote.signature()) {
             return Err(VoteValidationError::InvalidVoteSignature);
         }
 

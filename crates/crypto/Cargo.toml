@@ -9,4 +9,7 @@ workspace = true
 [dependencies]
 strata-primitives.workspace = true
 
+arbitrary.workspace = true
+borsh.workspace = true
+thiserror.workspace = true
 zkaleido.workspace = true

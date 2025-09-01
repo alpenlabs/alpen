@@ -1,23 +1,20 @@
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
-
-use crate::actions::MultisigAction;
+use strata_primitives::buf::Buf32;
 
 /// A multisig payload comprising an operation plus a nonce, ready for hashing and signing.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MultisigPayload {
-    op: MultisigAction,
+    op: Buf32,
     nonce: u64,
 }
 
 impl MultisigPayload {
     /// Create a new multisig payload.
-    pub fn new(op: MultisigAction, nonce: u64) -> Self {
+    pub fn new(op: Buf32, nonce: u64) -> Self {
         Self { op, nonce }
     }
 
     /// Borrow the multisig operation.
-    pub fn op(&self) -> &MultisigAction {
+    pub fn op(&self) -> &Buf32 {
         &self.op
     }
 
@@ -27,7 +24,7 @@ impl MultisigPayload {
     }
 
     /// Consume and return the inner `(MultisigOp, u64)`.
-    pub fn into_inner(self) -> (MultisigAction, u64) {
+    pub fn into_inner(self) -> (Buf32, u64) {
         (self.op, self.nonce)
     }
 }

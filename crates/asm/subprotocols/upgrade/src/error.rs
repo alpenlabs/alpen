@@ -1,7 +1,5 @@
-use strata_asm_proto_upgrade_txs::{
-    actions::UpdateId,
-    error::{MultisigConfigError, VoteValidationError},
-};
+use strata_asm_proto_upgrade_txs::actions::UpdateId;
+use strata_crypto::multisig::errors::{MultisigConfigError, VoteValidationError};
 use thiserror::Error;
 
 /// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
