@@ -80,6 +80,7 @@ default-members = [
   "bin/strata-client",
   "bin/strata-dbtool",
   "bin/strata-sequencer-client",
+  "bin/alpen-cli",
   "crates/util/python-utils",
 ]
 
