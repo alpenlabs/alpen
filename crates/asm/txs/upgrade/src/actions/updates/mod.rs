@@ -5,13 +5,11 @@ pub mod vk;
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_primitives::roles::{ProofType, Role};
 
-use crate::{
-    actions::updates::{
-        multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
-        vk::VerifyingKeyUpdate,
-    },
-    roles::{ProofType, Role},
+use crate::actions::updates::{
+    multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
+    vk::VerifyingKeyUpdate,
 };
 
 /// An action that upgrades some part of the ASM

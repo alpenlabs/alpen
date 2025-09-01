@@ -5,8 +5,8 @@ use strata_asm_proto_upgrade_txs::{
     actions::{MultisigAction, UpgradeAction},
     crypto::vote::AggregatedVote,
     parse::parse_tx_multisig_action_and_vote,
-    roles::ProofType,
 };
+use strata_primitives::roles::ProofType;
 
 use crate::{
     error::UpgradeError,

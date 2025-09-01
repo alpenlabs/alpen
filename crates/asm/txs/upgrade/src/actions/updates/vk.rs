@@ -1,9 +1,10 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
+use strata_primitives::roles::ProofType;
 use zkaleido::VerifyingKey;
 
-use crate::{error::UpgradeTxParseError, roles::ProofType};
+use crate::error::UpgradeTxParseError;
 
 /// An update to the verifying key for a given Strata proof layer.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]

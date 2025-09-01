@@ -7,9 +7,8 @@ use strata_asm_proto_upgrade_txs::{
         vote::AggregatedVote,
     },
     error::VoteValidationError,
-    roles::Role,
 };
-use strata_primitives::hash::compute_borsh_hash;
+use strata_primitives::{hash::compute_borsh_hash, roles::Role};
 
 /// Manages multisignature operations for a given role and key set, with replay protection via a
 /// nonce.
