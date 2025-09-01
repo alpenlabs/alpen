@@ -1,18 +1,18 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpgradeAction};
+use strata_asm_proto_upgrade_txs::actions::{UpdateId, UpdateAction};
 
 /// A time-delayed upgrade action with different delay semantics
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-pub struct DelayedUpgrade<T> {
+pub struct DelayedUpdate<T> {
     id: UpdateId,
-    action: UpgradeAction,
+    action: UpdateAction,
     activation_height: u64,
     _marker: std::marker::PhantomData<T>,
 }
 
 /// Shared implementation
-impl<T> DelayedUpgrade<T> {
-    pub fn new(id: UpdateId, action: UpgradeAction, activation_height: u64) -> Self {
+impl<T> DelayedUpdate<T> {
+    pub fn new(id: UpdateId, action: UpdateAction, activation_height: u64) -> Self {
         Self {
             id,
             action,
@@ -25,7 +25,7 @@ impl<T> DelayedUpgrade<T> {
         &self.id
     }
 
-    pub fn action(&self) -> &UpgradeAction {
+    pub fn action(&self) -> &UpdateAction {
         &self.action
     }
 
@@ -33,7 +33,7 @@ impl<T> DelayedUpgrade<T> {
         self.activation_height
     }
 
-    pub fn into_id_and_action(self) -> (UpdateId, UpgradeAction) {
+    pub fn into_id_and_action(self) -> (UpdateId, UpdateAction) {
         (self.id, self.action)
     }
 }

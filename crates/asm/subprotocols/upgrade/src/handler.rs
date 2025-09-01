@@ -1,12 +1,12 @@
 use strata_asm_common::MsgRelayer;
-use strata_asm_proto_upgrade_txs::actions::{MultisigAction, UpgradeAction};
+use strata_asm_proto_upgrade_txs::actions::{MultisigAction, UpdateAction};
 use strata_crypto::multisig::vote::AggregatedVote;
 use strata_primitives::roles::ProofType;
 
 use crate::{
     error::UpgradeError,
     state::UpgradeSubprotoState,
-    upgrades::{queued::QueuedUpgrade, scheduled::ScheduledUpgrade},
+    updates::{queued::QueuedUpdate, scheduled::ScheduledUpdate},
 };
 
 pub(crate) fn handle_scheduled_actions(
@@ -19,10 +19,10 @@ pub(crate) fn handle_scheduled_actions(
 
     for action in actions_to_enact {
         match action.action() {
-            UpgradeAction::Multisig(update) => {
+            UpdateAction::Multisig(update) => {
                 state.apply_multisig_update(update.role(), update.config());
             }
-            UpgradeAction::VerifyingKey(update) => match update.kind() {
+            UpdateAction::VerifyingKey(update) => match update.kind() {
                 ProofType::Asm => {
                     // Emit Log
                 }
@@ -30,10 +30,10 @@ pub(crate) fn handle_scheduled_actions(
                     // Send a InterprotoMsg to OL Core subprotocol
                 }
             },
-            UpgradeAction::OperatorSet(_update) => {
+            UpdateAction::OperatorSet(_update) => {
                 // Set an InterProtoMsg to the Bridge Subprotocol;
             }
-            UpgradeAction::Sequencer(_update) => {
+            UpdateAction::Sequencer(_update) => {
                 // Send a InterprotoMsg to the Sequencer subprotocol
             }
         }
@@ -47,7 +47,7 @@ pub(crate) fn handle_action(
     current_height: u64,
 ) -> Result<(), UpgradeError> {
     let role = match &action {
-        MultisigAction::Upgrade(upgrade) => upgrade.required_role(),
+        MultisigAction::Update(update) => update.required_role(),
         MultisigAction::Cancel(cancel) => {
             let target_action_id = cancel.target_id();
             let queued = state
@@ -68,18 +68,18 @@ pub(crate) fn handle_action(
     authority.validate_action(&action, &vote)?;
 
     match action {
-        MultisigAction::Upgrade(upgrade) => {
+        MultisigAction::Update(update) => {
             let id = state.next_update_id();
-            match upgrade {
+            match update {
                 // If the action is a VerifyingKeyUpdate, queue it to support cancellation
-                UpgradeAction::VerifyingKey(_) => {
-                    let queued_upgrade = QueuedUpgrade::try_new(id, upgrade, current_height)?;
-                    state.enqueue(queued_upgrade);
+                UpdateAction::VerifyingKey(_) => {
+                    let queued_update = QueuedUpdate::try_new(id, update, current_height)?;
+                    state.enqueue(queued_update);
                 }
                 // For all other actions, directly schedule them for execution
                 _ => {
-                    let scheduled_upgrade = ScheduledUpgrade::try_new(id, upgrade, current_height)?;
-                    state.schedule(scheduled_upgrade);
+                    let scheduled_update = ScheduledUpdate::try_new(id, update, current_height)?;
+                    state.schedule(scheduled_update);
                 }
             }
             state.increment_next_update_id();

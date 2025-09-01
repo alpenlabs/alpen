@@ -11,4 +11,4 @@ pub mod error;
 pub mod handler;
 pub mod state;
 pub mod subprotocol;
-pub mod upgrades;
+pub mod updates;

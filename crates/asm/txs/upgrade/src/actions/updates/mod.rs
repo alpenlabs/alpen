@@ -12,23 +12,23 @@ use crate::actions::updates::{
     vk::VerifyingKeyUpdate,
 };
 
-/// An action that upgrades some part of the ASM
+/// An action that updates some part of the ASM
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
-pub enum UpgradeAction {
+pub enum UpdateAction {
     Multisig(MultisigUpdate),
     OperatorSet(OperatorSetUpdate),
     Sequencer(SequencerUpdate),
     VerifyingKey(VerifyingKeyUpdate),
 }
 
-impl UpgradeAction {
-    /// The role authorized to enact this upgrade.
+impl UpdateAction {
+    /// The role authorized to enact this update.
     pub fn required_role(&self) -> Role {
         match self {
-            UpgradeAction::Multisig(m) => m.role(),
-            UpgradeAction::OperatorSet(_) => Role::BridgeAdmin,
-            UpgradeAction::Sequencer(_) => Role::StrataAdmin,
-            UpgradeAction::VerifyingKey(v) => match v.kind() {
+            UpdateAction::Multisig(m) => m.role(),
+            UpdateAction::OperatorSet(_) => Role::BridgeAdmin,
+            UpdateAction::Sequencer(_) => Role::StrataAdmin,
+            UpdateAction::VerifyingKey(v) => match v.kind() {
                 ProofType::Asm => Role::BridgeConsensusManager,
                 ProofType::OlStf => Role::StrataConsensusManager,
             },
@@ -36,27 +36,27 @@ impl UpgradeAction {
     }
 }
 
-// Allow easy conversion from each update type into a unified `UpgradeAction`.
-impl From<MultisigUpdate> for UpgradeAction {
+// Allow easy conversion from each update type into a unified `UpdateAction`.
+impl From<MultisigUpdate> for UpdateAction {
     fn from(update: MultisigUpdate) -> Self {
-        UpgradeAction::Multisig(update)
+        UpdateAction::Multisig(update)
     }
 }
 
-impl From<OperatorSetUpdate> for UpgradeAction {
+impl From<OperatorSetUpdate> for UpdateAction {
     fn from(update: OperatorSetUpdate) -> Self {
-        UpgradeAction::OperatorSet(update)
+        UpdateAction::OperatorSet(update)
     }
 }
 
-impl From<SequencerUpdate> for UpgradeAction {
+impl From<SequencerUpdate> for UpdateAction {
     fn from(update: SequencerUpdate) -> Self {
-        UpgradeAction::Sequencer(update)
+        UpdateAction::Sequencer(update)
     }
 }
 
-impl From<VerifyingKeyUpdate> for UpgradeAction {
+impl From<VerifyingKeyUpdate> for UpdateAction {
     fn from(update: VerifyingKeyUpdate) -> Self {
-        UpgradeAction::VerifyingKey(update)
+        UpdateAction::VerifyingKey(update)
     }
 }

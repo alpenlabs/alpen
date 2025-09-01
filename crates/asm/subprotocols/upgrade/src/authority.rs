@@ -71,7 +71,7 @@ impl MultisigAuthority {
         // 2. Aggregate those public keys into one.
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
-        // 3. Compute the msg from the UpgradeAction
+        // 3. Compute the msg from the UpdateAction
         let msg_hash = compute_borsh_hash(action);
         let payload = MultisigPayload::new(msg_hash, self.seqno);
 
