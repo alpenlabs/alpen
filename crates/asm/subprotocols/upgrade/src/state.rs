@@ -84,10 +84,11 @@ impl UpgradeSubprotoState {
     }
 
     /// Commit a scheduled upgrade: move from committed to scheduled.
-    pub fn commit_to_schedule(&mut self, id: &UpdateId) {
+    pub fn commit_to_schedule(&mut self, id: &UpdateId, current_height: u64) {
         if let Some(i) = self.committed.iter().position(|u| u.id() == id) {
-            let up = self.committed.swap_remove(i);
-            self.scheduled.push(up.into());
+            let c_up = self.committed.swap_remove(i);
+            let s_up = ScheduledUpdate::from_committed(c_up, current_height);
+            self.scheduled.push(s_up);
         }
     }
 
@@ -139,7 +140,7 @@ mod tests {
 
         let id = 1;
         let update: UpdateAction = arb.generate();
-        let upgrade = QueuedUpdate::new(id, update, 100);
+        let upgrade = QueuedUpdate::try_new(id, update, 100).unwrap();
         state.enqueue(upgrade.clone());
 
         assert_eq!(state.find_queued(&id), Some(&upgrade));
@@ -155,7 +156,7 @@ mod tests {
         let mut state = UpgradeSubprotoState::default();
         for (&id, &h) in ids.iter().zip(heights.iter()) {
             let action: UpdateAction = arb.generate();
-            state.enqueue(QueuedUpdate::new(id, action, h));
+            state.enqueue(QueuedUpdate::try_new(id, action, h).unwrap());
         }
         state
     }
@@ -170,7 +171,7 @@ mod tests {
         let mut upgrades = Vec::with_capacity(ids.len());
         for (&id, &h) in ids.iter().zip(heights.iter()) {
             let action: UpdateAction = arb.generate();
-            let upgrade = ScheduledUpdate::new(id, action, h);
+            let upgrade = ScheduledUpdate::try_new(id, action, h).unwrap();
             state.schedule(upgrade.clone());
             upgrades.push(upgrade);
         }
@@ -294,7 +295,7 @@ mod tests {
         assert_eq!(state.committed.len(), 3);
         assert_eq!(state.scheduled.len(), 0);
 
-        state.commit_to_schedule(&2);
+        state.commit_to_schedule(&2, 20);
 
         // now committed should no longer contain 2, but still 1 & 3
         let mut remaining: Vec<_> = state.committed.iter().map(|c| *c.id()).collect();

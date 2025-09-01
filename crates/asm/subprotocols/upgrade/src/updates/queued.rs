@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_upgrade_txs::actions::{UpdateAction, UpdateId};
@@ -10,9 +12,15 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
-pub struct QueueDelay;
+pub struct QueuedUpdate(DelayedUpdate);
 
-pub(crate) type QueuedUpdate = DelayedUpdate<QueueDelay>;
+impl Deref for QueuedUpdate {
+    type Target = DelayedUpdate;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl QueuedUpdate {
     pub(crate) fn try_new(
@@ -28,6 +36,11 @@ impl QueuedUpdate {
             _ => Err(UpdateActionError::CannotQueue)?,
         };
         let activation_height = current_height + delay;
-        Ok(Self::new(id, action, activation_height))
+        let delayed_update = DelayedUpdate::new(id, action, activation_height);
+        Ok(Self(delayed_update))
+    }
+
+    pub(crate) fn into_id_and_action(self) -> (UpdateId, UpdateAction) {
+        self.0.into_id_and_action()
     }
 }

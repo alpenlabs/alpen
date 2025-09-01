@@ -88,7 +88,7 @@ pub(crate) fn handle_action(
             state.remove_queued(cancel.target_id());
         }
         MultisigAction::Enact(enact) => {
-            state.commit_to_schedule(enact.target_id());
+            state.commit_to_schedule(enact.target_id(), current_height);
         }
     }
 

@@ -1,23 +1,22 @@
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_upgrade_txs::actions::{UpdateAction, UpdateId};
 
 /// A time-delayed upgrade action with different delay semantics
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-pub struct DelayedUpdate<T> {
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+pub struct DelayedUpdate {
     id: UpdateId,
     action: UpdateAction,
     activation_height: u64,
-    _marker: std::marker::PhantomData<T>,
 }
 
 /// Shared implementation
-impl<T> DelayedUpdate<T> {
+impl DelayedUpdate {
     pub fn new(id: UpdateId, action: UpdateAction, activation_height: u64) -> Self {
         Self {
             id,
             action,
             activation_height,
-            _marker: std::marker::PhantomData,
         }
     }
 

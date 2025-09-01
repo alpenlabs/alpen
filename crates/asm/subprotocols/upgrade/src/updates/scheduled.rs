@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_upgrade_txs::actions::{UpdateAction, UpdateId};
@@ -12,9 +14,15 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
-pub struct ExecutionDelay;
+pub struct ScheduledUpdate(DelayedUpdate);
 
-pub(crate) type ScheduledUpdate = DelayedUpdate<ExecutionDelay>;
+impl Deref for ScheduledUpdate {
+    type Target = DelayedUpdate;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl ScheduledUpdate {
     pub(crate) fn try_new(
@@ -29,13 +37,12 @@ impl ScheduledUpdate {
             UpdateAction::Sequencer(_) => Ok(SEQUENCER_UPDATE_ENACTMENT_DELAY),
         }?;
         let activation_height = current_height + delay;
+        let delayed_update = DelayedUpdate::new(id, action, activation_height);
 
-        Ok(Self::new(id, action, activation_height))
+        Ok(Self(delayed_update))
     }
-}
 
-impl From<CommittedUpdate> for ScheduledUpdate {
-    fn from(committed: CommittedUpdate) -> Self {
+    pub(crate) fn from_committed(committed: CommittedUpdate, current_height: u64) -> Self {
         let (id, action) = committed.into_id_and_action();
         let delay = match &action {
             UpdateAction::VerifyingKey(_) => VK_UPDATE_ENACTMENT_DELAY,
@@ -43,6 +50,8 @@ impl From<CommittedUpdate> for ScheduledUpdate {
             UpdateAction::OperatorSet(_) => OPERATOR_UPDATE_ENACTMENT_DELAY,
             UpdateAction::Sequencer(_) => SEQUENCER_UPDATE_ENACTMENT_DELAY,
         };
-        Self::new(id, action, delay)
+        let activation_height = current_height + delay;
+        let delayed_update = DelayedUpdate::new(id, action, activation_height);
+        Self(delayed_update)
     }
 }
