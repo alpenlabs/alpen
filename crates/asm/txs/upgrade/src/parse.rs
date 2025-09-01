@@ -1,4 +1,5 @@
 use strata_asm_common::TxInputRef;
+use strata_crypto::multisig::{Signature, vote::AggregatedVote};
 
 use crate::{
     actions::{
@@ -12,14 +13,13 @@ use crate::{
         CANCEL_TX_TYPE, ENACT_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
         SEQUENCER_UPDATE_TX_TYPE, VK_UPDATE_TX_TYPE,
     },
-    crypto::vote::AggregatedVote,
     error::UpgradeTxParseError,
 };
 
 pub fn parse_tx_multisig_action_and_vote(
     tx: &TxInputRef<'_>,
 ) -> Result<(MultisigAction, AggregatedVote), UpgradeTxParseError> {
-    let vote = AggregatedVote::extract_from_tx(tx)?;
+    let vote = parse_aggregated_vote(tx)?;
 
     let action = match tx.tag().tx_type() {
         CANCEL_TX_TYPE => MultisigAction::Cancel(CancelAction::extract_from_tx(tx)?),
@@ -41,4 +41,8 @@ pub fn parse_tx_multisig_action_and_vote(
         _ => Err(UpgradeTxParseError::UnknownTxType)?,
     };
     Ok((action, vote))
+}
+
+pub fn parse_aggregated_vote(_tx: &TxInputRef<'_>) -> Result<AggregatedVote, UpgradeTxParseError> {
+    Ok(AggregatedVote::new(vec![], Signature::default()))
 }

@@ -3,9 +3,9 @@ use strata_asm_common::{
 };
 use strata_asm_proto_upgrade_txs::{
     actions::{MultisigAction, UpgradeAction},
-    crypto::vote::AggregatedVote,
     parse::parse_tx_multisig_action_and_vote,
 };
+use strata_crypto::multisig::vote::AggregatedVote;
 use strata_primitives::roles::ProofType;
 
 use crate::{

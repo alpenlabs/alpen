@@ -1,9 +1,10 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
+use strata_crypto::multisig::config::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
-use crate::{crypto::multisig_config::MultisigConfigUpdate, error::UpgradeTxParseError};
+use crate::error::UpgradeTxParseError;
 
 /// An update to a multisig configuration for a specific role:
 /// - adds new members
