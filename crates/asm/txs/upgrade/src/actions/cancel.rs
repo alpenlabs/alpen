@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInput;
+use strata_asm_common::TxInputRef;
 
 use crate::{actions::UpdateId, constants::CANCEL_TX_TYPE, error::UpgradeTxParseError};
 
@@ -23,7 +23,7 @@ impl CancelAction {
 impl CancelAction {
     /// Extracts a CancelAction from a transaction input.
     /// This is a placeholder function and should be replaced with actual logic.
-    pub fn extract_from_tx(tx: &TxInput<'_>) -> Result<Self, UpgradeTxParseError> {
+    pub fn extract_from_tx(tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
         // sanity check
         assert_eq!(tx.tag().tx_type(), CANCEL_TX_TYPE);
 

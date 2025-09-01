@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInput;
+use strata_asm_common::TxInputRef;
 
 use crate::{
     crypto::multisig_config::MultisigConfigUpdate, error::UpgradeTxParseError, roles::Role,
@@ -40,7 +40,7 @@ impl MultisigUpdate {
     /// Extract a `MultisigUpdate` from a transaction input.
     ///
     /// Placeholder: replace with actual parsing logic.
-    pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeTxParseError> {
+    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
         // TODO: parse TxInput to build MultisigConfigUpdate and determine Role
         Ok(Self::new(
             MultisigConfigUpdate::new(vec![], vec![], 0),

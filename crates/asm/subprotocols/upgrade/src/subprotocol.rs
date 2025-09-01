@@ -1,4 +1,6 @@
-use strata_asm_common::{AnchorState, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInput};
+use strata_asm_common::{
+    AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
+};
 use strata_asm_proto_upgrade_txs::{
     actions::{MultisigAction, UpgradeAction},
     crypto::vote::AggregatedVote,
@@ -20,19 +22,25 @@ pub struct UpgradeSubprotocol;
 impl Subprotocol for UpgradeSubprotocol {
     const ID: SubprotocolId = 0;
 
+    type Params = ();
+
     type State = UpgradeSubprotoState;
 
     type Msg = NullMsg<0>;
 
-    fn init() -> UpgradeSubprotoState {
-        UpgradeSubprotoState::default()
+    type AuxInput = ();
+
+    fn init(_params: &Self::Params) -> Result<UpgradeSubprotoState, AsmError> {
+        Ok(UpgradeSubprotoState::default())
     }
 
     fn process_txs(
         state: &mut UpgradeSubprotoState,
-        txs: &[TxInput<'_>],
-        relayer: &mut impl MsgRelayer,
+        txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
+        _aux_input: &Self::AuxInput,
+        relayer: &mut impl MsgRelayer,
+        _params: &Self::Params,
     ) {
         // Get the current height
         let current_height = anchor_pre.chain_view.pow_state.last_verified_block.height() + 1;
@@ -49,7 +57,12 @@ impl Subprotocol for UpgradeSubprotocol {
         handle_scheduled_actions(state, relayer, current_height);
     }
 
-    fn process_msgs(_state: &mut UpgradeSubprotoState, _msgs: &[Self::Msg]) {}
+    fn process_msgs(
+        _state: &mut UpgradeSubprotoState,
+        _msgs: &[Self::Msg],
+        _params: &Self::Params,
+    ) {
+    }
 }
 
 fn handle_scheduled_actions(

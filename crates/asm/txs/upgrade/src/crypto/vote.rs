@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInput;
+use strata_asm_common::TxInputRef;
 
 use crate::{crypto::Signature, error::UpgradeTxParseError};
 
@@ -36,8 +36,8 @@ impl AggregatedVote {
     /// Extract an `AggregatedVote` from a transaction input.
     ///
     /// FIXME: replace with actual deserialization logic.
-    pub fn extract_from_tx(_tx: &TxInput<'_>) -> Result<Self, UpgradeTxParseError> {
-        // TODO: parse TxInput to obtain indices and aggregated signature
+    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
+        // TODO: parse TxInputRef to obtain indices and aggregated signature
         Ok(Self::new(vec![0u8; 15], Signature::default()))
     }
 }
