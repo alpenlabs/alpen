@@ -5,10 +5,12 @@
 //! configuration changes, verifying key updates, operator set changes,
 //! sequencer updates, and cancellations.
 
-pub mod authority;
-pub mod constants;
-pub mod error;
-pub mod handler;
-pub mod state;
-pub mod subprotocol;
-pub mod updates;
+mod authority;
+mod constants;
+mod error;
+mod handler;
+mod state;
+mod subprotocol;
+mod updates;
+
+pub use subprotocol::UpgradeSubprotocol;

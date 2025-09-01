@@ -14,10 +14,10 @@ use crate::{
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct ExecutionDelay;
 
-pub type ScheduledUpdate = DelayedUpdate<ExecutionDelay>;
+pub(crate) type ScheduledUpdate = DelayedUpdate<ExecutionDelay>;
 
 impl ScheduledUpdate {
-    pub fn try_new(
+    pub(crate) fn try_new(
         id: UpdateId,
         action: UpdateAction,
         current_height: u64,
