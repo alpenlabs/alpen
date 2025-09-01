@@ -14,16 +14,18 @@ class L1BlockCommitment(BaseModel):
     height: int
     blkid: StrBuf32
 
+
 class GenesisL1View(BaseModel):
     model_config = {"extra": "allow"}  # Allow any additional fields
     blk: L1BlockCommitment
     next_target: int
     epoch_start_timestamp: int
     # TODO: somehow it's not digested by the pydantic?
-    #last_l1_timestamps: list[int] 
+    # last_l1_timestamps: list[int]
 
     def height(self) -> int:
         return self.blk.height
+
 
 class OperatorConfigItem(BaseModel):
     signing_pk: StrBuf32
