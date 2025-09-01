@@ -1,8 +1,5 @@
 import flexitest
-from strata_utils import (
-    deposit_request_transaction,
-    is_valid_bosd,
-)
+from strata_utils import is_valid_bosd
 
 from envs.rollup_params_cfg import RollupConfig
 from utils import *

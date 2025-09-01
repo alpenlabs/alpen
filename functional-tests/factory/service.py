@@ -36,8 +36,6 @@ class DisposableService(flexitest.Service):
         - If stderr_to_stdout=True and we're not capturing,
         stderr is redirected to stdout
         """
-        self._reset_state()
-
         # Build env without clobbering the parent environment
         if env is not None:
             merged_env = os.environ.copy()

@@ -250,7 +250,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
 
         agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
         alpen_cli = alpen_cli.setup_environment(
-            reth_config.rpc_url, bitcoind_config, agg_pubkey, rollup_cfg.rollup_name
+            reth_config.rpc_url, bitcoind_config, agg_pubkey, rollup_cfg.magic_bytes
         )
 
         svcs["sequencer"] = sequencer

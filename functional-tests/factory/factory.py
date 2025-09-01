@@ -505,7 +505,7 @@ class AlpenCliFactory(flexitest.Factory):
         except CalledProcessError:
             return None
 
-        output = result.stdout
+        output = result.stdout.decode("utf-8")
         m = re.search(re_pattern, output)
         return m.group(0) if m else None
 
