@@ -8,7 +8,7 @@ use crate::{
     updates::{committed::CommittedUpdate, queued::QueuedUpdate, scheduled::ScheduledUpdate},
 };
 
-/// Holds the state for the upgrade subprotocol, including the various
+/// Holds the state for the Upgrade Subprotocol, including the various
 /// multisignature authorities and any actions still pending execution.
 #[derive(Debug, Clone, Eq, PartialEq, Default, BorshSerialize, BorshDeserialize)]
 pub struct UpgradeSubprotoState {
@@ -51,39 +51,39 @@ impl UpgradeSubprotoState {
         }
     }
 
-    /// Find a queued upgrade by its ID.
+    /// Find a queued update by its ID.
     pub fn find_queued(&self, id: &UpdateId) -> Option<&QueuedUpdate> {
         self.queued.iter().find(|u| u.id() == id)
     }
 
-    /// Find a committed upgrade by its ID.
+    /// Find a committed update by its ID.
     pub fn find_committed(&self, id: &UpdateId) -> Option<&CommittedUpdate> {
         self.committed.iter().find(|u| u.id() == id)
     }
 
-    /// Find a scheduled upgrade by its ID.
+    /// Find a scheduled update by its ID.
     pub fn find_scheduled(&self, id: &UpdateId) -> Option<&ScheduledUpdate> {
         self.scheduled.iter().find(|u| u.id() == id)
     }
 
-    /// Queue a new upgrade.
-    pub fn enqueue(&mut self, upgrade: QueuedUpdate) {
-        self.queued.push(upgrade);
+    /// Queue a new update.
+    pub fn enqueue(&mut self, update: QueuedUpdate) {
+        self.queued.push(update);
     }
 
-    /// Schedule an upgrade to run without enactment.
-    pub fn schedule(&mut self, upgrade: ScheduledUpdate) {
-        self.scheduled.push(upgrade);
+    /// Schedule an update to run without enactment.
+    pub fn schedule(&mut self, update: ScheduledUpdate) {
+        self.scheduled.push(update);
     }
 
-    /// Remove a queued upgrade by swapping it out.
+    /// Remove a queued update by swapping it out.
     pub fn remove_queued(&mut self, id: &UpdateId) {
         if let Some(i) = self.queued.iter().position(|u| u.id() == id) {
             self.queued.swap_remove(i);
         }
     }
 
-    /// Commit a scheduled upgrade: move from committed to scheduled.
+    /// Commit a scheduled update: move from committed to scheduled.
     pub fn commit_to_schedule(&mut self, id: &UpdateId, current_height: u64) {
         if let Some(i) = self.committed.iter().position(|u| u.id() == id) {
             let c_up = self.committed.swap_remove(i);
@@ -102,7 +102,7 @@ impl UpgradeSubprotoState {
         self.next_update_id += 1;
     }
 
-    /// Process all queued upgrades and move any whose `activation_height` equals `current_height`
+    /// Process all queued updates and move any whose `activation_height` equals `current_height`
     /// from `queued` into `committed`.
     pub fn process_queued(&mut self, current_height: u64) {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued)
@@ -112,7 +112,7 @@ impl UpgradeSubprotoState {
         self.committed.extend(ready.into_iter().map(Into::into));
     }
 
-    /// Process all queued upgrades and collect those whose `activation_height` equals
+    /// Process all queued updates and collect those whose `activation_height` equals
     /// `current_height`
     pub fn process_scheduled(&mut self, current_height: u64) -> Vec<ScheduledUpdate> {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled)
@@ -140,17 +140,17 @@ mod tests {
 
         let id = 1;
         let update: UpdateAction = arb.generate();
-        let upgrade = QueuedUpdate::try_new(id, update, 100).unwrap();
-        state.enqueue(upgrade.clone());
+        let update = QueuedUpdate::try_new(id, update, 100).unwrap();
+        state.enqueue(update.clone());
 
-        assert_eq!(state.find_queued(&id), Some(&upgrade));
+        assert_eq!(state.find_queued(&id), Some(&update));
         assert_eq!(state.find_queued(&2), None);
 
         state.remove_queued(&id);
         assert_eq!(state.find_queued(&id), None);
     }
 
-    /// Helper to seed queued upgrades
+    /// Helper to seed queued updates
     fn seed_queued(ids: &[u32], heights: &[u64]) -> UpgradeSubprotoState {
         let mut arb = ArbitraryGenerator::new();
         let mut state = UpgradeSubprotoState::default();
@@ -161,21 +161,21 @@ mod tests {
         state
     }
 
-    /// Helper to seed scheduled upgrades
+    /// Helper to seed scheduled updates
     fn seed_scheduled(
         ids: &[u32],
         heights: &[u64],
     ) -> (UpgradeSubprotoState, Vec<ScheduledUpdate>) {
         let mut arb = ArbitraryGenerator::new();
         let mut state = UpgradeSubprotoState::default();
-        let mut upgrades = Vec::with_capacity(ids.len());
+        let mut updates = Vec::with_capacity(ids.len());
         for (&id, &h) in ids.iter().zip(heights.iter()) {
             let action: UpdateAction = arb.generate();
-            let upgrade = ScheduledUpdate::try_new(id, action, h).unwrap();
-            state.schedule(upgrade.clone());
-            upgrades.push(upgrade);
+            let update = ScheduledUpdate::try_new(id, action, h).unwrap();
+            state.schedule(update.clone());
+            updates.push(update);
         }
-        (state, upgrades)
+        (state, updates)
     }
 
     #[test]

@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 strata-asm-common.workspace = true
 strata-crypto.workspace = true
+strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true

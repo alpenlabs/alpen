@@ -9,7 +9,7 @@ use crate::{
     updates::{queued::QueuedUpdate, scheduled::ScheduledUpdate},
 };
 
-pub(crate) fn handle_scheduled_actions(
+pub(crate) fn handle_scheduled_updates(
     state: &mut UpgradeSubprotoState,
     _relayer: &mut impl MsgRelayer,
     current_height: u64,

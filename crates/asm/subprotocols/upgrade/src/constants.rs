@@ -1,4 +1,3 @@
-
 /// The number of blocks during which an ASM verification key (VK) update remains in the
 /// `QueuedUpdate` state and can still be cancelled by submitting a cancel transaction.
 /// If no cancellation occurs within this many blocks of the original update transaction,
