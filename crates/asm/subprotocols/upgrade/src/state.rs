@@ -5,6 +5,7 @@ use strata_primitives::roles::Role;
 
 use crate::{
     authority::MultisigAuthority,
+    config::UpgradeSubprotoConfig,
     updates::{committed::CommittedUpdate, queued::QueuedUpdate, scheduled::ScheduledUpdate},
 };
 
@@ -34,6 +35,22 @@ pub struct UpgradeSubprotoState {
 }
 
 impl UpgradeSubprotoState {
+    pub fn new(config: &UpgradeSubprotoConfig) -> Self {
+        let authorities = config
+            .clone()
+            .get_all_authorities()
+            .into_iter()
+            .map(|(role, config)| MultisigAuthority::new(role, config))
+            .collect();
+
+        Self {
+            authorities,
+            queued: Vec::new(),
+            committed: Vec::new(),
+            scheduled: Vec::new(),
+            next_update_id: 0,
+        }
+    }
     /// Get a reference to the authority for the given role.
     pub fn authority(&self, role: Role) -> Option<&MultisigAuthority> {
         self.authorities.get(role as usize)
@@ -125,18 +142,53 @@ impl UpgradeSubprotoState {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_proto_upgrade_txs::actions::UpdateAction;
+    use strata_asm_proto_upgrade_txs::actions::{
+        UpdateAction,
+        updates::{multisig::MultisigUpdate, vk::VerifyingKeyUpdate},
+    };
+    use strata_crypto::multisig::{
+        PubKey,
+        config::{MultisigConfig, MultisigConfigUpdate},
+    };
+    use strata_primitives::roles::ProofType;
     use strata_test_utils::ArbitraryGenerator;
+    use zkaleido::VerifyingKey;
 
     use crate::{
-        state::UpgradeSubprotoState,
+        state::{UpgradeSubprotoConfig, UpgradeSubprotoState},
         updates::{queued::QueuedUpdate, scheduled::ScheduledUpdate},
     };
 
+    fn create_test_config() -> UpgradeSubprotoConfig {
+        let test_key = PubKey::new([1; 32]);
+        let test_config = MultisigConfig::try_new(vec![test_key], 1).unwrap();
+
+        UpgradeSubprotoConfig::new(
+            test_config.clone(),
+            test_config.clone(),
+            test_config.clone(),
+            test_config,
+        )
+    }
+
+    fn create_queued_action() -> UpdateAction {
+        let vk_update = VerifyingKeyUpdate::new(VerifyingKey::default(), ProofType::OlStf);
+        UpdateAction::VerifyingKey(vk_update)
+    }
+
+    fn create_scheduled_action() -> UpdateAction {
+        let test_key = PubKey::new([2; 32]);
+        let update = MultisigConfigUpdate::new(vec![test_key], vec![], 1);
+        let multisig_update =
+            MultisigUpdate::new(update, strata_primitives::roles::Role::BridgeAdmin);
+        UpdateAction::Multisig(multisig_update)
+    }
+
     #[test]
     fn test_enqueue_find_and_remove_queued() {
+        let config = create_test_config();
+        let mut state = UpgradeSubprotoState::new(&config);
         let mut arb = ArbitraryGenerator::new();
-        let mut state = UpgradeSubprotoState::default();
 
         let id = 1;
         let update: UpdateAction = arb.generate();
@@ -152,11 +204,14 @@ mod tests {
 
     /// Helper to seed queued updates
     fn seed_queued(ids: &[u32], heights: &[u64]) -> UpgradeSubprotoState {
-        let mut arb = ArbitraryGenerator::new();
-        let mut state = UpgradeSubprotoState::default();
+        let config = create_test_config();
+        let mut state = UpgradeSubprotoState::new(&config);
         for (&id, &h) in ids.iter().zip(heights.iter()) {
-            let action: UpdateAction = arb.generate();
-            state.enqueue(QueuedUpdate::try_new(id, action, h).unwrap());
+            let action = create_queued_action();
+            // Use current_height such that activation_height = h
+            // Since OL_STF_VK_QUEUE_DELAY = 4320, current_height = h - 4320
+            let current_height = if h >= 4320 { h - 4320 } else { 0 };
+            state.enqueue(QueuedUpdate::try_new(id, action, current_height).unwrap());
         }
         state
     }
@@ -187,21 +242,21 @@ mod tests {
         }
 
         let ids = &[1, 2, 3];
-        let heights = &[5, 10, 15];
+        let heights = &[5000, 5100, 5200]; // Increased to work with delays
 
         let cases = vec![
             Case {
-                current: 4,
+                current: 4999,
                 want_q: vec![1, 2, 3],
                 want_c: vec![],
             },
             Case {
-                current: 20,
+                current: 5200,
                 want_q: vec![],
                 want_c: vec![1, 2, 3],
             },
             Case {
-                current: 10,
+                current: 5100,
                 want_q: vec![3],
                 want_c: vec![1, 2],
             },
@@ -236,26 +291,26 @@ mod tests {
             want_ret: Vec<u32>,
         }
         let ids = &[1, 2, 3];
-        let heights = &[5, 10, 15];
+        let heights = &[2500, 3000, 3500]; // Increased to work with delays
 
         let cases = vec![
             Case {
-                current: 4,
+                current: 2499,
                 want_rem: vec![1, 2, 3],
                 want_ret: vec![],
             },
             Case {
-                current: 5,
+                current: 2500,
                 want_rem: vec![2, 3],
                 want_ret: vec![1],
             },
             Case {
-                current: 10,
+                current: 3000,
                 want_rem: vec![3],
                 want_ret: vec![1, 2],
             },
             Case {
-                current: 15,
+                current: 3500,
                 want_rem: vec![],
                 want_ret: vec![1, 2, 3],
             },
@@ -287,15 +342,15 @@ mod tests {
     #[test]
     fn test_commit_to_schedule() {
         let ids = &[1, 2, 3];
-        let heights = &[5, 10, 15];
+        let heights = &[5000, 5100, 5200]; // Increased to work with delays
         let mut state = seed_queued(ids, heights);
 
-        state.process_queued(15);
+        state.process_queued(5200);
         assert_eq!(state.queued, &[]);
         assert_eq!(state.committed.len(), 3);
         assert_eq!(state.scheduled.len(), 0);
 
-        state.commit_to_schedule(&2, 20);
+        state.commit_to_schedule(&2, 5300);
 
         // now committed should no longer contain 2, but still 1 & 3
         let mut remaining: Vec<_> = state.committed.iter().map(|c| *c.id()).collect();

@@ -6,6 +6,7 @@ use strata_asm_proto_upgrade_txs::{
 };
 
 use crate::{
+    config::UpgradeSubprotoConfig,
     handler::{handle_action, handle_scheduled_updates},
     state::UpgradeSubprotoState,
 };
@@ -16,7 +17,7 @@ pub struct UpgradeSubprotocol;
 impl Subprotocol for UpgradeSubprotocol {
     const ID: SubprotocolId = UPGRADE_SUBPROTOCOL_ID;
 
-    type Params = ();
+    type Params = UpgradeSubprotoConfig;
 
     type State = UpgradeSubprotoState;
 
@@ -24,8 +25,8 @@ impl Subprotocol for UpgradeSubprotocol {
 
     type AuxInput = ();
 
-    fn init(_params: &Self::Params) -> Result<UpgradeSubprotoState, AsmError> {
-        Ok(UpgradeSubprotoState::default())
+    fn init(params: &Self::Params) -> Result<UpgradeSubprotoState, AsmError> {
+        Ok(UpgradeSubprotoState::new(params))
     }
 
     fn process_txs(
