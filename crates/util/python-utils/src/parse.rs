@@ -22,7 +22,7 @@ pub(crate) fn parse_drt(
         .map_err(|e| Error::TxParser(e.to_string()))?;
 
     let config = DepositTxParams {
-        magic_bytes: MAGIC_BYTES.to_vec(),
+        magic_bytes: *MAGIC_BYTES,
         address_length: EE_ADDRESS_LEN,
         deposit_amount: BRIDGE_OUT_AMOUNT.to_sat(),
         address,

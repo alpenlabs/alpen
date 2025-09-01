@@ -9,7 +9,6 @@ import flexitest
 import web3
 import web3.middleware
 from bitcoinlib.services.bitcoind import BitcoindClient
-from factory.service import DisposableService
 
 from factory import seqrpc
 from factory.config import (
@@ -19,6 +18,7 @@ from factory.config import (
     ExecConfig,
     RethELConfig,
 )
+from factory.service import DisposableService
 from load.cfg import LoadConfig
 from load.service import LoadGeneratorService
 from utils import *

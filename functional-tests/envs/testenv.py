@@ -226,10 +226,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
                 # Generate one more block so the transaction is on the blockchain.
                 brpc.proxy.sendmany(
                     "",
-                    {
-                        get_address(i): 20
-                        for i in range(20)
-                    },
+                    {get_address(i): 20 for i in range(20)},
                 )
                 brpc.proxy.generatetoaddress(1, seqaddr)
 
