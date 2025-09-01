@@ -17,5 +17,5 @@ thiserror.workspace = true
 workspace = true
 
 [dev-dependencies]
-zkaleido.workspace = true
 strata-test-utils.workspace = true
+zkaleido.workspace = true

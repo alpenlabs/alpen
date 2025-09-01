@@ -184,49 +184,110 @@ mod tests {
         UpdateAction::Multisig(multisig_update)
     }
 
+    /// Try to create a QueuedUpdate from any arbitrary action, filtering out non-queueable ones
+    /// Normalizes VerifyingKey actions to use OlStf proof type for consistent test behavior
+    fn try_create_queued_update(
+        id: u32,
+        action: UpdateAction,
+        current_height: u64,
+    ) -> Option<QueuedUpdate> {
+        let normalized_action = match action {
+            UpdateAction::VerifyingKey(vk_update) => {
+                // Force all VerifyingKey actions to use OlStf for consistent delays
+                let (vk, _) = vk_update.into_inner();
+                let normalized = VerifyingKeyUpdate::new(vk, ProofType::OlStf);
+                UpdateAction::VerifyingKey(normalized)
+            }
+            other => other,
+        };
+        QueuedUpdate::try_new(id, normalized_action, current_height).ok()
+    }
+
+    /// Try to create a ScheduledUpdate from any arbitrary action, filtering out non-schedulable
+    /// ones
+    fn try_create_scheduled_update(
+        id: u32,
+        action: UpdateAction,
+        current_height: u64,
+    ) -> Option<ScheduledUpdate> {
+        ScheduledUpdate::try_new(id, action, current_height).ok()
+    }
+
     #[test]
     fn test_enqueue_find_and_remove_queued() {
+        let mut arb = ArbitraryGenerator::new();
         let config = create_test_config();
         let mut state = UpgradeSubprotoState::new(&config);
-        let mut arb = ArbitraryGenerator::new();
 
         let id = 1;
-        let update: UpdateAction = arb.generate();
-        let update = QueuedUpdate::try_new(id, update, 100).unwrap();
-        state.enqueue(update.clone());
+        let current_height = 100;
 
-        assert_eq!(state.find_queued(&id), Some(&update));
+        // Try arbitrary action first, fallback to guaranteed queueable action
+        let action: UpdateAction = arb.generate();
+        let upgrade =
+            if let Some(queued_update) = try_create_queued_update(id, action, current_height) {
+                queued_update
+            } else {
+                let fallback_action = create_queued_action();
+                QueuedUpdate::try_new(id, fallback_action, current_height).unwrap()
+            };
+
+        state.enqueue(upgrade.clone());
+
+        assert_eq!(state.find_queued(&id), Some(&upgrade));
         assert_eq!(state.find_queued(&2), None);
 
         state.remove_queued(&id);
         assert_eq!(state.find_queued(&id), None);
     }
 
-    /// Helper to seed queued updates
+    /// Helper to seed queued updates - tries arbitrary actions and keeps valid ones
     fn seed_queued(ids: &[u32], heights: &[u64]) -> UpgradeSubprotoState {
+        let mut arb = ArbitraryGenerator::new();
         let config = create_test_config();
         let mut state = UpgradeSubprotoState::new(&config);
+
         for (&id, &h) in ids.iter().zip(heights.iter()) {
-            let action = create_queued_action();
-            // Use current_height such that activation_height = h
-            // Since OL_STF_VK_QUEUE_DELAY = 4320, current_height = h - 4320
-            let current_height = if h >= 4320 { h - 4320 } else { 0 };
-            state.enqueue(QueuedUpdate::try_new(id, action, current_height).unwrap());
+            let current_height = h.saturating_sub(4320); // Fix clippy warning
+
+            // Try arbitrary actions until we get one that can be queued
+            let action: UpdateAction = arb.generate();
+            if let Some(queued_update) = try_create_queued_update(id, action, current_height) {
+                state.enqueue(queued_update);
+            } else {
+                // If arbitrary action can't be queued, use a guaranteed queueable action
+                let fallback_action = create_queued_action();
+                state.enqueue(QueuedUpdate::try_new(id, fallback_action, current_height).unwrap());
+            }
         }
         state
     }
 
-    /// Helper to seed scheduled updates
+    /// Helper to seed scheduled updates - tries arbitrary actions and keeps valid ones
     fn seed_scheduled(
         ids: &[u32],
         heights: &[u64],
     ) -> (UpgradeSubprotoState, Vec<ScheduledUpdate>) {
         let mut arb = ArbitraryGenerator::new();
-        let mut state = UpgradeSubprotoState::default();
+        let config = create_test_config();
+        let mut state = UpgradeSubprotoState::new(&config);
         let mut updates = Vec::with_capacity(ids.len());
+
         for (&id, &h) in ids.iter().zip(heights.iter()) {
+            let current_height = h.saturating_sub(2016); // Fix clippy warning
+
+            // Try arbitrary actions until we get one that can be scheduled
             let action: UpdateAction = arb.generate();
-            let update = ScheduledUpdate::try_new(id, action, h).unwrap();
+            let update = if let Some(scheduled_update) =
+                try_create_scheduled_update(id, action, current_height)
+            {
+                scheduled_update
+            } else {
+                // If arbitrary action can't be scheduled, use a guaranteed schedulable action
+                let fallback_action = create_scheduled_action();
+                ScheduledUpdate::try_new(id, fallback_action, current_height).unwrap()
+            };
+
             state.schedule(update.clone());
             updates.push(update);
         }
