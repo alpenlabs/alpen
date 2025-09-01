@@ -15,11 +15,7 @@ use tokio::{sync::mpsc, time};
 use tracing::*;
 
 use super::config::CsmExecConfig;
-use crate::{
-    csm::client_transition::{self, EventContext, StorageEventContext},
-    errors::Error,
-    genesis,
-};
+use crate::csm::client_transition::{self, EventContext, StorageEventContext};
 
 /// Mutable worker state that we modify in the consensus worker task.
 ///
@@ -76,7 +72,7 @@ impl WorkerState {
 
         let context = client_transition::StorageEventContext::new(&self.storage);
 
-        Ok(client_transition::handle_block(
+        Ok(client_transition::transition_client_state(
             self.cur_state.as_ref().clone(),
             &self.cur_block,
             next_block,
@@ -144,7 +140,7 @@ fn process_block_with_retries(
     let mut skipped_blocks: Vec<_> = vec![];
 
     // Handle pre-genesis: if the block is before genesis we don't care about it.
-    let genesis_trigger = state.params.rollup().genesis_l1_height;
+    let genesis_trigger = state.params.rollup().genesis_l1_view.height();
     let height = incoming_block.height();
     if incoming_block.height() < genesis_trigger {
         #[cfg(test)]
@@ -163,7 +159,9 @@ fn process_block_with_retries(
         let mut cur_block = *incoming_block;
         let mut cur_state = ctx.get_client_state(&cur_block);
 
-        while cur_state.is_err() && cur_block.height() >= state.params.rollup().genesis_l1_height {
+        while cur_state.is_err()
+            && cur_block.height() >= state.params.rollup().genesis_l1_view.height()
+        {
             let cur_block_mf = ctx.get_l1_block_manifest(cur_block.blkid())?;
             let prev_block_id = cur_block_mf.get_prev_blockid();
 
@@ -175,7 +173,7 @@ fn process_block_with_retries(
             cur_state = ctx.get_client_state(&cur_block);
         }
 
-        if cur_block.height() < state.params.rollup().genesis_l1_height {
+        if cur_block.height() < state.params.rollup().genesis_l1_view.height() {
             // we reached the height before genesis (while traversing the tree of ClientStates),
             // for such a case there shouldn't be any ClientState besides the default one.
             (Default::default(), Default::default())
@@ -261,7 +259,7 @@ fn handle_block(state: &mut WorkerState, block: &L1BlockManifest) -> anyhow::Res
     // the new state, so that any database changes from them are available when
     // things listening for the new state observe it.
     for action in actions.iter() {
-        apply_action(action.clone(), &state.storage, &state.params)?;
+        apply_action(action.clone(), &state.storage)?;
     }
 
     // Store the outputs.
@@ -276,11 +274,7 @@ fn handle_block(state: &mut WorkerState, block: &L1BlockManifest) -> anyhow::Res
     Ok(())
 }
 
-fn apply_action(
-    action: SyncAction,
-    storage: &Arc<NodeStorage>,
-    params: &Arc<Params>,
-) -> anyhow::Result<()> {
+fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> anyhow::Result<()> {
     let ckpt_db = storage.checkpoint();
     match action {
         SyncAction::FinalizeEpoch(epoch_comm) => {

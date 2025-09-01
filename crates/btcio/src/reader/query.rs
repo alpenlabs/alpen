@@ -63,8 +63,10 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block =
-        calculate_target_next_block(storage.l1().as_ref(), params.rollup().horizon_l1_height)?;
+    let target_next_block = calculate_target_next_block(
+        storage.l1().as_ref(),
+        params.rollup().genesis_l1_view.height(),
+    )?;
 
     let ctx = ReaderContext {
         client,
@@ -449,9 +451,6 @@ pub async fn fetch_verification_state(
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod test {
-    use bitcoin::hashes::Hash;
-    use strata_primitives::buf::Buf32;
-    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::test_utils::corepc_node_helpers::{get_bitcoind_and_client, mine_blocks};

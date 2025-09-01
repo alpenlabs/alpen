@@ -2,7 +2,7 @@ use strata_db::errors::DbError;
 use strata_primitives::{
     buf::{Buf32, Buf64},
     evm_exec::create_evm_extra_payload,
-    l1::{L1BlockCommitment, HeaderVerificationState, TIMESTAMPS_FOR_MEDIAN},
+    l1::{HeaderVerificationState, TIMESTAMPS_FOR_MEDIAN},
     params::{OperatorConfig, Params},
 };
 use strata_state::{
@@ -25,16 +25,15 @@ use tracing::*;
 
 /// Inserts into the database an initial basic client state that we can begin
 /// waiting for genesis with.
-pub fn init_client_state(_params: &Params, storage: &NodeStorage) -> anyhow::Result<()> {
+pub fn init_client_state(params: &Params, storage: &NodeStorage) -> anyhow::Result<()> {
     debug!("initializing client state in database!");
 
     let init_state = ClientState::default();
+    init_genesis_chainstate(params, storage)?;
 
     // Write the state into the database.
-    storage
-        .client_state()
-        ._put_update_blocking(
-        &L1BlockCommitment::default(),
+    storage.client_state().put_update_blocking(
+        &params.rollup().genesis_l1_view.blk,
         ClientUpdateOutput::new_state(init_state),
     )?;
 
