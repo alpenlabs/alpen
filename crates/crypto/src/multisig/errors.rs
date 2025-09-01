@@ -13,17 +13,20 @@ pub enum MultisigConfigError {
     #[error("cannot remove member {0:?}: not found in multisig configuration")]
     MemberNotFound(PubKey),
 
-    /// The provided threshold is invalid (must be strictly greater than half of the multisig
-    /// size).
-    #[error(
-        "invalid threshold {threshold}: must be greater than half of the multisig size ({min_required})"
-    )]
+    /// The provided threshold is invalid.
+    #[error("invalid threshold {threshold}: must be between {min_required} and {max_allowed}")]
     InvalidThreshold {
-        /// The threshold value provided in the transaction.
+        /// The threshold value provided.
         threshold: u8,
-        /// The minimum valid threshold for this multisig (computed as `size / 2 + 1`).
+        /// The minimum valid threshold.
         min_required: usize,
+        /// The maximum valid threshold.
+        max_allowed: usize,
     },
+
+    /// The keys list is empty.
+    #[error("keys cannot be empty")]
+    EmptyKeys,
 }
 
 /// Errors related to validating a multisig vote (aggregation or signature check).

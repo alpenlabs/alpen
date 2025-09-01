@@ -6,7 +6,7 @@ use strata_asm_proto_upgrade_txs::{
 };
 
 use crate::{
-    handler::{handle_action, handle_scheduled_actions},
+    handler::{handle_action, handle_scheduled_updates},
     state::UpgradeSubprotoState,
 };
 
@@ -48,7 +48,7 @@ impl Subprotocol for UpgradeSubprotocol {
             }
         }
 
-        handle_scheduled_actions(state, relayer, current_height);
+        handle_scheduled_updates(state, relayer, current_height);
     }
 
     fn process_msgs(
