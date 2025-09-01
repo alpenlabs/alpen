@@ -8,6 +8,7 @@
 pub mod authority;
 pub mod constants;
 pub mod error;
+pub mod handler;
 pub mod state;
 pub mod subprotocol;
 pub mod upgrades;
