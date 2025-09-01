@@ -12,10 +12,10 @@ use crate::{
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct QueueDelay;
 
-pub type QueuedUpdate = DelayedUpdate<QueueDelay>;
+pub(crate) type QueuedUpdate = DelayedUpdate<QueueDelay>;
 
 impl QueuedUpdate {
-    pub fn try_new(
+    pub(crate) fn try_new(
         id: UpdateId,
         action: UpdateAction,
         current_height: u64,

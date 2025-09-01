@@ -1,20 +1,20 @@
 use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
 };
-use strata_asm_proto_upgrade_txs::parser::parse_tx_multisig_action_and_vote;
+use strata_asm_proto_upgrade_txs::{
+    constants::UPGRADE_SUBPROTOCOL_ID, parser::parse_tx_multisig_action_and_vote,
+};
 
 use crate::{
     handler::{handle_action, handle_scheduled_actions},
     state::UpgradeSubprotoState,
 };
 
-pub const UPGRADE_SUBPROTOCOL_ID: u8 = 0;
-
 #[derive(Debug)]
 pub struct UpgradeSubprotocol;
 
 impl Subprotocol for UpgradeSubprotocol {
-    const ID: SubprotocolId = 0;
+    const ID: SubprotocolId = UPGRADE_SUBPROTOCOL_ID;
 
     type Params = ();
 

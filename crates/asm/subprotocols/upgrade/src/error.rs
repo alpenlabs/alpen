@@ -4,11 +4,7 @@ use thiserror::Error;
 
 /// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum UpgradeError {
-    /// Indicates a deserialization/parse failure.
-    #[error(transparent)]
-    Deserialize(#[from] DeserializeError),
-
+pub(crate) enum UpgradeError {
     /// The specified role is not recognized.
     #[error("the specified role is not recognized")]
     UnknownRole,
@@ -32,7 +28,7 @@ pub enum UpgradeError {
 
 /// Errors related to upgrade action.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum UpdateActionError {
+pub(crate) enum UpdateActionError {
     /// The update action cannot be queued.
     #[error("update action cannot be queued")]
     CannotQueue,
@@ -40,12 +36,4 @@ pub enum UpdateActionError {
     /// The update action cannot be directly scheduled.
     #[error("update action cannot be directly scheduled")]
     CannotSchedule,
-}
-
-/// Errors related to failing to parse incoming transactions.
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum DeserializeError {
-    /// Failed to deserialize the transaction payload for the given transaction type.
-    #[error("failed to deserialize transaction for tx_type = {0}")]
-    MalformedTransaction(u8),
 }
