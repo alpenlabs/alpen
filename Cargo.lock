@@ -14706,25 +14706,19 @@ dependencies = [
 name = "strata-python-utils"
 version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "bdk_bitcoind_rpc",
  "bdk_wallet",
- "bitcoind-async-client",
- "corepc-node",
+ "make_buf",
  "musig2",
  "pyo3",
  "pyo3-build-config",
  "rand 0.8.5",
- "rand_chacha 0.3.1",
- "revm-primitives",
  "secp256k1 0.29.1",
  "shrex",
  "shrex_macros",
- "strata-common",
  "strata-crypto",
+ "strata-l1tx",
  "strata-primitives",
- "tokio",
- "tracing",
 ]
 
 [[package]]
