@@ -41,7 +41,7 @@ pub(crate) struct GetCheckpointArgs {
 #[argh(subcommand, name = "get-checkpoints-summary")]
 /// Get checkpoints summary
 pub(crate) struct GetCheckpointsSummaryArgs {
-    /// start l1 height to query checkpoints from.
+    /// start l1 height to query checkpoints from
     #[argh(positional)]
     pub(crate) height_from: u64,
 

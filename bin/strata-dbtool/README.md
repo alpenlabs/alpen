@@ -59,7 +59,7 @@ Shows the latest client state update information.
 strata-dbtool get-client-state-update [<block_id>] [OPTIONS]
 ```
 **Arguments:**
-- `block_id` -  Client state block_id.
+- `block_id` -  Client state block_id
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -72,7 +72,7 @@ strata-dbtool get-l1-summary [<height_from>] [OPTIONS]
 ```
 
 **Arguments:**
-- `height_from` - L1 height to look up the summary about.
+- `height_from` - L1 height to look up the summary about
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -197,7 +197,7 @@ strata-dbtool get-checkpoints-summary <height_from>  [OPTIONS]
 ```
 
 **Arguments:**
-- `height_from` - Start l1 height to query checkpoints from.
+- `height_from` - Start l1 height to query checkpoints from
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)

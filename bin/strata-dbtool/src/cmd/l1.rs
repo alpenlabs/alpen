@@ -29,7 +29,7 @@ pub(crate) struct GetL1ManifestArgs {
 #[argh(subcommand, name = "get-l1-summary")]
 /// Get L1 summary
 pub(crate) struct GetL1SummaryArgs {
-    /// start height describing the summary queried
+    /// l1 height to look up the summary about
     #[argh(positional)]
     pub(crate) height_from: u64,
 
