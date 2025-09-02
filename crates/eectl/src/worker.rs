@@ -71,6 +71,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
     }
 
     fn update_finalized_tip(&mut self, new_finalized: &L2BlockCommitment) -> EngineResult<()> {
+        self.finalized_tip = *new_finalized;
         self.call_engine("engine_update_finalized_tip", |eng| {
             eng.update_finalized_block(*new_finalized.blkid())?;
             Ok(())
@@ -259,7 +260,7 @@ pub fn worker_task_inner<E: ExecEngineCtl>(
                 let _ = completion.send(res);
             }
             ExecCommand::NewFinalizedTip(ts, completion) => {
-                let res = state.update_safe_tip(&ts);
+                let res = state.update_finalized_tip(&ts);
                 let _ = completion.send(res);
             }
         }
