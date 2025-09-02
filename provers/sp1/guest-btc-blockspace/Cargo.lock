@@ -1688,6 +1688,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-l1-txfmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common#53b79d1fd710a9d3516cfdf94bfa8a5cda43c949"
+dependencies = [
+ "bitcoin",
+ "thiserror 2.0.12",
+]
+
+[[package]]
 name = "strata-l1tx"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1721,6 +1730,7 @@ dependencies = [
  "secp256k1",
  "serde",
  "sha2",
+ "strata-l1-txfmt",
  "thiserror 2.0.12",
  "zeroize",
  "zkaleido",
