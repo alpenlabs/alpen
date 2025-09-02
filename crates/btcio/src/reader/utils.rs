@@ -24,14 +24,13 @@ pub(crate) fn find_checkpoint(entries: &[RelevantTxEntry]) -> Option<&SignedChec
 }
 
 /// Looks for checkpoints in given L1 events
-pub(crate) fn find_checkpoint_in_events(evs: &[L1Event]) -> Option<&SignedCheckpoint> {
-    for ev in evs {
-        if let L1Event::BlockData(blk_data, _epoch) = ev {
-            if let Some(checkpt) = find_checkpoint(blk_data.relevant_txs()) {
-                return Some(checkpt);
-            }
+pub(crate) fn find_checkpoint_in_event(ev: &L1Event) -> Option<&SignedCheckpoint> {
+    if let L1Event::BlockData(blk_data, _epoch) = ev {
+        if let Some(checkpt) = find_checkpoint(blk_data.relevant_txs()) {
+            return Some(checkpt);
         }
     }
+
     None
 }
 
@@ -41,9 +40,11 @@ pub(crate) fn find_checkpoint_in_events(evs: &[L1Event]) -> Option<&SignedCheckp
 pub(crate) async fn find_last_checkpoint_chainstate(
     storage: &NodeStorage,
 ) -> anyhow::Result<Option<Chainstate>> {
-    let Some((_, client_state)) = storage.client_state().get_most_recent_state().await else {
-        return Ok(None);
-    };
+    let (_, client_state) = storage
+        .client_state()
+        .fetch_most_recent_state()?
+        .expect("missing initial client state?");
+
     let Some(last_checkpoint) = client_state.get_last_checkpoint() else {
         return Ok(None);
     };

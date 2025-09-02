@@ -314,7 +314,7 @@ pub(crate) fn worker_task<W: WorkerContext>(
     shared: Arc<Mutex<WorkerShared>>,
 ) -> anyhow::Result<()> {
     // Wait for genesis and determine the current tip
-    let cur_tip = wait_for_genesis_and_resolve_tip(&status_channel, &handle)?;
+    let cur_tip = wait_for_genesis_and_resolve_tip(&status_channel, &context, &handle)?;
 
     let blkid = *cur_tip.blkid();
     info!(%blkid, "starting chain worker");
@@ -344,8 +344,9 @@ pub(crate) fn worker_task<W: WorkerContext>(
 ///
 /// This encapsulates the complex logic for determining the initial state
 /// that the worker should start from.
-fn wait_for_genesis_and_resolve_tip(
+fn wait_for_genesis_and_resolve_tip<W: WorkerContext>(
     status_channel: &StatusChannel,
+    ctx: &W,
     handle: &Handle,
 ) -> WorkerResult<L2BlockCommitment> {
     info!("waiting until genesis");
@@ -354,9 +355,16 @@ fn wait_for_genesis_and_resolve_tip(
         .block_on(status_channel.wait_until_genesis())
         .map_err(|e| WorkerError::Unexpected(format!("failed to wait for genesis: {e}")))?;
 
-    let cur_tip = match init_state.get_declared_final_epoch().cloned() {
+    let genesis_blkid = handle.block_on(async {
+        while ctx.fetch_block_ids(0).unwrap().is_empty() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        *ctx.fetch_block_ids(0).unwrap().first().unwrap()
+    });
+
+    let cur_tip = match init_state.get_declared_final_epoch() {
         Some(epoch) => epoch.to_block_commitment(),
-        None => L2BlockCommitment::new(0, *init_state.sync().genesis_blkid()),
+        None => L2BlockCommitment::new(0, genesis_blkid),
     };
 
     Ok(cur_tip)

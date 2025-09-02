@@ -17,7 +17,6 @@ use strata_state::{
     batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint},
     block::{L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle},
     chain_state::Chainstate,
-    client_state::ClientState,
     header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
 };
 use strata_test_utils::ArbitraryGenerator;
@@ -147,16 +146,6 @@ fn get_rollup_vk() -> RollupVerifyingKey {
         serde_json::from_slice(include_bytes!("../../data/sp1_rollup_vk.json")).unwrap();
 
     RollupVerifyingKey::SP1VerifyingKey(sp1_vk)
-}
-
-/// Gets the [`ClientState`] from consensus [`Params`].
-pub fn gen_client_state(params: Option<&Params>) -> ClientState {
-    let params = match params {
-        Some(p) => p,
-        None => &gen_params(),
-    };
-    let (blk, _) = get_genesis_chainstate(params);
-    ClientState::from_genesis_params(params, blk.block().header().get_blockid())
 }
 
 /// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.

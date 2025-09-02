@@ -2,7 +2,7 @@
 
 use strata_db::types::CheckpointConfStatus;
 use strata_primitives::params::Params;
-use strata_state::{client_state::InternalState, header::L2Header, id::L2BlockId};
+use strata_state::{client_state::ClientState, header::L2Header, id::L2BlockId};
 use strata_storage::L2BlockManager;
 use tracing::*;
 
@@ -15,7 +15,7 @@ use crate::{
 /// Extracts new duties given a current chainstate and an identity.
 pub async fn extract_duties(
     tip_blkid: L2BlockId,
-    cistate: &InternalState,
+    cistate: &ClientState,
     checkpoint_handle: &CheckpointHandle,
     l2_block_manager: &L2BlockManager,
     params: &Params,
@@ -57,7 +57,7 @@ async fn extract_block_duties(
 }
 
 async fn extract_batch_duties(
-    cistate: &InternalState,
+    cistate: &ClientState,
     checkpoint_handle: &CheckpointHandle,
 ) -> Result<Vec<Duty>, Error> {
     // Get the next epoch we expect to be confirmed and start looking there.

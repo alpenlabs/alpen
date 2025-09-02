@@ -2,11 +2,9 @@ use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{DatabaseBackend, L1Database};
 use strata_primitives::l1::L1BlockId;
-use tracing::warn;
 
 use crate::{
     cli::OutputFormat,
-    cmd::client_state::get_latest_client_state_update,
     output::{
         l1::{L1BlockInfo, L1SummaryInfo, TransactionInfo},
         output,
@@ -31,6 +29,10 @@ pub(crate) struct GetL1ManifestArgs {
 #[argh(subcommand, name = "get-l1-summary")]
 /// Get L1 summary
 pub(crate) struct GetL1SummaryArgs {
+    /// l1 height to look up the summary about
+    #[argh(positional)]
+    pub(crate) height_from: u64,
+
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
@@ -123,21 +125,12 @@ pub(crate) fn get_l1_summary(
     // Use helper function to get L1 tip
     let (l1_tip_height, l1_tip_block_id) = get_l1_chain_tip(db)?;
 
-    let (client_state_update, _) = get_latest_client_state_update(db, None)?;
-    let (client_state, _) = client_state_update.into_parts();
-    let genesis_l1_height = client_state.genesis_l1_height();
-
-    if genesis_l1_height == l1_tip_height {
-        warn!("Missing all l1 blocks from horizon to tip.");
-        return Ok(());
-    }
-
-    // Use helper function to get horizon block ID
-    let genesis_l1_blkid = get_l1_block_id_at_height(db, genesis_l1_height)?;
+    let start_height = args.height_from;
+    let start_block_id = get_l1_block_id_at_height(db, start_height)?;
 
     // Check if all L1 blocks from L1 horizon to tip are present
     let mut missing_heights = Vec::new();
-    let all_l1_manifests_present = (genesis_l1_height..=l1_tip_height).all(|l1_height| {
+    let all_l1_manifests_present = (start_height..=l1_tip_height).all(|l1_height| {
         let Some(block_id) = l1_db
             .get_canonical_blockid_at_height(l1_height)
             .ok()
@@ -158,9 +151,9 @@ pub(crate) fn get_l1_summary(
     let output_data = L1SummaryInfo {
         tip_height: l1_tip_height,
         tip_block_id: format!("{l1_tip_block_id:?}"),
-        horizon_block_id: format!("{genesis_l1_blkid:?}"),
-        genesis_height: genesis_l1_height,
-        expected_block_count: l1_tip_height.saturating_sub(genesis_l1_height) + 1,
+        from_height: start_height,
+        from_block_id: format!("{start_block_id:?}"),
+        expected_block_count: l1_tip_height.saturating_sub(start_height) + 1,
         all_manifests_present: all_l1_manifests_present,
         missing_blocks: missing_heights
             .into_iter()

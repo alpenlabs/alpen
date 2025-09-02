@@ -10,6 +10,23 @@ class CredRule(BaseModel):
     schnorr_key: StrBuf32
 
 
+class L1BlockCommitment(BaseModel):
+    height: int
+    blkid: StrBuf32
+
+
+class GenesisL1View(BaseModel):
+    model_config = {"extra": "allow"}  # Allow any additional fields
+    blk: L1BlockCommitment
+    next_target: int
+    epoch_start_timestamp: int
+    # TODO: somehow it's not digested by the pydantic?
+    # last_l1_timestamps: list[int]
+
+    def height(self) -> int:
+        return self.blk.height
+
+
 class OperatorConfigItem(BaseModel):
     signing_pk: StrBuf32
     wallet_pk: StrBuf32
@@ -58,6 +75,7 @@ class RollupConfig(BaseModel):
     block_time: int
     cred_rule: CredRule
     operator_config: OperatorConfig
+    genesis_l1_view: GenesisL1View
     evm_genesis_block_hash: StrBuf32
     evm_genesis_block_state_root: StrBuf32
     l1_reorg_safe_depth: int

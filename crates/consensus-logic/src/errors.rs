@@ -8,10 +8,7 @@ use zkaleido::ZkVmError;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("missing client state index {0}")]
-    MissingClientState(u64),
-
-    #[error("invalid sync event index {0}")]
-    MissingSyncEvent(u64),
+    MissingClientState(L1BlockCommitment),
 
     #[error("L2 blkid {0:?} missing from database")]
     MissingL2Block(L2BlockId),
@@ -34,26 +31,11 @@ pub enum Error {
     #[error("missing expected chainstate for block {0:?}")]
     MissingBlockChainstate(L2BlockId),
 
-    #[error("unable to find reorg {0:?} -> {1:?})")]
-    UnableToFindReorg(L2BlockId, L2BlockId),
-
-    #[error("tried to skip event index {0} (cur state idx {1})")]
-    SkippedEventIdx(u64, u64),
-
     #[error("invalid state transition on block {0:?}: {1}")]
     InvalidStateTsn(L2BlockId, TsnError),
 
-    #[error("client sync state unset")]
-    MissingClientSyncState,
-
     #[error("csm dropped")]
     CsmDropped,
-
-    #[error("tried to reorg too deep (target {0} vs buried {1})")]
-    ReorgTooDeep(u64, u64),
-
-    #[error("out of order L1 block {2} (exp next height {0}, block {1})")]
-    OutOfOrderL1Block(u64, u64, L1BlockId),
 
     #[error("tried to process competing block for height {0} (have {0}, given {1})")]
     CompetingBlock(u64, L1BlockId, L1BlockId),

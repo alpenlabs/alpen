@@ -10,7 +10,6 @@ use strata_primitives::{
     l1::L1Status,
     params::{Params, RollupParams, SyncParams},
 };
-use strata_state::csm_status::CsmStatus;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
@@ -142,25 +141,16 @@ pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Resu
 pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
     // init client state
     let csman = storage.client_state();
-    let (cur_state_idx, cur_state) = csman
-        .get_most_recent_state_blocking()
-        .ok_or(InitError::MissingInitClientState)?;
-
-    // init the CsmStatus
-    let mut status = CsmStatus::default();
-    status.set_last_sync_ev_idx(cur_state_idx);
-    status.update_from_client_state(&cur_state);
+    let (cur_block, cur_state) = csman
+        .fetch_most_recent_state()?
+        .expect("missing init client state?");
 
     let l1_status = L1Status {
         ..Default::default()
     };
 
     // TODO avoid clone, change status channel to use arc
-    Ok(StatusChannel::new(
-        cur_state.as_ref().clone(),
-        l1_status,
-        None,
-    ))
+    Ok(StatusChannel::new(cur_state, cur_block, l1_status, None))
 }
 
 pub(crate) fn init_engine_controller(

@@ -1,8 +1,8 @@
 import flexitest
 from web3 import Web3
 
-from envs import testenv
-from utils import wait_until
+from envs import net_settings, testenv
+from utils import ProverClientSettings, wait_until
 
 
 @flexitest.register
@@ -13,7 +13,13 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
     """
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("basic")
+        ctx.set_env(
+            testenv.BasicEnvConfig(
+                101,
+                prover_client_settings=ProverClientSettings.new_with_proving(),
+                rollup_settings=net_settings.get_fast_batch_settings(),
+            )
+        )
 
     def main(self, ctx: flexitest.RunContext):
         seq = ctx.get_service("sequencer")
@@ -47,10 +53,10 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         # check if rpc is still working
         assert seqrpc.strata_clientStatus() is not None, "RPC server of sequencer crashed"
 
-        cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
+        cur_slot = seqrpc.strata_clientStatus()["tip_l1_block"]
         # wait for 2 seconds to allow block production if any
         seq_waiter.wait_until_client_ready(timeout=2, interval=2)
-        new_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
+        new_slot = seqrpc.strata_clientStatus()["tip_l1_block"]
 
         # block production should halt
         assert cur_slot == new_slot, "Block production didn't halt"
@@ -71,10 +77,9 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         seq_waiter.wait_until_client_ready()
 
         # check if new blocks are being created again
-        cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
-
+        cur_height = seqrpc.strata_syncStatus()["tip_height"]
         seq_waiter.wait_until_chain_tip_exceeds(
-            cur_slot,
+            cur_height,
             msg="New blocks are not being created",
         )
 

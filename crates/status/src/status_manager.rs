@@ -1,11 +1,11 @@
 //! Manages and updates unified status bundles
 use std::sync::Arc;
 
-use strata_primitives::l1::L1Status;
+use strata_primitives::l1::{L1BlockCommitment, L1Status};
 use strata_state::{
     bridge_state::{DepositsTable, OperatorTable},
     chain_state::Chainstate,
-    client_state::{ClientState, L1Checkpoint, SyncState},
+    client_state::{CheckpointState, ClientState, L1Checkpoint},
     id::L2BlockId,
 };
 use thiserror::Error;
@@ -52,10 +52,11 @@ impl StatusChannel {
     /// A `StatusChannel` containing a sender and receiver for the provided states.
     pub fn new(
         cl_state: ClientState,
+        cl_block: L1BlockCommitment,
         l1_status: L1Status,
         ch_state: Option<ChainSyncStatusUpdate>,
     ) -> Self {
-        let (cl_tx, cl_rx) = watch::channel(cl_state);
+        let (cl_tx, cl_rx) = watch::channel(CheckpointState::new(cl_state, cl_block));
         let (l1_tx, l1_rx) = watch::channel(l1_status);
         let (chs_tx, chs_rx) = watch::channel(ch_state);
 
@@ -77,12 +78,7 @@ impl StatusChannel {
 
     /// Gets the last finalized [`L1Checkpoint`] from the current client state.
     pub fn get_last_checkpoint(&self) -> Option<L1Checkpoint> {
-        self.receiver.cl.borrow().get_last_checkpoint().cloned()
-    }
-
-    /// Gets the latest [`SyncState`].
-    pub fn get_cur_sync_state(&self) -> SyncState {
-        self.receiver.cl.borrow().sync().clone()
+        self.receiver.cl.borrow().client_state.get_last_checkpoint()
     }
 
     /// Returns a clone of the most recent tip block's chainstate, if present.
@@ -137,13 +133,16 @@ impl StatusChannel {
             .map(|chs| chs.as_ref().clone())
     }
 
-    #[deprecated(note = "use `.get_cur_client_state()`")]
-    pub fn client_state(&self) -> ClientState {
+    pub fn get_cur_client_state(&self) -> ClientState {
+        self.receiver.cl.borrow().client_state.clone()
+    }
+
+    pub fn get_cur_checkpoint_state(&self) -> CheckpointState {
         self.receiver.cl.borrow().clone()
     }
 
-    pub fn get_cur_client_state(&self) -> ClientState {
-        self.receiver.cl.borrow().clone()
+    pub fn has_genesis_occurred(&self) -> bool {
+        self.receiver.cl.borrow().has_genesis_occurred()
     }
 
     pub fn get_last_sync_status_update(&self) -> Option<ChainSyncStatusUpdate> {
@@ -163,7 +162,7 @@ impl StatusChannel {
     // Subscription functions.
 
     /// Create a subscription to the client state watcher.
-    pub fn subscribe_client_state(&self) -> watch::Receiver<ClientState> {
+    pub fn subscribe_checkpoint_state(&self) -> watch::Receiver<CheckpointState> {
         self.sender.cl.subscribe()
     }
 
@@ -174,9 +173,9 @@ impl StatusChannel {
 
     /// Waits until genesis and returns the client state where genesis was triggered.
     pub async fn wait_until_genesis(&self) -> Result<ClientState, RecvError> {
-        let mut rx = self.subscribe_client_state();
+        let mut rx = self.subscribe_checkpoint_state();
         let state = rx.wait_for(|state| state.has_genesis_occurred()).await?;
-        Ok(state.clone())
+        Ok(state.client_state.clone())
     }
 
     // Sender methods
@@ -191,8 +190,13 @@ impl StatusChannel {
 
     /// Sends the updated `ClientState` to the client state receiver. Logs a warning if the receiver
     /// is dropped.
-    pub fn update_client_state(&self, post_state: ClientState) {
-        if self.sender.cl.send(post_state).is_err() {
+    pub fn update_client_state(&self, post_state: ClientState, post_block: L1BlockCommitment) {
+        if self
+            .sender
+            .cl
+            .send(CheckpointState::new(post_state, post_block))
+            .is_err()
+        {
             warn!("client state receiver dropped");
         }
     }
@@ -209,7 +213,7 @@ impl StatusChannel {
 /// Wrapper for watch status receivers
 #[derive(Debug, Clone)]
 struct StatusReceiver {
-    cl: watch::Receiver<ClientState>,
+    cl: watch::Receiver<CheckpointState>,
     l1: watch::Receiver<L1Status>,
     chs: watch::Receiver<Option<ChainSyncStatusUpdate>>,
 }
@@ -217,7 +221,7 @@ struct StatusReceiver {
 /// Wrapper for watch status senders
 #[derive(Debug, Clone)]
 struct StatusSender {
-    cl: watch::Sender<ClientState>,
+    cl: watch::Sender<CheckpointState>,
     l1: watch::Sender<L1Status>,
     chs: watch::Sender<Option<ChainSyncStatusUpdate>>,
 }

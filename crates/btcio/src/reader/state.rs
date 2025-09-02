@@ -46,16 +46,8 @@ impl ReaderState {
         self.next_height
     }
 
-    pub(crate) fn recent_blocks(&self) -> impl Iterator<Item = &BlockHash> {
-        self.recent_blocks.iter()
-    }
-
     pub(crate) fn epoch(&self) -> u64 {
         self.epoch
-    }
-
-    pub(crate) fn set_epoch(&mut self, epoch: u64) {
-        self.epoch = epoch;
     }
 
     pub(crate) fn best_block(&self) -> &BlockHash {
@@ -74,16 +66,6 @@ impl ReaderState {
         &mut self.filter_config
     }
 
-    pub(crate) fn set_filter_config(&mut self, filter_config: TxFilterConfig) {
-        self.filter_config = filter_config;
-    }
-
-    /// Returns the idx of the deepest block in the reader state.
-    #[allow(unused)]
-    fn deepest_block(&self) -> u64 {
-        self.best_block_idx() - self.recent_blocks.len() as u64 + 1
-    }
-
     /// Accepts a new block and possibly purges a buried one.
     pub(crate) fn accept_new_block(&mut self, blkhash: BlockHash) -> Option<BlockHash> {
         let ret = if self.recent_blocks.len() > self.max_depth {
@@ -95,21 +77,6 @@ impl ReaderState {
         self.recent_blocks.push_back(blkhash);
         self.next_height += 1;
         ret
-    }
-
-    /// Gets the blockhash of the given height, if we have it.
-    #[allow(unused)]
-    pub(crate) fn get_height_blkid(&self, height: u64) -> Option<&BlockHash> {
-        if height >= self.next_height {
-            return None;
-        }
-
-        if height < self.deepest_block() {
-            return None;
-        }
-
-        let off = height - self.deepest_block();
-        Some(&self.recent_blocks[off as usize])
     }
 
     pub(crate) fn revert_tip(&mut self) -> Option<BlockHash> {

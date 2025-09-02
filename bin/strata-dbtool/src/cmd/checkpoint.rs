@@ -9,7 +9,6 @@ use strata_primitives::l1::ProtocolOperation;
 use super::l1::{get_l1_block_id_at_height, get_l1_block_manifest, get_l1_chain_tip};
 use crate::{
     cli::OutputFormat,
-    cmd::client_state::get_latest_client_state_update,
     output::{
         checkpoint::{CheckpointInfo, CheckpointsSummaryInfo, EpochInfo},
         output,
@@ -42,6 +41,10 @@ pub(crate) struct GetCheckpointArgs {
 #[argh(subcommand, name = "get-checkpoints-summary")]
 /// Get checkpoints summary
 pub(crate) struct GetCheckpointsSummaryArgs {
+    /// start l1 height to query checkpoints from
+    #[argh(positional)]
+    pub(crate) height_from: u64,
+
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
@@ -159,14 +162,10 @@ pub(crate) fn get_checkpoints_summary(
     // Use helper function to get L1 tip
     let (l1_tip_height, _) = get_l1_chain_tip(db)?;
 
-    let (client_state_update, _) = get_latest_client_state_update(db, None)?;
-    let (client_state, _) = client_state_update.into_parts();
-    let genesis_l1_height = client_state.genesis_l1_height();
-
     let mut found_checkpoints = 0;
     let mut unexpected_checkpoints = Vec::new();
 
-    for l1_height in genesis_l1_height..=l1_tip_height {
+    for l1_height in args.height_from..=l1_tip_height {
         // Use helper functions to get block ID and manifest
         let block_id = get_l1_block_id_at_height(db, l1_height)?;
         let Some(manifest) = get_l1_block_manifest(db, block_id)? else {

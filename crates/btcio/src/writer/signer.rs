@@ -12,8 +12,6 @@ use super::{
 };
 use crate::broadcaster::L1BroadcastHandle;
 
-type BlobIdx = u64;
-
 /// Create envelope transactions corresponding to a [`PayloadEntry`].
 ///
 /// This is used during one of the cases:

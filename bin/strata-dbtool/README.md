@@ -56,10 +56,10 @@ strata-dbtool get-syncinfo
 Shows the latest client state update information.
 
 ```bash
-strata-dbtool get-client-state-update [<update_index>] [OPTIONS]
+strata-dbtool get-client-state-update [<block_id>] [OPTIONS]
 ```
 **Arguments:**
-- `update_index` - Client state update index (number), defaults to the latest
+- `block_id` -  Client state block_id
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -68,8 +68,11 @@ strata-dbtool get-client-state-update [<update_index>] [OPTIONS]
 Shows a summary of all L1 manifests in the database.
 
 ```bash
-strata-dbtool get-l1-summary [OPTIONS]
+strata-dbtool get-l1-summary [<height_from>] [OPTIONS]
 ```
+
+**Arguments:**
+- `height_from` - L1 height to look up the summary about
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -190,11 +193,19 @@ strata-dbtool get-l2-block 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01
 Shows a summary of all checkpoints in the database.
 
 ```bash
-strata-dbtool get-checkpoints-summary [OPTIONS]
+strata-dbtool get-checkpoints-summary <height_from>  [OPTIONS]
 ```
+
+**Arguments:**
+- `height_from` - Start l1 height to query checkpoints from
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
+
+**Example:**
+```bash
+strata-dbtool get-checkpoints-summary 10
+```
 
 ### `get-checkpoint`
 Shows detailed information about a specific checkpoint.
@@ -230,34 +241,6 @@ strata-dbtool get-epoch-summary <epoch_index> [OPTIONS]
 **Example:**
 ```bash
 strata-dbtool get-epoch-summary 5
-```
-
-### `get-sync-events-summary`
-Shows a summary of all sync events in the database.
-
-```bash
-strata-dbtool get-sync-events-summary [OPTIONS]
-```
-
-**Options:**
-- `-o, --output-format <format>` - Output format (default: porcelain)
-
-### `get-sync-event`
-Shows sync event information for a specific event index.
-
-```bash
-strata-dbtool get-sync-event <event_index> [OPTIONS]
-```
-
-**Arguments:**
-- `event_index` - sync event index (number)
-
-**Options:**
-- `-o, --output-format <format>` - Output format (default: porcelain)
-
-**Example:**
-```bash
-strata-dbtool get-sync-event 80
 ```
 
 ### `get-chainstate`

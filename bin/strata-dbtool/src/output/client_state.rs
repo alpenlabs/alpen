@@ -1,25 +1,16 @@
 //! Client state formatting implementations
 
 use strata_primitives::prelude::L1BlockCommitment;
-use strata_state::{client_state::InternalState, l1::L1BlockId, operation::SyncAction};
+use strata_state::{client_state::ClientState, operation::SyncAction};
 
 use super::{helpers::porcelain_field, traits::Formattable};
+use crate::output::helpers::porcelain_optional;
 
 /// Client state update information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct ClientStateUpdateInfo<'a> {
-    pub update_index: u64,
-    pub is_chain_active: bool,
-    pub genesis_l1_height: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub latest_l1_block: Option<&'a L1BlockId>,
-    pub next_expected_l1_height: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tip_l1_block: Option<L1BlockCommitment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub deepest_l1_block: Option<L1BlockCommitment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_internal_state: Option<&'a InternalState>,
+    pub block: L1BlockCommitment,
+    pub state: ClientState,
     pub sync_actions: &'a Vec<SyncAction>,
 }
 
@@ -28,62 +19,19 @@ impl<'a> Formattable for ClientStateUpdateInfo<'a> {
         let mut output = Vec::new();
 
         output.push(porcelain_field(
-            "client_state_update.update_index",
-            self.update_index,
+            "client_state_update.block",
+            format!("{:?}", self.block),
         ));
-        output.push(porcelain_field(
-            "client_state_update.client_state.is_chain_active",
-            if self.is_chain_active {
-                "true"
-            } else {
-                "false"
-            },
-        ));
-        output.push(porcelain_field(
-            "client_state_update.client_state.genesis_l1_height",
-            self.genesis_l1_height,
-        ));
-
-        if let Some(l1_block) = self.latest_l1_block {
-            output.push(porcelain_field(
-                "client_state_update.client_state.latest_l1_block",
-                format!("{l1_block:?}"),
-            ));
-        }
 
         output.push(porcelain_field(
-            "client_state_update.client_state.next_expected_l1_height",
-            self.next_expected_l1_height,
+            "client_state_update.client_state.last_finalized_checkpoint",
+            porcelain_optional(&self.state.get_last_finalized_checkpoint()),
         ));
 
-        if let Some(tip_l1_block) = &self.tip_l1_block {
-            output.push(porcelain_field(
-                "client_state_update.client_state.tip_l1_block.height",
-                tip_l1_block.height(),
-            ));
-            output.push(porcelain_field(
-                "client_state_update.client_state.tip_l1_block.blkid",
-                format!("{:?}", tip_l1_block.blkid()),
-            ));
-        }
-
-        if let Some(deepest_l1_block) = &self.deepest_l1_block {
-            output.push(porcelain_field(
-                "client_state_update.client_state.deepest_l1_block.height",
-                deepest_l1_block.height(),
-            ));
-            output.push(porcelain_field(
-                "client_state_update.client_state.deepest_l1_block.blkid",
-                format!("{:?}", deepest_l1_block.blkid()),
-            ));
-        }
-
-        if let Some(last_internal_state) = self.last_internal_state {
-            output.push(porcelain_field(
-                "client_state_update.client_state.last_internal_state.blkid",
-                format!("{:?}", last_internal_state.blkid()),
-            ));
-        }
+        output.push(porcelain_field(
+            "client_state_update.client_state.last_seen_checkpoint",
+            porcelain_optional(&self.state.get_last_checkpoint()),
+        ));
 
         // Format sync actions
         for sync_action in self.sync_actions {

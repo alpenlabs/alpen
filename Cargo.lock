@@ -13441,7 +13441,6 @@ dependencies = [
  "musig2",
  "rand 0.8.5",
  "reqwest 0.12.15",
- "secp256k1 0.29.1",
  "strata-config",
  "strata-db",
  "strata-db-store-rocksdb",
@@ -13705,7 +13704,6 @@ dependencies = [
  "strata-db-store-rocksdb",
  "strata-primitives",
  "strata-state",
- "tracing",
  "tracing-subscriber 0.3.19",
 ]
 

@@ -23,7 +23,7 @@ use strata_state::{
     block::L2BlockBundle,
     block_validation::validate_block_structure,
     chain_state::Chainstate,
-    client_state::ClientState,
+    client_state::{CheckpointState, ClientState},
     prelude::*,
     state_op::{StateCache, WriteBatchEntry},
 };
@@ -38,8 +38,9 @@ use tracing::*;
 
 use crate::{
     chain_worker_context::ChainWorkerCtx,
-    csm::{ctl::CsmController, message::ForkChoiceMessage, worker::WorkerState},
+    csm::{ctl::CsmController, message::ForkChoiceMessage},
     errors::*,
+    genesis::{check_needs_genesis, wait_for_genesis},
     tip_update::{compute_tip_update, TipUpdate},
     unfinalized_tracker::{self, UnfinalizedBlockTracker},
 };
@@ -52,9 +53,6 @@ pub struct ForkChoiceManager {
 
     /// Common node storage interface.
     storage: Arc<NodeStorage>,
-
-    /// Current CSM state, as of the last time we were updated about it.
-    cur_csm_state: Arc<ClientState>,
 
     /// Tracks unfinalized block tips.
     chain_tracker: unfinalized_tracker::UnfinalizedBlockTracker,
@@ -80,7 +78,6 @@ impl ForkChoiceManager {
     pub fn new(
         params: Arc<Params>,
         storage: Arc<NodeStorage>,
-        cur_csm_state: Arc<ClientState>,
         chain_tracker: unfinalized_tracker::UnfinalizedBlockTracker,
         chain_worker: Arc<ChainWorkerHandle>,
         cur_best_block: L2BlockCommitment,
@@ -89,7 +86,6 @@ impl ForkChoiceManager {
         Self {
             params,
             storage,
-            cur_csm_state,
             chain_tracker,
             chain_worker,
             cur_best_block,
@@ -274,17 +270,13 @@ impl ForkChoiceManager {
 pub fn init_forkchoice_manager(
     storage: &Arc<NodeStorage>,
     params: &Arc<Params>,
-    init_csm_state: Arc<ClientState>,
+    csm_finalized_epoch: Option<EpochCommitment>,
+    genesis_blkid: L2BlockId,
     chain_worker: Arc<ChainWorkerHandle>,
 ) -> anyhow::Result<ForkChoiceManager> {
     info!("initialized fcm test");
     // Load data about the last finalized block so we can use that to initialize
     // the finalized tracker.
-
-    // TODO: get finalized block id without depending on client state
-    // or ensure client state and chain state are in-sync during startup
-    let sync_state = init_csm_state.sync();
-    // let chain_tip_height = storage.chainstate().get_last_write_idx_blocking()?;
 
     // XXX right now we have to do some special casing for if we don't have an
     // initial checkpoint for the genesis epoch
@@ -298,10 +290,8 @@ pub fn init_forkchoice_manager(
 
     let chainstate_last_epoch = latest_chainstate.prev_epoch();
 
-    let csm_finalized_epoch = init_csm_state
-        .get_declared_final_epoch()
-        .cloned()
-        .unwrap_or_else(|| EpochCommitment::new(0, 0, *sync_state.genesis_blkid()));
+    let csm_finalized_epoch =
+        csm_finalized_epoch.unwrap_or_else(|| EpochCommitment::new(0, 0, genesis_blkid));
 
     // pick whatever is the earliest
     let finalized_epoch = if chainstate_last_epoch.epoch() < csm_finalized_epoch.epoch() {
@@ -332,7 +322,6 @@ pub fn init_forkchoice_manager(
     let mut fcm = ForkChoiceManager::new(
         params.clone(),
         storage.clone(),
-        init_csm_state,
         chain_tracker,
         chain_worker,
         cur_tip_block,
@@ -408,14 +397,37 @@ pub fn tracker_task(
 ) -> anyhow::Result<()> {
     // TODO only print this if we *don't* have genesis yet, somehow
     info!("waiting for genesis before starting forkchoice logic");
-    let init_state = handle.block_on(status_channel.wait_until_genesis())?;
-    let init_state = Arc::new(init_state);
 
+    let genesis_block_id = handle.block_on(async {
+        while storage
+            .l2()
+            .get_blocks_at_height_blocking(0)
+            .unwrap()
+            .is_empty()
+        {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        storage
+            .l2()
+            .get_blocks_at_height_blocking(0)
+            .unwrap()
+            .first()
+            .cloned()
+            .expect("genesis should be in")
+    });
+
+    let (_, init_state) = storage.client_state().fetch_most_recent_state()?.unwrap();
     info!(?init_state, "starting forkchoice logic");
 
     // Now that we have the database state in order, we can actually init the
     // FCM.
-    let mut fcm = match init_forkchoice_manager(&storage, &params, init_state, chain_worker) {
+    let mut fcm = match init_forkchoice_manager(
+        &storage,
+        &params,
+        init_state.get_declared_final_epoch(),
+        genesis_block_id,
+        chain_worker,
+    ) {
         Ok(fcm) => fcm,
         Err(e) => {
             error!(err = %e, "failed to init forkchoice manager!");
@@ -496,7 +508,7 @@ pub fn forkchoice_manager_task_inner(
     mut fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
-    let mut cl_rx = status_channel.subscribe_client_state();
+    let mut cl_rx = status_channel.subscribe_checkpoint_state();
     loop {
         // Check if we should shut down.
         if shutdown.should_shutdown() {
@@ -527,7 +539,7 @@ pub fn forkchoice_manager_task_inner(
 fn wait_for_fcm_event(
     handle: &Handle,
     fcm_rx: &mut mpsc::Receiver<ForkChoiceMessage>,
-    cl_rx: &mut watch::Receiver<ClientState>,
+    cl_rx: &mut watch::Receiver<CheckpointState>,
 ) -> FcmEvent {
     handle.block_on(async {
         tokio::select! {
@@ -549,11 +561,11 @@ fn wait_for_fcm_event(
 
 /// Waits until there's a new client state and returns the client state.
 async fn wait_for_client_change(
-    cl_rx: &mut watch::Receiver<ClientState>,
+    cl_rx: &mut watch::Receiver<CheckpointState>,
 ) -> Result<ClientState, watch::error::RecvError> {
     cl_rx.changed().await?;
     let state = cl_rx.borrow_and_update().clone();
-    Ok(state)
+    Ok(state.client_state)
 }
 
 fn process_fc_message(
@@ -1023,16 +1035,13 @@ fn handle_new_client_state(
     fcm_state: &mut ForkChoiceManager,
     cs: ClientState,
 ) -> anyhow::Result<()> {
-    let Some(new_fin_epoch) = cs.get_declared_final_epoch().copied() else {
+    let Some(new_fin_epoch) = cs.get_declared_final_epoch() else {
         debug!("got new CSM state, but finalized epoch still unset, ignoring");
         return Ok(());
     };
 
     info!(?new_fin_epoch, "got new finalized block");
     fcm_state.attach_epoch_pending_finalization(new_fin_epoch);
-
-    // Update the new state.
-    fcm_state.cur_csm_state = Arc::new(cs);
 
     match handle_epoch_finalization(fcm_state) {
         Err(err) => {

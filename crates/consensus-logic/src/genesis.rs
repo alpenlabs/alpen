@@ -20,6 +20,7 @@ use strata_state::{
     state_op::WriteBatch,
 };
 use strata_storage::{L2BlockManager, NodeStorage};
+use tokio::runtime::Handle;
 use tracing::*;
 
 /// Inserts into the database an initial basic client state that we can begin
@@ -27,14 +28,14 @@ use tracing::*;
 pub fn init_client_state(params: &Params, storage: &NodeStorage) -> anyhow::Result<()> {
     debug!("initializing client state in database!");
 
-    let (gblkid, _) = init_genesis_chainstate(params, storage)?;
-    let init_state = ClientState::from_genesis_params(params, gblkid);
+    let init_state = ClientState::default();
+    init_genesis_chainstate(params, storage)?;
 
     // Write the state into the database.
-    storage
-        .client_state()
-        .put_update_blocking(0, ClientUpdateOutput::new_state(init_state))?;
-    // TODO: status channel should probably be updated.
+    storage.client_state().put_update_blocking(
+        &params.rollup().genesis_l1_view.blk,
+        ClientUpdateOutput::new_state(init_state),
+    )?;
 
     Ok(())
 }
@@ -159,17 +160,8 @@ fn make_genesis_chainstate(gblock: &L2BlockBundle, params: &Params) -> Chainstat
 
 /// Check if the database needs to have client init done to it.
 pub fn check_needs_client_init(storage: &NodeStorage) -> anyhow::Result<bool> {
-    // Check if we've written any genesis state checkpoint.  These we perform a
-    // bit more carefully and check errors more granularly.
-    match storage.client_state().get_last_state_idx_blocking() {
-        Ok(_) => {}
-        Err(DbError::NotBootstrapped) => return Ok(true),
-
-        // TODO should we return an error here or skip?
-        Err(e) => return Err(e.into()),
-    }
-
-    Ok(false)
+    // Check if we've written any pre-genesis client state.
+    Ok(storage.client_state().fetch_most_recent_state()?.is_none())
 }
 
 /// Checks if we have a genesis block written to the L2 block database.
@@ -183,4 +175,14 @@ pub fn check_needs_genesis(l2man: &L2BlockManager) -> anyhow::Result<bool> {
         // Again, how should we handle this?
         Err(e) => Err(e.into()),
     }
+}
+
+pub fn wait_for_genesis<T>(f: impl Fn() -> Option<L2BlockId>, handle: Handle) -> L2BlockId {
+    let genesis_block_id = handle.block_on(async {
+        while f().is_none() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        f().expect("genesis should be in")
+    });
+    genesis_block_id
 }
