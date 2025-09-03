@@ -1,0 +1,43 @@
+[package]
+name = "alpen-benchmarks"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+db = [
+  "dep:strata-db",
+  "dep:strata-primitives",
+  "dep:strata-state",
+  "dep:tempfile",
+]
+sled = ["db", "dep:strata-db-store-sled", "dep:typed-sled"]
+rocksdb = ["db", "dep:strata-db-store-rocksdb", "dep:rockbound"]
+
+[[bench]]
+name = "l1_database"
+harness = false
+required-features = ["db"]
+
+[[bench]]
+name = "l2_database"
+harness = false
+required-features = ["db"]
+
+[lints]
+workspace = true
+
+[dependencies]
+arbitrary = { workspace = true }
+bitcoin = { workspace = true }
+criterion = { workspace = true }
+tempfile = { workspace = true, optional = true }
+
+strata-db = { workspace = true, optional = true }
+strata-db-store-rocksdb = { workspace = true, optional = true }
+strata-db-store-sled = { workspace = true, optional = true }
+strata-primitives = { workspace = true, optional = true }
+strata-state = { workspace = true, optional = true }
+
+rockbound = { workspace = true, optional = true }
+typed-sled = { workspace = true, optional = true }
