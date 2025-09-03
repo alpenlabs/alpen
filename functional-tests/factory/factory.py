@@ -2,8 +2,12 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 from subprocess import CalledProcessError
+from types import SimpleNamespace
 from typing import Optional
+import pty
+import contextlib
 
 import flexitest
 import web3
@@ -18,11 +22,10 @@ from factory.config import (
     ExecConfig,
     RethELConfig,
 )
-from factory.service import DisposableService
 from load.cfg import LoadConfig
 from load.service import LoadGeneratorService
-from utils import *
-from utils.constants import *
+from utils.constants import BD_PASSWORD, BD_USERNAME
+from utils.utils import ProverClientSettings
 
 
 class BitcoinFactory(flexitest.Factory):
@@ -423,7 +426,7 @@ risc0 = 20
 [timing]
 # Polling and timing configuration (in milliseconds and seconds)
 polling_interval_ms = {settings.polling_interval}
-checkpoint_poll_interval_s = 10
+checkpoint_poll_interval_s = 1
 
 [retry]
 # Retry policy configuration
@@ -491,14 +494,54 @@ class AlpenCliFactory(flexitest.Factory):
         # doesn't require any ports
         super().__init__([])
 
+    def run_tty(self,cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.CompletedProcess:
+        """
+        Runs `cmd` under a PTY (so indicatif used by Alpen-cli behaves).
+        Returns a CompletedProcess; stdout is bytes when captured.
+        """
+        if stdout is subprocess.PIPE:
+            capture_output, stdout = True, None
+
+        buf = [] if capture_output else None
+
+        def reader(fd):
+            data = os.read(fd, 4096)
+            if data:
+                if buf is not None:
+                    buf.append(data)
+                elif stdout is None:
+                    os.write(1, data)  # parent stdout
+                else:
+                    # file-like or text stream
+                    if hasattr(stdout, "buffer"):
+                        stdout.buffer.write(data); stdout.flush()
+                    else:
+                        stdout.write(data.decode("utf-8", "replace"))
+                        if hasattr(stdout, "flush"): stdout.flush()
+            return data
+
+        old_env = os.environ.copy()
+        try:
+            if env:
+                os.environ.update(env)
+            rc = pty.spawn(cmd, reader)
+        finally:
+            with contextlib.suppress(Exception):
+                os.environ.clear(); os.environ.update(old_env)
+
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=rc,
+            stdout=(b"".join(buf) if buf is not None else None),
+            stderr=None,  # PTY merges stderr
+        )
+
     def _run_and_extract_with_re(self, cmd, re_pattern) -> Optional[str]:
         assert self.svc is not None, "service not initialized"
         assert self.config_file is not None, "config path not set"
 
-        result = self.svc.basic_runner(
-            cmd,
-            env={"CLI_CONFIG": self.config_file, "PROJ_DIRS": self.datadir},
-            capture_output=True,
+        result = self.run_tty(
+            cmd, capture_output=True,env={"CLI_CONFIG": self.config_file, "PROJ_DIRS": self.datadir}
         )
         try:
             result.check_returncode()
@@ -507,16 +550,18 @@ class AlpenCliFactory(flexitest.Factory):
 
         output = result.stdout.decode("utf-8")
         m = re.search(re_pattern, output)
-        return m.group(0) if m else None
+        if not m:
+            return None
+        return m.group(1) if m.lastindex else m.group(0)
 
     def _check_config(self) -> bool:
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "config",
         ]
         # fmt: on
-        return self._run_and_extract_with_re(cmd, re.escape(self.config_file)) == self.config_file
+        return self._run_and_extract_with_re(cmd, self.config_file) == self.config_file
 
     def _scan(self) -> Optional[str]:
         cmd = [
@@ -575,7 +620,7 @@ class AlpenCliFactory(flexitest.Factory):
             "deposit",
         ]
         # fmt: on
-        return self._run_and_extract_with_re(cmd, r"\b[0-9a-f]{64}\b")
+        return self._run_and_extract_with_re(cmd, r"Transaction ID:\s*([0-9a-f]{64})")
 
     def _withdraw(self):
         # fmt: off
@@ -584,7 +629,7 @@ class AlpenCliFactory(flexitest.Factory):
             "withdraw",
         ]
         # fmt: on
-        return self._run_and_extract_with_re(cmd, r"\b[0-9a-f]{64}\b")
+        return self._run_and_extract_with_re(cmd, r"Transaction ID:\s*(0x[0-9a-f]{64})")
 
     @flexitest.with_ectx("ctx")
     def setup_environment(
@@ -605,15 +650,17 @@ alpen_endpoint = "{reth_endpoint}"
 bitcoind_rpc_endpoint = "{bitcoin_config.rpc_url}"
 bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
 bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
+faucet_endpoint = "{bitcoin_config.rpc_url}"
 bridge_pubkey = "{pubkey}"
 magic_bytes = "{magic_bytes}"
 network = "regtest"
+seed = "838d8ba290a3066abb35b663858fa839"
 """
         with open(self.config_file, "w") as f:
             f.write(config_content)
 
-        self.svc = DisposableService({}, stdout=subprocess.PIPE)
-        # inject multiple commands
+        # create a Service like object, but not really a service
+        self.svc = SimpleNamespace()
         self.svc.l2_address = lambda: self._l2_address()
         self.svc.l1_address = lambda: self._l1_address()
         self.svc.scan = lambda: self._scan()
@@ -621,6 +668,7 @@ network = "regtest"
         self.svc.l1_balance = lambda: self._l1_balance()
         self.svc.deposit = lambda: self._deposit()
         self.svc.withdraw = lambda: self._withdraw()
+        self.svc.is_started = lambda: False
 
         assert self._check_config(), "config file path should match"
         return self.svc
