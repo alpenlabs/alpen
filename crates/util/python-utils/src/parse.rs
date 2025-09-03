@@ -14,7 +14,7 @@ use crate::{
     error::Error,
 };
 
-#[allow(unused)]
+#[expect(unused)]
 pub(crate) fn parse_drt(
     tx: &Transaction,
     op_wallet_pks: &[Buf32],

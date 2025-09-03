@@ -27,7 +27,8 @@ class AlpenCli:
         # create directory
         self.datadir = datadir
         path = os.path.join(self.datadir, name)
-        os.makedirs(path)
+        if not os.path.exists(path):
+            os.makedirs(path)
         self.config_file = os.path.join(self.datadir, "alpen-cli.toml")
         config_content = f"""# Alpen-cli Configuration for functional test
 # Generated automatically by functional test factory

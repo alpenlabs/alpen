@@ -1,6 +1,5 @@
-use bdk_wallet::bitcoin::Address;
+use bdk_wallet::bitcoin::{Address, XOnlyPublicKey};
 use pyo3::prelude::*;
-use secp256k1::XOnlyPublicKey;
 use shrex::decode_alloc;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
