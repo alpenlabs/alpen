@@ -16,6 +16,8 @@ use shrex::Hex;
 use strata_primitives::constants::RECOVER_DELAY as DEFAULT_RECOVER_DELAY;
 use terrors::OneOf;
 
+#[cfg(feature = "test-mode")]
+use crate::{constants::SEED_LEN, seed::Seed};
 use crate::{
     constants::{
         DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
@@ -61,6 +63,9 @@ pub struct SettingsFromFile {
     pub bridge_alpen_address: Option<String>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
+    /// Seed that can be passed directly for functional test.
+    #[cfg(feature = "test-mode")]
+    pub seed: Hex<[u8; SEED_LEN]>,
 }
 
 /// Settings struct filled with either config values or
@@ -85,11 +90,17 @@ pub struct Settings {
     pub bridge_in_amount: Amount,
     pub bridge_out_amount: Amount,
     pub finality_depth: u32,
+    #[cfg(feature = "test-mode")]
+    pub seed: Seed,
 }
 
-pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
-    ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available")
-});
+pub static PROJ_DIRS: LazyLock<ProjectDirs> =
+    LazyLock::new(|| match std::env::var("PROJ_DIRS").ok() {
+        Some(path) => ProjectDirs::from_path(path.into()).expect("valid project path"),
+        None => {
+            ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available")
+        }
+    });
 
 pub static CONFIG_FILE: LazyLock<PathBuf> =
     LazyLock::new(|| match std::env::var("CLI_CONFIG").ok() {
@@ -176,6 +187,8 @@ impl Settings {
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
+            #[cfg(feature = "test-mode")]
+            seed: Seed::from_file(from_file.seed),
         })
     }
 }

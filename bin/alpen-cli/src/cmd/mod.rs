@@ -1,6 +1,7 @@
 use argh::FromArgs;
 use backup::BackupArgs;
 use balance::BalanceArgs;
+#[cfg(not(feature = "test-mode"))]
 use change_pwd::ChangePwdArgs;
 use config::ConfigArgs;
 use deposit::DepositArgs;
@@ -8,6 +9,7 @@ use drain::DrainArgs;
 use faucet::FaucetArgs;
 use receive::ReceiveArgs;
 use recover::RecoverArgs;
+#[cfg(not(feature = "test-mode"))]
 use reset::ResetArgs;
 use scan::ScanArgs;
 use send::SendArgs;
@@ -49,7 +51,9 @@ pub enum Commands {
     Faucet(FaucetArgs),
     Send(SendArgs),
     Receive(ReceiveArgs),
+    #[cfg(not(feature = "test-mode"))]
     ChangePwd(ChangePwdArgs),
+    #[cfg(not(feature = "test-mode"))]
     Reset(ResetArgs),
     Scan(ScanArgs),
     Config(ConfigArgs),
