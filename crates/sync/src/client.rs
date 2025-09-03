@@ -117,13 +117,17 @@ impl<RPC: StrataApiClient + Send + Sync> SyncClient for RpcSyncPeer<RPC> {
         &self,
         block_id: &L2BlockId,
     ) -> Result<Option<L2BlockBundle>, ClientError> {
-        let bytes = self
+        let maybe_bytes = self
             .rpc_client
             .get_raw_bundle_by_id(*block_id)
             .await
-            .map_err(|e| ClientError::Network(e.to_string()))?
-            .ok_or(ClientError::MissingBlock(*block_id))?;
+            .map_err(|e| ClientError::Network(e.to_string()))?;
 
-        borsh::from_slice(&bytes.0).map_err(|err| ClientError::Deserialization(err.to_string()))
+        maybe_bytes
+            .map(|bytes| {
+                borsh::from_slice::<L2BlockBundle>(&bytes.0)
+                    .map_err(|err| ClientError::Deserialization(err.to_string()))
+            })
+            .transpose()
     }
 }

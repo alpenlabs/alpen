@@ -260,12 +260,14 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         auto_generate_blocks: bool = True,
         n_operators: int = 2,
         duty_timeout_duration: int = 10,
+        prover_client_settings: Optional[ProverClientSettings] = None,
     ):
         self.pre_generate_blocks = pre_generate_blocks
         self.rollup_settings = rollup_settings
         self.auto_generate_blocks = auto_generate_blocks
         self.n_operators = n_operators
         self.duty_timeout_duration = duty_timeout_duration
+        self.prover_client_settings = prover_client_settings
         super().__init__()
 
     def init(self, ctx: flexitest.EnvContext) -> flexitest.LiveEnv:
@@ -299,7 +301,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         reth = reth_fac.create_exec_client(0, reth_secret_path, None)
         seq_reth_rpc_port = reth.get_prop("eth_rpc_http_port")
         fullnode_reth = reth_fac.create_exec_client(
-            1, reth_secret_path, f"http://localhost:{seq_reth_rpc_port}"
+            1, reth_secret_path, f"http://localhost:{seq_reth_rpc_port}", witness_gen=False
         )
         reth_authrpc_port = reth.get_prop("rpc_port")
 
@@ -362,7 +364,9 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         )
 
         prover_client_fac = ctx.get_factory("prover_client")
-        prover_client_settings = ProverClientSettings.new_with_proving()
+        prover_client_settings = (
+            self.prover_client_settings or ProverClientSettings.new_with_proving()
+        )
         prover_client = prover_client_fac.create_prover_client(
             bitcoind_config,
             f"http://localhost:{seq_port}",

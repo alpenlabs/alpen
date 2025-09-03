@@ -287,6 +287,7 @@ class RethFactory(flexitest.Factory):
         ctx: flexitest.EnvContext,
         custom_chain: str = "dev",
         name_suffix: str = "",
+        witness_gen=True,
     ) -> flexitest.Service:
         name = f"reth.{id}{'.' + name_suffix if name_suffix else ''}"
         datadir = ctx.make_service_dir(name)
@@ -310,7 +311,6 @@ class RethFactory(flexitest.Factory):
             "--http",
             "--http.port", str(ethrpc_http_port),
             "--color", "never",
-            "--enable-witness-gen",
             "--custom-chain", custom_chain,
             "-vvvv"
         ]
@@ -318,6 +318,9 @@ class RethFactory(flexitest.Factory):
 
         if sequencer_reth_rpc is not None:
             cmd.extend(["--sequencer-http", sequencer_reth_rpc])
+
+        if witness_gen:
+            cmd.extend(["--enable-witness-gen"])
 
         props = {"rpc_port": authrpc_port, "eth_rpc_http_port": ethrpc_http_port}
 
