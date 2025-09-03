@@ -86,5 +86,6 @@ async fn main() {
 
     if let Err(err) = result {
         eprintln!("{err}");
+        std::process::exit(1);
     }
 }

@@ -94,9 +94,13 @@ pub struct Settings {
     pub seed: Seed,
 }
 
-pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
-    ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available")
-});
+pub static PROJ_DIRS: LazyLock<ProjectDirs> =
+    LazyLock::new(|| match std::env::var("PROJ_DIRS").ok() {
+        Some(path) => ProjectDirs::from_path(path.into()).expect("valid project path"),
+        None => {
+            ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available")
+        }
+    });
 
 pub static CONFIG_FILE: LazyLock<PathBuf> =
     LazyLock::new(|| match std::env::var("CLI_CONFIG").ok() {
