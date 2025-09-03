@@ -1,13 +1,13 @@
+import contextlib
 import logging
 import os
+import pty
 import re
 import shutil
 import subprocess
 from subprocess import CalledProcessError
 from types import SimpleNamespace
 from typing import Optional
-import pty
-import contextlib
 
 import flexitest
 import web3
@@ -494,7 +494,9 @@ class AlpenCliFactory(flexitest.Factory):
         # doesn't require any ports
         super().__init__([])
 
-    def run_tty(self,cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.CompletedProcess:
+    def run_tty(
+        self, cmd, *, capture_output=False, stdout=None, env=None
+    ) -> subprocess.CompletedProcess:
         """
         Runs `cmd` under a PTY (so indicatif used by Alpen-cli behaves).
         Returns a CompletedProcess; stdout is bytes when captured.
@@ -514,10 +516,12 @@ class AlpenCliFactory(flexitest.Factory):
                 else:
                     # file-like or text stream
                     if hasattr(stdout, "buffer"):
-                        stdout.buffer.write(data); stdout.flush()
+                        stdout.buffer.write(data)
+                        stdout.flush()
                     else:
                         stdout.write(data.decode("utf-8", "replace"))
-                        if hasattr(stdout, "flush"): stdout.flush()
+                        if hasattr(stdout, "flush"):
+                            stdout.flush()
             return data
 
         old_env = os.environ.copy()
@@ -527,7 +531,8 @@ class AlpenCliFactory(flexitest.Factory):
             rc = pty.spawn(cmd, reader)
         finally:
             with contextlib.suppress(Exception):
-                os.environ.clear(); os.environ.update(old_env)
+                os.environ.clear()
+                os.environ.update(old_env)
 
         return subprocess.CompletedProcess(
             args=cmd,
@@ -541,7 +546,9 @@ class AlpenCliFactory(flexitest.Factory):
         assert self.config_file is not None, "config path not set"
 
         result = self.run_tty(
-            cmd, capture_output=True,env={"CLI_CONFIG": self.config_file, "PROJ_DIRS": self.datadir}
+            cmd,
+            capture_output=True,
+            env={"CLI_CONFIG": self.config_file, "PROJ_DIRS": self.datadir},
         )
         try:
             result.check_returncode()
@@ -557,7 +564,7 @@ class AlpenCliFactory(flexitest.Factory):
     def _check_config(self) -> bool:
         # fmt: off
         cmd = [
-            "alpen-cli",
+            "alpen",
             "config",
         ]
         # fmt: on
