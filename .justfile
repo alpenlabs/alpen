@@ -26,34 +26,33 @@ build:
 
 # Run unit tests
 [group('test')]
-test-unit:
-    -cargo install cargo-nextest --locked
+test-unit: ensure-cargo-nextest
     cargo nextest run {{unit_test_args}}
 
 # Run unit tests with coverage
 [group('test')]
-cov-unit:
+cov-unit: ensure-cargo-llvm-cov ensure-cargo-nextest
     rm -f {{cov_file}}
     cargo llvm-cov nextest --lcov --output-path {{cov_file}} {{unit_test_args}}
 
 # Generate an HTML coverage report and open it in the browser
 [group('test')]
-cov-report-html:
+cov-report-html: ensure-cargo-llvm-cov ensure-cargo-nextest
     cargo llvm-cov --open --workspace --locked nextest
 
 # Run integration tests
 [group('test')]
-test-int:
+test-int: ensure-cargo-nextest
     cargo nextest run -p "integration-tests" --status-level=fail --no-capture
 
 # Runs `nextest` under `cargo-mutants`. Caution: This can take *really* long to run
 [group('test')]
-mutants-test:
+mutants-test: ensure-cargo-mutants
     cargo mutants --workspace -j2
 
 # Check for security advisories on any dependencies
 [group('test')]
-sec:
+sec: ensure-cargo-audit
     cargo audit
 
 # Generate reports and profiling data for proofs
@@ -67,12 +66,73 @@ prover-clean:
     rm -rf {{prover_perf_eval_dir}}/*.trace
     rm -rf {{prover_proofs_cache_dir}}/*.proof
 
+# Check if cargo-audit is installed
+[group('prerequisites')]
+ensure-cargo-audit:
+    #!/usr/bin/env bash
+    if ! command -v cargo-audit &> /dev/null;
+    then
+        echo "cargo-audit not found. Please install it by running the command 'cargo install cargo-audit'"
+        exit 1
+    fi
+
+# Check if cargo-llvm-cov is installed
+[group('prerequisites')]
+ensure-cargo-llvm-cov:
+    #!/usr/bin/env bash
+    if ! command -v cargo-llvm-cov &> /dev/null;
+    then
+        echo "cargo-llvm-cov not found. Please install it by running the command 'cargo install cargo-llvm-cov --locked'"
+        exit 1
+    fi
+
+# Check if cargo-mutants is installed
+[group('prerequisites')]
+ensure-cargo-mutants:
+    #!/usr/bin/env bash
+    if ! command -v cargo-mutants &> /dev/null;
+    then
+        echo "cargo-mutants not found. Please install it by running the command 'cargo install cargo-mutants'"
+        exit 1
+    fi
+
+# Check if cargo-nextest is installed
+[group('prerequisites')]
+ensure-cargo-nextest:
+    #!/usr/bin/env bash
+    if ! command -v cargo-nextest &> /dev/null;
+    then
+        echo "cargo-nextest not found. Please install it by running the command 'cargo install cargo-nextest --locked'"
+        exit 1
+    fi
+
+# Check if codespell is installed
+[group('prerequisites')]
+ensure-codespell:
+    #!/usr/bin/env bash
+    if ! command -v codespell &> /dev/null;
+    then
+        echo "codespell not found. Please install it by running the command 'pip install codespell' or refer to the following link for more information: https://github.com/codespell-project/codespell"
+        exit 1
+    fi
+
 # Check if poetry is installed
 [group('prerequisites')]
 ensure-poetry:
     #!/usr/bin/env bash
-    if ! command -v poetry &> /dev/null; then
+    if ! command -v poetry &> /dev/null;
+    then
         echo "poetry not found. Please install it by following the instructions from: https://python-poetry.org/docs/#installation"
+        exit 1
+    fi
+
+# Check if taplo is installed
+[group('prerequisites')]
+ensure-taplo:
+    #!/usr/bin/env bash
+    if ! command -v taplo &> /dev/null;
+    then
+        echo "taplo not found. Please install it by following the instructions from: https://taplo.tamasfe.dev/cli/installation/binary.html"
         exit 1
     fi
 
@@ -131,15 +191,6 @@ fmt-check-ws:
 fmt-ws:
     cargo fmt --all
 
-# Check if taplo is installed
-[group('prerequisites')]
-ensure-taplo:
-    #!/usr/bin/env bash
-    if ! command -v taplo &> /dev/null; then
-        echo "taplo not found. Please install it by following the instructions from: https://taplo.tamasfe.dev/cli/installation/binary.html"
-        exit 1
-    fi
-
 # Runs `taplo` to check that TOML files are properly formatted
 [group('code-quality')]
 fmt-check-toml: ensure-taplo
@@ -189,15 +240,6 @@ lint-fix-ws:
         --no-deps \
         --allow-dirty \
         -- -D warnings
-
-# Check if codespell is installed
-[group('prerequisites')]
-ensure-codespell:
-    #!/usr/bin/env bash
-    if ! command -v codespell &> /dev/null; then
-        echo "codespell not found. Please install it by running the command 'pip install codespell' or refer to the following link for more information: https://github.com/codespell-project/codespell"
-        exit 1
-    fi
 
 # Runs `codespell` to check for spelling errors
 [group('code-quality')]
@@ -259,7 +301,7 @@ test: test-unit test-doc
 [group('code-quality')]
 pr: lint rustdocs test-doc test-unit test-int test-functional
     @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
-    @test -z "`git status --porcelain`" || echo "WARNING: You have uncommitted changes"
+    @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
 
 # Docker restart (down then up)
