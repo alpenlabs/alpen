@@ -8,6 +8,7 @@ import flexitest
 from strata_utils import get_address
 
 from envs.rollup_params_cfg import RollupConfig
+from factory.alpen_client import AlpenCli
 from factory.config import BitcoindConfig, RethELConfig
 from load.cfg import LoadConfig, LoadConfigBuilder
 from utils import *
@@ -55,9 +56,29 @@ class StrataRunContext(flexitest.RunContext):
     """
 
     def __init__(self, datadir_root: str, name: str, env: flexitest.LiveEnv):
+        super().__init__(env)
         self.name = name
         self.datadir_root = datadir_root
-        super().__init__(env)
+        # get the bitcoind config
+        btc_svc = self.get_service("bitcoin")
+        bitcoind_config = BitcoindConfig(
+            rpc_url=f"http://localhost:{btc_svc.get_prop('rpc_port')}",
+            rpc_user=btc_svc.get_prop("rpc_user"),
+            rpc_password=btc_svc.get_prop("rpc_password"),
+        )
+        # get reth endpoint
+        reth_svc = self.get_service("reth")
+        reth_rpc_http_port = reth_svc.get_prop("eth_rpc_http_port")
+        rollup_cfg = env.rollup_cfg()
+
+        agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
+        self.alpen_cli = AlpenCli(
+            f"http://localhost:{reth_rpc_http_port}",
+            bitcoind_config,
+            agg_pubkey,
+            rollup_cfg.magic_bytes,
+            self.datadir_root,
+        )
 
 
 class BasicLiveEnv(flexitest.LiveEnv):
@@ -127,7 +148,6 @@ class BasicEnvConfig(flexitest.EnvConfig):
         seq_fac = ctx.get_factory("sequencer")
         seq_signer_fac = ctx.get_factory("sequencer_signer")
         reth_fac = ctx.get_factory("reth")
-        alpen_cli = ctx.get_factory("alpen_cli")
 
         logger = logging.getLogger(__name__)
 
@@ -248,15 +268,9 @@ class BasicEnvConfig(flexitest.EnvConfig):
             seq_host, seq_port, epoch_gas_limit=self.epoch_gas_limit
         )
 
-        agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
-        alpen_cli = alpen_cli.setup_environment(
-            reth_config.rpc_url, bitcoind_config, agg_pubkey, rollup_cfg.magic_bytes
-        )
-
         svcs["sequencer"] = sequencer
         svcs["sequencer_signer"] = sequencer_signer
         svcs["reth"] = reth
-        svcs["alpen_cli"] = alpen_cli
 
         # Need to wait for at least `genesis_l1_height` blocks to be generated.
         # Sleeping some more for safety

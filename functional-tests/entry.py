@@ -126,7 +126,6 @@ def main(argv):
     prover_client_fac = factory.ProverClientFactory([12900 + i for i in range(100 * 3)])
     load_gen_fac = factory.LoadGeneratorFactory([13300 + i for i in range(100)])
     seq_signer_fac = factory.StrataSequencerFactory()
-    alpen_cli_fac = factory.AlpenCliFactory()
 
     factories = {
         "bitcoin": btc_fac,
@@ -136,7 +135,6 @@ def main(argv):
         "reth": reth_fac,
         "prover_client": prover_client_fac,
         "load_generator": load_gen_fac,
-        "alpen_cli": alpen_cli_fac
     }
 
     # Let load env have state diff generation exex for benchmarking.
