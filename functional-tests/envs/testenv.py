@@ -59,26 +59,30 @@ class StrataRunContext(flexitest.RunContext):
         super().__init__(env)
         self.name = name
         self.datadir_root = datadir_root
-        # get the bitcoind config
-        btc_svc = self.get_service("bitcoin")
-        bitcoind_config = BitcoindConfig(
-            rpc_url=f"http://localhost:{btc_svc.get_prop('rpc_port')}",
-            rpc_user=btc_svc.get_prop("rpc_user"),
-            rpc_password=btc_svc.get_prop("rpc_password"),
-        )
-        # get reth endpoint
-        reth_svc = self.get_service("reth")
-        reth_rpc_http_port = reth_svc.get_prop("eth_rpc_http_port")
-        rollup_cfg = env.rollup_cfg()
 
+        rollup_cfg = env.rollup_cfg()
         agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
-        self.alpen_cli = AlpenCli(
-            f"http://localhost:{reth_rpc_http_port}",
-            bitcoind_config,
-            agg_pubkey,
-            rollup_cfg.magic_bytes,
-            self.datadir_root,
+
+        builder = (
+            AlpenCli(self)
+            .requires_service(
+                "bitcoin",
+                lambda s: BitcoindConfig(
+                    rpc_url=f"http://localhost:{s.get_prop('rpc_port')}",
+                    rpc_user=s.get_prop("rpc_user"),
+                    rpc_password=s.get_prop("rpc_password"),
+                ),
+            )
+            .requires_service(
+                "reth",
+                lambda s: f"http://localhost:{s.get_prop('eth_rpc_http_port')}",
+            )
+            .with_pubkey(agg_pubkey)
+            .with_magic_bytes(rollup_cfg.magic_bytes)
+            .with_datadir(self.datadir_root)
         )
+
+        self.alpen_cli = builder.build()
 
 
 class BasicLiveEnv(flexitest.LiveEnv):

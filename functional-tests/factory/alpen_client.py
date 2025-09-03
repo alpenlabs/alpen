@@ -6,26 +6,52 @@ import subprocess
 from subprocess import CalledProcessError
 from typing import Optional
 
-from factory.config import BitcoindConfig
+from envs.env_control_builder import EnvControlBuilder, ServiceNotAvailable
 
 
-class AlpenCli:
+class AlpenCli(EnvControlBuilder):
     """
     Alpen Cli client with configuration setup specifically functional tests.
     Requires client to be built with "test-mode" cargo feature
+    Acts as a builder by extending EnvControlBuilder
     """
 
-    def __init__(
-        self,
-        reth_endpoint: str,
-        bitcoin_config: BitcoindConfig,
-        pubkey: str,
-        magic_bytes: str,
-        datadir: str,
-    ):
-        name = "alpen_cli"
-        # create directory
+    def __init__(self, env):
+        super().__init__(env)
+        self.pubkey = None
+        self.magic_bytes = None
+        self.datadir = None
+        self.config_file = None
+
+    def with_pubkey(self, pubkey: str):
+        self.pubkey = pubkey
+        return self
+
+    def with_magic_bytes(self, magic_bytes: str):
+        self.magic_bytes = magic_bytes
+        return self
+
+    def with_datadir(self, datadir: str):
         self.datadir = datadir
+        return self
+
+    def build(self):
+        """Build AlpenCli instance with resolved service configs"""
+        if not self.pubkey or not self.magic_bytes or not self.datadir:
+            raise ValueError("pubkey, magic_bytes, and datadir must be set before building")
+
+        # Get resolved configs from parent
+        try:
+            resolved_configs = super().build()
+        except ServiceNotAvailable:
+            return None
+
+        # Extract the specific configs we need
+        bitcoin_config = resolved_configs["bitcoin"]
+        reth_endpoint = resolved_configs["reth"]
+
+        # Set up the CLI configuration
+        name = "alpen_cli"
         path = os.path.join(self.datadir, name)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -37,8 +63,8 @@ bitcoind_rpc_endpoint = "{bitcoin_config.rpc_url}"
 bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
 bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
 faucet_endpoint = "{bitcoin_config.rpc_url}"
-bridge_pubkey = "{pubkey}"
-magic_bytes = "{magic_bytes}"
+bridge_pubkey = "{self.pubkey}"
+magic_bytes = "{self.magic_bytes}"
 network = "regtest"
 seed = "838d8ba290a3066abb35b663858fa839"
 """
@@ -46,6 +72,7 @@ seed = "838d8ba290a3066abb35b663858fa839"
             f.write(config_content)
 
         assert self.check_config(), "config file path should match"
+        return self
 
     def _run_tty(
         self, cmd, *, capture_output=False, stdout=None, env=None
