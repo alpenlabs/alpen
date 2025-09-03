@@ -4,12 +4,13 @@ use strata_l1tx::{
 };
 use strata_primitives::{
     buf::Buf32,
+    constants::EE_ADDRESS_LEN,
     l1::{DepositRequestInfo, XOnlyPk},
     params::DepositTxParams,
 };
 
 use crate::{
-    constants::{BRIDGE_OUT_AMOUNT, EE_ADDRESS_LEN, MAGIC_BYTES, NETWORK},
+    constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES, NETWORK},
     error::Error,
 };
 

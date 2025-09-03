@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
+use bdk_wallet::bitcoin::{Amount, Network};
 
 /// Magic bytes to add to the metadata output in transactions to help identify them.
 pub(crate) const MAGIC_BYTES: &[u8; 4] = b"ALPN";
@@ -26,17 +26,6 @@ pub(crate) static DESCRIPTOR: LazyLock<&'static str> =
 /// The Taproot-enable wallet's internal descriptor.
 pub(crate) static CHANGE_DESCRIPTOR: LazyLock<&'static str> =
     LazyLock::new(|| Box::leak(format!("tr({XPRIV}/86'/1'/0'/1/*)").into_boxed_str()));
-
-/// Corresponds to address length of Execution environment.
-pub(crate) const EE_ADDRESS_LEN: u8 = 20;
-
-/// For getting private key for the corresponding xpriv.
-#[allow(dead_code)]
-pub(crate) const GENERAL_WALLET_KEY_PATH: [ChildNumber; 3] = [
-    ChildNumber::Hardened { index: 20_000 },
-    ChildNumber::Hardened { index: 20 },
-    ChildNumber::Hardened { index: 101 },
-];
 
 #[cfg(test)]
 mod tests {
