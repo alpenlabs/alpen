@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Any, Callable
 
 import flexitest
 
@@ -10,12 +10,11 @@ class EnvControlBuilder:
     if it is injectable
     """
 
-    def __init__(self, ctx: flexitest.LiveEnv):
-        self.ctx = ctx
+    def __init__(self):
         self.service_requirements: dict[str, Callable] = {}
 
-    def get_service(self, service_name: str):
-        return self.ctx.get_service(service_name)
+    def get_service(self, ctx: flexitest.RunContext, service_name: str):
+        return ctx.get_service(service_name)
 
     def requires_service(self, service_name: str, transform_lambda: Callable):
         """
@@ -28,9 +27,12 @@ class EnvControlBuilder:
         self.service_requirements[service_name] = transform_lambda
         return self
 
-    def build(self):
+    def build(self, ctx: flexitest.RunContext) -> dict[str, Any]:
         """
         Resolve all service requirements and return transformed configs.
+
+        Args:
+            ctx: flexitest run context
 
         Returns:
             Dictionary mapping service names to their transformed values
@@ -40,7 +42,7 @@ class EnvControlBuilder:
         resolved_configs = {}
         for service_name, transform_lambda in self.service_requirements.items():
             try:
-                service = self.get_service(service_name)
+                service = self.get_service(ctx, service_name)
                 resolved_configs[service_name] = transform_lambda(service)
             except KeyError as err:
                 raise ServiceNotAvailable(service_name) from err

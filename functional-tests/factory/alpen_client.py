@@ -9,70 +9,15 @@ from typing import Optional
 from envs.env_control_builder import EnvControlBuilder, ServiceNotAvailable
 
 
-class AlpenCli(EnvControlBuilder):
+class AlpenCli:
     """
-    Alpen Cli client with configuration setup specifically functional tests.
-    Requires client to be built with "test-mode" cargo feature
-    Acts as a builder by extending EnvControlBuilder
+    Alpen CLI client for functional tests.
+    Requires client to be built with "test-mode" cargo feature.
     """
 
-    def __init__(self, env):
-        super().__init__(env)
-        self.pubkey = None
-        self.magic_bytes = None
-        self.datadir = None
-        self.config_file = None
-
-    def with_pubkey(self, pubkey: str):
-        self.pubkey = pubkey
-        return self
-
-    def with_magic_bytes(self, magic_bytes: str):
-        self.magic_bytes = magic_bytes
-        return self
-
-    def with_datadir(self, datadir: str):
+    def __init__(self, config_file: str, datadir: str):
+        self.config_file = config_file
         self.datadir = datadir
-        return self
-
-    def build(self):
-        """Build AlpenCli instance with resolved service configs"""
-        if not self.pubkey or not self.magic_bytes or not self.datadir:
-            raise ValueError("pubkey, magic_bytes, and datadir must be set before building")
-
-        # Get resolved configs from parent
-        try:
-            resolved_configs = super().build()
-        except ServiceNotAvailable:
-            return None
-
-        # Extract the specific configs we need
-        bitcoin_config = resolved_configs["bitcoin"]
-        reth_endpoint = resolved_configs["reth"]
-
-        # Set up the CLI configuration
-        name = "alpen_cli"
-        path = os.path.join(self.datadir, name)
-        if not os.path.exists(path):
-            os.makedirs(path)
-        self.config_file = os.path.join(self.datadir, "alpen-cli.toml")
-        config_content = f"""# Alpen-cli Configuration for functional test
-# Generated automatically by functional test factory
-alpen_endpoint = "{reth_endpoint}"
-bitcoind_rpc_endpoint = "{bitcoin_config.rpc_url}"
-bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
-bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
-faucet_endpoint = "{bitcoin_config.rpc_url}"
-bridge_pubkey = "{self.pubkey}"
-magic_bytes = "{self.magic_bytes}"
-network = "regtest"
-seed = "838d8ba290a3066abb35b663858fa839"
-"""
-        with open(self.config_file, "w") as f:
-            f.write(config_content)
-
-        assert self.check_config(), "config file path should match"
-        return self
 
     def _run_tty(
         self, cmd, *, capture_output=False, stdout=None, env=None
@@ -216,3 +161,73 @@ seed = "838d8ba290a3066abb35b663858fa839"
         ]
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"Transaction ID:\s*(0x[0-9a-f]{64})")
+
+
+class AlpenCliBuilder:
+    """
+    Builder for AlpenCli instances with configuration setup for functional tests.
+    """
+
+    def __init__(self):
+        self.service_resolver = EnvControlBuilder()
+        self.pubkey = None
+        self.magic_bytes = None
+        self.datadir = None
+
+    def with_pubkey(self, pubkey: str):
+        self.pubkey = pubkey
+        return self
+
+    def with_magic_bytes(self, magic_bytes: str):
+        self.magic_bytes = magic_bytes
+        return self
+
+    def with_datadir(self, datadir: str):
+        self.datadir = datadir
+        return self
+
+    def requires_service(self, service_name: str, transform_lambda):
+        """Configure service requirements for building the AlpenCli"""
+        self.service_resolver.requires_service(service_name, transform_lambda)
+        return self
+
+    def build(self, ctx) -> Optional[AlpenCli]:
+        """Build AlpenCli instance with resolved service configs"""
+        if not self.pubkey or not self.magic_bytes or not self.datadir:
+            raise ValueError("pubkey, magic_bytes, and datadir must be set before building")
+
+        # Get resolved configs using service resolver
+        try:
+            resolved_configs = self.service_resolver.build(ctx)
+        except ServiceNotAvailable:
+            return None
+
+        # Extract the specific configs we need
+        bitcoin_config = resolved_configs["bitcoin"]
+        reth_endpoint = resolved_configs["reth"]
+
+        # Set up the CLI configuration
+        name = "alpen_cli"
+        path = os.path.join(self.datadir, name)
+        if not os.path.exists(path):
+            os.makedirs(path)
+        config_file = os.path.join(self.datadir, "alpen-cli.toml")
+        config_content = f"""# Alpen-cli Configuration for functional test
+# Generated automatically by functional test factory
+alpen_endpoint = "{reth_endpoint}"
+bitcoind_rpc_endpoint = "{bitcoin_config.rpc_url}"
+bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
+bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
+faucet_endpoint = "{bitcoin_config.rpc_url}"
+bridge_pubkey = "{self.pubkey}"
+magic_bytes = "{self.magic_bytes}"
+network = "regtest"
+seed = "838d8ba290a3066abb35b663858fa839"
+"""
+        with open(config_file, "w") as f:
+            f.write(config_content)
+
+        # Create and return the built AlpenCli instance
+        alpen_cli = AlpenCli(config_file, self.datadir)
+        assert alpen_cli.check_config(), "config file path should match"
+        return alpen_cli

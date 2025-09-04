@@ -8,7 +8,7 @@ import flexitest
 from strata_utils import get_address
 
 from envs.rollup_params_cfg import RollupConfig
-from factory.alpen_client import AlpenCli
+from factory.alpen_client import AlpenCliBuilder
 from factory.config import BitcoindConfig, RethELConfig
 from load.cfg import LoadConfig, LoadConfigBuilder
 from utils import *
@@ -64,7 +64,7 @@ class StrataRunContext(flexitest.RunContext):
         agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
 
         builder = (
-            AlpenCli(self)
+            AlpenCliBuilder()
             .requires_service(
                 "bitcoin",
                 lambda s: BitcoindConfig(
@@ -82,7 +82,7 @@ class StrataRunContext(flexitest.RunContext):
             .with_datadir(self.datadir_root)
         )
 
-        self.alpen_cli = builder.build()
+        self.alpen_cli = builder.build(self)
 
 
 class BasicLiveEnv(flexitest.LiveEnv):
