@@ -58,8 +58,6 @@ fn main() {
         Command::GetL1BroadcasterTx(args) => get_l1_broadcaster_tx(db.broadcast_db(), args),
         Command::GetEpochSummary(args) => get_epoch_summary(db, args),
         Command::GetSyncinfo(args) => get_syncinfo(db, args),
-        Command::GetSyncEvent(args) => get_sync_event(db, args),
-        Command::GetSyncEventsSummary(args) => get_sync_events_summary(db, args),
         Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
     };
 

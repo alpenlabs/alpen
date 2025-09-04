@@ -1,8 +1,9 @@
-use strata_db::{DbResult, errors::*, traits::*};
-use strata_state::operation::*;
+use strata_db::{DbResult, traits::*};
+use strata_primitives::l1::L1BlockCommitment;
+use strata_state::{client_state::ClientState, operation::*};
 
 use super::schemas::ClientUpdateOutputSchema;
-use crate::{define_sled_database, utils::first};
+use crate::define_sled_database;
 
 define_sled_database!(
     pub struct ClientStateDBSled {
@@ -10,35 +11,24 @@ define_sled_database!(
     }
 );
 
-impl ClientStateDBSled {
-    fn get_next_idx(&self) -> DbResult<u64> {
-        match self.client_update_tree.last()? {
-            Some((idx, _)) => Ok(idx + 1),
-            None => Ok(0),
-        }
-    }
-}
-
 impl ClientStateDatabase for ClientStateDBSled {
-    fn put_client_update(&self, idx: u64, output: ClientUpdateOutput) -> DbResult<()> {
-        let next = self.get_next_idx()?;
-        if idx != next {
-            return Err(DbError::OooInsert("consensus_store", idx));
-        }
-        self.client_update_tree
-            .compare_and_swap(idx, None, Some(output))?;
-        Ok(())
+    fn put_client_update(
+        &self,
+        block: L1BlockCommitment,
+        output: ClientUpdateOutput,
+    ) -> DbResult<()> {
+        Ok(self.client_update_tree.insert(&block, &output)?)
     }
 
-    fn get_client_update(&self, idx: u64) -> DbResult<Option<ClientUpdateOutput>> {
-        Ok(self.client_update_tree.get(&idx)?)
+    fn get_client_update(&self, block: L1BlockCommitment) -> DbResult<Option<ClientUpdateOutput>> {
+        Ok(self.client_update_tree.get(&block)?)
     }
 
-    fn get_last_state_idx(&self) -> DbResult<u64> {
-        match self.client_update_tree.last()?.map(first) {
-            Some(idx) => Ok(idx),
-            None => Err(DbError::NotBootstrapped),
-        }
+    fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
+        // Relying on the lexicographical order of L1BlockCommitment.
+        let mut iter = self.client_update_tree.iter().rev();
+        let res = iter.next().map(|r| r.map(|(k, v)| (k, v.into_state())));
+        Ok(res.transpose()?)
     }
 }
 
