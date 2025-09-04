@@ -44,7 +44,7 @@ impl MultisigUpdate {
         // TODO: parse TxInput to build MultisigConfigUpdate and determine Role
         Ok(Self::new(
             MultisigConfigUpdate::new(vec![], vec![], 0),
-            Role::BridgeAdmin,
+            Role::StrataAdministrator,
         ))
     }
 }

@@ -163,12 +163,7 @@ mod tests {
         let test_key = PubKey::new([1; 32]);
         let test_config = MultisigConfig::try_new(vec![test_key], 1).unwrap();
 
-        AdministrationSubprotoConfig::new(
-            test_config.clone(),
-            test_config.clone(),
-            test_config.clone(),
-            test_config,
-        )
+        AdministrationSubprotoConfig::new(test_config.clone(), test_config.clone())
     }
 
     fn create_queued_action() -> UpdateAction {
@@ -180,7 +175,7 @@ mod tests {
         let test_key = PubKey::new([2; 32]);
         let update = MultisigConfigUpdate::new(vec![test_key], vec![], 1);
         let multisig_update =
-            MultisigUpdate::new(update, strata_primitives::roles::Role::BridgeAdmin);
+            MultisigUpdate::new(update, strata_primitives::roles::Role::StrataAdministrator);
         UpdateAction::Multisig(multisig_update)
     }
 
