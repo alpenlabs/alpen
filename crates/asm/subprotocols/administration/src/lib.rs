@@ -9,8 +9,8 @@ mod authority;
 mod config;
 mod error;
 mod handler;
+mod queued_update;
 mod state;
 mod subprotocol;
-mod updates;
 
 pub use subprotocol::AdministrationSubprotocol;
