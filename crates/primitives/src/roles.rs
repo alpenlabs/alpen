@@ -18,19 +18,19 @@ use borsh::{BorshDeserialize, BorshSerialize};
 )]
 #[borsh(use_discriminant = false)]
 pub enum Role {
-    /// The multisig authority that has the exclusive ability to update
-    /// (add/remove) bridge operators.
-    BridgeAdmin,
-    /// The multisig authority that has the exclusive abiltity to change the
-    /// VerifyingKey of the Bridge. Since Bridge is implemented as a subprotcol
-    /// in ASM, this entails that the new VK is for the entire ASM STF.
-    BridgeConsensusManager,
-    /// The multisig authority that has the exclusive abiltity to change the
-    /// public key of the OL batch producer.
-    StrataAdmin,
-    /// The multisig authority that has the exclusive ability to change the
-    /// VerifyingKey of the OL STF.
-    StrataConsensusManager,
+    /// The multisig authority that has exclusive ability to:
+    /// 1. update (add/remove) bridge signers
+    /// 2. update (add/remove) bridge operators
+    /// 3. update the definition of what is considered a valid bridge deposit address for:
+    ///    - registering deposit UTXOs
+    ///    - accepting and minting bridge deposits
+    ///    - assigning registered UTXOs to withdrawal requests
+    /// 4. update the verifying key for the OL STF
+    StrataAdministrator,
+
+    /// The multisig authority that has exclusive ability to change the canonical
+    /// public key of the default orchestration layer sequencer.
+    StrataSequencerManager,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
@@ -44,8 +44,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_role_variants_contigous() {
-        // There are 4 variants.
-        let count = 4;
+        // There are 2 variants.
+        let count = 2;
         // let count = std::mem::variant_count::<Role>() as u8; // This is not available in stable
         // Rust, so we use a constant.
 

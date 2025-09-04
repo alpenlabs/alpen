@@ -12,46 +12,34 @@ use strata_primitives::roles::Role;
 /// The benefit is avoiding missing fields at compile-time rather than runtime validation.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct AdministrationSubprotoConfig {
-    /// MultisigConfig for BridgeAdmin role
-    pub bridge_admin: MultisigConfig,
-    /// MultisigConfig for BridgeConsensusManager role
-    pub bridge_consensus_manager: MultisigConfig,
-    /// MultisigConfig for StrataAdmin role
-    pub strata_admin: MultisigConfig,
-    /// MultisigConfig for StrataConsensusManager role
-    pub strata_consensus_manager: MultisigConfig,
+    /// MultisigConfig for [StrataAdministrator](Role::StrataAdministrator).
+    pub strata_administrator: MultisigConfig,
+    /// MultisigConfig for [StrataSequencerManager](Role::StrataSequencerManager).
+    pub strata_sequencer_manager: MultisigConfig,
 }
 
 impl AdministrationSubprotoConfig {
     pub fn new(
-        bridge_admin: MultisigConfig,
-        bridge_consensus_manager: MultisigConfig,
-        strata_admin: MultisigConfig,
-        strata_consensus_manager: MultisigConfig,
+        strata_administrator: MultisigConfig,
+        strata_sequencer_manager: MultisigConfig,
     ) -> Self {
         Self {
-            bridge_admin,
-            bridge_consensus_manager,
-            strata_admin,
-            strata_consensus_manager,
+            strata_administrator,
+            strata_sequencer_manager,
         }
     }
 
     pub fn get_config(&self, role: Role) -> &MultisigConfig {
         match role {
-            Role::BridgeAdmin => &self.bridge_admin,
-            Role::BridgeConsensusManager => &self.bridge_consensus_manager,
-            Role::StrataAdmin => &self.strata_admin,
-            Role::StrataConsensusManager => &self.strata_consensus_manager,
+            Role::StrataAdministrator => &self.strata_administrator,
+            Role::StrataSequencerManager => &self.strata_sequencer_manager,
         }
     }
 
     pub fn get_all_authorities(self) -> Vec<(Role, MultisigConfig)> {
         vec![
-            (Role::BridgeAdmin, self.bridge_admin),
-            (Role::BridgeConsensusManager, self.bridge_consensus_manager),
-            (Role::StrataAdmin, self.strata_admin),
-            (Role::StrataConsensusManager, self.strata_consensus_manager),
+            (Role::StrataAdministrator, self.strata_administrator),
+            (Role::StrataSequencerManager, self.strata_sequencer_manager),
         ]
     }
 }

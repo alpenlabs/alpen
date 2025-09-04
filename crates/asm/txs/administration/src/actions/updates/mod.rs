@@ -5,7 +5,7 @@ pub mod vk;
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::roles::{ProofType, Role};
+use strata_primitives::roles::Role;
 
 use crate::actions::updates::{
     multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
@@ -26,12 +26,9 @@ impl UpdateAction {
     pub fn required_role(&self) -> Role {
         match self {
             UpdateAction::Multisig(m) => m.role(),
-            UpdateAction::OperatorSet(_) => Role::BridgeAdmin,
-            UpdateAction::Sequencer(_) => Role::StrataAdmin,
-            UpdateAction::VerifyingKey(v) => match v.kind() {
-                ProofType::Asm => Role::BridgeConsensusManager,
-                ProofType::OlStf => Role::StrataConsensusManager,
-            },
+            UpdateAction::OperatorSet(_) => Role::StrataAdministrator,
+            UpdateAction::VerifyingKey(_) => Role::StrataAdministrator,
+            UpdateAction::Sequencer(_) => Role::StrataSequencerManager,
         }
     }
 }
