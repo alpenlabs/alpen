@@ -2,11 +2,9 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 mod cancel;
-mod enact;
 pub mod updates;
 
 pub use cancel::CancelAction;
-pub use enact::EnactAction;
 pub use updates::UpdateAction;
 
 pub type UpdateId = u32;
@@ -16,8 +14,6 @@ pub type UpdateId = u32;
 pub enum MultisigAction {
     /// Cancel a pending action
     Cancel(CancelAction),
-    /// Execute a committed action
-    Enact(EnactAction),
     /// Propose an update
     Update(UpdateAction),
 }

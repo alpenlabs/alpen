@@ -55,13 +55,6 @@ pub(crate) fn handle_action(
                 .ok_or(AdministrationError::UnknownAction(*target_action_id))?;
             queued.action().required_role()
         }
-        MultisigAction::Enact(enact) => {
-            let target_action_id = enact.target_id();
-            let queued = state
-                .find_committed(target_action_id)
-                .ok_or(AdministrationError::UnknownAction(*target_action_id))?;
-            queued.action().required_role()
-        }
     };
 
     let authority = state
@@ -88,9 +81,6 @@ pub(crate) fn handle_action(
         }
         MultisigAction::Cancel(cancel) => {
             state.remove_queued(cancel.target_id());
-        }
-        MultisigAction::Enact(enact) => {
-            state.commit_to_schedule(enact.target_id(), current_height);
         }
     }
 

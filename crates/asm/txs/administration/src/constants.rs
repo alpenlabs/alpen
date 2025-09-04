@@ -9,9 +9,6 @@ pub const ADMINISTRATION_SUBPROTOCOL_ID: SubprotocolId = 0;
 /// Transaction type that signals the cancellation of a previously queued update.
 pub const CANCEL_TX_TYPE: TxType = 0;
 
-/// Transaction type that executes (enacts) the update that was previously committed.
-pub const ENACT_TX_TYPE: TxType = 1;
-
 /// Transaction type that proposes an update to the on-chain multisignature configuration.
 pub const MULTISIG_CONFIG_UPDATE_TX_TYPE: TxType = 10;
 
