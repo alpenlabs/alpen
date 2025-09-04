@@ -20,20 +20,4 @@ pub(crate) enum AdministrationError {
     /// Indicates a failure when validating a vote.
     #[error(transparent)]
     Vote(#[from] VoteValidationError),
-
-    /// Indicates a failure when validating a vote.
-    #[error(transparent)]
-    Action(#[from] UpdateActionError),
-}
-
-/// Errors related to update action.
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub(crate) enum UpdateActionError {
-    /// The update action cannot be queued.
-    #[error("update action cannot be queued")]
-    CannotQueue,
-
-    /// The update action cannot be directly scheduled.
-    #[error("update action cannot be directly scheduled")]
-    CannotSchedule,
 }

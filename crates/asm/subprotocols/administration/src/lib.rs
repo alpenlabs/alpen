@@ -7,7 +7,6 @@
 
 mod authority;
 mod config;
-mod constants;
 mod error;
 mod handler;
 mod state;

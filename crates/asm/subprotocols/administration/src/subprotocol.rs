@@ -6,7 +6,7 @@ use strata_asm_proto_administration_txs::{
 };
 
 use crate::{
-    config::AdministrationSubprotoConfig, handler::handle_action,
+    config::AdministrationSubprotoParams, handler::handle_action,
     state::AdministrationSubprotoState,
 };
 
@@ -16,7 +16,7 @@ pub struct AdministrationSubprotocol;
 impl Subprotocol for AdministrationSubprotocol {
     const ID: SubprotocolId = ADMINISTRATION_SUBPROTOCOL_ID;
 
-    type Params = AdministrationSubprotoConfig;
+    type Params = AdministrationSubprotoParams;
 
     type State = AdministrationSubprotoState;
 

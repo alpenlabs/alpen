@@ -4,7 +4,7 @@ use strata_crypto::multisig::config::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
-    authority::MultisigAuthority, config::AdministrationSubprotoConfig,
+    authority::MultisigAuthority, config::AdministrationSubprotoParams,
     updates::queued::QueuedUpdate,
 };
 
@@ -26,7 +26,7 @@ pub struct AdministrationSubprotoState {
 }
 
 impl AdministrationSubprotoState {
-    pub fn new(config: &AdministrationSubprotoConfig) -> Self {
+    pub fn new(config: &AdministrationSubprotoParams) -> Self {
         let authorities = config
             .clone()
             .get_all_authorities()
