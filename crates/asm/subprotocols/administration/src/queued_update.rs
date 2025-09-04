@@ -2,16 +2,14 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_administration_txs::actions::{UpdateAction, UpdateId};
 
-/// A time-delayed update action with different delay semantics
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
-pub struct DelayedUpdate {
+pub struct QueuedUpdate {
     id: UpdateId,
     action: UpdateAction,
     activation_height: u64,
 }
 
-/// Shared implementation
-impl DelayedUpdate {
+impl QueuedUpdate {
     pub fn new(id: UpdateId, action: UpdateAction, activation_height: u64) -> Self {
         Self {
             id,

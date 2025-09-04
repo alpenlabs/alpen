@@ -4,8 +4,7 @@ use strata_crypto::multisig::config::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
-    authority::MultisigAuthority, config::AdministrationSubprotoParams,
-    updates::queued::QueuedUpdate,
+    authority::MultisigAuthority, config::AdministrationSubprotoParams, queued_update::QueuedUpdate,
 };
 
 /// Holds the state for the Administration Subprotocol, including the various

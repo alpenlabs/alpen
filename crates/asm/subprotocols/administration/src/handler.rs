@@ -3,7 +3,7 @@ use strata_asm_proto_administration_txs::actions::{MultisigAction, UpdateAction}
 use strata_crypto::multisig::vote::AggregatedVote;
 
 use crate::{
-    error::AdministrationError, state::AdministrationSubprotoState, updates::queued::QueuedUpdate,
+    error::AdministrationError, queued_update::QueuedUpdate, state::AdministrationSubprotoState,
 };
 
 pub(crate) fn handle_action(
@@ -38,7 +38,9 @@ pub(crate) fn handle_action(
                 }
                 action => {
                     // For all others add it to queue
-                    let queued_update = QueuedUpdate::new(id, action, current_height, 0); // FIXME: delay
+                    let delay = 0; // FIXME: set proper delay
+                    let activation_height = current_height + delay;
+                    let queued_update = QueuedUpdate::new(id, action, activation_height);
                     state.enqueue(queued_update);
                 }
             }
