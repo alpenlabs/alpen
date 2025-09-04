@@ -4,7 +4,7 @@ name = "strata-risc0-guest-builder"
 version = "0.3.0-alpha.1"
 
 [dependencies]
-risc0-zkvm = "3.0.1"
+risc0-zkvm = "3.0.3"
 
 [dev-dependencies]
 bincode.workspace = true
@@ -23,7 +23,7 @@ strata-test-utils.workspace = true
 zkaleido.workspace = true
 
 [build-dependencies]
-risc0-build = "3.0.1"
+risc0-build = "3.0.3"
 
 [package.metadata.risc0]
 methods = [
