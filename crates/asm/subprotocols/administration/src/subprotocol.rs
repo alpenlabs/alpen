@@ -6,8 +6,7 @@ use strata_asm_proto_administration_txs::{
 };
 
 use crate::{
-    config::AdministrationSubprotoConfig,
-    handler::{handle_action, handle_scheduled_updates},
+    config::AdministrationSubprotoConfig, handler::handle_action,
     state::AdministrationSubprotoState,
 };
 
@@ -45,11 +44,9 @@ impl Subprotocol for AdministrationSubprotocol {
 
         for tx in txs {
             if let Ok((action, vote)) = parse_tx_multisig_action_and_vote(tx) {
-                let _ = handle_action(state, action, vote, current_height);
+                let _ = handle_action(state, action, vote, current_height, relayer);
             }
         }
-
-        handle_scheduled_updates(state, relayer, current_height);
     }
 
     fn process_msgs(
