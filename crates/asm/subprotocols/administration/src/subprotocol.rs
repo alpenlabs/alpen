@@ -6,7 +6,8 @@ use strata_asm_proto_administration_txs::{
 };
 
 use crate::{
-    config::AdministrationSubprotoParams, handler::handle_action,
+    config::AdministrationSubprotoParams,
+    handler::{handle_action, handle_pending_updates},
     state::AdministrationSubprotoState,
 };
 
@@ -40,7 +41,7 @@ impl Subprotocol for AdministrationSubprotocol {
         let current_height = anchor_pre.chain_view.pow_state.last_verified_block.height() + 1;
 
         // Before processing the transactions, we process any queued actions
-        state.process_queued(current_height);
+        handle_pending_updates(state, relayer, current_height);
 
         for tx in txs {
             if let Ok((action, vote)) = parse_tx_multisig_action_and_vote(tx) {
