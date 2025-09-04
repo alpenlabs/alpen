@@ -4,7 +4,7 @@ use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::config::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
-use crate::error::UpgradeTxParseError;
+use crate::error::AdministrationTxParseError;
 
 /// An update to a multisig configuration for a specific role:
 /// - adds new members
@@ -40,7 +40,7 @@ impl MultisigUpdate {
     /// Extract a `MultisigUpdate` from a transaction input.
     ///
     /// Placeholder: replace with actual parsing logic.
-    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
+    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
         // TODO: parse TxInput to build MultisigConfigUpdate and determine Role
         Ok(Self::new(
             MultisigConfigUpdate::new(vec![], vec![], 0),

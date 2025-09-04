@@ -1,15 +1,15 @@
 use strata_asm_common::SubprotocolId;
 use strata_l1_txfmt::TxType;
 
-/// Unique identifier for the Upgrade Subprotocol.
-pub const UPGRADE_SUBPROTOCOL_ID: SubprotocolId = 0;
+/// Unique identifier for the Administration Subprotocol.
+pub const ADMINISTRATION_SUBPROTOCOL_ID: SubprotocolId = 0;
 
-// ─── Upgrade Subprotocol Transaction Types ──────────────────────────────────────────────
+// ─── Administration Subprotocol Transaction Types ──────────────────────────────────────────────
 
-/// Transaction type that signals the cancellation of a previously queued upgrade.
+/// Transaction type that signals the cancellation of a previously queued update.
 pub const CANCEL_TX_TYPE: TxType = 0;
 
-/// Transaction type that executes (enacts) the upgrade that was previously committed.
+/// Transaction type that executes (enacts) the update that was previously committed.
 pub const ENACT_TX_TYPE: TxType = 1;
 
 /// Transaction type that proposes an update to the on-chain multisignature configuration.

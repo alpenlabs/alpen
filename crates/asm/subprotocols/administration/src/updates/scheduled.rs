@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_upgrade_txs::actions::{UpdateAction, UpdateId};
+use strata_asm_proto_administration_txs::actions::{UpdateAction, UpdateId};
 
 use crate::{
     constants::{

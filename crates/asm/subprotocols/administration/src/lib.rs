@@ -1,6 +1,6 @@
-//! Strata Upgrade Subprotocol
+//! Strata Administration Subprotocol
 //!
-//! This module implements the upgrade subprotocol for Strata, providing
+//! This module implements the administration subprotocol for Strata, providing
 //! on-chain governance and time-delayed enactment of multisig-backed
 //! configuration changes, verifying key updates, operator set changes,
 //! sequencer updates, and cancellations.
@@ -14,4 +14,4 @@ mod state;
 mod subprotocol;
 mod updates;
 
-pub use subprotocol::UpgradeSubprotocol;
+pub use subprotocol::AdministrationSubprotocol;

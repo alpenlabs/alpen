@@ -1,16 +1,16 @@
 use strata_asm_common::MsgRelayer;
-use strata_asm_proto_upgrade_txs::actions::{MultisigAction, UpdateAction};
+use strata_asm_proto_administration_txs::actions::{MultisigAction, UpdateAction};
 use strata_crypto::multisig::vote::AggregatedVote;
 use strata_primitives::roles::ProofType;
 
 use crate::{
-    error::UpgradeError,
-    state::UpgradeSubprotoState,
+    error::AdministrationError,
+    state::AdministrationSubprotoState,
     updates::{queued::QueuedUpdate, scheduled::ScheduledUpdate},
 };
 
 pub(crate) fn handle_scheduled_updates(
-    state: &mut UpgradeSubprotoState,
+    state: &mut AdministrationSubprotoState,
     _relayer: &mut impl MsgRelayer,
     current_height: u64,
 ) {
@@ -41,30 +41,32 @@ pub(crate) fn handle_scheduled_updates(
 }
 
 pub(crate) fn handle_action(
-    state: &mut UpgradeSubprotoState,
+    state: &mut AdministrationSubprotoState,
     action: MultisigAction,
     vote: AggregatedVote,
     current_height: u64,
-) -> Result<(), UpgradeError> {
+) -> Result<(), AdministrationError> {
     let role = match &action {
         MultisigAction::Update(update) => update.required_role(),
         MultisigAction::Cancel(cancel) => {
             let target_action_id = cancel.target_id();
             let queued = state
                 .find_queued(target_action_id)
-                .ok_or(UpgradeError::UnknownAction(*target_action_id))?;
+                .ok_or(AdministrationError::UnknownAction(*target_action_id))?;
             queued.action().required_role()
         }
         MultisigAction::Enact(enact) => {
             let target_action_id = enact.target_id();
             let queued = state
                 .find_committed(target_action_id)
-                .ok_or(UpgradeError::UnknownAction(*target_action_id))?;
+                .ok_or(AdministrationError::UnknownAction(*target_action_id))?;
             queued.action().required_role()
         }
     };
 
-    let authority = state.authority(role).ok_or(UpgradeError::UnknownRole)?;
+    let authority = state
+        .authority(role)
+        .ok_or(AdministrationError::UnknownRole)?;
     authority.validate_action(&action, &vote)?;
 
     match action {
@@ -93,7 +95,9 @@ pub(crate) fn handle_action(
     }
 
     // Increase the nonce
-    let authority = state.authority_mut(role).ok_or(UpgradeError::UnknownRole)?;
+    let authority = state
+        .authority_mut(role)
+        .ok_or(AdministrationError::UnknownRole)?;
     authority.increment_seqno();
 
     Ok(())

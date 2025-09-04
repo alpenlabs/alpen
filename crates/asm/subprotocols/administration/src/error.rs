@@ -1,10 +1,10 @@
-use strata_asm_proto_upgrade_txs::actions::UpdateId;
+use strata_asm_proto_administration_txs::actions::UpdateId;
 use strata_crypto::multisig::errors::{MultisigConfigError, VoteValidationError};
 use thiserror::Error;
 
-/// Top-level error type for the upgrade subprotocol, composed of smaller error categories.
+/// Top-level error type for the administration subprotocol, composed of smaller error categories.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub(crate) enum UpgradeError {
+pub(crate) enum AdministrationError {
     /// The specified role is not recognized.
     #[error("the specified role is not recognized")]
     UnknownRole,
@@ -26,7 +26,7 @@ pub(crate) enum UpgradeError {
     Action(#[from] UpdateActionError),
 }
 
-/// Errors related to upgrade action.
+/// Errors related to update action.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub(crate) enum UpdateActionError {
     /// The update action cannot be queued.

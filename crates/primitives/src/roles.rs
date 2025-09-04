@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
-/// Roles with authority in the upgrade subprotocol.
+/// Roles with authority in the administration subprotocol.
 #[repr(u8)]
 #[derive(
     Debug,

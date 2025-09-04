@@ -13,12 +13,12 @@ use crate::{
         CANCEL_TX_TYPE, ENACT_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
         SEQUENCER_UPDATE_TX_TYPE, VK_UPDATE_TX_TYPE,
     },
-    error::UpgradeTxParseError,
+    error::AdministrationTxParseError,
 };
 
 pub fn parse_tx_multisig_action_and_vote(
     tx: &TxInputRef<'_>,
-) -> Result<(MultisigAction, AggregatedVote), UpgradeTxParseError> {
+) -> Result<(MultisigAction, AggregatedVote), AdministrationTxParseError> {
     let vote = parse_aggregated_vote(tx)?;
 
     let action = match tx.tag().tx_type() {
@@ -38,11 +38,13 @@ pub fn parse_tx_multisig_action_and_vote(
             MultisigAction::Update(VerifyingKeyUpdate::extract_from_tx(tx)?.into())
         }
 
-        _ => Err(UpgradeTxParseError::UnknownTxType)?,
+        _ => Err(AdministrationTxParseError::UnknownTxType)?,
     };
     Ok((action, vote))
 }
 
-pub fn parse_aggregated_vote(_tx: &TxInputRef<'_>) -> Result<AggregatedVote, UpgradeTxParseError> {
+pub fn parse_aggregated_vote(
+    _tx: &TxInputRef<'_>,
+) -> Result<AggregatedVote, AdministrationTxParseError> {
     Ok(AggregatedVote::new(vec![], Signature::default()))
 }
