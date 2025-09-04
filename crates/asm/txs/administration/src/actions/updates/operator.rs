@@ -3,7 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
 use strata_primitives::buf::Buf32;
 
-use crate::error::UpgradeTxParseError;
+use crate::error::AdministrationTxParseError;
 
 /// An update to the Bridge Operator Set:
 /// - removes the specified `old_members`
@@ -41,7 +41,7 @@ impl OperatorSetUpdate {
     /// Extracts an `OperatorSetUpdate` from a transaction input.
     ///
     /// Placeholder logic: replace with real parsing implementation.
-    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
+    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
         // TODO: parse `_tx` to determine which keys to add/remove
         Ok(Self::new(Vec::new(), Vec::new()))
     }

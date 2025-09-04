@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_upgrade_txs::actions::MultisigAction;
+use strata_asm_proto_administration_txs::actions::MultisigAction;
 use strata_crypto::multisig::{
     aggregate_pubkeys, config::MultisigConfig, errors::VoteValidationError, msg::MultisigPayload,
     verify_sig, vote::AggregatedVote,

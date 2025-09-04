@@ -1,7 +1,7 @@
 /// The number of blocks during which an ASM verification key (VK) update remains in the
 /// `QueuedUpdate` state and can still be cancelled by submitting a cancel transaction.
 /// If no cancellation occurs within this many blocks of the original update transaction,
-/// the upgrade transitions to `CommittedUpdate` and can no longer be cancelled.
+/// the update transitions to `CommittedUpdate` and can no longer be cancelled.
 pub(crate) const ASM_VK_QUEUE_DELAY: u64 = 12_960;
 
 /// The number of blocks during which an optimistic L1 state-transition function (OL STF)

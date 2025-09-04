@@ -3,7 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_crypto::multisig::config::MultisigConfig;
 use strata_primitives::roles::Role;
 
-/// Configuration for the upgrade subprotocol, containing MultisigConfig for each role.
+/// Configuration for the admnistration subprotocol, containing MultisigConfig for each role.
 ///
 /// Design choice: Uses individual named fields rather than `Vec<(Role, MultisigConfig)>`
 /// to ensure structural completeness - the compiler guarantees all 4 config fields are
@@ -11,7 +11,7 @@ use strata_primitives::roles::Role;
 /// like using the same config for multiple roles or mismatched role-field assignments.
 /// The benefit is avoiding missing fields at compile-time rather than runtime validation.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
-pub struct UpgradeSubprotoConfig {
+pub struct AdministrationSubprotoConfig {
     /// MultisigConfig for BridgeAdmin role
     pub bridge_admin: MultisigConfig,
     /// MultisigConfig for BridgeConsensusManager role
@@ -22,7 +22,7 @@ pub struct UpgradeSubprotoConfig {
     pub strata_consensus_manager: MultisigConfig,
 }
 
-impl UpgradeSubprotoConfig {
+impl AdministrationSubprotoConfig {
     pub fn new(
         bridge_admin: MultisigConfig,
         bridge_consensus_manager: MultisigConfig,

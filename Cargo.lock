@@ -14070,6 +14070,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-proto-administration"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "strata-asm-common",
+ "strata-asm-proto-administration-txs",
+ "strata-crypto",
+ "strata-primitives",
+ "strata-test-utils",
+ "thiserror 2.0.12",
+ "zkaleido",
+]
+
+[[package]]
+name = "strata-asm-proto-administration-txs"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "strata-asm-common",
+ "strata-crypto",
+ "strata-l1-txfmt",
+ "strata-primitives",
+ "thiserror 2.0.12",
+ "zkaleido",
+]
+
+[[package]]
 name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 dependencies = [
@@ -14104,35 +14133,6 @@ dependencies = [
  "strata-msg-fmt",
  "strata-primitives",
  "thiserror 2.0.16",
- "zkaleido",
-]
-
-[[package]]
-name = "strata-asm-proto-upgrade"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "borsh",
- "strata-asm-common",
- "strata-asm-proto-upgrade-txs",
- "strata-crypto",
- "strata-primitives",
- "strata-test-utils",
- "thiserror 2.0.12",
- "zkaleido",
-]
-
-[[package]]
-name = "strata-asm-proto-upgrade-txs"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "borsh",
- "strata-asm-common",
- "strata-crypto",
- "strata-l1-txfmt",
- "strata-primitives",
- "thiserror 2.0.12",
  "zkaleido",
 ]
 

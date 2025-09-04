@@ -4,7 +4,7 @@ use strata_asm_common::TxInputRef;
 use strata_primitives::roles::ProofType;
 use zkaleido::VerifyingKey;
 
-use crate::error::UpgradeTxParseError;
+use crate::error::AdministrationTxParseError;
 
 /// An update to the verifying key for a given Strata proof layer.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
@@ -37,7 +37,7 @@ impl VerifyingKeyUpdate {
     /// Extract a `VerifyingKeyUpdate` from a transaction input.
     ///
     /// Placeholder logic: replace with actual deserialization.
-    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, UpgradeTxParseError> {
+    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
         // TODO: parse `TxInputRef` to obtain vk bytes and proof kind
         Ok(Self::new(VerifyingKey::default(), ProofType::OlStf))
     }

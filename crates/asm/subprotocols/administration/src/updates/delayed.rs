@@ -1,8 +1,8 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_upgrade_txs::actions::{UpdateAction, UpdateId};
+use strata_asm_proto_administration_txs::actions::{UpdateAction, UpdateId};
 
-/// A time-delayed upgrade action with different delay semantics
+/// A time-delayed update action with different delay semantics
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct DelayedUpdate {
     id: UpdateId,

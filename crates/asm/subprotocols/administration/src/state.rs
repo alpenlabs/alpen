@@ -1,18 +1,18 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_upgrade_txs::actions::UpdateId;
+use strata_asm_proto_administration_txs::actions::UpdateId;
 use strata_crypto::multisig::config::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
     authority::MultisigAuthority,
-    config::UpgradeSubprotoConfig,
+    config::AdministrationSubprotoConfig,
     updates::{committed::CommittedUpdate, queued::QueuedUpdate, scheduled::ScheduledUpdate},
 };
 
-/// Holds the state for the Upgrade Subprotocol, including the various
+/// Holds the state for the Administration Subprotocol, including the various
 /// multisignature authorities and any actions still pending execution.
 #[derive(Debug, Clone, Eq, PartialEq, Default, BorshSerialize, BorshDeserialize)]
-pub struct UpgradeSubprotoState {
+pub struct AdministrationSubprotoState {
     /// List of configurations for multisignature authorities.
     /// Each entry specifies who the signers are and how many signatures
     /// are required to approve an action.
@@ -34,8 +34,8 @@ pub struct UpgradeSubprotoState {
     next_update_id: UpdateId,
 }
 
-impl UpgradeSubprotoState {
-    pub fn new(config: &UpgradeSubprotoConfig) -> Self {
+impl AdministrationSubprotoState {
+    pub fn new(config: &AdministrationSubprotoConfig) -> Self {
         let authorities = config
             .clone()
             .get_all_authorities()
@@ -142,7 +142,7 @@ impl UpgradeSubprotoState {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_proto_upgrade_txs::actions::{
+    use strata_asm_proto_administration_txs::actions::{
         UpdateAction,
         updates::{multisig::MultisigUpdate, vk::VerifyingKeyUpdate},
     };
@@ -155,15 +155,15 @@ mod tests {
     use zkaleido::VerifyingKey;
 
     use crate::{
-        state::{UpgradeSubprotoConfig, UpgradeSubprotoState},
+        state::{AdministrationSubprotoConfig, AdministrationSubprotoState},
         updates::{queued::QueuedUpdate, scheduled::ScheduledUpdate},
     };
 
-    fn create_test_config() -> UpgradeSubprotoConfig {
+    fn create_test_config() -> AdministrationSubprotoConfig {
         let test_key = PubKey::new([1; 32]);
         let test_config = MultisigConfig::try_new(vec![test_key], 1).unwrap();
 
-        UpgradeSubprotoConfig::new(
+        AdministrationSubprotoConfig::new(
             test_config.clone(),
             test_config.clone(),
             test_config.clone(),
@@ -217,14 +217,14 @@ mod tests {
     fn test_enqueue_find_and_remove_queued() {
         let mut arb = ArbitraryGenerator::new();
         let config = create_test_config();
-        let mut state = UpgradeSubprotoState::new(&config);
+        let mut state = AdministrationSubprotoState::new(&config);
 
         let id = 1;
         let current_height = 100;
 
         // Try arbitrary action first, fallback to guaranteed queueable action
         let action: UpdateAction = arb.generate();
-        let upgrade =
+        let update =
             if let Some(queued_update) = try_create_queued_update(id, action, current_height) {
                 queued_update
             } else {
@@ -232,9 +232,9 @@ mod tests {
                 QueuedUpdate::try_new(id, fallback_action, current_height).unwrap()
             };
 
-        state.enqueue(upgrade.clone());
+        state.enqueue(update.clone());
 
-        assert_eq!(state.find_queued(&id), Some(&upgrade));
+        assert_eq!(state.find_queued(&id), Some(&update));
         assert_eq!(state.find_queued(&2), None);
 
         state.remove_queued(&id);
@@ -242,10 +242,10 @@ mod tests {
     }
 
     /// Helper to seed queued updates - tries arbitrary actions and keeps valid ones
-    fn seed_queued(ids: &[u32], heights: &[u64]) -> UpgradeSubprotoState {
+    fn seed_queued(ids: &[u32], heights: &[u64]) -> AdministrationSubprotoState {
         let mut arb = ArbitraryGenerator::new();
         let config = create_test_config();
-        let mut state = UpgradeSubprotoState::new(&config);
+        let mut state = AdministrationSubprotoState::new(&config);
 
         for (&id, &h) in ids.iter().zip(heights.iter()) {
             let current_height = h.saturating_sub(4320); // Fix clippy warning
@@ -267,10 +267,10 @@ mod tests {
     fn seed_scheduled(
         ids: &[u32],
         heights: &[u64],
-    ) -> (UpgradeSubprotoState, Vec<ScheduledUpdate>) {
+    ) -> (AdministrationSubprotoState, Vec<ScheduledUpdate>) {
         let mut arb = ArbitraryGenerator::new();
         let config = create_test_config();
-        let mut state = UpgradeSubprotoState::new(&config);
+        let mut state = AdministrationSubprotoState::new(&config);
         let mut updates = Vec::with_capacity(ids.len());
 
         for (&id, &h) in ids.iter().zip(heights.iter()) {

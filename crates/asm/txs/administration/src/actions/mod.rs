@@ -18,6 +18,6 @@ pub enum MultisigAction {
     Cancel(CancelAction),
     /// Execute a committed action
     Enact(EnactAction),
-    /// Propose an upgrade
+    /// Propose an update
     Update(UpdateAction),
 }

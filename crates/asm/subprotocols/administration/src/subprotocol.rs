@@ -1,36 +1,36 @@
 use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
 };
-use strata_asm_proto_upgrade_txs::{
-    constants::UPGRADE_SUBPROTOCOL_ID, parser::parse_tx_multisig_action_and_vote,
+use strata_asm_proto_administration_txs::{
+    constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx_multisig_action_and_vote,
 };
 
 use crate::{
-    config::UpgradeSubprotoConfig,
+    config::AdministrationSubprotoConfig,
     handler::{handle_action, handle_scheduled_updates},
-    state::UpgradeSubprotoState,
+    state::AdministrationSubprotoState,
 };
 
 #[derive(Debug)]
-pub struct UpgradeSubprotocol;
+pub struct AdministrationSubprotocol;
 
-impl Subprotocol for UpgradeSubprotocol {
-    const ID: SubprotocolId = UPGRADE_SUBPROTOCOL_ID;
+impl Subprotocol for AdministrationSubprotocol {
+    const ID: SubprotocolId = ADMINISTRATION_SUBPROTOCOL_ID;
 
-    type Params = UpgradeSubprotoConfig;
+    type Params = AdministrationSubprotoConfig;
 
-    type State = UpgradeSubprotoState;
+    type State = AdministrationSubprotoState;
 
     type Msg = NullMsg<0>;
 
     type AuxInput = ();
 
-    fn init(params: &Self::Params) -> Result<UpgradeSubprotoState, AsmError> {
-        Ok(UpgradeSubprotoState::new(params))
+    fn init(params: &Self::Params) -> Result<AdministrationSubprotoState, AsmError> {
+        Ok(AdministrationSubprotoState::new(params))
     }
 
     fn process_txs(
-        state: &mut UpgradeSubprotoState,
+        state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
         _aux_input: &Self::AuxInput,
@@ -53,7 +53,7 @@ impl Subprotocol for UpgradeSubprotocol {
     }
 
     fn process_msgs(
-        _state: &mut UpgradeSubprotoState,
+        _state: &mut AdministrationSubprotoState,
         _msgs: &[Self::Msg],
         _params: &Self::Params,
     ) {
