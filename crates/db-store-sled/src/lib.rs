@@ -10,7 +10,6 @@ pub mod l1;
 pub mod l2;
 pub mod macros;
 pub mod prover;
-pub mod sync_event;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 pub mod utils;
@@ -27,7 +26,6 @@ pub use config::SledDbConfig;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use strata_db::{DbResult, traits::DatabaseBackend};
-use sync_event::SyncEventDBSled;
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
 
@@ -55,7 +53,6 @@ pub fn open_sled_backend(
 pub struct SledBackend {
     l1_db: Arc<L1DBSled>,
     l2_db: Arc<L2DBSled>,
-    sync_event_db: Arc<SyncEventDBSled>,
     client_state_db: Arc<ClientStateDBSled>,
     chain_state_db: Arc<ChainstateDBSled>,
     checkpoint_db: Arc<CheckpointDBSled>,
@@ -72,7 +69,6 @@ impl SledBackend {
 
         let l1_db = Arc::new(L1DBSled::new(db_ref.clone(), config_ref.clone())?);
         let l2_db = Arc::new(L2DBSled::new(db_ref.clone(), config_ref.clone())?);
-        let sync_event_db = Arc::new(SyncEventDBSled::new(db_ref.clone(), config_ref.clone())?);
         let client_state_db = Arc::new(ClientStateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let chain_state_db = Arc::new(ChainstateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
@@ -82,7 +78,6 @@ impl SledBackend {
         Ok(Self {
             l1_db,
             l2_db,
-            sync_event_db,
             client_state_db,
             chain_state_db,
             checkpoint_db,
@@ -100,10 +95,6 @@ impl DatabaseBackend for SledBackend {
 
     fn l2_db(&self) -> Arc<impl strata_db::traits::L2BlockDatabase> {
         self.l2_db.clone()
-    }
-
-    fn sync_event_db(&self) -> Arc<impl strata_db::traits::SyncEventDatabase> {
-        self.sync_event_db.clone()
     }
 
     fn client_state_db(&self) -> Arc<impl strata_db::traits::ClientStateDatabase> {
