@@ -18,8 +18,8 @@ from factory.config import (
 )
 from load.cfg import LoadConfig
 from load.service import LoadGeneratorService
-from utils import *
-from utils.constants import *
+from utils.constants import BD_PASSWORD, BD_USERNAME
+from utils.utils import ProverClientSettings
 
 
 class BitcoinFactory(flexitest.Factory):
@@ -420,7 +420,7 @@ risc0 = 20
 [timing]
 # Polling and timing configuration (in milliseconds and seconds)
 polling_interval_ms = {settings.polling_interval}
-checkpoint_poll_interval_s = 10
+checkpoint_poll_interval_s = 1
 
 [retry]
 # Retry policy configuration

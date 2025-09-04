@@ -2,7 +2,7 @@ import time
 
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
-from strata_utils import extract_p2tr_pubkey, get_balance, xonlypk_to_descriptor
+from strata_utils import extract_p2tr_pubkey, xonlypk_to_descriptor
 
 from envs.rollup_params_cfg import RollupConfig
 from mixins import bridge_mixin
@@ -103,7 +103,9 @@ class ProverDepositWithdrawTest(bridge_mixin.BridgeMixin):
         btc_url = self.btcrpc.base_url
         btc_user = self.btc.get_prop("rpc_user")
         btc_password = self.btc.get_prop("rpc_password")
-        original_balance = get_balance(withdraw_address, btc_url, btc_user, btc_password)
+        original_balance = 0
+        # TODO: Fix this with alpen-cli after this test is enabled
+        # get_balance(withdraw_address, btc_url, btc_user, btc_password)
         self.debug(f"BTC balance before withdraw: {original_balance}")
 
         # Withdraw

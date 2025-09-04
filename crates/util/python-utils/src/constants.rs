@@ -5,12 +5,7 @@ use bdk_wallet::bitcoin::{Amount, Network};
 /// Magic bytes to add to the metadata output in transactions to help identify them.
 pub(crate) const MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
-/// 10 BTC + 0.01 to cover fees in the following transaction where the operator spends it into the
-/// federation.
-pub(crate) const BRIDGE_IN_AMOUNT: Amount = Amount::from_sat(1_001_000_000);
-
 /// Bridge outs are enforced to be exactly 10 BTC
-#[allow(dead_code)] // TODO: Remove this when bridge out is implemented
 pub(crate) const BRIDGE_OUT_AMOUNT: Amount = Amount::from_int_btc(10);
 
 /// An xpriv that is good enough for testing purposes.

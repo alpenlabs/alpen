@@ -106,13 +106,13 @@ def main(argv):
     parsed_args = parser.parse_args(argv[1:])
 
     root_dir = os.path.dirname(os.path.abspath(__file__))
-    
+
     # Handle args and prepare tests accordingly.
     is_keep_alive_execution = parsed_args.env is not None
     if is_keep_alive_execution:
         # In case of env option, we load the dynamically constructed keep-alive test
         # and prepare it in the runtime manually.
-        # `Tests` will contain test class object (instead of test name). 
+        # `Tests` will contain test class object (instead of test name).
         tests = load_keepalive_mock_test(parsed_args.env)
     else:
         test_dir = os.path.join(root_dir, TEST_DIR)

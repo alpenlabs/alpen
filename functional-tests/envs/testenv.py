@@ -5,12 +5,10 @@ import time
 from typing import Optional
 
 import flexitest
-from strata_utils import (
-    get_address,
-    get_recovery_address,
-)
+from strata_utils import get_address
 
 from envs.rollup_params_cfg import RollupConfig
+from factory.alpen_client import AlpenCliBuilder
 from factory.config import BitcoindConfig, RethELConfig
 from load.cfg import LoadConfig, LoadConfigBuilder
 from utils import *
@@ -58,9 +56,33 @@ class StrataRunContext(flexitest.RunContext):
     """
 
     def __init__(self, datadir_root: str, name: str, env: flexitest.LiveEnv):
+        super().__init__(env)
         self.name = name
         self.datadir_root = datadir_root
-        super().__init__(env)
+
+        rollup_cfg = env.rollup_cfg()
+        agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
+
+        builder = (
+            AlpenCliBuilder()
+            .requires_service(
+                "bitcoin",
+                lambda s: BitcoindConfig(
+                    rpc_url=f"http://localhost:{s.get_prop('rpc_port')}",
+                    rpc_user=s.get_prop("rpc_user"),
+                    rpc_password=s.get_prop("rpc_password"),
+                ),
+            )
+            .requires_service(
+                "reth",
+                lambda s: f"http://localhost:{s.get_prop('eth_rpc_http_port')}",
+            )
+            .with_pubkey(agg_pubkey)
+            .with_magic_bytes(rollup_cfg.magic_bytes)
+            .with_datadir(self.datadir_root)
+        )
+
+        self.alpen_cli = builder.build(self)
 
 
 class BasicLiveEnv(flexitest.LiveEnv):
@@ -92,15 +114,6 @@ class BasicLiveEnv(flexitest.LiveEnv):
         tr_addr: str = get_address(self._ext_btc_addr_idx)
         self._ext_btc_addr_idx += 1
         return tr_addr
-
-    def gen_rec_btc_address(self) -> str | list[str]:
-        """
-        Generates a unique bitcoin (recovery) taproot addresses that is funded with some BTC.
-        """
-
-        rec_tr_addr: str = get_recovery_address(self._rec_btc_addr_idx, self._bridge_pk)
-        self._rec_btc_addr_idx += 1
-        return rec_tr_addr
 
     def rollup_cfg(self) -> RollupConfig:
         return self._rollup_cfg
@@ -237,10 +250,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
                 # Generate one more block so the transaction is on the blockchain.
                 brpc.proxy.sendmany(
                     "",
-                    {
-                        (get_recovery_address(i, bridge_pk) if i < 10 else get_address(i - 10)): 20
-                        for i in range(20)
-                    },
+                    {get_address(i): 20 for i in range(20)},
                 )
                 brpc.proxy.generatetoaddress(1, seqaddr)
 

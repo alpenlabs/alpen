@@ -9,7 +9,6 @@ use bdk_wallet::{
         consensus::serialize, key::Parity, secp256k1::SECP256K1, Address, AddressType, FeeRate,
         PublicKey, Transaction, XOnlyPublicKey,
     },
-    descriptor::IntoWalletDescriptor,
     miniscript::ToPublicKey,
     KeychainKind, Wallet,
 };
@@ -19,7 +18,6 @@ use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
 
 use crate::{
     constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
-    drt::bridge_in_descriptor,
     error::Error,
     parse::{parse_pk, parse_xonly_pk},
 };
@@ -59,25 +57,6 @@ pub(crate) fn unspendable_address() -> String {
 /// This uses the hardcoded `[DESCRIPTOR]` and `[CHANGE_DESCRIPTOR]`.
 pub(crate) fn taproot_wallet() -> Result<Wallet, Error> {
     Ok(Wallet::create(*DESCRIPTOR, *CHANGE_DESCRIPTOR)
-        .network(NETWORK)
-        .create_wallet_no_persist()
-        .map_err(|_| Error::Wallet))?
-}
-
-/// The bridge wallet used to get the recovery path of the deposit request transaction (DRT).
-pub(crate) fn bridge_wallet(
-    bridge_pubkey: XOnlyPublicKey,
-    recovery_address: Address,
-) -> Result<Wallet, Error> {
-    let (bridge_in_desc, _) =
-        bridge_in_descriptor(bridge_pubkey, recovery_address).expect("valid bridge in descriptor");
-
-    let desc = bridge_in_desc
-        .clone()
-        .into_wallet_descriptor(SECP256K1, NETWORK)
-        .expect("valid descriptor");
-
-    Ok(Wallet::create_single(desc.clone())
         .network(NETWORK)
         .create_wallet_no_persist()
         .map_err(|_| Error::Wallet))?
@@ -165,7 +144,10 @@ pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
         .into_iter()
         .map(|pk| parse_xonly_pk(&pk).map_err(|_| Error::XOnlyPublicKey))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(musig_aggregate_pks_inner(pks)?.to_string())
+
+    let result = musig_aggregate_pks_inner(pks)?.to_string();
+
+    Ok(result)
 }
 
 /// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].
@@ -345,27 +327,6 @@ mod tests {
             .to_string();
         let expected = "bcrt1pz449kexzydh2kaypatup5ultru3ej284t6eguhnkn6wkhswt0l7q3a7j76";
         assert_eq!(change_address, expected);
-    }
-
-    #[test]
-    fn bridge_wallet() {
-        let bridge_pubkey = XOnlyPublicKey::from_slice(&hex!(
-            "be27fa8b1f5278faf82cab8da23e8761f8f9bd5d5ebebbb37e0e12a70d92dd16"
-        ))
-        .unwrap();
-
-        let recovery_address = "bcrt1pz449kexzydh2kaypatup5ultru3ej284t6eguhnkn6wkhswt0l7q3a7j76"
-            .parse::<Address<_>>()
-            .unwrap()
-            .assume_checked();
-
-        let mut wallet = super::bridge_wallet(bridge_pubkey, recovery_address).unwrap();
-
-        let address = wallet
-            .reveal_next_address(KeychainKind::External)
-            .to_string();
-        let expected = "bcrt1phu7d8hrax7s2p7mwezx5w8sw0gdpwuxcm7zxxa4ev0kv6hhy8tyq2xp4um";
-        assert_eq!(address, expected);
     }
 
     #[test]

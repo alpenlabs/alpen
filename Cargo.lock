@@ -2491,9 +2491,9 @@ dependencies = [
 
 [[package]]
 name = "bindgen"
-version = "0.71.1"
+version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
 dependencies = [
  "bitflags 2.9.4",
  "cexpr",
@@ -14706,23 +14706,19 @@ dependencies = [
 name = "strata-python-utils"
 version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "bdk_bitcoind_rpc",
  "bdk_wallet",
- "bitcoind-async-client",
- "corepc-node",
+ "make_buf",
  "musig2",
  "pyo3",
  "pyo3-build-config",
- "revm-primitives",
+ "rand 0.8.5",
  "secp256k1 0.29.1",
  "shrex",
  "shrex_macros",
- "strata-common",
  "strata-crypto",
+ "strata-l1tx",
  "strata-primitives",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -17433,11 +17429,11 @@ dependencies = [
 
 [[package]]
 name = "zstd-sys"
-version = "2.0.15+zstd.1.5.7"
+version = "2.0.16+zstd.1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb81183ddd97d0c74cedf1d50d85c8d08c1b8b68ee863bdee9e706eedba1a237"
+checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
 dependencies = [
- "bindgen 0.71.1",
+ "bindgen 0.72.1",
  "cc",
  "pkg-config",
 ]
