@@ -160,10 +160,10 @@ moho-runtime-interface = { git = "https://github.com/alpenlabs/moho" }
 moho-types = { git = "https://github.com/alpenlabs/moho" }
 
 # zkaleido
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
-zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc14" }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc15" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc15" }
+zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc15" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc15" }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
@@ -261,8 +261,8 @@ reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
 rsp-mpt = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
 rsp-primitives = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
-sp1-helper = "5.0.0"
-sp1-sdk = "5.0.0"
+sp1-helper = "5.2.1"
+sp1-sdk = "5.2.1"
 
 anyhow = "1.0.86"
 arbitrary = { version = "1.3.2", features = ["derive"] }
