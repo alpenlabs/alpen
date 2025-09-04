@@ -18,7 +18,7 @@ toml = "^0.10.2"
 [tool.poetry.group.dev.dependencies]
 ruff = "0.12.11"
 maturin = "1.9.4"
-ty = "^0.0.1a16"
+ty = "^0.0.1a20"
 
 [tool.ruff]
 line-length = 100
