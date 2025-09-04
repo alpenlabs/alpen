@@ -34,11 +34,11 @@ pub(crate) fn handle_action(
             let id = state.next_update_id();
             match update {
                 UpdateAction::Sequencer(_) => {
-                    // TODO: directly apply it without waiting
+                    // TODO: directly apply it without queuing
                 }
                 action => {
                     // For all others add it to queue
-                    let queued_update = QueuedUpdate::try_new(id, action, current_height)?;
+                    let queued_update = QueuedUpdate::new(id, action, current_height, 0); // FIXME: delay
                     state.enqueue(queued_update);
                 }
             }
