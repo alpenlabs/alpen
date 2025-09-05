@@ -14079,7 +14079,8 @@ dependencies = [
  "strata-asm-proto-administration-txs",
  "strata-crypto",
  "strata-primitives",
- "thiserror 2.0.12",
+ "strata-test-utils",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -14092,8 +14093,8 @@ dependencies = [
  "strata-crypto",
  "strata-l1-txfmt",
  "strata-primitives",
- "thiserror 2.0.12",
- "zkaleido",
+ "thiserror 2.0.16",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc15)",
 ]
 
 [[package]]
@@ -14339,8 +14340,8 @@ dependencies = [
  "arbitrary",
  "borsh",
  "strata-primitives",
- "thiserror 2.0.12",
- "zkaleido",
+ "thiserror 2.0.16",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc15)",
 ]
 
 [[package]]

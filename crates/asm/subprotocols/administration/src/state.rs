@@ -9,7 +9,7 @@ use crate::{
 
 /// Holds the state for the Administration Subprotocol, including the various
 /// multisignature authorities and any actions still pending execution.
-#[derive(Debug, Clone, Eq, PartialEq, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AdministrationSubprotoState {
     /// List of configurations for multisignature authorities.
     /// Each entry specifies who the signers are and how many signatures
@@ -103,283 +103,121 @@ impl AdministrationSubprotoState {
         self.queued = rest;
         ready
     }
+
+    /// Get a reference to the queued updates (for testing)
+    #[cfg(test)]
+    pub fn queued(&self) -> &[QueuedUpdate] {
+        &self.queued
+    }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use strata_asm_proto_administration_txs::actions::{
-//         UpdateAction,
-//         updates::{multisig::MultisigUpdate, vk::VerifyingKeyUpdate},
-//     };
-//     use strata_crypto::multisig::{
-//         PubKey,
-//         config::{MultisigConfig, MultisigConfigUpdate},
-//     };
-//     use strata_primitives::roles::ProofType;
-//     use strata_test_utils::ArbitraryGenerator;
-//     use zkaleido::VerifyingKey;
+#[cfg(test)]
+mod tests {
+    use strata_asm_proto_administration_txs::actions::UpdateAction;
+    use strata_test_utils::ArbitraryGenerator;
 
-//     use crate::{
-//         state::{AdministrationSubprotoConfig, AdministrationSubprotoState},
-//         updates::{queued::QueuedUpdate, scheduled::ScheduledUpdate},
-//     };
+    use crate::{
+        config::AdministrationSubprotoParams, queued_update::QueuedUpdate,
+        state::AdministrationSubprotoState,
+    };
 
-//     fn create_test_config() -> AdministrationSubprotoConfig {
-//         let test_key = PubKey::new([1; 32]);
-//         let test_config = MultisigConfig::try_new(vec![test_key], 1).unwrap();
+    #[test]
+    fn test_initial_state() {
+        let mut arb = ArbitraryGenerator::new();
+        let config: AdministrationSubprotoParams = arb.generate();
+        let state = AdministrationSubprotoState::new(&config);
 
-//         AdministrationSubprotoConfig::new(test_config.clone(), test_config.clone())
-//     }
+        assert_eq!(state.next_update_id(), 0);
+        assert_eq!(state.queued().len(), 0);
+    }
 
-//     fn create_queued_action() -> UpdateAction {
-//         let vk_update = VerifyingKeyUpdate::new(VerifyingKey::default(), ProofType::OlStf);
-//         UpdateAction::VerifyingKey(vk_update)
-//     }
+    #[test]
+    fn test_enqueue_find_and_remove_queued() {
+        let mut arb = ArbitraryGenerator::new();
+        let config: AdministrationSubprotoParams = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&config);
 
-//     fn create_scheduled_action() -> UpdateAction {
-//         let test_key = PubKey::new([2; 32]);
-//         let update = MultisigConfigUpdate::new(vec![test_key], vec![], 1);
-//         let multisig_update =
-//             MultisigUpdate::new(update, strata_primitives::roles::Role::StrataAdministrator);
-//         UpdateAction::Multisig(multisig_update)
-//     }
+        // Use arbitrary action or fallback to guaranteed queueable action
+        let update: QueuedUpdate = arb.generate();
+        let update_id = *update.id();
 
-//     /// Try to create a QueuedUpdate from any arbitrary action, filtering out non-queueable ones
-//     /// Normalizes VerifyingKey actions to use OlStf proof type for consistent test behavior
-//     fn try_create_queued_update(
-//         id: u32,
-//         action: UpdateAction,
-//         current_height: u64,
-//     ) -> Option<QueuedUpdate> {
-//         let normalized_action = match action {
-//             UpdateAction::VerifyingKey(vk_update) => {
-//                 // Force all VerifyingKey actions to use OlStf for consistent delays
-//                 let (vk, _) = vk_update.into_inner();
-//                 let normalized = VerifyingKeyUpdate::new(vk, ProofType::OlStf);
-//                 UpdateAction::VerifyingKey(normalized)
-//             }
-//             other => other,
-//         };
-//         QueuedUpdate::try_new(id, normalized_action, current_height).ok()
-//     }
+        state.enqueue(update.clone());
 
-//     /// Try to create a ScheduledUpdate from any arbitrary action, filtering out non-schedulable
-//     /// ones
-//     fn try_create_scheduled_update(
-//         id: u32,
-//         action: UpdateAction,
-//         current_height: u64,
-//     ) -> Option<ScheduledUpdate> {
-//         ScheduledUpdate::try_new(id, action, current_height).ok()
-//     }
+        assert_eq!(state.find_queued(&update_id), Some(&update));
+        assert_eq!(state.find_queued(&(update_id + 1)), None);
 
-//     #[test]
-//     fn test_enqueue_find_and_remove_queued() {
-//         let mut arb = ArbitraryGenerator::new();
-//         let config = create_test_config();
-//         let mut state = AdministrationSubprotoState::new(&config);
+        state.remove_queued(&update_id);
+        assert_eq!(state.find_queued(&update_id), None);
+    }
 
-//         let id = 1;
-//         let current_height = 100;
+    /// Helper to seed queued updates with specific activation heights
+    fn seed_queued(ids: &[u32], activation_heights: &[u64]) -> AdministrationSubprotoState {
+        let mut arb = ArbitraryGenerator::new();
+        let config = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&config);
 
-//         // Try arbitrary action first, fallback to guaranteed queueable action
-//         let action: UpdateAction = arb.generate();
-//         let update =
-//             if let Some(queued_update) = try_create_queued_update(id, action, current_height) {
-//                 queued_update
-//             } else {
-//                 let fallback_action = create_queued_action();
-//                 QueuedUpdate::try_new(id, fallback_action, current_height).unwrap()
-//             };
+        for (&id, &activation_height) in ids.iter().zip(activation_heights.iter()) {
+            let update: UpdateAction = arb.generate();
+            let queued_update = QueuedUpdate::new(id, update, activation_height);
+            state.enqueue(queued_update);
+        }
+        state
+    }
 
-//         state.enqueue(update.clone());
+    #[test]
+    fn test_process_queued_table() {
+        struct Case {
+            current: u64,
+            want_queued: Vec<u32>,
+            want_ready: Vec<u32>,
+        }
 
-//         assert_eq!(state.find_queued(&id), Some(&update));
-//         assert_eq!(state.find_queued(&2), None);
+        let ids = &[1, 2, 3];
+        let activation_heights = &[5000, 5100, 5200];
 
-//         state.remove_queued(&id);
-//         assert_eq!(state.find_queued(&id), None);
-//     }
+        let cases = vec![
+            Case {
+                current: 4999,
+                want_queued: vec![1, 2, 3],
+                want_ready: vec![],
+            },
+            Case {
+                current: 5000,
+                want_queued: vec![2, 3],
+                want_ready: vec![1],
+            },
+            Case {
+                current: 5100,
+                want_queued: vec![3],
+                want_ready: vec![1, 2],
+            },
+            Case {
+                current: 5200,
+                want_queued: vec![],
+                want_ready: vec![1, 2, 3],
+            },
+        ];
 
-//     /// Helper to seed queued updates - tries arbitrary actions and keeps valid ones
-//     fn seed_queued(ids: &[u32], heights: &[u64]) -> AdministrationSubprotoState {
-//         let mut arb = ArbitraryGenerator::new();
-//         let config = create_test_config();
-//         let mut state = AdministrationSubprotoState::new(&config);
+        for case in cases {
+            let mut state = seed_queued(ids, activation_heights);
+            let ready_updates = state.process_queued(case.current);
 
-//         for (&id, &h) in ids.iter().zip(heights.iter()) {
-//             let current_height = h.saturating_sub(4320); // Fix clippy warning
+            let mut queued_ids: Vec<_> = state.queued.iter().map(|u| *u.id()).collect();
+            queued_ids.sort_unstable();
 
-//             // Try arbitrary actions until we get one that can be queued
-//             let action: UpdateAction = arb.generate();
-//             if let Some(queued_update) = try_create_queued_update(id, action, current_height) {
-//                 state.enqueue(queued_update);
-//             } else {
-//                 // If arbitrary action can't be queued, use a guaranteed queueable action
-//                 let fallback_action = create_queued_action();
-//                 state.enqueue(QueuedUpdate::try_new(id, fallback_action,
-// current_height).unwrap());             }
-//         }
-//         state
-//     }
+            let mut ready_ids: Vec<_> = ready_updates.iter().map(|u| *u.id()).collect();
+            ready_ids.sort_unstable();
 
-//     /// Helper to seed scheduled updates - tries arbitrary actions and keeps valid ones
-//     fn seed_scheduled(
-//         ids: &[u32],
-//         heights: &[u64],
-//     ) -> (AdministrationSubprotoState, Vec<ScheduledUpdate>) {
-//         let mut arb = ArbitraryGenerator::new();
-//         let config = create_test_config();
-//         let mut state = AdministrationSubprotoState::new(&config);
-//         let mut updates = Vec::with_capacity(ids.len());
-
-//         for (&id, &h) in ids.iter().zip(heights.iter()) {
-//             let current_height = h.saturating_sub(2016); // Fix clippy warning
-
-//             // Try arbitrary actions until we get one that can be scheduled
-//             let action: UpdateAction = arb.generate();
-//             let update = if let Some(scheduled_update) =
-//                 try_create_scheduled_update(id, action, current_height)
-//             {
-//                 scheduled_update
-//             } else {
-//                 // If arbitrary action can't be scheduled, use a guaranteed schedulable action
-//                 let fallback_action = create_scheduled_action();
-//                 ScheduledUpdate::try_new(id, fallback_action, current_height).unwrap()
-//             };
-
-//             state.schedule(update.clone());
-//             updates.push(update);
-//         }
-//         (state, updates)
-//     }
-
-//     #[test]
-//     fn test_process_queued_table() {
-//         struct Case {
-//             current: u64,
-//             want_q: Vec<u32>,
-//             want_c: Vec<u32>,
-//         }
-
-//         let ids = &[1, 2, 3];
-//         let heights = &[5000, 5100, 5200]; // Increased to work with delays
-
-//         let cases = vec![
-//             Case {
-//                 current: 4999,
-//                 want_q: vec![1, 2, 3],
-//                 want_c: vec![],
-//             },
-//             Case {
-//                 current: 5200,
-//                 want_q: vec![],
-//                 want_c: vec![1, 2, 3],
-//             },
-//             Case {
-//                 current: 5100,
-//                 want_q: vec![3],
-//                 want_c: vec![1, 2],
-//             },
-//         ];
-
-//         for case in cases {
-//             let mut state = seed_queued(ids, heights);
-//             state.process_queued(case.current);
-
-//             let queued: Vec<_> = state.queued.iter().map(|u| *u.id()).collect();
-//             let mut committed: Vec<_> = state.committed.iter().map(|u| *u.id()).collect();
-//             committed.sort_unstable();
-
-//             assert_eq!(
-//                 queued, case.want_q,
-//                 "at height {} queued mismatch",
-//                 case.current
-//             );
-//             assert_eq!(
-//                 committed, case.want_c,
-//                 "at height {} committed mismatch",
-//                 case.current
-//             );
-//         }
-//     }
-
-//     #[test]
-//     fn test_process_scheduled_table() {
-//         struct Case {
-//             current: u64,
-//             want_rem: Vec<u32>,
-//             want_ret: Vec<u32>,
-//         }
-//         let ids = &[1, 2, 3];
-//         let heights = &[2500, 3000, 3500]; // Increased to work with delays
-
-//         let cases = vec![
-//             Case {
-//                 current: 2499,
-//                 want_rem: vec![1, 2, 3],
-//                 want_ret: vec![],
-//             },
-//             Case {
-//                 current: 2500,
-//                 want_rem: vec![2, 3],
-//                 want_ret: vec![1],
-//             },
-//             Case {
-//                 current: 3000,
-//                 want_rem: vec![3],
-//                 want_ret: vec![1, 2],
-//             },
-//             Case {
-//                 current: 3500,
-//                 want_rem: vec![],
-//                 want_ret: vec![1, 2, 3],
-//             },
-//         ];
-
-//         for case in cases {
-//             let (mut state, _) = seed_scheduled(ids, heights);
-//             let returned: Vec<_> = state
-//                 .process_scheduled(case.current)
-//                 .into_iter()
-//                 .map(|u| *u.id())
-//                 .collect();
-//             let mut remaining: Vec<_> = state.scheduled.iter().map(|u| *u.id()).collect();
-//             remaining.sort_unstable();
-
-//             assert_eq!(
-//                 returned, case.want_ret,
-//                 "at height {} returned mismatch",
-//                 case.current
-//             );
-//             assert_eq!(
-//                 remaining, case.want_rem,
-//                 "at height {} remaining mismatch",
-//                 case.current
-//             );
-//         }
-//     }
-
-//     #[test]
-//     fn test_commit_to_schedule() {
-//         let ids = &[1, 2, 3];
-//         let heights = &[5000, 5100, 5200]; // Increased to work with delays
-//         let mut state = seed_queued(ids, heights);
-
-//         state.process_queued(5200);
-//         assert_eq!(state.queued, &[]);
-//         assert_eq!(state.committed.len(), 3);
-//         assert_eq!(state.scheduled.len(), 0);
-
-//         state.commit_to_schedule(&2, 5300);
-
-//         // now committed should no longer contain 2, but still 1 & 3
-//         let mut remaining: Vec<_> = state.committed.iter().map(|c| *c.id()).collect();
-//         remaining.sort_unstable();
-//         assert_eq!(remaining, vec![1, 3]);
-
-//         // scheduled should now contain exactly 2
-//         let scheduled_ids: Vec<_> = state.scheduled.iter().map(|s| *s.id()).collect();
-//         assert_eq!(scheduled_ids, vec![2]);
-//     }
-// }
+            assert_eq!(
+                queued_ids, case.want_queued,
+                "at height {} queued mismatch",
+                case.current
+            );
+            assert_eq!(
+                ready_ids, case.want_ready,
+                "at height {} ready mismatch",
+                case.current
+            );
+        }
+    }
+}
