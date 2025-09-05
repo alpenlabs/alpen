@@ -32,7 +32,7 @@ strata-dbtool [OPTIONS] <COMMAND>
 ### Global Options
 
 - `-d, --datadir <path>` - Node data directory (default: `data`)
-- `-t, --db-type <type>` - Backend DB implementation: `rocksdb` or `sled` (default: `rocksdb`)
+- `-t, --db-type <type>` - Backend DB implementation: `sled` (default: `sled`)
 - `-o, --output-format <format>` - Output format: `porcelain` (default) or `json`
 
 ## Commands

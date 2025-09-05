@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bitcoind_async_client::{traits::Reader, Client};
 use jsonrpsee::http_client::HttpClient;
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_l1tx::filter::types::TxFilterConfig;
 use strata_primitives::{
     l1::L1BlockCommitment,
@@ -112,7 +112,7 @@ impl ProvingOp for BtcBlockspaceOperator {
     async fn fetch_input(
         &self,
         task_id: &ProofKey,
-        _db: &ProofDb,
+        _db: &ProofDBSled,
     ) -> Result<BlockScanProofInput, ProvingTaskError> {
         let (epoch, start, end) = match task_id.context() {
             ProofContext::BtcBlockspace(epoch, start, end) => (epoch, *start, *end),

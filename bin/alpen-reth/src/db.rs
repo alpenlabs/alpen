@@ -1,31 +1,18 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::Path, sync::Arc};
 
-use eyre::{eyre, Context};
-use rockbound::{rocksdb, DB};
+use eyre::{eyre, Context, Result};
+use typed_sled::SledDb;
 
-pub(crate) fn open_rocksdb_database(datadir: PathBuf) -> eyre::Result<Arc<DB>> {
-    let mut database_dir = datadir;
-    database_dir.push("rocksdb");
+pub(crate) fn open_sled_database(datadir: &Path) -> Result<Arc<SledDb>> {
+    let database_dir = datadir.join("sled");
 
-    if !database_dir.exists() {
-        fs::create_dir_all(&database_dir)?;
-    }
+    fs::create_dir_all(&database_dir)
+        .wrap_err_with(|| format!("creating database directory at {:?}", database_dir))?;
 
-    let dbname = alpen_reth_db::rocksdb::ROCKSDB_NAME;
-    let cfs = alpen_reth_db::rocksdb::STORE_COLUMN_FAMILIES;
-    let mut opts = rocksdb::Options::default();
-    opts.create_if_missing(true);
-    opts.create_missing_column_families(true);
+    let sled_db = sled::open(&database_dir).wrap_err("opening sled database")?;
 
-    let rbdb = DB::open(
-        &database_dir,
-        dbname,
-        cfs.iter().map(|s| s.to_string()),
-        &opts,
-    )
-    // convert from anyhow -> eyre
-    .map_err(|err| eyre!(Box::new(err)))
-    .context("opening database")?;
+    let typed_sled =
+        SledDb::new(sled_db).map_err(|e| eyre!("Failed to create typed sled db: {}", e))?;
 
-    Ok(Arc::new(rbdb))
+    Ok(Arc::new(typed_sled))
 }

@@ -13,7 +13,7 @@ path = "src/main.rs"
 [dependencies]
 strata-common.workspace = true
 strata-db.workspace = true
-strata-db-store-rocksdb.workspace = true
+strata-db-store-sled.workspace = true
 strata-l1tx.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-btc-blockspace.workspace = true
@@ -26,6 +26,7 @@ strata-rpc-types.workspace = true
 strata-rpc-utils.workspace = true
 strata-state.workspace = true
 strata-zkvm-hosts.workspace = true
+typed-sled.workspace = true
 zkaleido.workspace = true
 
 alloy-rpc-types.workspace = true
@@ -36,7 +37,6 @@ bincode.workspace = true
 bitcoind-async-client.workspace = true
 borsh.workspace = true
 jsonrpsee = { workspace = true, features = ["http-client"] }
-rockbound.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
@@ -54,6 +54,7 @@ zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+sled.workspace = true
 
 [features]
 default = []

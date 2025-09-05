@@ -18,6 +18,7 @@ borsh.workspace = true
 parking_lot = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
+typed-sled.workspace = true
 
 [features]
 default = []
