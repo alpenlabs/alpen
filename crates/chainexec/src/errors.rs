@@ -1,20 +1,13 @@
-use strata_primitives::prelude::*;
 use thiserror::Error;
 
-/// Newtype for exec context results, for brevity.
-pub type ExecResult<T> = Result<T, Error>;
-
 #[derive(Debug, Error)]
-pub enum Error {
-    #[error("missing pre-state for block {0}")]
-    MissingBlockPreState(L2BlockId),
+pub enum Error<C = Box<dyn std::error::Error + Send + Sync>> {
+    /// Context-related errors (IO, missing data, etc.)
+    /// These indicate system/process issues, not block validation failures
+    #[error("context: {0}")]
+    Context(C),
 
-    #[error("missing post-state for block {0}")]
-    MissingBlockPostState(L2BlockId),
-
-    #[error("missing L2 block header {0}")]
-    MissingL2Header(L2BlockId),
-
+    /// Block validation errors - indicate the block itself is invalid
     #[error("computed state root mismatch with block state root")]
     StateRootMismatch,
 
@@ -24,11 +17,20 @@ pub enum Error {
     #[error("not yet implemented")]
     Unimplemented,
 
-    /// Some unexpected error condition happened.
-    ///
-    /// This only exists as a way to map worker error types that we don't expect
-    /// to be generated in calls that the executor would see, like
-    /// `WorkerExited` or `Exec`.
-    #[error("unexpected failure: {0}")]
+    /// Some unexpected error condition happened during block validation
+    #[error("unexpected validation failure: {0}")]
     Unexpected(String),
+}
+
+impl<C> Error<C> {
+    /// Maps the context error type to a different type
+    pub fn map_context<D>(self, f: impl FnOnce(C) -> D) -> Error<D> {
+        match self {
+            Error::Context(c) => Error::Context(f(c)),
+            Error::StateRootMismatch => Error::StateRootMismatch,
+            Error::Transition(e) => Error::Transition(e),
+            Error::Unimplemented => Error::Unimplemented,
+            Error::Unexpected(msg) => Error::Unexpected(msg),
+        }
+    }
 }

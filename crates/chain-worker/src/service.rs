@@ -137,7 +137,8 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             None => {
                 // Get genesis block ID by fetching the first block at height 0
                 let genesis_block_ids = self.context.fetch_block_ids(0)?;
-                let genesis_blkid = *genesis_block_ids.first()
+                let genesis_blkid = *genesis_block_ids
+                    .first()
                     .ok_or(WorkerError::MissingGenesisBlock)?;
                 L2BlockCommitment::new(0, genesis_blkid)
             }
