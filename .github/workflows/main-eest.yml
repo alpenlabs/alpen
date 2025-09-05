@@ -54,28 +54,13 @@ jobs:
           bitcoind --version
           rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        id: setup-python
+      - name: Install uv
+        uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
         with:
-          python-version: "^3.10" # Keep in sync with `pyproject.toml`
-
-      - name: Install poetry
-        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a # v1
-        with:
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
-        with:
-          path: functional-tests/.venv
-          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies
-        working-directory: functional-tests
-        #if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true' # this was giving issues in cache
-        run: poetry install --no-root --no-interaction
+          working-directory: functional-tests
+          activate-environment: true
+          enable-cache: true
+          cache-suffix: "functional-tests"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
@@ -100,7 +85,7 @@ jobs:
           export PATH="${NEWPATH}:${PATH}"
           which strata-client
           cd functional-tests
-          screen -dmS basic_env poetry run python entry.py -e basic
+          screen -dmS basic_env uv run python entry.py -e basic
           sleep 15  # Wait for the service to start
 
       - name: Run tests
@@ -128,17 +113,17 @@ jobs:
         run: |
           chmod +x test_ee_proof.sh
           ./test_ee_proof.sh local
-      
+
       - name: Stop service
         if: always()
         run: |
           screen -S basic_env -X quit
-      
+
       - name: Check tests execution
         # the purpose of the workflow is twofold:
         # - run the EF tests
         # - make sure EE proof is completed with EF txns (regardless if some tests have failed)
-        # Thus, we check the whole logic here. 
+        # Thus, we check the whole logic here.
         if: steps.runtests.outcome == 'failure'
         run: |
           echo "Functional tests failed"

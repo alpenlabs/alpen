@@ -30,37 +30,28 @@ rm -rf bitcoin-29.0 bitcoin-29.0-x86_64-linux-gnu.tar.gz
 bitcoind --version
 ```
 
-### Poetry
+### `uv`
 
 > [!NOTE]
 > Make sure you have installed Python 3.10 or higher.
 
-We use Poetry for managing the test dependencies.
+We use [`uv`](https://github.com/astral-sh/uv) for managing the test dependencies.
 
-First, install `poetry`:
+First, install `uv` following the instructions at <https://docs.astral.sh/uv/>.
 
-```bash
-# install via apt
-apt install python3-poetry
-# or install poetry via pip3
-pip3 install poetry
-# or install poetry via pipx
-pipx install poetry
-# or install poetry via homebrew
-brew install poetry
-```
 
-Check, that `poetry` is installed:
+Check, that `uv` is installed:
 
 ```bash
-poetry --version
+uv --version
 ```
 
-Finally, install all test dependencies (without installing the root package):
+Now you can run tests with:
 
 ```bash
-poetry install --no-root
-```
+uv run python entry.py
+````
+
 
 ### Rosetta
 

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["poetry-core>=1.0.0", "maturin>=1.0,<2.0"]
+requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "strata_utils"
-version = "0.2.0-pre.1"
+version = "0.3.0-alpha.1"
 license = { text = "MIT" }
 
 [tool.maturin]

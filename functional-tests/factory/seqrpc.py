@@ -1,5 +1,4 @@
 import json
-from typing import Optional
 
 import requests
 from websockets.sync.client import connect as wsconnect
@@ -33,7 +32,7 @@ def _handle_response(resp_str: str):
     return resp["result"]
 
 
-def _send_single_ws_request(url: str, request: str, max_size: Optional[int] = None) -> str:
+def _send_single_ws_request(url: str, request: str, max_size: int | None = None) -> str:
     with wsconnect(url, max_size=max_size) as w:
         w.send(request)
         return w.recv()
@@ -45,7 +44,7 @@ def _send_http_request(url: str, request: str) -> str:
     return res.text
 
 
-def _dispatch_request(url: str, request: str, max_size: Optional[int] = None) -> str:
+def _dispatch_request(url: str, request: str, max_size: int | None = None) -> str:
     if url.startswith("http"):
         return _send_http_request(url, request)
     elif url.startswith("ws"):

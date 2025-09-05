@@ -1,7 +1,6 @@
 import logging
 import os
 import shutil
-from typing import Optional
 
 import flexitest
 import web3
@@ -171,7 +170,7 @@ class StrataSequencerFactory(flexitest.Factory):
         sequencer_rpc_host: str,
         sequencer_rpc_port: str,
         ctx: flexitest.EnvContext,
-        epoch_gas_limit: Optional[int] = None,
+        epoch_gas_limit: int | None = None,
         multi_instance_enabled: bool = False,
         instance_id: int = 0,
         name_suffix: str = "",
@@ -286,7 +285,7 @@ class RethFactory(flexitest.Factory):
         self,
         id: int,
         reth_secret_path: str,
-        sequencer_reth_rpc: Optional[str],
+        sequencer_reth_rpc: str | None,
         ctx: flexitest.EnvContext,
         custom_chain: str = "dev",
         name_suffix: str = "",

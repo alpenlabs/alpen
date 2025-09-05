@@ -1,5 +1,4 @@
 from dataclasses import asdict, dataclass, field
-from typing import Optional
 
 import toml
 
@@ -9,7 +8,7 @@ class ClientConfig:
     rpc_host: str = field(default="")
     rpc_port: int = field(default=0)
     p2p_port: int = field(default=0)
-    sync_endpoint: Optional[str] = field(default=None)
+    sync_endpoint: str | None = field(default=None)
     l2_blocks_fetch_limit: int = field(default=10)
     datadir: str = field(default="datadir")
     db_retry_count: int = field(default=3)
@@ -27,8 +26,8 @@ class BitcoindConfig:
     rpc_user: str = field(default="rpcuser")
     rpc_password: str = field(default="rpcpassword")
     network: str = field(default="regtest")
-    retry_count: Optional[int] = field(default=3)
-    retry_interval: Optional[int] = field(default=None)
+    retry_count: int | None = field(default=3)
+    retry_interval: int | None = field(default=None)
 
 
 @dataclass

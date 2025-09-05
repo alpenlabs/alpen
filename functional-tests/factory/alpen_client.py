@@ -4,7 +4,6 @@ import pty
 import re
 import subprocess
 from subprocess import CalledProcessError
-from typing import Optional
 
 from envs.env_control_builder import EnvControlBuilder, ServiceNotAvailable
 
@@ -66,7 +65,7 @@ class AlpenCli:
             stderr=None,  # PTY merges stderr
         )
 
-    def _run_and_extract_with_re(self, cmd, re_pattern) -> Optional[str]:
+    def _run_and_extract_with_re(self, cmd, re_pattern) -> str | None:
         assert self.config_file is not None, "config path not set"
 
         result = self._run_tty(
@@ -94,7 +93,7 @@ class AlpenCli:
         # fmt: on
         return self._run_and_extract_with_re(cmd, self.config_file) == self.config_file
 
-    def scan(self) -> Optional[str]:
+    def scan(self) -> str | None:
         cmd = [
             # fmt: off
             "alpen",
@@ -103,7 +102,7 @@ class AlpenCli:
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"Scan complete")
 
-    def l2_balance(self) -> Optional[str]:
+    def l2_balance(self) -> str | None:
         # fmt: off
         cmd = [
             "alpen",
@@ -113,7 +112,7 @@ class AlpenCli:
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"^Total:\s+([0-9]+(?:\.[0-9]+)?)\s+BTC\b")
 
-    def l1_balance(self) -> Optional[str]:
+    def l1_balance(self) -> str | None:
         # fmt: off
         cmd = [
             "alpen",
@@ -123,7 +122,7 @@ class AlpenCli:
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"^Total:\s+([0-9]+(?:\.[0-9]+)?)\s+BTC\b")
 
-    def l2_address(self) -> Optional[str]:
+    def l2_address(self) -> str | None:
         # fmt: off
         cmd = [
             "alpen",
@@ -144,7 +143,7 @@ class AlpenCli:
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"\b(?:bc1|tb1|bcrt1)[0-9a-z]{25,59}\b")
 
-    def deposit(self) -> Optional[str]:
+    def deposit(self) -> str | None:
         # fmt: off
         cmd = [
             "alpen",
@@ -191,7 +190,7 @@ class AlpenCliBuilder:
         self.service_resolver.requires_service(service_name, transform_lambda)
         return self
 
-    def build(self, ctx) -> Optional[AlpenCli]:
+    def build(self, ctx) -> AlpenCli | None:
         """Build AlpenCli instance with resolved service configs"""
         if not self.pubkey or not self.magic_bytes or not self.datadir:
             raise ValueError("pubkey, magic_bytes, and datadir must be set before building")
