@@ -47,6 +47,9 @@ pub enum WorkerError {
     #[error("shutdown before genesis")]
     ShutdownBeforeGenesis,
 
+    #[error("genesis block not found at height 0")]
+    MissingGenesisBlock,
+
     #[error("worker not initialized")]
     NotInitialized,
 
@@ -86,6 +89,9 @@ impl From<WorkerError> for strata_chainexec::Error {
             }
             WorkerError::ShutdownBeforeGenesis => {
                 ExecError::Unexpected("shutdown before genesis".to_owned())
+            }
+            WorkerError::MissingGenesisBlock => {
+                ExecError::Unexpected("genesis block not found at height 0".to_owned())
             }
             WorkerError::NotInitialized => {
                 ExecError::Unexpected("worker not initialized".to_owned())

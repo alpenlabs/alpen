@@ -132,9 +132,15 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             .block_on(self.status_channel.wait_until_genesis())
             .map_err(|_| WorkerError::ShutdownBeforeGenesis)?;
 
-        let cur_tip = match init_state.get_declared_final_epoch().cloned() {
+        let cur_tip = match init_state.get_declared_final_epoch().clone() {
             Some(epoch) => epoch.to_block_commitment(),
-            None => L2BlockCommitment::new(0, *init_state.sync().genesis_blkid()),
+            None => {
+                // Get genesis block ID by fetching the first block at height 0
+                let genesis_block_ids = self.context.fetch_block_ids(0)?;
+                let genesis_blkid = *genesis_block_ids.first()
+                    .ok_or(WorkerError::MissingGenesisBlock)?;
+                L2BlockCommitment::new(0, genesis_blkid)
+            }
         };
 
         Ok(cur_tip)
