@@ -132,7 +132,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             .block_on(self.status_channel.wait_until_genesis())
             .map_err(|_| WorkerError::ShutdownBeforeGenesis)?;
 
-        let cur_tip = match init_state.get_declared_final_epoch().clone() {
+        let cur_tip = match init_state.get_declared_final_epoch() {
             Some(epoch) => epoch.to_block_commitment(),
             None => {
                 // Get genesis block ID by fetching the first block at height 0
