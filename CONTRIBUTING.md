@@ -119,6 +119,14 @@ you can run the basic CI checks in your local environment:
   to run functional tests, see instructions in its
   [`README.md`](./functional-tests/README.md).
 
+We also provide a [`flake.nix`](flake.nix) with a `devShell` with all the dependencies
+necessary for local development.
+Install [Nix](https://nixos.org) and run:
+
+```sh
+nix develop
+```
+
 ## Locally running CI
 
 Before you create a PR, make sure that all the required CI checks pass locally.
