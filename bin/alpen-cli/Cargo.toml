@@ -7,7 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [[bin]]
-name = "alpen"
+name = "alpen-cli"
 path = "src/main.rs"
 
 [dependencies]

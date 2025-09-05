@@ -88,7 +88,7 @@ class AlpenCli:
     def check_config(self) -> bool:
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "config",
         ]
         # fmt: on
@@ -97,7 +97,7 @@ class AlpenCli:
     def scan(self) -> Optional[str]:
         cmd = [
             # fmt: off
-            "alpen",
+            "alpen-cli",
             "scan",
         ]
         # fmt: on
@@ -106,7 +106,7 @@ class AlpenCli:
     def l2_balance(self) -> Optional[str]:
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "balance",
             "alpen"
         ]
@@ -116,7 +116,7 @@ class AlpenCli:
     def l1_balance(self) -> Optional[str]:
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "balance",
             "signet"
         ]
@@ -126,7 +126,7 @@ class AlpenCli:
     def l2_address(self) -> Optional[str]:
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "receive",
             "alpen"
         ]
@@ -136,7 +136,7 @@ class AlpenCli:
     def l1_address(self):
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "receive",
             "signet"
         ]
@@ -147,7 +147,7 @@ class AlpenCli:
     def deposit(self) -> Optional[str]:
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "deposit",
         ]
         # fmt: on
@@ -156,7 +156,7 @@ class AlpenCli:
     def withdraw(self):
         # fmt: off
         cmd = [
-            "alpen",
+            "alpen-cli",
             "withdraw",
         ]
         # fmt: on

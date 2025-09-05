@@ -78,7 +78,7 @@ class StrataRunContext(flexitest.RunContext):
                 lambda s: f"http://localhost:{s.get_prop('eth_rpc_http_port')}",
             )
             .with_pubkey(agg_pubkey)
-            .with_magic_bytes(rollup_cfg.magic_bytes)
+            .with_magic_bytes(''.join(chr(byte_val) for byte_val in rollup_cfg.magic_bytes))
             .with_datadir(self.datadir_root)
         )
 
@@ -153,8 +153,6 @@ class BasicEnvConfig(flexitest.EnvConfig):
         seq_signer_fac = ctx.get_factory("sequencer_signer")
         reth_fac = ctx.get_factory("reth")
 
-        logger = logging.getLogger(__name__)
-
         svcs = {}
 
         # set up network params
@@ -207,7 +205,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
         # The default genesis trigger height is 100, so we need at least that many blocks
         min_blocks_needed = settings.genesis_trigger + 10  # Add a buffer
 
-        logger.info(
+        print(
             f"Generating {min_blocks_needed} blocks for genesis trigger height "
             f"{settings.genesis_trigger}"
         )
@@ -233,7 +231,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
                 # blocks is enough to deal with the coinbase maturation.
                 # Also, leave a log-message to indicate that the setup is little inconsistent.
                 if self.pre_generate_blocks < 110:
-                    logger.info(
+                    print(
                         "Env setup: pre_fund_addrs is enabled, specify pre_generate_blocks >= 110."
                     )
                     self.pre_generate_blocks = 110
@@ -241,12 +239,12 @@ class BasicEnvConfig(flexitest.EnvConfig):
             while self.pre_generate_blocks > 0:
                 batch_size = min(self.pre_generate_blocks, 500)
 
-                logger.info(f"Pre generating {batch_size} blocks to address {seqaddr}")
+                print(f"Pre generating {batch_size} blocks to address {seqaddr}")
                 brpc.proxy.generatetoaddress(batch_size, seqaddr)
                 self.pre_generate_blocks -= batch_size
 
             if self.pre_fund_addrs:
-                # Send funds for btc external and recovery addresses used in the test logic.
+                # Send funds for btc external addresses used in the test logic.
                 # Generate one more block so the transaction is on the blockchain.
                 brpc.proxy.sendmany(
                     "",

@@ -13,7 +13,16 @@ use crate::{
     error::Error,
 };
 
-/// Parses operator EvenSecretKey from bytes
+/// Parses operator EvenSecretKey from extended private key bytes
+///
+/// Takes raw bytes representing extended private keys and derives
+/// operator keys using the standard key derivation path.
+///
+/// # Arguments
+/// * `operator_keys` - Slice of 78-byte extended private key arrays
+///
+/// # Returns
+/// * `Result<Vec<EvenSecretKey>, Error>` - Vector of derived even secret keys
 pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<EvenSecretKey>, Error> {
     Ok(operator_keys
         .iter()
@@ -29,7 +38,18 @@ pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<Even
         .collect())
 }
 
-#[allow(unused)]
+/// Parses a deposit request transaction (DRT) and extracts relevant information
+///
+/// Validates the transaction against expected parameters and extracts
+/// deposit request information for further processing.
+///
+/// # Arguments
+/// * `tx` - The Bitcoin transaction to parse
+/// * `address` - Expected Bitcoin address for validation
+/// * `operators_pubkey` - Aggregated public key of operators
+///
+/// # Returns
+/// * `Result<DepositRequestInfo, Error>` - Parsed deposit request information
 pub(crate) fn parse_drt(
     tx: &Transaction,
     address: BitcoinAddress,
