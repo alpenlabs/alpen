@@ -14075,6 +14075,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "borsh",
+ "rand 0.8.5",
  "strata-asm-common",
  "strata-asm-proto-administration-txs",
  "strata-crypto",

@@ -113,7 +113,10 @@ impl AdministrationSubprotoState {
 
 #[cfg(test)]
 mod tests {
+    use rand::{Rng, thread_rng};
     use strata_asm_proto_administration_txs::actions::UpdateAction;
+    use strata_crypto::multisig::{PubKey, config::MultisigConfigUpdate};
+    use strata_primitives::roles::Role;
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{
@@ -217,6 +220,60 @@ mod tests {
                 ready_ids, case.want_ready,
                 "at height {} ready mismatch",
                 case.current
+            );
+        }
+    }
+
+    #[test]
+    fn test_apply_multisig_update() {
+        let mut arb = ArbitraryGenerator::new();
+        let config: AdministrationSubprotoParams = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&config);
+        let role: Role = arb.generate();
+
+        let initial_auth = state.authority(role).unwrap().config();
+        let initial_members = initial_auth.keys();
+        let initial_threshold = initial_auth.threshold() as usize;
+
+        let new_members: Vec<PubKey> = arb.generate();
+
+        // Randomly pick some members to remove
+        let mut rng = thread_rng();
+        let members_to_remove: Vec<PubKey> = initial_members
+            .iter()
+            .filter(|_| rng.gen_bool(0.3)) // 30% chance to remove each member
+            .cloned()
+            .collect();
+        let new_threshold = initial_threshold + new_members.len() - members_to_remove.len();
+
+        let update = MultisigConfigUpdate::new(
+            new_members.clone(),
+            members_to_remove.clone(),
+            new_threshold as u8,
+        );
+
+        state.apply_multisig_update(role, &update);
+
+        let updated_auth = state.authority(role).unwrap().config();
+
+        // Verify threshold was updated
+        assert_eq!(updated_auth.threshold(), new_threshold as u8);
+
+        // Verify that old members were removed
+        for old_member in &members_to_remove {
+            assert!(
+                !updated_auth.keys().contains(old_member),
+                "Old member {:?} was not removed",
+                old_member
+            );
+        }
+
+        // Verify that new members were added
+        for new_member in &new_members {
+            assert!(
+                updated_auth.keys().contains(new_member),
+                "New member {:?} was not added",
+                new_member
             );
         }
     }
