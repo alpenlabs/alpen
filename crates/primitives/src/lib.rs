@@ -25,6 +25,7 @@ pub mod params;
 pub mod prelude;
 pub mod proof;
 pub mod relay;
+pub mod roles;
 pub mod sorted_vec;
 pub mod utils;
 

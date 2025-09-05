@@ -1,0 +1,18 @@
+[package]
+name = "strata-asm-proto-administration-txs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-asm-common.workspace = true
+strata-crypto.workspace = true
+strata-l1-txfmt.workspace = true
+strata-primitives.workspace = true
+
+arbitrary.workspace = true
+borsh.workspace = true
+thiserror.workspace = true
+zkaleido.workspace = true
+
+[lints]
+workspace = true
