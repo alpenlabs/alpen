@@ -116,13 +116,13 @@ ensure-codespell:
         exit 1
     fi
 
-# Check if poetry is installed
+# Check if uv is installed
 [group('prerequisites')]
-ensure-poetry:
+ensure-uv:
     #!/usr/bin/env bash
-    if ! command -v poetry &> /dev/null;
+    if ! command -v uv &> /dev/null;
     then
-        echo "poetry not found. Please install it by following the instructions from: https://python-poetry.org/docs/#installation"
+        echo "uv not found. Please install it by following the instructions from: https://docs.astral.sh/uv/"
         exit 1
     fi
 
@@ -136,10 +136,11 @@ ensure-taplo:
         exit 1
     fi
 
-# Activate poetry environment for integration tests
+# Activate uv environment for integration tests
 [group('functional-tests')]
-activate: ensure-poetry
-    cd {{functional_tests_dir}} && poetry install --no-root
+activate-uv: ensure-uv
+    cd {{functional_tests_dir}} && uv venv --clear
+    @if [ -n "${FISH_VERSION:-}" ]; then source {{functional_tests_dir}}/.venv/bin/activate.fish; else source {{functional_tests_dir}}/.venv/bin/activate; fi
 
 # Remove the data directory used by functional tests
 [group('functional-tests')]
@@ -156,14 +157,14 @@ clean-cargo:
 clean-docker-data:
     rm -rf {{docker_dir}}/{{docker_datadir}} 2>/dev/null || true
 
-# Remove poetry virtual environment
+# Remove uv virtual environment
 [group('functional-tests')]
-clean-poetry:
+clean-uv:
     cd {{functional_tests_dir}} && rm -rf .venv 2>/dev/null || true
 
-# Clean functional tests directory, cargo clean, clean docker data, clean poetry virtual environment
+# Clean functional tests directory, cargo clean, clean docker data, clean uv virtual environment
 [group('functional-tests')]
-clean: clean-dd clean-docker-data clean-cargo clean-poetry
+clean: clean-dd clean-docker-data clean-cargo clean-uv
     @echo "\n\033[36m======== CLEAN_COMPLETE ========\033[0m\n"
 
 # Docker compose up
@@ -178,7 +179,7 @@ docker-down:
 
 # Runs functional tests
 [group('functional-tests')]
-test-functional: ensure-poetry activate clean-dd
+test-functional: ensure-uv activate-uv clean-dd
     cd {{functional_tests_dir}} && ./run_test.sh
 
 # Check formatting issues but do not fix automatically
@@ -203,13 +204,13 @@ fmt-toml: ensure-taplo
 
 # Check formatting of python files inside `test` directory
 [group('code-quality')]
-fmt-check-func-tests: ensure-poetry activate
-    cd {{functional_tests_dir}} && poetry run ruff format --check
+fmt-check-func-tests: ensure-uv activate-uv
+    cd {{functional_tests_dir}} && uv run ruff format --check
 
 # Apply formatting of python files inside `test` directory
 [group('code-quality')]
-fmt-func-tests: ensure-poetry activate
-    cd {{functional_tests_dir}} && poetry run ruff format
+fmt-func-tests: ensure-uv activate-uv
+    cd {{functional_tests_dir}} && uv run ruff format
 
 # Checks for lint issues in the workspace
 [group('code-quality')]
@@ -258,13 +259,13 @@ lint-check-toml: ensure-taplo
 
 # Lints the functional tests
 [group('code-quality')]
-lint-check-func-tests: ensure-poetry activate
-    cd {{functional_tests_dir}} && poetry run ruff check
+lint-check-func-tests: ensure-uv activate-uv
+    cd {{functional_tests_dir}} && uv run ruff check
 
 # Lints the functional tests and applies fixes where possible
 [group('code-quality')]
-lint-fix-func-tests: ensure-poetry activate
-    cd {{functional_tests_dir}} && poetry run ruff check --fix
+lint-fix-func-tests: ensure-uv activate-uv
+    cd {{functional_tests_dir}} && uv run ruff check --fix
 
 # Runs all lints and checks for issues without trying to fix them
 [group('code-quality')]
