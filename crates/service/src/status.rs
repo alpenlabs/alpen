@@ -38,19 +38,19 @@ impl<S: Service> ServiceMonitor<S> {
 /// monitors for heterogeneous service types.
 pub trait StatusMonitor {
     /// Fetches the latest status as a boxed `dyn Any`.
-    fn fetch_status_any(&mut self) -> anyhow::Result<AnyStatus>;
+    fn fetch_status_any(&self) -> anyhow::Result<AnyStatus>;
 
     /// Fetches the latest status as a JSON value.
-    fn fetch_status_json(&mut self) -> anyhow::Result<serde_json::Value>;
+    fn fetch_status_json(&self) -> anyhow::Result<serde_json::Value>;
 }
 
 impl<S: Service> StatusMonitor for ServiceMonitor<S> {
-    fn fetch_status_any(&mut self) -> anyhow::Result<AnyStatus> {
+    fn fetch_status_any(&self) -> anyhow::Result<AnyStatus> {
         let v = self.status_rx.borrow();
         Ok(Box::new(v.clone()))
     }
 
-    fn fetch_status_json(&mut self) -> anyhow::Result<serde_json::Value> {
+    fn fetch_status_json(&self) -> anyhow::Result<serde_json::Value> {
         let v = self.status_rx.borrow();
         Ok(serde_json::to_value(&*v)?)
     }
@@ -74,12 +74,12 @@ impl GenericStatusMonitor {
     }
 
     /// Fetches the latest status as a boxed `dyn Any`.
-    pub fn fetch_status_any(&mut self) -> anyhow::Result<AnyStatus> {
+    pub fn fetch_status_any(&self) -> anyhow::Result<AnyStatus> {
         self.inner.fetch_status_any()
     }
 
     /// Fetches the latest status as a JSON value.
-    pub fn fetch_status_json(&mut self) -> anyhow::Result<serde_json::Value> {
+    pub fn fetch_status_json(&self) -> anyhow::Result<serde_json::Value> {
         self.inner.fetch_status_json()
     }
 
@@ -87,10 +87,7 @@ impl GenericStatusMonitor {
     /// of the status, if it exists and is compatible with the type.
     // FIXME this is a kinda expensive thing to do, we should be able to do this
     // with `Serializer` hacks and `Box<dyn Any>` downcasting
-    pub fn query_status_field<T: DeserializeOwned>(
-        &mut self,
-        k: &str,
-    ) -> anyhow::Result<Option<T>> {
+    pub fn query_status_field<T: DeserializeOwned>(&self, k: &str) -> anyhow::Result<Option<T>> {
         let j = self.inner.fetch_status_json()?;
 
         let serde_json::Value::Object(mut obj) = j else {
