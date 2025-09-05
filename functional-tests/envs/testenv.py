@@ -2,7 +2,6 @@ import copy
 import json
 import logging
 import time
-from typing import Optional
 
 import flexitest
 from strata_utils import get_address
@@ -123,15 +122,15 @@ class BasicEnvConfig(flexitest.EnvConfig):
     def __init__(
         self,
         pre_generate_blocks: int = 0,
-        rollup_settings: Optional[RollupParamsSettings] = None,
-        prover_client_settings: Optional[ProverClientSettings] = None,
+        rollup_settings: RollupParamsSettings | None = None,
+        prover_client_settings: ProverClientSettings | None = None,
         auto_generate_blocks: bool = True,
         pre_fund_addrs: bool = True,
         n_operators: int = 2,
         message_interval: int = 0,
         duty_timeout_duration: int = 10,
         custom_chain: str | dict = "dev",
-        epoch_gas_limit: Optional[int] = None,
+        epoch_gas_limit: int | None = None,
         enable_state_diff_gen: bool = False,
     ):
         super().__init__()
@@ -299,7 +298,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
     def __init__(
         self,
         pre_generate_blocks: int = 0,
-        rollup_settings: Optional[RollupParamsSettings] = None,
+        rollup_settings: RollupParamsSettings | None = None,
         auto_generate_blocks: bool = True,
         n_operators: int = 2,
         duty_timeout_duration: int = 10,

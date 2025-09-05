@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable, TypeAlias
+from typing import TypeAlias
 
 import solcx
 import web3

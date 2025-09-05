@@ -3,9 +3,10 @@ import math
 import os
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Thread
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, TypeVar
 
 from bitcoinlib.services.bitcoind import BitcoindClient
 from strata_utils import convert_to_xonly_pk, musig_aggregate_pks
@@ -126,8 +127,8 @@ class RollupParamsSettings:
     epoch_slots: int
     genesis_trigger: int
     message_interval: int
-    proof_timeout: Optional[int] = None
-    chain_config: Optional[str] = None
+    proof_timeout: int | None = None
+    chain_config: str | None = None
 
     @classmethod
     def new_default(cls):
