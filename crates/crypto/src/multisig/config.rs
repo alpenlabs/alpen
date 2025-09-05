@@ -5,7 +5,7 @@ use crate::multisig::{errors::MultisigConfigError, PubKey};
 
 /// Configuration for a multisignature authority:
 /// who can sign (`keys`) and how many of them must sign (`threshold`).
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MultisigConfig {
     /// The public keys of all grant-holders authorized to sign.
     pub keys: Vec<PubKey>,
@@ -47,6 +47,23 @@ impl MultisigConfig {
 
     pub fn threshold(&self) -> u8 {
         self.threshold
+    }
+}
+
+impl<'a> Arbitrary<'a> for MultisigConfig {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate at least 2 keys, up to a reasonable maximum (e.g., 20)
+        let keys_count = u.int_in_range(2..=20)?;
+        let mut keys = Vec::with_capacity(keys_count);
+
+        for _ in 0..keys_count {
+            keys.push(PubKey::arbitrary(u)?);
+        }
+
+        // Generate threshold between 1 and the number of keys
+        let threshold = u.int_in_range(1..=keys_count as u8)?;
+
+        Ok(Self { keys, threshold })
     }
 }
 

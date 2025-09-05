@@ -87,4 +87,10 @@ impl MultisigAuthority {
     pub fn increment_seqno(&mut self) {
         self.seqno += 1;
     }
+
+    /// Get the current sequence number (for testing)
+    #[cfg(test)]
+    pub fn seqno(&self) -> u64 {
+        self.seqno
+    }
 }
