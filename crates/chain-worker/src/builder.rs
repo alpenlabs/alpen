@@ -74,7 +74,7 @@ impl<W> ChainWorkerBuilder<W> {
     /// Launch the chain worker service and return a handle to it.
     ///
     /// This method validates all required dependencies, creates the service state,
-    /// uses ServiceBuilder to set up the service infrastructure, and returns
+    /// uses [`ServiceBuilder`] to set up the service infrastructure, and returns
     /// a handle for interacting with the worker.
     pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<ChainWorkerHandle>
     where

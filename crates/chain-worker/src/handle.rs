@@ -9,7 +9,7 @@ use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
 /// Handle for interacting with the chain worker service.
 #[derive(Debug)]
 pub struct ChainWorkerHandle {
-    #[allow(unused)]
+    #[expect(unused, reason = "will be used later")]
     shared: Arc<Mutex<WorkerShared>>,
     command_handle: CommandHandle<ChainWorkerMessage>,
 }

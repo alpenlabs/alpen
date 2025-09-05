@@ -72,10 +72,10 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 /// Service state for the chain worker.
 #[derive(Debug)]
 pub struct ChainWorkerServiceState<W> {
-    #[allow(unused)]
+    #[expect(unused, reason = "will be used later")]
     shared: Arc<Mutex<WorkerShared>>,
 
-    #[allow(unused)]
+    #[expect(unused, reason = "don't think we should remove this here")]
     params: Arc<Params>,
 
     context: W,
