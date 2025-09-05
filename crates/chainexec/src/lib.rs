@@ -20,7 +20,7 @@ mod tip_state;
 pub mod validation_util;
 
 pub use diff::ChangedState;
-pub use errors::{Error, ExecResult};
+pub use errors::Error;
 pub use exec_context::{ExecContext, MemExecContext};
 pub use executor::ChainExecutor;
 pub use output::{BlockExecutionOutput, CheckinExecutionOutput, EpochExecutionOutput, LogMessage};

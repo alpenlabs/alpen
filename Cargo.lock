@@ -14163,10 +14163,12 @@ name = "strata-chain-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "serde",
  "strata-chainexec",
  "strata-chaintsn",
  "strata-eectl",
  "strata-primitives",
+ "strata-service",
  "strata-state",
  "strata-status",
  "strata-storage",

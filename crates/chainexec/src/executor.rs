@@ -7,7 +7,7 @@ use strata_chaintsn::{
 use strata_primitives::prelude::*;
 use strata_state::{block::L2BlockBody, header::L2Header};
 
-use crate::{BlockExecutionOutput, Error, ExecContext, ExecResult, MemStateAccessor};
+use crate::{BlockExecutionOutput, Error, ExecContext, MemStateAccessor};
 
 /// Type alias for the state accessor we're using.
 type StateAccImpl = MemStateAccessor;
@@ -24,23 +24,23 @@ impl ChainExecutor {
         Self { params }
     }
 
-    fn prepare_state_accessor(
+    fn prepare_state_accessor<C: ExecContext>(
         &self,
         parent_blkid: &L2BlockId,
-        ctx: &impl ExecContext,
-    ) -> ExecResult<StateAccImpl> {
+        ctx: &C,
+    ) -> Result<StateAccImpl, Error<C::Error>> {
         let pre_state = ctx.fetch_block_toplevel_post_state(parent_blkid)?;
         Ok(StateAccImpl::new(pre_state))
     }
 
     /// Tries to process a block.  This only works if the state of the block
     /// it's building on top of is available.
-    pub fn execute_block(
+    pub fn execute_block<C: ExecContext>(
         &self,
         header_ctx: &impl BlockHeaderContext,
         block_body: &L2BlockBody,
-        ctx: &impl ExecContext,
-    ) -> ExecResult<BlockExecutionOutput> {
+        ctx: &C,
+    ) -> Result<BlockExecutionOutput, Error<C::Error>> {
         // Construct the state accessor for the state we're executing on top of,
         // then just call out to process the block with it.
         let mut acc = self.prepare_state_accessor(header_ctx.parent_blkid(), ctx)?;
@@ -60,24 +60,24 @@ impl ChainExecutor {
     /// other associated data.
     ///
     /// If this succeeds, then the block is all good.
-    pub fn verify_block(
+    pub fn verify_block<C: ExecContext>(
         &self,
         header_and_parent: &L2HeaderAndParent,
         block_body: &L2BlockBody,
-        ctx: &impl ExecContext,
-    ) -> ExecResult<BlockExecutionOutput> {
+        ctx: &C,
+    ) -> Result<BlockExecutionOutput, Error<C::Error>> {
         let output = self.execute_block(header_and_parent, block_body, ctx)?;
         verify_output_matches_block(header_and_parent, block_body, &output)?;
         Ok(output)
     }
 }
 
-fn try_execute_block_inner(
+fn try_execute_block_inner<E>(
     state_acc: &mut impl StateAccessor,
     header_ctx: &impl BlockHeaderContext,
     block_body: &L2BlockBody,
     params: &RollupParams,
-) -> ExecResult<()> {
+) -> Result<(), Error<E>> {
     // Get the prev epoch to check if the epoch advanced, and the prev
     // epoch's terminal in case we need it.
     let pre_state_epoch_finishing = state_acc.epoch_finishing_flag();
@@ -110,11 +110,11 @@ fn try_execute_block_inner(
     Ok(())
 }
 
-fn verify_output_matches_block(
+fn verify_output_matches_block<E>(
     hap: &L2HeaderAndParent,
     _body: &L2BlockBody,
     output: &BlockExecutionOutput,
-) -> ExecResult<()> {
+) -> Result<(), Error<E>> {
     // Check that the state roots match.
     if output.computed_state_root() != hap.header().state_root() {
         return Err(Error::StateRootMismatch);

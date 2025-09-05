@@ -20,6 +20,10 @@ pub enum WorkerError {
     #[error("missing exec output for block {0:?}")]
     MissingBlockOutput(L2BlockCommitment),
 
+    /// Missing write batch for a specific block, used for post-state reconstruction
+    #[error("missing write batch for block {0}")]
+    MissingWriteBatch(L2BlockId),
+
     /// This means that we haven't executed the block that's the terminal for an epoch.
     #[error("missing inner post-state of epoch {0} terminal {1:?}")]
     MissingEpochInnerPostState(u64, L2BlockCommitment),
@@ -35,14 +39,23 @@ pub enum WorkerError {
     #[error("chain worker exited")]
     WorkerExited,
 
-    #[error("OL block execution: {0}")]
-    Exec(#[from] strata_chainexec::Error),
+    #[error("block execution: {0}")]
+    Exec(strata_chainexec::Error<Box<dyn std::error::Error + Send + Sync>>),
 
     #[error("EE block execution: {0}")]
     ExecEnvEngine(#[from] strata_eectl::errors::EngineError),
 
     #[error("missing required dependency: {0}")]
     MissingDependency(&'static str),
+
+    #[error("shutdown before genesis")]
+    ShutdownBeforeGenesis,
+
+    #[error("genesis block not found at height 0")]
+    MissingGenesisBlock,
+
+    #[error("worker not initialized")]
+    NotInitialized,
 
     #[error("unexpected error: {0}")]
     Unexpected(String),
@@ -51,36 +64,12 @@ pub enum WorkerError {
     Unimplemented,
 }
 
-/// Weird impl that we need to go "back down" for context fns.
-// TODO maybe restructure error types so we don't need this?
-impl From<WorkerError> for strata_chainexec::Error {
-    fn from(err: WorkerError) -> Self {
+impl From<strata_chainexec::Error<WorkerError>> for WorkerError {
+    fn from(err: strata_chainexec::Error<WorkerError>) -> Self {
         use strata_chainexec::Error as ExecError;
-        // TODO improve these relationships, they're kinda backwards in places
         match err {
-            WorkerError::MissingL2Block(block) => ExecError::MissingL2Header(block),
-            WorkerError::MissingPreState(block) => ExecError::MissingBlockPreState(*block.blkid()),
-            WorkerError::MissingBlockOutput(block) => {
-                ExecError::MissingBlockPostState(*block.blkid())
-            }
-            WorkerError::MissingEpochInnerPostState(_, block) => {
-                ExecError::MissingBlockPostState(*block.blkid())
-            }
-            WorkerError::MissingEpochSummary(epoch) => {
-                // you may still want to log a warning here
-                warn!(?epoch, "worker error: missing epoch summary");
-                ExecError::Unimplemented
-            }
-            WorkerError::Exec(e) => e,
-            WorkerError::WorkerExited | WorkerError::InvalidExecPayload(_) => {
-                ExecError::Unexpected("exec worker error".to_owned())
-            }
-            WorkerError::MissingDependency(dep) => {
-                ExecError::Unexpected(format!("missing dependency: {dep}"))
-            }
-            WorkerError::Unexpected(msg) => ExecError::Unexpected(msg),
-            WorkerError::Unimplemented => ExecError::Unimplemented,
-            WorkerError::ExecEnvEngine(_) => ExecError::Unimplemented, // FIXME:
+            ExecError::Context(worker_err) => worker_err,
+            _ => WorkerError::Exec(err.map_context(|e| Box::new(e) as _)),
         }
     }
 }
