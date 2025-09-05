@@ -108,7 +108,7 @@
             llvmPackages.libcxxStdenv.cc.cc.lib
             stdenv.cc.cc.lib
 
-            # TODO: Add python stuff from poetry's in functional-tests/
+            uv
           ];
 
           env = {
