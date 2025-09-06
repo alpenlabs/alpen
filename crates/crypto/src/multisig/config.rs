@@ -1,7 +1,8 @@
 use arbitrary::Arbitrary;
+use bitvec::{slice::BitSlice, vec::BitVec};
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::multisig::{errors::MultisigConfigError, PubKey};
+use crate::multisig::{aggregation::generate_agg_pubkey, errors::MultisigConfigError, PubKey};
 
 /// Configuration for a multisignature authority:
 /// who can sign (`keys`) and how many of them must sign (`threshold`).
@@ -45,6 +46,45 @@ impl MultisigConfig {
     pub fn threshold(&self) -> u8 {
         self.threshold
     }
+
+    /// Aggregates public keys selected by the given bit indices.
+    ///
+    /// This function uses the provided bit slice to select a subset of keys from the
+    /// multisig configuration and aggregates them into a single public key using
+    /// MuSig2 key aggregation.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices` - A bit slice where each set bit (1) indicates a key to include in the
+    ///   aggregation. The bit at index `i` corresponds to `self.keys[i]`.
+    ///
+    /// # Returns
+    ///
+    /// Returns the aggregated public key on success, or an error if:
+    /// - Insufficient keys are selected (fewer than the threshold)
+    /// - Key aggregation fails
+    ///
+    /// # Errors
+    ///
+    /// * `MultisigConfigError::InsufficientKeys` - If fewer keys are selected than required by the
+    ///   threshold
+    /// * `MultisigConfigError::KeyAggregationFailed` - If the underlying MuSig2 key aggregation
+    ///   process fails
+    pub fn aggregate(&self, indices: &BitSlice) -> Result<PubKey, MultisigConfigError> {
+        let selected_count = indices.count_ones();
+
+        if selected_count < self.threshold as usize {
+            return Err(MultisigConfigError::InsufficientKeys {
+                provided: selected_count,
+                required: self.threshold as usize,
+            });
+        }
+
+        let selected_keys = indices.iter_ones().map(|index| &self.keys[index]);
+        let agg_key = generate_agg_pubkey(selected_keys)?.into();
+
+        Ok(agg_key)
+    }
 }
 
 impl<'a> Arbitrary<'a> for MultisigConfig {
@@ -65,18 +105,25 @@ impl<'a> Arbitrary<'a> for MultisigConfig {
 }
 
 /// Represents a change to the multisig configuration:
-/// * removes the specified `old_members` from the set,
+/// * removes members at indices specified by `old_members` bit vector
 /// * adds the specified `new_members`
 /// * updates the threshold.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MultisigConfigUpdate {
     new_members: Vec<PubKey>,
-    old_members: Vec<PubKey>,
+    old_members: BitVec,
     new_threshold: u8,
 }
 
 impl MultisigConfigUpdate {
-    pub fn new(new_members: Vec<PubKey>, old_members: Vec<PubKey>, new_threshold: u8) -> Self {
+    /// Creates a new multisig configuration update.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_members` - New public keys to add to the configuration
+    /// * `old_members` - Bit vector indicating which existing members to remove by index
+    /// * `new_threshold` - New threshold value
+    pub fn new(new_members: Vec<PubKey>, old_members: BitVec, new_threshold: u8) -> Self {
         Self {
             new_members,
             old_members,
@@ -84,29 +131,79 @@ impl MultisigConfigUpdate {
         }
     }
 
-    pub fn old_members(&self) -> &[PubKey] {
+    /// Returns the bit vector indicating which members to remove by index.
+    pub fn old_members(&self) -> &BitSlice {
         &self.old_members
     }
 
+    /// Returns the new members to add.
     pub fn new_members(&self) -> &[PubKey] {
         &self.new_members
     }
 
+    /// Returns the new threshold.
     pub fn new_threshold(&self) -> u8 {
         self.new_threshold
     }
 }
 
+impl BorshSerialize for MultisigConfigUpdate {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.new_members.serialize(writer)?;
+        // Convert BitVec to Vec<bool> for serialization
+        let old_members_bits: Vec<bool> = self.old_members.iter().map(|b| *b).collect();
+        old_members_bits.serialize(writer)?;
+        self.new_threshold.serialize(writer)
+    }
+}
+
+impl BorshDeserialize for MultisigConfigUpdate {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let new_members = Vec::<PubKey>::deserialize_reader(reader)?;
+        let old_members_bits = Vec::<bool>::deserialize_reader(reader)?;
+        let new_threshold = u8::deserialize_reader(reader)?;
+        
+        // Convert Vec<bool> back to BitVec
+        let old_members = BitVec::from_iter(old_members_bits);
+        
+        Ok(Self {
+            new_members,
+            old_members,
+            new_threshold,
+        })
+    }
+}
+
+impl<'a> Arbitrary<'a> for MultisigConfigUpdate {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let new_members = Vec::<PubKey>::arbitrary(u)?;
+        
+        // Generate a reasonable sized bit vector for old members
+        let old_members_size = u.int_in_range(0..=20)?;
+        let mut old_members = BitVec::with_capacity(old_members_size);
+        for _ in 0..old_members_size {
+            old_members.push(bool::arbitrary(u)?);
+        }
+        
+        let new_threshold = u8::arbitrary(u)?;
+        
+        Ok(Self {
+            new_members,
+            old_members,
+            new_threshold,
+        })
+    }
+}
+
 impl MultisigConfig {
     /// Validates that an update can be applied to this configuration.
-    /// Ensures new members don't already exist, old members exist, and new threshold doesn't
+    /// Ensures new members don't already exist, indices are valid, and new threshold doesn't
     /// exceed the updated member count.
     ///
     /// # Errors
     ///
     /// Returns `MultisigConfigError` if:
     /// - `MemberAlreadyExists`: A new member already exists in the current configuration
-    /// - `MemberNotFound`: An old member to be removed doesn't exist in the current configuration
     /// - `InvalidThreshold`: New threshold exceeds the updated member count
     pub fn validate_update(
         &self,
@@ -118,14 +215,13 @@ impl MultisigConfig {
             return Err(MultisigConfigError::MemberAlreadyExists(*duplicate));
         }
 
-        // Ensure old members exist.
-        if let Some(missing) = update
-            .old_members()
-            .iter()
-            .find(|m| !self.keys.contains(*m))
-        {
-            // `missing` is the first member that wasn’t found in `self.keys`.
-            return Err(MultisigConfigError::MemberNotFound(*missing));
+        // Ensure old member indices don't exceed current key count.
+        if update.old_members().len() > self.keys.len() {
+            return Err(MultisigConfigError::InvalidThreshold {
+                threshold: 0,
+                min_required: 0,
+                max_allowed: self.keys.len(),.
+            });
         }
 
         // Ensure new threshold doesn't exceed total number of keys.
@@ -152,8 +248,13 @@ impl MultisigConfig {
         self.validate_update(update)?;
         // REVIEW: If we assert these lists are always sorted then we can do a more efficient
         // merge-and-remove pass with both this and the new entries
-        // Remove specified old members
-        self.keys.retain(|key| !update.old_members().contains(key));
+        // Remove members in reverse order to maintain index validity
+        let mut indices_to_remove: Vec<usize> = update.old_members().iter_ones().collect();
+        indices_to_remove.sort_by(|a, b| b.cmp(a)); // Sort in descending order
+        
+        for index in indices_to_remove {
+            self.keys.remove(index);
+        }
         // Add new members
         self.keys.extend_from_slice(update.new_members());
         // Update threshold
@@ -165,10 +266,29 @@ impl MultisigConfig {
 
 #[cfg(test)]
 mod tests {
+    use bitvec::prelude::*;
+
     use super::*;
 
     fn make_key(id: u8) -> PubKey {
         PubKey::new([id; 32])
+    }
+
+    #[test]
+    fn test_bitvec() {
+        let k1 = make_key(1);
+        let k2 = make_key(2);
+        let k3 = make_key(3);
+        let k4 = make_key(4);
+        let k5 = make_key(5);
+
+        let keys = [k1, k2, k3, k4, k5];
+
+        // Use bitvec to select only k1, k3, and k5 (indices 0, 2, 4)
+        let selection = bitvec![1, 0, 1, 0, 1];
+        let selected_keys: Vec<PubKey> = selection.iter_ones().map(|index| keys[index]).collect();
+
+        assert_eq!(selected_keys, vec![k1, k3, k5]);
     }
 
     #[test]
@@ -179,23 +299,22 @@ mod tests {
         let base = MultisigConfig::try_new(vec![k1, k2], 2).unwrap();
 
         // Try to add k2 again → should error MemberAlreadyExists(k2)
-        let update = MultisigConfigUpdate::new(vec![k2], vec![], 2);
+        let update = MultisigConfigUpdate::new(vec![k2], bitvec![], 2);
         let err = base.validate_update(&update).unwrap_err();
         assert_eq!(err, MultisigConfigError::MemberAlreadyExists(k2));
     }
 
     #[test]
-    fn test_validate_update_missing_old_member() {
+    fn test_validate_update_bitvec_too_long() {
         // Initial config: keys = [k1, k2], threshold = 2
         let k1 = make_key(1);
         let k2 = make_key(2);
-        let k3 = make_key(3);
         let base = MultisigConfig::try_new(vec![k1, k2], 2).unwrap();
 
-        // Try to remove k3 (which is not in base.keys) → should error MemberNotFound(k3)
-        let update = MultisigConfigUpdate::new(vec![], vec![k3], 2);
+        // Try to use a BitVec longer than the number of keys
+        let update = MultisigConfigUpdate::new(vec![], bitvec![1, 0, 1], 2);
         let err = base.validate_update(&update).unwrap_err();
-        assert_eq!(err, MultisigConfigError::MemberNotFound(k3));
+        assert!(matches!(err, MultisigConfigError::InvalidThreshold { .. }));
     }
 
     #[test]
@@ -238,7 +357,7 @@ mod tests {
         // new_threshold can be any value from 1 to 4
         let k4 = make_key(4);
         let k5 = make_key(5);
-        let update = MultisigConfigUpdate::new(vec![k4, k5], vec![k3], 3);
+        let update = MultisigConfigUpdate::new(vec![k4, k5], bitvec![0, 0, 1], 3);
 
         // First: validate_update should return Ok(())
         assert!(config.validate_update(&update).is_ok());

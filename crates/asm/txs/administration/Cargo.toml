@@ -10,6 +10,7 @@ strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
+bitvec.workspace = true
 borsh.workspace = true
 thiserror.workspace = true
 zkaleido.workspace = true

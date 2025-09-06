@@ -1,4 +1,5 @@
 use arbitrary::Arbitrary;
+use bitvec::vec::BitVec;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::config::MultisigConfigUpdate;
@@ -43,7 +44,7 @@ impl MultisigUpdate {
     pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
         // TODO: parse TxInput to build MultisigConfigUpdate and determine Role
         Ok(Self::new(
-            MultisigConfigUpdate::new(vec![], vec![], 0),
+            MultisigConfigUpdate::new(vec![], BitVec::new(), 0),
             Role::StrataAdministrator,
         ))
     }

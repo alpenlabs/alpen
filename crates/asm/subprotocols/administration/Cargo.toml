@@ -19,3 +19,4 @@ workspace = true
 [dev-dependencies]
 strata-test-utils.workspace = true
 rand.workspace = true
+bitvec.workspace = true

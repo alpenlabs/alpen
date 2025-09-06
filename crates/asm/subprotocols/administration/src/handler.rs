@@ -142,6 +142,7 @@ mod tests {
     use std::any::Any;
 
     use rand::{seq::SliceRandom, thread_rng};
+    use bitvec::vec::BitVec;
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
     use strata_asm_proto_administration_txs::actions::{
         CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate,
@@ -205,8 +206,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-
-        let vote = AggregatedVote::new(vec![], Signature::default());
+        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
         let current_height = 1000;
 
         // Generate 5 random update actions that require StrataAdministrator role
@@ -265,7 +265,7 @@ mod tests {
         let mut state = AdministrationSubprotoState::new(&params);
 
         let mut relayer = MockRelayer::new();
-        let vote = AggregatedVote::new(vec![], Signature::default());
+        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
         let current_height = 1000;
 
         // Generate random sequencer update actions
@@ -315,8 +315,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-
-        let vote = AggregatedVote::new(vec![], Signature::default());
+        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
         let no_of_updates = 5;
         let current_height = 1000;
 
@@ -381,8 +380,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-
-        let vote = AggregatedVote::new(vec![], Signature::default());
+        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
         let current_height = 1000;
 
         // Generate a random cancel action (likely targeting a non-existent ID)
@@ -411,8 +409,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-
-        let vote = AggregatedVote::new(vec![], Signature::default());
+        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
         let current_height = 1000;
 
         // Create an update action

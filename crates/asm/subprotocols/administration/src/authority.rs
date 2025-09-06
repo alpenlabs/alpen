@@ -2,8 +2,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_administration_txs::actions::MultisigAction;
 use strata_crypto::multisig::{
-    aggregate_pubkeys, config::MultisigConfig, errors::VoteValidationError, msg::MultisigPayload,
-    verify_sig, vote::AggregatedVote,
+    config::MultisigConfig, errors::VoteValidationError, msg::MultisigPayload, verify_sig,
+    vote::AggregatedVote,
 };
 use strata_primitives::{hash::compute_borsh_hash, roles::Role};
 
@@ -55,27 +55,14 @@ impl MultisigAuthority {
         action: &MultisigAction,
         vote: &AggregatedVote,
     ) -> Result<(), VoteValidationError> {
-        // 1. Collect each public key by index; error if out of bounds.
-        let signer_keys: Vec<_> = vote
-            .voter_indices()
-            .iter()
-            .map(|&i| {
-                self.config
-                    .keys()
-                    .get(i as usize)
-                    .cloned()
-                    .ok_or(VoteValidationError::AggregationError)
-            })
-            .collect::<Result<_, _>>()?;
+        // 1. Aggregate those public keys into one.
+        let aggregated_key = self.config.aggregate(vote.voter_indices()).expect("FIXME:");
 
-        // 2. Aggregate those public keys into one.
-        let aggregated_key = aggregate_pubkeys(&signer_keys)?;
-
-        // 3. Compute the msg from the UpdateAction.
+        // 2. Compute the msg from the UpdateAction
         let msg_hash = compute_borsh_hash(action);
         let payload = MultisigPayload::new(msg_hash, self.seqno);
 
-        // 4. Verify the aggregated signature against the aggregated pubkey.
+        // 3. Verify the aggregated signature against the aggregated pubkey
         if !verify_sig(&aggregated_key, &payload, vote.signature()) {
             return Err(VoteValidationError::InvalidVoteSignature);
         }

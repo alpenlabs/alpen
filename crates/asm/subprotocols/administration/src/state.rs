@@ -229,23 +229,28 @@ mod tests {
         let role: Role = arb.generate();
 
         let initial_auth = state.authority(role).unwrap().config();
-        let initial_members = initial_auth.keys();
-        let initial_threshold = initial_auth.threshold() as usize;
+        let initial_members: Vec<PubKey> = initial_auth.keys().to_vec();
 
         let new_members: Vec<PubKey> = arb.generate();
 
-        // Randomly pick some members to remove
+        // Randomly pick some members to remove by creating a bitvec
         let mut rng = thread_rng();
-        let members_to_remove: Vec<PubKey> = initial_members
-            .iter()
-            .filter(|_| rng.gen_bool(0.3)) // 30% chance to remove each member
-            .cloned()
-            .collect();
-        let new_threshold = initial_threshold + new_members.len() - members_to_remove.len();
+        let mut members_to_remove_bitvec = bitvec::bitvec![0; initial_members.len()];
+        let mut removal_count = 0;
+        
+        for i in 0..initial_members.len() {
+            if rng.gen_bool(0.3) { // 30% chance to remove each member
+                members_to_remove_bitvec.set(i, true);
+                removal_count += 1;
+            }
+        }
+        
+        let new_size = initial_members.len() + new_members.len() - removal_count;
+        let new_threshold = std::cmp::max(1, (new_size + 1) / 2); // Ensure valid threshold (at least majority)
 
         let update = MultisigConfigUpdate::new(
             new_members.clone(),
-            members_to_remove.clone(),
+            members_to_remove_bitvec.clone(),
             new_threshold as u8,
         );
 
@@ -256,13 +261,17 @@ mod tests {
         // Verify threshold was updated
         assert_eq!(updated_auth.threshold(), new_threshold as u8);
 
-        // Verify that old members were removed
-        for old_member in &members_to_remove {
-            assert!(
-                !updated_auth.keys().contains(old_member),
-                "Old member {:?} was not removed",
-                old_member
-            );
+        // Verify that old members indicated by bitvec were removed
+        for (index, should_be_removed) in members_to_remove_bitvec.iter().enumerate() {
+            if *should_be_removed {
+                let old_member = &initial_members[index];
+                assert!(
+                    !updated_auth.keys().contains(old_member),
+                    "Old member {:?} at index {} was not removed",
+                    old_member,
+                    index
+                );
+            }
         }
 
         // Verify that new members were added

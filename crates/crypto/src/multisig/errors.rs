@@ -30,6 +30,19 @@ pub enum MultisigConfigError {
     /// The keys list is empty.
     #[error("keys cannot be empty")]
     EmptyKeys,
+
+    /// Insufficient keys selected for aggregation.
+    #[error("insufficient keys selected: provided {provided}, required at least {required}")]
+    InsufficientKeys {
+        /// Number of keys provided.
+        provided: usize,
+        /// Number of keys required.
+        required: usize,
+    },
+
+    /// Key aggregation failed.
+    #[error("key aggregation failed: {0}")]
+    KeyAggregationFailed(#[from] KeyAggregationError),
 }
 
 /// Errors related to key aggregation.

@@ -14212,6 +14212,7 @@ name = "strata-asm-proto-administration"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "bitvec",
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
@@ -14227,6 +14228,7 @@ name = "strata-asm-proto-administration-txs"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "bitvec",
  "borsh",
  "strata-asm-common",
  "strata-crypto",
@@ -14479,6 +14481,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "bitcoin",
+ "bitvec",
  "borsh",
  "musig2",
  "secp256k1 0.29.1",

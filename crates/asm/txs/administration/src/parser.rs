@@ -1,3 +1,4 @@
+use bitvec::vec::BitVec;
 use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::{Signature, vote::AggregatedVote};
 
@@ -50,5 +51,5 @@ pub fn parse_tx_multisig_action_and_vote(
 pub fn parse_aggregated_vote(
     _tx: &TxInputRef<'_>,
 ) -> Result<AggregatedVote, AdministrationTxParseError> {
-    Ok(AggregatedVote::new(vec![], Signature::default()))
+    Ok(AggregatedVote::new(BitVec::new(), Signature::default()))
 }
