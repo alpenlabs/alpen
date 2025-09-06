@@ -10,6 +10,9 @@ workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
+bitcoin.workspace = true
 borsh.workspace = true
+musig2.workspace = true
+secp256k1.workspace = true
 thiserror.workspace = true
 zkaleido.workspace = true

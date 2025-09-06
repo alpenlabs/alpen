@@ -1,4 +1,5 @@
 // TODO: This needs to be in a different crate. Maybe strata-crypto
+pub mod aggregation;
 pub mod config;
 pub mod errors;
 pub mod msg;

@@ -1,3 +1,5 @@
+use musig2::errors::KeyAggError;
+use secp256k1;
 use thiserror::Error;
 
 use crate::multisig::PubKey;
@@ -13,6 +15,9 @@ pub enum MultisigConfigError {
     #[error("cannot remove member {0:?}: not found in multisig configuration")]
     MemberNotFound(PubKey),
 
+    #[error("invalid key")]
+    InvalidPubKey(PubKey),
+
     /// The provided threshold is invalid.
     #[error("invalid threshold {threshold}: must not exceed {total_keys}")]
     InvalidThreshold {
@@ -25,6 +30,24 @@ pub enum MultisigConfigError {
     /// The keys list is empty.
     #[error("keys cannot be empty")]
     EmptyKeys,
+}
+
+/// Errors related to key aggregation.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum KeyAggregationError {
+    /// Invalid x-only public key at a specific index.
+    #[error("invalid x-only public key at index {index}: {source}")]
+    InvalidXOnlyKey {
+        /// The index of the invalid key.
+        index: usize,
+        /// The underlying secp256k1 error.
+        #[source]
+        source: secp256k1::Error,
+    },
+
+    /// Failed to create key aggregation context.
+    #[error("failed to create key aggregation context: {0}")]
+    ContextCreationFailed(#[from] KeyAggError),
 }
 
 /// Errors related to validating a multisig vote (aggregation or signature check).
