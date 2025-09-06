@@ -21,8 +21,8 @@ thiserror.workspace = true
 
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
+strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
-strata-l1tx.workspace = true
 strata-primitives.workspace = true
 
 [dev-dependencies]

@@ -4,7 +4,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_l1tx::utils::generate_agg_pubkey;
+use strata_crypto::multisig::aggregation::generate_agg_pubkey;
 use strata_primitives::{
     bridge::OperatorIdx, buf::Buf32, l1::XOnlyPk, operator::OperatorPubkeys, sorted_vec::SortedVec,
 };

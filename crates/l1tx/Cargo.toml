@@ -7,13 +7,13 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-crypto.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 
 anyhow.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
-musig2.workspace = true
 secp256k1.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

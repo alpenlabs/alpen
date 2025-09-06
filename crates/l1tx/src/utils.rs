@@ -1,13 +1,12 @@
 use anyhow::anyhow;
 use bitcoin::{
-    key::Parity,
     opcodes::all::OP_PUSHNUM_1,
     script::{Instruction, Instructions},
-    secp256k1::{PublicKey, SECP256K1},
+    secp256k1::SECP256K1,
     taproot::TaprootBuilder,
     Address, Network, Opcode, XOnlyPublicKey,
 };
-use musig2::KeyAggContext;
+use strata_crypto::multisig::aggregation::generate_agg_pubkey;
 use strata_primitives::{
     buf::Buf32,
     l1::BitcoinAddress,
@@ -57,31 +56,6 @@ pub fn next_u32(instructions: &mut Instructions<'_>) -> Option<u32> {
         }
         _ => None,
     }
-}
-
-/// Returns the aggregated public key from an iterator of operator public keys.
-///
-/// # Errors
-///
-/// Returns an error if any key in the iterator is not a valid x-only public key.
-pub fn generate_agg_pubkey<'k>(
-    keys: impl Iterator<Item = &'k Buf32>,
-) -> anyhow::Result<XOnlyPublicKey> {
-    let public_keys = keys
-        .enumerate()
-        .map(|(i, op)| {
-            XOnlyPublicKey::from_slice(op.as_ref())
-                .map_err(|e| anyhow!("invalid x-only public key at index {i}: {e})"))
-                .map(|x_only| PublicKey::from_x_only_public_key(x_only, Parity::Even))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    let agg_pubkey = KeyAggContext::new(public_keys)?
-        .aggregated_pubkey::<PublicKey>()
-        .x_only_public_key()
-        .0;
-
-    Ok(agg_pubkey)
 }
 
 /// Returns taproot address along with untweaked internal pubkey
