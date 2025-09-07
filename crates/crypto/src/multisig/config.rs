@@ -162,10 +162,10 @@ impl BorshDeserialize for MultisigConfigUpdate {
         let new_members = Vec::<PubKey>::deserialize_reader(reader)?;
         let old_members_bits = Vec::<bool>::deserialize_reader(reader)?;
         let new_threshold = u8::deserialize_reader(reader)?;
-        
+
         // Convert Vec<bool> back to BitVec
         let old_members = BitVec::from_iter(old_members_bits);
-        
+
         Ok(Self {
             new_members,
             old_members,
@@ -177,16 +177,16 @@ impl BorshDeserialize for MultisigConfigUpdate {
 impl<'a> Arbitrary<'a> for MultisigConfigUpdate {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let new_members = Vec::<PubKey>::arbitrary(u)?;
-        
+
         // Generate a reasonable sized bit vector for old members
         let old_members_size = u.int_in_range(0..=20)?;
         let mut old_members = BitVec::with_capacity(old_members_size);
         for _ in 0..old_members_size {
             old_members.push(bool::arbitrary(u)?);
         }
-        
+
         let new_threshold = u8::arbitrary(u)?;
-        
+
         Ok(Self {
             new_members,
             old_members,
@@ -251,7 +251,7 @@ impl MultisigConfig {
         // Remove members in reverse order to maintain index validity
         let mut indices_to_remove: Vec<usize> = update.old_members().iter_ones().collect();
         indices_to_remove.sort_by(|a, b| b.cmp(a)); // Sort in descending order
-        
+
         for index in indices_to_remove {
             self.keys.remove(index);
         }
