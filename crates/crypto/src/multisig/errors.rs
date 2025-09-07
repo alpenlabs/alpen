@@ -11,10 +11,6 @@ pub enum MultisigConfigError {
     #[error("cannot add member {0:?}: already exists in multisig configuration")]
     MemberAlreadyExists(PubKey),
 
-    /// An old member to be removed was not found in the multisig configuration.
-    #[error("cannot remove member {0:?}: not found in multisig configuration")]
-    MemberNotFound(PubKey),
-
     #[error("invalid key")]
     InvalidPubKey(PubKey),
 
@@ -31,6 +27,14 @@ pub enum MultisigConfigError {
     #[error("keys cannot be empty")]
     EmptyKeys,
 
+    /// Key aggregation failed.
+    #[error("key aggregation failed: {0}")]
+    KeyAggregationFailed(#[from] KeyAggregationError),
+}
+
+/// Errors related to key aggregation.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum KeyAggregationError {
     /// Insufficient keys selected for aggregation.
     #[error("insufficient keys selected: provided {provided}, required at least {required}")]
     InsufficientKeys {
@@ -40,14 +44,6 @@ pub enum MultisigConfigError {
         required: usize,
     },
 
-    /// Key aggregation failed.
-    #[error("key aggregation failed: {0}")]
-    KeyAggregationFailed(#[from] KeyAggregationError),
-}
-
-/// Errors related to key aggregation.
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum KeyAggregationError {
     /// Invalid x-only public key at a specific index.
     #[error("invalid x-only public key at index {index}: {source}")]
     InvalidXOnlyKey {
@@ -66,9 +62,9 @@ pub enum KeyAggregationError {
 /// Errors related to validating a multisig vote (aggregation or signature check).
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
 pub enum VoteValidationError {
-    /// Failed to aggregate public keys for multisig vote.
-    #[error("failed to aggregate public keys for multisig vote")]
-    AggregationError,
+    /// Key aggregation failed.
+    #[error("key aggregation failed: {0}")]
+    KeyAggregationFailed(#[from] KeyAggregationError),
 
     /// The aggregated vote signature is invalid.
     #[error("invalid vote signature")]

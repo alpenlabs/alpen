@@ -2,7 +2,7 @@ use arbitrary::Arbitrary;
 use bitvec::{slice::BitSlice, vec::BitVec};
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::multisig::{aggregation::generate_agg_pubkey, errors::MultisigConfigError, PubKey};
+use crate::multisig::{errors::MultisigConfigError, PubKey};
 
 /// Configuration for a multisignature authority:
 /// who can sign (`keys`) and how many of them must sign (`threshold`).
@@ -45,45 +45,6 @@ impl MultisigConfig {
 
     pub fn threshold(&self) -> u8 {
         self.threshold
-    }
-
-    /// Aggregates public keys selected by the given bit indices.
-    ///
-    /// This function uses the provided bit slice to select a subset of keys from the
-    /// multisig configuration and aggregates them into a single public key using
-    /// MuSig2 key aggregation.
-    ///
-    /// # Arguments
-    ///
-    /// * `indices` - A bit slice where each set bit (1) indicates a key to include in the
-    ///   aggregation. The bit at index `i` corresponds to `self.keys[i]`.
-    ///
-    /// # Returns
-    ///
-    /// Returns the aggregated public key on success, or an error if:
-    /// - Insufficient keys are selected (fewer than the threshold)
-    /// - Key aggregation fails
-    ///
-    /// # Errors
-    ///
-    /// * `MultisigConfigError::InsufficientKeys` - If fewer keys are selected than required by the
-    ///   threshold
-    /// * `MultisigConfigError::KeyAggregationFailed` - If the underlying MuSig2 key aggregation
-    ///   process fails
-    pub fn aggregate(&self, indices: &BitSlice) -> Result<PubKey, MultisigConfigError> {
-        let selected_count = indices.count_ones();
-
-        if selected_count < self.threshold as usize {
-            return Err(MultisigConfigError::InsufficientKeys {
-                provided: selected_count,
-                required: self.threshold as usize,
-            });
-        }
-
-        let selected_keys = indices.iter_ones().map(|index| &self.keys[index]);
-        let agg_key = generate_agg_pubkey(selected_keys)?.into();
-
-        Ok(agg_key)
     }
 }
 

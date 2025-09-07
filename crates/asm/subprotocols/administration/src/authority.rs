@@ -2,7 +2,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_administration_txs::actions::MultisigAction;
 use strata_crypto::multisig::{
-    config::MultisigConfig, errors::VoteValidationError, verify_sig, vote::AggregatedVote,
+    aggregation::aggregate, config::MultisigConfig, errors::VoteValidationError, verify_sig,
+    vote::AggregatedVote,
 };
 use strata_primitives::roles::Role;
 
@@ -55,7 +56,7 @@ impl MultisigAuthority {
         vote: &AggregatedVote,
     ) -> Result<(), VoteValidationError> {
         // 1. Aggregate those public keys into one.
-        let aggregated_key = self.config.aggregate(vote.voter_indices()).expect("FIXME:");
+        let aggregated_key = aggregate(&self.config, vote.voter_indices())?;
 
         // 2. Compute the msg to sign by combining UpdateAction with sequence no
         let sig_hash = action.compute_sighash(self.seqno);
