@@ -27,9 +27,6 @@ use strata_db::{
     traits::{DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
     DbError,
 };
-use strata_db_store_sled::{
-    init_core_dbs, open_sled_database, SledBackend, SledDbConfig, SLED_NAME,
-};
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
 use strata_primitives::params::{Params, ProofPublishMode};
@@ -62,6 +59,8 @@ mod rpc_server;
 // TODO: this might need to come from config.
 const BITCOIN_POLL_INTERVAL: u64 = 200; // millis
 const SEQ_ADDR_GENERATION_TIMEOUT: u64 = 10; // seconds
+
+mod init_db;
 
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -99,15 +98,8 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     // TODO switch to num_cpus
     let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
 
-    // Open and initialize sled.
-    let sled_db = open_sled_database(&config.client.datadir, SLED_NAME)?;
-    // Create config with retry delay.
-    let retry_delay_ms = 200u64;
-    let db_config =
-        SledDbConfig::new_with_constant_backoff(config.client.db_retry_count, retry_delay_ms);
-
-    // Initialize core databases
-    let database = init_core_dbs(sled_db.clone(), db_config.clone())?;
+    // Open and initialize database
+    let database = init_db::init_database(&config.client.datadir, config.client.db_retry_count)?;
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
@@ -223,7 +215,7 @@ fn init_logging(rt: &Handle) {
 #[expect(missing_debug_implementations)]
 pub struct CoreContext {
     pub runtime: Handle,
-    pub database: Arc<SledBackend>,
+    pub database: Arc<init_db::DatabaseImpl>,
     pub storage: Arc<NodeStorage>,
     pub pool: threadpool::ThreadPool,
     pub params: Arc<Params>,
@@ -305,7 +297,7 @@ fn start_core_tasks(
     pool: threadpool::ThreadPool,
     config: &Config,
     params: Arc<Params>,
-    database: Arc<SledBackend>,
+    database: Arc<init_db::DatabaseImpl>,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<CoreContext> {

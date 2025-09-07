@@ -20,6 +20,12 @@ tracing-subscriber.workspace = true
 strata-cli-common.workspace = true
 strata-consensus-logic.workspace = true
 strata-db.workspace = true
-strata-db-store-sled.workspace = true
+strata-db-store-rocksdb = { workspace = true, optional = true }
+strata-db-store-sled = { workspace = true, optional = true }
 strata-primitives.workspace = true
 strata-state.workspace = true
+
+[features]
+default = ["sled"]
+sled = ["dep:strata-db-store-sled"]
+rocksdb = ["dep:strata-db-store-rocksdb"]

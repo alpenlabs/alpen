@@ -1,12 +1,34 @@
 //! Database for Reth.
 
+#[cfg(feature = "rocksdb")]
+pub mod rocksdb;
+#[cfg(all(feature = "sled", not(feature = "rocksdb")))]
 pub mod sled;
 
-// Suppress unused crate dependency warning for sled
+#[cfg(feature = "rocksdb")]
+#[allow(unused_extern_crates)]
+extern crate rockbound as _;
+#[cfg(all(feature = "sled", not(feature = "rocksdb")))]
 #[allow(unused_extern_crates)]
 extern crate sled as _;
+
+// Consume sled-related dependencies when rocksdb is active to avoid unused crate warnings
+#[cfg(feature = "rocksdb")]
+use strata_db_store_sled as _;
+#[cfg(feature = "rocksdb")]
+#[allow(unused_extern_crates)]
+extern crate sled as _;
+#[cfg(feature = "rocksdb")]
+#[allow(unused_extern_crates)]
+extern crate typed_sled as _;
+
+// Consume dev dependencies to avoid unused warnings in tests
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
+#[cfg(test)]
+use serde as _;
+#[cfg(test)]
+use serde_json as _;
 pub use strata_db::{errors, DbResult};
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 

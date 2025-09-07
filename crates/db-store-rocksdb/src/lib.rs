@@ -29,10 +29,7 @@ pub const PROVER_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
 
 // Re-exports
 pub use broadcaster::db::L1BroadcastDb;
-use broadcaster::{
-    db::BroadcastDb,
-    schemas::{BcastL1TxIdSchema, BcastL1TxSchema},
-};
+use broadcaster::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 pub use chain_state::{db::ChainstateDb, types::StateInstanceEntry};
 pub use checkpoint::db::RBCheckpointDB;
 use checkpoint::schemas::*;
@@ -150,6 +147,7 @@ pub struct RocksDbBackend {
     checkpoint_db: Arc<RBCheckpointDB>,
     writer_db: Arc<RBL1WriterDb>,
     prover_db: Arc<prover::db::ProofDb>,
+    broadcast_db: Arc<L1BroadcastDb>,
 }
 
 impl RocksDbBackend {
@@ -162,6 +160,7 @@ impl RocksDbBackend {
         checkpoint_db: Arc<RBCheckpointDB>,
         writer_db: Arc<RBL1WriterDb>,
         prover_db: Arc<prover::db::ProofDb>,
+        broadcast_db: Arc<L1BroadcastDb>,
     ) -> Self {
         Self {
             l1_db,
@@ -171,6 +170,7 @@ impl RocksDbBackend {
             checkpoint_db,
             writer_db,
             prover_db,
+            broadcast_db,
         }
     }
 }
@@ -203,6 +203,10 @@ impl DatabaseBackend for RocksDbBackend {
     fn prover_db(&self) -> Arc<impl strata_db::traits::ProofDatabase> {
         self.prover_db.clone()
     }
+
+    fn broadcast_db(&self) -> Arc<impl strata_db::traits::L1BroadcastDatabase> {
+        self.broadcast_db.clone()
+    }
 }
 
 pub fn init_core_dbs(
@@ -210,14 +214,6 @@ pub fn init_core_dbs(
     ops_config: DbOpsConfig,
 ) -> Arc<RocksDbBackend> {
     init_rocksdb_backend(rbdb, ops_config)
-}
-
-pub fn init_broadcaster_database(
-    rbdb: Arc<rockbound::OptimisticTransactionDB>,
-    ops_config: DbOpsConfig,
-) -> Arc<BroadcastDb> {
-    let l1_broadcast_db = L1BroadcastDb::new(rbdb.clone(), ops_config);
-    BroadcastDb::new(l1_broadcast_db.into()).into()
 }
 
 pub fn init_writer_database(
@@ -245,7 +241,8 @@ pub fn init_rocksdb_backend(
     let chain_state_db = Arc::new(ChainstateDb::new(rbdb.clone(), ops_config));
     let checkpoint_db = Arc::new(RBCheckpointDB::new(rbdb.clone(), ops_config));
     let writer_db = Arc::new(RBL1WriterDb::new(rbdb.clone(), ops_config));
-    let prover_db = Arc::new(ProofDb::new(rbdb, ops_config));
+    let prover_db = Arc::new(ProofDb::new(rbdb.clone(), ops_config));
+    let broadcast_db = Arc::new(L1BroadcastDb::new(rbdb, ops_config));
 
     Arc::new(RocksDbBackend::new(
         l1_db,
@@ -255,5 +252,6 @@ pub fn init_rocksdb_backend(
         checkpoint_db,
         writer_db,
         prover_db,
+        broadcast_db,
     ))
 }
