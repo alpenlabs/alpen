@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_crypto::multisig::MultisigConfig;
+use strata_crypto::multisig::SchnorrMultisigConfig;
 use strata_primitives::roles::Role;
 
 /// Parameters for the admnistration subprotocol, containing MultisigConfig for each role.
@@ -13,10 +13,10 @@ use strata_primitives::roles::Role;
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct AdministrationSubprotoParams {
     /// MultisigConfig for [StrataAdministrator](Role::StrataAdministrator).
-    pub strata_administrator: MultisigConfig,
+    pub strata_administrator: SchnorrMultisigConfig,
 
     /// MultisigConfig for [StrataSequencerManager](Role::StrataSequencerManager).
-    pub strata_sequencer_manager: MultisigConfig,
+    pub strata_sequencer_manager: SchnorrMultisigConfig,
 
     /// The confirmation depth (CD) setting: after an update transaction receives this many
     /// confirmations, the update is enacted automatically. During this confirmation period,
@@ -26,8 +26,8 @@ pub struct AdministrationSubprotoParams {
 
 impl AdministrationSubprotoParams {
     pub fn new(
-        strata_administrator: MultisigConfig,
-        strata_sequencer_manager: MultisigConfig,
+        strata_administrator: SchnorrMultisigConfig,
+        strata_sequencer_manager: SchnorrMultisigConfig,
         confirmation_depth: u32,
     ) -> Self {
         Self {
@@ -37,14 +37,14 @@ impl AdministrationSubprotoParams {
         }
     }
 
-    pub fn get_config(&self, role: Role) -> &MultisigConfig {
+    pub fn get_config(&self, role: Role) -> &SchnorrMultisigConfig {
         match role {
             Role::StrataAdministrator => &self.strata_administrator,
             Role::StrataSequencerManager => &self.strata_sequencer_manager,
         }
     }
 
-    pub fn get_all_authorities(self) -> Vec<(Role, MultisigConfig)> {
+    pub fn get_all_authorities(self) -> Vec<(Role, SchnorrMultisigConfig)> {
         vec![
             (Role::StrataAdministrator, self.strata_administrator),
             (Role::StrataSequencerManager, self.strata_sequencer_manager),

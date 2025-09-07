@@ -3,7 +3,7 @@ use strata_asm_common::{
     logging::{error, info},
 };
 use strata_asm_proto_administration_txs::actions::{MultisigAction, UpdateAction};
-use strata_crypto::multisig::AggregatedVote;
+use strata_crypto::multisig::SchnorrMultisigSignature;
 use strata_primitives::roles::ProofType;
 
 use crate::{
@@ -79,7 +79,7 @@ pub(crate) fn handle_pending_updates(
 pub(crate) fn handle_action(
     state: &mut AdministrationSubprotoState,
     action: MultisigAction,
-    vote: AggregatedVote,
+    sig: SchnorrMultisigSignature,
     current_height: u64,
     _relayer: &mut impl MsgRelayer,
     params: &AdministrationSubprotoParams,
@@ -101,7 +101,7 @@ pub(crate) fn handle_action(
     let authority = state
         .authority(role)
         .ok_or(AdministrationError::UnknownRole)?;
-    authority.validate_action(&action, &vote)?;
+    authority.validate_action(&action, &sig)?;
 
     // Process the action based on its type
     match action {
@@ -147,8 +147,8 @@ mod tests {
     use strata_asm_proto_administration_txs::actions::{
         CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate,
     };
-    use strata_crypto::multisig::{Signature, vote::AggregatedVote};
-    use strata_primitives::roles::Role;
+    use strata_crypto::multisig::signature::MultisigSignature;
+    use strata_primitives::{buf::Buf64, roles::Role};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::handle_action;
@@ -206,7 +206,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
+        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Generate 5 random update actions that require StrataAdministrator role
@@ -222,7 +222,7 @@ mod tests {
             handle_action(
                 &mut state,
                 action,
-                vote.clone(),
+                multisig.clone(),
                 current_height,
                 &mut relayer,
                 &params,
@@ -265,7 +265,7 @@ mod tests {
         let mut state = AdministrationSubprotoState::new(&params);
 
         let mut relayer = MockRelayer::new();
-        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
+        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Generate random sequencer update actions
@@ -281,7 +281,7 @@ mod tests {
             handle_action(
                 &mut state,
                 action,
-                vote.clone(),
+                multisig.clone(),
                 current_height,
                 &mut relayer,
                 &params,
@@ -315,7 +315,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
+        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let no_of_updates = 5;
         let current_height = 1000;
 
@@ -326,7 +326,7 @@ mod tests {
             handle_action(
                 &mut state,
                 update_action,
-                vote.clone(),
+                multisig.clone(),
                 current_height,
                 &mut relayer,
                 &params,
@@ -349,7 +349,7 @@ mod tests {
             handle_action(
                 &mut state,
                 cancel_action,
-                vote.clone(),
+                multisig.clone(),
                 current_height,
                 &mut relayer,
                 &params,
@@ -380,7 +380,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
+        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Generate a random cancel action (likely targeting a non-existent ID)
@@ -391,7 +391,7 @@ mod tests {
         let res = handle_action(
             &mut state,
             cancel_action,
-            vote.clone(),
+            multisig.clone(),
             current_height,
             &mut relayer,
             &params,
@@ -409,7 +409,7 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-        let vote = AggregatedVote::new(BitVec::new(), Signature::default());
+        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Create an update action
@@ -424,7 +424,7 @@ mod tests {
         handle_action(
             &mut state,
             update_action,
-            vote.clone(),
+            multisig.clone(),
             current_height,
             &mut relayer,
             &params,
@@ -436,7 +436,7 @@ mod tests {
         let res = handle_action(
             &mut state,
             cancel_action,
-            vote.clone(),
+            multisig.clone(),
             current_height,
             &mut relayer,
             &params,
@@ -448,7 +448,7 @@ mod tests {
         let res = handle_action(
             &mut state,
             cancel_action,
-            vote.clone(),
+            multisig.clone(),
             current_height,
             &mut relayer,
             &params,

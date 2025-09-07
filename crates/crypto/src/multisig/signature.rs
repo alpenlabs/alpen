@@ -3,18 +3,18 @@ use std::marker::PhantomData;
 
 use crate::multisig::traits::CryptoScheme;
 
-/// An aggregated signature over a subset of signers in a MultisigConfig,
+/// A multisig signature over a subset of signers in a MultisigConfig,
 /// identified by their positions in the config's key list.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AggregatedVote<S: CryptoScheme> {
+pub struct MultisigSignature<S: CryptoScheme> {
     indices: BitVec,
     signature: S::Signature,
     /// Phantom data to carry the crypto scheme type.
     _phantom: PhantomData<S>,
 }
 
-impl<S: CryptoScheme> AggregatedVote<S> {
-    /// Create a new `AggregatedVote` with given voter indices and aggregated signature.
+impl<S: CryptoScheme> MultisigSignature<S> {
+    /// Create a new `MultisigSignature` with given signer indices and aggregated signature.
     pub fn new(indices: BitVec, signature: S::Signature) -> Self {
         Self { 
             indices, 
@@ -28,8 +28,8 @@ impl<S: CryptoScheme> AggregatedVote<S> {
         &self.signature
     }
 
-    /// Borrow the voter indices slice.
-    pub fn voter_indices(&self) -> &BitSlice {
+    /// Borrow the signer indices slice.
+    pub fn signer_indices(&self) -> &BitSlice {
         &self.indices
     }
 
@@ -39,7 +39,7 @@ impl<S: CryptoScheme> AggregatedVote<S> {
     }
 }
 
-impl<S: CryptoScheme> Default for AggregatedVote<S>
+impl<S: CryptoScheme> Default for MultisigSignature<S>
 where
     S::Signature: Default,
 {

@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_administration_txs::actions::UpdateId;
-use strata_crypto::multisig::MultisigConfigUpdate;
+use strata_crypto::multisig::SchnorrMultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
@@ -52,11 +52,7 @@ impl AdministrationSubprotoState {
     }
 
     /// Apply a multisig config update for the specified role.
-    pub fn apply_multisig_update(
-        &mut self,
-        role: Role,
-        update: &MultisigConfigUpdate,
-    ) -> Result<(), AdministrationError> {
+    pub fn apply_multisig_update(&mut self, role: Role, update: &SchnorrMultisigConfigUpdate) {
         if let Some(auth) = self.authority_mut(role) {
             auth.config_mut().apply_update(update)?;
             Ok(())
@@ -112,8 +108,8 @@ impl AdministrationSubprotoState {
 mod tests {
     use rand::{Rng, thread_rng};
     use strata_asm_proto_administration_txs::actions::UpdateAction;
-    use strata_crypto::multisig::{PubKey, config::MultisigConfigUpdate};
-    use strata_primitives::roles::Role;
+    use strata_crypto::multisig::config::MultisigConfigUpdate;
+    use strata_primitives::{buf::Buf32, roles::Role};
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{
@@ -229,22 +225,23 @@ mod tests {
         let role: Role = arb.generate();
 
         let initial_auth = state.authority(role).unwrap().config();
-        let initial_members: Vec<PubKey> = initial_auth.keys().to_vec();
+        let initial_members: Vec<Buf32> = initial_auth.keys().to_vec();
 
-        let new_members: Vec<PubKey> = arb.generate();
+        let new_members: Vec<Buf32> = arb.generate();
 
         // Randomly pick some members to remove by creating a bitvec
         let mut rng = thread_rng();
         let mut members_to_remove_bitvec = bitvec::bitvec![0; initial_members.len()];
         let mut removal_count = 0;
-        
+
         for i in 0..initial_members.len() {
-            if rng.gen_bool(0.3) { // 30% chance to remove each member
+            if rng.gen_bool(0.3) {
+                // 30% chance to remove each member
                 members_to_remove_bitvec.set(i, true);
                 removal_count += 1;
             }
         }
-        
+
         let new_size = initial_members.len() + new_members.len() - removal_count;
         let new_threshold = std::cmp::max(1, (new_size + 1) / 2); // Ensure valid threshold (at least majority)
 

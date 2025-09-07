@@ -1,6 +1,7 @@
 use bitvec::vec::BitVec;
 use strata_asm_common::TxInputRef;
-use strata_crypto::multisig::{Signature, AggregatedVote};
+use strata_crypto::multisig::SchnorrMultisigSignature;
+use strata_primitives::buf::Buf64;
 
 use crate::{
     actions::{
@@ -19,7 +20,7 @@ use crate::{
 
 pub fn parse_tx_multisig_action_and_vote(
     tx: &TxInputRef<'_>,
-) -> Result<(MultisigAction, AggregatedVote), AdministrationTxParseError> {
+) -> Result<(MultisigAction, SchnorrMultisigSignature), AdministrationTxParseError> {
     let vote = parse_aggregated_vote(tx)?;
 
     let action = match tx.tag().tx_type() {
@@ -50,6 +51,9 @@ pub fn parse_tx_multisig_action_and_vote(
 /// FIXME: This is a placeholder function and should be replaced with actual logic.
 pub fn parse_aggregated_vote(
     _tx: &TxInputRef<'_>,
-) -> Result<AggregatedVote, AdministrationTxParseError> {
-    Ok(AggregatedVote::new(BitVec::new(), Signature::default()))
+) -> Result<SchnorrMultisigSignature, AdministrationTxParseError> {
+    Ok(SchnorrMultisigSignature::new(
+        BitVec::new(),
+        Buf64::default(),
+    ))
 }
