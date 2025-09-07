@@ -1,6 +1,6 @@
 use bitvec::vec::BitVec;
 use strata_asm_common::TxInputRef;
-use strata_crypto::multisig::{Signature, vote::AggregatedVote};
+use strata_crypto::multisig::{Signature, AggregatedVote};
 
 use crate::{
     actions::{

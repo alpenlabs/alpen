@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_crypto::multisig::config::MultisigConfig;
+use strata_crypto::multisig::MultisigConfig;
 use strata_primitives::roles::Role;
 
 /// Parameters for the admnistration subprotocol, containing MultisigConfig for each role.

@@ -4,7 +4,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_crypto::multisig::aggregation::generate_agg_pubkey;
+use strata_crypto::multisig::aggregate_schnorr_keys;
 use strata_primitives::{
     bridge::OperatorIdx, buf::Buf32, l1::XOnlyPk, operator::OperatorPubkeys, sorted_vec::SortedVec,
 };
@@ -170,7 +170,7 @@ impl OperatorTable {
                 "Cannot create operator table with empty entries - at least one operator is required"
             );
         }
-        let agg_operator_key = generate_agg_pubkey(entries.iter().map(|o| o.wallet_pk()))
+        let agg_operator_key = aggregate_schnorr_keys(entries.iter().map(|o| o.wallet_pk()))
             .unwrap()
             .into();
         Self {
@@ -304,7 +304,7 @@ impl OperatorTable {
                 panic!("Cannot have empty multisig - at least one operator must be active");
             }
 
-            self.agg_key = generate_agg_pubkey(active_keys.into_iter())
+            self.agg_key = aggregate_schnorr_keys(active_keys.into_iter())
                 .expect("Failed to generate aggregated key")
                 .into();
         }

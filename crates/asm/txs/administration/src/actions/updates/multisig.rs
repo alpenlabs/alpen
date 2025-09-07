@@ -2,7 +2,7 @@ use arbitrary::Arbitrary;
 use bitvec::vec::BitVec;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
-use strata_crypto::multisig::config::MultisigConfigUpdate;
+use strata_crypto::multisig::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::error::AdministrationTxParseError;

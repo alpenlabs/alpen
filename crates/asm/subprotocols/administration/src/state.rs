@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_administration_txs::actions::UpdateId;
-use strata_crypto::multisig::config::MultisigConfigUpdate;
+use strata_crypto::multisig::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{

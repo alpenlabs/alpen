@@ -6,7 +6,7 @@ use bitcoin::{
     taproot::TaprootBuilder,
     Address, Network, Opcode, XOnlyPublicKey,
 };
-use strata_crypto::multisig::aggregation::generate_agg_pubkey;
+use strata_crypto::multisig::aggregate_schnorr_keys;
 use strata_primitives::{
     buf::Buf32,
     l1::BitcoinAddress,
@@ -63,7 +63,7 @@ pub fn generate_taproot_address(
     operator_wallet_pks: &[Buf32],
     network: Network,
 ) -> anyhow::Result<(BitcoinAddress, XOnlyPublicKey)> {
-    let x_only_pub_key = generate_agg_pubkey(operator_wallet_pks.iter())?;
+    let x_only_pub_key = aggregate_schnorr_keys(operator_wallet_pks.iter())?;
 
     let taproot_builder = TaprootBuilder::new();
     let spend_info = taproot_builder

@@ -10,7 +10,7 @@ use bitcoin::{
 };
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
 use rand::{RngCore, rngs::OsRng};
-use strata_crypto::multisig::aggregation::generate_agg_pubkey;
+use strata_crypto::multisig::aggregate_schnorr_keys;
 use strata_primitives::{buf::Buf32, crypto::EvenSecretKey};
 
 use crate::txs::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
@@ -244,7 +244,7 @@ fn create_agg_pubkey_from_privkeys(operators_privkeys: &[SecretKey]) -> XOnlyPub
         .map(|pk| pk.x_only_public_key().0)
         .map(|xpk| Buf32::from(xpk.serialize()))
         .collect();
-    generate_agg_pubkey(pubkeys.iter()).expect("generation of aggregated public key failed")
+    aggregate_schnorr_keys(pubkeys.iter()).expect("generation of aggregated public key failed")
 }
 
 #[cfg(test)]

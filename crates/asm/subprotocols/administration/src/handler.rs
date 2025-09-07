@@ -3,7 +3,7 @@ use strata_asm_common::{
     logging::{error, info},
 };
 use strata_asm_proto_administration_txs::actions::{MultisigAction, UpdateAction};
-use strata_crypto::multisig::vote::AggregatedVote;
+use strata_crypto::multisig::AggregatedVote;
 use strata_primitives::roles::ProofType;
 
 use crate::{

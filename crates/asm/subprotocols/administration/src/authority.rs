@@ -1,10 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_administration_txs::actions::MultisigAction;
-use strata_crypto::multisig::{
-    aggregation::aggregate, config::MultisigConfig, errors::VoteValidationError, verify_sig,
-    vote::AggregatedVote,
-};
+use strata_crypto::multisig::{AggregatedVote, MultisigConfig, MultisigError, verify_multisig};
 use strata_primitives::roles::Role;
 
 /// Manages multisignature operations for a given role and key set, with replay protection via a
@@ -46,27 +43,22 @@ impl MultisigAuthority {
 
     /// Validate that `vote` approves `action` under the current config and nonce.
     ///
-    /// Steps:
-    /// 1. Map voter indices to pubkeys (error if out of bounds).
-    /// 2. Aggregate pubkeys and compute payload hash.
-    /// 3. Verify aggregated signature.
+    /// Uses the generic multisig verification function to orchestrate the workflow.
     pub fn validate_action(
         &self,
         action: &MultisigAction,
         vote: &AggregatedVote,
-    ) -> Result<(), VoteValidationError> {
-        // 1. Aggregate those public keys into one.
-        let aggregated_key = aggregate(&self.config, vote.voter_indices())?;
-
-        // 2. Compute the msg to sign by combining UpdateAction with sequence no
+    ) -> Result<(), MultisigError> {
+        // Compute the msg to sign by combining UpdateAction with sequence no
         let sig_hash = action.compute_sighash(self.seqno);
 
-        // 3. Verify the aggregated signature against the aggregated pubkey
-        if !verify_sig(&aggregated_key, &sig_hash, vote.signature()) {
-            return Err(VoteValidationError::InvalidVoteSignature);
-        }
-
-        Ok(())
+        // Use the generic multisig verification function
+        verify_multisig(
+            &self.config,
+            vote.voter_indices(),
+            &sig_hash.into(),
+            vote.signature(),
+        )
     }
 
     /// Increments the nonce.
