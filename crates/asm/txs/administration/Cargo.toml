@@ -3,6 +3,9 @@ name = "strata-asm-proto-administration-txs"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-asm-common.workspace = true
 strata-crypto.workspace = true
@@ -15,5 +18,8 @@ borsh.workspace = true
 thiserror.workspace = true
 zkaleido.workspace = true
 
-[lints]
-workspace = true
+[dev-dependencies]
+rand.workspace = true
+bitcoin.workspace = true
+strata-test-utils.workspace = true
+strata-crypto = { workspace = true, features = ["rand"] }
