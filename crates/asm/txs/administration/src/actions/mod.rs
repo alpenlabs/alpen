@@ -1,5 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_l1_txfmt::TxType;
 use strata_primitives::hash;
 
 mod cancel;
@@ -8,6 +9,11 @@ pub mod updates;
 pub use cancel::CancelAction;
 use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
 pub use updates::UpdateAction;
+
+use crate::constants::{
+    CANCEL_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
+    SEQUENCER_UPDATE_TX_TYPE, VK_UPDATE_TX_TYPE,
+};
 
 pub type UpdateId = u32;
 
@@ -39,5 +45,17 @@ impl MultisigAction {
         data[..32].copy_from_slice(&action_hash);
         data[32..].copy_from_slice(&seqno_bytes);
         hash::raw(&data)
+    }
+
+    pub fn tx_type(&self) -> TxType {
+        match self {
+            MultisigAction::Cancel(_) => CANCEL_TX_TYPE,
+            MultisigAction::Update(update) => match update {
+                UpdateAction::Multisig(_) => MULTISIG_CONFIG_UPDATE_TX_TYPE,
+                UpdateAction::OperatorSet(_) => OPERATOR_UPDATE_TX_TYPE,
+                UpdateAction::Sequencer(_) => SEQUENCER_UPDATE_TX_TYPE,
+                UpdateAction::VerifyingKey(_) => VK_UPDATE_TX_TYPE,
+            },
+        }
     }
 }
