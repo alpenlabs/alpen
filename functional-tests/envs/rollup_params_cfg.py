@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -55,14 +55,14 @@ class Risc0RollupVk(BaseModel):
     risc0: Risc0Groth16Verifier
 
 
-RollupVk = Union[Sp1RollupVk, Risc0RollupVk, Literal["native"]]
+RollupVk = Sp1RollupVk | Risc0RollupVk | Literal["native"]
 
 
 class ProofPublishModeTimeout(BaseModel):
     timeout: int
 
 
-ProofPublishMode = Union[Literal["strict"], ProofPublishModeTimeout]
+ProofPublishMode = Literal["strict"] | ProofPublishModeTimeout
 
 
 class RollupConfig(BaseModel):

@@ -55,8 +55,8 @@ updates:
       prefix: "chore(deps)"
       include: "scope"
 
-  # Python dependencies using Poetry
-  - package-ecosystem: "pip"
+  # Python dependencies using uv
+  - package-ecosystem: "uv"
     directory: "/functional-tests/"
     schedule:
       interval: "monthly"
