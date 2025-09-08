@@ -25,6 +25,13 @@ Generate the required keys:
 # build the datatool
 cargo build --bin strata-datatool
 cd docker
+
+# Bitcoin RPC credentials can be provided via environment variables (optional):
+# If not set, defaults to: http://localhost:18443, rpcuser, rpcpassword
+export BITCOIN_RPC_URL="http://localhost:18443"
+export BITCOIN_RPC_USER="rpcuser"
+export BITCOIN_RPC_PASSWORD="rpcpassword"
+
 ./init-keys.sh <path_to_strata_datatool> # typically, ../target/debug/strata-datatool
 ```
 
@@ -57,12 +64,17 @@ docker start alpen_reth_fn # if you want to test the full node
 2. Export the generated ELF
 
     ```bash
-    target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1 
+    target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1
     ```
 
 3. Generate configs
 
     ```bash
+    # Set Bitcoin RPC credentials if needed (optional)
+    export BITCOIN_RPC_URL="http://localhost:18443"
+    export BITCOIN_RPC_USER="rpcuser"
+    export BITCOIN_RPC_PASSWORD="rpcpassword"
+
     cd docker && ./init-keys.sh ../target/release/strata-datatool
     ```
 
