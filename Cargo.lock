@@ -14227,6 +14227,7 @@ dependencies = [
 name = "strata-asm-proto-administration-txs"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "arbitrary",
  "bitcoin",
  "bitvec",
@@ -14235,6 +14236,7 @@ dependencies = [
  "strata-asm-common",
  "strata-crypto",
  "strata-l1-txfmt",
+ "strata-l1tx",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",

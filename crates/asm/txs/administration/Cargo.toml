@@ -23,3 +23,5 @@ rand.workspace = true
 bitcoin.workspace = true
 strata-test-utils.workspace = true
 strata-crypto = { workspace = true, features = ["rand"] }
+anyhow.workspace = true
+strata-l1tx.workspace = true
