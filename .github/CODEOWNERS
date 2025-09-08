@@ -11,6 +11,8 @@ Makefile               @alpenlabs/rust @alpenlabs/ci @alpenlabs/bin
 codecov.yml            @alpenlabs/ci
 contrib/               @alpenlabs/ci   @alpenlabs/bin
 tests/                 @alpenlabs/rust @alpenlabs/ci
+**/*.nix               @alpenlabs/ci
+flake.lock             @alpenlabs/ci
 
 # Libs
 # Note that the globbing here is to future-proof against new crates

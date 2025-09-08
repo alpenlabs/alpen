@@ -2,8 +2,8 @@ name: Ethereum Execution Spec tests against staging docker.
 
 on:
   schedule:
-    - cron: '0 15 * * *'  # Daily at 15:00 UTC
-  workflow_dispatch:      # Manual trigger (optional)
+    - cron: "0 15 * * *" # Daily at 15:00 UTC
+  workflow_dispatch: # Manual trigger (optional)
 
 env:
   COMMIT: ${{ github.sha }}
@@ -21,133 +21,133 @@ jobs:
       name: development
     timeout-minutes: 120 # TODO: change to 60 once the exex witness generation is optimized.
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4
-      with:
-        persist-credentials: false
-        ref: releases/0.2.0
-        fetch-depth: 0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          persist-credentials: false
+          ref: releases/0.2.0
+          fetch-depth: 0
 
-    - name: Configure AWS ECR Details
-      uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ECR_ROLE }}
-        aws-region: us-east-1
+      - name: Configure AWS ECR Details
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ECR_ROLE }}
+          aws-region: us-east-1
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
-      with:
-        mask-password: "true"
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
+        with:
+          mask-password: "true"
 
-    - name: Pull latest Docker images from CD pipeline
-      id: pull-images
-      env:
+      - name: Pull latest Docker images from CD pipeline
+        id: pull-images
+        env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX }}
-      run: |
-        BINARIES=(
-          "strata-client"
-          "strata-sequencer-client"
-          "alpen-reth"
-        )
-        
-        for IMAGE in "${BINARIES[@]}"; do
-          ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${IMAGE}"
-          TAG=$(aws ecr describe-images \
-            --repository-name "${ECR_REPOSITORY}" \
-            --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
-            --output text)
-          echo "$TAG"
-          IMG_URL="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
-          docker pull "${IMG_URL}"
-          docker tag "${IMG_URL}" "${IMAGE}:latest"
-        done
-    
-    - name: List pulled Docker images
-      run: |
-        docker image list
+        run: |
+          BINARIES=(
+            "strata-client"
+            "strata-sequencer-client"
+            "alpen-reth"
+          )
 
-    - name: Build Prover Client image in native mode
-      run: |
-        # TODO(STR-1527): fetch the prover client image (in native mode) from ECR!
-        mkdir -p docker/prover-client/elfs
-
-        # Build prover
-        docker build \
-          --build-arg PROVER_FEATURES="default" \
-          -t "strata-prover-client:latest" \
-          -f "docker/prover-client/Dockerfile" .
-
-    - name: Switch to main and do stuff
-      run: |
-        # Required because compose yml and test_ee_proof live on main so far.
-        git checkout main
-
-    - name: Build params
-      run: |
-        # TODO: consider switching to uv instead of pip3.
-        # Install base58
-        pip3 install base58
-
-        # Build datatool with sp1 features
-        cargo build --bin strata-datatool --release
-
-        # Generate params: rollup_name := alpn, block_time := 1000
-        cd docker && ./init-keys.sh ../target/release/strata-datatool -n alpn -t 1
-        cat configs/params.json
-
-    - name: Start services with Docker Compose
-      run: |
-        docker image list
-        docker compose -f ./docker/docker-compose-testing.yml up -d
-
-    - name: Wait for services to be ready
-      run: |
-        sleep 60 # Ideally need some healthchecks.
-        EXITED_CONTAINERS=$(docker ps -a --filter "status=exited" --format '{{.Names}}')
-
-        if [ -n "$EXITED_CONTAINERS" ]; then
-          echo "❌ Found exited containers:"
-          echo "$EXITED_CONTAINERS"
-
-          for name in $EXITED_CONTAINERS; do
-            echo -e "\n=== Logs for container: $name ==="
-            docker logs "$name" || echo "(No logs)"
+          for IMAGE in "${BINARIES[@]}"; do
+            ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${IMAGE}"
+            TAG=$(aws ecr describe-images \
+              --repository-name "${ECR_REPOSITORY}" \
+              --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
+              --output text)
+            echo "$TAG"
+            IMG_URL="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+            docker pull "${IMG_URL}"
+            docker tag "${IMG_URL}" "${IMAGE}:latest"
           done
 
-          echo "❌ One or more containers have exited. Failing step."
-          exit 1
-        else
-          echo "✅ All containers are running."
-        fi
+      - name: List pulled Docker images
+        run: |
+          docker image list
 
-    - name: Run tests
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        git clone https://github.com/alpenlabs/execution-spec-tests
-        cd execution-spec-tests
-        uv python install 3.11
-        uv python pin 3.11
-        uv sync --all-extras
-        uv run solc-select use 0.8.24 --always-install
-        uv run execute remote \
-          -m state_test \
-          --fork=Shanghai \
-          --rpc-endpoint=http://localhost:8545 \
-          --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-          --rpc-chain-id 2892 \
-          --tx-wait-timeout 30 \
-          -v
-      continue-on-error: true
-    
-    - name: Generate a proof of EE blocks execution.
-      working-directory: docker
-      run: |
-        chmod +x test_ee_proof.sh
-        ./test_ee_proof.sh docker
+      - name: Build Prover Client image in native mode
+        run: |
+          # TODO(STR-1527): fetch the prover client image (in native mode) from ECR!
+          mkdir -p docker/prover-client/elfs
 
-    - name: Tear down services
-      if: always()
-      run: |
-        docker logs strata_prover_client
-        docker compose -f ./docker/docker-compose-testing.yml down
+          # Build prover
+          docker build \
+            --build-arg PROVER_FEATURES="default" \
+            -t "strata-prover-client:latest" \
+            -f "docker/prover-client/Dockerfile" .
+
+      - name: Switch to main and do stuff
+        run: |
+          # Required because compose yml and test_ee_proof live on main so far.
+          git checkout main
+
+      - name: Build params
+        run: |
+          # TODO: consider switching to uv instead of pip3.
+          # Install base58
+          pip3 install base58
+
+          # Build datatool with sp1 features
+          cargo build --bin strata-datatool --release
+
+          # Generate params: rollup_name := alpn, block_time := 1000
+          cd docker && ./init-keys.sh ../target/release/strata-datatool -n alpn -t 1
+          cat configs/params.json
+
+      - name: Start services with Docker Compose
+        run: |
+          docker image list
+          docker compose -f ./docker/docker-compose-testing.yml up -d
+
+      - name: Wait for services to be ready
+        run: |
+          sleep 60 # Ideally need some healthchecks.
+          EXITED_CONTAINERS=$(docker ps -a --filter "status=exited" --format '{{.Names}}')
+
+          if [ -n "$EXITED_CONTAINERS" ]; then
+            echo "❌ Found exited containers:"
+            echo "$EXITED_CONTAINERS"
+
+            for name in $EXITED_CONTAINERS; do
+              echo -e "\n=== Logs for container: $name ==="
+              docker logs "$name" || echo "(No logs)"
+            done
+
+            echo "❌ One or more containers have exited. Failing step."
+            exit 1
+          else
+            echo "✅ All containers are running."
+          fi
+
+      - name: Run tests
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          git clone https://github.com/alpenlabs/execution-spec-tests
+          cd execution-spec-tests
+          uv python install 3.11
+          uv python pin 3.11
+          uv sync --all-extras
+          uv run solc-select use 0.8.24 --always-install
+          uv run execute remote \
+            -m state_test \
+            --fork=Shanghai \
+            --rpc-endpoint=http://localhost:8545 \
+            --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+            --rpc-chain-id 2892 \
+            --tx-wait-timeout 30 \
+            -v
+        continue-on-error: true
+
+      - name: Generate a proof of EE blocks execution.
+        working-directory: docker
+        run: |
+          chmod +x test_ee_proof.sh
+          ./test_ee_proof.sh docker
+
+      - name: Tear down services
+        if: always()
+        run: |
+          docker logs strata_prover_client
+          docker compose -f ./docker/docker-compose-testing.yml down

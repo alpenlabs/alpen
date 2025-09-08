@@ -19,10 +19,10 @@ cov_file := "lcov.info"
 default:
     @just --list
 
-# Build the workspace into the `target` directory
+# Build the workspace
 [group('build')]
 build:
-    cargo build --workspace --bin "strata-client" --features "{{features}}" --profile "{{profile}}"
+    cargo build --workspace --all-features --lib --bins --examples --benches --locked
 
 # Run unit tests
 [group('test')]
