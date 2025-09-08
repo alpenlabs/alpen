@@ -2,8 +2,8 @@ name: Ethereum Execution Spec tests against main branch (via fntests).
 
 on:
   schedule:
-    - cron: '30 1 * * *' # every day at 1:30 AM UTC
-  workflow_dispatch:     # manual run
+    - cron: "30 1 * * *" # every day at 1:30 AM UTC
+  workflow_dispatch: # manual run
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,7 +18,7 @@ jobs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           persist-credentials: false
 
@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           persist-credentials: false
 
@@ -128,17 +128,17 @@ jobs:
         run: |
           chmod +x test_ee_proof.sh
           ./test_ee_proof.sh local
-      
+
       - name: Stop service
         if: always()
         run: |
           screen -S basic_env -X quit
-      
+
       - name: Check tests execution
         # the purpose of the workflow is twofold:
         # - run the EF tests
         # - make sure EE proof is completed with EF txns (regardless if some tests have failed)
-        # Thus, we check the whole logic here. 
+        # Thus, we check the whole logic here.
         if: steps.runtests.outcome == 'failure'
         run: |
           echo "Functional tests failed"
