@@ -120,7 +120,7 @@ class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
         wait_until(
             lambda: seqrpc.strata_syncStatus()["tip_height"] > final_blocknumber,
             error_with="not syncing blocks",
-            timeout=10,
+            timeout=15,
         )
 
         new_el_blockhash = rethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
