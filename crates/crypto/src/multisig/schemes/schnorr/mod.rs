@@ -1,8 +1,49 @@
+#[cfg(feature = "rand")]
+pub mod create;
+
 use bitcoin::{key::Parity, secp256k1::PublicKey, XOnlyPublicKey};
 use musig2::KeyAggContext;
 use strata_primitives::buf::{Buf32, Buf64};
 
 use crate::multisig::{errors::MultisigError, traits::CryptoScheme};
+
+/// Schnorr signature scheme using MuSig2 key aggregation.
+///
+/// This is the current implementation that was previously hardcoded in the multisig module.
+/// It uses secp256k1 curve with Schnorr signatures and MuSig2 for key aggregation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SchnorrScheme;
+
+impl CryptoScheme for SchnorrScheme {
+    type PubKey = Buf32;
+    type Signature = Buf64;
+    type AggregatedKey = Buf32;
+
+    /// Aggregates public keys using MuSig2 key aggregation.
+    ///
+    /// This is moved from the original `generate_agg_pubkey` function in `aggregation.rs`.
+    fn aggregate<'k>(
+        keys: impl Iterator<Item = &'k Self::PubKey>,
+    ) -> Result<Self::AggregatedKey, MultisigError>
+    where
+        Self::PubKey: 'k,
+    {
+        let a = aggregate_schnorr_keys(keys)?;
+        Ok(Buf32::from(a.serialize())) // FIXME:
+    }
+
+    /// Verifies a Schnorr signature against a message hash using an aggregated public key.
+    ///
+    /// This uses the existing `verify_sig` function logic, but properly implemented.
+    fn verify(
+        key: &Self::AggregatedKey,
+        message_hash: &[u8; 32],
+        signature: &Self::Signature,
+    ) -> bool {
+        // Use the existing verification function from strata_primitives
+        strata_primitives::crypto::verify_schnorr_sig(signature, &Buf32::from(*message_hash), key)
+    }
+}
 
 /// Aggregates a collection of Schnorr public keys using MuSig2 key aggregation.
 ///
@@ -43,42 +84,4 @@ where
         .0;
 
     Ok(agg_pubkey)
-}
-
-/// Schnorr signature scheme using MuSig2 key aggregation.
-///
-/// This is the current implementation that was previously hardcoded in the multisig module.
-/// It uses secp256k1 curve with Schnorr signatures and MuSig2 for key aggregation.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SchnorrScheme;
-
-impl CryptoScheme for SchnorrScheme {
-    type PubKey = Buf32;
-    type Signature = Buf64;
-    type AggregatedKey = Buf32;
-
-    /// Aggregates public keys using MuSig2 key aggregation.
-    ///
-    /// This is moved from the original `generate_agg_pubkey` function in `aggregation.rs`.
-    fn aggregate<'k>(
-        keys: impl Iterator<Item = &'k Self::PubKey>,
-    ) -> Result<Self::AggregatedKey, MultisigError>
-    where
-        Self::PubKey: 'k,
-    {
-        let a = aggregate_schnorr_keys(keys)?;
-        Ok(Buf32::from(a.serialize())) // FIXME:
-    }
-
-    /// Verifies a Schnorr signature against a message hash using an aggregated public key.
-    ///
-    /// This uses the existing `verify_sig` function logic, but properly implemented.
-    fn verify(
-        key: &Self::AggregatedKey,
-        message_hash: &[u8; 32],
-        signature: &Self::Signature,
-    ) -> bool {
-        // Use the existing verification function from strata_primitives
-        strata_primitives::crypto::verify_schnorr_sig(signature, &Buf32::from(*message_hash), key)
-    }
 }

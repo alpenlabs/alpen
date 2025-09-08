@@ -14,8 +14,13 @@ bitcoin.workspace = true
 bitvec.workspace = true
 borsh.workspace = true
 musig2.workspace = true
+rand = { workspace = true, optional = true }
 thiserror.workspace = true
 zkaleido.workspace = true
 
 [dev-dependencies]
 bitvec.workspace = true
+
+[features]
+default = ["rand"]
+rand = ["dep:rand"]

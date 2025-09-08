@@ -14484,6 +14484,7 @@ dependencies = [
  "bitvec",
  "borsh",
  "musig2",
+ "rand 0.8.5",
  "strata-primitives",
  "thiserror 2.0.16",
  "zkaleido",
