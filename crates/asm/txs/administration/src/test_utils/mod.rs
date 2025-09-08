@@ -1,15 +1,25 @@
-use bitcoin::{ScriptBuf, Transaction, secp256k1::SecretKey};
+use anyhow::anyhow;
+use bitcoin::{
+    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey,
+    absolute::LockTime,
+    blockdata::script,
+    key::UntweakedKeypair,
+    opcodes::{
+        OP_FALSE,
+        all::{OP_CHECKMULTISIG, OP_ENDIF, OP_IF},
+    },
+    script::PushBytesBuf,
+    secp256k1::{SECP256K1, SecretKey, schnorr::Signature},
+    taproot::{LeafVersion, TaprootBuilder},
+    transaction::Version,
+};
 use bitvec::vec::BitVec;
+use rand::{RngCore, rngs::OsRng};
 use strata_crypto::multisig::{
     schemes::{SchnorrScheme, schnorr::create::create_musig2_signature},
     signature::MultisigSignature,
 };
-use strata_l1tx::envelope::builder::build_envelope_script;
-use strata_primitives::{
-    buf::{Buf32, Buf64},
-    l1::payload::{L1Payload, L1PayloadType},
-    params::Params,
-};
+use strata_primitives::buf::{Buf32, Buf64};
 
 pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
@@ -62,8 +72,7 @@ pub fn create_multisig_signature(
 /// # Returns
 /// A Bitcoin transaction that serves as the reveal transaction containing the administration
 /// payload
-pub fn create_admin_tx(
-    params: &Params,
+pub fn create_test_admin_tx(
     privkeys: &[SecretKey],
     signer_indices: BitVec<u8>,
     action: &MultisigAction,
@@ -77,7 +86,6 @@ pub fn create_admin_tx(
     let mut aux_data = Vec::new();
     aux_data.extend_from_slice(signature.signature().as_bytes()); // 64 bytes
 
-    // Now we can directly get bytes from BitVec<u8> - much cleaner!
     let signer_indices_bytes = signature.signer_indices().to_bitvec().into_vec();
     aux_data.extend_from_slice(&signer_indices_bytes); // variable length bitset as bytes
 
@@ -89,30 +97,48 @@ pub fn create_admin_tx(
     tagged_payload.extend_from_slice(&[action.tx_type()]); // 1 byte TxType
     tagged_payload.extend_from_slice(&aux_data); // auxiliary data
 
-    // Create L1 payload for the administration data
-    // Using L1PayloadType::Da as the administration subprotocol uses DA-like semantics
-    let l1_payload = L1Payload::new(vec![], L1PayloadType::Da);
-
-    // Build the envelope script containing our administration payload
-    let envelope_script = build_envelope_script(params, &[l1_payload])?;
+    let action_payload = borsh::to_vec(action)?;
 
     // Create a minimal reveal transaction structure
     // This is a simplified version - in practice, this would be created as part of
     // a proper commit-reveal transaction pair using the btcio writer infrastructure
-    let reveal_tx = create_reveal_transaction_stub(envelope_script)?;
+    let reveal_tx = create_reveal_transaction_stub(action_payload, tagged_payload)?;
 
     Ok(reveal_tx)
 }
 
 /// Creates a stub reveal transaction containing the envelope script.
 /// This is a simplified implementation for testing purposes.
-fn create_reveal_transaction_stub(script: ScriptBuf) -> anyhow::Result<Transaction> {
-    use bitcoin::{
-        Amount, OutPoint, Sequence, TxIn, TxOut, absolute::LockTime, transaction::Version,
-    };
+fn create_reveal_transaction_stub(
+    envelope_payload: Vec<u8>,
+    sps50_tagged_payload: Vec<u8>,
+) -> anyhow::Result<Transaction> {
+    // Create commit key
+    let mut rand_bytes = [0; 32];
+    OsRng.fill_bytes(&mut rand_bytes);
+    let key_pair = UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)?;
+    let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
-    // Create a minimal transaction structure
-    // In practice, this would be a proper transaction that spends from a commit transaction
+    // Start creating envelope content
+    let reveal_script = build_reveal_script(&public_key, &envelope_payload)?;
+
+    // Create spend info for tapscript
+    let taproot_spend_info = TaprootBuilder::new()
+        .add_leaf(0, reveal_script.clone())?
+        .finalize(SECP256K1, public_key)
+        .map_err(|_| anyhow!("Could not build taproot spend info"))?;
+
+    let signature = Signature::from_slice(&[0u8; 64]).unwrap();
+    let mut witness = Witness::new();
+    witness.push(signature.as_ref());
+    witness.push(reveal_script.clone());
+    witness.push(
+        taproot_spend_info
+            .control_block(&(reveal_script, LeafVersion::TapScript))
+            .ok_or(anyhow!("Could not create control block"))?
+            .serialize(),
+    );
+
     let tx = Transaction {
         version: Version::TWO,
         lock_time: LockTime::ZERO,
@@ -120,25 +146,59 @@ fn create_reveal_transaction_stub(script: ScriptBuf) -> anyhow::Result<Transacti
             previous_output: OutPoint::null(),
             script_sig: ScriptBuf::new(),
             sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-            witness: bitcoin::Witness::new(),
+            witness,
         }],
         output: vec![TxOut {
-            value: Amount::from_sat(546), // Dust limit
-            script_pubkey: script,
+            value: Amount::ZERO,
+            script_pubkey: ScriptBuf::new_op_return(
+                PushBytesBuf::try_from(sps50_tagged_payload).unwrap(),
+            ),
         }],
     };
 
     Ok(tx)
 }
 
+/// Builds reveal script such that it contains opcodes for verifying the internal key as well as the
+/// envelope block
+fn build_reveal_script(
+    taproot_public_key: &XOnlyPublicKey,
+    payload: &[u8],
+) -> Result<ScriptBuf, anyhow::Error> {
+    let mut script_bytes = script::Builder::new()
+        .push_x_only_key(taproot_public_key)
+        .push_opcode(OP_CHECKMULTISIG)
+        .into_script()
+        .into_bytes();
+    let script = build_envelope_script(payload)?;
+    script_bytes.extend(script.into_bytes());
+    Ok(ScriptBuf::from(script_bytes))
+}
+
+fn build_envelope_script(payload: &[u8]) -> anyhow::Result<ScriptBuf> {
+    let mut builder = script::Builder::new()
+        .push_opcode(OP_FALSE)
+        .push_opcode(OP_IF);
+
+    // Insert actual data
+    for chunk in payload.chunks(520) {
+        builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
+    }
+    builder = builder.push_opcode(OP_ENDIF);
+    Ok(builder.into_script())
+}
+
 #[cfg(test)]
 mod tests {
     use bitcoin::secp256k1::{SECP256K1, SecretKey};
     use rand::rngs::OsRng;
+    use strata_asm_common::TxInputRef;
     use strata_crypto::multisig::{SchnorrMultisigConfig, verify_multisig};
+    use strata_l1_txfmt::ParseConfig;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
+    use crate::parser::parse_tx_multisig_action_and_vote;
 
     #[test]
     fn test_create_multisig_update_signature() {
@@ -177,6 +237,37 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    // TODO: Add comprehensive test for create_admin_tx once test parameters are properly set up
-    // For now, the function signature and basic logic are implemented correctly
+    #[test]
+    fn test_admin_tx() {
+        let mut arb = ArbitraryGenerator::new();
+        let seqno = 1;
+        let threshold = 2;
+
+        // Generate test private keys
+        // Create signer indices (signers 0 and 2)
+        let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let mut signer_indices = BitVec::<u8>::new();
+        signer_indices.resize(3, false);
+        signer_indices.set(0, true);
+        signer_indices.set(2, true);
+
+        let action: MultisigAction = arb.generate();
+        let tx = create_test_admin_tx(&privkeys, signer_indices, &action, seqno).unwrap();
+        let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
+            .try_parse_tx(&tx)
+            .unwrap();
+        let tx_input = TxInputRef::new(&tx, tag_data_ref);
+
+        let (p_action, sig) = parse_tx_multisig_action_and_vote(&tx_input).unwrap();
+        assert_eq!(action, p_action);
+
+        let pubkeys = privkeys
+            .iter()
+            .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
+            .collect::<Vec<Buf32>>();
+        let config = SchnorrMultisigConfig::try_new(pubkeys, threshold).unwrap();
+
+        let res = verify_multisig(&config, &sig, &action.compute_sighash(seqno).0);
+        assert!(res.is_ok());
+    }
 }

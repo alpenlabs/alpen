@@ -1,59 +1,49 @@
+use bitcoin::ScriptBuf;
 use bitvec::vec::BitVec;
 use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::SchnorrMultisigSignature;
-use strata_primitives::buf::Buf64;
+use strata_l1tx::envelope::parser::{enter_envelope, extract_until_op_endif};
 
-use crate::{
-    actions::{
-        CancelAction, MultisigAction,
-        updates::{
-            multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
-            vk::VerifyingKeyUpdate,
-        },
-    },
-    constants::{
-        ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE,
-        OL_STF_VK_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE, SEQUENCER_UPDATE_TX_TYPE,
-    },
-    error::AdministrationTxParseError,
-};
+use crate::{actions::MultisigAction, error::AdministrationTxParseError};
 
 pub fn parse_tx_multisig_action_and_vote(
     tx: &TxInputRef<'_>,
 ) -> Result<(MultisigAction, SchnorrMultisigSignature), AdministrationTxParseError> {
     let vote = parse_aggregated_vote(tx)?;
+    let tx_type = tx.tag().tx_type();
 
-    let action = match tx.tag().tx_type() {
-        CANCEL_TX_TYPE => MultisigAction::Cancel(CancelAction::extract_from_tx(tx)?),
+    let payload_script = tx.tx().input[0]
+        .witness
+        .taproot_leaf_script()
+        .ok_or(AdministrationTxParseError::MalformedTransaction(tx_type))?
+        .script;
+    let envelope_payload = parse_envelope_payload(&payload_script.into())
+        .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
+    let action = borsh::from_slice(&envelope_payload)
+        .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
 
-        MULTISIG_CONFIG_UPDATE_TX_TYPE => {
-            MultisigAction::Update(MultisigUpdate::extract_from_tx(tx)?.into())
-        }
-        OPERATOR_UPDATE_TX_TYPE => {
-            MultisigAction::Update(OperatorSetUpdate::extract_from_tx(tx)?.into())
-        }
-        SEQUENCER_UPDATE_TX_TYPE => {
-            MultisigAction::Update(SequencerUpdate::extract_from_tx(tx)?.into())
-        }
-        OL_STF_VK_UPDATE_TX_TYPE => {
-            MultisigAction::Update(VerifyingKeyUpdate::extract_from_tx(tx)?.into())
-        }
-        ASM_STF_VK_UPDATE_TX_TYPE => {
-            MultisigAction::Update(VerifyingKeyUpdate::extract_from_tx(tx)?.into())
-        }
-
-        _ => Err(AdministrationTxParseError::UnknownTxType)?,
-    };
     Ok((action, vote))
 }
 
 /// Extracts the AggregatedVote from a transaction input.
 /// FIXME: This is a placeholder function and should be replaced with actual logic.
 pub fn parse_aggregated_vote(
-    _tx: &TxInputRef<'_>,
+    tx: &TxInputRef<'_>,
 ) -> Result<SchnorrMultisigSignature, AdministrationTxParseError> {
-    Ok(SchnorrMultisigSignature::new(
-        BitVec::new(),
-        Buf64::default(),
-    ))
+    let data = tx.tag().aux_data();
+
+    let mut sig = [0u8; 64];
+    sig.copy_from_slice(&data[0..64]);
+
+    let signer_indices_bytes = &data[64..];
+    let indices: BitVec<u8> = BitVec::from_slice(signer_indices_bytes);
+
+    Ok(SchnorrMultisigSignature::new(indices, sig.into()))
+}
+
+pub fn parse_envelope_payload(script: &ScriptBuf) -> anyhow::Result<Vec<u8>> {
+    let mut instructions = script.instructions();
+    enter_envelope(&mut instructions)?;
+    let payload = extract_until_op_endif(&mut instructions)?;
+    Ok(payload)
 }
