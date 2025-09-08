@@ -24,8 +24,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
       time: "00:00"
     # Group non-security updates
     groups:
@@ -51,6 +50,144 @@ updates:
           - "patch"
     # Security updates remain ungrouped for urgent handling
     open-pull-requests-limit: 20
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # RISC0 guest programs (not workspace members)
+  - package-ecosystem: "cargo"
+    directory: "/provers/risc0/guest-btc-blockspace"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      risc0-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/provers/risc0/guest-checkpoint"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      risc0-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/provers/risc0/guest-cl-stf"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      risc0-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/provers/risc0/guest-evm-ee-stf"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      risc0-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # SP1 guest programs (not workspace members)
+  - package-ecosystem: "cargo"
+    directory: "/provers/sp1/guest-checkpoint"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      sp1-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/provers/sp1/guest-cl-stf"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      sp1-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/provers/sp1/guest-evm-ee-stf"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      sp1-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/provers/sp1/guest-btc-blockspace"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    groups:
+      sp1-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
