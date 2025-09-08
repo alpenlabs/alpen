@@ -1,8 +1,6 @@
 use bitcoin::{ScriptBuf, Transaction, secp256k1::SecretKey};
 use bitvec::vec::BitVec;
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_crypto::multisig::{
-    SchnorrMultisigSignature,
     schemes::{SchnorrScheme, schnorr::create::create_musig2_signature},
     signature::MultisigSignature,
 };
@@ -13,70 +11,9 @@ use strata_primitives::{
     params::Params,
 };
 
-use crate::actions::MultisigAction;
+pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
-/// Administration transaction payload containing the action and its signature.
-/// This structure is serialized and embedded in the SPS-50 compliant reveal transaction.
-#[derive(Debug, Clone)]
-pub struct AdminTxPayload {
-    /// The multisig action (Update or Cancel)
-    pub action: MultisigAction,
-    /// The cryptographic signature authorizing this action
-    pub signature: SchnorrMultisigSignature,
-    /// Sequence number for this operation
-    pub seqno: u64,
-}
-
-impl BorshSerialize for AdminTxPayload {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        // Serialize the action
-        self.action.serialize(writer)?;
-        
-        // Manually serialize the signature components
-        // Convert BitSlice to bytes for serialization
-        let signer_indices = self.signature.signer_indices();
-        let len = signer_indices.len();
-        len.serialize(writer)?;
-        
-        // Convert bitvec to a simple Vec<bool> for serialization
-        let bits: Vec<bool> = signer_indices.iter().by_vals().collect();
-        bits.serialize(writer)?;
-        
-        self.signature.signature().serialize(writer)?;
-        
-        // Serialize the sequence number
-        self.seqno.serialize(writer)
-    }
-}
-
-impl BorshDeserialize for AdminTxPayload {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        // Deserialize the action
-        let action = MultisigAction::deserialize_reader(reader)?;
-        
-        // Deserialize signature components
-        let bitvec_len = usize::deserialize_reader(reader)?;
-        let bits = Vec::<bool>::deserialize_reader(reader)?;
-        
-        // Reconstruct BitVec from bools
-        let mut signer_indices = BitVec::with_capacity(bitvec_len);
-        for bit in bits {
-            signer_indices.push(bit);
-        }
-        
-        let signature_buf = Buf64::deserialize_reader(reader)?;
-        let signature = SchnorrMultisigSignature::new(signer_indices, signature_buf);
-        
-        // Deserialize the sequence number
-        let seqno = u64::deserialize_reader(reader)?;
-        
-        Ok(AdminTxPayload {
-            action,
-            signature,
-            seqno,
-        })
-    }
-}
+use crate::{actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID};
 
 /// Creates a MultisigSignature for any MultisigAction.
 ///
@@ -94,7 +31,7 @@ impl BorshDeserialize for AdminTxPayload {
 /// A MultisigSignature that can be used to authorize this action
 pub fn create_multisig_signature(
     privkeys: &[SecretKey],
-    signer_indices: BitVec,
+    signer_indices: BitVec<u8>,
     sighash: Buf32,
 ) -> MultisigSignature<SchnorrScheme> {
     // Extract only the private keys for signers indicated by signer_indices
@@ -123,11 +60,12 @@ pub fn create_multisig_signature(
 /// * `seqno` - The sequence number for this operation
 ///
 /// # Returns
-/// A Bitcoin transaction that serves as the reveal transaction containing the administration payload
+/// A Bitcoin transaction that serves as the reveal transaction containing the administration
+/// payload
 pub fn create_admin_tx(
     params: &Params,
     privkeys: &[SecretKey],
-    signer_indices: BitVec,
+    signer_indices: BitVec<u8>,
     action: &MultisigAction,
     seqno: u64,
 ) -> anyhow::Result<Transaction> {
@@ -135,25 +73,25 @@ pub fn create_admin_tx(
     let sighash = action.compute_sighash(seqno);
     let signature = create_multisig_signature(privkeys, signer_indices, sighash);
 
-    // Convert to SchnorrMultisigSignature
-    let schnorr_signature = SchnorrMultisigSignature::new(
-        signature.signer_indices().to_bitvec(),
-        signature.signature().clone(),
-    );
+    // Create auxiliary data in the expected format for deposit transactions
+    let mut aux_data = Vec::new();
+    aux_data.extend_from_slice(signature.signature().as_bytes()); // 64 bytes
 
-    // Create the administration transaction payload
-    let admin_payload = AdminTxPayload {
-        action: action.clone(),
-        signature: schnorr_signature,
-        seqno,
-    };
+    // Now we can directly get bytes from BitVec<u8> - much cleaner!
+    let signer_indices_bytes = signature.signer_indices().to_bitvec().into_vec();
+    aux_data.extend_from_slice(&signer_indices_bytes); // variable length bitset as bytes
 
-    // Serialize the payload
-    let payload_bytes = borsh::to_vec(&admin_payload)?;
+    // Create the complete SPS-50 tagged payload
+    // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+    let mut tagged_payload = Vec::new();
+    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
+    tagged_payload.extend_from_slice(&ADMINISTRATION_SUBPROTOCOL_ID.to_be_bytes()); // 1 byte subprotocol ID
+    tagged_payload.extend_from_slice(&[action.tx_type()]); // 1 byte TxType
+    tagged_payload.extend_from_slice(&aux_data); // auxiliary data
 
     // Create L1 payload for the administration data
     // Using L1PayloadType::Da as the administration subprotocol uses DA-like semantics
-    let l1_payload = L1Payload::new(payload_bytes, L1PayloadType::Da);
+    let l1_payload = L1Payload::new(vec![], L1PayloadType::Da);
 
     // Build the envelope script containing our administration payload
     let envelope_script = build_envelope_script(params, &[l1_payload])?;
@@ -217,7 +155,7 @@ mod tests {
         let config = SchnorrMultisigConfig::try_new(pubkeys, threshold).unwrap();
 
         // Create signer indices (signers 0 and 2)
-        let mut signer_indices = BitVec::new();
+        let mut signer_indices = BitVec::<u8>::new();
         signer_indices.resize(3, false);
         signer_indices.set(0, true);
         signer_indices.set(2, true);

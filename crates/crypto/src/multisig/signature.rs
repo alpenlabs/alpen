@@ -7,7 +7,7 @@ use crate::multisig::traits::CryptoScheme;
 /// identified by their positions in the config's key list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultisigSignature<S: CryptoScheme> {
-    indices: BitVec,
+    indices: BitVec<u8>,
     signature: S::Signature,
     /// Phantom data to carry the crypto scheme type.
     _phantom: PhantomData<S>,
@@ -15,7 +15,7 @@ pub struct MultisigSignature<S: CryptoScheme> {
 
 impl<S: CryptoScheme> MultisigSignature<S> {
     /// Create a new `MultisigSignature` with given signer indices and aggregated signature.
-    pub fn new(indices: BitVec, signature: S::Signature) -> Self {
+    pub fn new(indices: BitVec<u8>, signature: S::Signature) -> Self {
         Self { 
             indices, 
             signature,
@@ -29,12 +29,12 @@ impl<S: CryptoScheme> MultisigSignature<S> {
     }
 
     /// Borrow the signer indices slice.
-    pub fn signer_indices(&self) -> &BitSlice {
+    pub fn signer_indices(&self) -> &BitSlice<u8> {
         &self.indices
     }
 
     /// Consume and return the inner `(indices, signature)`.
-    pub fn into_inner(self) -> (BitVec, S::Signature) {
+    pub fn into_inner(self) -> (BitVec<u8>, S::Signature) {
         (self.indices, self.signature)
     }
 }
@@ -45,7 +45,7 @@ where
 {
     fn default() -> Self {
         Self {
-            indices: BitVec::default(),
+            indices: BitVec::<u8>::default(),
             signature: S::Signature::default(),
             _phantom: PhantomData,
         }
