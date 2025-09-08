@@ -4,7 +4,7 @@ use strata_asm_common::TxInputRef;
 
 use crate::{actions::UpdateId, constants::CANCEL_TX_TYPE, error::AdministrationTxParseError};
 
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct CancelAction {
     /// ID of the update that needs to be cancelled
     target_id: UpdateId,

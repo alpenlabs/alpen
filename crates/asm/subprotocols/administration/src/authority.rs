@@ -9,7 +9,7 @@ use strata_primitives::{hash::compute_borsh_hash, roles::Role};
 
 /// Manages multisignature operations for a given role and key set, with replay protection via a
 /// nonce.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct MultisigAuthority {
     /// The role of this multisignature authority.
     role: Role,

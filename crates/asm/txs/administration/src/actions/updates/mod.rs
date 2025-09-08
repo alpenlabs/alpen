@@ -13,7 +13,7 @@ use crate::actions::updates::{
 };
 
 /// An action that updates some part of the ASM
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub enum UpdateAction {
     Multisig(MultisigUpdate),
     OperatorSet(OperatorSetUpdate),

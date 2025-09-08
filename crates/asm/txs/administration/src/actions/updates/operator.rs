@@ -8,7 +8,7 @@ use crate::error::AdministrationTxParseError;
 /// An update to the Bridge Operator Set:
 /// - removes the specified `old_members`
 /// - adds the specified `new_members`
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct OperatorSetUpdate {
     new_members: Vec<Buf32>,
     old_members: Vec<Buf32>,

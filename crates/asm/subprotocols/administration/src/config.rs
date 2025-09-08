@@ -10,7 +10,7 @@ use strata_primitives::roles::Role;
 /// provided when constructing this struct. However, it does NOT prevent logical errors
 /// like using the same config for multiple roles or mismatched role-field assignments.
 /// The benefit is avoiding missing fields at compile-time rather than runtime validation.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct AdministrationSubprotoParams {
     /// MultisigConfig for [StrataAdministrator](Role::StrataAdministrator).
     pub strata_administrator: MultisigConfig,

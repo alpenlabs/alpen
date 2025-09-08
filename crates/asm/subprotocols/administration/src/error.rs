@@ -3,7 +3,7 @@ use strata_crypto::multisig::errors::{MultisigConfigError, VoteValidationError};
 use thiserror::Error;
 
 /// Top-level error type for the administration subprotocol, composed of smaller error categories.
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Error)]
 pub(crate) enum AdministrationError {
     /// The specified role is not recognized.
     #[error("the specified role is not recognized")]

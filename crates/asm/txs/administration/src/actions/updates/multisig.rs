@@ -10,7 +10,7 @@ use crate::error::AdministrationTxParseError;
 /// - adds new members
 /// - removes old members
 /// - updates the threshold
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct MultisigUpdate {
     config: MultisigConfigUpdate,
     role: Role,

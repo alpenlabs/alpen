@@ -9,7 +9,7 @@ use crate::{
 
 /// Holds the state for the Administration Subprotocol, including the various
 /// multisignature authorities and any actions still pending execution.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct AdministrationSubprotoState {
     /// List of configurations for multisignature authorities.
     /// Each entry specifies who the signers are and how many signatures

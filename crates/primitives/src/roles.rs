@@ -4,17 +4,17 @@ use borsh::{BorshDeserialize, BorshSerialize};
 /// Roles with authority in the administration subprotocol.
 #[repr(u8)]
 #[derive(
-    Debug,
-    Clone,
     Copy,
+    Clone,
+    Debug,
     Eq,
     PartialEq,
-    PartialOrd,
     Ord,
+    PartialOrd,
     Hash,
-    BorshSerialize,
-    BorshDeserialize,
     Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
 )]
 #[borsh(use_discriminant = false)]
 pub enum Role {
@@ -33,7 +33,7 @@ pub enum Role {
     StrataSequencerManager,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub enum ProofType {
     Asm,
     OlStf,

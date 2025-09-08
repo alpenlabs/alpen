@@ -7,7 +7,7 @@ use zkaleido::VerifyingKey;
 use crate::error::AdministrationTxParseError;
 
 /// An update to the verifying key for a given Strata proof layer.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct VerifyingKeyUpdate {
     vk: VerifyingKey,
     kind: ProofType,

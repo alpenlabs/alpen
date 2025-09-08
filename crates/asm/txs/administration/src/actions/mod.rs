@@ -10,7 +10,7 @@ pub use updates::UpdateAction;
 pub type UpdateId = u32;
 
 /// A high‐level multisig operation that participants can propose.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub enum MultisigAction {
     /// Cancel a pending action
     Cancel(CancelAction),

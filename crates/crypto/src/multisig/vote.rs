@@ -2,7 +2,7 @@ use crate::multisig::Signature;
 
 /// An aggregated signature over a subset of signers in a MultisigConfig,
 /// identified by their positions in the config’s key list.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AggregatedVote {
     indices: Vec<u8>,
     signature: Signature,

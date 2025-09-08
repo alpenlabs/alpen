@@ -1,7 +1,7 @@
 use strata_primitives::buf::Buf32;
 
 /// A multisig payload comprising an operation plus a nonce, ready for hashing and signing.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MultisigPayload {
     op: Buf32,
     nonce: u64,
