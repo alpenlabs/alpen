@@ -4,10 +4,7 @@
 
 use std::{collections::VecDeque, sync::Arc};
 
-use strata_chain_worker::{
-    ChainWorkerHandle, ChainWorkerInput, ChainWorkerMessage, WorkerError, WorkerResult,
-    WorkerShared,
-};
+use strata_chain_worker::{ChainWorkerHandle, WorkerError, WorkerResult};
 use strata_chainexec::{validation_util, ChainExecutor, TipState};
 use strata_chaintsn::transition::process_block;
 use strata_common::retry::{

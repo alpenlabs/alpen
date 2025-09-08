@@ -6,16 +6,16 @@
 //! errors, workload dispatch, and state access in a concurrent environment.
 
 mod builder;
+mod context;
 mod errors;
 mod handle;
 mod message;
+mod service;
 mod state;
 mod traits;
-mod worker;
 
 pub use builder::ChainWorkerBuilder;
 pub use errors::{WorkerError, WorkerResult};
-pub use handle::{ChainWorkerHandle, ChainWorkerInput, WorkerShared};
-pub use message::ChainWorkerMessage;
+pub use handle::ChainWorkerHandle;
+pub use service::{ChainWorkerService, ChainWorkerServiceState, ChainWorkerStatus};
 pub use traits::WorkerContext;
-pub use worker::init_worker_state;

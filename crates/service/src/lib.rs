@@ -11,7 +11,7 @@ mod types;
 
 pub use adapters::*;
 pub use builder::ServiceBuilder;
-pub use command::CommandHandle;
+pub use command::{CommandCompletionSender, CommandHandle};
 pub use errors::ServiceError;
-pub use status::{ServiceMonitor, StatusMonitor};
+pub use status::{AnyStatus, GenericStatusMonitor, ServiceMonitor, StatusMonitor};
 pub use types::*;
