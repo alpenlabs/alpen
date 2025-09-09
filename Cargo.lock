@@ -14095,7 +14095,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-primitives",
  "thiserror 2.0.16",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc15)",
+ "zkaleido",
 ]
 
 [[package]]
@@ -14342,7 +14342,7 @@ dependencies = [
  "borsh",
  "strata-primitives",
  "thiserror 2.0.16",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc15)",
+ "zkaleido",
 ]
 
 [[package]]
