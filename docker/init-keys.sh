@@ -1,7 +1,20 @@
 #!/bin/bash
 # Usage: ./init-keys.sh <path_to_datatool_binary>
+#
+# Bitcoin RPC credentials can be provided via environment variables:
+#   BITCOIN_RPC_URL - Bitcoin RPC URL (default: http://localhost:18443)
+#   BITCOIN_RPC_USER - Bitcoin RPC username (default: rpcuser)
+#   BITCOIN_RPC_PASSWORD - Bitcoin RPC password (default: rpcpassword)
+#
+# Or passed as additional arguments after the datatool path
+
 DATATOOL_PATH=${1:-./strata-datatool}
 shift
+
+# Set default Bitcoin RPC credentials if not provided
+BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-"http://localhost:18443"}
+BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-"rpcuser"}
+BITCOIN_RPC_PASSWORD=${BITCOIN_RPC_PASSWORD:-"rpcpassword"}
 
 echo "Checking if 'base58' is installed.".
 if ! command -v base58 &> /dev/null; then \
@@ -69,7 +82,12 @@ if [[ "$@" != *"--output "* ]]; then
     extra_args+=(--output "$ROLLUP_PARAMS_FILE")
 fi
 
-$DATATOOL_PATH -b regtest genparams \
+# Add Bitcoin RPC credentials to genparams command
+$DATATOOL_PATH -b regtest \
+    --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
+    --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
+    --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
+    genparams \
     -s $seqpubkey \
     -b $op1pubkey \
     -b $op2pubkey \

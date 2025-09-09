@@ -6,7 +6,7 @@ This is a tool for doing basic operations with Strata keys and data.
 
 The basic flow to generate a params file with it looks like this:
 
-```
+```sh
 # Generate keys for the different parties each on different machines.
 strata-datatool genxpriv sequencer.bin
 strata-datatool genxpriv operator1.bin
