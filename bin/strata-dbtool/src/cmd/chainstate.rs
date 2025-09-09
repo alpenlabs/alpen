@@ -4,8 +4,7 @@ use strata_consensus_logic::chain_worker_context::conv_blkid_to_slot_wb_id;
 use strata_db::{
     chainstate::ChainstateDatabase,
     traits::{
-        BlockStatus, CheckpointDatabase, DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase,
-        L2BlockDatabase,
+        CheckpointDatabase, DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase, L2BlockDatabase,
     },
     types::IntentStatus,
 };
@@ -273,16 +272,6 @@ pub(crate) fn revert_chainstate<T: DatabaseBackend, B: L1BroadcastDatabase>(
                 println!("Revert chainstate no write batch found {block_id:?} {slot}");
                 continue;
             }
-
-            // Mark the status to unchecked
-            println!("Revert chainstate marking block unchecked {block_id:?}");
-            core_db
-                .l2_db()
-                .set_block_status(*block_id, BlockStatus::Unchecked)
-                .internal_error(format!(
-                    "Failed to update status for block with id {}",
-                    *block_id
-                ))?;
 
             // Delete blocks if requested
             if args.delete_blocks {
