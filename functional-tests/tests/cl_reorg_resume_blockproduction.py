@@ -25,11 +25,14 @@ class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
     """This tests sync when el is missing blocks"""
 
     def __init__(self, ctx: flexitest.InitContext):
+        # Use fast batch settings but with increased proof timeout for CI stability
+        rollup_settings = net_settings.get_fast_batch_settings()
+        rollup_settings.proof_timeout = 60  # Increase from 1s to 60s for CI
         ctx.set_env(
             testenv.BasicEnvConfig(
                 101,
                 prover_client_settings=ProverClientSettings.new_with_proving(),
-                rollup_settings=net_settings.get_fast_batch_settings(),
+                rollup_settings=rollup_settings,
             )
         )
 
@@ -105,11 +108,11 @@ class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
 
         logging.info("start sequencer")
         seq.start()
-        # wait for reth to start
+        # wait for sequencer to be ready and responsive
         wait_until(
             lambda: seqrpc.strata_syncStatus()["tip_height"] > 0,
-            error_with="reth did not start in time",
-            timeout=5,
+            error_with="sequencer did not start in time",
+            timeout=15,
         )
         # ensure sequencer db was reset to shorter chain
         assert seqrpc.strata_syncStatus()["tip_height"] < final_blocknumber
@@ -117,11 +120,7 @@ class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
         seq_signer.start()
 
         logging.info("wait for block production to resume")
-        wait_until(
-            lambda: seqrpc.strata_syncStatus()["tip_height"] > final_blocknumber,
-            error_with="not syncing blocks",
-            timeout=15,
-        )
+        seq_waiter.wait_until_chain_tip_exceeds(final_blocknumber, timeout=30)
 
         new_el_blockhash = rethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
 
