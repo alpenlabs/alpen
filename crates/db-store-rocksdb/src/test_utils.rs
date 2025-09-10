@@ -4,8 +4,8 @@ use rockbound::{rocksdb, OptimisticTransactionDB};
 use tempfile::TempDir;
 
 use crate::{
-    l2::db::L2Db, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db, ProofDb, RBCheckpointDB,
-    RBL1WriterDb, RocksDbBackend,
+    broadcaster::db::L1BroadcastDb, l2::db::L2Db, ChainstateDb, ClientStateDb, DbOpsConfig, L1Db,
+    ProofDb, RBCheckpointDB, RBL1WriterDb, RocksDbBackend,
 };
 
 pub fn get_rocksdb_tmp_instance() -> anyhow::Result<(Arc<OptimisticTransactionDB>, DbOpsConfig)> {
@@ -50,8 +50,16 @@ pub fn get_rocksdb_backend() -> Arc<RocksDbBackend> {
     let chst_db = Arc::new(ChainstateDb::new(rbdb.clone(), db_ops));
     let chpt_db = Arc::new(RBCheckpointDB::new(rbdb.clone(), db_ops));
     let writer_db = Arc::new(RBL1WriterDb::new(rbdb.clone(), db_ops));
-    let prover_db = Arc::new(ProofDb::new(rbdb, db_ops));
+    let prover_db = Arc::new(ProofDb::new(rbdb.clone(), db_ops));
+    let broadcast_db = Arc::new(L1BroadcastDb::new(rbdb, db_ops));
     Arc::new(RocksDbBackend::new(
-        l1_db, l2_db, cs_db, chst_db, chpt_db, writer_db, prover_db,
+        l1_db,
+        l2_db,
+        cs_db,
+        chst_db,
+        chpt_db,
+        writer_db,
+        prover_db,
+        broadcast_db,
     ))
 }

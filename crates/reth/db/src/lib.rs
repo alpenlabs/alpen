@@ -1,8 +1,24 @@
 //! Database for Reth.
 
+#[cfg(feature = "rocksdb")]
 pub mod rocksdb;
+#[cfg(feature = "sled")]
+pub mod sled;
+
+#[cfg(feature = "rocksdb")]
+#[allow(unused_extern_crates)]
+extern crate rockbound as _;
+#[cfg(feature = "sled")]
+#[allow(unused_extern_crates)]
+extern crate sled as _;
+
+// Consume dev dependencies to avoid unused warnings in tests
 use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
+#[cfg(test)]
+use serde as _;
+#[cfg(test)]
+use serde_json as _;
 pub use strata_db::{errors, DbResult};
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 

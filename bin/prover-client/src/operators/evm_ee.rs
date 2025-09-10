@@ -1,6 +1,6 @@
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::{core::client::ClientT, http_client::HttpClient, rpc_params};
-use strata_db_store_rocksdb::prover::db::ProofDb;
+use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
@@ -74,7 +74,7 @@ impl ProvingOp for EvmEeOperator {
     async fn fetch_input(
         &self,
         task_id: &ProofKey,
-        _db: &ProofDb,
+        _db: &ProofDBSled,
     ) -> Result<EvmEeProofInput, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
             ProofContext::EvmEeStf(start, end) => (*start, *end),

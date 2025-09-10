@@ -1,15 +1,25 @@
 //! Reth node for the Alpen codebase.
 
-mod db;
+// Ensure only one database backend is configured at a time
+#[cfg(all(
+    feature = "sled",
+    feature = "rocksdb",
+    not(any(test, debug_assertions))
+))]
+compile_error!(
+    "multiple database backends configured: both 'sled' and 'rocksdb' features are enabled"
+);
+
+mod init_db;
 
 use std::sync::Arc;
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
-use alpen_reth_db::rocksdb::WitnessDB;
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
 use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
 use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
+use init_db::init_witness_db;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
@@ -53,11 +63,9 @@ fn main() {
             let mut extend_rpc = None;
 
             if ext.enable_witness_gen || ext.enable_state_diff_gen {
-                let rbdb = db::open_rocksdb_database(datadir.clone()).expect("open rocksdb");
-                let db = Arc::new(WitnessDB::new(rbdb));
+                let db = init_witness_db(&datadir).expect("initialize witness database");
                 // Add RPC for querying block witness and state diffs.
                 extend_rpc.replace(AlpenRPC::new(db.clone()));
-
                 // Install Prover Input ExEx and persist to DB
                 if ext.enable_witness_gen {
                     let witness_db = db.clone();

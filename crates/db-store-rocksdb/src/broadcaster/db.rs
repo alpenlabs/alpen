@@ -3,12 +3,7 @@ use std::sync::Arc;
 use rockbound::{
     utils::get_last, OptimisticTransactionDB as DB, SchemaDBOperationsExt, TransactionRetry,
 };
-use strata_db::{
-    errors::DbError,
-    traits::{self, L1BroadcastDatabase},
-    types::L1TxEntry,
-    DbResult,
-};
+use strata_db::{errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry, DbResult};
 use strata_primitives::buf::Buf32;
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
@@ -131,25 +126,6 @@ impl L1BroadcastDatabase for L1BroadcastDb {
         } else {
             Ok(None)
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct BroadcastDb {
-    l1_broadcast_db: Arc<L1BroadcastDb>,
-}
-
-impl BroadcastDb {
-    pub fn new(l1_broadcast_db: Arc<L1BroadcastDb>) -> Self {
-        Self { l1_broadcast_db }
-    }
-}
-
-impl traits::BroadcastDatabase for BroadcastDb {
-    type L1BroadcastDB = L1BroadcastDb;
-
-    fn l1_broadcast_db(&self) -> &Arc<Self::L1BroadcastDB> {
-        &self.l1_broadcast_db
     }
 }
 

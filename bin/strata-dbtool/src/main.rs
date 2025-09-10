@@ -1,5 +1,16 @@
 //! Binary entry‑point for the offline Alpen database tool.
 //! Parses CLI arguments with **Clap** and delegates to the `alpen_dbtool` lib.
+
+// Ensure only one database backend is configured at a time
+#[cfg(all(
+    feature = "sled",
+    feature = "rocksdb",
+    not(any(test, debug_assertions))
+))]
+compile_error!(
+    "multiple database backends configured: both 'sled' and 'rocksdb' features are enabled"
+);
+
 mod cli;
 mod cmd;
 mod db;
@@ -7,6 +18,8 @@ mod output;
 mod utils;
 
 use std::str::FromStr;
+
+use strata_db::traits::DatabaseBackend;
 
 use crate::{
     cli::{Cli, Command},
@@ -37,25 +50,26 @@ fn main() {
         eprintln!("{e}");
         std::process::exit(1);
     });
+    let db = db.as_ref();
 
     let result = match cli.cmd {
-        Command::GetChainstate(args) => get_chainstate(&db.core, args),
-        Command::RevertChainstate(args) => revert_chainstate(&db, args),
-        Command::GetL1Manifest(args) => get_l1_manifest(&db.core, args),
-        Command::GetL1Summary(args) => get_l1_summary(&db.core, args),
-        Command::GetL1WriterSummary(args) => get_l1_writer_summary(&db.core, args),
-        Command::GetL1WriterPayload(args) => get_l1_writer_payload(&db.core, args),
+        Command::GetChainstate(args) => get_chainstate(db, args),
+        Command::RevertChainstate(args) => revert_chainstate(db, args),
+        Command::GetL2Block(args) => get_l2_block(db, args),
+        Command::GetL2Summary(args) => get_l2_summary(db, args),
+        Command::GetL1Manifest(args) => get_l1_manifest(db, args),
+        Command::GetL1Summary(args) => get_l1_summary(db, args),
+        Command::GetL1WriterSummary(args) => get_l1_writer_summary(db, args),
+        Command::GetL1WriterPayload(args) => get_l1_writer_payload(db, args),
+        Command::GetCheckpoint(args) => get_checkpoint(db, args),
+        Command::GetCheckpointsSummary(args) => get_checkpoints_summary(db, args),
         Command::GetL1BroadcasterSummary(args) => {
             get_l1_broadcaster_summary(db.broadcast_db(), args)
         }
         Command::GetL1BroadcasterTx(args) => get_l1_broadcaster_tx(db.broadcast_db(), args),
-        Command::GetL2Block(args) => get_l2_block(&db.core, args),
-        Command::GetL2Summary(args) => get_l2_summary(&db.core, args),
-        Command::GetCheckpoint(args) => get_checkpoint(&db.core, args),
-        Command::GetCheckpointsSummary(args) => get_checkpoints_summary(&db.core, args),
-        Command::GetEpochSummary(args) => get_epoch_summary(&db.core, args),
-        Command::GetSyncinfo(args) => get_syncinfo(&db.core, args),
-        Command::GetClientStateUpdate(args) => get_client_state_update(&db.core, args),
+        Command::GetEpochSummary(args) => get_epoch_summary(db, args),
+        Command::GetSyncinfo(args) => get_syncinfo(db, args),
+        Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
     };
 
     if let Err(e) = result {

@@ -6,13 +6,13 @@ use anyhow::Context;
 use args::Args;
 use bitcoind_async_client::Client;
 use checkpoint_runner::runner::checkpoint_proof_runner;
-use db::open_rocksdb_database;
+use db::open_sled_database;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::ProofOperator;
 use prover_manager::{ProverManager, ProverManagerConfig};
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
-use strata_db_store_rocksdb::{prover::db::ProofDb, DbOpsConfig};
+use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
 #[cfg(feature = "risc0-builder")]
 use strata_risc0_guest_builder as _;
 #[cfg(feature = "sp1-builder")]
@@ -91,10 +91,12 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     ));
     let task_tracker = Arc::new(Mutex::new(TaskTracker::new()));
 
-    let rbdb =
-        open_rocksdb_database(&config.datadir).context("Failed to open the RocksDB database")?;
-    let db_ops = DbOpsConfig { retry_count: 3 };
-    let db = Arc::new(ProofDb::new(rbdb, db_ops));
+    let sled_db =
+        open_sled_database(&config.datadir).context("Failed to open the Sled database")?;
+    let retries = 3;
+    let delay_ms = 200;
+    let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
+    let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
     let prover_config = ProverManagerConfig::new(
         config.get_workers(),

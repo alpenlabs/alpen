@@ -31,6 +31,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
+    fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
 }
 
 /// Database interface to control our view of L1 data.
@@ -271,14 +272,6 @@ pub trait ProofDatabase: Send + Sync + 'static {
     /// Tries to delete dependencies of by its context, returning if it really
     /// existed or not.
     fn del_proof_deps(&self, proof_context: ProofContext) -> DbResult<bool>;
-}
-
-// TODO remove this trait, just like the high level `Database` trait
-pub trait BroadcastDatabase: Send + Sync + 'static {
-    type L1BroadcastDB: L1BroadcastDatabase;
-
-    /// Return a reference to the L1 broadcast db implementation
-    fn l1_broadcast_db(&self) -> &Arc<Self::L1BroadcastDB>;
 }
 
 /// A trait encapsulating the provider and store traits for interacting with the broadcast

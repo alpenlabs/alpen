@@ -78,19 +78,19 @@ pub enum DbError {
     #[error("tried to revert to index {0} above current tip {1}")]
     RevertAboveCurrent(u64, u64),
 
-    #[error("IO Error (rocksdb)")]
-    IoError,
+    #[error("IO Error: {0}")]
+    IoError(String),
 
-    #[error("operation timed out (rocksdb)")]
+    #[error("operation timed out")]
     TimedOut,
 
-    #[error("operation aborted (rocksdb)")]
+    #[error("operation aborted")]
     Aborted,
 
-    #[error("invalid argument (rocksdb)")]
+    #[error("invalid argument")]
     InvalidArgument,
 
-    #[error("resource busy (rocksdb)")]
+    #[error("resource busy")]
     Busy,
 
     /// A database worker task failed in an way that could not be determined.
@@ -109,9 +109,6 @@ pub enum DbError {
     #[error("transaction error {0}")]
     TransactionError(String),
 
-    #[error("rocksdb {0}")]
-    RocksDb(String),
-
     #[error("not yet implemented")]
     Unimplemented,
 
@@ -122,5 +119,11 @@ pub enum DbError {
 impl From<anyhow::Error> for DbError {
     fn from(value: anyhow::Error) -> Self {
         Self::Other(value.to_string())
+    }
+}
+
+impl From<typed_sled::error::Error> for DbError {
+    fn from(value: typed_sled::error::Error) -> Self {
+        Self::Other(format!("sled error: {value:?}"))
     }
 }

@@ -1,14 +1,20 @@
 use std::{path::Path, sync::Arc};
 
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{DatabaseBackend, L1BroadcastDatabase};
+// Consume unused rocksdb dependencies when both features are enabled (for linting)
+#[cfg(all(feature = "sled", feature = "rocksdb"))]
+use strata_db_store_rocksdb as _;
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 use strata_db_store_rocksdb::{
-    l2::db::L2Db, open_rocksdb_database, prover::db::ProofDb, writer::db::RBL1WriterDb,
-    ChainstateDb, ClientStateDb, DbOpsConfig, L1BroadcastDb, L1Db, RBCheckpointDB, RocksDbBackend,
-    ROCKSDB_NAME,
+    init_rocksdb_backend, open_rocksdb_database, DbOpsConfig, RocksDbBackend, ROCKSDB_NAME,
 };
+#[cfg(feature = "sled")]
+use strata_db_store_sled::{open_sled_database, SledBackend, SledDbConfig, SLED_NAME};
 
 pub(crate) enum DbType {
+    #[cfg(feature = "sled")]
+    Sled,
+    #[cfg(all(feature = "rocksdb", not(feature = "sled")))]
     Rocksdb,
 }
 
@@ -17,63 +23,57 @@ impl std::str::FromStr for DbType {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
+            #[cfg(feature = "sled")]
+            "sled" => Ok(DbType::Sled),
+            #[cfg(all(feature = "rocksdb", not(feature = "sled")))]
             "rocksdb" | "rocks" => Ok(DbType::Rocksdb),
-            other => Err(format!("unknown db type {other}").into()),
+            other => {
+                let available_types = [
+                    #[cfg(feature = "sled")]
+                    "sled",
+                    #[cfg(all(feature = "rocksdb", not(feature = "sled")))]
+                    "rocksdb",
+                ]
+                .join(", ");
+                Err(format!("unknown db type '{other}', available types: {available_types}").into())
+            }
         }
     }
 }
 
-/// Common database backend that includes both the core database backend and L1 broadcast database
-pub(crate) struct CommonDbBackend<T: DatabaseBackend, B: L1BroadcastDatabase> {
-    pub(crate) core: T,
-    pub(crate) broadcast: Arc<B>,
-}
+// Type alias for database backend
+#[cfg(feature = "sled")]
+type DatabaseImpl = SledBackend;
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
+type DatabaseImpl = RocksDbBackend;
 
-impl<T: DatabaseBackend, B: L1BroadcastDatabase> CommonDbBackend<T, B> {
-    /// Returns a reference to the L1 broadcast database
-    pub(crate) fn broadcast_db(&self) -> Arc<B> {
-        self.broadcast.clone()
-    }
-}
-
-fn init_rocksdb_components(
-    rbdb: Arc<rockbound::OptimisticTransactionDB>,
-    ops_config: DbOpsConfig,
-) -> CommonDbBackend<RocksDbBackend, L1BroadcastDb> {
-    let l1_db: Arc<_> = L1Db::new(rbdb.clone(), ops_config).into();
-    let l2_db: Arc<_> = L2Db::new(rbdb.clone(), ops_config).into();
-    let clientstate_db: Arc<_> = ClientStateDb::new(rbdb.clone(), ops_config).into();
-    let chainstate_db: Arc<_> = ChainstateDb::new(rbdb.clone(), ops_config).into();
-    let checkpoint_db: Arc<_> = RBCheckpointDB::new(rbdb.clone(), ops_config).into();
-    let l1_writer_db: Arc<_> = RBL1WriterDb::new(rbdb.clone(), ops_config).into();
-    let proof_db: Arc<_> = ProofDb::new(rbdb.clone(), ops_config).into();
-
-    let core = RocksDbBackend::new(
-        l1_db,
-        l2_db,
-        clientstate_db,
-        chainstate_db,
-        checkpoint_db,
-        l1_writer_db,
-        proof_db,
-    );
-
-    let broadcast: Arc<_> = L1BroadcastDb::new(rbdb, ops_config).into();
-
-    CommonDbBackend { core, broadcast }
-}
-
-/// Returns a common database that includes implementations of both DatabaseBackend and
-/// L1BroadcastDatabase
+/// Returns a boxed trait-object that satisfies all the low-level traits.
 pub(crate) fn open_database(
     path: &Path,
     db_type: DbType,
-) -> Result<CommonDbBackend<impl DatabaseBackend, impl L1BroadcastDatabase>, DisplayedError> {
+) -> Result<Arc<DatabaseImpl>, DisplayedError> {
     match db_type {
+        #[cfg(feature = "sled")]
+        DbType::Sled => {
+            let sled_db = open_sled_database(path, SLED_NAME)
+                .internal_error("Failed to open sled database")?;
+
+            let config = SledDbConfig::new_with_constant_backoff(5, 200);
+            let backend = SledBackend::new(sled_db, config)
+                .internal_error("Could not open sled backend")
+                .map(Arc::new)?;
+
+            Ok(backend)
+        }
+        #[cfg(all(feature = "rocksdb", not(feature = "sled")))]
         DbType::Rocksdb => {
-            let rbdb = open_rocksdb_database(path, ROCKSDB_NAME)
+            let rocksdb = open_rocksdb_database(path, ROCKSDB_NAME)
                 .internal_error("Failed to open rocksdb database")?;
-            Ok(init_rocksdb_components(rbdb, DbOpsConfig::new(3)))
+
+            let ops_config = DbOpsConfig::new(5);
+            let backend = init_rocksdb_backend(rocksdb, ops_config);
+
+            Ok(backend)
         }
     }
 }

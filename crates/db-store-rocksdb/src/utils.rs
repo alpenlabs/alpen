@@ -34,10 +34,10 @@ where
 pub fn translate_rocksdb_error(err: rocksdb::Error) -> DbError {
     match err.kind() {
         rocksdb::ErrorKind::InvalidArgument => DbError::InvalidArgument,
-        rocksdb::ErrorKind::IOError => DbError::IoError,
+        rocksdb::ErrorKind::IOError => DbError::IoError(err.to_string()),
         rocksdb::ErrorKind::TimedOut => DbError::TimedOut,
         rocksdb::ErrorKind::Aborted => DbError::Aborted,
         rocksdb::ErrorKind::Busy => DbError::Busy,
-        _ => DbError::RocksDb(err.to_string()),
+        _ => DbError::Other(err.to_string()),
     }
 }
