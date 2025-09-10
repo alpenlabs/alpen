@@ -1,6 +1,16 @@
 //! Strata client for the Alpen codebase.
 
 #![feature(slice_pattern)]
+
+// Ensure only one database backend is configured at a time
+#[cfg(all(
+    feature = "sled",
+    feature = "rocksdb",
+    not(any(test, debug_assertions))
+))]
+compile_error!(
+    "multiple database backends configured: both 'sled' and 'rocksdb' features are enabled"
+);
 use std::{sync::Arc, time::Duration};
 
 use anyhow::anyhow;

@@ -1,24 +1,22 @@
 use std::{fs, path::Path, sync::Arc};
 
 use eyre::{eyre, Context, Result};
-// Consume the sled dependencies when rocksdb is active to avoid unused crate warnings
-#[cfg(feature = "rocksdb")]
-use sled as _;
-#[cfg(feature = "rocksdb")]
-use typed_sled as _;
-#[cfg(feature = "rocksdb")]
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 use {alpen_reth_db::rocksdb::WitnessDB as RocksWitnessDB, rockbound::OptimisticTransactionDB};
-#[cfg(all(feature = "sled", not(feature = "rocksdb")))]
+#[cfg(feature = "sled")]
 use {alpen_reth_db::sled::WitnessDB as SledWitnessDB, typed_sled::SledDb};
+// Consume unused rocksdb dependencies when both features are enabled (for linting)
+#[cfg(all(feature = "sled", feature = "rocksdb"))]
+use {rockbound as _, strata_db_store_rocksdb as _};
 
 // Type aliases for witness database
-#[cfg(all(feature = "sled", not(feature = "rocksdb")))]
+#[cfg(feature = "sled")]
 pub(crate) type WitnessDB = SledWitnessDB;
-#[cfg(feature = "rocksdb")]
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 pub(crate) type WitnessDB = RocksWitnessDB<OptimisticTransactionDB>;
 
 /// Initialize witness database based on configured features
-#[cfg(all(feature = "sled", not(feature = "rocksdb")))]
+#[cfg(feature = "sled")]
 pub(crate) fn init_witness_db(datadir: &Path) -> Result<Arc<WitnessDB>> {
     let database_dir = datadir.join("sled");
 
@@ -35,7 +33,7 @@ pub(crate) fn init_witness_db(datadir: &Path) -> Result<Arc<WitnessDB>> {
     Ok(Arc::new(witness_db))
 }
 
-#[cfg(feature = "rocksdb")]
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 pub(crate) fn init_witness_db(datadir: &Path) -> Result<Arc<WitnessDB>> {
     use strata_db_store_rocksdb::{open_rocksdb_database, ROCKSDB_NAME};
 

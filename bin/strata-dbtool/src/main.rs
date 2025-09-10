@@ -1,5 +1,16 @@
 //! Binary entry‑point for the offline Alpen database tool.
 //! Parses CLI arguments with **Clap** and delegates to the `alpen_dbtool` lib.
+
+// Ensure only one database backend is configured at a time
+#[cfg(all(
+    feature = "sled",
+    feature = "rocksdb",
+    not(any(test, debug_assertions))
+))]
+compile_error!(
+    "multiple database backends configured: both 'sled' and 'rocksdb' features are enabled"
+);
+
 mod cli;
 mod cmd;
 mod db;

@@ -2,25 +2,15 @@
 
 #[cfg(feature = "rocksdb")]
 pub mod rocksdb;
-#[cfg(all(feature = "sled", not(feature = "rocksdb")))]
+#[cfg(feature = "sled")]
 pub mod sled;
 
 #[cfg(feature = "rocksdb")]
 #[allow(unused_extern_crates)]
 extern crate rockbound as _;
-#[cfg(all(feature = "sled", not(feature = "rocksdb")))]
+#[cfg(feature = "sled")]
 #[allow(unused_extern_crates)]
 extern crate sled as _;
-
-// Consume sled-related dependencies when rocksdb is active to avoid unused crate warnings
-#[cfg(feature = "rocksdb")]
-use strata_db_store_sled as _;
-#[cfg(feature = "rocksdb")]
-#[allow(unused_extern_crates)]
-extern crate sled as _;
-#[cfg(feature = "rocksdb")]
-#[allow(unused_extern_crates)]
-extern crate typed_sled as _;
 
 // Consume dev dependencies to avoid unused warnings in tests
 use alpen_reth_statediff::BlockStateDiff;
