@@ -23,15 +23,14 @@ elif [ ! -z "$CI_COVERAGE" ]; then
   RUSTFLAGS="-Cinstrument-coverage" cargo build -F debug-utils --target-dir "$COV_TARGET_DIR"
   export PATH=$COV_TARGET_DIR/debug:$PATH
 else
-    echo "Building and running strata client"
-    if [ "$DB_BACKEND" = "rocksdb" ]; then
-        cargo build -F debug-utils -F rocksdb
-        echo built with rocksdb
-    else
-        cargo build -F debug-utils
-        echo built with default sled
-    fi
-
+  echo "Building and running strata client"
+  if [ "$DB_BACKEND" = "rocksdb" ]; then
+    cargo build -F debug-utils -F rocksdb
+    echo built with rocksdb
+  else
+    cargo build -F debug-utils
+    echo built with default sled
+  fi
 fi
 
 uv run python entry.py "$@"
