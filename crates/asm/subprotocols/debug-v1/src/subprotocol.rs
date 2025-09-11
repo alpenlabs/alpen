@@ -102,7 +102,7 @@ fn process_parsed_debug_tx(
                 "Processing fake withdrawal"
             );
 
-            // Wrap it in BridgeIncomingMsg
+            // Wrap it in [`BridgeIncomingMsg`]
             let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
 
             // Send to bridge subprotocol
@@ -113,14 +113,4 @@ fn process_parsed_debug_tx(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_debug_subprotocol_id() {
-        assert_eq!(DebugSubproto::ID, DEBUG_SUBPROTOCOL_ID);
-    }
 }

@@ -7,6 +7,7 @@
 //! # Purpose
 //!
 //! The debug subprotocol enables testing of ASM components in isolation:
+//!
 //! - Test the Bridge subprotocol without running the full Orchestration Layer
 //! - Test the Orchestration Layer without running the full bridge infrastructure
 //! - Inject arbitrary log messages for testing log processing
@@ -15,19 +16,32 @@
 //!
 //! The debug subprotocol supports the following transaction types:
 //!
-//! - **`FAKE_ASM_LOG_TX_TYPE`**: Injects arbitrary log messages into the ASM
-//! - **`FAKE_WITHDRAW_INTENT_TX_TYPE`**: Creates fake withdrawal intent for the bridge
+//! - **`FAKE_ASM_LOG_TX_TYPE` (1)**: Injects arbitrary log messages into the ASM log output,
+//!   simulating logs that would normally originate from the bridge subprotocol. Example: Deposit
+//!   events (locking funds in n/n multisig)
+//!
+//! - **`FAKE_WITHDRAW_INTENT_TX_TYPE` (2)**: Creates withdrawal intents that are sent to the bridge
+//!   subprotocol, simulating withdrawals from the Orchestration Layer. Format: `[amount: 8
+//!   bytes][descriptor: variable]` where the descriptor is self-describing Bitcoin-BOSD format.
+//!   These messages normally originate from the Checkpointing subprotocol through inter-protocol
+//!   messaging.
+//!
+//! # Subprotocol ID
+//!
+//! The debug subprotocol uses ID 255 (u8::MAX) to avoid conflicts with production
+//! subprotocols, which are assigned incremental IDs starting from 0 as specified in the
+//! spec documents.
 //!
 //! # Security
 //!
 //! This subprotocol is intended for testing only and should never be enabled
-//! in non-testing runtime. it's available when ASM initiated with `DebugAsmSpec`.
+//! in non-testing runtime. It's available when ASM is initiated with `DebugAsmSpec`
+//! and should not be included in non-testing runtime builds.
 
 // Silence unused dependency warnings for these crates
 use borsh as _;
 use serde as _;
 use strata_asm_logs as _;
-use strata_msg_fmt as _;
 use strata_primitives as _;
 use thiserror as _;
 

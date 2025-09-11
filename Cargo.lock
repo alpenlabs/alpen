@@ -14122,7 +14122,6 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-proto-bridge-v1",
  "strata-l1-txfmt",
- "strata-msg-fmt",
  "strata-primitives",
  "thiserror 2.0.16",
 ]

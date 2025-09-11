@@ -17,7 +17,6 @@ thiserror = { workspace = true }
 strata-asm-common = { workspace = true }
 strata-asm-logs = { workspace = true }
 strata-l1-txfmt = { workspace = true }
-strata-msg-fmt = { workspace = true }
 strata-primitives = { workspace = true }
 
 # Bridge subprotocol for inter-protocol messaging
