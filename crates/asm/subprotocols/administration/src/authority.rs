@@ -16,7 +16,7 @@ pub struct MultisigAuthority {
     /// The public keys of all grant-holders authorized to sign.
     config: MultisigConfig,
     /// Sequence number for the multisig configuration. It increases on each valid action.
-    /// This is used to prevent replay attacks
+    /// This is used to prevent replay attacks.
     seqno: u64,
 }
 
@@ -71,11 +71,11 @@ impl MultisigAuthority {
         // 2. Aggregate those public keys into one.
         let aggregated_key = aggregate_pubkeys(&signer_keys)?;
 
-        // 3. Compute the msg from the UpdateAction
+        // 3. Compute the msg from the UpdateAction.
         let msg_hash = compute_borsh_hash(action);
         let payload = MultisigPayload::new(msg_hash, self.seqno);
 
-        // 4. Verify the aggregated signature against the aggregated pubkey
+        // 4. Verify the aggregated signature against the aggregated pubkey.
         if !verify_sig(&aggregated_key, &payload, vote.signature()) {
             return Err(VoteValidationError::InvalidVoteSignature);
         }
@@ -88,7 +88,7 @@ impl MultisigAuthority {
         self.seqno += 1;
     }
 
-    /// Get the current sequence number (for testing)
+    /// Get the current sequence number (for testing).
     #[cfg(test)]
     pub fn seqno(&self) -> u64 {
         self.seqno

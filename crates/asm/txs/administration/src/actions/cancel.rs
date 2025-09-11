@@ -6,7 +6,7 @@ use crate::{actions::UpdateId, constants::CANCEL_TX_TYPE, error::AdministrationT
 
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct CancelAction {
-    /// ID of the update that needs to be cancelled
+    /// ID of the update that needs to be cancelled.
     target_id: UpdateId,
 }
 
@@ -22,7 +22,7 @@ impl CancelAction {
 
 impl CancelAction {
     /// Extracts a CancelAction from a transaction input.
-    /// This is a placeholder function and should be replaced with actual logic.
+    /// FIXME: This is a placeholder function and should be replaced with actual logic.
     pub fn extract_from_tx(tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
         // sanity check
         assert_eq!(tx.tag().tx_type(), CANCEL_TX_TYPE);

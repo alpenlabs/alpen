@@ -22,17 +22,17 @@ pub(crate) fn handle_pending_updates(
             }
             UpdateAction::VerifyingKey(update) => match update.kind() {
                 ProofType::Asm => {
-                    // Emit Log
+                    // TODO: STR-1721 Emit ASM Log
                 }
                 ProofType::OlStf => {
-                    // Send a InterprotoMsg to OL Core subprotocol
+                    // TODO: STR-1721 Send a InterprotoMsg to Checkpoint subprotocol
                 }
             },
             UpdateAction::OperatorSet(_update) => {
-                // Set an InterProtoMsg to the Bridge Subprotocol;
+                // TODO: STR-1721 Set an InterProtoMsg to the Bridge Subprotocol;
             }
             UpdateAction::Sequencer(_update) => {
-                // Send a InterprotoMsg to the Sequencer subprotocol
+                // TODO: STF-1721 Send a InterprotoMsg to the Checkpoint subprotocol
             }
         }
     }
@@ -95,6 +95,7 @@ pub(crate) fn handle_action(
 mod tests {
     use std::any::Any;
 
+    use rand::{seq::SliceRandom, thread_rng};
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
     use strata_asm_proto_administration_txs::actions::{
         CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate,
@@ -259,9 +260,9 @@ mod tests {
     }
 
     /// Test that cancel actions properly remove queued updates:
-    /// - First queue 5 update actions
-    /// - Then cancel each one individually
-    /// - Verify sequence numbers increment, queue shrinks, and updates are removed
+    /// - First queue 5 update actions.
+    /// - Then cancel each one individually.
+    /// - Verify sequence numbers increment, queue shrinks, and updates are removed.
     #[test]
     fn test_strata_administrator_cancel_action() {
         let mut state = create_test_state();
@@ -270,7 +271,7 @@ mod tests {
         let no_of_updates = 5;
         let current_height = 1000;
 
-        // First, queue 5 update actions
+        // First, queue 5 update actions.
         let updates = get_strata_administrator_update_actions(no_of_updates);
         for update in updates {
             let update_action = MultisigAction::Update(update);
@@ -284,10 +285,14 @@ mod tests {
             .unwrap();
         }
 
-        // Then cancel each queued update one by one
-        for i in 0..no_of_updates as u32 {
-            let cancel_action = MultisigAction::Cancel(CancelAction::new(i));
-            let authorized_role = state.find_queued(&i).unwrap().action().required_role();
+        // Then create a random order in which the actions are cancelled.
+        let mut cancel_order: Vec<u32> = (0..no_of_updates as u32).collect();
+        cancel_order.shuffle(&mut thread_rng());
+
+        // Then cancel each queued update one by one based on the random order.
+        for id in cancel_order {
+            let cancel_action = MultisigAction::Cancel(CancelAction::new(id));
+            let authorized_role = state.find_queued(&id).unwrap().action().required_role();
             // Capture initial state before cancellation
             let initial_seq_no = state.authority(authorized_role).unwrap().seqno();
             let initial_next_id = state.next_update_id();
@@ -312,7 +317,7 @@ mod tests {
             // Queue should shrink by 1
             assert_eq!(new_queued_len, initial_queued_len - 1);
             // The cancelled update should no longer be found
-            assert!(state.find_queued(&i).is_none());
+            assert!(state.find_queued(&id).is_none());
         }
     }
 
@@ -342,9 +347,10 @@ mod tests {
         assert!(matches!(res, Err(AdministrationError::UnknownAction(_))));
     }
 
-    /// Test that attempting to cancel a non-existent action returns an error:
-    /// - Generate a random cancel action for an ID that doesn't exist
-    /// - Verify that handle_action returns UnknownAction error
+    /// Test that attempting to cancel a same action twice returns an error:
+    /// - Generate a random update action and queue it.
+    /// - Cancel the update action.
+    /// - Verify that cancelling the update action again returns an UnknownAction error.
     #[test]
     fn test_strata_administrator_duplicate_cancels() {
         let mut state = create_test_state();

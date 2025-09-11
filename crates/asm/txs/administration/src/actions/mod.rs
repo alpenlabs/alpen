@@ -12,8 +12,8 @@ pub type UpdateId = u32;
 /// A high‐level multisig operation that participants can propose.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub enum MultisigAction {
-    /// Cancel a pending action
+    /// Cancel a pending action.
     Cancel(CancelAction),
-    /// Propose an update
+    /// Propose an update.
     Update(UpdateAction),
 }
