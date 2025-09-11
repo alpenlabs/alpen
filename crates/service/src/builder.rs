@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use tokio::sync::{mpsc, watch};
 
 use crate::{
-    async_worker, sync_worker, AsyncService, AsyncServiceInput, CommandHandle, Service,
+    async_worker, service_worker, AsyncService, AsyncServiceInput, CommandHandle, Service,
     ServiceInput, ServiceMonitor, ServiceMsg, SyncService, SyncServiceInput, TokioMpscInput,
 };
 
@@ -86,7 +86,7 @@ where
         let init_status = S::get_status(&state);
         let (status_tx, status_rx) = watch::channel(init_status);
 
-        let worker_cls = move |g| sync_worker::worker_task::<S, I>(state, inp, status_tx, g);
+        let worker_cls = move |g| service_worker::worker_task::<S, I>(state, inp, status_tx, g);
         texec.spawn_critical(name, worker_cls);
 
         Ok(ServiceMonitor::new(status_rx))
