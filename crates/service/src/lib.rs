@@ -6,7 +6,7 @@ mod builder;
 mod command;
 mod errors;
 mod status;
-mod sync_worker;
+mod service_worker;
 mod types;
 
 pub use adapters::*;
