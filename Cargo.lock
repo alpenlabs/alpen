@@ -14228,7 +14228,6 @@ dependencies = [
 name = "strata-asm-proto-administration-txs"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "arbitrary",
  "bitcoin",
  "bitvec",

@@ -5,7 +5,7 @@ use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::SchnorrMultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
-use crate::error::AdministrationTxParseError;
+use crate::errors::AdministrationTxParseError;
 
 /// An update to a multisig configuration for a specific role:
 /// - adds new members

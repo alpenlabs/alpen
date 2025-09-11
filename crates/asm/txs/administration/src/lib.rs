@@ -27,7 +27,7 @@
 
 pub mod actions;
 pub mod constants;
-pub mod error;
+pub mod errors;
 pub mod parser;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;

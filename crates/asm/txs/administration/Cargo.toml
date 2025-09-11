@@ -12,7 +12,6 @@ strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
-anyhow.workspace = true                      # FIXME: remove this
 arbitrary.workspace = true
 bitcoin.workspace = true
 bitvec.workspace = true
@@ -26,5 +25,4 @@ zkaleido.workspace = true
 test-utils = ["rand", "strata-crypto/rand"]
 
 [dev-dependencies]
-bitcoin.workspace = true
 strata-test-utils.workspace = true

@@ -4,7 +4,7 @@ use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::SchnorrMultisigSignature;
 use strata_l1tx::envelope::parser::{enter_envelope, extract_until_op_endif};
 
-use crate::{actions::MultisigAction, error::AdministrationTxParseError};
+use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
 
 pub fn parse_tx_multisig_action_and_vote(
     tx: &TxInputRef<'_>,
@@ -17,8 +17,7 @@ pub fn parse_tx_multisig_action_and_vote(
         .taproot_leaf_script()
         .ok_or(AdministrationTxParseError::MalformedTransaction(tx_type))?
         .script;
-    let envelope_payload = parse_envelope_payload(&payload_script.into())
-        .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
+    let envelope_payload = parse_envelope_payload(&payload_script.into())?;
     let action = borsh::from_slice(&envelope_payload)
         .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
 
@@ -41,9 +40,9 @@ pub fn parse_aggregated_vote(
     Ok(SchnorrMultisigSignature::new(indices, sig.into()))
 }
 
-pub fn parse_envelope_payload(script: &ScriptBuf) -> anyhow::Result<Vec<u8>> {
+pub fn parse_envelope_payload(script: &ScriptBuf) -> Result<Vec<u8>, AdministrationTxParseError> {
     let mut instructions = script.instructions();
-    enter_envelope(&mut instructions)?;
+    enter_envelope(&mut instructions).map_err(AdministrationTxParseError::MalformedEnvelope)?;
     let payload = extract_until_op_endif(&mut instructions)?;
     Ok(payload)
 }
