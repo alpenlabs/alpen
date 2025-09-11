@@ -141,14 +141,24 @@ pub(crate) fn handle_action(
 mod tests {
     use std::any::Any;
 
-    use rand::{seq::SliceRandom, thread_rng};
+    use bitcoin::secp256k1::{SECP256K1, SecretKey};
     use bitvec::vec::BitVec;
+    use rand::rngs::OsRng;
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
-    use strata_asm_proto_administration_txs::actions::{
-        CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate,
+    use strata_asm_proto_administration_txs::{
+        actions::{CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate},
+        test_utils::create_multisig_signature,
     };
-    use strata_crypto::multisig::signature::MultisigSignature;
-    use strata_primitives::{buf::Buf64, roles::Role};
+    use strata_crypto::{
+        EvenSecretKey,
+        multisig::{
+            MultisigError, SchnorrMultisigConfig, SchnorrScheme, signature::MultisigSignature,
+        },
+    };
+    use strata_primitives::{
+        buf::{Buf32, Buf64},
+        roles::Role,
+    };
     use strata_test_utils::ArbitraryGenerator;
 
     use super::handle_action;
@@ -182,6 +192,41 @@ mod tests {
         }
     }
 
+    fn create_test_state() -> (
+        AdministrationSubprotoState,
+        Vec<EvenSecretKey>,
+        Vec<EvenSecretKey>,
+    ) {
+        let strata_admin_sks: Vec<EvenSecretKey> =
+            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
+        let strata_admin_pks: Vec<Buf32> = strata_admin_sks
+            .iter()
+            .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
+            .collect();
+        let strata_administrator = SchnorrMultisigConfig::try_new(strata_admin_pks, 2).unwrap();
+
+        let strata_seq_manager_sks: Vec<EvenSecretKey> =
+            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
+        let strata_seq_manager_pks: Vec<Buf32> = strata_seq_manager_sks
+            .iter()
+            .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
+            .collect();
+        let strata_sequencer_manager =
+            SchnorrMultisigConfig::try_new(strata_seq_manager_pks, 2).unwrap();
+
+        let config = AdministrationSubprotoParams {
+            strata_administrator,
+            strata_sequencer_manager,
+            confirmation_depth: 2016,
+        };
+
+        (
+            AdministrationSubprotoState::new(&config),
+            strata_admin_sks,
+            strata_seq_manager_sks,
+        )
+    }
+
     fn get_strata_administrator_update_actions(count: usize) -> Vec<UpdateAction> {
         let mut arb = ArbitraryGenerator::new();
         let mut actions = Vec::new();
@@ -202,15 +247,18 @@ mod tests {
     /// - Queued actions can be found in state
     #[test]
     fn test_strata_administrator_update_actions() {
-        let mut arb = ArbitraryGenerator::new();
-        let params: AdministrationSubprotoParams = arb.generate();
-        let mut state = AdministrationSubprotoState::new(&params);
+        let (mut state, admin_sks, _) = create_test_state();
         let mut relayer = MockRelayer::new();
-        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Generate 5 random update actions that require StrataAdministrator role
         let updates = get_strata_administrator_update_actions(5);
+
+        // Create signer indices (signers 0 and 2)
+        let mut signer_indices = BitVec::<u8>::new();
+        signer_indices.resize(3, false);
+        signer_indices.set(0, true);
+        signer_indices.set(2, true);
 
         for update in updates {
             // Capture initial state before processing the update
@@ -219,15 +267,9 @@ mod tests {
             let initial_queued_len = state.queued().len();
 
             let action = MultisigAction::Update(update.clone());
-            handle_action(
-                &mut state,
-                action,
-                multisig.clone(),
-                current_height,
-                &mut relayer,
-                &params,
-            )
-            .unwrap();
+            let sighash = action.compute_sighash(initial_seq_no);
+            let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+            handle_action(&mut state, action, multisig, current_height, &mut relayer).unwrap();
 
             // Verify state changes after processing
             let new_seq_no = state.authority(update.required_role()).unwrap().seqno();
@@ -253,6 +295,60 @@ mod tests {
         }
     }
 
+    /// Test that multisig actions reject invalid sequence numbers.
+    ///
+    /// Verifies sequence number validation prevents replay attacks by rejecting
+    /// duplicate and out-of-order sequence numbers for StrataAdministrator actions.
+    #[test]
+    fn test_strata_administrator_incorrect_seqno() {
+        let (mut state, admin_sks, _) = create_test_state();
+        let mut relayer = MockRelayer::new();
+        let current_height = 1000;
+        let initial_seq_no = 0;
+
+        // Generate a random update action that require StrataAdministrator role
+        let update = get_strata_administrator_update_actions(1)[0].clone();
+
+        // Create signer indices (signers 0 and 2)
+        let mut signer_indices = BitVec::<u8>::new();
+        signer_indices.resize(3, false);
+        signer_indices.set(0, true);
+        signer_indices.set(2, true);
+
+        // Create an action and queue that.
+        let action = MultisigAction::Update(update.clone());
+        let sighash = action.compute_sighash(initial_seq_no);
+        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let res = handle_action(&mut state, action, multisig, current_height, &mut relayer);
+        assert!(res.is_ok());
+
+        // Try queuing it again with same seq no
+        let action = MultisigAction::Update(update.clone());
+        let sighash = action.compute_sighash(initial_seq_no);
+        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let res = handle_action(&mut state, action, multisig, current_height, &mut relayer);
+        assert!(res.is_err());
+        assert!(matches!(
+            res,
+            Err(AdministrationError::Multisig(
+                MultisigError::InvalidSignature
+            ))
+        ));
+
+        // Try queuing it again with same arbitrary seq no.
+        let seq_no: u64 = ArbitraryGenerator::new().generate();
+        let action = MultisigAction::Update(update.clone());
+        let sighash = action.compute_sighash(seq_no);
+        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let res = handle_action(&mut state, action, multisig, current_height, &mut relayer);
+        assert!(matches!(
+            res,
+            Err(AdministrationError::Multisig(
+                MultisigError::InvalidSignature
+            ))
+        ));
+    }
+
     /// Test that Sequencer update actions are handled differently from other updates:
     /// - Authority sequence number is incremented
     /// - Update ID is incremented
@@ -264,12 +360,18 @@ mod tests {
         let params: AdministrationSubprotoParams = arb.generate();
         let mut state = AdministrationSubprotoState::new(&params);
 
+        let (mut state, _, seq_manager_sks) = create_test_state();
         let mut relayer = MockRelayer::new();
-        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Generate random sequencer update actions
         let updates: Vec<SequencerUpdate> = arb.generate();
+
+        // Create signer indices (signers 0 and 2)
+        let mut signer_indices = BitVec::<u8>::new();
+        signer_indices.resize(3, false);
+        signer_indices.set(0, true);
+        signer_indices.set(2, true);
 
         for update in updates {
             let update: UpdateAction = update.into();
@@ -277,16 +379,13 @@ mod tests {
             let initial_seq_no = state.authority(update.required_role()).unwrap().seqno();
             let initial_next_id = state.next_update_id();
             let initial_queued_len = state.queued().len();
+
             let action = MultisigAction::Update(update.clone());
-            handle_action(
-                &mut state,
-                action,
-                multisig.clone(),
-                current_height,
-                &mut relayer,
-                &params,
-            )
-            .unwrap();
+            let sighash = action.compute_sighash(initial_seq_no);
+            let multisig =
+                create_multisig_signature(&seq_manager_sks, signer_indices.clone(), sighash);
+
+            handle_action(&mut state, action, multisig, current_height, &mut relayer).unwrap();
 
             // Verify state changes after processing
             let new_seq_no = state.authority(update.required_role()).unwrap().seqno();
@@ -311,22 +410,31 @@ mod tests {
     /// - Verify sequence numbers increment, queue shrinks, and updates are removed.
     #[test]
     fn test_strata_administrator_cancel_action() {
-        let mut arb = ArbitraryGenerator::new();
-        let params: AdministrationSubprotoParams = arb.generate();
-        let mut state = AdministrationSubprotoState::new(&params);
+        let (mut state, admin_sks, _) = create_test_state();
         let mut relayer = MockRelayer::new();
-        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
         let no_of_updates = 5;
         let current_height = 1000;
 
-        // First, queue 5 update actions.
+        // Create signer indices (signers 0 and 2)
+        let mut signer_indices = BitVec::<u8>::new();
+        signer_indices.resize(3, false);
+        signer_indices.set(0, true);
+        signer_indices.set(2, true);
+
+        // First, queue 5 update actions
         let updates = get_strata_administrator_update_actions(no_of_updates);
+
         for update in updates {
+            let seq_no = state.authority(update.required_role()).unwrap().seqno();
             let update_action = MultisigAction::Update(update);
+
+            let sighash = update_action.compute_sighash(seq_no);
+            let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+
             handle_action(
                 &mut state,
                 update_action,
-                multisig.clone(),
+                multisig,
                 current_height,
                 &mut relayer,
                 &params,
@@ -346,15 +454,20 @@ mod tests {
             let initial_seq_no = state.authority(authorized_role).unwrap().seqno();
             let initial_next_id = state.next_update_id();
             let initial_queued_len = state.queued().len();
+
+            let sighash = cancel_action.compute_sighash(initial_seq_no);
+            let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+
             handle_action(
                 &mut state,
                 cancel_action,
-                multisig.clone(),
+                multisig,
                 current_height,
                 &mut relayer,
                 &params,
             )
             .unwrap();
+
             // Verify state changes after cancellation
             let new_seq_no = state.authority(authorized_role).unwrap().seqno();
             let new_next_id = state.next_update_id();
@@ -377,10 +490,9 @@ mod tests {
     #[test]
     fn test_strata_administrator_non_existent_cancel() {
         let mut arb = ArbitraryGenerator::new();
-        let params: AdministrationSubprotoParams = arb.generate();
-        let mut state = AdministrationSubprotoState::new(&params);
+        let (mut state, _, _) = create_test_state();
         let mut relayer = MockRelayer::new();
-        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
+        let multisig = MultisigSignature::<SchnorrScheme>::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Generate a random cancel action (likely targeting a non-existent ID)
@@ -391,7 +503,7 @@ mod tests {
         let res = handle_action(
             &mut state,
             cancel_action,
-            multisig.clone(),
+            multisig,
             current_height,
             &mut relayer,
             &params,
@@ -405,11 +517,9 @@ mod tests {
     /// - Verify that cancelling the update action again returns an UnknownAction error.
     #[test]
     fn test_strata_administrator_duplicate_cancels() {
-        let mut arb = ArbitraryGenerator::new();
-        let params: AdministrationSubprotoParams = arb.generate();
-        let mut state = AdministrationSubprotoState::new(&params);
+        let (mut state, admin_sks, _) = create_test_state();
         let mut relayer = MockRelayer::new();
-        let multisig = MultisigSignature::new(BitVec::new(), Buf64::default());
+        let initial_seq_no = 0;
         let current_height = 1000;
 
         // Create an update action
@@ -419,6 +529,15 @@ mod tests {
             .unwrap()
             .clone();
         let update_action = MultisigAction::Update(update);
+
+        // Create signer indices (signers 0 and 2)
+        let mut signer_indices = BitVec::<u8>::new();
+        signer_indices.resize(3, false);
+        signer_indices.set(0, true);
+        signer_indices.set(2, true);
+
+        let sighash = update_action.compute_sighash(initial_seq_no);
+        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
 
         // Queue the update action
         handle_action(
@@ -433,6 +552,8 @@ mod tests {
 
         // Cancel the update action
         let cancel_action = MultisigAction::Cancel(CancelAction::new(update_id));
+        let sighash = cancel_action.compute_sighash(initial_seq_no + 1);
+        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
         let res = handle_action(
             &mut state,
             cancel_action,

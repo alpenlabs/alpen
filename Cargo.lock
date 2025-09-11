@@ -14212,6 +14212,7 @@ name = "strata-asm-proto-administration"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "bitcoin",
  "bitvec",
  "borsh",
  "rand 0.8.5",
