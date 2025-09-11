@@ -21,14 +21,9 @@ pub use forced_inclusion::ForcedInclusionData;
 /// Enum wrapping all supported ASM log types.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub enum AsmLogType {
-    /// ASM state transition function update.
     AsmStfUpdate(AsmStfUpdate),
-    /// Checkpoint update.
     CheckpointUpdate(CheckpointUpdate),
-    /// Deposit log.
     DepositLog(DepositLog),
-    /// New export entry.
     NewExportEntry(NewExportEntry),
-    /// Forced inclusion data.
     ForcedInclusionData(ForcedInclusionData),
 }
