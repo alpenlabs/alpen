@@ -1,6 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_common::{InterprotoMsg, SubprotocolId};
 
-use crate::state::withdrawal::WithdrawOutput;
+use crate::{BRIDGE_V1_SUBPROTOCOL_ID, state::withdrawal::WithdrawOutput};
 
 /// Incoming message types received from other subprotocols.
 ///
@@ -23,4 +24,14 @@ pub enum BridgeIncomingMsg {
     /// Upon receiving this message, the Bridge subprotocol will create a withdrawal assignment
     /// by selecting an unassigned deposit and assigning it to a random operator.
     DispatchWithdrawal(WithdrawOutput),
+}
+
+impl InterprotoMsg for BridgeIncomingMsg {
+    fn id(&self) -> SubprotocolId {
+        BRIDGE_V1_SUBPROTOCOL_ID
+    }
+
+    fn as_dyn_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }

@@ -68,7 +68,7 @@ pub trait Subprotocol: 'static {
     type State: Any + BorshDeserialize + BorshSerialize;
 
     /// Message type that we receive messages from other subprotocols using.
-    type Msg: Clone + Any;
+    type Msg: Clone + InterprotoMsg + Any;
 
     /// Type of auxiliary input required by the subprotocol.
     ///

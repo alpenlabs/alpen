@@ -7,8 +7,10 @@ members = [
   "crates/asm/stf",
   "crates/asm/moho-program",
   "crates/asm/spec",
+  "crates/asm/spec-debug",
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
+  "crates/asm/subprotocols/debug-v1",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -109,7 +111,9 @@ strata-asm-logs = { path = "crates/asm/logs" }
 strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
+strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-spec = { path = "crates/asm/spec" }
+strata-asm-spec-debug = { path = "crates/asm/spec-debug" }
 strata-asm-stf = { path = "crates/asm/stf" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
