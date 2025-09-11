@@ -173,7 +173,7 @@ fn prepare_l1_segment(
     // We aren't going to reorg, so we'll include blocks right up to the tip.
     let (cur_real_l1_height, _) = l1man
         .get_canonical_chain_tip()?
-        .expect("blockasm: should have L1 blocks by now");
+        .ok_or(Error::MissingTipBlock)?;
     let target_height = cur_real_l1_height.saturating_sub(params.l1_reorg_safe_depth as u64); // -1 to give some buffer for very short reorgs
 
     // Check to see if there's actually no blocks in the queue.  In that case we can just give
