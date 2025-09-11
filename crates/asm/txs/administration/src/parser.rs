@@ -10,8 +10,8 @@ use crate::{
         },
     },
     constants::{
-        CANCEL_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
-        SEQUENCER_UPDATE_TX_TYPE, VK_UPDATE_TX_TYPE,
+        ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE,
+        OL_STF_VK_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE, SEQUENCER_UPDATE_TX_TYPE,
     },
     error::AdministrationTxParseError,
 };
@@ -33,7 +33,10 @@ pub fn parse_tx_multisig_action_and_vote(
         SEQUENCER_UPDATE_TX_TYPE => {
             MultisigAction::Update(SequencerUpdate::extract_from_tx(tx)?.into())
         }
-        VK_UPDATE_TX_TYPE => {
+        OL_STF_VK_UPDATE_TX_TYPE => {
+            MultisigAction::Update(VerifyingKeyUpdate::extract_from_tx(tx)?.into())
+        }
+        ASM_STF_VK_UPDATE_TX_TYPE => {
             MultisigAction::Update(VerifyingKeyUpdate::extract_from_tx(tx)?.into())
         }
 

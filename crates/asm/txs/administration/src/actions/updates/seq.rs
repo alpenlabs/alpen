@@ -5,7 +5,7 @@ use strata_primitives::buf::Buf32;
 
 use crate::error::AdministrationTxParseError;
 
-/// An update to the public key of the sequencer
+/// An update to the public key of the sequencer.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct SequencerUpdate {
     pub_key: Buf32,
