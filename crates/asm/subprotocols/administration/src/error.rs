@@ -13,7 +13,7 @@ pub enum AdministrationError {
     #[error("no pending update found for action_id = {0:?}")]
     UnknownAction(UpdateId),
 
-    /// Indicates a multisig error (configuration, aggregation, or vote validation).
+    /// Indicates a multisig error (configuration, aggregation, or signature validation).
     #[error(transparent)]
     Multisig(#[from] MultisigError),
 }

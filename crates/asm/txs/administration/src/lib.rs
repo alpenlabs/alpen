@@ -22,8 +22,8 @@
 //!   Update)
 //! - [`actions::CancelAction`]: Specific action to cancel a pending update by ID
 //! - [`actions::UpdateAction`]: Various update types (multisig, operator, sequencer, verifying key)
-//! - [`strata_crypto::multisig::vote::AggregatedVote`]: Cryptographic signature aggregation for
-//!   multisig voting
+//! - [`strata_crypto::multisig::signature::MultisigSignature`]: Cryptographic signature aggregation
+//!   for multisig voting
 
 pub mod actions;
 pub mod constants;

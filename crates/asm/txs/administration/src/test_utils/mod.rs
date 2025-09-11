@@ -194,7 +194,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::parser::parse_tx_multisig_action_and_vote;
+    use crate::parser::parse_tx;
 
     #[test]
     fn test_create_multisig_update_signature() {
@@ -256,7 +256,7 @@ mod tests {
             .unwrap();
         let tx_input = TxInputRef::new(&tx, tag_data_ref);
 
-        let (p_action, sig) = parse_tx_multisig_action_and_vote(&tx_input).unwrap();
+        let (p_action, sig) = parse_tx(&tx_input).unwrap();
         assert_eq!(action, p_action);
 
         let pubkeys = privkeys

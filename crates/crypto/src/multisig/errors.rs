@@ -34,8 +34,8 @@ pub enum MultisigError {
     #[error("keys cannot be empty")]
     EmptyKeys,
 
-    /// The aggregated vote signature is invalid.
-    #[error("invalid vote signature")]
+    /// The aggregated signature is invalid.
+    #[error("invalid signature")]
     InvalidSignature,
 
     /// Key aggregation context creation failed.
