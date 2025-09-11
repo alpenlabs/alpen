@@ -419,7 +419,7 @@ risc0 = 20
 [timing]
 # Polling and timing configuration (in milliseconds and seconds)
 polling_interval_ms = {settings.polling_interval}
-checkpoint_poll_interval_s = 1
+checkpoint_poll_interval_s = 10
 
 [retry]
 # Retry policy configuration
