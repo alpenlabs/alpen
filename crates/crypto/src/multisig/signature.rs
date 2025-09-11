@@ -1,5 +1,6 @@
-use bitvec::{slice::BitSlice, vec::BitVec};
 use std::marker::PhantomData;
+
+use bitvec::{slice::BitSlice, vec::BitVec};
 
 use crate::multisig::traits::CryptoScheme;
 
@@ -16,8 +17,8 @@ pub struct MultisigSignature<S: CryptoScheme> {
 impl<S: CryptoScheme> MultisigSignature<S> {
     /// Create a new `MultisigSignature` with given signer indices and aggregated signature.
     pub fn new(indices: BitVec<u8>, signature: S::Signature) -> Self {
-        Self { 
-            indices, 
+        Self {
+            indices,
             signature,
             _phantom: PhantomData,
         }

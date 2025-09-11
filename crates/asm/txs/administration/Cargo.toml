@@ -12,7 +12,7 @@ strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
-anyhow.workspace = true      # FIXME: remove this
+anyhow.workspace = true                      # FIXME: remove this
 arbitrary.workspace = true
 bitcoin.workspace = true
 bitvec.workspace = true

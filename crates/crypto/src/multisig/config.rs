@@ -1,12 +1,10 @@
+use std::marker::PhantomData;
+
 use arbitrary::Arbitrary;
 use bitvec::{slice::BitSlice, vec::BitVec};
 use borsh::{BorshDeserialize, BorshSerialize};
-use std::marker::PhantomData;
 
-use crate::multisig::{
-    errors::MultisigError,
-    traits::CryptoScheme,
-};
+use crate::multisig::{errors::MultisigError, traits::CryptoScheme};
 
 /// Configuration for a multisignature authority:
 /// who can sign (`keys`) and how many of them must sign (`threshold`).
@@ -44,8 +42,8 @@ impl<S: CryptoScheme> MultisigConfig<S> {
             });
         }
 
-        Ok(Self { 
-            keys, 
+        Ok(Self {
+            keys,
             threshold,
             _phantom: PhantomData,
         })
@@ -60,8 +58,8 @@ impl<S: CryptoScheme> MultisigConfig<S> {
     }
 }
 
-impl<'a, S: CryptoScheme> Arbitrary<'a> for MultisigConfig<S> 
-where 
+impl<'a, S: CryptoScheme> Arbitrary<'a> for MultisigConfig<S>
+where
     S::PubKey: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
@@ -76,8 +74,8 @@ where
         // Generate threshold between 1 and the number of keys
         let threshold = u.int_in_range(1..=keys_count as u8)?;
 
-        Ok(Self { 
-            keys, 
+        Ok(Self {
+            keys,
             threshold,
             _phantom: PhantomData,
         })
@@ -198,11 +196,8 @@ impl<S: CryptoScheme> MultisigConfig<S> {
     ///
     /// Returns `MultisigConfigError` if:
     /// - `MemberAlreadyExists`: A new member already exists in the current configuration
-    /// - `InvalidThreshold`: New threshold exceeds the updated member count
-    pub fn validate_update(
-        &self,
-        update: &MultisigConfigUpdate,
-    ) -> Result<(), MultisigConfigError> {
+    /// - `InvalidThreshold`: New threshold is less than half the updated member count
+    pub fn validate_update(&self, update: &MultisigConfigUpdate<S>) -> Result<(), MultisigError> {
         // Ensure no duplicate new members
         if let Some(duplicate) = update.new_members().iter().find(|m| self.keys.contains(*m)) {
             // `duplicate` is a reference to the first member that already exists in `self.keys`.
@@ -259,7 +254,7 @@ mod tests {
     use strata_primitives::buf::Buf32;
 
     use super::*;
-    use crate::multisig::{schemes::SchnorrScheme, errors::MultisigError};
+    use crate::multisig::{errors::MultisigError, schemes::SchnorrScheme};
 
     type TestMultisigConfig = MultisigConfig<SchnorrScheme>;
     type TestMultisigConfigUpdate = MultisigConfigUpdate<SchnorrScheme>;
