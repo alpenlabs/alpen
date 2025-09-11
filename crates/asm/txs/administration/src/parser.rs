@@ -42,6 +42,8 @@ pub fn parse_tx_multisig_action_and_vote(
     Ok((action, vote))
 }
 
+/// Extracts the AggregatedVote from a transaction input.
+/// FIXME: This is a placeholder function and should be replaced with actual logic.
 pub fn parse_aggregated_vote(
     _tx: &TxInputRef<'_>,
 ) -> Result<AggregatedVote, AdministrationTxParseError> {

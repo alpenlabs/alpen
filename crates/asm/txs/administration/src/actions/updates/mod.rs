@@ -12,7 +12,7 @@ use crate::actions::updates::{
     vk::VerifyingKeyUpdate,
 };
 
-/// An action that updates some part of the ASM
+/// An action that updates some part of the ASM.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub enum UpdateAction {
     Multisig(MultisigUpdate),

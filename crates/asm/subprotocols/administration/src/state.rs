@@ -16,11 +16,12 @@ pub struct AdministrationSubprotoState {
     /// are required to approve an action.
     authorities: Vec<MultisigAuthority>,
 
-    /// Actions that can still be cancelled by CancelTx while waiting
-    /// for their block countdown to complete.
+    /// List of updates that have been queued for execution.
+    /// These remain in a queued state and can be cancelled via a CancelTx until execution. If not
+    /// cancelled, they are executed automatically once their activation height is reached.
     queued: Vec<QueuedUpdate>,
 
-    /// UpdateId for the next update
+    /// UpdateId for the next update.
     next_update_id: UpdateId,
 
     /// The confirmation depth (CD) setting: after an update transaction receives this many
@@ -62,6 +63,11 @@ impl AdministrationSubprotoState {
         }
     }
 
+    /// Get a reference to the queued updates.
+    pub fn queued(&self) -> &[QueuedUpdate] {
+        &self.queued
+    }
+
     /// Find a queued update by its ID.
     pub fn find_queued(&self, id: &UpdateId) -> Option<&QueuedUpdate> {
         self.queued.iter().find(|u| u.id() == id)
@@ -79,35 +85,29 @@ impl AdministrationSubprotoState {
         }
     }
 
-    /// Get the next global update id
+    /// Get the next global update id.
     pub fn next_update_id(&self) -> UpdateId {
         self.next_update_id
     }
 
-    /// Confirmation depth
+    /// Confirmation depth.
     pub fn confirmation_depth(&self) -> u32 {
         self.confirmation_depth
     }
 
-    /// Increment the next global update id
+    /// Increment the next global update id.
     pub fn increment_next_update_id(&mut self) {
         self.next_update_id += 1;
     }
 
-    /// Process all queued updates and move any whose `activation_height` equals `current_height`
-    /// from `queued` into `committed`.
+    /// Process all queued updates and remove any whose `activation_height` equals `current_height`
+    /// from `queued`.
     pub fn process_queued(&mut self, current_height: u64) -> Vec<QueuedUpdate> {
         let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued)
             .into_iter()
             .partition(|u| u.activation_height() <= current_height);
         self.queued = rest;
         ready
-    }
-
-    /// Get a reference to the queued updates (for testing)
-    #[cfg(test)]
-    pub fn queued(&self) -> &[QueuedUpdate] {
-        &self.queued
     }
 }
 
