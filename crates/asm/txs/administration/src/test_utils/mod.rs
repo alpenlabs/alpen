@@ -9,15 +9,18 @@ use bitcoin::{
         all::{OP_CHECKMULTISIG, OP_ENDIF, OP_IF},
     },
     script::PushBytesBuf,
-    secp256k1::{SECP256K1, SecretKey, schnorr::Signature},
+    secp256k1::{SECP256K1, schnorr::Signature},
     taproot::{LeafVersion, TaprootBuilder},
     transaction::Version,
 };
 use bitvec::vec::BitVec;
 use rand::{RngCore, rngs::OsRng};
-use strata_crypto::multisig::{
-    schemes::{SchnorrScheme, schnorr::create::create_musig2_signature},
-    signature::MultisigSignature,
+use strata_crypto::{
+    EvenSecretKey,
+    multisig::{
+        schemes::{SchnorrScheme, schnorr::create::create_musig2_signature},
+        signature::MultisigSignature,
+    },
 };
 use strata_primitives::buf::{Buf32, Buf64};
 
@@ -40,12 +43,12 @@ use crate::{actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID};
 /// # Returns
 /// A MultisigSignature that can be used to authorize this action
 pub fn create_multisig_signature(
-    privkeys: &[SecretKey],
+    privkeys: &[EvenSecretKey],
     signer_indices: BitVec<u8>,
     sighash: Buf32,
 ) -> MultisigSignature<SchnorrScheme> {
     // Extract only the private keys for signers indicated by signer_indices
-    let selected_privkeys: Vec<SecretKey> = signer_indices
+    let selected_privkeys: Vec<EvenSecretKey> = signer_indices
         .iter_ones()
         .map(|index| privkeys[index])
         .collect();
@@ -73,7 +76,7 @@ pub fn create_multisig_signature(
 /// A Bitcoin transaction that serves as the reveal transaction containing the administration
 /// payload
 pub fn create_test_admin_tx(
-    privkeys: &[SecretKey],
+    privkeys: &[EvenSecretKey],
     signer_indices: BitVec<u8>,
     action: &MultisigAction,
     seqno: u64,
@@ -207,7 +210,8 @@ mod tests {
         let threshold = 2;
 
         // Generate test private keys
-        let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let privkeys: Vec<EvenSecretKey> =
+            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
         let pubkeys = privkeys
             .iter()
             .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
@@ -245,7 +249,8 @@ mod tests {
 
         // Generate test private keys
         // Create signer indices (signers 0 and 2)
-        let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let privkeys: Vec<EvenSecretKey> =
+            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
         let mut signer_indices = BitVec::<u8>::new();
         signer_indices.resize(3, false);
         signer_indices.set(0, true);

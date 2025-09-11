@@ -1,5 +1,5 @@
 use bitcoin::{
-    secp256k1::{PublicKey, Secp256k1, SecretKey},
+    secp256k1::{PublicKey, Secp256k1},
     XOnlyPublicKey,
 };
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
@@ -21,19 +21,18 @@ use crate::multisig::aggregate_schnorr_keys;
 /// # Returns
 /// The aggregated MuSig2 signature
 pub fn create_musig2_signature(
-    signer_secretkeys: &[SecretKey],
+    signer_secretkeys: &[EvenSecretKey],
     message: &[u8; 32],
     tweak: Option<[u8; 32]>,
 ) -> musig2::CompactSignature {
     let secp = Secp256k1::new();
 
     // Adjust both public keys and private keys for even parity
-    let adjusted_keys: Vec<(PublicKey, SecretKey)> = signer_secretkeys
+    let adjusted_keys: Vec<(PublicKey, EvenSecretKey)> = signer_secretkeys
         .iter()
         .map(|sk| {
-            let even_sk = EvenSecretKey::from(*sk);
-            let pk = PublicKey::from_secret_key(&secp, &even_sk);
-            (pk, *even_sk.as_ref())
+            let pk = PublicKey::from_secret_key(&secp, sk);
+            (pk, *sk)
         })
         .collect();
 
@@ -63,7 +62,7 @@ pub fn create_musig2_signature(
             nonce_seed,
             signer_index,
             SecNonceSpices::new()
-                .with_seckey(*adjusted_privkey)
+                .with_seckey(*adjusted_privkey.as_ref())
                 .with_message(message),
         )
         .expect("Failed to create FirstRound");
@@ -86,7 +85,7 @@ pub fn create_musig2_signature(
 
         // Finalize first round to create second round
         let second_round = first_round
-            .finalize(adjusted_keys[signer_index].1, *message)
+            .finalize(*adjusted_keys[signer_index].1, *message)
             .expect("Failed to finalize first round");
 
         second_rounds.push(second_round);
@@ -117,7 +116,7 @@ pub fn create_musig2_signature(
     panic!("No signers available to finalize signature");
 }
 
-pub fn create_agg_pubkey_from_privkeys(operators_privkeys: &[SecretKey]) -> XOnlyPublicKey {
+pub fn create_agg_pubkey_from_privkeys(operators_privkeys: &[EvenSecretKey]) -> XOnlyPublicKey {
     let pubkeys: Vec<_> = operators_privkeys
         .iter()
         .map(|sk| PublicKey::from_secret_key(&Secp256k1::new(), sk))
@@ -152,8 +151,9 @@ mod tests {
         OsRng.fill_bytes(&mut tweak);
 
         // Generate test private keys for 3 operators
-        let operator_privkeys: Vec<SecretKey> =
-            (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let operator_privkeys: Vec<EvenSecretKey> = (0..3)
+            .map(|_| EvenSecretKey::from(SecretKey::new(&mut OsRng)))
+            .collect();
 
         // Test without tweak
         let signature_no_tweak = create_musig2_signature(&operator_privkeys, &message, None);

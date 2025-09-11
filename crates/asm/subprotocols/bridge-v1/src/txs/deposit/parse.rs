@@ -127,6 +127,7 @@ mod tests {
         secp256k1::{Secp256k1, SecretKey},
     };
     use strata_asm_common::TxInputRef;
+    use strata_crypto::EvenSecretKey;
     use strata_l1_txfmt::ParseConfig;
     use strata_primitives::{
         buf::Buf32,
@@ -144,9 +145,9 @@ mod tests {
     };
 
     // Helper function to create a test operator keypair
-    fn create_test_operator_keypair() -> (XOnlyPk, SecretKey) {
+    fn create_test_operator_keypair() -> (XOnlyPk, EvenSecretKey) {
         let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let secret_key = EvenSecretKey::from(SecretKey::from_slice(&[1u8; 32]).unwrap());
         let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
         let (xonly_pk, _) = keypair.x_only_public_key();
         let operators_pubkey =

@@ -5,11 +5,14 @@ use bitcoin::{
     absolute::LockTime,
     hashes::Hash,
     script::PushBytesBuf,
-    secp256k1::{Secp256k1, SecretKey},
+    secp256k1::Secp256k1,
     sighash::{Prevouts, SighashCache, TapSighashType},
 };
-use strata_crypto::multisig::schemes::schnorr::create::{
-    create_agg_pubkey_from_privkeys, create_musig2_signature,
+use strata_crypto::{
+    EvenSecretKey,
+    multisig::schemes::schnorr::create::{
+        create_agg_pubkey_from_privkeys, create_musig2_signature,
+    },
 };
 
 use crate::txs::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
@@ -35,7 +38,7 @@ use crate::txs::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 /// The properly formatted and signed Bitcoin transaction
 pub(crate) fn create_test_deposit_tx(
     deposit_info: &DepositInfo,
-    operators_privkeys: &[SecretKey],
+    operators_privkeys: &[EvenSecretKey],
 ) -> Transaction {
     use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
