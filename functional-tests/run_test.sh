@@ -20,15 +20,15 @@ elif [ ! -z "$CI_COVERAGE" ]; then
   COV_TARGET_DIR=$(realpath ../target)"/llvm-cov-target"
   mkdir -p "$COV_TARGET_DIR"
   export LLVM_PROFILE_FILE=$COV_TARGET_DIR"/strata-%p-%m.profraw"
-  RUSTFLAGS="-Cinstrument-coverage" cargo build -F debug-utils --target-dir "$COV_TARGET_DIR"
+  RUSTFLAGS="-Cinstrument-coverage" cargo build -F debug-utils -F test-mode --target-dir "$COV_TARGET_DIR"
   export PATH=$COV_TARGET_DIR/debug:$PATH
 else
   echo "Building and running strata client"
   if [ "$DB_BACKEND" = "rocksdb" ]; then
-    cargo build -F debug-utils -F rocksdb
+    cargo build -F debug-utils -F test-mode -F rocksdb
     echo built with rocksdb
   else
-    cargo build -F debug-utils
+    cargo build -F debug-utils -F test-mode
     echo built with default sled
   fi
 fi
