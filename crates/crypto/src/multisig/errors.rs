@@ -14,14 +14,12 @@ pub enum MultisigConfigError {
     MemberNotFound(PubKey),
 
     /// The provided threshold is invalid.
-    #[error("invalid threshold {threshold}: must be between {min_required} and {max_allowed}")]
+    #[error("invalid threshold {threshold}: must not exceed {total_keys}")]
     InvalidThreshold {
         /// The threshold value provided.
         threshold: u8,
-        /// The minimum valid threshold.
-        min_required: usize,
-        /// The maximum valid threshold.
-        max_allowed: usize,
+        /// The total keys in the multisig.
+        total_keys: usize,
     },
 
     /// The keys list is empty.
