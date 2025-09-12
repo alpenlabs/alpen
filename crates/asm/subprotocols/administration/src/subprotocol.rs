@@ -1,3 +1,8 @@
+//! Administration Subprotocol Implementation
+//!
+//! This module contains the core administration subprotocol implementation that integrates
+//! with the Strata Anchor State Machine (ASM) for managing protocol governance and updates.
+
 use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
 };
@@ -11,6 +16,11 @@ use crate::{
     state::AdministrationSubprotoState,
 };
 
+/// Administration subprotocol implementation.
+///
+/// This struct implements the [`Subprotocol`] trait to integrate administration functionality
+/// with the ASM. It handles multisig governance actions, protocol parameter updates, and
+/// operator set management through a queued execution system.
 #[derive(Debug)]
 pub struct AdministrationSubprotocol;
 
@@ -21,7 +31,7 @@ impl Subprotocol for AdministrationSubprotocol {
 
     type State = AdministrationSubprotoState;
 
-    type Msg = NullMsg<0>;
+    type Msg = NullMsg<ADMINISTRATION_SUBPROTOCOL_ID>;
 
     type AuxInput = ();
 
@@ -29,6 +39,19 @@ impl Subprotocol for AdministrationSubprotocol {
         Ok(AdministrationSubprotoState::new(params))
     }
 
+    /// Processes transactions for the Administration subprotocol and executes pending updates.
+    ///
+    /// The function follows a two-phase approach:
+    /// 1. **Pre-processing**: Executes all queued updates that are ready for activation
+    /// 2. **Transaction processing**: Handles incoming multisig actions (updates/cancellations)
+    ///
+    /// # Transaction Types Processed
+    ///
+    /// - **Multisig update actions**: Governance transactions that propose protocol changes,
+    ///   operator set updates, or parameter modifications. These are validated and are queued or
+    ///   executed depending upon the action.
+    /// - **Multisig cancel actions**: Governance transactions that remove previously queued updates
+    ///   from the execution queue.
     fn process_txs(
         state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
@@ -37,19 +60,28 @@ impl Subprotocol for AdministrationSubprotocol {
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     ) {
-        // Get the current height
+        // Calculate current height as the next block height
         let current_height = anchor_pre.chain_view.pow_state.last_verified_block.height() + 1;
 
-        // Before processing the transactions, we process any queued actions
+        // Phase 1: Execute any pending updates that have reached their activation height
         handle_pending_updates(state, relayer, current_height);
 
+        // Phase 2: Process incoming administration transactions
         for tx in txs {
+            // Parse transaction to extract multisig action and aggregated vote
             if let Ok((action, vote)) = parse_tx_multisig_action_and_vote(tx) {
+                // Handle the action (update/cancel) - errors are silently ignored for resilience
                 let _ = handle_action(state, action, vote, current_height, relayer, params);
             }
+            // Transaction parsing failures are silently ignored to maintain system resilience
         }
     }
 
+    /// Processes incoming administration messages.
+    ///
+    /// Currently, the Administration subprotocol uses `NullMsg` and does not process
+    /// any incoming messages. All administration actions are handled through transactions
+    /// in the `process_txs` method.
     fn process_msgs(
         _state: &mut AdministrationSubprotoState,
         _msgs: &[Self::Msg],

@@ -11,6 +11,14 @@ use crate::{
     state::AdministrationSubprotoState,
 };
 
+/// Processes and applies all queued updates that are ready to be enacted at the current height.
+///
+/// This function retrieves all update actions from the queue that are ready to be applied
+/// and processes them sequentially. If an error occurs during the execution of any update,
+/// an error log is emitted and processing continues with the next queued update.
+///
+/// This function should not return an error - it handles all errors internally by logging
+/// them and continuing with the next update to ensure system resilience.
 pub(crate) fn handle_pending_updates(
     state: &mut AdministrationSubprotoState,
     _relayer: &mut impl MsgRelayer,
@@ -56,6 +64,18 @@ pub(crate) fn handle_pending_updates(
     }
 }
 
+/// Processes a multisig action by validating the aggregated vote.
+///
+/// This function handles two types of multisig actions:
+/// - `Update`: Validates the action and queues it for later execution (except sequencer updates)
+/// - `Cancel`: Removes a previously queued action from the queue
+///
+/// The function performs validation by checking that the aggregated vote meets the multisig
+/// requirements for the required role, then processes the action accordingly.
+///
+/// # Returns
+/// * `Ok(())` if the action was successfully processed
+/// * `Err(AdministrationError)` if validation failed or the action could not be processed
 pub(crate) fn handle_action(
     state: &mut AdministrationSubprotoState,
     action: MultisigAction,
@@ -64,9 +84,11 @@ pub(crate) fn handle_action(
     _relayer: &mut impl MsgRelayer,
     params: &AdministrationSubprotoParams,
 ) -> Result<(), AdministrationError> {
+    // Determine the required role based on the action type
     let role = match &action {
         MultisigAction::Update(update) => update.required_role(),
         MultisigAction::Cancel(cancel) => {
+            // For cancel actions, we need to find the target action to determine its required role
             let target_action_id = cancel.target_id();
             let queued = state
                 .find_queued(target_action_id)
@@ -75,33 +97,38 @@ pub(crate) fn handle_action(
         }
     };
 
+    // Get the authority for this role and validate the action with the aggregated vote
     let authority = state
         .authority(role)
         .ok_or(AdministrationError::UnknownRole)?;
     authority.validate_action(&action, &vote)?;
 
+    // Process the action based on its type
     match action {
         MultisigAction::Update(update) => {
+            // Generate a unique ID for this update
             let id = state.next_update_id();
             match update {
                 UpdateAction::Sequencer(_) => {
                     // TODO: directly apply it without queuing
                 }
                 action => {
-                    // For all others add it to queue
+                    // For all other update types, add to the queue with a future activation height
                     let activation_height = current_height + params.confirmation_depth as u64;
                     let queued_update = QueuedUpdate::new(id, action, activation_height);
                     state.enqueue(queued_update);
                 }
             }
+            // Increment the update ID counter for the next action
             state.increment_next_update_id();
         }
         MultisigAction::Cancel(cancel) => {
+            // Remove the target action from the queue
             state.remove_queued(cancel.target_id());
         }
     }
 
-    // Increase the nonce
+    // Increment the sequence number for the authority to prevent replay attacks
     let authority = state
         .authority_mut(role)
         .ok_or(AdministrationError::UnknownRole)?;
