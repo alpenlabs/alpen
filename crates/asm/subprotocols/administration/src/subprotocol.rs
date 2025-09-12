@@ -35,7 +35,7 @@ impl Subprotocol for AdministrationSubprotocol {
         anchor_pre: &AnchorState,
         _aux_input: &Self::AuxInput,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
+        params: &Self::Params,
     ) {
         // Get the current height
         let current_height = anchor_pre.chain_view.pow_state.last_verified_block.height() + 1;
@@ -45,7 +45,7 @@ impl Subprotocol for AdministrationSubprotocol {
 
         for tx in txs {
             if let Ok((action, vote)) = parse_tx_multisig_action_and_vote(tx) {
-                let _ = handle_action(state, action, vote, current_height, relayer);
+                let _ = handle_action(state, action, vote, current_height, relayer, params);
             }
         }
     }

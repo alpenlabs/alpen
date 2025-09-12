@@ -23,11 +23,6 @@ pub struct AdministrationSubprotoState {
 
     /// UpdateId for the next update.
     next_update_id: UpdateId,
-
-    /// The confirmation depth (CD) setting: after an update transaction receives this many
-    /// confirmations, the update is enacted automatically. During this confirmation period,
-    /// the update can still be cancelled by submitting a cancel transaction.
-    confirmation_depth: u32,
 }
 
 impl AdministrationSubprotoState {
@@ -43,7 +38,6 @@ impl AdministrationSubprotoState {
             authorities,
             queued: Vec::new(),
             next_update_id: 0,
-            confirmation_depth: config.confirmation_depth,
         }
     }
     /// Get a reference to the authority for the given role.
@@ -88,11 +82,6 @@ impl AdministrationSubprotoState {
     /// Get the next global update id.
     pub fn next_update_id(&self) -> UpdateId {
         self.next_update_id
-    }
-
-    /// Confirmation depth.
-    pub fn confirmation_depth(&self) -> u32 {
-        self.confirmation_depth
     }
 
     /// Increment the next global update id.

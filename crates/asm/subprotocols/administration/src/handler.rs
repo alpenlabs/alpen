@@ -4,7 +4,8 @@ use strata_crypto::multisig::vote::AggregatedVote;
 use strata_primitives::roles::ProofType;
 
 use crate::{
-    error::AdministrationError, queued_update::QueuedUpdate, state::AdministrationSubprotoState,
+    config::AdministrationSubprotoParams, error::AdministrationError, queued_update::QueuedUpdate,
+    state::AdministrationSubprotoState,
 };
 
 pub(crate) fn handle_pending_updates(
@@ -44,6 +45,7 @@ pub(crate) fn handle_action(
     vote: AggregatedVote,
     current_height: u64,
     _relayer: &mut impl MsgRelayer,
+    params: &AdministrationSubprotoParams,
 ) -> Result<(), AdministrationError> {
     let role = match &action {
         MultisigAction::Update(update) => update.required_role(),
@@ -70,7 +72,7 @@ pub(crate) fn handle_action(
                 }
                 action => {
                     // For all others add it to queue
-                    let activation_height = current_height + state.confirmation_depth() as u64;
+                    let activation_height = current_height + params.confirmation_depth as u64;
                     let queued_update = QueuedUpdate::new(id, action, activation_height);
                     state.enqueue(queued_update);
                 }
@@ -135,12 +137,6 @@ mod tests {
         }
     }
 
-    fn create_test_state() -> AdministrationSubprotoState {
-        let mut arb = ArbitraryGenerator::new();
-        let config: AdministrationSubprotoParams = arb.generate();
-        AdministrationSubprotoState::new(&config)
-    }
-
     fn get_strata_administrator_update_actions(count: usize) -> Vec<UpdateAction> {
         let mut arb = ArbitraryGenerator::new();
         let mut actions = Vec::new();
@@ -161,8 +157,11 @@ mod tests {
     /// - Queued actions can be found in state
     #[test]
     fn test_strata_administrator_update_actions() {
-        let mut state = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+        let params: AdministrationSubprotoParams = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
+
         let vote = AggregatedVote::new(vec![], Signature::default());
         let current_height = 1000;
 
@@ -182,6 +181,7 @@ mod tests {
                 vote.clone(),
                 current_height,
                 &mut relayer,
+                &params,
             )
             .unwrap();
 
@@ -204,7 +204,7 @@ mod tests {
 
             assert_eq!(
                 queued_update.activation_height(),
-                current_height + state.confirmation_depth() as u64
+                current_height + params.confirmation_depth as u64
             );
         }
     }
@@ -217,8 +217,9 @@ mod tests {
     #[test]
     fn test_strata_seq_manager_update_actions() {
         let mut arb = ArbitraryGenerator::new();
+        let params: AdministrationSubprotoParams = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&params);
 
-        let mut state = create_test_state();
         let mut relayer = MockRelayer::new();
         let vote = AggregatedVote::new(vec![], Signature::default());
         let current_height = 1000;
@@ -239,6 +240,7 @@ mod tests {
                 vote.clone(),
                 current_height,
                 &mut relayer,
+                &params,
             )
             .unwrap();
 
@@ -265,8 +267,11 @@ mod tests {
     /// - Verify sequence numbers increment, queue shrinks, and updates are removed.
     #[test]
     fn test_strata_administrator_cancel_action() {
-        let mut state = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+        let params: AdministrationSubprotoParams = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
+
         let vote = AggregatedVote::new(vec![], Signature::default());
         let no_of_updates = 5;
         let current_height = 1000;
@@ -281,6 +286,7 @@ mod tests {
                 vote.clone(),
                 current_height,
                 &mut relayer,
+                &params,
             )
             .unwrap();
         }
@@ -303,6 +309,7 @@ mod tests {
                 vote.clone(),
                 current_height,
                 &mut relayer,
+                &params,
             )
             .unwrap();
             // Verify state changes after cancellation
@@ -327,8 +334,10 @@ mod tests {
     #[test]
     fn test_strata_administrator_non_existent_cancel() {
         let mut arb = ArbitraryGenerator::new();
-        let mut state = create_test_state();
+        let params: AdministrationSubprotoParams = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
+
         let vote = AggregatedVote::new(vec![], Signature::default());
         let current_height = 1000;
 
@@ -343,6 +352,7 @@ mod tests {
             vote.clone(),
             current_height,
             &mut relayer,
+            &params,
         );
         assert!(matches!(res, Err(AdministrationError::UnknownAction(_))));
     }
@@ -353,8 +363,11 @@ mod tests {
     /// - Verify that cancelling the update action again returns an UnknownAction error.
     #[test]
     fn test_strata_administrator_duplicate_cancels() {
-        let mut state = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+        let params: AdministrationSubprotoParams = arb.generate();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
+
         let vote = AggregatedVote::new(vec![], Signature::default());
         let current_height = 1000;
 
@@ -373,6 +386,7 @@ mod tests {
             vote.clone(),
             current_height,
             &mut relayer,
+            &params,
         )
         .unwrap();
 
@@ -384,6 +398,7 @@ mod tests {
             vote.clone(),
             current_height,
             &mut relayer,
+            &params,
         );
         assert!(res.is_ok());
 
@@ -395,6 +410,7 @@ mod tests {
             vote.clone(),
             current_height,
             &mut relayer,
+            &params,
         );
         assert!(res.is_err());
         assert!(matches!(res, Err(AdministrationError::UnknownAction(_))));
