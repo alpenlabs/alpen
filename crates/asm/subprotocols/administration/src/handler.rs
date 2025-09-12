@@ -1,4 +1,7 @@
-use strata_asm_common::MsgRelayer;
+use strata_asm_common::{
+    MsgRelayer,
+    logging::{error, info},
+};
 use strata_asm_proto_administration_txs::actions::{MultisigAction, UpdateAction};
 use strata_crypto::multisig::vote::AggregatedVote;
 use strata_primitives::roles::ProofType;
@@ -19,7 +22,21 @@ pub(crate) fn handle_pending_updates(
     for action in actions_to_enact {
         match action.action() {
             UpdateAction::Multisig(update) => {
-                state.apply_multisig_update(update.role(), update.config());
+                match state.apply_multisig_update(update.role(), update.config()) {
+                    Ok(_) => {
+                        info!(
+                            "Successfully applied multisig update to role {:?}",
+                            update.role(),
+                        );
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to apply multisig update to role {:?}: {}",
+                            update.role(),
+                            e,
+                        );
+                    }
+                }
             }
             UpdateAction::VerifyingKey(update) => match update.kind() {
                 ProofType::Asm => {

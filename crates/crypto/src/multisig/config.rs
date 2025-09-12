@@ -148,8 +148,13 @@ impl MultisigConfig {
     }
 
     /// Applies an update to this configuration by removing old members, adding new members, and
-    /// updating the threshold. Must call `validate_update` first to ensure the update is valid.
-    pub fn apply(&mut self, update: &MultisigConfigUpdate) {
+    /// updating the threshold.
+    pub fn apply_update(
+        &mut self,
+        update: &MultisigConfigUpdate,
+    ) -> Result<(), MultisigConfigError> {
+        // First validate the update
+        self.validate_update(update)?;
         // REVIEW: If we assert these lists are always sorted then we can do a more efficient
         // merge-and-remove pass with both this and the new entries
         // Remove specified old members
@@ -158,6 +163,8 @@ impl MultisigConfig {
         self.keys.extend_from_slice(update.new_members());
         // Update threshold
         self.threshold = update.new_threshold();
+
+        Ok(())
     }
 }
 
@@ -248,7 +255,7 @@ mod tests {
         //   - Remove k3 from the keys
         //   - Add k4 and k5
         //   - Have threshold = 3
-        config.apply(&update);
+        config.apply_update(&update).unwrap();
 
         // The “new” key‐set should be exactly [k1, k2, k4, k5] (order may matter if you rely on it)
         let expected_keys = vec![k1, k2, k4, k5];

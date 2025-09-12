@@ -4,7 +4,7 @@ use thiserror::Error;
 
 /// Top-level error type for the administration subprotocol, composed of smaller error categories.
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
-pub(crate) enum AdministrationError {
+pub enum AdministrationError {
     /// The specified role is not recognized.
     #[error("the specified role is not recognized")]
     UnknownRole,

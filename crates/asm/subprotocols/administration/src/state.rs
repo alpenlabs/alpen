@@ -4,7 +4,8 @@ use strata_crypto::multisig::config::MultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
-    authority::MultisigAuthority, config::AdministrationSubprotoParams, queued_update::QueuedUpdate,
+    authority::MultisigAuthority, config::AdministrationSubprotoParams, error::AdministrationError,
+    queued_update::QueuedUpdate,
 };
 
 /// Holds the state for the Administration Subprotocol, including the various
@@ -51,9 +52,16 @@ impl AdministrationSubprotoState {
     }
 
     /// Apply a multisig config update for the specified role.
-    pub fn apply_multisig_update(&mut self, role: Role, update: &MultisigConfigUpdate) {
+    pub fn apply_multisig_update(
+        &mut self,
+        role: Role,
+        update: &MultisigConfigUpdate,
+    ) -> Result<(), AdministrationError> {
         if let Some(auth) = self.authority_mut(role) {
-            auth.config_mut().apply(update);
+            auth.config_mut().apply_update(update)?;
+            Ok(())
+        } else {
+            Err(AdministrationError::UnknownRole)
         }
     }
 
@@ -241,7 +249,7 @@ mod tests {
             new_threshold as u8,
         );
 
-        state.apply_multisig_update(role, &update);
+        state.apply_multisig_update(role, &update).unwrap();
 
         let updated_auth = state.authority(role).unwrap().config();
 
