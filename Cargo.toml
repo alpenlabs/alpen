@@ -72,6 +72,9 @@ members = [
   # integration tests
   "tests",
   "crates/util/python-utils",
+
+  # benchmarks
+  "benches",
 ]
 
 default-members = [
@@ -291,6 +294,7 @@ bytes = "1.6.0"
 cfg-if = "1.0.0"
 chrono = "0.4.38"
 clap = { version = "4.5.39", default-features = false, features = ["derive"] }
+criterion = { version = "0.7.0", features = ["html_reports"] }
 deadpool = "0.12.1"
 digest = "0.10"
 ethnum = "1.5.0"

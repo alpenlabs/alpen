@@ -309,3 +309,34 @@ pr: lint rustdocs test-doc test-unit test-int test-functional
 [group('functional-tests')]
 docker: docker-down docker-up
     echo "Done!"
+
+# Run all benchmarks in the workspace
+[group('benches')]
+bench: bench-db
+
+# Open benchmark results in Criterion default output folder
+[group('benches')]
+bench-results:
+    #!/usr/bin/env bash
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        open target/criterion/
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        xdg-open target/criterion/
+    else
+        echo "Unsupported OS. Benchmark results are in target/criterion/"
+    fi
+
+# Run all database benchmarks
+[group('benches')]
+bench-db: bench-db-sled bench-db-rocksdb
+
+# Run database benchmarks with `sled` backend only
+[group('benches')]
+bench-db-sled:
+    cargo bench --package alpen-benchmarks --no-default-features --features=db,sled
+
+# Run database benchmarks with `rocksdb` backend only
+[group('benches')]
+bench-db-rocksdb:
+    cargo bench --package alpen-benchmarks --no-default-features --features=db,rocksdb
+
