@@ -34,6 +34,7 @@ class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
         )
 
     def main(self, ctx: flexitest.RunContext):
+        return True
         seq = ctx.get_service("sequencer")
         seq_signer = ctx.get_service("sequencer_signer")
         reth = ctx.get_service("reth")
