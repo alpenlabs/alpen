@@ -1,4 +1,5 @@
 use reth_evm::precompiles::{DynPrecompile, PrecompilesMap};
+use revm::precompile::PrecompileId;
 use revm_primitives::hardfork::SpecId;
 
 use crate::{
@@ -12,7 +13,10 @@ pub fn create_precompiles_map(spec: SpecId) -> PrecompilesMap {
 
     // Add bridge precompile using DynPrecompile for compatibility
     precompiles.apply_precompile(&BRIDGEOUT_ADDRESS, |_| {
-        Some(DynPrecompile::new(bridge_context_call))
+        Some(DynPrecompile::new(
+            PrecompileId::custom("bridge-precompile"),
+            bridge_context_call,
+        ))
     });
 
     precompiles
