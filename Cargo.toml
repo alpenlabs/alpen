@@ -244,10 +244,7 @@ alloy = { version = "1.0.30", features = [
   "providers",
   "rpc-types",
 ] }
-alloy-consensus = { version = "1.0.30", default-features = false, features = [
-  "serde",
-  "serde-bincode-compat",
-] }
+alloy-consensus = { version = "1.0.30", default-features = false }
 alloy-eips = { version = "1.0.30", default-features = false }
 alloy-genesis = { version = "1.0.30", default-features = false }
 alloy-network = { version = "1.0.30", default-features = false }
@@ -255,7 +252,7 @@ alloy-primitives = { version = "1.3.1", default-features = false, features = [
   "sha3-keccak",
   "map-foldhash",
 ] }
-alloy-rlp = "0.3.10"
+alloy-rlp = { version = "0.3.10", default-features = false }
 alloy-rlp-derive = "0.3.10"
 alloy-rpc-types = { version = "1.0.30", features = [
   "eth",
@@ -264,15 +261,19 @@ alloy-rpc-types-engine = { version = "1.0.30", default-features = false }
 alloy-rpc-types-eth = { version = "1.0.30", default-features = false, features = [
   "serde",
 ] }
-alloy-serde = "1.0.30"
-alloy-sol-types = "1.3.1"
-alloy-trie = "0.9.1"
+alloy-serde = { version = "1.0.30", default-features = false }
+alloy-sol-types = "1.3.0"
+alloy-trie = { version = "0.9.0", default-features = false, features = [
+  "arbitrary",
+  "serde",
+] }
 revm = { version = "29.0.0", features = [
   "serde",
   "kzg-rs",
   "bn",
 ], default-features = false }
 revm-primitives = { version = "20.2.1", features = [
+  "std",
   "serde",
 ], default-features = false }
 
@@ -323,19 +324,11 @@ reth-trie = { git = "https://github.com/paradigmxyz/reth", tag = "v1.7.0" }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth", tag = "v1.7.0", default-features = false }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.7.0" }
 
-<<<<<<< HEAD
-rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
-rsp-mpt = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
-rsp-primitives = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.6.0" }
-sp1-helper = "5.2.1"
-sp1-sdk = "5.2.1"
-=======
 rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.7.0" }
 rsp-mpt = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.7.0" }
 rsp-primitives = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.7.0" }
-sp1-helper = "5.0.0"
-sp1-sdk = "5.0.0"
->>>>>>> e9385861 (chore: update reth related deps)
+sp1-helper = "5.2.1"
+sp1-sdk = "5.2.1"
 
 anyhow = "1.0.86"
 arbitrary = { version = "1.3.2", features = ["derive"] }
