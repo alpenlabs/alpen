@@ -11,7 +11,7 @@ use crate::AsmError;
 
 /// Generic wrapper around a inter-proto msg.
 pub trait InterprotoMsg: Any + 'static {
-    /// Returns the ID of the subprotocol that produced this messages.
+    /// Returns the ID of the subprotocol this message is intended for.
     fn id(&self) -> SubprotocolId;
 
     /// Converts the message ref into a `&dyn Any` for upcasting.
