@@ -11,7 +11,7 @@ use reth_rpc_eth_api::{
     helpers::{pending_block::PendingEnvBuilder, LoadPendingBlock},
     FromEvmError, RpcConvert, RpcNodeCore,
 };
-use reth_rpc_eth_types::{EthApiError, PendingBlock};
+use reth_rpc_eth_types::{builder::config::PendingBlockKind, EthApiError, PendingBlock};
 
 use crate::AlpenEthApi;
 
@@ -29,6 +29,11 @@ where
     #[inline]
     fn pending_env_builder(&self) -> &dyn PendingEnvBuilder<Self::Evm> {
         self.inner.eth_api.pending_env_builder()
+    }
+
+    #[inline]
+    fn pending_block_kind(&self) -> PendingBlockKind {
+        self.inner.eth_api.pending_block_kind()
     }
 
     /// Returns the locally built pending block
