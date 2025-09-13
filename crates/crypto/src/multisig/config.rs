@@ -204,7 +204,7 @@ impl<S: CryptoScheme> MultisigConfig<S> {
 
         // Ensure the removal bitvec doesn't reference invalid member indices
         if update.remove_members().len() > self.keys.len() {
-            return Err(MultisigError::RemovalBitVecTooLong {
+            return Err(MultisigError::BitVecTooLong {
                 bitvec_len: update.remove_members().len(),
                 member_count: self.keys.len(),
             });
@@ -348,7 +348,7 @@ mod tests {
         let err = base.apply_update(&update).unwrap_err();
         assert_eq!(
             err,
-            MultisigError::RemovalBitVecTooLong {
+            MultisigError::BitVecTooLong {
                 bitvec_len: 6,
                 member_count: 5
             }

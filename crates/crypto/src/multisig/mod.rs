@@ -28,6 +28,7 @@ use crate::multisig::traits::CryptoScheme;
 ///
 /// # Returns
 /// Returns `Ok(())` if verification succeeds, or an error if:
+/// - Signer indices exceed the available keys count
 /// - Insufficient keys are selected (fewer than threshold)
 /// - Key aggregation fails
 /// - Signature verification fails
@@ -36,6 +37,15 @@ pub fn verify_multisig<S: CryptoScheme>(
     signature: &signature::MultisigSignature<S>,
     message_hash: &[u8; 32],
 ) -> Result<(), MultisigError> {
+    // Validate that signer indices don't exceed available keys
+    let total_indices_count = signature.signer_indices().len();
+    if total_indices_count > config.keys().len() {
+        return Err(MultisigError::BitVecTooLong {
+            bitvec_len: total_indices_count,
+            member_count: config.keys().len(),
+        });
+    }
+
     // Check threshold
     let selected_count = signature.signer_indices().count_ones();
     if selected_count < config.threshold() as usize {
@@ -49,7 +59,7 @@ pub fn verify_multisig<S: CryptoScheme>(
     let selected_keys = signature
         .signer_indices()
         .iter_ones()
-        .map(|index| &config.keys()[index]); // FIXME: prevent panic
+        .map(|index| &config.keys()[index]);
     let aggregated_key = S::aggregate(selected_keys)?;
 
     // Verify signature
