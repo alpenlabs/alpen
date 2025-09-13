@@ -296,7 +296,7 @@ mod tests {
             }
         );
 
-        // Test successfull config creation
+        // Test successful config creation
         let config = TestMultisigConfig::try_new(vec![k1, k2], 1).unwrap();
         assert_eq!(config.keys(), &[k1, k2]);
         assert_eq!(config.threshold(), 1);
