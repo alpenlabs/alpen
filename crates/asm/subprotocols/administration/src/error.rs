@@ -1,5 +1,5 @@
 use strata_asm_proto_administration_txs::actions::UpdateId;
-use strata_crypto::multisig::errors::{MultisigConfigError, VoteValidationError};
+use strata_crypto::multisig::MultisigError;
 use thiserror::Error;
 
 /// Top-level error type for the administration subprotocol, composed of smaller error categories.
@@ -13,11 +13,7 @@ pub enum AdministrationError {
     #[error("no pending update found for action_id = {0:?}")]
     UnknownAction(UpdateId),
 
-    /// Indicates a validation failure on multisig configuration or threshold.
+    /// Indicates a multisig error (configuration, aggregation, or signature validation).
     #[error(transparent)]
-    MultisigConfig(#[from] MultisigConfigError),
-
-    /// Indicates a failure when validating a vote.
-    #[error(transparent)]
-    Vote(#[from] VoteValidationError),
+    Multisig(#[from] MultisigError),
 }

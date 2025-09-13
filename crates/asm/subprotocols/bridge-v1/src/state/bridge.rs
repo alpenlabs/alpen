@@ -431,6 +431,7 @@ impl BridgeV1State {
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::Rng;
+    use strata_crypto::EvenSecretKey;
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
         buf::Buf32,
@@ -458,14 +459,14 @@ mod tests {
     ///
     /// - `Vec<SecretKey>` - Private keys for creating test transactions
     /// - `Vec<OperatorPubkeys>` - Public keys for bridge configuration
-    fn create_test_operators() -> (Vec<SecretKey>, Vec<OperatorPubkeys>) {
+    fn create_test_operators() -> (Vec<EvenSecretKey>, Vec<OperatorPubkeys>) {
         let secp = Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
         let num_operators = rng.gen_range(2..=5);
 
         // Generate random operator keys
-        let operators_privkeys: Vec<SecretKey> = (0..num_operators)
-            .map(|_| SecretKey::new(&mut rng))
+        let operators_privkeys: Vec<EvenSecretKey> = (0..num_operators)
+            .map(|_| SecretKey::new(&mut rng).into())
             .collect();
 
         // Create operator pubkeys for config
@@ -482,7 +483,7 @@ mod tests {
         (operators_privkeys, operator_pubkeys)
     }
 
-    fn create_test_state() -> (BridgeV1State, Vec<SecretKey>) {
+    fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
         let (privkeys, operators) = create_test_operators();
         let denomination = BitcoinAmount::from_sat(1_000_000);
         let config = BridgeV1Config {
@@ -506,7 +507,7 @@ mod tests {
     /// - `state` - Mutable reference to the bridge state to add deposits to
     /// - `count` - Number of deposits to create and add
     /// - `privkeys` - Private keys used to sign the deposit transactions
-    fn add_deposits(state: &mut BridgeV1State, count: usize, privkeys: &[SecretKey]) {
+    fn add_deposits(state: &mut BridgeV1State, count: usize, privkeys: &[EvenSecretKey]) {
         let mut arb = ArbitraryGenerator::new();
         for _ in 0..count {
             let mut info: DepositInfo = arb.generate();
@@ -530,7 +531,7 @@ mod tests {
     fn add_deposits_and_assignments(
         state: &mut BridgeV1State,
         count: usize,
-        privkeys: &[SecretKey],
+        privkeys: &[EvenSecretKey],
     ) {
         add_deposits(state, count, privkeys);
         let mut arb = ArbitraryGenerator::new();

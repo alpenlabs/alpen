@@ -177,6 +177,7 @@ mod tests {
     };
     use musig2::KeyAggContext;
     use rand::Rng;
+    use strata_crypto::EvenSecretKey;
     use strata_primitives::{buf::Buf32, l1::XOnlyPk};
     use strata_test_utils::ArbitraryGenerator;
 
@@ -184,14 +185,14 @@ mod tests {
     use crate::txs::{deposit::parse::DepositInfo, test_utils::create_test_deposit_tx};
 
     // Helper function to create test operator keys with proper MuSig2 aggregation
-    fn create_test_operators() -> (XOnlyPk, Vec<SecretKey>) {
+    fn create_test_operators() -> (XOnlyPk, Vec<EvenSecretKey>) {
         let secp = Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
         let num_operators = rng.gen_range(2..=5);
 
         // Generate random operator keys
-        let operators_privkeys: Vec<SecretKey> = (0..num_operators)
-            .map(|_| SecretKey::new(&mut rng))
+        let operators_privkeys: Vec<EvenSecretKey> = (0..num_operators)
+            .map(|_| SecretKey::new(&mut rng).into())
             .collect();
 
         // Create MuSig2 context for consistent key aggregation (same as create_test_deposit_tx)

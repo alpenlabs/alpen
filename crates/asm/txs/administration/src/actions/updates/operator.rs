@@ -3,7 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
 use strata_primitives::buf::Buf32;
 
-use crate::error::AdministrationTxParseError;
+use crate::errors::AdministrationTxParseError;
 
 /// An update to the Bridge Operator Set:
 /// - removes the specified `remove_members`

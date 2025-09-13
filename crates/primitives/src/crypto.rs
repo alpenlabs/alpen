@@ -53,7 +53,7 @@ pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
 }
 
 /// A secret key that is guaranteed to have a even x-only public key
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct EvenSecretKey(SecretKey);
 
 impl Deref for EvenSecretKey {

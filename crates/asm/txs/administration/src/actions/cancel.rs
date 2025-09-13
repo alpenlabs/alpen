@@ -2,7 +2,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
 
-use crate::{actions::UpdateId, constants::CANCEL_TX_TYPE, error::AdministrationTxParseError};
+use crate::{actions::UpdateId, constants::CANCEL_TX_TYPE, errors::AdministrationTxParseError};
 
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct CancelAction {

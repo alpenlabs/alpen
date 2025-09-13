@@ -7,7 +7,7 @@ use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
 };
 use strata_asm_proto_administration_txs::{
-    constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx_multisig_action_and_vote,
+    constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx,
 };
 
 use crate::{
@@ -68,10 +68,8 @@ impl Subprotocol for AdministrationSubprotocol {
 
         // Phase 2: Process incoming administration transactions
         for tx in txs {
-            // Parse transaction to extract multisig action and aggregated vote
-            if let Ok((action, vote)) = parse_tx_multisig_action_and_vote(tx) {
-                // Handle the action (update/cancel) - errors are silently ignored for resilience
-                let _ = handle_action(state, action, vote, current_height, relayer, params);
+            if let Ok((action, agg_sig)) = parse_tx(tx) {
+                let _ = handle_action(state, action, agg_sig, current_height, relayer, params);
             }
             // Transaction parsing failures are silently ignored to maintain system resilience
         }
