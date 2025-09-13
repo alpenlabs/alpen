@@ -8,11 +8,10 @@ use reth_chainspec::ChainSpec;
 use reth_ethereum_payload_builder::EthereumExecutionPayloadValidator;
 use reth_node_api::{
     payload::PayloadTypes, validate_version_specific_fields, AddOnsContext, BuiltPayload,
-    EngineApiMessageVersion, EngineObjectValidationError, EngineTypes, EngineValidator,
-    FullNodeComponents, InvalidPayloadAttributesError, NewPayloadError, NodeTypes,
-    PayloadOrAttributes, PayloadValidator,
+    EngineApiMessageVersion, EngineApiValidator, EngineObjectValidationError, EngineTypes,
+    FullNodeComponents, NewPayloadError, NodeTypes, PayloadOrAttributes, PayloadValidator,
 };
-use reth_node_builder::rpc::EngineValidatorBuilder;
+use reth_node_builder::rpc::PayloadValidatorBuilder;
 use reth_primitives::{Block, EthPrimitives, NodePrimitives, RecoveredBlock, SealedBlock};
 use serde::{Deserialize, Serialize};
 
@@ -72,9 +71,8 @@ impl AlpenEngineValidator {
     }
 }
 
-impl PayloadValidator for AlpenEngineValidator {
+impl PayloadValidator<AlpenEngineTypes> for AlpenEngineValidator {
     type Block = Block;
-    type ExecutionData = ExecutionData;
 
     fn ensure_well_formed_payload(
         &self,
@@ -87,14 +85,11 @@ impl PayloadValidator for AlpenEngineValidator {
     }
 }
 
-impl<T> EngineValidator<T> for AlpenEngineValidator
-where
-    T: EngineTypes<PayloadAttributes = AlpenPayloadAttributes, ExecutionData = ExecutionData>,
-{
+impl EngineApiValidator<AlpenEngineTypes> for AlpenEngineValidator {
     fn validate_version_specific_fields(
         &self,
         version: EngineApiMessageVersion,
-        payload_or_attrs: PayloadOrAttributes<'_, Self::ExecutionData, T::PayloadAttributes>,
+        payload_or_attrs: PayloadOrAttributes<'_, ExecutionData, AlpenPayloadAttributes>,
     ) -> Result<(), EngineObjectValidationError> {
         validate_version_specific_fields(self.chain_spec(), version, payload_or_attrs)
     }
@@ -102,25 +97,16 @@ where
     fn ensure_well_formed_attributes(
         &self,
         version: EngineApiMessageVersion,
-        attributes: &T::PayloadAttributes,
+        attributes: &AlpenPayloadAttributes,
     ) -> Result<(), EngineObjectValidationError> {
         validate_version_specific_fields(
             self.chain_spec(),
             version,
-            PayloadOrAttributes::<Self::ExecutionData, T::PayloadAttributes>::PayloadAttributes(
+            PayloadOrAttributes::<ExecutionData, AlpenPayloadAttributes>::PayloadAttributes(
                 attributes,
             ),
         )?;
 
-        Ok(())
-    }
-
-    fn validate_payload_attributes_against_header(
-        &self,
-        _attr: &<T as PayloadTypes>::PayloadAttributes,
-        _header: &<Self::Block as reth_node_api::Block>::Header,
-    ) -> Result<(), InvalidPayloadAttributesError> {
-        // skip default timestamp validation
         Ok(())
     }
 }
@@ -130,7 +116,7 @@ where
 #[non_exhaustive]
 pub struct AlpenEngineValidatorBuilder;
 
-impl<N> EngineValidatorBuilder<N> for AlpenEngineValidatorBuilder
+impl<N> PayloadValidatorBuilder<N> for AlpenEngineValidatorBuilder
 where
     N: FullNodeComponents<
         Types: NodeTypes<
