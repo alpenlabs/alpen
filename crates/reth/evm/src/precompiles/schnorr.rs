@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use revm::precompile::{
     utilities::right_pad, Precompile, PrecompileId, PrecompileOutput, PrecompileResult,
 };
@@ -5,13 +7,11 @@ use revm_primitives::Bytes;
 use strata_crypto::schnorr::verify_schnorr_sig;
 use strata_primitives::buf::{Buf32, Buf64};
 
-use crate::constants::SCHNORR_ADDRESS;
-
-pub(crate) const SCHNORR_ID: &str = "schnorr_signature_validation";
+use crate::constants::{SCHNORR_PRECOMPILE_ADDRESS, SCHNORR_PRECOMPILE_PRECOMPILE_ID};
 
 pub(crate) const SCHNORR_SIGNATURE_VALIDATION: Precompile = Precompile::new(
-    PrecompileId::Custom(std::borrow::Cow::Borrowed(SCHNORR_ID)),
-    SCHNORR_ADDRESS,
+    PrecompileId::Custom(Cow::Borrowed(SCHNORR_PRECOMPILE_PRECOMPILE_ID)),
+    SCHNORR_PRECOMPILE_ADDRESS,
     verify_schnorr_precompile,
 );
 
