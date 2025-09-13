@@ -3,17 +3,15 @@
 //! This module implements parsing for debug transaction types that allow
 //! injection of test data into the ASM for testing purposes.
 
-use borsh::BorshDeserialize;
 use strata_asm_common::TxInputRef;
-use strata_asm_logs::AsmLogType;
 use strata_asm_proto_bridge_v1::WithdrawOutput;
 use strata_l1_txfmt::TxType;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
 
 use crate::constants::{
-    AMOUNT_OFFSET, AMOUNT_SIZE, DESCRIPTOR_OFFSET, FAKE_ASM_LOG_TX_TYPE,
-    FAKE_WITHDRAW_INTENT_TX_TYPE, MIN_ASM_LOG_AUX_DATA_LEN, MIN_FAKEWITHDRAW_AUX_DATA_LEN,
+    AMOUNT_OFFSET, AMOUNT_SIZE, DESCRIPTOR_OFFSET, MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
+    MOCK_ASM_LOG_TX_TYPE, MOCK_WITHDRAW_INTENT_TX_TYPE,
 };
 
 /// Errors that can occur during debug transaction parsing.
@@ -30,25 +28,23 @@ pub(crate) enum DebugTxParseError {
     /// Invalid descriptor format.
     #[error("invalid descriptor format: {0}")]
     InvalidDescriptorFormat(String),
-
-    /// Failed to deserialize ASM log type.
-    #[error("failed to deserialize ASM log type: {0}")]
-    AsmLogDeserializationError(#[from] borsh::io::Error),
 }
 
-/// Type alias for fake ASM log injection info.
-pub(crate) type FakeAsmLogInfo = AsmLogType;
+/// Info for mock ASM log injection.
+pub(crate) struct MockAsmLogInfo {
+    pub bytes: Vec<u8>,
+}
 
-/// Type alias for fake withdrawal info.
-pub(crate) type FakeWithdrawInfo = WithdrawOutput;
+/// Type alias for mock withdrawal info.
+pub(crate) type MockWithdrawInfo = WithdrawOutput;
 
 /// Parsed debug transaction types.
 pub(crate) enum ParsedDebugTx {
     /// ASM log injection transaction.
-    FakeAsmLog(FakeAsmLogInfo),
+    MockAsmLog(MockAsmLogInfo),
 
-    /// Fake withdrawal creation transaction.
-    FakeWithdrawIntent(FakeWithdrawInfo),
+    /// Mock withdrawal creation transaction.
+    MockWithdrawIntent(MockWithdrawInfo),
 }
 
 /// Parses a debug transaction from the given transaction input.
@@ -57,41 +53,43 @@ pub(crate) enum ParsedDebugTx {
 /// parsing function based on the type.
 pub(crate) fn parse_debug_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
     match tx.tag().tx_type() {
-        FAKE_ASM_LOG_TX_TYPE => parse_fake_asm_log_tx(tx),
-        FAKE_WITHDRAW_INTENT_TX_TYPE => parse_fake_withdraw_intent_tx(tx),
+        MOCK_ASM_LOG_TX_TYPE => parse_mock_asm_log_tx(tx),
+        MOCK_WITHDRAW_INTENT_TX_TYPE => parse_mock_withdraw_intent_tx(tx),
         tx_type => Err(DebugTxParseError::UnsupportedTxType(tx_type)),
     }
 }
 
-/// Parses ASM log data from auxiliary data bytes.
-fn parse_asm_log_from_aux_data(aux_data: &[u8]) -> Result<AsmLogType, DebugTxParseError> {
-    if aux_data.len() < MIN_ASM_LOG_AUX_DATA_LEN {
+/// Extracts raw log bytes from auxiliary data.
+/// The auxiliary data directly contains the raw log bytes - no parsing needed.
+fn extract_log_bytes_from_aux_data(aux_data: &[u8]) -> Result<MockAsmLogInfo, DebugTxParseError> {
+    if aux_data.is_empty() {
         return Err(DebugTxParseError::AuxDataTooShort {
-            expected: MIN_ASM_LOG_AUX_DATA_LEN,
-            actual: aux_data.len(),
+            expected: 1, // At least 1 byte
+            actual: 0,
         });
     }
 
-    // Deserialize the AsmLogType from auxiliary data
-    let asm_log_type = AsmLogType::try_from_slice(aux_data)?;
-    Ok(asm_log_type)
+    // The auxiliary data directly contains the raw log bytes
+    Ok(MockAsmLogInfo {
+        bytes: aux_data.to_vec(),
+    })
 }
 
 /// Parses an ASM log injection transaction.
 ///
 /// Auxiliary data format:
-/// - `[serialized AsmLogType]` - serialized AsmLogType
-fn parse_fake_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
+/// - `[raw log bytes]` - The raw bytes that will become the log entry
+fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
     let aux_data = tx.tag().aux_data();
-    let asm_log_type = parse_asm_log_from_aux_data(aux_data)?;
-    Ok(ParsedDebugTx::FakeAsmLog(asm_log_type))
+    let asm_log_info = extract_log_bytes_from_aux_data(aux_data)?;
+    Ok(ParsedDebugTx::MockAsmLog(asm_log_info))
 }
 
 /// Parses withdrawal data from auxiliary data bytes.
 fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, DebugTxParseError> {
-    if aux_data.len() < MIN_FAKEWITHDRAW_AUX_DATA_LEN {
+    if aux_data.len() < MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN {
         return Err(DebugTxParseError::AuxDataTooShort {
-            expected: MIN_FAKEWITHDRAW_AUX_DATA_LEN,
+            expected: MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
             actual: aux_data.len(),
         });
     }
@@ -111,45 +109,51 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
     Ok(withdraw_output)
 }
 
-/// Parses a fake withdrawal transaction.
+/// Parses a mock withdrawal transaction.
 ///
 /// Auxiliary data format:
 /// - `[amount: 8 bytes]` - The withdrawal amount in satoshis
 /// - `[descriptor: variable]` - The self-describing Bitcoin descriptor
-fn parse_fake_withdraw_intent_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
+fn parse_mock_withdraw_intent_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
     let aux_data = tx.tag().aux_data();
     let withdraw_output = parse_withdrawal_from_aux_data(aux_data)?;
-    Ok(ParsedDebugTx::FakeWithdrawIntent(withdraw_output))
+    Ok(ParsedDebugTx::MockWithdrawIntent(withdraw_output))
 }
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_logs::*;
     use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
     use super::*;
 
     #[test]
-    fn test_parse_asm_log_from_aux_data() {
-        // Create test AsmLogType
-        let deposit_log = DepositLog::new(1, 100_000, b"test_address".to_vec());
-        let log_type = AsmLogType::DepositLog(deposit_log);
+    fn test_extract_and_reconstruct_deposit_log() {
+        use strata_asm_common::AsmLogEntry;
+        use strata_asm_logs::deposit::DepositLog;
 
-        // Serialize for auxiliary data
-        let aux_data = borsh::to_vec(&log_type).unwrap();
+        // Step 1: Create a real DepositLog
+        let original_deposit_log = DepositLog::new(42, 100_000, b"test_address".to_vec());
 
-        // Test the internal parsing function directly
-        let parsed_log_type = parse_asm_log_from_aux_data(&aux_data).unwrap();
+        // Step 2: Convert it to bytes using AsmLogEntry::from_log
+        let log_entry = AsmLogEntry::from_log(&original_deposit_log).unwrap();
+        let log_bytes = log_entry.into_bytes();
 
-        // Verify the actual content matches, not just the variant
-        match (&log_type, &parsed_log_type) {
-            (AsmLogType::DepositLog(original), AsmLogType::DepositLog(parsed)) => {
-                assert_eq!(original.ee_id, parsed.ee_id);
-                assert_eq!(original.amount, parsed.amount);
-                assert_eq!(original.addr, parsed.addr);
-            }
-            _ => panic!("Parsed log type variant mismatch"),
-        }
+        // Step 3: Pass the bytes through our extraction function (simulating aux data)
+        let extracted_info = extract_log_bytes_from_aux_data(&log_bytes).unwrap();
+
+        // Verify the bytes are preserved
+        assert_eq!(extracted_info.bytes, log_bytes);
+
+        // Step 4: Create a new AsmLogEntry from the extracted bytes
+        let reconstructed_entry = AsmLogEntry::from_raw(extracted_info.bytes);
+
+        // Step 5: Deserialize back to DepositLog
+        let reconstructed_log: DepositLog = reconstructed_entry.try_into_log().unwrap();
+
+        // Step 6: Verify the reconstructed log matches the original
+        assert_eq!(reconstructed_log.ee_id, original_deposit_log.ee_id);
+        assert_eq!(reconstructed_log.amount, original_deposit_log.amount);
+        assert_eq!(reconstructed_log.addr, original_deposit_log.addr);
     }
 
     #[test]
@@ -231,7 +235,7 @@ mod tests {
         let result = parse_withdrawal_from_aux_data(&short_aux_data);
         match result {
             Err(DebugTxParseError::AuxDataTooShort { expected, actual }) => {
-                assert_eq!(expected, MIN_FAKEWITHDRAW_AUX_DATA_LEN);
+                assert_eq!(expected, MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN);
                 assert_eq!(actual, 3);
             }
             _ => panic!("Expected AuxDataTooShort error"),
@@ -239,32 +243,17 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_asm_log_error_handling() {
-        // Test too short auxiliary data
-        let empty_aux_data = vec![]; // Empty, need at least 8 bytes
+    fn test_extract_log_bytes_error_handling() {
+        // Test empty auxiliary data
+        let empty_aux_data = vec![];
 
-        let result = parse_asm_log_from_aux_data(&empty_aux_data);
+        let result = extract_log_bytes_from_aux_data(&empty_aux_data);
         match result {
             Err(DebugTxParseError::AuxDataTooShort { expected, actual }) => {
-                assert_eq!(expected, MIN_ASM_LOG_AUX_DATA_LEN);
+                assert_eq!(expected, 1);
                 assert_eq!(actual, 0);
             }
             _ => panic!("Expected AuxDataTooShort error"),
-        }
-    }
-
-    #[test]
-    fn test_parse_asm_log_deserialization_error() {
-        // Create invalid Borsh data that's long enough but malformed
-        // Use a discriminant that doesn't match any AsmLogType variant (> 4)
-        let invalid_aux_data = vec![255u8; 20]; // Invalid discriminant + garbage data
-
-        let result = parse_asm_log_from_aux_data(&invalid_aux_data);
-        match result {
-            Err(DebugTxParseError::AsmLogDeserializationError(_)) => {
-                // Success - we got the expected deserialization error
-            }
-            _ => panic!("Expected AsmLogDeserializationError"),
         }
     }
 }

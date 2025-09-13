@@ -7,26 +7,12 @@ use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
     TxInputRef, logging,
 };
-use strata_asm_logs::AsmLogType;
 use strata_asm_proto_bridge_v1::BridgeIncomingMsg;
 
 use crate::{
     constants::DEBUG_SUBPROTOCOL_ID,
     txs::{ParsedDebugTx, parse_debug_tx},
 };
-
-/// Helper function to create an AsmLogEntry from any AsmLogType variant.
-///
-/// This provides a cleaner interface than pattern matching on each variant.
-fn create_asm_log_entry(asm_log_type: &AsmLogType) -> Result<AsmLogEntry, AsmError> {
-    match asm_log_type {
-        AsmLogType::AsmStfUpdate(log) => AsmLogEntry::from_log(log),
-        AsmLogType::CheckpointUpdate(log) => AsmLogEntry::from_log(log),
-        AsmLogType::DepositLog(log) => AsmLogEntry::from_log(log),
-        AsmLogType::NewExportEntry(log) => AsmLogEntry::from_log(log),
-        AsmLogType::ForcedInclusionData(log) => AsmLogEntry::from_log(log),
-    }
-}
 
 /// Debug subprotocol implementation.
 ///
@@ -86,20 +72,21 @@ fn process_parsed_debug_tx(
     relayer: &mut impl MsgRelayer,
 ) -> Result<(), AsmError> {
     match parsed_tx {
-        ParsedDebugTx::FakeAsmLog(asm_log_type) => {
+        ParsedDebugTx::MockAsmLog(log_info) => {
             logging::info!("Processing ASM log injection");
 
-            // Create log entry from the ASM log type using helper function
-            let log_entry = create_asm_log_entry(&asm_log_type)?;
+            // Create log entry directly from raw bytes
+            // The log_info contains the raw bytes that represent the log
+            let log_entry = AsmLogEntry::from_raw(log_info.bytes);
 
             relayer.emit_log(log_entry);
             logging::info!("Successfully emitted ASM log");
         }
 
-        ParsedDebugTx::FakeWithdrawIntent(withdraw_output) => {
+        ParsedDebugTx::MockWithdrawIntent(withdraw_output) => {
             logging::info!(
                 amount = withdraw_output.amt.to_sat(),
-                "Processing fake withdrawal"
+                "Processing mock withdrawal"
             );
 
             // Wrap it in [`BridgeIncomingMsg`]
@@ -108,7 +95,7 @@ fn process_parsed_debug_tx(
             // Send to bridge subprotocol
             relayer.relay_msg(&bridge_msg);
 
-            logging::info!("Successfully sent fake withdrawal to bridge");
+            logging::info!("Successfully sent mock withdrawal intent to bridge");
         }
     }
 

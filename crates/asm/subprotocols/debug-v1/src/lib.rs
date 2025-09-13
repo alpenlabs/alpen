@@ -16,11 +16,11 @@
 //!
 //! The debug subprotocol supports the following transaction types:
 //!
-//! - **`FAKE_ASM_LOG_TX_TYPE` (1)**: Injects arbitrary log messages into the ASM log output,
+//! - **`MOCK_ASM_LOG_TX_TYPE` (1)**: Injects arbitrary log messages into the ASM log output,
 //!   simulating logs that would normally originate from the bridge subprotocol. Example: Deposit
 //!   events (locking funds in n/n multisig)
 //!
-//! - **`FAKE_WITHDRAW_INTENT_TX_TYPE` (2)**: Creates withdrawal intents that are sent to the bridge
+//! - **`MOCK_WITHDRAW_INTENT_TX_TYPE` (2)**: Creates withdrawal intents that are sent to the bridge
 //!   subprotocol, simulating withdrawals from the Orchestration Layer. Format: `[amount: 8
 //!   bytes][descriptor: variable]` where the descriptor is self-describing Bitcoin-BOSD format.
 //!   These messages normally originate from the Checkpointing subprotocol through inter-protocol
