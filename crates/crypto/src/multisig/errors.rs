@@ -30,9 +30,9 @@ pub enum MultisigError {
         total_keys: usize,
     },
 
-    /// The keys list is empty.
-    #[error("keys cannot be empty")]
-    EmptyKeys,
+    /// The provided threshold is invalid.
+    #[error("zero threshold")]
+    ZeroThreshold,
 
     /// The aggregated signature is invalid.
     #[error("invalid signature")]
@@ -49,6 +49,12 @@ pub enum MultisigError {
     #[error("cannot add member: already exists in multisig configuration")]
     MemberAlreadyExists,
 
-    #[error("too many old members specified: provided {provided}, maximum allowed {max_allowed}")]
-    TooManyOldMembers { provided: usize, max_allowed: usize },
+    #[error("invalid add members: already exists in multisig configuration")]
+    DuplicateAddMember,
+
+    #[error("removal bitvec references invalid member indices: bitvec length {bitvec_len}, but multisig only has {member_count} members")]
+    RemovalBitVecTooLong {
+        bitvec_len: usize,
+        member_count: usize,
+    },
 }
