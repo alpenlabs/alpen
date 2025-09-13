@@ -1,14 +1,19 @@
+use std::borrow::Cow;
+
 use revm::precompile::{
-    utilities::right_pad, PrecompileOutput, PrecompileResult, PrecompileWithAddress,
+    utilities::right_pad, Precompile, PrecompileId, PrecompileOutput, PrecompileResult,
 };
 use revm_primitives::Bytes;
 use strata_crypto::verify_schnorr_sig;
 use strata_primitives::buf::{Buf32, Buf64};
 
-use crate::constants::SCHNORR_ADDRESS;
+use crate::constants::{SCHNORR_PRECOMPILE_ADDRESS, SCHNORR_PRECOMPILE_PRECOMPILE_ID};
 
-pub(crate) const SCHNORR_SIGNATURE_VALIDATION: PrecompileWithAddress =
-    PrecompileWithAddress(SCHNORR_ADDRESS, verify_schnorr_precompile);
+pub(crate) const SCHNORR_SIGNATURE_VALIDATION: Precompile = Precompile::new(
+    PrecompileId::Custom(Cow::Borrowed(SCHNORR_PRECOMPILE_PRECOMPILE_ID)),
+    SCHNORR_PRECOMPILE_ADDRESS,
+    verify_schnorr_precompile,
+);
 
 /// Internal representation of parsed Schnorr input bytes.
 struct SchnorrInput {

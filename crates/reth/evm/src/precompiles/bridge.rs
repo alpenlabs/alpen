@@ -5,7 +5,7 @@ use revm_primitives::{Bytes, Log, LogData, U256};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{
-    constants::{BRIDGEOUT_ADDRESS, FIXED_WITHDRAWAL_WEI},
+    constants::{BRIDGEOUT_PRECOMPILE_ADDRESS, FIXED_WITHDRAWAL_WEI},
     utils::wei_to_sats,
 };
 
@@ -44,14 +44,14 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     // Create a log entry for the bridge out intent
     let logdata = LogData::from(&evt);
     input.internals.log(Log {
-        address: BRIDGEOUT_ADDRESS,
+        address: BRIDGEOUT_PRECOMPILE_ADDRESS,
         data: logdata,
     });
 
     // Burn value sent to bridge by adjusting the account balance of bridge precompile
     let mut account = input
         .internals
-        .load_account(BRIDGEOUT_ADDRESS) // Error case should never occur
+        .load_account(BRIDGEOUT_PRECOMPILE_ADDRESS) // Error case should never occur
         .map_err(|_| PrecompileError::Fatal("Failed to load BRIDGEOUT_ADDRESS account".into()))?;
     account.info.balance = U256::ZERO;
 
