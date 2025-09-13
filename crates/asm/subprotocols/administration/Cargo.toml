@@ -1,0 +1,21 @@
+[package]
+name = "strata-asm-proto-administration"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-asm-common.workspace = true
+strata-asm-proto-administration-txs.workspace = true
+strata-crypto.workspace = true
+strata-primitives.workspace = true
+
+arbitrary.workspace = true
+borsh.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true
+rand.workspace = true

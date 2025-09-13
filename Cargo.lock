@@ -14208,6 +14208,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-proto-administration"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "rand 0.8.5",
+ "strata-asm-common",
+ "strata-asm-proto-administration-txs",
+ "strata-crypto",
+ "strata-primitives",
+ "strata-test-utils",
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-asm-proto-administration-txs"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "strata-asm-common",
+ "strata-crypto",
+ "strata-l1-txfmt",
+ "strata-primitives",
+ "thiserror 2.0.16",
+ "zkaleido",
+]
+
+[[package]]
 name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 dependencies = [
@@ -14448,7 +14477,10 @@ dependencies = [
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "arbitrary",
+ "borsh",
  "strata-primitives",
+ "thiserror 2.0.16",
  "zkaleido",
 ]
 

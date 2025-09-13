@@ -1,0 +1,259 @@
+use arbitrary::Arbitrary;
+use borsh::{BorshDeserialize, BorshSerialize};
+
+use crate::multisig::{errors::MultisigConfigError, PubKey};
+
+/// Configuration for a multisignature authority:
+/// who can sign (`keys`) and how many of them must sign (`threshold`).
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+pub struct MultisigConfig {
+    /// The public keys of all grant-holders authorized to sign.
+    pub keys: Vec<PubKey>,
+    /// The minimum number of keys that must sign to approve an action.
+    pub threshold: u8,
+}
+
+impl MultisigConfig {
+    /// Create a new config.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MultisigConfigError` if:
+    /// - `EmptyKeys`: The keys list is empty
+    /// - `InvalidThreshold`: The threshold exceeds the total number of keys
+    pub fn try_new(keys: Vec<PubKey>, threshold: u8) -> Result<Self, MultisigConfigError> {
+        if keys.is_empty() {
+            return Err(MultisigConfigError::EmptyKeys);
+        }
+
+        let total_keys = keys.len();
+
+        if threshold as usize > total_keys {
+            return Err(MultisigConfigError::InvalidThreshold {
+                threshold,
+                total_keys,
+            });
+        }
+
+        Ok(Self { keys, threshold })
+    }
+
+    pub fn keys(&self) -> &[PubKey] {
+        &self.keys
+    }
+
+    pub fn threshold(&self) -> u8 {
+        self.threshold
+    }
+}
+
+impl<'a> Arbitrary<'a> for MultisigConfig {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate at least 2 keys, up to a reasonable maximum (e.g., 20)
+        let keys_count = u.int_in_range(2..=20)?;
+        let mut keys = Vec::with_capacity(keys_count);
+
+        for _ in 0..keys_count {
+            keys.push(PubKey::arbitrary(u)?);
+        }
+
+        // Generate threshold between 1 and the number of keys
+        let threshold = u.int_in_range(1..=keys_count as u8)?;
+
+        Ok(Self { keys, threshold })
+    }
+}
+
+/// Represents a change to the multisig configuration:
+/// * removes the specified `old_members` from the set,
+/// * adds the specified `new_members`
+/// * updates the threshold.
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+pub struct MultisigConfigUpdate {
+    new_members: Vec<PubKey>,
+    old_members: Vec<PubKey>,
+    new_threshold: u8,
+}
+
+impl MultisigConfigUpdate {
+    pub fn new(new_members: Vec<PubKey>, old_members: Vec<PubKey>, new_threshold: u8) -> Self {
+        Self {
+            new_members,
+            old_members,
+            new_threshold,
+        }
+    }
+
+    pub fn old_members(&self) -> &[PubKey] {
+        &self.old_members
+    }
+
+    pub fn new_members(&self) -> &[PubKey] {
+        &self.new_members
+    }
+
+    pub fn new_threshold(&self) -> u8 {
+        self.new_threshold
+    }
+}
+
+impl MultisigConfig {
+    /// Validates that an update can be applied to this configuration.
+    /// Ensures new members don't already exist, old members exist, and new threshold doesn't
+    /// exceed the updated member count.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MultisigConfigError` if:
+    /// - `MemberAlreadyExists`: A new member already exists in the current configuration
+    /// - `MemberNotFound`: An old member to be removed doesn't exist in the current configuration
+    /// - `InvalidThreshold`: New threshold exceeds the updated member count
+    pub fn validate_update(
+        &self,
+        update: &MultisigConfigUpdate,
+    ) -> Result<(), MultisigConfigError> {
+        // Ensure no duplicate new members.
+        if let Some(duplicate) = update.new_members().iter().find(|m| self.keys.contains(*m)) {
+            // `duplicate` is a reference to the first member that already exists in `self.keys`.
+            return Err(MultisigConfigError::MemberAlreadyExists(*duplicate));
+        }
+
+        // Ensure old members exist.
+        if let Some(missing) = update
+            .old_members()
+            .iter()
+            .find(|m| !self.keys.contains(*m))
+        {
+            // `missing` is the first member that wasn’t found in `self.keys`.
+            return Err(MultisigConfigError::MemberNotFound(*missing));
+        }
+
+        // Ensure new threshold doesn't exceed total number of keys.
+        let updated_size =
+            self.keys.len() + update.new_members().len() - update.old_members().len();
+
+        if update.new_threshold() as usize > updated_size {
+            return Err(MultisigConfigError::InvalidThreshold {
+                threshold: update.new_threshold(),
+                total_keys: updated_size,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Applies an update to this configuration by removing old members, adding new members, and
+    /// updating the threshold.
+    pub fn apply_update(
+        &mut self,
+        update: &MultisigConfigUpdate,
+    ) -> Result<(), MultisigConfigError> {
+        // First validate the update
+        self.validate_update(update)?;
+        // REVIEW: If we assert these lists are always sorted then we can do a more efficient
+        // merge-and-remove pass with both this and the new entries
+        // Remove specified old members
+        self.keys.retain(|key| !update.old_members().contains(key));
+        // Add new members
+        self.keys.extend_from_slice(update.new_members());
+        // Update threshold
+        self.threshold = update.new_threshold();
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_key(id: u8) -> PubKey {
+        PubKey::new([id; 32])
+    }
+
+    #[test]
+    fn test_validate_update_duplicate_new_member() {
+        // Initial config: keys = [k1, k2], threshold = 2
+        let k1 = make_key(1);
+        let k2 = make_key(2);
+        let base = MultisigConfig::try_new(vec![k1, k2], 2).unwrap();
+
+        // Try to add k2 again → should error MemberAlreadyExists(k2)
+        let update = MultisigConfigUpdate::new(vec![k2], vec![], 2);
+        let err = base.validate_update(&update).unwrap_err();
+        assert_eq!(err, MultisigConfigError::MemberAlreadyExists(k2));
+    }
+
+    #[test]
+    fn test_validate_update_missing_old_member() {
+        // Initial config: keys = [k1, k2], threshold = 2
+        let k1 = make_key(1);
+        let k2 = make_key(2);
+        let k3 = make_key(3);
+        let base = MultisigConfig::try_new(vec![k1, k2], 2).unwrap();
+
+        // Try to remove k3 (which is not in base.keys) → should error MemberNotFound(k3)
+        let update = MultisigConfigUpdate::new(vec![], vec![k3], 2);
+        let err = base.validate_update(&update).unwrap_err();
+        assert_eq!(err, MultisigConfigError::MemberNotFound(k3));
+    }
+
+    #[test]
+    fn test_validate_update_invalid_threshold() {
+        // Initial config: keys = [k1, k2, k3, k4], threshold = 3
+        let k1 = make_key(1);
+        let k2 = make_key(2);
+        let k3 = make_key(3);
+        let k4 = make_key(4);
+
+        let base = MultisigConfig::try_new(vec![k1, k2, k3, k4], 3).unwrap();
+
+        // Remove k4, add k5 and k6 → updated_size = 5 (since 4 - 1 + 2)
+        // If new_threshold is 6 (> updated_size), it should be invalid.
+        let k5 = make_key(5);
+        let k6 = make_key(6);
+
+        // new_threshold = 6  (invalid, exceeds total keys)
+        let update = MultisigConfigUpdate::new(vec![k5, k6], vec![k4], 6);
+        let err = base.validate_update(&update).unwrap_err();
+        assert_eq!(
+            err,
+            MultisigConfigError::InvalidThreshold {
+                threshold: 6,
+                total_keys: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn test_validate_update_success() {
+        // Initial config: keys = [k1, k2, k3], threshold = 2
+        let k1 = make_key(1);
+        let k2 = make_key(2);
+        let k3 = make_key(3);
+
+        let mut config = MultisigConfig::try_new(vec![k1, k2, k3], 2).unwrap();
+
+        // Remove k3, add k4 and k5 → updated_size = 4 (3 - 1 + 2)
+        // new_threshold can be any value from 1 to 4
+        let k4 = make_key(4);
+        let k5 = make_key(5);
+        let update = MultisigConfigUpdate::new(vec![k4, k5], vec![k3], 3);
+
+        // First: validate_update should return Ok(())
+        assert!(config.validate_update(&update).is_ok());
+
+        // Then, if we actually call `update()`, the resulting config should:
+        //   - Keep role the same
+        //   - Remove k3 from the keys
+        //   - Add k4 and k5
+        //   - Have threshold = 3
+        config.apply_update(&update).unwrap();
+
+        // The "new" key‐set should be exactly [k1, k2, k4, k5] (order may matter if you rely on it)
+        let expected_keys = vec![k1, k2, k4, k5];
+        assert_eq!(expected_keys, config.keys);
+
+        assert_eq!(config.threshold, 3);
+    }
+}
