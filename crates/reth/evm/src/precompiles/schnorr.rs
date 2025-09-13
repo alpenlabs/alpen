@@ -1,6 +1,4 @@
-use revm::precompile::{
-    utilities::right_pad, PrecompileOutput, PrecompileResult, PrecompileWithAddress,
-};
+use revm::precompile::{utilities::right_pad, PrecompileOutput, PrecompileResult};
 use revm_primitives::Bytes;
 use strata_crypto::schnorr::verify_schnorr_sig;
 use strata_primitives::buf::{Buf32, Buf64};
