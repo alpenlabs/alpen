@@ -24,19 +24,23 @@ impl<S: CryptoScheme> MultisigConfig<S> {
     ///
     /// # Errors
     ///
-    /// Returns `MultisigConfigError` if:
+    /// Returns `MultisigError` if:
     /// - `EmptyKeys`: The keys list is empty
     /// - `InvalidThreshold`: The threshold is not greater than half the number of keys or exceeds
     ///   the total number of keys
-    pub fn try_new(keys: Vec<PubKey>, threshold: u8) -> Result<Self, MultisigConfigError> {
+    pub fn try_new(keys: Vec<S::PubKey>, threshold: u8) -> Result<Self, MultisigError> {
+        let mut keys = keys;
+
+        keys.dedup();
+
         if keys.is_empty() {
             return Err(MultisigError::EmptyKeys);
         }
 
         let total_keys = keys.len();
 
-        if (threshold as usize) < min_required || threshold as usize > max {
-            return Err(MultisigConfigError::InvalidThreshold {
+        if threshold as usize > total_keys {
+            return Err(MultisigError::InvalidThreshold {
                 threshold,
                 total_keys,
             });
@@ -194,22 +198,24 @@ impl<S: CryptoScheme> MultisigConfig<S> {
     ///
     /// # Errors
     ///
-    /// Returns `MultisigConfigError` if:
+    /// Returns `MultisigError` if:
     /// - `MemberAlreadyExists`: A new member already exists in the current configuration
     /// - `InvalidThreshold`: New threshold is less than half the updated member count
     pub fn validate_update(&self, update: &MultisigConfigUpdate<S>) -> Result<(), MultisigError> {
+        let mut new_members = update.new_members().to_vec();
+        new_members.dedup();
+
         // Ensure no duplicate new members
-        if let Some(duplicate) = update.new_members().iter().find(|m| self.keys.contains(*m)) {
+        if let Some(_) = new_members.iter().find(|m| self.keys.contains(*m)) {
             // `duplicate` is a reference to the first member that already exists in `self.keys`.
-            return Err(MultisigConfigError::MemberAlreadyExists(*duplicate));
+            return Err(MultisigError::MemberAlreadyExists);
         }
 
         // Ensure old member indices don't exceed current key count.
         if update.old_members().len() > self.keys.len() {
-            return Err(MultisigError::InvalidThreshold {
-                threshold: 0,
-                min_required: 0,
-                max_allowed: self.keys.len(),.
+            return Err(MultisigError::TooManyOldMembers {
+                provided: update.old_members().len(),
+                max_allowed: self.keys.len(),
             });
         }
 
@@ -217,8 +223,8 @@ impl<S: CryptoScheme> MultisigConfig<S> {
         let updated_size =
             self.keys.len() + update.new_members().len() - update.old_members().len();
 
-        if (update.new_threshold() as usize) < min_required {
-            return Err(MultisigConfigError::InvalidThreshold {
+        if (update.new_threshold() as usize) > updated_size {
+            return Err(MultisigError::InvalidThreshold {
                 threshold: update.new_threshold(),
                 total_keys: updated_size,
             });
@@ -229,7 +235,7 @@ impl<S: CryptoScheme> MultisigConfig<S> {
 
     /// Applies an update to this configuration by removing old members, adding new members, and
     /// updating the threshold. Must call `validate_update` first to ensure the update is valid.
-    pub fn apply(&mut self, update: &MultisigConfigUpdate) {
+    pub fn apply_update(&mut self, update: &MultisigConfigUpdate<S>) -> Result<(), MultisigError> {
         // REVIEW: If we assert these lists are always sorted then we can do a more efficient
         // merge-and-remove pass with both this and the new entries
         // Remove members in reverse order to maintain index validity
@@ -327,10 +333,9 @@ mod tests {
         let err = base.validate_update(&update).unwrap_err();
         assert_eq!(
             err,
-            MultisigConfigError::InvalidThreshold {
+            MultisigError::InvalidThreshold {
                 threshold: 2,
-                min_required: 3,
-                max_allowed: 5,
+                total_keys: 3,
             }
         );
     }

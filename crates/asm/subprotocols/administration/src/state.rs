@@ -52,7 +52,11 @@ impl AdministrationSubprotoState {
     }
 
     /// Apply a multisig config update for the specified role.
-    pub fn apply_multisig_update(&mut self, role: Role, update: &SchnorrMultisigConfigUpdate) {
+    pub fn apply_multisig_update(
+        &mut self,
+        role: Role,
+        update: &SchnorrMultisigConfigUpdate,
+    ) -> Result<(), AdministrationError> {
         if let Some(auth) = self.authority_mut(role) {
             auth.config_mut().apply_update(update)?;
             Ok(())

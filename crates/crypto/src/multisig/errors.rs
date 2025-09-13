@@ -48,4 +48,7 @@ pub enum MultisigError {
     /// A new member to be added already exists in the multisig configuration.
     #[error("cannot add member: already exists in multisig configuration")]
     MemberAlreadyExists,
+
+    #[error("too many old members specified: provided {provided}, maximum allowed {max_allowed}")]
+    TooManyOldMembers { provided: usize, max_allowed: usize },
 }

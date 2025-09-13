@@ -11,8 +11,8 @@ use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
 pub use updates::UpdateAction;
 
 use crate::constants::{
-    CANCEL_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
-    SEQUENCER_UPDATE_TX_TYPE, VK_UPDATE_TX_TYPE,
+    ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE,
+    OPERATOR_UPDATE_TX_TYPE, SEQUENCER_UPDATE_TX_TYPE,
 };
 
 pub type UpdateId = u32;
@@ -54,7 +54,7 @@ impl MultisigAction {
                 UpdateAction::Multisig(_) => MULTISIG_CONFIG_UPDATE_TX_TYPE,
                 UpdateAction::OperatorSet(_) => OPERATOR_UPDATE_TX_TYPE,
                 UpdateAction::Sequencer(_) => SEQUENCER_UPDATE_TX_TYPE,
-                UpdateAction::VerifyingKey(_) => VK_UPDATE_TX_TYPE,
+                UpdateAction::VerifyingKey(_) => ASM_STF_VK_UPDATE_TX_TYPE, // FIXME:
             },
         }
     }

@@ -143,7 +143,7 @@ mod tests {
 
     use bitcoin::secp256k1::{SECP256K1, SecretKey};
     use bitvec::vec::BitVec;
-    use rand::rngs::OsRng;
+    use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
     use strata_asm_proto_administration_txs::{
         actions::{CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate},
@@ -192,8 +192,8 @@ mod tests {
         }
     }
 
-    fn create_test_state() -> (
-        AdministrationSubprotoState,
+    fn create_test_params() -> (
+        AdministrationSubprotoParams,
         Vec<EvenSecretKey>,
         Vec<EvenSecretKey>,
     ) {
@@ -220,11 +220,7 @@ mod tests {
             confirmation_depth: 2016,
         };
 
-        (
-            AdministrationSubprotoState::new(&config),
-            strata_admin_sks,
-            strata_seq_manager_sks,
-        )
+        (config, strata_admin_sks, strata_seq_manager_sks)
     }
 
     fn get_strata_administrator_update_actions(count: usize) -> Vec<UpdateAction> {
@@ -247,7 +243,8 @@ mod tests {
     /// - Queued actions can be found in state
     #[test]
     fn test_strata_administrator_update_actions() {
-        let (mut state, admin_sks, _) = create_test_state();
+        let (params, admin_sks, _) = create_test_params();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
         let current_height = 1000;
 
@@ -269,7 +266,15 @@ mod tests {
             let action = MultisigAction::Update(update.clone());
             let sighash = action.compute_sighash(initial_seq_no);
             let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
-            handle_action(&mut state, action, multisig, current_height, &mut relayer).unwrap();
+            handle_action(
+                &mut state,
+                action,
+                multisig,
+                current_height,
+                &mut relayer,
+                &params,
+            )
+            .unwrap();
 
             // Verify state changes after processing
             let new_seq_no = state.authority(update.required_role()).unwrap().seqno();
@@ -301,7 +306,8 @@ mod tests {
     /// duplicate and out-of-order sequence numbers for StrataAdministrator actions.
     #[test]
     fn test_strata_administrator_incorrect_seqno() {
-        let (mut state, admin_sks, _) = create_test_state();
+        let (params, admin_sks, _) = create_test_params();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
         let current_height = 1000;
         let initial_seq_no = 0;
@@ -319,14 +325,28 @@ mod tests {
         let action = MultisigAction::Update(update.clone());
         let sighash = action.compute_sighash(initial_seq_no);
         let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
-        let res = handle_action(&mut state, action, multisig, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            action,
+            multisig,
+            current_height,
+            &mut relayer,
+            &params,
+        );
         assert!(res.is_ok());
 
         // Try queuing it again with same seq no
         let action = MultisigAction::Update(update.clone());
         let sighash = action.compute_sighash(initial_seq_no);
         let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
-        let res = handle_action(&mut state, action, multisig, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            action,
+            multisig,
+            current_height,
+            &mut relayer,
+            &params,
+        );
         assert!(res.is_err());
         assert!(matches!(
             res,
@@ -340,7 +360,14 @@ mod tests {
         let action = MultisigAction::Update(update.clone());
         let sighash = action.compute_sighash(seq_no);
         let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
-        let res = handle_action(&mut state, action, multisig, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            action,
+            multisig,
+            current_height,
+            &mut relayer,
+            &params,
+        );
         assert!(matches!(
             res,
             Err(AdministrationError::Multisig(
@@ -357,10 +384,9 @@ mod tests {
     #[test]
     fn test_strata_seq_manager_update_actions() {
         let mut arb = ArbitraryGenerator::new();
-        let params: AdministrationSubprotoParams = arb.generate();
+        let (params, _, seq_manager_sks) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
 
-        let (mut state, _, seq_manager_sks) = create_test_state();
         let mut relayer = MockRelayer::new();
         let current_height = 1000;
 
@@ -385,7 +411,15 @@ mod tests {
             let multisig =
                 create_multisig_signature(&seq_manager_sks, signer_indices.clone(), sighash);
 
-            handle_action(&mut state, action, multisig, current_height, &mut relayer).unwrap();
+            handle_action(
+                &mut state,
+                action,
+                multisig,
+                current_height,
+                &mut relayer,
+                &params,
+            )
+            .unwrap();
 
             // Verify state changes after processing
             let new_seq_no = state.authority(update.required_role()).unwrap().seqno();
@@ -410,7 +444,8 @@ mod tests {
     /// - Verify sequence numbers increment, queue shrinks, and updates are removed.
     #[test]
     fn test_strata_administrator_cancel_action() {
-        let (mut state, admin_sks, _) = create_test_state();
+        let (params, admin_sks, _) = create_test_params();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
         let no_of_updates = 5;
         let current_height = 1000;
@@ -490,7 +525,8 @@ mod tests {
     #[test]
     fn test_strata_administrator_non_existent_cancel() {
         let mut arb = ArbitraryGenerator::new();
-        let (mut state, _, _) = create_test_state();
+        let (params, _, _) = create_test_params();
+        let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
         let multisig = MultisigSignature::<SchnorrScheme>::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
@@ -517,8 +553,9 @@ mod tests {
     /// - Verify that cancelling the update action again returns an UnknownAction error.
     #[test]
     fn test_strata_administrator_duplicate_cancels() {
-        let (mut state, admin_sks, _) = create_test_state();
+        let (params, admin_sks, _) = create_test_params();
         let mut relayer = MockRelayer::new();
+        let mut state = AdministrationSubprotoState::new(&params);
         let initial_seq_no = 0;
         let current_height = 1000;
 
