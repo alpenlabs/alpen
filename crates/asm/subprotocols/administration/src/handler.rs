@@ -142,7 +142,7 @@ mod tests {
     use std::any::Any;
 
     use bitcoin::secp256k1::{SECP256K1, SecretKey};
-    use bitvec::vec::BitVec;
+    use bitvec::prelude::*;
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
     use strata_asm_proto_administration_txs::{
@@ -252,10 +252,7 @@ mod tests {
         let updates = get_strata_administrator_update_actions(5);
 
         // Create signer indices (signers 0 and 2)
-        let mut signer_indices = BitVec::<u8>::new();
-        signer_indices.resize(3, false);
-        signer_indices.set(0, true);
-        signer_indices.set(2, true);
+        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
 
         for update in updates {
             // Capture initial state before processing the update
@@ -316,10 +313,7 @@ mod tests {
         let update = get_strata_administrator_update_actions(1)[0].clone();
 
         // Create signer indices (signers 0 and 2)
-        let mut signer_indices = BitVec::<u8>::new();
-        signer_indices.resize(3, false);
-        signer_indices.set(0, true);
-        signer_indices.set(2, true);
+        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
 
         // Create an action and queue that.
         let action = MultisigAction::Update(update.clone());
@@ -394,10 +388,7 @@ mod tests {
         let updates: Vec<SequencerUpdate> = arb.generate();
 
         // Create signer indices (signers 0 and 2)
-        let mut signer_indices = BitVec::<u8>::new();
-        signer_indices.resize(3, false);
-        signer_indices.set(0, true);
-        signer_indices.set(2, true);
+        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
 
         for update in updates {
             let update: UpdateAction = update.into();
@@ -450,11 +441,8 @@ mod tests {
         let no_of_updates = 5;
         let current_height = 1000;
 
-        // Create signer indices (signers 0 and 2)
-        let mut signer_indices = BitVec::<u8>::new();
-        signer_indices.resize(3, false);
-        signer_indices.set(0, true);
-        signer_indices.set(2, true);
+        // create signer indices (signers 0 and 2)
+        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
 
         // First, queue 5 update actions
         let updates = get_strata_administrator_update_actions(no_of_updates);
@@ -567,11 +555,8 @@ mod tests {
             .clone();
         let update_action = MultisigAction::Update(update);
 
-        // Create signer indices (signers 0 and 2)
-        let mut signer_indices = BitVec::<u8>::new();
-        signer_indices.resize(3, false);
-        signer_indices.set(0, true);
-        signer_indices.set(2, true);
+        // create signer indices (signers 0 and 2)
+        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
 
         let sighash = update_action.compute_sighash(initial_seq_no);
         let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
