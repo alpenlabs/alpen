@@ -20,7 +20,12 @@ pub(crate) const AMOUNT_OFFSET: usize = 0;
 /// Offset of descriptor field in auxiliary data.
 pub(crate) const DESCRIPTOR_OFFSET: usize = AMOUNT_OFFSET + AMOUNT_SIZE;
 
+/// Minimum size of descriptor field in bytes.
+///
+/// See: <https://github.com/alpenlabs/bitcoin-bosd/blob/main/SPECIFICATION.md>
+pub(crate) const MIN_DESCRIPTOR_SIZE: usize = 20;
+
 /// Minimum auxiliary data length for mock withdrawal intent.
 ///
 /// Format: `[amount: 8 bytes][descriptor: variable]`
-pub(crate) const MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN: usize = AMOUNT_SIZE + 20; // +20 for minimum descriptor size
+pub(crate) const MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN: usize = AMOUNT_SIZE + MIN_DESCRIPTOR_SIZE;
