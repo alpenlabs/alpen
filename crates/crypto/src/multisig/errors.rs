@@ -51,10 +51,4 @@ pub enum MultisigError {
 
     #[error("invalid add members: already exists in multisig configuration")]
     DuplicateAddMember,
-
-    #[error("bitvec references invalid member indices: bitvec length {bitvec_len}, but multisig only has {member_count} members")]
-    BitVecTooLong {
-        bitvec_len: usize,
-        member_count: usize,
-    },
 }

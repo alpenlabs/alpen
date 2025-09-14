@@ -21,9 +21,9 @@
         // "provers/sp1/guest-cl-agg/Cargo.toml",
     ],
     "rust-analyzer.diagnostics.enable": true,
-    // "rust-analyzer.cargo.features": [
-    //     "prover"
-    // ],
+    "rust-analyzer.cargo.features": [
+        "test-utils"
+    ],
     "todohighlight.isEnable": true,
     "todohighlight.isCaseSensitive": true,
     "todohighlight.keywords": [

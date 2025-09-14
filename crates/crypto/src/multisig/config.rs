@@ -202,14 +202,6 @@ impl<S: CryptoScheme> MultisigConfig<S> {
             return Err(MultisigError::MemberAlreadyExists);
         }
 
-        // Ensure the removal bitvec doesn't reference invalid member indices
-        if update.remove_members().len() > self.keys.len() {
-            return Err(MultisigError::BitVecTooLong {
-                bitvec_len: update.remove_members().len(),
-                member_count: self.keys.len(),
-            });
-        }
-
         if update.new_threshold() == 0 {
             return Err(MultisigError::ZeroThreshold);
         }
@@ -229,18 +221,25 @@ impl<S: CryptoScheme> MultisigConfig<S> {
     }
 
     /// Applies an update to this configuration by removing old members, adding new members, and
-    /// updating the threshold. Must call `validate_update` first to ensure the update is valid.
+    /// updating the threshold.
+    ///
+    /// This method efficiently handles member removal by padding/shrinking the remove indices
+    /// bitvec to match the exact size of the current keys, allowing for O(1) index lookups
+    /// during the retain operation instead of searching through the removal list.
     pub fn apply_update(&mut self, update: &MultisigConfigUpdate<S>) -> Result<(), MultisigError> {
         self.validate_update(update)?;
 
-        // Remove members by index. We must remove in reverse order (highest index first)
-        // to prevent index shifting from invalidating subsequent removal indices.
-        // When an element is removed, all elements after it shift left by one position.
-        let mut indices_to_remove: Vec<usize> = update.remove_members().iter_ones().collect();
-        indices_to_remove.reverse(); // Reverse to get descending order
-        for index in indices_to_remove {
-            self.keys.remove(index);
-        }
+        // Remove members by index using retain
+        // Pad/shrink the bitvec to exact size of keys
+        let mut remove_indices = update.remove_members().to_bitvec();
+        remove_indices.resize(self.keys.len(), false);
+
+        let mut index = 0;
+        self.keys.retain(|_| {
+            let keep = !remove_indices[index];
+            index += 1;
+            keep
+        });
 
         // Add new members
         self.keys.extend_from_slice(update.add_members());
@@ -339,38 +338,28 @@ mod tests {
         let k3 = make_key(3);
         let k4 = make_key(4);
         let k5 = make_key(5);
+        let k6 = make_key(6);
 
-        // Initial config: keys = [k1, k2, k3, k4, k5], threshold = 2
-        let mut base = TestMultisigConfig::try_new(vec![k1, k2, k3, k4, k5], 2).unwrap();
+        // Initial config: keys = [k1, k2, k3, k4, k5, k6], threshold = 2
+        let mut base = TestMultisigConfig::try_new(vec![k1, k2, k3, k4, k5, k6], 2).unwrap();
 
-        // Try to remove first member using a BitVec longer than the number of keys
-        let update = TestMultisigConfigUpdate::new(vec![], bitvec![1, 0, 0, 0, 0, 0], 2);
-        let err = base.apply_update(&update).unwrap_err();
-        assert_eq!(
-            err,
-            MultisigError::BitVecTooLong {
-                bitvec_len: 6,
-                member_count: 5
-            }
-        );
+        // Remove first member using a BitVec longer than the number of keys
+        // This should shrink the bitvec
+        let update = TestMultisigConfigUpdate::new(vec![], bitvec![0, 0, 0, 0, 0, 1, 1, 1], 2);
+        base.apply_update(&update).unwrap();
+        assert_eq!(base.keys(), &[k1, k2, k3, k4, k5]);
 
         // Current keys: [k1, k2, k3, k4, k5]
-        // Remove the last member
-        let update = TestMultisigConfigUpdate::new(vec![], bitvec![0, 0, 0, 0, 1], 2);
-        base.apply_update(&update).unwrap();
-        assert_eq!(base.keys(), &[k1, k2, k3, k4]);
-
-        // Current keys: [k1, k2, k3, k4]
         // Remove the new first member with smaller bitvec
         let update = TestMultisigConfigUpdate::new(vec![], bitvec![1], 2);
         base.apply_update(&update).unwrap();
-        assert_eq!(base.keys(), &[k2, k3, k4]);
+        assert_eq!(base.keys(), &[k2, k3, k4, k5]);
 
-        // Current keys: [k2, k3, k4]
-        // Try to remove front two members
-        let update = TestMultisigConfigUpdate::new(vec![], bitvec![1, 1], 1);
+        // Current keys: [k2, k3, k4, k5]
+        // Try to remove first and last member
+        let update = TestMultisigConfigUpdate::new(vec![], bitvec![1, 0, 1], 2);
         base.apply_update(&update).unwrap();
-        assert_eq!(base.keys(), &[k4]);
+        assert_eq!(base.keys(), &[k3, k5]);
     }
 
     #[test]

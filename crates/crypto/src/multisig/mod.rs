@@ -37,15 +37,6 @@ pub fn verify_multisig<S: CryptoScheme>(
     signature: &signature::MultisigSignature<S>,
     message_hash: &[u8; 32],
 ) -> Result<(), MultisigError> {
-    // Validate that signer indices don't exceed available keys
-    let total_indices_count = signature.signer_indices().len();
-    if total_indices_count > config.keys().len() {
-        return Err(MultisigError::BitVecTooLong {
-            bitvec_len: total_indices_count,
-            member_count: config.keys().len(),
-        });
-    }
-
     // Check threshold
     let selected_count = signature.signer_indices().count_ones();
     if selected_count < config.threshold() as usize {
