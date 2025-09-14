@@ -4,7 +4,7 @@ pub mod schemes;
 pub mod signature;
 pub mod traits;
 
-// Re-export the Schnorr scheme ans Schnorr aggreagation
+// Re-export the Schnorr scheme and Schnorr aggregation
 pub use schemes::{aggregate_schnorr_keys, SchnorrScheme};
 
 // Type aliases for Schnorr-based multisig
