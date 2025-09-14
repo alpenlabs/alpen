@@ -4,9 +4,10 @@ pub mod schemes;
 pub mod signature;
 pub mod traits;
 
-// Re-export the default Schnorr scheme
+// Re-export the Schnorr scheme ans Schnorr aggreagation
 pub use schemes::{aggregate_schnorr_keys, SchnorrScheme};
-// Type aliases for Schnorr-based multisig (backward compatibility)
+
+// Type aliases for Schnorr-based multisig
 pub type SchnorrMultisigConfig = config::MultisigConfig<SchnorrScheme>;
 pub type SchnorrMultisigConfigUpdate = config::MultisigConfigUpdate<SchnorrScheme>;
 pub type SchnorrMultisigSignature = signature::MultisigSignature<SchnorrScheme>;

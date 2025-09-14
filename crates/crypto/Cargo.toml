@@ -19,7 +19,7 @@ thiserror.workspace = true
 zkaleido.workspace = true
 
 [dev-dependencies]
-bitvec.workspace = true
+strata-test-utils.workspace = true
 
 [features]
 default = ["rand"]

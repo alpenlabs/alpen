@@ -19,6 +19,19 @@ pub struct MultisigConfig<S: CryptoScheme> {
     _phantom: PhantomData<S>,
 }
 
+/// Represents a change to the multisig configuration:
+/// * removes members at indices specified by `old_members` bit vector
+/// * adds the specified `new_members`
+/// * updates the threshold.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MultisigConfigUpdate<S: CryptoScheme> {
+    add_members: Vec<S::PubKey>,
+    remove_members: BitVec,
+    new_threshold: u8,
+    /// Phantom data to carry the crypto scheme type.
+    _phantom: PhantomData<S>,
+}
+
 impl<S: CryptoScheme> MultisigConfig<S> {
     /// Create a new multisig configuration.
     ///
@@ -71,19 +84,6 @@ where
             _phantom: PhantomData,
         })
     }
-}
-
-/// Represents a change to the multisig configuration:
-/// * removes members at indices specified by `old_members` bit vector
-/// * adds the specified `new_members`
-/// * updates the threshold.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MultisigConfigUpdate<S: CryptoScheme> {
-    add_members: Vec<S::PubKey>,
-    remove_members: BitVec,
-    new_threshold: u8,
-    /// Phantom data to carry the crypto scheme type.
-    _phantom: PhantomData<S>,
 }
 
 impl<S: CryptoScheme> MultisigConfigUpdate<S> {
@@ -255,6 +255,7 @@ impl<S: CryptoScheme> MultisigConfig<S> {
 mod tests {
     use bitvec::prelude::*;
     use strata_primitives::buf::Buf32;
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::multisig::{errors::MultisigError, schemes::SchnorrScheme};
@@ -264,6 +265,18 @@ mod tests {
 
     fn make_key(id: u8) -> Buf32 {
         Buf32::new([id; 32])
+    }
+
+    #[test]
+    fn test_borsh_serde() {
+        let mut arb = ArbitraryGenerator::new();
+        let config: TestMultisigConfig = arb.generate();
+
+        let borsh_serialized_config = borsh::to_vec(&config).unwrap();
+        let borsh_deserialized_config: TestMultisigConfig =
+            borsh::from_slice(&borsh_serialized_config).unwrap();
+
+        assert_eq!(config, borsh_deserialized_config);
     }
 
     #[test]
