@@ -7,7 +7,7 @@ use strata_crypto::multisig::{
 use strata_primitives::roles::Role;
 
 /// Manages multisignature operations for a given role and key set, with replay protection via a
-/// nonce.
+/// seqno.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct MultisigAuthority {
     /// The role of this multisignature authority.
@@ -43,10 +43,11 @@ impl MultisigAuthority {
         &mut self.config
     }
 
-    /// Validate that `signature` approves `action` under the current config and nonce.
+    /// Verify that `signature` is a valid threshold signature for `action` under the current config
+    /// and seqno.
     ///
     /// Uses the generic multisig verification function to orchestrate the workflow.
-    pub fn validate_action(
+    pub fn verify_action_signature(
         &self,
         action: &MultisigAction,
         signature: &SchnorrMultisigSignature,
@@ -58,7 +59,7 @@ impl MultisigAuthority {
         verify_multisig(&self.config, signature, &sig_hash.into())
     }
 
-    /// Increments the nonce.
+    /// Increments the seqno.
     pub fn increment_seqno(&mut self) {
         self.seqno += 1;
     }

@@ -3,19 +3,19 @@ pub mod create;
 
 use bitcoin::{key::Parity, secp256k1::PublicKey, XOnlyPublicKey};
 use musig2::KeyAggContext;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_primitives::{
+    buf::{Buf32, Buf64},
+    crypto::verify_schnorr_sig,
+};
 
 use crate::multisig::{errors::MultisigError, traits::CryptoScheme};
 
 /// Schnorr signature scheme using MuSig2 key aggregation.
-///
-/// This is the current implementation that was previously hardcoded in the multisig module.
-/// It uses secp256k1 curve with Schnorr signatures and MuSig2 for key aggregation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SchnorrScheme;
 
 impl CryptoScheme for SchnorrScheme {
-    type PubKey = Buf32;
+    type PubKey = Buf32; // FIXME:?
     type Signature = Buf64;
     type AggregatedKey = Buf32;
 
@@ -29,19 +29,17 @@ impl CryptoScheme for SchnorrScheme {
         Self::PubKey: 'k,
     {
         let a = aggregate_schnorr_keys(keys)?;
-        Ok(Buf32::from(a.serialize())) // FIXME:
+        Ok(Buf32::from(a.serialize()))
     }
 
-    /// Verifies a Schnorr signature against a message hash using an aggregated public key.
-    ///
-    /// This uses the existing `verify_sig` function logic, but properly implemented.
+    /// Verifies a Schnorr signature against a message hash using a(n aggregated) public key.
     fn verify(
         key: &Self::AggregatedKey,
         message_hash: &[u8; 32],
         signature: &Self::Signature,
     ) -> bool {
         // Use the existing verification function from strata_primitives
-        strata_primitives::crypto::verify_schnorr_sig(signature, &Buf32::from(*message_hash), key)
+        verify_schnorr_sig(signature, &Buf32::from(*message_hash), key)
     }
 }
 

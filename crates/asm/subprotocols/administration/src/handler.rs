@@ -64,14 +64,17 @@ pub(crate) fn handle_pending_updates(
     }
 }
 
-/// Processes a multisig action by validating the aggregated vote.
+/// Processes a multisig action by validating the aggregated signature and executing the requested
+/// operation.
 ///
-/// This function handles two types of multisig actions:
-/// - `Update`: Validates the action and queues it for later execution (except sequencer updates)
-/// - `Cancel`: Removes a previously queued action from the queue
-///
-/// The function performs validation by checking that the aggregated vote meets the multisig
-/// requirements for the required role, then processes the action accordingly.
+/// This function handles the complete lifecycle of a multisig action:
+/// 1. Determines the required role based on the action type
+/// 2. Validates that the aggregated signature meets the multisig requirements for that role
+/// 3. Processes the action based on its type:
+///    - `Update`: Queues the action for later execution (except sequencer updates which apply
+///      immediately)
+///    - `Cancel`: Removes a previously queued action from the queue
+/// 4. Increments the authority's sequence number to prevent replay attacks
 ///
 /// # Returns
 /// * `Ok(())` if the action was successfully processed
@@ -97,11 +100,11 @@ pub(crate) fn handle_action(
         }
     };
 
-    // Get the authority for this role and validate the action with the aggregated vote
+    // Get the authority for this role and validate the action with the aggregated signature
     let authority = state
         .authority(role)
         .ok_or(AdministrationError::UnknownRole)?;
-    authority.validate_action(&action, &sig)?;
+    authority.verify_action_signature(&action, &sig)?;
 
     // Process the action based on its type
     match action {

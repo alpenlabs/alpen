@@ -16,10 +16,9 @@ pub use errors::MultisigError;
 
 use crate::multisig::traits::CryptoScheme;
 
-/// Generic multisig verification function that orchestrates the verification workflow.
-///
-/// This function takes a multisig configuration, multisig signature, and message hash,
-/// then performs the full verification process using the provided cryptographic scheme.
+/// Generic multisig verification function that takes a multisig configuration, multisig signature,
+/// and message hash, then performs the full verification process using the provided cryptographic
+/// scheme.
 ///
 /// # Arguments
 /// * `config` - The multisig configuration containing keys and threshold
@@ -29,7 +28,7 @@ use crate::multisig::traits::CryptoScheme;
 /// # Returns
 /// Returns `Ok(())` if verification succeeds, or an error if:
 /// - Signer indices exceed the available keys count
-/// - Insufficient keys are selected (fewer than threshold)
+/// - Insufficient keys (threshold is not achieved)
 /// - Key aggregation fails
 /// - Signature verification fails
 pub fn verify_multisig<S: CryptoScheme>(
