@@ -7,6 +7,8 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-common.workspace = true
+strata-asm-stf.workspace = true
 strata-asm-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true

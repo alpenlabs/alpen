@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::block::Header;
+use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{AnchorState, AsmLogEntry, AuxPayload, AuxRequest, TxInputRef};
 use strata_l1_txfmt::SubprotocolId;
 
@@ -20,7 +21,7 @@ pub struct AsmPreProcessOutput<'i> {
 }
 
 /// Overall output of applying ASM STF.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AsmStfOutput {
     pub state: AnchorState,
     pub logs: Vec<AsmLogEntry>,

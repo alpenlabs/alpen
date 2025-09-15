@@ -1,5 +1,6 @@
 //! RocksDB store for the Alpen codebase.
 
+pub mod asm;
 pub mod broadcaster;
 pub mod chain_state;
 pub mod checkpoint;
@@ -28,6 +29,7 @@ pub const PROVER_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
 ];
 
 // Re-exports
+pub use asm::db::AsmDb;
 pub use broadcaster::db::L1BroadcastDb;
 use broadcaster::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 pub use chain_state::{db::ChainstateDb, types::StateInstanceEntry};
@@ -140,6 +142,7 @@ pub fn open_rocksdb_backend(
 /// Complete RocksDB backend with all database types
 #[derive(Debug)]
 pub struct RocksDbBackend {
+    asm_db: Arc<AsmDb>,
     l1_db: Arc<L1Db>,
     l2_db: Arc<L2Db>,
     client_state_db: Arc<ClientStateDb>,
@@ -153,6 +156,7 @@ pub struct RocksDbBackend {
 impl RocksDbBackend {
     #[allow(clippy::too_many_arguments)] // hard to avoid here
     pub fn new(
+        asm_db: Arc<AsmDb>,
         l1_db: Arc<L1Db>,
         l2_db: Arc<L2Db>,
         client_state_db: Arc<ClientStateDb>,
@@ -163,6 +167,7 @@ impl RocksDbBackend {
         broadcast_db: Arc<L1BroadcastDb>,
     ) -> Self {
         Self {
+            asm_db,
             l1_db,
             l2_db,
             client_state_db,
@@ -176,6 +181,10 @@ impl RocksDbBackend {
 }
 
 impl DatabaseBackend for RocksDbBackend {
+    fn asm_db(&self) -> Arc<impl strata_db::traits::AsmDatabase> {
+        self.asm_db.clone()
+    }
+
     fn l1_db(&self) -> Arc<impl strata_db::traits::L1Database> {
         self.l1_db.clone()
     }
@@ -235,6 +244,7 @@ pub fn init_rocksdb_backend(
     rbdb: Arc<rockbound::OptimisticTransactionDB>,
     ops_config: DbOpsConfig,
 ) -> Arc<RocksDbBackend> {
+    let asm_db = Arc::new(AsmDb::new(rbdb.clone(), ops_config));
     let l1_db = Arc::new(L1Db::new(rbdb.clone(), ops_config));
     let l2_db = Arc::new(L2Db::new(rbdb.clone(), ops_config));
     let client_state_db = Arc::new(ClientStateDb::new(rbdb.clone(), ops_config));
@@ -245,6 +255,7 @@ pub fn init_rocksdb_backend(
     let broadcast_db = Arc::new(L1BroadcastDb::new(rbdb, ops_config));
 
     Arc::new(RocksDbBackend::new(
+        asm_db,
         l1_db,
         l2_db,
         client_state_db,

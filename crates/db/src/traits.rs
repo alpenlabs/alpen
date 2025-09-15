@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
+use strata_asm_common::AnchorState;
+use strata_asm_stf::AsmStfOutput;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_primitives::{
     batch::EpochSummary,
@@ -24,6 +26,7 @@ use crate::{
 /// parameterizing them over each individual trait gets cumbersome or if we need
 /// to use behavior that crosses different interfaces.
 pub trait DatabaseBackend: Send + Sync {
+    fn asm_db(&self) -> Arc<impl AsmDatabase>;
     fn l1_db(&self) -> Arc<impl L1Database>;
     fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
@@ -32,6 +35,18 @@ pub trait DatabaseBackend: Send + Sync {
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
+}
+
+/// Database interface to control our view of ASM state.
+pub trait AsmDatabase: Send + Sync + 'static {
+    /// Writes a new consensus output for a given l1 block.
+    fn put_asm_output(&self, block: L1BlockCommitment, output: AsmStfOutput) -> DbResult<()>;
+
+    /// Gets the output client state writes for some input index.
+    fn get_asm_output(&self, block: L1BlockCommitment) -> DbResult<Option<AsmStfOutput>>;
+
+    /// Gets latest client state (the entry that corresponds to the highest l1 block).
+    fn get_latest_anchor_state(&self) -> DbResult<Option<(L1BlockCommitment, AnchorState)>>;
 }
 
 /// Database interface to control our view of L1 data.

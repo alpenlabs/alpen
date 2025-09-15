@@ -7,6 +7,8 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-common.workspace = true
+strata-asm-worker.workspace = true
 strata-asm-types.workspace = true
 strata-chain-worker.workspace = true
 strata-chainexec.workspace = true
@@ -24,6 +26,7 @@ zkaleido.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
+bitcoind-async-client.workspace = true
 borsh.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
