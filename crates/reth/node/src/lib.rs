@@ -1,6 +1,7 @@
 //! Reth node implementation for the Alpen EE.
 mod engine;
 mod evm;
+pub mod head_gossip;
 mod node;
 mod payload;
 mod payload_builder;
