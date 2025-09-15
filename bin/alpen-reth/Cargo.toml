@@ -37,6 +37,9 @@ reth-network.workspace = true
 reth-network-api.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
+reth-transaction-pool.workspace = true
+reth-primitives.workspace = true
+futures-util.workspace = true
 rockbound = { workspace = true, optional = true }
 sled = { workspace = true, optional = true }
 strata-db-store-rocksdb = { workspace = true, optional = true }
