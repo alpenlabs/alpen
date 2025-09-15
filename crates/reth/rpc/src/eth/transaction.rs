@@ -6,7 +6,9 @@ use reth_rpc_eth_api::{
     FromEthApiError, RpcConvert, RpcNodeCore,
 };
 use reth_rpc_eth_types::{utils::recover_raw_transaction, EthApiError};
-use reth_transaction_pool::{PoolTransaction, TransactionOrigin, TransactionPool};
+use reth_transaction_pool::{
+    AddedTransactionOutcome, PoolTransaction, TransactionOrigin, TransactionPool,
+};
 
 use crate::{AlpenEthApi, SequencerClient, StrataNodeCore};
 
@@ -35,7 +37,7 @@ where
                 });
         }
         // submit the transaction to the pool with a `Local` origin
-        let hash = self
+        let AddedTransactionOutcome { hash, .. } = self
             .pool()
             .add_transaction(TransactionOrigin::Local, pool_transaction)
             .await
