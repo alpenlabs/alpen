@@ -5,8 +5,8 @@ mod async_worker;
 mod builder;
 mod command;
 mod errors;
-mod status;
 mod service_worker;
+mod status;
 mod types;
 
 pub use adapters::*;

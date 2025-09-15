@@ -12,6 +12,7 @@ use thiserror::Error;
 ///
 /// Does NOT provide access to chainstate information.  This is primarily
 /// involving block headers.  It will probably also provide L1 manifests.
+// TODO/NOTE: There's already a similar trait called `L2Header`, might need to merge those.
 pub trait BlockHeaderContext {
     /// Returns the slot that we're checking.
     fn slot(&self) -> u64;

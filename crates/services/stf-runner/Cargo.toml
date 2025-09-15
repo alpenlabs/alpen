@@ -1,0 +1,20 @@
+[package]
+name = "stf-runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+strata-asm-common.workspace = true
+strata-asm-logs.workspace = true
+strata-chainexec.workspace = true
+strata-chaintsn.workspace = true
+strata-primitives.workspace = true
+strata-service.workspace = true
+strata-state.workspace = true
+
+[lints]
+workspace = true
