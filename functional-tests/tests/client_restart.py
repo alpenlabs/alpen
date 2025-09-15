@@ -38,20 +38,20 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
         # get started, but once it does it goes fairly quickly.
         for n in range(2):
             check_nth_checkpoint_finalized(n, seqrpc, prover_rpc, timeout=150)
-            logging.info(f"Found checkpoint {n} finalized")
+            self.logger.info(f"Found checkpoint {n} finalized")
 
         # Restart sequencer.
-        logging.info("Restarting sequencer's node...")
+        self.logger.info("Restarting sequencer's node...")
         seq.stop()
         seq.start()
-        logging.info("Waiting for it to come back up...")
+        self.logger.info("Waiting for it to come back up...")
         seqrpc = seq.create_rpc()
         strata_waiter.wait_until_client_ready()
 
         # Check for next 2 checkpoints
-        logging.info("Now we look for more checkpoints")
+        self.logger.info("Now we look for more checkpoints")
         for n in range(2, 4):
             check_nth_checkpoint_finalized(n, seqrpc, prover_rpc, timeout=150)
-            logging.info(f"Found checkpoint {n} finalized")
+            self.logger.info(f"Found checkpoint {n} finalized")
 
         check_already_sent_proof(seqrpc, 0)
