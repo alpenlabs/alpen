@@ -1,0 +1,25 @@
+[package]
+name = "strata-asm-worker"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-asm-common.workspace = true
+strata-asm-spec.workspace = true
+strata-asm-stf.workspace = true
+strata-chainexec.workspace = true
+strata-eectl.workspace = true
+strata-primitives.workspace = true
+strata-service.workspace = true
+strata-state.workspace = true
+strata-tasks.workspace = true
+
+anyhow.workspace = true
+async-trait.workspace = true
+bitcoin.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

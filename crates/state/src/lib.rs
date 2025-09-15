@@ -23,6 +23,8 @@ pub mod operation;
 pub mod state_op;
 pub mod state_queue;
 
+use std::{boxed::Box, vec::Vec};
+
 use async_trait::async_trait;
 use strata_primitives::l1::L1BlockCommitment;
 
@@ -30,11 +32,44 @@ use strata_primitives::l1::L1BlockCommitment;
 // TODO reverse the convention on these function names, since you can't
 // accidentally call an async fn in a blocking context
 #[async_trait]
-pub trait BlockSubmitter {
+pub trait BlockSubmitter: Send + Sync {
     /// Submit block blocking
-    fn submit_block(&self, sync_event: L1BlockCommitment) -> anyhow::Result<()>;
+    fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()>;
     /// Submit block async
-    async fn submit_block_async(&self, sync_event: L1BlockCommitment) -> anyhow::Result<()>;
+    async fn submit_block_async(&self, block: L1BlockCommitment) -> anyhow::Result<()>;
+}
+
+/// A glue implementation to allow several block submitters "consume" from the same reader.
+#[allow(missing_debug_implementations)]
+pub struct CombinedBlockSubmitter {
+    submitters: Vec<std::sync::Arc<dyn BlockSubmitter>>,
+}
+
+#[async_trait]
+impl BlockSubmitter for CombinedBlockSubmitter {
+    /// Sends a new l1 block to the csm machinery.
+    fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+        for s in self.submitters.iter() {
+            s.submit_block(block)?;
+        }
+
+        Ok(())
+    }
+
+    /// Sends a new l1 block to the csm machinery.
+    async fn submit_block_async(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+        for s in self.submitters.iter() {
+            s.submit_block_async(block).await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl CombinedBlockSubmitter {
+    pub fn new(submitters: Vec<std::sync::Arc<dyn BlockSubmitter>>) -> Self {
+        Self { submitters }
+    }
 }
 
 pub mod prelude;
