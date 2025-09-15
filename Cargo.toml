@@ -42,6 +42,10 @@ members = [
   "crates/reth/exex",
   "crates/reth/node",
   "crates/reth/rpc",
+  "crates/reth/ee/config",
+  "crates/reth/ee/node",
+  "crates/reth/ee/primitives",
+  "crates/reth/ee/sequencer",
   "crates/rpc/api",
   "crates/rpc/prover-client-api",
   "crates/rpc/types",
@@ -59,7 +63,6 @@ members = [
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
   "crates/util/mmr",
-  "crates/db-tests",
   "provers/risc0",
   "provers/sp1",
 
@@ -103,6 +106,10 @@ rustdoc.all = "warn"
 
 [workspace.dependencies]
 alpen-chainspec = { path = "crates/reth/chainspec" }
+alpen-ee-config = { path = "crates/reth/ee/config" }
+alpen-ee-node = { path = "crates/reth/ee/node" }
+alpen-ee-primitives = { path = "crates/reth/ee/primitives" }
+alpen-ee-sequencer = { path = "crates/reth/ee/sequencer" }
 alpen-reth-db = { path = "crates/reth/db" }
 alpen-reth-evm = { path = "crates/reth/evm" }
 alpen-reth-exex = { path = "crates/reth/exex" }

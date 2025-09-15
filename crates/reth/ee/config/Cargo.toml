@@ -1,0 +1,13 @@
+[package]
+edition = "2021"
+name = "alpen-ee-config"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-primitives.workspace = true
+strata-primitives.workspace = true
+
+alloy-genesis.workspace = true

@@ -1,0 +1,14 @@
+[package]
+edition = "2021"
+name = "alpen-ee-node"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-primitives.workspace = true
+futures.workspace = true
+
+alloy-primitives.workspace = true
+alloy-rpc-types.workspace = true

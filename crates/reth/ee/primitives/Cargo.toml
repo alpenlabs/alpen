@@ -1,0 +1,11 @@
+[package]
+edition = "2021"
+name = "alpen-ee-primitives"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+bitcoin-bosd.workspace = true
