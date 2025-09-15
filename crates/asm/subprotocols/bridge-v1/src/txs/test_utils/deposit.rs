@@ -17,7 +17,7 @@ use strata_crypto::{
 
 use crate::txs::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 
-// Creates a test deposit transaction with proper MuSig2 signatures following the SPS-50
+/// Creates a test deposit transaction with proper MuSig2 signatures following the SPS-50
 /// specification.
 ///
 /// Creates a properly structured and signed Bitcoin deposit transaction with:

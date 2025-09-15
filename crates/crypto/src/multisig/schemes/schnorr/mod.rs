@@ -20,8 +20,6 @@ impl CryptoScheme for SchnorrScheme {
     type AggregatedKey = Buf32;
 
     /// Aggregates public keys using MuSig2 key aggregation.
-    ///
-    /// This is moved from the original `generate_agg_pubkey` function in `aggregation.rs`.
     fn aggregate<'k>(
         keys: impl Iterator<Item = &'k Self::PubKey>,
     ) -> Result<Self::AggregatedKey, MultisigError>

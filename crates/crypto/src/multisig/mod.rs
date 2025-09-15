@@ -28,7 +28,6 @@ use crate::multisig::traits::CryptoScheme;
 ///
 /// # Returns
 /// Returns `Ok(())` if verification succeeds, or an error if:
-/// - Signer indices exceed the available keys count
 /// - Insufficient keys (threshold is not achieved)
 /// - Key aggregation fails
 /// - Signature verification fails

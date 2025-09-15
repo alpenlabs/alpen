@@ -247,7 +247,7 @@ mod tests {
         }
 
         let new_size = initial_members.len() + new_members.len() - removal_count;
-        let new_threshold = std::cmp::max(1, new_size); // Ensure valid threshold (at least majority)
+        let new_threshold = rng.gen_range(1..=new_size);
 
         let update = MultisigConfigUpdate::new(
             new_members.clone(),

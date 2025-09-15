@@ -64,8 +64,8 @@ pub(crate) fn handle_pending_updates(
     }
 }
 
-/// Processes a multisig action by validating the aggregated signature and executing the requested
-/// operation.
+/// Processes a multisig action (an admin "change" message) by validating the aggregated signature
+/// and executing the requested operation.
 ///
 /// This function handles the complete lifecycle of a multisig action:
 /// 1. Determines the required role based on the action type
@@ -302,7 +302,7 @@ mod tests {
 
     /// Test that multisig actions reject invalid sequence numbers.
     ///
-    /// Verifies sequence number validation prevents replay attacks by rejecting
+    /// Verifies that sequence number validation prevents replay attacks by rejecting
     /// duplicate and out-of-order sequence numbers for StrataAdministrator actions.
     #[test]
     fn test_strata_administrator_incorrect_seqno() {

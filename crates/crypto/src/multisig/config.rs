@@ -180,33 +180,36 @@ where
 
 impl<S: CryptoScheme> MultisigConfig<S> {
     /// Validates that an update can be applied to this configuration.
-    /// Ensures new members don't already exist, remove indices are valid, and new threshold
-    /// is within valid bounds for the updated member count.
+    /// Ensures no duplicate members in the add list, new members don't already exist in the
+    /// current configuration, and the new threshold is within valid bounds.
     ///
     /// # Errors
     ///
     /// Returns `MultisigError` if:
+    /// - `DuplicateAddMember`: The add members list contains duplicates
     /// - `MemberAlreadyExists`: A new member already exists in the current configuration
-    /// - `RemovalBitVecTooLong`: The removal bitvec is longer than the current member count
-    /// - `InvalidThreshold`: New threshold exceeds the total number of keys after update or is zero
+    /// - `ZeroThreshold`: New threshold is zero
+    /// - `InvalidThreshold`: New threshold exceeds the total number of keys after update
     pub fn validate_update(&self, update: &MultisigConfigUpdate<S>) -> Result<(), MultisigError> {
         let mut members_to_add = update.add_members().to_vec();
         members_to_add.dedup();
 
+        // Ensure no duplicate members in the add list
         if members_to_add.len() != update.add_members().len() {
             return Err(MultisigError::DuplicateAddMember);
         }
 
-        // Ensure no duplicate members to add
+        // Ensure new members don't already exist in current configuration
         if members_to_add.iter().any(|m| self.keys.contains(m)) {
             return Err(MultisigError::MemberAlreadyExists);
         }
 
+        // Ensure new threshold is not zero
         if update.new_threshold() == 0 {
             return Err(MultisigError::ZeroThreshold);
         }
 
-        // Ensure new threshold is valid for the updated member count
+        // Ensure new threshold doesn't exceed updated member count
         let updated_size =
             self.keys.len() + update.add_members().len() - update.remove_members().count_ones();
 
