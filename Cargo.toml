@@ -52,6 +52,7 @@ members = [
   "crates/sequencer",
   "crates/service",
   "crates/snark-acct-types",
+  "crates/services/stf-runner",
   "crates/state",
   "crates/status",
   "crates/storage",
@@ -161,6 +162,7 @@ strata-service = { path = "crates/service" }
 strata-snark-acct-types = { path = "crates/snark-acct-types" }
 strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
+strata-stf-runner = { path = "crates/services/stf-runner" }
 strata-storage = { path = "crates/storage" }
 strata-sync = { path = "crates/sync" }
 strata-tasks = { path = "crates/tasks" }

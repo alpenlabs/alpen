@@ -180,8 +180,6 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             .fetch_block(block.blkid())?
             .ok_or(WorkerError::MissingL2Block(*block.blkid()))?;
 
-        let is_epoch_terminal = !bundle.body().l1_segment().new_manifests().is_empty();
-
         let parent_blkid = bundle.header().header().parent();
         let parent_header = context
             .fetch_header(parent_blkid)?
@@ -201,8 +199,8 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
 
         let output = chain_exec.verify_block(&header_ctx, bundle.body(), &exec_ctx)?;
 
-        if is_epoch_terminal {
-            debug!(%is_epoch_terminal);
+        if bundle.is_terminal() {
+            debug!("terminal block");
             self.handle_complete_epoch(block.blkid(), bundle.block(), &output)?;
         }
 

@@ -50,23 +50,24 @@ impl EpochExecutionOutput {
 
 /// Describes the output of executing a block.
 #[derive(Debug, Clone)]
-pub struct BlockExecutionOutput {
+pub struct BlockExecutionOutput<WB = WriteBatch, L = LogMessage> {
+    // TODO: Generic parameters, WB and L for transition
     /// State root as computed by the STF.
     computed_state_root: Buf32,
 
     /// Log messages emitted while executing the block.
     ///
     /// These will eventually be accumulated to be processed by ASM.
-    logs: Vec<LogMessage>,
+    logs: Vec<L>,
 
     /// Changes to the state we store in the database.
     ///
     /// This is NOT a state diff, that requires more precise tracking.
-    write_batch: WriteBatch,
+    write_batch: WB,
 }
 
-impl BlockExecutionOutput {
-    pub fn new(computed_state_root: Buf32, logs: Vec<LogMessage>, write_batch: WriteBatch) -> Self {
+impl<WB, L> BlockExecutionOutput<WB, L> {
+    pub fn new(computed_state_root: Buf32, logs: Vec<L>, write_batch: WB) -> Self {
         Self {
             computed_state_root,
             logs,
@@ -78,19 +79,19 @@ impl BlockExecutionOutput {
         &self.computed_state_root
     }
 
-    pub fn logs(&self) -> &[LogMessage] {
+    pub fn logs(&self) -> &[L] {
         &self.logs
     }
 
-    pub fn write_batch(&self) -> &WriteBatch {
+    pub fn write_batch(&self) -> &WB {
         &self.write_batch
     }
 
-    pub fn add_log(&mut self, log: LogMessage) {
+    pub fn add_log(&mut self, log: L) {
         self.logs.push(log);
     }
 
-    pub fn logs_iter(&self) -> impl Iterator<Item = &LogMessage> + '_ {
+    pub fn logs_iter(&self) -> impl Iterator<Item = &L> + '_ {
         self.logs.iter()
     }
 }
@@ -131,6 +132,8 @@ impl CheckinExecutionOutput {
 /// Payload SHOULD conform to SPS-msg-fmt.
 #[derive(Debug, Clone)]
 pub struct LogMessage {
+    // TODO: do not make this opaque in case we want to process or do something based on this.
+    // Instead, have a structure and a method `.into_sps_log()` ??
     payload: Vec<u8>,
 }
 

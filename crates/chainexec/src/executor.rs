@@ -62,12 +62,12 @@ impl ChainExecutor {
     /// If this succeeds, then the block is all good.
     pub fn verify_block<C: ExecContext>(
         &self,
-        header_and_parent: &L2HeaderAndParent,
+        header_ctx: &impl BlockHeaderContext,
         block_body: &L2BlockBody,
         ctx: &C,
     ) -> Result<BlockExecutionOutput, Error<C::Error>> {
-        let output = self.execute_block(header_and_parent, block_body, ctx)?;
-        verify_output_matches_block(header_and_parent, block_body, &output)?;
+        let output = self.execute_block(header_ctx, block_body, ctx)?;
+        verify_output_matches_block(header_ctx, block_body, &output)?;
         Ok(output)
     }
 }
@@ -111,12 +111,12 @@ fn try_execute_block_inner<E>(
 }
 
 fn verify_output_matches_block<E>(
-    hap: &L2HeaderAndParent,
+    header_ctx: &impl BlockHeaderContext,
     _body: &L2BlockBody,
     output: &BlockExecutionOutput,
 ) -> Result<(), Error<E>> {
     // Check that the state roots match.
-    if output.computed_state_root() != hap.header().state_root() {
+    if output.computed_state_root() != header_ctx.header().state_root() {
         return Err(Error::StateRootMismatch);
     }
 

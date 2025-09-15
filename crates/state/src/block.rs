@@ -219,6 +219,10 @@ impl L2BlockBundle {
         self.block.body()
     }
 
+    pub fn is_terminal(&self) -> bool {
+        self.body().l1_segment().new_manifests().is_empty()
+    }
+
     pub fn l1_segment(&self) -> &L1Segment {
         self.block.l1_segment()
     }
