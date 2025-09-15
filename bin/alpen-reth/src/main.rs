@@ -16,6 +16,7 @@ use alpen_reth_node::{
 };
 use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
+use futures_util::StreamExt;
 use init_db::init_witness_db;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
@@ -24,6 +25,8 @@ use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_network_api::PeerId;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
+use reth_primitives::Header;
+use reth_transaction_pool::{FullTransactionEvent, TransactionPool};
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -106,28 +109,43 @@ fn main() {
                 .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
 
             // This task will handle gossip events
+            let mut tx_events = handle.node.pool.all_transactions_event_listener();
             tokio::spawn(async move {
                 let mut connections: HashMap<PeerId, mpsc::UnboundedSender<HeadGossipCommand>> =
                     HashMap::new();
-                while let Some(event) = gossip_rx.recv().await {
-                    match event {
-                        HeadGossipEvent::Established {
-                            peer_id,
-                            to_connection,
-                            ..
-                        } => {
-                            connections.insert(peer_id, to_connection);
-                        }
-                        HeadGossipEvent::Closed { peer_id } => {
-                            connections.remove(&peer_id);
-                        }
-                        HeadGossipEvent::HeadHash { peer_id, header } => {
-                            // TODO(@storopoli): do something when we receive a single `Header`.
-                            info!(target: "head-gossip", "Received head hash from peer {}: {:?}", peer_id, header.hash_slow());
-                        }
-                        HeadGossipEvent::HeadHashes { peer_id, headers } => {
-                            // TODO(@storopoli): do something when we receive multiple `Header`s.
-                            info!(target: "head-gossip", "Received {} head hashes from peer {}", headers.len(), peer_id);
+                loop {
+                    tokio::select! {
+                        Some(event) = gossip_rx.recv() => {
+                            match event {
+                                HeadGossipEvent::Established {
+                                    peer_id,
+                                    to_connection,
+                                    ..
+                                } => {
+                                    connections.insert(peer_id, to_connection);
+                                }
+                                HeadGossipEvent::Closed { peer_id } => {
+                                    connections.remove(&peer_id);
+                                }
+                                HeadGossipEvent::HeadHash { peer_id, header } => {
+                                    // TODO(@storopoli): do something when we receive a single `Header`.
+                                    info!(target: "head-gossip", "Received head hash from peer {}: {:?}", peer_id, header.hash_slow());
+                                }
+                                HeadGossipEvent::HeadHashes { peer_id, headers } => {
+                                    // TODO(@storopoli): do something when we receive multiple `Header`s.
+                                    info!(target: "head-gossip", "Received {} head hashes from peer {}", headers.len(), peer_id);
+                                }
+                            }
+                        },
+                        Some(event) = tx_events.next() => {
+                            // TODO(@storopoli): How to get a `Header`?
+                            if let FullTransactionEvent::Mined { block_hash, .. } = event {
+                                info!(target: "head-gossip", "New block mined: {:?}, broadcasting to {} peers", block_hash, connections.len());
+                                let header = Header::default();
+                                for sender in connections.values() {
+                                    let _ = sender.send(HeadGossipCommand::SendHeadHash(header.clone()));
+                                }
+                            }
                         }
                     }
                 }

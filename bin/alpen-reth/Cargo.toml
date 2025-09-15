@@ -17,8 +17,6 @@ alpen-reth-exex.workspace = true
 alpen-reth-node.workspace = true
 alpen-reth-rpc.workspace = true
 
-clap.workspace = true
-eyre.workspace = true
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true
 reth-cli-runner.workspace = true
@@ -28,6 +26,12 @@ reth-network.workspace = true
 reth-network-api.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
+reth-primitives.workspace = true
+reth-transaction-pool.workspace = true
+
+clap.workspace = true
+eyre.workspace = true
+futures-util.workspace = true
 sled.workspace = true
 tokio.workspace = true
 tracing.workspace = true
