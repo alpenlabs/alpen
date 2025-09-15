@@ -59,7 +59,6 @@ members = [
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
   "crates/util/mmr",
-  "crates/db-tests",
   "provers/risc0",
   "provers/sp1",
 
@@ -240,6 +239,7 @@ reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-errors = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
+reth-eth-wire = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-ethereum-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-ethereum-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-ethereum-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
@@ -248,7 +248,9 @@ reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-exex = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
+reth-network = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-network-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
+reth-network-p2p = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-node-core = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
@@ -262,6 +264,7 @@ reth-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0",
 reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0", default-features = false }
 reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-revm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
+reth-rlp = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-rpc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-rpc-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-rpc-eth-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
@@ -349,6 +352,7 @@ terrors = "0.3.0"
 thiserror = "2.0.11"
 threadpool = "1.8"
 tokio = { version = "1.37", features = ["full"] }
+tokio-stream = "0.1.17"
 toml = "0.5"
 tower = "0.5"
 tracing = "0.1"
