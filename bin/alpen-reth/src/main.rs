@@ -2,19 +2,29 @@
 
 mod init_db;
 
-use std::sync::Arc;
+use std::{collections::HashMap, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
-use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
+use alpen_reth_node::{
+    args::AlpenNodeArgs,
+    head_gossip::{
+        connection::HeadGossipCommand,
+        handler::{HeadGossipEvent, HeadGossipProtocolHandler, HeadGossipState},
+    },
+    AlpenEthereumNode,
+};
 use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
 use init_db::init_witness_db;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
+use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
+use reth_network_api::PeerId;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
+use tokio::sync::mpsc;
 use tracing::info;
 
 fn main() {
@@ -83,11 +93,51 @@ fn main() {
             });
 
             let handle = node_builder.launch().await?;
+
+            // Create and add the custom RLPx subprotocol
+            // See: crates/reth/node/src/head_gossip/
+            let (gossip_tx, mut gossip_rx) = mpsc::unbounded_channel();
+            let handler = HeadGossipProtocolHandler {
+                state: HeadGossipState { events: gossip_tx },
+            };
+            handle
+                .node
+                .network
+                .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
+
+            // This task will handle gossip events
+            tokio::spawn(async move {
+                let mut connections: HashMap<PeerId, mpsc::UnboundedSender<HeadGossipCommand>> =
+                    HashMap::new();
+                while let Some(event) = gossip_rx.recv().await {
+                    match event {
+                        HeadGossipEvent::Established {
+                            peer_id,
+                            to_connection,
+                            ..
+                        } => {
+                            connections.insert(peer_id, to_connection);
+                        }
+                        HeadGossipEvent::Closed { peer_id } => {
+                            connections.remove(&peer_id);
+                        }
+                        HeadGossipEvent::HeadHash { peer_id, header } => {
+                            // TODO(@storopoli): do something when we receive a single `Header`.
+                            info!(target: "head-gossip", "Received head hash from peer {}: {:?}", peer_id, header.hash_slow());
+                        }
+                        HeadGossipEvent::HeadHashes { peer_id, headers } => {
+                            // TODO(@storopoli): do something when we receive multiple `Header`s.
+                            info!(target: "head-gossip", "Received {} head hashes from peer {}", headers.len(), peer_id);
+                        }
+                    }
+                }
+            });
+
             handle.node_exit_future.await
         },
     ) {
         eprintln!("Error: {err:?}");
-        std::process::exit(1);
+        process::exit(1);
     }
 }
 
