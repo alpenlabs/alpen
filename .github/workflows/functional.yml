@@ -109,7 +109,7 @@ jobs:
       - name: Build Cargo project
         env:
           RUSTFLAGS: "-Cinstrument-coverage"
-        run: cargo build --locked -F debug-utils
+        run: cargo build --locked -F debug-utils -F test-mode
 
       - name: Run functional tests (1)
         id: funcTestsRun1
