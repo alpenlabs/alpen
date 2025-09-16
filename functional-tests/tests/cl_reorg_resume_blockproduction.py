@@ -1,9 +1,8 @@
-import logging
-
 import flexitest
 from web3 import Web3
 
 from envs import net_settings, testenv
+from mixins.dbtool_mixin import DbtoolMixin
 from utils import *
 
 
@@ -21,7 +20,7 @@ def send_tx(web3: Web3):
 
 
 @flexitest.register
-class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
+class CLReorgResumeBlockProductionTest(DbtoolMixin):
     """This tests sync when el is missing blocks"""
 
     def __init__(self, ctx: flexitest.InitContext):
@@ -50,61 +49,45 @@ class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
         for _ in range(3):
             send_tx(web3)
 
-        seq_waiter.wait_until_epoch_finalized(0, timeout=30)
+        seq_waiter.wait_until_epoch_finalized(1, timeout=30)
 
-        # ensure there are some blocks generated
-        wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > 0,
-            error_with="not building blocks",
-            timeout=5,
-        )
-
-        logging.info("stop sequencer")
-        seq_signer.stop()
         orig_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
-        logging.info(f"stop seq @{orig_blocknumber}")
-        seq.stop()
 
-        reth.stop()
-
-        # take snapshot of sequencer db
-        SNAPSHOT_IDX = 1
-        seq.snapshot_datadir(SNAPSHOT_IDX)
-
-        logging.info("start reth")
-        reth.start()
-
-        # wait for reth to start
-        wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > 0,
-            error_with="reth did not start in time",
-            timeout=5,
-        )
-
-        logging.info("start sequencer")
-        seq.start()
-        seq_signer.start()
-
-        # generate more blocks
+        # ensure there are some blocks more than our tip height
         wait_until(
             lambda: int(rethrpc.eth_blockNumber(), base=16) > orig_blocknumber + 1,
             error_with="not building blocks",
             timeout=5,
         )
 
-        logging.info("stop sequencer")
+        # stop sequencer
+        self.info("stop sequencer")
         seq_signer.stop()
         final_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
-        logging.info(f"stop reth @{final_blocknumber}")
+
+        # since L1 is canonical, so we can delete all the blocks that are not
+        # present in prev epoch
+        sync_info = seqrpc.strata_syncStatus()
+        revert_target_blkid = sync_info.get("prev_epoch").get("last_blkid")
+
+        self.info(f"stop reth @{final_blocknumber}")
 
         original_el_blockhash = rethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
 
         seq.stop()
+        # revert chainstate to target blkid
+        self.info(f"Reverting chainstate to {revert_target_blkid}")
+        return_code, stdout, stderr = self.revert_chainstate(revert_target_blkid, "-d")
 
-        # replace sequencer db with older snapshot
-        seq.restore_snapshot(SNAPSHOT_IDX)
+        if return_code != 0:
+            self.error(f"revert-chainstate failed with return code {return_code}")
+            self.error(f"Stderr: {stderr}")
+            return False
 
-        logging.info("start sequencer")
+        self.info("Revert chainstate completed successfully")
+        self.info(f"Stdout: {stdout}")
+
+        self.info("start sequencer")
         seq.start()
         # wait for reth to start
         wait_until(
@@ -117,7 +100,7 @@ class CLReorgResumeBlockProductionTest(testenv.StrataTestBase):
 
         seq_signer.start()
 
-        logging.info("wait for block production to resume")
+        self.info("wait for block production to resume")
         wait_until(
             lambda: seqrpc.strata_syncStatus()["tip_height"] > final_blocknumber,
             error_with="not syncing blocks",

@@ -50,6 +50,9 @@ pub enum BlockAssemblyError {
     #[error("block assembly timed out")]
     BlockAssemblyTimedOut,
 
+    #[error("missing L1 tip block")]
+    MissingTipBlock,
+
     #[error("consensus: {0}")]
     ConsensusError(#[from] strata_consensus_logic::errors::Error),
 
