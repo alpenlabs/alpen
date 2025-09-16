@@ -5,6 +5,7 @@ pub mod ledger;
 pub mod service;
 pub(crate) mod state;
 pub mod stf;
+pub(crate) mod tx_exec;
 pub mod worker;
 
 use strata_state as _;

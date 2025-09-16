@@ -1,6 +1,6 @@
 use strata_primitives::buf::Buf32;
 
-/// Represents the current state of the OL Chain
+/// Represents the state of the OL Chain
 #[derive(Debug, Clone, Default)]
 pub struct OLState {
     accounts_root: Buf32,

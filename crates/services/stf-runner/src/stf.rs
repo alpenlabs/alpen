@@ -11,9 +11,10 @@ use thiserror::Error;
 
 use crate::{
     account::{AccountId, AccountSerial, MessageData, SnarkAccountMessageEntry},
-    block::{L1Update, OLBlock, OLBlockHeader, OLLog, Transaction},
+    block::{L1Update, OLBlock, OLBlockHeader, OLLog},
     ledger::{LedgerError, LedgerProvider},
     state::OLState,
+    tx_exec::execute_transaction,
 };
 
 /// Any error that happens during executing the State Transition Function (STF)
@@ -37,7 +38,30 @@ pub enum StfError {
     // TODO: possibly can be merged with above
     #[error("non-existent account : {0}")]
     NonExistentAccount(AccountId),
+
+    /// Mismatched sequence
+    #[error("mismatched sequence: expected {expected}, got {got}")]
+    MismatchedSequence { expected: u64, got: u64 },
+
+    #[error("mismatched message index: expected {expected}, got {got}")]
+    InvalidMsgIndex { expected: u64, got: u64 },
+
+    #[error("invalid outputs")]
+    InvalidOutputs,
+
+    #[error("invalid witness")]
+    InvalidWitness,
+
+    /// Generic error for now.
+    // TODO: make errors more specific as things get clearer
+    #[error("something else: {0}")]
+    Other(String),
+
+    #[error("insufficient balance: available {available}, spent {spent}")]
+    InsufficientBalance { available: u64, spent: u64 },
 }
+
+pub type StfResult<T> = Result<T, StfError>;
 
 // FIXME: There's a lot of func arguments :o
 pub fn process_block(
@@ -47,7 +71,7 @@ pub fn process_block(
     params: &RollupParams,
     state_accessor: &mut impl StateAccessor,
     ledger_provider: &mut impl LedgerProvider,
-) -> Result<BlockExecutionOutput<OLState, OLLog>, StfError> {
+) -> StfResult<BlockExecutionOutput<OLState, OLLog>> {
     // Validate block header
     block
         .validate_block_header(params, prev_header)
@@ -66,20 +90,22 @@ pub fn process_block(
     if let Some(l1update) = block.body().l1update() {
         let seal_logs = seal_epoch(params, l1update, state_accessor, ledger_provider)?;
         logs.extend(seal_logs);
+
+        // Increment the cur epoch now that we have sealed this epoch
+        state_accessor.set_cur_epoch(state_accessor.cur_epoch() + 1);
     }
 
-    let wb = OLState::default();
+    // Increment cur slot ??
+    // state_accessor.set_cur_slot(state_accessor.cur_slot() + 1);
+
+    // Set accounts root
+    state_accessor.set_accounts_root(ledger_provider.root()?);
+
+    // TODO: calculate new state root
+
+    let wb = OLState::default(); // TODO: get current state, possibly from state_accessor
     let out = BlockExecutionOutput::new(Buf32::zero(), logs, wb);
     Ok(out)
-}
-
-fn execute_transaction(
-    params: &RollupParams,
-    state_accessor: &mut impl StateAccessor,
-    ledger_provider: &mut impl LedgerProvider,
-    tx: &Transaction,
-) -> Result<Vec<OLLog>, StfError> {
-    todo!()
 }
 
 fn seal_epoch(
@@ -87,7 +113,7 @@ fn seal_epoch(
     l1update: &L1Update,
     state_accessor: &mut impl StateAccessor,
     ledger_provider: &mut impl LedgerProvider,
-) -> Result<Vec<OLLog>, StfError> {
+) -> StfResult<Vec<OLLog>> {
     let mut logs = Vec::new();
     for manifest in l1update.manifests() {
         for asmlog in manifest.logs() {
@@ -103,6 +129,7 @@ fn seal_epoch(
             }
         }
     }
+    // TODO: set l1_view
     Ok(logs)
 }
 
@@ -115,16 +142,17 @@ fn process_deposit(
     dep: &DepositLog,
     state_accessor: &mut impl StateAccessor,
     ledger_provider: &mut impl LedgerProvider,
-) -> Result<(), StfError> {
+) -> StfResult<()> {
     let serial = dep.ee_id as u32;
     let acct_id = ledger_provider
         .account_id(serial)?
         .ok_or(StfError::NonExistentAccountSerial(serial))?;
     let mut acct_state = ledger_provider
-        .account_state(acct_id)?
+        .account_state(&acct_id)?
         .ok_or(StfError::NonExistentAccount(acct_id))?;
 
     acct_state.balance += dep.amount;
+
     let message = SnarkAccountMessageEntry {
         source: bridge_account_id(),
         included_epoch: state_accessor.cur_epoch(),
@@ -139,6 +167,7 @@ fn process_deposit(
     Ok(())
 }
 
+// TODO: this should be concretely serialized, perhaps SSZ?
 fn deposit_log_to_msg_payload(dep: &DepositLog) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(&dep.amount.to_be_bytes());
@@ -149,6 +178,7 @@ fn deposit_log_to_msg_payload(dep: &DepositLog) -> Vec<u8> {
 fn process_checkpoint(
     _ckpt: &CheckpointUpdate,
     _state_accessor: &mut impl StateAccessor,
-) -> Result<(), StfError> {
+) -> StfResult<()> {
+    // TODO: possibly extract, validate and set finalized/confirmed epoch.
     todo!()
 }
