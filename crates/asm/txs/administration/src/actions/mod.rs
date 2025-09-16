@@ -1,7 +1,10 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_l1_txfmt::TxType;
-use strata_primitives::hash;
+use strata_primitives::{
+    hash,
+    roles::{ProofType, Role},
+};
 
 mod cancel;
 pub mod updates;
@@ -11,8 +14,9 @@ use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
 pub use updates::UpdateAction;
 
 use crate::constants::{
-    ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE, MULTISIG_CONFIG_UPDATE_TX_TYPE,
-    OPERATOR_UPDATE_TX_TYPE, SEQUENCER_UPDATE_TX_TYPE,
+    ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE, OL_STF_VK_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
+    SEQUENCER_UPDATE_TX_TYPE, STRATA_ADMIN_MULTISIG_UPDATE_TX_TYPE,
+    STRATA_SEQ_MANAGER_MULTISIG_UPDATE_TX_TYPE,
 };
 
 pub type UpdateId = u32;
@@ -51,10 +55,16 @@ impl MultisigAction {
         match self {
             MultisigAction::Cancel(_) => CANCEL_TX_TYPE,
             MultisigAction::Update(update) => match update {
-                UpdateAction::Multisig(_) => MULTISIG_CONFIG_UPDATE_TX_TYPE,
+                UpdateAction::Multisig(update) => match update.role() {
+                    Role::StrataAdministrator => STRATA_ADMIN_MULTISIG_UPDATE_TX_TYPE,
+                    Role::StrataSequencerManager => STRATA_SEQ_MANAGER_MULTISIG_UPDATE_TX_TYPE,
+                },
                 UpdateAction::OperatorSet(_) => OPERATOR_UPDATE_TX_TYPE,
                 UpdateAction::Sequencer(_) => SEQUENCER_UPDATE_TX_TYPE,
-                UpdateAction::VerifyingKey(_) => ASM_STF_VK_UPDATE_TX_TYPE, // FIXME:
+                UpdateAction::VerifyingKey(vk) => match vk.kind() {
+                    ProofType::Asm => ASM_STF_VK_UPDATE_TX_TYPE,
+                    ProofType::OlStf => OL_STF_VK_UPDATE_TX_TYPE,
+                },
             },
         }
     }
