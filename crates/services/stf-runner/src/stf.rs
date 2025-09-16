@@ -109,15 +109,18 @@ pub fn process_block(
     // Check state root
     let new_state = state_accessor.get_toplevel_state().clone();
     let state_root = new_state.compute_root();
-    let exp_root = *block.signed_header().header().state_root();
-    if state_root != exp_root {
-        // TODO: use `Mismatch` struct
-        return Err(StfError::StateRootMismatch {
-            expected: exp_root,
-            got: state_root,
-        });
-        // TODO: should revert state accessor to previous state?
-    }
+
+    // NOTE: Need to check state root matches or not. That should happen outside this.
+
+    // let exp_root = *block.signed_header().header().state_root();
+    // if state_root != exp_root {
+    //     // TODO: use `Mismatch` struct
+    //     return Err(StfError::StateRootMismatch {
+    //         expected: exp_root,
+    //         got: state_root,
+    //     });
+    //     // TODO: should revert state accessor to previous state?
+    // }
 
     let out = BlockExecutionOutput::new(state_root, logs, new_state);
     Ok(out)

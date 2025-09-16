@@ -61,7 +61,8 @@ pub enum TransactionPayload {
         payload: Vec<u8>,
     },
     SnarkAccountUpdate {
-        target: AccountId,
+        target: AccountId, // is the transaction supposed to update the state of this target? looks
+        // like it
         update: SnarkAccountUpdate,
     },
 }
@@ -279,10 +280,11 @@ impl Transaction {
     /// along with vk? and then we can have transactions to update the pubkey if sequencer needs to
     /// rotate. Just a thought.
     pub fn account_id(&self) -> AccountId {
-        // FIXME: what could be the account id? For now returning 2222... as we will have single
-        // Execution Domain.
-        let id = [2u8; 32];
-        id.into()
+        match self.payload() {
+            TransactionPayload::SnarkAccountUpdate { target, .. } => *target,
+            // FIXME: this is probably not correct for Generic Account Message
+            TransactionPayload::GenericAccountMessage { target, .. } => *target,
+        }
     }
 }
 
