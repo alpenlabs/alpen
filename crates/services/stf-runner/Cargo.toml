@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 
 strata-asm-common.workspace = true

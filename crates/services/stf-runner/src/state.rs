@@ -57,6 +57,24 @@ impl OLState {
     pub fn set_cur_epoch(&mut self, cur_epoch: u64) {
         self.cur_epoch = cur_epoch;
     }
+
+    pub fn compute_root(&self) -> Buf32 {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+
+        // Hash accounts root
+        hasher.update(self.accounts_root.as_ref());
+
+        // Hash L1 view components
+        hasher.update(self.l1_view.block_hash.as_ref());
+        hasher.update(&self.l1_view.block_height.to_be_bytes());
+
+        // Hash current slot and epoch
+        hasher.update(&self.cur_slot.to_be_bytes());
+        hasher.update(&self.cur_epoch.to_be_bytes());
+
+        Buf32::new(hasher.finalize().into())
+    }
 }
 
 impl L1View {

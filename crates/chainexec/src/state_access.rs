@@ -32,7 +32,7 @@ impl MemStateAccessor {
     }
 }
 
-impl StateAccessor for MemStateAccessor {
+impl StateAccessor<Chainstate> for MemStateAccessor {
     fn state_untracked(&self) -> &Chainstate {
         self.state_cache.state()
     }
@@ -96,5 +96,9 @@ impl StateAccessor for MemStateAccessor {
 
     fn set_accounts_root(&mut self, root: Buf32) {
         // TODO: add impl
+    }
+
+    fn get_toplevel_state(&mut self) -> &Chainstate {
+        self.state_cache.state()
     }
 }

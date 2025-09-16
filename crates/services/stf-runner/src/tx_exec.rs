@@ -8,12 +8,13 @@ use crate::{
     },
     block::{OLLog, Transaction, TransactionPayload},
     ledger::LedgerProvider,
+    state::OLState,
     stf::{StfError, StfResult},
 };
 
 pub(crate) fn execute_transaction(
     params: &RollupParams,
-    state_accessor: &mut impl StateAccessor,
+    state_accessor: &mut impl StateAccessor<OLState>,
     ledger_provider: &mut impl LedgerProvider,
     tx: &Transaction,
 ) -> StfResult<Vec<OLLog>> {
@@ -41,7 +42,7 @@ pub(crate) fn execute_transaction(
 
 fn execute_snark_update(
     _params: &RollupParams,
-    state_accessor: &mut impl StateAccessor,
+    state_accessor: &mut impl StateAccessor<OLState>,
     ledger_provider: &mut impl LedgerProvider,
     acct_id: &Buf32,
     _target: &Buf32, // What exactly to do with this??
@@ -82,7 +83,7 @@ fn execute_snark_update(
 }
 
 fn verify_update_correctness(
-    state_accessor: &mut impl StateAccessor,
+    state_accessor: &mut impl StateAccessor<OLState>,
     ledger_provider: &mut impl LedgerProvider,
     snark_state: &SnarkAccountState,
     acct_id: &AccountId,

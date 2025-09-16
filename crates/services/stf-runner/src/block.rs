@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use strata_asm_common::AsmLogEntry;
 use strata_primitives::{
     buf::{Buf32, Buf64},
@@ -115,10 +116,42 @@ impl OLBlock {
 
     pub fn validate_block_header(
         &self,
-        params: &RollupParams,
+        _params: &RollupParams,
         prev_header: &OLBlockHeader,
     ) -> Result<(), String> {
-        // TODO: check continuity, roots, etc.
+        let current_header = self.signed_header.header();
+
+        if current_header.slot() > 0 && current_header.slot() != prev_header.slot() + 1 {
+            return Err(format!("Invalid block slot {}", current_header.slot()));
+        }
+        if current_header.slot() > 0
+            && *current_header.parent_blockid() != prev_header.compute_header_root()
+        {
+            return Err("Invalid parent block ID".to_string());
+        }
+
+        // Check epoch progression - epoch should not decrease
+        if current_header.epoch() != 0 && current_header.epoch() < prev_header.epoch() {
+            return Err(format!(
+                "Epoch regression: current {} < previous {}",
+                current_header.epoch, prev_header.epoch
+            ));
+        }
+
+        // Check timestamp progression - should not go backwards.
+        // FIXME: might need to use some threshold like bitcoin.
+        if current_header.timestamp < prev_header.timestamp {
+            return Err(format!(
+                "Timestamp regression: current {} < previous {}",
+                current_header.timestamp, prev_header.timestamp
+            ));
+        }
+
+        // Basic sanity checks
+        if current_header.body_root == Buf32::zero() {
+            return Err("Invalid body root (zero hash)".to_string());
+        }
+
         Ok(())
     }
 }
@@ -179,6 +212,20 @@ impl OLBlockHeader {
     pub fn state_root(&self) -> &Buf32 {
         &self.state_root
     }
+
+    pub fn compute_header_root(&self) -> Buf32 {
+        let mut hasher = Sha256::new();
+
+        // Hash all header fields in a deterministic order
+        hasher.update(self.timestamp.to_be_bytes());
+        hasher.update(self.slot.to_be_bytes());
+        hasher.update(self.epoch.to_be_bytes());
+        hasher.update(self.parent_blockid.as_ref());
+        hasher.update(self.body_root.as_ref());
+        hasher.update(self.state_root.as_ref());
+
+        Buf32::new(hasher.finalize().into())
+    }
 }
 
 impl OLBlockBody {
@@ -232,8 +279,10 @@ impl Transaction {
     /// along with vk? and then we can have transactions to update the pubkey if sequencer needs to
     /// rotate. Just a thought.
     pub fn account_id(&self) -> AccountId {
-        // TODO: what could be the account id?
-        todo!()
+        // FIXME: what could be the account id? For now returning 2222... as we will have single
+        // Execution Domain.
+        let id = [2u8; 32];
+        id.into()
     }
 }
 
