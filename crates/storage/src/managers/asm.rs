@@ -1,17 +1,13 @@
 use std::sync::Arc;
 
-use strata_asm_common::AnchorState;
-use strata_db::{
-    traits::{AsmDatabase, L1Database},
-    DbError, DbResult,
-};
-use strata_primitives::l1::{L1BlockCommitment, L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_db::{traits::AsmDatabase, DbResult};
+use strata_primitives::l1::L1BlockCommitment;
+use strata_state::asm_state::AsmState;
 use threadpool::ThreadPool;
-use tracing::error;
 
 use crate::ops;
 
-/// Caching manager of L1 block data
+/// A manager for the persistence of [`AsmState`].
 #[expect(missing_debug_implementations)]
 pub struct AsmManager {
     ops: ops::asm::AsmDataOps,
@@ -24,10 +20,18 @@ impl AsmManager {
         Self { ops }
     }
 
-    /// Returns [`AnchorState`] that corresponds to the "heighest" block.
-    pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, AnchorState)>> {
-        self.ops
-            .get_latest_asm_state_blocking()
-            .map(|x| x.map(|(k, v)| (k, v.state)))
+    /// Returns [`AsmState`] that corresponds to the "highest" block.
+    pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
+        self.ops.get_latest_asm_state_blocking()
+    }
+
+    /// Returns [`AsmState`] that corresponds to passed block.
+    pub fn get_state(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>> {
+        self.ops.get_asm_state_blocking(block)
+    }
+
+    /// Puts [`AsmState`] for the given block.
+    pub fn put_state(&self, block: L1BlockCommitment, asm_state: AsmState) -> DbResult<()> {
+        self.ops.put_asm_state_blocking(block, asm_state)
     }
 }
