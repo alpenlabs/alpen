@@ -22,5 +22,5 @@ zkaleido.workspace = true
 strata-test-utils.workspace = true
 
 [features]
-default = ["rand"]
-rand = ["dep:rand"]
+default = []
+test-utils = ["dep:rand"]

@@ -16,10 +16,8 @@ use bitvec::vec::BitVec;
 use rand::{RngCore, rngs::OsRng};
 use strata_crypto::{
     EvenSecretKey,
-    multisig::{
-        schemes::{SchnorrScheme, schnorr::create::create_musig2_signature},
-        signature::AggregatedSignature,
-    },
+    multisig::{schemes::SchnorrScheme, signature::AggregatedSignature},
+    test_utils::schnorr::create_musig2_signature,
 };
 use strata_primitives::buf::{Buf32, Buf64};
 

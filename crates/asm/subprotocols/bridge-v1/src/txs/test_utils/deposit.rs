@@ -10,9 +10,7 @@ use bitcoin::{
 };
 use strata_crypto::{
     EvenSecretKey,
-    multisig::schemes::schnorr::create::{
-        create_agg_pubkey_from_privkeys, create_musig2_signature,
-    },
+    test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
 
 use crate::txs::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};

@@ -1,6 +1,3 @@
-#[cfg(feature = "rand")]
-pub mod create;
-
 use bitcoin::{key::Parity, secp256k1::PublicKey, XOnlyPublicKey};
 use musig2::KeyAggContext;
 use strata_primitives::{

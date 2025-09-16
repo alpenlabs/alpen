@@ -22,7 +22,7 @@ thiserror.workspace = true
 zkaleido.workspace = true
 
 [features]
-test-utils = ["rand", "strata-crypto/rand"]
+test-utils = ["rand", "strata-crypto/test-utils"]
 
 [dev-dependencies]
 strata-test-utils.workspace = true
