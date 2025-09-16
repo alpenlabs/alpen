@@ -40,7 +40,7 @@ impl WorkerContext for AsmWorkerCtx {
         todo!()
     }
 
-    fn get_latest_anchor_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AnchorState)>> {
+    fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AnchorState)>> {
         todo!()
     }
 

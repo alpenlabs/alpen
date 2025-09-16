@@ -57,7 +57,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     ///
     /// If there are no anchor states yet, creates and stores genesis one beforehand.
     pub(crate) fn load_latest_or_create_genesis(&mut self) -> WorkerResult<()> {
-        match self.context.get_latest_anchor_state()? {
+        match self.context.get_latest_asm_state()? {
             Some((blkid, state)) => {
                 self.update_anchor_state(state, blkid);
                 Ok(())

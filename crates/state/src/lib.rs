@@ -6,6 +6,7 @@
 //! Types relating to the execution-layer state are kept generic, not
 //! reusing any Reth types.
 
+pub mod asm_state;
 pub mod block;
 pub mod block_validation;
 pub mod bridge_ops;

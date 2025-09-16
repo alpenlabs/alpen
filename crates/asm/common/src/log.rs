@@ -29,7 +29,8 @@ pub trait AsmLog: BorshSerialize + BorshDeserialize {
 /// Create log entries using [`AsmLogEntry::from_log`], [`AsmLogEntry::from_raw`], or
 /// [`AsmLogEntry::from_msg`], and retrieve typed data using [`AsmLogEntry::try_into_log`]
 /// or check if it's a valid SPS-52 message using [`AsmLogEntry::try_as_msg`].
-#[derive(Clone, Debug, PartialEq)]
+/// TODO(QQ): FIX borsh here.
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AsmLogEntry(pub Vec<u8>);
 
 impl AsmLogEntry {
@@ -102,24 +103,5 @@ impl AsmLogEntry {
     /// Consume the log entry and return the raw bytes.
     pub fn into_bytes(self) -> Vec<u8> {
         self.0
-    }
-}
-
-// TODO: Remove these Borsh implementations when upstream OwnedMsg implements
-// Serialize/Deserialize The Message wrapper was primarily created to add serialization support.
-impl BorshSerialize for AsmLogEntry {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        // Serialize as (ty, body) tuple for Borsh compatibility
-        (self.0.ty(), self.0.body().to_vec()).serialize(writer)
-    }
-}
-
-impl BorshDeserialize for AsmLogEntry {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        // Deserialize as (ty, body) tuple for Borsh compatibility
-        let (ty, body): (TypeId, Vec<u8>) = BorshDeserialize::deserialize_reader(reader)?;
-        let owned_msg = OwnedMsg::new(ty, body)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(AsmLogEntry(owned_msg))
     }
 }
