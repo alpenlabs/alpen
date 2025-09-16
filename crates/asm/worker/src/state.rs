@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::Block;
-use strata_asm_common::{AnchorState, AsmLogEntry, AuxPayload, ChainViewState};
+use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_primitives::{
@@ -9,6 +9,7 @@ use strata_primitives::{
     params::Params,
 };
 use strata_service::ServiceState;
+use strata_state::asm_state::AsmState;
 
 use crate::{WorkerContext, WorkerError, WorkerResult};
 
@@ -24,12 +25,8 @@ pub struct AsmWorkerServiceState<W> {
     /// Whether the service is initialized.
     pub(crate) initialized: bool,
 
-    /// ASM log entries emitted as a result of applying the current anchor block.
-    #[expect(unused, reason = "will be used soon")]
-    pub(crate) cur_logs: Option<Vec<AsmLogEntry>>,
-
-    /// Current anchor state.
-    pub(crate) anchor: Option<AnchorState>,
+    /// Current ASM state.
+    pub(crate) anchor: Option<AsmState>,
 
     /// Current anchor block.
     pub(crate) blkid: Option<L1BlockCommitment>,
@@ -47,7 +44,6 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             context,
             anchor: None,
             blkid: None,
-            cur_logs: None,
             initialized: false,
             asm_spec,
         }
@@ -76,6 +72,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                 };
 
                 // Persist it and update state.
+                let state = AsmState::new(state, vec![]);
                 self.context
                     .store_anchor_state(&genesis_l1_view.blk, &state)?;
                 self.update_anchor_state(state, genesis_l1_view.blk);
@@ -92,7 +89,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         let cur_state = self.anchor.as_ref().expect("state should be set before");
 
         // Pre process transition next block against current anchor state.
-        let pre_process = strata_asm_stf::pre_process_asm(&self.asm_spec, cur_state, block)
+        let pre_process = strata_asm_stf::pre_process_asm(&self.asm_spec, &cur_state.state, block)
             .map_err(WorkerError::AsmError)?;
 
         // Data transformation.
@@ -126,12 +123,12 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         };
 
         // Asm transition.
-        strata_asm_stf::compute_asm_transition(&self.asm_spec, cur_state, stf_input)
+        strata_asm_stf::compute_asm_transition(&self.asm_spec, &cur_state.state, stf_input)
             .map_err(WorkerError::AsmError)
     }
 
     /// Updates anchor related bookkeping.
-    pub(crate) fn update_anchor_state(&mut self, anchor: AnchorState, blkid: L1BlockCommitment) {
+    pub(crate) fn update_anchor_state(&mut self, anchor: AsmState, blkid: L1BlockCommitment) {
         self.initialized = true;
         self.anchor = Some(anchor);
         self.blkid = Some(blkid);

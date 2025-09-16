@@ -3,7 +3,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{AnchorState, AsmLogEntry};
 use strata_asm_stf::AsmStfOutput;
-#[derive(Debug, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub struct AsmState {
     pub state: AnchorState,
     pub logs: Vec<AsmLogEntry>,

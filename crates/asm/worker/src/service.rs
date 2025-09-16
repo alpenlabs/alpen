@@ -3,6 +3,7 @@
 use serde::Serialize;
 use strata_primitives::prelude::*;
 use strata_service::{Response, Service, SyncService};
+use strata_state::asm_state::AsmState;
 use tracing::*;
 
 use crate::{AsmWorkerServiceState, traits::WorkerContext};
@@ -82,11 +83,10 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             info!(%block_id, "ASM transition attempt");
             match state.transition(block) {
                 Ok(asm_stf_out) => {
+                    let new_state = AsmState::from_output(asm_stf_out);
                     // Store and update anchor.
-                    state
-                        .context
-                        .store_anchor_state(block_id, &asm_stf_out.state)?;
-                    state.update_anchor_state(asm_stf_out.state, *block_id);
+                    state.context.store_anchor_state(block_id, &new_state)?;
+                    state.update_anchor_state(new_state, *block_id);
                 }
                 Err(e) => {
                     error!(%e, "ASM transition error");

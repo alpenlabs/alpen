@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use bitcoind_async_client::{traits::Reader, Client};
+use bitcoind_async_client::Client;
 use strata_asm_worker::AsmWorkerHandle;
 use strata_chain_worker::ChainWorkerHandle;
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
@@ -101,10 +101,12 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     )?);
 
     // ASM worker.
+    let asm_handle = executor.handle().clone();
     let asm_storage = storage.clone();
     let asm_params = params.clone();
     let asm_controller = Arc::new(spawn_asm_worker(
         executor,
+        asm_handle,
         asm_storage,
         asm_params,
         bitcoin_client,
@@ -196,6 +198,7 @@ fn spawn_chain_worker(
 
 fn spawn_asm_worker(
     executor: &TaskExecutor,
+    handle: Handle,
     storage: Arc<NodeStorage>,
     params: Arc<Params>,
     bitcoin_client: Arc<Client>,
@@ -203,7 +206,12 @@ fn spawn_asm_worker(
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
     // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
     // block manager).
-    let context = AsmWorkerCtx::new(storage.l1().clone(), bitcoin_client, storage.asm().clone());
+    let context = AsmWorkerCtx::new(
+        handle,
+        bitcoin_client,
+        storage.l1().clone(),
+        storage.asm().clone(),
+    );
 
     // Use the new builder API to launch the worker and get a handle
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
