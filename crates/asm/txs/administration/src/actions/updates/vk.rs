@@ -4,7 +4,7 @@ use strata_asm_common::TxInputRef;
 use strata_primitives::roles::ProofType;
 use zkaleido::VerifyingKey;
 
-use crate::error::AdministrationTxParseError;
+use crate::errors::AdministrationTxParseError;
 
 /// An update to the verifying key for a given Strata proof layer.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]

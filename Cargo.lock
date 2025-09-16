@@ -14212,6 +14212,8 @@ name = "strata-asm-proto-administration"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "bitcoin",
+ "bitvec",
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
@@ -14227,11 +14229,16 @@ name = "strata-asm-proto-administration-txs"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "bitcoin",
+ "bitvec",
  "borsh",
+ "rand 0.8.5",
  "strata-asm-common",
  "strata-crypto",
  "strata-l1-txfmt",
+ "strata-l1tx",
  "strata-primitives",
+ "strata-test-utils",
  "thiserror 2.0.16",
  "zkaleido",
 ]
@@ -14251,8 +14258,8 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-crypto",
  "strata-l1-txfmt",
- "strata-l1tx",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
@@ -14504,8 +14511,13 @@ name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
+ "bitcoin",
+ "bitvec",
  "borsh",
+ "musig2",
+ "rand 0.8.5",
  "strata-primitives",
+ "strata-test-utils",
  "thiserror 2.0.16",
  "zkaleido",
 ]
@@ -14695,9 +14707,9 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "borsh",
- "musig2",
  "secp256k1 0.29.1",
  "strata-btcio",
+ "strata-crypto",
  "strata-l1-txfmt",
  "strata-primitives",
  "strata-state",

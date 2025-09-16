@@ -1,22 +1,61 @@
-// TODO: This needs to be in a different crate. Maybe strata-crypto
 pub mod config;
 pub mod errors;
-pub mod msg;
-pub mod vote;
+pub mod schemes;
+pub mod signature;
+pub mod traits;
 
-use strata_primitives::buf::{Buf32, Buf64};
+// Re-export the Schnorr scheme and Schnorr aggregation
+pub use schemes::{aggregate_schnorr_keys, SchnorrScheme};
 
-use crate::multisig::{errors::VoteValidationError, msg::MultisigPayload};
+// Type aliases for Schnorr-based multisig
+pub type SchnorrMultisigConfig = config::MultisigConfig<SchnorrScheme>;
+pub type SchnorrMultisigConfigUpdate = config::MultisigConfigUpdate<SchnorrScheme>;
+pub type SchnorrMultisigSignature = signature::AggregatedSignature<SchnorrScheme>;
 
-pub type PubKey = Buf32;
-pub type Signature = Buf64;
+// Re-export the single error type
+pub use errors::MultisigError;
 
-// FIXME: handle
-pub fn aggregate_pubkeys(_keys: &[PubKey]) -> Result<PubKey, VoteValidationError> {
-    Ok(PubKey::default())
-}
+use crate::multisig::traits::CryptoScheme;
 
-// FIXME: handle
-pub fn verify_sig(_pk: &PubKey, _payload: &MultisigPayload, _sig: &Signature) -> bool {
-    true
+/// Generic multisig verification function that takes a multisig configuration, aggregated
+/// signature, and message hash, then performs the full verification process using the provided
+/// cryptographic scheme.
+///
+/// # Arguments
+/// * `config` - The multisig configuration containing keys and threshold
+/// * `signature` - The aggregated signature containing signer indices and aggregated signature
+/// * `message_hash` - The message hash that was signed
+///
+/// # Returns
+/// Returns `Ok(())` if verification succeeds, or an error if:
+/// - Insufficient keys (threshold is not achieved)
+/// - Key aggregation fails
+/// - Signature verification fails
+pub fn verify_multisig<S: CryptoScheme>(
+    config: &config::MultisigConfig<S>,
+    signature: &signature::AggregatedSignature<S>,
+    message_hash: &[u8; 32],
+) -> Result<(), MultisigError> {
+    // Check threshold
+    let selected_count = signature.signer_indices().count_ones();
+    if selected_count < config.threshold() as usize {
+        return Err(MultisigError::InsufficientKeys {
+            provided: selected_count,
+            required: config.threshold() as usize,
+        });
+    }
+
+    // Aggregate selected keys
+    let selected_keys = signature
+        .signer_indices()
+        .iter_ones()
+        .map(|index| &config.keys()[index]);
+    let aggregated_key = S::aggregate(selected_keys)?;
+
+    // Verify signature
+    if !S::verify(&aggregated_key, message_hash, signature.signature()) {
+        return Err(MultisigError::InvalidSignature);
+    }
+
+    Ok(())
 }

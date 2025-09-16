@@ -3,6 +3,9 @@ name = "strata-asm-proto-administration"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-proto-administration-txs.workspace = true
@@ -13,9 +16,11 @@ arbitrary.workspace = true
 borsh.workspace = true
 thiserror.workspace = true
 
-[lints]
-workspace = true
-
 [dev-dependencies]
+strata-asm-proto-administration-txs = { workspace = true, features = [
+  "test-utils",
+] }
 strata-test-utils.workspace = true
 rand.workspace = true
+bitvec.workspace = true
+bitcoin.workspace = true

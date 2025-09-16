@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_proto_administration_txs::actions::UpdateId;
-use strata_crypto::multisig::config::MultisigConfigUpdate;
+use strata_crypto::multisig::SchnorrMultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
@@ -55,7 +55,7 @@ impl AdministrationSubprotoState {
     pub fn apply_multisig_update(
         &mut self,
         role: Role,
-        update: &MultisigConfigUpdate,
+        update: &SchnorrMultisigConfigUpdate,
     ) -> Result<(), AdministrationError> {
         if let Some(auth) = self.authority_mut(role) {
             auth.config_mut().apply_update(update)?;
@@ -112,8 +112,8 @@ impl AdministrationSubprotoState {
 mod tests {
     use rand::{Rng, thread_rng};
     use strata_asm_proto_administration_txs::actions::UpdateAction;
-    use strata_crypto::multisig::{PubKey, config::MultisigConfigUpdate};
-    use strata_primitives::roles::Role;
+    use strata_crypto::multisig::config::MultisigConfigUpdate;
+    use strata_primitives::{buf::Buf32, roles::Role};
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{
@@ -229,23 +229,27 @@ mod tests {
         let role: Role = arb.generate();
 
         let initial_auth = state.authority(role).unwrap().config();
-        let initial_members = initial_auth.keys();
-        let initial_threshold = initial_auth.threshold() as usize;
+        let initial_members: Vec<Buf32> = initial_auth.keys().to_vec();
 
-        let new_members: Vec<PubKey> = arb.generate();
+        let add_members: Vec<Buf32> = arb.generate();
 
         // Randomly pick some members to remove
         let mut rng = thread_rng();
-        let members_to_remove: Vec<PubKey> = initial_members
-            .iter()
-            .filter(|_| rng.gen_bool(0.3)) // 30% chance to remove each member
-            .cloned()
-            .collect();
-        let new_threshold = initial_threshold + new_members.len() - members_to_remove.len();
+        let mut remove_members = Vec::new();
+
+        for member in &initial_members {
+            if rng.gen_bool(0.3) {
+                // 30% chance to remove each member
+                remove_members.push(*member);
+            }
+        }
+
+        let new_size = initial_members.len() + add_members.len() - remove_members.len();
+        let new_threshold = rng.gen_range(1..=new_size);
 
         let update = MultisigConfigUpdate::new(
-            new_members.clone(),
-            members_to_remove.clone(),
+            add_members.clone(),
+            remove_members.clone(),
             new_threshold as u8,
         );
 
@@ -256,17 +260,17 @@ mod tests {
         // Verify threshold was updated
         assert_eq!(updated_auth.threshold(), new_threshold as u8);
 
-        // Verify that old members were removed
-        for old_member in &members_to_remove {
+        // Verify that specified members were removed
+        for member_to_remove in &remove_members {
             assert!(
-                !updated_auth.keys().contains(old_member),
-                "Old member {:?} was not removed",
-                old_member
+                !updated_auth.keys().contains(member_to_remove),
+                "Member {:?} was not removed",
+                member_to_remove
             );
         }
 
         // Verify that new members were added
-        for new_member in &new_members {
+        for new_member in &add_members {
             assert!(
                 updated_auth.keys().contains(new_member),
                 "New member {:?} was not added",
