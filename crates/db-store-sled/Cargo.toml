@@ -12,6 +12,7 @@ typed-sled.workspace = true
 zkaleido.workspace = true
 
 anyhow.workspace = true
+bincode.workspace = true
 borsh.workspace = true
 sled.workspace = true
 

@@ -1,5 +1,6 @@
 //! Sled store for the Alpen codebase.
 
+pub mod asm;
 pub mod broadcaster;
 pub mod chain_state;
 pub mod checkpoint;
@@ -18,6 +19,7 @@ pub mod writer;
 use std::{path::Path, sync::Arc};
 
 // Re-exports
+use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
@@ -51,6 +53,7 @@ pub fn open_sled_backend(
 /// Complete Sled backend with all database types
 #[derive(Debug)]
 pub struct SledBackend {
+    asm_db: Arc<AsmDBSled>,
     l1_db: Arc<L1DBSled>,
     l2_db: Arc<L2DBSled>,
     client_state_db: Arc<ClientStateDBSled>,
@@ -67,6 +70,7 @@ impl SledBackend {
         let db_ref = &sled_db;
         let config_ref = &config;
 
+        let asm_db = Arc::new(AsmDBSled::new(db_ref.clone(), config_ref.clone())?);
         let l1_db = Arc::new(L1DBSled::new(db_ref.clone(), config_ref.clone())?);
         let l2_db = Arc::new(L2DBSled::new(db_ref.clone(), config_ref.clone())?);
         let client_state_db = Arc::new(ClientStateDBSled::new(db_ref.clone(), config_ref.clone())?);
@@ -76,6 +80,7 @@ impl SledBackend {
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
         Ok(Self {
+            asm_db,
             l1_db,
             l2_db,
             client_state_db,
@@ -89,6 +94,10 @@ impl SledBackend {
 }
 
 impl DatabaseBackend for SledBackend {
+    fn asm_db(&self) -> Arc<impl strata_db::traits::AsmDatabase> {
+        self.asm_db.clone()
+    }
+
     fn l1_db(&self) -> Arc<impl strata_db::traits::L1Database> {
         self.l1_db.clone()
     }

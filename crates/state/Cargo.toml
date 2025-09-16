@@ -10,6 +10,8 @@ workspace = true
 # reuse much of reth in this crate so that we can factor it all out eventually.
 
 [dependencies]
+strata-asm-common.workspace = true
+strata-asm-stf.workspace = true
 strata-asm-types.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true

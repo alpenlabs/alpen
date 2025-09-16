@@ -15,7 +15,7 @@ pub trait WorkerContext {
     fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<AnchorState>;
 
     /// Fetches the latest [`AnchorState`] - the one that corresponds to the "highest" block.
-    fn get_latest_anchor_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AnchorState)>>;
+    fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AnchorState)>>;
 
     /// Puts the [`AnchorState`] into DB.
     fn store_anchor_state(

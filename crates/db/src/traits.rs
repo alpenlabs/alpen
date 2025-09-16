@@ -5,15 +5,15 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
-use strata_asm_common::AnchorState;
-use strata_asm_stf::AsmStfOutput;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_primitives::{
     batch::EpochSummary,
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
-use strata_state::{block::L2BlockBundle, client_state::ClientState, operation::*};
+use strata_state::{
+    asm_state::AsmState, block::L2BlockBundle, client_state::ClientState, operation::*,
+};
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
@@ -39,14 +39,14 @@ pub trait DatabaseBackend: Send + Sync {
 
 /// Database interface to control our view of ASM state.
 pub trait AsmDatabase: Send + Sync + 'static {
-    /// Writes a new consensus output for a given l1 block.
-    fn put_asm_output(&self, block: L1BlockCommitment, output: AsmStfOutput) -> DbResult<()>;
+    /// Writes a new ASM state for a given l1 block.
+    fn put_asm_state(&self, block: L1BlockCommitment, state: AsmState) -> DbResult<()>;
 
-    /// Gets the output client state writes for some input index.
-    fn get_asm_output(&self, block: L1BlockCommitment) -> DbResult<Option<AsmStfOutput>>;
+    /// Gets the ASM state for the given l1 block.
+    fn get_asm_state(&self, block: L1BlockCommitment) -> DbResult<Option<AsmState>>;
 
-    /// Gets latest client state (the entry that corresponds to the highest l1 block).
-    fn get_latest_anchor_state(&self) -> DbResult<Option<(L1BlockCommitment, AnchorState)>>;
+    /// Gets latest ASM state (the entry that corresponds to the highest l1 block).
+    fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>>;
 }
 
 /// Database interface to control our view of L1 data.

@@ -26,6 +26,8 @@ impl AsmManager {
 
     /// Returns [`AnchorState`] that corresponds to the "heighest" block.
     pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, AnchorState)>> {
-        self.ops.get_latest_anchor_state_blocking()
+        self.ops
+            .get_latest_asm_state_blocking()
+            .map(|x| x.map(|(k, v)| (k, v.state)))
     }
 }
