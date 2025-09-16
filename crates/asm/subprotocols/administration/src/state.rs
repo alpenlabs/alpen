@@ -231,27 +231,25 @@ mod tests {
         let initial_auth = state.authority(role).unwrap().config();
         let initial_members: Vec<Buf32> = initial_auth.keys().to_vec();
 
-        let new_members: Vec<Buf32> = arb.generate();
+        let add_members: Vec<Buf32> = arb.generate();
 
-        // Randomly pick some members to remove by creating a bitvec
+        // Randomly pick some members to remove
         let mut rng = thread_rng();
-        let mut members_to_remove_bitvec = bitvec::bitvec![0; initial_members.len()];
-        let mut removal_count = 0;
+        let mut remove_members = Vec::new();
 
-        for i in 0..initial_members.len() {
+        for member in &initial_members {
             if rng.gen_bool(0.3) {
                 // 30% chance to remove each member
-                members_to_remove_bitvec.set(i, true);
-                removal_count += 1;
+                remove_members.push(*member);
             }
         }
 
-        let new_size = initial_members.len() + new_members.len() - removal_count;
+        let new_size = initial_members.len() + add_members.len() - remove_members.len();
         let new_threshold = rng.gen_range(1..=new_size);
 
         let update = MultisigConfigUpdate::new(
-            new_members.clone(),
-            members_to_remove_bitvec.clone(),
+            add_members.clone(),
+            remove_members.clone(),
             new_threshold as u8,
         );
 
@@ -262,21 +260,17 @@ mod tests {
         // Verify threshold was updated
         assert_eq!(updated_auth.threshold(), new_threshold as u8);
 
-        // Verify that old members indicated by bitvec were removed
-        for (index, should_be_removed) in members_to_remove_bitvec.iter().enumerate() {
-            if *should_be_removed {
-                let old_member = &initial_members[index];
-                assert!(
-                    !updated_auth.keys().contains(old_member),
-                    "Old member {:?} at index {} was not removed",
-                    old_member,
-                    index
-                );
-            }
+        // Verify that specified members were removed
+        for member_to_remove in &remove_members {
+            assert!(
+                !updated_auth.keys().contains(member_to_remove),
+                "Member {:?} was not removed",
+                member_to_remove
+            );
         }
 
         // Verify that new members were added
-        for new_member in &new_members {
+        for new_member in &add_members {
             assert!(
                 updated_auth.keys().contains(new_member),
                 "New member {:?} was not added",

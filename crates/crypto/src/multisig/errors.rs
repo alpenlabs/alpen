@@ -49,6 +49,15 @@ pub enum MultisigError {
     #[error("cannot add member: already exists in multisig configuration")]
     MemberAlreadyExists,
 
-    #[error("invalid add members: already exists in multisig configuration")]
+    /// Attempted to add duplicate members in a single operation.
+    #[error("duplicate members in add request: cannot add the same member multiple times")]
     DuplicateAddMember,
+
+    /// Attempted to remove duplicate members in a single operation.
+    #[error("duplicate members in remove request: cannot remove the same member multiple times")]
+    DuplicateRemoveMember,
+
+    /// A member to be removed does not exist in the multisig configuration.
+    #[error("cannot remove member: not found in multisig configuration")]
+    MemberNotFound,
 }
