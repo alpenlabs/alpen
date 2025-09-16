@@ -227,6 +227,14 @@ impl Transaction {
     pub fn extra(&self) -> &TransactionExtra {
         &self.extra
     }
+
+    /// The account id this transaction belongs to. Maybe we should also store sequencer pubkey
+    /// along with vk? and then we can have transactions to update the pubkey if sequencer needs to
+    /// rotate. Just a thought.
+    pub fn account_id(&self) -> AccountId {
+        // TODO: what could be the account id?
+        todo!()
+    }
 }
 
 impl TransactionExtra {

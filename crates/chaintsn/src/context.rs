@@ -135,6 +135,9 @@ pub trait StateAccessor {
 
     // Accessors for ledger account entries.
     // TODO
+
+    /// Sets accounts root.
+    fn set_accounts_root(&mut self, root: Buf32);
 }
 
 /// Provider for queries to sideloaded state like L1 block manifests.

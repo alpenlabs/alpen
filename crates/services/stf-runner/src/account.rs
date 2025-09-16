@@ -16,6 +16,7 @@ pub struct AccountState {
 
 /// Account states that correspond to various account types.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum AccountInnerState {
     Snark(SnarkAccountState),
     // add others
@@ -33,14 +34,17 @@ pub struct SnarkAccountUpdate {
 pub struct SnarkAccountUpdateData {
     pub new_state: SnarkAccountProofState,
     pub seq_no: u64,
-    pub processed_messages: Vec<SnarkAcctMsgProof>,
+    pub processed_msgs: Vec<SnarkAcctMsgProof>,
     pub ledger_refs: LedgerReferences,
     pub outputs: AccountUpdateOutputs,
     pub extra_data: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
-pub struct AccountUpdateOutputs {}
+pub struct AccountUpdateOutputs {
+    pub output_transfers: Vec<OutputTransfer>,
+    pub output_messages: Vec<OutputMessage>,
+}
 
 #[derive(Debug, Clone)]
 pub struct SnarkAccountProofState {
@@ -53,13 +57,10 @@ pub struct SnarkAccountState {
     pub update_vk: AccountVk,
     pub proof_state: SnarkAccountProofState,
     pub seq_no: u64,
-    pub input_mmr: Mmr64,
+    // TODO: update this with MMR. This will be accessed via Ledger provider, so just changing the
+    // type here should be fine.
+    pub input: Vec<SnarkAccountMessageEntry>,
 }
-
-// MMR placeholders
-type Mmr64 = Vec<Vec<u8>>; // Serialized input for now
-#[derive(Debug, Clone)]
-pub struct Mmr64ProofPath {}
 
 /// Message hashed and put into an account's input_mmr.
 #[derive(Debug, Clone)]
@@ -104,7 +105,7 @@ pub struct SnarkAccountUpdateOutputs {
 /// Proof for an input message in an MMR that can be updated by the OL sequencer
 /// without invalidating the transaction's signature.
 #[derive(Debug, Clone)]
-pub struct SnarkAcctMsgProof {
+pub struct SnarkAcctMsgProof<P = () /* This is temporary till we implement mmr */> {
     pub data: SnarkAccountMessageEntry,
-    pub proof: Mmr64ProofPath,
+    pub proof: P,
 }

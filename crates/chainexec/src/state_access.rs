@@ -93,4 +93,8 @@ impl StateAccessor for MemStateAccessor {
     fn set_epoch_finishing_flag(&mut self, flag: bool) {
         self.state_cache.set_epoch_finishing_flag(flag);
     }
+
+    fn set_accounts_root(&mut self, root: Buf32) {
+        // TODO: add impl
+    }
 }
