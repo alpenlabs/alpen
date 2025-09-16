@@ -68,6 +68,10 @@ fn execute_snark_update(
         snark_state.proof_state = update.data.new_state.clone();
         snark_state.seq_no += 1;
         acct_state.balance -= total_sent;
+        acct_state.inner_state = AccountInnerState::Snark(snark_state);
+
+        // Save the updated account state back to the ledger
+        ledger_provider.set_account_state(*acct_id, acct_state)?;
 
         // Insert message to respective account
         for (acct_id, msg) in out_msgs {

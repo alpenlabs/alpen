@@ -100,8 +100,8 @@ pub fn process_block(
         state_accessor.set_cur_epoch(state_accessor.cur_epoch() + 1);
     }
 
-    // Increment cur slot ??
-    // state_accessor.set_cur_slot(state_accessor.cur_slot() + 1);
+    // Update cur slot after processing block
+    state_accessor.set_slot(block.signed_header().header().slot());
 
     // Set accounts root
     state_accessor.set_accounts_root(ledger_provider.root()?);
