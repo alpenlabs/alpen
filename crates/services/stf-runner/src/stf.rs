@@ -59,6 +59,9 @@ pub enum StfError {
 
     #[error("insufficient balance: available {available}, spent {spent}")]
     InsufficientBalance { available: u64, spent: u64 },
+
+    #[error("state root mismatch: expected {expected}, got {got}")]
+    StateRootMismatch { expected: Buf32, got: Buf32 },
 }
 
 pub type StfResult<T> = Result<T, StfError>;
@@ -69,7 +72,9 @@ pub fn process_block(
     prev_header: &OLBlockHeader,
     block: &OLBlock,
     params: &RollupParams,
-    state_accessor: &mut impl StateAccessor,
+    // state accessor is expected to allow CRUD operations on state
+    state_accessor: &mut impl StateAccessor<OLState>,
+    // ledger_provider is expected to allow CRUD operations on accounts ledger
     ledger_provider: &mut impl LedgerProvider,
 ) -> StfResult<BlockExecutionOutput<OLState, OLLog>> {
     // Validate block header
@@ -88,7 +93,7 @@ pub fn process_block(
 
     // process l1 update if any, which means terminal block and the epoch is being sealed
     if let Some(l1update) = block.body().l1update() {
-        let seal_logs = seal_epoch(params, l1update, state_accessor, ledger_provider)?;
+        let seal_logs = seal_epoch(params, state_accessor, ledger_provider, l1update)?;
         logs.extend(seal_logs);
 
         // Increment the cur epoch now that we have sealed this epoch
@@ -101,18 +106,28 @@ pub fn process_block(
     // Set accounts root
     state_accessor.set_accounts_root(ledger_provider.root()?);
 
-    // TODO: calculate new state root
+    // Check state root
+    let new_state = state_accessor.get_toplevel_state().clone();
+    let state_root = new_state.compute_root();
+    let exp_root = *block.signed_header().header().state_root();
+    if state_root != exp_root {
+        // TODO: use `Mismatch` struct
+        return Err(StfError::StateRootMismatch {
+            expected: exp_root,
+            got: state_root,
+        });
+        // TODO: should revert state accessor to previous state?
+    }
 
-    let wb = OLState::default(); // TODO: get current state, possibly from state_accessor
-    let out = BlockExecutionOutput::new(Buf32::zero(), logs, wb);
+    let out = BlockExecutionOutput::new(state_root, logs, new_state);
     Ok(out)
 }
 
 fn seal_epoch(
     _params: &RollupParams,
-    l1update: &L1Update,
-    state_accessor: &mut impl StateAccessor,
+    state_accessor: &mut impl StateAccessor<OLState>,
     ledger_provider: &mut impl LedgerProvider,
+    l1update: &L1Update,
 ) -> StfResult<Vec<OLLog>> {
     let mut logs = Vec::new();
     for manifest in l1update.manifests() {
@@ -140,7 +155,7 @@ fn bridge_account_id() -> Buf32 {
 
 fn process_deposit(
     dep: &DepositLog,
-    state_accessor: &mut impl StateAccessor,
+    state_accessor: &mut impl StateAccessor<OLState>,
     ledger_provider: &mut impl LedgerProvider,
 ) -> StfResult<()> {
     let serial = dep.ee_id as u32;
@@ -177,7 +192,7 @@ fn deposit_log_to_msg_payload(dep: &DepositLog) -> Vec<u8> {
 
 fn process_checkpoint(
     _ckpt: &CheckpointUpdate,
-    _state_accessor: &mut impl StateAccessor,
+    _state_accessor: &mut impl StateAccessor<OLState>,
 ) -> StfResult<()> {
     // TODO: possibly extract, validate and set finalized/confirmed epoch.
     todo!()
