@@ -10,20 +10,20 @@ pub use schemes::{aggregate_schnorr_keys, SchnorrScheme};
 // Type aliases for Schnorr-based multisig
 pub type SchnorrMultisigConfig = config::MultisigConfig<SchnorrScheme>;
 pub type SchnorrMultisigConfigUpdate = config::MultisigConfigUpdate<SchnorrScheme>;
-pub type SchnorrMultisigSignature = signature::MultisigSignature<SchnorrScheme>;
+pub type SchnorrMultisigSignature = signature::AggregatedSignature<SchnorrScheme>;
 
 // Re-export the single error type
 pub use errors::MultisigError;
 
 use crate::multisig::traits::CryptoScheme;
 
-/// Generic multisig verification function that takes a multisig configuration, multisig signature,
-/// and message hash, then performs the full verification process using the provided cryptographic
-/// scheme.
+/// Generic multisig verification function that takes a multisig configuration, aggregated
+/// signature, and message hash, then performs the full verification process using the provided
+/// cryptographic scheme.
 ///
 /// # Arguments
 /// * `config` - The multisig configuration containing keys and threshold
-/// * `signature` - The multisig signature containing signer indices and aggregated signature
+/// * `signature` - The aggregated signature containing signer indices and aggregated signature
 /// * `message_hash` - The message hash that was signed
 ///
 /// # Returns
@@ -33,7 +33,7 @@ use crate::multisig::traits::CryptoScheme;
 /// - Signature verification fails
 pub fn verify_multisig<S: CryptoScheme>(
     config: &config::MultisigConfig<S>,
-    signature: &signature::MultisigSignature<S>,
+    signature: &signature::AggregatedSignature<S>,
     message_hash: &[u8; 32],
 ) -> Result<(), MultisigError> {
     // Check threshold

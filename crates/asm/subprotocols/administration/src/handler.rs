@@ -155,7 +155,7 @@ mod tests {
     use strata_crypto::{
         EvenSecretKey,
         multisig::{
-            MultisigError, SchnorrMultisigConfig, SchnorrScheme, signature::MultisigSignature,
+            MultisigError, SchnorrMultisigConfig, SchnorrScheme, signature::AggregatedSignature,
         },
     };
     use strata_primitives::{
@@ -519,7 +519,7 @@ mod tests {
         let (params, _, _) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::new();
-        let multisig = MultisigSignature::<SchnorrScheme>::new(BitVec::new(), Buf64::default());
+        let multisig = AggregatedSignature::<SchnorrScheme>::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
         // Generate a random cancel action (likely targeting a non-existent ID)

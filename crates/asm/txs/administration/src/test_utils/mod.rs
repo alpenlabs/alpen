@@ -18,7 +18,7 @@ use strata_crypto::{
     EvenSecretKey,
     multisig::{
         schemes::{SchnorrScheme, schnorr::create::create_musig2_signature},
-        signature::MultisigSignature,
+        signature::AggregatedSignature,
     },
 };
 use strata_primitives::buf::{Buf32, Buf64};
@@ -27,7 +27,7 @@ pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
 use crate::{actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID};
 
-/// Creates a MultisigSignature for any MultisigAction.
+/// Creates an AggregatedSignature for any MultisigAction.
 ///
 /// This function generates the required signature for any administration action
 /// (Update or Cancel) by computing the sighash from the action and sequence number,
@@ -40,12 +40,12 @@ use crate::{actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID};
 /// * `seqno` - The sequence number for this operation
 ///
 /// # Returns
-/// A MultisigSignature that can be used to authorize this action
+/// An AggregatedSignature that can be used to authorize this action
 pub fn create_multisig_signature(
     privkeys: &[EvenSecretKey],
     signer_indices: BitVec<u8>,
     sighash: Buf32,
-) -> MultisigSignature<SchnorrScheme> {
+) -> AggregatedSignature<SchnorrScheme> {
     // Extract only the private keys for signers indicated by signer_indices
     let selected_privkeys: Vec<EvenSecretKey> = signer_indices
         .iter_ones()
@@ -55,7 +55,7 @@ pub fn create_multisig_signature(
     let signature = create_musig2_signature(&selected_privkeys, &sighash.0, None);
     let signature_buf = Buf64::from(signature.serialize());
 
-    MultisigSignature::new(signer_indices, signature_buf)
+    AggregatedSignature::new(signer_indices, signature_buf)
 }
 
 /// Creates a SPS-50 compliant administration transaction with commit-reveal pattern.
@@ -80,7 +80,7 @@ pub fn create_test_admin_tx(
     action: &MultisigAction,
     seqno: u64,
 ) -> Transaction {
-    // Compute the signature hash and create the multisig signature
+    // Compute the signature hash and create the aggregated signature
     let sighash = action.compute_sighash(seqno);
     let signature = create_multisig_signature(privkeys, signer_indices, sighash);
 

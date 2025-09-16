@@ -9,7 +9,7 @@ use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
 /// Parses a transaction to extract both the multisig action and the aggregated signature.
 ///
 /// This function extracts the administrative action from the taproot leaf script embedded
-/// in the transaction's witness data, and parses the aggregated multisig signature from
+/// in the transaction's witness data, and parses the aggregated signature from
 /// the transaction's auxiliary data.
 ///
 /// # Arguments
@@ -50,10 +50,10 @@ pub fn parse_tx(
     Ok((action, agg_multisig))
 }
 
-/// Parses the aggregated multisig signature from transaction auxiliary data.
+/// Parses the aggregated signature from transaction auxiliary data.
 ///
 /// The auxiliary data contains a 64-byte Schnorr signature followed by a bit vector
-/// indicating which signers participated in the multisig signature.
+/// indicating which signers participated in the aggregated signature.
 ///
 /// # Arguments
 /// * `tx` - A reference to the transaction input containing the auxiliary data
