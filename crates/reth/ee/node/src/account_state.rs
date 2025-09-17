@@ -3,12 +3,18 @@ use alpen_ee_primitives::{BitcoinAmount, L1BlockCommitment, OlBlockCommitment};
 
 /// Representation of inner account state of EE
 /// In this implementation, this equals the blockhash of the final ee block of the update
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AccountStateCommitment(FixedBytes<32>);
 
 impl From<FixedBytes<32>> for AccountStateCommitment {
     fn from(value: FixedBytes<32>) -> Self {
         Self(value)
+    }
+}
+
+impl From<AccountStateCommitment> for FixedBytes<32> {
+    fn from(value: AccountStateCommitment) -> Self {
+        value.0
     }
 }
 
