@@ -13,6 +13,7 @@ pub struct ChainParams {
 /// Configurations for local operation of the alpen-ee-client.
 #[derive(Debug, Clone)]
 pub struct NodeConfig {
+    pub chain_params: ChainParams,
     /// host:port of ol node to connect to. This OL is trusted by the client and should ideally be
     /// run by the same entity.
     pub ol_connection: String,
@@ -29,6 +30,7 @@ pub struct NodeConfig {
 /// Configurations specific to the sequencer node.
 #[derive(Debug, Clone)]
 pub struct SequencerConfig {
+    pub node_config: NodeConfig,
     /// private key for sequencer to sign block updates to p2p.
     pub sequencer_identity: Identity,
     /// blocktime that the sequencer should target to maintain, in millis.
