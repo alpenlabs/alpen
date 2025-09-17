@@ -5,7 +5,7 @@ use crate::message::{InboundMsgEnvelope, OutboundMsgEnvelope};
 
 /// Maps 1-1 to an eth block and holds additional block production metadata
 #[derive(Debug, Clone)]
-pub struct BlockPackage {
+pub struct BlockMetadata {
     /// blocknumber
     number: u64,
     /// Blockhash of ee block
@@ -17,7 +17,7 @@ pub struct BlockPackage {
     output_msg: Vec<OutboundMsgEnvelope>,
 }
 
-impl BlockPackage {
+impl BlockMetadata {
     pub fn new(
         number: u64,
         blockhash: EEBlockHash,

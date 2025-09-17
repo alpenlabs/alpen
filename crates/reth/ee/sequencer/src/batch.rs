@@ -1,7 +1,7 @@
 use alpen_ee_node::account_state::{Account, AccountStateCommitment};
 use alpen_ee_primitives::EEBlockHash;
 
-use crate::{block::BlockPackage, message::OutboundMsgEnvelope};
+use crate::{block::BlockMetadata, message::OutboundMsgEnvelope};
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -105,7 +105,7 @@ impl EEUpdate {
 pub fn new_ee_update_unchecked(
     cur_account_state: &Account,
     batch: &Batch,
-    packages: &[BlockPackage],
+    packages: &[BlockMetadata],
 ) -> EEUpdate {
     let sequence_no = cur_account_state.sequence_no();
     let pre_state = cur_account_state.state().clone();

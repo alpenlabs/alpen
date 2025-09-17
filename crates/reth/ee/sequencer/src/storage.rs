@@ -1,6 +1,6 @@
 use alpen_ee_primitives::EEBlockHash;
 
-use crate::block::{BlockPackage, BlockPayload};
+use crate::block::{BlockMetadata, BlockPayload};
 
 #[derive(Debug, Clone)]
 pub enum StorageError {
@@ -11,9 +11,9 @@ pub type ProviderResult<T> = Result<T, StorageError>;
 
 pub trait StorageProvider {
     /// Get latest block in canonical chain
-    fn get_latest_ee_block(&self) -> ProviderResult<BlockPackage>;
+    fn get_latest_ee_block(&self) -> ProviderResult<BlockMetadata>;
     /// Get block in range start..=end
-    fn get_ee_block_range(&self, start: u64, end: u64) -> ProviderResult<Vec<BlockPackage>>;
+    fn get_ee_block_range(&self, start: u64, end: u64) -> ProviderResult<Vec<BlockMetadata>>;
     /// Get payload to recreate ee block
     /// This is meant for use during consistency checks and recovery of reth db
     fn get_block_payload(&self, blockhash: EEBlockHash) -> ProviderResult<BlockPayload>;
@@ -22,7 +22,7 @@ pub trait StorageProvider {
     /// fail if block.parent_blockhash is not current canonical chain tip.
     fn extend_canonical_chain(
         &self,
-        package: BlockPackage,
+        package: BlockMetadata,
         block: BlockPayload,
     ) -> ProviderResult<()>;
     /// revert canonical chain to given blockhash.
