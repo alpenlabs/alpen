@@ -63,7 +63,7 @@ impl Batch {
 #[derive(Debug, Clone)]
 pub struct EEUpdate {
     /// update sequence no. Must equal expected sequence number in account
-    sequencer_no: u64,
+    sequence_no: u64,
     /// expected current account state before update
     pre_state: AccountStateCommitment, // maybe unnecessary
     /// account state after update
@@ -78,7 +78,7 @@ pub struct EEUpdate {
 
 impl EEUpdate {
     pub fn sequence_no(&self) -> u64 {
-        self.sequencer_no
+        self.sequence_no
     }
 
     pub fn pre_state(&self) -> &AccountStateCommitment {
@@ -107,7 +107,7 @@ pub fn new_ee_update_unchecked(
     batch: &Batch,
     packages: &[BlockPackage],
 ) -> EEUpdate {
-    let sequencer_no = cur_account_state.sequence_no();
+    let sequence_no = cur_account_state.sequence_no();
     let pre_state = cur_account_state.state().clone();
     let post_state = batch.end.into();
     let (outbound_messages, inbound_messages_consumed) = packages.iter().fold(
@@ -122,7 +122,7 @@ pub fn new_ee_update_unchecked(
     let proof = batch.proof.clone().unwrap();
 
     EEUpdate {
-        sequencer_no,
+        sequence_no,
         pre_state,
         post_state,
         outbound_messages,
