@@ -1,3 +1,4 @@
+use strata_asm_common::Mismatched;
 use strata_chaintsn::context::StateAccessor;
 use strata_primitives::{buf::Buf32, params::RollupParams};
 
@@ -88,10 +89,10 @@ fn verify_update_correctness(
 ) -> StfResult<(u64, Vec<(AccountId, SnarkAccountMessageEntry)>)> {
     // Check if update matches the current account state
     if snark_state.seq_no != update.data.seq_no {
-        return Err(StfError::MismatchedSequence {
-            expected: snark_state.seq_no,
-            got: update.data.seq_no,
-        });
+        return Err(StfError::MismatchedSequence(Mismatched::new(
+            snark_state.seq_no,
+            update.data.seq_no,
+        )));
     }
 
     // output msgs
@@ -102,10 +103,10 @@ fn verify_update_correctness(
     let new_idx = update.data.new_state.next_input_idx;
     let exp_msg_idx = cur_idx + update.data.processed_msgs.len() as u64;
     if exp_msg_idx != new_idx {
-        return Err(StfError::InvalidMsgIndex {
-            expected: exp_msg_idx,
-            got: new_idx,
-        });
+        return Err(StfError::MismatchedMsgIdx(Mismatched::new(
+            exp_msg_idx,
+            new_idx,
+        )));
     }
 
     // Verify ledger references

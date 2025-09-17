@@ -1,7 +1,7 @@
 //! Chain executor.
 
 use strata_chaintsn::{
-    context::{BlockHeaderContext, L2HeaderAndParent, StateAccessor},
+    context::{BlockHeaderContext, StateAccessor},
     transition::process_block,
 };
 use strata_primitives::prelude::*;

@@ -117,16 +117,14 @@ impl LedgerProvider for InMemoryVectorLedger {
         // For now, recompute every time (inefficient but correct)
         let mut hasher = Sha256::new();
 
-        let mut sorted_accounts: Vec<_> = self.account_states.keys().collect();
-        sorted_accounts.sort();
+        let mut sorted_accounts: Vec<_> = self.account_states.iter().collect();
+        sorted_accounts.sort_by_key(|(k, _)| **k);
 
-        for account_id in sorted_accounts {
-            hasher.update(account_id.as_ref());
-            if let Some(state) = self.account_states.get(account_id) {
-                hasher.update(state.serial.to_be_bytes());
-                hasher.update(state.ty.to_be_bytes());
-                hasher.update(state.balance.to_be_bytes());
-            }
+        for (acct_id, state) in sorted_accounts {
+            hasher.update(acct_id.as_slice());
+            hasher.update(state.serial.to_be_bytes());
+            hasher.update(state.ty.to_be_bytes());
+            hasher.update(state.balance.to_be_bytes());
         }
 
         Ok(Buf32::new(hasher.finalize().into()))

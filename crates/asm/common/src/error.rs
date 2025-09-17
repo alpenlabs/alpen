@@ -18,6 +18,12 @@ where
     pub actual: T,
 }
 
+impl<T: Debug + Display> Mismatched<T> {
+    pub fn new(expected: T, actual: T) -> Self {
+        Self { expected, actual }
+    }
+}
+
 /// Errors that can occur while working with ASM subprotocols.
 #[derive(Debug, Error)]
 pub enum AsmError {
