@@ -95,7 +95,6 @@ pub struct AsmManifest {
 #[derive(Debug, Clone)]
 pub struct OLLog {
     account_serial: u32,
-    account_id: AccountId,
     payload: Vec<u8>, // TODO: make this typed, serialization can be done at the edges
 }
 
@@ -122,17 +121,19 @@ impl OLBlock {
     ) -> Result<(), String> {
         let current_header = self.signed_header.header();
 
-        if current_header.slot() > 0 && current_header.slot() != prev_header.slot() + 1 {
-            return Err(format!("Invalid block slot {}", current_header.slot()));
-        }
-        if current_header.slot() > 0
-            && *current_header.parent_blockid() != prev_header.compute_header_root()
-        {
-            return Err("Invalid parent block ID".to_string());
+        if current_header.slot() > 0 {
+            if current_header.slot() != prev_header.slot() + 1 {
+                return Err(format!("Invalid block slot {}", current_header.slot()));
+            }
+            if *current_header.parent_blockid() != prev_header.compute_header_root() {
+                return Err("Invalid parent block ID".to_string());
+            }
         }
 
-        // Check epoch progression - epoch should not decrease
-        if current_header.epoch() != 0 && current_header.epoch() < prev_header.epoch() {
+        // Check epoch progression - epoch should not decrease and increase only by 1 at max
+        let same_epoch = current_header.epoch() == prev_header.epoch();
+        let valid_increment = current_header.epoch() == prev_header.epoch() + 1;
+        if current_header.epoch() != 0 && (same_epoch || valid_increment) {
             return Err(format!(
                 "Epoch regression: current {} < previous {}",
                 current_header.epoch, prev_header.epoch
@@ -276,7 +277,8 @@ impl Transaction {
         &self.extra
     }
 
-    /// The account id this transaction belongs to. Maybe we should also store sequencer pubkey
+    /// The account id this transaction is on behalf of. `target` is confusing.
+    /// Maybe we could also store sequencer pubkey
     /// along with vk? and then we can have transactions to update the pubkey if sequencer needs to
     /// rotate. Just a thought.
     pub fn account_id(&self) -> AccountId {
@@ -339,20 +341,15 @@ impl AsmManifest {
 }
 
 impl OLLog {
-    pub fn new(account_serial: u32, account_id: AccountId, payload: Vec<u8>) -> Self {
+    pub fn new(account_serial: u32, payload: Vec<u8>) -> Self {
         Self {
             account_serial,
-            account_id,
             payload,
         }
     }
 
     pub fn account_serial(&self) -> u32 {
         self.account_serial
-    }
-
-    pub fn account_id(&self) -> &AccountId {
-        &self.account_id
     }
 
     pub fn payload(&self) -> &[u8] {

@@ -34,14 +34,7 @@ The STF Runner Demo provides a hands-on way to understand how the Orchestration 
 From the project root:
 
 ```bash
-cargo run --bin stf-runner-demo
-```
-
-Or from the demo directory:
-
-```bash
-cd bin/stf-runner-demo
-cargo run
+cargo run -p stf-runner-demo
 ```
 
 ## Usage

@@ -112,7 +112,7 @@ impl StateAccessor<OLState> for SimpleStateAccessor {
 
 fn create_minimal_params() -> RollupParams {
     RollupParams {
-        magic_bytes: "demo".as_bytes().try_into().unwrap_or([0u8; 4]).into(),
+        magic_bytes: "demo".as_bytes().try_into().unwrap_or([0u8; 4]),
         block_time: 1000,
         da_tag: "demo-da".to_string(),
         checkpoint_tag: "demo-ckpt".to_string(),
@@ -353,7 +353,9 @@ fn main() -> anyhow::Result<()> {
     println!("  Bridge Account: {} for withdrawals", bridge_hex);
 
     // Update state accessor with the correct accounts root after creating accounts
-    let accounts_root = ledger.root().expect("Failed to compute accounts root");
+    let accounts_root = ledger
+        .accounts_root()
+        .expect("Failed to compute accounts root");
     state_accessor.set_accounts_root(accounts_root);
 
     // Process genesis block automatically on startup
@@ -361,10 +363,8 @@ fn main() -> anyhow::Result<()> {
     let genesis_block = create_genesis_block();
     let genesis_prev_header =
         OLBlockHeader::new(0, 0, 0, Buf32::zero(), Buf32::zero(), Buf32::zero());
-    let state_clone = state_accessor.get_toplevel_state().clone();
 
     match process_block(
-        &state_clone,
         &genesis_prev_header,
         &genesis_block,
         &params,
@@ -432,9 +432,7 @@ fn main() -> anyhow::Result<()> {
 
                             // Create a clone of the state for the first parameter (it's unused
                             // according to comments)
-                            let state_clone = state_accessor.get_toplevel_state().clone();
                             match process_block(
-                                &state_clone,
                                 &last_header,
                                 &block,
                                 &params,
@@ -479,9 +477,7 @@ fn main() -> anyhow::Result<()> {
 
                             // Create a clone of the state for the first parameter (it's unused
                             // according to comments)
-                            let state_clone = state_accessor.get_toplevel_state().clone();
                             match process_block(
-                                &state_clone,
                                 &last_header,
                                 &block,
                                 &params,
@@ -519,9 +515,7 @@ fn main() -> anyhow::Result<()> {
 
                 // Create a clone of the state for the first parameter (it's unused according to
                 // comments)
-                let state_clone = state_accessor.get_toplevel_state().clone();
                 match process_block(
-                    &state_clone,
                     &last_header,
                     &block,
                     &params,
@@ -549,9 +543,7 @@ fn main() -> anyhow::Result<()> {
 
                 // Create a clone of the state for the first parameter (it's unused according to
                 // comments)
-                let state_clone = state_accessor.get_toplevel_state().clone();
                 match process_block(
-                    &state_clone,
                     &last_header,
                     &block,
                     &params,
@@ -613,7 +605,7 @@ fn show_accounts(ledger: &InMemoryVectorLedger) {
     for i in 0..2 {
         let account_id = Buf32::from([i as u8; 32]);
         let account_hex = hex::encode(account_id.as_bytes());
-        match ledger.account_state(&account_id) {
+        match ledger.get_account_state(&account_id) {
             Ok(Some(account)) => {
                 println!(
                     "  Account {}: {} balance = {} sats",
