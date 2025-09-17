@@ -87,6 +87,8 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                     // Store and update anchor.
                     state.context.store_anchor_state(block_id, &new_state)?;
                     state.update_anchor_state(new_state, *block_id);
+
+                    state.notify_subprotocols()?;
                 }
                 Err(e) => {
                     error!(%e, "ASM transition error");

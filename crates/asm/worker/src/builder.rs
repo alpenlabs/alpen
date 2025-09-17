@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use strata_primitives::params::Params;
-use strata_service::ServiceBuilder;
+use strata_service::{CommandHandle, ServiceBuilder};
 use strata_tasks::TaskExecutor;
+use tokio::runtime::Handle;
 
 use crate::{
+    SubprotocolMessage,
     errors::{WorkerError, WorkerResult},
     handle::AsmWorkerHandle,
     service::AsmWorkerService,
@@ -22,6 +24,8 @@ use crate::{
 pub struct AsmWorkerBuilder<W> {
     context: Option<W>,
     params: Option<Arc<Params>>,
+    handle: Option<Handle>,
+    subproto_handles: Vec<CommandHandle<SubprotocolMessage>>,
 }
 
 impl<W> AsmWorkerBuilder<W> {
@@ -30,6 +34,8 @@ impl<W> AsmWorkerBuilder<W> {
         Self {
             context: None,
             params: None,
+            handle: None,
+            subproto_handles: vec![],
         }
     }
 
@@ -42,6 +48,18 @@ impl<W> AsmWorkerBuilder<W> {
     /// Set the rollup parameters.
     pub fn with_params(mut self, params: Arc<Params>) -> Self {
         self.params = Some(params);
+        self
+    }
+
+    /// Set the runtime handle.
+    pub fn with_runtime(mut self, handle: Handle) -> Self {
+        self.handle = Some(handle);
+        self
+    }
+
+    /// Add subprotocol handler.
+    pub fn add_subproto(mut self, h: CommandHandle<SubprotocolMessage>) -> Self {
+        self.subproto_handles.push(h);
         self
     }
 
@@ -61,8 +79,13 @@ impl<W> AsmWorkerBuilder<W> {
             .params
             .ok_or(WorkerError::MissingDependency("params"))?;
 
+        let runtime = self
+            .handle
+            .ok_or(WorkerError::MissingDependency("runtime"))?;
+
         // Create the service state.
-        let service_state = AsmWorkerServiceState::new(context, params);
+        let service_state =
+            AsmWorkerServiceState::new(context, params, self.subproto_handles, runtime);
 
         // Create the service builder and get command handle.
         let mut service_builder =
