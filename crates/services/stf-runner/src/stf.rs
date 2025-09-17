@@ -1,5 +1,5 @@
 // TODO: move this module out of this crate, possibly in chaintsn
-use strata_asm_common::{AsmError, TypeId as AsmTypeId};
+use strata_asm_common::{AsmError, Mismatched, TypeId as AsmTypeId};
 use strata_asm_logs::{
     CheckpointUpdate, DepositLog,
     constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
@@ -40,11 +40,11 @@ pub enum StfError {
     NonExistentAccount(AccountId),
 
     /// Mismatched sequence
-    #[error("mismatched sequence: expected {expected}, got {got}")]
-    MismatchedSequence { expected: u64, got: u64 },
+    #[error("mismatched sequence: {0}")]
+    MismatchedSequence(Mismatched<u64>),
 
-    #[error("mismatched message index: expected {expected}, got {got}")]
-    InvalidMsgIndex { expected: u64, got: u64 },
+    #[error("mismatched message index: {0}")]
+    MismatchedMsgIdx(Mismatched<u64>),
 
     #[error("invalid outputs")]
     InvalidOutputs,
@@ -60,13 +60,40 @@ pub enum StfError {
     #[error("insufficient balance: available {available}, spent {spent}")]
     InsufficientBalance { available: u64, spent: u64 },
 
-    #[error("state root mismatch: expected {expected}, got {got}")]
-    StateRootMismatch { expected: Buf32, got: Buf32 },
+    #[error("state root mismatch: {0}")]
+    MismatchedStateRoot(Mismatched<Buf32>),
+
+    #[error("logs root mismatch: {0}")]
+    MismatchedLogsRoot(Mismatched<Buf32>),
+
+    #[error("body root mismatch: {0}")]
+    MismatchedBodyRoot(Mismatched<Buf32>),
+}
+
+impl StfError {
+    pub fn mismatched_state_root(expected: Buf32, actual: Buf32) -> Self {
+        Self::MismatchedStateRoot(Mismatched::new(expected, actual))
+    }
+    pub fn mismatched_logs_root(expected: Buf32, actual: Buf32) -> Self {
+        Self::MismatchedLogsRoot(Mismatched::new(expected, actual))
+    }
+
+    pub fn mismatched_sequence(expected: u64, actual: u64) -> Self {
+        Self::MismatchedSequence(Mismatched::new(expected, actual))
+    }
+
+    pub fn mismatched_msg_idx(expected: u64, actual: u64) -> Self {
+        Self::MismatchedMsgIdx(Mismatched::new(expected, actual))
+    }
+
+    pub fn mismatched_body_root(expected: Buf32, actual: Buf32) -> Self {
+        Self::MismatchedBodyRoot(Mismatched::new(expected, actual))
+    }
 }
 
 pub type StfResult<T> = Result<T, StfError>;
 
-pub fn process_block(
+pub fn execute_block(
     prev_header: &OLBlockHeader,
     block: &OLBlock,
     params: &RollupParams,
@@ -75,10 +102,29 @@ pub fn process_block(
     // ledger_provider is expected to allow CRUD operations on accounts ledger
     ledger_provider: &mut impl LedgerProvider,
 ) -> StfResult<BlockExecutionOutput<OLState, OLLog>> {
-    // Validate block header
+    // Validate continuity of block header
     block
-        .validate_block_header(params, prev_header)
+        .pre_exec_validate(params, prev_header)
         .map_err(StfError::InvalidBlockHeader)?;
+
+    // Execute block without checking header
+    let out = execute_block_raw(block, params, state_accessor, ledger_provider)?;
+
+    // Validate state and log roots
+    block.post_exec_validate(&out)?; // todo: be consistent with the errors
+
+    Ok(out)
+}
+
+/// Processes block and returns result without validating the state root with block header.
+pub fn execute_block_raw(
+    block: &OLBlock,
+    params: &RollupParams,
+    // state accessor is expected to allow CRUD operations on state
+    state_accessor: &mut impl StateAccessor<OLState>,
+    // ledger_provider is expected to allow CRUD operations on accounts ledger
+    ledger_provider: &mut impl LedgerProvider,
+) -> StfResult<BlockExecutionOutput<OLState, OLLog>> {
     let mut logs = Vec::new();
 
     // process txs if any
@@ -107,18 +153,6 @@ pub fn process_block(
     // Check state root
     let new_state = state_accessor.get_toplevel_state().clone();
     let state_root = new_state.compute_root();
-
-    // NOTE: Need to check state root matches or not. That should happen outside this.
-
-    // let exp_root = *block.signed_header().header().state_root();
-    // if state_root != exp_root {
-    //     // TODO: use `Mismatch` struct
-    //     return Err(StfError::StateRootMismatch {
-    //         expected: exp_root,
-    //         got: state_root,
-    //     });
-    //     // TODO: should revert state accessor to previous state?
-    // }
 
     let out = BlockExecutionOutput::new(state_root, logs, new_state);
     Ok(out)
