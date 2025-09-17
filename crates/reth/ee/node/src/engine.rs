@@ -6,8 +6,8 @@ pub enum EngineError {
     Other(String),
 }
 
-type EngineResult<T> = Result<T, EngineError>;
+pub type EngineResult<T> = Result<T, EngineError>;
 
-pub trait ConsensusEngine<TEnginePayload> {
+pub trait ConsensusEngine {
     fn update_consensus_state(&self, update: ForkchoiceState) -> EngineResult<()>;
 }
