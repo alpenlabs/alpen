@@ -66,9 +66,7 @@ pub enum StfError {
 
 pub type StfResult<T> = Result<T, StfError>;
 
-// FIXME: There's a lot of func arguments :o
 pub fn process_block(
-    _prev_state: &OLState, // Possibly redudant with state_accessor
     prev_header: &OLBlockHeader,
     block: &OLBlock,
     params: &RollupParams,
@@ -104,7 +102,7 @@ pub fn process_block(
     state_accessor.set_slot(block.signed_header().header().slot());
 
     // Set accounts root
-    state_accessor.set_accounts_root(ledger_provider.root()?);
+    state_accessor.set_accounts_root(ledger_provider.accounts_root()?);
 
     // Check state root
     let new_state = state_accessor.get_toplevel_state().clone();
@@ -163,10 +161,10 @@ fn process_deposit(
 ) -> StfResult<()> {
     let serial = dep.ee_id as u32;
     let acct_id = ledger_provider
-        .account_id(serial)?
+        .get_account_id(serial)?
         .ok_or(StfError::NonExistentAccountSerial(serial))?;
     let mut acct_state = ledger_provider
-        .account_state(&acct_id)?
+        .get_account_state(&acct_id)?
         .ok_or(StfError::NonExistentAccount(acct_id))?;
 
     acct_state.balance += dep.amount;
@@ -179,7 +177,7 @@ fn process_deposit(
             payload: deposit_log_to_msg_payload(dep),
         },
     };
-    ledger_provider.insert_message(acct_id, message)?;
+    ledger_provider.insert_message(&acct_id, message)?;
     ledger_provider.set_account_state(acct_id, acct_state)?;
 
     Ok(())

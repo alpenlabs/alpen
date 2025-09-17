@@ -21,15 +21,9 @@ pub(crate) fn execute_transaction(
     let acct_id = tx.account_id();
     let txtype = tx.type_id();
     match tx.payload() {
-        TransactionPayload::SnarkAccountUpdate { target, update } => {
-            let logs = execute_snark_update(
-                params,
-                state_accessor,
-                ledger_provider,
-                &acct_id,
-                target,
-                update,
-            )?;
+        TransactionPayload::SnarkAccountUpdate { update, .. } => {
+            let logs =
+                execute_snark_update(params, state_accessor, ledger_provider, &acct_id, update)?;
             Ok(logs)
         }
         _ => {
@@ -45,12 +39,11 @@ fn execute_snark_update(
     state_accessor: &mut impl StateAccessor<OLState>,
     ledger_provider: &mut impl LedgerProvider,
     acct_id: &Buf32,
-    _target: &Buf32, // What exactly to do with this??
     update: &SnarkAccountUpdate,
 ) -> StfResult<Vec<OLLog>> {
     // verify update
     let mut acct_state = ledger_provider
-        .account_state(acct_id)?
+        .get_account_state(acct_id)?
         .ok_or(StfError::NonExistentAccount(*acct_id))?;
 
     #[allow(irrefutable_let_patterns)]
@@ -66,7 +59,7 @@ fn execute_snark_update(
 
         // Now apply updates
         snark_state.proof_state = update.data.new_state.clone();
-        snark_state.seq_no += 1;
+        snark_state.seq_no = update.data.seq_no;
         acct_state.balance -= total_sent;
         acct_state.inner_state = AccountInnerState::Snark(snark_state);
 
@@ -75,7 +68,7 @@ fn execute_snark_update(
 
         // Insert message to respective account
         for (acct_id, msg) in out_msgs {
-            ledger_provider.insert_message(acct_id, msg)?;
+            ledger_provider.insert_message(&acct_id, msg)?;
         }
 
         Ok(logs)
@@ -93,7 +86,7 @@ fn verify_update_correctness(
     acct_id: &AccountId,
     update: &SnarkAccountUpdate,
 ) -> StfResult<(u64, Vec<(AccountId, SnarkAccountMessageEntry)>)> {
-    // 1. Check if update matches the current account state
+    // Check if update matches the current account state
     if snark_state.seq_no != update.data.seq_no {
         return Err(StfError::MismatchedSequence {
             expected: snark_state.seq_no,
@@ -115,18 +108,18 @@ fn verify_update_correctness(
         });
     }
 
-    // 2. Verify ledger references
+    // Verify ledger references
     // TODO: implement this later, not needed for now
     // if !verify_ledger_refs(&update.ledger_refs, ledger_provider)? {
     //     return Err(StfError::InvalidLedgerRefs);
     // }
 
-    // 3. Verify outputs can be applied safely
+    // Verify outputs can be applied safely
     let (total_sent, out_msgs) =
         verify_update_outputs_safe(snark_state, acct_id, &update.data.outputs, ledger_provider)?;
     msgs.extend(out_msgs);
 
-    // 4. Verify witness correctness (expensive, so last)
+    // Verify witness correctness
     verify_update_witness(snark_state, update, &update.witness)?;
 
     Ok((total_sent, msgs))
@@ -140,7 +133,7 @@ fn verify_update_outputs_safe(
 ) -> StfResult<(u64, Vec<(AccountId, SnarkAccountMessageEntry)>)> {
     let mut total_sent = 0u64; // use a wider type like u128 ??
     let acct_state = ledger_provider
-        .account_state(acct_id)?
+        .get_account_state(acct_id)?
         .ok_or(StfError::NonExistentAccount(*acct_id))?;
     let cur_balance = acct_state.balance;
 
@@ -148,7 +141,7 @@ fn verify_update_outputs_safe(
     for t in &outputs.output_transfers {
         // Account existence check
         ledger_provider
-            .account_state(&t.destination)?
+            .get_account_state(&t.destination)?
             .ok_or(StfError::NonExistentAccount(t.destination))?;
 
         total_sent += t.transferred_value; // TODO: checked addition??
@@ -159,7 +152,7 @@ fn verify_update_outputs_safe(
     for m in &outputs.output_messages {
         // Account existence check
         ledger_provider
-            .account_state(&m.destination)?
+            .get_account_state(&m.destination)?
             .ok_or(StfError::NonExistentAccount(m.destination))?;
 
         // TODO: send messages later. We don't have inter-account messages for mainnet.
