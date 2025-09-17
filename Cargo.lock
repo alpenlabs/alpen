@@ -14361,6 +14361,7 @@ dependencies = [
  "strata-state",
  "strata-tasks",
  "thiserror 2.0.16",
+ "tokio",
  "tracing",
 ]
 

@@ -20,4 +20,5 @@ async-trait.workspace = true
 bitcoin.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true

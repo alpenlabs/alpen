@@ -6,6 +6,7 @@
 mod builder;
 mod errors;
 mod handle;
+mod message;
 mod service;
 mod state;
 mod traits;
@@ -13,6 +14,7 @@ mod traits;
 pub use builder::AsmWorkerBuilder;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::AsmWorkerHandle;
+pub use message::SubprotocolMessage;
 pub use service::{AsmWorkerService, AsmWorkerStatus};
 pub use state::AsmWorkerServiceState;
 pub use traits::WorkerContext;

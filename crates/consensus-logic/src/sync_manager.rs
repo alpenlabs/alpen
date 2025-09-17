@@ -207,7 +207,7 @@ fn spawn_asm_worker(
     // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
     // block manager).
     let context = AsmWorkerCtx::new(
-        handle,
+        handle.clone(),
         bitcoin_client,
         storage.l1().clone(),
         storage.asm().clone(),
@@ -217,6 +217,7 @@ fn spawn_asm_worker(
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
         .with_params(params)
+        .with_runtime(handle)
         .launch(executor)?;
 
     Ok(handle)

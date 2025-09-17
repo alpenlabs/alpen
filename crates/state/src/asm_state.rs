@@ -5,8 +5,8 @@ use strata_asm_common::{AnchorState, AsmLogEntry};
 use strata_asm_stf::AsmStfOutput;
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub struct AsmState {
-    pub state: AnchorState,
-    pub logs: Vec<AsmLogEntry>,
+    state: AnchorState,
+    logs: Vec<AsmLogEntry>,
 }
 
 impl AsmState {
@@ -19,5 +19,13 @@ impl AsmState {
             state: output.state,
             logs: output.logs,
         }
+    }
+
+    pub fn logs(&self) -> &Vec<AsmLogEntry> {
+        &self.logs
+    }
+
+    pub fn state(&self) -> &AnchorState {
+        &self.state
     }
 }
