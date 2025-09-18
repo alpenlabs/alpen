@@ -7,6 +7,7 @@ use crate::cmd::{
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     client_state::GetClientStateUpdateArgs,
     l1::{GetL1ManifestArgs, GetL1SummaryArgs},
+    l1_writer::{GetL1WriterPayloadArgs, GetL1WriterSummaryArgs},
     l2::{GetL2BlockArgs, GetL2SummaryArgs},
     sync_event::{GetSyncEventArgs, GetSyncEventsSummaryArgs},
     syncinfo::GetSyncinfoArgs,
@@ -34,6 +35,8 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     GetL1Manifest(GetL1ManifestArgs),
     GetL1Summary(GetL1SummaryArgs),
+    GetL1WriterSummary(GetL1WriterSummaryArgs),
+    GetL1WriterPayload(GetL1WriterPayloadArgs),
     GetL2Block(GetL2BlockArgs),
     GetL2Summary(GetL2SummaryArgs),
     GetClientStateUpdate(GetClientStateUpdateArgs),
