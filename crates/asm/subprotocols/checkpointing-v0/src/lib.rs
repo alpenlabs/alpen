@@ -17,7 +17,8 @@
 //!
 //! - **Current Format Compatibility**: Uses existing checkpoint data structures for verification
 //! - **Envelope Parsing**: Follows administration subprotocol pattern for SPS-50 envelope parsing
-//! - **Proof Verification Bridge**: Delegates to current groth16 verification until unipred is ready
+//! - **Proof Verification Bridge**: Delegates to current groth16 verification until unipred is
+//!   ready
 //! - **Simplified Auxiliary Input**: Uses basic L1 context instead of full SPS-62 oracles
 //!
 //! # SPS-62 Compatibility Notes
@@ -61,14 +62,9 @@ mod verification;
 // Public re-exports
 pub use constants::*;
 pub use error::{CheckpointV0Error, CheckpointV0Result};
-pub use subprotocol::{CheckpointingV0Config, CheckpointingV0Subproto};
-pub use types::*;
-
-// Re-export verification functions for testing and integration
-pub use verification::{
-    process_checkpoint_v0,
-    extract_withdrawal_messages,
-};
-
 // Re-export parsing functions
 pub use parsing::extract_signed_checkpoint_from_envelope;
+pub use subprotocol::{CheckpointingV0Config, CheckpointingV0Subproto};
+pub use types::*;
+// Re-export verification functions for testing and integration
+pub use verification::{extract_withdrawal_messages, process_checkpoint_v0};
