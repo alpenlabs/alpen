@@ -1,4 +1,4 @@
-//! Checkpointing v0 compatible data structures
+//! Checkpointing v0 data structures
 //!
 //! This module defines data structures that maintain compatibility with the current
 //! checkpoint implementation while incorporating SPS-62 concepts where applicable.
@@ -7,68 +7,48 @@
 //! checkpointing system. Future versions will be fully SPS-62 compatible.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
-// Re-export current checkpoint types for compatibility
-pub use strata_primitives::batch::{
-    BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar, SignedCheckpoint,
-};
+// Re-export current checkpoint types for compatibility (excluding BatchTransition)
+pub use strata_primitives::batch::{BatchInfo, Checkpoint, CheckpointSidecar, SignedCheckpoint};
 use strata_primitives::{
     batch::Checkpoint as PrimitivesCheckpoint, buf::Buf32, l1::L1BlockCommitment,
 };
 
-/// Internal TxFilterConfigTransition to remove dependency
+/// ASM-specific BatchTransition without TxFilterConfigTransition dependency
 ///
-/// NOTE: This is a temporary internal structure to avoid depending on
-/// TxFilterConfigTransition from primitives until it's removed from the circuit
-#[derive(
-    Clone, Copy, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
-pub struct InternalTxFilterConfigTransition {
-    /// Hash of the TxFilterConfig before the transition
-    pub pre_config_hash: Buf32,
-    /// Hash of the TxFilterConfig after the transition
-    pub post_config_hash: Buf32,
-}
-
-/// Internal BatchTransition without external TxFilterConfigTransition dependency
-///
-/// NOTE: This mirrors the current BatchTransition but uses our internal
-/// TxFilterConfigTransition to remove the dependency until circuit changes
-#[derive(
-    Clone, Copy, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
-pub struct InternalBatchTransition {
+/// Since ASM replaces the need for TxFilterConfig, this BatchTransition only includes
+/// the essential fields: epoch number and chainstate transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+pub struct BatchTransition {
     /// Epoch number
     pub epoch: u64,
     /// Chainstate root transition
-    pub chainstate_transition: strata_state::batch::ChainstateRootTransition,
-    /// TX filter config transition (internal)
-    pub tx_filters_transition: InternalTxFilterConfigTransition,
+    pub chainstate_transition: strata_primitives::batch::ChainstateRootTransition,
 }
 
-/// Convert from current BatchTransition to internal format
-impl From<BatchTransition> for InternalBatchTransition {
-    fn from(bt: BatchTransition) -> Self {
+/// Convert from primitives BatchTransition to ASM BatchTransition
+///
+/// This extracts only the fields needed by ASM, discarding the TxFilterConfigTransition
+impl From<strata_primitives::batch::BatchTransition> for BatchTransition {
+    fn from(bt: strata_primitives::batch::BatchTransition) -> Self {
         Self {
             epoch: bt.epoch,
             chainstate_transition: bt.chainstate_transition,
-            tx_filters_transition: InternalTxFilterConfigTransition {
-                pre_config_hash: bt.tx_filters_transition.pre_config_hash,
-                post_config_hash: bt.tx_filters_transition.post_config_hash,
-            },
         }
     }
 }
 
-/// Convert from internal format to current BatchTransition
-impl From<InternalBatchTransition> for BatchTransition {
-    fn from(ibt: InternalBatchTransition) -> Self {
+/// Convert from ASM BatchTransition to primitives BatchTransition
+///
+/// This creates a primitives BatchTransition with zero TxFilterConfigTransition
+/// since ASM doesn't use TxFilterConfig
+impl From<BatchTransition> for strata_primitives::batch::BatchTransition {
+    fn from(bt: BatchTransition) -> Self {
         Self {
-            epoch: ibt.epoch,
-            chainstate_transition: ibt.chainstate_transition,
+            epoch: bt.epoch,
+            chainstate_transition: bt.chainstate_transition,
             tx_filters_transition: strata_primitives::batch::TxFilterConfigTransition {
-                pre_config_hash: ibt.tx_filters_transition.pre_config_hash,
-                post_config_hash: ibt.tx_filters_transition.post_config_hash,
+                pre_config_hash: strata_primitives::buf::Buf32::zero(),
+                post_config_hash: strata_primitives::buf::Buf32::zero(),
             },
         }
     }

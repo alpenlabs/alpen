@@ -23,7 +23,6 @@ zkaleido.workspace = true
 
 # Serialization
 borsh.workspace = true
-serde.workspace = true
 
 # Bitcoin types
 bitcoin.workspace = true
