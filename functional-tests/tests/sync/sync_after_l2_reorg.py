@@ -1,3 +1,5 @@
+import logging
+
 import flexitest
 
 from envs import net_settings, testenv
@@ -35,25 +37,16 @@ class FullnodeSyncAfterReorgTest(testenv.StrataTester):
         wait_until_epoch_finalized(fnrpc, 0, timeout=30)
 
         # ensure there are some blocks generated
-        wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > 0,
-            error_with="not building blocks",
-            timeout=5,
-        )
+        wait_until_el_block_height(rethrpc, 1, timeout=5)
 
-        print("stop sequencer block production")
+        logging.info("stop sequencer block production")
         seq_signer.stop()
 
         # wait for fullnode to sync up
-        wait_until(
-            lambda: fnrpc.strata_syncStatus()["tip_height"]
-            == seqrpc.strata_syncStatus()["tip_height"],
-            error_with="fullnode did not sync with sequencer",
-            timeout=5,
-        )
+        wait_until_l2_nodes_synced(seqrpc, fnrpc, timeout=5)
 
         orig_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
-        print(f"stop seq @{orig_blocknumber}")
+        logging.info(f"stop seq @{orig_blocknumber}")
         fullnode.stop()
         seq.stop()
 
@@ -61,32 +54,23 @@ class FullnodeSyncAfterReorgTest(testenv.StrataTester):
         SNAPSHOT_IDX = 1
         seq.snapshot_datadir(SNAPSHOT_IDX)
 
-        print("restart sequencer")
+        logging.info("restart sequencer")
         seq.start()
         seq_signer.start()
 
         # generate more blocks
-        wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > orig_blocknumber + 2,
-            error_with="not building blocks",
-            timeout=5,
-        )
+        wait_until_el_block_height(rethrpc, orig_blocknumber + 3, timeout=5)
 
         fullnode.start()
 
-        print("stop sequencer block production")
+        logging.info("stop sequencer block production")
         seq_signer.stop()
 
         # wait for fullnode to sync up
-        wait_until(
-            lambda: fnrpc.strata_syncStatus()["tip_height"]
-            == seqrpc.strata_syncStatus()["tip_height"],
-            error_with="fullnode did not sync with sequencer",
-            timeout=5,
-        )
+        wait_until_l2_nodes_synced(seqrpc, fnrpc, timeout=5)
 
         final_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
-        print(f"stop seq @{final_blocknumber}")
+        logging.info(f"stop seq @{final_blocknumber}")
 
         orig_el_blockhash = rethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
         orig_el_blockhash_fn = fnrethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
@@ -99,15 +83,11 @@ class FullnodeSyncAfterReorgTest(testenv.StrataTester):
         # replace sequencer db with older snapshot with shorter chain at fork point to trigger reorg
         seq.restore_snapshot(SNAPSHOT_IDX)
 
-        print("restart sequencer after chain revert")
+        logging.info("restart sequencer after chain revert")
         seq.start()
         fullnode.start()
 
-        wait_until(
-            lambda: seqrpc.strata_syncStatus()["tip_height"] > 0,
-            error_with="reth did not start in time",
-            timeout=5,
-        )
+        wait_until_l2_synced_to_height(seqrpc, 1, timeout=5)
         # ensure sequencer db was reset to shorter chain
         assert seqrpc.strata_syncStatus()["tip_height"] < final_blocknumber, (
             "sequencer should have shorter chain"
@@ -120,24 +100,18 @@ class FullnodeSyncAfterReorgTest(testenv.StrataTester):
         # resume block production for reorg'd chain
         seq_signer.start()
 
-        print("wait for block production to resume")
-        wait_until(
-            lambda: seqrpc.strata_syncStatus()["tip_height"] > final_blocknumber,
-            error_with="not syncing blocks",
-            timeout=10,
-        )
+        logging.info("wait for block production to resume")
+        wait_until_l2_synced_to_height(seqrpc, final_blocknumber + 1, timeout=10)
 
         new_el_blockhash = rethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
-        print(final_blocknumber, orig_el_blockhash, new_el_blockhash)
+        logging.info(
+            f"Block {final_blocknumber}: orig_hash={orig_el_blockhash}, new_hash={new_el_blockhash}"
+        )
 
         assert orig_el_blockhash != new_el_blockhash, "sequencer EE should move to new fork"
 
         # wait for fullnode to sync up
-        wait_until(
-            lambda: fnrpc.strata_syncStatus()["tip_height"] > final_blocknumber,
-            error_with="fullnode not syncing reorged blocks",
-            timeout=10,
-        )
+        wait_until_l2_synced_to_height(fnrpc, final_blocknumber + 1, timeout=10)
 
         new_el_blockhash_fn = fnrethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
 

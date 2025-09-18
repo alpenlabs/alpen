@@ -254,6 +254,49 @@ def wait_until_l1_observed(rpc, height: int, **kwargs):
     wait_until(_check, **kwargs)
 
 
+def wait_until_l2_synced_to_height(rpc, height: int, **kwargs):
+    """
+    Waits until the provided L2 height has been reached by the node.
+    """
+
+    def _check():
+        ss = rpc.strata_syncStatus()
+        current_height = ss["tip_height"]
+        logging.info(f"chain now at L2 height {current_height}, waiting for {height}")
+        return current_height >= height
+
+    wait_until(_check, **kwargs)
+
+
+def wait_until_l2_nodes_synced(seq_rpc, follower_rpc, **kwargs):
+    """
+    Waits until follower node has synced to the same tip height as sequencer.
+    """
+
+    def _check():
+        seq_ss = seq_rpc.strata_syncStatus()
+        follower_ss = follower_rpc.strata_syncStatus()
+        seq_height = seq_ss["tip_height"]
+        follower_height = follower_ss["tip_height"]
+        logging.info(f"sequencer at height {seq_height}, follower at height {follower_height}")
+        return follower_height >= seq_height
+
+    wait_until(_check, **kwargs)
+
+
+def wait_until_el_block_height(reth_rpc, height: int, **kwargs):
+    """
+    Waits until execution layer reaches the specified block height.
+    """
+
+    def _check():
+        current_height = int(reth_rpc.eth_blockNumber(), base=16)
+        logging.info(f"EL at block height {current_height}, waiting for {height}")
+        return current_height >= height
+
+    wait_until(_check, **kwargs)
+
+
 def wait_until_csm_l1_tip_observed(rpc, **kwargs):
     """
     Waits until the CSM's current L1 tip block height has been observed by the OL.
