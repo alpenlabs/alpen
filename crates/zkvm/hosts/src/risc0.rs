@@ -53,7 +53,6 @@ define_host!(
 /// instance, allowing for efficient host selection for different proof types.
 pub fn get_host(id: &ProofContext) -> &'static Risc0Host {
     match id {
-        ProofContext::BtcBlockspace(..) => &BTC_BLOCKSPACE_HOST,
         ProofContext::EvmEeStf(..) => &EVM_EE_STF_HOST,
         ProofContext::ClStf(..) => &CL_STF_HOST,
         ProofContext::Checkpoint(..) => &CHECKPOINT_HOST,

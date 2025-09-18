@@ -18,7 +18,7 @@ use tracing::{info, warn};
 use zkaleido::ProofReceipt;
 
 use crate::{
-    operators::{btc::BtcBlockscanParams, cl_stf::ClStfParams, ProofOperator, ProvingOp},
+    operators::{cl_stf::ClStfParams, ProofOperator, ProvingOp},
     status::ProvingTaskStatus,
     task_tracker::TaskTracker,
 };
@@ -94,22 +94,6 @@ impl ProverClientRpc {
 
 #[async_trait]
 impl StrataProverClientApiServer for ProverClientRpc {
-    async fn prove_btc_blocks(
-        &self,
-        btc_range: (L1BlockCommitment, L1BlockCommitment),
-        epoch: u64,
-    ) -> RpcResult<Vec<ProofKey>> {
-        let btc_params = BtcBlockscanParams {
-            range: btc_range,
-            epoch,
-        };
-        self.operator
-            .btc_operator()
-            .create_task(btc_params, self.task_tracker.clone(), &self.db)
-            .await
-            .map_err(to_jsonrpsee_error("failed to create task for btc block"))
-    }
-
     async fn prove_el_blocks(
         &self,
         el_block_range: (EvmEeBlockCommitment, EvmEeBlockCommitment),
