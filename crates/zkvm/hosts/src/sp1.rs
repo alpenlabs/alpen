@@ -25,11 +25,6 @@ macro_rules! define_host {
 
 // Define hosts using the macro
 define_host!(
-    BTC_BLOCKSPACE_HOST,
-    GUEST_BTC_BLOCKSPACE_ELF,
-    "guest-btc-blockspace.elf"
-);
-define_host!(
     EVM_EE_STF_HOST,
     GUEST_EVM_EE_STF_ELF,
     "guest-evm-ee-stf.elf"
