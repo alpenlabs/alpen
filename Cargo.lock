@@ -14784,22 +14784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-btc-blockspace"
-version = "0.3.0-alpha.1"
-dependencies = [
- "bitcoin",
- "borsh",
- "rand 0.8.5",
- "strata-l1tx",
- "strata-primitives",
- "strata-test-utils-btc",
- "strata-test-utils-l2",
- "strata-test-utils-tx-indexer",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
 name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14956,7 +14940,6 @@ dependencies = [
  "risc0-zkvm",
  "strata-chaintsn",
  "strata-primitives",
- "strata-proofimpl-btc-blockspace",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
