@@ -57,7 +57,6 @@ pub struct CheckpointV0VerifyContext {
     pub checkpoint_signer_pubkey: Buf32,
 }
 
-
 /// Compatibility functions for working with current checkpoint types
 impl CheckpointV0VerifierState {
     /// Initialize from genesis parameters
