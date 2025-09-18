@@ -184,7 +184,7 @@ mod tests {
         let l2_commitment = L2BlockCommitment::new(100, Buf32::zero().into());
 
         let batch_info = BatchInfo::new(
-            1, // epoch
+            1,                              // epoch
             (l1_commitment, l1_commitment), // L1 range tuple
             (l2_commitment, l2_commitment), // L2 range tuple
         );

@@ -7,19 +7,16 @@
 //! focusing on compatibility with existing CSM checkpoint verification.
 
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
-    TxInputRef, logging,
+    logging, AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol,
+    SubprotocolId, TxInputRef,
 };
 
 use crate::{
     constants::CHECKPOINTING_V0_SUBPROTOCOL_ID,
     error::{CheckpointV0Error, CheckpointV0Result},
     parsing::extract_signed_checkpoint_from_envelope,
-    types::{
-        CheckpointV0VerifierState, CheckpointV0VerificationParams,
-        CheckpointV0AuxInput
-    },
-    verification::{process_checkpoint_v0, extract_withdrawal_messages},
+    types::{CheckpointV0AuxInput, CheckpointV0VerificationParams, CheckpointV0VerifierState},
+    verification::{extract_withdrawal_messages, process_checkpoint_v0},
 };
 
 /// Checkpointing v0 subprotocol configuration
@@ -128,11 +125,7 @@ impl Subprotocol for CheckpointingV0Subproto {
     ///
     /// Currently, the checkpointing v0 subprotocol uses NullMsg and does not
     /// process incoming messages. All checkpoint verification is transaction-driven.
-    fn process_msgs(
-        _state: &mut Self::State,
-        _msgs: &[Self::Msg],
-        _params: &Self::Params,
-    ) {
+    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg], _params: &Self::Params) {
         // Checkpointing v0 doesn't process inter-subprotocol messages
         // All functionality is transaction-based
     }
@@ -168,7 +161,8 @@ fn process_checkpoint_transaction_v0(
         &verify_context,
         aux_input,
         &params.verification_params,
-    ).map_err(|e| CheckpointV0Error::StateTransitionError(e.to_string()))?;
+    )
+    .map_err(|e| CheckpointV0Error::StateTransitionError(e.to_string()))?;
 
     if accepted {
         // 4. Extract withdrawal messages for bridge forwarding
@@ -184,7 +178,11 @@ fn process_checkpoint_transaction_v0(
         // For v0, we skip bridge integration as a placeholder
 
         let epoch = signed_checkpoint.checkpoint().batch_info().epoch();
-        logging::info!("Checkpoint accepted for epoch {}, L1 height {}", epoch, current_l1_height);
+        logging::info!(
+            "Checkpoint accepted for epoch {}, L1 height {}",
+            epoch,
+            current_l1_height
+        );
     }
 
     Ok(accepted)
@@ -195,9 +193,7 @@ fn process_checkpoint_transaction_v0(
 /// This constructs simplified auxiliary input for checkpoint verification.
 /// Full SPS-62 implementation would collect comprehensive L1 oracle data.
 #[allow(dead_code)] // Reserved for future use
-fn create_aux_input_v0(
-    anchor_pre: &AnchorState,
-) -> CheckpointV0AuxInput {
+fn create_aux_input_v0(anchor_pre: &AnchorState) -> CheckpointV0AuxInput {
     // For checkpointing v0, create simplified auxiliary input
     let current_l1_height = anchor_pre.chain_view.pow_state.last_verified_block.height();
     let current_l1_blkid = anchor_pre.chain_view.pow_state.last_verified_block.blkid();
@@ -210,9 +206,10 @@ fn create_aux_input_v0(
 
 #[cfg(test)]
 mod tests {
+    use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
+
     use super::*;
     use crate::types::*;
-    use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 
     fn create_test_config() -> CheckpointingV0Config {
         let verification_params = CheckpointV0VerificationParams {

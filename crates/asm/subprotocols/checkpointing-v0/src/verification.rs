@@ -9,14 +9,14 @@
 
 use strata_asm_common::logging;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_primitives::{proof::RollupVerifyingKey, batch::SignedCheckpoint};
+use strata_primitives::{batch::SignedCheckpoint, proof::RollupVerifyingKey};
 use zkaleido::{ProofReceipt, PublicValues};
 
 use crate::{
     error::CheckpointV0Error,
     types::{
-        CheckpointV0VerifierState, CheckpointV0VerificationParams,
-        CheckpointV0VerifyContext, CheckpointV0AuxInput, WithdrawalMessages,
+        CheckpointV0AuxInput, CheckpointV0VerificationParams, CheckpointV0VerifierState,
+        CheckpointV0VerifyContext, WithdrawalMessages,
     },
 };
 
@@ -39,8 +39,11 @@ pub fn process_checkpoint_v0(
     // 1. Verify epoch progression
     let epoch = checkpoint.batch_info().epoch();
     if !state.can_accept_epoch(epoch) {
-        logging::warn!("Invalid epoch progression: expected {}, got {}",
-                       state.current_epoch() + 1, epoch);
+        logging::warn!(
+            "Invalid epoch progression: expected {}, got {}",
+            state.current_epoch() + 1,
+            epoch
+        );
         return Ok(false);
     }
 
@@ -52,10 +55,11 @@ pub fn process_checkpoint_v0(
 
     // 3. Verify proof using current system
     if !verif_params.skip_proof_verification
-        && !verify_checkpoint_proof_current_system(checkpoint, verif_params)? {
-            logging::warn!("Checkpoint proof verification failed");
-            return Ok(false);
-        }
+        && !verify_checkpoint_proof_current_system(checkpoint, verif_params)?
+    {
+        logging::warn!("Checkpoint proof verification failed");
+        return Ok(false);
+    }
 
     // 4. Verify state transitions (basic validation)
     if let Some(last_checkpoint) = &state.last_checkpoint {
@@ -164,8 +168,7 @@ fn verify_with_current_groth16_system(
     let proof = checkpoint.proof().clone();
     let batch_transition = checkpoint.batch_transition();
     let public_values = PublicValues::new(
-        borsh::to_vec(batch_transition)
-            .map_err(|_| CheckpointV0Error::SerializationError)?
+        borsh::to_vec(batch_transition).map_err(|_| CheckpointV0Error::SerializationError)?,
     );
 
     let receipt = ProofReceipt::new(proof, public_values);
@@ -178,8 +181,6 @@ fn verify_with_current_groth16_system(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::*;
     use strata_primitives::{
         batch::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar},
         buf::{Buf32, Buf64},
@@ -189,6 +190,9 @@ mod tests {
     use strata_state::batch::ChainstateRootTransition;
     use zkaleido::Proof;
 
+    use super::*;
+    use crate::types::*;
+
     fn create_test_checkpoint() -> SignedCheckpoint {
         let l1_start = L1BlockCommitment::new(199, Buf32::zero().into());
         let l1_end = L1BlockCommitment::new(200, Buf32::zero().into());
@@ -196,7 +200,7 @@ mod tests {
         let l2_end = L2BlockCommitment::new(100, Buf32::zero().into());
 
         let batch_info = BatchInfo::new(
-            1, // epoch
+            1,                  // epoch
             (l1_start, l1_end), // L1 range tuple
             (l2_start, l2_end), // L2 range tuple
         );
@@ -245,7 +249,7 @@ mod tests {
             &signed_checkpoint,
             &verify_context,
             &aux_input,
-            &verif_params
+            &verif_params,
         );
 
         assert!(result.is_ok());
