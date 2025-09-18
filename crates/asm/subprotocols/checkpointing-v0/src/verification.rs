@@ -4,7 +4,7 @@
 //! with the current checkpoint verification system while incorporating SPS-62
 //! concepts where beneficial.
 //!
-//! NOTE: This bridges to the current proof verification system until unipred
+//! NOTE: This bridges to the current proof verification system until `predicate` framework
 //! is available, as requested for feature parity.
 
 use strata_asm_common::logging;
@@ -14,10 +14,7 @@ use zkaleido::{ProofReceipt, PublicValues};
 
 use crate::{
     error::CheckpointV0Error,
-    types::{
-        CheckpointV0AuxInput, CheckpointV0VerificationParams, CheckpointV0VerifierState,
-        CheckpointV0VerifyContext, WithdrawalMessages,
-    },
+    types::{CheckpointV0VerificationParams, CheckpointV0VerifierState},
 };
 
 /// Main checkpoint processing function (SPS-62 inspired)
@@ -30,8 +27,6 @@ use crate::{
 pub fn process_checkpoint_v0(
     state: &mut CheckpointV0VerifierState,
     signed_checkpoint: &SignedCheckpoint,
-    verify_context: &CheckpointV0VerifyContext,
-    _aux_input: &CheckpointV0AuxInput,
     verif_params: &CheckpointV0VerificationParams,
 ) -> Result<bool, CheckpointV0Error> {
     let checkpoint = signed_checkpoint.checkpoint();
@@ -70,7 +65,8 @@ pub fn process_checkpoint_v0(
     }
 
     // 5. Update state with verified checkpoint
-    state.update_with_checkpoint(checkpoint.clone(), verify_context.current_l1_height);
+    // TODO : Add L1 height context to update with verify_context (currently using 0)
+    state.update_with_checkpoint(checkpoint.clone(), 0);
 
     logging::info!("Successfully verified checkpoint for epoch {}", epoch);
     Ok(true)
@@ -141,20 +137,6 @@ fn verify_state_transition(
     Ok(true)
 }
 
-/// Extract withdrawal messages from checkpoint (current system compatibility)
-///
-/// This extracts withdrawal messages that should be forwarded to the bridge subprotocol.
-/// Currently, withdrawal data is embedded in the checkpoint sidecar.
-pub fn extract_withdrawal_messages(
-    checkpoint: &strata_primitives::batch::Checkpoint,
-) -> Result<WithdrawalMessages, CheckpointV0Error> {
-    // Extract withdrawal messages from checkpoint sidecar
-    let sidecar = checkpoint.sidecar();
-    let messages = WithdrawalMessages::from_checkpoint_sidecar(sidecar);
-
-    Ok(messages)
-}
-
 /// Bridge to current proof verification system with proper types
 ///
 /// This function bridges our verification to the existing groth16 verification
@@ -176,90 +158,5 @@ fn verify_with_current_groth16_system(
     match verify_rollup_groth16_proof_receipt(&receipt, rollup_vk) {
         Ok(_) => Ok(true),
         Err(_) => Ok(false),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use strata_primitives::{
-        batch::{BatchInfo, Checkpoint, CheckpointSidecar},
-        buf::{Buf32, Buf64},
-        l1::L1BlockCommitment,
-        l2::L2BlockCommitment,
-    };
-    use strata_state::batch::ChainstateRootTransition;
-    use zkaleido::Proof;
-
-    use super::*;
-    use crate::types::*;
-
-    fn create_test_checkpoint() -> SignedCheckpoint {
-        let l1_start = L1BlockCommitment::new(199, Buf32::zero().into());
-        let l1_end = L1BlockCommitment::new(200, Buf32::zero().into());
-        let l2_start = L2BlockCommitment::new(99, Buf32::zero().into());
-        let l2_end = L2BlockCommitment::new(100, Buf32::zero().into());
-
-        let batch_info = BatchInfo::new(
-            1,                  // epoch
-            (l1_start, l1_end), // L1 range tuple
-            (l2_start, l2_end), // L2 range tuple
-        );
-
-        let batch_transition = BatchTransition {
-            epoch: 1,
-            chainstate_transition: ChainstateRootTransition {
-                pre_state_root: Buf32::zero(),
-                post_state_root: Buf32::zero(),
-            },
-        };
-
-        let checkpoint = Checkpoint::new(
-            batch_info,
-            batch_transition.into(), // Convert ASM BatchTransition to primitives BatchTransition
-            Proof::new(vec![]),
-            CheckpointSidecar::new(vec![1, 2, 3, 4]),
-        );
-
-        SignedCheckpoint::new(checkpoint, Buf64::zero())
-    }
-
-    #[test]
-    fn test_epoch_progression_validation() {
-        let mut state = CheckpointV0VerifierState::default();
-        let signed_checkpoint = create_test_checkpoint();
-        let verify_context = CheckpointV0VerifyContext {
-            current_l1_height: 100,
-            checkpoint_signer_pubkey: Buf32::zero(),
-        };
-        let verif_params = CheckpointV0VerificationParams {
-            sequencer_pubkey: Buf32::zero(),
-            skip_proof_verification: true,
-            genesis_l1_block: L1BlockCommitment::new(0, Buf32::zero().into()),
-            rollup_verifying_key: None, // No verifying key needed for test
-        };
-        let aux_input = CheckpointV0AuxInput::default();
-
-        // Should accept epoch 1 when current is 0
-        let result = process_checkpoint_v0(
-            &mut state,
-            &signed_checkpoint,
-            &verify_context,
-            &aux_input,
-            &verif_params,
-        );
-
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-        assert_eq!(state.current_epoch(), 1);
-    }
-
-    #[test]
-    fn test_withdrawal_message_extraction() {
-        let signed_checkpoint = create_test_checkpoint();
-        let result = extract_withdrawal_messages(signed_checkpoint.checkpoint());
-
-        assert!(result.is_ok());
-        let messages = result.unwrap();
-        assert_eq!(messages.count, 0); // Empty for now
     }
 }

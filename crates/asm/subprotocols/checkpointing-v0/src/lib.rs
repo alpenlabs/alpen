@@ -45,4 +45,4 @@ pub use parsing::extract_signed_checkpoint_from_envelope;
 pub use subprotocol::{CheckpointingV0Config, CheckpointingV0Subproto};
 pub use types::*;
 // Re-export verification functions for testing and integration
-pub use verification::{extract_withdrawal_messages, process_checkpoint_v0};
+pub use verification::process_checkpoint_v0;

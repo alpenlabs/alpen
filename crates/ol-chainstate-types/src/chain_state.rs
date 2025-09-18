@@ -163,6 +163,10 @@ impl Chainstate {
     pub fn is_epoch_finishing(&self) -> bool {
         self.is_epoch_finishing
     }
+
+    pub fn pending_withdraws(&self) -> &StateQueue<bridge_ops::WithdrawalIntent> {
+        &self.pending_withdraws
+    }
 }
 
 /// Hashed Chain State. This is used to compute the state root of the [`Chainstate`]

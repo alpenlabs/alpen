@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 # ASM dependencies
 strata-asm-common.workspace = true
+strata-asm-proto-bridge-v1.workspace = true
 
 # L1 transaction utilities
 strata-l1tx.workspace = true

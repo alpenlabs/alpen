@@ -7,52 +7,14 @@
 //! checkpointing system. Future versions will be fully SPS-62 compatible.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-// Re-export current checkpoint types for compatibility (excluding BatchTransition)
-pub use strata_primitives::batch::{BatchInfo, Checkpoint, CheckpointSidecar, SignedCheckpoint};
+// Re-export current checkpoint types for compatibility
+// TODO: remove dependency of strata_primitives data structures to `TxFilterConfig`
+pub use strata_primitives::batch::{
+    BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar, SignedCheckpoint,
+};
 use strata_primitives::{
     batch::Checkpoint as PrimitivesCheckpoint, buf::Buf32, l1::L1BlockCommitment,
 };
-
-/// ASM-specific BatchTransition without TxFilterConfigTransition dependency
-///
-/// Since ASM replaces the need for TxFilterConfig, this BatchTransition only includes
-/// the essential fields: epoch number and chainstate transition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct BatchTransition {
-    /// Epoch number
-    pub epoch: u64,
-    /// Chainstate root transition
-    pub chainstate_transition: strata_primitives::batch::ChainstateRootTransition,
-}
-
-/// Convert from primitives BatchTransition to ASM BatchTransition
-///
-/// This extracts only the fields needed by ASM, discarding the TxFilterConfigTransition
-impl From<strata_primitives::batch::BatchTransition> for BatchTransition {
-    fn from(bt: strata_primitives::batch::BatchTransition) -> Self {
-        Self {
-            epoch: bt.epoch,
-            chainstate_transition: bt.chainstate_transition,
-        }
-    }
-}
-
-/// Convert from ASM BatchTransition to primitives BatchTransition
-///
-/// This creates a primitives BatchTransition with zero TxFilterConfigTransition
-/// since ASM doesn't use TxFilterConfig
-impl From<BatchTransition> for strata_primitives::batch::BatchTransition {
-    fn from(bt: BatchTransition) -> Self {
-        Self {
-            epoch: bt.epoch,
-            chainstate_transition: bt.chainstate_transition,
-            tx_filters_transition: strata_primitives::batch::TxFilterConfigTransition {
-                pre_config_hash: strata_primitives::buf::Buf32::zero(),
-                post_config_hash: strata_primitives::buf::Buf32::zero(),
-            },
-        }
-    }
-}
 
 /// Checkpoint verifier state for checkpointing v0
 ///
@@ -95,115 +57,6 @@ pub struct CheckpointV0VerifyContext {
     pub checkpoint_signer_pubkey: Buf32,
 }
 
-/// Auxiliary input for checkpoint verification (simplified for v0)
-///
-/// NOTE: This is a simplified version compared to full SPS-62 auxiliary input.
-/// Future versions will implement complete L1 oracle functionality.
-#[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
-pub struct CheckpointV0AuxInput {
-    /// Current L1 block information (simplified)
-    pub current_l1_height: u64,
-    pub current_l1_blkid: Buf32,
-}
-
-/// Withdrawal message extraction result
-///
-/// Contains structured withdrawal intents extracted from checkpoint chainstate
-/// that are ready to be forwarded to the bridge subprotocol for processing.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-pub struct WithdrawalMessages {
-    /// Parsed withdrawal intents from the chainstate pending_withdraws queue
-    pub intents: Vec<WithdrawalIntentData>,
-    /// Number of withdrawal messages found
-    pub count: usize,
-}
-
-/// Withdrawal intent data extracted from chainstate
-///
-/// This mirrors the `bridge_ops::WithdrawalIntent` structure but avoids
-/// importing the full state crate dependencies in the ASM subprotocol.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-pub struct WithdrawalIntentData {
-    /// Amount in satoshis
-    pub amount_sats: u64,
-    /// Destination Bitcoin descriptor bytes
-    pub destination_bytes: Vec<u8>,
-    /// L2 transaction ID that initiated the withdrawal
-    pub withdrawal_txid: Buf32,
-}
-
-impl WithdrawalMessages {
-    /// Create empty withdrawal messages
-    pub fn empty() -> Self {
-        Self {
-            intents: Vec::new(),
-            count: 0,
-        }
-    }
-
-    /// Create withdrawal messages from intent data
-    pub fn from_intents(intents: Vec<WithdrawalIntentData>) -> Self {
-        let count = intents.len();
-        Self { intents, count }
-    }
-
-    /// Extract withdrawal messages from checkpoint sidecar
-    ///
-    /// Parses the checkpoint sidecar to extract withdrawal requests that need to be
-    /// forwarded to the bridge subprotocol for L2→L1 withdrawals.
-    ///
-    /// # Arguments
-    /// * `sidecar` - The checkpoint sidecar containing serialized chainstate data
-    ///
-    /// # Returns
-    /// `WithdrawalMessages` containing extracted withdrawal intents, or empty if extraction fails
-    ///
-    /// # Implementation Status
-    /// Currently returns empty as this requires a public accessor method on Chainstate
-    /// for the `pending_withdraws` field. The chainstate deserialization works correctly.
-    ///
-    /// # TODO
-    /// This function needs `strata_state::chain_state::Chainstate` to expose a public
-    /// getter method like `pub fn pending_withdraws(&self) -> &StateQueue<WithdrawalIntent>`
-    /// to enable extraction of withdrawal intents from checkpoint sidecars.
-    pub fn from_checkpoint_sidecar(sidecar: &CheckpointSidecar) -> Self {
-        use strata_asm_common::logging;
-
-        // Verify chainstate deserialization works (this validates the approach)
-        let chainstate_bytes = sidecar.chainstate();
-        match borsh::from_slice::<strata_state::chain_state::Chainstate>(chainstate_bytes) {
-            Ok(_chainstate) => {
-                // Chainstate deserialization successful - withdrawal extraction is feasible
-                // but blocked by private field access
-
-                logging::info!("Chainstate deserialized successfully from checkpoint sidecar");
-                logging::warn!("Withdrawal extraction requires public accessor for Chainstate::pending_withdraws");
-
-                // TODO: Once Chainstate exposes pending_withdraws() method:
-                // let pending_withdrawals = chainstate.pending_withdraws();
-                // let withdrawal_entries = pending_withdrawals.entries();
-                //
-                // let mut withdrawal_intents = Vec::with_capacity(withdrawal_entries.len());
-                // for intent in withdrawal_entries {
-                //     withdrawal_intents.push(WithdrawalIntentData {
-                //         amount_sats: intent.amt().to_sat(),
-                //         destination_bytes: intent.destination().to_bytes(),
-                //         withdrawal_txid: *intent.withdrawal_txid(),
-                //     });
-                // }
-                // return Self::from_intents(withdrawal_intents);
-            }
-            Err(e) => {
-                logging::warn!(
-                    "Failed to deserialize chainstate from checkpoint sidecar: {:?}",
-                    e
-                );
-            }
-        }
-
-        Self::empty()
-    }
-}
 
 /// Compatibility functions for working with current checkpoint types
 impl CheckpointV0VerifierState {
