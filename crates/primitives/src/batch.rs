@@ -371,9 +371,6 @@ pub struct BatchTransition {
 
     /// Transition commitment for `Chainstate`
     pub chainstate_transition: ChainstateRootTransition,
-
-    /// Transition commitment of `TxFilterConfig`
-    pub tx_filters_transition: TxFilterConfigTransition,
 }
 
 /// Contains Chainstate root transition information within a batch, verified by the associated

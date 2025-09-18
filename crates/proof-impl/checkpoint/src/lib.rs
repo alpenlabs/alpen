@@ -16,7 +16,6 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
         epoch,
         initial_chainstate_root,
         mut final_chainstate_root,
-        mut tx_filters_transition,
     } = zkvm.read_verified_borsh(cl_stf_vk);
 
     // Starting with 1 since we have already read the first CL STF output
@@ -34,9 +33,6 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
         );
 
         final_chainstate_root = cl_stf_output.final_chainstate_root;
-
-        // If there was some update to TxFiltersConfig update it, else leave as is
-        tx_filters_transition = tx_filters_transition.or(cl_stf_output.tx_filters_transition);
     }
 
     let chainstate_transition = ChainstateRootTransition {
@@ -47,8 +43,6 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
     let output = BatchTransition {
         epoch,
         chainstate_transition,
-        tx_filters_transition: tx_filters_transition
-            .expect("checkpoint must include a valid tx filters transition"),
     };
 
     zkvm.commit_borsh(&output);

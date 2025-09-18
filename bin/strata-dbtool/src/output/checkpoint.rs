@@ -129,20 +129,6 @@ pub(crate) fn format_batch_transition(
             batch_transition.chainstate_transition.post_state_root
         ),
     ));
-    output.push(porcelain_field(
-        &format!("{prefix}.batch_transition.tx_filter.pre_config_hash"),
-        format!(
-            "{:?}",
-            batch_transition.tx_filters_transition.pre_config_hash
-        ),
-    ));
-    output.push(porcelain_field(
-        &format!("{prefix}.batch_transition.tx_filter.post_config_hash"),
-        format!(
-            "{:?}",
-            batch_transition.tx_filters_transition.post_config_hash
-        ),
-    ));
 
     output
 }

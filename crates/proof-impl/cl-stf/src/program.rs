@@ -5,9 +5,7 @@ use std::{
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{buf::Buf32, params::RollupParams};
-use strata_state::{
-    batch::TxFilterConfigTransition, block::L2Block, chain_state::Chainstate, header::L2BlockHeader,
-};
+use strata_state::{block::L2Block, chain_state::Chainstate, header::L2BlockHeader};
 use zkaleido::{
     AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
     ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
@@ -31,7 +29,6 @@ pub struct ClStfOutput {
     pub epoch: u64,
     pub initial_chainstate_root: Buf32,
     pub final_chainstate_root: Buf32,
-    pub tx_filters_transition: Option<TxFilterConfigTransition>,
 }
 
 #[derive(Debug)]
@@ -91,7 +88,7 @@ impl ClStfProgram {
         NativeHost {
             process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
                 catch_unwind(AssertUnwindSafe(|| {
-                    process_cl_stf(zkvm, &MOCK_VK, &MOCK_VK);
+                    process_cl_stf(zkvm, &MOCK_VK);
                 }))
                 .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
                 Ok(())
