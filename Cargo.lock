@@ -14276,7 +14276,6 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
- "serde",
  "strata-asm-common",
  "strata-crypto",
  "strata-l1tx",

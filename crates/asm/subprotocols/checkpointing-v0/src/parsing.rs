@@ -1,8 +1,7 @@
 //! Checkpoint transaction parsing for checkpointing v0
 //!
 //! This module handles parsing of SPS-50 envelope transactions containing
-//! checkpoint data. It follows the same pattern as the administration subprotocol
-//! but extracts checkpoint data instead of multisig actions.
+//! checkpoint data.
 //!
 //! NOTE: This implementation focuses on compatibility with the current checkpoint
 //! format while following SPS-62 envelope structure requirements.
@@ -116,7 +115,7 @@ fn extract_verification_context(
 /// - Extracts payload data between envelope opcodes
 /// - Returns raw payload bytes for deserialization
 ///
-/// NOTE: This removes dependency on TxFilterConfig by using direct envelope parsing
+/// NOTE: Uses direct envelope parsing for extracting checkpoint data
 fn parse_envelope_payload(script: &ScriptBuf) -> CheckpointV0Result<Vec<u8>> {
     let mut instructions = script.instructions();
 
@@ -153,7 +152,7 @@ pub(crate) fn extract_checkpoint_legacy_format(
 #[cfg(test)]
 mod tests {
     use strata_primitives::{
-        batch::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar},
+        batch::{BatchInfo, Checkpoint, CheckpointSidecar},
         buf::{Buf32, Buf64},
         l1::L1BlockCommitment,
         l2::L2BlockCommitment,
@@ -162,6 +161,7 @@ mod tests {
     use zkaleido::Proof;
 
     use super::*;
+    use crate::types::BatchTransition;
 
     #[test]
     fn test_envelope_parsing_structure() {
@@ -195,15 +195,11 @@ mod tests {
                 pre_state_root: Buf32::zero(),
                 post_state_root: Buf32::zero(),
             },
-            tx_filters_transition: strata_primitives::batch::TxFilterConfigTransition {
-                pre_config_hash: Buf32::zero(),
-                post_config_hash: Buf32::zero(),
-            },
         };
 
         let checkpoint = Checkpoint::new(
             batch_info,
-            batch_transition,
+            batch_transition.into(), // Convert ASM BatchTransition to primitives BatchTransition
             Proof::new(vec![]),
             CheckpointSidecar::new(vec![1, 2, 3, 4]),
         );

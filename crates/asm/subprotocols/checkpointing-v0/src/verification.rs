@@ -182,7 +182,7 @@ fn verify_with_current_groth16_system(
 #[cfg(test)]
 mod tests {
     use strata_primitives::{
-        batch::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar},
+        batch::{BatchInfo, Checkpoint, CheckpointSidecar},
         buf::{Buf32, Buf64},
         l1::L1BlockCommitment,
         l2::L2BlockCommitment,
@@ -211,15 +211,11 @@ mod tests {
                 pre_state_root: Buf32::zero(),
                 post_state_root: Buf32::zero(),
             },
-            tx_filters_transition: strata_primitives::batch::TxFilterConfigTransition {
-                pre_config_hash: Buf32::zero(),
-                post_config_hash: Buf32::zero(),
-            },
         };
 
         let checkpoint = Checkpoint::new(
             batch_info,
-            batch_transition,
+            batch_transition.into(), // Convert ASM BatchTransition to primitives BatchTransition
             Proof::new(vec![]),
             CheckpointSidecar::new(vec![1, 2, 3, 4]),
         );
