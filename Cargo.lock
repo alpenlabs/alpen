@@ -1041,6 +1041,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-config"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-genesis",
+ "alpen-ee-primitives",
+ "strata-primitives",
+]
+
+[[package]]
+name = "alpen-ee-node"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types",
+ "alpen-ee-primitives",
+ "futures",
+]
+
+[[package]]
+name = "alpen-ee-primitives"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "bitcoin-bosd",
+]
+
+[[package]]
+name = "alpen-ee-sequencer"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-node",
+ "alpen-ee-primitives",
+ "reth-primitives",
+]
+
+[[package]]
 name = "alpen-reth"
 version = "0.3.0-alpha.1"
 dependencies = [
