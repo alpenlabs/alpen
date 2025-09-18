@@ -9,7 +9,7 @@
 //! The checkpointing v0 subprotocol is responsible for:
 //!
 //! - **Checkpoint Verification**: Validates checkpoints using current verification system
-//! - **SPS-50 Envelope Parsing**: Processes envelope transactions like administration subprotocol
+//! - **SPS-50 Envelope Parsing**: Processes envelope transactions
 //! - **Feature Parity**: Maintains compatibility with existing checkpoint behavior
 //! - **Bridge Integration**: Extracts and forwards withdrawal messages to bridge subprotocol
 //!
@@ -17,9 +17,9 @@
 //!
 //! - **Current Format Compatibility**: Uses existing checkpoint data structures for verification
 //! - **Envelope Parsing**: Follows administration subprotocol pattern for SPS-50 envelope parsing
-//! - **Proof Verification Bridge**: Delegates to current groth16 verification until unipred is
-//!   ready
-//! - **Simplified Auxiliary Input**: Uses basic L1 context instead of full SPS-62 oracles
+//! - **Proof Verification Bridge**: Delegates to current groth16 verification until predicates are
+//!   defined
+//! - **Simplified Auxiliary Input**: Uses basic L1 context instead of full SPS-62 oracles(?)
 //!
 //! # SPS-62 Compatibility Notes
 //!
@@ -29,28 +29,6 @@
 //! - Envelope transaction structure (SPS-50)
 //! - Basic verification flow concepts
 //! - Placeholder structures for future SPS-62 migration
-//!
-//! # Usage
-//!
-//! The main entry point is [`CheckpointingV0Subproto`] which implements the
-//! [`Subprotocol`] trait for ASM integration.
-//!
-//! ```rust,ignore
-//! use strata_asm_proto_checkpointing_v0::{
-//!     CheckpointingV0Subproto, CheckpointingV0Config, CheckpointV0VerificationParams
-//! };
-//! use strata_asm_common::Subprotocol;
-//!
-//! // Initialize the subprotocol
-//! let verification_params = CheckpointV0VerificationParams {
-//!     sequencer_pubkey: sequencer_key,
-//!     skip_proof_verification: false,
-//!     genesis_l1_block: genesis_block,
-//! };
-//! let config = CheckpointingV0Config { verification_params };
-//! let state = CheckpointingV0Subproto::init(&config)?;
-//! ```
-
 // Module declarations
 mod constants;
 mod error;
