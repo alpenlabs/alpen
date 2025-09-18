@@ -25,12 +25,6 @@ fn main() {
             pub const GUEST_RISC0_CL_AGG_ELF: &[u8] = &[];
             pub const GUEST_RISC0_CL_AGG_ID: [u32; 8] = [0u32; 8];
 
-            pub const GUEST_RISC0_BTC_BLOCKSPACE_ELF: &[u8] = &[];
-            pub const GUEST_RISC0_BTC_BLOCKSPACE_ID: [u32; 8] = [0u32; 8];
-
-            pub const GUEST_RISC0_L1_BATCH_ELF: &[u8] = &[];
-            pub const GUEST_RISC0_L1_BATCH_ID: [u32; 8] = [0u32; 8];
-
             pub const GUEST_RISC0_CHECKPOINT_ELF: &[u8] = &[];
             pub const GUEST_RISC0_CHECKPOINT_ID: [u32; 8] = [0u32; 8];
         "#;
