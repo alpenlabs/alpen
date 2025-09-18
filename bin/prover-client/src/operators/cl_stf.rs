@@ -6,7 +6,6 @@ use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
-    l1::L1BlockCommitment,
     l2::L2BlockCommitment,
     params::RollupParams,
     proof::{ProofContext, ProofKey},
@@ -19,11 +18,7 @@ use strata_zkvm_hosts::get_verification_key;
 use tokio::sync::Mutex;
 use tracing::error;
 
-use super::{
-    btc::{BtcBlockscanParams, BtcBlockspaceOperator},
-    evm_ee::EvmEeOperator,
-    ProvingOp,
-};
+use super::{evm_ee::EvmEeOperator, ProvingOp};
 use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
 
 /// A struct that implements the [`ProvingOp`] trait for Consensus Layer (CL) State Transition
@@ -41,7 +36,6 @@ use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
 pub(crate) struct ClStfOperator {
     pub cl_client: HttpClient,
     evm_ee_operator: Arc<EvmEeOperator>,
-    btc_blockspace_operator: Arc<BtcBlockspaceOperator>,
     rollup_params: Arc<RollupParams>,
 }
 
@@ -50,13 +44,11 @@ impl ClStfOperator {
     pub(crate) fn new(
         cl_client: HttpClient,
         evm_ee_operator: Arc<EvmEeOperator>,
-        btc_blockspace_operator: Arc<BtcBlockspaceOperator>,
         rollup_params: Arc<RollupParams>,
     ) -> Self {
         Self {
             cl_client,
             evm_ee_operator,
-            btc_blockspace_operator,
             rollup_params,
         }
     }
@@ -126,9 +118,7 @@ impl ClStfOperator {
 
 #[derive(Debug)]
 pub(crate) struct ClStfParams {
-    pub epoch: u64,
     pub l2_range: (L2BlockCommitment, L2BlockCommitment),
-    pub l1_range: Option<(L1BlockCommitment, L1BlockCommitment)>,
 }
 
 impl ProvingOp for ClStfOperator {
@@ -182,20 +172,6 @@ impl ProvingOp for ClStfOperator {
         let evm_ee_vk = get_verification_key(&evm_ee_key);
         let evm_ee_proof_with_vk = (evm_ee_proof, evm_ee_vk);
 
-        // Second dependency that is optional is BTC Blockspace Proof
-        let btc_blockspace_proof_with_vk = deps
-            .get(1)
-            .map(|btc_blockspace_id| -> Result<_, ProvingTaskError> {
-                let btc_blockspace_key = ProofKey::new(*btc_blockspace_id, *task_id.host());
-                let btc_blockspace_proof = db
-                    .get_proof(&btc_blockspace_key)
-                    .map_err(ProvingTaskError::DatabaseError)?
-                    .ok_or(ProvingTaskError::ProofNotFound(evm_ee_key))?;
-                let btc_blockspace_vk = get_verification_key(&btc_blockspace_key);
-                Ok((btc_blockspace_proof, btc_blockspace_vk))
-            })
-            .transpose()?;
-
         let chainstate = self.get_chainstate_before(*start_block.blkid()).await?;
         let mut l2_blocks = vec![];
         let mut current_block_hash = *end_block.blkid();
@@ -227,7 +203,6 @@ impl ProvingOp for ClStfOperator {
             chainstate,
             l2_blocks,
             evm_ee_proof_with_vk,
-            btc_blockspace_proof_with_vk,
         })
     }
 
@@ -237,31 +212,15 @@ impl ProvingOp for ClStfOperator {
         db: &ProofDBSled,
         task_tracker: Arc<Mutex<TaskTracker>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
-        let ClStfParams {
-            epoch,
-            l1_range,
-            l2_range,
-        } = params;
+        let ClStfParams { l2_range } = params;
 
         let el_start_block = self.get_exec_commitment(*l2_range.0.blkid()).await?;
         let el_end_block = self.get_exec_commitment(*l2_range.1.blkid()).await?;
 
-        let mut tasks = self
+        let tasks = self
             .evm_ee_operator
             .create_task((el_start_block, el_end_block), task_tracker.clone(), db)
             .await?;
-
-        if let Some(l1_range) = l1_range {
-            let btc_params = BtcBlockscanParams {
-                epoch,
-                range: l1_range,
-            };
-            let btc_tasks = self
-                .btc_blockspace_operator
-                .create_task(btc_params, task_tracker, db)
-                .await?;
-            tasks.extend(btc_tasks);
-        }
 
         Ok(tasks)
     }

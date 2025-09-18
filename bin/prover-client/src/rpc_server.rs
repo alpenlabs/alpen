@@ -4,18 +4,15 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use bitcoind_async_client::{traits::Reader, Client};
-use jsonrpsee::{core::RpcResult, http_client::HttpClient, RpcModule};
+use jsonrpsee::{core::RpcResult, RpcModule};
 use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::{
-    evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, proof::Epoch,
+    evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment,
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
-use strata_rpc_api::StrataDebugApiClient;
 use strata_rpc_types::ProofKey;
 use strata_rpc_utils::to_jsonrpsee_error;
-use strata_state::header::L2Header;
 use tokio::sync::{oneshot, Mutex};
 use tracing::{info, warn};
 use zkaleido::ProofReceipt;
@@ -128,15 +125,8 @@ impl StrataProverClientApiServer for ProverClientRpc {
         &self,
         cl_block_range: (L2BlockCommitment, L2BlockCommitment),
     ) -> RpcResult<Vec<ProofKey>> {
-        let cl_client = &self.operator.cl_stf_operator().cl_client;
-        let btc_client = &self.operator.btc_operator().btc_client;
-
-        let l1_range = derive_l1_range(cl_client, btc_client, cl_block_range).await;
-        let epoch = fetch_epoch(cl_client, cl_block_range.0).await;
         let cl_params = ClStfParams {
-            epoch,
             l2_range: cl_block_range,
-            l1_range,
         };
         self.operator
             .cl_stf_operator()
@@ -232,64 +222,4 @@ impl StrataProverClientApiServer for ProverClientRpc {
         let task_tracker = self.task_tracker.lock().await;
         Ok(task_tracker.generate_report())
     }
-}
-
-/// Derives the L1 range corresponding to the provided L2 block range.
-///
-/// This function asynchronously traverses backward from the end slot to find the most recent epoch
-/// containing a (CL) terminal block. If the provided range spans multiple epochs, it returns the L1
-/// range for the most recent epoch only.
-///
-/// - If none of the blocks within the given range are CL terminal blocks, the function returns
-///   `None`.
-/// - Panics if fetching a block or its height fails
-async fn derive_l1_range(
-    cl_client: &HttpClient,
-    btc_client: &Client,
-    l2_range: (L2BlockCommitment, L2BlockCommitment),
-) -> Option<(L1BlockCommitment, L1BlockCommitment)> {
-    // sanity check
-    assert!(l2_range.1.slot() >= l2_range.0.slot(), "invalid range");
-
-    let start_block_hash = *l2_range.0.blkid();
-    let mut current_block_hash = *l2_range.1.blkid();
-
-    loop {
-        let l2_block = cl_client
-            .get_block_by_id(current_block_hash)
-            .await
-            .expect("cannot find L2 block")
-            .expect("cannot find L2 block");
-
-        let new_l1_manifests = l2_block.l1_segment().new_manifests();
-        if !new_l1_manifests.is_empty() {
-            let blkid = *new_l1_manifests.first().unwrap().blkid();
-            let height = btc_client.get_block_height(&blkid.into()).await.unwrap();
-            let first_commitment = L1BlockCommitment::new(height, blkid);
-
-            let blkid = *new_l1_manifests.last().unwrap().blkid();
-            let height = btc_client.get_block_height(&blkid.into()).await.unwrap();
-            let last_commitment = L1BlockCommitment::new(height, blkid);
-
-            return Some((first_commitment, last_commitment));
-        }
-
-        let prev_l2_blkid = *l2_block.header().parent();
-
-        if current_block_hash == start_block_hash {
-            break;
-        } else {
-            current_block_hash = prev_l2_blkid;
-        }
-    }
-    None
-}
-
-async fn fetch_epoch(cl_client: &HttpClient, l2_block: L2BlockCommitment) -> Epoch {
-    cl_client
-        .get_chainstate_by_id(*l2_block.blkid())
-        .await
-        .expect("expect a chainstate")
-        .expect("expect a chainstate")
-        .cur_epoch
 }

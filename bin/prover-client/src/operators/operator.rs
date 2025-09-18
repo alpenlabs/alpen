@@ -64,7 +64,6 @@ impl ProofOperator {
         let cl_stf_operator = ClStfOperator::new(
             cl_client.clone(),
             Arc::new(evm_ee_operator.clone()),
-            Arc::new(btc_blockspace_operator.clone()),
             rollup_params.clone(),
         );
         let checkpoint_operator = CheckpointOperator::new(

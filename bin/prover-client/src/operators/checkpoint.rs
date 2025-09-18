@@ -79,8 +79,6 @@ impl CheckpointOperator {
         //
         // For now, do everything on a single chunk
         let cl_stf_params = ClStfParams {
-            epoch: checkpoint_info.idx,
-            l1_range: Some(checkpoint_info.l1_range),
             l2_range: checkpoint_info.l2_range,
         };
         self.cl_stf_operator
