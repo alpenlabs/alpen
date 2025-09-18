@@ -13,7 +13,6 @@ strata-common.workspace = true
 strata-consensus-logic.workspace = true
 strata-db.workspace = true
 strata-eectl.workspace = true
-strata-l1tx.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true

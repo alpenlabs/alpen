@@ -14784,22 +14784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-btc-blockspace"
-version = "0.3.0-alpha.1"
-dependencies = [
- "bitcoin",
- "borsh",
- "rand 0.8.5",
- "strata-l1tx",
- "strata-primitives",
- "strata-test-utils-btc",
- "strata-test-utils-l2",
- "strata-test-utils-tx-indexer",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
 name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14817,7 +14801,6 @@ dependencies = [
  "strata-chainexec",
  "strata-chaintsn",
  "strata-primitives",
- "strata-proofimpl-btc-blockspace",
  "strata-state",
  "zkaleido",
  "zkaleido-native-adapter",
@@ -14867,9 +14850,7 @@ dependencies = [
  "strata-common",
  "strata-db",
  "strata-db-store-sled",
- "strata-l1tx",
  "strata-primitives",
- "strata-proofimpl-btc-blockspace",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
@@ -14912,14 +14893,11 @@ dependencies = [
  "reqwest 0.12.23",
  "serde_json",
  "sp1-sdk",
- "strata-l1tx",
- "strata-proofimpl-btc-blockspace",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-risc0-guest-builder",
  "strata-sp1-guest-builder",
- "strata-test-utils-btc",
  "strata-test-utils-evm-ee",
  "strata-test-utils-l2",
  "strata-zkvm-hosts",
@@ -14962,7 +14940,6 @@ dependencies = [
  "risc0-zkvm",
  "strata-chaintsn",
  "strata-primitives",
- "strata-proofimpl-btc-blockspace",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
@@ -15023,7 +15000,6 @@ dependencies = [
  "strata-db",
  "strata-eectl",
  "strata-key-derivation",
- "strata-l1tx",
  "strata-primitives",
  "strata-state",
  "strata-status",
@@ -15231,7 +15207,6 @@ name = "strata-zkvm-hosts"
 version = "0.3.0-alpha.1"
 dependencies = [
  "strata-primitives",
- "strata-proofimpl-btc-blockspace",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",

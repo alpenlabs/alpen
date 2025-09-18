@@ -31,7 +31,6 @@ members = [
   "crates/l1tx",
   "crates/mpt",
   "crates/primitives",
-  "crates/proof-impl/btc-blockspace",
   "crates/proof-impl/checkpoint",
   "crates/proof-impl/cl-stf",
   "crates/proof-impl/evm-ee-stf",
@@ -142,7 +141,6 @@ strata-l1tx = { path = "crates/l1tx" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
 strata-primitives = { path = "crates/primitives" }
-strata-proofimpl-btc-blockspace = { path = "crates/proof-impl/btc-blockspace" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }

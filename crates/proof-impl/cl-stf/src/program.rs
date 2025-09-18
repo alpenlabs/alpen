@@ -5,9 +5,7 @@ use std::{
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{buf::Buf32, params::RollupParams};
-use strata_state::{
-    batch::TxFilterConfigTransition, block::L2Block, chain_state::Chainstate, header::L2BlockHeader,
-};
+use strata_state::{block::L2Block, chain_state::Chainstate, header::L2BlockHeader};
 use zkaleido::{
     AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
     ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
@@ -23,7 +21,6 @@ pub struct ClStfInput {
     pub parent_header: L2BlockHeader,
     pub l2_blocks: Vec<L2Block>,
     pub evm_ee_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
-    pub btc_blockspace_proof_with_vk: Option<(ProofReceiptWithMetadata, VerifyingKey)>,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -31,7 +28,6 @@ pub struct ClStfOutput {
     pub epoch: u64,
     pub initial_chainstate_root: Buf32,
     pub final_chainstate_root: Buf32,
-    pub tx_filters_transition: Option<TxFilterConfigTransition>,
 }
 
 #[derive(Debug)]
@@ -59,16 +55,6 @@ impl ZkVmProgram for ClStfProgram {
         input_builder.write_borsh(&input.chainstate)?;
         input_builder.write_borsh(&input.l2_blocks)?;
 
-        match input.btc_blockspace_proof_with_vk.clone() {
-            Some((proof, vk)) => {
-                input_builder.write_serde(&true)?;
-                input_builder.write_proof(&AggregationInput::new(proof, vk))?;
-            }
-            None => {
-                input_builder.write_serde(&false)?;
-            }
-        };
-
         let (proof, vk) = input.evm_ee_proof_with_vk.clone();
         input_builder.write_proof(&AggregationInput::new(proof, vk))?;
 
@@ -91,7 +77,7 @@ impl ClStfProgram {
         NativeHost {
             process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
                 catch_unwind(AssertUnwindSafe(|| {
-                    process_cl_stf(zkvm, &MOCK_VK, &MOCK_VK);
+                    process_cl_stf(zkvm, &MOCK_VK);
                 }))
                 .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
                 Ok(())

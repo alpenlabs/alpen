@@ -2,7 +2,6 @@ use strata_db::traits::ProofDatabase;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
-    l1::L1BlockCommitment,
     l2::L2BlockCommitment,
     proof::{ProofContext, ProofKey, ProofZkVm},
 };
@@ -88,11 +87,7 @@ pub fn test_get_nonexistent_proof_deps(db: &impl ProofDatabase) {
 
 // Helper functions
 fn generate_proof() -> (ProofKey, ProofReceiptWithMetadata) {
-    let proof_context = ProofContext::BtcBlockspace(
-        0,
-        L1BlockCommitment::default(),
-        L1BlockCommitment::default(),
-    );
+    let proof_context = ProofContext::ClStf(L2BlockCommitment::null(), L2BlockCommitment::null());
     let host = ProofZkVm::Native;
     let proof_key = ProofKey::new(proof_context, host);
     let proof = Proof::default();

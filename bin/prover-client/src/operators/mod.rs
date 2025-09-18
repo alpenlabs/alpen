@@ -26,7 +26,6 @@ use zkaleido::{ZkVmHost, ZkVmProgram};
 
 use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
 
-pub(crate) mod btc;
 pub(crate) mod checkpoint;
 pub(crate) mod cl_stf;
 pub(crate) mod evm_ee;
@@ -191,7 +190,7 @@ mod tests {
     use std::sync::Arc;
 
     use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
-    use strata_primitives::{buf::Buf32, evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment};
+    use strata_primitives::{buf::Buf32, evm_exec::EvmEeBlockCommitment, l2::L2BlockCommitment};
     use strata_rpc_types::ProofKey;
     use tokio::sync::Mutex;
     use typed_sled::SledDb;
@@ -329,10 +328,9 @@ mod tests {
             params: &Self::Params,
         ) -> Result<strata_primitives::proof::ProofContext, crate::errors::ProvingTaskError>
         {
-            Ok(strata_primitives::proof::ProofContext::BtcBlockspace(
-                0,
-                L1BlockCommitment::new(*params, Buf32::default().into()),
-                L1BlockCommitment::new(*params, Buf32::default().into()),
+            Ok(strata_primitives::proof::ProofContext::ClStf(
+                L2BlockCommitment::new(*params, Buf32::default().into()),
+                L2BlockCommitment::new(*params, Buf32::default().into()),
             ))
         }
 

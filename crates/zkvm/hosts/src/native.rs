@@ -1,5 +1,4 @@
 use strata_primitives::proof::ProofContext;
-use strata_proofimpl_btc_blockspace::program::BtcBlockspaceProgram;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
 use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
@@ -12,7 +11,6 @@ use zkaleido_native_adapter::NativeHost;
 /// allowing for efficient host selection for different proof types.
 pub fn get_host(id: &ProofContext) -> NativeHost {
     match id {
-        ProofContext::BtcBlockspace(..) => BtcBlockspaceProgram::native_host(),
         ProofContext::EvmEeStf(..) => EvmEeProgram::native_host(),
         ProofContext::ClStf(..) => ClStfProgram::native_host(),
         ProofContext::Checkpoint(..) => CheckpointProgram::native_host(),

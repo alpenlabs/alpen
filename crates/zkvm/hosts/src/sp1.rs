@@ -25,11 +25,6 @@ macro_rules! define_host {
 
 // Define hosts using the macro
 define_host!(
-    BTC_BLOCKSPACE_HOST,
-    GUEST_BTC_BLOCKSPACE_ELF,
-    "guest-btc-blockspace.elf"
-);
-define_host!(
     EVM_EE_STF_HOST,
     GUEST_EVM_EE_STF_ELF,
     "guest-evm-ee-stf.elf"
@@ -47,7 +42,6 @@ define_host!(
 /// instance, allowing for efficient host selection for different proof types.
 pub fn get_host(id: &ProofContext) -> &'static SP1Host {
     match id {
-        ProofContext::BtcBlockspace(..) => &BTC_BLOCKSPACE_HOST,
         ProofContext::EvmEeStf(..) => &EVM_EE_STF_HOST,
         ProofContext::ClStf(..) => &CL_STF_HOST,
         ProofContext::Checkpoint(..) => &CHECKPOINT_HOST,

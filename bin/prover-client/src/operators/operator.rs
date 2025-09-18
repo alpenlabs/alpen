@@ -8,8 +8,7 @@ use strata_rpc_types::ProofKey;
 use strata_zkvm_hosts::{resolve_host, ZkVmHostInstance};
 
 use super::{
-    btc::BtcBlockspaceOperator, checkpoint::CheckpointOperator, cl_stf::ClStfOperator,
-    evm_ee::EvmEeOperator, ProvingOp,
+    checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator, ProvingOp,
 };
 use crate::errors::ProvingTaskError;
 
@@ -21,7 +20,6 @@ use crate::errors::ProvingTaskError;
 /// by organizing operations through this struct.
 #[derive(Debug, Clone)]
 pub(crate) struct ProofOperator {
-    btc_blockspace_operator: BtcBlockspaceOperator,
     evm_ee_operator: EvmEeOperator,
     cl_stf_operator: ClStfOperator,
     checkpoint_operator: CheckpointOperator,
@@ -30,13 +28,11 @@ pub(crate) struct ProofOperator {
 impl ProofOperator {
     /// Creates a new instance of `ProofOperator` with the provided proof operators.
     pub(crate) fn new(
-        btc_blockspace_operator: BtcBlockspaceOperator,
         evm_ee_operator: EvmEeOperator,
         cl_stf_operator: ClStfOperator,
         checkpoint_operator: CheckpointOperator,
     ) -> Self {
         Self {
-            btc_blockspace_operator,
             evm_ee_operator,
             cl_stf_operator,
             checkpoint_operator,
@@ -51,20 +47,13 @@ impl ProofOperator {
         rollup_params: RollupParams,
         enable_checkpoint_runner: bool,
     ) -> Self {
-        let btc_client = Arc::new(btc_client);
+        let _btc_client = Arc::new(btc_client);
         let rollup_params = Arc::new(rollup_params);
 
-        // Create each operator using the respective clients.
-        let btc_blockspace_operator = BtcBlockspaceOperator::new(
-            btc_client.clone(),
-            cl_client.clone(),
-            rollup_params.clone(),
-        );
         let evm_ee_operator = EvmEeOperator::new(evm_ee_client.clone());
         let cl_stf_operator = ClStfOperator::new(
             cl_client.clone(),
             Arc::new(evm_ee_operator.clone()),
-            Arc::new(btc_blockspace_operator.clone()),
             rollup_params.clone(),
         );
         let checkpoint_operator = CheckpointOperator::new(
@@ -73,12 +62,7 @@ impl ProofOperator {
             enable_checkpoint_runner,
         );
 
-        ProofOperator::new(
-            btc_blockspace_operator,
-            evm_ee_operator,
-            cl_stf_operator,
-            checkpoint_operator,
-        )
+        ProofOperator::new(evm_ee_operator, cl_stf_operator, checkpoint_operator)
     }
 
     /// Asynchronously generates a proof using the specified operator and host environment.
@@ -110,9 +94,6 @@ impl ProofOperator {
         let host = resolve_host(proof_key);
 
         match proof_key.context() {
-            ProofContext::BtcBlockspace(..) => {
-                Self::prove(&self.btc_blockspace_operator, proof_key, db, host).await
-            }
             ProofContext::EvmEeStf(..) => {
                 Self::prove(&self.evm_ee_operator, proof_key, db, host).await
             }
@@ -123,11 +104,6 @@ impl ProofOperator {
                 Self::prove(&self.checkpoint_operator, proof_key, db, host).await
             }
         }
-    }
-
-    /// Returns a reference to the [`BtcBlockspaceOperator`].
-    pub(crate) fn btc_operator(&self) -> &BtcBlockspaceOperator {
-        &self.btc_blockspace_operator
     }
 
     /// Returns a reference to the [`EvmEeOperator`].

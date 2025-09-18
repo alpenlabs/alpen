@@ -11,9 +11,5 @@ use zkaleido_sp1_guest_env::Sp1ZkVmEnv;
 mod vks;
 
 fn main() {
-    process_cl_stf(
-        &Sp1ZkVmEnv,
-        vks::GUEST_EVM_EE_STF_ELF_ID,
-        vks::GUEST_BTC_BLOCKSPACE_ELF_ID,
-    );
+    process_cl_stf(&Sp1ZkVmEnv, vks::GUEST_EVM_EE_STF_ELF_ID);
 }

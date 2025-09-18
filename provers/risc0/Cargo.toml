@@ -14,7 +14,6 @@ hex.workspace = true
 rand.workspace = true
 strata-chaintsn.workspace = true
 strata-primitives.workspace = true
-strata-proofimpl-btc-blockspace.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-cl-stf.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
@@ -26,9 +25,4 @@ zkaleido.workspace = true
 risc0-build = "3.0.3"
 
 [package.metadata.risc0]
-methods = [
-  "guest-btc-blockspace",
-  "guest-evm-ee-stf",
-  "guest-cl-stf",
-  "guest-checkpoint",
-]
+methods = ["guest-evm-ee-stf", "guest-cl-stf", "guest-checkpoint"]

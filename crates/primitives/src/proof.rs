@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use zkaleido_risc0_groth16_verifier::Risc0Groth16Verifier;
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
-use crate::{evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment};
+use crate::{evm_exec::EvmEeBlockCommitment, l2::L2BlockCommitment};
 
 pub type Epoch = u64;
 
@@ -54,9 +54,6 @@ pub enum RollupVerifyingKey {
     Deserialize,
 )]
 pub enum ProofContext {
-    /// Identifier representing a Bitcoin L1 blocks for blockscan proof
-    BtcBlockspace(Epoch, L1BlockCommitment, L1BlockCommitment),
-
     /// Identifier for the EVM Execution Environment (EE) blocks used in generating the State
     /// Transition Function (STF) proof.
     EvmEeStf(EvmEeBlockCommitment, EvmEeBlockCommitment),

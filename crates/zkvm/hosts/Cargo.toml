@@ -19,7 +19,6 @@ strata-risc0-guest-builder = { path = "../../../provers/risc0", optional = true 
 zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc15", optional = true }
 
 strata-primitives.workspace = true
-strata-proofimpl-btc-blockspace.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-cl-stf.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true

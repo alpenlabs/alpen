@@ -13,14 +13,6 @@ use zkaleido::ProofReceipt;
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "dev_strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "dev_strata"))]
 pub trait StrataProverClientApi {
-    /// Start proving the given btc block
-    #[method(name = "proveBtcBlocks")]
-    async fn prove_btc_blocks(
-        &self,
-        btc_range: (L1BlockCommitment, L1BlockCommitment),
-        epoch: u64,
-    ) -> RpcResult<Vec<ProofKey>>;
-
     /// Start proving the given el block
     #[method(name = "proveElBlocks")]
     async fn prove_el_blocks(
