@@ -8,19 +8,12 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32,
-    batch::{Checkpoint as PrimitivesCheckpoint},
-    l1::L1BlockCommitment,
-};
-
 // Re-export current checkpoint types for compatibility
 pub use strata_primitives::batch::{
-    Checkpoint,
-    CheckpointSidecar,
-    SignedCheckpoint,
-    BatchInfo,
-    BatchTransition,
+    BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar, SignedCheckpoint,
+};
+use strata_primitives::{
+    batch::Checkpoint as PrimitivesCheckpoint, buf::Buf32, l1::L1BlockCommitment,
 };
 
 /// Internal TxFilterConfigTransition to remove dependency
@@ -28,15 +21,7 @@ pub use strata_primitives::batch::{
 /// NOTE: This is a temporary internal structure to avoid depending on
 /// TxFilterConfigTransition from primitives until it's removed from the circuit
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
+    Clone, Copy, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
 )]
 pub struct InternalTxFilterConfigTransition {
     /// Hash of the TxFilterConfig before the transition
@@ -50,15 +35,7 @@ pub struct InternalTxFilterConfigTransition {
 /// NOTE: This mirrors the current BatchTransition but uses our internal
 /// TxFilterConfigTransition to remove the dependency until circuit changes
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
+    Clone, Copy, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
 )]
 pub struct InternalBatchTransition {
     /// Epoch number
@@ -101,8 +78,7 @@ impl From<InternalBatchTransition> for BatchTransition {
 ///
 /// NOTE: This maintains state similar to the current core subprotocol but
 /// simplified for checkpointing v0 compatibility
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-#[derive(Default)]
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Default)]
 pub struct CheckpointV0VerifierState {
     /// The last verified checkpoint
     pub last_checkpoint: Option<PrimitivesCheckpoint>,
@@ -111,7 +87,6 @@ pub struct CheckpointV0VerifierState {
     /// Current epoch we've verified up to
     pub current_verified_epoch: u64,
 }
-
 
 /// Verification parameters for checkpointing v0
 ///
@@ -239,7 +214,10 @@ impl WithdrawalMessages {
                 // return Self::from_intents(withdrawal_intents);
             }
             Err(e) => {
-                logging::warn!("Failed to deserialize chainstate from checkpoint sidecar: {:?}", e);
+                logging::warn!(
+                    "Failed to deserialize chainstate from checkpoint sidecar: {:?}",
+                    e
+                );
             }
         }
 
