@@ -32,6 +32,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         Ok(state.load_latest_or_create_genesis()?)
     }
 
+    // TODO(QQ): add tests.
     fn process_input(
         state: &mut AsmWorkerServiceState<W>,
         incoming_block: &L1BlockCommitment,

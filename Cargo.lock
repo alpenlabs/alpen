@@ -14657,6 +14657,7 @@ name = "strata-db-tests"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "strata-asm-common",
  "strata-asm-types",
  "strata-db",
  "strata-primitives",

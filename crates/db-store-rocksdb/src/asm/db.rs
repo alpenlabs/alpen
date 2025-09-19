@@ -80,6 +80,17 @@ impl AsmDatabase for AsmDb {
     }
 }
 
-#[cfg(feature = "test_utils")]
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use strata_db_tests::asm_state_db_tests;
+
+    use super::*;
+    use crate::test_utils::get_rocksdb_tmp_instance;
+
+    fn setup_db() -> AsmDb {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        AsmDb::new(db, db_ops)
+    }
+
+    asm_state_db_tests!(setup_db());
+}
