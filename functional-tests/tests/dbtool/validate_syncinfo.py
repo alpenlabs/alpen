@@ -1,13 +1,13 @@
 import flexitest
 
 from envs import net_settings, testenv
-from mixins.dbtool_mixin import DbtoolMixin
+from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils.dbtool import send_tx
 from utils.utils import ProverClientSettings
 
 
 @flexitest.register
-class DbtoolValidateSyncinfoTest(DbtoolMixin):
+class DbtoolValidateSyncinfoTest(SequencerDbtoolMixin):
     """Test that sync info is valid and expected blocks/checkpoints exist"""
 
     def __init__(self, ctx: flexitest.InitContext):
