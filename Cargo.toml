@@ -27,6 +27,7 @@ members = [
   "crates/db-store-rocksdb",
   "crates/db-tests",
   "crates/ee-acct-runtime",
+  "crates/ee-acct-types",
   "crates/eectl",
   "crates/evmexec",
   "crates/key-derivation",
@@ -138,6 +139,7 @@ strata-db-store-rocksdb = { path = "crates/db-store-rocksdb" }
 strata-db-store-sled = { path = "crates/db-store-sled" }
 strata-db-tests = { path = "crates/db-tests" }
 strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
+strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
 strata-key-derivation = { path = "crates/key-derivation" }

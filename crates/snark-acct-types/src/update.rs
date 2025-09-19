@@ -2,6 +2,7 @@
 
 use crate::{
     message::{MessageEntry, MessageEntryProof},
+    outputs::UpdateOutputs,
     state::ProofState,
 };
 
@@ -28,6 +29,12 @@ pub struct UpdateOperation {
     extra_data: Vec<u8>,
 }
 
+impl UpdateOperation {
+    pub fn processed_messages(&self) -> &[MessageEntry] {
+        &self.processed_messages
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct InboxMes {
     proof: (), // TODO,
@@ -40,11 +47,6 @@ pub struct LedgerRefs {
 
 #[derive(Clone, Debug)]
 pub struct LedgerRefProofs {
-    // TODO
-}
-
-#[derive(Clone, Debug)]
-pub struct UpdateOutputs {
     // TODO
 }
 
