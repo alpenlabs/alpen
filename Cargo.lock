@@ -14188,29 +14188,6 @@ name = "strata-acct-types"
 version = "0.1.0"
 
 [[package]]
-name = "stf-runner-demo"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitcoin",
- "hex",
- "jsonrpsee",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "stf-runner",
- "strata-asm-common",
- "strata-asm-logs",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-l1-txfmt",
- "strata-primitives",
- "tokio",
- "tracing",
- "tracing-subscriber 0.3.20",
-]
-
-[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [

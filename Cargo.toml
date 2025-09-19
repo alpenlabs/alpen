@@ -77,7 +77,6 @@ members = [
   "bin/strata-sequencer-client",
   "bin/prover-client",
   "bin/prover-perf",
-  "bin/stf-runner-demo",
 
   # integration tests
   "tests",
