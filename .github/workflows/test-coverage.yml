@@ -25,7 +25,7 @@ jobs:
     uses: ./.github/workflows/functional.yml
 
   publish-coverage:
-    name: Check that all tests pass
+    name: Publish coverage reports
     runs-on: ubuntu-latest
     if: always()
     needs: [functional-tests, unit-tests]
@@ -48,17 +48,18 @@ jobs:
         with:
           name: unit-lcov
 
-      - name: Install lcov
-        run: sudo apt-get update && sudo apt-get install -y lcov
-
-      - name: Merge test coverage
-        run: |
-          lcov --add-tracefile ./lcov.unit.info \
-            --add-tracefile ./lcov.functional.info \
-            --output-file ./lcov.info
-
-      - name: Publish Test Coverage
+      - name: Publish Unit Test Coverage
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.unit.info
+          flags: unit
+          name: unit-coverage
+
+      - name: Publish Functional Test Coverage
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.functional.info
+          flags: functional
+          name: functional-coverage
