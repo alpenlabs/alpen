@@ -12,7 +12,7 @@ from utils.utils import (
 
 @flexitest.register
 class RevertFinalizedBlockShouldFailTest(DbtoolMixin):
-    """Test that reverting to finalized blocks fails as expected"""
+    """Test that reverting a finalized block fails as expected"""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
