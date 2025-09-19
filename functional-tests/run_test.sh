@@ -1,20 +1,25 @@
 #! /bin/bash
 set -e
 
+cd "$(dirname "$0")"
+# shellcheck disable=SC1091
 source env.bash
 
 if [ "$CARGO_RELEASE" = 1 ]; then
+  # shellcheck disable=2155
   export PATH=$(realpath ../target/release/):$PATH
 else
+  # shellcheck disable=2155
   export PATH=$(realpath ../target/debug/):$PATH
 fi
 
 # Conditionally run cargo build based on PROVER_TEST
-if [ ! -z "$PROVER_TEST" ]; then
+if [ -n "$PROVER_TEST" ]; then
   echo "Running on sp1-builder mode"
   cargo build --release -F sp1-builder
+  # shellcheck disable=2155
   export PATH=$(realpath ../target/release/):$PATH
-elif [ ! -z "$CI_COVERAGE" ]; then
+elif [ -n "$CI_COVERAGE" ]; then
   echo "Running strata client with coverage"
   # same targe dir and coverage format as cargo-llvm-cov
   COV_TARGET_DIR=$(realpath ../target)"/llvm-cov-target"

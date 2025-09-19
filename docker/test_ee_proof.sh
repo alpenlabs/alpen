@@ -29,7 +29,7 @@ get_block_info() {
     if [[ "$BLOCK_PARAM" == "latest" ]]; then
         BLOCK_NUMBER_HEX="latest"
     else
-        BLOCK_NUMBER_HEX=$(printf "0x%x" $BLOCK_PARAM)
+        BLOCK_NUMBER_HEX=$(printf "0x%x" "$BLOCK_PARAM")
     fi
 
     RESPONSE=$(curl -s -X POST --data "{
@@ -39,10 +39,10 @@ get_block_info() {
         \"id\":1
     }" -H "Content-Type: application/json" $RPC_URL)
 
-    BLOCK_HASH=$(echo $RESPONSE | jq -r '.result.hash')
+    BLOCK_HASH=$(echo "$RESPONSE" | jq -r '.result.hash')
 
-    BLOCK_NUMBER_HEX_ACTUAL=$(echo $RESPONSE | jq -r '.result.number')
-    BLOCK_NUMBER_DEC=$(( $(printf "%d" $BLOCK_NUMBER_HEX_ACTUAL) ))
+    BLOCK_NUMBER_HEX_ACTUAL=$(echo "$RESPONSE" | jq -r '.result.number')
+    BLOCK_NUMBER_DEC=$(( $(printf "%d" "$BLOCK_NUMBER_HEX_ACTUAL") ))
 
     # Write JSON to file
     echo "{\"slot\": $BLOCK_NUMBER_DEC, \"blkid\": \"$BLOCK_HASH\"}" > "$OUTPUT_FILE"

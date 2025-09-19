@@ -18,4 +18,4 @@ fi
 # Note: Command line arguments will override config file values
 strata-prover-client \
     --config "$CONFIG_PATH" \
-    $@
+    "$@"

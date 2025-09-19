@@ -100,6 +100,7 @@
             cargo-audit
             cargo-hack
             bitcoind
+            shellcheck
 
             # C/C++ build dependencies for bindgen and native libs
             pkg-config

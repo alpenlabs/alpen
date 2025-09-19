@@ -116,6 +116,16 @@ ensure-codespell:
         exit 1
     fi
 
+# Check if shellcheck is installed
+[group('prerequisites')]
+ensure-shellcheck:
+    #!/usr/bin/env bash
+    if ! command -v shellcheck &> /dev/null;
+    then
+        echo "shellcheck not found. Please install it. See: https://www.shellcheck.net/"
+        exit 1
+    fi
+
 # Check if uv is installed
 [group('prerequisites')]
 ensure-uv:
@@ -262,6 +272,12 @@ lint-check-toml: ensure-taplo
 lint-check-func-tests: ensure-uv activate-uv
     cd {{functional_tests_dir}} && uv run ruff check
 
+# Lints shell scripts
+[group('code-quality')]
+lint-check-shell: ensure-shellcheck
+    @echo "Linting shell scripts..."
+    @find . -type f \( -name '*.sh' -o -name '*.bash' \) -not -path "./target/*" -not -path "./.git/*" -not -path "./.ropeproject/*" -not -path "./functional-tests/.venv/*" -execdir shellcheck -x {} +
+
 # Lints the functional tests and applies fixes where possible
 [group('code-quality')]
 lint-fix-func-tests: ensure-uv activate-uv
@@ -269,7 +285,7 @@ lint-fix-func-tests: ensure-uv activate-uv
 
 # Runs all lints and checks for issues without trying to fix them
 [group('code-quality')]
-lint: fmt-check-ws fmt-check-func-tests fmt-check-toml lint-check-ws lint-check-func-tests lint-check-codespell
+lint: fmt-check-ws fmt-check-func-tests fmt-check-toml lint-check-ws lint-check-func-tests lint-check-codespell lint-check-shell
     @echo "\n\033[36m======== OK: Lints and Formatting ========\033[0m\n"
 
 # Runs all lints and applies fixes where possible
