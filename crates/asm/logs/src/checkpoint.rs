@@ -1,30 +1,29 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
-use strata_primitives::{l1::L1BlockCommitment, l2::L2BlockCommitment};
+use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 
 use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE;
 
 /// Details for a checkpoint update event.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-// TODO: Append "Log" to the name like other
-pub struct CheckpointUpdate {
+pub struct CheckpointUpdateLog {
     /// L1 block commitment reference.
     pub l1_ref: L1BlockCommitment,
-    /// Verified L2 block commitment reference.
-    pub verified_blk: L2BlockCommitment,
+    /// Epoch Commitment
+    pub epoch_commitment: EpochCommitment,
 }
 
-impl CheckpointUpdate {
+impl CheckpointUpdateLog {
     /// Create a new CheckpointUpdate instance.
-    pub fn new(l1_ref: L1BlockCommitment, verified_blk: L2BlockCommitment) -> Self {
+    pub fn new(l1_ref: L1BlockCommitment, epoch_commitment: EpochCommitment) -> Self {
         Self {
             l1_ref,
-            verified_blk,
+            epoch_commitment,
         }
     }
 }
 
-impl AsmLog for CheckpointUpdate {
+impl AsmLog for CheckpointUpdateLog {
     const TY: TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
 }

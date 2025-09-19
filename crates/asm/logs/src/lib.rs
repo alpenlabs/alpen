@@ -11,7 +11,7 @@ pub mod export;
 pub mod forced_inclusion;
 
 pub use asm_stf::AsmStfUpdate;
-pub use checkpoint::CheckpointUpdate;
+pub use checkpoint::CheckpointUpdateLog;
 pub use deposit::DepositLog;
 pub use export::NewExportEntry;
 pub use forced_inclusion::ForcedInclusionData;
