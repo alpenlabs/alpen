@@ -14167,6 +14167,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "strata-acct-types"
+version = "0.1.0"
+
+[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
@@ -14634,6 +14638,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ee-acct-runtime"
+version = "0.1.0"
+
+[[package]]
 name = "strata-eectl"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15047,6 +15055,13 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-snark-acct-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
 ]
 
 [[package]]
