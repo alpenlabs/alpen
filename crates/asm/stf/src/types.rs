@@ -20,7 +20,7 @@ pub struct AsmPreProcessOutput<'i> {
 }
 
 /// Overall output of applying ASM STF.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AsmStfOutput {
     pub state: AnchorState,
     pub logs: Vec<AsmLogEntry>,

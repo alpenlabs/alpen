@@ -29,7 +29,8 @@ pub trait AsmLog: BorshSerialize + BorshDeserialize {
 /// Create log entries using [`AsmLogEntry::from_log`], [`AsmLogEntry::from_raw`], or
 /// [`AsmLogEntry::from_msg`], and retrieve typed data using [`AsmLogEntry::try_into_log`]
 /// or check if it's a valid SPS-52 message using [`AsmLogEntry::try_as_msg`].
-#[derive(Clone, Debug)]
+/// TODO(QQ): FIX borsh here.
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AsmLogEntry(pub Vec<u8>);
 
 impl AsmLogEntry {
