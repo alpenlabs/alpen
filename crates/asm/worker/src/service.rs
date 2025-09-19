@@ -69,7 +69,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         // We reached the height before genesis (while traversing), but didn't find genesis state.
         if pivot_block.height() < genesis_height {
-            warn!("ASM haven't found pivot anchor state at genesis.");
+            warn!("ASM hasn't found pivot anchor state at genesis.");
             return Ok(Response::ShouldExit);
         }
 

@@ -341,7 +341,7 @@ fn start_core_tasks(
     .into();
 
     // Creating a combined block consumer both for CSM and for ASM, so they are in-sync.
-    // TODO: Ideally, ASM service would use it's own reader task with its own reader config.
+    // TODO: Ideally, ASM service would use its own reader task with its own reader config.
     let block_submitter =
         CombinedBlockSubmitter::new(vec![sync_manager.get_csm_ctl(), sync_manager.get_asm_ctl()]);
 

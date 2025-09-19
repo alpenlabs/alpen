@@ -213,7 +213,7 @@ fn spawn_asm_worker(
         storage.asm().clone(),
     );
 
-    // Use the new builder API to launch the worker and get a handle
+    // Use the new builder API to launch the worker and get a handle.
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
         .with_params(params)
