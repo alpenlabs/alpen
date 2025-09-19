@@ -8,7 +8,7 @@ from utils.utils import ProverClientSettings
 
 @flexitest.register
 class RevertChainstateDeleteBlocksTest(DbtoolMixin):
-    """Test to revert chainstate with -d flag (deletes blocks and update status)"""
+    """Test revert chainstate with -d flag on sequencer"""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -65,14 +65,14 @@ class RevertChainstateDeleteBlocksTest(DbtoolMixin):
             return False
 
         # Get the latest checkpoint index (checkpoints_count - 1)
-        latest_checkpt_index = checkpoints_count - 1
-        self.info(f"Latest checkpoint index: {latest_checkpt_index}")
+        checkpt_idx_before_revert = checkpoints_count - 1
+        self.info(f"Latest checkpoint index: {checkpt_idx_before_revert}")
 
         # Get the latest checkpoint details
-        latest_checkpt = self.get_checkpoint(latest_checkpt_index).get("checkpoint", {})
+        checkpt_before_revert = self.get_checkpoint(checkpt_idx_before_revert).get("checkpoint", {})
 
         # Extract the L2 range from the checkpoint
-        batch_info = latest_checkpt.get("commitment", {}).get("batch_info", {})
+        batch_info = checkpt_before_revert.get("commitment", {}).get("batch_info", {})
         l2_range = batch_info.get("l2_range", {})
 
         if not l2_range:
@@ -149,8 +149,15 @@ class RevertChainstateDeleteBlocksTest(DbtoolMixin):
         self.seq.start()
         self.seq_signer.start()
 
-        # Wait for services to sync
+        # Wait for block production to resume
         seq_waiter.wait_until_chain_tip_exceeds(old_ol_block_number + 1, timeout=30)
+
+        # Wait for new epoch summary to be created
+        self.info("Waiting for new epoch summary to be created after restart")
+        epoch_summary = seq_waiter.wait_until_chain_epoch(
+            checkpt_idx_before_revert + 1, timeout=120
+        )
+        self.info(f"Epoch summary: {epoch_summary}")
 
         new_ol_block_number = self.seqrpc.strata_syncStatus()["tip_height"]
         new_el_block_number = int(self.rethrpc.eth_blockNumber(), base=16)

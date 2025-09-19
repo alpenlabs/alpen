@@ -8,7 +8,7 @@ from utils.utils import ProverClientSettings
 
 @flexitest.register
 class RevertChainstateDeleteBlocksTest(DbtoolMixin):
-    """Test to revert chainstate with -d flag (deletes blocks and update status)"""
+    """Test to revert chainstate to a block inside a checkpointed epoch (should fail)"""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -60,14 +60,14 @@ class RevertChainstateDeleteBlocksTest(DbtoolMixin):
             return False
 
         # Get the latest checkpoint index (checkpoints_count - 1)
-        latest_checkpt_index = checkpoints_count - 1
-        self.info(f"Latest checkpoint index: {latest_checkpt_index}")
+        checkpt_idx_before_revert = checkpoints_count - 1
+        self.info(f"Latest checkpoint index: {checkpt_idx_before_revert}")
 
         # Get the latest checkpoint details
-        latest_checkpt = self.get_checkpoint(latest_checkpt_index).get("checkpoint", {})
+        checkpt_before_revert = self.get_checkpoint(checkpt_idx_before_revert).get("checkpoint", {})
 
         # Extract the L2 range from the checkpoint
-        batch_info = latest_checkpt.get("commitment", {}).get("batch_info", {})
+        batch_info = checkpt_before_revert.get("commitment", {}).get("batch_info", {})
         l2_range = batch_info.get("l2_range", {})
 
         if not l2_range:
