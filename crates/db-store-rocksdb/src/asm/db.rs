@@ -1,22 +1,23 @@
 use std::sync::Arc;
 
-use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt};
-use strata_db::{traits::*, DbResult};
+use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt, TransactionRetry};
+use strata_db::{traits::*, DbError, DbResult};
 use strata_state::asm_state::AsmState;
 
-use crate::{asm::schemas::AsmBlockSchema, DbOpsConfig};
+use super::schemas::{AsmLogSchema, AsmStateSchema};
+use crate::DbOpsConfig;
 
 #[derive(Debug)]
 pub struct AsmDb {
     db: Arc<OptimisticTransactionDB>,
-    _ops: DbOpsConfig,
+    ops: DbOpsConfig,
 }
 
 impl AsmDb {
     // NOTE: db is expected to open all the column families defined in STORE_COLUMN_FAMILIES.
     // FIXME: Make it better/generic.
     pub fn new(db: Arc<OptimisticTransactionDB>, ops: DbOpsConfig) -> Self {
-        Self { db, _ops: ops }
+        Self { db, ops }
     }
 }
 
@@ -26,26 +27,56 @@ impl AsmDatabase for AsmDb {
         block: strata_primitives::prelude::L1BlockCommitment,
         state: AsmState,
     ) -> DbResult<()> {
-        self.db.put::<AsmBlockSchema>(&block, &state)?;
-        Ok(())
+        self.db
+            .with_optimistic_txn(
+                TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    txn.put::<AsmStateSchema>(&block, state.state())?;
+                    txn.put::<AsmLogSchema>(&block, state.logs())?;
+
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))
     }
 
     fn get_asm_state(
         &self,
         block: strata_primitives::prelude::L1BlockCommitment,
     ) -> DbResult<Option<AsmState>> {
-        Ok(self.db.get::<AsmBlockSchema>(&block)?)
+        self.db
+            .with_optimistic_txn(
+                TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<Option<AsmState>, anyhow::Error> {
+                    let state = txn.get::<AsmStateSchema>(&block)?;
+                    let logs = txn.get::<AsmLogSchema>(&block)?;
+
+                    Ok(state.and_then(|s| logs.map(|l| AsmState::new(s, l))))
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))
     }
 
     fn get_latest_asm_state(
         &self,
     ) -> DbResult<Option<(strata_primitives::prelude::L1BlockCommitment, AsmState)>> {
         // Relying on the lexicographycal order of L1BlockCommitment.
-        let mut iterator = self.db.iter::<AsmBlockSchema>()?;
-        iterator.seek_to_last();
-        let opt = iterator.rev().next().map(|res| res.unwrap().into_tuple());
+        let mut state_iter = self.db.iter::<AsmStateSchema>()?;
+        state_iter.seek_to_last();
+        let state = state_iter.rev().next().map(|res| res.unwrap().into_tuple());
 
-        Ok(opt)
+        let mut logs_iter = self.db.iter::<AsmLogSchema>()?;
+        logs_iter.seek_to_last();
+        let logs = logs_iter.rev().next().map(|res| res.unwrap().into_tuple());
+
+        // Assert that the block for the state and for the logs is the same.
+        // It should be because we are putting it within transaction.
+        Ok(state.and_then(|s| {
+            logs.map(|l| {
+                assert_eq!(s.0, l.0);
+                (s.0, AsmState::new(s.1, l.1))
+            })
+        }))
     }
 }
 

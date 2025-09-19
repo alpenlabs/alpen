@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+strata-asm-common.workspace = true
 strata-asm-types.workspace = true
 strata-db.workspace = true
 strata-primitives.workspace = true
