@@ -38,6 +38,10 @@ class DbtoolMixin(BaseMixin):
         """Get checkpoint data for specific index and return parsed data"""
         return self.__run_dbtool_json_command("get-checkpoint", str(checkpoint_index), "-o", "json")
 
+    def get_epoch_summary(self, epoch_index: int) -> dict[str, Any]:
+        """Get epoch summary for specific epoch index and return parsed data"""
+        return self.__run_dbtool_json_command("get-epoch-summary", str(epoch_index), "-o", "json")
+
     def revert_chainstate(self, block_id: str, *args) -> tuple[int, str, str]:
         """Run revert-chainstate command and return (return_code, stdout, stderr)"""
         datadir = self.__get_datadir()
