@@ -1,13 +1,13 @@
 import flexitest
 
 from envs import net_settings, testenv
-from mixins.dbtool_mixin import DbtoolMixin
+from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils.dbtool import send_tx
 from utils.utils import ProverClientSettings
 
 
 @flexitest.register
-class RevertChainstateSeqTest(DbtoolMixin):
+class RevertChainstateSeqTest(SequencerDbtoolMixin):
     """Test revert chainstate on sequencer"""
 
     def __init__(self, ctx: flexitest.InitContext):
