@@ -54,3 +54,14 @@ impl AsmDatabase for AsmDBSled {
         }))
     }
 }
+
+#[cfg(feature = "test_utils")]
+#[cfg(test)]
+mod tests {
+    use strata_db_tests::asm_state_db_tests;
+
+    use super::*;
+    use crate::sled_db_test_setup;
+
+    sled_db_test_setup!(AsmDBSled, asm_state_db_tests);
+}

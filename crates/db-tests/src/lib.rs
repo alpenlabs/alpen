@@ -4,6 +4,7 @@
 //! the database kind so that when new unit tests are added, all impls
 //! automatically inherit them.
 
+pub mod asm_tests;
 pub mod chain_state_tests;
 pub mod checkpoint_tests;
 pub mod client_state_tests;

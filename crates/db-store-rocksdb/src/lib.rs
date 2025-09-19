@@ -47,6 +47,7 @@ pub use writer::db::RBL1WriterDb;
 use writer::schemas::{IntentIdxSchema, IntentSchema, PayloadSchema};
 
 use crate::{
+    asm::schemas::{AsmLogSchema, AsmStateSchema},
     chain_state::schemas::{StateInstanceSchema, WriteBatchSchema},
     client_state::schemas::ClientUpdateOutputSchema,
     l1::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema},
@@ -57,6 +58,10 @@ pub const ROCKSDB_NAME: &str = "strata-client";
 
 #[rustfmt::skip]
 pub const STORE_COLUMN_FAMILIES: &[ColumnFamilyName] = &[
+    // ASM
+    AsmStateSchema::COLUMN_FAMILY_NAME,
+    AsmLogSchema::COLUMN_FAMILY_NAME,
+
     // Core
     SequenceSchema::COLUMN_FAMILY_NAME,
     ClientUpdateOutputSchema::COLUMN_FAMILY_NAME,
