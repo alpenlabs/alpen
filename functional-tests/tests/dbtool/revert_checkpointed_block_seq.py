@@ -1,7 +1,7 @@
 import flexitest
 
 from envs import net_settings, testenv
-from mixins.dbtool_mixin import DbtoolMixin
+from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils.dbtool import send_tx
 from utils.utils import (
     ProverClientSettings,
@@ -13,7 +13,7 @@ from utils.utils import (
 
 
 @flexitest.register
-class RevertCheckpointedBlockSeqTest(DbtoolMixin):
+class RevertCheckpointedBlockSeqTest(SequencerDbtoolMixin):
     """Test revert checkpointed block on sequencer"""
 
     def __init__(self, ctx: flexitest.InitContext):
@@ -45,9 +45,9 @@ class RevertCheckpointedBlockSeqTest(DbtoolMixin):
         old_el_block_number = int(self.rethrpc.eth_blockNumber(), base=16)
         self.info(f"OL block number: {old_ol_block_number}, EL block number: {old_el_block_number}")
 
-        old_el_blockhash = self.rethrpc.eth_getBlockByNumber(
-            hex(old_el_block_number), False
-        )["hash"]
+        old_el_blockhash = self.rethrpc.eth_getBlockByNumber(hex(old_el_block_number), False)[
+            "hash"
+        ]
 
         # Check if both services are at the same state before proceeding
         if old_ol_block_number != old_el_block_number:
@@ -151,7 +151,7 @@ class RevertCheckpointedBlockSeqTest(DbtoolMixin):
             self.seqrpc,
             checkpt_idx_before_revert + 1,
             error_with="new epoch summary not created after revert chainstate",
-            timeout=120
+            timeout=120,
         )
         self.info(f"Epoch number after restart: {epoch_number}")
 
@@ -162,9 +162,9 @@ class RevertCheckpointedBlockSeqTest(DbtoolMixin):
 
         self.info(f"chainstate reverted to target_slot: {target_slot}")
 
-        new_el_blockhash = self.rethrpc.eth_getBlockByNumber(
-            hex(new_el_block_number), False
-        )["hash"]
+        new_el_blockhash = self.rethrpc.eth_getBlockByNumber(hex(new_el_block_number), False)[
+            "hash"
+        ]
         self.info(f"old_el_blockhash: {old_el_blockhash}, new_el_blockhash: {new_el_blockhash}")
         assert old_el_blockhash != new_el_blockhash
 
