@@ -18,7 +18,7 @@ use crate::{
 ///
 /// This encapsulates all the initialization logic and dependencies needed to
 /// launch an ASM worker using the service framework, preventing impl details
-/// from leaking into the caller.  The builder launches the service and returns
+/// from leaking into the caller. The builder launches the service and returns
 /// a handle to it.
 #[derive(Debug)]
 pub struct AsmWorkerBuilder<W> {

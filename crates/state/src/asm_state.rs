@@ -3,6 +3,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{AnchorState, AsmLogEntry};
 use strata_asm_stf::AsmStfOutput;
+
+/// ASM bookkeping "umbrella" state.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub struct AsmState {
     state: AnchorState,

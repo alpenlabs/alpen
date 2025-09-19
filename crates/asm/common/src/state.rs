@@ -12,7 +12,7 @@ use crate::{AsmError, Mismatched, Subprotocol, SubprotocolId};
 /// receiving protocol transactions at L1 and updating its storage. A zk-SNARK proof
 /// attests that the transition from the previous ASM state to the new state
 /// was performed correctly on the given L1 block.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AnchorState {
     /// The current view of the L1 chain required for state transitions.
     pub chain_view: ChainViewState,
@@ -30,7 +30,7 @@ impl AnchorState {
 
 /// Represents the on‐chain view required by the Anchor State Machine (ASM) to process
 /// state transitions for each new L1 block.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct ChainViewState {
     /// All data needed to validate a Bitcoin block header, including past‐n timestamps,
     /// accumulated work, and difficulty adjustments.
