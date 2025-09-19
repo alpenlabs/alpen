@@ -1,7 +1,7 @@
 import flexitest
 
 from envs import net_settings, testenv
-from mixins.dbtool_mixin import DbtoolMixin
+from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils.dbtool import send_tx
 from utils.utils import (
     ProverClientSettings,
@@ -11,7 +11,7 @@ from utils.utils import (
 
 
 @flexitest.register
-class RevertCheckpointedBlockShouldFailTest(DbtoolMixin):
+class RevertCheckpointedBlockShouldFailTest(SequencerDbtoolMixin):
     """Test to revert chainstate to a block inside a checkpointed epoch (should fail)"""
 
     def __init__(self, ctx: flexitest.InitContext):
