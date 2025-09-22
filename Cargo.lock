@@ -14641,7 +14641,9 @@ dependencies = [
 name = "strata-ee-acct-runtime"
 version = "0.1.0"
 dependencies = [
+ "strata-acct-types",
  "strata-ee-acct-types",
+ "strata-ee-chain-types",
  "strata-snark-acct-types",
 ]
 
@@ -14650,8 +14652,13 @@ name = "strata-ee-acct-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
+ "strata-ee-chain-types",
  "thiserror 2.0.16",
 ]
+
+[[package]]
+name = "strata-ee-chain-types"
+version = "0.1.0"
 
 [[package]]
 name = "strata-eectl"

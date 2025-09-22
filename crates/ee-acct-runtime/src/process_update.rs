@@ -8,12 +8,16 @@
 //! outside the proof, after verifying the proof, to update our view of the
 //! state, presumably with information extracted from DA.
 
+use strata_acct_types::AcctId;
 use strata_ee_acct_types::{
-    DecodedEeMessage, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
+    CommitCoinput, DecodedEeMessage, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
 };
 use strata_snark_acct_types::{MessageEntry, UpdateOperation};
 
-use crate::verification_state::UpdateVerificationState;
+use crate::{
+    exec_processing::{apply_commit, verify_commit},
+    verification_state::UpdateVerificationState,
+};
 
 /// Verify if an update operation is valid.  Accepts coinputs corresponding to
 /// each message to privately attest validity before applying effects.
@@ -21,6 +25,7 @@ pub fn verify_and_apply_update_operation<'i, E: ExecutionEnvironment>(
     state: &mut EeAccountState,
     operation: &UpdateOperation,
     coinputs: impl IntoIterator<Item = &'i [u8]>,
+    ee: &E,
 ) -> EnvResult<()> {
     let mut coinp_iter = coinputs.into_iter();
 
@@ -33,7 +38,7 @@ pub fn verify_and_apply_update_operation<'i, E: ExecutionEnvironment>(
         };
 
         // Verify the message.  This relies on the private coinput.
-        verify_message(&mut vstate, state, &eem, &meta, coinp, operation)?;
+        verify_message(&mut vstate, state, &eem, &meta, coinp, operation, ee)?;
 
         // Then apply the message.  This doesn't rely on the private coinput.
         apply_message(state, &eem, &meta, operation)?;
@@ -53,22 +58,47 @@ pub fn verify_and_apply_update_operation<'i, E: ExecutionEnvironment>(
     Ok(())
 }
 
-fn verify_message(
+fn verify_message<E: ExecutionEnvironment>(
     vstate: &mut UpdateVerificationState,
     astate: &EeAccountState,
     msg: &DecodedEeMessage,
     meta: &MsgMeta,
     coinp: &[u8],
     op: &UpdateOperation,
+    ee: &E,
 ) -> EnvResult<()> {
     // TODO dispatch to handler depending on message type
+
+    match msg {
+        DecodedEeMessage::Deposit(deposit_msg_data) => {
+            // No coinputs allowed for this one.
+            if !coinp.is_empty() {
+                return Err(EnvError::MalformedCoinput);
+            }
+        }
+
+        DecodedEeMessage::SubjTransfer(subj_transfer_msg_data) => {
+            // No coinputs allowed for this one.
+            if !coinp.is_empty() {
+                return Err(EnvError::MalformedCoinput);
+            }
+        }
+
+        DecodedEeMessage::Commit(commit_msg_data) => {
+            let Some(cc) = CommitCoinput::decode_raw(coinp) else {
+                return Err(EnvError::MalformedCoinput);
+            };
+
+            verify_commit(vstate, astate, commit_msg_data, &cc, ee)?;
+        }
+    }
 
     Ok(())
 }
 
 fn verify_accumulated_state(
     vstate: &mut UpdateVerificationState,
-    state: &EeAccountState,
+    astate: &EeAccountState,
     op: &UpdateOperation,
 ) -> EnvResult<()> {
     // 1. Check balance changes are consistent.
@@ -85,9 +115,10 @@ fn verify_accumulated_state(
 /// assumed we have a proof attesting to the validity that transitively attests
 /// to this.
 ///
-/// This is
+/// This is used in clients after they have a proof for an update to reconstruct
+/// the actual state proven by the proof.
 pub fn apply_update_operation_unconditionally<E: ExecutionEnvironment>(
-    state: &mut EeAccountState,
+    astate: &mut EeAccountState,
     operation: &UpdateOperation,
 ) -> EnvResult<()> {
     // 1. Apply the changes from the messages.
@@ -96,23 +127,38 @@ pub fn apply_update_operation_unconditionally<E: ExecutionEnvironment>(
             continue;
         };
 
-        apply_message(state, &eem, &meta, operation)?;
+        apply_message(astate, &eem, &meta, operation)?;
     }
 
     // 2. Apply the final update changes.
-    apply_final_update_changes(state, operation)?;
+    apply_final_update_changes(astate, operation)?;
 
     // TODO
     Ok(())
 }
 
 fn apply_message(
-    state: &mut EeAccountState,
+    astate: &mut EeAccountState,
     msg: &DecodedEeMessage,
     meta: &MsgMeta,
     op: &UpdateOperation,
 ) -> EnvResult<()> {
     // TODO dispatch to handler depending on message type
+
+    match msg {
+        DecodedEeMessage::Deposit(deposit_msg_data) => {
+            // TODO
+        }
+
+        DecodedEeMessage::SubjTransfer(subj_transfer_msg_data) => {
+            // TODO
+        }
+
+        DecodedEeMessage::Commit(commit_msg_data) => {
+            apply_commit(astate, commit_msg_data)?;
+        }
+    }
+
     Ok(())
 }
 

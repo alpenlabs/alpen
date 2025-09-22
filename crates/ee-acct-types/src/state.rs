@@ -21,8 +21,12 @@ pub struct EeAccountState {
 }
 
 impl EeAccountState {
-    pub fn last_exec_blkid(&self) -> [u8; 32] {
+    pub fn last_exec_blkid(&self) -> Hash {
         self.last_exec_blkid
+    }
+
+    pub fn set_last_exec_blkid(&mut self, blkid: Hash) {
+        self.last_exec_blkid = blkid;
     }
 
     pub fn tracked_balance(&self) -> u64 {

@@ -17,6 +17,9 @@ pub struct UpdateVerificationState {
     // recorded outputs we'll check later
     output_transfers: Vec<OutputTransfer>,
     output_messages: Vec<OutputMessage>,
+
+    // Recorded DA.
+    l1_da_blob_hashes: Vec<Hash>,
 }
 
 impl UpdateVerificationState {
@@ -33,6 +36,7 @@ impl UpdateVerificationState {
             total_val_recv: 0,
             output_transfers: Vec::new(),
             output_messages: Vec::new(),
+            l1_da_blob_hashes: Vec::new(),
         }
     }
 }
