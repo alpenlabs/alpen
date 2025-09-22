@@ -13,8 +13,11 @@
 //! We also have a sentinel "null" epoch used to refer to the "finalized epoch"
 //! as of the genesis block.
 
+use std::fmt;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use const_hex as hex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -26,7 +29,6 @@ use crate::{
 #[derive(
     Copy,
     Clone,
-    Debug,
     Eq,
     PartialEq,
     Ord,
@@ -85,5 +87,33 @@ impl EpochCommitment {
     /// for the genesis epoch (0) before the it is completed.
     pub fn is_null(&self) -> bool {
         Buf32::from(self.last_blkid).is_zero()
+    }
+}
+
+impl fmt::Display for EpochCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Show first 2 and last 2 bytes of block ID (4 hex chars each)
+        let blkid_bytes = self.last_blkid.as_ref();
+        let first_2 = &blkid_bytes[..2];
+        let last_2 = &blkid_bytes[30..];
+
+        let first_hex = hex::encode(first_2);
+        let last_hex = hex::encode(last_2);
+
+        write!(
+            f,
+            "{}[{}]@{}..{}",
+            self.last_slot, self.epoch, first_hex, last_hex
+        )
+    }
+}
+
+impl fmt::Debug for EpochCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "EpochCommitment(epoch={}, last_slot={}, last_blkid={:?})",
+            self.epoch, self.last_slot, self.last_blkid
+        )
     }
 }

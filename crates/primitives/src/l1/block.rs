@@ -3,6 +3,7 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use bitcoin::{hashes::Hash, BlockHash};
 use borsh::{BorshDeserialize, BorshSerialize};
+use const_hex as hex;
 use serde::{Deserialize, Serialize};
 
 use super::{L1HeaderRecord, L1Tx};
@@ -49,7 +50,6 @@ impl From<L1BlockId> for BlockHash {
 }
 
 #[derive(
-    Debug,
     Copy,
     Clone,
     Eq,
@@ -71,7 +71,25 @@ pub struct L1BlockCommitment {
 
 impl fmt::Display for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <Self as fmt::Debug>::fmt(self, f)
+        // Show first 2 and last 2 bytes of block ID (4 hex chars each)
+        let blkid_bytes = self.blkid.as_ref();
+        let first_2 = &blkid_bytes[..2];
+        let last_2 = &blkid_bytes[30..];
+
+        let first_hex = hex::encode(first_2);
+        let last_hex = hex::encode(last_2);
+
+        write!(f, "{}@{}..{}", self.height, first_hex, last_hex)
+    }
+}
+
+impl fmt::Debug for L1BlockCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "L1BlockCommitment(height={}, blkid={:?})",
+            self.height, self.blkid
+        )
     }
 }
 

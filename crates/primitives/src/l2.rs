@@ -1,5 +1,8 @@
+use std::fmt;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use const_hex as hex;
 use serde::{Deserialize, Serialize};
 
 use crate::{buf::Buf32, impl_buf_wrapper};
@@ -40,7 +43,6 @@ impl L2BlockId {
 #[derive(
     Copy,
     Clone,
-    Debug,
     Eq,
     PartialEq,
     Ord,
@@ -76,5 +78,29 @@ impl L2BlockCommitment {
 
     pub fn is_null(&self) -> bool {
         self.slot == 0 && self.blkid.0.is_zero()
+    }
+}
+
+impl fmt::Display for L2BlockCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Show first 2 and last 2 bytes of block ID (4 hex chars each)
+        let blkid_bytes = self.blkid.as_ref();
+        let first_2 = &blkid_bytes[..2];
+        let last_2 = &blkid_bytes[30..];
+
+        let first_hex = hex::encode(first_2);
+        let last_hex = hex::encode(last_2);
+
+        write!(f, "{}@{}..{}", self.slot, first_hex, last_hex)
+    }
+}
+
+impl fmt::Debug for L2BlockCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "L2BlockCommitment(slot={}, blkid={:?})",
+            self.slot, self.blkid
+        )
     }
 }
