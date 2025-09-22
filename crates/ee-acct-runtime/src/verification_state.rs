@@ -8,7 +8,7 @@ type Hash = [u8; 32];
 /// State tracker that accumulates changes that we need to make checks about
 /// later on in update processing.
 #[derive(Debug)]
-pub struct UpdateVerificationState<'s> {
+pub struct UpdateVerificationState {
     // balance bookkeeping as additional checks to avoid overdraw
     orig_tracked_balance: u64,
     total_val_sent: u64,

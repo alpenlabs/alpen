@@ -1,7 +1,7 @@
 mod constants;
 mod id;
-mod message;
+mod messages;
 
 pub use constants::SYSTEM_RESERVED_ACCTS;
 pub use id::{AcctId, AcctSerial, SubjectId};
-pub use message::{AcctMessage, MessageData};
+pub use messages::{AcctMessage, MessageData};

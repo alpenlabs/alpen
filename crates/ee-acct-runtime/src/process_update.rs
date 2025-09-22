@@ -11,7 +11,7 @@
 use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult, ExecutionEnvironment};
 use strata_snark_acct_types::{MessageEntry, UpdateOperation};
 
-use crate::accumulator::UpdateVerificationState;
+use crate::verification_state::UpdateVerificationState;
 
 /// Verify if an update operation is valid.  Accepts coinputs corresponding to
 /// each message to privately attest validity before applying effects.

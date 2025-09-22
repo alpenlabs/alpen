@@ -1,10 +1,12 @@
-mod message;
+mod accumulators;
+mod messages;
 mod outputs;
 mod proof_interface;
 mod state;
 mod update;
 
-pub use message::*;
+pub use accumulators::*;
+pub use messages::*;
 pub use outputs::*;
 pub use proof_interface::UpdateProofPubParams;
 pub use state::ProofState;
