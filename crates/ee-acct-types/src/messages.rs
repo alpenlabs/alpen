@@ -2,6 +2,45 @@
 
 use strata_acct_types::SubjectId;
 
+/// Decoded possible EE account messages we want to honor.
+///
+/// This is not intended to capture all possible message types.
+// TODO make zero copy?
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DecodedEeMessage {
+    /// Deposit from L1 to a subject in the EE.
+    Deposit(DepositMsgData),
+
+    /// Transfer from a subject in one EE to a subject in another EE.
+    SubjTransfer(SubjTransferMsgData),
+
+    /// Commit an update.
+    Commit(CommitMsgData),
+}
+
+impl DecodedEeMessage {
+    /// Decode a raw buffer.
+    pub fn decode_raw(buf: &[u8]) -> Option<DecodedEeMessage> {
+        // TODO use msg ty fmt
+        unimplemented!()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DepositMsgData {
+    dest_subject: SubjectId,
+}
+
+impl DepositMsgData {
+    pub fn new(dest_subject: SubjectId) -> Self {
+        Self { dest_subject }
+    }
+
+    pub fn dest_subject(&self) -> SubjectId {
+        self.dest_subject
+    }
+}
+
 /// Describes a transfer between subjects in EEs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubjTransferMsgData {
@@ -33,6 +72,7 @@ impl SubjTransferMsgData {
 }
 
 /// Describes a chunk a sequencer wants to stage.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitMsgData {
     chunk_commitment: [u8; 32],
 }

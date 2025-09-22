@@ -8,7 +8,9 @@
 //! outside the proof, after verifying the proof, to update our view of the
 //! state, presumably with information extracted from DA.
 
-use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult, ExecutionEnvironment};
+use strata_ee_acct_types::{
+    DecodedEeMessage, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
+};
 use strata_snark_acct_types::{MessageEntry, UpdateOperation};
 
 use crate::verification_state::UpdateVerificationState;
@@ -25,13 +27,16 @@ pub fn verify_and_apply_update_operation<'i, E: ExecutionEnvironment>(
     // 1. Process each message in order.
     let mut vstate = UpdateVerificationState::new_from_state(state);
     for (inp, coinp) in operation.processed_messages().iter().zip(&mut coinp_iter) {
-        // TODO decode the message first and then pass decoded to handler
+        let Some((meta, eem)) = parse_input(&inp) else {
+            // Other type or invalid message, skip.
+            continue;
+        };
 
         // Verify the message.  This relies on the private coinput.
-        verify_message(&mut vstate, state, inp, coinp, operation)?;
+        verify_message(&mut vstate, state, &eem, &meta, coinp, operation)?;
 
         // Then apply the message.  This doesn't rely on the private coinput.
-        apply_message(state, inp, operation)?;
+        apply_message(state, &eem, &meta, operation)?;
     }
 
     // Make sure there are no more leftover coinputs we haven't recognized.
@@ -51,7 +56,8 @@ pub fn verify_and_apply_update_operation<'i, E: ExecutionEnvironment>(
 fn verify_message(
     vstate: &mut UpdateVerificationState,
     astate: &EeAccountState,
-    msg: &MessageEntry,
+    msg: &DecodedEeMessage,
+    meta: &MsgMeta,
     coinp: &[u8],
     op: &UpdateOperation,
 ) -> EnvResult<()> {
@@ -86,7 +92,11 @@ pub fn apply_update_operation_unconditionally<E: ExecutionEnvironment>(
 ) -> EnvResult<()> {
     // 1. Apply the changes from the messages.
     for inp in operation.processed_messages().iter() {
-        apply_message(state, inp, operation)?;
+        let Some((meta, eem)) = parse_input(&inp) else {
+            continue;
+        };
+
+        apply_message(state, &eem, &meta, operation)?;
     }
 
     // 2. Apply the final update changes.
@@ -98,7 +108,8 @@ pub fn apply_update_operation_unconditionally<E: ExecutionEnvironment>(
 
 fn apply_message(
     state: &mut EeAccountState,
-    msg: &MessageEntry,
+    msg: &DecodedEeMessage,
+    meta: &MsgMeta,
     op: &UpdateOperation,
 ) -> EnvResult<()> {
     // TODO dispatch to handler depending on message type
@@ -109,4 +120,21 @@ fn apply_final_update_changes(state: &mut EeAccountState, op: &UpdateOperation) 
     // 1. Update final execution head block.
 
     Ok(())
+}
+
+/// Meta fields extracted from a message.
+struct MsgMeta {
+    source: AcctId,
+    incl_epoch: u32,
+    value: u64,
+}
+
+fn parse_input(m: &MessageEntry) -> Option<(MsgMeta, DecodedEeMessage)> {
+    let eem = DecodedEeMessage::decode_raw(m.payload_buf())?;
+    let meta = MsgMeta {
+        source: m.source(),
+        incl_epoch: m.incl_epoch(),
+        value: m.payload_value(),
+    };
+    Some((meta, eem))
 }
