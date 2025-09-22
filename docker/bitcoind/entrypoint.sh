@@ -19,11 +19,11 @@ EOF
 echo "Bitcoin RPC User: $BITCOIND_RPC_USER"
 
 bcli() {
-    bitcoin-cli -regtest -rpcuser=${BITCOIND_RPC_USER} -rpcpassword=${BITCOIND_RPC_PASSWORD} $@
+    bitcoin-cli -regtest -rpcuser="${BITCOIND_RPC_USER}" -rpcpassword="${BITCOIND_RPC_PASSWORD}" "$@"
 }
 
 # Start bitcoind in the background
-bitcoind -conf=/root/.bitcoin/bitcoin.conf -regtest $@ &
+bitcoind -conf=/root/.bitcoin/bitcoin.conf -regtest "$@" &
 
 # Function to check if a wallet exists and is loaded, mainly for docker cache
 check_wallet_exists() {
@@ -32,16 +32,16 @@ check_wallet_exists() {
   # List all wallets in the wallet directory
   ALL_WALLETS=$(bcli listwalletdir)
 
-  echo $ALL_WALLETS
+  echo "$ALL_WALLETS"
 
   # Check if the wallet name is in the list of wallets in the directory
   if echo "$ALL_WALLETS" | grep -q "\"name\": \"${1}\""; then
     echo "Wallet '$1' exists in the wallet directory."
-    bcli loadwallet $1
+    bcli loadwallet "$1"
   else
     echo "Wallet '$1' does not exist in the wallet directory."
     bcli -named createwallet wallet_name="${1}" descriptors=true
-    bcli loadwallet $1
+    bcli loadwallet "$1"
   fi
 
   return 0
@@ -50,9 +50,8 @@ check_wallet_exists() {
 # Function to check if bitcoind is ready
 wait_for_bitcoind() {
   echo "Waiting for bitcoind to be ready..."
-  for i in $(seq 1 10); do
-    result=$(bcli getblockchaininfo 2>/dev/null)
-    if [ $? -eq 0 ]; then
+  for _ in $(seq 1 10); do
+    if bcli getblockchaininfo >/dev/null 2>&1; then
       echo "Bitcoind started"
       return 0
     else
@@ -63,18 +62,16 @@ wait_for_bitcoind() {
 }
 
 # Wait until bitcoind is fully started
-wait_for_bitcoind
-
-if [ $? -eq 1 ]; then
+if ! wait_for_bitcoind; then
     echo "Bitcoin didn't start properly. Exiting"
-    exit
+    exit 1
 fi
 
 # create wallet
-check_wallet_exists $BITCOIND_WALLET
-check_wallet_exists $BRIDGE_WALLET_1
-check_wallet_exists $BRIDGE_WALLET_2
-check_wallet_exists $BRIDGE_WALLET_3
+check_wallet_exists "$BITCOIND_WALLET"
+check_wallet_exists "$BRIDGE_WALLET_1"
+check_wallet_exists "$BRIDGE_WALLET_2"
+check_wallet_exists "$BRIDGE_WALLET_3"
 
 VAL=$(bitcoin-cli getblockcount)
 
@@ -87,7 +84,7 @@ if [[ $VAL -eq 0 ]]; then
     BRIDGE_ADDRESS_3=$(bcli -rpcwallet="${BRIDGE_WALLET_3}" getnewaddress)
 
     echo "Generated new address: $ADDRESS"
-    echo $ADDRESS > /root/.bitcoin/bitcoin-address
+    echo "$ADDRESS" > /root/.bitcoin/bitcoin-address
 
     # Generate 120 blocks to the new address
     # (101 to mature the coinbase transactions and a few more for rollup genesis)
@@ -100,14 +97,14 @@ if [[ $VAL -eq 0 ]]; then
 fi
 
 # generate single blocks
-if [ ! -z $GENERATE_BLOCKS ];then
+if [ -n "$GENERATE_BLOCKS" ];then
 while :
 do
     bcli generatetoaddress 1 "$ADDRESS"
     bcli generatetoaddress 1 "$BRIDGE_ADDRESS_1"
     bcli generatetoaddress 1 "$BRIDGE_ADDRESS_2"
     bcli generatetoaddress 1 "$BRIDGE_ADDRESS_3"
-    sleep $GENERATE_BLOCKS
+    sleep "$GENERATE_BLOCKS"
 done
 else
     wait -n

@@ -29,4 +29,4 @@ ARGS=""
 export RUST_LOG=${RUST_LOG:-info}
 
 # Start the Strata Client
-strata-client --config "$CONFIG_PATH" --rollup-params "$PARAM_PATH" $ARGS $@
+strata-client --config "$CONFIG_PATH" --rollup-params "$PARAM_PATH" "$ARGS" "$@"
