@@ -61,6 +61,10 @@ impl StateAccessor<Chainstate> for MemStateAccessor {
         self.state_cache.state().cur_epoch()
     }
 
+    fn set_recorded_epoch(&mut self, _epoch_commitment: EpochCommitment) {
+        todo!()
+    }
+
     fn set_cur_epoch(&mut self, epoch: u64) {
         self.state_cache.set_cur_epoch(epoch);
     }
@@ -94,11 +98,15 @@ impl StateAccessor<Chainstate> for MemStateAccessor {
         self.state_cache.set_epoch_finishing_flag(flag);
     }
 
-    fn set_accounts_root(&mut self, root: Buf32) {
+    fn set_accounts_root(&mut self, _root: Buf32) {
         // TODO: add impl
     }
 
     fn get_toplevel_state(&mut self) -> &Chainstate {
         self.state_cache.state()
+    }
+
+    fn set_l1_view(&mut self, l1_view: ()) {
+        todo!()
     }
 }

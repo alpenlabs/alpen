@@ -9,13 +9,13 @@ use crate::{
     },
     block::{OLLog, Transaction, TransactionPayload},
     ledger::LedgerProvider,
-    state::OLState,
+    state::{L1View, OLState},
     stf::{StfError, StfResult},
 };
 
 pub(crate) fn execute_transaction(
     params: &RollupParams,
-    state_accessor: &mut impl StateAccessor<OLState>,
+    state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
     tx: &Transaction,
 ) -> StfResult<Vec<OLLog>> {
@@ -37,7 +37,7 @@ pub(crate) fn execute_transaction(
 
 fn execute_snark_update(
     _params: &RollupParams,
-    state_accessor: &mut impl StateAccessor<OLState>,
+    state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
     acct_id: &Buf32,
     update: &SnarkAccountUpdate,
@@ -80,8 +80,10 @@ fn execute_snark_update(
     }
 }
 
+/// Verifies an account update is correct with respect to the current state of
+/// a snark account, including checking account balances.
 fn verify_update_correctness(
-    state_accessor: &mut impl StateAccessor<OLState>,
+    _state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
     snark_state: &SnarkAccountState,
     acct_id: &AccountId,
@@ -171,9 +173,9 @@ fn verify_update_outputs_safe(
 }
 
 fn verify_update_witness(
-    snark_state: &SnarkAccountState,
-    update: &SnarkAccountUpdate,
-    witness: &[u8],
+    _snark_state: &SnarkAccountState,
+    _update: &SnarkAccountUpdate,
+    _witness: &[u8],
 ) -> StfResult<()> {
     // TODO: implement correctly, for now just ok
     Ok(())

@@ -43,7 +43,7 @@ pub trait LedgerProvider {
         acct_state: AccountState,
     ) -> LedgerResult<()>;
 
-    /// insert message to an account message mmr/queue.
+    /// Insert message to an account message mmr/queue.
     // TODO: message can be a bit generic instead of snark message?
     fn insert_message(
         &mut self,

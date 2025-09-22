@@ -57,8 +57,8 @@ pub struct SnarkAccountState {
     pub update_vk: AccountVk,
     pub proof_state: SnarkAccountProofState,
     pub seq_no: u64,
-    // TODO: update this with MMR. This will be accessed via Ledger provider, so just changing the
-    // type here should be fine.
+    // TODO: update this with MMR. This will be accessed via Ledger/State provider, so we can just
+    // change the type here and update the provider implementation
     pub input: Vec<SnarkAccountMessageEntry>,
 }
 

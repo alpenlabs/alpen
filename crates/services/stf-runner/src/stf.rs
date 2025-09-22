@@ -1,7 +1,7 @@
 // TODO: move this module out of this crate, possibly in chaintsn
 use strata_asm_common::{AsmError, Mismatched, TypeId as AsmTypeId};
 use strata_asm_logs::{
-    CheckpointUpdate, DepositLog,
+    CheckpointUpdateLog, DepositLog,
     constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
 };
 use strata_chainexec::BlockExecutionOutput;
@@ -13,7 +13,7 @@ use crate::{
     account::{AccountId, AccountSerial, MessageData, SnarkAccountMessageEntry},
     block::{L1Update, OLBlock, OLBlockHeader, OLLog},
     ledger::{LedgerError, LedgerProvider},
-    state::OLState,
+    state::{L1View, OLState},
     tx_exec::execute_transaction,
 };
 
@@ -98,7 +98,7 @@ pub fn execute_block(
     block: &OLBlock,
     params: &RollupParams,
     // state accessor is expected to allow CRUD operations on state
-    state_accessor: &mut impl StateAccessor<OLState>,
+    state_accessor: &mut impl StateAccessor<OLState, L1View>,
     // ledger_provider is expected to allow CRUD operations on accounts ledger
     ledger_provider: &mut impl LedgerProvider,
 ) -> StfResult<BlockExecutionOutput<OLState, OLLog>> {
@@ -121,7 +121,7 @@ pub fn execute_block_raw(
     block: &OLBlock,
     params: &RollupParams,
     // state accessor is expected to allow CRUD operations on state
-    state_accessor: &mut impl StateAccessor<OLState>,
+    state_accessor: &mut impl StateAccessor<OLState, L1View>,
     // ledger_provider is expected to allow CRUD operations on accounts ledger
     ledger_provider: &mut impl LedgerProvider,
 ) -> StfResult<BlockExecutionOutput<OLState, OLLog>> {
@@ -137,6 +137,10 @@ pub fn execute_block_raw(
 
     // process l1 update if any, which means terminal block and the epoch is being sealed
     if let Some(l1update) = block.body().l1update() {
+        // Check pre-sealing state root
+        let exp_preseal_state_root = state_accessor.get_toplevel_state().compute_root();
+        assert_eq!(exp_preseal_state_root, *l1update.preseal_state_root()); // maybe return err?
+
         let seal_logs = seal_epoch(params, state_accessor, ledger_provider, l1update)?;
         logs.extend(seal_logs);
 
@@ -160,7 +164,7 @@ pub fn execute_block_raw(
 
 fn seal_epoch(
     _params: &RollupParams,
-    state_accessor: &mut impl StateAccessor<OLState>,
+    state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
     l1update: &L1Update,
 ) -> StfResult<Vec<OLLog>> {
@@ -168,18 +172,21 @@ fn seal_epoch(
     for manifest in l1update.manifests() {
         for asmlog in manifest.logs() {
             // TODO: may need to abstract with system message
-            if asmlog.ty() == DEPOSIT_LOG_TYPE_ID {
+            if asmlog.ty() == Some(DEPOSIT_LOG_TYPE_ID) {
                 let dep = asmlog.try_into_log::<DepositLog>()?;
                 process_deposit(&dep, state_accessor, ledger_provider)?;
-            } else if asmlog.ty() == CHECKPOINT_UPDATE_LOG_TYPE {
-                let ckpt = asmlog.try_into_log::<CheckpointUpdate>()?;
+            } else if asmlog.ty() == Some(CHECKPOINT_UPDATE_LOG_TYPE) {
+                let ckpt = asmlog.try_into_log::<CheckpointUpdateLog>()?;
                 process_checkpoint(&ckpt, state_accessor)?;
-            } else {
-                return Err(StfError::UnsupportedLogType(asmlog.ty()));
+            } else if let Some(t) = asmlog.ty() {
+                return Err(StfError::UnsupportedLogType(t));
             }
         }
     }
-    // TODO: set l1_view
+    state_accessor.set_l1_view(L1View::new(
+        l1update.new_l1_blk_hash,
+        l1update.new_l1_blk_height,
+    ));
     Ok(logs)
 }
 
@@ -190,7 +197,7 @@ fn bridge_account_id() -> Buf32 {
 
 fn process_deposit(
     dep: &DepositLog,
-    state_accessor: &mut impl StateAccessor<OLState>,
+    state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
 ) -> StfResult<()> {
     let serial = dep.ee_id as u32;
@@ -226,9 +233,9 @@ fn deposit_log_to_msg_payload(dep: &DepositLog) -> Vec<u8> {
 }
 
 fn process_checkpoint(
-    _ckpt: &CheckpointUpdate,
-    _state_accessor: &mut impl StateAccessor<OLState>,
+    ckpt: &CheckpointUpdateLog,
+    state_accessor: &mut impl StateAccessor<OLState, L1View>,
 ) -> StfResult<()> {
-    // TODO: possibly extract, validate and set finalized/confirmed epoch.
-    todo!()
+    state_accessor.set_recorded_epoch(ckpt.epoch_commitment);
+    Ok(())
 }

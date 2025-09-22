@@ -81,7 +81,7 @@ impl BlockHeaderContext for L2HeaderAndParent {
 /// Accessor for fetch and manipulate the state we're building on top of.
 ///
 /// This is supersceding the `StateCache` type.
-pub trait StateAccessor<S = Chainstate> {
+pub trait StateAccessor<S = Chainstate, LV = ()> {
     /// Gets a ref to the state.
     ///
     /// This is a transitional accessor that we will deprecate and remove soon.
@@ -111,6 +111,9 @@ pub trait StateAccessor<S = Chainstate> {
 
     /// Sets the current epoch index.
     fn set_cur_epoch(&mut self, epoch: u64);
+
+    /// Sets the epoch confirmed by ASM.
+    fn set_recorded_epoch(&mut self, epoch_commitment: EpochCommitment);
 
     /// Gets the previous epoch.
     fn prev_epoch(&self) -> EpochCommitment;
@@ -142,6 +145,8 @@ pub trait StateAccessor<S = Chainstate> {
     /// Get toplevel state. Similar to state_untracked except that this has no plans for
     /// depreciation.
     fn get_toplevel_state(&mut self) -> &S;
+
+    fn set_l1_view(&mut self, l1_view: LV);
 }
 
 /// Provider for queries to sideloaded state like L1 block manifests.

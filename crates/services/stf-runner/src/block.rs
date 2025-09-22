@@ -85,11 +85,13 @@ pub struct TransactionExtra {
 #[derive(Debug, Clone)]
 pub struct L1Update {
     /// The state root before applying updates from L1
-    unsealed_state_root: Buf32,
+    pub preseal_state_root: Buf32,
     /// L1 height the manifests are read upto
-    new_l1_height: u32,
+    pub new_l1_blk_height: u64,
+    /// L1 block hash the manifests are read upto
+    pub new_l1_blk_hash: Buf32,
     /// Manifests from last l1_height to the new_l1_height
-    manifests: Vec<AsmManifest>,
+    pub manifests: Vec<AsmManifest>,
 }
 
 /// A manifest containing ASM (Abstract State Machine) data
@@ -372,20 +374,30 @@ impl TransactionExtra {
 }
 
 impl L1Update {
-    pub fn new(inner_state_root: Buf32, new_l1_height: u32, manifests: Vec<AsmManifest>) -> Self {
+    pub fn new(
+        preseal_state_root: Buf32,
+        new_l1_blk_height: u64,
+        new_l1_blk_hash: Buf32,
+        manifests: Vec<AsmManifest>,
+    ) -> Self {
         Self {
-            unsealed_state_root: inner_state_root,
-            new_l1_height,
+            preseal_state_root,
+            new_l1_blk_height,
+            new_l1_blk_hash,
             manifests,
         }
     }
 
-    pub fn inner_state_root(&self) -> &Buf32 {
-        &self.unsealed_state_root
+    pub fn preseal_state_root(&self) -> &Buf32 {
+        &self.preseal_state_root
     }
 
-    pub fn new_l1_height(&self) -> u32 {
-        self.new_l1_height
+    pub fn new_l1_blk_height(&self) -> u64 {
+        self.new_l1_blk_height
+    }
+
+    pub fn new_l1_blk_hash(&self) -> Buf32 {
+        self.new_l1_blk_hash
     }
 
     pub fn manifests(&self) -> &[AsmManifest] {

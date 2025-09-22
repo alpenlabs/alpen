@@ -3,10 +3,18 @@ use strata_primitives::buf::Buf32;
 /// Represents the state of the OL Chain
 #[derive(Debug, Clone, Default)]
 pub struct OLState {
+    /// Root of the accounts ledger
     accounts_root: Buf32,
+    /// L1 view of OL
     l1_view: L1View,
+    /// Current slot this state corresponds to
     cur_slot: u64,
+    /// Current epoch
     cur_epoch: u64,
+    /// Epoch whose checkpoint is recorded by ASM
+    recorded_epoch: u64,
+    /// Total bridged-in btc
+    total_bridged_in_sats: u64,
 }
 
 /// Represents the view of the layer 1 blockchain from the perspective of the OL
@@ -17,12 +25,21 @@ pub struct L1View {
 }
 
 impl OLState {
-    pub fn new(accounts_root: Buf32, l1_view: L1View, cur_slot: u64, cur_epoch: u64) -> Self {
+    pub fn new(
+        accounts_root: Buf32,
+        l1_view: L1View,
+        cur_slot: u64,
+        cur_epoch: u64,
+        recorded_epoch: u64,
+        total_bridged_in_sats: u64,
+    ) -> Self {
         Self {
             accounts_root,
             l1_view,
             cur_slot,
             cur_epoch,
+            recorded_epoch,
+            total_bridged_in_sats,
         }
     }
 
@@ -40,6 +57,14 @@ impl OLState {
 
     pub fn cur_epoch(&self) -> u64 {
         self.cur_epoch
+    }
+
+    pub fn recorded_epoch(&self) -> u64 {
+        self.recorded_epoch
+    }
+
+    pub fn total_bridged_in_sats(&self) -> u64 {
+        self.total_bridged_in_sats
     }
 
     pub fn set_accounts_root(&mut self, accounts_root: Buf32) {

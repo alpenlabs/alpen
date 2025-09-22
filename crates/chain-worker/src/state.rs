@@ -53,6 +53,14 @@ impl StateAccessor for WbStateAccessorImpl {
         self.toplevel_chs_cache.set_cur_epoch(epoch);
     }
 
+    fn set_recorded_epoch(&mut self, _epoch_commitment: EpochCommitment) {
+        todo!()
+    }
+
+    fn set_l1_view(&mut self, l1_view: ()) {
+        todo!()
+    }
+
     fn prev_epoch(&self) -> EpochCommitment {
         *self.toplevel_chs_cache.state().prev_epoch()
     }
