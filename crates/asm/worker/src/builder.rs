@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use strata_primitives::params::Params;
-use strata_service::{CommandHandle, ServiceBuilder};
+use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 use tokio::runtime::Handle;
 
 use crate::{
-    SubprotocolMessage,
     errors::{WorkerError, WorkerResult},
     handle::AsmWorkerHandle,
     service::AsmWorkerService,
@@ -25,7 +24,6 @@ pub struct AsmWorkerBuilder<W> {
     context: Option<W>,
     params: Option<Arc<Params>>,
     handle: Option<Handle>,
-    subproto_handles: Vec<CommandHandle<SubprotocolMessage>>,
 }
 
 impl<W> AsmWorkerBuilder<W> {
@@ -35,7 +33,6 @@ impl<W> AsmWorkerBuilder<W> {
             context: None,
             params: None,
             handle: None,
-            subproto_handles: vec![],
         }
     }
 
@@ -57,18 +54,12 @@ impl<W> AsmWorkerBuilder<W> {
         self
     }
 
-    /// Add subprotocol handler.
-    pub fn add_subproto(mut self, h: CommandHandle<SubprotocolMessage>) -> Self {
-        self.subproto_handles.push(h);
-        self
-    }
-
     /// Launch the chain worker service and return a handle to it.
     ///
     /// This method validates all required dependencies, creates the service state,
     /// uses [`ServiceBuilder`] to set up the service infrastructure, and returns
     /// a handle for interacting with the worker.
-    pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<AsmWorkerHandle>
+    pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<AsmWorkerHandle<W>>
     where
         W: WorkerContext + Send + Sync + 'static,
     {
@@ -84,8 +75,7 @@ impl<W> AsmWorkerBuilder<W> {
             .ok_or(WorkerError::MissingDependency("runtime"))?;
 
         // Create the service state.
-        let service_state =
-            AsmWorkerServiceState::new(context, params, self.subproto_handles, runtime);
+        let service_state = AsmWorkerServiceState::new(context, params, runtime);
 
         // Create the service builder and get command handle.
         let mut service_builder =
@@ -95,12 +85,12 @@ impl<W> AsmWorkerBuilder<W> {
         let command_handle = service_builder.create_command_handle(64);
 
         // Launch the service using the sync worker.
-        let _service_monitor = service_builder
+        let service_monitor: strata_service::ServiceMonitor<AsmWorkerService<W>> = service_builder
             .launch_sync("asm_worker", executor)
             .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 
         // Create and return the handle.
-        let handle = AsmWorkerHandle::new(command_handle);
+        let handle = AsmWorkerHandle::new(command_handle, service_monitor);
 
         Ok(handle)
     }

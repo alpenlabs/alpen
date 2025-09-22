@@ -8,11 +8,11 @@ use strata_primitives::{
     l1::{HeaderVerificationState, L1BlockCommitment},
     params::Params,
 };
-use strata_service::{CommandHandle, ServiceState};
+use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
 use tokio::runtime::Handle;
 
-use crate::{SubprotocolMessage, WorkerContext, WorkerError, WorkerResult};
+use crate::{WorkerContext, WorkerError, WorkerResult};
 
 /// Service state for the ASM worker.
 #[derive(Debug)]
@@ -35,22 +35,13 @@ pub struct AsmWorkerServiceState<W> {
     /// ASM spec for ASM STF.
     asm_spec: StrataAsmSpec,
 
-    /// Subprotocol handles to pass updates to.
-    /// Right now, the only mode supported is "optimistic" (no subprotocol error handling).
-    subproto_handles: Vec<CommandHandle<SubprotocolMessage>>,
-
-    /// A runtime handle to send subproto updates.
-    runtime_handle: Handle,
+    /// A runtime handle.
+    _runtime_handle: Handle,
 }
 
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
-    pub(crate) fn new(
-        context: W,
-        params: Arc<Params>,
-        subproto_handles: Vec<CommandHandle<SubprotocolMessage>>,
-        runtime_handle: Handle,
-    ) -> Self {
+    pub(crate) fn new(context: W, params: Arc<Params>, runtime_handle: Handle) -> Self {
         let asm_spec = StrataAsmSpec::from_params(params.rollup());
         Self {
             params,
@@ -59,8 +50,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             blkid: None,
             initialized: false,
             asm_spec,
-            subproto_handles,
-            runtime_handle,
+            _runtime_handle: runtime_handle,
         }
     }
 
@@ -147,19 +137,6 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         self.initialized = true;
         self.anchor = Some(anchor);
         self.blkid = Some(blkid);
-    }
-
-    pub fn notify_subprotocols(&self) -> WorkerResult<()> {
-        for sub in &self.subproto_handles {
-            // Do not handle any errors, send optimistically for now.
-            let _ = self
-                .runtime_handle
-                .block_on(sub.send(SubprotocolMessage::NewAsmState(
-                    self.anchor.as_ref().unwrap().clone(),
-                    self.blkid.unwrap(),
-                )));
-        }
-        Ok(())
     }
 }
 

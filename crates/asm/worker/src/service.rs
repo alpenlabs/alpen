@@ -23,6 +23,7 @@ impl<W: WorkerContext + Send + Sync + 'static> Service for AsmWorkerService<W> {
         AsmWorkerStatus {
             is_initialized: state.initialized,
             cur_block: state.blkid,
+            cur_state: state.anchor.clone(),
         }
     }
 }
@@ -88,8 +89,6 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                     // Store and update anchor.
                     state.context.store_anchor_state(block_id, &new_state)?;
                     state.update_anchor_state(new_state, *block_id);
-
-                    state.notify_subprotocols()?;
                 }
                 Err(e) => {
                     error!(%e, "ASM transition error");
@@ -108,4 +107,5 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 pub struct AsmWorkerStatus {
     pub is_initialized: bool,
     pub cur_block: Option<L1BlockCommitment>,
+    pub cur_state: Option<AsmState>,
 }

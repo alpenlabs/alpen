@@ -14173,6 +14173,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "serde",
  "strata-asm-types",
  "strata-l1-txfmt",
  "strata-msg-fmt",
@@ -15126,6 +15127,7 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "borsh",
+ "hex",
  "serde",
  "strata-asm-common",
  "strata-asm-stf",

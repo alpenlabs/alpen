@@ -28,7 +28,7 @@ pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
     csm_controller: Arc<CsmController>,
-    asm_controller: Arc<AsmWorkerHandle>,
+    asm_controller: Arc<AsmWorkerHandle<AsmWorkerCtx>>,
     status_channel: StatusChannel,
 }
 
@@ -51,7 +51,7 @@ impl SyncManager {
         self.csm_controller.clone()
     }
 
-    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle> {
+    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle<AsmWorkerCtx>> {
         self.asm_controller.clone()
     }
 
@@ -202,7 +202,7 @@ fn spawn_asm_worker(
     storage: Arc<NodeStorage>,
     params: Arc<Params>,
     bitcoin_client: Arc<Client>,
-) -> anyhow::Result<AsmWorkerHandle> {
+) -> anyhow::Result<AsmWorkerHandle<AsmWorkerCtx>> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
     // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
     // block manager).
