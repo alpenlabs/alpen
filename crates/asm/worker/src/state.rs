@@ -10,11 +10,12 @@ use strata_primitives::{
 };
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
-use tokio::runtime::Handle;
 
 use crate::{WorkerContext, WorkerError, WorkerResult};
 
 /// Service state for the ASM worker.
+///
+/// TODO: additional fields and bookkeeping related to STF version and storing aux inputs.
 #[derive(Debug)]
 pub struct AsmWorkerServiceState<W> {
     /// Params.
@@ -34,14 +35,11 @@ pub struct AsmWorkerServiceState<W> {
 
     /// ASM spec for ASM STF.
     asm_spec: StrataAsmSpec,
-
-    /// A runtime handle.
-    _runtime_handle: Handle,
 }
 
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
-    pub(crate) fn new(context: W, params: Arc<Params>, runtime_handle: Handle) -> Self {
+    pub(crate) fn new(context: W, params: Arc<Params>) -> Self {
         let asm_spec = StrataAsmSpec::from_params(params.rollup());
         Self {
             params,
@@ -50,7 +48,6 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             blkid: None,
             initialized: false,
             asm_spec,
-            _runtime_handle: runtime_handle,
         }
     }
 

@@ -20,7 +20,6 @@ anyhow.workspace = true
 arbitrary.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
-hex.workspace = true
 borsh.workspace = true
 serde.workspace = true
 thiserror.workspace = true

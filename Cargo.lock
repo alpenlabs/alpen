@@ -15127,7 +15127,6 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "borsh",
- "hex",
  "serde",
  "strata-asm-common",
  "strata-asm-stf",

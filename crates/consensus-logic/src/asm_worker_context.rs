@@ -7,7 +7,7 @@ use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
 use strata_db::DbError;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
-use strata_storage::{AsmManager, L1BlockManager};
+use strata_storage::{AsmStateManager, L1BlockManager};
 use tokio::runtime::Handle;
 
 #[expect(missing_debug_implementations)]
@@ -15,7 +15,7 @@ pub struct AsmWorkerCtx {
     handle: Handle,
     bitcoin_client: Arc<Client>,
     l1man: Arc<L1BlockManager>,
-    asmman: Arc<AsmManager>,
+    asmman: Arc<AsmStateManager>,
 }
 
 impl AsmWorkerCtx {
@@ -23,7 +23,7 @@ impl AsmWorkerCtx {
         handle: Handle,
         bitcoin_client: Arc<Client>,
         l1man: Arc<L1BlockManager>,
-        asmman: Arc<AsmManager>,
+        asmman: Arc<AsmStateManager>,
     ) -> Self {
         Self {
             handle,

@@ -69,13 +69,12 @@ impl<W> AsmWorkerBuilder<W> {
         let params = self
             .params
             .ok_or(WorkerError::MissingDependency("params"))?;
-
-        let runtime = self
+        let _runtime = self
             .handle
             .ok_or(WorkerError::MissingDependency("runtime"))?;
 
         // Create the service state.
-        let service_state = AsmWorkerServiceState::new(context, params, runtime);
+        let service_state = AsmWorkerServiceState::new(context, params);
 
         // Create the service builder and get command handle.
         let mut service_builder =

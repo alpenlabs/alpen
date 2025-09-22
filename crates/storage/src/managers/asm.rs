@@ -9,12 +9,12 @@ use crate::ops;
 
 /// A manager for the persistence of [`AsmState`].
 #[expect(missing_debug_implementations)]
-pub struct AsmManager {
+pub struct AsmStateManager {
     ops: ops::asm::AsmDataOps,
 }
 
-impl AsmManager {
-    /// Create new instance of [`AsmManager`].
+impl AsmStateManager {
+    /// Create new instance of [`AsmStateManager`].
     pub fn new(pool: ThreadPool, db: Arc<impl AsmDatabase + 'static>) -> Self {
         let ops = ops::asm::Context::new(db).into_ops(pool);
         Self { ops }
