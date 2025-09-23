@@ -81,7 +81,7 @@ pub trait MerkleHasher {
 }
 
 /// Merkle hash for arbitrary digest impl.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct DigestMerkleHasher<D: Digest, const N: usize>(std::marker::PhantomData<D>);
 
 /// Generic impl over [`Digest`] impls, where hash is `[u8; 32]`.
