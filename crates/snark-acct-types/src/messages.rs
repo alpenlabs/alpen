@@ -50,7 +50,7 @@ impl MessageEntry {
 /// Proof for a message in an inbox MMR.
 ///
 /// This message entry doesn't imply a specific index, since this is implicit
-/// from contect.
+/// from context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessageEntryProof {
     entry: MessageEntry,
