@@ -7,6 +7,7 @@ use bitcoin::{
     consensus::{self, deserialize},
     hashes::Hash,
     key::{Parity, UntweakedKeypair},
+    script::PushBytesBuf,
     taproot::{ControlBlock, LeafVersion, TaprootMerkleBranch},
     transaction::Version,
     Address, Amount, Block, BlockHash, Network, ScriptBuf, SignedAmount, TapNodeHash, Transaction,
@@ -339,7 +340,7 @@ pub fn build_reveal_transaction_test(
     fee_rate: u64,
     reveal_script: &ScriptBuf,
     control_block: &ControlBlock,
-    envelope_tag: &[u8],
+    op_return_script: &ScriptBuf,
 ) -> Result<Transaction, EnvelopeError> {
     build_reveal_transaction(
         input_transaction,
@@ -348,7 +349,7 @@ pub fn build_reveal_transaction_test(
         fee_rate,
         reveal_script,
         control_block,
-        envelope_tag,
+        op_return_script,
     )
 }
 
@@ -435,8 +436,9 @@ pub fn create_checkpoint_envelope_tx(
 
     // Create transaction using control block
     let envelope_tag = vec![0xAAu8, 0xBB, 0xCC];
+    let op_return_script = ScriptBuf::new_op_return(PushBytesBuf::try_from(envelope_tag).unwrap());
     let mut tx =
-        build_reveal_transaction_test(inp_tx, address, 100, 10, &script, &cb, &envelope_tag)
+        build_reveal_transaction_test(inp_tx, address, 100, 10, &script, &cb, &op_return_script)
             .unwrap();
     tx.input[0].witness.push([1; 3]);
     tx.input[0].witness.push(script);
