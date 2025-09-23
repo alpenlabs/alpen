@@ -1,5 +1,9 @@
 use strata_asm_types::HeaderVerificationState;
 use strata_db::errors::DbError;
+use strata_ol_chain_types::{
+    ExecSegment, L1Segment, L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader,
+    L2Header, SignedL2BlockHeader,
+};
 use strata_primitives::{
     buf::{Buf32, Buf64},
     constants::TIMESTAMPS_FOR_MEDIAN,
@@ -7,14 +11,12 @@ use strata_primitives::{
     params::{OperatorConfig, Params},
 };
 use strata_state::{
-    block::{ExecSegment, L1Segment, L2BlockAccessory, L2BlockBundle},
     bridge_state::OperatorTable,
     chain_state::Chainstate,
     client_state::ClientState,
     exec_env::ExecEnvState,
     exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
     genesis::GenesisStateData,
-    header::L2BlockHeader,
     l1::L1ViewState,
     operation::ClientUpdateOutput,
     prelude::*,

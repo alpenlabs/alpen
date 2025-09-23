@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 

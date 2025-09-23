@@ -16,6 +16,7 @@ use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
 use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
 use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus};
+use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_primitives::{
     batch::EpochSummary,
     bridge::{OperatorIdx, PublickeyTable},
@@ -46,13 +47,10 @@ use strata_sequencer::{
 };
 use strata_state::{
     batch::{Checkpoint, SignedCheckpoint},
-    block::{L2Block, L2BlockBundle},
     bridge_ops::WithdrawalIntent,
     bridge_state::DepositState,
     chain_state::Chainstate,
     client_state::ClientState,
-    header::L2Header,
-    id::L2BlockId,
     l1::L1BlockId,
     operation::ClientUpdateOutput,
 };

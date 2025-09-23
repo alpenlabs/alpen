@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "strata-db"
+name = "strata-ol-chain-types"
 version = "0.3.0-alpha.1"
 
 [lints]
@@ -8,24 +8,15 @@ workspace = true
 
 [dependencies]
 strata-asm-types.workspace = true
-strata-ol-chain-types.workspace = true
+strata-crypto.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
-zkaleido.workspace = true
 
-anyhow.workspace = true
 arbitrary.workspace = true
-bitcoin.workspace = true
 borsh.workspace = true
-parking_lot = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
-typed-sled.workspace = true
-
-[features]
-default = []
-mocks = []
-stubs = ["dep:parking_lot"]
+tracing.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+strata-test-utils.workspace = true

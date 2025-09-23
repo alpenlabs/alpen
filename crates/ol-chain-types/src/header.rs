@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use strata_primitives::{
     buf::{Buf32, Buf64},
     hash,
-    l2::L2BlockCommitment,
+    l2::{L2BlockCommitment, L2BlockId},
 };
 
-use crate::{block::L2BlockBody, id::L2BlockId};
+use crate::block::L2BlockBody;
 
 pub trait L2Header {
     fn slot(&self) -> u64;

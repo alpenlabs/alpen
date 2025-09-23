@@ -12,13 +12,12 @@ use strata_common::retry::{
 };
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
+use strata_ol_chain_types::{validate_block_structure, L2BlockBundle, L2BlockId, L2Header};
 use strata_primitives::{
     epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, params::Params,
 };
 use strata_state::{
     batch::EpochSummary,
-    block::L2BlockBundle,
-    block_validation::validate_block_structure,
     chain_state::Chainstate,
     client_state::{CheckpointState, ClientState},
     prelude::*,

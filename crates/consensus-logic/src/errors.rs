@@ -1,7 +1,8 @@
 use strata_chaintsn::errors::TsnError;
 use strata_eectl::errors::EngineError;
+use strata_ol_chain_types::L2BlockId;
 use strata_primitives::prelude::*;
-use strata_state::{id::L2BlockId, l1::L1BlockId};
+use strata_state::l1::L1BlockId;
 use thiserror::Error;
 use zkaleido::ZkVmError;
 

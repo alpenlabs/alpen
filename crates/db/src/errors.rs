@@ -1,5 +1,6 @@
+use strata_ol_chain_types::L2BlockId;
 use strata_primitives::epoch::EpochCommitment;
-use strata_state::{id::L2BlockId, l1::L1BlockId};
+use strata_state::l1::L1BlockId;
 use thiserror::Error;
 
 use crate::chainstate::WriteBatchId;

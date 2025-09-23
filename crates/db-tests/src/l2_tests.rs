@@ -1,5 +1,5 @@
 use strata_db::traits::{BlockStatus, L2BlockDatabase};
-use strata_state::{block::L2BlockBundle, prelude::*};
+use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_set_and_get_block_data(db: &impl L2BlockDatabase) {

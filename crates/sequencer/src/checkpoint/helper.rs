@@ -1,7 +1,8 @@
 //! reusable utils.
 
+use strata_ol_chain_types::verify_sequencer_signature;
 use strata_primitives::params::Params;
-use strata_state::{batch::SignedCheckpoint, block_validation::verify_sequencer_signature};
+use strata_state::batch::SignedCheckpoint;
 
 /// Verify checkpoint has correct signature from sequencer.
 pub fn verify_checkpoint_sig(signed_checkpoint: &SignedCheckpoint, params: &Params) -> bool {

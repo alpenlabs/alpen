@@ -1,7 +1,7 @@
 use std::collections::*;
 
 use parking_lot::Mutex;
-use strata_state::{block::L2BlockBundle, prelude::*};
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
 
 use crate::{
     traits::{BlockStatus, *},

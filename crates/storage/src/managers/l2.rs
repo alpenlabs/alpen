@@ -4,7 +4,7 @@ use strata_db::{
     traits::{BlockStatus, L2BlockDatabase},
     DbResult,
 };
-use strata_state::{block::L2BlockBundle, header::L2Header, id::L2BlockId};
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
 use threadpool::ThreadPool;
 
 use crate::{cache, ops};

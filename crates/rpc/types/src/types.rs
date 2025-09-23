@@ -7,6 +7,7 @@
 use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry};
+use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
     bridge::OperatorIdx,
@@ -21,7 +22,6 @@ use strata_state::{
     bridge_ops::WithdrawalIntent,
     bridge_state::{DepositEntry, DepositState},
     client_state::CheckpointL1Ref,
-    id::L2BlockId,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,7 +223,7 @@ pub struct RpcSyncStatus {
 
     /// Last L2 block we've chosen as the current tip.
     // TODO consolidate into using L2BlockCommitment
-    pub tip_block_id: strata_state::id::L2BlockId,
+    pub tip_block_id: L2BlockId,
 
     /// Current epoch from chainstate.
     pub cur_epoch: u64,

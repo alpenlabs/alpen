@@ -1,8 +1,8 @@
 //! L2 block formatting implementations
 
 use strata_db::traits::BlockStatus;
+use strata_ol_chain_types::{L2Header, SignedL2BlockHeader};
 use strata_primitives::{l1::L1BlockId, l2::L2BlockId};
-use strata_state::header::{L2Header, SignedL2BlockHeader};
 
 use super::{
     helpers::{porcelain_field, porcelain_optional},

@@ -1,7 +1,7 @@
 use strata_chaintsn::errors::TsnError;
 use strata_db::DbError;
 use strata_eectl::errors::EngineError;
-use strata_primitives::l2::L2BlockId;
+use strata_ol_chain_types::L2BlockId;
 use thiserror::Error;
 
 /// Possible errors during block assembly and block template handling.

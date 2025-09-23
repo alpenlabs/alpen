@@ -3,7 +3,7 @@ use alpen_reth_primitives::WithdrawalIntent;
 use revm_primitives::alloy_primitives::FixedBytes;
 use rsp_client_executor::io::EthClientExecutorInput;
 use serde::{Deserialize, Serialize};
-use strata_state::block::ExecSegment;
+use strata_ol_chain_types::ExecSegment;
 
 /// Public Parameters that proof asserts
 pub type EvmEeProofOutput = Vec<ExecSegment>;

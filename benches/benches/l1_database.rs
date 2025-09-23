@@ -14,6 +14,8 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use strata_asm_types::L1BlockManifest;
 use strata_db::traits::L1Database;
 #[allow(unused_imports)]
+use strata_ol_chain_types as _;
+#[allow(unused_imports)]
 use strata_primitives as _;
 #[allow(unused_imports)]
 use strata_state as _;

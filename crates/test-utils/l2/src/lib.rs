@@ -6,6 +6,10 @@ use bitcoin::secp256k1::{SecretKey, SECP256K1};
 use borsh::to_vec;
 use rand::{rngs::StdRng, SeedableRng};
 use strata_consensus_logic::genesis::make_l2_genesis;
+use strata_ol_chain_types::{
+    L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2Header,
+    SignedL2BlockHeader,
+};
 use strata_primitives::{
     block_credential,
     buf::Buf64,
@@ -15,9 +19,7 @@ use strata_primitives::{
 };
 use strata_state::{
     batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint},
-    block::{L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle},
     chain_state::Chainstate,
-    header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
 };
 use strata_test_utils::ArbitraryGenerator;
 use strata_test_utils_btc::segment::BtcChainSegment;

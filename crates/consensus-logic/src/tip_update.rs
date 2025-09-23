@@ -1,6 +1,6 @@
 //! Types relating to updating the tip and planning reorgs.
 
-use strata_primitives::l2::L2BlockId;
+use strata_ol_chain_types::L2BlockId;
 use tracing::*;
 
 use crate::{errors::Error, unfinalized_tracker};

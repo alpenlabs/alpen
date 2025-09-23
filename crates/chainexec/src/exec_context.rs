@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use strata_primitives::prelude::*;
-use strata_state::{chain_state::Chainstate, prelude::*};
+use strata_ol_chain_types::{L2BlockHeader, L2BlockId};
+use strata_state::chain_state::Chainstate;
 use thiserror::Error;
 
 use crate::Error as ExecError;

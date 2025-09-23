@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "debug-utils")]
 use strata_common::{check_bail_trigger, BAIL_DUTY_SIGN_BLOCK};
-use strata_primitives::{buf::Buf64, l2::L2BlockId};
-use strata_state::{
-    block::{L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle},
-    header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
+use strata_ol_chain_types::{
+    L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2Header,
+    SignedL2BlockHeader,
 };
+use strata_primitives::{buf::Buf64, l2::L2BlockId};
 
 /// Represents a complete block template containing header, body, and accessory data
 ///

@@ -3,6 +3,7 @@
 use std::collections::*;
 
 use strata_db::traits::BlockStatus;
+use strata_ol_chain_types::{L2Header, SignedL2BlockHeader};
 use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_state::prelude::*;
 use strata_storage::L2BlockManager;
@@ -409,8 +410,8 @@ mod tests {
 
     use strata_db::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_ol_chain_types::L2Header;
     use strata_primitives::{epoch::EpochCommitment, l2::L2BlockId};
-    use strata_state::header::L2Header;
     use strata_storage::L2BlockManager;
     use strata_test_utils_l2::gen_l2_chain;
 

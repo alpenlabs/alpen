@@ -16,6 +16,9 @@ use strata_asm_types as _;
 use strata_db as _;
 #[cfg(feature = "db")]
 #[allow(unused_imports)]
+use strata_ol_chain_types as _;
+#[cfg(feature = "db")]
+#[allow(unused_imports)]
 use strata_primitives as _;
 #[cfg(feature = "db")]
 #[allow(unused_imports)]

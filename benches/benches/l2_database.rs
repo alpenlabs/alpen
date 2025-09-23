@@ -14,9 +14,9 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 #[allow(unused_imports)]
 use strata_asm_types as _;
 use strata_db::traits::{BlockStatus, L2BlockDatabase};
+use strata_ol_chain_types::{L2BlockBundle, L2Header};
 #[allow(unused_imports)]
 use strata_primitives as _;
-use strata_state::block::L2BlockBundle;
 #[allow(unused_imports)]
 use strata_state::prelude::*;
 use tempfile::TempDir;

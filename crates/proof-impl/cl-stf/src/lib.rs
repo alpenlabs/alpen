@@ -6,13 +6,11 @@ pub mod program;
 use program::ClStfOutput;
 use strata_chainexec::{ChainExecutor, MemExecContext};
 use strata_chaintsn::context::L2HeaderAndParent;
-use strata_primitives::params::RollupParams;
-use strata_state::{
-    block::{ExecSegment, L2Block},
-    block_validation::{check_block_credential, validate_block_structure},
-    chain_state::Chainstate,
-    header::{L2BlockHeader, L2Header},
+use strata_ol_chain_types::{
+    check_block_credential, validate_block_structure, ExecSegment, L2Block, L2BlockHeader, L2Header,
 };
+use strata_primitives::params::RollupParams;
+use strata_state::chain_state::Chainstate;
 use zkaleido::ZkVmEnv;
 
 pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {

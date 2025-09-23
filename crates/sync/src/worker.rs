@@ -6,8 +6,8 @@ use futures::StreamExt;
 #[cfg(feature = "debug-utils")]
 use strata_common::{check_and_pause_debug_async, WorkerType};
 use strata_consensus_logic::{csm::message::ForkChoiceMessage, sync_manager::SyncManager};
+use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_primitives::epoch::EpochCommitment;
-use strata_state::{block::L2BlockBundle, header::L2Header};
 use strata_status::ChainSyncStatusUpdate;
 use strata_storage::NodeStorage;
 use tokio::sync::watch;

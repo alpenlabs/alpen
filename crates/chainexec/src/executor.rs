@@ -4,8 +4,8 @@ use strata_chaintsn::{
     context::{BlockHeaderContext, L2HeaderAndParent, StateAccessor},
     transition::process_block,
 };
+use strata_ol_chain_types::{L2BlockBody, L2Header};
 use strata_primitives::prelude::*;
-use strata_state::{block::L2BlockBody, header::L2Header};
 
 use crate::{BlockExecutionOutput, Error, ExecContext, MemStateAccessor};
 

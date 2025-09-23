@@ -3,10 +3,9 @@
 use std::sync::Arc;
 
 use strata_chainexec::{BlockExecutionOutput, CheckinExecutionOutput};
+use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader};
 use strata_primitives::{batch::EpochSummary, prelude::*};
-use strata_state::{
-    block::L2BlockBundle, chain_state::Chainstate, header::L2BlockHeader, state_op::WriteBatch,
-};
+use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 
 use crate::WorkerResult;
 

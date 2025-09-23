@@ -4,6 +4,9 @@ use std::path::PathBuf;
 
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
+use strata_ol_chain_types::{
+    L1Segment, L2Block, L2BlockBody, L2BlockHeader, L2Header, SignedL2BlockHeader,
+};
 use strata_primitives::buf::{Buf32, Buf64};
 use strata_proofimpl_evm_ee_stf::{
     executor::process_block,
@@ -11,11 +14,7 @@ use strata_proofimpl_evm_ee_stf::{
     utils::generate_exec_update,
     EvmBlockStfInput,
 };
-use strata_state::{
-    block::{L1Segment, L2Block, L2BlockBody},
-    chain_state::Chainstate,
-    header::{L2BlockHeader, L2Header, SignedL2BlockHeader},
-};
+use strata_state::chain_state::Chainstate;
 use strata_test_utils_btc::segment::BtcChainSegment;
 use strata_test_utils_l2::{gen_params, get_genesis_chainstate};
 

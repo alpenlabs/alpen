@@ -1,9 +1,6 @@
 use strata_consensus_logic::unfinalized_tracker::UnfinalizedBlockTracker;
+use strata_ol_chain_types::{L2BlockId, L2Header, SignedL2BlockHeader};
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
-use strata_state::{
-    header::{L2Header, SignedL2BlockHeader},
-    id::L2BlockId,
-};
 use strata_storage::NodeStorage;
 use tracing::debug;
 
