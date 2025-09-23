@@ -12,11 +12,11 @@ use strata_asm_common::{
 use strata_asm_proto_bridge_v1::{BridgeIncomingMsg, WithdrawOutput};
 
 use crate::{
-    constants::CHECKPOINTING_V0_SUBPROTOCOL_ID,
     error::{CheckpointV0Error, CheckpointV0Result},
-    parsing::{extract_signed_checkpoint_from_envelope, extract_withdrawal_messages},
+    extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
     types::{CheckpointV0VerificationParams, CheckpointV0VerifierState},
     verification::process_checkpoint_v0,
+    CHECKPOINTING_V0_SUBPROTOCOL_ID,
 };
 
 /// Checkpointing v0 subprotocol configuration

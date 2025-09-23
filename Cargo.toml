@@ -15,6 +15,7 @@ members = [
   "crates/asm/subprotocols/checkpointing-v0",
   "crates/asm/txs/administration",
   "crates/asm-types",
+  "crates/asm/txs/checkpointing",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -118,6 +119,7 @@ strata-asm-proto-administration = { path = "crates/asm/subprotocols/administrati
 strata-asm-proto-administration-txs = { path = "crates/asm/txs/administration" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-checkpointing-v0 = { path = "crates/asm/subprotocols/checkpointing-v0" }
+strata-asm-proto-checkpointing-txs = { path = "crates/asm/txs/checkpointing" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-spec = { path = "crates/asm/spec" }
