@@ -1,4 +1,5 @@
 //! Account system common type definitions.
+#![allow(unused)] // in-development
 
 mod constants;
 mod id;

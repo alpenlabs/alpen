@@ -3,6 +3,7 @@
 //! This is primarily at the boundary between the internal EE account state and
 //! the execution env chain.  These are not generally involved in the
 //! orchestration layer protocol.
+#![allow(unused)] // in-development
 
 mod block;
 
