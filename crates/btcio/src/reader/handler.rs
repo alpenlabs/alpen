@@ -98,14 +98,8 @@ fn generate_block_manifest(
 
 fn generate_l1txs(blockdata: &BlockData) -> Vec<L1Tx> {
     blockdata
-        .relevant_txs()
+        .tagged_tx_indices()
         .iter()
-        .map(|tx_entry| {
-            generate_l1_tx(
-                blockdata.block(),
-                *tx_entry.index(),
-                tx_entry.item().protocol_ops().to_vec(),
-            )
-        })
+        .map(|idx| generate_l1_tx(blockdata.block(), *idx, Vec::new()))
         .collect()
 }
