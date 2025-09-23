@@ -3,6 +3,7 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use bitcoin::{hashes::Hash, BlockHash};
 use borsh::{BorshDeserialize, BorshSerialize};
+use const_hex as hex;
 use serde::{Deserialize, Serialize};
 
 use super::{L1HeaderRecord, L1Tx};
@@ -49,7 +50,6 @@ impl From<L1BlockId> for BlockHash {
 }
 
 #[derive(
-    Debug,
     Copy,
     Clone,
     Eq,
@@ -71,7 +71,36 @@ pub struct L1BlockCommitment {
 
 impl fmt::Display for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <Self as fmt::Debug>::fmt(self, f)
+        // Show first 2 and last 2 bytes of block ID (4 hex chars each)
+        let blkid_bytes = self.blkid.as_ref();
+        let first_2 = &blkid_bytes[..2];
+        let last_2 = &blkid_bytes[30..];
+
+        let mut first_hex = [0u8; 4];
+        let mut last_hex = [0u8; 4];
+        hex::encode_to_slice(first_2, &mut first_hex)
+            .expect("Failed to encode first 2 bytes to hex");
+        hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
+
+        write!(
+            f,
+            "{}@{}..{}",
+            self.height,
+            std::str::from_utf8(&first_hex)
+                .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
+            std::str::from_utf8(&last_hex)
+                .expect("Failed to convert last 2 hex bytes to UTF-8 string")
+        )
+    }
+}
+
+impl fmt::Debug for L1BlockCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "L1BlockCommitment(height={}, blkid={:?})",
+            self.height, self.blkid
+        )
     }
 }
 
