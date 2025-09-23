@@ -36,6 +36,22 @@ pub enum RollupVerifyingKey {
     NativeVerifyingKey,
 }
 
+impl BorshSerialize for RollupVerifyingKey {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let encoded = bincode::serialize(self)
+            .map_err(std::io::Error::other)?;
+        BorshSerialize::serialize(&encoded, writer)
+    }
+}
+
+impl BorshDeserialize for RollupVerifyingKey {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let encoded = Vec::<u8>::deserialize_reader(reader)?;
+        bincode::deserialize(&encoded)
+            .map_err(std::io::Error::other)
+    }
+}
+
 /// Represents a context for different types of proofs.
 ///
 /// This enum categorizes proofs by their associated context, including the type of proof and its

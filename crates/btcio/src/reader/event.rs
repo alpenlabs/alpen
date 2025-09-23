@@ -24,6 +24,8 @@ pub(crate) struct BlockData {
     block: Block,
 
     /// Transaction indexes in the block that contain SPS-50 tags
+    // TODO: Replace ad-hoc tagged index tracking with fully parsed SPS-50 envelopes
+    // once have clear lifecycle and storage strategy for envelopes.
     tagged_tx_indices: Vec<u32>,
 }
 

@@ -716,9 +716,9 @@ mod tests {
         .unwrap(); // should be 33 bytes
 
         let inp_txn = get_txn_from_utxo(utxo, &ctx.sequencer_address);
-        let header = vec![0xAAu8, 0xBB, 0xCC];
+        let envelope_tag = vec![0xAAu8, 0xBB, 0xCC];
         let op_return_script =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(header.clone()).unwrap());
+            ScriptBuf::new_op_return(PushBytesBuf::try_from(envelope_tag.clone()).unwrap());
         let mut tx = super::build_reveal_transaction(
             inp_txn,
             ctx.sequencer_address.clone(),
@@ -739,7 +739,7 @@ mod tests {
 
         assert_eq!(tx.output.len(), 2);
         let expected_op_return =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(header.clone()).unwrap());
+            ScriptBuf::new_op_return(PushBytesBuf::try_from(envelope_tag.clone()).unwrap());
         assert_eq!(tx.output[0].value.to_sat(), 0);
         assert_eq!(tx.output[0].script_pubkey, expected_op_return);
         assert_eq!(tx.output[1].value.to_sat(), ctx.config.reveal_amount);
@@ -752,9 +752,9 @@ mod tests {
         let utxo = utxos.get(2).unwrap();
         let inp_txn = get_txn_from_utxo(utxo, &ctx.sequencer_address);
         let inp_required = 5000000000;
-        let header = vec![0xAAu8, 0xBB, 0xCC];
+        let envelope_tag = vec![0xAAu8, 0xBB, 0xCC];
         let op_return_script =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(header.clone()).unwrap());
+            ScriptBuf::new_op_return(PushBytesBuf::try_from(envelope_tag.clone()).unwrap());
         let tx = super::build_reveal_transaction(
             inp_txn,
             ctx.sequencer_address.clone(),

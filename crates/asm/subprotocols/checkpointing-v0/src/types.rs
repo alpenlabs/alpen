@@ -13,14 +13,15 @@ pub use strata_primitives::batch::{
     BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar, SignedCheckpoint,
 };
 use strata_primitives::{
-    batch::Checkpoint as PrimitivesCheckpoint, buf::Buf32, l1::L1BlockCommitment,
+    batch::Checkpoint as PrimitivesCheckpoint, block_credential::CredRule, buf::Buf32,
+    l1::L1BlockCommitment, params::ProofPublishMode, proof::RollupVerifyingKey,
 };
 
 /// Checkpoint verifier state for checkpointing v0
 ///
 /// NOTE: This maintains state similar to the current core subprotocol but
 /// simplified for checkpointing v0 compatibility
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Default)]
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct CheckpointV0VerifierState {
     /// The last verified checkpoint
     pub last_checkpoint: Option<PrimitivesCheckpoint>,
@@ -28,6 +29,12 @@ pub struct CheckpointV0VerifierState {
     pub last_checkpoint_l1_height: u64,
     /// Current epoch we've verified up to
     pub current_verified_epoch: u64,
+    /// Credential rule governing signature verification
+    pub cred_rule: CredRule,
+    /// Rollup verifying key used for proof verification
+    pub rollup_verifying_key: RollupVerifyingKey,
+    /// Proof publication policy used to determine whether empty proofs are acceptable
+    pub proof_publish_mode: ProofPublishMode,
 }
 
 /// Verification parameters for checkpointing v0
@@ -37,15 +44,14 @@ pub struct CheckpointV0VerifierState {
 /// Configuration parameters don't need serialization - they're provided at init.
 #[derive(Clone, Debug)]
 pub struct CheckpointV0VerificationParams {
-    /// Sequencer public key for signature verification
-    pub sequencer_pubkey: Buf32,
-    /// Whether to skip proof verification for testing (current system compatibility)
-    pub skip_proof_verification: bool,
     /// Genesis L1 block commitment
     pub genesis_l1_block: L1BlockCommitment,
+    /// Credential rule governing signature verification
+    pub cred_rule: CredRule,
     /// Rollup verifying key for proof verification
-    /// Optional to support testing environments without proof verification
-    pub rollup_verifying_key: Option<strata_primitives::proof::RollupVerifyingKey>,
+    pub rollup_verifying_key: RollupVerifyingKey,
+    /// Proof publication policy
+    pub proof_publish_mode: ProofPublishMode,
 }
 
 /// Verification context for a checkpoint transaction
@@ -60,11 +66,14 @@ pub struct CheckpointV0VerifyContext {
 /// Compatibility functions for working with current checkpoint types
 impl CheckpointV0VerifierState {
     /// Initialize from genesis parameters
-    pub fn new_genesis(genesis_l1_block: L1BlockCommitment) -> Self {
+    pub fn new(params: &CheckpointV0VerificationParams) -> Self {
         Self {
             last_checkpoint: None,
-            last_checkpoint_l1_height: genesis_l1_block.height(),
+            last_checkpoint_l1_height: params.genesis_l1_block.height(),
             current_verified_epoch: 0,
+            cred_rule: params.cred_rule.clone(),
+            rollup_verifying_key: params.rollup_verifying_key.clone(),
+            proof_publish_mode: params.proof_publish_mode.clone(),
         }
     }
 
@@ -81,6 +90,14 @@ impl CheckpointV0VerifierState {
         self.current_verified_epoch
     }
 
+    /// Get the epoch value we expect from the next checkpoint.
+    pub fn expected_next_epoch(&self) -> u64 {
+        match &self.last_checkpoint {
+            Some(_) => self.current_verified_epoch + 1,
+            None => 0,
+        }
+    }
+
     /// Check if we can accept a checkpoint for the given epoch
     ///
     /// Returns `true` if the epoch is exactly one greater than the current verified epoch.
@@ -92,6 +109,10 @@ impl CheckpointV0VerifierState {
     /// # Returns
     /// `true` if the epoch can be accepted, `false` otherwise
     pub fn can_accept_epoch(&self, epoch: u64) -> bool {
-        epoch == self.current_verified_epoch + 1
+        if self.last_checkpoint.is_none() {
+            epoch == 0
+        } else {
+            epoch == self.current_verified_epoch + 1
+        }
     }
 }

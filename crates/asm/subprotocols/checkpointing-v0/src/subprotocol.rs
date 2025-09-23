@@ -49,8 +49,7 @@ impl Subprotocol for CheckpointingV0Subproto {
     type AuxInput = ();
 
     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
-        let genesis_l1_block = params.verification_params.genesis_l1_block;
-        Ok(CheckpointV0VerifierState::new_genesis(genesis_l1_block))
+        Ok(CheckpointV0VerifierState::new(&params.verification_params))
     }
 
     /// Process checkpoint transactions according to checkpointing v0 specification
@@ -71,14 +70,13 @@ impl Subprotocol for CheckpointingV0Subproto {
         anchor_pre: &AnchorState,
         _aux_input: &Self::AuxInput,
         relayer: &mut impl MsgRelayer,
-        params: &Self::Params,
+        _params: &Self::Params,
     ) {
         // Get current L1 height from anchor state
         let current_l1_height = anchor_pre.chain_view.pow_state.last_verified_block.height();
 
         for tx in txs {
-            let result =
-                process_checkpoint_transaction_v0(state, tx, current_l1_height, relayer, params);
+            let result = process_checkpoint_transaction_v0(state, tx, current_l1_height, relayer);
 
             // Log transaction processing results
             match result {
@@ -123,37 +121,33 @@ fn process_checkpoint_transaction_v0(
     tx: &TxInputRef<'_>,
     current_l1_height: u64,
     relayer: &mut impl MsgRelayer,
-    params: &CheckpointingV0Config,
 ) -> CheckpointV0Result<bool> {
     // 1. Extract signed checkpoint from SPS-50 envelope
     let signed_checkpoint = extract_signed_checkpoint_from_envelope(tx)?;
 
-    // 3. Process checkpoint using v0 verification logic
-    let accepted = process_checkpoint_v0(state, &signed_checkpoint, &params.verification_params)
+    // 2. Process checkpoint using v0 verification logic
+    process_checkpoint_v0(state, &signed_checkpoint, current_l1_height)?;
+
+    // 3. Extract withdrawal messages for bridge forwarding
+    let withdrawal_intents = extract_withdrawal_messages(signed_checkpoint.checkpoint())
         .map_err(|e| CheckpointV0Error::StateTransitionError(e.to_string()))?;
 
-    if accepted {
-        // 4. Extract withdrawal messages for bridge forwarding
-        let withdrawal_intents = extract_withdrawal_messages(signed_checkpoint.checkpoint())
-            .map_err(|e| CheckpointV0Error::StateTransitionError(e.to_string()))?;
+    // Forward each withdrawal message to the bridge subprotocol
+    for intent in withdrawal_intents {
+        let withdraw_output = WithdrawOutput::new(intent.destination().clone(), *intent.amt());
+        // Wrap it in [`BridgeIncomingMsg`]
+        let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
 
-        // Forward each withdrawal message to the bridge subprotocol
-        for intent in withdrawal_intents {
-            let withdraw_output = WithdrawOutput::new(intent.destination().clone(), *intent.amt());
-            // Wrap it in [`BridgeIncomingMsg`]
-            let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
-
-            // Send to bridge subprotocol
-            relayer.relay_msg(&bridge_msg);
-        }
-
-        let epoch = signed_checkpoint.checkpoint().batch_info().epoch();
-        logging::info!(
-            "Checkpoint accepted for epoch {}, L1 height {}",
-            epoch,
-            current_l1_height
-        );
+        // Send to bridge subprotocol
+        relayer.relay_msg(&bridge_msg);
     }
 
-    Ok(accepted)
+    let epoch = signed_checkpoint.checkpoint().batch_info().epoch();
+    logging::info!(
+        "Checkpoint accepted for epoch {}, L1 height {}",
+        epoch,
+        current_l1_height
+    );
+
+    Ok(true)
 }
