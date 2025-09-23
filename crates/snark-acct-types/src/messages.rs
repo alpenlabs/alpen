@@ -1,6 +1,6 @@
 //! Snark account types.
 
-use strata_acct_types::AcctId;
+use strata_acct_types::{AcctId, MsgPayload};
 
 // TODO use actual MMR proofs
 type MmrProof = Vec<u8>;
@@ -8,8 +8,13 @@ type MmrProof = Vec<u8>;
 /// Message entry in an account inbox.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessageEntry {
+    /// The source account ID of the message.
     source: AcctId,
+
+    /// The epoch that the message was included.
     incl_epoch: u32,
+
+    /// The message payload.
     payload: MsgPayload,
 }
 
@@ -34,15 +39,18 @@ impl MessageEntry {
         &self.payload
     }
 
+    /// Gets the data payload buf.
     pub fn payload_buf(&self) -> &[u8] {
         self.payload().data()
     }
 
+    /// Gets the payload value.
     pub fn payload_value(&self) -> u64 {
         self.payload().value()
     }
 }
 
+/// Proof for a message in an inbox MMR.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessageEntryProof {
     entry: MessageEntry,
@@ -60,28 +68,5 @@ impl MessageEntryProof {
 
     pub fn proof(&self) -> &[u8] {
         &self.proof
-    }
-}
-
-/// The actual payload carried in a message.
-///
-/// This is both data and some native asset value.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct MsgPayload {
-    value: u64,
-    data: Vec<u8>,
-}
-
-impl MsgPayload {
-    pub fn new(value: u64, data: Vec<u8>) -> Self {
-        Self { value, data }
-    }
-
-    pub fn value(&self) -> u64 {
-        self.value
-    }
-
-    pub fn data(&self) -> &[u8] {
-        &self.data
     }
 }

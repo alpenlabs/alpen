@@ -100,6 +100,7 @@ impl LedgerRefProofs {
     }
 }
 
+/// Container for a snark account update with the various relevant proofs.
 #[derive(Clone, Debug)]
 pub struct SnarkAccountUpdate {
     /// The state change/requirements operation data itself.
