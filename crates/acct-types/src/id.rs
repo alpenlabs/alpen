@@ -15,7 +15,7 @@ pub struct SubjectId([u8; 32]);
 /// Raw primitive version of an account ID.  Defined here for convenience.
 pub type RawAcctTypeId = u16;
 
-/// Distingushes between account types.
+/// Distinguishes between account types.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u16)]
 pub enum AcctTypeId {
