@@ -1,9 +1,10 @@
 //! Types relating to EE block related structures.
 
-type Hash = [u8; 32];
+use strata_acct_types::{AcctId, Hash, SentMessage, SubjectId};
 
 /// Container for an execution block that signals additional data with it.
 // TODO better name, using an intentionally bad one for now
+// TODO SSZ
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecBlockNotpackage {
     /// Execution blkid, which commits to things more cleanly.
@@ -38,13 +39,51 @@ impl ExecBlockNotpackage {
 }
 
 /// Inputs from the OL to the EE processed in a single EE block.
+// TODO SSZ
+// TODO builder
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockInputs {
-    // TODO messages
+    subject_deposits: Vec<SubjectDepositData>,
+}
+
+/// Describes data for a simple deposit to a subject within an EE.
+///
+/// This is used for deposits from L1, but can encompass any "blind" transfer to
+/// a subject (which doesn't allow it to autonomously respond to the deposit or
+/// know where the sender was).
+// TODO SSZ
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubjectDepositData {
+    dest: SubjectId,
+    value: u64,
+}
+
+impl SubjectDepositData {
+    pub fn new(dest: SubjectId, value: u64) -> Self {
+        Self { dest, value }
+    }
+
+    pub fn dest(&self) -> SubjectId {
+        self.dest
+    }
+
+    pub fn value(&self) -> u64 {
+        self.value
+    }
 }
 
 /// Outputs from an EE to the OL produced in a single EE block.
+// TODO SSZ
+// TODO builder type
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockOutputs {
-    // TODO messages
+    output_transfers: Vec<OutputTransfer>,
+    output_messages: Vec<SentMessage>,
+}
+
+// TODO SSZ?
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OutputTransfer {
+    dest: AcctId,
+    value: u64,
 }
