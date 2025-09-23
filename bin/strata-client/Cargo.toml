@@ -11,8 +11,8 @@ name = "strata-client"
 path = "src/main.rs"
 
 [dependencies]
-strata-btcio.workspace = true
 strata-asm-proto-checkpointing-txs.workspace = true
+strata-btcio.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-config.workspace = true
 strata-consensus-logic = { workspace = true, default-features = true }
