@@ -76,10 +76,21 @@ impl fmt::Display for L1BlockCommitment {
         let first_2 = &blkid_bytes[..2];
         let last_2 = &blkid_bytes[30..];
 
-        let first_hex = hex::encode(first_2);
-        let last_hex = hex::encode(last_2);
+        let mut first_hex = [0u8; 4];
+        let mut last_hex = [0u8; 4];
+        hex::encode_to_slice(first_2, &mut first_hex)
+            .expect("Failed to encode first 2 bytes to hex");
+        hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
 
-        write!(f, "{}@{}..{}", self.height, first_hex, last_hex)
+        write!(
+            f,
+            "{}@{}..{}",
+            self.height,
+            std::str::from_utf8(&first_hex)
+                .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
+            std::str::from_utf8(&last_hex)
+                .expect("Failed to convert last 2 hex bytes to UTF-8 string")
+        )
     }
 }
 
