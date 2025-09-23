@@ -94,7 +94,7 @@ impl LedgerRefProofs {
             l1_header_refs: self
                 .l1_headers_proofs
                 .iter()
-                .map(|e| *e.claim())
+                .map(|e| e.to_claim())
                 .collect::<Vec<_>>(),
         }
     }

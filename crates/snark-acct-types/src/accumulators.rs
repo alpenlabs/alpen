@@ -1,9 +1,6 @@
 //! Types relating to accumulators and making proofs against them.
 
-type Hash = [u8; 32];
-
-// TODO make this use the MMR crate
-type MmrProof = Vec<u8>;
+use strata_acct_types::{Hash, MerkleProof};
 
 /// Claim that an entry exists in a linear accumulator at some index.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -29,24 +26,32 @@ impl AccumulatorClaim {
 /// Claim with proof for an entry in an MMR.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct MmrEntryProof {
-    claim: AccumulatorClaim,
-    proof: MmrProof,
+    entry_hash: Hash,
+    proof: MerkleProof,
 }
 
 impl MmrEntryProof {
-    pub fn new(claim: AccumulatorClaim, proof: Vec<u8>) -> Self {
-        Self { claim, proof }
-    }
-
-    pub fn claim(&self) -> &AccumulatorClaim {
-        &self.claim
-    }
-
-    pub fn idx(&self) -> u64 {
-        self.claim.idx()
+    pub fn new(entry_hash: Hash, proof: MerkleProof) -> Self {
+        Self { entry_hash, proof }
     }
 
     pub fn entry_hash(&self) -> &Hash {
-        self.claim.entry_hash()
+        &self.entry_hash
+    }
+
+    pub fn proof(&self) -> &MerkleProof {
+        &self.proof
+    }
+
+    pub fn entry_idx(&self) -> u64 {
+        self.proof.index()
+    }
+
+    /// Converts the proof to a compact claim for the entry being proven.
+    ///
+    /// This doesn't verify the proof, this should only be called if we have
+    /// reason to believe that the proof is valid.
+    pub fn to_claim(&self) -> AccumulatorClaim {
+        AccumulatorClaim::new(self.entry_idx(), *self.entry_hash())
     }
 }

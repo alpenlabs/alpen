@@ -1,9 +1,6 @@
 //! Snark account types.
 
-use strata_acct_types::{AcctId, MsgPayload};
-
-// TODO use actual MMR proofs
-type MmrProof = Vec<u8>;
+use strata_acct_types::{AcctId, MsgPayload, RawMerkleProof};
 
 /// Message entry in an account inbox.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,22 +48,25 @@ impl MessageEntry {
 }
 
 /// Proof for a message in an inbox MMR.
+///
+/// This message entry doesn't imply a specific index, since this is implicit
+/// from contect.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessageEntryProof {
     entry: MessageEntry,
-    proof: MmrProof,
+    raw_proof: RawMerkleProof,
 }
 
 impl MessageEntryProof {
-    pub fn new(entry: MessageEntry, proof: MmrProof) -> Self {
-        Self { entry, proof }
+    pub fn new(entry: MessageEntry, raw_proof: RawMerkleProof) -> Self {
+        Self { entry, raw_proof }
     }
 
     pub fn entry(&self) -> &MessageEntry {
         &self.entry
     }
 
-    pub fn proof(&self) -> &[u8] {
-        &self.proof
+    pub fn raw_proof(&self) -> &RawMerkleProof {
+        &self.raw_proof
     }
 }

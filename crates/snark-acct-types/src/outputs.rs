@@ -1,6 +1,6 @@
 //! Account output types that get applied to the ledger.
 
-use strata_acct_types::{AcctId, MessageData};
+use strata_acct_types::{AcctId, MsgPayload};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpdateOutputs {
@@ -48,19 +48,19 @@ impl OutputTransfer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputMessage {
     dest: AcctId,
-    data: MessageData,
+    payload: MsgPayload,
 }
 
 impl OutputMessage {
-    pub fn new(dest: AcctId, data: MessageData) -> Self {
-        Self { dest, data }
+    pub fn new(dest: AcctId, payload: MsgPayload) -> Self {
+        Self { dest, payload }
     }
 
     pub fn dest(&self) -> AcctId {
         self.dest
     }
 
-    pub fn data(&self) -> &MessageData {
-        &self.data
+    pub fn payload(&self) -> &MsgPayload {
+        &self.payload
     }
 }
