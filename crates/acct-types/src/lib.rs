@@ -4,4 +4,4 @@ mod messages;
 
 pub use constants::SYSTEM_RESERVED_ACCTS;
 pub use id::{AcctId, AcctSerial, SubjectId};
-pub use messages::{AcctMessage, MsgPayload, ReceivedMessage};
+pub use messages::{MsgPayload, ReceivedMessage, SentMessage};
