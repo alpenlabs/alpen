@@ -128,6 +128,7 @@ strata-asm-proto-administration = { path = "crates/asm/subprotocols/admin" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-checkpointing-txs = { path = "crates/asm/txs/checkpointing" }
 strata-asm-proto-checkpointing-v0 = { path = "crates/asm/subprotocols/checkpointing-v0" }
+strata-asm-proto-checkpointing-txs = { path = "crates/asm/txs/checkpointing" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-proto-administration-txs = { path = "crates/asm/txs/admin" }

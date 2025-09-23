@@ -30,18 +30,18 @@
 //! - Basic verification flow concepts
 //! - Placeholder structures for future SPS-62 migration
 // Module declarations
-mod constants;
 mod error;
-mod parsing;
 mod subprotocol;
 mod types;
 mod verification;
 
 // Public re-exports
-pub use constants::*;
 pub use error::{CheckpointV0Error, CheckpointV0Result};
-// Re-export parsing functions
-pub use parsing::extract_signed_checkpoint_from_envelope;
+// Re-export checkpoint transaction helpers
+pub use strata_asm_proto_checkpointing_txs::{
+    encode_checkpoint_tag, extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
+    CHECKPOINTING_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
+};
 pub use subprotocol::{CheckpointingV0Config, CheckpointingV0Subproto};
 pub use types::*;
 // Re-export verification functions for testing and integration

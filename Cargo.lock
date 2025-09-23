@@ -14271,17 +14271,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-checkpointing-v0"
+name = "strata-asm-proto-checkpointing-txs"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
  "strata-asm-common",
- "strata-asm-proto-bridge-v1",
- "strata-crypto",
+ "strata-l1-txfmt",
  "strata-l1tx",
  "strata-primitives",
  "strata-state",
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-asm-proto-checkpointing-v0"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "strata-asm-common",
+ "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-checkpointing-txs",
+ "strata-crypto",
+ "strata-primitives",
  "thiserror 2.0.16",
  "zkaleido",
 ]
@@ -14429,7 +14441,6 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "corepc-node",
  "hex",
  "musig2",
@@ -14439,6 +14450,7 @@ dependencies = [
  "strata-config",
  "strata-db",
  "strata-db-store-sled",
+ "strata-l1-txfmt",
  "strata-l1tx",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -14448,7 +14460,6 @@ dependencies = [
  "strata-tasks",
  "strata-test-utils",
  "strata-test-utils-l2",
- "strata-test-utils-tx-indexer",
  "thiserror 2.0.16",
  "threadpool",
  "tokio",
@@ -14526,6 +14537,7 @@ dependencies = [
  "futures",
  "jsonrpsee",
  "serde_json",
+ "strata-asm-proto-checkpointing-txs",
  "strata-btcio",
  "strata-common",
  "strata-config",

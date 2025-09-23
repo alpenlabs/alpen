@@ -339,6 +339,7 @@ pub fn build_reveal_transaction_test(
     fee_rate: u64,
     reveal_script: &ScriptBuf,
     control_block: &ControlBlock,
+    envelope_tag: &[u8],
 ) -> Result<Transaction, EnvelopeError> {
     build_reveal_transaction(
         input_transaction,
@@ -347,6 +348,7 @@ pub fn build_reveal_transaction_test(
         fee_rate,
         reveal_script,
         control_block,
+        envelope_tag,
     )
 }
 
@@ -432,7 +434,10 @@ pub fn create_checkpoint_envelope_tx(
     };
 
     // Create transaction using control block
-    let mut tx = build_reveal_transaction_test(inp_tx, address, 100, 10, &script, &cb).unwrap();
+    let envelope_tag = vec![0xAAu8, 0xBB, 0xCC];
+    let mut tx =
+        build_reveal_transaction_test(inp_tx, address, 100, 10, &script, &cb, &envelope_tag)
+            .unwrap();
     tx.input[0].witness.push([1; 3]);
     tx.input[0].witness.push(script);
     tx.input[0].witness.push(cb.serialize());
@@ -449,7 +454,10 @@ pub(crate) mod test_context {
     use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_l2::gen_params;
 
-    use crate::{test_utils::TestBitcoinClient, writer::context::WriterContext};
+    use crate::{
+        test_utils::TestBitcoinClient,
+        writer::context::{EnvelopeTagEncoder, WriterContext},
+    };
 
     pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
         let client = Arc::new(TestBitcoinClient::new(1));
@@ -466,7 +474,10 @@ pub(crate) mod test_context {
             None,
         );
         let params = Arc::new(gen_params());
-        let ctx = WriterContext::new(params, cfg, addr, client, status_channel);
+        // A dummy tag encoder that always returns the same tag.
+        let tag_encoder: Arc<EnvelopeTagEncoder> =
+            Arc::new(|_| -> anyhow::Result<Vec<u8>> { Ok(vec![0xAAu8, 0xBB, 0xCC]) });
+        let ctx = WriterContext::new(params, cfg, addr, client, status_channel, tag_encoder);
         Arc::new(ctx)
     }
 }
