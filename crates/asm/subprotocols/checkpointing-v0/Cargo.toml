@@ -17,7 +17,6 @@ strata-primitives.workspace = true
 
 # Crypto and proof verification
 strata-crypto.workspace = true
-zkaleido.workspace = true
 
 # Serialization
 borsh.workspace = true

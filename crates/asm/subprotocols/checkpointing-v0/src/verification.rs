@@ -9,13 +9,13 @@
 
 use strata_asm_common::logging;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_primitives::{batch::SignedCheckpoint, proof::RollupVerifyingKey};
-use zkaleido::{ProofReceipt, PublicValues};
-
-use crate::{
-    error::CheckpointV0Error,
-    types::{CheckpointV0VerificationParams, CheckpointV0VerifierState},
+use strata_primitives::{
+    batch::{verify_signed_checkpoint_sig, BatchTransition, Checkpoint, SignedCheckpoint},
+    block_credential::CredRule,
+    proof::RollupVerifyingKey,
 };
+
+use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
 
 /// Main checkpoint processing function (SPS-62 inspired)
 ///
@@ -27,136 +27,130 @@ use crate::{
 pub fn process_checkpoint_v0(
     state: &mut CheckpointV0VerifierState,
     signed_checkpoint: &SignedCheckpoint,
-    verif_params: &CheckpointV0VerificationParams,
-) -> Result<bool, CheckpointV0Error> {
+    current_l1_height: u64,
+) -> Result<(), CheckpointV0Error> {
     let checkpoint = signed_checkpoint.checkpoint();
-
-    // 1. Verify epoch progression
     let epoch = checkpoint.batch_info().epoch();
+
     if !state.can_accept_epoch(epoch) {
-        logging::warn!(
-            "Invalid epoch progression: expected {}, got {}",
-            state.current_epoch() + 1,
-            epoch
-        );
-        return Ok(false);
+        let expected = state.expected_next_epoch();
+        logging::warn!(expected, actual = epoch, "Invalid epoch progression");
+        return Err(CheckpointV0Error::InvalidEpoch {
+            expected,
+            actual: epoch,
+        });
     }
 
-    // 2. Verify signature (placeholder - would verify against sequencer pubkey)
-    if !verify_checkpoint_signature(signed_checkpoint, &verif_params.sequencer_pubkey)? {
-        logging::warn!("Checkpoint signature verification failed");
-        return Ok(false);
+    ensure_batch_epochs_consistent(checkpoint)?;
+    verify_checkpoint_signature(signed_checkpoint, &state.cred_rule)?;
+    verify_checkpoint_proof(checkpoint, state)?;
+
+    if let Some(previous) = &state.last_checkpoint {
+        verify_state_transition(previous, checkpoint)?;
     }
 
-    // 3. Verify proof using current system
-    if !verif_params.skip_proof_verification
-        && !verify_checkpoint_proof_current_system(checkpoint, verif_params)?
-    {
-        logging::warn!("Checkpoint proof verification failed");
-        return Ok(false);
-    }
+    state.update_with_checkpoint(checkpoint.clone(), current_l1_height);
+    logging::info!(epoch, "Successfully verified checkpoint");
 
-    // 4. Verify state transitions (basic validation)
-    if let Some(last_checkpoint) = &state.last_checkpoint {
-        if !verify_state_transition(last_checkpoint, checkpoint)? {
-            logging::warn!("State transition validation failed");
-            return Ok(false);
-        }
-    }
-
-    // 5. Update state with verified checkpoint
-    // TODO : Add L1 height context to update with verify_context (currently using 0)
-    state.update_with_checkpoint(checkpoint.clone(), 0);
-
-    logging::info!("Successfully verified checkpoint for epoch {}", epoch);
-    Ok(true)
+    Ok(())
 }
 
-/// Verify checkpoint signature (placeholder for current system compatibility)
+fn ensure_batch_epochs_consistent(checkpoint: &Checkpoint) -> Result<(), CheckpointV0Error> {
+    let info_epoch = checkpoint.batch_info().epoch();
+    let transition_epoch = checkpoint.batch_transition().epoch;
+    if info_epoch != transition_epoch {
+        return Err(CheckpointV0Error::StateTransitionError(
+            "batch info and transition epochs differ".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn verify_checkpoint_signature(
-    _signed_checkpoint: &SignedCheckpoint,
-    _expected_pubkey: &strata_primitives::buf::Buf32,
-) -> Result<bool, CheckpointV0Error> {
-    // TODO: Implement actual signature verification
-    // For now, accept all signatures for feature parity testing
-    // In real implementation, this would:
-    // 1. Extract signature and pubkey from signed checkpoint
-    // 2. Verify signature against checkpoint data
-    // 3. Check pubkey matches expected sequencer key
-
-    Ok(true)
+    signed_checkpoint: &SignedCheckpoint,
+    cred_rule: &CredRule,
+) -> Result<(), CheckpointV0Error> {
+    if verify_signed_checkpoint_sig(signed_checkpoint, cred_rule) {
+        Ok(())
+    } else {
+        Err(CheckpointV0Error::InvalidSignature)
+    }
 }
 
-/// Verify checkpoint proof using current verification system
-///
-/// NOTE: This bridges to the current groth16 verifier until unipred is ready
-fn verify_checkpoint_proof_current_system(
-    checkpoint: &strata_primitives::batch::Checkpoint,
-    verif_params: &CheckpointV0VerificationParams,
-) -> Result<bool, CheckpointV0Error> {
-    let proof = checkpoint.proof();
-    if proof.is_empty() {
-        // Handle empty proofs for testing/development
-        #[cfg(feature = "debug-utils")]
-        {
-            logging::info!("Accepting empty proof in debug mode");
-            return Ok(true);
-        }
-        #[cfg(not(feature = "debug-utils"))]
-        {
-            logging::warn!("Rejecting empty proof in production mode");
-            return Ok(false);
-        }
+fn verify_checkpoint_proof(
+    checkpoint: &Checkpoint,
+    state: &CheckpointV0VerifierState,
+) -> Result<(), CheckpointV0Error> {
+    let proof_receipt = checkpoint.construct_receipt();
+    let expected_output = *checkpoint.batch_transition();
+    let actual_output: BatchTransition =
+        borsh::from_slice(proof_receipt.public_values().as_bytes())
+            .map_err(|_| CheckpointV0Error::SerializationError)?;
+
+    if expected_output != actual_output {
+        logging::warn!(
+            epoch = checkpoint.batch_info().epoch(),
+            "Checkpoint proof public values mismatch"
+        );
+        return Err(CheckpointV0Error::InvalidProof);
     }
 
-    // Use actual groth16 verification if verifying key is provided
-    if let Some(rollup_vk) = &verif_params.rollup_verifying_key {
-        logging::info!("Using groth16 verification with provided verifying key");
-        return verify_with_current_groth16_system(checkpoint, rollup_vk);
+    let is_empty_proof = proof_receipt.proof().is_empty();
+    let allow_empty = state.proof_publish_mode.allow_empty()
+        || matches!(
+            state.rollup_verifying_key,
+            RollupVerifyingKey::NativeVerifyingKey
+        );
+
+    if is_empty_proof {
+        if allow_empty {
+            logging::warn!(
+                epoch = checkpoint.batch_info().epoch(),
+                "Accepting empty checkpoint proof"
+            );
+            return Ok(());
+        }
+
+        return Err(CheckpointV0Error::InvalidProof);
     }
 
-    // Fallback for configurations without verifying key
-    logging::warn!("No verifying key provided - proof verification is placeholder");
-    logging::warn!("This is NOT SECURE for production use");
-    Ok(true)
+    if let Err(err) =
+        verify_rollup_groth16_proof_receipt(&proof_receipt, &state.rollup_verifying_key)
+    {
+        logging::warn!("Groth16 verification failed: {err:?}");
+        return Err(CheckpointV0Error::InvalidProof);
+    }
+
+    Ok(())
 }
 
-/// Verify state transition between checkpoints
 fn verify_state_transition(
-    _prev_checkpoint: &strata_primitives::batch::Checkpoint,
-    _curr_checkpoint: &strata_primitives::batch::Checkpoint,
-) -> Result<bool, CheckpointV0Error> {
-    // TODO: Implement state transition verification
-    // This would verify:
-    // 1. Chainstate root transition is valid
-    // 2. L1/L2 block height progression
-    // 3. Epoch progression
-    // 4. Other state consistency checks
+    prev_checkpoint: &Checkpoint,
+    curr_checkpoint: &Checkpoint,
+) -> Result<(), CheckpointV0Error> {
+    let prev_epoch = prev_checkpoint.batch_info().epoch();
+    let curr_epoch = curr_checkpoint.batch_info().epoch();
 
-    // For v0, accept all transitions as placeholder
-    Ok(true)
-}
-
-/// Bridge to current proof verification system with proper types
-///
-/// This function bridges our verification to the existing groth16 verification
-/// system until full unipred integration is available.
-fn verify_with_current_groth16_system(
-    checkpoint: &strata_primitives::batch::Checkpoint,
-    rollup_vk: &RollupVerifyingKey,
-) -> Result<bool, CheckpointV0Error> {
-    // Convert current checkpoint to format expected by current verifier
-    // Note: ProofReceipt::new takes ownership, so clone is required here
-    let proof = checkpoint.proof().clone();
-    let batch_transition = checkpoint.batch_transition();
-    let public_values = PublicValues::new(
-        borsh::to_vec(batch_transition).map_err(|_| CheckpointV0Error::SerializationError)?,
-    );
-
-    let receipt = ProofReceipt::new(proof, public_values);
-
-    match verify_rollup_groth16_proof_receipt(&receipt, rollup_vk) {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
+    if curr_epoch != prev_epoch + 1 {
+        return Err(CheckpointV0Error::InvalidEpoch {
+            expected: prev_epoch + 1,
+            actual: curr_epoch,
+        });
     }
+
+    if prev_checkpoint
+        .batch_transition()
+        .chainstate_transition
+        .post_state_root
+        != curr_checkpoint
+            .batch_transition()
+            .chainstate_transition
+            .pre_state_root
+    {
+        return Err(CheckpointV0Error::StateTransitionError(
+            "L2 state root mismatch between checkpoints".to_string(),
+        ));
+    }
+
+    Ok(())
 }
