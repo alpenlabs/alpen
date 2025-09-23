@@ -1,3 +1,5 @@
+//! Account system common type definitions.
+
 mod constants;
 mod id;
 mod messages;
