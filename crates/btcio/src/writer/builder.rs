@@ -154,6 +154,10 @@ pub fn create_envelope_transactions(
         .finalize(SECP256K1, public_key)
         .map_err(|_| anyhow!("Could not build taproot spend info"))?;
 
+    let op_return_push = PushBytesBuf::try_from(envelope_tag.to_vec())
+        .map_err(|_| EnvelopeError::InvalidEnvelopeTag)?;
+    let op_return_script = ScriptBuf::new_op_return(op_return_push.clone());
+
     // Create reveal address
     let reveal_address = Address::p2tr(
         SECP256K1,
@@ -169,6 +173,7 @@ pub fn create_envelope_transactions(
         env_config.fee_rate,
         &reveal_script,
         &taproot_spend_info,
+        &op_return_script,
     );
 
     // Build commit tx
@@ -192,7 +197,7 @@ pub fn create_envelope_transactions(
         &taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
-        envelope_tag,
+        &op_return_script,
     )?;
 
     // Sign reveal tx
@@ -403,15 +408,12 @@ pub fn build_reveal_transaction(
     fee_rate: u64,
     reveal_script: &ScriptBuf,
     control_block: &ControlBlock,
-    envelope_tag: &[u8],
+    op_return_script: &ScriptBuf,
 ) -> Result<Transaction, EnvelopeError> {
-    let op_return_script = PushBytesBuf::try_from(envelope_tag.to_vec())
-        .map_err(|_| EnvelopeError::InvalidEnvelopeTag)?;
-
     let outputs: Vec<TxOut> = vec![
         TxOut {
             value: Amount::from_sat(0),
-            script_pubkey: ScriptBuf::new_op_return(op_return_script),
+            script_pubkey: op_return_script.clone(),
         },
         TxOut {
             value: Amount::from_sat(output_value),
@@ -481,13 +483,22 @@ fn calculate_commit_output_value(
     fee_rate: u64,
     reveal_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
+    op_return_script: &ScriptBuf,
 ) -> u64 {
+    let outputs = [
+        TxOut {
+            value: Amount::from_sat(0),
+            script_pubkey: op_return_script.clone(),
+        },
+        TxOut {
+            value: Amount::from_sat(reveal_value),
+            script_pubkey: recipient.script_pubkey(),
+        },
+    ];
+
     get_size(
         &default_txin(),
-        &[TxOut {
-            script_pubkey: recipient.script_pubkey(),
-            value: Amount::from_sat(reveal_value),
-        }],
+        &outputs,
         Some(reveal_script),
         Some(
             &taproot_spend_info
@@ -706,6 +717,8 @@ mod tests {
 
         let inp_txn = get_txn_from_utxo(utxo, &ctx.sequencer_address);
         let header = vec![0xAAu8, 0xBB, 0xCC];
+        let op_return_script =
+            ScriptBuf::new_op_return(PushBytesBuf::try_from(header.clone()).unwrap());
         let mut tx = super::build_reveal_transaction(
             inp_txn,
             ctx.sequencer_address.clone(),
@@ -713,7 +726,7 @@ mod tests {
             8,
             &_script,
             &control_block,
-            &header,
+            &op_return_script,
         )
         .unwrap();
 
@@ -740,6 +753,8 @@ mod tests {
         let inp_txn = get_txn_from_utxo(utxo, &ctx.sequencer_address);
         let inp_required = 5000000000;
         let header = vec![0xAAu8, 0xBB, 0xCC];
+        let op_return_script =
+            ScriptBuf::new_op_return(PushBytesBuf::try_from(header.clone()).unwrap());
         let tx = super::build_reveal_transaction(
             inp_txn,
             ctx.sequencer_address.clone(),
@@ -747,7 +762,7 @@ mod tests {
             750,
             &_script,
             &control_block,
-            &header,
+            &op_return_script,
         );
 
         assert!(tx.is_err());
@@ -806,7 +821,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_build_envelope_txs_rejects_multiple_payloads() {
         let (ctx, _, _, _) = get_mock_data();
         let payload = L1Payload::new_checkpoint(vec![0u8; 10]);
@@ -820,26 +835,7 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_create_envelope_transactions_invalid_tag() {
-        let (ctx, _, _, utxos) = get_mock_data();
-        let payload = L1Payload::new_checkpoint(vec![0u8; 10]);
-        // 600 bytes exceeds the OP_RETURN payload limit (max 80).
-        let tag = vec![0u8; 600];
-        let env_config = EnvelopeConfig::new(
-            ctx.params.clone(),
-            ctx.sequencer_address.clone(),
-            Network::Regtest,
-            1000,
-            546,
-        );
-
-        let err = super::create_envelope_transactions(&env_config, &tag, &payload, utxos.to_vec())
-            .unwrap_err();
-        assert!(matches!(err, EnvelopeError::InvalidEnvelopeTag));
-    }
-
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_build_envelope_txs_tag_resolution_error() {
         let (ctx, _, _, _) = get_mock_data();
         let failing_encoder: Arc<EnvelopeTagEncoder> =

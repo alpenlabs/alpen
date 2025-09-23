@@ -19,7 +19,7 @@ strata-tasks.workspace = true
 anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-hex = { workspace = true, optional = true }
+hex.workspace = true
 musig2 = { workspace = true, features = ["serde"], optional = true }
 rand.workspace = true
 reqwest.workspace = true
@@ -44,4 +44,4 @@ strata-test-utils-l2.workspace = true
 corepc-node = { version = "0.8.0", features = ["29_0"] }
 
 [features]
-test_utils = ["dep:hex", "dep:musig2"]
+test_utils = ["dep:musig2"]
