@@ -8,6 +8,7 @@ use strata_state::batch::EpochSummary;
 use super::schemas::*;
 use crate::DbOpsConfig;
 
+#[derive(Debug)]
 pub struct RBCheckpointDB {
     db: Arc<OptimisticTransactionDB>,
     ops: DbOpsConfig,
@@ -89,6 +90,74 @@ impl CheckpointDatabase for RBCheckpointDB {
         Ok(rockbound::utils::get_last::<EpochSummarySchema>(&*self.db)?.map(|(x, _)| x))
     }
 
+    fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        let epoch_idx = epoch.epoch();
+        let terminal = epoch.to_block_commitment();
+
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<bool, anyhow::Error> {
+                    let Some(mut summaries) =
+                        txn.get_for_update::<EpochSummarySchema>(&epoch_idx)?
+                    else {
+                        return Ok(false);
+                    };
+
+                    // Find the summary to delete
+                    let Ok(pos) = summaries.binary_search_by_key(&terminal, |s| *s.terminal())
+                    else {
+                        return Ok(false);
+                    };
+
+                    // Remove the summary from the vector
+                    summaries.remove(pos);
+
+                    // If vector is now empty, delete the entire entry
+                    if summaries.is_empty() {
+                        txn.delete::<EpochSummarySchema>(&epoch_idx)?;
+                    } else {
+                        // Otherwise, update with the remaining summaries
+                        txn.put::<EpochSummarySchema>(&epoch_idx, &summaries)?;
+                    }
+
+                    Ok(true)
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))
+    }
+
+    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>> {
+        let last_epoch = self.get_last_summarized_epoch()?;
+        let Some(last_epoch) = last_epoch else {
+            return Ok(Vec::new());
+        };
+
+        if start_epoch > last_epoch {
+            return Ok(Vec::new());
+        }
+
+        let mut deleted_epochs = Vec::new();
+
+        // Use batch operations for efficiency
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    for epoch in start_epoch..=last_epoch {
+                        if txn.get::<EpochSummarySchema>(&epoch)?.is_some() {
+                            txn.delete::<EpochSummarySchema>(&epoch)?;
+                            deleted_epochs.push(epoch);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(deleted_epochs)
+    }
+
     fn put_checkpoint(&self, epoch: u64, entry: CheckpointEntry) -> DbResult<()> {
         Ok(self.db.put::<CheckpointSchema>(&epoch, &entry)?)
     }
@@ -99,6 +168,45 @@ impl CheckpointDatabase for RBCheckpointDB {
 
     fn get_last_checkpoint_idx(&self) -> DbResult<Option<u64>> {
         Ok(rockbound::utils::get_last::<CheckpointSchema>(&*self.db)?.map(|(x, _)| x))
+    }
+
+    fn del_checkpoint(&self, epoch: u64) -> DbResult<bool> {
+        let exists = self.db.get::<CheckpointSchema>(&epoch)?.is_some();
+        if exists {
+            self.db.delete::<CheckpointSchema>(&epoch)?;
+        }
+        Ok(exists)
+    }
+
+    fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>> {
+        let last_epoch = self.get_last_checkpoint_idx()?;
+        let Some(last_epoch) = last_epoch else {
+            return Ok(Vec::new());
+        };
+
+        if start_epoch > last_epoch {
+            return Ok(Vec::new());
+        }
+
+        let mut deleted_epochs = Vec::new();
+
+        // Use batch operations for efficiency
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    for epoch in start_epoch..=last_epoch {
+                        if txn.get::<CheckpointSchema>(&epoch)?.is_some() {
+                            txn.delete::<CheckpointSchema>(&epoch)?;
+                            deleted_epochs.push(epoch);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(deleted_epochs)
     }
 }
 
@@ -260,5 +368,304 @@ mod tests {
                 .put_checkpoint(last_idx + 1, checkpoint.clone())
                 .unwrap();
         }
+    }
+
+    #[test]
+    fn test_del_checkpoint_single() {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        let chkpt_db = RBCheckpointDB::new(db, db_ops);
+
+        let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
+        let epoch = 5;
+
+        // Insert checkpoint
+        chkpt_db
+            .put_checkpoint(epoch, checkpoint.clone())
+            .expect("test: insert");
+
+        // Verify it exists
+        assert!(chkpt_db.get_checkpoint(epoch).expect("test: get").is_some());
+
+        // Delete it
+        let deleted = chkpt_db.del_checkpoint(epoch).expect("test: delete");
+        assert!(
+            deleted,
+            "Should return true when deleting existing checkpoint"
+        );
+
+        // Verify it's gone
+        assert!(chkpt_db
+            .get_checkpoint(epoch)
+            .expect("test: get after delete")
+            .is_none());
+
+        // Delete again should return false
+        let deleted_again = chkpt_db.del_checkpoint(epoch).expect("test: delete again");
+        assert!(
+            !deleted_again,
+            "Should return false when deleting non-existent checkpoint"
+        );
+    }
+
+    #[test]
+    fn test_del_checkpoints_from_epoch() {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        let chkpt_db = RBCheckpointDB::new(db, db_ops);
+
+        let checkpoint: CheckpointEntry = ArbitraryGenerator::new().generate();
+
+        // Insert checkpoints for epochs 1, 3, 5, 7
+        chkpt_db
+            .put_checkpoint(1, checkpoint.clone())
+            .expect("test: insert 1");
+        chkpt_db
+            .put_checkpoint(3, checkpoint.clone())
+            .expect("test: insert 3");
+        chkpt_db
+            .put_checkpoint(5, checkpoint.clone())
+            .expect("test: insert 5");
+        chkpt_db
+            .put_checkpoint(7, checkpoint.clone())
+            .expect("test: insert 7");
+
+        // Delete from epoch 4 onwards
+        let deleted_epochs = chkpt_db
+            .del_checkpoints_from_epoch(4)
+            .expect("test: delete from epoch 4");
+        assert_eq!(deleted_epochs, vec![5, 7], "Should delete epochs 5 and 7");
+
+        // Verify epochs 1 and 3 still exist, epochs 5 and 7 are gone
+        assert!(chkpt_db.get_checkpoint(1).expect("test: get 1").is_some());
+        assert!(chkpt_db.get_checkpoint(3).expect("test: get 3").is_some());
+        assert!(chkpt_db.get_checkpoint(5).expect("test: get 5").is_none());
+        assert!(chkpt_db.get_checkpoint(7).expect("test: get 7").is_none());
+
+        // Delete from epoch 2 onwards
+        let deleted_epochs = chkpt_db
+            .del_checkpoints_from_epoch(2)
+            .expect("test: delete from epoch 2");
+        assert_eq!(deleted_epochs, vec![3], "Should delete epoch 3");
+
+        // Verify only epoch 1 remains
+        assert!(chkpt_db
+            .get_checkpoint(1)
+            .expect("test: get 1 final")
+            .is_some());
+        assert!(chkpt_db
+            .get_checkpoint(3)
+            .expect("test: get 3 final")
+            .is_none());
+    }
+
+    #[test]
+    fn test_del_epoch_summary_single() {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        let chkpt_db = RBCheckpointDB::new(db, db_ops);
+
+        let summary: EpochSummary = ArbitraryGenerator::new().generate();
+        let commitment = summary.get_epoch_commitment();
+
+        // Insert summary
+        chkpt_db
+            .insert_epoch_summary(summary)
+            .expect("test: insert");
+
+        // Verify it exists
+        assert!(chkpt_db
+            .get_epoch_summary(commitment)
+            .expect("test: get")
+            .is_some());
+
+        // Delete it
+        let deleted = chkpt_db
+            .del_epoch_summary(commitment)
+            .expect("test: delete");
+        assert!(deleted, "Should return true when deleting existing summary");
+
+        // Verify it's gone
+        assert!(chkpt_db
+            .get_epoch_summary(commitment)
+            .expect("test: get after delete")
+            .is_none());
+
+        // Delete again should return false
+        let deleted_again = chkpt_db
+            .del_epoch_summary(commitment)
+            .expect("test: delete again");
+        assert!(
+            !deleted_again,
+            "Should return false when deleting non-existent summary"
+        );
+    }
+
+    #[test]
+    fn test_del_epoch_summaries_from_epoch() {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        let chkpt_db = RBCheckpointDB::new(db, db_ops);
+
+        let mut ag = ArbitraryGenerator::new();
+
+        // Create summaries for epochs 1, 2, 3
+        let summary1: EpochSummary = EpochSummary::new(
+            1,
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+        );
+        let summary2: EpochSummary = EpochSummary::new(
+            2,
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+        );
+        let summary3: EpochSummary = EpochSummary::new(
+            3,
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+        );
+
+        let commitment1 = summary1.get_epoch_commitment();
+        let commitment2 = summary2.get_epoch_commitment();
+        let commitment3 = summary3.get_epoch_commitment();
+
+        // Insert all summaries
+        chkpt_db
+            .insert_epoch_summary(summary1)
+            .expect("test: insert 1");
+        chkpt_db
+            .insert_epoch_summary(summary2)
+            .expect("test: insert 2");
+        chkpt_db
+            .insert_epoch_summary(summary3)
+            .expect("test: insert 3");
+
+        // Delete from epoch 2 onwards
+        let deleted_epochs = chkpt_db
+            .del_epoch_summaries_from_epoch(2)
+            .expect("test: delete from epoch 2");
+        assert_eq!(deleted_epochs, vec![2, 3], "Should delete epochs 2 and 3");
+
+        // Verify epoch 1 still exists, epochs 2 and 3 are gone
+        assert!(chkpt_db
+            .get_epoch_summary(commitment1)
+            .expect("test: get 1")
+            .is_some());
+        assert!(chkpt_db
+            .get_epoch_summary(commitment2)
+            .expect("test: get 2")
+            .is_none());
+        assert!(chkpt_db
+            .get_epoch_summary(commitment3)
+            .expect("test: get 3")
+            .is_none());
+
+        // Delete from epoch 0 onwards (should delete epoch 1)
+        let deleted_epochs = chkpt_db
+            .del_epoch_summaries_from_epoch(0)
+            .expect("test: delete from epoch 0");
+        assert_eq!(deleted_epochs, vec![1], "Should delete epoch 1");
+
+        // Verify all are gone
+        assert!(chkpt_db
+            .get_epoch_summary(commitment1)
+            .expect("test: get 1 final")
+            .is_none());
+    }
+
+    #[test]
+    fn test_del_epoch_summary_from_multiple() {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        let chkpt_db = RBCheckpointDB::new(db, db_ops);
+
+        let mut ag = ArbitraryGenerator::new();
+        let summary1: EpochSummary = ag.generate();
+        let epoch = summary1.epoch();
+        let summary2 = EpochSummary::new(
+            epoch,
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+            ag.generate(),
+        );
+
+        let commitment1 = summary1.get_epoch_commitment();
+        let commitment2 = summary2.get_epoch_commitment();
+
+        // Insert both summaries
+        chkpt_db
+            .insert_epoch_summary(summary1)
+            .expect("test: insert 1");
+        chkpt_db
+            .insert_epoch_summary(summary2)
+            .expect("test: insert 2");
+
+        // Verify both exist
+        assert!(chkpt_db
+            .get_epoch_summary(commitment1)
+            .expect("test: get 1")
+            .is_some());
+        assert!(chkpt_db
+            .get_epoch_summary(commitment2)
+            .expect("test: get 2")
+            .is_some());
+
+        // Delete first summary
+        let deleted = chkpt_db
+            .del_epoch_summary(commitment1)
+            .expect("test: delete 1");
+        assert!(deleted);
+
+        // Verify first is gone, second still exists
+        assert!(chkpt_db
+            .get_epoch_summary(commitment1)
+            .expect("test: get 1 after delete")
+            .is_none());
+        assert!(chkpt_db
+            .get_epoch_summary(commitment2)
+            .expect("test: get 2 after delete")
+            .is_some());
+
+        // Delete second summary
+        let deleted = chkpt_db
+            .del_epoch_summary(commitment2)
+            .expect("test: delete 2");
+        assert!(deleted);
+
+        // Verify both are gone
+        assert!(chkpt_db
+            .get_epoch_summary(commitment1)
+            .expect("test: get 1 final")
+            .is_none());
+        assert!(chkpt_db
+            .get_epoch_summary(commitment2)
+            .expect("test: get 2 final")
+            .is_none());
+    }
+
+    #[test]
+    fn test_del_checkpoints_empty_database() {
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        let chkpt_db = RBCheckpointDB::new(db, db_ops);
+
+        // Delete from empty database should return empty vec
+        let deleted_epochs = chkpt_db
+            .del_checkpoints_from_epoch(0)
+            .expect("test: delete from empty");
+        assert!(
+            deleted_epochs.is_empty(),
+            "Should return empty vec for empty database"
+        );
+
+        let deleted_epochs = chkpt_db
+            .del_epoch_summaries_from_epoch(0)
+            .expect("test: delete summaries from empty");
+        assert!(
+            deleted_epochs.is_empty(),
+            "Should return empty vec for empty database"
+        );
     }
 }

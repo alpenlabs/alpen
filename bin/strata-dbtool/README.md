@@ -92,6 +92,72 @@ strata-dbtool get-l1-manifest <block_id> [OPTIONS]
 strata-dbtool get-l1-manifest 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
 ```
 
+### `get-writer-summary`
+Shows a summary of writer database contents including payload and intent entry counts.
+
+```bash
+strata-dbtool get-writer-summary [OPTIONS]
+```
+
+**Options:**
+- `-o, --output-format <format>` - Output format (default: porcelain)
+
+**Example:**
+```bash
+strata-dbtool get-writer-summary
+```
+
+### `get-writer-payload`
+Shows detailed information about a specific writer payload entry by index.
+
+```bash
+strata-dbtool get-writer-payload <index> [OPTIONS]
+```
+
+**Arguments:**
+- `index` - Payload entry index (number)
+
+**Options:**
+- `-o, --output-format <format>` - Output format (default: porcelain)
+
+**Example:**
+```bash
+strata-dbtool get-writer-payload 5
+```
+
+### `get-broadcaster-summary`
+Shows a summary of broadcaster database contents including transaction counts by status.
+
+```bash
+strata-dbtool get-broadcaster-summary [OPTIONS]
+```
+
+**Options:**
+- `-o, --output-format <format>` - Output format (default: porcelain)
+
+**Example:**
+```bash
+strata-dbtool get-broadcaster-summary
+```
+
+### `get-broadcaster-tx`
+Shows detailed information about a specific broadcaster transaction entry by index.
+
+```bash
+strata-dbtool get-broadcaster-tx <index> [OPTIONS]
+```
+
+**Arguments:**
+- `index` - Transaction entry index (number)
+
+**Options:**
+- `-o, --output-format <format>` - Output format (default: porcelain)
+
+**Example:**
+```bash
+strata-dbtool get-broadcaster-tx 3
+```
+
 ### `get-l2-summary`
 Shows a summary of L2 blocks in the database.
 
