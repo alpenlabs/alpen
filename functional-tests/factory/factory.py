@@ -274,6 +274,11 @@ class FullNodeFactory(flexitest.Factory):
         svc.stop_timeout = 30
         svc.start()
         _inject_service_create_rpc(svc, rpc_url, name)
+
+        def _datadir_path() -> str:
+            return datadir
+
+        svc.datadir_path = _datadir_path
         return svc
 
 

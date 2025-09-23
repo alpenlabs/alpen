@@ -2,6 +2,7 @@ import json
 import os
 from typing import Any
 
+from envs.testenv import StrataTestBase
 from utils.dbtool import extract_json_from_output, run_dbtool_command
 
 from . import BaseMixin
@@ -42,6 +43,10 @@ class DbtoolMixin(BaseMixin):
         """Get checkpoint data for specific index and return parsed data"""
         return self.__run_dbtool_json_command("get-checkpoint", str(checkpoint_index), "-o", "json")
 
+    def get_epoch_summary(self, epoch_index: int) -> dict[str, Any]:
+        """Get epoch summary for specific epoch index and return parsed data"""
+        return self.__run_dbtool_json_command("get-epoch-summary", str(epoch_index), "-o", "json")
+
     def revert_chainstate(self, block_id: str, *args) -> tuple[int, str, str]:
         """Run revert-chainstate command and return (return_code, stdout, stderr)"""
         datadir = self.__get_datadir()
@@ -71,11 +76,46 @@ class DbtoolMixin(BaseMixin):
             raise ValueError(f"Invalid JSON from {subcommand}: {e}") from e
 
     def __get_datadir(self) -> str:
-        """Get sequencer datadir and validate it exists"""
-        datadir = self.seq.datadir_path()
-
+        datadir = self._get_dbtool_datadir()
         if not os.path.exists(datadir):
-            self.error(f"Sequencer datadir does not exist: {datadir}")
-            raise FileNotFoundError(f"Sequencer datadir does not exist: {datadir}")
-
+            self.error(f"Datadir does not exist: {datadir}")
+            raise FileNotFoundError(f"Datadir does not exist: {datadir}")
         return datadir
+
+    def _get_dbtool_datadir(self) -> str:
+        """Subclasses must implement this to return the appropriate datadir path."""
+        raise NotImplementedError("Subclasses must implement _get_dbtool_datadir()")
+
+
+class SequencerDbtoolMixin(DbtoolMixin):
+    def _get_dbtool_datadir(self) -> str:
+        return self.seq.datadir_path()
+
+
+class FullnodeDbtoolMixin(DbtoolMixin):
+    """Dbtool mixin for fullnode tests that uses follower_1_node datadir."""
+
+    def premain(self, ctx):
+        """Override premain to set up fullnode services instead of sequencer services."""
+        StrataTestBase.premain(self, ctx)
+        self._ctx = ctx
+
+        # Set up fullnode-specific services (available in HubNetworkEnvConfig)
+        self.btc = ctx.get_service("bitcoin")
+        self.seq = ctx.get_service("seq_node")
+        self.seq_signer = ctx.get_service("sequencer_signer")
+        self.reth = ctx.get_service("seq_reth")
+        self.follower_1_node = ctx.get_service("follower_1_node")
+        self.follower_1_reth = ctx.get_service("follower_1_reth")
+
+        # Create RPC connections
+        self.seqrpc = self.seq.create_rpc()
+        self.btcrpc = self.btc.create_rpc()
+        self.rethrpc = self.reth.create_rpc()
+        self.web3 = self.reth.create_web3()
+        self.follower_1_rpc = self.follower_1_node.create_rpc()
+        self.follower_1_reth_rpc = self.follower_1_reth.create_rpc()
+
+    def _get_dbtool_datadir(self) -> str:
+        """Get fullnode datadir for dbtool operations."""
+        return self.follower_1_node.datadir_path()

@@ -2,7 +2,7 @@ import flexitest
 from web3 import Web3
 
 from envs import net_settings, testenv
-from mixins.dbtool_mixin import DbtoolMixin
+from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils import *
 
 
@@ -20,7 +20,7 @@ def send_tx(web3: Web3):
 
 
 @flexitest.register
-class CLReorgResumeBlockProductionTest(DbtoolMixin):
+class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
     """This tests sync when el is missing blocks"""
 
     def __init__(self, ctx: flexitest.InitContext):

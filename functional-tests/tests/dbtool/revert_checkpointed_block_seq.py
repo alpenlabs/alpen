@@ -1,14 +1,14 @@
 import flexitest
 
 from envs import net_settings, testenv
-from mixins.dbtool_mixin import DbtoolMixin
+from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils.dbtool import send_tx
 from utils.utils import ProverClientSettings
 
 
 @flexitest.register
-class DbtoolRevertChainstateTest(DbtoolMixin):
-    """Test that chainstate revert functionality works correctly with reth database sync"""
+class RevertCheckpointedBlockSeqTest(SequencerDbtoolMixin):
+    """Test revert checkpointed block on sequencer"""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -39,10 +39,10 @@ class DbtoolRevertChainstateTest(DbtoolMixin):
         # Wait for both services to be in sync
         old_ol_block_number = self.seqrpc.strata_syncStatus()["tip_height"]
         old_el_block_number = int(self.rethrpc.eth_blockNumber(), base=16)
-        self.info(f"OL block number: {old_ol_block_number}, EL block number: {old_el_block_number}")
         old_el_blockhash = self.rethrpc.eth_getBlockByNumber(hex(old_el_block_number), False)[
             "hash"
         ]
+        self.info(f"OL block number: {old_ol_block_number}, EL block number: {old_el_block_number}")
 
         # Check if both services are at the same state before proceeding
         if old_ol_block_number != old_el_block_number:
@@ -65,64 +65,50 @@ class DbtoolRevertChainstateTest(DbtoolMixin):
             return False
 
         # Get the latest checkpoint index (checkpoints_count - 1)
-        latest_checkpt_index = checkpoints_count - 1
-        self.info(f"Latest checkpoint index: {latest_checkpt_index}")
+        checkpt_idx_before_revert = checkpoints_count - 1
+        self.info(f"Latest checkpoint index: {checkpt_idx_before_revert}")
+
+        epoch_summary = self.get_epoch_summary(checkpt_idx_before_revert)
+        self.info(f"Epoch summary before revert: {epoch_summary}")
 
         # Get the latest checkpoint details
-        latest_checkpt = self.get_checkpoint(latest_checkpt_index).get("checkpoint", {})
+        checkpt_before_revert = self.get_checkpoint(checkpt_idx_before_revert).get("checkpoint", {})
 
         # Extract the L2 range from the checkpoint
-        batch_info = latest_checkpt.get("commitment", {}).get("batch_info", {})
+        batch_info = checkpt_before_revert.get("commitment", {}).get("batch_info", {})
         l2_range = batch_info.get("l2_range", {})
 
         if not l2_range:
             self.error("Could not find L2 range in checkpoint")
             return False
 
-        # Get the checkpoint end slot
-        checkpt_end_slot = l2_range[1].get("slot")
-        checkpt_end_block_id = l2_range[1].get("blkid")
+        # Get a block within the checkpointed range (use the first block in the range)
+        checkpt_start_slot = l2_range[0].get("slot")
+        checkpt_start_block_id = l2_range[0].get("blkid")
+        target_slot = checkpt_start_slot
+        target_block_id = checkpt_start_block_id
 
-        if checkpt_end_slot is None:
-            self.error("Could not find checkpoint end slot")
+        if checkpt_start_slot is None or not checkpt_start_block_id:
+            self.error("Could not find checkpoint start slot or block ID")
             return False
 
-        self.info(f"Checkpoint end slot: {checkpt_end_slot}")
+        self.info(
+            f"Checkpoint start slot: {checkpt_start_slot}, block ID: {checkpt_start_block_id}"
+        )
 
-        # Get sync information to find the current tip
-        sync_info = self.get_syncinfo()
-        tip_block_id = sync_info.get("l2_tip_block_id")
-        tip_slot = sync_info.get("l2_tip_height")
-
-        if tip_slot is None or not tip_block_id:
-            self.error("Could not find tip block information")
-            return False
-
-        self.info(f"Tip slot: {tip_slot}, tip block ID: {tip_block_id}")
-
-        # Ensure we have blocks outside the checkpointed range
-        if tip_slot <= checkpt_end_slot:
-            self.info("No blocks outside checkpointed range - test cannot proceed")
-            return True
-
-        target_block_id = checkpt_end_block_id
-        target_slot = checkpt_end_slot
-
+        # Try to revert to a checkpointed block with -c flag - this should succeed
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
-
-        # Revert chainstate with no flags
-        self.info(f"Testing revert-chainstate to {target_block_id} with no flags")
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id)
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-c")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")
             self.error(f"Stderr: {stderr}")
             return False
 
-        self.info("Revert chainstate completed successfully")
+        self.info(f"revert-chainstate succeeded with return code {return_code}")
         self.info(f"Stdout: {stdout}")
 
-        # Verify chainstate was reverted correctly
+        # Verify the chainstate was reverted correctly
         self.info("Verifying chainstate after revert")
         reverted_chainstate = self.get_chainstate(target_block_id)
 
@@ -149,8 +135,15 @@ class DbtoolRevertChainstateTest(DbtoolMixin):
         self.seq.start()
         self.seq_signer.start()
 
-        # Wait for services to sync
-        seq_waiter.wait_until_chain_tip_exceeds(old_ol_block_number + 1, timeout=30)
+        # Wait for block production to resume to sync
+        seq_waiter.wait_until_chain_tip_exceeds(old_ol_block_number + 1, timeout=120)
+
+        # Wait for new epoch summary to be created
+        self.info("Waiting for new epoch summary to be created after restart")
+        epoch_summary = seq_waiter.wait_until_chain_epoch(
+            checkpt_idx_before_revert + 1, timeout=120
+        )
+        self.info(f"Epoch summary after restart: {epoch_summary}")
 
         new_ol_block_number = self.seqrpc.strata_syncStatus()["tip_height"]
         new_el_block_number = int(self.rethrpc.eth_blockNumber(), base=16)
