@@ -1,5 +1,5 @@
 use bitcoin::Transaction;
-use strata_primitives::l1::{DepositInfo, DepositRequestInfo, DepositSpendInfo, OutputRef};
+use strata_primitives::l1::{DepositInfo, DepositSpendInfo, OutputRef};
 
 mod checkpoint;
 pub mod indexer;
@@ -9,21 +9,9 @@ mod withdrawal_fulfillment;
 use checkpoint::parse_valid_checkpoint_envelopes;
 use withdrawal_fulfillment::try_parse_tx_as_withdrawal_fulfillment;
 
-use crate::{
-    deposit::{deposit_request::extract_deposit_request_info, deposit_tx::extract_deposit_info},
-    filter::types::TxFilterConfig,
-};
+use crate::{deposit::deposit_tx::extract_deposit_info, filter::types::TxFilterConfig};
 
 // TODO move all these functions to other modules
-
-fn extract_deposit_requests(
-    tx: &Transaction,
-    filter_conf: &TxFilterConfig,
-) -> impl Iterator<Item = DepositRequestInfo> {
-    // TODO: Currently only one item is parsed, need to check thoroughly and parse multiple
-    extract_deposit_request_info(tx, &filter_conf.deposit_config).into_iter()
-}
-
 /// Parse deposits from [`Transaction`].
 fn try_parse_tx_deposit(
     tx: &Transaction,
@@ -66,54 +54,11 @@ mod test {
     };
     use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils_btc::{
-        build_test_deposit_request_script, build_test_deposit_script, create_test_deposit_tx,
-        test_taproot_addr,
+        build_test_deposit_script, create_test_deposit_tx, test_taproot_addr,
     };
     use strata_test_utils_l2::gen_params;
 
-    use crate::{
-        filter::{extract_deposit_requests, try_parse_tx_deposit},
-        utils::test_utils::create_tx_filter_config,
-    };
-
-    #[test]
-    fn test_parse_deposit_request() {
-        let params = gen_params();
-        let (filter_conf, keypair) = create_tx_filter_config(&params);
-        let mut deposit_conf = filter_conf.deposit_config.clone();
-
-        let extra_amt = 10000;
-        deposit_conf.deposit_amount += extra_amt;
-        let dest_addr = vec![2u8; 20]; // Example EVM address
-        let dummy_block = [0u8; 32]; // Example dummy block
-        let deposit_request_script = build_test_deposit_request_script(
-            deposit_conf.magic_bytes.to_vec(),
-            dummy_block.to_vec(),
-            dest_addr.clone(),
-        );
-
-        let tapnode_hash = [0u8; 32];
-
-        let tx = create_test_deposit_tx(
-            Amount::from_sat(deposit_conf.deposit_amount), // Any amount
-            &deposit_conf.address.address().script_pubkey(),
-            &deposit_request_script,
-            &keypair,
-            &tapnode_hash,
-        );
-
-        let deposit_reqs: Vec<_> = extract_deposit_requests(&tx, &filter_conf).collect();
-        assert_eq!(deposit_reqs.len(), 1, "Should find one deposit request");
-
-        assert_eq!(
-            deposit_reqs[0].address, dest_addr,
-            "EE address should match"
-        );
-        assert_eq!(
-            deposit_reqs[0].take_back_leaf_hash, dummy_block,
-            "Control block should match"
-        );
-    }
+    use crate::{filter::try_parse_tx_deposit, utils::test_utils::create_tx_filter_config};
 
     #[test]
     fn test_parse_deposit_txs() {

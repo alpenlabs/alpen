@@ -4,17 +4,13 @@ use strata_l1tx::{
 };
 use strata_primitives::{
     batch::SignedCheckpoint,
-    l1::{
-        DepositInfo, DepositRequestInfo, DepositSpendInfo, ProtocolOperation,
-        WithdrawalFulfillmentInfo,
-    },
+    l1::{DepositInfo, DepositSpendInfo, ProtocolOperation, WithdrawalFulfillmentInfo},
 };
 
 /// Ops indexer for rollup client. Collects extra info like da blobs and deposit requests
 #[derive(Clone, Debug)]
 pub(crate) struct ReaderTxVisitorImpl {
     ops: Vec<ProtocolOperation>,
-    deposit_requests: Vec<DepositRequestInfo>,
     da_entries: Vec<DaEntry>,
 }
 
@@ -22,7 +18,6 @@ impl ReaderTxVisitorImpl {
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
-            deposit_requests: Vec::new(),
             da_entries: Vec::new(),
         }
     }
@@ -42,10 +37,6 @@ impl TxVisitor for ReaderTxVisitorImpl {
         self.ops.push(ProtocolOperation::Deposit(d));
     }
 
-    fn visit_deposit_request(&mut self, dr: DepositRequestInfo) {
-        self.deposit_requests.push(dr);
-    }
-
     fn visit_checkpoint(&mut self, chkpt: SignedCheckpoint) {
         self.ops.push(ProtocolOperation::Checkpoint(chkpt));
     }
@@ -60,14 +51,10 @@ impl TxVisitor for ReaderTxVisitorImpl {
     }
 
     fn finalize(self) -> Option<L1TxMessages> {
-        if self.ops.is_empty() && self.deposit_requests.is_empty() && self.da_entries.is_empty() {
+        if self.ops.is_empty() && self.da_entries.is_empty() {
             None
         } else {
-            Some(L1TxMessages::new(
-                self.ops,
-                self.deposit_requests,
-                self.da_entries,
-            ))
+            Some(L1TxMessages::new(self.ops, self.da_entries))
         }
     }
 }

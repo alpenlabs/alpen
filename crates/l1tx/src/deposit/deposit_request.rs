@@ -101,7 +101,13 @@ fn parse_tag_script(
     let dest = &buf[32..];
     if dest.len() != config.address_length as usize {
         // casting is safe as address.len() < buf.len() < 80
-        debug!(?buf, expected = config.address_length, got = %dest.len(), "incorrect number of bytes in dest");
+        debug!(
+            buf = ?buf,
+            dest = ?dest,
+            expected = config.address_length,
+            got = %dest.len(),
+            "incorrect number of bytes in dest buf"
+        );
         return Err(DepositParseError::InvalidDestLen(dest.len() as u8));
     }
 
