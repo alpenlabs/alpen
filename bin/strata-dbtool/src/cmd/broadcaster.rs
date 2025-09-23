@@ -7,24 +7,24 @@ use strata_db::{traits::L1BroadcastDatabase, types::L1TxStatus};
 use crate::{
     cli::OutputFormat,
     output::{
-        l1_broadcaster::{L1BroadcasterSummary, L1BroadcasterTxInfo},
+        broadcaster::{BroadcasterSummary, BroadcasterTxInfo},
         output,
     },
 };
 
 #[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "get-l1-broadcaster-summary")]
-/// Get summary of L1 broadcaster database
-pub(crate) struct GetL1BroadcasterSummaryArgs {
+#[argh(subcommand, name = "get-broadcaster-summary")]
+/// Get summary of broadcaster database
+pub(crate) struct GetBroadcasterSummaryArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "get-l1-broadcaster-tx")]
-/// Get L1 broadcaster transaction entry by index
-pub(crate) struct GetL1BroadcasterTxArgs {
+#[argh(subcommand, name = "get-broadcaster-tx")]
+/// Get broadcaster transaction entry by index
+pub(crate) struct GetBroadcasterTxArgs {
     /// transaction index
     #[argh(positional)]
     pub(crate) index: u64,
@@ -34,10 +34,10 @@ pub(crate) struct GetL1BroadcasterTxArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-/// Get summary of L1 broadcaster database
-pub(crate) fn get_l1_broadcaster_summary(
+/// Get summary of broadcaster database
+pub(crate) fn get_broadcaster_summary(
     broadcast_db: Arc<impl L1BroadcastDatabase>,
-    args: GetL1BroadcasterSummaryArgs,
+    args: GetBroadcasterSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let mut total_tx_entries = 0;
     let mut unpublished_count = 0;
@@ -68,7 +68,7 @@ pub(crate) fn get_l1_broadcaster_summary(
         }
     }
 
-    let summary = L1BroadcasterSummary {
+    let summary = BroadcasterSummary {
         total_tx_entries,
         unpublished_count,
         published_count,
@@ -80,10 +80,10 @@ pub(crate) fn get_l1_broadcaster_summary(
     output(&summary, args.output_format)
 }
 
-/// Get L1 broadcaster transaction entry by index
-pub(crate) fn get_l1_broadcaster_tx(
+/// Get broadcaster transaction entry by index
+pub(crate) fn get_broadcaster_tx(
     broadcast_db: Arc<impl L1BroadcastDatabase>,
-    args: GetL1BroadcasterTxArgs,
+    args: GetBroadcasterTxArgs,
 ) -> Result<(), DisplayedError> {
     let tx_entry = match broadcast_db.get_tx_entry(args.index) {
         Ok(Some(entry)) => entry,
@@ -113,7 +113,7 @@ pub(crate) fn get_l1_broadcaster_tx(
         }
     };
 
-    let tx_info = L1BroadcasterTxInfo {
+    let tx_info = BroadcasterTxInfo {
         index: args.index,
         txid: match broadcast_db.get_txid(args.index) {
             Ok(Some(txid)) => txid,

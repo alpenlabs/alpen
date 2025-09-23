@@ -4,9 +4,9 @@ use strata_primitives::buf::Buf32;
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
-/// Summary information for L1 broadcaster database
+/// Summary information for broadcaster database
 #[derive(Serialize)]
-pub(crate) struct L1BroadcasterSummary {
+pub(crate) struct BroadcasterSummary {
     pub(crate) total_tx_entries: u64,
     pub(crate) unpublished_count: u64,
     pub(crate) published_count: u64,
@@ -15,9 +15,9 @@ pub(crate) struct L1BroadcasterSummary {
     pub(crate) invalid_inputs_count: u64,
 }
 
-/// Individual L1 broadcaster transaction information
+/// Individual broadcaster transaction information
 #[derive(Serialize)]
-pub(crate) struct L1BroadcasterTxInfo<'a> {
+pub(crate) struct BroadcasterTxInfo<'a> {
     pub(crate) index: u64,
     pub(crate) txid: Buf32,
     pub(crate) status: &'a L1TxStatus,
@@ -25,7 +25,7 @@ pub(crate) struct L1BroadcasterTxInfo<'a> {
     pub(crate) raw_tx: &'a [u8],
 }
 
-impl Formattable for L1BroadcasterSummary {
+impl Formattable for BroadcasterSummary {
     fn format_porcelain(&self) -> String {
         [
             porcelain_field("total_tx_entries", self.total_tx_entries),
@@ -39,7 +39,7 @@ impl Formattable for L1BroadcasterSummary {
     }
 }
 
-impl<'a> Formattable for L1BroadcasterTxInfo<'a> {
+impl<'a> Formattable for BroadcasterTxInfo<'a> {
     fn format_porcelain(&self) -> String {
         [
             porcelain_field("tx_index", self.index),

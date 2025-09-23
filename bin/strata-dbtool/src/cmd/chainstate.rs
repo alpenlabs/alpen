@@ -79,20 +79,20 @@ pub(crate) fn get_latest_l2_write_batch(
     })
 }
 
-/// Deletes L1 writer database entries and L1 broadcast database entries associated with a specific
+/// Deletes writer database entries and broadcast database entries associated with a specific
 /// checkpoint
 fn delete_l1_entries_for_checkpoint(
     db: &impl DatabaseBackend,
     epoch: u64,
     checkpoint: &Checkpoint,
 ) -> Result<(), DisplayedError> {
-    let l1_writer_db = db.writer_db();
-    let l1_broadcast_db = db.broadcast_db();
+    let writer_db = db.writer_db();
+    let broadcast_db = db.broadcast_db();
     // Compute the checkpoint hash (same way as in complete_checkpoint_signature)
     let checkpoint_hash = checkpoint.hash();
 
     // Find the intent entry by this hash
-    if let Some(intent_entry) = l1_writer_db
+    if let Some(intent_entry) = writer_db
         .get_intent_by_id(checkpoint_hash)
         .internal_error("Failed to get intent entry")?
     {
@@ -100,33 +100,27 @@ fn delete_l1_entries_for_checkpoint(
         match intent_entry.status {
             IntentStatus::Bundled(bundle_idx) => {
                 // Get the payload entry to find commit and reveal txids
-                if let Some(payload_entry) = l1_writer_db
+                if let Some(payload_entry) = writer_db
                     .get_payload_entry_by_idx(bundle_idx)
                     .internal_error("Failed to get payload entry")?
                 {
                     // Delete commit transaction entry from broadcast DB
-                    if l1_broadcast_db
-                        .del_tx_entry(payload_entry.commit_txid)
-                        .is_ok()
-                    {
+                    if broadcast_db.del_tx_entry(payload_entry.commit_txid).is_ok() {
                         println!("Deleted commit tx entry for checkpoint epoch {}", epoch);
                     }
 
                     // Delete reveal transaction entry from broadcast DB
-                    if l1_broadcast_db
-                        .del_tx_entry(payload_entry.reveal_txid)
-                        .is_ok()
-                    {
+                    if broadcast_db.del_tx_entry(payload_entry.reveal_txid).is_ok() {
                         println!("Deleted reveal tx entry for checkpoint epoch {}", epoch);
                     }
                 }
 
                 // Delete the bundled payload entry from writer DB
-                l1_writer_db
+                writer_db
                     .del_payload_entry(bundle_idx)
                     .internal_error("Failed to delete payload entry")?;
                 // Delete the intent entry from writer DB
-                l1_writer_db
+                writer_db
                     .del_intent_entry(checkpoint_hash)
                     .internal_error("Failed to delete intent entry")?;
                 println!(
@@ -136,7 +130,7 @@ fn delete_l1_entries_for_checkpoint(
             }
             IntentStatus::Unbundled => {
                 // Just delete the intent entry from writer DB
-                l1_writer_db
+                writer_db
                     .del_intent_entry(checkpoint_hash)
                     .internal_error("Failed to delete intent entry")?;
                 println!(
