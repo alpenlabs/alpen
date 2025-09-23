@@ -61,14 +61,14 @@ $DATATOOL_PATH -b regtest genxpriv -f $OP5_SEED_FILE
 seqprivkey=$($DATATOOL_PATH -b regtest genseqprivkey -f ${SEQ_SEED_FILE})
 echo -n "$seqprivkey" > $CONFIG_FILE/sequencer.key
 
-op1pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP1_SEED_FILE})
-op2pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP2_SEED_FILE})
+op1xpriv=$(cat $OP1_SEED_FILE)
+op2xpriv=$(cat $OP2_SEED_FILE)
 # shellcheck disable=2034
-op3pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP3_SEED_FILE})
+op3xpriv=$(cat $OP3_SEED_FILE)
 # shellcheck disable=2034
-op4pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP4_SEED_FILE})
+op4xpriv=$(cat $OP4_SEED_FILE)
 # shellcheck disable=2034
-op5pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP5_SEED_FILE})
+op5xpriv=$(cat $OP5_SEED_FILE)
 
 seqpubkey=$($DATATOOL_PATH -b regtest genseqpubkey -f ${CONFIG_FILE}/sequencer.key)
 
@@ -78,7 +78,7 @@ ROLLUP_PARAMS_FILE=$CONFIG_FILE/params.json
 # Check if -n is set in args
 # shellcheck disable=2199
 if [[ "$@" != *"-n "* ]]; then
-    extra_args+=("-n" "alpenstrata")
+    extra_args+=("-n" "alpn")
 fi
 
 if [ -z "$output_found" ]; then
@@ -92,7 +92,7 @@ $DATATOOL_PATH -b regtest \
     --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
     genparams \
     -s "$seqpubkey" \
-    -b "$op1pubkey" \
-    -b "$op2pubkey" \
+    -b "$op1xpriv" \
+    -b "$op2xpriv" \
     "${extra_args[@]}" \
     "$@"
