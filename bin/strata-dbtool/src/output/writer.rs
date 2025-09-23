@@ -4,8 +4,9 @@ use strata_primitives::{buf::Buf32, l1::payload::L1Payload};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
+/// Summary information for writer database
 #[derive(Serialize)]
-pub(crate) struct L1WriterSummary {
+pub(crate) struct WriterSummary {
     pub(crate) total_payload_entries: u64,
     pub(crate) total_intent_entries: u64,
     pub(crate) checkpoints_with_l1_entries: u64,
@@ -13,7 +14,7 @@ pub(crate) struct L1WriterSummary {
     pub(crate) total_checkpoints: u64,
 }
 
-impl Formattable for L1WriterSummary {
+impl Formattable for WriterSummary {
     fn format_porcelain(&self) -> String {
         [
             porcelain_field("total_payload_entries", self.total_payload_entries),
@@ -32,8 +33,9 @@ impl Formattable for L1WriterSummary {
     }
 }
 
+/// Individual writer payload information
 #[derive(Serialize)]
-pub(crate) struct L1WriterPayloadInfo {
+pub(crate) struct WriterPayloadInfo {
     pub(crate) index: u64,
     pub(crate) status: L1BundleStatus,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -44,7 +46,7 @@ pub(crate) struct L1WriterPayloadInfo {
     pub(crate) reveal_txid: Option<Buf32>,
 }
 
-impl Formattable for L1WriterPayloadInfo {
+impl Formattable for WriterPayloadInfo {
     fn format_porcelain(&self) -> String {
         let mut output = Vec::new();
 

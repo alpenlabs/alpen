@@ -11,15 +11,15 @@ use std::str::FromStr;
 use crate::{
     cli::{Cli, Command},
     cmd::{
+        broadcaster::{get_broadcaster_summary, get_broadcaster_tx},
         chainstate::{get_chainstate, revert_chainstate},
         checkpoint::{get_checkpoint, get_checkpoints_summary, get_epoch_summary},
         client_state::get_client_state_update,
         l1::{get_l1_manifest, get_l1_summary},
-        l1_broadcaster::{get_l1_broadcaster_summary, get_l1_broadcaster_tx},
-        l1_writer::{get_l1_writer_payload, get_l1_writer_summary},
         l2::{get_l2_block, get_l2_summary},
         sync_event::{get_sync_event, get_sync_events_summary},
         syncinfo::get_syncinfo,
+        writer::{get_writer_payload, get_writer_summary},
     },
     db::{open_database, DbType},
 };
@@ -44,12 +44,10 @@ fn main() {
         Command::RevertChainstate(args) => revert_chainstate(&db, args),
         Command::GetL1Manifest(args) => get_l1_manifest(&db.core, args),
         Command::GetL1Summary(args) => get_l1_summary(&db.core, args),
-        Command::GetL1WriterSummary(args) => get_l1_writer_summary(&db, args),
-        Command::GetL1WriterPayload(args) => get_l1_writer_payload(&db, args),
-        Command::GetL1BroadcasterSummary(args) => {
-            get_l1_broadcaster_summary(db.broadcast_db(), args)
-        }
-        Command::GetL1BroadcasterTx(args) => get_l1_broadcaster_tx(db.broadcast_db(), args),
+        Command::GetWriterSummary(args) => get_writer_summary(&db, args),
+        Command::GetWriterPayload(args) => get_writer_payload(&db, args),
+        Command::GetBroadcasterSummary(args) => get_broadcaster_summary(db.broadcast_db(), args),
+        Command::GetBroadcasterTx(args) => get_broadcaster_tx(db.broadcast_db(), args),
         Command::GetL2Block(args) => get_l2_block(&db.core, args),
         Command::GetL2Summary(args) => get_l2_summary(&db.core, args),
         Command::GetCheckpoint(args) => get_checkpoint(&db.core, args),

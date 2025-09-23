@@ -92,11 +92,11 @@ strata-dbtool get-l1-manifest <block_id> [OPTIONS]
 strata-dbtool get-l1-manifest 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
 ```
 
-### `get-l1-writer-summary`
-Shows a summary of L1 writer database contents including payload and intent entry counts.
+### `get-writer-summary`
+Shows a summary of writer database contents including payload and intent entry counts.
 
 ```bash
-strata-dbtool get-l1-writer-summary [OPTIONS]
+strata-dbtool get-writer-summary [OPTIONS]
 ```
 
 **Options:**
@@ -104,14 +104,14 @@ strata-dbtool get-l1-writer-summary [OPTIONS]
 
 **Example:**
 ```bash
-strata-dbtool get-l1-writer-summary
+strata-dbtool get-writer-summary
 ```
 
-### `get-l1-writer-payload`
-Shows detailed information about a specific L1 writer payload entry by index.
+### `get-writer-payload`
+Shows detailed information about a specific writer payload entry by index.
 
 ```bash
-strata-dbtool get-l1-writer-payload <index> [OPTIONS]
+strata-dbtool get-writer-payload <index> [OPTIONS]
 ```
 
 **Arguments:**
@@ -122,14 +122,14 @@ strata-dbtool get-l1-writer-payload <index> [OPTIONS]
 
 **Example:**
 ```bash
-strata-dbtool get-l1-writer-payload 5
+strata-dbtool get-writer-payload 5
 ```
 
-### `get-l1-broadcaster-summary`
-Shows a summary of L1 broadcaster database contents including transaction counts by status.
+### `get-broadcaster-summary`
+Shows a summary of broadcaster database contents including transaction counts by status.
 
 ```bash
-strata-dbtool get-l1-broadcaster-summary [OPTIONS]
+strata-dbtool get-broadcaster-summary [OPTIONS]
 ```
 
 **Options:**
@@ -137,14 +137,14 @@ strata-dbtool get-l1-broadcaster-summary [OPTIONS]
 
 **Example:**
 ```bash
-strata-dbtool get-l1-broadcaster-summary
+strata-dbtool get-broadcaster-summary
 ```
 
-### `get-l1-broadcaster-tx`
-Shows detailed information about a specific L1 broadcaster transaction entry by index.
+### `get-broadcaster-tx`
+Shows detailed information about a specific broadcaster transaction entry by index.
 
 ```bash
-strata-dbtool get-l1-broadcaster-tx <index> [OPTIONS]
+strata-dbtool get-broadcaster-tx <index> [OPTIONS]
 ```
 
 **Arguments:**
@@ -155,7 +155,7 @@ strata-dbtool get-l1-broadcaster-tx <index> [OPTIONS]
 
 **Example:**
 ```bash
-strata-dbtool get-l1-broadcaster-tx 3
+strata-dbtool get-broadcaster-tx 3
 ```
 
 ### `get-l2-summary`

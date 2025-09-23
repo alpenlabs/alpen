@@ -3,15 +3,15 @@ use std::{path::PathBuf, str::FromStr};
 use argh::FromArgs;
 
 use crate::cmd::{
+    broadcaster::{GetBroadcasterSummaryArgs, GetBroadcasterTxArgs},
     chainstate::{GetChainstateArgs, RevertChainstateArgs},
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     client_state::GetClientStateUpdateArgs,
     l1::{GetL1ManifestArgs, GetL1SummaryArgs},
-    l1_broadcaster::{GetL1BroadcasterSummaryArgs, GetL1BroadcasterTxArgs},
-    l1_writer::{GetL1WriterPayloadArgs, GetL1WriterSummaryArgs},
     l2::{GetL2BlockArgs, GetL2SummaryArgs},
     sync_event::{GetSyncEventArgs, GetSyncEventsSummaryArgs},
     syncinfo::GetSyncinfoArgs,
+    writer::{GetWriterPayloadArgs, GetWriterSummaryArgs},
 };
 
 /// Strata DB tool – offline database & chain‑maintenance utility.
@@ -36,10 +36,10 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     GetL1Manifest(GetL1ManifestArgs),
     GetL1Summary(GetL1SummaryArgs),
-    GetL1WriterSummary(GetL1WriterSummaryArgs),
-    GetL1WriterPayload(GetL1WriterPayloadArgs),
-    GetL1BroadcasterSummary(GetL1BroadcasterSummaryArgs),
-    GetL1BroadcasterTx(GetL1BroadcasterTxArgs),
+    GetWriterSummary(GetWriterSummaryArgs),
+    GetWriterPayload(GetWriterPayloadArgs),
+    GetBroadcasterSummary(GetBroadcasterSummaryArgs),
+    GetBroadcasterTx(GetBroadcasterTxArgs),
     GetL2Block(GetL2BlockArgs),
     GetL2Summary(GetL2SummaryArgs),
     GetClientStateUpdate(GetClientStateUpdateArgs),
