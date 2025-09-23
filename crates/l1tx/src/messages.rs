@@ -1,6 +1,6 @@
 use strata_primitives::{
     indexed::Indexed,
-    l1::{DaCommitment, DepositRequestInfo, ProtocolOperation},
+    l1::{DaCommitment, ProtocolOperation},
 };
 
 /// Container for the different kinds of messages that we could extract from a L1 tx.
@@ -9,23 +9,15 @@ pub struct L1TxMessages {
     /// Protocol consensus operations relevant to STF.
     protocol_ops: Vec<ProtocolOperation>,
 
-    /// Deposit requests which the node stores for non-stf related bookkeeping.
-    deposit_reqs: Vec<DepositRequestInfo>,
-
     /// DA entries which the node stores for state reconstruction.  These MUST
     /// reflect messages found in `ProtocolOperation`.
     da_entries: Vec<DaEntry>,
 }
 
 impl L1TxMessages {
-    pub fn new(
-        protocol_ops: Vec<ProtocolOperation>,
-        deposit_reqs: Vec<DepositRequestInfo>,
-        da_entries: Vec<DaEntry>,
-    ) -> Self {
+    pub fn new(protocol_ops: Vec<ProtocolOperation>, da_entries: Vec<DaEntry>) -> Self {
         Self {
             protocol_ops,
-            deposit_reqs,
             da_entries,
         }
     }
@@ -34,22 +26,12 @@ impl L1TxMessages {
         &self.protocol_ops
     }
 
-    pub fn deposit_reqs(&self) -> &[DepositRequestInfo] {
-        &self.deposit_reqs
-    }
-
     pub fn da_entries(&self) -> &[DaEntry] {
         &self.da_entries
     }
 
-    pub fn into_parts(
-        self,
-    ) -> (
-        Vec<ProtocolOperation>,
-        Vec<DepositRequestInfo>,
-        Vec<DaEntry>,
-    ) {
-        (self.protocol_ops, self.deposit_reqs, self.da_entries)
+    pub fn into_parts(self) -> (Vec<ProtocolOperation>, Vec<DaEntry>) {
+        (self.protocol_ops, self.da_entries)
     }
 }
 
