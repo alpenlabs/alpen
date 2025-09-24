@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use strata_chainexec::{BlockExecutionOutput, ChainExecutor};
+use strata_checkpoint_types::EpochSummary;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_ol_chain_types::{L2Block, L2Header};
-use strata_primitives::{batch::EpochSummary, params::Params, prelude::*};
+use strata_primitives::{params::Params, prelude::*};
 use strata_service::{Response, Service, ServiceState, SyncService};
 use strata_status::StatusChannel;
 use tokio::{runtime::Handle, sync::Mutex};

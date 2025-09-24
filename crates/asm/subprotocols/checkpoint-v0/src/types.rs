@@ -7,10 +7,9 @@
 //! checkpoint system. Future versions will be fully SPS-62 compatible.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-// Re-export current checkpoint types for compatibility
+use strata_checkpoint_types::Checkpoint;
 use strata_primitives::{
-    batch::Checkpoint as PrimitivesCheckpoint, block_credential::CredRule, buf::Buf32,
-    l1::L1BlockCommitment, proof::RollupVerifyingKey,
+    block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment, proof::RollupVerifyingKey,
 };
 
 /// Checkpoint verifier state for checkpoint v0
@@ -20,7 +19,7 @@ use strata_primitives::{
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct CheckpointV0VerifierState {
     /// The last verified checkpoint
-    pub last_checkpoint: Option<PrimitivesCheckpoint>,
+    pub last_checkpoint: Option<Checkpoint>,
 
     /// Last L1 block where we got a valid checkpoint
     pub last_checkpoint_l1_height: u64,
@@ -66,7 +65,7 @@ impl CheckpointV0VerifierState {
     }
 
     /// Update state with a newly verified checkpoint
-    pub fn update_with_checkpoint(&mut self, checkpoint: PrimitivesCheckpoint, l1_height: u64) {
+    pub fn update_with_checkpoint(&mut self, checkpoint: Checkpoint, l1_height: u64) {
         let epoch = checkpoint.batch_info().epoch();
         self.last_checkpoint = Some(checkpoint);
         self.last_checkpoint_l1_height = l1_height;

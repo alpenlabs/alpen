@@ -2,8 +2,8 @@
 //! Proof. It ensures that the previous batch proof was correctly settled on the L1
 //! chain and that all L1-L2 transactions were processed.
 
+use strata_checkpoint_types::{BatchTransition, ChainstateRootTransition};
 use strata_proofimpl_cl_stf::program::ClStfOutput;
-use strata_state::batch::{BatchTransition, ChainstateRootTransition};
 use zkaleido::ZkVmEnv;
 
 pub mod program;

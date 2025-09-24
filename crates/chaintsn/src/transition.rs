@@ -5,15 +5,14 @@ use rand_core::{RngCore, SeedableRng};
 use strata_asm_types::{
     DepositInfo, DepositSpendInfo, L1BlockManifest, ProtocolOperation, WithdrawalFulfillmentInfo,
 };
+use strata_checkpoint_types::{verify_signed_checkpoint_sig, Checkpoint, SignedCheckpoint};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::{L2BlockBody, L2BlockHeader, L2Header};
 use strata_ol_chainstate_types::StateCache;
 use strata_primitives::{
-    batch::SignedCheckpoint, epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockCommitment,
-    params::RollupParams,
+    epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockCommitment, params::RollupParams,
 };
 use strata_state::{
-    batch::{verify_signed_checkpoint_sig, Checkpoint},
     bridge_ops::{DepositIntent, WithdrawalIntent},
     bridge_state::{DepositState, DispatchCommand, WithdrawOutput},
     exec_update::{self, Op},

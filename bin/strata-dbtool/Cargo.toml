@@ -18,6 +18,7 @@ serde_json.workspace = true
 tracing-subscriber.workspace = true
 
 strata-asm-types.workspace = true
+strata-checkpoint-types.workspace = true
 strata-cli-common.workspace = true
 strata-consensus-logic.workspace = true
 strata-db.workspace = true

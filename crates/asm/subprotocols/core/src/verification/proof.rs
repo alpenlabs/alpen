@@ -2,8 +2,9 @@
 //!
 //! Handles verification of zero-knowledge proofs submitted with checkpoint transactions.
 
+use strata_checkpoint_types::Checkpoint;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_primitives::{batch::Checkpoint, hash, proof::RollupVerifyingKey};
+use strata_primitives::{hash, proof::RollupVerifyingKey};
 use zkaleido::{Proof, ProofReceipt, PublicValues};
 
 use crate::{CoreOLState, error::*, messages, types::CheckpointProofPublicParameters};

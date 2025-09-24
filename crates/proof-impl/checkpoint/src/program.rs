@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use strata_state::batch::BatchTransition;
+use strata_checkpoint_types::BatchTransition;
 use zkaleido::{
     AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
     ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
