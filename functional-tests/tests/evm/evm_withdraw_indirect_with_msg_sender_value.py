@@ -6,6 +6,7 @@ from envs import net_settings, testenv
 from envs.rollup_params_cfg import RollupConfig
 from mixins.bridge_out_precompile_contract_mixin import BridgePrecompileMixin
 from utils.constants import SATS_TO_WEI
+from utils.utils import get_priv_keys
 
 
 @flexitest.register
@@ -17,11 +18,11 @@ class ContractBridgeOutWithSenderValueTest(BridgePrecompileMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        logging.warn("test temporarily disabled")
-        return
+        el_address = self.alpen_cli.l2_address()
+        priv_keys = get_priv_keys(ctx)
 
         # deposit once
-        self.deposit(ctx, self.bridge_eth_account.address, self.bridge_pk)
+        self.deposit(ctx, el_address, priv_keys)
 
         cfg: RollupConfig = ctx.env.rollup_cfg()
         deposit_amount = cfg.deposit_amount
