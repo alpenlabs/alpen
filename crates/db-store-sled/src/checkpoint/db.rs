@@ -1,6 +1,6 @@
+use strata_checkpoint_types::EpochSummary;
 use strata_db::{DbError, DbResult, traits::CheckpointDatabase, types::CheckpointEntry};
 use strata_primitives::epoch::EpochCommitment;
-use strata_state::batch::EpochSummary;
 
 use super::schemas::*;
 use crate::{define_sled_database, utils::first};

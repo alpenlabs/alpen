@@ -7,11 +7,11 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-checkpoint-types.workspace = true
 strata-consensus-logic.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
-strata-state.workspace = true
 strata-test-utils.workspace = true
 strata-test-utils-btc.workspace = true
 

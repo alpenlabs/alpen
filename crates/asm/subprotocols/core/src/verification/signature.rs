@@ -2,11 +2,8 @@
 //!
 //! Handles verification of sequencer signatures on checkpoint data.
 
-use strata_primitives::{
-    batch::{SignedCheckpoint, verify_signed_checkpoint_sig},
-    block_credential::CredRule,
-    buf::Buf32,
-};
+use strata_checkpoint_types::{SignedCheckpoint, verify_signed_checkpoint_sig};
+use strata_primitives::{block_credential::CredRule, buf::Buf32};
 
 use crate::error::*;
 

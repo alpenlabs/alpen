@@ -1,8 +1,10 @@
 //! Checkpoint formatting implementations
 
+use strata_checkpoint_types::{
+    BatchInfo, BatchTransition, Checkpoint, EpochSummary, SignedCheckpoint,
+};
 use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus};
-use strata_primitives::batch::{BatchInfo, BatchTransition, Checkpoint, EpochSummary};
-use strata_state::{batch::SignedCheckpoint, client_state::CheckpointL1Ref};
+use strata_state::client_state::CheckpointL1Ref;
 
 use super::{helpers::porcelain_field, traits::Formattable};
 

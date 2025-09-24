@@ -6,7 +6,6 @@
 #[macro_use]
 mod macros;
 
-pub mod batch;
 pub mod block_credential;
 pub mod bridge;
 pub mod buf;

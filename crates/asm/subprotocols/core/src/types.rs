@@ -4,8 +4,8 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::L2ToL1Msg;
+use strata_checkpoint_types::{Checkpoint, EpochSummary};
 use strata_primitives::{
-    batch::{Checkpoint, EpochSummary},
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
     proof::RollupVerifyingKey,

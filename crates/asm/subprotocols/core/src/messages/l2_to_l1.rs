@@ -3,8 +3,8 @@
 //! Handles extraction and validation of messages from L2 to L1 (withdrawals, etc.).
 
 use strata_asm_common::L2ToL1Msg;
+use strata_checkpoint_types::Checkpoint;
 use strata_msg_fmt::{MAX_TYPE, TypeId};
-use strata_primitives::batch::Checkpoint;
 
 use crate::error::*;
 

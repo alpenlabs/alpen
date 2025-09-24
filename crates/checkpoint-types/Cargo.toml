@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "strata-checkpoint-types"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-primitives.workspace = true
+
+arbitrary.workspace = true
+borsh.workspace = true
+serde.workspace = true
+zkaleido.workspace = true
