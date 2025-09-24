@@ -4,7 +4,7 @@ use strata_db::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use strata_rocksdb::prover::db::ProofDb;
 use tokio::{spawn, sync::Mutex, time::sleep};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     checkpoint_runner::errors::CheckpointError, errors::ProvingTaskError, operators::ProofOperator,
@@ -121,10 +121,7 @@ async fn make_proof(
 ) -> Result<(), ProvingTaskError> {
     // Handle the delay (if set) from the TransientFailure retries.
     if delay_seconds > 0 {
-        info!(
-            "scheduling transiently failed task {:?} to run in {} seconds",
-            task, delay_seconds
-        );
+        debug!("scheduling transiently failed task {task:?} to run in {delay_seconds} seconds",);
         sleep(Duration::from_secs(delay_seconds)).await;
     }
 
@@ -173,7 +170,7 @@ fn handle_task_error(task: ProofKey, e: ProvingTaskError) -> ProvingTaskStatus {
             // currently be unavailable.
             // NetworkRetryableError indicates network error on SP1 side.
             // See STR-1410 and STR-1473 for details.
-            info!(?task, ?e, "proving task failed transiently");
+            error!(?task, ?e, "proving task failed transiently");
             ProvingTaskStatus::TransientFailure
         }
         ProvingTaskError::IdempotentCompletion(_) => {
