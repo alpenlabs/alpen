@@ -1,12 +1,12 @@
 use bdk_wallet::bitcoin::{bip32::Xpriv, OutPoint, PublicKey, Transaction, Txid, XOnlyPublicKey};
 use secp256k1::SECP256K1;
-use strata_asm_types::DepositRequestInfo;
 use strata_crypto::EvenSecretKey;
 use strata_l1tx::deposit::deposit_request::extract_deposit_request_info;
 use strata_params::DepositTxParams;
 use strata_primitives::{
     constants::{EE_ADDRESS_LEN, STRATA_OP_WALLET_DERIVATION_PATH},
-    l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey},
+    l1::{BitcoinAddress, DepositRequestInfo, XOnlyPk},
+    params::DepositTxParams,
 };
 
 use crate::{
@@ -58,8 +58,8 @@ pub(crate) fn parse_drt(
 ) -> Result<DepositRequestInfo, Error> {
     let config = DepositTxParams {
         magic_bytes: *MAGIC_BYTES,
-        max_address_length: EE_ADDRESS_LEN,
-        deposit_amount: BitcoinAmount::from_sat(BRIDGE_OUT_AMOUNT.to_sat()),
+        address_length: EE_ADDRESS_LEN,
+        deposit_amount: BRIDGE_OUT_AMOUNT.to_sat(),
         address,
         operators_pubkey: BitcoinXOnlyPublicKey::new(operators_pubkey.serialize().into())
             .expect("good XOnlyPublicKey"),
@@ -81,11 +81,7 @@ pub(crate) fn parse_pk(pk: &str) -> Result<PublicKey, Error> {
 }
 
 /// Parses an [`OutPoint`] from a string.
-#[allow(
-    dead_code,
-    clippy::allow_attributes,
-    reason = "This might be useful in the future"
-)]
+#[allow(dead_code)] // This might be useful in the future
 pub(crate) fn parse_outpoint(outpoint: &str) -> Result<OutPoint, Error> {
     let parts: Vec<&str> = outpoint.split(':').collect();
     if parts.len() != 2 {

@@ -1,6 +1,6 @@
 import flexitest
 from solcx import install_solc, set_solc_version
-from strata_utils import extract_p2tr_pubkey, xonlypk_to_descriptor
+from factory.test_cli import extract_p2tr_pubkey, xonlypk_to_descriptor
 
 from mixins import bridge_mixin
 from utils import get_bridge_pubkey

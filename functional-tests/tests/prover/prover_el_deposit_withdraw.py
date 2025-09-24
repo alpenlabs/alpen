@@ -2,7 +2,7 @@ import time
 
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
-from strata_utils import extract_p2tr_pubkey, xonlypk_to_descriptor
+from factory.test_cli import extract_p2tr_pubkey, xonlypk_to_descriptor
 
 from envs.rollup_params_cfg import RollupConfig
 from mixins import bridge_mixin

@@ -14627,6 +14627,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-test-cli"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "argh",
+ "bdk_bitcoind_rpc",
+ "bdk_wallet",
+ "hex",
+ "make_buf",
+ "musig2",
+ "rand 0.8.5",
+ "secp256k1 0.29.1",
+ "serde_json",
+ "shrex",
+ "shrex_macros",
+ "strata-crypto",
+ "strata-l1tx",
+ "strata-primitives",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-test-utils"
 version = "0.3.0-alpha.1"
 dependencies = [

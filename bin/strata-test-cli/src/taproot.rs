@@ -5,16 +5,11 @@ use bdk_bitcoind_rpc::{
     Emitter,
 };
 use bdk_wallet::{
-    bitcoin::{
-        consensus::serialize, key::Parity, secp256k1::SECP256K1, Address, AddressType, FeeRate,
-        PublicKey, Transaction, XOnlyPublicKey,
-    },
+    bitcoin::{key::Parity, Address, AddressType, PublicKey, XOnlyPublicKey},
     miniscript::ToPublicKey,
     KeychainKind, Wallet,
 };
 use musig2::KeyAggContext;
-use pyo3::prelude::*;
-use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
 
 use crate::{
     constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
@@ -41,14 +36,6 @@ impl ExtractP2trPubkey for Address {
     }
 }
 
-/// Unspendabled Taproot address.
-///
-/// This is based on the [`UNSPENDABLE`] public key.
-#[pyfunction]
-pub(crate) fn unspendable_address() -> String {
-    let address = Address::p2tr(SECP256K1, *UNSPENDABLE_PUBLIC_KEY, None, NETWORK);
-    address.to_string()
-}
 
 /// A simple Taproot-enable wallet.
 ///
@@ -56,10 +43,10 @@ pub(crate) fn unspendable_address() -> String {
 ///
 /// This uses the hardcoded `[DESCRIPTOR]` and `[CHANGE_DESCRIPTOR]`.
 pub(crate) fn taproot_wallet() -> Result<Wallet, Error> {
-    Ok(Wallet::create(*DESCRIPTOR, *CHANGE_DESCRIPTOR)
+    Wallet::create(*DESCRIPTOR, *CHANGE_DESCRIPTOR)
         .network(NETWORK)
         .create_wallet_no_persist()
-        .map_err(|_| Error::Wallet))?
+        .map_err(|_| Error::Wallet)
 }
 
 /// Syncs a wallet with the network using `bitcoind` as the backend.
@@ -87,7 +74,7 @@ pub(crate) fn new_bitcoind_client(
     rpc_user: Option<&str>,
     rpc_pass: Option<&str>,
 ) -> Result<Client, Error> {
-    Ok(Client::new(
+    Client::new(
         url,
         match (rpc_cookie, rpc_user, rpc_pass) {
             (None, None, None) => Auth::None,
@@ -97,37 +84,15 @@ pub(crate) fn new_bitcoind_client(
             (_, None, Some(_)) => panic!("rpc auth: missing rpc_user"),
         },
     )
-    .map_err(|_| Error::RpcClient))?
+    .map_err(|_| Error::RpcClient)
 }
 
-/// MuSig2 aggregates public keys into a single public key.
-///
-/// # Note
-///
-/// These should all be X-only public keys, assuming that all are [`Parity::Even`].
-pub(crate) fn musig_aggregate_pks_inner(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
-    let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
-    let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
-    Ok(key_agg_ctx.aggregated_pubkey())
-}
 
 /// Gets a (receiving/external) address from the [`taproot_wallet`] at the given `index`.
-#[pyfunction]
-pub(crate) fn get_address(index: u32) -> PyResult<String> {
+pub(crate) fn get_address_inner(index: u32) -> Result<String, Error> {
     let wallet = taproot_wallet()?;
     let address = wallet
         .peek_address(KeychainKind::External, index)
-        .address
-        .to_string();
-    Ok(address)
-}
-
-/// Gets a (change/internal) address from the wallet at a given `index`.
-#[pyfunction]
-pub(crate) fn get_change_address(index: u32) -> PyResult<String> {
-    let wallet = taproot_wallet()?;
-    let address = wallet
-        .peek_address(KeychainKind::Internal, index)
         .address
         .to_string();
     Ok(address)
@@ -138,36 +103,45 @@ pub(crate) fn get_change_address(index: u32) -> PyResult<String> {
 /// # Note
 ///
 /// These should all be X-only public keys.
-#[pyfunction]
-pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
+pub(crate) fn musig_aggregate_pks_inner(pks: Vec<String>) -> Result<String, Error> {
     let pks = pks
         .into_iter()
         .map(|pk| parse_xonly_pk(&pk).map_err(|_| Error::XOnlyPublicKey))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let result = musig_aggregate_pks_inner(pks)?.to_string();
+    let result = musig_aggregate_pks_core(pks)?.to_string();
 
     Ok(result)
 }
 
-/// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].
+/// MuSig2 aggregates XOnlyPublicKeys into a single public key (core implementation).
+///
+/// # Note
+///
+/// These should all be X-only public keys, assuming that all are [`Parity::Even`].
+fn musig_aggregate_pks_core(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
+    let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
+    let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
+    Ok(key_agg_ctx.aggregated_pubkey())
+}
+
+/// Converts a [`PublicKey`] string to an [`XOnlyPublicKey`] string.
 ///
 /// # Note
 ///
 /// This only works for even keys (i.e. starts with `"02"`) and will return an error otherwise.
-#[pyfunction]
-pub(crate) fn convert_to_xonly_pk(pk: String) -> PyResult<String> {
+pub(crate) fn convert_to_xonly_pk_inner(pk: String) -> Result<String, Error> {
     let pk = parse_pk(&pk)?;
-    let x_only_pk = convert_to_xonly_pk_inner(pk)?;
+    let x_only_pk = convert_to_xonly_pk_core(pk)?;
     Ok(x_only_pk.to_string())
 }
 
-/// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].
+/// Converts a [`PublicKey`] to an [`XOnlyPublicKey`] (core implementation).
 ///
 /// # Note
 ///
 /// This only works for even keys (i.e. starts with `"02"`) and will return an error otherwise.
-fn convert_to_xonly_pk_inner(pk: PublicKey) -> Result<XOnlyPublicKey, Error> {
+fn convert_to_xonly_pk_core(pk: PublicKey) -> Result<XOnlyPublicKey, Error> {
     // assert that the first byte is 0x02 as string.
     if !pk.to_string().starts_with("02") {
         return Err(Error::PublicKey);
@@ -181,8 +155,7 @@ fn convert_to_xonly_pk_inner(pk: PublicKey) -> Result<XOnlyPublicKey, Error> {
 /// # Note
 ///
 /// This assumes that the caller has verified the `address`.
-#[pyfunction]
-pub(crate) fn extract_p2tr_pubkey(address: String) -> PyResult<String> {
+pub(crate) fn extract_p2tr_pubkey_inner(address: String) -> Result<String, Error> {
     let address = &address
         .parse::<Address<_>>()
         .map_err(|_| Error::NotTaprootAddress)?
@@ -191,92 +164,6 @@ pub(crate) fn extract_p2tr_pubkey(address: String) -> PyResult<String> {
     Ok(pk.to_string())
 }
 
-/// Drains the wallet to the given `address`.
-///
-/// # Arguments
-///
-/// - `address`: Bitcoin address to drain the wallet to.
-/// - `bitcoind_url`: URL of the `bitcoind` instance.
-/// - `bitcoind_user`: Username for the `bitcoind` instance.
-/// - `bitcoind_password`: Password for the `bitcoind` instance.
-///
-/// # Returns
-///
-/// A signed (with the `private_key`) and serialized transaction.
-///
-/// # Note
-///
-/// This is a good way to empty the wallet in order to test different addresses.
-fn drain_wallet_inner(
-    address: &str,
-    bitcoind_url: &str,
-    bitcoind_user: &str,
-    bitcoind_password: &str,
-) -> Result<Transaction, Error> {
-    let mut wallet = taproot_wallet()?;
-    let address = address
-        .parse::<Address<_>>()
-        .map_err(|_| Error::BitcoinAddress)?
-        .assume_checked();
-
-    // Instantiate the BitcoinD client
-    let client = new_bitcoind_client(
-        bitcoind_url,
-        None,
-        Some(bitcoind_user),
-        Some(bitcoind_password),
-    )?;
-
-    // For regtest 2 sat/vbyte is enough
-    let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
-
-    // Before signing the transaction, we need to sync the wallet with bitcoind
-    sync_wallet(&mut wallet, &client)?;
-
-    let mut psbt = {
-        let mut builder = wallet.build_tx();
-        builder.drain_wallet();
-        builder.drain_to(address.script_pubkey());
-        builder.fee_rate(fee_rate);
-        builder.finish().expect("valid psbt")
-    };
-    wallet
-        .sign(&mut psbt, Default::default())
-        .expect("valid psbt");
-
-    let tx = psbt.extract_tx().expect("valid tx");
-    Ok(tx)
-}
-
-/// Drains the wallet to the given `address`.
-///
-/// # Arguments
-///
-/// - `address`: Bitcoin address to drain the wallet to.
-/// - `bitcoind_url`: URL of the `bitcoind` instance.
-/// - `bitcoind_user`: Username for the `bitcoind` instance.
-/// - `bitcoind_password`: Password for the `bitcoind` instance.
-///
-/// # Returns
-///
-/// A signed (with the `private_key`) and serialized transaction.
-///
-/// # Note
-///
-/// This is a good way to empty the wallet in order to test different addresses.
-#[pyfunction]
-pub(crate) fn drain_wallet(
-    address: String,
-    bitcoind_url: String,
-    bitcoind_user: String,
-    bitcoind_password: String,
-) -> PyResult<Vec<u8>> {
-    let signed_tx =
-        drain_wallet_inner(&address, &bitcoind_url, &bitcoind_user, &bitcoind_password)?;
-
-    let signed_tx = serialize(&signed_tx);
-    Ok(signed_tx)
-}
 
 #[cfg(test)]
 mod tests {
@@ -303,14 +190,6 @@ mod tests {
         assert_eq!(pk, expected);
     }
 
-    #[test]
-    fn unspendable_address() {
-        let address = super::unspendable_address();
-        assert_eq!(
-            address,
-            "bcrt1p7hgsjwtz2pkz45y97dglj4yuc88zsva2p0n5tmcz0zrvfmhcc2lsckedfk"
-        );
-    }
 
     #[test]
     fn taproot_wallet() {

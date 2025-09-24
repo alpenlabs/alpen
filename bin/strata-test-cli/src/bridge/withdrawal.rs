@@ -11,7 +11,6 @@ use bdk_wallet::{
     },
     TxOrdering,
 };
-use pyo3::prelude::*;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use super::types::WithdrawalMetadata;
@@ -21,7 +20,7 @@ use crate::{
     taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
-/// Creates a withdrawal fulfillment transaction
+/// Creates a withdrawal fulfillment transaction (CLI wrapper)
 ///
 /// # Arguments
 /// * `recipient_bosd` - bosd specifying which address to send to
@@ -32,21 +31,20 @@ use crate::{
 /// * `bitcoind_url` - Bitcoind url
 /// * `bitcoind_user` - credentials
 /// * `bitcoind_password` - credentials
-#[expect(clippy::too_many_arguments, reason = "used for python bindings")]
-#[pyfunction]
-pub(crate) fn create_withdrawal_fulfillment(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_withdrawal_fulfillment_cli(
     recipient_bosd: String,
     amount: u64,
     operator_idx: u32,
     deposit_idx: u32,
     deposit_txid: String,
-    bitcoind_url: &str,
-    bitcoind_user: &str,
-    bitcoind_password: &str,
-) -> PyResult<Vec<u8>> {
+    bitcoind_url: String,
+    bitcoind_user: String,
+    bitcoind_password: String,
+) -> Result<Vec<u8>, Error> {
     let recipient_script = recipient_bosd
         .parse::<Descriptor>()
-        .expect("Not a valid bosd")
+        .map_err(|_| Error::TxBuilder("Not a valid bosd".to_string()))?
         .to_script();
 
     let tx = create_withdrawal_fulfillment_inner(
@@ -55,16 +53,16 @@ pub(crate) fn create_withdrawal_fulfillment(
         operator_idx,
         deposit_idx,
         deposit_txid,
-        bitcoind_url,
-        bitcoind_user,
-        bitcoind_password,
+        &bitcoind_url,
+        &bitcoind_user,
+        &bitcoind_password,
     )?;
 
     Ok(serialize(&tx))
 }
 
 /// Internal implementation of withdrawal fulfillment creation
-#[expect(clippy::too_many_arguments, reason = "used for python bindings")]
+#[allow(clippy::too_many_arguments)]
 fn create_withdrawal_fulfillment_inner(
     recipient_script: ScriptBuf,
     amount: u64,

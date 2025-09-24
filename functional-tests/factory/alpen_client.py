@@ -1,11 +1,9 @@
-import contextlib
 import os
-import pty
 import re
-import subprocess
 from subprocess import CalledProcessError
 
 from envs.env_control_builder import EnvControlBuilder, ServiceNotAvailable
+from utils import run_tty
 
 
 class AlpenCli:
@@ -18,57 +16,10 @@ class AlpenCli:
         self.config_file = config_file
         self.datadir = datadir
 
-    def _run_tty(
-        self, cmd, *, capture_output=False, stdout=None, env=None
-    ) -> subprocess.CompletedProcess:
-        """
-        Runs `cmd` under a PTY (so indicatif used by Alpen-cli behaves).
-        Returns a CompletedProcess; stdout is bytes when captured.
-        """
-        if stdout is subprocess.PIPE:
-            capture_output, stdout = True, None
-
-        buf = [] if capture_output else None
-
-        def reader(fd):
-            data = os.read(fd, 4096)
-            if data:
-                if buf is not None:
-                    buf.append(data)
-                elif stdout is None:
-                    os.write(1, data)  # parent stdout
-                else:
-                    # file-like or text stream
-                    if hasattr(stdout, "buffer"):
-                        stdout.buffer.write(data)
-                        stdout.flush()
-                    else:
-                        stdout.write(data.decode("utf-8", "replace"))
-                        if hasattr(stdout, "flush"):
-                            stdout.flush()
-            return data
-
-        old_env = os.environ.copy()
-        try:
-            if env:
-                os.environ.update(env)
-            rc = pty.spawn(cmd, reader)
-        finally:
-            with contextlib.suppress(Exception):
-                os.environ.clear()
-                os.environ.update(old_env)
-
-        return subprocess.CompletedProcess(
-            args=cmd,
-            returncode=rc,
-            stdout=(b"".join(buf) if buf is not None else None),
-            stderr=None,  # PTY merges stderr
-        )
-
     def _run_and_extract_with_re(self, cmd, re_pattern) -> str | None:
         assert self.config_file is not None, "config path not set"
 
-        result = self._run_tty(
+        result = run_tty(
             cmd,
             capture_output=True,
             env={"CLI_CONFIG": self.config_file, "PROJ_DIRS": self.datadir},
