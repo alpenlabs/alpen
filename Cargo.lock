@@ -983,6 +983,7 @@ dependencies = [
  "bitcoin",
  "criterion",
  "rockbound",
+ "strata-asm-types",
  "strata-db",
  "strata-db-store-rocksdb",
  "strata-db-store-sled",
@@ -14172,9 +14173,9 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "strata-asm-types",
  "strata-l1-txfmt",
  "strata-msg-fmt",
- "strata-primitives",
  "thiserror 2.0.16",
  "tracing",
 ]
@@ -14328,6 +14329,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "borsh",
+ "digest 0.10.7",
+ "rand 0.8.5",
+ "serde",
+ "sha2 0.10.9",
+ "strata-primitives",
+ "strata-test-utils-btc",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-btcio"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14340,6 +14357,7 @@ dependencies = [
  "musig2",
  "rand 0.8.5",
  "reqwest 0.12.23",
+ "strata-asm-types",
  "strata-config",
  "strata-db",
  "strata-db-store-sled",
@@ -14395,6 +14413,7 @@ dependencies = [
  "bitcoin",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "strata-asm-types",
  "strata-chainexec",
  "strata-crypto",
  "strata-primitives",
@@ -14486,6 +14505,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "rand 0.8.5",
+ "strata-asm-types",
  "strata-chain-worker",
  "strata-chainexec",
  "strata-chaintsn",
@@ -14541,6 +14561,7 @@ dependencies = [
  "serde_json",
  "shrex",
  "sp1-verifier",
+ "strata-asm-types",
  "strata-key-derivation",
  "strata-l1-txfmt",
  "strata-primitives",
@@ -14563,6 +14584,7 @@ dependencies = [
  "parking_lot 0.12.4",
  "serde",
  "serde_json",
+ "strata-asm-types",
  "strata-primitives",
  "strata-state",
  "thiserror 2.0.16",
@@ -14578,6 +14600,7 @@ dependencies = [
  "bincode",
  "borsh",
  "rockbound",
+ "strata-asm-types",
  "strata-db",
  "strata-db-tests",
  "strata-primitives",
@@ -14594,6 +14617,7 @@ dependencies = [
  "anyhow",
  "borsh",
  "sled",
+ "strata-asm-types",
  "strata-db",
  "strata-db-tests",
  "strata-primitives",
@@ -14607,6 +14631,7 @@ name = "strata-db-tests"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "strata-asm-types",
  "strata-db",
  "strata-primitives",
  "strata-state",
@@ -14623,6 +14648,7 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
+ "strata-asm-types",
  "strata-cli-common",
  "strata-consensus-logic",
  "strata-db",
@@ -14708,6 +14734,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "secp256k1 0.29.1",
+ "strata-asm-types",
  "strata-btcio",
  "strata-crypto",
  "strata-l1-txfmt",
@@ -14775,7 +14802,6 @@ dependencies = [
  "sha2 0.10.9",
  "strata-l1-txfmt",
  "strata-test-utils",
- "strata-test-utils-btc",
  "thiserror 2.0.16",
  "zeroize",
  "zkaleido",
@@ -14922,6 +14948,7 @@ dependencies = [
  "secp256k1 0.29.1",
  "shrex",
  "shrex_macros",
+ "strata-asm-types",
  "strata-crypto",
  "strata-l1tx",
  "strata-primitives",
@@ -14993,6 +15020,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-asm-types",
  "strata-chainexec",
  "strata-chaintsn",
  "strata-common",
@@ -15072,6 +15100,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-asm-types",
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
@@ -15099,6 +15128,7 @@ dependencies = [
  "futures",
  "lru 0.12.5",
  "paste",
+ "strata-asm-types",
  "strata-db",
  "strata-primitives",
  "strata-state",
@@ -15154,6 +15184,7 @@ dependencies = [
  "bitcoin",
  "bitcoind-async-client",
  "hex",
+ "strata-asm-types",
  "strata-btcio",
  "strata-primitives",
  "strata-state",
@@ -15196,6 +15227,7 @@ name = "strata-test-utils-tx-indexer"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
+ "strata-asm-types",
  "strata-l1tx",
  "strata-primitives",
  "strata-test-utils-btc",

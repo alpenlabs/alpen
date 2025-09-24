@@ -1,11 +1,11 @@
+use strata_asm_types::{
+    DepositInfo, DepositSpendInfo, ProtocolOperation, WithdrawalFulfillmentInfo,
+};
 use strata_l1tx::{
     filter::indexer::TxVisitor,
     messages::{DaEntry, L1TxMessages},
 };
-use strata_primitives::{
-    batch::SignedCheckpoint,
-    l1::{DepositInfo, DepositSpendInfo, ProtocolOperation, WithdrawalFulfillmentInfo},
-};
+use strata_primitives::batch::SignedCheckpoint;
 
 /// Ops indexer for rollup client. Collects extra info like da blobs and deposit requests
 #[derive(Clone, Debug)]

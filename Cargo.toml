@@ -13,6 +13,7 @@ members = [
   "crates/asm/subprotocols/debug-v1",
   "crates/asm/subprotocols/administration",
   "crates/asm/txs/administration",
+  "crates/asm-types",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -121,6 +122,7 @@ strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-spec = { path = "crates/asm/spec" }
 strata-asm-spec-debug = { path = "crates/asm/spec-debug" }
 strata-asm-stf = { path = "crates/asm/stf" }
+strata-asm-types = { path = "crates/asm-types" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chainexec = { path = "crates/chainexec" }

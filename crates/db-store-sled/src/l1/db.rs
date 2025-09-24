@@ -1,5 +1,6 @@
+use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_db::{DbResult, errors::DbError, traits::*};
-use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_primitives::l1::L1BlockId;
 use typed_sled::batch::SledBatch;
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};

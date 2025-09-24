@@ -1,8 +1,9 @@
+use strata_asm_types::HeaderVerificationState;
 use strata_db::errors::DbError;
 use strata_primitives::{
     buf::{Buf32, Buf64},
+    constants::TIMESTAMPS_FOR_MEDIAN,
     evm_exec::create_evm_extra_payload,
-    l1::{HeaderVerificationState, TIMESTAMPS_FOR_MEDIAN},
     params::{OperatorConfig, Params},
 };
 use strata_state::{

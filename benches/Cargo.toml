@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 db = [
+  "dep:strata-asm-types",
   "dep:strata-db",
   "dep:strata-primitives",
   "dep:strata-state",
@@ -33,6 +34,7 @@ bitcoin = { workspace = true }
 criterion = { workspace = true }
 tempfile = { workspace = true, optional = true }
 
+strata-asm-types = { workspace = true, optional = true }
 strata-db = { workspace = true, optional = true }
 strata-db-store-rocksdb = { workspace = true, optional = true }
 strata-db-store-sled = { workspace = true, optional = true }

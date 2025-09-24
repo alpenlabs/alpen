@@ -1,7 +1,7 @@
 use bitcoin::{block::Header, consensus::Encodable, Block};
+use strata_primitives::{buf::Buf32, hash::sha256d};
 
 use super::{L1Tx, L1TxProof, ProtocolOperation};
-use crate::{buf::Buf32, hash::sha256d};
 
 /// Returns the block hash.
 ///

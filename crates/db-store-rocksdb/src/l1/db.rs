@@ -6,8 +6,9 @@ use rockbound::{
     utils::{get_first, get_last},
     OptimisticTransactionDB, SchemaBatch, SchemaDBOperationsExt,
 };
+use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_db::{errors::DbError, traits::*, DbResult};
-use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_primitives::l1::L1BlockId;
 use tracing::*;
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};

@@ -1,6 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_asm_types::L1BlockManifest;
 use strata_primitives::prelude::*;
 
 use crate::{

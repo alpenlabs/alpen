@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_db::{traits::L1Database, DbError, DbResult};
-use strata_primitives::l1::{L1BlockId, L1BlockManifest, L1Tx, L1TxRef};
+use strata_primitives::l1::L1BlockId;
 use threadpool::ThreadPool;
 use tracing::error;
 

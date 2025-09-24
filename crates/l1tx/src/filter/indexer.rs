@@ -1,9 +1,6 @@
 use bitcoin::{Block, Transaction};
-use strata_primitives::{
-    batch::SignedCheckpoint,
-    indexed::Indexed,
-    l1::{DepositInfo, DepositSpendInfo, WithdrawalFulfillmentInfo},
-};
+use strata_asm_types::{DepositInfo, DepositSpendInfo, WithdrawalFulfillmentInfo};
+use strata_primitives::{batch::SignedCheckpoint, indexed::Indexed};
 
 use super::{
     extract_da_blobs, find_deposit_spends, parse_valid_checkpoint_envelopes,

@@ -11,9 +11,13 @@ use arbitrary::Arbitrary;
 #[allow(unused_imports)]
 use bitcoin as _;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+#[allow(unused_imports)]
+use strata_asm_types as _;
 use strata_db::traits::{BlockStatus, L2BlockDatabase};
 #[allow(unused_imports)]
 use strata_primitives as _;
+use strata_state::block::L2BlockBundle;
+#[allow(unused_imports)]
 use strata_state::prelude::*;
 use tempfile::TempDir;
 #[cfg(feature = "rocksdb")]
@@ -91,9 +95,8 @@ fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupSled::new();
                             let seed_data = vec![payload_ops as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             (setup, bundle)
                         },
                         |(setup, bundle)| black_box(setup.db.put_block_data(bundle)).unwrap(),
@@ -106,9 +109,8 @@ fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupRocks::new();
                             let seed_data = vec![payload_ops as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             (setup, bundle)
                         },
                         |(setup, bundle)| black_box(setup.db.put_block_data(bundle)).unwrap(),
@@ -139,9 +141,8 @@ fn bench_get_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupSled::new();
                             let seed_data = vec![(payload_ops + 1) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             let block_id = bundle.block().header().get_blockid();
                             setup.db.put_block_data(bundle).unwrap();
                             (setup, block_id)
@@ -156,9 +157,8 @@ fn bench_get_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupRocks::new();
                             let seed_data = vec![(payload_ops + 1) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             let block_id = bundle.block().header().get_blockid();
                             setup.db.put_block_data(bundle).unwrap();
                             (setup, block_id)
@@ -191,9 +191,8 @@ fn bench_set_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupSled::new();
                             let seed_data = vec![(payload_ops + 2) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             let block_id = bundle.block().header().get_blockid();
                             setup.db.put_block_data(bundle).unwrap();
                             (setup, block_id)
@@ -211,9 +210,8 @@ fn bench_set_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupRocks::new();
                             let seed_data = vec![(payload_ops + 2) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             let block_id = bundle.block().header().get_blockid();
                             setup.db.put_block_data(bundle).unwrap();
                             (setup, block_id)
@@ -249,9 +247,8 @@ fn bench_get_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupSled::new();
                             let seed_data = vec![(payload_ops + 3) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             let block_id = bundle.block().header().get_blockid();
                             setup.db.put_block_data(bundle).unwrap();
                             setup
@@ -270,9 +267,8 @@ fn bench_get_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L2BenchSetupRocks::new();
                             let seed_data = vec![(payload_ops + 3) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle =
-                                strata_state::block::L2BlockBundle::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L2BlockBundle");
+                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
+                                .expect("Failed to generate L2BlockBundle");
                             let block_id = bundle.block().header().get_blockid();
                             setup.db.put_block_data(bundle).unwrap();
                             setup

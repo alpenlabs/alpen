@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Display};
 
+use strata_asm_types::L1VerificationError;
 use strata_l1_txfmt::SubprotocolId;
 use strata_msg_fmt::TypeId;
-use strata_primitives::l1::L1VerificationError;
 use thiserror::Error;
 
 /// A generic “expected vs actual” error.

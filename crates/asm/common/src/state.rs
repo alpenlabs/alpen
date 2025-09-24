@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::l1::HeaderVerificationState;
+use strata_asm_types::HeaderVerificationState;
 
 use crate::{AsmError, Mismatched, Subprotocol, SubprotocolId};
 

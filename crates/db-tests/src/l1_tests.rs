@@ -1,5 +1,5 @@
+use strata_asm_types::{L1BlockManifest, L1Tx, L1TxProof, L1TxRef, ProtocolOperation};
 use strata_db::traits::L1Database;
-use strata_primitives::l1::{L1BlockManifest, L1Tx, L1TxProof, L1TxRef, ProtocolOperation};
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_insert_into_empty_db(db: &impl L1Database) {

@@ -13,6 +13,7 @@ use risc0_groth16 as _;
 use risc0_zkvm as _;
 #[cfg(feature = "sp1-builder")]
 use sp1_verifier as _;
+use strata_asm_types as _;
 #[cfg(feature = "risc0-builder")]
 use strata_risc0_guest_builder as _;
 #[cfg(feature = "risc0-builder")]

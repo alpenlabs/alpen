@@ -2,6 +2,7 @@
 
 use std::{sync::Arc, thread};
 
+use strata_asm_types::L1BlockManifest;
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry, CheckpointProvingStatus};
 use strata_primitives::prelude::*;
 use strata_state::{

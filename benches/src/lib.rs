@@ -10,6 +10,9 @@ use bitcoin as _;
 use criterion as _;
 #[cfg(feature = "db")]
 #[allow(unused_imports)]
+use strata_asm_types as _;
+#[cfg(feature = "db")]
+#[allow(unused_imports)]
 use strata_db as _;
 #[cfg(feature = "db")]
 #[allow(unused_imports)]

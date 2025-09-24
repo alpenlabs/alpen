@@ -1,11 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-
-/// The number of timestamps used for calculating the median.
-/// According to Bitcoin consensus rules, we need to check that a block's timestamp
-/// is not lower than the median of the last eleven blocks' timestamps.
-pub const TIMESTAMPS_FOR_MEDIAN: usize = 11;
+use strata_primitives::constants::TIMESTAMPS_FOR_MEDIAN;
 
 /// The middle index for selecting the median timestamp.
 /// Since TIMESTAMPS_FOR_MEDIAN is odd, the median is the element at index 5 (the 6th element)

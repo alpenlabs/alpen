@@ -8,7 +8,8 @@ use thiserror::Error;
 
 use crate::{
     block_credential::CredRule,
-    l1::{BitcoinAddress, L1BlockCommitment, L1BlockId, XOnlyPk, TIMESTAMPS_FOR_MEDIAN},
+    constants::TIMESTAMPS_FOR_MEDIAN,
+    l1::{BitcoinAddress, L1BlockCommitment, L1BlockId, XOnlyPk},
     operator::OperatorPubkeys,
     prelude::Buf32,
     proof::RollupVerifyingKey,

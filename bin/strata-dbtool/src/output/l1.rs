@@ -1,6 +1,7 @@
 //! L1 block formatting implementations
 
-use strata_primitives::l1::{L1BlockId, L1Tx, ProtocolOperation};
+use strata_asm_types::{L1Tx, ProtocolOperation};
+use strata_primitives::l1::L1BlockId;
 
 use super::{checkpoint::format_signed_checkpoint, helpers::porcelain_field, traits::Formattable};
 

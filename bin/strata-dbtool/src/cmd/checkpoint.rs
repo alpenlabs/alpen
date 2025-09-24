@@ -1,10 +1,10 @@
 use argh::FromArgs;
+use strata_asm_types::ProtocolOperation;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::{
     traits::{CheckpointDatabase, DatabaseBackend},
     types::CheckpointEntry,
 };
-use strata_primitives::l1::ProtocolOperation;
 
 use super::l1::{get_l1_block_id_at_height, get_l1_block_manifest, get_l1_chain_tip};
 use crate::{

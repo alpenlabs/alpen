@@ -5,11 +5,10 @@
 
 use bitcoin::CompactTarget;
 use bitcoind_async_client::{traits::Reader, Client};
+use strata_asm_types::get_relative_difficulty_adjustment_height;
 use strata_primitives::{
-    l1::{
-        get_relative_difficulty_adjustment_height, BtcParams, L1BlockCommitment, L1BlockId,
-        TIMESTAMPS_FOR_MEDIAN,
-    },
+    constants::TIMESTAMPS_FOR_MEDIAN,
+    l1::{BtcParams, L1BlockCommitment, L1BlockId},
     params::GenesisL1View,
 };
 

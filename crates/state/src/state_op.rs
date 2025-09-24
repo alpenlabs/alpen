@@ -6,11 +6,12 @@
 
 use bitcoin::block::Header;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, L1VerificationError, OutputRef, WithdrawalFulfillmentInfo},
+    l1::{BitcoinAmount, OutputRef},
     l2::{L2BlockCommitment, L2BlockId},
 };
 use tracing::warn;

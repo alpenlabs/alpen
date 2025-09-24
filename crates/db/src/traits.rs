@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
+use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_primitives::{
     batch::EpochSummary,
-    l1::{L1Tx, *},
     prelude::*,
     proof::{ProofContext, ProofKey},
 };

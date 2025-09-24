@@ -7,6 +7,7 @@ use bitcoin::{
     transaction::Version as TVersion,
     Amount, Block, BlockHash, CompactTarget, ScriptBuf, Transaction, TxMerkleNode, TxOut,
 };
+use strata_asm_types::{ProtocolOperation, WithdrawalFulfillmentInfo};
 use strata_l1tx::{
     filter::{
         indexer::{index_block, TxVisitor},
@@ -14,10 +15,7 @@ use strata_l1tx::{
     },
     utils::test_utils::{create_tx_filter_config, get_filter_config_from_deposit_entries},
 };
-use strata_primitives::{
-    indexed::Indexed,
-    l1::{BitcoinAmount, ProtocolOperation, WithdrawalFulfillmentInfo},
-};
+use strata_primitives::{indexed::Indexed, l1::BitcoinAmount};
 use strata_test_utils_btc::{
     build_test_deposit_request_script, build_test_deposit_script, create_opreturn_metadata,
     create_test_deposit_tx, generate_withdrawal_fulfillment_data, test_taproot_addr,

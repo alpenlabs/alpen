@@ -14,10 +14,11 @@ use bitcoin::{
     Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
     Transaction, TxIn, TxOut, Witness,
 };
+use strata_asm_types::L1HeaderRecord;
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
     buf::Buf32,
-    l1::{BitcoinAddress, BitcoinAmount, L1HeaderRecord, OutputRef},
+    l1::{BitcoinAddress, BitcoinAmount, OutputRef},
     params::DepositTxParams,
 };
 use strata_state::bridge_state::{
