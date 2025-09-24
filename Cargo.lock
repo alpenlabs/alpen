@@ -14357,6 +14357,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-spec",
  "strata-asm-stf",
+ "strata-asm-types",
  "strata-primitives",
  "strata-service",
  "strata-state",

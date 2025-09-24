@@ -10,6 +10,7 @@ workspace = true
 strata-asm-common.workspace = true
 strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
+strata-asm-types.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-state.workspace = true
