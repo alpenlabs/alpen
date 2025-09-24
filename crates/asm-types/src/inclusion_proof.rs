@@ -4,13 +4,9 @@ use arbitrary::Arbitrary;
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_primitives::{buf::Buf32, hash::sha256d, utils::get_cohashes};
 
-use crate::{
-    buf::Buf32,
-    hash::sha256d,
-    l1::{TxIdComputable, TxIdMarker, WtxIdMarker},
-    utils::get_cohashes,
-};
+use super::{TxIdComputable, TxIdMarker, WtxIdMarker};
 
 /// A generic proof structure that can handle any kind of transaction ID (e.g.,
 /// [`Txid`](bitcoin::Txid) or [`Wtxid`](bitcoin::Wtxid)) by delegating the ID computation to the
@@ -106,10 +102,10 @@ pub type L1WtxProof = L1TxInclusionProof<WtxIdMarker>;
 mod tests {
     use bitcoin::hashes::Hash;
     use rand::{thread_rng, Rng};
+    use strata_primitives::buf::Buf32;
     use strata_test_utils_btc::segment::BtcChainSegment;
 
     use super::*;
-    use crate::buf::Buf32;
 
     #[test]
     fn test_l1_tx_proof() {

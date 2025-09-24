@@ -2,14 +2,51 @@ use arbitrary::Arbitrary;
 use bitcoin::{block::Header, hashes::Hash, params::Params, BlockHash, CompactTarget, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-
-use super::{error::L1VerificationError, timestamp_store::TimestampStore, L1BlockId};
-use crate::{
+use strata_primitives::{
     buf::Buf32,
     hash::compute_borsh_hash,
-    l1::{utils::compute_block_hash, work::BtcWork, BtcParams, L1BlockCommitment},
+    l1::{BtcParams, L1BlockCommitment, L1BlockId},
     params::GenesisL1View,
 };
+use thiserror::Error;
+
+use super::{timestamp_store::TimestampStore, utils::compute_block_hash, BtcWork};
+
+/// Errors that can occur during Bitcoin header verification.
+#[derive(Debug, Error)]
+pub enum L1VerificationError {
+    /// Occurs when the previous block hash in the header does not match the expected hash.
+    #[error("Block continuity error: expected previous block hash {expected:?}, got {found:?}")]
+    ContinuityError {
+        expected: L1BlockId,
+        found: L1BlockId,
+    },
+
+    /// Occurs when the header's encoded target does not match the expected target.
+    #[error("Invalid Proof-of-Work: header target {found:?} does not match expected target {expected:?}")]
+    PowMismatch { expected: u32, found: u32 },
+
+    /// Occurs when the computed block hash does not meet the target difficulty.
+    #[error("Proof-of-Work not met: block hash {block_hash:?} does not meet target {target:?}")]
+    PowNotMet { block_hash: BlockHash, target: u32 },
+
+    /// Occurs when the header's timestamp is not greater than the median of the previous 11
+    /// timestamps.
+    #[error("Invalid timestamp: header time {time} is not greater than median {median}")]
+    TimestampError { time: u32, median: u32 },
+
+    /// Occurs when the new headers provided in a reorganization are fewer than the headers being
+    /// removed.
+    #[error("Reorg error: new headers length {new_headers} is less than old headers length {old_headers}")]
+    ReorgLengthError {
+        new_headers: usize,
+        old_headers: usize,
+    },
+
+    /// Wraps underlying I/O errors.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+}
 
 /// A struct containing all necessary information for validating a Bitcoin block header.
 ///
@@ -127,7 +164,7 @@ impl HeaderVerificationState {
     ///
     /// The checks include:
     /// 1. Continuity: Ensuring the header's previous block hash matches the last verified hash.
-    /// 2. Proof-of-Work: Validating that the header’s target matches the expected target and that
+    /// 2. Proof-of-Work: Validating that the header's target matches the expected target and that
     ///    the computed block hash meets the target.
     /// 3. Timestamp: Ensuring the header's timestamp is greater than the median of the last 11
     ///    blocks.

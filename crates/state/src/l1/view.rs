@@ -1,6 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::l1::{HeaderVerificationState, L1BlockCommitment, L1BlockId};
+use strata_asm_types::HeaderVerificationState;
+use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 
 /// Describes state relating to the CL's view of L1.  Updated by entries in the
 /// L1 segment of CL blocks.

@@ -17,6 +17,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 shrex.workspace = true
+strata-asm-types.workspace = true
 strata-crypto.workspace = true
 strata-l1tx.workspace = true
 strata-primitives.workspace = true

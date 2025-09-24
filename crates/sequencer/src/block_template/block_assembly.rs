@@ -1,5 +1,6 @@
 use std::{thread, time};
 
+use strata_asm_types::{L1BlockManifest, ProtocolOperation};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
 use strata_common::retry::{
@@ -14,7 +15,6 @@ use strata_eectl::{
 };
 use strata_primitives::{
     buf::Buf32,
-    l1::{L1BlockManifest, ProtocolOperation},
     params::{Params, RollupParams},
 };
 use strata_state::{

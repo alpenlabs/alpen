@@ -7,16 +7,15 @@ use std::{
 use anyhow::bail;
 use bitcoin::{Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
+use strata_asm_types::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
 use strata_config::btcio::ReaderConfig;
 use strata_l1tx::{
     filter::{indexer::index_block, types::TxFilterConfig},
     messages::RelevantTxEntry,
 };
 use strata_primitives::{
-    l1::{
-        get_relative_difficulty_adjustment_height, BtcParams, HeaderVerificationState,
-        L1BlockCommitment, L1BlockId, TIMESTAMPS_FOR_MEDIAN,
-    },
+    constants::TIMESTAMPS_FOR_MEDIAN,
+    l1::{BtcParams, L1BlockCommitment, L1BlockId},
     params::{GenesisL1View, Params},
 };
 use strata_state::BlockSubmitter;

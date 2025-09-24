@@ -2,8 +2,7 @@ use arbitrary::Arbitrary;
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-
-use crate::buf::Buf32;
+use strata_primitives::buf::Buf32;
 
 /// A trait for computing some kind of transaction ID (e.g., [`Txid`](bitcoin::Txid) or
 /// [`Wtxid`](bitcoin::Wtxid)) from a [`Transaction`].

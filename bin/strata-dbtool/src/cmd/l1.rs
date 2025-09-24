@@ -70,7 +70,7 @@ pub(crate) fn get_l1_block_id_at_height(
 pub(crate) fn get_l1_block_manifest(
     db: &impl DatabaseBackend,
     block_id: L1BlockId,
-) -> Result<Option<strata_primitives::l1::L1BlockManifest>, DisplayedError> {
+) -> Result<Option<strata_asm_types::L1BlockManifest>, DisplayedError> {
     db.l1_db()
         .get_block_manifest(block_id)
         .internal_error(format!("Failed to get block manifest for id {block_id:?}",))

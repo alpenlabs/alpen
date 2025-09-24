@@ -1,6 +1,7 @@
 //! Legacy routines extracted from `StateCache`.
 
 use bitcoin::block::Header;
+use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     l1::*,

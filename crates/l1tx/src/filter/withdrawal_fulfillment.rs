@@ -1,8 +1,6 @@
 use bitcoin::{ScriptBuf, Transaction};
-use strata_primitives::{
-    buf::Buf32,
-    l1::{BitcoinAmount, WithdrawalFulfillmentInfo},
-};
+use strata_asm_types::WithdrawalFulfillmentInfo;
+use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 use tracing::{debug, error};
 
 use crate::filter::types::TxFilterConfig;

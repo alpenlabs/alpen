@@ -22,9 +22,10 @@ use bdk_wallet::{
 use make_buf::make_buf;
 use pyo3::{exceptions::PyValueError, prelude::*};
 use secp256k1::{All, Secp256k1, SECP256K1};
+use strata_asm_types::DepositRequestInfo;
 use strata_crypto::EvenSecretKey;
 use strata_l1tx::utils::generate_taproot_address;
-use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY, l1::DepositRequestInfo};
+use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use super::{musig_signer::MusigSigner, types::DepositTxMetadata};
 use crate::{

@@ -1,5 +1,5 @@
+use strata_asm_types::ProtocolOperation;
 use strata_l1tx::messages::RelevantTxEntry;
-use strata_primitives::l1::ProtocolOperation;
 use strata_state::{batch::SignedCheckpoint, chain_state::Chainstate};
 use strata_storage::NodeStorage;
 

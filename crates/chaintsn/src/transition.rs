@@ -5,14 +5,15 @@
 use std::{cmp::max, collections::HashMap};
 
 use rand_core::{RngCore, SeedableRng};
+use strata_asm_types::{
+    DepositInfo, DepositSpendInfo, L1BlockManifest, L1HeaderRecord, L1TxRef, ProtocolOperation,
+    WithdrawalFulfillmentInfo,
+};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_primitives::{
     batch::SignedCheckpoint,
     epoch::EpochCommitment,
-    l1::{
-        BitcoinAmount, DepositInfo, DepositSpendInfo, L1BlockManifest, L1HeaderRecord, L1TxRef,
-        OutputRef, ProtocolOperation, WithdrawalFulfillmentInfo,
-    },
+    l1::{BitcoinAmount, OutputRef},
     l2::L2BlockCommitment,
     params::RollupParams,
     proof::RollupVerifyingKey,
@@ -529,16 +530,12 @@ fn next_rand_op_pos(rng: &mut SlotRng, num: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use rand_core::SeedableRng;
-    use strata_chainexec::MemStateAccessor;
-    use strata_primitives::{
-        buf::Buf32,
-        l1::{
-            BitcoinAmount, DepositInfo, DepositUpdateTx, L1BlockManifest, L1HeaderRecord, L1Tx,
-            ProtocolOperation, WithdrawalFulfillmentInfo,
-        },
-        l2::L2BlockId,
-        params::OperatorConfig,
+    use strata_asm_types::{
+        DepositInfo, DepositUpdateTx, L1BlockManifest, L1HeaderRecord, L1Tx, ProtocolOperation,
+        WithdrawalFulfillmentInfo,
     };
+    use strata_chainexec::MemStateAccessor;
+    use strata_primitives::{buf::Buf32, l1::BitcoinAmount, l2::L2BlockId, params::OperatorConfig};
     use strata_state::{
         block::{ExecSegment, L1Segment, L2BlockBody},
         bridge_state::{

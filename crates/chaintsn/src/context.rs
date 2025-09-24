@@ -1,5 +1,6 @@
 //! Interfaces to expose the context in which a block is being validated.
 
+use strata_asm_types::L1BlockManifest;
 use strata_primitives::prelude::*;
 use strata_state::{
     chain_state::Chainstate,

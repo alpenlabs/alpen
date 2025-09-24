@@ -1,10 +1,11 @@
 use bdk_wallet::bitcoin::{bip32::Xpriv, OutPoint, PublicKey, Transaction, Txid, XOnlyPublicKey};
 use secp256k1::SECP256K1;
+use strata_asm_types::DepositRequestInfo;
 use strata_crypto::EvenSecretKey;
 use strata_l1tx::deposit::deposit_request::extract_deposit_request_info;
 use strata_primitives::{
     constants::{EE_ADDRESS_LEN, STRATA_OP_WALLET_DERIVATION_PATH},
-    l1::{BitcoinAddress, DepositRequestInfo, XOnlyPk},
+    l1::{BitcoinAddress, XOnlyPk},
     params::DepositTxParams,
 };
 

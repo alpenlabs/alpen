@@ -2,13 +2,10 @@
 
 use std::sync::Arc;
 
+use strata_asm_types::L1BlockManifest;
 use strata_db::{types::CheckpointEntry, DbError};
 use strata_primitives::{
-    self,
-    epoch::EpochCommitment,
-    l1::{L1BlockCommitment, L1BlockManifest},
-    l2::L2BlockCommitment,
-    prelude::*,
+    self, epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, prelude::*,
 };
 use strata_state::{
     batch::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary},
