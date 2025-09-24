@@ -9,6 +9,7 @@
 # Or passed as additional arguments after the datatool path
 
 DATATOOL_PATH=${1:-./strata-datatool}
+BITCOIN_NETWORK=${BITCOIN_NETWORK:-"regtest"}
 shift
 
 # Set default Bitcoin RPC credentials if not provided
@@ -86,7 +87,7 @@ if [ -z "$output_found" ]; then
 fi
 
 # Add Bitcoin RPC credentials to genparams command
-$DATATOOL_PATH -b regtest \
+"$DATATOOL_PATH" -b "$BITCOIN_NETWORK" \
     --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
     --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
     --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
