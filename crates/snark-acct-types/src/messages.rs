@@ -1,6 +1,6 @@
 //! Snark account types.
 
-use strata_acct_types::{AcctId, MsgPayload, RawMerkleProof};
+use strata_acct_types::{AcctId, BitcoinAmount, MsgPayload, RawMerkleProof};
 
 /// Message entry in an account inbox.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,7 +42,7 @@ impl MessageEntry {
     }
 
     /// Gets the payload value.
-    pub fn payload_value(&self) -> u64 {
+    pub fn payload_value(&self) -> BitcoinAmount {
         self.payload().value()
     }
 }

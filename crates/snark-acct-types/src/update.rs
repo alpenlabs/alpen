@@ -133,7 +133,7 @@ impl SnarkAccountUpdate {
         &self.update_proof
     }
 
-    /// Converts the base snark account update andd converts it into the full
+    /// Converts the base snark account update and converts it into the full
     /// version by providing accumulator proofs.
     ///
     /// The proofs MUST correspond to the accumulator requirements.  This DOES

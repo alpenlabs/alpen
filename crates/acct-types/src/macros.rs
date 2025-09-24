@@ -12,17 +12,21 @@ macro_rules! impl_thin_wrapper {
             pub fn inner(&self) -> &$inner {
                 &self.0
             }
-        }
 
-        impl Into<$target> for $inner {
-            fn into(self) -> $target {
-                <$target>::new(self)
+            fn into_inner(self) -> $inner {
+                self.0
             }
         }
 
-        impl Into<$inner> for $target {
-            fn into(self) -> $inner {
-                self.0
+        impl From<$inner> for $target {
+            fn from(value: $inner) -> $target {
+                <$target>::new(value)
+            }
+        }
+
+        impl From<$target> for $inner {
+            fn from(value: $target) -> $inner {
+                value.into_inner()
             }
         }
     };

@@ -55,6 +55,7 @@ pub enum AcctTypeId {
 }
 
 impl AcctTypeId {
+    // This MUST always be the last entry in `AcctTypeId`.
     const MAX_RAW: RawAcctTypeId = 1;
 }
 
@@ -64,7 +65,7 @@ impl TryFrom<RawAcctTypeId> for AcctTypeId {
     fn try_from(value: RawAcctTypeId) -> Result<Self, Self::Error> {
         if value > Self::MAX_RAW {
             // SAFETY: ok this is actually safe
-            Ok(unsafe { mem::transmute(value) })
+            Ok(unsafe { mem::transmute::<RawAcctTypeId, AcctTypeId>(value) })
         } else {
             Err(AcctError::InvalidAcctId(value))
         }
