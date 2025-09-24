@@ -1,3 +1,4 @@
+use strata_acct_types::{AcctId, AcctSerial};
 // TODO: move this module out of this crate, possibly in chaintsn
 use strata_asm_common::{AsmError, Mismatched, TypeId as AsmTypeId};
 use strata_asm_logs::{
@@ -7,10 +8,10 @@ use strata_asm_logs::{
 use strata_chainexec::BlockExecutionOutput;
 use strata_chaintsn::context::StateAccessor;
 use strata_primitives::{buf::Buf32, params::RollupParams};
+use strata_snark_acct_types::{MessageEntry, MsgPayload};
 use thiserror::Error;
 
 use crate::{
-    account::{AccountId, AccountSerial, MessageData, SnarkAccountMessageEntry},
     block::{L1Update, OLBlock, OLBlockHeader, OLLog},
     ledger::{LedgerError, LedgerProvider},
     state::{L1View, OLState},
@@ -33,11 +34,11 @@ pub enum StfError {
     LedgerError(#[from] LedgerError),
 
     #[error("non-existent account serial: {0}")]
-    NonExistentAccountSerial(AccountSerial),
+    NonExistentAccountSerial(AcctSerial),
 
     // TODO: possibly can be merged with above
     #[error("non-existent account : {0}")]
-    NonExistentAccount(AccountId),
+    NonExistentAccount(AcctId),
 
     /// Mismatched sequence
     #[error("mismatched sequence: {0}")]
@@ -190,9 +191,9 @@ fn seal_epoch(
     Ok(logs)
 }
 
-fn bridge_account_id() -> Buf32 {
+fn bridge_account_id() -> AcctId {
     let acc = [1; 32]; // TODO: change this
-    acc.into()
+    AcctId(acc)
 }
 
 fn process_deposit(
@@ -200,7 +201,7 @@ fn process_deposit(
     state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
 ) -> StfResult<()> {
-    let serial = dep.ee_id as u32;
+    let serial = AcctSerial(dep.ee_id as u32);
     let acct_id = ledger_provider
         .get_account_id(serial)?
         .ok_or(StfError::NonExistentAccountSerial(serial))?;
@@ -210,12 +211,12 @@ fn process_deposit(
 
     acct_state.balance += dep.amount;
 
-    let message = SnarkAccountMessageEntry {
+    let message = MessageEntry {
         source: bridge_account_id(),
-        included_epoch: state_accessor.cur_epoch(),
-        data: MessageData {
-            transferred_value: dep.amount,
-            payload: deposit_log_to_msg_payload(dep),
+        incl_epoch: state_accessor.cur_epoch() as u32,
+        payload: MsgPayload {
+            value: dep.amount,
+            data: deposit_log_to_msg_payload(dep),
         },
     };
     ledger_provider.insert_message(&acct_id, message)?;

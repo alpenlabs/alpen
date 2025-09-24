@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use strata_acct_types::AcctId;
 use strata_asm_common::AsmLogEntry;
 use strata_chainexec::BlockExecutionOutput;
 use strata_primitives::{
@@ -7,6 +8,7 @@ use strata_primitives::{
     crypto::verify_schnorr_sig,
     params::RollupParams,
 };
+use strata_snark_acct_types::SnarkAccountUpdate;
 
 use crate::{
     account::{AccountId, SnarkAccountUpdate},
@@ -64,11 +66,11 @@ pub struct Transaction {
 #[derive(Debug, Clone)]
 pub enum TransactionPayload {
     GenericAccountMessage {
-        target: AccountId,
+        target: AcctId,
         payload: Vec<u8>,
     },
     SnarkAccountUpdate {
-        target: AccountId, // is the transaction supposed to update the state of this target? looks
+        target: AcctId, // is the transaction supposed to update the state of this target? looks
         // like it
         update: SnarkAccountUpdate,
     },
@@ -308,13 +310,13 @@ impl OLBlockBody {
                 hasher.update(tx.type_id().to_be_bytes());
                 match &tx.payload {
                     TransactionPayload::GenericAccountMessage { target, payload } => {
-                        hasher.update(target.as_slice());
+                        // hasher.update(target.as_slice());
                         hasher.update(payload);
                     }
                     TransactionPayload::SnarkAccountUpdate { target, update } => {
-                        hasher.update(target.as_slice());
-                        hasher.update(&update.witness);
-                        hasher.update(update.data.seq_no.to_be_bytes());
+                        // hasher.update(target.as_slice());
+                        // hasher.update(&update.update_proof);
+                        // hasher.update(update.data.seq_no.to_be_bytes());
                         // TODO: other fields, maybe wait for ssz?
                         todo!()
                     }

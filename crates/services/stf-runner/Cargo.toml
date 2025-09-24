@@ -9,12 +9,16 @@ serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 
+strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
+strata-snark-acct-types.workspace = true
 strata-state.workspace = true
 
 [lints]

@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use sha2::{Digest, Sha256};
+use strata_acct_types::{AcctId, AcctSerial, MessageEntry};
 use strata_primitives::buf::Buf32;
+use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 
-use crate::account::{
-    AccountId, AccountInnerState, AccountSerial, AccountState, SnarkAccountMessageEntry,
-};
+use crate::account::{AccountInnerState, AccountState};
 
 #[derive(Debug, Error)]
 pub enum LedgerError {}
@@ -19,15 +19,15 @@ pub trait LedgerProvider {
     fn accounts_root(&self) -> LedgerResult<Buf32>;
 
     /// Get account id from serial
-    fn get_account_id(&self, serial: AccountSerial) -> LedgerResult<Option<AccountId>>;
+    fn get_account_id(&self, serial: AcctSerial) -> LedgerResult<Option<AcctId>>;
 
     /// Get an account state
-    fn get_account_state(&self, acct_id: &AccountId) -> LedgerResult<Option<AccountState>>;
+    fn get_account_state(&self, acct_id: &AcctId) -> LedgerResult<Option<AccountState>>;
 
     /// Convenient method for accessing state via serial.
     fn get_account_state_by_serial(
         &self,
-        serial: AccountSerial,
+        serial: AcctSerial,
     ) -> LedgerResult<Option<AccountState>> {
         if let Some(acct_id) = self.get_account_id(serial)? {
             self.get_account_state(&acct_id)
@@ -37,26 +37,18 @@ pub trait LedgerProvider {
     }
 
     /// Set an account state
-    fn set_account_state(
-        &mut self,
-        acct_id: AccountId,
-        acct_state: AccountState,
-    ) -> LedgerResult<()>;
+    fn set_account_state(&mut self, acct_id: AcctId, acct_state: AccountState) -> LedgerResult<()>;
 
     /// Insert message to an account message mmr/queue.
     // TODO: message can be a bit generic instead of snark message?
-    fn insert_message(
-        &mut self,
-        acct_id: &AccountId,
-        message: SnarkAccountMessageEntry,
-    ) -> LedgerResult<()>;
+    fn insert_message(&mut self, acct_id: &AcctId, message: MessageEntry) -> LedgerResult<()>;
 }
 
 /// Simplest in-memory ledger. All it has is an in-memory map of acct id to list of messages.
 #[derive(Debug, Clone)]
 pub struct InMemoryVectorLedger {
-    pub serial_to_id: HashMap<AccountSerial, AccountId>,
-    pub account_states: HashMap<AccountId, AccountState>,
+    pub serial_to_id: HashMap<AcctSerial, AcctId>,
+    pub account_states: HashMap<AcctId, AccountState>,
     pub root_cache: Option<Buf32>,
 }
 
@@ -69,7 +61,7 @@ impl InMemoryVectorLedger {
         }
     }
 
-    pub fn create_account(&mut self, serial: AccountSerial, id: AccountId, state: AccountState) {
+    pub fn create_account(&mut self, serial: AcctSerial, id: AcctId, state: AccountState) {
         self.serial_to_id.insert(serial, id);
         self.account_states.insert(id, state);
         self.invalidate_root_cache();
@@ -91,9 +83,9 @@ impl InMemoryVectorLedger {
         sorted_accounts.sort();
 
         for account_id in sorted_accounts {
-            hasher.update(account_id.as_ref());
+            // hasher.update(account_id.0.as_ref());
             if let Some(state) = self.account_states.get(account_id) {
-                hasher.update(state.serial.to_be_bytes());
+                // hasher.update(state.serial.to_be_bytes());
                 hasher.update(state.ty.to_be_bytes());
                 hasher.update(state.balance.to_be_bytes());
             }
@@ -120,9 +112,9 @@ impl LedgerProvider for InMemoryVectorLedger {
         let mut sorted_accounts: Vec<_> = self.account_states.iter().collect();
         sorted_accounts.sort_by_key(|(k, _)| **k);
 
-        for (acct_id, state) in sorted_accounts {
-            hasher.update(acct_id.as_slice());
-            hasher.update(state.serial.to_be_bytes());
+        for (_acct_id, state) in sorted_accounts {
+            // hasher.update(acct_id.as_slice());
+            // hasher.update(state.serial.to_be_bytes());
             hasher.update(state.ty.to_be_bytes());
             hasher.update(state.balance.to_be_bytes());
         }
@@ -130,19 +122,15 @@ impl LedgerProvider for InMemoryVectorLedger {
         Ok(Buf32::new(hasher.finalize().into()))
     }
 
-    fn get_account_id(&self, serial: AccountSerial) -> LedgerResult<Option<AccountId>> {
+    fn get_account_id(&self, serial: AcctSerial) -> LedgerResult<Option<AcctId>> {
         Ok(self.serial_to_id.get(&serial).copied())
     }
 
-    fn get_account_state(&self, acct_id: &AccountId) -> LedgerResult<Option<AccountState>> {
+    fn get_account_state(&self, acct_id: &AcctId) -> LedgerResult<Option<AccountState>> {
         Ok(self.account_states.get(acct_id).cloned())
     }
 
-    fn insert_message(
-        &mut self,
-        acct_id: &AccountId,
-        message: SnarkAccountMessageEntry,
-    ) -> LedgerResult<()> {
+    fn insert_message(&mut self, acct_id: &AcctId, message: MessageEntry) -> LedgerResult<()> {
         if let Some(AccountInnerState::Snark(mut acct)) =
             self.get_account_state(acct_id)?.map(|a| a.inner_state)
         {
@@ -153,11 +141,7 @@ impl LedgerProvider for InMemoryVectorLedger {
         Ok(())
     }
 
-    fn set_account_state(
-        &mut self,
-        acct_id: AccountId,
-        acct_state: AccountState,
-    ) -> LedgerResult<()> {
+    fn set_account_state(&mut self, acct_id: AcctId, acct_state: AccountState) -> LedgerResult<()> {
         self.account_states.insert(acct_id, acct_state);
         self.invalidate_root_cache();
         Ok(())

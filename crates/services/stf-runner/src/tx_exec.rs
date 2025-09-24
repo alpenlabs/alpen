@@ -1,12 +1,12 @@
+use strata_acct_types::AcctId;
 use strata_asm_common::Mismatched;
 use strata_chaintsn::context::StateAccessor;
-use strata_primitives::{buf::Buf32, params::RollupParams};
+use strata_ee_acct_types::EeAccountState;
+use strata_primitives::params::RollupParams;
+use strata_snark_acct_types::{MessageEntry, SnarkAccountUpdate};
 
 use crate::{
-    account::{
-        AccountId, AccountInnerState, AccountUpdateOutputs, SnarkAccountMessageEntry,
-        SnarkAccountState, SnarkAccountUpdate,
-    },
+    account::AccountInnerState,
     block::{OLLog, Transaction, TransactionPayload},
     ledger::LedgerProvider,
     state::{L1View, OLState},
@@ -39,7 +39,7 @@ fn execute_snark_update(
     _params: &RollupParams,
     state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
-    acct_id: &Buf32,
+    acct_id: &AcctId,
     update: &SnarkAccountUpdate,
 ) -> StfResult<Vec<OLLog>> {
     // verify update
@@ -85,10 +85,10 @@ fn execute_snark_update(
 fn verify_update_correctness(
     _state_accessor: &mut impl StateAccessor<OLState, L1View>,
     ledger_provider: &mut impl LedgerProvider,
-    snark_state: &SnarkAccountState,
-    acct_id: &AccountId,
+    snark_state: &EeAccountState,
+    acct_id: &AcctId,
     update: &SnarkAccountUpdate,
-) -> StfResult<(u64, Vec<(AccountId, SnarkAccountMessageEntry)>)> {
+) -> StfResult<(u64, Vec<(AcctId, MessageEntry)>)> {
     // Check if update matches the current account state
     if snark_state.seq_no != update.data.seq_no {
         return Err(StfError::MismatchedSequence(Mismatched::new(
@@ -130,10 +130,10 @@ fn verify_update_correctness(
 
 fn verify_update_outputs_safe(
     _snark_state: &SnarkAccountState,
-    acct_id: &AccountId,
+    acct_id: &AcctId,
     outputs: &AccountUpdateOutputs,
     ledger_provider: &mut impl LedgerProvider,
-) -> StfResult<(u64, Vec<(AccountId, SnarkAccountMessageEntry)>)> {
+) -> StfResult<(u64, Vec<(AcctId, MessageEntry)>)> {
     let mut total_sent = 0u64; // use a wider type like u128 ??
     let acct_state = ledger_provider
         .get_account_state(acct_id)?
