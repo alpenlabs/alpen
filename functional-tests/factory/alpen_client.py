@@ -143,12 +143,14 @@ class AlpenCli:
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"\b(?:bc1|tb1|bcrt1)[0-9a-z]{25,59}\b")
 
-    def deposit(self) -> str | None:
+    def deposit(self, alpen_address=None) -> str | None:
         # fmt: off
         cmd = [
             "alpen",
             "deposit",
         ]
+        if alpen_address:
+            cmd.append(alpen_address)
         # fmt: on
         return self._run_and_extract_with_re(cmd, r"Transaction ID:\s*([0-9a-f]{64})")
 
