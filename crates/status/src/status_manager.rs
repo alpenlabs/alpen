@@ -1,10 +1,10 @@
 //! Manages and updates unified status bundles
 use std::sync::Arc;
 
+use strata_bridge_types::{DepositsTable, OperatorTable};
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::l1::{L1BlockCommitment, L1Status};
 use strata_state::{
-    bridge_state::{DepositsTable, OperatorTable},
     chain_state::Chainstate,
     client_state::{CheckpointState, ClientState, L1Checkpoint},
 };

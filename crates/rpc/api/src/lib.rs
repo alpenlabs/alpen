@@ -1,10 +1,11 @@
 //! Macro trait def for the `strata_` RPC namespace using jsonrpsee.
 use bitcoin::Txid;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
+use strata_bridge_types::PublickeyTable;
 use strata_common::{Action, WorkerType};
 use strata_db::types::{L1TxEntry, L1TxStatus};
 use strata_ol_chain_types::{L2Block, L2BlockId};
-use strata_primitives::{batch::EpochSummary, bridge::PublickeyTable, epoch::EpochCommitment};
+use strata_primitives::{batch::EpochSummary, epoch::EpochCommitment};
 use strata_rpc_types::{
     types::{RpcBlockHeader, RpcClientStatus, RpcL1Status},
     HexBytes, HexBytes32, HexBytes64, L2BlockStatus, RpcChainState, RpcCheckpointConfStatus,

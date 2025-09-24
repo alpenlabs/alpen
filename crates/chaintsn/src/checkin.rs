@@ -4,10 +4,11 @@ use bitcoin::{block::Header, consensus};
 use strata_asm_types::{
     DepositInfo, DepositSpendInfo, L1BlockManifest, ProtocolOperation, WithdrawalFulfillmentInfo,
 };
+use strata_bridge_types::DepositIntent;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::L1Segment;
 use strata_primitives::{batch::SignedCheckpoint, params::RollupParams};
-use strata_state::{batch::verify_signed_checkpoint_sig, bridge_ops::DepositIntent};
+use strata_state::batch::verify_signed_checkpoint_sig;
 
 use crate::{
     context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},

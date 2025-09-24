@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use bitcoin::ScriptBuf;
 use strata_l1_txfmt::TxType;
 use strata_primitives::{
-    bridge::OperatorIdx,
     l1::{BitcoinAmount, BitcoinTxid},
+    operator::OperatorIdx,
 };
 use thiserror::Error;
 

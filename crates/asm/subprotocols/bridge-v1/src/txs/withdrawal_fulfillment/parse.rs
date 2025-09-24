@@ -2,8 +2,8 @@ use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::{ScriptBuf, Txid, hashes::Hash};
 use strata_asm_common::TxInputRef;
 use strata_primitives::{
-    bridge::OperatorIdx,
     l1::{BitcoinAmount, BitcoinTxid},
+    operator::OperatorIdx,
 };
 
 use crate::{

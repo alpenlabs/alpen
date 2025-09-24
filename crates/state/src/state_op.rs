@@ -7,20 +7,19 @@
 use bitcoin::block::Header;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
+use strata_bridge_types::{
+    DepositEntry, DepositIntent, DepositState, DispatchCommand, DispatchedState, FulfilledState,
+};
 use strata_primitives::{
-    bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, OutputRef},
+    l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
     l2::{L2BlockCommitment, L2BlockId},
+    operator::OperatorIdx,
 };
 use tracing::warn;
 
-use crate::{
-    bridge_ops::DepositIntent,
-    bridge_state::{DepositEntry, DepositState, DispatchCommand, DispatchedState, FulfilledState},
-    chain_state::{Chainstate, ChainstateEntry},
-};
+use crate::chain_state::{Chainstate, ChainstateEntry};
 
 /// Collection of writes we're making to the state.
 #[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]

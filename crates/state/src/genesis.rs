@@ -1,21 +1,22 @@
 //! Types relating to constructing the genesis chainstate.
 
 use arbitrary::Arbitrary;
+use strata_bridge_types::OperatorTable;
 
-use crate::{bridge_state, exec_env, l1};
+use crate::{exec_env, l1};
 
 /// Genesis data we use to construct the genesis state.
 #[derive(Clone, Debug, Arbitrary)]
 pub struct GenesisStateData {
     l1_state: l1::L1ViewState,
-    operator_table: bridge_state::OperatorTable,
+    operator_table: OperatorTable,
     exec_state: exec_env::ExecEnvState,
 }
 
 impl GenesisStateData {
     pub fn new(
         l1_state: l1::L1ViewState,
-        operator_table: bridge_state::OperatorTable,
+        operator_table: OperatorTable,
         exec_state: exec_env::ExecEnvState,
     ) -> Self {
         Self {
@@ -29,7 +30,7 @@ impl GenesisStateData {
         &self.l1_state
     }
 
-    pub fn operator_table(&self) -> &bridge_state::OperatorTable {
+    pub fn operator_table(&self) -> &OperatorTable {
         &self.operator_table
     }
 

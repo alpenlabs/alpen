@@ -2,9 +2,10 @@
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_bridge_types::DepositIntent;
 use strata_primitives::{buf::Buf32, l1::payload::BlobSpec};
 
-use crate::{bridge_ops, exec_update, forced_inclusion, state_queue::StateQueue};
+use crate::{exec_update, forced_inclusion, state_queue::StateQueue};
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct ExecEnvState {
@@ -25,7 +26,7 @@ pub struct ExecEnvState {
     /// an update yet.  The sequencer should be processing these as soon as
     /// possible.
     // TODO make this not pub
-    pub pending_deposits: StateQueue<bridge_ops::DepositIntent>,
+    pub pending_deposits: StateQueue<DepositIntent>,
 
     /// Forced inclusions that have been accepted by the CL but not processed by
     /// a CL payload yet.
@@ -55,11 +56,11 @@ impl ExecEnvState {
         &self.cur_state
     }
 
-    pub fn pending_deposits(&self) -> &StateQueue<bridge_ops::DepositIntent> {
+    pub fn pending_deposits(&self) -> &StateQueue<DepositIntent> {
         &self.pending_deposits
     }
 
-    pub fn pending_deposits_mut(&mut self) -> &mut StateQueue<bridge_ops::DepositIntent> {
+    pub fn pending_deposits_mut(&mut self) -> &mut StateQueue<DepositIntent> {
         &mut self.pending_deposits
     }
 }

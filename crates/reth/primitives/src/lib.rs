@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
 /// Type for withdrawal_intents in rpc.
-/// Distinct from `strata_state::bridge_ops::WithdrawalIntent`
+/// Distinct from `strata_bridge_types::WithdrawalIntent`
 /// as this will live in reth repo eventually
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct WithdrawalIntent {

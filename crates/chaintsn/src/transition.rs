@@ -5,6 +5,9 @@ use rand_core::{RngCore, SeedableRng};
 use strata_asm_types::{
     DepositInfo, DepositSpendInfo, L1BlockManifest, ProtocolOperation, WithdrawalFulfillmentInfo,
 };
+use strata_bridge_types::{
+    DepositIntent, DepositState, DispatchCommand, WithdrawOutput, WithdrawalIntent,
+};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::{L2BlockBody, L2BlockHeader, L2Header};
 use strata_primitives::{
@@ -12,8 +15,6 @@ use strata_primitives::{
 };
 use strata_state::{
     batch::{verify_signed_checkpoint_sig, Checkpoint},
-    bridge_ops::{DepositIntent, WithdrawalIntent},
-    bridge_state::{DepositState, DispatchCommand, WithdrawOutput},
     exec_update::{self, Op},
     prelude::*,
     state_op::StateCache,
@@ -523,12 +524,9 @@ fn next_rand_op_pos(rng: &mut SlotRng, num: u32) -> u32 {
 mod tests {
     use rand_core::SeedableRng;
     use strata_asm_types::{L1BlockManifest, L1Tx, ProtocolOperation, WithdrawalFulfillmentInfo};
+    use strata_bridge_types::{DepositState, DepositsTable, DispatchCommand, DispatchedState};
     use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
-    use strata_state::{
-        bridge_state::{DepositState, DepositsTable, DispatchCommand, DispatchedState},
-        chain_state::Chainstate,
-        state_op::StateCache,
-    };
+    use strata_state::{chain_state::Chainstate, state_op::StateCache};
     use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_l2::gen_params;
 
