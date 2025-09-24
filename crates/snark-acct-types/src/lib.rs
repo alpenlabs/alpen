@@ -1,5 +1,5 @@
 //! Types relating to snark accounts and the snark account proof interface.
-#![allow(unused)] // in-development
+#![expect(unused)] // in-development
 
 use strata_mmr as _; // might need this shortly
 

@@ -2,6 +2,7 @@
 
 use strata_acct_types::{AcctId, MsgPayload};
 
+/// Outputs from a snark account update.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpdateOutputs {
     transfers: Vec<OutputTransfer>,
@@ -25,6 +26,11 @@ impl UpdateOutputs {
     }
 }
 
+/// Transfer from one account to another.
+///
+/// This IS NOT a message and DOES NOT carry data.  This is NOT intended to be
+/// for sending funds between subjects.  This is primarily intendede for future
+/// functionality related to sequencer accounts.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct OutputTransfer {
     dest: AcctId,
@@ -45,6 +51,13 @@ impl OutputTransfer {
     }
 }
 
+/// Message from one account to another.
+///
+/// This DOES carry data and value.  This is how many EE-related features are
+/// implemented, including
+///
+/// Drawing a parallel with EVM, this is like a contract call if it was
+/// asynchronous.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputMessage {
     dest: AcctId,

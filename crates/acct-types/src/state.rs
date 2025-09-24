@@ -1,8 +1,9 @@
 use std::fmt;
 
 use crate::{
+    amount::BitcoinAmount,
     errors::{AcctError, AcctResult},
-    id::{AcctId, AcctTypeId},
+    id::{AcctId, AcctSerial, AcctTypeId, RawAcctTypeId},
     mmr::Hash,
 };
 
@@ -18,26 +19,35 @@ pub struct AcctState {
 }
 
 impl AcctState {
-    pub fn ty(&self) -> u16 {
+    pub fn raw_ty(&self) -> RawAcctTypeId {
+        self.intrinsics.raw_ty()
+    }
+
+    /// Attempts to parse the type into a valid [`AcctTypeId`].
+    pub fn ty(&self) -> AcctResult<AcctTypeId> {
         self.intrinsics.ty()
     }
 
-    pub fn serial(&self) -> AcctId {
+    pub fn serial(&self) -> AcctSerial {
         self.intrinsics.serial()
     }
 
-    pub fn balance(&self) -> u64 {
+    pub fn balance(&self) -> BitcoinAmount {
         self.intrinsics.balance()
     }
 
+    // should this even be exposed?
     pub fn encoded_state_buf(&self) -> &[u8] {
         &self.encoded_state
     }
 
+    /// Attempts to decode the account state as a concrete account type.
+    ///
+    /// This MUST match, returns error otherwise.
     pub fn decode_as_type<T: AcctTypeState>(&self) -> AcctResult<T> {
         let dec_ty = T::ID;
-        if T::ID as u16 != self.ty() {
-            let id = AcctTypeId::from(self.ty());
+        if T::ID as u16 != self.raw_ty() {
+            let id = AcctTypeId::try_from(self.raw_ty())?;
             return Err(AcctError::MismatchedType(AcctTypeId::Empty, T::ID));
         }
 
@@ -55,15 +65,15 @@ pub struct AcctStateSummary {
 }
 
 impl AcctStateSummary {
-    pub fn ty(&self) -> u16 {
-        self.intrinsics.ty()
+    pub fn raw_ty(&self) -> RawAcctTypeId {
+        self.intrinsics.raw_ty()
     }
 
-    pub fn serial(&self) -> AcctId {
+    pub fn serial(&self) -> AcctSerial {
         self.intrinsics.serial()
     }
 
-    pub fn balance(&self) -> u64 {
+    pub fn balance(&self) -> BitcoinAmount {
         self.intrinsics.balance()
     }
 
@@ -78,39 +88,55 @@ impl AcctStateSummary {
 pub struct IntrinsicAcctState {
     // immutable fields, these MUST NOT change
     /// Account type, which determines how we interact with it.
-    ty: u16,
+    raw_ty: RawAcctTypeId,
 
     /// Account serial number.
-    serial: AcctId,
+    serial: AcctSerial,
 
     // mutable fields, which MAY change
     /// Native asset (satoshi) balance.
-    balance: u64,
+    balance: BitcoinAmount,
 }
 
 impl IntrinsicAcctState {
-    pub fn new(ty: u16, serial: AcctId, balance: u64) -> Self {
+    /// Constructs a new raw instance.
+    fn new_unchecked(raw_ty: RawAcctTypeId, serial: AcctSerial, balance: BitcoinAmount) -> Self {
         Self {
-            ty,
+            raw_ty,
             serial,
             balance,
         }
     }
 
-    pub fn ty(&self) -> u16 {
-        self.ty
+    /// Creates a new account using a real type ID.
+    pub fn new(ty: AcctTypeId, serial: AcctSerial, balance: BitcoinAmount) -> Self {
+        Self::new_unchecked(ty as RawAcctTypeId, serial, balance)
     }
 
-    pub fn serial(&self) -> AcctId {
+    /// Creates a new empty account with no balance.
+    pub fn new_empty(serial: AcctSerial) -> Self {
+        Self::new(AcctTypeId::Empty, serial, 0.into())
+    }
+
+    pub fn raw_ty(&self) -> RawAcctTypeId {
+        self.raw_ty
+    }
+
+    /// Attempts to parse the type into a valid [`AcctTypeId`].
+    pub fn ty(&self) -> AcctResult<AcctTypeId> {
+        AcctTypeId::try_from(self.raw_ty())
+    }
+
+    pub fn serial(&self) -> AcctSerial {
         self.serial
     }
 
-    pub fn balance(&self) -> u64 {
+    pub fn balance(&self) -> BitcoinAmount {
         self.balance
     }
 
     /// Constructs a new instance with an updated balance.
-    pub fn with_new_balance(&self, bal: u64) -> Self {
+    pub fn with_new_balance(&self, bal: BitcoinAmount) -> Self {
         Self {
             balance: bal,
             ..*self

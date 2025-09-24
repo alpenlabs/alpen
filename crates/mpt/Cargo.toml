@@ -14,7 +14,7 @@ alloy-rpc-types-eth.workspace = true
 
 anyhow.workspace = true
 revm-primitives.workspace = true
-rlp = "0.5.2"
+rlp.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

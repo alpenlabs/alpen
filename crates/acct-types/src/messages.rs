@@ -1,6 +1,6 @@
 //! Account message types.
 
-use crate::id::AcctId;
+use crate::{amount::BitcoinAmount, id::AcctId};
 
 /// Describes a message we're getting ready to send.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,16 +47,16 @@ impl ReceivedMessage {
 /// Contents of a message, ie the data and sent value payload components.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MsgPayload {
-    value: u64, // TODO convert to BitcoinAmount
+    value: BitcoinAmount,
     data: Vec<u8>,
 }
 
 impl MsgPayload {
-    pub fn new(value: u64, data: Vec<u8>) -> Self {
+    pub fn new(value: BitcoinAmount, data: Vec<u8>) -> Self {
         Self { value, data }
     }
 
-    pub fn value(&self) -> u64 {
+    pub fn value(&self) -> BitcoinAmount {
         self.value
     }
 

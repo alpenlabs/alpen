@@ -9,7 +9,7 @@ use crate::{
 
 /// Description of the operation of what we're updating.
 #[derive(Clone, Debug)]
-pub struct UpdateOperation {
+pub struct UpdateOperationData {
     /// Sequence number to prevent replays, since we can't just rely on message
     /// index.
     seq_no: u64,
@@ -31,7 +31,7 @@ pub struct UpdateOperation {
     extra_data: Vec<u8>,
 }
 
-impl UpdateOperation {
+impl UpdateOperationData {
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }
@@ -100,17 +100,59 @@ impl LedgerRefProofs {
     }
 }
 
-/// Container for a snark account update with the various relevant proofs.
+/// Container for a snark account update but with only the update proof itself,
+/// ignoring the accumulator proofs that anyone can theoretically generate.
+///
+/// This is enough to verify that an update is safe to potentially apply to some
+/// current state, but not that its claimed dependencies on the ledger are
+/// actually correct.
 #[derive(Clone, Debug)]
 pub struct SnarkAccountUpdate {
     /// The state change/requirements operation data itself.
-    data: UpdateOperation,
+    operation: UpdateOperationData,
 
     /// Proof for the update itself, attesting to relationships between the
     /// various fields.
     // TODO use predicate spec
     update_proof: Vec<u8>,
+}
 
+impl SnarkAccountUpdate {
+    pub fn new(operation: UpdateOperationData, update_proof: Vec<u8>) -> Self {
+        Self {
+            operation,
+            update_proof,
+        }
+    }
+
+    pub fn operation(&self) -> &UpdateOperationData {
+        &self.operation
+    }
+
+    pub fn update_proof(&self) -> &[u8] {
+        &self.update_proof
+    }
+
+    /// Converts the base snark account update andd converts it into the full
+    /// version by providing accumulator proofs.
+    ///
+    /// The proofs MUST correspond to the accumulator requirements.  This DOES
+    /// NOT validate that they are correct, this must be checked ahead of time.
+    pub fn into_full(self, proofs: UpdateAccumulatorProofs) -> SnarkAccountUpdateContainer {
+        SnarkAccountUpdateContainer {
+            base_update: self,
+            accumulator_proofs: proofs,
+        }
+    }
+}
+
+/// The proofs for the inputs and ledger references that we accessing in the
+/// ledger.
+///
+/// Note that this container does not specify *which block* these proofs are for
+/// as that must be supplied from some additional context.
+#[derive(Clone, Debug)]
+pub struct UpdateAccumulatorProofs {
     /// MMR proofs for each of the inbox messages we processed.
     ///
     /// These may be updated by the sequencer.
@@ -120,4 +162,60 @@ pub struct SnarkAccountUpdate {
     ///
     /// These may be updated by the sequencer.
     ledger_ref_proofs: LedgerRefProofs,
+}
+
+impl UpdateAccumulatorProofs {
+    fn new(inbox_proofs: Vec<MessageEntryProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
+        Self {
+            inbox_proofs,
+            ledger_ref_proofs,
+        }
+    }
+
+    pub fn inbox_proofs(&self) -> &[MessageEntryProof] {
+        &self.inbox_proofs
+    }
+
+    pub fn ledger_ref_proofs(&self) -> &LedgerRefProofs {
+        &self.ledger_ref_proofs
+    }
+}
+
+/// Container for a snark account update with the contextual relevant proofs.
+///
+/// This is what is contained in the OL block.
+#[derive(Clone, Debug)]
+pub struct SnarkAccountUpdateContainer {
+    /// The base update data with proof which can be checked independently.
+    base_update: SnarkAccountUpdate,
+
+    /// Proofs for the "context" around the ledger that we're operating on,
+    /// which may need to be updated according to the recent state if it was
+    /// provided for an older one.
+    accumulator_proofs: UpdateAccumulatorProofs,
+}
+
+impl SnarkAccountUpdateContainer {
+    pub fn new(
+        base_update: SnarkAccountUpdate,
+        accumulator_proofs: UpdateAccumulatorProofs,
+    ) -> Self {
+        Self {
+            base_update,
+            accumulator_proofs,
+        }
+    }
+
+    pub fn base_update(&self) -> &SnarkAccountUpdate {
+        &self.base_update
+    }
+
+    pub fn accumulator_proofs(&self) -> &UpdateAccumulatorProofs {
+        &self.accumulator_proofs
+    }
+
+    /// Gets the inner operation data that we do stuff with.
+    pub fn operation(&self) -> &UpdateOperationData {
+        self.base_update().operation()
+    }
 }

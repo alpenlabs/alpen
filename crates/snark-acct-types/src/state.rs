@@ -1,9 +1,30 @@
 //! Snark account state types.
 
-use strata_acct_types::{AcctTypeId, AcctTypeState, Hash, Mmr64};
+use strata_acct_types::{AcctTypeId, AcctTypeState, Hash, Mmr64, impl_thin_wrapper};
 
 /// State root type.
 type Root = Hash;
+
+/// Raw sequence number type.
+type RawSeqno = u64;
+
+/// Account sequence number type.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Seqno(RawSeqno);
+
+impl_thin_wrapper!(Seqno => RawSeqno);
+
+impl Seqno {
+    /// Gets the incremented seqno.
+    pub fn incr(self) -> Seqno {
+        // do we really have to panic here?
+        if *self.inner() == RawSeqno::MAX {
+            panic!("snarkacct: reached max seqno");
+        }
+
+        Seqno::new(self.inner() + 1)
+    }
+}
 
 /// Snark account state.  This is contained immediately within the basic
 /// account state entry.
@@ -17,7 +38,7 @@ pub struct SnarkAcctState {
     proof_state: ProofState,
 
     /// Sequence number for updates.
-    seq_no: u64,
+    seq_no: Seqno,
 
     /// Inbox message MMR.
     inbox_mmr: Mmr64,
@@ -32,7 +53,7 @@ impl SnarkAcctState {
         self.proof_state
     }
 
-    pub fn seq_no(&self) -> u64 {
+    pub fn seq_no(&self) -> Seqno {
         self.seq_no
     }
 

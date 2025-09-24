@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::id::AcctTypeId;
+use crate::id::{AcctTypeId, RawAcctTypeId};
 
 pub type AcctResult<T> = Result<T, AcctError>;
 
@@ -14,4 +14,7 @@ pub enum AcctError {
     /// Issue decoding an account's type state.
     #[error("decode {0} account state")]
     DecodeState(AcctTypeId),
+
+    #[error("invalid account id {0}")]
+    InvalidAcctId(RawAcctTypeId),
 }
