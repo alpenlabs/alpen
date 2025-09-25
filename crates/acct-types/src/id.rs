@@ -2,33 +2,33 @@ use std::{fmt, mem};
 
 use int_enum::IntEnum;
 
-use crate::{errors::AcctError, impl_thin_wrapper};
+use crate::{errors::AcctError, impl_opaque_thin_wrapper};
 
-type RawAcctId = [u8; 32];
+type RawAccountId = [u8; 32];
 
 /// Universal account identifier.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct AcctId(RawAcctId);
+pub struct AccountId(RawAccountId);
 
-impl_thin_wrapper!(AcctId => RawAcctId);
+impl_opaque_thin_wrapper!(AccountId => RawAccountId);
 
-type RawAcctSerial = u32;
+type RawAccountSerial = u32;
 
 /// Incrementally assigned account serial number.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct AcctSerial(RawAcctSerial);
+pub struct AccountSerial(RawAccountSerial);
 
-impl_thin_wrapper!(AcctSerial => RawAcctSerial);
+impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
 
-impl AcctSerial {
-    pub fn incr(self) -> AcctSerial {
-        if *self.inner() == RawAcctSerial::MAX {
+impl AccountSerial {
+    pub fn incr(self) -> AccountSerial {
+        if *self.inner() == RawAccountSerial::MAX {
             panic!("acctsys: reached max serial number");
         }
 
-        AcctSerial::new(self.inner() + 1)
+        AccountSerial::new(self.inner() + 1)
     }
 }
 
@@ -39,15 +39,15 @@ type RawSubjectId = [u8; 32];
 #[repr(transparent)]
 pub struct SubjectId(RawSubjectId);
 
-impl_thin_wrapper!(SubjectId => RawSubjectId);
+impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 
 /// Raw primitive version of an account ID.  Defined here for convenience.
-pub type RawAcctTypeId = u16;
+pub type RawAccountTypeId = u16;
 
 /// Distinguishes between account types.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, IntEnum)]
 #[repr(u16)]
-pub enum AcctTypeId {
+pub enum AccountTypeId {
     /// "Inert" account type for a stub that exists but does nothing, but store
     /// balance.
     Empty = 0,
@@ -56,11 +56,11 @@ pub enum AcctTypeId {
     Snark = 1,
 }
 
-impl fmt::Display for AcctTypeId {
+impl fmt::Display for AccountTypeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            AcctTypeId::Empty => "empty",
-            AcctTypeId::Snark => "snark",
+            AccountTypeId::Empty => "empty",
+            AccountTypeId::Snark => "snark",
         };
         write!(f, "{}", s)
     }

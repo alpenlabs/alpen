@@ -1,4 +1,4 @@
-use crate::impl_thin_wrapper;
+use crate::impl_transparent_thin_wrapper;
 
 type RawBitcoinAmount = u64;
 
@@ -10,4 +10,4 @@ type RawBitcoinAmount = u64;
 #[repr(transparent)]
 pub struct BitcoinAmount(RawBitcoinAmount);
 
-impl_thin_wrapper!(BitcoinAmount => RawBitcoinAmount);
+impl_transparent_thin_wrapper!(BitcoinAmount => RawBitcoinAmount);

@@ -1,6 +1,6 @@
 //! Account output types that get applied to the ledger.
 
-use strata_acct_types::{AcctId, MsgPayload};
+use strata_acct_types::{AccountId, MsgPayload};
 
 /// Outputs from a snark account update.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,16 +33,16 @@ impl UpdateOutputs {
 /// functionality related to sequencer accounts.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct OutputTransfer {
-    dest: AcctId,
+    dest: AccountId,
     value: u64,
 }
 
 impl OutputTransfer {
-    pub fn new(dest: AcctId, value: u64) -> Self {
+    pub fn new(dest: AccountId, value: u64) -> Self {
         Self { dest, value }
     }
 
-    pub fn dest(&self) -> AcctId {
+    pub fn dest(&self) -> AccountId {
         self.dest
     }
 
@@ -60,16 +60,16 @@ impl OutputTransfer {
 /// asynchronous.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputMessage {
-    dest: AcctId,
+    dest: AccountId,
     payload: MsgPayload,
 }
 
 impl OutputMessage {
-    pub fn new(dest: AcctId, payload: MsgPayload) -> Self {
+    pub fn new(dest: AccountId, payload: MsgPayload) -> Self {
         Self { dest, payload }
     }
 
-    pub fn dest(&self) -> AcctId {
+    pub fn dest(&self) -> AccountId {
         self.dest
     }
 

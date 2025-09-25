@@ -1,20 +1,23 @@
 //! Account message types.
 
-use crate::{amount::BitcoinAmount, id::AcctId};
+use crate::{amount::BitcoinAmount, id::AccountId};
 
 /// Describes a message we're getting ready to send.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SentMessage {
-    dest: AcctId,
+    /// Destination orchestration layer account ID.
+    dest: AccountId,
+
+    /// Message payload.
     payload: MsgPayload,
 }
 
 impl SentMessage {
-    pub fn new(dest: AcctId, payload: MsgPayload) -> Self {
+    pub fn new(dest: AccountId, payload: MsgPayload) -> Self {
         Self { dest, payload }
     }
 
-    pub fn dest(&self) -> AcctId {
+    pub fn dest(&self) -> AccountId {
         self.dest
     }
 
@@ -26,16 +29,16 @@ impl SentMessage {
 /// Describes a message being received by an account.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceivedMessage {
-    source: AcctId,
+    source: AccountId,
     payload: MsgPayload,
 }
 
 impl ReceivedMessage {
-    pub fn new(source: AcctId, payload: MsgPayload) -> Self {
+    pub fn new(source: AccountId, payload: MsgPayload) -> Self {
         Self { source, payload }
     }
 
-    pub fn source(&self) -> AcctId {
+    pub fn source(&self) -> AccountId {
         self.source
     }
 

@@ -1,6 +1,6 @@
 //! Snark account state types.
 
-use strata_acct_types::{AcctTypeId, AcctTypeState, Hash, Mmr64, impl_thin_wrapper};
+use strata_acct_types::{AccountTypeId, AccountTypeState, Hash, Mmr64, impl_opaque_thin_wrapper};
 
 /// State root type.
 type Root = Hash;
@@ -12,7 +12,7 @@ type RawSeqno = u64;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Seqno(RawSeqno);
 
-impl_thin_wrapper!(Seqno => RawSeqno);
+impl_opaque_thin_wrapper!(Seqno => RawSeqno);
 
 impl Seqno {
     /// Gets the incremented seqno.
@@ -30,7 +30,7 @@ impl Seqno {
 /// account state entry.
 // TODO SSZ
 #[derive(Clone, Debug)]
-pub struct SnarkAcctState {
+pub struct SnarkAccountState {
     /// Vk used to verify updates.
     update_vk: Vec<u8>, // TODO use predicate fmt
 
@@ -44,7 +44,7 @@ pub struct SnarkAcctState {
     inbox_mmr: Mmr64,
 }
 
-impl SnarkAcctState {
+impl SnarkAccountState {
     pub fn update_vk(&self) -> &[u8] {
         &self.update_vk
     }
@@ -62,8 +62,8 @@ impl SnarkAcctState {
     }
 }
 
-impl AcctTypeState for SnarkAcctState {
-    const ID: AcctTypeId = AcctTypeId::Snark;
+impl AccountTypeState for SnarkAccountState {
+    const ID: AccountTypeId = AccountTypeId::Snark;
 }
 
 /// Snark account's proof state, updated on a proof.

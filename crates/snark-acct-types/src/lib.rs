@@ -14,5 +14,5 @@ pub use accumulators::*;
 pub use messages::*;
 pub use outputs::*;
 pub use proof_interface::UpdateProofPubParams;
-pub use state::{ProofState, SnarkAcctState};
+pub use state::{ProofState, SnarkAccountState};
 pub use update::*;

@@ -1,12 +1,12 @@
 //! Snark account types.
 
-use strata_acct_types::{AcctId, BitcoinAmount, MsgPayload, RawMerkleProof};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, RawMerkleProof};
 
 /// Message entry in an account inbox.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessageEntry {
     /// The source account ID of the message.
-    source: AcctId,
+    source: AccountId,
 
     /// The epoch that the message was included.
     incl_epoch: u32,
@@ -16,7 +16,7 @@ pub struct MessageEntry {
 }
 
 impl MessageEntry {
-    pub fn new(source: AcctId, incl_epoch: u32, payload: MsgPayload) -> Self {
+    pub fn new(source: AccountId, incl_epoch: u32, payload: MsgPayload) -> Self {
         Self {
             source,
             incl_epoch,
@@ -24,7 +24,7 @@ impl MessageEntry {
         }
     }
 
-    pub fn source(&self) -> AcctId {
+    pub fn source(&self) -> AccountId {
         self.source
     }
 

@@ -1,6 +1,6 @@
 //! Types relating to EE block related structures.
 
-use strata_acct_types::{AcctId, Hash, SentMessage, SubjectId};
+use strata_acct_types::{AccountId, Hash, SentMessage, SubjectId};
 
 /// Container for an execution block that signals additional data with it.
 // TODO better name, using an intentionally bad one for now
@@ -176,16 +176,19 @@ impl BlockOutputs {
 // TODO SSZ?
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputTransfer {
-    dest: AcctId,
+    /// Destination orchestration layer account ID.
+    dest: AccountId,
+
+    /// Native asset value sent (satoshis).
     value: u64,
 }
 
 impl OutputTransfer {
-    pub fn new(dest: AcctId, value: u64) -> Self {
+    pub fn new(dest: AccountId, value: u64) -> Self {
         Self { dest, value }
     }
 
-    pub fn dest(&self) -> AcctId {
+    pub fn dest(&self) -> AccountId {
         self.dest
     }
 
