@@ -81,7 +81,11 @@ pub(crate) fn parse_pk(pk: &str) -> Result<PublicKey, Error> {
 }
 
 /// Parses an [`OutPoint`] from a string.
-#[allow(dead_code)] // This might be useful in the future
+#[allow(
+    dead_code,
+    clippy::allow_attributes,
+    reason = "This might be useful in the future"
+)]
 pub(crate) fn parse_outpoint(outpoint: &str) -> Result<OutPoint, Error> {
     let parts: Vec<&str> = outpoint.split(':').collect();
     if parts.len() != 2 {

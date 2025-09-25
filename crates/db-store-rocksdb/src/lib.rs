@@ -159,7 +159,7 @@ pub struct RocksDbBackend {
 }
 
 impl RocksDbBackend {
-    #[allow(clippy::too_many_arguments)] // hard to avoid here
+    #[expect(clippy::too_many_arguments, reason = "hard to avoid here")]
     pub fn new(
         asm_db: Arc<AsmDb>,
         l1_db: Arc<L1Db>,

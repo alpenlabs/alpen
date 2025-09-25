@@ -295,7 +295,7 @@ fn has_expected_checkpoint(
     false
 }
 
-#[allow(unused)]
+#[expect(unused, reason = "used for fetching manifest")]
 fn fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<L1BlockManifest, Error> {
     try_fetch_manifest(h, l1man)?.ok_or(Error::MissingL1BlockHeight(h))
 }
@@ -305,7 +305,7 @@ fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<L1BlockMa
 }
 
 /// Prepares the execution segment for the block.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "used for preparing exec data")]
 fn prepare_exec_data<E: ExecEngineCtl>(
     _slot: u64,
     timestamp: u64,

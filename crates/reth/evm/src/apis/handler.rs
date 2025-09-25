@@ -15,7 +15,10 @@ use revm_primitives::{hardfork::SpecId, U256};
 
 use crate::{apis::validation, constants::BASEFEE_ADDRESS};
 
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Handler struct contains phantom data and doesn't need debug implementation"
+)]
 pub struct AlpenRevmHandler<EVM> {
     pub _phantom: core::marker::PhantomData<EVM>,
 }

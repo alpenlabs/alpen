@@ -45,7 +45,6 @@ impl L1HeaderRecord {
         &self.blkid
     }
 
-    #[allow(clippy::missing_const_for_fn)]
     pub fn buf(&self) -> &[u8] {
         &self.buf
     }

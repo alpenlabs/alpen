@@ -89,7 +89,6 @@ pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
 /// # Errors
 ///
 /// Returns an error if the export process fails.
-#[allow(clippy::missing_const_for_fn)]
 fn export_elf(_elf_path: &Path) -> anyhow::Result<()> {
     #[cfg(feature = "sp1-builder")]
     {
@@ -457,7 +456,6 @@ pub(crate) struct ParamsConfig {
     /// Tagname used to identify Checkpoint envelopes
     checkpoint_tag: String,
     /// Network to use.
-    #[allow(unused)]
     bitcoin_network: Network,
     /// Block time in seconds.
     block_time_sec: u64,

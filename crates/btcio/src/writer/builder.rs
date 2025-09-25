@@ -534,7 +534,6 @@ mod tests {
         writer::builder::EnvelopeError,
     };
 
-    #[allow(clippy::type_complexity)]
     fn get_mock_data() -> (
         Arc<WriterContext<TestBitcoinClient>>,
         Vec<u8>,

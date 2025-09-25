@@ -58,10 +58,10 @@ impl DaCommitment {
 /// Consensus level protocol operations extracted from a bitcoin transaction.
 ///
 /// These are submitted to the OL STF and impact state.
+#[expect(clippy::large_enum_variant, reason = "used for protocol operations")]
 #[derive(
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
 )]
-#[allow(clippy::large_enum_variant)]
 pub enum ProtocolOperation {
     /// Deposit Transaction
     Deposit(DepositInfo),

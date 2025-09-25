@@ -22,7 +22,6 @@ pub struct WithdrawalIntent {
 }
 
 sol! {
-    #[allow(missing_docs)]
     event WithdrawalIntentEvent(
         /// Withdrawal amount in sats.
         uint64 amount,

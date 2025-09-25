@@ -69,7 +69,6 @@ pub(crate) struct StrataRpcImpl {
 }
 
 impl StrataRpcImpl {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         status_channel: StatusChannel,
         sync_manager: Arc<SyncManager>,
@@ -227,7 +226,6 @@ impl StrataApiServer for StrataRpcImpl {
             finalized_epoch = Some(fin_ckpt.batch_info.get_epoch_commitment());
         }
 
-        #[allow(deprecated)]
         Ok(RpcClientStatus {
             finalized_epoch,
             confirmed_epoch,
@@ -461,7 +459,7 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     // FIXME: remove deprecated
-    #[allow(deprecated)]
+    #[expect(deprecated, reason = "used for rpc server")]
     async fn sync_status(&self) -> RpcResult<RpcSyncStatus> {
         let cssu = self
             .status_channel
@@ -704,7 +702,6 @@ pub(crate) struct SequencerServerImpl {
 }
 
 impl SequencerServerImpl {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         envelope_handle: Arc<EnvelopeHandle>,
         broadcast_handle: Arc<L1BroadcastHandle>,

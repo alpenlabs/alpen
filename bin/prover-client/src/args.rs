@@ -238,7 +238,7 @@ pub(crate) struct ResolvedConfig {
     pub(crate) bitcoind_password: String,
 
     /// Path to the custom rollup configuration file.
-    #[expect(dead_code)] // Part of public API, may be used in future
+    #[expect(dead_code, reason = "Part of public API, may be used in future")]
     pub(crate) rollup_params: PathBuf,
 }
 

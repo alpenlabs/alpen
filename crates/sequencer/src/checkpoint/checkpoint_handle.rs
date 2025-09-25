@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 //! Checkpointing bookkeeping and control logic.
 
 use std::sync::Arc;
@@ -9,7 +7,10 @@ use strata_storage::CheckpointDbManager;
 use tokio::sync::broadcast;
 use tracing::*;
 
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct CheckpointHandle {
     /// Manager for underlying database.
     db_manager: Arc<CheckpointDbManager>,

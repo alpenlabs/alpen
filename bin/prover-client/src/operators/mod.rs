@@ -112,7 +112,7 @@ pub(crate) trait ProvingOp {
     /// # Returns
     ///
     /// A [`Vec`] containing the [`ProofKey`] for the dependent proving operations.
-    #[allow(unused_variables)]
+    #[expect(unused_variables, reason = "used for overriding default impl")]
     async fn create_deps_tasks(
         &self,
         params: Self::Params,

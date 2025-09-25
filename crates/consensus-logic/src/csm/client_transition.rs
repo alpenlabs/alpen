@@ -22,7 +22,10 @@ pub trait EventContext {
 
 /// Event context using the main node storage interfaace.
 #[derive(Clone)]
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct StorageEventContext<'c> {
     storage: &'c NodeStorage,
 }

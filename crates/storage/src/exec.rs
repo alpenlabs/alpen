@@ -57,7 +57,7 @@ macro_rules! inst_ops {
             $($iname:ident($($aname:ident: $aty:ty),*) => $ret:ty;)*
         }
     } => {
-        #[expect(missing_debug_implementations)]
+        #[expect(missing_debug_implementations, reason = "Some inner types don't have Debug implementation")]
         pub struct $base {
             pool: threadpool::ThreadPool,
             inner: Arc<dyn ShimTrait>,

@@ -65,7 +65,6 @@ pub struct SledBackend {
 }
 
 impl SledBackend {
-    #[allow(clippy::too_many_arguments)] // hard to avoid here
     pub fn new(sled_db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         let db_ref = &sled_db;
         let config_ref = &config;

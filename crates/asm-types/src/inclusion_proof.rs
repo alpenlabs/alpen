@@ -41,7 +41,6 @@ impl<T> L1TxInclusionProof<T> {
         }
     }
 
-    #[allow(clippy::missing_const_for_fn)]
     pub fn cohashes(&self) -> &[Buf32] {
         &self.cohashes
     }

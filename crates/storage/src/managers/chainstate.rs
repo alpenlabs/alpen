@@ -15,7 +15,10 @@ use tracing::*;
 
 use crate::{cache, ops};
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct ChainstateManager {
     ops: ops::chainstate::ChainstateOps,
     tl_cache: cache::CacheTable<StateInstanceId, Arc<Chainstate>>,

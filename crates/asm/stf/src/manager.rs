@@ -187,7 +187,6 @@ impl SubprotoManager {
             .ok_or(AsmError::InvalidSubprotocol(id))
     }
 
-    #[allow(unused)]
     fn get_handler(&self, id: SubprotocolId) -> Result<&dyn SubprotoHandler, AsmError> {
         self.handlers
             .get(&id)
@@ -205,7 +204,7 @@ impl SubprotoManager {
     }
 
     /// Extracts the section state for a subprotocol.
-    #[allow(unused)]
+    #[expect(dead_code, reason = "Method is part of section state management API")]
     pub(crate) fn to_section_state<S: Subprotocol>(&self) -> SectionState {
         let h = self.get_handler(S::ID).expect("asm: unloaded subprotocol");
         h.to_section()

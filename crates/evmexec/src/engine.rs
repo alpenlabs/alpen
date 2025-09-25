@@ -33,19 +33,16 @@ use crate::{
     http_client::EngineRpc,
 };
 
-#[allow(dead_code)]
 fn address_from_slice(slice: &[u8]) -> Option<Address> {
     let slice: Option<[u8; 20]> = slice.try_into().ok();
     slice.map(Address::from)
 }
 
-#[allow(dead_code)]
 fn sats_to_gwei(sats: u64) -> Option<u64> {
     // 1 BTC = 10^8 sats = 10^9 gwei
     sats.checked_mul(10)
 }
 
-#[allow(dead_code)]
 fn gwei_to_sats(gwei: u64) -> u64 {
     // 1 BTC = 10^8 sats = 10^9 gwei
     gwei / 10
@@ -65,7 +62,6 @@ struct RpcExecEngineInner<T: EngineRpc> {
 }
 
 impl<T: EngineRpc> RpcExecEngineInner<T> {
-    #[allow(dead_code)]
     fn new(client: T, head_block_hash: B256) -> Self {
         Self {
             client,
@@ -77,7 +73,6 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         }
     }
 
-    #[allow(dead_code)]
     async fn update_block_state(
         &self,
         fcs_partial: ForkchoiceStatePartial,
@@ -116,7 +111,6 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         }
     }
 
-    #[allow(dead_code)]
     async fn build_block_from_mempool(
         &self,
         payload_env: PayloadEnv,
@@ -174,7 +168,6 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         Ok(u64::from_be_bytes(raw_id))
     }
 
-    #[allow(dead_code)]
     async fn get_payload_status(&self, payload_id: u64) -> EngineResult<PayloadStatus> {
         let payload = self
             .client
@@ -223,7 +216,6 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         ))
     }
 
-    #[allow(dead_code)]
     async fn submit_new_payload(&self, payload: ExecPayloadData) -> EngineResult<BlockStatus> {
         let Ok(el_payload) = borsh::from_slice::<ElPayload>(payload.accessory_data()) else {
             // In particular, this happens if we try to call it with for genesis block.
@@ -276,7 +268,6 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         }
     }
 
-    #[allow(dead_code)]
     async fn check_block_exists(&self, block_hash: B256) -> EngineResult<bool> {
         let block = self
             .client
@@ -287,8 +278,10 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
     }
 }
 
-#[allow(dead_code)]
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "some inner types don't have Debug impls"
+)]
 pub struct RpcExecEngineCtl<T: EngineRpc> {
     inner: RpcExecEngineInner<T>,
     tokio_handle: Handle,

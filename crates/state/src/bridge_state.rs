@@ -95,7 +95,7 @@ impl OperatorTable {
     }
 
     /// Sanity checks the operator table for sensibility.
-    #[allow(dead_code)] // FIXME: remove this.
+    #[expect(unused, reason = "used for sanity checking")]
     fn sanity_check(&self) {
         if !self.operators.is_sorted_by_key(|e| e.idx) {
             panic!("bridge_state: operators list not sorted");
@@ -207,7 +207,7 @@ impl DepositsTable {
     }
 
     /// Sanity checks the operator table for sensibility.
-    #[allow(dead_code)] // FIXME: remove this.
+    #[expect(unused, reason = "used for sanity checking")]
     fn sanity_check(&self) {
         if !self.deposits.is_sorted_by_key(|e| e.deposit_idx) {
             panic!("bridge_state: deposits list not sorted");

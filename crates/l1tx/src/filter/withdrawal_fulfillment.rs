@@ -159,7 +159,7 @@ mod test {
         DEPOSIT_AMT - OPERATOR_FEE
     }
 
-    #[expect(unused)]
+    #[expect(unused, reason = "used for testing")]
     fn generate_data() -> (Vec<Descriptor>, Vec<[u8; 32]>, TxFilterConfig) {
         let (addresses, txids, deposits) = generate_withdrawal_fulfillment_data(deposit_amt());
         let params: Params = gen_params();

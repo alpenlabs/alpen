@@ -9,7 +9,10 @@ use tracing::debug;
 use crate::errors::{EngineError, EngineResult};
 
 /// Commands we send from the handle to the worker, with completion channels.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "some inner types don't have Debug impls"
+)]
 pub enum ExecCommand {
     /// Notifies the worker of a new block being produced.
     NewBlock(L2BlockCommitment, oneshot::Sender<EngineResult<()>>),
@@ -23,7 +26,7 @@ pub enum ExecCommand {
 
 #[derive(Debug)]
 pub struct ExecCtlHandle {
-    shared: Arc<ExecShared>,
+    _shared: Arc<ExecShared>,
     msg_tx: mpsc::Sender<ExecCommand>,
 }
 
@@ -100,7 +103,7 @@ impl ExecCtlHandle {
 
 #[derive(Debug)]
 pub struct ExecCtlInput {
-    shared: Arc<ExecShared>,
+    _shared: Arc<ExecShared>,
     msg_rx: mpsc::Receiver<ExecCommand>,
 }
 
@@ -122,11 +125,14 @@ pub fn make_handle_pair() -> (ExecCtlHandle, ExecCtlInput) {
     let shared = Arc::new(ExecShared {});
 
     let handle = ExecCtlHandle {
-        shared: shared.clone(),
+        _shared: shared.clone(),
         msg_tx: tx,
     };
 
-    let input = ExecCtlInput { shared, msg_rx: rx };
+    let input = ExecCtlInput {
+        _shared: shared,
+        msg_rx: rx,
+    };
 
     (handle, input)
 }

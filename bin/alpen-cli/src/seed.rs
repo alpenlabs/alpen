@@ -26,7 +26,10 @@ use crate::constants::{
     AES_NONCE_LEN, AES_TAG_LEN, BIP44_ALPEN_EVM_WALLET_PATH, PW_SALT_LEN, SEED_LEN,
 };
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Struct contains sensitive wallet parameters that should not be debug printed"
+)]
 pub struct BaseWallet(LoadParams, CreateParams);
 
 impl BaseWallet {
@@ -131,7 +134,10 @@ impl Seed {
     }
 }
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Struct contains encrypted seed data that should not be debug printed"
+)]
 pub struct EncryptedSeed([u8; Self::LEN]);
 
 impl EncryptedSeed {

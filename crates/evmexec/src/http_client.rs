@@ -20,7 +20,11 @@ use revm_primitives::alloy_primitives::{BlockHash, B256};
 
 type RpcResult<T> = Result<T, jsonrpsee::core::ClientError>;
 
-#[allow(async_fn_in_trait)]
+#[allow(
+    async_fn_in_trait,
+    clippy::allow_attributes,
+    reason = "we don't want async_trait"
+)]
 #[cfg_attr(test, automock)]
 pub trait EngineRpc {
     async fn fork_choice_updated_v3(

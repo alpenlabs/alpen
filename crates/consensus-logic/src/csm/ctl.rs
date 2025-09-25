@@ -6,7 +6,10 @@ use tracing::*;
 
 /// Controller handle for the consensus state machine.
 /// Used to submit new l1 blocks for processing.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct CsmController {
     csm_tx: mpsc::Sender<L1BlockCommitment>,
 }

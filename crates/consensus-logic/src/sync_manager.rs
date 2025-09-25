@@ -23,7 +23,10 @@ use crate::{
 };
 
 /// Handle to the core pipeline tasks.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
@@ -71,7 +74,6 @@ impl SyncManager {
 }
 
 /// Starts the sync tasks using provided settings.
-#[allow(clippy::too_many_arguments)]
 pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     executor: &TaskExecutor,
     storage: &Arc<NodeStorage>,

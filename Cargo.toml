@@ -61,7 +61,6 @@ members = [
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
   "crates/util/mmr",
-  "crates/db-tests",
   "provers/risc0",
   "provers/sp1",
 
@@ -101,6 +100,8 @@ rust.unreachable_pub = "warn"
 rust.unused_crate_dependencies = "deny"
 rust.unused_must_use = "deny"
 # rust.missing_docs = "warn" # TODO: we need to enable this in the near future
+clippy.allow_attributes = "warn"
+clippy.allow_attributes_without_reason = "warn"
 rustdoc.all = "warn"
 
 [workspace.dependencies]

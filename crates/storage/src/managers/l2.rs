@@ -10,7 +10,10 @@ use threadpool::ThreadPool;
 use crate::{cache, ops};
 
 /// Caching manager of L2 blocks in the block database.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct L2BlockManager {
     ops: ops::l2::L2DataOps,
     block_cache: cache::CacheTable<L2BlockId, Option<L2BlockBundle>>,

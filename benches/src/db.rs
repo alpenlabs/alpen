@@ -73,7 +73,7 @@ pub enum DatabaseBackend {
 
 impl DatabaseBackend {
     /// Get all available backends based on enabled features.
-    #[allow(
+    #[expect(
         clippy::vec_init_then_push,
         reason = "highly complicated feature-gating"
     )]

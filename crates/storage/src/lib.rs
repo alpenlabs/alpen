@@ -18,7 +18,10 @@ use strata_db::traits::DatabaseBackend;
 /// A consolidation of database managers.
 // TODO move this to its own module
 #[derive(Clone)]
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct NodeStorage {
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,

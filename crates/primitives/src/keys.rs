@@ -9,7 +9,10 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// A zeroizable on [`Drop`] wrapper around [`Xpriv`].
 #[derive(Clone, PartialEq, Eq)]
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Debug implementation would expose sensitive key material"
+)]
 pub struct ZeroizableXpriv(Xpriv);
 
 impl ZeroizableXpriv {
@@ -53,7 +56,10 @@ impl ZeroizeOnDrop for ZeroizableXpriv {}
 
 /// A zeroizable on [`Drop`] wrapper around [`Keypair`].
 #[derive(Clone, PartialEq, Eq)]
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Debug implementation would expose sensitive key material"
+)]
 pub struct ZeroizableKeypair(Keypair);
 
 impl ZeroizableKeypair {

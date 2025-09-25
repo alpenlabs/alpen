@@ -28,7 +28,10 @@ pub enum TemplateManagerRequest {
 }
 
 /// Handle for communication with the template manager worker.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct TemplateManagerHandle {
     tx: mpsc::Sender<TemplateManagerRequest>,
     shared: SharedState,

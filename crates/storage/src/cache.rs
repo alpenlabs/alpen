@@ -45,7 +45,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
     /// Gets the number of elements in the cache.
     // TODO replace this with an atomic we update after every op
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
     pub(crate) async fn get_len_async(&self) -> usize {
         let cache = self.cache.lock().await;
         cache.len()
@@ -53,7 +53,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
     /// Gets the number of elements in the cache.
     // TODO replace this with an atomic we update after every op
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::allow_attributes, reason = "used for debugging")]
     pub(crate) fn get_len_blocking(&self) -> usize {
         let cache = self.cache.blocking_lock();
         cache.len()
