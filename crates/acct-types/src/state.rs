@@ -1,9 +1,7 @@
-use std::fmt;
-
 use crate::{
     amount::BitcoinAmount,
     errors::{AcctError, AcctResult},
-    id::{AccountId, AccountSerial, AccountTypeId, RawAccountTypeId},
+    id::{AccountSerial, AccountTypeId, RawAccountTypeId},
     mmr::Hash,
 };
 
@@ -45,9 +43,8 @@ impl AccountState {
     ///
     /// This MUST match, returns error otherwise.
     pub fn decode_as_type<T: AccountTypeState>(&self) -> AcctResult<T> {
-        let dec_ty = T::ID;
         let real_ty = self.ty()?;
-        if T::ID != self.ty()? {
+        if T::ID != real_ty {
             return Err(AcctError::MismatchedType(real_ty, T::ID));
         }
 

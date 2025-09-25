@@ -1,8 +1,8 @@
-use std::{fmt, mem};
+use std::fmt;
 
 use int_enum::IntEnum;
 
-use crate::{errors::AcctError, impl_opaque_thin_wrapper};
+use crate::impl_opaque_thin_wrapper;
 
 type RawAccountId = [u8; 32];
 
