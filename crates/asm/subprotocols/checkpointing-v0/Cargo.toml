@@ -1,0 +1,28 @@
+[package]
+name = "strata-asm-proto-checkpointing-v0"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+# ASM dependencies
+strata-asm-common.workspace = true
+strata-asm-proto-bridge-v1.workspace = true
+strata-asm-proto-checkpointing-txs.workspace = true
+
+# Primitives and types
+strata-primitives.workspace = true
+
+# Crypto and proof verification
+strata-crypto.workspace = true
+
+# Serialization
+borsh.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+[features]
+debug-utils = []
