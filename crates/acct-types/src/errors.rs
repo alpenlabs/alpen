@@ -8,6 +8,8 @@ pub type AcctResult<T> = Result<T, AcctError>;
 #[derive(Debug, Error)]
 pub enum AcctError {
     /// When we mismatch uses of types.
+    ///
+    /// (real acct type, asked type)
     #[error("tried to use {0} as {1}")]
     MismatchedType(AcctTypeId, AcctTypeId),
 
@@ -16,5 +18,5 @@ pub enum AcctError {
     DecodeState(AcctTypeId),
 
     #[error("invalid account id {0}")]
-    InvalidAcctId(RawAcctTypeId),
+    InvalidAcctTypeId(RawAcctTypeId),
 }

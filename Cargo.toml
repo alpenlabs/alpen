@@ -324,6 +324,7 @@ futures-util = "0.3"
 hex = { version = "0.4", features = ["serde"] }
 http = "1.0.0"
 hyper = "0.14.25"
+int-enum = "1.2"
 jsonrpsee = { version = "0.25.1" }
 jsonrpsee-http-client = { version = "0.25.1" }
 jsonrpsee-types = { version = "0.25.1" }

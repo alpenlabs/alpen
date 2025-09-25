@@ -46,9 +46,9 @@ impl AcctState {
     /// This MUST match, returns error otherwise.
     pub fn decode_as_type<T: AcctTypeState>(&self) -> AcctResult<T> {
         let dec_ty = T::ID;
-        if T::ID as u16 != self.raw_ty() {
-            let id = AcctTypeId::try_from(self.raw_ty())?;
-            return Err(AcctError::MismatchedType(AcctTypeId::Empty, T::ID));
+        let real_ty = self.ty()?;
+        if T::ID != self.ty()? {
+            return Err(AcctError::MismatchedType(real_ty, T::ID));
         }
 
         // TODO
@@ -124,7 +124,7 @@ impl IntrinsicAcctState {
 
     /// Attempts to parse the type into a valid [`AcctTypeId`].
     pub fn ty(&self) -> AcctResult<AcctTypeId> {
-        AcctTypeId::try_from(self.raw_ty())
+        AcctTypeId::try_from(self.raw_ty()).map_err(AcctError::InvalidAcctTypeId)
     }
 
     pub fn serial(&self) -> AcctSerial {

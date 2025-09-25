@@ -1,5 +1,7 @@
 use std::{fmt, mem};
 
+use int_enum::IntEnum;
+
 use crate::{errors::AcctError, impl_thin_wrapper};
 
 type RawAcctId = [u8; 32];
@@ -43,7 +45,7 @@ impl_thin_wrapper!(SubjectId => RawSubjectId);
 pub type RawAcctTypeId = u16;
 
 /// Distinguishes between account types.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, IntEnum)]
 #[repr(u16)]
 pub enum AcctTypeId {
     /// "Inert" account type for a stub that exists but does nothing, but store
@@ -52,24 +54,6 @@ pub enum AcctTypeId {
 
     /// Snark accounts.
     Snark = 1,
-}
-
-impl AcctTypeId {
-    // This MUST always be the last entry in `AcctTypeId`.
-    const MAX_RAW: RawAcctTypeId = 1;
-}
-
-impl TryFrom<RawAcctTypeId> for AcctTypeId {
-    type Error = AcctError;
-
-    fn try_from(value: RawAcctTypeId) -> Result<Self, Self::Error> {
-        if value > Self::MAX_RAW {
-            // SAFETY: ok this is actually safe
-            Ok(unsafe { mem::transmute::<RawAcctTypeId, AcctTypeId>(value) })
-        } else {
-            Err(AcctError::InvalidAcctId(value))
-        }
-    }
 }
 
 impl fmt::Display for AcctTypeId {
