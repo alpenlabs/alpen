@@ -186,9 +186,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
         // Fill in the lock state and send down the complete tx.
         *slot_lock = SlotState::Ready(res.clone());
-        if complete_tx.send(res.clone()).is_err() {
-            warn!("failed to notify waiting cache readers");
-        }
+        let _ = complete_tx.send(res.clone());
 
         Ok(res)
     }
@@ -232,11 +230,7 @@ impl<K: Clone + Eq + Hash, V: Clone> CacheTable<K, V> {
 
         // Fill in the lock state and send down the complete tx.
         *slot_lock = SlotState::Ready(res.clone());
-        if complete_tx.send(res.clone()).is_err() {
-            // This happens if there was no waiters, which is normal, leaving it
-            // here if we need to debug it.
-            //warn!("failed to notify waiting cache readers");
-        }
+        let _ = complete_tx.send(res.clone());
 
         Ok(res)
     }
