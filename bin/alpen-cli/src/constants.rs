@@ -3,9 +3,8 @@ use std::time::Duration;
 use alloy::consensus::constants::ETH_TO_WEI;
 use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
 
-/// Number of blocks that the wallet considers a transaction "buried" or final taking into account
-/// reorgs that might happen.
-pub const DEFAULT_FINALITY_DEPTH: u32 = 6;
+/// Number of blocks required for a transaction to be considered mature.
+pub const DEFAULT_MATURITY_DEPTH: u32 = 6;
 
 pub const RECOVERY_DESC_CLEANUP_DELAY: u32 = 100;
 

@@ -117,7 +117,7 @@ def wait_until_with_value(
 @dataclass
 class ManualGenBlocksConfig:
     btcrpc: BitcoindClient
-    finality_depth: int
+    maturity_depth: int
     gen_addr: str
 
 
@@ -201,7 +201,7 @@ def check_nth_checkpoint_finalized(
 
     def _maybe_do_gen():
         if manual_gen:
-            nblocks = manual_gen.finality_depth + 1
+            nblocks = manual_gen.maturity_depth + 1
             logging.debug(f"generating {nblocks} L1 blocks to try to finalize")
             manual_gen.btcrpc.proxy.generatetoaddress(nblocks, manual_gen.gen_addr)
 

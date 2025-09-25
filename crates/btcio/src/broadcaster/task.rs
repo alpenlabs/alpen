@@ -260,7 +260,7 @@ mod test {
         );
 
         let reorg_depth: u64 = params.rollup().l1_reorg_safe_depth.into();
-        // This client will return confirmations to be finality_depth - 1
+        // This client will return confirmations to be maturity_depth - 1
         let client = TestBitcoinClient::new(reorg_depth - 1);
         let cl = Arc::new(client);
 
@@ -272,10 +272,10 @@ mod test {
             Some(L1TxStatus::Confirmed {
                 confirmations: cl.confs
             }),
-            "Status should be confirmed if 0 < confirmations < finality_depth"
+            "Status should be confirmed if 0 < confirmations < maturity_depth"
         );
 
-        // This client will return confirmations to be finality_depth
+        // This client will return confirmations to be maturity_depth
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
@@ -287,7 +287,7 @@ mod test {
             Some(L1TxStatus::Finalized {
                 confirmations: cl.confs
             }),
-            "Status should be confirmed if confirmations >= finality_depth"
+            "Status should be confirmed if confirmations >= maturity_depth"
         );
     }
 
@@ -317,7 +317,7 @@ mod test {
         );
 
         let reorg_depth = params.rollup().l1_reorg_safe_depth as u64;
-        // This client will return confirmations to be finality_depth - 1
+        // This client will return confirmations to be maturity_depth - 1
         let client = TestBitcoinClient::new(reorg_depth - 1);
         let cl = Arc::new(client);
 
@@ -329,10 +329,10 @@ mod test {
             Some(L1TxStatus::Confirmed {
                 confirmations: cl.confs
             }),
-            "Status should be confirmed if 0 < confirmations < finality_depth"
+            "Status should be confirmed if 0 < confirmations < maturity_depth"
         );
 
-        // This client will return confirmations to be finality_depth
+        // This client will return confirmations to be maturity_depth
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
@@ -344,7 +344,7 @@ mod test {
             Some(L1TxStatus::Finalized {
                 confirmations: cl.confs
             }),
-            "Status should be confirmed if confirmations >= finality_depth"
+            "Status should be confirmed if confirmations >= maturity_depth"
         );
     }
 
@@ -361,7 +361,7 @@ mod test {
 
         let params = get_params();
         let reorg_depth = params.rollup().l1_reorg_safe_depth as u64;
-        // This client will return confirmations to be Finality depth
+        // This client will return confirmations to be maturity depth
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
@@ -400,7 +400,7 @@ mod test {
 
         let params = get_params();
         let reorg_depth = params.rollup().l1_reorg_safe_depth as u64;
-        // This client will return confirmations to be Finality depth
+        // This client will return confirmations to be maturity depth
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 

@@ -107,7 +107,7 @@ pub async fn deposit(
 
     // Number of blocks after which the wallet actually enables recovery. This is mostly to account
     // for any reorgs that may happen at the recovery height.
-    let recover_at_delay = settings.recover_delay + settings.finality_depth;
+    let recover_at_delay = settings.recover_delay + settings.maturity_depth;
 
     let recover_at = current_block_height + recover_at_delay;
 

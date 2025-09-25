@@ -21,7 +21,7 @@ use crate::{constants::SEED_LEN, seed::Seed};
 use crate::{
     constants::{
         DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
-        DEFAULT_FINALITY_DEPTH, DEFAULT_NETWORK, MAGIC_BYTES_LEN,
+        DEFAULT_MATURITY_DEPTH, DEFAULT_NETWORK, MAGIC_BYTES_LEN,
     },
     signet::{backend::SignetBackend, EsploraClient},
 };
@@ -61,8 +61,8 @@ pub struct SettingsFromFile {
     pub bridge_out_amount_sats: Option<u64>,
     /// The address of the bridge precompile in alpen evm in hex.
     pub bridge_alpen_address: Option<String>,
-    /// The number of confirmations to consider a Bitcoin transaction final.
-    pub finality_depth: Option<u32>,
+    /// The number of confirmations to consider a Bitcoin transaction mature.
+    pub maturity_depth: Option<u32>,
     /// Seed that can be passed directly for functional test.
     #[cfg(feature = "test-mode")]
     pub seed: Hex<[u8; SEED_LEN]>,
@@ -89,7 +89,7 @@ pub struct Settings {
     pub recover_delay: u32,
     pub bridge_in_amount: Amount,
     pub bridge_out_amount: Amount,
-    pub finality_depth: u32,
+    pub maturity_depth: u32,
     #[cfg(feature = "test-mode")]
     pub seed: Seed,
 }
@@ -186,7 +186,7 @@ impl Settings {
                 .bridge_out_amount_sats
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
-            finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
+            maturity_depth: from_file.maturity_depth.unwrap_or(DEFAULT_MATURITY_DEPTH),
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),
         })

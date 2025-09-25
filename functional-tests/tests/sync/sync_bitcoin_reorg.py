@@ -42,7 +42,7 @@ class BitcoinReorgChecksTest(testenv.StrataTestBase):
         seq_waiter = self.create_strata_waiter(seqrpc)
 
         cfg: RollupConfig = ctx.env.rollup_cfg()
-        finality_depth = cfg.l1_reorg_safe_depth
+        maturity_depth = cfg.l1_reorg_safe_depth
 
         seq_waiter.wait_for_genesis()
 
@@ -56,7 +56,7 @@ class BitcoinReorgChecksTest(testenv.StrataTestBase):
         btcrpc.proxy.generatetoaddress(101, seq_addr)
         check_submit_proof_fails_for_nonexistent_batch(seqrpc, 100)
 
-        manual_gen = ManualGenBlocksConfig(btcrpc, finality_depth + 1, seq_addr)
+        manual_gen = ManualGenBlocksConfig(btcrpc, maturity_depth + 1, seq_addr)
 
         # Sanity Check for first checkpoint
         idx = 0
@@ -85,8 +85,8 @@ def check_nth_checkpoint_finalized_on_reorg(
     seq_addr = seq.get_prop("address")
 
     cfg: RollupConfig = ctx.env.rollup_cfg()
-    finality_depth = cfg.l1_reorg_safe_depth
-    manual_gen = ManualGenBlocksConfig(btcrpc, finality_depth, seq_addr)
+    maturity_depth = cfg.l1_reorg_safe_depth
+    manual_gen = ManualGenBlocksConfig(btcrpc, maturity_depth, seq_addr)
 
     # gen some blocks
     btcrpc.proxy.generatetoaddress(3, seq_addr)
@@ -128,7 +128,7 @@ def check_nth_checkpoint_finalized_on_reorg(
     btcrpc.proxy.generatetoaddress(1, new_addr)
 
     # Create enough blocks to finalize
-    btcrpc.proxy.generatetoaddress(finality_depth + 1, new_addr)
+    btcrpc.proxy.generatetoaddress(maturity_depth + 1, new_addr)
 
     batch_info = seqrpc.strata_getCheckpointInfo(checkpt_idx)
     to_finalize_blkid = batch_info["l2_range"][1]["blkid"]
