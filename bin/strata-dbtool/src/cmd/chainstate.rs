@@ -283,7 +283,7 @@ pub(crate) fn revert_chainstate(
 
     let target_epoch = top_level_state.cur_epoch();
     let latest_checkpoint_epoch = latest_checkpoint_entry.checkpoint.batch_info().epoch;
-    if target_epoch < latest_checkpoint_epoch {
+    if target_epoch <= latest_checkpoint_epoch {
         // Clean up checkpoints and related data from target epoch onwards
         println!(
             "Revert chainstate cleaning up checkpoints and L1 entries from epoch {target_epoch}"
