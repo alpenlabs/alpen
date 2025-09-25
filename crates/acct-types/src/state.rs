@@ -21,7 +21,7 @@ impl AccountState {
         self.intrinsics.raw_ty()
     }
 
-    /// Attempts to parse the type into a valid [`AcctTypeId`].
+    /// Attempts to parse the type into a valid [`AccountTypeId`].
     pub fn ty(&self) -> AcctResult<AccountTypeId> {
         self.intrinsics.ty()
     }
@@ -123,7 +123,7 @@ impl IntrinsicAccountState {
         self.raw_ty
     }
 
-    /// Attempts to parse the type into a valid [`AcctTypeId`].
+    /// Attempts to parse the type into a valid [`AccountTypeId`].
     pub fn ty(&self) -> AcctResult<AccountTypeId> {
         AccountTypeId::try_from(self.raw_ty()).map_err(AcctError::InvalidAcctTypeId)
     }
