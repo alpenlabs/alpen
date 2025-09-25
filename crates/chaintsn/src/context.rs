@@ -13,6 +13,7 @@ use thiserror::Error;
 ///
 /// Does NOT provide access to chainstate information.  This is primarily
 /// involving block headers.  It will probably also provide L1 manifests.
+// TODO/NOTE: There's already a similar trait called `L2Header`, might need to merge those.
 pub trait BlockHeaderContext {
     /// Returns the slot that we're checking.
     fn slot(&self) -> u64;
@@ -81,16 +82,16 @@ impl BlockHeaderContext for L2HeaderAndParent {
 /// Accessor for fetch and manipulate the state we're building on top of.
 ///
 /// This is supersceding the `StateCache` type.
-pub trait StateAccessor {
+pub trait StateAccessor<S = Chainstate> {
     /// Gets a ref to the state.
     ///
     /// This is a transitional accessor that we will deprecate and remove soon.
-    fn state_untracked(&self) -> &Chainstate;
+    fn state_untracked(&self) -> &S;
 
     /// Gets a mut ref to the state.
     ///
     /// This is a transitional accessor that we will deprecate and remove soon.
-    fn state_mut_untracked(&mut self) -> &mut Chainstate;
+    fn state_mut_untracked(&mut self) -> &mut S;
 
     // Accessors for toplevel state fields.
 
@@ -135,6 +136,13 @@ pub trait StateAccessor {
 
     // Accessors for ledger account entries.
     // TODO
+
+    /// Sets accounts root.
+    fn set_accounts_root(&mut self, root: Buf32);
+
+    /// Get toplevel state. Similar to state_untracked except that this has no plans for
+    /// depreciation.
+    fn get_toplevel_state(&mut self) -> &S;
 }
 
 /// Provider for queries to sideloaded state like L1 block manifests.

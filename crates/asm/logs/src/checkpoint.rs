@@ -7,6 +7,7 @@ use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE;
 
 /// Details for a checkpoint update event.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+// TODO: Append "Log" to the name like other
 pub struct CheckpointUpdate {
     /// L1 block commitment reference.
     pub l1_ref: L1BlockCommitment,

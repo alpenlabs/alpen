@@ -80,4 +80,12 @@ impl StateAccessor for WbStateAccessorImpl {
     fn set_epoch_finishing_flag(&mut self, flag: bool) {
         self.toplevel_chs_cache.set_epoch_finishing_flag(flag);
     }
+
+    fn get_toplevel_state(&mut self) -> &Chainstate {
+        self.toplevel_chs_cache.state()
+    }
+
+    fn set_accounts_root(&mut self, _root: Buf32) {
+        todo!()
+    }
 }

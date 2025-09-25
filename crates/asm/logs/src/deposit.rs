@@ -8,7 +8,7 @@ use crate::constants::DEPOSIT_LOG_TYPE_ID;
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct DepositLog {
     /// Identifier of the target execution environment.
-    pub ee_id: u64,
+    pub ee_id: u64, // TODO: rename to acc_id/acc_serial. And type to u32 ?
     /// Amount in satoshis.
     pub amount: u64,
     /// Serialized address for the operation.

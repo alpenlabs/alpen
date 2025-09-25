@@ -14168,6 +14168,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "stf-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "sha2 0.10.9",
+ "strata-asm-common",
+ "strata-asm-logs",
+ "strata-chainexec",
+ "strata-chaintsn",
+ "strata-primitives",
+ "strata-service",
+ "strata-state",
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "stf-runner-demo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "hex",
+ "jsonrpsee",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "stf-runner",
+ "strata-asm-common",
+ "strata-asm-logs",
+ "strata-chainexec",
+ "strata-chaintsn",
+ "strata-l1-txfmt",
+ "strata-primitives",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.20",
+]
+
+[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
