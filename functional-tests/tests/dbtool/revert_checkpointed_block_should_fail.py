@@ -7,7 +7,7 @@ from utils.utils import ProverClientSettings
 
 
 @flexitest.register
-class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
+class RevertCheckpointedBlockShouldFailTest(SequencerDbtoolMixin):
     """Test to revert chainstate to a block inside a checkpointed epoch (should fail)"""
 
     def __init__(self, ctx: flexitest.InitContext):
