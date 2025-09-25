@@ -6,7 +6,7 @@ use strata_db::{
     traits::{BlockStatus, L2BlockDatabase},
     DbResult,
 };
-use strata_state::{block::L2BlockBundle, prelude::*};
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
 
 use super::schemas::{L2BlockSchema, L2BlockStatusSchema};
 use crate::{l2::schemas::L2BlockHeightSchema, DbOpsConfig};

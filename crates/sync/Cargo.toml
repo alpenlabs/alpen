@@ -10,9 +10,9 @@ workspace = true
 strata-common = { workspace = true, optional = true }
 strata-consensus-logic.workspace = true
 strata-db.workspace = true
+strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-rpc-api = { workspace = true, features = ["client"] }
-strata-state.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 

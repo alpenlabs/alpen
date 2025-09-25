@@ -3,6 +3,7 @@ use bitcoin::Txid;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use strata_common::{Action, WorkerType};
 use strata_db::types::{L1TxEntry, L1TxStatus};
+use strata_ol_chain_types::{L2Block, L2BlockId};
 use strata_primitives::{batch::EpochSummary, bridge::PublickeyTable, epoch::EpochCommitment};
 use strata_rpc_types::{
     types::{RpcBlockHeader, RpcClientStatus, RpcL1Status},
@@ -13,10 +14,7 @@ use strata_sequencer::{
     block_template::{BlockCompletionData, BlockGenerationConfig, BlockTemplate},
     duty::types::Duty,
 };
-use strata_state::{
-    block::L2Block, client_state::ClientState, id::L2BlockId, l1::L1BlockId,
-    operation::ClientUpdateOutput,
-};
+use strata_state::{client_state::ClientState, l1::L1BlockId, operation::ClientUpdateOutput};
 use zkaleido::ProofReceipt;
 
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]

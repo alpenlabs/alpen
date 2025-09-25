@@ -8,7 +8,7 @@
 // errors as we'd be able to identify when our perspective on the state is
 // inconsistent with the remote state.
 
-use strata_state::{block::L2BlockBundle, id::L2BlockId};
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 
 use crate::{errors::*, messages::*};
 

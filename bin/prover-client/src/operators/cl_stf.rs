@@ -3,6 +3,7 @@ use std::sync::Arc;
 use jsonrpsee::http_client::HttpClient;
 use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_ol_chain_types::{L2Block, L2BlockId, L2Header};
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
@@ -13,7 +14,7 @@ use strata_primitives::{
 use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::RpcBlockHeader;
-use strata_state::{block::L2Block, chain_state::Chainstate, header::L2Header, id::L2BlockId};
+use strata_state::chain_state::Chainstate;
 use strata_zkvm_hosts::get_verification_key;
 use tokio::sync::Mutex;
 use tracing::error;

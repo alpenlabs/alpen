@@ -2,7 +2,7 @@
 //! converters to appropriate json-rpc error codes.
 
 use jsonrpsee::types::ErrorObjectOwned;
-use strata_state::id::L2BlockId;
+use strata_ol_chain_types::L2BlockId;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

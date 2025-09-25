@@ -1,6 +1,6 @@
 use strata_consensus_logic::errors::ChainTipError;
 use strata_db::DbError;
-use strata_state::id::L2BlockId;
+use strata_ol_chain_types::L2BlockId;
 
 use crate::ClientError;
 

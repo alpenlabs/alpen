@@ -14,6 +14,7 @@ path = "src/main.rs"
 strata-common.workspace = true
 strata-crypto.workspace = true
 strata-key-derivation.workspace = true
+strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-rpc-api = { workspace = true, features = ["client"] }
 strata-rpc-types.workspace = true

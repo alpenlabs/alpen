@@ -17,12 +17,11 @@ use strata_eectl::{
     errors::{EngineError, EngineResult},
     messages::{ExecPayloadData, PayloadEnv},
 };
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l1::BitcoinAmount;
 use strata_state::{
-    block::L2BlockBundle,
     bridge_ops,
     exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput},
-    id::L2BlockId,
 };
 use strata_storage::L2BlockManager;
 use tokio::{runtime::Handle, sync::Mutex};
@@ -451,8 +450,8 @@ mod tests {
     use rand::{rngs::OsRng, Rng};
     use revm_primitives::{alloy_primitives::Bloom, Bytes, FixedBytes, U256};
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
+    use strata_ol_chain_types::{L2Block, L2BlockAccessory};
     use strata_primitives::buf::Buf32;
-    use strata_state::block::{L2Block, L2BlockAccessory};
 
     use super::*;
     use crate::http_client::MockEngineRpc;

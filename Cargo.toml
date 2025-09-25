@@ -50,6 +50,7 @@ members = [
   "crates/sequencer",
   "crates/service",
   "crates/state",
+  "crates/ol-chain-types",
   "crates/status",
   "crates/storage",
   "crates/sync",
@@ -144,6 +145,7 @@ strata-key-derivation = { path = "crates/key-derivation" }
 strata-l1tx = { path = "crates/l1tx" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
+strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }

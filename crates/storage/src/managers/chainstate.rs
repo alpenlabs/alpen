@@ -7,8 +7,9 @@ use strata_db::{
     chainstate::{ChainstateDatabase, StateInstanceId, WriteBatchId},
     DbResult,
 };
+use strata_ol_chain_types::L2BlockId;
 use strata_primitives::buf::Buf32;
-use strata_state::{chain_state::Chainstate, id::L2BlockId, state_op::WriteBatch};
+use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 use threadpool::ThreadPool;
 use tracing::*;
 

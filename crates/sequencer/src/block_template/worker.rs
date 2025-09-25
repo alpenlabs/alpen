@@ -7,13 +7,10 @@ use std::{
 };
 
 use strata_eectl::engine::ExecEngineCtl;
-use strata_primitives::params::{Params, RollupParams};
-use strata_state::{
-    block::L2BlockBundle,
-    block_validation::verify_sequencer_signature,
-    header::{L2BlockHeader, L2Header},
-    id::L2BlockId,
+use strata_ol_chain_types::{
+    verify_sequencer_signature, L2BlockBundle, L2BlockHeader, L2BlockId, L2Header,
 };
+use strata_primitives::params::{Params, RollupParams};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::ShutdownGuard;

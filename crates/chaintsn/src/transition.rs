@@ -10,6 +10,7 @@ use strata_asm_types::{
     WithdrawalFulfillmentInfo,
 };
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
+use strata_ol_chain_types::{L1Segment, L2BlockBody, L2BlockHeader, L2Header};
 use strata_primitives::{
     batch::SignedCheckpoint,
     epoch::EpochCommitment,
@@ -20,7 +21,6 @@ use strata_primitives::{
 };
 use strata_state::{
     batch::{verify_signed_checkpoint_sig, Checkpoint},
-    block::L1Segment,
     bridge_ops::{DepositIntent, WithdrawalIntent},
     bridge_state::{DepositState, DispatchCommand, WithdrawOutput},
     exec_env::ExecEnvState,
@@ -535,9 +535,9 @@ mod tests {
         WithdrawalFulfillmentInfo,
     };
     use strata_chainexec::MemStateAccessor;
+    use strata_ol_chain_types::{ExecSegment, L1Segment, L2BlockBody, L2BlockHeader, L2Header};
     use strata_primitives::{buf::Buf32, l1::BitcoinAmount, l2::L2BlockId, params::OperatorConfig};
     use strata_state::{
-        block::{ExecSegment, L1Segment, L2BlockBody},
         bridge_state::{
             DepositState, DepositsTable, DispatchCommand, DispatchedState, FulfilledState,
             OperatorTable,
@@ -546,7 +546,6 @@ mod tests {
         exec_env::ExecEnvState,
         exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
         genesis::GenesisStateData,
-        header::{L2BlockHeader, L2Header},
         l1::L1ViewState,
         state_op::StateCache,
     };

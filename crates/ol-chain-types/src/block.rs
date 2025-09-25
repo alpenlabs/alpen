@@ -3,12 +3,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_types::L1BlockManifest;
 use strata_primitives::prelude::*;
+use strata_state::exec_update::ExecUpdate;
 
-use crate::{
-    exec_update,
-    header::{L2BlockHeader, SignedL2BlockHeader},
-    id::L2BlockId,
-};
+use crate::header::{L2BlockHeader, SignedL2BlockHeader};
 
 /// Full contents of the bare L2 block.
 #[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -153,11 +150,11 @@ impl L1Segment {
 )]
 pub struct ExecSegment {
     /// Update payload for the single execution environment.
-    update: exec_update::ExecUpdate,
+    update: ExecUpdate,
 }
 
 impl ExecSegment {
-    pub fn new(update: exec_update::ExecUpdate) -> Self {
+    pub fn new(update: ExecUpdate) -> Self {
         Self { update }
     }
 
@@ -165,7 +162,7 @@ impl ExecSegment {
     ///
     /// This might be replaced with a totally different scheme if we have
     /// multiple EEs.
-    pub fn update(&self) -> &exec_update::ExecUpdate {
+    pub fn update(&self) -> &ExecUpdate {
         &self.update
     }
 }
@@ -246,7 +243,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::block_validation::validate_block_structure;
+    use crate::validation::validate_block_structure;
 
     // This test is flaky because sometimes it generates an L1 segment with no
     // elements twice.

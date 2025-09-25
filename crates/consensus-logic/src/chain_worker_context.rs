@@ -8,11 +8,9 @@ use strata_db::{
     chainstate::{StateInstanceId, WriteBatchId},
     DbError,
 };
+use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader};
 use strata_primitives::prelude::*;
-use strata_state::{
-    batch::EpochSummary, block::L2BlockBundle, chain_state::Chainstate, prelude::*,
-    state_op::WriteBatch,
-};
+use strata_state::{batch::EpochSummary, chain_state::Chainstate, state_op::WriteBatch};
 use strata_storage::{ChainstateManager, CheckpointDbManager, L2BlockManager};
 use tracing::*;
 

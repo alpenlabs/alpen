@@ -10,6 +10,7 @@ workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-eectl.workspace = true
+strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-state.workspace = true

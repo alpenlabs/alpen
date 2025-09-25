@@ -8,10 +8,7 @@ use strata_primitives::{
 use thiserror::Error;
 use tracing::warn;
 
-use crate::{
-    block::L2Block,
-    header::{L2Header, SignedL2BlockHeader},
-};
+use crate::{L2Block, L2Header, SignedL2BlockHeader};
 
 /// Errors relating to block structural checks.
 #[derive(Debug, Error)]

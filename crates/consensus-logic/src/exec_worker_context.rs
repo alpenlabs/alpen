@@ -6,8 +6,8 @@ use strata_eectl::{
     messages::ExecPayloadData,
     worker::{ExecEnvId, ExecWorkerContext},
 };
+use strata_ol_chain_types::{L2BlockId, L2Header};
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
-use strata_state::{header::L2Header, id::L2BlockId};
 use strata_storage::{ClientStateManager, L2BlockManager};
 
 #[expect(missing_debug_implementations)]

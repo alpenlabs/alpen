@@ -1,9 +1,9 @@
 use std::cmp::min;
 
 use futures::stream::{self, Stream, StreamExt};
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l2::L2BlockCommitment;
 use strata_rpc_api::StrataApiClient;
-use strata_state::{block::L2BlockBundle, id::L2BlockId};
 use tracing::error;
 
 #[derive(Debug, thiserror::Error)]

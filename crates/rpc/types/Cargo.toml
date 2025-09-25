@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-db.workspace = true
+strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 

@@ -1,6 +1,6 @@
 //! Common error types for sequencer duty.
 
-use strata_state::id::L2BlockId;
+use strata_ol_chain_types::L2BlockId;
 use thiserror::Error;
 
 /// Errors used in sequencer duty.

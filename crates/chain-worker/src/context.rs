@@ -1,8 +1,9 @@
 //! Chain executor context impls.
 
 use strata_chainexec::{Error as ExecError, ExecContext};
+use strata_ol_chain_types::L2BlockHeader;
 use strata_primitives::prelude::*;
-use strata_state::{chain_state::Chainstate, prelude::L2BlockHeader};
+use strata_state::chain_state::Chainstate;
 
 use crate::{WorkerContext, WorkerError};
 
