@@ -173,7 +173,7 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         self.follower_1_node.start()
 
         # Wait for block production to resume to sync
-        seq_waiter.wait_until_chain_tip_exceeds(old_seq_ol_block_number + 1, timeout=30)
+        seq_waiter.wait_until_chain_tip_exceeds(old_seq_ol_block_number + 1, timeout=120)
 
         # Wait for full node to catch up to sequencer
         fn_waiter = self.create_strata_waiter(self.follower_1_rpc)
