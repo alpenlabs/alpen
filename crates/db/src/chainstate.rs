@@ -13,8 +13,8 @@
 //! struct.  In the future, we will have a "bulk" state that contains
 //! potentially-many ledger entries.
 
+use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::buf::Buf32;
-use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 
 use crate::DbResult;
 

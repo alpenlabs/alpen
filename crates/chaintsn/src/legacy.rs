@@ -2,12 +2,13 @@
 
 use bitcoin::block::Header;
 use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     l1::*,
     prelude::*,
 };
-use strata_state::{bridge_ops::DepositIntent, bridge_state::*, chain_state::Chainstate};
+use strata_state::{bridge_ops::DepositIntent, bridge_state::*};
 
 use crate::{context::StateAccessor, macros::*};
 

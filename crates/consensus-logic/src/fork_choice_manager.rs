@@ -7,11 +7,9 @@ use strata_chainexec::{validation_util, TipState};
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::errors::EngineError;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, params::Params};
-use strata_state::{
-    chain_state::Chainstate,
-    client_state::{CheckpointState, ClientState},
-};
+use strata_state::client_state::{CheckpointState, ClientState};
 use strata_status::*;
 use strata_storage::{L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;

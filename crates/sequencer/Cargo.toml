@@ -15,6 +15,7 @@ strata-consensus-logic.workspace = true
 strata-db.workspace = true
 strata-eectl.workspace = true
 strata-ol-chain-types.workspace = true
+strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true

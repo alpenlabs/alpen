@@ -1,17 +1,17 @@
 [package]
 edition = "2021"
-name = "strata-status"
+name = "strata-ol-chainstate-types"
 version = "0.3.0-alpha.1"
 
 [lints]
 workspace = true
 
 [dependencies]
-strata-ol-chain-types.workspace = true
-strata-ol-chainstate-types.workspace = true
+strata-asm-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 
-thiserror.workspace = true
-tokio.workspace = true
+arbitrary.workspace = true
+bitcoin.workspace = true
+borsh.workspace = true
 tracing.workspace = true

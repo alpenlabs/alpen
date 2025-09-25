@@ -9,8 +9,8 @@ use strata_db::{
     },
     types::IntentStatus,
 };
+use strata_ol_chainstate_types::WriteBatch;
 use strata_primitives::{batch::Checkpoint, l2::L2BlockId};
-use strata_state::state_op::WriteBatch;
 
 use super::{
     checkpoint::get_latest_checkpoint_entry,
@@ -72,7 +72,7 @@ pub(crate) fn get_l2_write_batch(
 /// This gets the write batch associated with the highest slot block in the database.
 pub(crate) fn get_latest_l2_write_batch(
     db: &impl DatabaseBackend,
-) -> Result<strata_state::state_op::WriteBatch, DisplayedError> {
+) -> Result<WriteBatch, DisplayedError> {
     let block_id = get_latest_l2_block_id(db)?;
     get_l2_write_batch(db, block_id)?.ok_or_else(|| {
         DisplayedError::InternalError("L2 write batch not found".to_string(), Box::new(block_id))

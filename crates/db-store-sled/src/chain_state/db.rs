@@ -2,8 +2,8 @@ use strata_db::{
     DbError, DbResult,
     chainstate::{ChainstateDatabase, StateInstanceId, WriteBatchId},
 };
+use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::buf::Buf32;
-use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 
 use crate::{
     chain_state::schemas::{StateInstanceEntry, StateInstanceSchema, WriteBatchSchema},

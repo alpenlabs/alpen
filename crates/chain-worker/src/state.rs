@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use strata_chaintsn::context::StateAccessor;
+use strata_ol_chainstate_types::{Chainstate, StateCache};
 use strata_primitives::prelude::*;
-use strata_state::{chain_state::Chainstate, state_op::StateCache};
 use strata_storage::ChainstateManager;
 
 #[expect(dead_code, reason = "Some inner types don't have Debug impls")]

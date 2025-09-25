@@ -1,6 +1,7 @@
 use bitcoin::Transaction;
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{batch::SignedCheckpoint, l1::payload::L1PayloadType};
-use strata_state::{batch::verify_signed_checkpoint_sig, chain_state::Chainstate};
+use strata_state::batch::verify_signed_checkpoint_sig;
 use tracing::warn;
 
 use super::TxFilterConfig;
@@ -68,11 +69,9 @@ fn validate_checkpoint(
 #[cfg(test)]
 mod test {
     use strata_btcio::test_utils::create_checkpoint_envelope_tx;
+    use strata_ol_chainstate_types::Chainstate;
     use strata_primitives::{l1::payload::L1Payload, params::Params};
-    use strata_state::{
-        batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint},
-        chain_state::Chainstate,
-    };
+    use strata_state::batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
     use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_l2::gen_params;
 

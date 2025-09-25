@@ -9,8 +9,8 @@ use strata_chaintsn::context::L2HeaderAndParent;
 use strata_ol_chain_types::{
     check_block_credential, validate_block_structure, ExecSegment, L2Block, L2BlockHeader, L2Header,
 };
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::params::RollupParams;
-use strata_state::chain_state::Chainstate;
 use zkaleido::ZkVmEnv;
 
 pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {

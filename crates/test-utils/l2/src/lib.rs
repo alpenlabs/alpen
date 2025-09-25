@@ -10,6 +10,7 @@ use strata_ol_chain_types::{
     L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2Header,
     SignedL2BlockHeader,
 };
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     block_credential,
     buf::Buf64,
@@ -17,10 +18,7 @@ use strata_primitives::{
     params::{OperatorConfig, Params, ProofPublishMode, RollupParams, SyncParams},
     proof::RollupVerifyingKey,
 };
-use strata_state::{
-    batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint},
-    chain_state::Chainstate,
-};
+use strata_state::batch::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
 use strata_test_utils::ArbitraryGenerator;
 use strata_test_utils_btc::segment::BtcChainSegment;
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;

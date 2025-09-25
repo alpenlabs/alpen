@@ -34,6 +34,8 @@ members = [
   "crates/key-derivation",
   "crates/l1tx",
   "crates/mpt",
+  "crates/ol-chain-types",
+  "crates/ol-chainstate-types",
   "crates/primitives",
   "crates/proof-impl/checkpoint",
   "crates/proof-impl/cl-stf",
@@ -53,7 +55,6 @@ members = [
   "crates/service",
   "crates/snark-acct-types",
   "crates/state",
-  "crates/ol-chain-types",
   "crates/status",
   "crates/storage",
   "crates/sync",
@@ -151,6 +152,7 @@ strata-l1tx = { path = "crates/l1tx" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
 strata-ol-chain-types = { path = "crates/ol-chain-types" }
+strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }

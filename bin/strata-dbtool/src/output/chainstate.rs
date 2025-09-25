@@ -1,7 +1,6 @@
 //! Chainstate formatting implementations
 
-use strata_primitives::{l2::L2BlockId, prelude::EpochCommitment};
-use strata_state::l1::L1BlockId;
+use strata_primitives::{l1::L1BlockId, l2::L2BlockId, prelude::EpochCommitment};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 

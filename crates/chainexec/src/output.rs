@@ -1,7 +1,7 @@
 //! Execution outputs.
 
+use strata_ol_chainstate_types::WriteBatch;
 use strata_primitives::prelude::*;
-use strata_state::state_op::WriteBatch;
 
 /// Container for the output of executing an epoch.
 ///

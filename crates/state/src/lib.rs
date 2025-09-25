@@ -9,16 +9,12 @@
 pub mod asm_state;
 pub mod bridge_ops;
 pub mod bridge_state;
-pub mod chain_state;
 pub mod client_state;
 pub mod exec_env;
 pub mod exec_update;
 pub mod forced_inclusion;
-pub mod genesis;
-pub mod l1;
 pub mod operation;
 pub mod prelude;
-pub mod state_op;
 pub mod state_queue;
 
 use std::{boxed::Box, vec::Vec};

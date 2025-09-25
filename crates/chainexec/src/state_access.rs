@@ -7,11 +7,8 @@
 //!   data
 
 use strata_chaintsn::context::StateAccessor;
+use strata_ol_chainstate_types::{Chainstate, StateCache, WriteBatch};
 use strata_primitives::prelude::*;
-use strata_state::{
-    chain_state::Chainstate,
-    state_op::{StateCache, WriteBatch},
-};
 
 /// Accessor for state in memory.
 #[derive(Debug)]

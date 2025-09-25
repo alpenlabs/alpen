@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 strata-mmr.workspace = true
 
-thiserror.workspace = true
 int-enum.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

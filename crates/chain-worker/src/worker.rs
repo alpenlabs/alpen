@@ -11,7 +11,8 @@ use strata_chainexec::{
 use strata_chaintsn::context::L2HeaderAndParent;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_primitives::{batch::EpochSummary, params::Params, prelude::*};
-use strata_state::{chain_state::Chainstate, header::L2Header, prelude::*};
+use strata_ol_chainstate_types::Chainstate;
+use strata_state::{header::L2Header, prelude::*};
 use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
 use tokio::{

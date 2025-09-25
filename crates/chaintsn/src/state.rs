@@ -1,4 +1,4 @@
-use strata_state::chain_state::Chainstate;
+use strata_ol_chainstate_types::Chainstate;
 
 use crate::context::StateAccessor;
 

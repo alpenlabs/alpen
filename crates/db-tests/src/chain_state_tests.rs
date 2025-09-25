@@ -1,6 +1,6 @@
 use strata_db::chainstate::ChainstateDatabase;
+use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::buf::Buf32;
-use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_create_and_get_state_instance(db: &impl ChainstateDatabase) {

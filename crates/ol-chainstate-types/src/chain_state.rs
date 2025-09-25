@@ -3,17 +3,19 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{
-    buf::Buf32, epoch::EpochCommitment, hash::compute_borsh_hash, l2::L2BlockCommitment,
+    buf::Buf32,
+    epoch::EpochCommitment,
+    hash::compute_borsh_hash,
+    l2::{L2BlockCommitment, L2BlockId},
 };
-
-use crate::{
+use strata_state::{
     bridge_ops,
     bridge_state::{self, DepositsTable, OperatorTable},
     exec_env::{self, ExecEnvState},
-    genesis::GenesisStateData,
-    l1::{self, L1ViewState},
-    prelude::*,
+    state_queue::StateQueue,
 };
+
+use crate::{genesis::GenesisStateData, l1_view::L1ViewState};
 
 /// L2 blockchain state.  This is the state computed as a function of a
 /// pre-state and a block.
@@ -49,7 +51,7 @@ pub struct Chainstate {
     pub(crate) finalized_epoch: EpochCommitment,
 
     /// Rollup's view of L1 state.
-    pub(crate) l1_state: l1::L1ViewState,
+    pub(crate) l1_state: L1ViewState,
 
     /// Pending withdrawals that have been initiated but haven't been sent out.
     pub(crate) pending_withdraws: StateQueue<bridge_ops::WithdrawalIntent>,

@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_state::chain_state::Chainstate;
+use strata_ol_chainstate_types::Chainstate;
 
 /// Describes the entry for a state in the database.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
