@@ -1,5 +1,5 @@
 //! Types relating to snark accounts and the snark account proof interface.
-#![expect(unused)] // in-development
+#![expect(unused, reason = "in development")] // in-development
 
 mod accumulators;
 mod messages;
