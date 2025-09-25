@@ -8,6 +8,10 @@ use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
 use strata_asm_proto_core::{CoreGenesisConfig, OLCoreSubproto};
 use strata_l1_txfmt::MagicBytes;
+use strata_primitives::{
+    l1::BitcoinAmount,
+    params::{OperatorConfig, RollupParams},
+};
 
 /// ASM specification for the Strata protocol.
 ///
@@ -51,6 +55,27 @@ impl StrataAsmSpec {
             magic_bytes,
             core_genesis,
             bridge_v1_genesis,
+        }
+    }
+
+    pub fn from_params(params: &RollupParams) -> Self {
+        let OperatorConfig::Static(operators) = params.operator_config.clone();
+        Self {
+            magic_bytes: params.magic_bytes,
+            core_genesis: CoreGenesisConfig {
+                // TODO(QQ): adjust
+                checkpoint_vk: Default::default(),
+                genesis_l1_block: params.genesis_l1_view.blk,
+                // TODO(QQ): adjust
+                sequencer_pubkey: Default::default(),
+            },
+            bridge_v1_genesis: BridgeV1Config {
+                operators,
+                denomination: BitcoinAmount::from_sat(params.deposit_amount),
+                deadline_duration: params.dispatch_assignment_dur as u64,
+                // TODO(QQ): adjust
+                operator_fee: BitcoinAmount::ZERO,
+            },
         }
     }
 }

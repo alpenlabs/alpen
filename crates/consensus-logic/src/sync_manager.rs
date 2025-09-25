@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+use bitcoind_async_client::Client;
+use strata_asm_worker::AsmWorkerHandle;
 use strata_chain_worker::ChainWorkerHandle;
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_primitives::{l1::L1BlockCommitment, params::Params};
@@ -13,6 +15,7 @@ use strata_tasks::TaskExecutor;
 use tokio::{runtime::Handle, sync::mpsc};
 
 use crate::{
+    asm_worker_context::AsmWorkerCtx,
     chain_worker_context::ChainWorkerCtx,
     csm::{ctl::CsmController, message::ForkChoiceMessage, worker},
     exec_worker_context::ExecWorkerCtx,
@@ -25,6 +28,7 @@ pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
     csm_controller: Arc<CsmController>,
+    asm_controller: Arc<AsmWorkerHandle<AsmWorkerCtx>>,
     status_channel: StatusChannel,
 }
 
@@ -47,6 +51,10 @@ impl SyncManager {
         self.csm_controller.clone()
     }
 
+    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle<AsmWorkerCtx>> {
+        self.asm_controller.clone()
+    }
+
     pub fn status_channel(&self) -> &StatusChannel {
         &self.status_channel
     }
@@ -67,6 +75,7 @@ impl SyncManager {
 pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     executor: &TaskExecutor,
     storage: &Arc<NodeStorage>,
+    bitcoin_client: Arc<Client>,
     engine: Arc<E>,
     params: Arc<Params>,
     status_channel: StatusChannel,
@@ -76,17 +85,31 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let (btc_block_tx, btc_block_rx) = mpsc::channel::<L1BlockCommitment>(64);
     let csm_controller = Arc::new(CsmController::new(btc_block_tx));
 
+    // Exec worker.
     let ex_storage = storage.clone();
     let ex_st_ch = status_channel.clone();
     let ex_handle = executor.handle().clone();
     let ex_handle = spawn_exec_worker(executor, ex_handle, ex_storage, ex_st_ch, engine)?;
 
+    // Chain worker.
     let cw_handle = executor.handle().clone();
     let cw_storage = storage.clone();
     let cw_st_ch = status_channel.clone();
     let cw_params = params.clone();
     let cw_handle = Arc::new(spawn_chain_worker(
         executor, cw_handle, cw_storage, cw_st_ch, cw_params, ex_handle,
+    )?);
+
+    // ASM worker.
+    let asm_handle = executor.handle().clone();
+    let asm_storage = storage.clone();
+    let asm_params = params.clone();
+    let asm_controller = Arc::new(spawn_asm_worker(
+        executor,
+        asm_handle,
+        asm_storage,
+        asm_params,
+        bitcoin_client,
     )?);
 
     // Start the fork choice manager thread.  If we haven't done genesis yet
@@ -120,6 +143,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         params,
         fc_manager_tx: fcm_tx,
         csm_controller,
+        asm_controller,
         status_channel,
     })
 }
@@ -166,6 +190,33 @@ fn spawn_chain_worker(
         .with_params(params)
         .with_exec_handle(exec_ctl_handle)
         .with_status_channel(status_channel)
+        .with_runtime(handle)
+        .launch(executor)?;
+
+    Ok(handle)
+}
+
+fn spawn_asm_worker(
+    executor: &TaskExecutor,
+    handle: Handle,
+    storage: Arc<NodeStorage>,
+    params: Arc<Params>,
+    bitcoin_client: Arc<Client>,
+) -> anyhow::Result<AsmWorkerHandle<AsmWorkerCtx>> {
+    // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
+    // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
+    // block manager).
+    let context = AsmWorkerCtx::new(
+        handle.clone(),
+        bitcoin_client,
+        storage.l1().clone(),
+        storage.asm().clone(),
+    );
+
+    // Use the new builder API to launch the worker and get a handle.
+    let handle = strata_asm_worker::AsmWorkerBuilder::new()
+        .with_context(context)
+        .with_params(params)
         .with_runtime(handle)
         .launch(executor)?;
 

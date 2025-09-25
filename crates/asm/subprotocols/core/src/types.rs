@@ -70,7 +70,7 @@ pub(crate) fn apply_checkpoint_to_state(
 /// This configuration contains only the essential data that is known at genesis time.
 /// Other fields like the initial EpochSummary are constructed during initialization
 /// since most of their values are either zero or unknowable until genesis processing.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Default)]
 pub struct CoreGenesisConfig {
     /// The initial checkpoint verifying key for zk-SNARK proof verification
     pub checkpoint_vk: VerifyingKey,

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 pub use managers::{
-    chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
+    asm::AsmStateManager, chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
     client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
@@ -20,6 +20,7 @@ use strata_db::traits::DatabaseBackend;
 #[derive(Clone)]
 #[expect(missing_debug_implementations)]
 pub struct NodeStorage {
+    asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
     l2_block_manager: Arc<L2BlockManager>,
 
@@ -33,6 +34,10 @@ pub struct NodeStorage {
 }
 
 impl NodeStorage {
+    pub fn asm(&self) -> &Arc<AsmStateManager> {
+        &self.asm_state_manager
+    }
+
     pub fn l1(&self) -> &Arc<L1BlockManager> {
         &self.l1_block_manager
     }
@@ -64,12 +69,14 @@ where
     D: DatabaseBackend + 'static,
 {
     // Extract database references first to ensure they live long enough
+    let asm_db = db.asm_db();
     let l1_db = db.l1_db();
     let l2_db = db.l2_db();
     let chainstate_db = db.chain_state_db();
     let client_state_db = db.client_state_db();
     let checkpoint_db = db.checkpoint_db();
 
+    let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
     let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), l2_db));
     let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
@@ -82,6 +89,7 @@ where
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     Ok(NodeStorage {
+        asm_state_manager: asm_manager,
         l1_block_manager,
         l2_block_manager,
 

@@ -1,3 +1,4 @@
+pub(crate) mod asm;
 pub(crate) mod chainstate;
 pub(crate) mod checkpoint;
 pub(crate) mod client_state;

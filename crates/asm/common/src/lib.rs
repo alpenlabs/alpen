@@ -17,6 +17,7 @@ pub use msg::*;
 pub use spec::*;
 pub use state::*;
 pub use subprotocol::*;
+use tracing as _;
 pub use tx::*;
 
 // Re-export the logging module

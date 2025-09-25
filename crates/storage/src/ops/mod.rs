@@ -1,3 +1,4 @@
+pub mod asm;
 pub mod chainstate;
 pub mod checkpoint;
 pub mod client_state;
