@@ -1,5 +1,4 @@
 //! Account system common type definitions.
-#![expect(unused)] // in-development
 
 mod amount;
 mod constants;

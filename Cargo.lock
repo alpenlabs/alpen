@@ -15174,7 +15174,6 @@ name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-mmr",
 ]
 
 [[package]]
