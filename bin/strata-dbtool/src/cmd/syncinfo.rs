@@ -5,7 +5,7 @@ use strata_db::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
 use super::{
     chainstate::get_latest_l2_write_batch,
     l1::get_l1_chain_tip,
-    l2::{get_highest_l2_slot, get_latest_l2_block_id},
+    l2::{get_chain_tip_block_id, get_chain_tip_slot},
 };
 use crate::{
     cli::OutputFormat,
@@ -28,14 +28,14 @@ pub(crate) fn get_syncinfo(
 ) -> Result<(), DisplayedError> {
     let l2_db = db.l2_db();
 
-    // Get L1 tip using helper function
+    // Get L1 tip
     let (l1_tip_height, l1_tip_block_id) = get_l1_chain_tip(db)?;
 
-    // Get L2 tip using helper function
-    let l2_tip_block_id = get_latest_l2_block_id(db)?;
+    // Get L2 tip
+    let l2_tip_block_id = get_chain_tip_block_id(db)?;
 
-    // Get L2 tip slot using helper function
-    let l2_tip_height = get_highest_l2_slot(db)?;
+    // Get L2 tip slot
+    let l2_tip_height = get_chain_tip_slot(db)?;
 
     // Get L2 block status
     let l2_tip_block_status = l2_db

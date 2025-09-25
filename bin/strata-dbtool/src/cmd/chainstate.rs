@@ -12,7 +12,7 @@ use strata_primitives::{l1::L1BlockCommitment, l2::L2BlockId};
 
 use super::{
     checkpoint::get_latest_checkpoint_entry,
-    l2::{get_highest_l2_slot, get_l2_block_slot, get_latest_l2_block_id},
+    l2::{get_chain_tip_block_id, get_chain_tip_slot, get_l2_block_slot_and_epoch},
 };
 use crate::{
     cli::OutputFormat,
@@ -65,13 +65,13 @@ pub(crate) fn get_l2_write_batch(
         .internal_error("Failed to get L2 write batch")
 }
 
-/// Get the write batch for the latest L2 block.
+/// Get the write batch for the chain tip L2 block.
 ///
 /// This gets the write batch associated with the highest slot block in the database.
 pub(crate) fn get_latest_l2_write_batch(
     db: &impl DatabaseBackend,
 ) -> Result<WriteBatch, DisplayedError> {
-    let block_id = get_latest_l2_block_id(db)?;
+    let block_id = get_chain_tip_block_id(db)?;
     get_l2_write_batch(db, block_id)?.ok_or_else(|| {
         DisplayedError::InternalError("L2 write batch not found".to_string(), Box::new(block_id))
     })
@@ -129,9 +129,10 @@ pub(crate) fn get_chainstate(
     let top_level_state = write_batch.new_toplevel_state();
 
     // Get the block slot
-    let block_slot = get_l2_block_slot(db, block_id)?.ok_or_else(|| {
-        DisplayedError::UserError("L2 block with id not found".to_string(), Box::new(block_id))
-    })?;
+    let (block_slot, block_epoch) =
+        get_l2_block_slot_and_epoch(db, block_id)?.ok_or_else(|| {
+            DisplayedError::UserError("L2 block with id not found".to_string(), Box::new(block_id))
+        })?;
 
     let prev_epoch = top_level_state.prev_epoch();
     let finalized_epoch = top_level_state.finalized_epoch();
@@ -141,7 +142,7 @@ pub(crate) fn get_chainstate(
     let chainstate_info = ChainstateInfo {
         block_id: &block_id,
         current_slot: block_slot,
-        current_epoch: top_level_state.cur_epoch(),
+        current_epoch: block_epoch,
         is_epoch_finishing: top_level_state.is_epoch_finishing(),
         previous_epoch: prev_epoch,
         finalized_epoch,
@@ -160,20 +161,21 @@ pub(crate) fn revert_chainstate(
     args: RevertChainstateArgs,
 ) -> Result<(), DisplayedError> {
     let target_block_id = parse_l2_block_id(&args.block_id)?;
-    let target_slot = get_l2_block_slot(db, target_block_id)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "L2 block with id not found".to_string(),
-            Box::new(target_block_id),
-        )
-    })?;
+    let (target_slot, target_epoch) = get_l2_block_slot_and_epoch(db, target_block_id)?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "L2 block with id not found".to_string(),
+                Box::new(target_block_id),
+            )
+        })?;
 
-    // Get the latest slot
-    let latest_slot = get_highest_l2_slot(db)?;
+    // Get the chain tip slot
+    let chain_tip_slot = get_chain_tip_slot(db)?;
 
-    // Get latest write batch to check finalized epoch constraints
-    let latest_write_batch = get_latest_l2_write_batch(db)?;
-    let latest_top_level_state = latest_write_batch.new_toplevel_state();
-    let finalized_slot = latest_top_level_state.finalized_epoch().last_slot();
+    // Get chain tip write batch to check finalized epoch constraints
+    let chain_tip_write_batch = get_latest_l2_write_batch(db)?;
+    let chain_tip_top_level_state = chain_tip_write_batch.new_toplevel_state();
+    let finalized_slot = chain_tip_top_level_state.finalized_epoch().last_slot();
 
     if target_slot < finalized_slot {
         return Err(DisplayedError::UserError(
@@ -184,6 +186,7 @@ pub(crate) fn revert_chainstate(
 
     // Check if target block is inside checkpointed epoch
     let latest_checkpoint_entry = get_latest_checkpoint_entry(db)?;
+    let latest_checkpoint_epoch = latest_checkpoint_entry.checkpoint.batch_info().epoch;
     let checkpoint_last_slot = latest_checkpoint_entry
         .checkpoint
         .batch_info()
@@ -207,11 +210,13 @@ pub(crate) fn revert_chainstate(
     })?;
     let target_top_level_state = target_write_batch.new_toplevel_state();
     let target_l1_safe_block = target_top_level_state.l1_view().get_safe_block();
+    let target_slot_is_terminal = target_top_level_state.is_epoch_finishing();
 
-    println!("Chainstate latest slot {latest_slot}");
+    println!("Chainstate chain tip slot {chain_tip_slot}");
     println!("Chainstate finalized slot {finalized_slot}");
     println!("Latest checkpointed slot {checkpoint_last_slot}");
     println!("Revert chainstate target slot {target_slot}");
+    println!("Target slot is epoch finishing: {target_slot_is_terminal}");
     println!(
         "Target L1 safe block {}@{}",
         target_l1_safe_block.height_u64(),
@@ -219,7 +224,7 @@ pub(crate) fn revert_chainstate(
     );
 
     // Now delete write batches and optionally blocks
-    for slot in target_slot + 1..=latest_slot {
+    for slot in target_slot + 1..=chain_tip_slot {
         let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or_default();
         for block_id in l2_block_ids.iter() {
             // Convert block ID to write batch ID
@@ -264,13 +269,19 @@ pub(crate) fn revert_chainstate(
         }
     }
 
-    let target_epoch = target_top_level_state.cur_epoch();
-    let latest_checkpoint_epoch = latest_checkpoint_entry.checkpoint.batch_info().epoch;
-    println!(
-        "target epoch = {:?}, latest_checkpoint_epoch = {:?}",
-        target_epoch, latest_checkpoint_epoch
-    );
-    if target_epoch <= latest_checkpoint_epoch {
+    // Determine first epoch to clean up
+    // - If target_slot is terminal: target_epoch is complete, start cleaning from next epoch
+    // - If target_slot is not terminal: target_epoch is incomplete, include it in cleanup
+    let first_epoch_to_clean = if target_slot_is_terminal {
+        target_epoch + 1
+    } else {
+        target_epoch
+    };
+
+    // Only perform cleanup if there are epochs to clean
+    let needs_cleanup = first_epoch_to_clean <= latest_checkpoint_epoch;
+
+    if needs_cleanup {
         // Delete ClientState entries AFTER the target L1 safe block
         let next_l1_height = target_l1_safe_block.height_u64() + 1;
         let next_l1_block = L1BlockCommitment::from_height_u64(next_l1_height, Default::default())
@@ -294,11 +305,8 @@ pub(crate) fn revert_chainstate(
             }
         }
 
-        // Clean up checkpoints and related data AFTER target epoch
-        // We keep the target epoch's data intact since we're reverting TO that epoch, not FROM it
-        let first_epoch_to_delete = target_epoch + 1;
         println!(
-            "Revert chainstate cleaning up checkpoints from epoch {first_epoch_to_delete} onwards"
+            "Cleaning up checkpoints and epoch summaries from epoch {first_epoch_to_clean} to {latest_checkpoint_epoch}"
         );
 
         // Note: We intentionally do NOT delete L1 related stuff ( writer entries such as
@@ -306,19 +314,21 @@ pub(crate) fn revert_chainstate(
         // 1. These L1 entries don't affect L2 chain state correctness after a revert.
         // 2. The L1 transactions may already be on Bitcoin, so keeping the records is appropriate.
 
-        // Use bulk deletion methods for efficiency
+        // Bulk delete checkpoints and epoch summaries
         let deleted_checkpoints = db
             .checkpoint_db()
-            .del_checkpoints_from_epoch(first_epoch_to_delete)
+            .del_checkpoints_from_epoch(first_epoch_to_clean)
             .internal_error("Failed to delete checkpoints")?;
 
         let deleted_summaries = db
             .checkpoint_db()
-            .del_epoch_summaries_from_epoch(first_epoch_to_delete)
+            .del_epoch_summaries_from_epoch(first_epoch_to_clean)
             .internal_error("Failed to delete epoch summaries")?;
 
         println!("Deleted checkpoints at epochs: {:?}", deleted_checkpoints);
         println!("Deleted epoch summaries at epochs: {:?}", deleted_summaries);
+    } else {
+        println!("No cleanup needed - target slot preserves all checkpointed epochs");
     }
 
     println!("Revert chainstate completed");
