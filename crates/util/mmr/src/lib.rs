@@ -189,8 +189,11 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
             let prev_node = self.peaks[current_height];
             let next_node = MH::hash_node(prev_node, current_node);
             let leaf_parent_tree = new_leaf_index >> (current_height + 1);
+
+            let proof_index = updated_proof.index();
             self.update_single_proof(
-                &mut updated_proof,
+                updated_proof.inner_mut(),
+                proof_index,
                 leaf_parent_tree,
                 current_height,
                 prev_node,
@@ -210,22 +213,25 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
     fn update_single_proof(
         &mut self,
-        proof: &mut MerkleProof<MH::Hash>,
+        proof: &mut RawMerkleProof<MH::Hash>,
+        proof_index: u64,
         leaf_parent_tree: u64,
         current_height: usize,
         prev_node: MH::Hash,
         current_node: MH::Hash,
     ) {
-        let proof_index = proof.index;
         let proof_parent_tree = proof_index >> (current_height + 1);
         if leaf_parent_tree == proof_parent_tree {
-            if current_height >= proof.cohashes.len() {
-                proof.cohashes.resize(current_height + 1, MH::zero_hash());
+            let cohashes = proof.cohashes_vec_mut();
+
+            if current_height >= cohashes.len() {
+                cohashes.resize(current_height + 1, MH::zero_hash());
             }
+
             if (proof_index >> current_height) & 1 == 1 {
-                proof.cohashes[current_height] = prev_node;
+                cohashes[current_height] = prev_node;
             } else {
-                proof.cohashes[current_height] = current_node;
+                cohashes[current_height] = current_node;
             }
         }
     }
@@ -245,6 +251,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         }
 
         let mut new_proof = MerkleProof::<MH::Hash>::new_empty(self.num);
+        let new_proof_index = new_proof.index();
+        assert_eq!(new_proof_index, self.num);
 
         let new_leaf_index = self.num;
         let peak_mask = self.num;
@@ -256,8 +264,10 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
             let leaf_parent_tree = new_leaf_index >> (current_height + 1);
 
             for proof in proof_list.iter_mut() {
+                let index = proof.index();
                 self.update_single_proof(
-                    proof,
+                    proof.inner_mut(),
+                    index,
                     leaf_parent_tree,
                     current_height,
                     prev_node,
@@ -266,7 +276,8 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
             }
 
             self.update_single_proof(
-                &mut new_proof,
+                new_proof.inner_mut(),
+                new_proof_index,
                 leaf_parent_tree,
                 current_height,
                 prev_node,
@@ -287,7 +298,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
 
     /// Verifies a single proof for a leaf against the current MMR state.
     pub fn verify(&self, proof: &MerkleProof<MH::Hash>, leaf: &MH::Hash) -> bool {
-        self.verify_raw(&proof.cohashes, proof.index, leaf)
+        self.verify_raw(proof.cohashes(), proof.index(), leaf)
     }
 
     fn verify_raw(&self, cohashes: &[MH::Hash], leaf_index: u64, leaf_hash: &MH::Hash) -> bool {
@@ -331,23 +342,27 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
     }
 }
 
-/// Proof for an entry in an MMR.
+/// Proof for an entry in an MMR/tree.
 ///
 /// If the MMR that produced this proof is updated, then this proof has to be
 /// updated as well.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct MerkleProof<H>
 where
     H: MerkleHash,
 {
     /// Sibling hashes required for proof.
-    pub(crate) cohashes: Vec<H>,
+    pub(crate) inner: RawMerkleProof<H>,
 
     /// Index of the element for which this proof is for.
     pub(crate) index: u64,
 }
 
 impl<H: MerkleHash> MerkleProof<H> {
+    fn new(inner: RawMerkleProof<H>, index: u64) -> Self {
+        Self { inner, index }
+    }
+
     /// Constructs a new empty proof for the 0 index.
     pub fn new_zero() -> Self {
         Self::new_empty(0)
@@ -356,20 +371,70 @@ impl<H: MerkleHash> MerkleProof<H> {
     /// Constructs a new empty proof for some index.  This probably will not
     /// validate properly.
     fn new_empty(index: u64) -> Self {
-        Self::from_cohashes(Vec::new(), index)
+        Self::new(RawMerkleProof::new_zero(), index)
     }
 
     /// Constructs a new instance from the path.
     pub fn from_cohashes(cohashes: Vec<H>, index: u64) -> Self {
-        Self { cohashes, index }
+        Self::new(RawMerkleProof::new(cohashes), index)
+    }
+
+    /// Exposes the raw inner proof, which you probably don't want to use.
+    pub fn inner_raw(&self) -> &RawMerkleProof<H> {
+        &self.inner
+    }
+
+    fn inner_mut(&mut self) -> &mut RawMerkleProof<H> {
+        &mut self.inner
+    }
+
+    pub fn cohashes(&self) -> &[H] {
+        self.inner.cohashes()
+    }
+
+    pub fn index(&self) -> u64 {
+        self.index
+    }
+
+    /// Discards the index and returns the raw merkle proof.
+    pub fn into_raw(self) -> RawMerkleProof<H> {
+        self.inner
+    }
+}
+
+/// Raw proof for some entry in a MMR/tree.
+///
+/// This doesn't include the index of the entry being proven, which makes this
+/// useful in contexts where we establish that value separately.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct RawMerkleProof<H>
+where
+    H: MerkleHash,
+{
+    pub(crate) cohashes: Vec<H>,
+}
+
+impl<H: MerkleHash> RawMerkleProof<H> {
+    pub fn new(cohashes: Vec<H>) -> Self {
+        Self { cohashes }
+    }
+
+    pub fn new_zero() -> Self {
+        Self::new(Vec::new())
     }
 
     pub fn cohashes(&self) -> &[H] {
         &self.cohashes
     }
 
-    pub fn index(&self) -> u64 {
-        self.index
+    fn cohashes_vec_mut(&mut self) -> &mut Vec<H> {
+        &mut self.cohashes
+    }
+
+    /// Takes an index that this merkle proof is allegedly for and constructs a
+    /// full proof using the cohash path we have.
+    pub fn into_indexed(self, idx: u64) -> MerkleProof<H> {
+        MerkleProof::from_cohashes(self.cohashes, idx)
     }
 }
 

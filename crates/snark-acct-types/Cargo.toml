@@ -1,0 +1,11 @@
+
+[package]
+name = "strata-snark-acct-types"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-acct-types.workspace = true
+
+[lints]
+workspace = true
