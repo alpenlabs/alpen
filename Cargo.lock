@@ -14948,6 +14948,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ledger-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-snark-acct-types",
+]
+
+[[package]]
 name = "strata-mmr"
 version = "0.3.0-alpha.1"
 dependencies = [
