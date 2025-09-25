@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-proto-administration-txs"
+name = "strata-asm-txs-admin"
 version = "0.1.0"
 edition = "2024"
 

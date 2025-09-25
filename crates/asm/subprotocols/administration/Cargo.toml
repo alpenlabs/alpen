@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-asm-proto-administration-txs.workspace = true
+strata-asm-txs-admin.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
 
@@ -17,9 +17,7 @@ borsh.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-strata-asm-proto-administration-txs = { workspace = true, features = [
-  "test-utils",
-] }
+strata-asm-txs-admin = { workspace = true, features = ["test-utils"] }
 strata-test-utils.workspace = true
 rand.workspace = true
 bitvec.workspace = true
