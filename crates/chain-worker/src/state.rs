@@ -7,8 +7,7 @@ use strata_primitives::prelude::*;
 use strata_state::{chain_state::Chainstate, state_op::StateCache};
 use strata_storage::ChainstateManager;
 
-#[allow(missing_debug_implementations)]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "Some inner types don't have Debug impls")]
 pub(crate) struct WbStateAccessorImpl {
     /// Chainstate manager to fetch "deep" information we might not have in memory.
     // we aren't actually using this yet, but we will when we have accounts

@@ -9,7 +9,10 @@ use reth_primitives::EthPrimitives;
 use reth_provider::{BlockReaderIdExt, Chain};
 use tracing::{debug, error};
 
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct StateDiffGenerator<
     Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
     S: StateDiffStore + Clone,

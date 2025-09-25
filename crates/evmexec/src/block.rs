@@ -5,8 +5,7 @@ use strata_primitives::evm_exec::EVMExtraPayload;
 use thiserror::Error;
 
 pub(crate) struct EVML2Block {
-    #[allow(dead_code)]
-    l2_block: L2Block,
+    _l2_block: L2Block,
     extra_payload: EVMExtraPayload,
 }
 
@@ -15,7 +14,7 @@ impl EVML2Block {
     pub(crate) fn try_extract(bundle: &L2BlockBundle) -> Result<Self, ConversionError> {
         let extra_payload = get_extra_payload(bundle)?;
         Ok(Self {
-            l2_block: bundle.block().to_owned(),
+            _l2_block: bundle.block().to_owned(),
             extra_payload,
         })
     }

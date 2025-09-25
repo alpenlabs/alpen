@@ -9,7 +9,10 @@ use tracing::error;
 use crate::{cache::CacheTable, ops};
 
 /// Caching manager of L1 block data
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct L1BlockManager {
     ops: ops::l1::L1DataOps,
     manifest_cache: CacheTable<L1BlockId, Option<L1BlockManifest>>,

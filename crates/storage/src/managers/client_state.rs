@@ -14,7 +14,10 @@ use crate::{
     ops::client_state::{ClientStateOps, Context},
 };
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct ClientStateManager {
     ops: ClientStateOps,
 

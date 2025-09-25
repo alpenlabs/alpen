@@ -10,7 +10,10 @@ use strata_ol_chain_types::{L2BlockId, L2Header};
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_storage::{ClientStateManager, L2BlockManager};
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct ExecWorkerCtx {
     l2man: Arc<L2BlockManager>,
     client: Arc<ClientStateManager>,

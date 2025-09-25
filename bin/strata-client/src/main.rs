@@ -223,7 +223,10 @@ fn init_logging(rt: &Handle) {
 
 /// Shared low-level services that secondary services depend on.
 #[derive(Clone)]
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "some inner types do not implement Debug"
+)]
 pub struct CoreContext {
     pub runtime: Handle,
     pub database: Arc<init_db::DatabaseImpl>,
@@ -371,7 +374,6 @@ fn start_core_tasks(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn start_sequencer_tasks(
     ctx: CoreContext,
     config: &Config,

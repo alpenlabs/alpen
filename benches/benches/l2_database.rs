@@ -8,16 +8,32 @@ use std::hint::black_box;
 use alpen_benchmarks::db::DatabaseBackend;
 use arbitrary::Arbitrary;
 // Suppress unused crate warnings
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    clippy::allow_attributes,
+    reason = "used for benchmarking"
+)]
 use bitcoin as _;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    clippy::allow_attributes,
+    reason = "used for benchmarking"
+)]
 use strata_asm_types as _;
 use strata_db::traits::{BlockStatus, L2BlockDatabase};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    clippy::allow_attributes,
+    reason = "used for benchmarking"
+)]
 use strata_primitives as _;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    clippy::allow_attributes,
+    reason = "used for benchmarking"
+)]
 use strata_state::prelude::*;
 use tempfile::TempDir;
 #[cfg(feature = "rocksdb")]

@@ -61,7 +61,6 @@ members = [
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
   "crates/util/mmr",
-  "crates/db-tests",
   "provers/risc0",
   "provers/sp1",
 

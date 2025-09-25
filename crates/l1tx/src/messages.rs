@@ -36,10 +36,8 @@ impl L1TxMessages {
 /// DA commitment and blob retrieved from L1 transaction.
 #[derive(Clone, Debug)]
 pub struct DaEntry {
-    #[allow(unused)]
     commitment: DaCommitment,
 
-    #[allow(unused)]
     blob_buf: Vec<u8>,
 }
 

@@ -1,44 +1,33 @@
 //! Top-level CL state transition logic.  This is largely stubbed off now, but
 //! we'll replace components with real implementations as we go along.
-#![allow(unused)]
-
-use std::{cmp::max, collections::HashMap};
 
 use rand_core::{RngCore, SeedableRng};
 use strata_asm_types::{
-    DepositInfo, DepositSpendInfo, L1BlockManifest, L1HeaderRecord, L1TxRef, ProtocolOperation,
-    WithdrawalFulfillmentInfo,
+    DepositInfo, DepositSpendInfo, L1BlockManifest, ProtocolOperation, WithdrawalFulfillmentInfo,
 };
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_ol_chain_types::{L1Segment, L2BlockBody, L2BlockHeader, L2Header};
+use strata_ol_chain_types::{L2BlockBody, L2BlockHeader, L2Header};
 use strata_primitives::{
-    batch::SignedCheckpoint,
-    epoch::EpochCommitment,
-    l1::{BitcoinAmount, OutputRef},
-    l2::L2BlockCommitment,
-    params::RollupParams,
-    proof::RollupVerifyingKey,
+    batch::SignedCheckpoint, epoch::EpochCommitment, l2::L2BlockCommitment, params::RollupParams,
 };
 use strata_state::{
     batch::{verify_signed_checkpoint_sig, Checkpoint},
     bridge_ops::{DepositIntent, WithdrawalIntent},
     bridge_state::{DepositState, DispatchCommand, WithdrawOutput},
-    exec_env::ExecEnvState,
-    exec_update::{self, construct_ops_from_deposit_intents, ELDepositData, Op},
+    exec_update::{self, Op},
     prelude::*,
     state_op::StateCache,
-    state_queue,
 };
 use tracing::warn;
-use zkaleido::{ProofReceipt, ZkVmResult};
+use zkaleido::ZkVmResult;
 
 use crate::{
     checkin::{process_l1_view_update, SegmentAuxData},
-    context::{BlockHeaderContext, StateAccessor},
+    context::StateAccessor,
     errors::{OpError, TsnError},
     legacy::FauxStateCache,
     macros::*,
-    slot_rng::{self, SlotRng},
+    slot_rng::SlotRng,
 };
 
 /// Processes a block, making writes into the provided state cache.
@@ -104,6 +93,7 @@ fn compute_init_slot_rng(state: &impl StateAccessor) -> SlotRng {
     SlotRng::from_seed(blkid_buf)
 }
 
+#[allow(dead_code, clippy::allow_attributes, reason = "used for chaintsn")]
 fn process_l1_block(
     state: &mut StateCache,
     block_mf: &L1BlockManifest,
@@ -155,7 +145,7 @@ fn process_proto_op(
 
 fn process_l1_checkpoint(
     state: &mut StateCache,
-    src_block_mf: &L1BlockManifest,
+    _src_block_mf: &L1BlockManifest,
     signed_ckpt: &SignedCheckpoint,
     params: &RollupParams,
 ) -> Result<(), OpError> {
@@ -169,7 +159,7 @@ fn process_l1_checkpoint(
     let ckpt = signed_ckpt.checkpoint(); // inner data
     let ckpt_epoch = ckpt.batch_transition().epoch;
 
-    let receipt = ckpt.construct_receipt();
+    let _receipt = ckpt.construct_receipt();
     let fin_epoch = state.state().finalized_epoch();
 
     // Note: This is error because this is done by the sequencer
@@ -185,7 +175,7 @@ fn process_l1_checkpoint(
     verify_checkpoint_proof(ckpt, params).map_err(|_| OpError::InvalidProof)?;
 
     // Copy the epoch commitment and make it finalized.
-    let old_fin_epoch = state.state().finalized_epoch();
+    let _old_fin_epoch = state.state().finalized_epoch();
     let new_fin_epoch = ckpt.batch_info().get_epoch_commitment();
 
     // TODO go through and do whatever stuff we need to do now that's finalized
@@ -233,7 +223,7 @@ fn is_checkpoint_null(ckpt: &Checkpoint, finalized_epoch: &EpochCommitment) -> b
 
 fn process_l1_deposit(
     state: &mut StateCache,
-    src_block_mf: &L1BlockManifest,
+    _src_block_mf: &L1BlockManifest,
     info: &DepositInfo,
 ) -> Result<(), OpError> {
     let requested_idx = info.deposit_idx;
@@ -302,9 +292,10 @@ fn advance_epoch_tracking(state: &mut impl StateAccessor) -> Result<(), TsnError
 
 /// Checks the attested block IDs and parent blkid connections in new blocks.
 // TODO unit tests
+#[expect(dead_code, reason = "used for chaintsn")]
 fn check_chain_integrity(
     cur_safe_height: u64,
-    cur_safe_blkid: &L1BlockId,
+    _cur_safe_blkid: &L1BlockId,
     new_height: u64,
     new_blocks: &[L1BlockManifest],
 ) -> Result<(), TsnError> {
@@ -373,6 +364,7 @@ fn process_execution_update<'s, 'u, S: StateAccessor>(
         .iter()
         .filter_map(|op| match op {
             Op::Deposit(deposit) => Some(deposit.intent_idx()),
+            #[expect(unreachable_patterns, reason = "unreachable")]
             _ => None,
         })
         .max();
@@ -530,30 +522,18 @@ fn next_rand_op_pos(rng: &mut SlotRng, num: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use rand_core::SeedableRng;
-    use strata_asm_types::{
-        DepositInfo, DepositUpdateTx, L1BlockManifest, L1HeaderRecord, L1Tx, ProtocolOperation,
-        WithdrawalFulfillmentInfo,
-    };
-    use strata_chainexec::MemStateAccessor;
-    use strata_ol_chain_types::{ExecSegment, L1Segment, L2BlockBody, L2BlockHeader, L2Header};
-    use strata_primitives::{buf::Buf32, l1::BitcoinAmount, l2::L2BlockId, params::OperatorConfig};
+    use strata_asm_types::{L1BlockManifest, L1Tx, ProtocolOperation, WithdrawalFulfillmentInfo};
+    use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
     use strata_state::{
-        bridge_state::{
-            DepositState, DepositsTable, DispatchCommand, DispatchedState, FulfilledState,
-            OperatorTable,
-        },
+        bridge_state::{DepositState, DepositsTable, DispatchCommand, DispatchedState},
         chain_state::Chainstate,
-        exec_env::ExecEnvState,
-        exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
-        genesis::GenesisStateData,
-        l1::L1ViewState,
         state_op::StateCache,
     };
     use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_l2::gen_params;
 
-    use super::{next_rand_op_pos, process_block};
-    use crate::{checkin::process_l1_view_update, slot_rng::SlotRng, transition::process_l1_block};
+    use super::next_rand_op_pos;
+    use crate::{slot_rng::SlotRng, transition::process_l1_block};
 
     #[test]
     // Confirm that operator index sampling is deterministic and in bounds
@@ -598,7 +578,7 @@ mod tests {
             vec![0, 1, 2],
             BitcoinAmount::from_int_btc(10),
         );
-        let mut deposit = deposit_table.get_deposit_mut(0).expect("should exist");
+        let deposit = deposit_table.get_deposit_mut(0).expect("should exist");
         deposit.set_state(DepositState::Dispatched(DispatchedState::new(
             DispatchCommand::new(vec![]),
             0,

@@ -1,48 +1,38 @@
 //! Fork choice manager. Used to talk to the EL and pick the new fork choice.
 
-#![allow(unused)]
-
 use std::{collections::VecDeque, sync::Arc};
 
-use strata_chain_worker::{ChainWorkerHandle, WorkerError, WorkerResult};
-use strata_chainexec::{validation_util, ChainExecutor, TipState};
-use strata_chaintsn::transition::process_block;
-use strata_common::retry::{
-    policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
-};
+use strata_chain_worker::{ChainWorkerHandle, WorkerResult};
+use strata_chainexec::{validation_util, TipState};
 use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
-use strata_eectl::{engine::ExecEngineCtl, errors::EngineError, messages::ExecPayloadData};
-use strata_ol_chain_types::{validate_block_structure, L2BlockBundle, L2BlockId, L2Header};
-use strata_primitives::{
-    epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, params::Params,
-};
+use strata_eectl::errors::EngineError;
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
+use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, params::Params};
 use strata_state::{
-    batch::EpochSummary,
     chain_state::Chainstate,
     client_state::{CheckpointState, ClientState},
-    prelude::*,
-    state_op::{StateCache, WriteBatchEntry},
 };
 use strata_status::*;
 use strata_storage::{L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc, watch, Mutex},
+    sync::{mpsc, watch},
 };
 use tracing::*;
 
 use crate::{
-    chain_worker_context::ChainWorkerCtx,
-    csm::{ctl::CsmController, message::ForkChoiceMessage},
+    csm::message::ForkChoiceMessage,
     errors::*,
-    genesis::{check_needs_genesis, wait_for_genesis},
     tip_update::{compute_tip_update, TipUpdate},
     unfinalized_tracker::{self, UnfinalizedBlockTracker},
 };
 
 /// Tracks the parts of the chain that haven't been finalized on-chain yet.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct ForkChoiceManager {
     /// Consensus parameters.
     params: Arc<Params>,
@@ -91,7 +81,7 @@ impl ForkChoiceManager {
     }
 
     // TODO is this right?
-    #[expect(unused)]
+    #[expect(unused, reason = "used for fork choice manager")]
     fn finalized_tip(&self) -> &L2BlockId {
         self.chain_tracker.finalized_tip()
     }
@@ -105,6 +95,7 @@ impl ForkChoiceManager {
         Ok(())
     }
 
+    #[expect(unused, reason = "used for fork choice manager")]
     fn get_block_status(&self, id: &L2BlockId) -> Result<Option<BlockStatus>, DbError> {
         self.storage.l2().get_block_status_blocking(id)
     }
@@ -127,7 +118,7 @@ impl ForkChoiceManager {
         Ok(block.header().slot())
     }
 
-    #[expect(unused)]
+    #[expect(unused, reason = "used for fork choice manager")]
     fn get_block_chainstate(
         &self,
         block: &L2BlockCommitment,
@@ -179,6 +170,7 @@ impl ForkChoiceManager {
         }
 
         // Do the leg work of applying the finalization.
+        #[expect(unused, reason = "used for fork choice manager")]
         let tip_update = TipState::new(self.cur_best_block(), *epoch);
         self.chain_worker.finalize_epoch_blocking(*epoch)?;
 
@@ -191,6 +183,7 @@ impl ForkChoiceManager {
         Ok(())
     }
 
+    #[expect(unused, reason = "used for fork choice manager")]
     fn get_chainstate_cur_epoch(&self) -> u64 {
         self.cur_chainstate.cur_epoch()
     }
@@ -381,7 +374,6 @@ fn determine_start_tip(
 }
 
 /// Main tracker task that takes a ready fork choice manager and some IO stuff.
-#[allow(clippy::too_many_arguments)]
 pub fn tracker_task(
     shutdown: ShutdownGuard,
     handle: Handle,
@@ -431,7 +423,9 @@ pub fn tracker_task(
         }
     };
 
+    #[expect(unused, reason = "used for fork choice manager")]
     let cur_tip = fcm.cur_best_block();
+    #[expect(unused, reason = "used for fork choice manager")]
     let prev_epoch = *fcm.get_chainstate_prev_epoch();
 
     // Update status.
@@ -490,7 +484,7 @@ pub fn handle_unprocessed_blocks(
     Ok(())
 }
 
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant, reason = "used for fork choice manager")]
 enum FcmEvent {
     NewFcmMsg(ForkChoiceMessage),
     NewStateUpdate(ClientState),
@@ -864,7 +858,7 @@ fn revert_chainstate_to_block(
         .get_slot_write_batch_blocking(blkid)?
         .ok_or(Error::MissingBlockChainstate(blkid))?
         .into_toplevel();
-    fcm_state.update_tip_block(*block, Arc::new(new_state));
+    let _ = fcm_state.update_tip_block(*block, Arc::new(new_state));
 
     // FIXME: Rollback the writes on the database that we no longer need.
 

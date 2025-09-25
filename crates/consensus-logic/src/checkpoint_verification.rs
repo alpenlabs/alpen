@@ -68,7 +68,6 @@ fn verify_checkpoint_extends(
 /// This is here because we want to move `.get_proof_receipt()` out of the
 /// checkpoint type itself soon.
 pub fn construct_receipt(checkpoint: &Checkpoint) -> ProofReceipt {
-    #[allow(deprecated)]
     checkpoint.construct_receipt()
 }
 

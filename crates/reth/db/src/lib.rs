@@ -6,10 +6,18 @@ pub mod rocksdb;
 pub mod sled;
 
 #[cfg(feature = "rocksdb")]
-#[allow(unused_extern_crates)]
+#[allow(
+    unused_extern_crates,
+    clippy::allow_attributes,
+    reason = "feature-gated"
+)]
 extern crate rockbound as _;
 #[cfg(feature = "sled")]
-#[allow(unused_extern_crates)]
+#[allow(
+    unused_extern_crates,
+    clippy::allow_attributes,
+    reason = "feature-gated"
+)]
 extern crate sled as _;
 
 // Consume dev dependencies to avoid unused warnings in tests

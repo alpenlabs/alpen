@@ -1,4 +1,4 @@
-#![allow(stable_features)] // FIX: this is needed for sp1 toolchain.
+#![expect(stable_features, reason = "Required for sp1 toolchain compatibility")] // FIX: this is needed for sp1 toolchain.
 #![feature(is_sorted, is_none_or)]
 
 //! Rollup types relating to the consensus-layer state of the rollup.
@@ -17,12 +17,14 @@ pub mod forced_inclusion;
 pub mod genesis;
 pub mod l1;
 pub mod operation;
+pub mod prelude;
 pub mod state_op;
 pub mod state_queue;
 
 use std::{boxed::Box, vec::Vec};
 
 use async_trait::async_trait;
+pub use strata_primitives::batch;
 use strata_primitives::l1::L1BlockCommitment;
 
 /// Interface to submit blocks to CSM in blocking or async fashion.
@@ -37,7 +39,10 @@ pub trait BlockSubmitter: Send + Sync {
 }
 
 /// A glue implementation to allow several block submitters "consume" from the same reader.
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Inner types don't have Debug implementation"
+)]
 pub struct CombinedBlockSubmitter {
     submitters: Vec<std::sync::Arc<dyn BlockSubmitter>>,
 }
@@ -68,7 +73,3 @@ impl CombinedBlockSubmitter {
         Self { submitters }
     }
 }
-
-pub mod prelude;
-
-pub use strata_primitives::batch;

@@ -6,7 +6,10 @@ use zxcvbn::{zxcvbn, Entropy};
 use super::PW_SALT_LEN;
 
 #[derive(ZeroizeOnDrop)]
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Struct contains sensitive password data that should not be debug printed"
+)]
 pub struct Password {
     inner: String,
 }

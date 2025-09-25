@@ -24,7 +24,10 @@ use super::{
 use crate::utils::now_millis;
 
 /// Container to pass context to worker
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct WorkerContext<E> {
     params: Arc<Params>,
     storage: Arc<NodeStorage>,

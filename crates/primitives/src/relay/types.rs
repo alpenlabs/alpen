@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use core::fmt;
 
 use arbitrary::Arbitrary;
@@ -67,13 +65,11 @@ impl BridgeMessage {
     }
 
     /// Raw scope.
-    #[allow(clippy::missing_const_for_fn)]
     pub fn scope(&self) -> &[u8] {
         &self.scope
     }
 
     /// Raw payload
-    #[allow(clippy::missing_const_for_fn)]
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
@@ -271,6 +267,7 @@ mod tests {
         l1::BitcoinTxid,
     };
 
+    #[expect(unused, reason = "used for testing")]
     fn get_arb_bridge_msg() -> BridgeMessage {
         let msg: BridgeMessage = ArbitraryGenerator::new().generate();
         msg

@@ -60,7 +60,10 @@ impl<S: Service> StatusMonitor for ServiceMonitor<S> {
 ///
 /// This exists to make it easier to work with a collection of status monitors
 /// for unrelated services and reduce the burden of dealing with all the types.
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Trait object cannot implement Debug"
+)]
 pub struct GenericStatusMonitor {
     inner: Box<dyn StatusMonitor>,
 }

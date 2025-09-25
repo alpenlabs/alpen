@@ -8,7 +8,7 @@ macro_rules! define_ids {
         )*
 
         /// Array containing all defined type IDs
-        #[allow(dead_code)]
+        #[allow(dead_code, clippy::allow_attributes, reason = "some generated code is not used")]
         const $const_name: &'static [$type] = &[$($name),*];
     };
 }

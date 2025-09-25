@@ -256,7 +256,11 @@ impl<N: RpcNodeCore, Rpc: RpcConvert> fmt::Debug for AlpenEthApi<N, Rpc> {
 }
 
 /// Container type for [`AlpenEthApi`]
-#[allow(missing_debug_implementations)]
+#[allow(
+    missing_debug_implementations,
+    clippy::allow_attributes,
+    reason = "Some inner types don't have Debug implementation"
+)]
 struct AlpenEthApiInner<N: RpcNodeCore, Rpc: RpcConvert> {
     /// Gateway to node's core components.
     eth_api: EthApiNodeBackend<N, Rpc>,
@@ -283,7 +287,10 @@ impl<N: RpcNodeCore, Rpc: RpcConvert> AlpenEthApiInner<N, Rpc> {
     }
 }
 
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct AlpenEthApiBuilder<NetworkT = Ethereum> {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
     /// network.

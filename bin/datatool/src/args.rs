@@ -43,7 +43,10 @@ pub(crate) struct Args {
     pub(crate) subc: Subcommand,
 }
 
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Enum contains large variants for different subcommands"
+)]
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub(crate) enum Subcommand {
@@ -254,7 +257,10 @@ pub(crate) struct BitcoindConfig {
 
 pub(crate) struct CmdContext {
     /// Resolved datadir for the network.
-    #[allow(unused)]
+    #[expect(
+        unused,
+        reason = "Field is used in command context but may not be directly accessed"
+    )]
     pub(crate) datadir: PathBuf,
 
     /// The Bitcoin network we're building on top of.

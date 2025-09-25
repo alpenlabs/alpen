@@ -75,7 +75,6 @@ impl L1BlockManifest {
         &self.record
     }
 
-    #[allow(clippy::missing_const_for_fn)]
     pub fn txs(&self) -> &[L1Tx] {
         &self.txs
     }

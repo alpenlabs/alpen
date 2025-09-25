@@ -30,7 +30,10 @@ use crate::{
 };
 
 /// A handle to the Envelope task.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have debug impls"
+)]
 pub struct EnvelopeHandle {
     ops: Arc<EnvelopeDataOps>,
     intent_tx: Sender<IntentEntry>,
@@ -111,7 +114,7 @@ impl EnvelopeHandle {
 /// # Returns
 ///
 /// [`Result<EnvelopeHandle>`](anyhow::Result)
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "used for starting envelope task")]
 pub fn start_envelope_task<D: L1WriterDatabase + Send + Sync + 'static>(
     executor: &TaskExecutor,
     bitcoin_client: Arc<Client>,

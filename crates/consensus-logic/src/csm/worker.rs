@@ -22,7 +22,10 @@ use crate::csm::client_transition::{self, EventContext, StorageEventContext};
 ///
 /// Unable to be shared across threads.  Any data we want to export we'll do
 /// through another handle.
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct WorkerState {
     /// Consensus parameters.
     params: Arc<Params>,

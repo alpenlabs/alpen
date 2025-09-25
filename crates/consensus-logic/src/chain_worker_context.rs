@@ -14,7 +14,10 @@ use strata_state::{batch::EpochSummary, chain_state::Chainstate, state_op::Write
 use strata_storage::{ChainstateManager, CheckpointDbManager, L2BlockManager};
 use tracing::*;
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct ChainWorkerCtx {
     l2man: Arc<L2BlockManager>,
     chsman: Arc<ChainstateManager>,

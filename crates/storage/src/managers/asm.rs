@@ -8,7 +8,10 @@ use threadpool::ThreadPool;
 use crate::ops;
 
 /// A manager for the persistence of [`AsmState`].
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Inner types don't have Debug implementation"
+)]
 pub struct AsmStateManager {
     ops: ops::asm::AsmDataOps,
 }

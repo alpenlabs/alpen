@@ -31,7 +31,6 @@ impl ClientUpdateOutput {
         &self.state
     }
 
-    #[allow(clippy::missing_const_for_fn)]
     pub fn actions(&self) -> &[SyncAction] {
         &self.actions
     }
@@ -47,7 +46,7 @@ impl ClientUpdateOutput {
 
 /// Actions the client state machine directs the node to take to update its own
 /// database bookkeeping.
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant, reason = "I don't want to box it")]
 #[derive(
     Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
 )]

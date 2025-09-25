@@ -22,7 +22,10 @@ use tokio::io::AsyncReadExt;
 
 use crate::seed::Seed;
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Struct contains sensitive cryptographic data that should not be debug printed"
+)]
 pub struct DescriptorRecovery {
     db: sled::Db,
     cipher: Aes256GcmSiv,
@@ -229,29 +232,27 @@ impl DescriptorRecovery {
 }
 
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for recovery operations")]
 pub struct EntryTooShort {
     length: usize,
 }
 
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for invalid descriptor recovery")]
 pub struct InvalidDescriptor(OneOf<(FromUtf8Error, bdk_wallet::miniscript::Error)>);
 
 #[derive(Debug)]
-#[allow(unused)]
 pub struct InvalidNetwork;
 
 #[derive(Debug)]
-#[allow(unused)]
 pub struct InvalidNetworksLen;
 
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for invalid private key recovery")]
 pub struct InvalidPrivateKey(OneOf<(FromUtf8Error, DescriptorKeyParseError)>);
 
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for invalid public key recovery")]
 pub struct InvalidPublicKey(OneOf<(FromUtf8Error, DescriptorKeyParseError)>);
 
 #[derive(Debug)]

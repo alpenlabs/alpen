@@ -11,7 +11,10 @@ pub mod factory;
 mod schnorr;
 
 /// A custom precompile that contains static precompiles.
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Precompiles struct contains static precompiles that don't need debug implementation"
+)]
 #[derive(Clone, Default)]
 pub struct AlpenEvmPrecompiles {
     pub inner: EthPrecompiles,

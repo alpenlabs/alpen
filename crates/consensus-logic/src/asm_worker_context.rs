@@ -10,7 +10,10 @@ use strata_state::asm_state::AsmState;
 use strata_storage::{AsmStateManager, L1BlockManager};
 use tokio::runtime::Handle;
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Inner types don't have Debug implementation"
+)]
 pub struct AsmWorkerCtx {
     handle: Handle,
     bitcoin_client: Arc<Client>,

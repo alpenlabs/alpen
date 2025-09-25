@@ -81,10 +81,9 @@ use crate::signet::backend::BoxedErr;
 /// This indicates runtime failure in the underlying platform storage system. The details of the
 /// failure can be retrieved from the attached platform error.
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for platform storage failures")]
 pub struct PlatformFailure(BoxedErr);
 
-#[allow(unused)]
 impl PlatformFailure {
     pub fn new<E>(e: E) -> Self
     where
@@ -98,10 +97,9 @@ impl PlatformFailure {
 /// Typically this is because of access rules in the platform; for example, it might be that the
 /// credential store is locked. The underlying platform error will typically give the reason.
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for storage access failures")]
 pub struct NoStorageAccess(BoxedErr);
 
-#[allow(unused)]
 impl NoStorageAccess {
     pub fn new<E>(e: E) -> Self
     where
@@ -119,14 +117,17 @@ pub struct NoEntry;
 /// This indicates that the retrieved password blob was not a UTF-8 string. The underlying bytes are
 /// available for examination in the attached value.
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for bad encoding in credential storage")]
 pub struct BadEncoding(Vec<u8>);
 
 /// This indicates that one of the entry's credential attributes exceeded a length limit in the
 /// underlying platform. The attached values give the name of the attribute and the platform length
 /// limit that was exceeded.
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(
+    unused,
+    reason = "Error type for credential attributes that are too long"
+)]
 pub struct TooLong {
     name: String,
     limit: u32,
@@ -135,7 +136,7 @@ pub struct TooLong {
 /// This indicates that one of the entry's required credential attributes was invalid. The attached
 /// value gives the name of the attribute and the reason it's invalid.
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for invalid credential attributes")]
 pub struct Invalid {
     name: String,
     reason: String,
@@ -144,7 +145,7 @@ pub struct Invalid {
 /// This indicates that there is more than one credential found in the store that matches the entry.
 /// Its value is a vector of the matching credentials.
 #[derive(Debug)]
-#[allow(unused)]
+#[expect(unused, reason = "Error type for ambiguous credential matches")]
 pub struct Ambiguous(Vec<Box<Credential>>);
 
 #[cfg(not(target_os = "linux"))]

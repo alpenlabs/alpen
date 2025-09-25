@@ -21,7 +21,10 @@ mod exec;
 pub mod handler;
 pub mod validation;
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "EVM struct contains complex internal state that doesn't need debug implementation"
+)]
 pub struct AlpenAlloyEvm<DB: Database, I> {
     inner: RevmEvm<
         EthEvmContext<DB>,

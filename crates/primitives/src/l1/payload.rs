@@ -78,7 +78,7 @@ impl BlobSpec {
         &self.commitment
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Constructor for testing purposes")]
     fn new(dest: PayloadDest, commitment: Buf32) -> Self {
         Self { dest, commitment }
     }
@@ -146,7 +146,6 @@ impl L1Payload {
         Self::new(data, L1PayloadType::Da)
     }
 
-    #[allow(clippy::missing_const_for_fn)]
     pub fn data(&self) -> &[u8] {
         &self.data
     }

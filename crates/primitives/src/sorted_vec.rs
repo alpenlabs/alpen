@@ -512,7 +512,7 @@ mod tests {
         assert_eq!(sv1.as_slice(), &[1, 3, 3, 4, 4, 5, 5, 7, 8]);
     }
 
-    #[allow(unused)]
+    #[expect(unused, reason = "Test helper struct for table entry tests")]
     struct Pair(u32, u32);
 
     impl TableEntry for Pair {

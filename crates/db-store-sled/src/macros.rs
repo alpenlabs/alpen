@@ -166,7 +166,7 @@ macro_rules! define_sled_database {
             $(
                 $field: typed_sled::SledTree<$schema>,
             )*
-            #[allow(dead_code)]
+            #[allow(dead_code, clippy::allow_attributes, reason = "some generated code is not used")]
             config: $crate::SledDbConfig,
         }
 

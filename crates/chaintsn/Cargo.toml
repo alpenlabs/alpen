@@ -23,8 +23,6 @@ zkaleido.workspace = true
 [dev-dependencies]
 strata-test-utils.workspace = true
 strata-test-utils-l2.workspace = true
-strata-chainexec.workspace = true
-
 
 [features]
 default = ["fullstd"]

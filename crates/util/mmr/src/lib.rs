@@ -1,6 +1,12 @@
 //! Merkle mountain range implementation crate.
-#![allow(clippy::declare_interior_mutable_const)]
-#![allow(clippy::borrow_interior_mutable_const)]
+#![expect(
+    clippy::declare_interior_mutable_const,
+    reason = "Constants with interior mutability are needed for MMR implementation"
+)]
+#![expect(
+    clippy::borrow_interior_mutable_const,
+    reason = "Borrowing interior mutable constants is required for MMR operations"
+)]
 
 pub mod error;
 pub mod hasher;
@@ -27,7 +33,6 @@ pub struct CompactMmr<H: MerkleHash> {
 #[derive(Clone, Debug)]
 pub struct MerkleMr64<MH: MerkleHasher + Clone> {
     /// Total number of elements inserted into MMR.
-    #[allow(unused)]
     pub(crate) num: u64,
 
     /// Buffer of all possible peaks in MMR.  Only some of these will be valid
@@ -309,8 +314,7 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         <MH::Hash as MerkleHash>::eq_ct(&cur_hash, root)
     }
 
-    // FIXME what is this function for?  it does not generate a proof
-    #[allow(unused)]
+    #[allow(dead_code, clippy::allow_attributes, reason = "used for testing")]
     pub(crate) fn gen_proof(
         &self,
         proof_list: &[MerkleProof<MH::Hash>],

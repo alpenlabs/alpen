@@ -31,7 +31,7 @@ pub type DutyId = Buf32;
 
 /// Duties the sequencer might carry out.
 #[derive(Clone, Debug, BorshSerialize, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant, reason = "I don't want to box it")]
 pub enum Duty {
     /// Goal to sign a block.
     SignBlock(BlockSigningDuty),

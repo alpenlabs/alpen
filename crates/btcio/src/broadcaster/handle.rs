@@ -13,7 +13,10 @@ use tracing::*;
 
 use super::task::broadcaster_task;
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impls"
+)]
 pub struct L1BroadcastHandle {
     ops: Arc<BroadcastDbOps>,
     sender: mpsc::Sender<(u64, L1TxEntry)>,

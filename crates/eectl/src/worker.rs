@@ -20,12 +20,15 @@ use crate::{
     messages::ExecPayloadData,
 };
 
-#[expect(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "some inner types don't have Debug impls"
+)]
 pub struct ExecWorkerState<E: ExecEngineCtl> {
     engine: Arc<E>,
     exec_env_id: ExecEnvId,
     safe_tip: L2BlockCommitment,
-    finalized_tip: L2BlockCommitment,
+    _finalized_tip: L2BlockCommitment,
 }
 
 impl<E: ExecEngineCtl> ExecWorkerState<E> {
@@ -40,7 +43,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
             engine,
             exec_env_id,
             safe_tip,
-            finalized_tip,
+            _finalized_tip: finalized_tip,
         }
     }
 
@@ -70,6 +73,7 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
         })
     }
 
+    #[expect(unused, reason = "will be used later")]
     fn update_finalized_tip(&mut self, new_finalized: &L2BlockCommitment) -> EngineResult<()> {
         self.call_engine("engine_update_finalized_tip", |eng| {
             eng.update_finalized_block(*new_finalized.blkid())?;
@@ -78,9 +82,10 @@ impl<E: ExecEngineCtl> ExecWorkerState<E> {
     }
 
     /// Calls the engine to update the reffed blocks.
+    #[expect(unused, reason = "will be used later")]
     fn update_engine_refs(&mut self) -> EngineResult<()> {
         let safe_blkid = *self.safe_tip.blkid();
-        let finalized_blkid = *self.finalized_tip.blkid();
+        let finalized_blkid = *self._finalized_tip.blkid();
         self.call_engine("engine_update_refs", |eng| {
             eng.update_safe_block(safe_blkid)?;
             eng.update_finalized_block(finalized_blkid)?;

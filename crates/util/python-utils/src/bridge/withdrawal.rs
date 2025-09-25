@@ -32,7 +32,7 @@ use crate::{
 /// * `bitcoind_url` - Bitcoind url
 /// * `bitcoind_user` - credentials
 /// * `bitcoind_password` - credentials
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "used for python bindings")]
 #[pyfunction]
 pub(crate) fn create_withdrawal_fulfillment(
     recipient_bosd: String,
@@ -64,7 +64,7 @@ pub(crate) fn create_withdrawal_fulfillment(
 }
 
 /// Internal implementation of withdrawal fulfillment creation
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "used for python bindings")]
 fn create_withdrawal_fulfillment_inner(
     recipient_script: ScriptBuf,
     amount: u64,
