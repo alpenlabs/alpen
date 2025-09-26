@@ -21,7 +21,9 @@
 
 mod constants;
 mod errors;
+mod handler;
 mod msgs;
+mod parser;
 mod state;
 mod subprotocol;
 

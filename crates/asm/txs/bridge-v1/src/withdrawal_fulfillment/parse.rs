@@ -20,29 +20,29 @@ const DEPOSIT_IDX_OFFSET: usize = OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE;
 const DEPOSIT_TXID_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
 
 /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
-pub(crate) const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
+pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
     OPERATOR_IDX_SIZE + DEPOSIT_IDX_SIZE + DEPOSIT_TXID_SIZE;
 
 /// Information extracted from a Bitcoin withdrawal transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalFulfillmentInfo {
     /// The index of the operator who processed this withdrawal.
-    pub(crate) operator_idx: OperatorIdx,
+    pub operator_idx: OperatorIdx,
 
     /// The index of the deposit that the operator wishes to receive payout from later.
     /// This must be validated against the operator's assigned deposits in the state's assignments
     /// table to ensure the operator is authorized to claim this specific deposit.
-    pub(crate) deposit_idx: u32,
+    pub deposit_idx: u32,
 
     /// The transaction ID of the deposit that the operator wishes to claim for payout.
     /// This must match the deposit referenced by `deposit_idx` in the assignments table.
-    pub(crate) deposit_txid: BitcoinTxid,
+    pub deposit_txid: BitcoinTxid,
 
     /// The Bitcoin script address where the withdrawn funds are being sent.
-    pub(crate) withdrawal_destination: ScriptBuf,
+    pub withdrawal_destination: ScriptBuf,
 
     /// The amount of Bitcoin being withdrawn (may be less than the original deposit due to fees).
-    pub(crate) withdrawal_amount: BitcoinAmount,
+    pub withdrawal_amount: BitcoinAmount,
 }
 
 impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
@@ -89,7 +89,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// - The transaction has fewer than 2 outputs (missing withdrawal fulfillment or OP_RETURN)
 /// - The auxiliary data size doesn't match the expected metadata size
 /// - Any of the metadata fields cannot be parsed correctly
-pub(crate) fn parse_withdrawal_fulfillment_tx<'t>(
+pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
     if tx.tag().tx_type() != WITHDRAWAL_TX_TYPE {

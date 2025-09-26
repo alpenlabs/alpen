@@ -34,7 +34,7 @@ use crate::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 ///
 /// # Returns
 /// The properly formatted and signed Bitcoin transaction
-pub(crate) fn create_test_deposit_tx(
+pub fn create_test_deposit_tx(
     deposit_info: &DepositInfo,
     operators_privkeys: &[EvenSecretKey],
 ) -> Transaction {

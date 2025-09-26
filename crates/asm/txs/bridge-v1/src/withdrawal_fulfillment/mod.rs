@@ -32,9 +32,9 @@
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod parse;
 
-pub(crate) const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
+pub const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
 
-pub(crate) use parse::{
+pub use parse::{
     WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN, WithdrawalFulfillmentInfo,
     parse_withdrawal_fulfillment_tx,
 };

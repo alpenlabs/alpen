@@ -27,7 +27,7 @@ use crate::{
 /// # Returns
 ///
 /// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
-pub(crate) fn create_test_withdrawal_fulfillment_tx(
+pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
     // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]

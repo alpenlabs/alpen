@@ -8,13 +8,12 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_asm_txs_bridge_v1::errors::DepositValidationError;
 use strata_primitives::{
     bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},
     sorted_vec::SortedVec,
 };
-
-use crate::errors::DepositValidationError;
 
 /// Bitcoin deposit entry containing UTXO reference and historical multisig operators.
 ///
@@ -101,7 +100,7 @@ impl DepositEntry {
         amt: BitcoinAmount,
     ) -> Result<Self, DepositValidationError> {
         if operators.is_empty() {
-            return Err(crate::errors::DepositValidationError::EmptyOperators);
+            return Err(DepositValidationError::EmptyOperators);
         }
 
         Ok(Self {
@@ -272,13 +271,10 @@ impl DepositsTable {
     /// let result = table.insert_deposit(entry);
     /// assert!(result.is_ok());
     /// ```
-    pub fn insert_deposit(
-        &mut self,
-        entry: DepositEntry,
-    ) -> Result<(), crate::errors::DepositValidationError> {
+    pub fn insert_deposit(&mut self, entry: DepositEntry) -> Result<(), DepositValidationError> {
         let idx = entry.deposit_idx;
         match self.get_deposit(idx) {
-            Some(_) => Err(crate::errors::DepositValidationError::DepositIdxAlreadyExists(idx)),
+            Some(_) => Err(DepositValidationError::DepositIdxAlreadyExists(idx)),
             None => {
                 // SortedVec handles insertion and maintains sorted order
                 self.deposits.insert(entry);
@@ -325,7 +321,7 @@ mod tests {
         let result = DepositEntry::new(1, output, operators, amount);
         assert!(matches!(
             result,
-            Err(crate::errors::DepositValidationError::EmptyOperators)
+            Err(DepositValidationError::EmptyOperators)
         ));
     }
 
@@ -360,7 +356,7 @@ mod tests {
         let result = table.insert_deposit(entry2.clone());
         assert!(matches!(
             result,
-            Err(crate::errors::DepositValidationError::DepositIdxAlreadyExists(idx)) if idx == deposit_idx
+            Err(DepositValidationError::DepositIdxAlreadyExists(idx)) if idx == deposit_idx
         ));
     }
 

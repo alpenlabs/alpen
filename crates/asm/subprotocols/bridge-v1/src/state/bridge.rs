@@ -1,19 +1,20 @@
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_txs_bridge_v1::{
+    deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
+    errors::{DepositValidationError, Mismatch},
+    withdrawal_fulfillment::WithdrawalFulfillmentInfo,
+};
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
-    errors::{DepositValidationError, Mismatch, WithdrawalCommandError, WithdrawalValidationError},
+    errors::{WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
         withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
-    },
-    txs::{
-        deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
-        withdrawal_fulfillment::WithdrawalFulfillmentInfo,
     },
 };
 
@@ -431,6 +432,10 @@ impl BridgeV1State {
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::Rng;
+    use strata_asm_txs_bridge_v1::{
+        deposit::DepositInfo,
+        test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
+    };
     use strata_crypto::EvenSecretKey;
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
@@ -441,13 +446,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        state::{config::BridgeV1Config, withdrawal::WithdrawOutput},
-        txs::{
-            deposit::DepositInfo,
-            test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
-        },
-    };
+    use crate::state::{config::BridgeV1Config, withdrawal::WithdrawOutput};
 
     /// Helper function to create test operator keys
     ///

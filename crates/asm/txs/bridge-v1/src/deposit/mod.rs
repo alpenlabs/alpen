@@ -39,7 +39,7 @@
 mod parse;
 mod validation;
 
-pub(crate) const DEPOSIT_OUTPUT_INDEX: u32 = 1;
+pub const DEPOSIT_OUTPUT_INDEX: u32 = 1;
 
-pub(crate) use parse::{DepositInfo, MIN_DEPOSIT_TX_AUX_DATA_LEN, parse_deposit_tx};
-pub(crate) use validation::{validate_deposit_output_lock, validate_drt_spending_signature};
+pub use parse::{DepositInfo, MIN_DEPOSIT_TX_AUX_DATA_LEN, parse_deposit_tx};
+pub use validation::{validate_deposit_output_lock, validate_drt_spending_signature};

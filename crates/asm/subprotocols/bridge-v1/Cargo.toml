@@ -15,7 +15,6 @@ bitcoin.workspace = true
 borsh.workspace = true
 moho-types.workspace = true
 rand_chacha.workspace = true
-secp256k1.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
@@ -28,5 +27,5 @@ strata-primitives.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
-musig2.workspace = true
 rand.workspace = true
+secp256k1.workspace = true

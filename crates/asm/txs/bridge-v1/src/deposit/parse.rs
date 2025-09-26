@@ -17,7 +17,7 @@ const DEPOSIT_IDX_LEN: usize = 4;
 const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
 
 /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
-pub(crate) const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
+pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
 
 /// Information extracted from a Bitcoin deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
@@ -65,9 +65,7 @@ pub struct DepositInfo {
 /// - `Ok(DepositInfo)` - Successfully parsed deposit information
 /// - `Err(DepositError)` - If the transaction structure is invalid, signature verification fails,
 ///   or any parsing step encounters malformed data
-pub(crate) fn parse_deposit_tx<'a>(
-    tx_input: &TxInputRef<'a>,
-) -> Result<DepositInfo, DepositTxParseError> {
+pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
     if tx_input.tag().tx_type() != DEPOSIT_TX_TYPE {
         return Err(DepositTxParseError::InvalidTxType(tx_input.tag().tx_type()));
     }

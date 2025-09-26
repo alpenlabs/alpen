@@ -14,9 +14,10 @@ use strata_primitives::{
 
 use crate::{
     constants::BRIDGE_V1_SUBPROTOCOL_ID,
+    handler::handle_parsed_tx,
     msgs::BridgeIncomingMsg,
+    parser::parse_tx,
     state::{BridgeV1Config, BridgeV1State},
-    txs::{handle_parsed_tx, parse_tx},
 };
 
 /// Bridge V1 subprotocol implementation.

@@ -3,8 +3,8 @@ use strata_asm_logs::NewExportEntry;
 
 use crate::{
     errors::BridgeSubprotocolError,
+    parser::{ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx},
     state::BridgeV1State,
-    txs::{ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx},
 };
 
 /// Handles parsed transactions and update the bridge state accordingly.

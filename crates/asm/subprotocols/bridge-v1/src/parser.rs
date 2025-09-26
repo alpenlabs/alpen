@@ -1,13 +1,36 @@
+use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
-
-use crate::{
+use strata_asm_txs_bridge_v1::{
     constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
-    errors::BridgeSubprotocolError,
-    txs::{
-        ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx, deposit::parse_deposit_tx,
-        withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
-    },
+    deposit::{DepositInfo, parse_deposit_tx},
+    withdrawal_fulfillment::{WithdrawalFulfillmentInfo, parse_withdrawal_fulfillment_tx},
 };
+
+use crate::BridgeSubprotocolError;
+
+/// A parsed deposit transaction containing the raw transaction and extracted deposit information.
+#[derive(Debug)]
+pub struct ParsedDepositTx<'t> {
+    pub tx: &'t Transaction,
+    pub info: DepositInfo,
+}
+
+/// A parsed withdrawal fulfillment transaction containing the raw transaction and extracted
+/// withdrawal information.
+#[derive(Debug)]
+pub struct ParsedWithdrawalFulfillmentTx<'t> {
+    pub tx: &'t Transaction,
+    pub info: WithdrawalFulfillmentInfo,
+}
+
+/// Represents a parsed transaction that can be either a deposit or withdrawal fulfillment.
+#[derive(Debug)]
+pub enum ParsedTx<'t> {
+    /// A deposit transaction that locks Bitcoin funds in the bridge
+    Deposit(ParsedDepositTx<'t>),
+    /// A withdrawal fulfillment transaction that releases Bitcoin funds from the bridge
+    WithdrawalFulfillment(ParsedWithdrawalFulfillmentTx<'t>),
+}
 
 /// Parses a transaction into a structured format based on its type.
 ///
@@ -30,7 +53,7 @@ use crate::{
 /// Returns an error if:
 /// - The transaction type is not supported by the bridge subprotocol
 /// - The transaction data extraction fails (malformed transaction structure)
-pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, BridgeSubprotocolError> {
+pub fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, BridgeSubprotocolError> {
     match tx.tag().tx_type() {
         DEPOSIT_TX_TYPE => {
             let info = parse_deposit_tx(tx)?;
