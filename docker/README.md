@@ -21,6 +21,8 @@ which also includes some details on the necessary non-docker pre-setup.
 
 Generate the required keys:
 
+**NOTE**: Datatool requires a connection to bitcoin network to generate params. If the bitcoin network is other than regtest, make sure it is set to the environment variable `BITCOIN_NETWORK`.
+
 ```bash
 # build the datatool
 cargo build --bin strata-datatool
@@ -83,3 +85,6 @@ docker start alpen_reth_fn # if you want to test the full node
     ```bash
     rm -rf .data && docker compose up prover-client
     ```
+
+## Troubleshooting
+- If you get an error `ERROR Max retries 3 exceeded` while running `init-keys.sh`, make sure the bitcoin node's endpoint provided via `BITCOIN_RPC_URL` is running.

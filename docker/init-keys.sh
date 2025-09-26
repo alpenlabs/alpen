@@ -9,6 +9,7 @@
 # Or passed as additional arguments after the datatool path
 
 DATATOOL_PATH=${1:-./strata-datatool}
+BITCOIN_NETWORK=${BITCOIN_NETWORK:-"regtest"}
 shift
 
 # Set default Bitcoin RPC credentials if not provided
@@ -61,14 +62,14 @@ $DATATOOL_PATH -b regtest genxpriv -f $OP5_SEED_FILE
 seqprivkey=$($DATATOOL_PATH -b regtest genseqprivkey -f ${SEQ_SEED_FILE})
 echo -n "$seqprivkey" > $CONFIG_FILE/sequencer.key
 
-op1pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP1_SEED_FILE})
-op2pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP2_SEED_FILE})
+op1xpriv=$(cat $OP1_SEED_FILE)
+op2xpriv=$(cat $OP2_SEED_FILE)
 # shellcheck disable=2034
-op3pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP3_SEED_FILE})
+op3xpriv=$(cat $OP3_SEED_FILE)
 # shellcheck disable=2034
-op4pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP4_SEED_FILE})
+op4xpriv=$(cat $OP4_SEED_FILE)
 # shellcheck disable=2034
-op5pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP5_SEED_FILE})
+op5xpriv=$(cat $OP5_SEED_FILE)
 
 seqpubkey=$($DATATOOL_PATH -b regtest genseqpubkey -f ${CONFIG_FILE}/sequencer.key)
 
@@ -78,7 +79,7 @@ ROLLUP_PARAMS_FILE=$CONFIG_FILE/params.json
 # Check if -n is set in args
 # shellcheck disable=2199
 if [[ "$@" != *"-n "* ]]; then
-    extra_args+=("-n" "alpenstrata")
+    extra_args+=("-n" "alpn")
 fi
 
 if [ -z "$output_found" ]; then
@@ -86,13 +87,13 @@ if [ -z "$output_found" ]; then
 fi
 
 # Add Bitcoin RPC credentials to genparams command
-$DATATOOL_PATH -b regtest \
+"$DATATOOL_PATH" -b "$BITCOIN_NETWORK" \
     --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
     --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
     --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
     genparams \
     -s "$seqpubkey" \
-    -b "$op1pubkey" \
-    -b "$op2pubkey" \
+    -b "$op1xpriv" \
+    -b "$op2xpriv" \
     "${extra_args[@]}" \
     "$@"
