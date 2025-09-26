@@ -2,13 +2,13 @@ use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_bridge_v1::{
     deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
-    errors::{DepositValidationError, Mismatch},
+    errors::Mismatch,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
-    errors::{WithdrawalCommandError, WithdrawalValidationError},
+    errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
@@ -650,7 +650,8 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DepositValidationError::InvalidSignature { .. })
+            Err(DepositValidationError::DrtSignature(_)) |
+            Err(DepositValidationError::DepositOutput(_))
         ));
 
         // Verify no deposit was added

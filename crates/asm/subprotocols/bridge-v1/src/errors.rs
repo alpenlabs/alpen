@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositTxParseError, DepositValidationError, Mismatch, WithdrawalParseError,
+    DepositTxParseError, DrtSignatureError, DepositOutputError, Mismatch, WithdrawalParseError,
 };
 use strata_l1_txfmt::TxType;
 use strata_primitives::{
@@ -11,12 +11,41 @@ use strata_primitives::{
 };
 use thiserror::Error;
 
+/// Errors that can occur when validating deposit transactions at the subprotocol level.
+///
+/// These errors represent state-level validation failures that occur after successful
+/// transaction parsing and cryptographic validation.
+#[derive(Debug, Error)]
+pub enum DepositValidationError {
+    /// DRT spending signature validation failed.
+    #[error("DRT spending signature validation failed")]
+    DrtSignature(#[from] DrtSignatureError),
+
+    /// Deposit output lock validation failed.
+    #[error("Deposit output lock validation failed")]
+    DepositOutput(#[from] DepositOutputError),
+
+    /// The deposit amount does not match the expected amount for this bridge configuration.
+    #[error("Invalid deposit amount")]
+    MismatchDepositAmount(Mismatch<u64>),
+
+    /// A deposit with this index already exists in the deposits table.
+    /// This should not occur since deposit indices are guaranteed unique by the N/N multisig.
+    #[error("Deposit index {0} already exists in deposits table")]
+    DepositIdxAlreadyExists(u32),
+
+    /// Cannot create deposit entry with empty operators list.
+    /// Each deposit must have at least one notary operator.
+    #[error("Cannot create deposit entry with empty operators.")]
+    EmptyOperators,
+}
+
 #[derive(Debug, Error)]
 pub enum BridgeSubprotocolError {
     #[error("failed to parse deposit tx")]
     DepositTxParse(#[from] DepositTxParseError),
 
-    #[error("failed to parse deposit tx")]
+    #[error("failed to process deposit tx")]
     DepositTxProcess(#[from] DepositValidationError),
 
     #[error("failed to parse withdrawal fulfillment tx")]

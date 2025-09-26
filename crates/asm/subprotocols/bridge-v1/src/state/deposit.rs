@@ -8,7 +8,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_asm_txs_bridge_v1::errors::DepositValidationError;
+use crate::errors::DepositValidationError;
 use strata_primitives::{
     bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},

@@ -3,9 +3,6 @@ name = "strata-asm-proto-bridge-v1"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-test_utils = []
-
 [lints]
 workspace = true
 
@@ -29,3 +26,6 @@ strata-primitives.workspace = true
 strata-test-utils.workspace = true
 rand.workspace = true
 secp256k1.workspace = true
+
+[features]
+test_utils = ["strata-asm-txs-bridge-v1/test-utils"]

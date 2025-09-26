@@ -8,7 +8,10 @@ use bitcoin::{
 use secp256k1::Message;
 use strata_primitives::{buf::Buf32, l1::XOnlyPk};
 
-use crate::{deposit::DEPOSIT_OUTPUT_INDEX, errors::DepositValidationError};
+use crate::{
+    deposit::DEPOSIT_OUTPUT_INDEX,
+    errors::{DepositOutputError, DrtSignatureError}
+};
 
 /// Validates that the DRT spending signature in the deposit transaction is valid.
 ///
@@ -37,8 +40,7 @@ use crate::{deposit::DEPOSIT_OUTPUT_INDEX, errors::DepositValidationError};
 /// # Returns
 ///
 /// - `Ok(())` - If the signature is cryptographically valid for the given public key
-/// - `Err(DepositValidationError::InvalidSignature)` - If signature validation fails with details
-///   about the failure
+/// - `Err(DrtSignatureError)` - If signature validation fails with specific details about the failure
 ///
 /// # Implementation Details
 ///
@@ -50,7 +52,7 @@ pub fn validate_drt_spending_signature(
     drt_tapnode_hash: Buf32,
     operators_pubkey: &XOnlyPk,
     deposit_amount: Amount,
-) -> Result<(), DepositValidationError> {
+) -> Result<(), DrtSignatureError> {
     // Initialize necessary variables and dependencies
     let secp = secp256k1::SECP256K1;
 
@@ -63,19 +65,14 @@ pub fn validate_drt_spending_signature(
 
     // Check if witness is present.
     if input.witness.is_empty() {
-        return Err(DepositValidationError::InvalidSignature {
-            reason: "No witness data found in transaction input".to_string(),
-        });
+        return Err(DrtSignatureError::MissingWitness);
     }
     let sig_witness = &input.witness[0];
 
     // rust-bitcoin taproot::Signature handles both both 64-byte (SIGHASH_DEFAULT)
     // and 65-byte (explicit sighash) signatures.
-    let taproot_sig = taproot::Signature::from_slice(sig_witness).map_err(|e| {
-        DepositValidationError::InvalidSignature {
-            reason: format!("Failed to parse taproot signature: {e}"),
-        }
-    })?;
+    let taproot_sig = taproot::Signature::from_slice(sig_witness)
+        .map_err(|e| DrtSignatureError::InvalidSignatureFormat(e.to_string()))?;
     let schnorr_sig = taproot_sig.signature;
     let sighash_type = taproot_sig.sighash_type;
 
@@ -105,9 +102,7 @@ pub fn validate_drt_spending_signature(
 
     // Verify the Schnorr signature
     secp.verify_schnorr(&schnorr_sig, &msg, &tweaked_key.to_x_only_public_key())
-        .map_err(|e| DepositValidationError::InvalidSignature {
-            reason: format!("Schnorr signature verification failed: {e}"),
-        })?;
+        .map_err(|e| DrtSignatureError::SchnorrVerificationFailed(e.to_string()))?;
 
     Ok(())
 }
@@ -133,12 +128,11 @@ pub fn validate_drt_spending_signature(
 /// # Returns
 ///
 /// - `Ok(())` - If the deposit output is properly locked to the operator key
-/// - `Err(DepositValidationError::InvalidSignature)` - If the output has wrong script type or wrong
-///   key
+/// - `Err(DepositOutputError)` - If the output has wrong script type or wrong key
 pub fn validate_deposit_output_lock(
     tx: &Transaction,
     operators_agg_pubkey: &XOnlyPk,
-) -> Result<(), DepositValidationError> {
+) -> Result<(), DepositOutputError> {
     // Get the deposit output at the expected index.
     // This expect is safe because we only validate transactions that have already been
     // parsed and confirmed to have proper deposit transaction structure. If there's no
@@ -152,18 +146,14 @@ pub fn validate_deposit_output_lock(
     // Extract the internal key from the P2TR script
     let secp = secp256k1::SECP256K1;
     let operators_pubkey = XOnlyPublicKey::from_slice(operators_agg_pubkey.inner().as_bytes())
-        .map_err(|_| DepositValidationError::InvalidSignature {
-            reason: "Invalid operator public key".to_string(),
-        })?;
+        .map_err(|_| DepositOutputError::InvalidOperatorKey)?;
 
     // Create expected P2TR script with no merkle root (key-spend only)
     let expected_script = ScriptBuf::new_p2tr(secp, operators_pubkey, None);
 
     // Verify the deposit output script matches the expected P2TR script
     if deposit_output.script_pubkey != expected_script {
-        return Err(DepositValidationError::InvalidSignature {
-            reason: "Deposit output is not locked to the aggregated operator key".to_string(),
-        });
+        return Err(DepositOutputError::WrongOutputLock);
     }
 
     Ok(())
@@ -263,11 +253,8 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DepositValidationError::InvalidSignature { .. })
+            Err(DepositOutputError::WrongOutputLock)
         ));
-        if let Err(DepositValidationError::InvalidSignature { reason }) = result {
-            assert!(reason.contains("not locked to the aggregated operator key"));
-        }
     }
 
     #[test]
@@ -295,11 +282,8 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DepositValidationError::InvalidSignature { .. })
+            Err(DrtSignatureError::MissingWitness)
         ));
-        if let Err(DepositValidationError::InvalidSignature { reason }) = result {
-            assert!(reason.contains("No witness data found"));
-        }
     }
 
     #[test]
@@ -325,7 +309,8 @@ mod tests {
         // The exact error depends on whether signature parsing or verification fails first
         assert!(matches!(
             result,
-            Err(DepositValidationError::InvalidSignature { .. })
+            Err(DrtSignatureError::InvalidSignatureFormat(_)) |
+            Err(DrtSignatureError::SchnorrVerificationFailed(_))
         ));
     }
 

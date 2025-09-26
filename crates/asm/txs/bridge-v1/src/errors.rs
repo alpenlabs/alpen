@@ -43,31 +43,34 @@ pub enum DepositTxParseError {
     MissingDepositOutput,
 }
 
-/// Errors that can occur when validating deposit transactions.
-///
-/// When these validation errors occur, they are logged and the transaction is skipped.
-/// No further processing is performed on transactions that fail to validate.
+/// Errors that can occur during DRT (Deposit Request Transaction) spending signature validation.
 #[derive(Debug, Error, Clone)]
-pub enum DepositValidationError {
-    /// Signature validation failed during deposit verification.
-    /// This indicates the transaction was not signed by the expected operator set.
-    #[error("Deposit signature validation failed: {reason}")]
-    InvalidSignature { reason: String },
+pub enum DrtSignatureError {
+    /// No witness data found in the transaction input.
+    #[error("No witness data found in transaction input")]
+    MissingWitness,
 
-    /// The deposit amount does not match the expected amount for this bridge configuration.
-    #[error("Invalid deposit amount")]
-    MismatchDepositAmount(Mismatch<u64>),
+    /// Failed to parse the taproot signature from witness data.
+    #[error("Failed to parse taproot signature: {0}")]
+    InvalidSignatureFormat(String),
 
-    /// A deposit with this index already exists in the deposits table.
-    /// This should not occur since deposit indices are guaranteed unique by the N/N multisig.
-    #[error("Deposit index {0} already exists in deposits table")]
-    DepositIdxAlreadyExists(u32),
-
-    /// Cannot create deposit entry with empty operators list.
-    /// Each deposit must have at least one notary operator.
-    #[error("Cannot create deposit entry with empty operators.")]
-    EmptyOperators,
+    /// Schnorr signature verification failed against the expected key.
+    #[error("Schnorr signature verification failed: {0}")]
+    SchnorrVerificationFailed(String),
 }
+
+/// Errors that can occur during deposit output lock validation.
+#[derive(Debug, Error, Clone)]
+pub enum DepositOutputError {
+    /// The operator public key is malformed or invalid.
+    #[error("Invalid operator public key")]
+    InvalidOperatorKey,
+
+    /// The deposit output is not locked to the expected aggregated operator key.
+    #[error("Deposit output is not locked to the aggregated operator key")]
+    WrongOutputLock,
+}
+
 
 /// Errors that can occur when parsing withdrawal fulfillment transactions.
 ///
