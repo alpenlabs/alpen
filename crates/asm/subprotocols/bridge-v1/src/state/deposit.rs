@@ -8,12 +8,13 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use crate::errors::DepositValidationError;
 use strata_primitives::{
     bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},
     sorted_vec::SortedVec,
 };
+
+use crate::errors::DepositValidationError;
 
 /// Bitcoin deposit entry containing UTXO reference and historical multisig operators.
 ///

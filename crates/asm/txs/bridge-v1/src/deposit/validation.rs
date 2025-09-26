@@ -10,7 +10,7 @@ use strata_primitives::{buf::Buf32, l1::XOnlyPk};
 
 use crate::{
     deposit::DEPOSIT_OUTPUT_INDEX,
-    errors::{DepositOutputError, DrtSignatureError}
+    errors::{DepositOutputError, DrtSignatureError},
 };
 
 /// Validates that the DRT spending signature in the deposit transaction is valid.
@@ -40,7 +40,8 @@ use crate::{
 /// # Returns
 ///
 /// - `Ok(())` - If the signature is cryptographically valid for the given public key
-/// - `Err(DrtSignatureError)` - If signature validation fails with specific details about the failure
+/// - `Err(DrtSignatureError)` - If signature validation fails with specific details about the
+///   failure
 ///
 /// # Implementation Details
 ///
@@ -251,10 +252,7 @@ mod tests {
             "Should fail when deposit output has wrong script"
         );
 
-        assert!(matches!(
-            result,
-            Err(DepositOutputError::WrongOutputLock)
-        ));
+        assert!(matches!(result, Err(DepositOutputError::WrongOutputLock)));
     }
 
     #[test]
@@ -280,10 +278,7 @@ mod tests {
             "Should fail when no witness data is present"
         );
 
-        assert!(matches!(
-            result,
-            Err(DrtSignatureError::MissingWitness)
-        ));
+        assert!(matches!(result, Err(DrtSignatureError::MissingWitness)));
     }
 
     #[test]
@@ -309,8 +304,8 @@ mod tests {
         // The exact error depends on whether signature parsing or verification fails first
         assert!(matches!(
             result,
-            Err(DrtSignatureError::InvalidSignatureFormat(_)) |
-            Err(DrtSignatureError::SchnorrVerificationFailed(_))
+            Err(DrtSignatureError::InvalidSignatureFormat(_))
+                | Err(DrtSignatureError::SchnorrVerificationFailed(_))
         ));
     }
 

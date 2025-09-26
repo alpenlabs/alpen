@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositTxParseError, DrtSignatureError, DepositOutputError, Mismatch, WithdrawalParseError,
+    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
 };
 use strata_l1_txfmt::TxType;
 use strata_primitives::{

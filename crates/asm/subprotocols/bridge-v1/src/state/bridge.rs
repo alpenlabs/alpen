@@ -650,8 +650,8 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DepositValidationError::DrtSignature(_)) |
-            Err(DepositValidationError::DepositOutput(_))
+            Err(DepositValidationError::DrtSignature(_))
+                | Err(DepositValidationError::DepositOutput(_))
         ));
 
         // Verify no deposit was added

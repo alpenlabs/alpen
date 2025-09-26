@@ -71,7 +71,6 @@ pub enum DepositOutputError {
     WrongOutputLock,
 }
 
-
 /// Errors that can occur when parsing withdrawal fulfillment transactions.
 ///
 /// When these parsing errors occur, they are logged and the transaction is skipped.
