@@ -24,6 +24,7 @@ strata-db.workspace = true
 strata-db-store-rocksdb = { workspace = true, optional = true }
 strata-db-store-sled = { workspace = true, optional = true }
 strata-ol-chain-types.workspace = true
+strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 

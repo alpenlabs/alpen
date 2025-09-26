@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db::chainstate::*;
-use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
+use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 
 use crate::{
     define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,

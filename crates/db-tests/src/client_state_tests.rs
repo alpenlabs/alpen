@@ -1,6 +1,6 @@
 use strata_db::traits::ClientStateDatabase;
-use strata_primitives::l1::L1BlockCommitment;
-use strata_state::{l1::L1BlockId, operation::ClientUpdateOutput};
+use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
+use strata_state::operation::ClientUpdateOutput;
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_get_consensus_update(db: &impl ClientStateDatabase) {

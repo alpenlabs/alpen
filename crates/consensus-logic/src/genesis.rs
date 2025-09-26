@@ -4,6 +4,7 @@ use strata_ol_chain_types::{
     ExecSegment, L1Segment, L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader,
     L2Header, SignedL2BlockHeader,
 };
+use strata_ol_chainstate_types::{Chainstate, GenesisStateData, L1ViewState, WriteBatch};
 use strata_primitives::{
     buf::{Buf32, Buf64},
     constants::TIMESTAMPS_FOR_MEDIAN,
@@ -12,15 +13,11 @@ use strata_primitives::{
 };
 use strata_state::{
     bridge_state::OperatorTable,
-    chain_state::Chainstate,
     client_state::ClientState,
     exec_env::ExecEnvState,
     exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
-    genesis::GenesisStateData,
-    l1::L1ViewState,
     operation::ClientUpdateOutput,
     prelude::*,
-    state_op::WriteBatch,
 };
 use strata_storage::{L2BlockManager, NodeStorage};
 use tokio::runtime::Handle;

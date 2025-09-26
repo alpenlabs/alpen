@@ -18,10 +18,8 @@ strata-primitives.workspace = true
 anyhow.workspace = true
 arbitrary.workspace = true
 async-trait.workspace = true
-bitcoin.workspace = true
 borsh.workspace = true
 serde.workspace = true
-tracing.workspace = true     # ideally this shouldn't be in this crate
 
 [features]
 test_utils = []

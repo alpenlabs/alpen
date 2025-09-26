@@ -17,13 +17,12 @@ use strata_ol_chain_types::{
     ExecSegment, L1Segment, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2BlockId,
     L2Header,
 };
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     buf::Buf32,
     params::{Params, RollupParams},
 };
-use strata_state::{
-    batch::Checkpoint, chain_state::Chainstate, exec_update::construct_ops_from_deposit_intents,
-};
+use strata_state::{batch::Checkpoint, exec_update::construct_ops_from_deposit_intents};
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
 use tracing::*;
 

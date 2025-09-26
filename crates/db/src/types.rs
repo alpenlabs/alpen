@@ -7,13 +7,13 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     buf::Buf32,
     l1::payload::{L1Payload, PayloadIntent},
 };
 use strata_state::{
     batch::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar},
-    chain_state::Chainstate,
     client_state::CheckpointL1Ref,
 };
 use zkaleido::Proof;

@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use revm_primitives::B256;
 use strata_db::errors::DbError;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
+use strata_ol_chainstate_types::ChainstateEntry;
 use strata_primitives::params::RollupParams;
-use strata_state::chain_state::ChainstateEntry;
 use strata_storage::*;
 use tracing::*;
 

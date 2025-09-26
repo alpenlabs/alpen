@@ -4,7 +4,9 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use strata_common::{Action, WorkerType};
 use strata_db::types::{L1TxEntry, L1TxStatus};
 use strata_ol_chain_types::{L2Block, L2BlockId};
-use strata_primitives::{batch::EpochSummary, bridge::PublickeyTable, epoch::EpochCommitment};
+use strata_primitives::{
+    batch::EpochSummary, bridge::PublickeyTable, epoch::EpochCommitment, l1::L1BlockId,
+};
 use strata_rpc_types::{
     types::{RpcBlockHeader, RpcClientStatus, RpcL1Status},
     HexBytes, HexBytes32, HexBytes64, L2BlockStatus, RpcChainState, RpcCheckpointConfStatus,
@@ -14,7 +16,7 @@ use strata_sequencer::{
     block_template::{BlockCompletionData, BlockGenerationConfig, BlockTemplate},
     duty::types::Duty,
 };
-use strata_state::{client_state::ClientState, l1::L1BlockId, operation::ClientUpdateOutput};
+use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
 use zkaleido::ProofReceipt;
 
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]

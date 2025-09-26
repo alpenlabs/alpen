@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use strata_db::chainstate::*;
+use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::buf::Buf32;
-use strata_state::{chain_state::Chainstate, state_op::WriteBatch};
 
 use crate::exec::*;
 

@@ -1,6 +1,7 @@
 use strata_asm_types::ProtocolOperation;
 use strata_l1tx::messages::RelevantTxEntry;
-use strata_state::{batch::SignedCheckpoint, chain_state::Chainstate};
+use strata_ol_chainstate_types::Chainstate;
+use strata_state::batch::SignedCheckpoint;
 use strata_storage::NodeStorage;
 
 use super::event::L1Event;

@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 strata-chaintsn.workspace = true
 strata-ol-chain-types.workspace = true
+strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
-strata-state.workspace = true
 
 thiserror.workspace = true

@@ -5,8 +5,8 @@ use std::{
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_ol_chain_types::{L2Block, L2BlockHeader};
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{buf::Buf32, params::RollupParams};
-use strata_state::chain_state::Chainstate;
 use zkaleido::{
     AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
     ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,

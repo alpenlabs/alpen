@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, prelude::*};
-use strata_state::chain_state::Chainstate;
 
 /// Describes FCM state.
 #[derive(Copy, Clone, Debug)]

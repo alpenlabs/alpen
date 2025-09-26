@@ -14,13 +14,13 @@ use strata_primitives::{
     l1::{BitcoinAmount, OutputRef},
     l2::{L2BlockCommitment, L2BlockId},
 };
-use tracing::warn;
-
-use crate::{
+use strata_state::{
     bridge_ops::DepositIntent,
     bridge_state::{DepositEntry, DepositState, DispatchCommand, DispatchedState, FulfilledState},
-    chain_state::{Chainstate, ChainstateEntry},
 };
+use tracing::warn;
+
+use crate::{Chainstate, ChainstateEntry};
 
 /// Collection of writes we're making to the state.
 #[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]

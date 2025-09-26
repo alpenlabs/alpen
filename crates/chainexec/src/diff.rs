@@ -1,6 +1,6 @@
 //! Basic containers for tracking OL state changes across blocks.
 
-use strata_state::chain_state::Chainstate;
+use strata_ol_chainstate_types::Chainstate;
 
 /// Description of the basic writes we need to make to the underlying database.
 ///

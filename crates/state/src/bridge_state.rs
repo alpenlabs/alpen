@@ -17,18 +17,21 @@ use strata_primitives::{
 ///
 /// Each operator has:
 ///
-/// * an `idx` which is used to identify operators uniquely.
-/// * a `signing_pk` which is a [`Buf32`] key used to sign messages sent among each other.
-/// * a `wallet_pk` which is a [`Buf32`] [`XOnlyPublickey`](bitcoin::secp256k1::XOnlyPublicKey) used
-///   to sign bridge transactions.
+/// * an `idx` which uniquely identifies the operator.
+/// * a `signing_pk`, a [`Buf32`] key used to sign messages exchanged between operators.
+/// * a `wallet_pk`, a [`Buf32`] [`XOnlyPublicKey`] used to sign bridge transactions.
 ///
 /// # Note
 ///
-/// The separation between the two keys is so that we can use a different signing mechanism for
-/// signing messages in the future. For the present, only the `wallet_pk` is used.
+/// The two keys are separated so we can change the message-signing mechanism in the future.
+/// For now, only `wallet_pk` is used.
 ///
-/// Also note that the `wallet_pk` corresponds to a [`PublicKey`](bitcoin::secp256k1::PublicKey)
-/// with an even parity as per [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design).
+/// Also note that `wallet_pk` corresponds to a [`PublicKey`] with even Y-parity, as per [BIP-340]'s
+/// design.
+///
+/// [`XOnlyPublicKey`]: https://docs.rs/secp256k1/latest/secp256k1/struct.XOnlyPublicKey.html
+/// [`PublicKey`]: https://docs.rs/secp256k1/latest/secp256k1/struct.PublicKey.html
+/// [BIP-340]: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
 )]

@@ -2,8 +2,7 @@
 
 use hex::FromHex;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_primitives::{buf::Buf32, l2::L2BlockId};
-use strata_state::l1::L1BlockId;
+use strata_primitives::{buf::Buf32, l1::L1BlockId, l2::L2BlockId};
 
 /// Length of a hex-encoded block ID (32 bytes = 64 hex characters)
 const HEX_BLOCK_ID_LENGTH: usize = 64;

@@ -2,8 +2,8 @@
 
 use strata_asm_types::L1BlockManifest;
 use strata_ol_chain_types::{L2BlockHeader, L2BlockId, L2Header};
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::prelude::*;
-use strata_state::chain_state::Chainstate;
 use thiserror::Error;
 
 /// Provider for context about the block in the chain.

@@ -10,9 +10,9 @@ workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-ol-chain-types.workspace = true
+strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
-strata-state.workspace = true
 strata-test-utils-btc.workspace = true
 strata-test-utils-l2.workspace = true
 

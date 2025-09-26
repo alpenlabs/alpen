@@ -17,6 +17,7 @@ use strata_common::{send_action_to_worker, Action, WorkerType};
 use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
 use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus};
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
+use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     batch::EpochSummary,
     bridge::{OperatorIdx, PublickeyTable},
@@ -25,7 +26,7 @@ use strata_primitives::{
     hash,
     l1::{
         payload::{L1Payload, PayloadDest, PayloadIntent},
-        L1BlockCommitment,
+        L1BlockCommitment, L1BlockId,
     },
     params::Params,
 };
@@ -49,9 +50,7 @@ use strata_state::{
     batch::{Checkpoint, SignedCheckpoint},
     bridge_ops::WithdrawalIntent,
     bridge_state::DepositState,
-    chain_state::Chainstate,
     client_state::ClientState,
-    l1::L1BlockId,
     operation::ClientUpdateOutput,
 };
 use strata_status::StatusChannel;

@@ -186,7 +186,7 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     ///
     /// `batchidx` for the Checkpoint is expected to increase monotonically and
     /// correspond to the value of `cur_epoch` in
-    /// [`strata_state::chain_state::Chainstate`].
+    /// [`strata_ol_chainstate_types::Chainstate`].
     fn put_checkpoint(&self, epoch: u64, entry: CheckpointEntry) -> DbResult<()>;
 
     /// Get a [`CheckpointEntry`] by its index.
