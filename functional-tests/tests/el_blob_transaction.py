@@ -24,7 +24,7 @@ BLOB_CHUNK_SIZE = 32
 
 
 @flexitest.register
-class ElBalanceTransferTest(BaseMixin):
+class ElRejectBlobTest(BaseMixin):
     """
     Test that Alpen EVM correctly rejects EIP-4844 blob transactions.
     """
