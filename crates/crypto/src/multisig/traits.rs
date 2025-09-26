@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -16,6 +16,7 @@ pub trait CryptoScheme: Clone + Debug + Send + Sync + 'static {
         + Debug
         + PartialEq
         + Eq
+        + Hash
         + Send
         + Sync
         + BorshSerialize
