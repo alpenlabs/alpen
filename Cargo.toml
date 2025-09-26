@@ -82,7 +82,7 @@ members = [
   "crates/util/python-utils",
 
   # benchmarks
-  "benches",
+  "benches", "crates/types/ol-chain-types", "crates/types/ol-state-types",
 ]
 
 default-members = [
