@@ -1,10 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::SchnorrMultisigConfigUpdate;
 use strata_primitives::roles::Role;
-
-use crate::errors::AdministrationTxParseError;
 
 /// An update to a multisig configuration for a specific role:
 /// - adds new members
@@ -35,16 +32,5 @@ impl MultisigUpdate {
     /// Consume and return the inner config and role.
     pub fn into_inner(self) -> (SchnorrMultisigConfigUpdate, Role) {
         (self.config, self.role)
-    }
-
-    /// Extract a `MultisigUpdate` from a transaction input.
-    ///
-    /// Placeholder: replace with actual parsing logic.
-    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
-        // TODO: parse TxInput to build MultisigConfigUpdate and determine Role
-        Ok(Self::new(
-            SchnorrMultisigConfigUpdate::new(vec![], vec![], 0),
-            Role::StrataAdministrator,
-        ))
     }
 }

@@ -1,8 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInputRef;
 
-use crate::{actions::UpdateId, constants::CANCEL_TX_TYPE, errors::AdministrationTxParseError};
+use crate::actions::UpdateId;
 
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct CancelAction {
@@ -17,17 +16,5 @@ impl CancelAction {
 
     pub fn target_id(&self) -> &UpdateId {
         &self.target_id
-    }
-}
-
-impl CancelAction {
-    /// Extracts a CancelAction from a transaction input.
-    /// FIXME: This is a placeholder function and should be replaced with actual logic.
-    pub fn extract_from_tx(tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
-        // sanity check
-        assert_eq!(tx.tag().tx_type(), CANCEL_TX_TYPE);
-
-        let id = 0;
-        Ok(CancelAction::new(id))
     }
 }

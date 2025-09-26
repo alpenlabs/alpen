@@ -1,9 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInputRef;
 use strata_primitives::buf::Buf32;
-
-use crate::errors::AdministrationTxParseError;
 
 /// An update to the public key of the sequencer.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
@@ -25,13 +22,5 @@ impl SequencerUpdate {
     /// Consume and return the inner public key.
     pub fn into_inner(self) -> Buf32 {
         self.pub_key
-    }
-
-    /// Extract a `SequencerUpdate` from a transaction input.
-    ///
-    /// Placeholder: replace with real parsing logic.
-    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
-        // TODO: parse TxInputRef to obtain new sequencer Buf32
-        Ok(Self::new(Buf32::default()))
     }
 }
