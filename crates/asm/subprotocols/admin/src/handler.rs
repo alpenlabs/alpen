@@ -2,7 +2,7 @@ use strata_asm_common::{
     MsgRelayer,
     logging::{error, info},
 };
-use strata_asm_proto_administration_txs::actions::{MultisigAction, UpdateAction};
+use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction};
 use strata_crypto::multisig::SchnorrMultisigSignature;
 use strata_primitives::roles::ProofType;
 
@@ -148,7 +148,7 @@ mod tests {
     use bitvec::prelude::*;
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
-    use strata_asm_proto_administration_txs::{
+    use strata_asm_txs_admin::{
         actions::{CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate},
         test_utils::create_multisig_signature,
     };

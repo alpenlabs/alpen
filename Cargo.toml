@@ -12,7 +12,7 @@ members = [
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
   "crates/asm/subprotocols/debug-v1",
-  "crates/asm/subprotocols/administration",
+  "crates/asm/subprotocols/admin",
   "crates/asm/txs/administration",
   "crates/asm-types",
   "crates/asm/worker",

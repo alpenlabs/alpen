@@ -1,4 +1,4 @@
-use strata_asm_proto_administration_txs::actions::UpdateId;
+use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::multisig::MultisigError;
 use thiserror::Error;
 

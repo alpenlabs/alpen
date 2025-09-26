@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_administration_txs::actions::UpdateId;
+use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::multisig::SchnorrMultisigConfigUpdate;
 use strata_primitives::roles::Role;
 
@@ -111,7 +111,7 @@ impl AdministrationSubprotoState {
 #[cfg(test)]
 mod tests {
     use rand::{Rng, thread_rng};
-    use strata_asm_proto_administration_txs::actions::UpdateAction;
+    use strata_asm_txs_admin::actions::UpdateAction;
     use strata_crypto::multisig::config::MultisigConfigUpdate;
     use strata_primitives::{buf::Buf32, roles::Role};
     use strata_test_utils::ArbitraryGenerator;
