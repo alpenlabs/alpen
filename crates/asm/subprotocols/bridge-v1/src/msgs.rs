@@ -1,7 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
+use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 
-use crate::{BRIDGE_V1_SUBPROTOCOL_ID, state::withdrawal::WithdrawOutput};
+use crate::state::withdrawal::WithdrawOutput;
 
 /// Incoming message types received from other subprotocols.
 ///

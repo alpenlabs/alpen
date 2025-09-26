@@ -19,7 +19,6 @@
 //! The main entry point is [`subprotocol::BridgeV1Subproto`] which implements the `Subprotocol`
 //! trait for integration with the Anchor State Machine.
 
-mod constants;
 mod errors;
 mod handler;
 mod msgs;
@@ -27,7 +26,6 @@ mod parser;
 mod state;
 mod subprotocol;
 
-pub use constants::BRIDGE_V1_SUBPROTOCOL_ID;
 pub use errors::*;
 pub use msgs::BridgeIncomingMsg;
 pub use state::{BridgeV1Config, BridgeV1State, withdrawal::WithdrawOutput};
