@@ -7,9 +7,10 @@ mod outputs;
 mod state;
 mod traits;
 
-pub use commit::{CommitBlockData, CommitCoinput};
+pub use commit::{CommitBlockData, CommitChainSegment};
 pub use errors::{EnvError, EnvResult};
+pub use extra_data::UpdateExtraData;
 pub use messages::*;
 pub use outputs::ExecBlockOutput;
-pub use state::EeAccountState;
+pub use state::{EeAccountState, PendingFinclEntry, PendingInputEntry, PendingInputType};
 pub use traits::ExecutionEnvironment;

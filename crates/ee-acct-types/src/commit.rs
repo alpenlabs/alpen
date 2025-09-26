@@ -2,41 +2,24 @@
 
 use strata_ee_chain_types::ExecBlockNotpackage;
 
+/// Chain segment data provided with a coinput.
 #[derive(Clone, Debug)]
-pub struct CommitCoinput {
+pub struct CommitChainSegment {
     blocks: Vec<CommitBlockData>,
-    raw_prev_header: Vec<u8>,
-    raw_partial_state: Vec<u8>,
 }
 
-impl CommitCoinput {
-    pub fn new(
-        blocks: Vec<CommitBlockData>,
-        raw_prev_header: Vec<u8>,
-        raw_partial_state: Vec<u8>,
-    ) -> Self {
-        Self {
-            blocks,
-            raw_prev_header,
-            raw_partial_state,
-        }
+impl CommitChainSegment {
+    pub fn new(blocks: Vec<CommitBlockData>) -> Self {
+        Self { blocks }
     }
 
-    pub fn decode_raw(buf: &[u8]) -> Option<CommitCoinput> {
+    pub fn decode_raw(buf: &[u8]) -> Option<CommitChainSegment> {
         // TODO implement this function properly
         unimplemented!()
     }
 
     pub fn blocks(&self) -> &[CommitBlockData] {
         &self.blocks
-    }
-
-    pub fn raw_prev_header(&self) -> &[u8] {
-        &self.raw_prev_header
-    }
-
-    pub fn raw_partial_state(&self) -> &[u8] {
-        &self.raw_partial_state
     }
 }
 

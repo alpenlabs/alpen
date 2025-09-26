@@ -16,6 +16,9 @@ pub enum EnvError {
 
     #[error("coinput is internally inconsistent")]
     InconsistentCoinput,
+
+    #[error("provided chain segment malformed")]
+    MalformedChainSegment,
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;

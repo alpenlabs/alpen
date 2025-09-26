@@ -11,3 +11,23 @@ type RawBitcoinAmount = u64;
 pub struct BitcoinAmount(RawBitcoinAmount);
 
 impl_transparent_thin_wrapper!(BitcoinAmount => RawBitcoinAmount);
+
+impl BitcoinAmount {
+    pub fn zero() -> Self {
+        Self(0)
+    }
+
+    /// Sums an iterator of multiple amounts, panicking on overflow.
+    pub fn sum(iter: impl IntoIterator<Item = BitcoinAmount>) -> BitcoinAmount {
+        let v = iter.into_iter().fold(0u64, |a, e| {
+            a.checked_add(*e).expect("acctsys: amount overflow")
+        });
+
+        Self(v)
+    }
+
+    /// Returns if the amount is zero.
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+}
