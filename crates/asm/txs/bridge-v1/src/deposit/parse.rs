@@ -99,13 +99,13 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
     let deposit_output = tx_input
         .tx()
         .output
-        .get(DEPOSIT_OUTPUT_INDEX as usize)
+        .get(DEPOSIT_OUTPUT_INDEX)
         .ok_or(DepositTxParseError::MissingDepositOutput)?;
 
     // Create outpoint reference for the deposit output
     let deposit_outpoint = OutputRef::from(OutPoint {
         txid: tx_input.tx().compute_txid(),
-        vout: DEPOSIT_OUTPUT_INDEX,
+        vout: DEPOSIT_OUTPUT_INDEX as u32,
     });
 
     // Construct the validated deposit information
@@ -186,7 +186,7 @@ mod tests {
         // The outpoint should be from the created transaction with vout = 1 (DEPOSIT_OUTPUT_INDEX)
         let expected_outpoint = OutputRef::from(OutPoint {
             txid: tx.compute_txid(),
-            vout: DEPOSIT_OUTPUT_INDEX,
+            vout: DEPOSIT_OUTPUT_INDEX as u32,
         });
         assert_eq!(expected_outpoint, deposit_info.outpoint);
     }

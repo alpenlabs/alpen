@@ -69,6 +69,10 @@ pub enum DepositOutputError {
     /// The deposit output is not locked to the expected aggregated operator key.
     #[error("Deposit output is not locked to the aggregated operator key")]
     WrongOutputLock,
+
+    /// Missing deposit output at the expected index.
+    #[error("Missing deposit output at index {0}")]
+    MissingDepositOutput(usize),
 }
 
 /// Errors that can occur when parsing withdrawal fulfillment transactions.

@@ -115,12 +115,6 @@ pub fn validate_drt_spending_signature(
 /// (key-spend only). This ensures the deposited funds can only be spent by the N/N
 /// operator set.
 ///
-/// # Panics
-///
-/// This function will panic if the deposit output at `DEPOSIT_OUTPUT_INDEX` is missing.
-/// This is safe because this validation is only called on transactions that have already
-/// been parsed and verified to have the proper deposit transaction structure.
-///
 /// # Parameters
 ///
 /// - `tx` - The deposit transaction to validate
@@ -129,20 +123,18 @@ pub fn validate_drt_spending_signature(
 /// # Returns
 ///
 /// - `Ok(())` - If the deposit output is properly locked to the operator key
-/// - `Err(DepositOutputError)` - If the output has wrong script type or wrong key
+/// - `Err(DepositOutputError)` - If the output is missing, has wrong script type, or wrong key
 pub fn validate_deposit_output_lock(
     tx: &Transaction,
     operators_agg_pubkey: &XOnlyPk,
 ) -> Result<(), DepositOutputError> {
     // Get the deposit output at the expected index.
-    // This expect is safe because we only validate transactions that have already been
-    // parsed and confirmed to have proper deposit transaction structure. If there's no
-    // deposit output at this index, it means the transaction wasn't properly validated
-    // during parsing, which indicates a programming error.
-    let deposit_output = tx
-        .output
-        .get(DEPOSIT_OUTPUT_INDEX as usize)
-        .expect("invalid deposit tx structure");
+    let deposit_output =
+        tx.output
+            .get(DEPOSIT_OUTPUT_INDEX)
+            .ok_or(DepositOutputError::MissingDepositOutput(
+                DEPOSIT_OUTPUT_INDEX,
+            ))?;
 
     // Extract the internal key from the P2TR script
     let secp = secp256k1::SECP256K1;
@@ -232,9 +224,12 @@ mod tests {
         // Remove the deposit output (keep only OP_RETURN at index 0)
         tx.output.truncate(1);
 
-        // This should panic since we removed the deposit output
+        // This should return MissingDepositOutput error since we removed the deposit output
         let err = validate_deposit_output_lock(&tx, &operators_pubkey).unwrap_err();
-        assert!(matches!(err, DepositOutputError::WrongOutputLock))
+        assert!(matches!(
+            err,
+            DepositOutputError::MissingDepositOutput(DEPOSIT_OUTPUT_INDEX)
+        ));
     }
 
     #[test]
