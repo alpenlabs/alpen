@@ -129,6 +129,52 @@ For instance:
 
 As a result, services will be kept alive, so you can send RPCs and play around.
 
-To see the full list of supported envs as well as insights of each of them,
-navigate to `entry.py` and follow along.
+## Test Environment Configurations
+
+The functional tests support multiple environment configurations, each designed for specific testing scenarios:
+
+### **"basic"**
+- **Purpose**: Default environment for most tests
+- **Components**:
+  - Bitcoin regtest node
+  - Sequencer + Sequencer Signer
+  - Reth (Ethereum execution client)
+  - Prover Client
+- **Settings**: 110 pre-generated blocks, fast batch mode
+- **Use case**: Standard rollup functionality tests
+- **Example**: `./run_test.sh -e basic`
+
+### **"load_reth"**
+- **Purpose**: Load testing with state diff generation
+- **Components**: Same as basic + Load Generator service
+- **Settings**: State diff generation enabled, load jobs (30/sec rate)
+- **Use case**: Performance testing, benchmarking
+- **Example**: `./run_test.sh -e load_reth`
+
+### **"hub1"**
+- **Purpose**: Multi-node network testing
+- **Components**:
+  - Bitcoin regtest node
+  - **Sequencer node** + Sequencer Signer + Reth
+  - **Full node follower** + separate Reth instance
+  - Prover Client
+- **Use case**: Testing network synchronization, follower behavior
+- **Example**: `./run_test.sh -e hub1`
+
+### **"prover"**
+- **Purpose**: Testing with strict proof validation
+- **Components**: Same as basic
+- **Settings**: **Strict mode** (no proof timeout), proving enabled
+- **Use case**: Zero-knowledge proof validation tests
+- **Example**: `./run_test.sh -e prover`
+
+### **Other environments**:
+- **"operator_lag"**: Tests operator delays (10min message interval)
+- **"devnet"**: Production devnet configuration
+- **"crash"**: For crash/recovery testing
+- **"state_diffs"**: State diff generation testing
+
+Each environment spins up the appropriate services and configures them for specific testing scenarios, from basic functionality to complex multi-node networks and performance testing.
+
+For more details on environment configurations, see [entry.py](entry.py).
 
