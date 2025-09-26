@@ -4,15 +4,15 @@
 //! [`verify_and_apply_update_operation`], which is what we use in the proof to
 //! carefully check and update the account state.
 //!
-//! The second is [`apply_update_operation_unconditionall`], which is used
+//! The second is [`apply_update_operation_unconditionally`], which is used
 //! outside the proof, after verifying the proof, to update our view of the
 //! state, presumably with information extracted from DA.
 
-use strata_acct_types::AcctId;
+use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_ee_acct_types::{
     CommitCoinput, DecodedEeMessage, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
 };
-use strata_snark_acct_types::{MessageEntry, UpdateOperation};
+use strata_snark_acct_types::{MessageEntry, UpdateOperationData};
 
 use crate::{
     exec_processing::{apply_commit, verify_commit},
@@ -23,7 +23,7 @@ use crate::{
 /// each message to privately attest validity before applying effects.
 pub fn verify_and_apply_update_operation<'i, E: ExecutionEnvironment>(
     state: &mut EeAccountState,
-    operation: &UpdateOperation,
+    operation: &UpdateOperationData,
     coinputs: impl IntoIterator<Item = &'i [u8]>,
     ee: &E,
 ) -> EnvResult<()> {
@@ -64,7 +64,7 @@ fn verify_message<E: ExecutionEnvironment>(
     msg: &DecodedEeMessage,
     meta: &MsgMeta,
     coinp: &[u8],
-    op: &UpdateOperation,
+    op: &UpdateOperationData,
     ee: &E,
 ) -> EnvResult<()> {
     // TODO dispatch to handler depending on message type
@@ -99,7 +99,7 @@ fn verify_message<E: ExecutionEnvironment>(
 fn verify_accumulated_state(
     vstate: &mut UpdateVerificationState,
     astate: &EeAccountState,
-    op: &UpdateOperation,
+    op: &UpdateOperationData,
 ) -> EnvResult<()> {
     // 1. Check balance changes are consistent.
 
@@ -119,7 +119,7 @@ fn verify_accumulated_state(
 /// the actual state proven by the proof.
 pub fn apply_update_operation_unconditionally<E: ExecutionEnvironment>(
     astate: &mut EeAccountState,
-    operation: &UpdateOperation,
+    operation: &UpdateOperationData,
 ) -> EnvResult<()> {
     // 1. Apply the changes from the messages.
     for inp in operation.processed_messages().iter() {
@@ -141,7 +141,7 @@ fn apply_message(
     astate: &mut EeAccountState,
     msg: &DecodedEeMessage,
     meta: &MsgMeta,
-    op: &UpdateOperation,
+    op: &UpdateOperationData,
 ) -> EnvResult<()> {
     // TODO dispatch to handler depending on message type
 
@@ -162,7 +162,10 @@ fn apply_message(
     Ok(())
 }
 
-fn apply_final_update_changes(state: &mut EeAccountState, op: &UpdateOperation) -> EnvResult<()> {
+fn apply_final_update_changes(
+    state: &mut EeAccountState,
+    op: &UpdateOperationData,
+) -> EnvResult<()> {
     // 1. Update final execution head block.
 
     Ok(())
@@ -170,9 +173,9 @@ fn apply_final_update_changes(state: &mut EeAccountState, op: &UpdateOperation) 
 
 /// Meta fields extracted from a message.
 struct MsgMeta {
-    source: AcctId,
+    source: AccountId,
     incl_epoch: u32,
-    value: u64,
+    value: BitcoinAmount,
 }
 
 fn parse_input(m: &MessageEntry) -> Option<(MsgMeta, DecodedEeMessage)> {

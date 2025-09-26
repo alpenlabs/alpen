@@ -25,7 +25,7 @@ pub fn verify_commit<E: ExecutionEnvironment>(
         return Err(EnvError::MalformedCoinput);
     };
 
-    let last_exec_blkid = last.notpackage().block_raw_hash();
+    let last_exec_blkid = last.notpackage().exec_blkid();
     if last_exec_blkid != commit.chunk_commitment() {
         return Err(EnvError::MismatchedCoinput);
     }
