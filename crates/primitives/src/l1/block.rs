@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, str};
 
 use arbitrary::Arbitrary;
 use bitcoin::{hashes::Hash, BlockHash};
@@ -102,10 +102,9 @@ impl fmt::Display for L1BlockCommitment {
             f,
             "{}@{}..{}",
             self.height,
-            std::str::from_utf8(&first_hex)
+            str::from_utf8(&first_hex)
                 .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
-            std::str::from_utf8(&last_hex)
-                .expect("Failed to convert last 2 hex bytes to UTF-8 string")
+            str::from_utf8(&last_hex).expect("Failed to convert last 2 hex bytes to UTF-8 string")
         )
     }
 }

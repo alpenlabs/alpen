@@ -1,5 +1,5 @@
 use std::{
-    fmt::Display,
+    fmt::{self, Debug, Display},
     io::{self, Read, Write},
     iter::Sum,
     ops::Add,
@@ -708,10 +708,39 @@ impl<'a> Arbitrary<'a> for TaprootSpendPath {
 }
 
 /// Outpoint of a bitcoin tx
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
 pub struct Outpoint {
     pub txid: Buf32,
     pub vout: u32,
+}
+
+// Custom debug implementation to print txid in little endian
+impl Debug for Outpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+
+        f.debug_struct("Outpoint")
+            .field("txid", &txid_le)
+            .field("vout", &self.vout)
+            .finish()
+    }
+}
+
+// Custom display implementation to print txid in little endian
+impl Display for Outpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+
+        write!(f, "Outpoint {{ txid: {}, vout: {} }}", txid_le, self.vout)
+    }
 }
 
 /// A wrapper around [`Buf32`] for XOnly Schnorr taproot pubkeys.
