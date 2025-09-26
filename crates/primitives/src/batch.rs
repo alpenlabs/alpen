@@ -1,7 +1,8 @@
-use std::fmt;
+use std::{fmt, str};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use hex::encode_to_slice;
 use serde::{Deserialize, Serialize};
 use zkaleido::{Proof, ProofReceipt, PublicValues};
 
@@ -541,26 +542,34 @@ pub fn verify_signed_checkpoint_sig(
 // Custom debug implementation to print txid and wtxid in little endian
 impl fmt::Debug for CommitmentInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
+        let mut txid_buf = [0u8; 64];
+        let mut wtxid_buf = [0u8; 64];
+        let mut blockhash_buf = [0u8; 64];
+
+        {
             let mut bytes = self.txid.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
-        let wtxid_le = {
+            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
+        }
+        {
             let mut bytes = self.wtxid.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
-        let blockhash_le = {
+            encode_to_slice(bytes, &mut wtxid_buf).expect("buf: enc hex");
+        }
+        {
             let mut bytes = self.blockhash.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
+            encode_to_slice(bytes, &mut blockhash_buf).expect("buf: enc hex");
+        }
 
         f.debug_struct("CommitmentInfo")
-            .field("blockhash", &blockhash_le)
-            .field("txid", &txid_le)
-            .field("wtxid", &wtxid_le)
+            .field("blockhash", &unsafe {
+                std::str::from_utf8_unchecked(&blockhash_buf)
+            })
+            .field("txid", &unsafe { std::str::from_utf8_unchecked(&txid_buf) })
+            .field("wtxid", &unsafe {
+                std::str::from_utf8_unchecked(&wtxid_buf)
+            })
             .field("block_height", &self.block_height)
             .field("position", &self.position)
             .finish()
@@ -570,26 +579,36 @@ impl fmt::Debug for CommitmentInfo {
 // Custom display implementation to print txid and wtxid in little endian
 impl fmt::Display for CommitmentInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
+        let mut txid_buf = [0u8; 64];
+        let mut wtxid_buf = [0u8; 64];
+        let mut blockhash_buf = [0u8; 64];
+
+        {
             let mut bytes = self.txid.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
-        let wtxid_le = {
+            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
+        }
+        {
             let mut bytes = self.wtxid.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
-        let blockhash_le = {
+            encode_to_slice(bytes, &mut wtxid_buf).expect("buf: enc hex");
+        }
+        {
             let mut bytes = self.blockhash.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
+            encode_to_slice(bytes, &mut blockhash_buf).expect("buf: enc hex");
+        }
 
         write!(
             f,
             "CommitmentInfo {{ blockhash: {}, txid: {}, wtxid: {}, block_height: {}, position: {} }}",
-            blockhash_le, txid_le, wtxid_le, self.block_height, self.position
+            // SAFETY: hex encoding always produces valid UTF-8
+            unsafe { str::from_utf8_unchecked(&blockhash_buf) },
+            // SAFETY: hex encoding always produces valid UTF-8
+            unsafe { str::from_utf8_unchecked(&txid_buf) },
+            // SAFETY: hex encoding always produces valid UTF-8
+            unsafe { str::from_utf8_unchecked(&wtxid_buf) },
+            self.block_height, self.position
         )
     }
 }

@@ -4,6 +4,7 @@ use arbitrary::Arbitrary;
 use bitcoin::{hashes::Hash, BlockHash};
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
+use hex::encode_to_slice;
 use serde::{Deserialize, Serialize};
 
 use crate::{buf::Buf32, hash::sha256d};
@@ -138,8 +139,11 @@ impl fmt::Debug for L1BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut bytes = self.0 .0;
         bytes.reverse();
-        let hex_str = hex::encode(bytes);
-        f.write_str(&hex_str)
+        let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
+        encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
+        // SAFETY: hex encoding always produces valid UTF-8
+        let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
+        f.write_str(hex_str)
     }
 }
 
@@ -148,7 +152,10 @@ impl fmt::Display for L1BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut bytes = self.0 .0;
         bytes.reverse();
-        let hex_str = hex::encode(bytes);
-        f.write_str(&hex_str)
+        let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
+        encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
+        // SAFETY: hex encoding always produces valid UTF-8
+        let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
+        f.write_str(hex_str)
     }
 }

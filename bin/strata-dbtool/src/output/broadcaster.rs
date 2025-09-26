@@ -1,5 +1,6 @@
 use std::fmt;
 
+use hex::encode_to_slice;
 use serde::Serialize;
 use strata_db::types::L1TxStatus;
 use strata_primitives::buf::Buf32;
@@ -56,15 +57,16 @@ impl<'a> Formattable for BroadcasterTxInfo<'a> {
 // Custom debug implementation to print txid in little endian
 impl<'a> fmt::Debug for BroadcasterTxInfo<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
+        let mut txid_buf = [0u8; 64];
+        {
             let mut bytes = self.txid.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
+            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
+        }
 
         f.debug_struct("BroadcasterTxInfo")
             .field("index", &self.index)
-            .field("txid", &txid_le)
+            .field("txid", &unsafe { std::str::from_utf8_unchecked(&txid_buf) })
             .field("status", &self.status)
             .field("raw_tx", &self.raw_tx)
             .finish()
@@ -74,17 +76,19 @@ impl<'a> fmt::Debug for BroadcasterTxInfo<'a> {
 // Custom display implementation to print txid in little endian
 impl<'a> fmt::Display for BroadcasterTxInfo<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
+        let mut txid_buf = [0u8; 64];
+        {
             let mut bytes = self.txid.0;
             bytes.reverse();
-            hex::encode(bytes)
-        };
+            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
+        }
 
         write!(
             f,
             "BroadcasterTxInfo {{ index: {}, txid: {}, status: {:?}, raw_tx: {} bytes }}",
             self.index,
-            txid_le,
+            // SAFETY: hex encoding always produces valid UTF-8
+            unsafe { str::from_utf8_unchecked(&txid_buf) },
             self.status,
             self.raw_tx.len()
         )
