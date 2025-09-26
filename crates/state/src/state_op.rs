@@ -15,7 +15,7 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
     l2::{L2BlockCommitment, L2BlockId},
-    operator::OperatorIdx,
+    operator::{OperatorIdx, OperatorPubkeys},
 };
 use tracing::warn;
 
@@ -201,7 +201,8 @@ impl StateCache {
     /// Inserts a new operator with the specified pubkeys into the operator table.
     pub fn insert_operator(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
         let state = self.state_mut();
-        state.operator_table.insert(signing_pk, wallet_pk);
+        let operator_pubkeys = OperatorPubkeys::new(signing_pk, wallet_pk);
+        state.operator_table.insert(operator_pubkeys);
     }
 
     /// Inserts a new deposit with some settings.
