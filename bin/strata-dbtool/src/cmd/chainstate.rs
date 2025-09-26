@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use strata_checkpoint_types::Checkpoint;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_consensus_logic::chain_worker_context::conv_blkid_to_slot_wb_id;
 use strata_db::{
@@ -10,7 +11,7 @@ use strata_db::{
     types::IntentStatus,
 };
 use strata_ol_chainstate_types::WriteBatch;
-use strata_primitives::{batch::Checkpoint, l2::L2BlockId};
+use strata_primitives::l2::L2BlockId;
 
 use super::{
     checkpoint::get_latest_checkpoint_entry,

@@ -52,7 +52,8 @@ use strata_asm_common::{
     AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
     TxInputRef, logging,
 };
-use strata_primitives::{batch::EpochSummary, buf::Buf32, l2::L2BlockCommitment};
+use strata_checkpoint_types::EpochSummary;
+use strata_primitives::{buf::Buf32, l2::L2BlockCommitment};
 pub use types::{CoreGenesisConfig, CoreOLState};
 
 use crate::{constants::OL_STF_CHECKPOINT_TX_TYPE, handlers::handle_checkpoint_transaction};

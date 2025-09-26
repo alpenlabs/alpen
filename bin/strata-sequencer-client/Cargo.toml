@@ -11,6 +11,7 @@ name = "strata-sequencer-client"
 path = "src/main.rs"
 
 [dependencies]
+strata-checkpoint-types.workspace = true
 strata-common.workspace = true
 strata-crypto.workspace = true
 strata-key-derivation.workspace = true
@@ -19,7 +20,6 @@ strata-primitives.workspace = true
 strata-rpc-api = { workspace = true, features = ["client"] }
 strata-rpc-types.workspace = true
 strata-sequencer.workspace = true
-strata-state.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true

@@ -8,14 +8,12 @@ use core::fmt;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_checkpoint_types::{BatchInfo, BatchTransition};
 use strata_primitives::{
-    batch::BatchTransition,
     buf::Buf32,
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
-
-use crate::batch::BatchInfo;
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.

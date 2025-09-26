@@ -2,8 +2,8 @@
 
 use bitcoin::Transaction;
 use strata_asm_types::{L1BlockManifest, L1Tx, ProtocolOperation};
+use strata_checkpoint_types::verify_signed_checkpoint_sig;
 use strata_primitives::{
-    batch::verify_signed_checkpoint_sig,
     l1::{L1BlockCommitment, L1BlockId},
     prelude::*,
 };

@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use strata_asm_types::L1BlockManifest;
+use strata_checkpoint_types::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
 use strata_db::{types::CheckpointEntry, DbError};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     self, epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, prelude::*,
 };
-use strata_state::batch::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
 use strata_status::*;
 use strata_storage::{CheckpointDbManager, L1BlockManager, L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;

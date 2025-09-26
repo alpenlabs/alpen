@@ -9,10 +9,11 @@ use strata_chainexec::{
     BlockExecutionOutput, ChainExecutor, ExecContext, ExecResult, MemStateAccessor,
 };
 use strata_chaintsn::context::L2HeaderAndParent;
+use strata_checkpoint_types::EpochSummary;
 use strata_eectl::handle::ExecCtlHandle;
-use strata_primitives::{batch::EpochSummary, params::Params, prelude::*};
 use strata_ol_chainstate_types::Chainstate;
-use strata_state::{header::L2Header, prelude::*};
+use strata_primitives::{params::Params, prelude::*};
+use strata_state::prelude::*;
 use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
 use tokio::{

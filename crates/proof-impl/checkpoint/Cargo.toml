@@ -7,8 +7,8 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-checkpoint-types.workspace = true
 strata-proofimpl-cl-stf.workspace = true
-strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
