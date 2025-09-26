@@ -1,6 +1,6 @@
 //! Types relating to EE block related structures.
 
-use strata_acct_types::{AccountId, Hash, SentMessage, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, SentMessage, SubjectId};
 
 /// Container for an execution block that signals additional data with it.
 // TODO better name, using an intentionally bad one for now
@@ -116,11 +116,11 @@ impl BlockInputs {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubjectDepositData {
     dest: SubjectId,
-    value: u64,
+    value: BitcoinAmount,
 }
 
 impl SubjectDepositData {
-    pub fn new(dest: SubjectId, value: u64) -> Self {
+    pub fn new(dest: SubjectId, value: BitcoinAmount) -> Self {
         Self { dest, value }
     }
 
@@ -128,7 +128,7 @@ impl SubjectDepositData {
         self.dest
     }
 
-    pub fn value(&self) -> u64 {
+    pub fn value(&self) -> BitcoinAmount {
         self.value
     }
 }
@@ -180,11 +180,11 @@ pub struct OutputTransfer {
     dest: AccountId,
 
     /// Native asset value sent (satoshis).
-    value: u64,
+    value: BitcoinAmount,
 }
 
 impl OutputTransfer {
-    pub fn new(dest: AccountId, value: u64) -> Self {
+    pub fn new(dest: AccountId, value: BitcoinAmount) -> Self {
         Self { dest, value }
     }
 
@@ -192,7 +192,7 @@ impl OutputTransfer {
         self.dest
     }
 
-    pub fn value(&self) -> u64 {
+    pub fn value(&self) -> BitcoinAmount {
         self.value
     }
 }
