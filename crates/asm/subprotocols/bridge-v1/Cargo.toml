@@ -24,8 +24,6 @@ strata-primitives.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
 rand.workspace = true
 secp256k1.workspace = true
-
-[features]
-test_utils = ["strata-asm-txs-bridge-v1/test-utils"]

@@ -21,7 +21,7 @@ strata-crypto = { workspace = true, optional = true }
 
 [dev-dependencies]
 strata-test-utils.workspace = true
-strata-crypto.workspace = true
+strata-crypto = { workspace = true, features = ["test-utils"] }
 musig2.workspace = true
 rand.workspace = true
 
