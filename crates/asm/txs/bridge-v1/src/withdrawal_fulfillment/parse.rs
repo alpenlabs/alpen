@@ -203,14 +203,9 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_withdrawal_fulfillment_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
-
-        assert!(matches!(
-            result,
-            Err(WithdrawalParseError::InvalidTxType { .. })
-        ));
-        if let Err(WithdrawalParseError::InvalidTxType(tx_type)) = result {
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, WithdrawalParseError::InvalidTxType { .. }));
+        if let WithdrawalParseError::InvalidTxType(tx_type) = err {
             assert_eq!(tx_type, tx_input.tag().tx_type());
         }
     }
@@ -231,14 +226,10 @@ mod tests {
         let tx_input_ref = TxInputRef::new(&tx, tag_data);
 
         // Extract withdrawal info using the actual parser
-        let result = parse_withdrawal_fulfillment_tx(&tx_input_ref);
-        assert!(
-            result.is_err(),
-            "Should fail with missing withdrawal output"
-        );
+        let err = parse_withdrawal_fulfillment_tx(&tx_input_ref).unwrap_err();
         assert!(matches!(
-            result,
-            Err(WithdrawalParseError::MissingUserFulfillmentOutput)
+            err,
+            WithdrawalParseError::MissingUserFulfillmentOutput
         ))
     }
 
@@ -256,14 +247,13 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_withdrawal_fulfillment_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
 
         assert!(matches!(
-            result,
-            Err(WithdrawalParseError::InvalidAuxiliaryData { .. })
+            err,
+            WithdrawalParseError::InvalidAuxiliaryData { .. }
         ));
-        if let Err(WithdrawalParseError::InvalidAuxiliaryData(len)) = result {
+        if let WithdrawalParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1);
         }
 
@@ -274,14 +264,12 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_withdrawal_fulfillment_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
-
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
         assert!(matches!(
-            result,
-            Err(WithdrawalParseError::InvalidAuxiliaryData { .. })
+            err,
+            WithdrawalParseError::InvalidAuxiliaryData { .. }
         ));
-        if let Err(WithdrawalParseError::InvalidAuxiliaryData(len)) = result {
+        if let WithdrawalParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1);
         }
     }

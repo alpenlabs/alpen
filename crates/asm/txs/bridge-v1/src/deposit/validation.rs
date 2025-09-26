@@ -241,13 +241,8 @@ mod tests {
         // Mutate the deposit output to have wrong script (empty script instead of P2TR)
         tx.output[1].script_pubkey = ScriptBuf::new();
 
-        let result = validate_deposit_output_lock(&tx, &operators_pubkey);
-        assert!(
-            result.is_err(),
-            "Should fail when deposit output has wrong script"
-        );
-
-        assert!(matches!(result, Err(DepositOutputError::WrongOutputLock)));
+        let err = validate_deposit_output_lock(&tx, &operators_pubkey).unwrap_err();
+        assert!(matches!(err, DepositOutputError::WrongOutputLock));
     }
 
     #[test]
@@ -261,19 +256,15 @@ mod tests {
         // Clear the witness to test no witness case
         tx.input[0].witness.clear();
 
-        let result = validate_drt_spending_signature(
+        let err = validate_drt_spending_signature(
             &tx,
             deposit_info.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
-        );
+        )
+        .unwrap_err();
 
-        assert!(
-            result.is_err(),
-            "Should fail when no witness data is present"
-        );
-
-        assert!(matches!(result, Err(DrtSignatureError::MissingWitness)));
+        assert!(matches!(err, DrtSignatureError::MissingWitness));
     }
 
     #[test]

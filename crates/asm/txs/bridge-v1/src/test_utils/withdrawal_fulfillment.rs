@@ -14,7 +14,7 @@ use crate::{
 /// This function constructs a Bitcoin transaction that follows the full SPS-50 specification
 /// for withdrawal fulfillment transactions. The transaction contains:
 /// - Input: A dummy input spending from a previous output
-/// - Output 0: OP_RETURN with full SPS-50 format: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+/// - Output 0: OP_RETURN with full SPS-50 format: MAGIC + SUBPROTOCOL_ID + TX_TYPE + AUX_DATA
 /// - Output 1: The actual withdrawal payment to the recipient address
 ///
 /// The transaction is fully compatible with the SPS-50 parser and can be parsed by `ParseConfig`.
@@ -31,7 +31,6 @@ pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
     // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
-
     let mut tagged_payload = Vec::new();
     tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
     tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID

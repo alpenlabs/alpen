@@ -204,14 +204,10 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_deposit_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(
-            result,
-            Err(DepositTxParseError::InvalidTxType { .. })
-        ));
-        if let Err(DepositTxParseError::InvalidTxType(tx_type)) = result {
+        assert!(matches!(err, DepositTxParseError::InvalidTxType(..)));
+        if let DepositTxParseError::InvalidTxType(tx_type) = err {
             assert_eq!(tx_type, tx_input.tag().tx_type());
         }
     }
@@ -232,17 +228,9 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_deposit_tx(&tx_input);
-        assert!(
-            result.is_err(),
-            "Should fail with insufficient auxiliary data"
-        );
-
-        assert!(matches!(
-            result,
-            Err(DepositTxParseError::InvalidAuxiliaryData(_))
-        ));
-        if let Err(DepositTxParseError::InvalidAuxiliaryData(len)) = result {
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData(_)));
+        if let DepositTxParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, MIN_DEPOSIT_TX_AUX_DATA_LEN - 1);
         }
     }
@@ -282,12 +270,7 @@ mod tests {
         tx.output.truncate(1);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_deposit_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with missing deposit output");
-
-        assert!(matches!(
-            result,
-            Err(DepositTxParseError::MissingDepositOutput)
-        ));
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, DepositTxParseError::MissingDepositOutput));
     }
 }
