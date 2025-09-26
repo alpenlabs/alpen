@@ -7,16 +7,17 @@ use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     logging::{error, info},
 };
+use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
 };
 
 use crate::{
-    constants::BRIDGE_V1_SUBPROTOCOL_ID,
+    handler::handle_parsed_tx,
     msgs::BridgeIncomingMsg,
+    parser::parse_tx,
     state::{BridgeV1Config, BridgeV1State},
-    txs::{handle_parsed_tx, parse_tx},
 };
 
 /// Bridge V1 subprotocol implementation.

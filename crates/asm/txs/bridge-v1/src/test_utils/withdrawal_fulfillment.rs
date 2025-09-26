@@ -5,7 +5,8 @@ use bitcoin::{
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE},
-    txs::{test_utils::TEST_MAGIC_BYTES, withdrawal_fulfillment::WithdrawalFulfillmentInfo},
+    test_utils::TEST_MAGIC_BYTES,
+    withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
 
 /// Creates a withdrawal fulfillment transaction for testing purposes.
@@ -13,7 +14,7 @@ use crate::{
 /// This function constructs a Bitcoin transaction that follows the full SPS-50 specification
 /// for withdrawal fulfillment transactions. The transaction contains:
 /// - Input: A dummy input spending from a previous output
-/// - Output 0: OP_RETURN with full SPS-50 format: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+/// - Output 0: OP_RETURN with full SPS-50 format: MAGIC + SUBPROTOCOL_ID + TX_TYPE + AUX_DATA
 /// - Output 1: The actual withdrawal payment to the recipient address
 ///
 /// The transaction is fully compatible with the SPS-50 parser and can be parsed by `ParseConfig`.
@@ -26,11 +27,10 @@ use crate::{
 /// # Returns
 ///
 /// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
-pub(crate) fn create_test_withdrawal_fulfillment_tx(
+pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
     // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
-
     let mut tagged_payload = Vec::new();
     tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
     tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID

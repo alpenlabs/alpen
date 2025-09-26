@@ -8,7 +8,7 @@ use strata_primitives::{
 
 use crate::{
     constants::WITHDRAWAL_TX_TYPE, errors::WithdrawalParseError,
-    txs::withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
+    withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
 };
 
 const OPERATOR_IDX_SIZE: usize = 4;
@@ -20,29 +20,29 @@ const DEPOSIT_IDX_OFFSET: usize = OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE;
 const DEPOSIT_TXID_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
 
 /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
-pub(crate) const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
+pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
     OPERATOR_IDX_SIZE + DEPOSIT_IDX_SIZE + DEPOSIT_TXID_SIZE;
 
 /// Information extracted from a Bitcoin withdrawal transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalFulfillmentInfo {
     /// The index of the operator who processed this withdrawal.
-    pub(crate) operator_idx: OperatorIdx,
+    pub operator_idx: OperatorIdx,
 
     /// The index of the deposit that the operator wishes to receive payout from later.
     /// This must be validated against the operator's assigned deposits in the state's assignments
     /// table to ensure the operator is authorized to claim this specific deposit.
-    pub(crate) deposit_idx: u32,
+    pub deposit_idx: u32,
 
     /// The transaction ID of the deposit that the operator wishes to claim for payout.
     /// This must match the deposit referenced by `deposit_idx` in the assignments table.
-    pub(crate) deposit_txid: BitcoinTxid,
+    pub deposit_txid: BitcoinTxid,
 
     /// The Bitcoin script address where the withdrawn funds are being sent.
-    pub(crate) withdrawal_destination: ScriptBuf,
+    pub withdrawal_destination: ScriptBuf,
 
     /// The amount of Bitcoin being withdrawn (may be less than the original deposit due to fees).
-    pub(crate) withdrawal_amount: BitcoinAmount,
+    pub withdrawal_amount: BitcoinAmount,
 }
 
 impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
@@ -89,7 +89,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// - The transaction has fewer than 2 outputs (missing withdrawal fulfillment or OP_RETURN)
 /// - The auxiliary data size doesn't match the expected metadata size
 /// - Any of the metadata fields cannot be parsed correctly
-pub(crate) fn parse_withdrawal_fulfillment_tx<'t>(
+pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
     if tx.tag().tx_type() != WITHDRAWAL_TX_TYPE {
@@ -149,7 +149,7 @@ mod tests {
     use super::*;
     use crate::{
         BRIDGE_V1_SUBPROTOCOL_ID,
-        txs::test_utils::{
+        test_utils::{
             TEST_MAGIC_BYTES, create_tagged_payload, create_test_withdrawal_fulfillment_tx,
             mutate_op_return_output, parse_tx,
         },
@@ -203,14 +203,9 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_withdrawal_fulfillment_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
-
-        assert!(matches!(
-            result,
-            Err(WithdrawalParseError::InvalidTxType { .. })
-        ));
-        if let Err(WithdrawalParseError::InvalidTxType(tx_type)) = result {
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, WithdrawalParseError::InvalidTxType { .. }));
+        if let WithdrawalParseError::InvalidTxType(tx_type) = err {
             assert_eq!(tx_type, tx_input.tag().tx_type());
         }
     }
@@ -231,14 +226,10 @@ mod tests {
         let tx_input_ref = TxInputRef::new(&tx, tag_data);
 
         // Extract withdrawal info using the actual parser
-        let result = parse_withdrawal_fulfillment_tx(&tx_input_ref);
-        assert!(
-            result.is_err(),
-            "Should fail with missing withdrawal output"
-        );
+        let err = parse_withdrawal_fulfillment_tx(&tx_input_ref).unwrap_err();
         assert!(matches!(
-            result,
-            Err(WithdrawalParseError::MissingUserFulfillmentOutput)
+            err,
+            WithdrawalParseError::MissingUserFulfillmentOutput
         ))
     }
 
@@ -256,14 +247,13 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_withdrawal_fulfillment_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
 
         assert!(matches!(
-            result,
-            Err(WithdrawalParseError::InvalidAuxiliaryData { .. })
+            err,
+            WithdrawalParseError::InvalidAuxiliaryData { .. }
         ));
-        if let Err(WithdrawalParseError::InvalidAuxiliaryData(len)) = result {
+        if let WithdrawalParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1);
         }
 
@@ -274,14 +264,12 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_withdrawal_fulfillment_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
-
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
         assert!(matches!(
-            result,
-            Err(WithdrawalParseError::InvalidAuxiliaryData { .. })
+            err,
+            WithdrawalParseError::InvalidAuxiliaryData { .. }
         ));
-        if let Err(WithdrawalParseError::InvalidAuxiliaryData(len)) = result {
+        if let WithdrawalParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1);
         }
     }

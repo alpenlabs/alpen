@@ -7,7 +7,7 @@ use strata_primitives::{
 };
 
 use crate::{
-    constants::DEPOSIT_TX_TYPE, errors::DepositTxParseError, txs::deposit::DEPOSIT_OUTPUT_INDEX,
+    constants::DEPOSIT_TX_TYPE, deposit::DEPOSIT_OUTPUT_INDEX, errors::DepositTxParseError,
 };
 
 /// Length of the deposit index field in the auxiliary data (4 bytes for u32)
@@ -17,7 +17,7 @@ const DEPOSIT_IDX_LEN: usize = 4;
 const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
 
 /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
-pub(crate) const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
+pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
 
 /// Information extracted from a Bitcoin deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
@@ -65,9 +65,7 @@ pub struct DepositInfo {
 /// - `Ok(DepositInfo)` - Successfully parsed deposit information
 /// - `Err(DepositError)` - If the transaction structure is invalid, signature verification fails,
 ///   or any parsing step encounters malformed data
-pub(crate) fn parse_deposit_tx<'a>(
-    tx_input: &TxInputRef<'a>,
-) -> Result<DepositInfo, DepositTxParseError> {
+pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
     if tx_input.tag().tx_type() != DEPOSIT_TX_TYPE {
         return Err(DepositTxParseError::InvalidTxType(tx_input.tag().tx_type()));
     }
@@ -101,13 +99,13 @@ pub(crate) fn parse_deposit_tx<'a>(
     let deposit_output = tx_input
         .tx()
         .output
-        .get(DEPOSIT_OUTPUT_INDEX as usize)
+        .get(DEPOSIT_OUTPUT_INDEX)
         .ok_or(DepositTxParseError::MissingDepositOutput)?;
 
     // Create outpoint reference for the deposit output
     let deposit_outpoint = OutputRef::from(OutPoint {
         txid: tx_input.tx().compute_txid(),
-        vout: DEPOSIT_OUTPUT_INDEX,
+        vout: DEPOSIT_OUTPUT_INDEX as u32,
     });
 
     // Construct the validated deposit information
@@ -138,7 +136,7 @@ mod tests {
     use super::*;
     use crate::{
         constants::BRIDGE_V1_SUBPROTOCOL_ID,
-        txs::test_utils::{
+        test_utils::{
             TEST_MAGIC_BYTES, create_tagged_payload, create_test_deposit_tx,
             mutate_op_return_output, parse_tx,
         },
@@ -188,7 +186,7 @@ mod tests {
         // The outpoint should be from the created transaction with vout = 1 (DEPOSIT_OUTPUT_INDEX)
         let expected_outpoint = OutputRef::from(OutPoint {
             txid: tx.compute_txid(),
-            vout: DEPOSIT_OUTPUT_INDEX,
+            vout: DEPOSIT_OUTPUT_INDEX as u32,
         });
         assert_eq!(expected_outpoint, deposit_info.outpoint);
     }
@@ -206,14 +204,10 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_deposit_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with invalid transaction type");
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(
-            result,
-            Err(DepositTxParseError::InvalidTxType { .. })
-        ));
-        if let Err(DepositTxParseError::InvalidTxType(tx_type)) = result {
+        assert!(matches!(err, DepositTxParseError::InvalidTxType(..)));
+        if let DepositTxParseError::InvalidTxType(tx_type) = err {
             assert_eq!(tx_type, tx_input.tag().tx_type());
         }
     }
@@ -234,17 +228,9 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_deposit_tx(&tx_input);
-        assert!(
-            result.is_err(),
-            "Should fail with insufficient auxiliary data"
-        );
-
-        assert!(matches!(
-            result,
-            Err(DepositTxParseError::InvalidAuxiliaryData(_))
-        ));
-        if let Err(DepositTxParseError::InvalidAuxiliaryData(len)) = result {
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData(_)));
+        if let DepositTxParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, MIN_DEPOSIT_TX_AUX_DATA_LEN - 1);
         }
     }
@@ -284,12 +270,7 @@ mod tests {
         tx.output.truncate(1);
 
         let tx_input = parse_tx(&tx);
-        let result = parse_deposit_tx(&tx_input);
-        assert!(result.is_err(), "Should fail with missing deposit output");
-
-        assert!(matches!(
-            result,
-            Err(DepositTxParseError::MissingDepositOutput)
-        ));
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, DepositTxParseError::MissingDepositOutput));
     }
 }

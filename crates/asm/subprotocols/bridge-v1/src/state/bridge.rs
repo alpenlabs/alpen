@@ -1,19 +1,20 @@
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_txs_bridge_v1::{
+    deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
+    errors::Mismatch,
+    withdrawal_fulfillment::WithdrawalFulfillmentInfo,
+};
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
-    errors::{DepositValidationError, Mismatch, WithdrawalCommandError, WithdrawalValidationError},
+    errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
         withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
-    },
-    txs::{
-        deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
-        withdrawal_fulfillment::WithdrawalFulfillmentInfo,
     },
 };
 
@@ -431,6 +432,10 @@ impl BridgeV1State {
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::Rng;
+    use strata_asm_txs_bridge_v1::{
+        deposit::DepositInfo,
+        test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
+    };
     use strata_crypto::EvenSecretKey;
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
@@ -441,13 +446,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        state::{config::BridgeV1Config, withdrawal::WithdrawOutput},
-        txs::{
-            deposit::DepositInfo,
-            test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
-        },
-    };
+    use crate::state::{config::BridgeV1Config, withdrawal::WithdrawOutput};
 
     /// Helper function to create test operator keys
     ///
@@ -507,14 +506,21 @@ mod tests {
     /// - `state` - Mutable reference to the bridge state to add deposits to
     /// - `count` - Number of deposits to create and add
     /// - `privkeys` - Private keys used to sign the deposit transactions
-    fn add_deposits(state: &mut BridgeV1State, count: usize, privkeys: &[EvenSecretKey]) {
+    fn add_deposits(
+        state: &mut BridgeV1State,
+        count: usize,
+        privkeys: &[EvenSecretKey],
+    ) -> Vec<DepositInfo> {
         let mut arb = ArbitraryGenerator::new();
+        let mut infos = Vec::new();
         for _ in 0..count {
             let mut info: DepositInfo = arb.generate();
             info.amt = state.denomination;
             let tx = create_test_deposit_tx(&info, privkeys);
             state.process_deposit_tx(&tx, &info).unwrap();
+            infos.push(info);
         }
+        infos
     }
 
     /// Helper function to add deposits and immediately create withdrawal assignments.
@@ -592,13 +598,8 @@ mod tests {
             assert_eq!(bridge_state.deposits().len(), i + 1);
             let stored_deposit = bridge_state
                 .deposits()
-                .get_deposit(deposit_info.deposit_idx);
-            assert!(
-                stored_deposit.is_some(),
-                "Deposit should be found in deposits table"
-            );
-
-            let stored_deposit = stored_deposit.unwrap();
+                .get_deposit(deposit_info.deposit_idx)
+                .unwrap();
             assert_eq!(stored_deposit.idx(), deposit_info.deposit_idx);
             assert_eq!(stored_deposit.amt(), deposit_info.amt);
             assert_eq!(stored_deposit.output(), &deposit_info.outpoint);
@@ -616,14 +617,14 @@ mod tests {
 
         let tx = create_test_deposit_tx(&deposit_info, &privkeys);
 
-        let result = bridge_state.process_deposit_tx(&tx, &deposit_info);
-        assert!(result.is_err(), "Deposit with wrong amount should fail");
-
+        let err = bridge_state
+            .process_deposit_tx(&tx, &deposit_info)
+            .unwrap_err();
         assert!(matches!(
-            result,
-            Err(DepositValidationError::MismatchDepositAmount(_))
+            err,
+            DepositValidationError::MismatchDepositAmount(_)
         ));
-        if let Err(DepositValidationError::MismatchDepositAmount(mismatch)) = result {
+        if let DepositValidationError::MismatchDepositAmount(mismatch) = err {
             assert_eq!(mismatch.expected, bridge_state.denomination.to_sat());
             assert_eq!(mismatch.got, deposit_info.amt.to_sat());
         }
@@ -646,13 +647,11 @@ mod tests {
         privkeys.pop();
         let tx = create_test_deposit_tx(&deposit_info, &privkeys);
 
-        let result = bridge_state.process_deposit_tx(&tx, &deposit_info);
-        assert!(result.is_err(), "Invalid signature should fail validation");
+        let err = bridge_state
+            .process_deposit_tx(&tx, &deposit_info)
+            .unwrap_err();
 
-        assert!(matches!(
-            result,
-            Err(DepositValidationError::InvalidSignature { .. })
-        ));
+        assert!(matches!(err, DepositValidationError::DrtSignature(_)));
 
         // Verify no deposit was added
         assert_eq!(bridge_state.deposits().len(), 0);
@@ -705,13 +704,21 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
 
         let count = 1;
-        add_deposits(&mut state, count, &privkeys);
+        let deposit = add_deposits(&mut state, count, &privkeys)[0].clone();
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
-        let res = state.create_withdrawal_assignment(&output, &l1blk);
-        assert!(res.is_err());
-        // TODO: check for error type
+        let err = state
+            .create_withdrawal_assignment(&output, &l1blk)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            WithdrawalCommandError::DepositWithdrawalAmountMismatch(..)
+        ));
+        if let WithdrawalCommandError::DepositWithdrawalAmountMismatch(mismatch) = err {
+            assert_eq!(mismatch.got, output.amt.to_sat());
+            assert_eq!(mismatch.expected, deposit.amt.to_sat());
+        }
     }
 
     /// Test successful withdrawal fulfillment transaction processing.
@@ -752,14 +759,15 @@ mod tests {
         let correct_operator_idx = withdrawal_info.operator_idx;
         withdrawal_info.operator_idx = arb.generate();
         let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
-        let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
+        let err = bridge_state
+            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .unwrap_err();
 
-        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(WithdrawalValidationError::OperatorMismatch(_))
+            err,
+            WithdrawalValidationError::OperatorMismatch(_)
         ));
-        if let Err(WithdrawalValidationError::OperatorMismatch(mismatch)) = res {
+        if let WithdrawalValidationError::OperatorMismatch(mismatch) = err {
             assert_eq!(mismatch.expected, correct_operator_idx);
             assert_eq!(mismatch.got, withdrawal_info.operator_idx);
         }
@@ -783,14 +791,15 @@ mod tests {
         let correct_deposit_txid = withdrawal_info.deposit_txid;
         withdrawal_info.deposit_txid = arb.generate();
         let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
-        let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
+        let err = bridge_state
+            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .unwrap_err();
 
-        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(WithdrawalValidationError::DepositTxidMismatch(_))
+            err,
+            WithdrawalValidationError::DepositTxidMismatch(_)
         ));
-        if let Err(WithdrawalValidationError::DepositTxidMismatch(mismatch)) = res {
+        if let WithdrawalValidationError::DepositTxidMismatch(mismatch) = err {
             assert_eq!(mismatch.expected, correct_deposit_txid);
             assert_eq!(mismatch.got, withdrawal_info.deposit_txid);
         }
@@ -814,14 +823,15 @@ mod tests {
         let correct_withdrawal_destination = withdrawal_info.withdrawal_destination.clone();
         withdrawal_info.withdrawal_destination = arb.generate::<Descriptor>().to_script();
         let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
-        let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
+        let err = bridge_state
+            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .unwrap_err();
 
-        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(WithdrawalValidationError::DestinationMismatch(_))
+            err,
+            WithdrawalValidationError::DestinationMismatch(_)
         ));
-        if let Err(WithdrawalValidationError::DestinationMismatch(mismatch)) = res {
+        if let WithdrawalValidationError::DestinationMismatch(mismatch) = err {
             assert_eq!(mismatch.expected, correct_withdrawal_destination);
             assert_eq!(mismatch.got, withdrawal_info.withdrawal_destination);
         }
@@ -845,14 +855,12 @@ mod tests {
         let correct_withdrawal_amount = withdrawal_info.withdrawal_amount;
         withdrawal_info.withdrawal_amount = arb.generate();
         let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
-        let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
+        let err = bridge_state
+            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .unwrap_err();
 
-        assert!(res.is_err());
-        assert!(matches!(
-            res,
-            Err(WithdrawalValidationError::AmountMismatch(_))
-        ));
-        if let Err(WithdrawalValidationError::AmountMismatch(mismatch)) = res {
+        assert!(matches!(err, WithdrawalValidationError::AmountMismatch(_)));
+        if let WithdrawalValidationError::AmountMismatch(mismatch) = err {
             assert_eq!(mismatch.expected, correct_withdrawal_amount);
             assert_eq!(mismatch.got, withdrawal_info.withdrawal_amount);
         }
@@ -875,14 +883,15 @@ mod tests {
         withdrawal_info.deposit_idx = arb.generate();
 
         let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
-        let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
+        let err = bridge_state
+            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .unwrap_err();
 
-        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(WithdrawalValidationError::NoAssignmentFound { .. })
+            err,
+            WithdrawalValidationError::NoAssignmentFound { .. }
         ));
-        if let Err(WithdrawalValidationError::NoAssignmentFound { deposit_idx }) = res {
+        if let WithdrawalValidationError::NoAssignmentFound { deposit_idx } = err {
             assert_eq!(deposit_idx, withdrawal_info.deposit_idx);
         }
     }

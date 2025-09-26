@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-proto-bridge-v1"
+name = "strata-asm-txs-bridge-v1"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,21 +9,21 @@ workspace = true
 [dependencies]
 arbitrary.workspace = true
 bitcoin.workspace = true
-borsh.workspace = true
-moho-types.workspace = true
-rand_chacha.workspace = true
-serde.workspace = true
+secp256k1.workspace = true
 thiserror.workspace = true
 
 strata-asm-common.workspace = true
-strata-asm-logs.workspace = true
-strata-asm-txs-bridge-v1.workspace = true
-strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
+# Optional dependency for test utilities
+strata-crypto = { workspace = true, optional = true }
+
 [dev-dependencies]
 strata-test-utils.workspace = true
-strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
+strata-crypto = { workspace = true, features = ["test-utils"] }
+musig2.workspace = true
 rand.workspace = true
-secp256k1.workspace = true
+
+[features]
+test-utils = ["dep:strata-crypto", "strata-crypto/test-utils"]
