@@ -8,7 +8,6 @@ mod macros;
 
 pub mod batch;
 pub mod block_credential;
-pub mod bridge;
 pub mod buf;
 pub mod constants;
 pub mod crypto;
@@ -24,7 +23,6 @@ pub mod operator;
 pub mod params;
 pub mod prelude;
 pub mod proof;
-pub mod relay;
 pub mod roles;
 pub mod sorted_vec;
 pub mod utils;

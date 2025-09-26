@@ -10,6 +10,7 @@ use bitcoin::{
 };
 use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult;
+use strata_bridge_types::{DepositState, PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 #[cfg(feature = "debug-utils")]
 use strata_common::BAIL_SENDER;
@@ -19,7 +20,6 @@ use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry,
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_primitives::{
     batch::EpochSummary,
-    bridge::{OperatorIdx, PublickeyTable},
     buf::Buf32,
     epoch::EpochCommitment,
     hash,
@@ -27,6 +27,7 @@ use strata_primitives::{
         payload::{L1Payload, PayloadDest, PayloadIntent},
         L1BlockCommitment,
     },
+    operator::OperatorIdx,
     params::Params,
 };
 use strata_rpc_api::{
@@ -47,8 +48,6 @@ use strata_sequencer::{
 };
 use strata_state::{
     batch::{Checkpoint, SignedCheckpoint},
-    bridge_ops::WithdrawalIntent,
-    bridge_state::DepositState,
     chain_state::Chainstate,
     client_state::ClientState,
     l1::L1BlockId,

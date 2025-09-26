@@ -1,5 +1,6 @@
 use bitcoin::{hashes::Hash, Amount};
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_bridge_types::{DepositEntry, DepositState};
 use strata_primitives::{
     block_credential::CredRule,
     buf::Buf32,
@@ -7,10 +8,7 @@ use strata_primitives::{
     params::{DepositTxParams, RollupParams},
     sorted_vec::{FlatTable, SortedVec, TableEntry},
 };
-use strata_state::{
-    bridge_state::{DepositEntry, DepositState},
-    chain_state::Chainstate,
-};
+use strata_state::chain_state::Chainstate;
 
 use crate::utils::{generate_taproot_address, get_operator_wallet_pks};
 

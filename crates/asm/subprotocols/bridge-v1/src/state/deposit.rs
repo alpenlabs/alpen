@@ -9,8 +9,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
-    bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},
+    operator::OperatorIdx,
     sorted_vec::SortedVec,
 };
 

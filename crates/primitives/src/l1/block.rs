@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{buf::Buf32, hash::sha256d, impl_buf_wrapper};
 
+/// The bitcoin block height
+pub type BitcoinBlockHeight = u64;
+
 /// ID of an L1 block, usually the hash of its header.
 #[derive(
     Copy,

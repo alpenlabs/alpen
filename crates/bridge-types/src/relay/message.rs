@@ -4,10 +4,9 @@ use arbitrary::Arbitrary;
 use borsh::{io, BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
-use crate::{
-    bridge::OperatorIdx,
+use strata_primitives::{
     buf::{Buf32, Buf64},
+    operator::OperatorIdx,
     prelude::BitcoinTxid,
 };
 
@@ -136,7 +135,7 @@ impl TryInto<Box<[u8]>> for BridgeMessage {
     fn try_into(self) -> Result<Box<[u8]>, Self::Error> {
         let serialized_vec =
             borsh::to_vec(&self).map_err(|_| io::Error::other("Serialization error"))?;
-        Ok(serialized_vec.into_boxed_slice()) // Convert Vec<u8> to Box<[u8]>
+        Ok(serialized_vec.into_boxed_slice()) // Convert Vec<u8] to Box<[u8]>
     }
 }
 
@@ -258,14 +257,11 @@ impl fmt::Display for BridgeMsgId {
 
 #[cfg(test)]
 mod tests {
+    use strata_primitives::{buf::Buf64, l1::BitcoinTxid};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::{BridgeMessage, Scope};
-    use crate::{
-        bridge::{Musig2PartialSig, Musig2PubNonce},
-        buf::Buf64,
-        l1::BitcoinTxid,
-    };
+    use crate::bridge::{Musig2PartialSig, Musig2PubNonce};
 
     #[expect(unused, reason = "used for testing")]
     fn get_arb_bridge_msg() -> BridgeMessage {
