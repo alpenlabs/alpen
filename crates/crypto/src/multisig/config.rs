@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{collections::HashSet, marker::PhantomData};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -185,11 +185,10 @@ impl<S: CryptoScheme> MultisigConfig<S> {
     /// - `ZeroThreshold`: New threshold is zero
     /// - `InvalidThreshold`: New threshold exceeds the total number of keys after update
     pub fn validate_update(&self, update: &MultisigConfigUpdate<S>) -> Result<(), MultisigError> {
-        let mut members_to_add = update.add_members().to_vec();
-        members_to_add.dedup();
-
-        let mut members_to_remove = update.remove_members().to_vec();
-        members_to_remove.dedup();
+        let members_to_add: HashSet<<S as CryptoScheme>::PubKey> =
+            update.add_members().iter().cloned().collect();
+        let members_to_remove: HashSet<<S as CryptoScheme>::PubKey> =
+            update.remove_members().iter().cloned().collect();
 
         // Ensure no duplicate members in the add list
         if members_to_add.len() != update.add_members().len() {
