@@ -1,14 +1,7 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod constants;
+pub mod deposit;
+pub mod errors;
+pub mod test_utils;
+pub mod withdrawal_fulfillment;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use constants::BRIDGE_V1_SUBPROTOCOL_ID;
