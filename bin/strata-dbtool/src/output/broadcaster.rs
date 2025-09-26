@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::Serialize;
 use strata_db::types::L1TxStatus;
 use strata_primitives::buf::Buf32;
@@ -48,5 +50,43 @@ impl<'a> Formattable for BroadcasterTxInfo<'a> {
             porcelain_field("tx.raw_tx.len", format!("{:?} bytes", self.raw_tx.len())),
         ]
         .join("\n")
+    }
+}
+
+// Custom debug implementation to print txid in little endian
+impl<'a> fmt::Debug for BroadcasterTxInfo<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+
+        f.debug_struct("BroadcasterTxInfo")
+            .field("index", &self.index)
+            .field("txid", &txid_le)
+            .field("status", &self.status)
+            .field("raw_tx", &self.raw_tx)
+            .finish()
+    }
+}
+
+// Custom display implementation to print txid in little endian
+impl<'a> fmt::Display for BroadcasterTxInfo<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+
+        write!(
+            f,
+            "BroadcasterTxInfo {{ index: {}, txid: {}, status: {:?}, raw_tx: {} bytes }}",
+            self.index,
+            txid_le,
+            self.status,
+            self.raw_tx.len()
+        )
     }
 }
