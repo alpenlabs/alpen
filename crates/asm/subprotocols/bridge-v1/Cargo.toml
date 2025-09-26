@@ -21,6 +21,7 @@ thiserror.workspace = true
 
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
+strata-asm-txs-bridge-v1.workspace = true
 strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true

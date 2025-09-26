@@ -24,7 +24,6 @@ mod errors;
 mod msgs;
 mod state;
 mod subprotocol;
-mod txs;
 
 pub use constants::BRIDGE_V1_SUBPROTOCOL_ID;
 pub use errors::*;
