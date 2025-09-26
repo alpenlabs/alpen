@@ -6,9 +6,7 @@
 use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
 };
-use strata_asm_proto_administration_txs::{
-    constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx,
-};
+use strata_asm_txs_admin::{constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx};
 
 use crate::{
     config::AdministrationSubprotoParams,

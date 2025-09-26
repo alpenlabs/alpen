@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-proto-administration-txs"
+name = "strata-asm-proto-administration"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,21 +8,17 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
+strata-asm-txs-admin.workspace = true
 strata-crypto.workspace = true
-strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
-bitcoin.workspace = true
-bitvec.workspace = true
 borsh.workspace = true
-rand = { workspace = true, optional = true }
-strata-l1tx.workspace = true
 thiserror.workspace = true
-zkaleido.workspace = true
-
-[features]
-test-utils = ["rand", "strata-crypto/test-utils"]
 
 [dev-dependencies]
+strata-asm-txs-admin = { workspace = true, features = ["test-utils"] }
 strata-test-utils.workspace = true
+rand.workspace = true
+bitvec.workspace = true
+bitcoin.workspace = true

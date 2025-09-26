@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_proto_administration_txs::actions::MultisigAction;
+use strata_asm_txs_admin::actions::MultisigAction;
 use strata_crypto::multisig::{
     MultisigError, SchnorrMultisigConfig, SchnorrMultisigSignature, verify_multisig,
 };

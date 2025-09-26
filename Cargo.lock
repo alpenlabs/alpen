@@ -14241,30 +14241,11 @@ dependencies = [
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
- "strata-asm-proto-administration-txs",
+ "strata-asm-txs-admin",
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
-]
-
-[[package]]
-name = "strata-asm-proto-administration-txs"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "bitcoin",
- "bitvec",
- "borsh",
- "rand 0.8.5",
- "strata-asm-common",
- "strata-crypto",
- "strata-l1-txfmt",
- "strata-l1tx",
- "strata-primitives",
- "strata-test-utils",
- "thiserror 2.0.16",
- "zkaleido",
 ]
 
 [[package]]
@@ -14350,6 +14331,25 @@ dependencies = [
  "borsh",
  "strata-asm-common",
  "strata-l1-txfmt",
+]
+
+[[package]]
+name = "strata-asm-txs-admin"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "bitvec",
+ "borsh",
+ "rand 0.8.5",
+ "strata-asm-common",
+ "strata-crypto",
+ "strata-l1-txfmt",
+ "strata-l1tx",
+ "strata-primitives",
+ "strata-test-utils",
+ "thiserror 2.0.16",
+ "zkaleido",
 ]
 
 [[package]]

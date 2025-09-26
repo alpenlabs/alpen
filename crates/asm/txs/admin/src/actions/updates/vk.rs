@@ -1,10 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::TxInputRef;
 use strata_primitives::roles::ProofType;
 use zkaleido::VerifyingKey;
-
-use crate::errors::AdministrationTxParseError;
 
 /// An update to the verifying key for a given Strata proof layer.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
@@ -32,14 +29,6 @@ impl VerifyingKeyUpdate {
     /// Consume and return the inner values.
     pub fn into_inner(self) -> (VerifyingKey, ProofType) {
         (self.vk, self.kind)
-    }
-
-    /// Extract a `VerifyingKeyUpdate` from a transaction input.
-    ///
-    /// Placeholder logic: replace with actual deserialization.
-    pub fn extract_from_tx(_tx: &TxInputRef<'_>) -> Result<Self, AdministrationTxParseError> {
-        // TODO: parse `TxInputRef` to obtain vk bytes and proof kind
-        Ok(Self::new(VerifyingKey::default(), ProofType::OlStf))
     }
 }
 
