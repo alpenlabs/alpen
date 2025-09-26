@@ -37,9 +37,7 @@ pub(crate) struct GetL2SummaryArgs {
 }
 
 /// Get the latest L2 block from the database.
-///
-/// This finds the highest slot block in the database.
-pub(crate) fn get_latest_l2_block_id(
+pub(crate) fn get_l2_chain_tip_block_id(
     db: &impl DatabaseBackend,
 ) -> Result<L2BlockId, DisplayedError> {
     db.l2_db()
@@ -68,29 +66,30 @@ pub(crate) fn get_earliest_l2_block_id(
     Ok(blocks_at_slot_0[0])
 }
 
-/// Get the slot for a specific L2 block.
-pub(crate) fn get_l2_block_slot(
+/// Get the slot and epoch for a specific L2 block.
+pub(crate) fn get_l2_block_slot_and_epoch(
     db: &impl DatabaseBackend,
     block_id: L2BlockId,
-) -> Result<Option<u64>, DisplayedError> {
+) -> Result<Option<(u64, u64)>, DisplayedError> {
     let Some(block_data) = get_l2_block_data(db, block_id)? else {
         return Ok(None);
     };
-
-    Ok(Some(block_data.block().header().slot()))
+    let header = block_data.block().header();
+    Ok(Some((header.slot(), header.epoch())))
 }
 
-/// Get the highest L2 block slot from the database.
-///
-/// This gets the slot of the highest slot block in the database.
-pub(crate) fn get_highest_l2_slot(db: &impl DatabaseBackend) -> Result<u64, DisplayedError> {
-    let block_id = get_latest_l2_block_id(db)?;
-    get_l2_block_slot(db, block_id)?.ok_or_else(|| {
+/// Get the L2 chain tip slot and epoch from the database.
+pub(crate) fn get_l2_chain_tip_slot_and_epoch(
+    db: &impl DatabaseBackend,
+) -> Result<(u64, u64), DisplayedError> {
+    let block_id = get_l2_chain_tip_block_id(db)?;
+    let (slot, epoch) = get_l2_block_slot_and_epoch(db, block_id)?.ok_or_else(|| {
         DisplayedError::InternalError(
             "L2 block data not found in database".to_string(),
             Box::new(block_id),
         )
-    })
+    })?;
+    Ok((slot, epoch))
 }
 
 /// Get L2 block data by block ID.
@@ -151,7 +150,7 @@ pub(crate) fn get_l2_summary(
     args: GetL2SummaryArgs,
 ) -> Result<(), DisplayedError> {
     // Get the tip block (highest slot)
-    let tip_block_id = get_latest_l2_block_id(db)?;
+    let tip_block_id = get_l2_chain_tip_block_id(db)?;
     let tip_block_data = get_l2_block_data(db, tip_block_id)?.ok_or_else(|| {
         DisplayedError::InternalError(
             "L2 block data not found in database".to_string(),

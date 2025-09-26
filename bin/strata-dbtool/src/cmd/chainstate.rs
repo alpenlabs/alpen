@@ -14,7 +14,7 @@ use strata_state::state_op::WriteBatch;
 
 use super::{
     checkpoint::get_latest_checkpoint_entry,
-    l2::{get_highest_l2_slot, get_l2_block_slot, get_latest_l2_block_id},
+    l2::{get_l2_block_slot_and_epoch, get_l2_chain_tip_block_id, get_l2_chain_tip_slot_and_epoch},
 };
 use crate::{
     cli::OutputFormat,
@@ -73,7 +73,7 @@ pub(crate) fn get_l2_write_batch(
 pub(crate) fn get_latest_l2_write_batch(
     db: &impl DatabaseBackend,
 ) -> Result<strata_state::state_op::WriteBatch, DisplayedError> {
-    let block_id = get_latest_l2_block_id(db)?;
+    let block_id = get_l2_chain_tip_block_id(db)?;
     get_l2_write_batch(db, block_id)?.ok_or_else(|| {
         DisplayedError::InternalError("L2 write batch not found".to_string(), Box::new(block_id))
     })
@@ -161,9 +161,10 @@ pub(crate) fn get_chainstate(
     let top_level_state = write_batch.new_toplevel_state();
 
     // Get the block slot
-    let block_slot = get_l2_block_slot(db, block_id)?.ok_or_else(|| {
-        DisplayedError::UserError("L2 block with id not found".to_string(), Box::new(block_id))
-    })?;
+    let (block_slot, block_epoch) =
+        get_l2_block_slot_and_epoch(db, block_id)?.ok_or_else(|| {
+            DisplayedError::UserError("L2 block with id not found".to_string(), Box::new(block_id))
+        })?;
 
     let prev_epoch = top_level_state.prev_epoch();
     let finalized_epoch = top_level_state.finalized_epoch();
@@ -173,7 +174,7 @@ pub(crate) fn get_chainstate(
     let chainstate_info = ChainstateInfo {
         block_id: &block_id,
         current_slot: block_slot,
-        current_epoch: top_level_state.cur_epoch(),
+        current_epoch: block_epoch,
         is_epoch_finishing: top_level_state.is_epoch_finishing(),
         previous_epoch: prev_epoch,
         finalized_epoch,
@@ -192,15 +193,16 @@ pub(crate) fn revert_chainstate(
     args: RevertChainstateArgs,
 ) -> Result<(), DisplayedError> {
     let target_block_id = parse_l2_block_id(&args.block_id)?;
-    let target_slot = get_l2_block_slot(db, target_block_id)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "L2 block with id not found".to_string(),
-            Box::new(target_block_id),
-        )
-    })?;
+    let (target_slot, target_epoch) = get_l2_block_slot_and_epoch(db, target_block_id)?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "L2 block with id not found".to_string(),
+                Box::new(target_block_id),
+            )
+        })?;
 
     // Get the latest slot
-    let latest_slot = get_highest_l2_slot(db)?;
+    let (latest_slot, _) = get_l2_chain_tip_slot_and_epoch(db)?;
 
     // Get latest write batch to check finalized epoch constraints
     let write_batch = get_latest_l2_write_batch(db)?;
@@ -281,7 +283,6 @@ pub(crate) fn revert_chainstate(
         }
     }
 
-    let target_epoch = top_level_state.cur_epoch();
     let latest_checkpoint_epoch = latest_checkpoint_entry.checkpoint.batch_info().epoch;
     if target_epoch <= latest_checkpoint_epoch {
         // Clean up checkpoints and related data from target epoch onwards

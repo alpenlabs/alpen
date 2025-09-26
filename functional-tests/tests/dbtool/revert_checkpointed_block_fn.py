@@ -96,43 +96,22 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
             self.error("Could not find L2 range in checkpoint")
             return False
 
-        # Get the checkpoint end slot (last L2 block of the checkpointed range)
-        checkpt_end_slot = l2_range[1].get("slot")
-        checkpt_end_block_id = l2_range[1].get("blkid")
+        # Get a block within the checkpointed range (use the first block in the range)
+        checkpt_start_slot = l2_range[0].get("slot")
+        checkpt_start_block_id = l2_range[0].get("blkid")
+        target_slot = checkpt_start_slot
+        target_block_id = checkpt_start_block_id
 
-        if checkpt_end_slot is None:
-            self.error("Could not find checkpoint end slot")
+        if checkpt_start_slot is None or not checkpt_start_block_id:
+            self.error("Could not find checkpoint start slot or block ID")
             return False
 
-        self.info(f"Checkpoint end slot: {checkpt_end_slot}")
-        self.info(f"Checkpoint end block ID: {checkpt_end_block_id}")
+        self.info(
+            f"Checkpoint start slot: {checkpt_start_slot}, block ID: {checkpt_start_block_id}"
+        )
 
-        # Get sync information to find the current tip
-        sync_info = self.get_syncinfo()
-        tip_block_id = sync_info.get("l2_tip_block_id")
-        tip_slot = sync_info.get("l2_tip_height")
-
-        if tip_slot is None or not tip_block_id:
-            self.error("Could not find tip block information")
-            return False
-
-        self.info(f"Tip slot: {tip_slot}, tip block ID: {tip_block_id}")
-
-        # Ensure we have blocks outside the checkpointed range
-        if tip_slot <= checkpt_end_slot:
-            self.info("No blocks outside checkpointed range - test cannot proceed")
-            return True
-
-        # Use the checkpoint end block as target (last L2 block of checkpointed range)
-        target_block_id = checkpt_end_block_id
-        target_slot = checkpt_end_slot
-
+        # Try to revert to a checkpointed block with -c flag - this should succeed
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
-
-        # Revert chainstate to the last L2 block of the checkpointed range
-        # Using the fullnode database (follower_1_node)
-        self.info(f"Testing revert-chainstate to {target_block_id} using fullnode database")
-
         return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-c")
 
         if return_code != 0:
