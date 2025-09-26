@@ -466,7 +466,7 @@ pub struct TxFilterConfigTransition {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
 )]
 pub struct CommitmentInfo {
     pub blockhash: Buf32,
@@ -536,4 +536,60 @@ pub fn verify_signed_checkpoint_sig(
         &checkpoint_sighash,
         seq_pubkey,
     )
+}
+
+// Custom debug implementation to print txid and wtxid in little endian
+impl fmt::Debug for CommitmentInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+        let wtxid_le = {
+            let mut bytes = self.wtxid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+        let blockhash_le = {
+            let mut bytes = self.blockhash.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+
+        f.debug_struct("CommitmentInfo")
+            .field("blockhash", &blockhash_le)
+            .field("txid", &txid_le)
+            .field("wtxid", &wtxid_le)
+            .field("block_height", &self.block_height)
+            .field("position", &self.position)
+            .finish()
+    }
+}
+
+// Custom display implementation to print txid and wtxid in little endian
+impl fmt::Display for CommitmentInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+        let wtxid_le = {
+            let mut bytes = self.wtxid.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+        let blockhash_le = {
+            let mut bytes = self.blockhash.0;
+            bytes.reverse();
+            hex::encode(bytes)
+        };
+
+        write!(
+            f,
+            "CommitmentInfo {{ blockhash: {}, txid: {}, wtxid: {}, block_height: {}, position: {} }}",
+            blockhash_le, txid_le, wtxid_le, self.block_height, self.position
+        )
+    }
 }
