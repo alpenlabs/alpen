@@ -1,3 +1,5 @@
+use std::fmt;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use digest::Digest;
@@ -116,7 +118,7 @@ pub struct DepositRequestInfo {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
+    Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
 )]
 pub struct WithdrawalFulfillmentInfo {
     /// index of deposit this fulfillment is for
@@ -140,4 +142,45 @@ pub struct WithdrawalFulfillmentInfo {
 pub struct DepositSpendInfo {
     /// index of the deposit whose utxo is spent.
     pub deposit_idx: u32,
+}
+
+// Custom debug implementation to print txid in little endian
+impl fmt::Debug for WithdrawalFulfillmentInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        f.debug_struct("WithdrawalFulfillmentInfo")
+            .field("deposit_idx", &self.deposit_idx)
+            .field("operator_idx", &self.operator_idx)
+            .field("amt", &self.amt)
+            .field("txid", &txid_le)
+            .finish()
+    }
+}
+
+// Custom display implementation to print txid in little endian
+impl fmt::Display for WithdrawalFulfillmentInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        write!(
+            f,
+            "WithdrawalFulfillmentInfo {{ deposit_idx: {}, operator_idx: {}, amt: {:?}, txid: {} }}",
+            self.deposit_idx, self.operator_idx, self.amt, txid_le
+        )
+    }
 }
