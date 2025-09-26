@@ -1,6 +1,13 @@
 #!/bin/bash
 # Usage: ./init-keys.sh <path_to_datatool_binary>
 DATATOOL_PATH=${1:-./strata-datatool}
+BITCOIN_NETWORK=${BITCOIN_NETWORK:-"regtest"}
+shift
+
+# Set default Bitcoin RPC credentials if not provided
+BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-"http://localhost:18443"}
+BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-"rpcuser"}
+BITCOIN_RPC_PASSWORD=${BITCOIN_RPC_PASSWORD:-"rpcpassword"}
 
 echo "Checking if 'base58' is installed.".
 if ! command -v base58 &> /dev/null; then \
@@ -47,21 +54,38 @@ $DATATOOL_PATH -b regtest genxpriv -f $OP5_SEED_FILE
 seqprivkey=$($DATATOOL_PATH -b regtest genseqprivkey -f ${SEQ_SEED_FILE})
 echo -n $seqprivkey > $CONFIG_FILE/sequencer.key
 
-op1pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP1_SEED_FILE})
-op2pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP2_SEED_FILE})
-op3pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP3_SEED_FILE})
-op4pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP4_SEED_FILE})
-op5pubkey=$($DATATOOL_PATH -b regtest genopxpub -f ${OP5_SEED_FILE})
+op1xpriv=$(cat $OP1_SEED_FILE)
+op2xpriv=$(cat $OP2_SEED_FILE)
+# shellcheck disable=2034
+op3xpriv=$(cat $OP3_SEED_FILE)
+# shellcheck disable=2034
+op4xpriv=$(cat $OP4_SEED_FILE)
+# shellcheck disable=2034
+op5xpriv=$(cat $OP5_SEED_FILE)
 
 seqpubkey=$($DATATOOL_PATH -b regtest genseqpubkey -f ${CONFIG_FILE}/sequencer.key)
 
 ROLLUP_PARAMS_FILE=$CONFIG_FILE/params.json
-$DATATOOL_PATH -b regtest genparams \
-    -n "alpenstrata" \
-    -s $seqpubkey \
-    -b $op1pubkey \
-    -b $op2pubkey \
-    --output $ROLLUP_PARAMS_FILE
-    # -b $op3pubkey \
-    # -b $op4pubkey \
-    # -b $op5pubkey \
+
+# Construct args for genparams.
+# Check if -n is set in args
+# shellcheck disable=2199
+if [[ "$@" != *"-n "* ]]; then
+    extra_args+=("-n" "alpn")
+fi
+
+if [ -z "$output_found" ]; then
+    extra_args+=(--output "$ROLLUP_PARAMS_FILE")
+fi
+
+# Add Bitcoin RPC credentials to genparams command
+"$DATATOOL_PATH" -b "$BITCOIN_NETWORK" \
+    --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
+    --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
+    --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
+    genparams \
+    -s "$seqpubkey" \
+    -b "$op1xpriv" \
+    -b "$op2xpriv" \
+    "${extra_args[@]}" \
+    "$@"
