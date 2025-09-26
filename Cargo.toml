@@ -13,7 +13,7 @@ members = [
   "crates/asm/subprotocols/bridge-v1",
   "crates/asm/subprotocols/debug-v1",
   "crates/asm/subprotocols/admin",
-  "crates/asm/txs/administration",
+  "crates/asm/txs/admin",
   "crates/asm-types",
   "crates/asm/worker",
   "crates/btcio",
@@ -127,7 +127,7 @@ strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-spec = { path = "crates/asm/spec" }
 strata-asm-spec-debug = { path = "crates/asm/spec-debug" }
 strata-asm-stf = { path = "crates/asm/stf" }
-strata-asm-txs-admin = { path = "crates/asm/txs/administration" }
+strata-asm-txs-admin = { path = "crates/asm/txs/admin" }
 strata-asm-types = { path = "crates/asm-types" }
 strata-asm-worker = { path = "crates/asm/worker" }
 strata-btcio = { path = "crates/btcio" }
