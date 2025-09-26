@@ -132,10 +132,44 @@ impl L1WriterDatabase for RBL1WriterDb {
 
     fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
         let exists = self.db.get::<IntentSchema>(&id)?.is_some();
-        if exists {
-            self.db.delete::<IntentSchema>(&id)?;
+        if !exists {
+            return Ok(false);
         }
-        Ok(exists)
+
+        // Find the index that maps to this intent ID
+        let mut found_idx = None;
+        let mut iterator = self.db.iter::<IntentIdxSchema>()?;
+        while let Some(result) = iterator.next().transpose()? {
+            let (idx, stored_id) = result.into_tuple();
+            if stored_id == id {
+                found_idx = Some(idx);
+                break;
+            }
+        }
+
+        if let Some(idx) = found_idx {
+            // Delete both intent entry and index mapping atomically
+            self.db
+                .with_optimistic_txn(
+                    rockbound::TransactionRetry::Count(self.ops.retry_count),
+                    |txn| -> Result<(), anyhow::Error> {
+                        // Delete intent entry first, then index mapping
+                        txn.delete::<IntentSchema>(&id)?;
+                        txn.delete::<IntentIdxSchema>(&idx)?;
+                        Ok(())
+                    },
+                )
+                .map_err(|e| DbError::TransactionError(e.to_string()))?;
+        } else {
+            // Intent exists but no index mapping found - this indicates data corruption
+            // Don't delete anything to maintain consistency
+            return Err(DbError::Other(format!(
+                "Intent entry exists but no index mapping found for id {:?} - database inconsistency",
+                id
+            )));
+        }
+
+        Ok(true)
     }
 
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {

@@ -117,10 +117,41 @@ impl L1WriterDatabase for L1WriterDBSled {
     fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
         let old_item = self.intent_tree.get(&id)?;
         let exists = old_item.is_some();
-        if exists {
-            self.intent_tree.compare_and_swap(id, old_item, None)?;
+        if !exists {
+            return Ok(false);
         }
-        Ok(exists)
+
+        // Find the index that maps to this intent ID
+        let mut found_idx = None;
+        for result in self.intent_idx_tree.iter() {
+            let (idx, stored_id) = result?;
+            if stored_id == id {
+                found_idx = Some(idx);
+                break;
+            }
+        }
+
+        if let Some(idx) = found_idx {
+            // Delete both intent entry and index mapping atomically
+            self.config
+                .with_retry((&self.intent_idx_tree, &self.intent_tree), |(iit, it)| {
+                    if let Some(intent_id) = iit.get(&idx)? {
+                        // Delete intent entry first, then index mapping
+                        it.remove(&intent_id)?;
+                        iit.remove(&idx)?;
+                    }
+                    Ok(())
+                })?;
+        } else {
+            // Intent exists but no index mapping found - this indicates data corruption
+            // Don't delete anything to maintain consistency
+            return Err(DbError::Other(format!(
+                "Intent entry exists but no index mapping found for id {:?} - database inconsistency",
+                id
+            )));
+        }
+
+        Ok(true)
     }
 
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
