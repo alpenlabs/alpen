@@ -14334,6 +14334,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-txs-bridge-v1"
+version = "0.1.0"
+
+[[package]]
 name = "strata-asm-txs-admin"
 version = "0.1.0"
 dependencies = [
