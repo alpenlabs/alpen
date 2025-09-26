@@ -226,7 +226,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "invalid deposit tx structure")]
     fn test_validate_deposit_output_lock_missing_output() {
         let (mut tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
 
@@ -234,7 +233,8 @@ mod tests {
         tx.output.truncate(1);
 
         // This should panic since we removed the deposit output
-        validate_deposit_output_lock(&tx, &operators_pubkey).unwrap();
+        let err = validate_deposit_output_lock(&tx, &operators_pubkey).unwrap_err();
+        assert!(matches!(err, DepositOutputError::WrongOutputLock))
     }
 
     #[test]
@@ -282,6 +282,41 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_drt_spending_signature_invalid_signature_format() {
+        let (operators_pubkey, operators_privkeys) = create_test_operators();
+
+        // Create a signed transaction then replace with invalid signature
+        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
+        let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
+
+        // Replace with invalid witness data
+        tx.input[0].witness = Witness::from_slice(&[&[0u8; 66]]); // larger sig len
+
+        let err = validate_drt_spending_signature(
+            &tx,
+            deposit_info.drt_tapscript_merkle_root,
+            &operators_pubkey,
+            deposit_info.amt.into(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, DrtSignatureError::InvalidSignatureFormat(_)));
+
+        // Replace with invalid witness data
+        tx.input[0].witness = Witness::from_slice(&[&[0u8; 32]]); // smaller sig len
+
+        let err = validate_drt_spending_signature(
+            &tx,
+            deposit_info.drt_tapscript_merkle_root,
+            &operators_pubkey,
+            deposit_info.amt.into(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, DrtSignatureError::InvalidSignatureFormat(_)));
+    }
+
+    #[test]
     fn test_validate_drt_spending_signature_invalid_signature() {
         let (operators_pubkey, operators_privkeys) = create_test_operators();
 
@@ -290,22 +325,19 @@ mod tests {
         let mut tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
 
         // Replace with invalid witness data
-        tx.input[0].witness = Witness::from_slice(&[&[0u8; 64]]); // Dummy signature
+        tx.input[0].witness = Witness::from_slice(&[&[0u8; 64]]);
 
-        let result = validate_drt_spending_signature(
+        let err = validate_drt_spending_signature(
             &tx,
             deposit_info.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
-        );
+        )
+        .unwrap_err();
 
-        assert!(result.is_err(), "Should fail with invalid signature");
-
-        // The exact error depends on whether signature parsing or verification fails first
         assert!(matches!(
-            result,
-            Err(DrtSignatureError::InvalidSignatureFormat(_))
-                | Err(DrtSignatureError::SchnorrVerificationFailed(_))
+            err,
+            DrtSignatureError::SchnorrVerificationFailed(_)
         ));
     }
 
@@ -315,8 +347,6 @@ mod tests {
         let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
         let (operators_pubkey, operators_privkeys) = create_test_operators();
         let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
-
-        // Transaction created with proper MuSig2 signature
 
         // Test the validation using the same tapnode hash from deposit_info
         let result = validate_drt_spending_signature(
