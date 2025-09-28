@@ -2,6 +2,7 @@
 //!
 //! This module contains types and tables for managing bridge operators
 
+use bitvec::prelude::*;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_crypto::multisig::aggregate_schnorr_keys;
@@ -105,6 +106,44 @@ impl OperatorEntry {
     /// `true` if the operator is in the current multisig, `false` otherwise.
     pub fn is_in_current_multisig(&self) -> bool {
         self.is_in_current_multisig
+    }
+}
+
+/// TODO: Update docstring
+/// Efficient bitmap-based storage for notary operator indices.
+///
+/// Uses a memory-efficient bitmap to represent which operators are part of
+/// the multisig for a deposit. Since `OperatorIdx` is `u32`, we use a dynamic
+/// BitVec to handle any operator index size while minimizing memory usage.
+///
+/// Whether this operator is part of the current N/N multisig set.
+/// Operators not in the current multisig are preserved but not assigned new tasks.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActiveOperatorSet {
+    /// Bitmap where bit `i` is set if operator index `i` is in the set.
+    /// Using BitVec for dynamic sizing and memory efficiency.
+    operators: BitVec<u8>,
+}
+
+impl BorshSerialize for ActiveOperatorSet {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        todo!()
+    }
+}
+
+impl BorshDeserialize for ActiveOperatorSet {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        todo!()
+    }
+}
+
+impl ActiveOperatorSet {
+    fn active_operator_indices<'a>(
+        &self,
+        operators: &'a [OperatorEntry],
+    ) -> impl Iterator<Item = &'a OperatorEntry> {
+        assert_eq!(operators.len(), self.operators.len());
+        self.operators.iter_ones().map(move |i| &operators[i])
     }
 }
 
