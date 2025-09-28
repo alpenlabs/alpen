@@ -7,14 +7,13 @@
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 use strata_primitives::{
     l1::{BitcoinAmount, OutputRef},
     operator::OperatorIdx,
     sorted_vec::SortedVec,
 };
 
-use crate::errors::DepositValidationError;
+use crate::{errors::DepositValidationError, state::operator::OperatorBitmap};
 
 /// Bitcoin deposit entry containing UTXO reference and historical multisig operators.
 ///
@@ -42,7 +41,7 @@ use crate::errors::DepositValidationError;
 /// formed the N/N multisig when this deposit was locked. Any one honest operator
 /// from this set can properly process user withdrawals. We store this historical
 /// set because the active operator set may change over time.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct DepositEntry {
     /// Unique deposit identifier assigned by the bridge and provided in the deposit transaction.
     deposit_idx: u32,
@@ -56,8 +55,8 @@ pub struct DepositEntry {
     /// deposit was locked, since the active operator set may change over time.
     /// Any one honest operator from this set can process user withdrawals.
     ///
-    /// TODO: Convert this to a windowed bitmap for better memory efficiency.
-    notary_operators: Vec<OperatorIdx>,
+    /// Uses a memory-efficient bitmap representation instead of storing operator indices.
+    operators: OperatorBitmap,
 
     /// Amount of Bitcoin locked in this deposit (in satoshis).
     amt: BitcoinAmount,
@@ -97,17 +96,17 @@ impl DepositEntry {
     pub fn new(
         idx: u32,
         output: OutputRef,
-        operators: Vec<OperatorIdx>,
+        operators: OperatorBitmap,
         amt: BitcoinAmount,
     ) -> Result<Self, DepositValidationError> {
-        if operators.is_empty() {
+        if operators.active_count() == 0 {
             return Err(DepositValidationError::EmptyOperators);
         }
 
         Ok(Self {
             deposit_idx: idx,
             output,
-            notary_operators: operators,
+            operators,
             amt,
         })
     }
@@ -123,8 +122,17 @@ impl DepositEntry {
     }
 
     /// Returns the historical set of operators that formed the N/N multisig.
-    pub fn notary_operators(&self) -> &[OperatorIdx] {
-        &self.notary_operators
+    ///
+    /// # Returns
+    ///
+    /// A vector containing the operator indices that were active for this deposit.
+    /// The indices are returned in sorted order.
+    pub fn notary_operators(&self) -> Vec<OperatorIdx> {
+        self.operators.to_indices()
+    }
+
+    pub fn operators(&self) -> &OperatorBitmap {
+        &self.operators
     }
 
     /// Returns the amount of Bitcoin locked in this deposit.
@@ -143,18 +151,15 @@ impl<'a> Arbitrary<'a> for DepositEntry {
 
         // Generate a random number of notary operators between 1 and 20
         let num_operators = u.int_in_range(1..=20)?;
-        let mut notary_operators = Vec::with_capacity(num_operators);
 
-        for _ in 0..num_operators {
-            let operator_idx: OperatorIdx = u.arbitrary()?;
-            notary_operators.push(operator_idx);
-        }
+        // Create OperatorBitmap directly by setting sequential operators as active
+        let operators = OperatorBitmap::new_sequential_active(num_operators);
 
         // Generate a random Bitcoin amount (between 1 satoshi and 21 million BTC)
         let amount: BitcoinAmount = u.arbitrary()?;
 
         // Create the DepositEntry - this should not fail since we ensure operators is non-empty
-        Self::new(deposit_idx, output, notary_operators, amount)
+        Self::new(deposit_idx, output, operators, amount)
             .map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
@@ -316,7 +321,7 @@ mod tests {
     #[test]
     fn test_deposit_entry_new_empty_operators() {
         let output: OutputRef = ArbitraryGenerator::new().generate();
-        let operators = vec![];
+        let operators = OperatorBitmap::new_empty();
         let amount = BitcoinAmount::from_sat(1_000_000);
 
         let result = DepositEntry::new(1, output, operators, amount);

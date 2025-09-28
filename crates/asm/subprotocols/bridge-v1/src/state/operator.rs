@@ -2,6 +2,7 @@
 //!
 //! This module contains types and tables for managing bridge operators
 
+use arbitrary::Arbitrary;
 use bitvec::prelude::*;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -147,7 +148,7 @@ impl BorshDeserialize for OperatorBitmap {
 
 impl OperatorBitmap {
     /// Creates a new empty operator bitmap.
-    fn new() -> Self {
+    pub fn new_empty() -> Self {
         Self {
             bits: BitVec::new(),
         }
@@ -161,7 +162,7 @@ impl OperatorBitmap {
     /// # Parameters
     ///
     /// - `count` - Number of sequential operators to mark as active (0 through count-1)
-    fn new_sequential_active(count: usize) -> Self {
+    pub fn new_sequential_active(count: usize) -> Self {
         let mut bits = BitVec::with_capacity(count);
         bits.resize(count, true); // Set all bits to true for 0..count-1
         Self { bits }
@@ -176,7 +177,7 @@ impl OperatorBitmap {
     /// # Returns
     ///
     /// `true` if the operator is active, `false` if not active or index out of bounds
-    fn is_active(&self, idx: OperatorIdx) -> bool {
+    pub fn is_active(&self, idx: OperatorIdx) -> bool {
         self.bits.get(idx as usize).map(|b| *b).unwrap_or(false)
     }
 
@@ -190,7 +191,7 @@ impl OperatorBitmap {
     /// # Returns
     ///
     /// `Ok(())` on success, `Err(())` if index would exceed reasonable bounds
-    fn try_set(&mut self, idx: OperatorIdx, active: bool) -> Result<(), ()> {
+    pub fn try_set(&mut self, idx: OperatorIdx, active: bool) -> Result<(), ()> {
         let idx = idx as usize;
         // Only allow increasing bitmap size by 1 at a time
         if idx > self.bits.len() {
@@ -204,33 +205,76 @@ impl OperatorBitmap {
     }
 
     /// Returns an iterator over all active operator indices.
-    fn active_indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
+    pub fn active_indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
         self.bits.iter_ones().map(|i| i as OperatorIdx)
     }
 
     /// Returns the number of active operators.
-    fn active_count(&self) -> u32 {
+    pub fn active_count(&self) -> u32 {
         self.bits.count_ones() as u32
     }
 
     /// Returns the total capacity (number of operator indices this bitmap can hold).
-    fn capacity(&self) -> usize {
+    pub fn capacity(&self) -> usize {
         self.bits.len()
     }
 
     /// Returns whether the bitmap is empty (no active operators).
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.bits.not_any()
     }
 
-    /// Clears all active operators.
-    fn clear(&mut self) {
-        self.bits.fill(false);
+    /// Creates a new bitmap from the bitwise AND of two bitmaps.
+    ///
+    /// Returns operators that are active in both input bitmaps.
+    /// The result bitmap capacity is the maximum of both input capacities.
+    pub fn bitwise_and(&self, other: &OperatorBitmap) -> OperatorBitmap {
+        let max_len = std::cmp::max(self.bits.len(), other.bits.len());
+        let mut result = BitVec::with_capacity(max_len);
+        result.resize(max_len, false);
+
+        for i in 0..max_len {
+            let self_bit = self.bits.get(i).map(|b| *b).unwrap_or(false);
+            let other_bit = other.bits.get(i).map(|b| *b).unwrap_or(false);
+            result.set(i, self_bit & other_bit);
+        }
+
+        OperatorBitmap { bits: result }
+    }
+
+    /// Creates a new bitmap from the bitwise AND NOT of two bitmaps.
+    ///
+    /// Returns operators that are active in self but not in other.
+    /// Equivalent to self & (!other).
+    pub fn bitwise_and_not(&self, other: &OperatorBitmap) -> OperatorBitmap {
+        let mut result = self.clone();
+        let min_len = std::cmp::min(result.bits.len(), other.bits.len());
+
+        for i in 0..min_len {
+            if let Some(other_bit) = other.bits.get(i) {
+                if *other_bit {
+                    result.bits.set(i, false);
+                }
+            }
+        }
+
+        result
     }
 
     /// Collects all active operator indices into a vector.
-    fn to_indices(&self) -> Vec<OperatorIdx> {
+    pub fn to_indices(&self) -> Vec<OperatorIdx> {
         self.active_indices().collect()
+    }
+}
+
+impl<'a> Arbitrary<'a> for OperatorBitmap {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate a random number of operators between 1 and 20
+        let num_operators = u.int_in_range(1..=20)?;
+
+        // Use the efficient sequential initialization since arbitrary tests
+        // typically expect operators to be sequential starting from 0
+        Ok(OperatorBitmap::new_sequential_active(num_operators))
     }
 }
 
@@ -381,6 +425,11 @@ impl OperatorTable {
     /// Only returns indices of operators marked as active in the bitmap.
     /// This is used for assignment creation and deposit processing.
     ///
+    /// Returns a reference to the bitmap of currently active multisig operators.
+    pub fn current_multisig_bitmap(&self) -> &OperatorBitmap {
+        &self.active_operators_bitmap
+    }
+
     /// # Returns
     ///
     /// Vector containing [`OperatorIdx`] for operators in the current multisig.

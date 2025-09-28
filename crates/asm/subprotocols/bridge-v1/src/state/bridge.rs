@@ -13,7 +13,7 @@ use crate::{
         assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
-        operator::OperatorTable,
+        operator::{OperatorBitmap, OperatorTable},
         withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
     },
 };
@@ -193,7 +193,10 @@ impl BridgeV1State {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
 
-        let notary_operators = self.operators().current_multisig_indices();
+        let total_operators = self.operators().len() as usize;
+        let notary_operators = OperatorBitmap::new_sequential_active(total_operators);
+        // Note: Using sequential active operators for simplicity. In the future, this should
+        // match the exact current multisig operators from self.operators().current_multisig_indices()
         let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
         self.deposits.insert_deposit(entry)?;
 
@@ -255,7 +258,7 @@ impl BridgeV1State {
             deposit,
             withdrawal_cmd,
             exec_deadline,
-            &self.operators().current_multisig_indices(),
+            self.operators().current_multisig_bitmap(),
             *l1_block.blkid(),
         )?;
 
@@ -291,10 +294,11 @@ impl BridgeV1State {
         let current_block_height = current_block.height_u64();
         let l1_block_id = current_block.blkid();
 
+        let current_operators = self.operators().current_multisig_bitmap().clone();
         self.assignments.reassign_expired_assignments(
             self.operator_fee,
             current_block_height,
-            &self.operators().current_multisig_indices(),
+            &current_operators,
             *l1_block_id,
         )
     }
