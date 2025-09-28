@@ -2,7 +2,7 @@
 //!
 //! Validates that state transitions follow protocol rules and maintain consistency.
 
-use strata_primitives::batch::Checkpoint;
+use strata_checkpoint_types::Checkpoint;
 
 use crate::{CoreOLState, error::*};
 

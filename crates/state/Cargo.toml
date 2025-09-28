@@ -13,6 +13,7 @@ workspace = true
 strata-asm-common.workspace = true
 strata-asm-stf.workspace = true
 strata-asm-types.workspace = true
+strata-checkpoint-types.workspace = true
 strata-primitives.workspace = true
 
 anyhow.workspace = true

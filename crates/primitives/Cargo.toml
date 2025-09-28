@@ -29,7 +29,6 @@ sha2.workspace = true
 strata-l1-txfmt.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
-zkaleido.workspace = true
 zkaleido-risc0-groth16-verifier.workspace = true
 zkaleido-sp1-groth16-verifier.workspace = true
 

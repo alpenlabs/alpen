@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use strata_chain_worker::*;
 use strata_chainexec::{BlockExecutionOutput, CheckinExecutionOutput};
+use strata_checkpoint_types::EpochSummary;
 use strata_db::{
     chainstate::{StateInstanceId, WriteBatchId},
     DbError,
@@ -11,7 +12,6 @@ use strata_db::{
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader};
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::prelude::*;
-use strata_state::batch::EpochSummary;
 use strata_storage::{ChainstateManager, CheckpointDbManager, L2BlockManager};
 use tracing::*;
 

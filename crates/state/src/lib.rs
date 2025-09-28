@@ -20,7 +20,6 @@ pub mod state_queue;
 use std::{boxed::Box, vec::Vec};
 
 use async_trait::async_trait;
-pub use strata_primitives::batch;
 use strata_primitives::l1::L1BlockCommitment;
 
 /// Interface to submit blocks to CSM in blocking or async fashion.
