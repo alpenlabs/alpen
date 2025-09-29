@@ -1,79 +1,62 @@
+use strata_codec::Codec;
 use strata_ee_chain_types::BlockInputs;
 
 use crate::{errors::EnvResult, outputs::ExecBlockOutput};
 
 type Hash = [u8; 32];
 
+/// Represents a partially-loaded state, including any information we would need
+/// to manipulate it and compute state roots.
+pub trait ExecPartialState: Codec + Sized {
+    /// Computes the state root of a partial state.
+    fn compute_state_root(&self) -> EnvResult<Hash>;
+}
+
+/// Represents an execution block header.
+pub trait ExecHeader: Clone + Codec + Sized {
+    /// Gets the state root field.
+    fn get_state_root(&self) -> Hash;
+
+    /// Computes the exec block ID.
+    fn compute_block_id(&self) -> Hash;
+}
+
+/// Represents a full execution block, with whatever information needed to
+/// execute it on top of a pre-state.
+pub trait ExecBlock: Codec + Sized {
+    /// The block's header type.
+    type Header: ExecHeader;
+
+    /// Gets the block's header.
+    fn get_header(&self) -> Self::Header;
+}
+
 /// Execution environment.
 pub trait ExecutionEnvironment: Sized {
     /// Partial execution chain state.
-    type PartialState<'s>: Sized;
+    type PartialState: ExecPartialState;
 
     /// Execution block header.
-    type Header<'h>: Sized;
+    type Header: ExecHeader;
 
     /// Execution block.
-    type Block<'b>: Sized;
-
-    /// Compacted version of a block that must be "executionally equivalent" to
-    /// the block.
-    type Summary<'b>: Sized;
+    type Block: ExecBlock;
 
     /// Write batch that can be applied to the partial state.
     type WriteBatch: Sized;
 
-    /// Decodes a partial state from a buf.
-    fn decode_partial_state<'s>(buf: &'s [u8]) -> EnvResult<Self::PartialState<'s>>;
-
-    /// Computes the state root of a partial state.
-    fn compute_state_root(ps: &Self::PartialState<'_>) -> EnvResult<Hash>;
-
-    /// Decodes a header from a buf.
-    fn decode_header<'h>(buf: &'h [u8]) -> EnvResult<Self::Header<'h>>;
-
-    /// Gets the state root from a parsed header.
-    fn get_header_state_root(h: &Self::Header<'_>) -> Hash;
-
-    /// Decodes a block from a buf.
-    fn decode_block<'b>(buf: &'b [u8]) -> EnvResult<Self::Block<'b>>;
-
-    /// Gets a block's header.
-    fn get_block_header<'b>(block: &Self::Block<'b>) -> Self::Header<'b>;
-
-    /// Decodes a block summary from a buf.
-    fn decode_block_summary<'b>(buf: &'b [u8]) -> EnvResult<Self::Summary<'b>>;
-
-    /// Computes a block's ID from its header.
-    fn compute_block_id(h: &Self::Header<'_>) -> Hash;
-
     /// Processes a block, returning a block execution output.
     fn process_block(
         &self,
-        pre_state: &Self::PartialState<'_>,
-        block: &Self::Block<'_>,
+        pre_state: &Self::PartialState,
+        block: &Self::Block,
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>>;
-
-    /// Processes a summary, returning a block execution output.
-    fn process_block_summary(
-        &self,
-        pre_state: &Self::PartialState<'_>,
-        summary: &Self::Summary<'_>,
-    ) -> EnvResult<ExecBlockOutput<Self>>;
-
-    /// Checks if a block summary is executionally-equivalent to the block, such
-    /// that it produces the same post-state and outputs.
-    fn verify_block_summary(
-        &self,
-        pre_state: &Self::PartialState<'_>,
-        block: &Self::Block<'_>,
-        summary: &Self::Summary<'_>,
-    ) -> EnvResult<bool>;
 
     /// Applies a pending write batch into the partial state.
     fn merge_write_into_state(
         &self,
-        state: &mut Self::PartialState<'_>,
+        state: &mut Self::PartialState,
         wb: &Self::WriteBatch,
     ) -> EnvResult<()>;
 }

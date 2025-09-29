@@ -56,8 +56,30 @@ impl EeAccountState {
         self.pending_inputs.push(inp);
     }
 
+    pub fn remove_pending_inputs(&mut self, n: usize) -> bool {
+        if self.pending_inputs.len() < n {
+            return false;
+        } else {
+            self.pending_inputs.drain(..n);
+            true
+        }
+    }
+
     pub fn pending_fincls(&self) -> &[PendingFinclEntry] {
         &self.pending_fincls
+    }
+
+    pub fn add_pending_fincl(&mut self, inp: PendingFinclEntry) {
+        self.pending_fincls.push(inp);
+    }
+
+    pub fn remove_pending_fincls(&mut self, n: usize) -> bool {
+        if self.pending_fincls.len() < n {
+            return false;
+        } else {
+            self.pending_fincls.drain(..n);
+            true
+        }
     }
 }
 

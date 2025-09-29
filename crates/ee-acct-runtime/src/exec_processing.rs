@@ -1,9 +1,11 @@
 //! Procedures relating more specifically to execution processing.
 
 use strata_acct_types::Hash;
+use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
     CommitBlockData, CommitChainSegment, CommitMsgData, EeAccountState, EnvError, EnvResult,
-    ExecBlockOutput, ExecutionEnvironment,
+    ExecBlock, ExecBlockOutput, ExecHeader, ExecPartialState, ExecutionEnvironment,
+    UpdateExtraData,
 };
 use strata_ee_chain_types::{BlockInputs, ExecBlockNotpackage};
 
@@ -13,22 +15,22 @@ struct ChainVerificationState<'v, E: ExecutionEnvironment> {
     uvstate: &'v mut UpdateVerificationState,
     ee: &'v E,
 
-    exec_state: E::PartialState<'v>,
-    last_exec_header: E::Header<'v>,
+    exec_state: E::PartialState,
+    last_exec_header: E::Header,
     last_exec_blkid: Hash,
 }
 
 impl<'v, E: ExecutionEnvironment> ChainVerificationState<'v, E> {
     /// Computes the state root of the current chain verification state.
-    fn compute_state_root(&self) -> EnvResult<Hash> {
-        E::compute_state_root(&self.exec_state)
+    fn compute_cur_state_root(&self) -> EnvResult<Hash> {
+        self.exec_state.compute_state_root()
     }
 
-    /// Processes a block on top of the current exec state, producing and output
+    /// Processes a block on top of the current exec state, producing an output
     /// but not modifying the state.
     fn process_block(
         &self,
-        block: &E::Block<'_>,
+        block: &E::Block,
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<E>> {
         self.ee.process_block(&self.exec_state, block, inputs)
@@ -45,6 +47,7 @@ pub fn verify_chain_segment<E: ExecutionEnvironment>(
     cvstate: &mut ChainVerificationState<'_, E>,
     commit: &CommitMsgData,
     segment: &CommitChainSegment,
+    extra: &UpdateExtraData,
 ) -> EnvResult<()> {
     // 1. Make sure the last block of this package chain matches the exec blkid
     // that was committed.  This is enough for us, we don't actually care about
@@ -74,9 +77,10 @@ fn process_block<E: ExecutionEnvironment>(
     // TODO
 
     // 2. Decode the block and make sure the actual block ID matches.
-    let block = E::decode_block(block_data.raw_full_block())?;
-    let header = E::get_block_header(&block);
-    let blkid = E::compute_block_id(&header);
+    let block: E::Block =
+        decode_buf_exact(block_data.raw_full_block()).map_err(|_| EnvError::Decode)?;
+    let header = block.get_header();
+    let blkid = header.compute_block_id();
     if blkid != block_data.notpackage().exec_blkid() {
         return Err(EnvError::InconsistentCoinput);
     }
@@ -90,8 +94,8 @@ fn process_block<E: ExecutionEnvironment>(
 
     // 3. Apply writes and check state root.
     cvstate.apply_write_batch(exec_outp.write_batch())?;
-    let computed_sr = cvstate.compute_state_root()?;
-    let header_sr = E::get_header_state_root(&header);
+    let computed_sr = cvstate.compute_cur_state_root()?;
+    let header_sr = header.get_state_root();
     if computed_sr != header_sr {
         return Err(EnvError::InconsistentCoinput);
     }
@@ -108,13 +112,20 @@ fn process_block<E: ExecutionEnvironment>(
     Ok(())
 }
 
-pub fn apply_commit(astate: &mut EeAccountState, commit: &CommitMsgData) -> EnvResult<()> {
+pub fn apply_commit(
+    astate: &mut EeAccountState,
+    commit: &CommitMsgData,
+    extra: &UpdateExtraData,
+) -> EnvResult<()> {
     // 1. The first part is easy, we just update the value.
     astate.set_last_exec_blkid(commit.chunk_commitment());
 
     // 2. The second part is a little harder, we have to figure out what pending
     // inputs we're consuming from the state so we can remove those.
-    // TODO
+    astate.remove_pending_inputs(extra.processed_inputs() as usize);
+    astate.remove_pending_fincls(extra.processed_fincls() as usize);
+
+    // TODO update tracked balance?  this is a bit harder to reason about
 
     Ok(())
 }

@@ -187,6 +187,8 @@ strata-test-utils-tx-indexer = { path = "crates/test-utils/tx-indexer" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
+strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 
@@ -392,7 +394,6 @@ inherits = "release"
 lto = "off"
 opt-level = 0
 strip = true
-
 
 [patch.crates-io]
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee", rev = "ffd5020e9c2940e1d5cfb49900b4a17518f24ec3" }
