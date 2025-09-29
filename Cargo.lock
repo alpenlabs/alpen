@@ -14240,12 +14240,15 @@ dependencies = [
  "bitvec",
  "borsh",
  "rand 0.8.5",
+ "serde_json",
  "strata-asm-common",
+ "strata-asm-proto-checkpointing-v0",
  "strata-asm-txs-admin",
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
+ "zkaleido",
 ]
 
 [[package]]

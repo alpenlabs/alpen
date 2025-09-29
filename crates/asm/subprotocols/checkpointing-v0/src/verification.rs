@@ -46,7 +46,7 @@ pub fn process_checkpoint_v0(
     verify_checkpoint_proof(checkpoint, state)?;
 
     if let Some(previous) = &state.last_checkpoint {
-        verify_state_transition(previous, checkpoint)?;
+        verify_epoch_continuity(previous, checkpoint)?;
     }
 
     state.update_with_checkpoint(checkpoint.clone(), current_l1_height);
@@ -92,7 +92,7 @@ fn verify_checkpoint_proof(
             epoch = checkpoint.batch_info().epoch(),
             "Checkpoint proof public values mismatch"
         );
-        return Err(CheckpointV0Error::InvalidProof);
+        return Err(CheckpointV0Error::InvalidCheckpointProof);
     }
 
     let is_empty_proof = proof_receipt.proof().is_empty();
@@ -103,6 +103,8 @@ fn verify_checkpoint_proof(
         );
 
     if is_empty_proof {
+        // TODO(STR-XXXX): Remove empty-proof acceptance once the predicate framework lands so this
+        // code cannot reach production unchanged.
         if allow_empty {
             logging::warn!(
                 epoch = checkpoint.batch_info().epoch(),
@@ -111,33 +113,24 @@ fn verify_checkpoint_proof(
             return Ok(());
         }
 
-        return Err(CheckpointV0Error::InvalidProof);
+        return Err(CheckpointV0Error::InvalidCheckpointProof);
     }
 
     if let Err(err) =
         verify_rollup_groth16_proof_receipt(&proof_receipt, &state.rollup_verifying_key)
     {
         logging::warn!("Groth16 verification failed: {err:?}");
-        return Err(CheckpointV0Error::InvalidProof);
+        return Err(CheckpointV0Error::InvalidCheckpointProof);
     }
 
     Ok(())
 }
 
-fn verify_state_transition(
+/// Ensure that the previous checkpoint's post state matches the current checkpoint's pre state.
+fn verify_epoch_continuity(
     prev_checkpoint: &Checkpoint,
     curr_checkpoint: &Checkpoint,
 ) -> Result<(), CheckpointV0Error> {
-    let prev_epoch = prev_checkpoint.batch_info().epoch();
-    let curr_epoch = curr_checkpoint.batch_info().epoch();
-
-    if curr_epoch != prev_epoch + 1 {
-        return Err(CheckpointV0Error::InvalidEpoch {
-            expected: prev_epoch + 1,
-            actual: curr_epoch,
-        });
-    }
-
     if prev_checkpoint
         .batch_transition()
         .chainstate_transition

@@ -8,10 +8,6 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 // Re-export current checkpoint types for compatibility
-// TODO: remove dependency of strata_primitives data structures to `TxFilterConfig`
-pub use strata_primitives::batch::{
-    BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar, SignedCheckpoint,
-};
 use strata_primitives::{
     batch::Checkpoint as PrimitivesCheckpoint, block_credential::CredRule, buf::Buf32,
     l1::L1BlockCommitment, params::ProofPublishMode, proof::RollupVerifyingKey,
@@ -54,15 +50,6 @@ pub struct CheckpointV0VerificationParams {
     pub proof_publish_mode: ProofPublishMode,
 }
 
-/// Verification context for a checkpoint transaction
-#[derive(Clone, Debug)]
-pub struct CheckpointV0VerifyContext {
-    /// Current L1 height when processing the checkpoint
-    pub current_l1_height: u64,
-    /// Public key that signed the checkpoint envelope transaction
-    pub checkpoint_signer_pubkey: Buf32,
-}
-
 /// Compatibility functions for working with current checkpoint types
 impl CheckpointV0VerifierState {
     /// Initialize from genesis parameters
@@ -85,12 +72,12 @@ impl CheckpointV0VerifierState {
         self.current_verified_epoch = epoch;
     }
 
-    /// Get the current epoch we've verified
+    /// Get the latest verified epoch
     pub fn current_epoch(&self) -> u64 {
         self.current_verified_epoch
     }
 
-    /// Get the epoch value we expect from the next checkpoint.
+    /// Get the epoch value we expect for the next checkpoint.
     pub fn expected_next_epoch(&self) -> u64 {
         match &self.last_checkpoint {
             Some(_) => self.current_verified_epoch + 1,
@@ -109,10 +96,16 @@ impl CheckpointV0VerifierState {
     /// # Returns
     /// `true` if the epoch can be accepted, `false` otherwise
     pub fn can_accept_epoch(&self, epoch: u64) -> bool {
-        if self.last_checkpoint.is_none() {
-            epoch == 0
-        } else {
-            epoch == self.current_verified_epoch + 1
-        }
+        epoch == self.expected_next_epoch()
+    }
+
+    /// Update the sequencer public key used to validate checkpoint signatures.
+    pub fn update_sequencer_key(&mut self, new_pubkey: Buf32) {
+        self.cred_rule = CredRule::SchnorrKey(new_pubkey);
+    }
+
+    /// Update the rollup verifying key used for proof verification.
+    pub fn update_rollup_verifying_key(&mut self, new_vk: RollupVerifyingKey) {
+        self.rollup_verifying_key = new_vk;
     }
 }

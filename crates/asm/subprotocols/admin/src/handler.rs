@@ -2,9 +2,11 @@ use strata_asm_common::{
     MsgRelayer,
     logging::{error, info},
 };
+use strata_asm_proto_checkpointing_v0::CheckpointingIncomingMsg;
 use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction};
 use strata_crypto::multisig::SchnorrMultisigSignature;
-use strata_primitives::roles::ProofType;
+use strata_primitives::{buf::Buf32, proof::RollupVerifyingKey, roles::ProofType};
+use zkaleido::VerifyingKey;
 
 use crate::{
     config::AdministrationSubprotoParams, error::AdministrationError, queued_update::QueuedUpdate,
@@ -21,24 +23,27 @@ use crate::{
 /// them and continuing with the next update to ensure system resilience.
 pub(crate) fn handle_pending_updates(
     state: &mut AdministrationSubprotoState,
-    _relayer: &mut impl MsgRelayer,
+    relayer: &mut impl MsgRelayer,
     current_height: u64,
 ) {
-    // Get all the update actions that are ready to be enacted
-    let actions_to_enact = state.process_queued(current_height);
+    let queued_updates = state.process_queued(current_height);
 
-    for action in actions_to_enact {
-        match action.action() {
+    for queued in queued_updates {
+        let (update_id, action) = queued.into_id_and_action();
+
+        match action {
             UpdateAction::Multisig(update) => {
                 match state.apply_multisig_update(update.role(), update.config()) {
                     Ok(_) => {
                         info!(
+                            update_id = update_id,
                             "Successfully applied multisig update to role {:?}",
                             update.role(),
                         );
                     }
                     Err(e) => {
                         error!(
+                            update_id = update_id,
                             "Failed to apply multisig update to role {:?}: {}",
                             update.role(),
                             e,
@@ -46,19 +51,40 @@ pub(crate) fn handle_pending_updates(
                     }
                 }
             }
-            UpdateAction::VerifyingKey(update) => match update.kind() {
-                ProofType::Asm => {
-                    // TODO: STR-1721 Emit ASM Log
+            UpdateAction::VerifyingKey(update) => {
+                let (vk, kind) = update.into_inner();
+                match kind {
+                    ProofType::Asm => {
+                        // TODO: STR-1721 Emit ASM Log
+                    }
+                    ProofType::OlStf => match deserialize_rollup_vk(&vk) {
+                        Ok(rollup_vk) => {
+                            relay_checkpoint_rollup_vk(relayer, rollup_vk);
+                            info!(
+                                update_id = update_id,
+                                "Forwarded rollup verifying key update to checkpoint subprotocol",
+                            );
+                        }
+                        Err(e) => {
+                            error!(
+                                update_id = update_id,
+                                error = %e,
+                                "Failed to decode rollup verifying key update for checkpoint",
+                            );
+                        }
+                    },
                 }
-                ProofType::OlStf => {
-                    // TODO: STR-1721 Send a InterprotoMsg to Checkpoint subprotocol
-                }
-            },
-            UpdateAction::OperatorSet(_update) => {
-                // TODO: STR-1721 Set an InterProtoMsg to the Bridge Subprotocol;
             }
-            UpdateAction::Sequencer(_update) => {
-                // TODO: STF-1721 Send a InterprotoMsg to the Checkpoint subprotocol
+            UpdateAction::OperatorSet(_update) => {
+                // TODO: STR-1721 Set an InterProtoMsg to the Bridge Subprotocol
+            }
+            UpdateAction::Sequencer(update) => {
+                let new_key = update.into_inner();
+                relay_checkpoint_sequencer_update(relayer, new_key);
+                info!(
+                    update_id = update_id,
+                    "Forwarded queued sequencer key update to checkpoint subprotocol",
+                );
             }
         }
     }
@@ -84,7 +110,7 @@ pub(crate) fn handle_action(
     action: MultisigAction,
     sig: SchnorrMultisigSignature,
     current_height: u64,
-    _relayer: &mut impl MsgRelayer,
+    relayer: &mut impl MsgRelayer,
     params: &AdministrationSubprotoParams,
 ) -> Result<(), AdministrationError> {
     // Determine the required role based on the action type
@@ -112,8 +138,13 @@ pub(crate) fn handle_action(
             // Generate a unique ID for this update
             let id = state.next_update_id();
             match update {
-                UpdateAction::Sequencer(_) => {
-                    // TODO: directly apply it without queuing
+                UpdateAction::Sequencer(update) => {
+                    let new_key = update.into_inner();
+                    relay_checkpoint_sequencer_update(relayer, new_key);
+                    info!(
+                        update_id = id,
+                        "Applied sequencer update immediately via checkpoint inter-proto message",
+                    );
                 }
                 action => {
                     // For all other update types, add to the queue with a future activation height
@@ -140,6 +171,20 @@ pub(crate) fn handle_action(
     Ok(())
 }
 
+fn relay_checkpoint_sequencer_update(relayer: &mut impl MsgRelayer, new_key: Buf32) {
+    let msg = CheckpointingIncomingMsg::UpdateSequencerKey(new_key);
+    relayer.relay_msg(&msg);
+}
+
+fn relay_checkpoint_rollup_vk(relayer: &mut impl MsgRelayer, rollup_vk: RollupVerifyingKey) {
+    let msg = CheckpointingIncomingMsg::UpdateRollupVerifyingKey(rollup_vk);
+    relayer.relay_msg(&msg);
+}
+
+fn deserialize_rollup_vk(vk: &VerifyingKey) -> Result<RollupVerifyingKey, serde_json::Error> {
+    serde_json::from_slice(vk.as_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use std::any::Any;
@@ -148,8 +193,16 @@ mod tests {
     use bitvec::prelude::*;
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
+<<<<<<< HEAD:crates/asm/subprotocols/admin/src/handler.rs
     use strata_asm_txs_admin::{
         actions::{CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate},
+=======
+    use strata_asm_proto_checkpointing_v0::CheckpointingIncomingMsg;
+    use strata_asm_txs_admin::{
+        actions::{
+            CancelAction, MultisigAction, UpdateAction,
+            updates::{seq::SequencerUpdate, vk::VerifyingKeyUpdate},
+        },
         test_utils::create_multisig_signature,
     };
     use strata_crypto::{
@@ -160,30 +213,41 @@ mod tests {
     };
     use strata_primitives::{
         buf::{Buf32, Buf64},
-        roles::Role,
+        proof::RollupVerifyingKey,
+        roles::{ProofType, Role},
     };
     use strata_test_utils::ArbitraryGenerator;
+    use zkaleido::VerifyingKey;
 
-    use super::handle_action;
+    use super::{handle_action, handle_pending_updates};
     use crate::{
         config::AdministrationSubprotoParams, error::AdministrationError,
-        state::AdministrationSubprotoState,
+        queued_update::QueuedUpdate, state::AdministrationSubprotoState,
     };
 
     struct MockRelayer {
         logs: Vec<AsmLogEntry>,
+        checkpoint_msgs: Vec<CheckpointingIncomingMsg>,
     }
 
     impl MockRelayer {
         fn new() -> Self {
-            Self { logs: Vec::new() }
+            Self {
+                logs: Vec::new(),
+                checkpoint_msgs: Vec::new(),
+            }
+        }
+
+        fn checkpoint_msgs(&self) -> &[CheckpointingIncomingMsg] {
+            &self.checkpoint_msgs
         }
     }
 
     impl MsgRelayer for MockRelayer {
-        fn relay_msg(&mut self, _m: &dyn InterprotoMsg) {
-            // Since we can't clone the dyn InterprotoMsg, just skip pushing messages in tests
-            // self.messages.push(m.clone_box());
+        fn relay_msg(&mut self, m: &dyn InterprotoMsg) {
+            if let Some(msg) = m.as_dyn_any().downcast_ref::<CheckpointingIncomingMsg>() {
+                self.checkpoint_msgs.push(msg.clone());
+            }
         }
 
         fn emit_log(&mut self, log: AsmLogEntry) {
@@ -389,6 +453,7 @@ mod tests {
 
         // Generate random sequencer update actions
         let updates: Vec<SequencerUpdate> = arb.generate();
+        let update_count = updates.len();
 
         // Create signer indices (signers 0 and 2)
         let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
@@ -429,6 +494,50 @@ mod tests {
 
             // Verify the update was not queued (applied immediately)
             assert!(state.find_queued(&initial_next_id).is_none());
+        }
+
+        assert_eq!(relayer.checkpoint_msgs().len(), update_count);
+        assert!(
+            relayer
+                .checkpoint_msgs()
+                .iter()
+                .all(|msg| matches!(msg, CheckpointingIncomingMsg::UpdateSequencerKey(_)))
+        );
+    }
+
+    #[test]
+    fn test_rollup_verifying_key_update_forwarded_to_checkpoint() {
+        let (params, _, _) = create_test_params();
+        let mut state = AdministrationSubprotoState::new(&params);
+        let mut relayer = MockRelayer::new();
+
+        let rollup_vk = RollupVerifyingKey::NativeVerifyingKey;
+        let vk_bytes = serde_json::to_vec(&rollup_vk).expect("serialize vk");
+        let verifying_key = VerifyingKey::new(vk_bytes);
+
+        let update = VerifyingKeyUpdate::new(verifying_key, ProofType::OlStf);
+        let update_id = state.next_update_id();
+        let activation_height = 42;
+        state.enqueue(QueuedUpdate::new(
+            update_id,
+            update.into(),
+            activation_height,
+        ));
+        state.increment_next_update_id();
+
+        handle_pending_updates(&mut state, &mut relayer, activation_height);
+
+        assert!(state.queued().is_empty());
+        assert_eq!(relayer.checkpoint_msgs().len(), 1);
+        match &relayer.checkpoint_msgs()[0] {
+            CheckpointingIncomingMsg::UpdateRollupVerifyingKey(vk) => {
+                let serialized = serde_json::to_vec(vk).expect("serialize forwarded vk");
+                assert_eq!(
+                    serialized,
+                    serde_json::to_vec(&rollup_vk).expect("serialize")
+                );
+            }
+            _ => panic!("expected rollup verifying key update to checkpoint"),
         }
     }
 

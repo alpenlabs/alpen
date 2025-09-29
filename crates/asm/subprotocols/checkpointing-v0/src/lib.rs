@@ -1,4 +1,4 @@
-//! Strata Checkpointing v0 Subprotocol
+//! Checkpointing v0 Subprotocol
 //!
 //! This crate implements the checkpointing v0 subprotocol that maintains feature parity
 //! with the current checkpointing system while incorporating SPS-62 concepts where
@@ -8,18 +8,17 @@
 //!
 //! The checkpointing v0 subprotocol is responsible for:
 //!
-//! - **Checkpoint Verification**: Validates checkpoints using current verification system
+//! - **Checkpoint Verification**: Validates checkpoints using TN1 verification logic
 //! - **SPS-50 Envelope Parsing**: Processes envelope transactions
+//! - **Upgradability**: Receives upgrade messages from the Administration subprotocol and processes
+//!   those inter-protocol messages
 //! - **Feature Parity**: Maintains compatibility with existing checkpoint behavior
 //! - **Bridge Integration**: Extracts and forwards withdrawal messages to bridge subprotocol
 //!
 //! # Key Design Decisions
 //!
 //! - **Current Format Compatibility**: Uses existing checkpoint data structures for verification
-//! - **Envelope Parsing**: Follows administration subprotocol pattern for SPS-50 envelope parsing
-//! - **Proof Verification Bridge**: Delegates to current groth16 verification until predicates are
-//!   defined
-//! - **Simplified Auxiliary Input**: Uses basic L1 context instead of full SPS-62 oracles(?)
+//! - **Proof Verification**: Delegates to current groth16 verification until predicates are defined
 //!
 //! # SPS-62 Compatibility Notes
 //!
@@ -31,18 +30,14 @@
 //! - Placeholder structures for future SPS-62 migration
 // Module declarations
 mod error;
+mod msgs;
 mod subprotocol;
 mod types;
 mod verification;
 
 // Public re-exports
 pub use error::{CheckpointV0Error, CheckpointV0Result};
-// Re-export checkpoint transaction helpers
-pub use strata_asm_proto_checkpointing_txs::{
-    encode_checkpoint_tag, extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
-    CHECKPOINTING_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
-};
-pub use subprotocol::{CheckpointingV0Config, CheckpointingV0Subproto};
-pub use types::*;
+pub use msgs::CheckpointingIncomingMsg;
+pub use subprotocol::{CheckpointingV0Params, CheckpointingV0Subproto};
 // Re-export verification functions for testing and integration
 pub use verification::process_checkpoint_v0;
