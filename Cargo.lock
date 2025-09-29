@@ -14280,7 +14280,6 @@ dependencies = [
  "bitcoin",
  "borsh",
  "strata-asm-common",
- "strata-l1-txfmt",
  "strata-l1tx",
  "strata-ol-chainstate-types",
  "strata-primitives",
