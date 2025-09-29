@@ -1,7 +1,5 @@
 //! Transaction indexing tests and helpers.
 
-// TODO: Update this crate so the module works with the ASM + SPS-50 tag flow, allowing it to drive
-// ASM-focused tests.
 use bitcoin::{
     absolute::LockTime,
     block::{Header, Version},

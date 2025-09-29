@@ -7,7 +7,6 @@ use bitcoin::{
     blockdata::{opcodes::all::OP_CHECKSIG, script},
     hashes::Hash,
     key::{TapTweak, TweakedPublicKey, UntweakedKeypair},
-    script::PushBytesBuf,
     secp256k1::{
         constants::SCHNORR_SIGNATURE_SIZE, schnorr::Signature, Message, XOnlyPublicKey, SECP256K1,
     },
@@ -76,15 +75,6 @@ pub enum EnvelopeError {
     #[error("insufficient funds for tx (need {0} sats, have {1} sats)")]
     NotEnoughUtxos(u64, u64),
 
-    #[error("envelope expects exactly one payload (got {0})")]
-    InvalidPayloadCount(usize),
-
-    #[error("failed to resolve SPS-50 tag: {0}")]
-    TagResolution(String),
-
-    #[error("failed to encode SPS-50 tag into OP_RETURN output")]
-    InvalidEnvelopeTag,
-
     #[error("Could not sign raw transaction: {0}")]
     SignRawTransaction(String),
 
@@ -103,12 +93,6 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payloads: &[L1Payload],
     ctx: &WriterContext<R>,
 ) -> anyhow::Result<(Transaction, Transaction)> {
-    // SPS-50 envelopes currently carry a single protocol transaction, so btcio enforces
-    // exactly one payload until multi-payload envelopes are supported.
-    if payloads.len() != 1 {
-        return Err(EnvelopeError::InvalidPayloadCount(payloads.len()).into());
-    }
-
     let network = ctx.client.network().await?;
     let utxos = ctx.client.get_utxos().await?;
 
@@ -123,19 +107,13 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         fee_rate,
         BITCOIN_DUST_LIMIT,
     );
-    let payload = &payloads[0];
-    let tag = ctx
-        .encode_tag(payload)
-        .map_err(|e| EnvelopeError::TagResolution(e.to_string()))?;
-
-    create_envelope_transactions(&env_config, &tag, payload, utxos)
+    create_envelope_transactions(&env_config, payloads, utxos)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
-    envelope_tag: &[u8],
-    payload: &L1Payload,
+    payloads: &[L1Payload],
     utxos: Vec<ListUnspent>,
 ) -> Result<(Transaction, Transaction), EnvelopeError> {
     // Create commit key
@@ -143,20 +121,12 @@ pub fn create_envelope_transactions(
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
     // Start creating envelope content
-    let reveal_script = build_reveal_script(
-        env_config.params.as_ref(),
-        &public_key,
-        std::slice::from_ref(payload),
-    )?;
+    let reveal_script = build_reveal_script(env_config.params.as_ref(), &public_key, payloads)?;
     // Create spend info for tapscript
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())?
         .finalize(SECP256K1, public_key)
         .map_err(|_| anyhow!("Could not build taproot spend info"))?;
-
-    let op_return_push = PushBytesBuf::try_from(envelope_tag.to_vec())
-        .map_err(|_| EnvelopeError::InvalidEnvelopeTag)?;
-    let op_return_script = ScriptBuf::new_op_return(op_return_push.clone());
 
     // Create reveal address
     let reveal_address = Address::p2tr(
@@ -173,7 +143,6 @@ pub fn create_envelope_transactions(
         env_config.fee_rate,
         &reveal_script,
         &taproot_spend_info,
-        &op_return_script,
     );
 
     // Build commit tx
@@ -197,7 +166,6 @@ pub fn create_envelope_transactions(
         &taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
-        &op_return_script,
     )?;
 
     // Sign reveal tx
@@ -408,18 +376,11 @@ pub fn build_reveal_transaction(
     fee_rate: u64,
     reveal_script: &ScriptBuf,
     control_block: &ControlBlock,
-    op_return_script: &ScriptBuf,
 ) -> Result<Transaction, EnvelopeError> {
-    let outputs: Vec<TxOut> = vec![
-        TxOut {
-            value: Amount::from_sat(0),
-            script_pubkey: op_return_script.clone(),
-        },
-        TxOut {
-            value: Amount::from_sat(output_value),
-            script_pubkey: recipient.script_pubkey(),
-        },
-    ];
+    let outputs: Vec<TxOut> = vec![TxOut {
+        value: Amount::from_sat(output_value),
+        script_pubkey: recipient.script_pubkey(),
+    }];
 
     let v_out_for_reveal = 0u32;
     let input_utxo = input_transaction.output[v_out_for_reveal as usize].clone();
@@ -483,22 +444,13 @@ fn calculate_commit_output_value(
     fee_rate: u64,
     reveal_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
-    op_return_script: &ScriptBuf,
 ) -> u64 {
-    let outputs = [
-        TxOut {
-            value: Amount::from_sat(0),
-            script_pubkey: op_return_script.clone(),
-        },
-        TxOut {
-            value: Amount::from_sat(reveal_value),
-            script_pubkey: recipient.script_pubkey(),
-        },
-    ];
-
     get_size(
         &default_txin(),
-        &outputs,
+        &[TxOut {
+            script_pubkey: recipient.script_pubkey(),
+            value: Amount::from_sat(reveal_value),
+        }],
         Some(reveal_script),
         Some(
             &taproot_spend_info
@@ -579,7 +531,7 @@ mod tests {
     use super::*;
     use crate::{
         test_utils::{test_context::get_writer_context, TestBitcoinClient},
-        writer::{builder::EnvelopeError, context::EnvelopeTagEncoder},
+        writer::builder::EnvelopeError,
     };
 
     fn get_mock_data() -> (
@@ -716,9 +668,6 @@ mod tests {
         .unwrap(); // should be 33 bytes
 
         let inp_txn = get_txn_from_utxo(utxo, &ctx.sequencer_address);
-        let envelope_tag = vec![0xAAu8, 0xBB, 0xCC];
-        let op_return_script =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(envelope_tag.clone()).unwrap());
         let mut tx = super::build_reveal_transaction(
             inp_txn,
             ctx.sequencer_address.clone(),
@@ -726,7 +675,6 @@ mod tests {
             8,
             &_script,
             &control_block,
-            &op_return_script,
         )
         .unwrap();
 
@@ -737,14 +685,10 @@ mod tests {
         assert_eq!(tx.input.len(), 1);
         assert_eq!(tx.input[0].previous_output.vout, utxo.vout);
 
-        assert_eq!(tx.output.len(), 2);
-        let expected_op_return =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(envelope_tag.clone()).unwrap());
-        assert_eq!(tx.output[0].value.to_sat(), 0);
-        assert_eq!(tx.output[0].script_pubkey, expected_op_return);
-        assert_eq!(tx.output[1].value.to_sat(), ctx.config.reveal_amount);
+        assert_eq!(tx.output.len(), 1);
+        assert_eq!(tx.output[0].value.to_sat(), ctx.config.reveal_amount);
         assert_eq!(
-            tx.output[1].script_pubkey,
+            tx.output[0].script_pubkey,
             ctx.sequencer_address.script_pubkey()
         );
 
@@ -752,9 +696,6 @@ mod tests {
         let utxo = utxos.get(2).unwrap();
         let inp_txn = get_txn_from_utxo(utxo, &ctx.sequencer_address);
         let inp_required = 5000000000;
-        let envelope_tag = vec![0xAAu8, 0xBB, 0xCC];
-        let op_return_script =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(envelope_tag.clone()).unwrap());
         let tx = super::build_reveal_transaction(
             inp_txn,
             ctx.sequencer_address.clone(),
@@ -762,7 +703,6 @@ mod tests {
             750,
             &_script,
             &control_block,
-            &op_return_script,
         );
 
         assert!(tx.is_err());
@@ -773,8 +713,7 @@ mod tests {
     fn test_create_envelope_transactions() {
         let (ctx, _, _, utxos) = get_mock_data();
 
-        let payload = L1Payload::new_checkpoint(vec![0u8; 100]);
-        let tag = vec![0xAAu8, 0xBB, 0xCC];
+        let payload = L1Payload::new_da(vec![0u8; 100]);
 
         let env_config = EnvelopeConfig::new(
             ctx.params.clone(),
@@ -784,13 +723,12 @@ mod tests {
             546,
         );
         let (commit, reveal) =
-            super::create_envelope_transactions(&env_config, &tag, &payload, utxos.to_vec())
-                .unwrap();
+            super::create_envelope_transactions(&env_config, &[payload], utxos.to_vec()).unwrap();
 
         // check outputs
         assert_eq!(commit.output.len(), 2, "commit tx should have 2 outputs");
 
-        assert_eq!(reveal.output.len(), 2, "reveal tx should have 2 outputs");
+        assert_eq!(reveal.output.len(), 1, "reveal tx should have 1 output");
 
         assert_eq!(
             commit.input[0].previous_output.txid, utxos[2].txid,
@@ -811,49 +749,11 @@ mod tests {
             "reveal should use commit as input"
         );
 
-        let expected_op_return =
-            ScriptBuf::new_op_return(PushBytesBuf::try_from(tag.clone()).unwrap());
-        assert_eq!(reveal.output[0].value.to_sat(), 0);
-        assert_eq!(reveal.output[0].script_pubkey, expected_op_return);
         assert_eq!(
-            reveal.output[1].script_pubkey,
-            ctx.sequencer_address.script_pubkey()
+            reveal.output[0].script_pubkey,
+            ctx.sequencer_address.script_pubkey(),
+            "reveal should pay to the correct address"
         );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_build_envelope_txs_rejects_multiple_payloads() {
-        let (ctx, _, _, _) = get_mock_data();
-        let payload = L1Payload::new_checkpoint(vec![0u8; 10]);
-
-        let err = build_envelope_txs(&[payload.clone(), payload], ctx.as_ref())
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err.downcast_ref::<EnvelopeError>(),
-            Some(EnvelopeError::InvalidPayloadCount(2))
-        ));
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_build_envelope_txs_tag_resolution_error() {
-        let (ctx, _, _, _) = get_mock_data();
-        let failing_encoder: Arc<EnvelopeTagEncoder> =
-            Arc::new(|_| -> anyhow::Result<Vec<u8>> { Err(anyhow!("no tag")) });
-        let failing_ctx = Arc::new(WriterContext::new(
-            ctx.params.clone(),
-            ctx.config.clone(),
-            ctx.sequencer_address.clone(),
-            ctx.client.clone(),
-            ctx.status_channel.clone(),
-            failing_encoder,
-        ));
-
-        let payload = L1Payload::new_checkpoint(vec![0u8; 16]);
-        let err = build_envelope_txs(&[payload], failing_ctx.as_ref())
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("failed to resolve SPS-50 tag"));
     }
 
     // TODO: make the tests more comprehensive

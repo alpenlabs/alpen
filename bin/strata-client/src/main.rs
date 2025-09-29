@@ -19,11 +19,10 @@ use bitcoind_async_client::{traits::Reader, Client};
 use errors::InitError;
 use jsonrpsee::Methods;
 use rpc_client::sync_client;
-use strata_asm_proto_checkpointing_txs::encode_checkpoint_tag;
 use strata_btcio::{
     broadcaster::{spawn_broadcaster_task, L1BroadcastHandle},
     reader::query::bitcoin_data_reader_task,
-    writer::{start_envelope_task, EnvelopeTagEncoder},
+    writer::start_envelope_task,
 };
 use strata_common::{
     logging,
@@ -40,10 +39,7 @@ use strata_db::{
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
-use strata_primitives::{
-    l1::payload::L1PayloadType,
-    params::{Params, ProofPublishMode},
-};
+use strata_primitives::params::{Params, ProofPublishMode};
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,
 };
@@ -406,22 +402,6 @@ fn start_sequencer_tasks(
 
     let btcio_config = Arc::new(config.btcio.clone());
 
-    let magic_bytes = params.rollup().magic_bytes;
-
-    // NOTE: Only checkpoint envelopes are handled right now. When new SPS-50 tagged
-    // transactions are introduced, extend this encoder to cover their tags so btcio
-    // stays agnostic of protocol-specific details.
-    let tag_encoder: Arc<EnvelopeTagEncoder> =
-        Arc::new(move |payload| -> anyhow::Result<Vec<u8>> {
-            match payload.payload_type() {
-                L1PayloadType::Checkpoint => Ok(encode_checkpoint_tag(magic_bytes)),
-                _ => Err(anyhow!(
-                    "unsupported SPS-50 tag for payload type {:?}",
-                    payload.payload_type()
-                )),
-            }
-        });
-
     // Start envelope tasks
     let envelope_handle = start_envelope_task(
         executor,
@@ -433,7 +413,6 @@ fn start_sequencer_tasks(
         status_channel.clone(),
         pool.clone(),
         broadcast_handle.clone(),
-        tag_encoder,
     )?;
 
     let template_manager_handle = start_template_manager_task(&ctx, executor);

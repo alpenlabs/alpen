@@ -9,7 +9,10 @@ use bitcoin::{Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use strata_asm_types::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
 use strata_config::btcio::ReaderConfig;
-use strata_l1_txfmt::ParseConfig;
+use strata_l1tx::{
+    filter::{indexer::index_block, types::TxFilterConfig},
+    messages::RelevantTxEntry,
+};
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
     l1::{BtcParams, L1BlockCommitment, L1BlockId},
@@ -22,7 +25,13 @@ use tracing::*;
 
 use super::event::L1Event;
 use crate::{
-    reader::{event::BlockData, handler::handle_bitcoin_event, state::ReaderState},
+    reader::{
+        event::BlockData,
+        handler::handle_bitcoin_event,
+        state::ReaderState,
+        tx_indexer::ReaderTxVisitorImpl,
+        utils::{find_checkpoint_in_event, find_last_checkpoint_chainstate},
+    },
     status::{apply_status_updates, L1StatusUpdate},
 };
 
@@ -173,9 +182,22 @@ async fn init_reader_state<R: Reader>(
         real_cur_height = height;
     }
 
+    let params = ctx.params.clone();
+    let mut filter_config = TxFilterConfig::derive_from(params.rollup())?;
     let epoch = ctx.status_channel.get_cur_chain_epoch().unwrap_or(0);
 
-    let state = ReaderState::new(real_cur_height + 1, lookback, init_queue, epoch);
+    // update filterconfig based on chainstate of last seen checkpoint
+    if let Some(chainstate) = find_last_checkpoint_chainstate(&ctx.storage).await? {
+        filter_config.update_from_chainstate(&chainstate);
+    }
+
+    let state = ReaderState::new(
+        real_cur_height + 1,
+        lookback,
+        init_queue,
+        filter_config,
+        epoch,
+    );
     Ok(state)
 }
 
@@ -223,6 +245,15 @@ async fn poll_for_new_blocks<R: Reader>(
     for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, ev)) => {
+                if let Some(checkpt) = find_checkpoint_in_event(&ev) {
+                    // if we have a checkpoint in this block, update filterconfig based on this
+                    let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().chainstate())
+                        .expect("deserialize chainstate");
+
+                    state
+                        .filter_config_mut()
+                        .update_from_chainstate(&chainstate);
+                }
                 events.push(ev);
 
                 info!(%fetch_height, %blkid, "accepted new block");
@@ -277,7 +308,7 @@ async fn fetch_and_process_block<R: Reader>(
 
 /// Processes a bitcoin Block to return corresponding `L1Event` and `BlockHash`.
 async fn process_block<R: Reader>(
-    ctx: &ReaderContext<R>,
+    _ctx: &ReaderContext<R>,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
     height: u64,
@@ -285,15 +316,13 @@ async fn process_block<R: Reader>(
 ) -> anyhow::Result<(L1Event, BlockHash)> {
     let txs = block.txdata.len();
 
-    let parser = ParseConfig::new(ctx.params.rollup().magic_bytes);
-    let tagged_tx_indices: Vec<u32> = block
-        .txdata
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, tx)| parser.try_parse_tx(tx).ok().map(|_| idx as u32))
-        .collect();
+    // Index all the stuff in the block.
+    let entries: Vec<RelevantTxEntry> =
+        index_block(&block, ReaderTxVisitorImpl::new, state.filter_config());
 
-    let block_data = BlockData::new(height, block, tagged_tx_indices);
+    // TODO: do stuffs with dep_reqs and da_entries
+
+    let block_data = BlockData::new(height, block, entries);
 
     let l1blkid = block_data.block().block_hash();
 

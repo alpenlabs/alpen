@@ -1,4 +1,5 @@
 use bitcoin::Block;
+use strata_l1tx::messages::RelevantTxEntry;
 use strata_primitives::l1::L1BlockCommitment;
 
 /// L1 events that we observe and want the persistence task to work on.
@@ -23,18 +24,16 @@ pub(crate) struct BlockData {
     // TODO remove?
     block: Block,
 
-    /// Transaction indexes in the block that contain SPS-50 tags
-    // TODO: Replace ad-hoc tagged index tracking with fully parsed SPS-50 envelopes
-    // once have clear lifecycle and storage strategy for envelopes.
-    tagged_tx_indices: Vec<u32>,
+    /// Transactions in the block that contain protocol operations
+    relevant_txs: Vec<RelevantTxEntry>,
 }
 
 impl BlockData {
-    pub(crate) fn new(block_num: u64, block: Block, tagged_tx_indices: Vec<u32>) -> Self {
+    pub(crate) fn new(block_num: u64, block: Block, relevant_txs: Vec<RelevantTxEntry>) -> Self {
         Self {
             block_num,
             block,
-            tagged_tx_indices,
+            relevant_txs,
         }
     }
 
@@ -46,7 +45,7 @@ impl BlockData {
         &self.block
     }
 
-    pub(crate) fn tagged_tx_indices(&self) -> &[u32] {
-        &self.tagged_tx_indices
+    pub(crate) fn relevant_txs(&self) -> &[RelevantTxEntry] {
+        &self.relevant_txs
     }
 }

@@ -25,9 +25,7 @@ use crate::{
     broadcaster::L1BroadcastHandle,
     status::{apply_status_updates, L1StatusUpdate},
     writer::{
-        builder::EnvelopeError,
-        context::{EnvelopeTagEncoder, WriterContext},
-        signer::create_and_sign_payload_envelopes,
+        builder::EnvelopeError, context::WriterContext, signer::create_and_sign_payload_envelopes,
     },
 };
 
@@ -127,7 +125,6 @@ pub fn start_envelope_task<D: L1WriterDatabase + Send + Sync + 'static>(
     status_channel: StatusChannel,
     pool: threadpool::ThreadPool,
     broadcast_handle: Arc<L1BroadcastHandle>,
-    tag_encoder: Arc<EnvelopeTagEncoder>,
 ) -> anyhow::Result<Arc<EnvelopeHandle>> {
     let writer_ops = Arc::new(Context::new(db).into_ops(pool));
     let next_watch_payload_idx = get_next_payloadidx_to_watch(writer_ops.as_ref())?;
@@ -140,7 +137,6 @@ pub fn start_envelope_task<D: L1WriterDatabase + Send + Sync + 'static>(
         sequencer_address,
         bitcoin_client,
         status_channel,
-        tag_encoder,
     ));
 
     let wops = writer_ops.clone();
