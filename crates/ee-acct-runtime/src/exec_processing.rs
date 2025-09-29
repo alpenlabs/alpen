@@ -1,22 +1,70 @@
 //! Procedures relating more specifically to execution processing.
 
+use digest::Digest;
+use sha2::Sha256;
 use strata_acct_types::Hash;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
     CommitBlockData, CommitChainSegment, CommitMsgData, EeAccountState, EnvError, EnvResult,
     ExecBlock, ExecBlockOutput, ExecHeader, ExecPartialState, ExecutionEnvironment,
-    UpdateExtraData,
+    PendingInputEntry, UpdateExtraData,
 };
-use strata_ee_chain_types::{BlockInputs, ExecBlockNotpackage};
+use strata_ee_chain_types::{BlockInputs, ExecBlockNotpackage, SubjectDepositData};
 
 use crate::verification_state::UpdateVerificationState;
+
+struct InputTracker<'a> {
+    expected_inputs: &'a [PendingInputEntry],
+    consumed: usize,
+}
+
+impl<'a> InputTracker<'a> {
+    pub fn new(expected_inputs: &'a [PendingInputEntry]) -> Self {
+        Self {
+            expected_inputs,
+            consumed: 0,
+        }
+    }
+
+    fn consumed(&self) -> usize {
+        self.consumed
+    }
+
+    fn has_next(&self) -> bool {
+        self.consumed < self.expected_inputs.len()
+    }
+
+    fn expected_next(&self) -> Option<&'a PendingInputEntry> {
+        if self.has_next() {
+            Some(&self.expected_inputs[self.consumed])
+        } else {
+            None
+        }
+    }
+
+    /// Checks if an input matches the next value we expect to consume.  If it
+    /// matches, increments the pointer.  Errors on mismatch.
+    pub fn consume_input(&mut self, input: &PendingInputEntry) -> EnvResult<()> {
+        let Some(exp_next) = self.expected_next() else {
+            return Err(EnvError::MalformedCoinput);
+        };
+
+        if input != exp_next {
+            return Err(EnvError::MalformedCoinput);
+        }
+
+        Ok(())
+    }
+}
 
 struct ChainVerificationState<'v, E: ExecutionEnvironment> {
     uvstate: &'v mut UpdateVerificationState,
     ee: &'v E,
 
+    input_tracker: InputTracker<'v>,
+
     exec_state: E::PartialState,
-    last_exec_header: E::Header,
+    last_exec_header: <E::Block as ExecBlock>::Header,
     last_exec_blkid: Hash,
 }
 
@@ -36,9 +84,36 @@ impl<'v, E: ExecutionEnvironment> ChainVerificationState<'v, E> {
         self.ee.process_block(&self.exec_state, block, inputs)
     }
 
-    /// Merges a write batch into the current state.
-    fn apply_write_batch(&mut self, wb: &E::WriteBatch) -> EnvResult<()> {
-        self.ee.merge_write_into_state(&mut self.exec_state, wb)
+    /// Merges a write batch into the current state, also accepting a
+    /// corresponding header to check the newly-computed state root against.
+    ///
+    /// This does NOT check that the blkid matches the header.
+    fn apply_write_batch(
+        &mut self,
+        wb: &E::WriteBatch,
+        h: <E::Block as ExecBlock>::Header,
+        blkid: Hash,
+    ) -> EnvResult<()> {
+        self.ee.merge_write_into_state(&mut self.exec_state, wb)?;
+        let new_sr = self.compute_cur_state_root()?;
+
+        if new_sr != h.get_state_root() {
+            return Err(EnvError::InconsistentCoinput);
+        }
+
+        // Okay actually I lied, we *do* check this, but only in tests.  It's
+        // expensive to do in the proof so we only want to do it once, but it's
+        // fine to do it here as a sanity check.
+        #[cfg(test)]
+        {
+            let computed_blkid = h.compute_block_id();
+            assert_eq!(computed_blkid, blkid, "exec: header blkid mismatch");
+        }
+
+        self.last_exec_header = h;
+        self.last_exec_blkid = blkid;
+
+        Ok(())
     }
 }
 
@@ -74,7 +149,10 @@ fn process_block<E: ExecutionEnvironment>(
     block_data: &CommitBlockData,
 ) -> EnvResult<()> {
     // 1. Make sure the raw block data matches the package.
-    // TODO
+    let raw_block_hash = Sha256::digest(block_data.raw_full_block());
+    if raw_block_hash.as_ref() != block_data.notpackage().raw_block_encoded_hash() {
+        return Err(EnvError::InconsistentCoinput);
+    }
 
     // 2. Decode the block and make sure the actual block ID matches.
     let block: E::Block =
@@ -85,24 +163,29 @@ fn process_block<E: ExecutionEnvironment>(
         return Err(EnvError::InconsistentCoinput);
     }
 
-    // 2. Execute the block and make sure the outputs are consistent with the
+    // 3. Check that the inputs match what was expected.
+    for inp in block_data.notpackage().inputs().subject_deposits() {
+        // We kinda bodge this conversion for now since the concepts aren't a
+        // 1:1 match, maybe this will be iterated on in the future if we rethink
+        // the types.  But this is fine for now.
+        let pi = PendingInputEntry::Deposit(SubjectDepositData::new(inp.dest(), inp.value()));
+        cvstate.input_tracker.consume_input(&pi)?;
+    }
+
+    // 4. Execute the block and make sure the outputs are consistent with the
     // package.
     let exec_outp = cvstate.process_block(&block, block_data.notpackage().inputs())?;
     if exec_outp.outputs() != block_data.notpackage().outputs() {
         return Err(EnvError::InconsistentCoinput);
     }
 
-    // 3. Apply writes and check state root.
-    cvstate.apply_write_batch(exec_outp.write_batch())?;
-    let computed_sr = cvstate.compute_cur_state_root()?;
-    let header_sr = header.get_state_root();
-    if computed_sr != header_sr {
-        return Err(EnvError::InconsistentCoinput);
-    }
+    // 5. Apply writes and check state root.  This checks the state root
+    // matches the root expected in the header.
+    cvstate.apply_write_batch(exec_outp.write_batch(), header.clone(), blkid)?;
 
-    // 4. maybe: Compare summaries?  (or other DA something something)
+    // maybe: Compare summaries?  (or other DA something something)
 
-    // 5. Apply outputs.
+    // 6. Update bookkeeping outputs.
     cvstate
         .uvstate
         .merge_block_outputs(block_data.notpackage().outputs());
@@ -125,7 +208,7 @@ pub fn apply_commit(
     astate.remove_pending_inputs(extra.processed_inputs() as usize);
     astate.remove_pending_fincls(extra.processed_fincls() as usize);
 
-    // TODO update tracked balance?  this is a bit harder to reason about
+    // TODO update tracked balance?  this involves a little more indirect reasoning
 
     Ok(())
 }

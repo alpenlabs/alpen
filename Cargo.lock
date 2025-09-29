@@ -14791,6 +14791,8 @@ dependencies = [
 name = "strata-ee-acct-runtime"
 version = "0.1.0"
 dependencies = [
+ "digest 0.10.7",
+ "sha2 0.10.9",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",

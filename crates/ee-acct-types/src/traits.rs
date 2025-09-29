@@ -36,9 +36,6 @@ pub trait ExecutionEnvironment: Sized {
     /// Partial execution chain state.
     type PartialState: ExecPartialState;
 
-    /// Execution block header.
-    type Header: ExecHeader;
-
     /// Execution block.
     type Block: ExecBlock;
 

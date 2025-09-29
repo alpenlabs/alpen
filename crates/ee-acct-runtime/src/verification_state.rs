@@ -19,6 +19,9 @@ pub struct UpdateVerificationState {
     // commits to check
     pending_commits: Vec<CommitMsgData>,
 
+    // number of inputs we've consumed
+    consumed_inputs: usize,
+
     // recorded outputs we'll check later
     accumulated_outputs: UpdateOutputs,
 
@@ -39,6 +42,7 @@ impl UpdateVerificationState {
             total_val_sent: 0.into(),
             total_val_recv: 0.into(),
             pending_commits: Vec::new(),
+            consumed_inputs: 0,
             accumulated_outputs: UpdateOutputs::new_empty(),
             l1_da_blob_hashes: Vec::new(),
         }
@@ -46,6 +50,15 @@ impl UpdateVerificationState {
 
     pub fn accumulated_outputs(&self) -> &UpdateOutputs {
         &self.accumulated_outputs
+    }
+
+    pub fn consumed_inputs(&self) -> usize {
+        self.consumed_inputs
+    }
+
+    /// Increments the number of consumed inputs by some amount.
+    pub fn inc_consumed_inputs(&mut self, amt: usize) {
+        self.consumed_inputs += amt;
     }
 
     /// Appends a notpackage block's outputs into the pending outputs being

@@ -10,5 +10,8 @@ strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-snark-acct-types.workspace = true
 
+digest.workspace = true
+sha2.workspace = true
+
 [lints]
 workspace = true

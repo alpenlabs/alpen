@@ -84,7 +84,7 @@ impl EeAccountState {
 }
 
 /// Pending input we expect to see in a block.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PendingInputEntry {
     Deposit(SubjectDepositData),
 }
