@@ -90,12 +90,25 @@ fn filter_eligible_operators(
     previous_assignees: &OperatorBitmap,
     current_active_operators: &OperatorBitmap,
 ) -> OperatorBitmap {
-    // Use bitwise operations for efficiency:
-    // 1. Remove previous assignees from notary operators: notary_operators & (!previous_assignees)
-    // 2. Keep only currently active operators: result & current_active_operators
-    notary_operators
-        .bitwise_and_not(previous_assignees)
-        .bitwise_and(current_active_operators)
+    // Use BitVec's native operations for maximum efficiency
+    // Combined operation: (notary & !previous) & active in a single pass
+    let max_len = std::cmp::max(
+        std::cmp::max(notary_operators.len(), previous_assignees.len()),
+        current_active_operators.len(),
+    );
+
+    // Clone and resize all bitmaps to the same length
+    let mut notary_extended = (**notary_operators).clone();
+    let mut previous_extended = (**previous_assignees).clone();
+    let mut active_extended = (**current_active_operators).clone();
+
+    notary_extended.resize(max_len, false);
+    previous_extended.resize(max_len, false);
+    active_extended.resize(max_len, false);
+
+    // Single BitVec operation: (notary & !previous) & active
+    let result = (notary_extended & (!previous_extended)) & active_extended;
+    result.into()
 }
 
 impl AssignmentEntry {
@@ -137,7 +150,7 @@ impl AssignmentEntry {
             current_active_operators,
         );
 
-        if eligible_operators.is_empty() {
+        if eligible_operators.not_any() {
             return Err(WithdrawalCommandError::NoEligibleOperators {
                 deposit_idx: deposit_entry.idx(),
             });
@@ -215,31 +228,25 @@ impl AssignmentEntry {
         let seed_bytes: [u8; 32] = Buf32::from(seed).into();
         let mut rng = ChaChaRng::from_seed(seed_bytes);
 
-        // Convert notary operators to bitmap for efficient operations
-        let notary_indices = self.deposit_entry.notary_operators();
-        let mut notary_bitmap = OperatorBitmap::new_empty();
-        for &idx in &notary_indices {
-            let _ = notary_bitmap.try_set(idx, true);
-        }
-
+        // Use the already cached bitmap from DepositEntry instead of converting from Vec
         let mut eligible_operators = filter_eligible_operators(
-            &notary_bitmap,
+            self.deposit_entry.operators(),
             &self.previous_assignees,
             current_active_operators,
         );
 
-        if eligible_operators.is_empty() {
+        if eligible_operators.not_any() {
             // If no eligible operators left, clear previous assignees
             self.previous_assignees = OperatorBitmap::new_empty();
             eligible_operators = filter_eligible_operators(
-                &notary_bitmap,
+                self.deposit_entry.operators(),
                 &self.previous_assignees,
                 current_active_operators,
             );
         }
 
         // If still no eligible operators, return error
-        if eligible_operators.is_empty() {
+        if eligible_operators.not_any() {
             return Err(WithdrawalCommandError::NoEligibleOperators {
                 deposit_idx: self.deposit_entry.idx(),
             });
