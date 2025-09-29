@@ -142,11 +142,13 @@ impl AssignmentEntry {
         let seed_bytes: [u8; 32] = Buf32::from(seed).into();
         let mut rng = ChaChaRng::from_seed(seed_bytes);
 
-        let empty_bitmap = OperatorBitmap::new_empty(); // No previous assignees at creation
+        // No previous assignees at creation
+        let previous_assignees =
+            OperatorBitmap::new_with_size(deposit_entry.notary_operators().len(), false);
 
         let eligible_operators = filter_eligible_operators(
             deposit_entry.notary_operators(),
-            &empty_bitmap,
+            &previous_assignees,
             current_active_operators,
         );
 
@@ -162,10 +164,10 @@ impl AssignmentEntry {
         let current_assignee = eligible_indices[random_index];
 
         Ok(Self {
-            deposit_entry,
+            deposit_entry: deposit_entry.clone(),
             withdrawal_cmd,
             current_assignee,
-            previous_assignees: OperatorBitmap::new_empty(),
+            previous_assignees,
             exec_deadline,
         })
     }
@@ -222,7 +224,8 @@ impl AssignmentEntry {
         seed: L1BlockId,
         current_active_operators: &OperatorBitmap,
     ) -> Result<(), WithdrawalCommandError> {
-        let _ = self.previous_assignees.try_set(self.current_assignee, true);
+        self.previous_assignees
+            .try_set(self.current_assignee, true)?;
 
         // Use ChaChaRng with L1 block ID as seed for deterministic random selection
         let seed_bytes: [u8; 32] = Buf32::from(seed).into();
@@ -237,7 +240,8 @@ impl AssignmentEntry {
 
         if eligible_operators.not_any() {
             // If no eligible operators left, clear previous assignees
-            self.previous_assignees = OperatorBitmap::new_empty();
+            self.previous_assignees =
+                OperatorBitmap::new_with_size(self.deposit_entry.notary_operators().len(), false);
             eligible_operators = filter_eligible_operators(
                 self.deposit_entry.notary_operators(),
                 &self.previous_assignees,
@@ -388,7 +392,7 @@ impl AssignmentTable {
     ///
     /// ```rust,ignore
     /// let current_height = BitcoinBlockHeight::from(1000);
-    /// let active_operators = OperatorBitmap::new_sequential_active(3);
+    /// let active_operators = OperatorBitmap::new_with_size(3, true);
     /// let seed = L1BlockId::from([0u8; 32]);
     ///
     /// table.reassign_expired_assignments(current_height, &active_operators, seed)?;
@@ -467,17 +471,17 @@ mod tests {
         // Empty active operators list
         let current_active_operators = OperatorBitmap::new_empty();
 
-        let result = AssignmentEntry::create_with_random_assignment(
+        let err = AssignmentEntry::create_with_random_assignment(
             deposit_entry.clone(),
             withdrawal_cmd,
             exec_deadline,
             &current_active_operators,
             seed,
-        );
+        )
+        .unwrap_err();
 
-        assert!(result.is_err());
         assert!(matches!(
-            result.unwrap_err(),
+            err,
             WithdrawalCommandError::NoEligibleOperators { .. }
         ));
     }
@@ -485,7 +489,15 @@ mod tests {
     #[test]
     fn test_reassign_success() {
         let mut arb = ArbitraryGenerator::new();
-        let deposit_entry: DepositEntry = arb.generate();
+
+        // Keep generating deposit entries until we have at least 2 active operators
+        let deposit_entry: DepositEntry = loop {
+            let candidate: DepositEntry = arb.generate();
+            if candidate.notary_operators().active_count() >= 2 {
+                break candidate;
+            }
+        };
+
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
         let exec_deadline: BitcoinBlockHeight = 100;
         let seed1: L1BlockId = arb.generate();
@@ -494,11 +506,6 @@ mod tests {
         // Use the deposit's notary operators as active operators
         let current_active_operators = deposit_entry.notary_operators().clone();
         let new_fee = BitcoinAmount::from_sat(20_000);
-
-        // Ensure we have at least 2 operators for reassignment
-        if current_active_operators.active_count() < 2 {
-            return; // Skip test if not enough operators
-        }
 
         let mut assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry,
@@ -516,18 +523,10 @@ mod tests {
         let result = assignment.reassign(new_fee, seed2, &current_active_operators);
         assert!(result.is_ok());
 
-        // Verify reassignment - the behavior depends on how many operators are available
-        if assignment.previous_assignees().len() == 1 {
-            // Normal case: different operator selected and previous assignee tracked
-            assert_eq!(assignment.previous_assignees()[0], original_assignee);
-            assert_ne!(assignment.current_assignee(), original_assignee);
-        } else {
-            // Edge case: previous assignees were cleared during reassignment
-            // This happens when no eligible operators are found initially, forcing
-            // the reassignment logic to clear previous assignees and retry
-            assert_eq!(assignment.previous_assignees().len(), 0);
-        }
-        assert!(current_active_operators.is_active(assignment.current_assignee()));
+        // Verify reassignment
+        assert_eq!(assignment.previous_assignees().len(), 1);
+        assert_eq!(assignment.previous_assignees()[0], original_assignee);
+        assert_ne!(assignment.current_assignee(), original_assignee);
     }
 
     #[test]
@@ -536,7 +535,7 @@ mod tests {
         let mut deposit_entry: DepositEntry = arb.generate();
 
         // Force single operator for this test
-        let operators = OperatorBitmap::new_sequential_active(1);
+        let operators = OperatorBitmap::new_with_size(1, true);
         deposit_entry = DepositEntry::new(
             deposit_entry.idx(),
             *deposit_entry.output(),
@@ -551,7 +550,7 @@ mod tests {
         let seed1: L1BlockId = arb.generate();
         let seed2: L1BlockId = arb.generate();
 
-        let current_active_operators = OperatorBitmap::new_sequential_active(1); // Single operator with index 0
+        let current_active_operators = OperatorBitmap::new_with_size(1, true); // Single operator with index 0
 
         let mut assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry,
@@ -660,20 +659,11 @@ mod tests {
         let future_original_assignee = future_assignment.current_assignee();
         table.insert(future_assignment);
 
-        // Create combined active operators bitmap for reassignment
-        let mut combined_active_operators = OperatorBitmap::new_empty();
-        for idx in current_active_operators1.active_indices() {
-            let _ = combined_active_operators.try_set(idx, true);
-        }
-        for idx in current_active_operators2.active_indices() {
-            let _ = combined_active_operators.try_set(idx, true);
-        }
-
         // Reassign expired assignments
         let result = table.reassign_expired_assignments(
             new_operator_fee,
             current_height,
-            &combined_active_operators,
+            &current_active_operators1,
             seed,
         );
 
@@ -681,28 +671,11 @@ mod tests {
 
         // Check that expired assignment was reassigned
         let expired_assignment_after = table.get_assignment(expired_deposit_idx).unwrap();
-
-        // The behavior depends on how many eligible operators are available
-        let deposit1_notary_count = deposit_entry1.notary_operators().active_count();
-        if deposit1_notary_count > 1
-            && expired_assignment_after.current_assignee() != original_assignee
-        {
-            // Normal case: different operator selected
-            assert_eq!(expired_assignment_after.previous_assignees().len(), 1);
-            assert_eq!(
-                expired_assignment_after.previous_assignees()[0],
-                original_assignee
-            );
-            assert_ne!(
-                expired_assignment_after.current_assignee(),
-                original_assignee
-            );
-        } else {
-            // Edge case: same operator reselected or only one operator available
-            // In this case previous assignees may be cleared to allow reassignment
-            // This can happen with single operator deposits or when the same operator is reselected
-            assert_eq!(expired_assignment_after.previous_assignees().len(), 0);
-        }
+        assert_eq!(expired_assignment_after.previous_assignees().len(), 1);
+        assert_eq!(
+            expired_assignment_after.previous_assignees()[0],
+            original_assignee
+        );
 
         // Check that non-expired assignment was not reassigned
         let future_assignment_after = table.get_assignment(future_deposit_idx).unwrap();

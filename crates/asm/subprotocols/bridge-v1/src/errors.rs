@@ -11,6 +11,24 @@ use strata_primitives::{
 };
 use thiserror::Error;
 
+#[derive(Debug, Error)]
+pub enum BridgeSubprotocolError {
+    #[error("failed to parse deposit tx")]
+    DepositTxParse(#[from] DepositTxParseError),
+
+    #[error("failed to process deposit tx")]
+    DepositTxProcess(#[from] DepositValidationError),
+
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxParse(#[from] WithdrawalParseError),
+
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxProcess(#[from] WithdrawalValidationError),
+
+    #[error("unsupported tx type {0}")]
+    UnsupportedTxType(TxType),
+}
+
 /// Errors that can occur when validating deposit transactions at the subprotocol level.
 ///
 /// These errors represent state-level validation failures that occur after successful
@@ -38,24 +56,6 @@ pub enum DepositValidationError {
     /// Each deposit must have at least one notary operator.
     #[error("Cannot create deposit entry with empty operators.")]
     EmptyOperators,
-}
-
-#[derive(Debug, Error)]
-pub enum BridgeSubprotocolError {
-    #[error("failed to parse deposit tx")]
-    DepositTxParse(#[from] DepositTxParseError),
-
-    #[error("failed to process deposit tx")]
-    DepositTxProcess(#[from] DepositValidationError),
-
-    #[error("failed to parse withdrawal fulfillment tx")]
-    WithdrawalTxParse(#[from] WithdrawalParseError),
-
-    #[error("failed to parse withdrawal fulfillment tx")]
-    WithdrawalTxProcess(#[from] WithdrawalValidationError),
-
-    #[error("unsupported tx type {0}")]
-    UnsupportedTxType(TxType),
 }
 
 /// Errors that can occur when validating withdrawal fulfillment transactions.
@@ -104,4 +104,17 @@ pub enum WithdrawalCommandError {
     /// Deposit amount doesn't match withdrawal command total value
     #[error("Deposit amount mismatch {0}")]
     DepositWithdrawalAmountMismatch(Mismatch<u64>),
+
+    /// Bitmap operation failed
+    #[error("Bitmap operation failed")]
+    BitmapError(#[from] BitmapError),
+}
+
+/// Error type for OperatorBitmap operations.
+#[derive(Debug, Error, PartialEq)]
+pub enum BitmapError {
+    /// Attempted to set a bit at an index that would create a gap in the bitmap.
+    /// Only sequential indices are allowed.
+    #[error("Index {0} is out of bounds for sequential bitmap")]
+    IndexOutOfBounds(OperatorIdx),
 }

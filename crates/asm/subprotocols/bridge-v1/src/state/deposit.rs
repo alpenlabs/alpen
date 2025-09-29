@@ -8,6 +8,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{
+    bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},
     operator::OperatorIdx,
     sorted_vec::SortedVec,
@@ -56,7 +57,7 @@ pub struct DepositEntry {
     /// Any one honest operator from this set can process user withdrawals.
     ///
     /// Uses a memory-efficient bitmap representation instead of storing operator indices.
-    operators: OperatorBitmap,
+    notary_operators: OperatorBitmap,
 
     /// Amount of Bitcoin locked in this deposit (in satoshis).
     amt: BitcoinAmount,
@@ -96,17 +97,17 @@ impl DepositEntry {
     pub fn new(
         idx: u32,
         output: OutputRef,
-        operators: OperatorBitmap,
+        notary_operators: OperatorBitmap,
         amt: BitcoinAmount,
     ) -> Result<Self, DepositValidationError> {
-        if operators.active_count() == 0 {
+        if notary_operators.active_count() == 0 {
             return Err(DepositValidationError::EmptyOperators);
         }
 
         Ok(Self {
             deposit_idx: idx,
             output,
-            operators,
+            notary_operators,
             amt,
         })
     }
@@ -127,7 +128,16 @@ impl DepositEntry {
     ///
     /// A reference to the operator bitmap that contains the operators active for this deposit.
     pub fn notary_operators(&self) -> &OperatorBitmap {
-        &self.operators
+        &self.notary_operators
+    }
+
+    /// Returns the indices of operators that formed the N/N multisig for this deposit.
+    ///
+    /// # Returns
+    ///
+    /// Vector containing [`OperatorIdx`] for operators that were active for this deposit.
+    pub fn notary_operators_indices(&self) -> Vec<OperatorIdx> {
+        self.notary_operators.to_indices()
     }
 
     /// Returns the amount of Bitcoin locked in this deposit.
@@ -144,17 +154,14 @@ impl<'a> Arbitrary<'a> for DepositEntry {
         // Generate a random Bitcoin UTXO reference
         let output: OutputRef = u.arbitrary()?;
 
-        // Generate a random number of notary operators between 1 and 20
-        let num_operators = u.int_in_range(1..=20)?;
-
         // Create OperatorBitmap directly by setting sequential operators as active
-        let operators = OperatorBitmap::new_sequential_active(num_operators);
+        let notary_operators = u.arbitrary()?;
 
         // Generate a random Bitcoin amount (between 1 satoshi and 21 million BTC)
         let amount: BitcoinAmount = u.arbitrary()?;
 
         // Create the DepositEntry - this should not fail since we ensure operators is non-empty
-        Self::new(deposit_idx, output, operators, amount)
+        Self::new(deposit_idx, output, notary_operators, amount)
             .map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }

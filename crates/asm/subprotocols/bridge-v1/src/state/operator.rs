@@ -16,6 +16,8 @@ use strata_primitives::{
     sorted_vec::SortedVec,
 };
 
+use crate::BitmapError;
+
 /// Bridge operator entry containing identification and cryptographic keys.
 ///
 /// Each operator registered in the bridge has:
@@ -113,6 +115,15 @@ impl OperatorEntry {
 ///
 /// For operator sets with densely packed indices, this bitmap uses significantly
 /// less memory than storing operator indices as `Vec<OperatorIdx>`.
+///
+/// # Examples
+///
+/// Basic usage:
+/// - Create a bitmap with `new_with_size(5, true)` to get operators 0, 1, 2, 3, 4 active
+/// - Use `is_active(idx)` to check if an operator is active
+/// - Use `try_set(idx, false)` to deactivate an operator
+/// - Use `to_indices()` to get a Vec of active operator indices
+/// - Sequential index constraint: can only add operators one by one without gaps
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperatorBitmap {
     /// Bitmap where bit `i` is set if operator index `i` is active.
@@ -156,18 +167,30 @@ impl OperatorBitmap {
         }
     }
 
-    /// Creates a new operator bitmap with sequential active indices starting from 0.
+    /// Creates a new operator bitmap with specified size and initial state.
     ///
-    /// This is optimized for the common case where initial operators have sequential
-    /// indices 0, 1, 2, ..., count-1 and all are active.
+    /// This is optimized for creating bitmaps with all bits set to the same initial value.
+    /// Common use cases include creating cleared bitmaps for tracking previous assignees
+    /// or active bitmaps for sequential operators.
     ///
     /// # Parameters
     ///
-    /// - `count` - Number of sequential operators to mark as active (0 through count-1)
-    pub fn new_sequential_active(count: usize) -> Self {
-        let mut bitmap = Self::new_empty();
-        bitmap.resize(count, true); // Set all bits to true for 0..count-1
-        bitmap
+    /// - `size` - Number of bits in the bitmap
+    /// - `initial_state` - Initial state for all bits (true = active, false = inactive)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// // Create a bitmap with 5 operators all inactive (for tracking previous assignees)
+    /// let cleared = OperatorBitmap::new_with_size(5, false);
+    ///
+    /// // Create a bitmap with 3 operators all active (for sequential operators 0, 1, 2)
+    /// let active = OperatorBitmap::new_with_size(3, true);
+    /// ```
+    pub fn new_with_size(size: usize, initial_state: bool) -> Self {
+        Self {
+            bits: BitVec::repeat(initial_state, size),
+        }
     }
 
     /// Returns whether the operator at the given index is active.
@@ -192,17 +215,17 @@ impl OperatorBitmap {
     ///
     /// # Returns
     ///
-    /// `Ok(())` on success, `Err(())` if index would exceed reasonable bounds
-    pub fn try_set(&mut self, idx: OperatorIdx, active: bool) -> Result<(), ()> {
-        let idx = idx as usize;
-        // Only allow increasing bitmap size by 1 at a time
-        if idx > self.len() {
-            return Err(());
+    /// `Ok(())` on success, `Err(BitmapError)` if index would create a gap in the bitmap
+    pub fn try_set(&mut self, idx: OperatorIdx, active: bool) -> Result<(), BitmapError> {
+        let idx_usize = idx as usize;
+        // Only allow increasing bitmap size by 1 at a time to maintain sequential indices
+        if idx_usize > self.len() {
+            return Err(BitmapError::IndexOutOfBounds(idx));
         }
-        if idx == self.len() {
-            self.resize(idx + 1, false);
+        if idx_usize == self.len() {
+            self.resize(idx_usize + 1, false);
         }
-        self.set(idx, active);
+        self.set(idx_usize, active);
         Ok(())
     }
 
@@ -215,8 +238,6 @@ impl OperatorBitmap {
     pub fn active_count(&self) -> u32 {
         self.count_ones() as u32
     }
-
-    // Note: capacity(), len(), is_empty() and other BitVec methods are available via Deref
 
     /// Collects all active operator indices into a vector.
     pub fn to_indices(&self) -> Vec<OperatorIdx> {
@@ -246,12 +267,17 @@ impl From<BitVec<u8>> for OperatorBitmap {
 
 impl<'a> Arbitrary<'a> for OperatorBitmap {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        // Generate a random number of operators between 1 and 20
-        let num_operators = u.int_in_range(1..=20)?;
+        // Generate a random number of operators between 2 and 20
+        let num_operators = u.int_in_range(2..=20)?;
 
-        // Use the efficient sequential initialization since arbitrary tests
-        // typically expect operators to be sequential starting from 0
-        Ok(OperatorBitmap::new_sequential_active(num_operators))
+        // Create a random bitmap by generating random bits for each operator
+        let mut bits = BitVec::with_capacity(num_operators);
+        for _ in 0..num_operators {
+            let bit = u.int_in_range(0..=1)? == 1;
+            bits.push(bit);
+        }
+
+        Ok(OperatorBitmap::from(bits))
     }
 }
 
@@ -281,7 +307,13 @@ pub struct OperatorTable {
     /// **Invariant**: MUST be sorted by `OperatorEntry::idx` field.
     operators: SortedVec<OperatorEntry>,
 
-    active_operators_bitmap: OperatorBitmap,
+    /// Bitmap indicating which operators are part of the current N/N multisig.
+    ///
+    /// Each bit position corresponds to an operator index, where a set bit (1) indicates
+    /// the operator at that index is included in the current multisig configuration.
+    /// This bitmap is used to efficiently track multisig membership and coordinate
+    /// with the aggregated public key for signature operations.
+    current_multisig: OperatorBitmap,
 
     /// Aggregated public key derived from operator wallet keys that are part of the current N/N
     /// multisig.
@@ -326,7 +358,7 @@ impl OperatorTable {
             .unwrap()
             .into();
         // Create bitmap with all initial operators as active (0, 1, 2, ..., n-1)
-        let bitmap = OperatorBitmap::new_sequential_active(entries.len());
+        let bitmap = OperatorBitmap::new_with_size(entries.len(), true);
         Self {
             next_idx: entries.len() as OperatorIdx,
             operators: SortedVec::new_unchecked(
@@ -340,7 +372,7 @@ impl OperatorTable {
                     })
                     .collect(),
             ),
-            active_operators_bitmap: bitmap,
+            current_multisig: bitmap,
             agg_key: agg_operator_key,
         }
     }
@@ -394,7 +426,19 @@ impl OperatorTable {
     ///
     /// `true` if the operator is in the current multisig, `false` otherwise.
     pub fn is_in_current_multisig(&self, idx: u32) -> bool {
-        self.active_operators_bitmap.is_active(idx)
+        self.current_multisig.is_active(idx)
+    }
+
+    /// Returns a reference to the bitmap of currently active multisig operators.
+    ///
+    /// The bitmap tracks which operators are part of the current N/N multisig configuration.
+    /// This is used for assignment creation and deposit processing.
+    ///
+    /// # Returns
+    ///
+    /// Reference to the [`OperatorBitmap`] representing current multisig membership.
+    pub fn current_multisig(&self) -> &OperatorBitmap {
+        &self.current_multisig
     }
 
     /// Returns indices of operators in the current N/N multisig.
@@ -402,16 +446,11 @@ impl OperatorTable {
     /// Only returns indices of operators marked as active in the bitmap.
     /// This is used for assignment creation and deposit processing.
     ///
-    /// Returns a reference to the bitmap of currently active multisig operators.
-    pub fn current_multisig_bitmap(&self) -> &OperatorBitmap {
-        &self.active_operators_bitmap
-    }
-
     /// # Returns
     ///
     /// Vector containing [`OperatorIdx`] for operators in the current multisig.
     pub fn current_multisig_indices(&self) -> Vec<OperatorIdx> {
-        self.active_operators_bitmap.to_indices()
+        self.current_multisig.to_indices()
     }
 
     /// Updates the multisig membership status for multiple operators, inserts new operators,
@@ -448,7 +487,7 @@ impl OperatorTable {
             self.operators.insert(entry);
 
             // Set new operator as active in bitmap
-            self.active_operators_bitmap
+            self.current_multisig
                 .try_set(idx, true)
                 .expect("Sequential operator insertion should always succeed");
 
@@ -465,8 +504,8 @@ impl OperatorTable {
                 .is_ok()
             {
                 // For existing operators, we can set their status directly
-                if (idx as usize) < self.active_operators_bitmap.len() {
-                    self.active_operators_bitmap
+                if (idx as usize) < self.current_multisig.len() {
+                    self.current_multisig
                         .try_set(idx, is_in_multisig)
                         .expect("Setting existing operator status should succeed");
                 }
@@ -476,9 +515,9 @@ impl OperatorTable {
         if !updates.is_empty() || !inserts.is_empty() {
             // Recalculate aggregated key based on current multisig members
             let active_keys: Vec<&Buf32> = self
-                .active_operators_bitmap
+                .current_multisig
                 .active_indices()
-                .map(|op| self.get_operator(op).unwrap().wallet_pk())
+                .filter_map(|op| self.get_operator(op).map(|entry| entry.wallet_pk()))
                 .collect();
 
             if active_keys.is_empty() {
@@ -496,6 +535,7 @@ impl OperatorTable {
 mod tests {
     use bitcoin::secp256k1::{SECP256K1, SecretKey};
     use strata_primitives::operator::OperatorPubkeys;
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
 
@@ -525,6 +565,97 @@ mod tests {
     )]
     fn test_operator_table_empty_entries_panics() {
         OperatorTable::from_operator_list(&[]);
+    }
+
+    #[test]
+    fn test_operator_bitmap_new_empty() {
+        let bitmap = OperatorBitmap::new_empty();
+        assert!(bitmap.is_empty());
+        assert_eq!(bitmap.active_count(), 0);
+        assert_eq!(bitmap.to_indices(), Vec::<OperatorIdx>::new());
+    }
+
+    #[test]
+    fn test_operator_bitmap_new_with_size() {
+        // Test creating cleared bitmap
+        let cleared_bitmap = OperatorBitmap::new_with_size(5, false);
+        assert!(!cleared_bitmap.is_empty());
+        assert_eq!(cleared_bitmap.len(), 5);
+        assert_eq!(cleared_bitmap.active_count(), 0);
+        assert_eq!(cleared_bitmap.to_indices(), Vec::<OperatorIdx>::new());
+
+        // Check individual bits are all false
+        for i in 0..5 {
+            assert!(!cleared_bitmap.is_active(i));
+        }
+        assert!(!cleared_bitmap.is_active(5)); // Out of bounds should be false
+
+        // Test creating active bitmap
+        let active_bitmap = OperatorBitmap::new_with_size(3, true);
+        assert!(!active_bitmap.is_empty());
+        assert_eq!(active_bitmap.len(), 3);
+        assert_eq!(active_bitmap.active_count(), 3);
+        assert_eq!(active_bitmap.to_indices(), vec![0, 1, 2]);
+
+        // Check individual bits are all true
+        for i in 0..3 {
+            assert!(active_bitmap.is_active(i));
+        }
+        assert!(!active_bitmap.is_active(3)); // Out of bounds should be false
+    }
+
+    #[test]
+    fn test_operator_bitmap_try_set() {
+        let mut bitmap = OperatorBitmap::new_empty();
+
+        // Setting bit 0 should work
+        assert!(bitmap.try_set(0, true).is_ok());
+        assert!(bitmap.is_active(0));
+        assert_eq!(bitmap.active_count(), 1);
+
+        // Setting bit 1 should work (sequential)
+        assert!(bitmap.try_set(1, true).is_ok());
+        assert!(bitmap.is_active(1));
+        assert_eq!(bitmap.active_count(), 2);
+
+        // Setting bit 0 to false should work
+        assert!(bitmap.try_set(0, false).is_ok());
+        assert!(!bitmap.is_active(0));
+        assert_eq!(bitmap.active_count(), 1);
+
+        // Trying to set bit 3 (skipping 2) should fail
+        assert_eq!(
+            bitmap.try_set(3, true),
+            Err(BitmapError::IndexOutOfBounds(3))
+        );
+        assert_eq!(bitmap.active_count(), 1);
+
+        // Setting bit 2 (next sequential) should work
+        assert!(bitmap.try_set(2, true).is_ok());
+        assert!(bitmap.is_active(2));
+        assert_eq!(bitmap.active_count(), 2);
+
+        // Test modifying an existing bitmap created with macro
+        let mut existing_bitmap =
+            OperatorBitmap::from(bitvec![u8, bitvec::order::Lsb0; 1, 1, 1, 0, 0]);
+        assert_eq!(existing_bitmap.active_count(), 3);
+
+        // Turn off operator 1
+        assert!(existing_bitmap.try_set(1, false).is_ok());
+        assert_eq!(existing_bitmap.to_indices(), vec![0, 2]);
+
+        // Turn on operator 3
+        assert!(existing_bitmap.try_set(4, true).is_ok());
+        assert_eq!(existing_bitmap.to_indices(), vec![0, 2, 4]);
+    }
+
+    #[test]
+    fn test_operator_bitmap_serialization_roundtrip() {
+        let mut arb = ArbitraryGenerator::new();
+        let bitmap: OperatorBitmap = arb.generate();
+        let serialized_bytes = borsh::to_vec(&bitmap).unwrap();
+        let deserialized_bitmap = borsh::from_slice(&serialized_bytes).unwrap();
+        assert_eq!(bitmap, deserialized_bitmap);
     }
 
     #[test]
