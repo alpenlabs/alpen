@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{str, sync::Arc};
 
 use bitcoind_async_client::traits::{Broadcaster, Reader, Signer, Wallet};
+use hex::encode_to_slice;
 use strata_db::{
     types::{L1TxEntry, L1TxStatus},
     DbResult,
@@ -38,7 +39,14 @@ impl L1BroadcastHandle {
     /// This function is infallible. If the entry already exists it will update with the new
     /// `txentry`.
     pub async fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>> {
-        trace!(%txid, "insert_new_tx_entry");
+        // NOTE: Reverse the txid to little endian so that it's consistent with block explorers.
+        let mut bytes = txid.0;
+        bytes.reverse();
+        let mut hex_buf = [0u8; 64];
+        encode_to_slice(bytes, &mut hex_buf).expect("buf: enc hex");
+        // SAFETY: hex encoding always produces valid UTF-8
+        let txid_le = unsafe { str::from_utf8_unchecked(&hex_buf) };
+        trace!(txid = %txid_le, "insert_new_tx_entry");
         assert!(txentry.try_to_tx().is_ok(), "invalid tx entry {txentry:?}");
         let Some(idx) = self.ops.put_tx_entry_async(txid, txentry.clone()).await? else {
             return Ok(None);

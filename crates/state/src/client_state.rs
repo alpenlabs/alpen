@@ -3,6 +3,8 @@
 //! implement the consensus logic.
 // TODO move this to another crate that contains our sync logic
 
+use std::fmt;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -349,7 +351,7 @@ impl InternalState {
 
 /// Represents a reference to a transaction in bitcoin. Redundantly puts block_height a well.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
 )]
 pub struct CheckpointL1Ref {
     pub l1_commitment: L1BlockCommitment,
@@ -372,34 +374,6 @@ impl CheckpointL1Ref {
 
     pub fn block_id(&self) -> &L1BlockId {
         self.l1_commitment.blkid()
-    }
-}
-
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
-pub struct L1Checkpoint {
-    /// The inner checkpoint batch info.
-    pub batch_info: BatchInfo,
-
-    /// The inner checkpoint batch transition.
-    pub batch_transition: BatchTransition,
-
-    /// L1 reference for this checkpoint.
-    pub l1_reference: CheckpointL1Ref,
-}
-
-impl L1Checkpoint {
-    pub fn new(
-        batch_info: BatchInfo,
-        batch_transition: BatchTransition,
-        l1_reference: CheckpointL1Ref,
-    ) -> Self {
-        Self {
-            batch_info,
-            batch_transition,
-            l1_reference,
-        }
     }
 }
 
@@ -623,4 +597,76 @@ impl ClientStateMut {
             self.state.expect_sync_mut().finalized_epoch = fin_epoch;
         }
     }*/
+}
+
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+)]
+pub struct L1Checkpoint {
+    /// The inner checkpoint batch info.
+    pub batch_info: BatchInfo,
+
+    /// The inner checkpoint batch transition.
+    pub batch_transition: BatchTransition,
+
+    /// L1 reference for this checkpoint.
+    pub l1_reference: CheckpointL1Ref,
+}
+
+impl L1Checkpoint {
+    pub fn new(
+        batch_info: BatchInfo,
+        batch_transition: BatchTransition,
+        l1_reference: CheckpointL1Ref,
+    ) -> Self {
+        Self {
+            batch_info,
+            batch_transition,
+            l1_reference,
+        }
+    }
+}
+
+// Custom debug implementation to print txid and wtxid in little endian
+impl fmt::Debug for CheckpointL1Ref {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        };
+        let wtxid_le = {
+            let mut bytes = self.wtxid.0;
+            bytes.reverse();
+            bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        };
+
+        f.debug_struct("CheckpointL1Ref")
+            .field("l1_commitment", &self.l1_commitment)
+            .field("txid", &txid_le)
+            .field("wtxid", &wtxid_le)
+            .finish()
+    }
+}
+
+// Custom display implementation to print txid and wtxid in little endian
+impl fmt::Display for CheckpointL1Ref {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        };
+        let wtxid_le = {
+            let mut bytes = self.wtxid.0;
+            bytes.reverse();
+            bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        };
+
+        write!(
+            f,
+            "CheckpointL1Ref {{ l1_commitment: {}, txid: {}, wtxid: {} }}",
+            self.l1_commitment, txid_le, wtxid_le
+        )
+    }
 }
