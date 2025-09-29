@@ -13,7 +13,7 @@ use crate::{
         assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
-        operator::{OperatorBitmap, OperatorTable},
+        operator::OperatorTable,
         withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
     },
 };
@@ -192,12 +192,12 @@ impl BridgeV1State {
     ) -> Result<(), DepositValidationError> {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
-
-        let total_operators = self.operators().len() as usize;
-        let notary_operators = OperatorBitmap::new_sequential_active(total_operators);
-        // Note: Using sequential active operators for simplicity. In the future, this should
-        // match the exact current multisig operators from self.operators().current_multisig_indices()
-        let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
+        let entry = DepositEntry::new(
+            info.deposit_idx,
+            info.outpoint,
+            self.operators().current_multisig_bitmap().clone(),
+            info.amt,
+        )?;
         self.deposits.insert_deposit(entry)?;
 
         Ok(())
