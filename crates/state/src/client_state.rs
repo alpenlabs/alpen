@@ -107,7 +107,7 @@ impl CheckpointState {
 
 /// Represents a reference to a transaction in bitcoin. Redundantly puts block_height a well.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
 )]
 pub struct CheckpointL1Ref {
     pub l1_commitment: L1BlockCommitment,
@@ -164,5 +164,61 @@ impl L1Checkpoint {
             batch_transition,
             l1_reference,
         }
+    }
+}
+
+// Custom debug implementation to print txid and wtxid in little endian
+impl fmt::Debug for CheckpointL1Ref {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+        let wtxid_le = {
+            let mut bytes = self.wtxid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        f.debug_struct("CheckpointL1Ref")
+            .field("l1_commitment", &self.l1_commitment)
+            .field("txid", &txid_le)
+            .field("wtxid", &wtxid_le)
+            .finish()
+    }
+}
+
+// Custom display implementation to print txid and wtxid in little endian
+impl fmt::Display for CheckpointL1Ref {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+        let wtxid_le = {
+            let mut bytes = self.wtxid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        write!(
+            f,
+            "CheckpointL1Ref {{ l1_commitment: {}, txid: {}, wtxid: {} }}",
+            self.l1_commitment, txid_le, wtxid_le
+        )
     }
 }

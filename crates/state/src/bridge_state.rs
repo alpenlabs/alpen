@@ -3,6 +3,8 @@
 //! This just implements a very simple n-of-n multisig bridge.  It will be
 //! extended to a more sophisticated design when we have that specced out.
 
+use std::fmt;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
@@ -547,7 +549,7 @@ impl WithdrawOutput {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct FulfilledState {
     /// The index of the operator that has fronted the funds for the withdrawal,
     /// and who will be reimbursed by the bridge notaries.
@@ -575,5 +577,45 @@ impl FulfilledState {
 
     pub fn amt(&self) -> BitcoinAmount {
         self.amt
+    }
+}
+
+// Custom debug implementation to print txid in little endian
+impl fmt::Debug for FulfilledState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        f.debug_struct("FulfilledState")
+            .field("assignee", &self.assignee)
+            .field("amt", &self.amt)
+            .field("txid", &txid_le)
+            .finish()
+    }
+}
+
+// Custom display implementation to print txid in little endian
+impl fmt::Display for FulfilledState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let txid_le = {
+            let mut bytes = self.txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        write!(
+            f,
+            "FulfilledState {{ assignee: {}, amt: {:?}, txid: {} }}",
+            self.assignee, self.amt, txid_le
+        )
     }
 }

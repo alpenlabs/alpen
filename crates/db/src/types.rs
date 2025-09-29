@@ -1,5 +1,7 @@
 //! Module for database local types
 
+use std::fmt;
+
 use arbitrary::Arbitrary;
 use bitcoin::{
     consensus::{self, deserialize, serialize},
@@ -56,7 +58,7 @@ pub enum IntentStatus {
 }
 
 /// Represents data for a payload we're still planning to post to L1.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct BundledPayloadEntry {
     pub payloads: Vec<L1Payload>,
     pub commit_txid: Buf32,
@@ -88,6 +90,63 @@ impl BundledPayloadEntry {
         let cid = Buf32::zero();
         let rid = Buf32::zero();
         Self::new(payloads, cid, rid, L1BundleStatus::Unsigned)
+    }
+}
+
+// Custom debug implementation to print commit_txid and reveal_txid in little endian
+impl fmt::Debug for BundledPayloadEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let commit_txid_le = {
+            let mut bytes = self.commit_txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+        let reveal_txid_le = {
+            let mut bytes = self.reveal_txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        f.debug_struct("BundledPayloadEntry")
+            .field("payloads", &self.payloads)
+            .field("commit_txid", &commit_txid_le)
+            .field("reveal_txid", &reveal_txid_le)
+            .field("status", &self.status)
+            .finish()
+    }
+}
+
+// Custom display implementation to print commit_txid and reveal_txid in little endian
+impl fmt::Display for BundledPayloadEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let commit_txid_le = {
+            let mut bytes = self.commit_txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+        let reveal_txid_le = {
+            let mut bytes = self.reveal_txid.0;
+            bytes.reverse();
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        };
+
+        write!(
+            f,
+            "BundledPayloadEntry {{ payloads: {} items, commit_txid: {}, reveal_txid: {}, status: {:?} }}",
+            self.payloads.len(), commit_txid_le, reveal_txid_le, self.status
+        )
     }
 }
 
