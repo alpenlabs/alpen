@@ -1,10 +1,14 @@
+use std::{fmt, str};
+
 use arbitrary::Arbitrary;
 use bitcoin::{hashes::Hash, BlockHash};
 use borsh::{BorshDeserialize, BorshSerialize};
+use const_hex as hex;
+use hex::encode_to_slice;
 use serde::{Deserialize, Serialize};
 
 use super::{header_verification::HeaderVerificationState, L1HeaderRecord, L1Tx};
-use crate::{buf::Buf32, hash::sha256d, impl_buf_wrapper};
+use crate::{buf::Buf32, hash::sha256d};
 
 /// ID of an L1 block, usually the hash of its header.
 #[derive(
@@ -32,7 +36,24 @@ impl L1BlockId {
     }
 }
 
-impl_buf_wrapper!(L1BlockId, Buf32, 32);
+// Custom implementation without Debug/Display to avoid conflicts
+impl From<Buf32> for L1BlockId {
+    fn from(value: Buf32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<L1BlockId> for Buf32 {
+    fn from(value: L1BlockId) -> Self {
+        value.0
+    }
+}
+
+impl AsRef<[u8; 32]> for L1BlockId {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.0.as_ref()
+    }
+}
 
 impl From<BlockHash> for L1BlockId {
     fn from(value: BlockHash) -> Self {
@@ -47,7 +68,6 @@ impl From<L1BlockId> for BlockHash {
 }
 
 #[derive(
-    Debug,
     Copy,
     Clone,
     Eq,
@@ -67,6 +87,40 @@ pub struct L1BlockCommitment {
     blkid: L1BlockId,
 }
 
+impl fmt::Display for L1BlockCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Show first 2 and last 2 bytes of block ID (4 hex chars each)
+        let blkid_bytes = self.blkid.as_ref();
+        let first_2 = &blkid_bytes[..2];
+        let last_2 = &blkid_bytes[30..];
+
+        let mut first_hex = [0u8; 4];
+        let mut last_hex = [0u8; 4];
+        hex::encode_to_slice(first_2, &mut first_hex)
+            .expect("Failed to encode first 2 bytes to hex");
+        hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
+
+        write!(
+            f,
+            "{}@{}..{}",
+            self.height,
+            str::from_utf8(&first_hex)
+                .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
+            str::from_utf8(&last_hex).expect("Failed to convert last 2 hex bytes to UTF-8 string")
+        )
+    }
+}
+
+impl fmt::Debug for L1BlockCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "L1BlockCommitment(height={}, blkid={:?})",
+            self.height, self.blkid
+        )
+    }
+}
+
 impl L1BlockCommitment {
     pub fn new(height: u64, blkid: L1BlockId) -> Self {
         Self { height, blkid }
@@ -80,7 +134,6 @@ impl L1BlockCommitment {
         &self.blkid
     }
 }
-
 /// Reference to a transaction in a block.  This is the blockid and the
 /// position of the transaction in the block.
 #[derive(
@@ -220,5 +273,31 @@ impl L1BlockManifest {
 
     pub fn into_record(self) -> L1HeaderRecord {
         self.record
+    }
+}
+
+// Custom debug implementation to print the block hash in little endian
+impl fmt::Debug for L1BlockId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut bytes = self.0 .0;
+        bytes.reverse();
+        let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
+        encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
+        // SAFETY: hex encoding always produces valid UTF-8
+        let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
+        f.write_str(hex_str)
+    }
+}
+
+// Custom display implementation to print the block hash in little endian
+impl fmt::Display for L1BlockId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut bytes = self.0 .0;
+        bytes.reverse();
+        let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
+        encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
+        // SAFETY: hex encoding always produces valid UTF-8
+        let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
+        f.write_str(hex_str)
     }
 }

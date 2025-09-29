@@ -30,7 +30,7 @@ impl ShutdownSignal {
         self.0.load(Ordering::Relaxed)
     }
 
-    fn notified(&self) -> Notified {
+    fn notified(&self) -> Notified<'_> {
         self.1.notified()
     }
 }
