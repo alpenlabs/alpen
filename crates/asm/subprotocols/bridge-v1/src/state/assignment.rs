@@ -145,7 +145,7 @@ impl AssignmentEntry {
         let empty_bitmap = OperatorBitmap::new_empty(); // No previous assignees at creation
 
         let eligible_operators = filter_eligible_operators(
-            deposit_entry.operators(),
+            deposit_entry.notary_operators(),
             &empty_bitmap,
             current_active_operators,
         );
@@ -230,7 +230,7 @@ impl AssignmentEntry {
 
         // Use the already cached bitmap from DepositEntry instead of converting from Vec
         let mut eligible_operators = filter_eligible_operators(
-            self.deposit_entry.operators(),
+            self.deposit_entry.notary_operators(),
             &self.previous_assignees,
             current_active_operators,
         );
@@ -239,7 +239,7 @@ impl AssignmentEntry {
             // If no eligible operators left, clear previous assignees
             self.previous_assignees = OperatorBitmap::new_empty();
             eligible_operators = filter_eligible_operators(
-                self.deposit_entry.operators(),
+                self.deposit_entry.notary_operators(),
                 &self.previous_assignees,
                 current_active_operators,
             );
@@ -435,14 +435,7 @@ mod tests {
         let seed: L1BlockId = arb.generate();
 
         // Use the deposit's notary operators as active operators
-        let current_active_operators = {
-            let notary_indices = deposit_entry.notary_operators();
-            let mut bitmap = OperatorBitmap::new_empty();
-            for &idx in &notary_indices {
-                let _ = bitmap.try_set(idx, true);
-            }
-            bitmap
-        };
+        let current_active_operators = deposit_entry.notary_operators().clone();
 
         let result = AssignmentEntry::create_with_random_assignment(
             deposit_entry.clone(),
@@ -499,14 +492,7 @@ mod tests {
         let seed2: L1BlockId = arb.generate();
 
         // Use the deposit's notary operators as active operators
-        let current_active_operators = {
-            let notary_indices = deposit_entry.notary_operators();
-            let mut bitmap = OperatorBitmap::new_empty();
-            for &idx in &notary_indices {
-                let _ = bitmap.try_set(idx, true);
-            }
-            bitmap
-        };
+        let current_active_operators = deposit_entry.notary_operators().clone();
         let new_fee = BitcoinAmount::from_sat(20_000);
 
         // Ensure we have at least 2 operators for reassignment
@@ -596,14 +582,7 @@ mod tests {
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
         let exec_deadline: BitcoinBlockHeight = 100;
         let seed: L1BlockId = arb.generate();
-        let current_active_operators = {
-            let notary_indices = deposit_entry.notary_operators();
-            let mut bitmap = OperatorBitmap::new_empty();
-            for &idx in &notary_indices {
-                let _ = bitmap.try_set(idx, true);
-            }
-            bitmap
-        };
+        let current_active_operators = deposit_entry.notary_operators().clone();
 
         let assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry.clone(),
@@ -647,14 +626,7 @@ mod tests {
         let deposit_entry1: DepositEntry = arb.generate();
         let withdrawal_cmd1: WithdrawalCommand = arb.generate();
         let expired_deadline: BitcoinBlockHeight = 100; // Less than current_height
-        let current_active_operators1 = {
-            let notary_indices = deposit_entry1.notary_operators();
-            let mut bitmap = OperatorBitmap::new_empty();
-            for &idx in &notary_indices {
-                let _ = bitmap.try_set(idx, true);
-            }
-            bitmap
-        };
+        let current_active_operators1 = deposit_entry1.notary_operators().clone();
 
         let expired_assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry1.clone(),
@@ -673,14 +645,7 @@ mod tests {
         let deposit_entry2: DepositEntry = arb.generate();
         let withdrawal_cmd2: WithdrawalCommand = arb.generate();
         let future_deadline: BitcoinBlockHeight = 200; // Greater than current_height
-        let current_active_operators2 = {
-            let notary_indices = deposit_entry2.notary_operators();
-            let mut bitmap = OperatorBitmap::new_empty();
-            for &idx in &notary_indices {
-                let _ = bitmap.try_set(idx, true);
-            }
-            bitmap
-        };
+        let current_active_operators2 = deposit_entry2.notary_operators().clone();
 
         let future_assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry2.clone(),
@@ -718,7 +683,7 @@ mod tests {
         let expired_assignment_after = table.get_assignment(expired_deposit_idx).unwrap();
 
         // The behavior depends on how many eligible operators are available
-        let deposit1_notary_count = deposit_entry1.notary_operators().len();
+        let deposit1_notary_count = deposit_entry1.notary_operators().active_count();
         if deposit1_notary_count > 1
             && expired_assignment_after.current_assignee() != original_assignee
         {

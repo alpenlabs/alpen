@@ -156,7 +156,6 @@ impl OperatorBitmap {
         }
     }
 
-
     /// Creates a new operator bitmap with sequential active indices starting from 0.
     ///
     /// This is optimized for the common case where initial operators have sequential

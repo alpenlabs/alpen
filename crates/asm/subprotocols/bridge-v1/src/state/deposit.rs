@@ -125,13 +125,8 @@ impl DepositEntry {
     ///
     /// # Returns
     ///
-    /// A vector containing the operator indices that were active for this deposit.
-    /// The indices are returned in sorted order.
-    pub fn notary_operators(&self) -> Vec<OperatorIdx> {
-        self.operators.to_indices()
-    }
-
-    pub fn operators(&self) -> &OperatorBitmap {
+    /// A reference to the operator bitmap that contains the operators active for this deposit.
+    pub fn notary_operators(&self) -> &OperatorBitmap {
         &self.operators
     }
 

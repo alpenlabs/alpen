@@ -192,12 +192,8 @@ impl BridgeV1State {
     ) -> Result<(), DepositValidationError> {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
-        let entry = DepositEntry::new(
-            info.deposit_idx,
-            info.outpoint,
-            self.operators().current_multisig_bitmap().clone(),
-            info.amt,
-        )?;
+        let operators = self.operators.current_multisig_bitmap().clone();
+        let entry = DepositEntry::new(info.deposit_idx, info.outpoint, operators, info.amt)?;
         self.deposits.insert_deposit(entry)?;
 
         Ok(())
@@ -294,11 +290,10 @@ impl BridgeV1State {
         let current_block_height = current_block.height_u64();
         let l1_block_id = current_block.blkid();
 
-        let current_operators = self.operators().current_multisig_bitmap().clone();
         self.assignments.reassign_expired_assignments(
             self.operator_fee,
             current_block_height,
-            &current_operators,
+            self.operators.current_multisig_bitmap(),
             *l1_block_id,
         )
     }
