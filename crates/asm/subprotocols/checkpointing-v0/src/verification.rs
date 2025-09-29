@@ -4,8 +4,8 @@
 //! with the current checkpoint verification system while incorporating SPS-62
 //! concepts where beneficial.
 //!
-//! NOTE: This bridges to the current proof verification system until `predicate` framework
-//! is available, as requested for feature parity.
+//! NOTE: Leverage the current proof/signature verification pipeline until the predicate framework
+//! lands
 
 use strata_asm_common::logging;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
@@ -17,7 +17,7 @@ use strata_primitives::{
 
 use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
 
-/// Main checkpoint processing function (SPS-62 inspired)
+/// Main checkpoint processing function
 ///
 /// This processes a checkpoint by verifying its validity and updating the verifier state.
 /// It bridges SPS-62 concepts with current checkpoint verification for feature parity.
@@ -96,14 +96,13 @@ fn verify_checkpoint_proof(
     }
 
     let is_empty_proof = proof_receipt.proof().is_empty();
-    let allow_empty = state.proof_publish_mode.allow_empty()
-        || matches!(
-            state.rollup_verifying_key,
-            RollupVerifyingKey::NativeVerifyingKey
-        );
+    let allow_empty = matches!(
+        state.rollup_verifying_key,
+        RollupVerifyingKey::NativeVerifyingKey
+    );
 
     if is_empty_proof {
-        // TODO(STR-XXXX): Remove empty-proof acceptance once the predicate framework lands so this
+        // TODO: Remove empty-proof acceptance once the predicate framework lands so this
         // code cannot reach production unchanged.
         if allow_empty {
             logging::warn!(
@@ -141,7 +140,7 @@ fn verify_epoch_continuity(
             .pre_state_root
     {
         return Err(CheckpointV0Error::StateTransitionError(
-            "L2 state root mismatch between checkpoints".to_string(),
+            "OL state root mismatch between checkpoints".to_string(),
         ));
     }
 

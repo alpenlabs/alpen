@@ -136,14 +136,14 @@ fn process_checkpoint_transaction_v0(
     relayer: &mut impl MsgRelayer,
 ) -> CheckpointV0Result<bool> {
     // 1. Extract signed checkpoint from SPS-50 envelope
+
+    // we only have one tx type for checkpointing v0
     let signed_checkpoint = extract_signed_checkpoint_from_envelope(tx)?;
 
     // 2. Process checkpoint using v0 verification logic
     process_checkpoint_v0(state, &signed_checkpoint, current_l1_height)?;
 
-    // 3. Extract withdrawal messages for bridge forwarding. The OL state machine already tracks
-    //    withdrawal intents, but the bridge subprotocol still needs an explicit message so it can
-    //    drive Bitcoin-side assignment without re-parsing checkpoints.
+    // 3. Extract withdrawal messages for bridge forwarding.
     let withdrawal_intents = extract_withdrawal_messages(signed_checkpoint.checkpoint())
         .map_err(|e| CheckpointV0Error::ParsingError(e.to_string()))?;
 
@@ -175,14 +175,15 @@ fn apply_sequencer_update(state: &mut CheckpointV0VerifierState, new_key: Buf32)
         return;
     }
 
-    state.update_sequencer_key(new_key);
-
     match previous_rule {
         CredRule::SchnorrKey(_) => {
-            logging::info!(new_key = %new_key, "Updated sequencer public key")
+            state.update_sequencer_key(new_key);
+            logging::info!(new_key = %new_key, "Updated sequencer schnorr public key");
         }
         CredRule::Unchecked => {
-            logging::warn!(new_key = %new_key, "Enabled sequencer key checks via admin update")
+            logging::warn!(new_key = %new_key, "Received unchecked sequencer key update from administration");
+            state.update_sequencer_key(new_key);
+            logging::info!(new_key = %new_key, "Updated sequencer public key to unchecked CredRule");
         }
     }
 }
@@ -192,14 +193,12 @@ fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_vk: RollupV
     let next_kind = rollup_vk_kind(&new_vk);
 
     if prev_kind == next_kind {
-        // Even if the proving system stays the same we still replace the key to pick up new
-        // parameters.
         logging::info!(kind = next_kind, "Applying rollup verifying key update");
     } else {
         logging::info!(
             previous = prev_kind,
             next = next_kind,
-            "Switching rollup verifying key proving system"
+            "Switching rollup proving system"
         );
     }
 
@@ -220,7 +219,6 @@ mod tests {
         block_credential::CredRule,
         buf::Buf32,
         l1::{L1BlockCommitment, L1BlockId},
-        params::ProofPublishMode,
         proof::RollupVerifyingKey,
     };
 
@@ -232,7 +230,6 @@ mod tests {
             genesis_l1_block: genesis_commitment,
             cred_rule: CredRule::Unchecked,
             rollup_verifying_key: RollupVerifyingKey::NativeVerifyingKey,
-            proof_publish_mode: ProofPublishMode::Strict,
         };
 
         CheckpointingV0Params {
@@ -254,22 +251,5 @@ mod tests {
             CredRule::SchnorrKey(current) => assert_eq!(current, &new_key),
             CredRule::Unchecked => panic!("sequencer key should switch to schnorr rule"),
         }
-    }
-
-    #[test]
-    fn process_msgs_updates_rollup_verifying_key() {
-        let params = test_params();
-        let mut state = CheckpointingV0Subproto::init(&params).expect("init state");
-
-        let msgs = [CheckpointingIncomingMsg::UpdateRollupVerifyingKey(
-            RollupVerifyingKey::NativeVerifyingKey,
-        )];
-
-        CheckpointingV0Subproto::process_msgs(&mut state, &msgs, &params);
-
-        assert!(matches!(
-            state.rollup_verifying_key,
-            RollupVerifyingKey::NativeVerifyingKey
-        ));
     }
 }

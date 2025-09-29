@@ -68,7 +68,6 @@ impl StrataAsmSpec {
                 genesis_l1_block: params.genesis_l1_view.blk,
                 cred_rule: params.cred_rule.clone(),
                 rollup_verifying_key: params.rollup_vk.clone(),
-                proof_publish_mode: params.proof_publish_mode.clone(),
             },
         };
 

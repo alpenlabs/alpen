@@ -26,8 +26,8 @@ pub(crate) fn handle_pending_updates(
     relayer: &mut impl MsgRelayer,
     current_height: u64,
 ) {
+    // Get all the update actions that are ready to be enacted
     let queued_updates = state.process_queued(current_height);
-
     for queued in queued_updates {
         let (update_id, action) = queued.into_id_and_action();
 
@@ -59,7 +59,7 @@ pub(crate) fn handle_pending_updates(
                     }
                     ProofType::OlStf => match deserialize_rollup_vk(&vk) {
                         Ok(rollup_vk) => {
-                            relay_checkpoint_rollup_vk(relayer, rollup_vk);
+                            relay_checkpointing_rollup_vk(relayer, rollup_vk);
                             info!(
                                 update_id = update_id,
                                 "Forwarded rollup verifying key update to checkpoint subprotocol",
@@ -80,10 +80,10 @@ pub(crate) fn handle_pending_updates(
             }
             UpdateAction::Sequencer(update) => {
                 let new_key = update.into_inner();
-                relay_checkpoint_sequencer_update(relayer, new_key);
+                relay_checkpointing_sequencer_update(relayer, new_key);
                 info!(
                     update_id = update_id,
-                    "Forwarded queued sequencer key update to checkpoint subprotocol",
+                    "Forwarded queued sequencer key update to checkpointing subprotocol",
                 );
             }
         }
@@ -138,12 +138,13 @@ pub(crate) fn handle_action(
             // Generate a unique ID for this update
             let id = state.next_update_id();
             match update {
+                // Directly apply it without queuing
                 UpdateAction::Sequencer(update) => {
                     let new_key = update.into_inner();
-                    relay_checkpoint_sequencer_update(relayer, new_key);
+                    relay_checkpointing_sequencer_update(relayer, new_key);
                     info!(
                         update_id = id,
-                        "Applied sequencer update immediately via checkpoint inter-proto message",
+                        "Forwarded sequencer key update immediately to checkpointing subprotocol",
                     );
                 }
                 action => {
@@ -171,12 +172,12 @@ pub(crate) fn handle_action(
     Ok(())
 }
 
-fn relay_checkpoint_sequencer_update(relayer: &mut impl MsgRelayer, new_key: Buf32) {
+fn relay_checkpointing_sequencer_update(relayer: &mut impl MsgRelayer, new_key: Buf32) {
     let msg = CheckpointingIncomingMsg::UpdateSequencerKey(new_key);
     relayer.relay_msg(&msg);
 }
 
-fn relay_checkpoint_rollup_vk(relayer: &mut impl MsgRelayer, rollup_vk: RollupVerifyingKey) {
+fn relay_checkpointing_rollup_vk(relayer: &mut impl MsgRelayer, rollup_vk: RollupVerifyingKey) {
     let msg = CheckpointingIncomingMsg::UpdateRollupVerifyingKey(rollup_vk);
     relayer.relay_msg(&msg);
 }
@@ -221,28 +222,31 @@ mod tests {
         queued_update::QueuedUpdate, state::AdministrationSubprotoState,
     };
 
-    struct MockRelayer {
+    struct MockRelayer<M> {
         logs: Vec<AsmLogEntry>,
-        checkpoint_msgs: Vec<CheckpointingIncomingMsg>,
+        messages: Vec<M>,
     }
 
-    impl MockRelayer {
+    impl<M> MockRelayer<M> {
         fn new() -> Self {
             Self {
                 logs: Vec::new(),
-                checkpoint_msgs: Vec::new(),
+                messages: Vec::new(),
             }
         }
 
-        fn checkpoint_msgs(&self) -> &[CheckpointingIncomingMsg] {
-            &self.checkpoint_msgs
+        fn messages(&self) -> &[M] {
+            &self.messages
         }
     }
 
-    impl MsgRelayer for MockRelayer {
+    impl<M> MsgRelayer for MockRelayer<M>
+    where
+        M: InterprotoMsg + Clone + 'static,
+    {
         fn relay_msg(&mut self, m: &dyn InterprotoMsg) {
-            if let Some(msg) = m.as_dyn_any().downcast_ref::<CheckpointingIncomingMsg>() {
-                self.checkpoint_msgs.push(msg.clone());
+            if let Some(msg) = m.as_dyn_any().downcast_ref::<M>() {
+                self.messages.push(msg.clone());
             }
         }
 
@@ -308,7 +312,7 @@ mod tests {
     fn test_strata_administrator_update_actions() {
         let (params, admin_sks, _) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
-        let mut relayer = MockRelayer::new();
+        let mut relayer = MockRelayer::<CheckpointingIncomingMsg>::new();
         let current_height = 1000;
 
         // Generate 5 random update actions that require StrataAdministrator role
@@ -368,7 +372,7 @@ mod tests {
     fn test_strata_administrator_incorrect_seqno() {
         let (params, admin_sks, _) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
-        let mut relayer = MockRelayer::new();
+        let mut relayer = MockRelayer::<CheckpointingIncomingMsg>::new();
         let current_height = 1000;
         let initial_seq_no = 0;
 
@@ -444,7 +448,7 @@ mod tests {
         let (params, _, seq_manager_sks) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
 
-        let mut relayer = MockRelayer::new();
+        let mut relayer = MockRelayer::<CheckpointingIncomingMsg>::new();
         let current_height = 1000;
 
         // Generate random sequencer update actions
@@ -492,10 +496,10 @@ mod tests {
             assert!(state.find_queued(&initial_next_id).is_none());
         }
 
-        assert_eq!(relayer.checkpoint_msgs().len(), update_count);
+        let checkpoint_msgs = relayer.messages();
+        assert_eq!(checkpoint_msgs.len(), update_count);
         assert!(
-            relayer
-                .checkpoint_msgs()
+            checkpoint_msgs
                 .iter()
                 .all(|msg| matches!(msg, CheckpointingIncomingMsg::UpdateSequencerKey(_)))
         );
@@ -505,7 +509,7 @@ mod tests {
     fn test_rollup_verifying_key_update_forwarded_to_checkpoint() {
         let (params, _, _) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
-        let mut relayer = MockRelayer::new();
+        let mut relayer = MockRelayer::<CheckpointingIncomingMsg>::new();
 
         let rollup_vk = RollupVerifyingKey::NativeVerifyingKey;
         let vk_bytes = serde_json::to_vec(&rollup_vk).expect("serialize vk");
@@ -519,13 +523,16 @@ mod tests {
             update.into(),
             activation_height,
         ));
-        state.increment_next_update_id();
 
         handle_pending_updates(&mut state, &mut relayer, activation_height);
 
         assert!(state.queued().is_empty());
-        assert_eq!(relayer.checkpoint_msgs().len(), 1);
-        match &relayer.checkpoint_msgs()[0] {
+        let checkpoint_msgs = relayer.messages();
+        assert_eq!(checkpoint_msgs.len(), 1);
+        match checkpoint_msgs
+            .first()
+            .expect("checkpoint message expected")
+        {
             CheckpointingIncomingMsg::UpdateRollupVerifyingKey(vk) => {
                 let serialized = serde_json::to_vec(vk).expect("serialize forwarded vk");
                 assert_eq!(
@@ -545,7 +552,7 @@ mod tests {
     fn test_strata_administrator_cancel_action() {
         let (params, admin_sks, _) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
-        let mut relayer = MockRelayer::new();
+        let mut relayer = MockRelayer::<CheckpointingIncomingMsg>::new();
         let no_of_updates = 5;
         let current_height = 1000;
 
@@ -623,7 +630,7 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let (params, _, _) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
-        let mut relayer = MockRelayer::new();
+        let mut relayer = MockRelayer::<CheckpointingIncomingMsg>::new();
         let multisig = AggregatedSignature::<SchnorrScheme>::new(BitVec::new(), Buf64::default());
         let current_height = 1000;
 
@@ -650,7 +657,7 @@ mod tests {
     #[test]
     fn test_strata_administrator_duplicate_cancels() {
         let (params, admin_sks, _) = create_test_params();
-        let mut relayer = MockRelayer::new();
+        let mut relayer = MockRelayer::<CheckpointingIncomingMsg>::new();
         let mut state = AdministrationSubprotoState::new(&params);
         let initial_seq_no = 0;
         let current_height = 1000;

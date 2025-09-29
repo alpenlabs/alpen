@@ -8,20 +8,12 @@ workspace = true
 
 [dependencies]
 # ASM dependencies
+borsh.workspace = true
 strata-asm-common.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
 strata-asm-proto-checkpointing-txs.workspace = true
-
-# Primitives and types
-strata-primitives.workspace = true
-
-# Crypto and proof verification
 strata-crypto.workspace = true
-
-# Serialization
-borsh.workspace = true
-
-# Error handling
+strata-primitives.workspace = true
 thiserror.workspace = true
 
 [features]

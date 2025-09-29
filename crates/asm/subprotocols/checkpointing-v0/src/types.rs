@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 // Re-export current checkpoint types for compatibility
 use strata_primitives::{
     batch::Checkpoint as PrimitivesCheckpoint, block_credential::CredRule, buf::Buf32,
-    l1::L1BlockCommitment, params::ProofPublishMode, proof::RollupVerifyingKey,
+    l1::L1BlockCommitment, proof::RollupVerifyingKey,
 };
 
 /// Checkpoint verifier state for checkpointing v0
@@ -29,8 +29,6 @@ pub struct CheckpointV0VerifierState {
     pub cred_rule: CredRule,
     /// Rollup verifying key used for proof verification
     pub rollup_verifying_key: RollupVerifyingKey,
-    /// Proof publication policy used to determine whether empty proofs are acceptable
-    pub proof_publish_mode: ProofPublishMode,
 }
 
 /// Verification parameters for checkpointing v0
@@ -46,8 +44,6 @@ pub struct CheckpointV0VerificationParams {
     pub cred_rule: CredRule,
     /// Rollup verifying key for proof verification
     pub rollup_verifying_key: RollupVerifyingKey,
-    /// Proof publication policy
-    pub proof_publish_mode: ProofPublishMode,
 }
 
 /// Compatibility functions for working with current checkpoint types
@@ -60,7 +56,6 @@ impl CheckpointV0VerifierState {
             current_verified_epoch: 0,
             cred_rule: params.cred_rule.clone(),
             rollup_verifying_key: params.rollup_verifying_key.clone(),
-            proof_publish_mode: params.proof_publish_mode.clone(),
         }
     }
 
