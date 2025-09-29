@@ -6,7 +6,9 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
-use strata_asm_proto_checkpointing_v0::{CheckpointingV0Params, CheckpointingV0Subproto};
+use strata_asm_proto_checkpointing_v0::{
+    CheckpointV0VerificationParams, CheckpointingV0Params, CheckpointingV0Subproto,
+};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     l1::BitcoinAmount,
@@ -60,15 +62,19 @@ impl StrataAsmSpec {
 
     pub fn from_params(params: &RollupParams) -> Self {
         let OperatorConfig::Static(operators) = params.operator_config.clone();
+
+        let checkpointing_v0_params = CheckpointingV0Params {
+            verification_params: CheckpointV0VerificationParams {
+                genesis_l1_block: params.genesis_l1_view.blk,
+                cred_rule: params.cred_rule.clone(),
+                rollup_verifying_key: params.rollup_vk.clone(),
+                proof_publish_mode: params.proof_publish_mode.clone(),
+            },
+        };
+
         Self {
             magic_bytes: params.magic_bytes,
-            core_genesis: CoreGenesisConfig {
-                // TODO(QQ): adjust
-                checkpoint_vk: Default::default(),
-                genesis_l1_block: params.genesis_l1_view.blk,
-                // TODO(QQ): adjust
-                sequencer_pubkey: Default::default(),
-            },
+            checkpointing_v0_params,
             bridge_v1_genesis: BridgeV1Config {
                 operators,
                 denomination: BitcoinAmount::from_sat(params.deposit_amount),

@@ -193,10 +193,6 @@ mod tests {
     use bitvec::prelude::*;
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
-<<<<<<< HEAD:crates/asm/subprotocols/admin/src/handler.rs
-    use strata_asm_txs_admin::{
-        actions::{CancelAction, MultisigAction, UpdateAction, updates::seq::SequencerUpdate},
-=======
     use strata_asm_proto_checkpointing_v0::CheckpointingIncomingMsg;
     use strata_asm_txs_admin::{
         actions::{

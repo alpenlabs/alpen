@@ -39,5 +39,6 @@ mod verification;
 pub use error::{CheckpointV0Error, CheckpointV0Result};
 pub use msgs::CheckpointingIncomingMsg;
 pub use subprotocol::{CheckpointingV0Params, CheckpointingV0Subproto};
+pub use types::{CheckpointV0VerificationParams, CheckpointV0VerifierState};
 // Re-export verification functions for testing and integration
 pub use verification::process_checkpoint_v0;

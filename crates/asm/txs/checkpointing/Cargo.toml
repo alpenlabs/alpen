@@ -10,6 +10,7 @@ workspace = true
 strata-asm-common.workspace = true
 strata-l1-txfmt.workspace = true
 strata-l1tx.workspace = true
+strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 

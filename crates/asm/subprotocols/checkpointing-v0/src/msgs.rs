@@ -11,7 +11,10 @@ use strata_primitives::{buf::Buf32, proof::RollupVerifyingKey};
 // Clippy warns about `large_enum_variant` here because the verifying key payload is big, but the
 // checkpointing subprotocol needs to own the key without additional indirection. These messages
 // are infrequent, so the extra size is an acceptable trade-off.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "checkpointing subprotocol needs to own the verifying key without indirection, messages are infrequent"
+)]
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub enum CheckpointingIncomingMsg {
     /// Update the Schnorr public key used to verify sequencer signatures embedded in checkpoints.
