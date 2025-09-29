@@ -14293,6 +14293,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "strata-asm-common",
+ "strata-asm-logs",
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpointing-txs",
  "strata-crypto",

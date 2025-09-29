@@ -7,14 +7,17 @@
 //! envelope layout so we can reuse existing verification logic while moving toward SPS-62.
 
 use strata_asm_common::{
-    logging, AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    logging, AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
 };
+use strata_asm_logs::CheckpointUpdate;
 use strata_asm_proto_bridge_v1::{BridgeIncomingMsg, WithdrawOutput};
 use strata_asm_proto_checkpointing_txs::{
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
     CHECKPOINTING_V0_SUBPROTOCOL_ID,
 };
-use strata_primitives::{block_credential::CredRule, buf::Buf32, proof::RollupVerifyingKey};
+use strata_primitives::{
+    block_credential::CredRule, buf::Buf32, l1::BitcoinTxid, proof::RollupVerifyingKey,
+};
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
@@ -163,6 +166,16 @@ fn process_checkpoint_transaction_v0(
         epoch,
         current_l1_height
     );
+
+    // Emit CheckpointUpdate log
+    let checkpoint_txid = BitcoinTxid::new(&tx.tx().compute_txid());
+    let checkpoint_update =
+        CheckpointUpdate::from_checkpoint(signed_checkpoint.checkpoint(), checkpoint_txid);
+
+    match AsmLogEntry::from_log(&checkpoint_update) {
+        Ok(log_entry) => relayer.emit_log(log_entry),
+        Err(err) => logging::error!(error = ?err, "Failed to encode checkpoint update log"),
+    }
 
     Ok(true)
 }
