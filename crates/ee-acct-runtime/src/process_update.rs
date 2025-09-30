@@ -257,7 +257,7 @@ fn apply_message(
 
         DecodedEeMessageData::Commit(_data) => {
             // Just ignore this one for now because we're not handling it.
-            // TOOD improve
+            // TODO improve
         }
     }
 
