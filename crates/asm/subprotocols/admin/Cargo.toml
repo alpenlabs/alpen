@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-asm-proto-checkpointing-v0.workspace = true
+strata-asm-proto-checkpoint-v0.workspace = true
 strata-asm-txs-admin.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true

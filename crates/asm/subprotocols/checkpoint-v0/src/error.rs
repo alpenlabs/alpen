@@ -1,6 +1,6 @@
-//! Error types for checkpointing v0 subprotocol
+//! Error types for checkpoint v0 subprotocol
 
-use strata_asm_proto_checkpointing_txs::CheckpointTxError;
+use strata_asm_proto_checkpoint_txs::CheckpointTxError;
 use thiserror::Error;
 
 /// Errors that can occur during checkpoint verification and processing
@@ -28,11 +28,20 @@ pub enum CheckpointV0Error {
 
     /// Invalid transaction type
     #[error("Unsupported transaction type: {0}")]
-    UnsupportedTxType(String),
+    UnsupportedTxType(u8),
 
-    /// State transition validation failed
-    #[error("State transition validation failed: {0}")]
-    StateTransitionError(String),
+    /// Batch info epoch does not align with transition epoch
+    #[error(
+        "Checkpoint batch info epoch {info_epoch} differs from transition epoch {transition_epoch}"
+    )]
+    BatchEpochMismatch {
+        info_epoch: u64,
+        transition_epoch: u64,
+    },
+
+    /// State roots between consecutive checkpoints do not align
+    #[error("Checkpoint state root mismatch between consecutive epochs")]
+    StateRootMismatch,
 }
 
 /// Result type alias for checkpoint operations
@@ -41,11 +50,10 @@ pub type CheckpointV0Result<T> = Result<T, CheckpointV0Error>;
 impl From<CheckpointTxError> for CheckpointV0Error {
     fn from(err: CheckpointTxError) -> Self {
         match err {
-            CheckpointTxError::UnexpectedTxType { expected, actual } => {
-                CheckpointV0Error::UnsupportedTxType(format!(
-                    "Expected checkpoint tx type {expected}, got {actual}"
-                ))
-            }
+            CheckpointTxError::UnexpectedTxType {
+                expected: _,
+                actual,
+            } => CheckpointV0Error::UnsupportedTxType(actual),
             other => CheckpointV0Error::ParsingError(other.to_string()),
         }
     }

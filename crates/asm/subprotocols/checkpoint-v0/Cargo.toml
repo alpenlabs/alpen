@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-proto-checkpointing-v0"
+name = "strata-asm-proto-checkpoint-v0"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,7 +12,7 @@ borsh.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
-strata-asm-proto-checkpointing-txs.workspace = true
+strata-asm-proto-checkpoint-txs.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
 thiserror.workspace = true

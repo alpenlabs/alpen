@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-proto-checkpointing-txs"
+name = "strata-asm-proto-checkpoint-txs"
 version = "0.1.0"
 edition = "2024"
 
@@ -16,3 +16,6 @@ strata-state.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true

@@ -1,10 +1,10 @@
-//! Checkpointing v0 data structures
+//! Checkpoint v0 data structures
 //!
 //! This module defines data structures that maintain compatibility with the current
 //! checkpoint implementation while incorporating SPS-62 concepts where applicable.
 //!
-//! NOTE: This is checkpointing v0 which focuses on feature parity with the current
-//! checkpointing system. Future versions will be fully SPS-62 compatible.
+//! NOTE: This is checkpoint v0 which focuses on feature parity with the current
+//! checkpoint system. Future versions will be fully SPS-62 compatible.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 // Re-export current checkpoint types for compatibility
@@ -13,25 +13,29 @@ use strata_primitives::{
     l1::L1BlockCommitment, proof::RollupVerifyingKey,
 };
 
-/// Checkpoint verifier state for checkpointing v0
+/// Checkpoint verifier state for checkpoint v0
 ///
 /// NOTE: This maintains state similar to the current core subprotocol but
-/// simplified for checkpointing v0 compatibility
+/// simplified for checkpoint v0 compatibility
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct CheckpointV0VerifierState {
     /// The last verified checkpoint
     pub last_checkpoint: Option<PrimitivesCheckpoint>,
+
     /// Last L1 block where we got a valid checkpoint
     pub last_checkpoint_l1_height: u64,
+
     /// Current epoch we've verified up to
     pub current_verified_epoch: u64,
+
     /// Credential rule governing signature verification
     pub cred_rule: CredRule,
+
     /// Rollup verifying key used for proof verification
     pub rollup_verifying_key: RollupVerifyingKey,
 }
 
-/// Verification parameters for checkpointing v0
+/// Verification parameters for checkpoint v0
 ///
 /// NOTE: This bridges to the current verification system while maintaining
 /// some SPS-62 concepts for future compatibility.
@@ -40,8 +44,10 @@ pub struct CheckpointV0VerifierState {
 pub struct CheckpointV0VerificationParams {
     /// Genesis L1 block commitment
     pub genesis_l1_block: L1BlockCommitment,
+
     /// Credential rule governing signature verification
     pub cred_rule: CredRule,
+
     /// Rollup verifying key for proof verification
     pub rollup_verifying_key: RollupVerifyingKey,
 }

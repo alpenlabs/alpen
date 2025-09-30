@@ -1,4 +1,4 @@
-//! Checkpoint verification logic for checkpointing v0
+//! Checkpoint verification logic for checkpoint v0
 //!
 //! This module implements verification procedures that maintain compatibility
 //! with the current checkpoint verification system while incorporating SPS-62
@@ -11,7 +11,6 @@ use strata_asm_common::logging;
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_primitives::{
     batch::{verify_signed_checkpoint_sig, BatchTransition, Checkpoint, SignedCheckpoint},
-    block_credential::CredRule,
     proof::RollupVerifyingKey,
 };
 
@@ -42,7 +41,9 @@ pub fn process_checkpoint_v0(
     }
 
     ensure_batch_epochs_consistent(checkpoint)?;
-    verify_checkpoint_signature(signed_checkpoint, &state.cred_rule)?;
+    if !verify_signed_checkpoint_sig(signed_checkpoint, &state.cred_rule) {
+        return Err(CheckpointV0Error::InvalidSignature);
+    }
     verify_checkpoint_proof(checkpoint, state)?;
 
     if let Some(previous) = &state.last_checkpoint {
@@ -59,22 +60,12 @@ fn ensure_batch_epochs_consistent(checkpoint: &Checkpoint) -> Result<(), Checkpo
     let info_epoch = checkpoint.batch_info().epoch();
     let transition_epoch = checkpoint.batch_transition().epoch;
     if info_epoch != transition_epoch {
-        return Err(CheckpointV0Error::StateTransitionError(
-            "batch info and transition epochs differ".to_string(),
-        ));
+        return Err(CheckpointV0Error::BatchEpochMismatch {
+            info_epoch,
+            transition_epoch,
+        });
     }
     Ok(())
-}
-
-fn verify_checkpoint_signature(
-    signed_checkpoint: &SignedCheckpoint,
-    cred_rule: &CredRule,
-) -> Result<(), CheckpointV0Error> {
-    if verify_signed_checkpoint_sig(signed_checkpoint, cred_rule) {
-        Ok(())
-    } else {
-        Err(CheckpointV0Error::InvalidSignature)
-    }
 }
 
 fn verify_checkpoint_proof(
@@ -102,9 +93,7 @@ fn verify_checkpoint_proof(
     );
 
     if is_empty_proof {
-        // TODO: Remove empty-proof acceptance once the predicate framework lands so this
-        // code cannot reach production unchanged.
-        if allow_empty {
+        if allow_empty && cfg!(feature = "debug-utils") {
             logging::warn!(
                 epoch = checkpoint.batch_info().epoch(),
                 "Accepting empty checkpoint proof"
@@ -139,9 +128,7 @@ fn verify_epoch_continuity(
             .chainstate_transition
             .pre_state_root
     {
-        return Err(CheckpointV0Error::StateTransitionError(
-            "OL state root mismatch between checkpoints".to_string(),
-        ));
+        return Err(CheckpointV0Error::StateRootMismatch);
     }
 
     Ok(())

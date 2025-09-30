@@ -6,8 +6,8 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
-use strata_asm_proto_checkpointing_v0::{
-    CheckpointV0VerificationParams, CheckpointingV0Params, CheckpointingV0Subproto,
+use strata_asm_proto_checkpoint_v0::{
+    CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
@@ -25,7 +25,7 @@ pub struct StrataAsmSpec {
 
     // subproto params, which right now currently just contain the genesis data
     // TODO rename these
-    checkpointing_v0_params: CheckpointingV0Params,
+    checkpoint_v0_params: CheckpointV0Params,
     bridge_v1_genesis: BridgeV1Config,
 }
 
@@ -36,12 +36,12 @@ impl AsmSpec for StrataAsmSpec {
 
     fn load_subprotocols(&self, loader: &mut impl Loader) {
         // TODO avoid clone?
-        loader.load_subprotocol::<CheckpointingV0Subproto>(self.checkpointing_v0_params.clone());
+        loader.load_subprotocol::<CheckpointV0Subproto>(self.checkpoint_v0_params.clone());
         loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
     }
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
-        stage.invoke_subprotocol::<CheckpointingV0Subproto>();
+        stage.invoke_subprotocol::<CheckpointV0Subproto>();
         stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
 }
@@ -50,12 +50,12 @@ impl StrataAsmSpec {
     /// Creates a new ASM spec instance.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
-        checkpointing_v0_params: CheckpointingV0Params,
+        checkpoint_v0_params: CheckpointV0Params,
         bridge_v1_genesis: BridgeV1Config,
     ) -> Self {
         Self {
             magic_bytes,
-            checkpointing_v0_params,
+            checkpoint_v0_params,
             bridge_v1_genesis,
         }
     }
@@ -63,7 +63,7 @@ impl StrataAsmSpec {
     pub fn from_params(params: &RollupParams) -> Self {
         let OperatorConfig::Static(operators) = params.operator_config.clone();
 
-        let checkpointing_v0_params = CheckpointingV0Params {
+        let checkpoint_v0_params = CheckpointV0Params {
             verification_params: CheckpointV0VerificationParams {
                 genesis_l1_block: params.genesis_l1_view.blk,
                 cred_rule: params.cred_rule.clone(),
@@ -73,7 +73,7 @@ impl StrataAsmSpec {
 
         Self {
             magic_bytes: params.magic_bytes,
-            checkpointing_v0_params,
+            checkpoint_v0_params,
             bridge_v1_genesis: BridgeV1Config {
                 operators,
                 denomination: BitcoinAmount::from_sat(params.deposit_amount),

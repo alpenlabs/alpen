@@ -23,7 +23,7 @@
 //! - **`MOCK_WITHDRAW_INTENT_TX_TYPE` (2)**: Creates withdrawal intents that are sent to the bridge
 //!   subprotocol, simulating withdrawals from the Orchestration Layer. Format: `[amount: 8
 //!   bytes][descriptor: variable]` where the descriptor is self-describing Bitcoin-BOSD format.
-//!   These messages normally originate from the Checkpointing subprotocol through inter-protocol
+//!   These messages normally originate from the Checkpoint subprotocol through inter-protocol
 //!   messaging.
 //!
 //! # Subprotocol ID

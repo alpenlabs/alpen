@@ -1,7 +1,7 @@
-//! Checkpointing v0 Subprotocol Implementation
+//! Checkpoint v0 Subprotocol Implementation
 //!
-//! This module implements the checkpointing v0 subprotocol that maintains feature parity
-//! with the current checkpointing system while following SPS-62 structure where beneficial.
+//! This module implements the checkpoint v0 subprotocol that maintains feature parity
+//! with the current checkpoint system while following SPS-62 structure where beneficial.
 //!
 //! NOTE: This implementation bridges the legacy checkpoint payload format with the new SPS-50
 //! envelope layout so we can reuse existing verification logic while moving toward SPS-62.
@@ -11,9 +11,9 @@ use strata_asm_common::{
 };
 use strata_asm_logs::CheckpointUpdate;
 use strata_asm_proto_bridge_v1::{BridgeIncomingMsg, WithdrawOutput};
-use strata_asm_proto_checkpointing_txs::{
+use strata_asm_proto_checkpoint_txs::{
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
-    CHECKPOINTING_V0_SUBPROTOCOL_ID,
+    CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
 };
 use strata_primitives::{
     block_credential::CredRule, buf::Buf32, l1::BitcoinTxid, proof::RollupVerifyingKey,
@@ -21,45 +21,45 @@ use strata_primitives::{
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
-    msgs::CheckpointingIncomingMsg,
+    msgs::CheckpointIncomingMsg,
     types::{CheckpointV0VerificationParams, CheckpointV0VerifierState},
     verification::process_checkpoint_v0,
 };
 
-/// Checkpointing v0 subprotocol parameters
+/// Checkpoint v0 subprotocol parameters
 ///
 /// NOTE: This maintains compatibility with current checkpoint parameters while
 /// incorporating SPS-62 structure concepts for future transition
 #[derive(Clone, Debug)]
-pub struct CheckpointingV0Params {
+pub struct CheckpointV0Params {
     /// Verification parameters for checkpoint validation
     pub verification_params: CheckpointV0VerificationParams,
 }
 
-/// Checkpointing v0 subprotocol implementation.
+/// Checkpoint v0 subprotocol implementation.
 ///
 /// This struct implements the [`Subprotocol`] trait to integrate checkpoint
 /// verification functionality with the ASM. It maintains feature parity with
-/// the current checkpointing system while following SPS-62 envelope structure.
+/// the current checkpoint system while following SPS-62 envelope structure.
 ///
-/// NOTE: This is checkpointing v0 - focused on current system compatibility.
+/// NOTE: This is checkpoint v0 - focused on current system compatibility.
 /// Future versions will be fully SPS-62 compliant.
 #[derive(Copy, Clone, Debug)]
-pub struct CheckpointingV0Subproto;
+pub struct CheckpointV0Subproto;
 
-impl Subprotocol for CheckpointingV0Subproto {
-    const ID: SubprotocolId = CHECKPOINTING_V0_SUBPROTOCOL_ID;
+impl Subprotocol for CheckpointV0Subproto {
+    const ID: SubprotocolId = CHECKPOINT_V0_SUBPROTOCOL_ID;
 
     type State = CheckpointV0VerifierState;
-    type Params = CheckpointingV0Params;
-    type Msg = CheckpointingIncomingMsg;
+    type Params = CheckpointV0Params;
+    type Msg = CheckpointIncomingMsg;
     type AuxInput = ();
 
     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
         Ok(CheckpointV0VerifierState::new(&params.verification_params))
     }
 
-    /// Process checkpoint transactions according to checkpointing v0 specification
+    /// Process checkpoint transactions according to checkpoint v0 specification
     ///
     /// This function handles checkpoint transactions that use current checkpoint format
     /// wrapped in SPS-50 envelopes:
@@ -83,38 +83,51 @@ impl Subprotocol for CheckpointingV0Subproto {
         let current_l1_height = anchor_pre.chain_view.pow_state.last_verified_block.height();
 
         for tx in txs {
-            let result = process_checkpoint_transaction_v0(state, tx, current_l1_height, relayer);
+            let tx_type = tx.tag().tx_type();
+            if tx_type != OL_STF_CHECKPOINT_TX_TYPE {
+                logging::debug!(
+                    txid = %tx.tx().compute_txid(),
+                    tx_type,
+                    "Skipping non-checkpoint transaction in checkpoint subprotocol",
+                );
+                continue;
+            }
 
-            // Log transaction processing results
-            match result {
-                Ok(accepted) => {
-                    if accepted {
-                        let txid = tx.tx().compute_txid();
-                        logging::info!("Successfully processed checkpoint transaction: {txid:?}");
-                    } else {
-                        let txid = tx.tx().compute_txid();
-                        logging::warn!("Rejected checkpoint transaction: {txid:?}");
-                    }
+            match process_checkpoint_transaction_v0(state, tx, current_l1_height, relayer) {
+                Ok(true) => {
+                    logging::info!(
+                        txid = %tx.tx().compute_txid(),
+                        "Successfully processed checkpoint transaction"
+                    );
                 }
-                Err(e) => {
-                    let txid = tx.tx().compute_txid();
-                    logging::warn!("Error processing checkpoint transaction {txid:?}: {e:?}");
+                Ok(false) => {
+                    logging::warn!(
+                        txid = %tx.tx().compute_txid(),
+                        "Rejected checkpoint transaction"
+                    );
+                }
+                Err(error) => {
+                    logging::warn!(
+                        txid = %tx.tx().compute_txid(),
+                        error = ?error,
+                        "Error processing checkpoint transaction"
+                    );
                 }
             }
         }
     }
 
-    /// Process incoming administration upgrade messages for checkpointing v0.
+    /// Process incoming administration upgrade messages for checkpoint v0.
     ///
     /// Handles configuration updates emitted by the administration subprotocol such as
     /// sequencer key rotations and rollup verifying key refreshes.
     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _params: &Self::Params) {
         for msg in msgs {
             match msg {
-                CheckpointingIncomingMsg::UpdateSequencerKey(new_key) => {
+                CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
                     apply_sequencer_update(state, *new_key);
                 }
-                CheckpointingIncomingMsg::UpdateRollupVerifyingKey(new_vk) => {
+                CheckpointIncomingMsg::UpdateRollupVerifyingKey(new_vk) => {
                     apply_rollup_vk_update(state, new_vk.clone());
                 }
             }
@@ -140,7 +153,7 @@ fn process_checkpoint_transaction_v0(
 ) -> CheckpointV0Result<bool> {
     // 1. Extract signed checkpoint from SPS-50 envelope
 
-    // we only have one tx type for checkpointing v0
+    // we only have one tx type for checkpoint v0
     let signed_checkpoint = extract_signed_checkpoint_from_envelope(tx)?;
 
     // 2. Process checkpoint using v0 verification logic
@@ -237,7 +250,7 @@ mod tests {
 
     use super::*;
 
-    fn test_params() -> CheckpointingV0Params {
+    fn test_params() -> CheckpointV0Params {
         let genesis_commitment = L1BlockCommitment::new(0, L1BlockId::from(Buf32::default()));
         let verification_params = CheckpointV0VerificationParams {
             genesis_l1_block: genesis_commitment,
@@ -245,7 +258,7 @@ mod tests {
             rollup_verifying_key: RollupVerifyingKey::NativeVerifyingKey,
         };
 
-        CheckpointingV0Params {
+        CheckpointV0Params {
             verification_params,
         }
     }
@@ -253,12 +266,12 @@ mod tests {
     #[test]
     fn process_msgs_updates_sequencer_key() {
         let params = test_params();
-        let mut state = CheckpointingV0Subproto::init(&params).expect("init state");
+        let mut state = CheckpointV0Subproto::init(&params).expect("init state");
 
         let new_key = Buf32::from([42u8; 32]);
-        let msgs = [CheckpointingIncomingMsg::UpdateSequencerKey(new_key)];
+        let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];
 
-        CheckpointingV0Subproto::process_msgs(&mut state, &msgs, &params);
+        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &params);
 
         match &state.cred_rule {
             CredRule::SchnorrKey(current) => assert_eq!(current, &new_key),
