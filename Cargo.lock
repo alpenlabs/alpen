@@ -14186,7 +14186,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "strata-acct-types"
 version = "0.1.0"
 dependencies = [
+ "digest 0.10.7",
  "int-enum",
+ "sha2 0.10.9",
  "strata-codec",
  "strata-mmr",
  "thiserror 2.0.16",

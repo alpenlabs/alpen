@@ -12,6 +12,7 @@ mod macros;
 mod messages;
 mod mmr;
 mod state;
+mod util;
 mod varint_vec;
 
 pub use amount::BitcoinAmount;
@@ -21,4 +22,5 @@ pub use id::{AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SubjectI
 pub use messages::{MsgPayload, ReceivedMessage, SentMessage};
 pub use mmr::{CompactMmr64, Hash, MerkleProof, Mmr64, RawMerkleProof, StrataHasher};
 pub use state::{AccountState, AccountTypeState, AcctStateSummary, IntrinsicAccountState};
+pub use util::compute_codec_sha256;
 pub use varint_vec::{VARINT_MAX, VarVec};
