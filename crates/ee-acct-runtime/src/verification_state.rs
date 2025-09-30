@@ -1,7 +1,7 @@
 //! Verification state accumulator.
 
 use strata_acct_types::BitcoinAmount;
-use strata_ee_acct_types::{CommitBlockData, CommitChainSegment, CommitMsgData, EeAccountState};
+use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult, PendingInputEntry};
 use strata_ee_chain_types::BlockOutputs;
 use strata_snark_acct_types::{OutputMessage, OutputTransfer, UpdateOutputs};
 
@@ -17,7 +17,7 @@ pub struct UpdateVerificationState {
     total_val_recv: BitcoinAmount,
 
     // commits to check
-    pending_commits: Vec<CommitMsgData>,
+    pending_commits: Vec<PendingCommit>,
 
     // number of inputs we've consumed
     consumed_inputs: usize,
@@ -48,8 +48,12 @@ impl UpdateVerificationState {
         }
     }
 
-    pub fn accumulated_outputs(&self) -> &UpdateOutputs {
-        &self.accumulated_outputs
+    pub fn pending_commits(&self) -> &[PendingCommit] {
+        &self.pending_commits
+    }
+
+    pub fn add_pending_commit(&mut self, commit: PendingCommit) {
+        self.pending_commits.push(commit);
     }
 
     pub fn consumed_inputs(&self) -> usize {
@@ -59,6 +63,10 @@ impl UpdateVerificationState {
     /// Increments the number of consumed inputs by some amount.
     pub fn inc_consumed_inputs(&mut self, amt: usize) {
         self.consumed_inputs += amt;
+    }
+
+    pub fn accumulated_outputs(&self) -> &UpdateOutputs {
+        &self.accumulated_outputs
     }
 
     /// Appends a notpackage block's outputs into the pending outputs being
@@ -95,5 +103,65 @@ impl UpdateVerificationState {
             );
 
         self.total_val_sent = BitcoinAmount::sum(sent_amts_iter);
+    }
+}
+
+/// Data about a pending commit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PendingCommit {
+    new_tip_exec_blkid: Hash,
+}
+
+impl PendingCommit {
+    pub(crate) fn new(new_tip_exec_blkid: Hash) -> Self {
+        Self { new_tip_exec_blkid }
+    }
+
+    pub(crate) fn new_tip_exec_blkid(&self) -> [u8; 32] {
+        self.new_tip_exec_blkid
+    }
+}
+
+/// Tracks pending inputs for while processing notpackages.
+pub(crate) struct InputTracker<'a> {
+    expected_inputs: &'a [PendingInputEntry],
+    consumed: usize,
+}
+
+impl<'a> InputTracker<'a> {
+    pub(crate) fn new(expected_inputs: &'a [PendingInputEntry]) -> Self {
+        Self {
+            expected_inputs,
+            consumed: 0,
+        }
+    }
+
+    /// Gets the number of entries consumed.
+    pub(crate) fn consumed(&self) -> usize {
+        self.consumed
+    }
+
+    /// Gets if there are more entries that could be consumed.
+    fn has_next(&self) -> bool {
+        self.consumed < self.expected_inputs.len()
+    }
+
+    /// Gets the next entry that would need to be be consumed, if there is one.
+    fn expected_next(&self) -> Option<&'a PendingInputEntry> {
+        self.expected_inputs.get(self.consumed)
+    }
+
+    /// Checks if an input matches the next value we expect to consume.  If it
+    /// matches, increments the pointer.  Errors on mismatch.
+    pub(crate) fn consume_input(&mut self, input: &PendingInputEntry) -> EnvResult<()> {
+        let Some(exp_next) = self.expected_next() else {
+            return Err(EnvError::MalformedCoinput);
+        };
+
+        if input != exp_next {
+            return Err(EnvError::MalformedCoinput);
+        }
+
+        Ok(())
     }
 }

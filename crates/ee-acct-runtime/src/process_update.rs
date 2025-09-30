@@ -13,16 +13,16 @@
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
-    CommitChainSegment, DecodedEeMessageData, EeAccountState, EnvError, EnvResult,
-    ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
+    DecodedEeMessageData, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
+    PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::SubjectDepositData;
 use strata_snark_acct_types::{LedgerRefs, MessageEntry, UpdateOperationData, UpdateOutputs};
 
 use crate::{
-    exec_processing::{apply_commit, verify_chain_segment},
+    exec_processing::process_segments,
     private_input::SharedPrivateInput,
-    verification_state::UpdateVerificationState,
+    verification_state::{InputTracker, PendingCommit, UpdateVerificationState},
 };
 
 /// Common data from various sources passed around together.
@@ -33,23 +33,23 @@ struct SharedData<'v> {
 }
 
 impl<'v> SharedData<'v> {
-    pub fn seq_no(&self) -> u64 {
+    fn seq_no(&self) -> u64 {
         self.operation.seq_no()
     }
 
-    pub fn ledger_refs(&self) -> &'v LedgerRefs {
+    fn ledger_refs(&self) -> &'v LedgerRefs {
         self.operation.ledger_refs()
     }
 
-    pub fn outputs(&self) -> &'v UpdateOutputs {
+    fn outputs(&self) -> &'v UpdateOutputs {
         self.operation.outputs()
     }
 
-    pub fn extra(&self) -> &'v UpdateExtraData {
+    fn extra(&self) -> &'v UpdateExtraData {
         self.extra
     }
 
-    pub fn private_input(&self) -> &'v SharedPrivateInput {
+    fn private_input(&self) -> &'v SharedPrivateInput {
         self.shared_private
     }
 }
@@ -94,7 +94,9 @@ pub fn verify_and_apply_update_operation<'i>(
     let mut coinp_iter = coinputs.into_iter().fuse();
 
     // Basic parsing/handling for things.
-    let extra = decode_buf_exact(operation.extra_data()).map_err(|_| EnvError::Decode)?;
+    // TODO clean this up a little
+    let extra =
+        decode_buf_exact(operation.extra_data()).map_err(|_| EnvError::MalformedExtraData)?;
     let shared = SharedData {
         operation,
         extra: &extra,
@@ -102,8 +104,17 @@ pub fn verify_and_apply_update_operation<'i>(
     };
 
     // 1. Process each message in order.
-    let mut vstate = UpdateVerificationState::new_from_state(state);
-    for (inp, coinp) in operation.processed_messages().iter().zip(&mut coinp_iter) {
+    // FIXME the bounds/indexing checking on all of this is a little jank
+    let mut cnt = 0;
+    let mut uvstate = UpdateVerificationState::new_from_state(state);
+    for (i, (inp, coinp)) in operation
+        .processed_messages()
+        .iter()
+        .zip(&mut coinp_iter)
+        .enumerate()
+    {
+        cnt = i;
+
         let Some(msg) = MsgData::from_entry(inp) else {
             // Other type or invalid message, skip.
             continue;
@@ -111,19 +122,20 @@ pub fn verify_and_apply_update_operation<'i>(
 
         // Process the coinput and message, probably verifying them against each
         // other and inserting entries in the verification state for later.
-        handle_coinput_for_message(&mut vstate, state, &msg, coinp, &shared, ee)?;
+        handle_coinput_for_message(&mut uvstate, state, &msg, coinp, &shared, ee)
+            .map_err(make_inp_err_indexer(i))?;
 
         // Then apply the message.  This doesn't rely on the private coinput.
-        apply_message(state, &msg, &extra)?;
+        apply_message(state, &msg, &extra).map_err(make_inp_err_indexer(i))?;
     }
 
     // Make sure there are no more leftover coinputs we haven't recognized.
-    if coinp_iter.next().is_some() {
-        return Err(EnvError::ExtraCoinputs);
+    if coinp_iter.next().is_some() || cnt != operation.processed_messages().len() {
+        return Err(EnvError::MismatchedCoinputCnt);
     }
 
     // 2. Ensure that the accumulated effects match the final state.
-    verify_accumulated_state(&mut vstate, state, &shared)?;
+    verify_accumulated_state(&mut uvstate, state, &shared, ee)?;
 
     // 3. Apply final changes.
     apply_final_update_changes(state, &extra)?;
@@ -135,7 +147,7 @@ pub fn verify_and_apply_update_operation<'i>(
 }
 
 fn handle_coinput_for_message(
-    vstate: &mut UpdateVerificationState,
+    uvstate: &mut UpdateVerificationState,
     astate: &EeAccountState,
     msg: &MsgData,
     coinp: &[u8],
@@ -151,19 +163,43 @@ fn handle_coinput_for_message(
 }
 
 fn verify_accumulated_state(
-    vstate: &mut UpdateVerificationState,
+    uvstate: &mut UpdateVerificationState,
     astate: &EeAccountState,
     shared: &SharedData<'_>,
+    ee: &impl ExecutionEnvironment,
 ) -> EnvResult<()> {
-    // 1. Process each block, tracking inputs and outputs.
+    // Temporary measure: interpret the new tip blkid in the extra data as a
+    // commit.
+    uvstate.add_pending_commit(PendingCommit::new(*shared.extra.new_tip_blkid()));
 
-    // 2. Check balance changes are consistent.
+    // 1. Validate that we got chain segments corresponding to the pending commits.
+    if uvstate.pending_commits().len() != shared.private_input().commit_data().len() {
+        return Err(EnvError::MismatchedChainSegment);
+    }
 
-    // 3. Check outputs match what's claimed.
+    // 2. Verify segments against the accumulated state.
+    let mut input_tracker = InputTracker::new(astate.pending_inputs());
+    process_segments(
+        uvstate,
+        &mut input_tracker,
+        shared.shared_private.commit_data(),
+        shared.private_input().raw_partial_pre_state(),
+        shared.private_input().raw_prev_header(),
+        ee,
+    )?;
 
-    // 4. Check ledger references (DA) match what was ultimately computed.
+    // 3. Check that the inputs we consumed match the number we're syaing were
+    // consumed.
+    if input_tracker.consumed() != *shared.extra().processed_inputs() as usize {
+        return Err(EnvError::ConflictingPublicState);
+    }
 
+    // A. Check balance changes are consistent.
     // TODO
+
+    // C. Check ledger references (DA) match what was ultimately computed.
+    // TODO figure out DA plan
+
     Ok(())
 }
 
@@ -177,15 +213,16 @@ pub fn apply_update_operation_unconditionally(
     astate: &mut EeAccountState,
     operation: &UpdateOperationData,
 ) -> EnvResult<()> {
-    let extra = UpdateExtraData::decode(operation.extra_data()).map_err(|_| EnvError::Decode)?;
+    let extra =
+        decode_buf_exact(operation.extra_data()).map_err(|_| EnvError::MalformedExtraData)?;
 
     // 1. Apply the changes from the messages.
-    for inp in operation.processed_messages().iter() {
+    for (i, inp) in operation.processed_messages().iter().enumerate() {
         let Some(msg) = MsgData::from_entry(inp) else {
             continue;
         };
 
-        apply_message(astate, &msg, &extra)?;
+        apply_message(astate, &msg, &extra).map_err(make_inp_err_indexer(i))?;
     }
 
     // 2. Apply the final update changes.
@@ -197,42 +234,61 @@ pub fn apply_update_operation_unconditionally(
     Ok(())
 }
 
+/// Applies state changes from the message.
 fn apply_message(
     astate: &mut EeAccountState,
     msg: &MsgData,
-    extra: &UpdateExtraData,
+    _extra: &UpdateExtraData,
 ) -> EnvResult<()> {
-    // TODO dispatch to handler depending on message type
+    if !msg.meta.value.is_zero() {
+        astate.add_tracked_balance(msg.meta.value);
+    }
 
     match &msg.message {
         DecodedEeMessageData::Deposit(data) => {
-            let deposit_data = SubjectDepositData::new(data.dest_subject(), msg.meta.value);
-            astate.add_tracked_balance(msg.meta.value);
+            let deposit_data = SubjectDepositData::new(*data.dest_subject(), msg.meta.value);
             astate.add_pending_input(PendingInputEntry::Deposit(deposit_data));
         }
 
         DecodedEeMessageData::SubjTransfer(_data) => {
-            astate.add_tracked_balance(msg.meta.value);
             // TODO
         }
 
         DecodedEeMessageData::Commit(_data) => {
-            if !msg.meta.value.is_zero() {
-                // TODO maybe do something here, not sure
-            }
-
-            // TODO figure out what to do with this
+            // Just ignore this one for now because we're not handling it.
+            // TOOD improve
         }
     }
 
     Ok(())
 }
 
+/// Applies the final changes to the account state.
+///
+/// This just updates the exec tip blkid and removes pending entries.
 fn apply_final_update_changes(
     state: &mut EeAccountState,
     extra: &UpdateExtraData,
 ) -> EnvResult<()> {
     // 1. Update final execution head block.
+    state.set_last_exec_blkid(*extra.new_tip_blkid());
+
+    // 2. Update queues.
+    state.remove_pending_inputs(*extra.processed_inputs() as usize);
+    state.remove_pending_fincls(*extra.processed_fincls() as usize);
 
     Ok(())
+}
+
+fn maybe_index_inp_err(e: EnvError, idx: usize) -> EnvError {
+    match e {
+        EnvError::MalformedCoinput => EnvError::MalformedCoinputIdx(idx),
+        EnvError::MismatchedCoinput => EnvError::MismatchedCoinputIdx(idx),
+        EnvError::InconsistentCoinput => EnvError::InconsistentCoinputIdx(idx),
+        _ => e,
+    }
+}
+
+fn make_inp_err_indexer(idx: usize) -> impl Fn(EnvError) -> EnvError {
+    move |e| maybe_index_inp_err(e, idx)
 }

@@ -91,6 +91,6 @@ impl_type_flat_struct! {
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct CommitMsgData {
         // TODO rename to new_tip_exec_blkid
-        chunk_commitment: [u8; 32],
+        new_tip_exec_blkid: [u8; 32],
     }
 }

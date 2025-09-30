@@ -11,67 +11,62 @@ use strata_ee_acct_types::{
 };
 use strata_ee_chain_types::{BlockInputs, ExecBlockNotpackage, SubjectDepositData};
 
-use crate::verification_state::UpdateVerificationState;
+use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationState};
 
-struct InputTracker<'a> {
-    expected_inputs: &'a [PendingInputEntry],
-    consumed: usize,
-}
-
-impl<'a> InputTracker<'a> {
-    pub fn new(expected_inputs: &'a [PendingInputEntry]) -> Self {
-        Self {
-            expected_inputs,
-            consumed: 0,
-        }
-    }
-
-    fn consumed(&self) -> usize {
-        self.consumed
-    }
-
-    fn has_next(&self) -> bool {
-        self.consumed < self.expected_inputs.len()
-    }
-
-    fn expected_next(&self) -> Option<&'a PendingInputEntry> {
-        if self.has_next() {
-            Some(&self.expected_inputs[self.consumed])
-        } else {
-            None
-        }
-    }
-
-    /// Checks if an input matches the next value we expect to consume.  If it
-    /// matches, increments the pointer.  Errors on mismatch.
-    pub fn consume_input(&mut self, input: &PendingInputEntry) -> EnvResult<()> {
-        let Some(exp_next) = self.expected_next() else {
-            return Err(EnvError::MalformedCoinput);
-        };
-
-        if input != exp_next {
-            return Err(EnvError::MalformedCoinput);
-        }
-
-        Ok(())
-    }
-}
-
-struct ChainVerificationState<'v, E: ExecutionEnvironment> {
+struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
     uvstate: &'v mut UpdateVerificationState,
-    ee: &'v E,
+    input_tracker: &'v mut InputTracker<'a>,
 
-    input_tracker: InputTracker<'v>,
+    ee: &'v E,
 
     exec_state: E::PartialState,
     last_exec_header: <E::Block as ExecBlock>::Header,
     last_exec_blkid: Hash,
+
+    processed_commits: usize,
 }
 
-impl<'v, E: ExecutionEnvironment> ChainVerificationState<'v, E> {
+impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
+    fn new(
+        uvstate: &'v mut UpdateVerificationState,
+        input_tracker: &'v mut InputTracker<'a>,
+        ee: &'v E,
+        exec_state: E::PartialState,
+        last_exec_header: <E::Block as ExecBlock>::Header,
+    ) -> Self {
+        let last_exec_blkid = last_exec_header.compute_block_id();
+        Self {
+            uvstate,
+            input_tracker,
+            ee,
+            exec_state,
+            last_exec_header,
+            last_exec_blkid,
+            processed_commits: 0,
+        }
+    }
+
     /// Computes the state root of the current chain verification state.
     fn compute_cur_state_root(&self) -> EnvResult<Hash> {
         self.exec_state.compute_state_root()
+    }
+
+    /// Gets the next commit we have yet to process.
+    fn next_pending_commit(&self) -> Option<&PendingCommit> {
+        self.uvstate.pending_commits().get(self.processed_commits)
+    }
+
+    fn consume_pending_commit(&mut self, exec_blkid: &Hash) -> EnvResult<()> {
+        let next_commit = self
+            .next_pending_commit()
+            .ok_or(EnvError::UncommittedChainSegment)?;
+
+        if *exec_blkid == next_commit.new_tip_exec_blkid() {
+            self.processed_commits += 1;
+            Ok(())
+        } else {
+            Err(EnvError::MismatchedChainSegment)
+        }
     }
 
     /// Processes a block on top of the current exec state, producing an output
@@ -82,6 +77,14 @@ impl<'v, E: ExecutionEnvironment> ChainVerificationState<'v, E> {
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<E>> {
         self.ee.process_block(&self.exec_state, block, inputs)
+    }
+
+    /// Checks that the next pending input entry is this one, and marks it as
+    /// consumed.
+    fn consume_pending_input(&mut self, input: &PendingInputEntry) -> EnvResult<()> {
+        self.input_tracker.consume_input(input)?;
+        self.uvstate.inc_consumed_inputs(1);
+        Ok(())
     }
 
     /// Merges a write batch into the current state, also accepting a
@@ -117,24 +120,50 @@ impl<'v, E: ExecutionEnvironment> ChainVerificationState<'v, E> {
     }
 }
 
-/// Verifies a chain segment, accumulating effects in the verification state.
-pub fn verify_chain_segment<E: ExecutionEnvironment>(
-    cvstate: &mut ChainVerificationState<'_, E>,
-    commit: &CommitMsgData,
+/// Processes segments against accumulated update verification state by
+/// verifying the blocks and managing inputs/outputs/etc.
+pub fn process_segments<E: ExecutionEnvironment>(
+    uvstate: &mut UpdateVerificationState,
+    input_tracker: &mut InputTracker<'_>,
+    segments: &[CommitChainSegment],
+    pre_state: &[u8],
+    cur_tip_header: &[u8],
+    ee: &E,
+) -> EnvResult<()> {
+    // 1. Decode the various inputs to be able to construct the chain
+    // verification state tracker thing.
+    let header = decode_buf_exact::<<E::Block as ExecBlock>::Header>(cur_tip_header)
+        .map_err(|_| EnvError::MalformedCoinput)?;
+    let partial_pre_state =
+        decode_buf_exact::<E::PartialState>(pre_state).map_err(|_| EnvError::MalformedCoinput)?;
+
+    let mut cvstate =
+        ChainVerificationState::new(uvstate, input_tracker, ee, partial_pre_state, header);
+
+    for i in 0..segments.len() {
+        let segment = &segments[i];
+        process_chain_segment(&mut cvstate, segment)?;
+    }
+
+    Ok(())
+}
+
+/// Processes a chain segment by verifying its blocks and accumulating effects
+/// in the verification state.
+fn process_chain_segment<E: ExecutionEnvironment>(
+    cvstate: &mut ChainVerificationState<'_, '_, E>,
     segment: &CommitChainSegment,
-    extra: &UpdateExtraData,
 ) -> EnvResult<()> {
     // 1. Make sure the last block of this package chain matches the exec blkid
-    // that was committed.  This is enough for us, we don't actually care about
-    // the notpackage chain beyond this.
+    // in the next pending commit.  This is enough for us, we don't actually
+    // have a way to directly check the rest of the chain beyond this, but
+    // whatever matters will get checked via the EE block processing.
     let Some(last) = segment.blocks().last() else {
         return Err(EnvError::MalformedCoinput);
     };
 
     let last_exec_blkid = last.notpackage().exec_blkid();
-    if last_exec_blkid != commit.chunk_commitment() {
-        return Err(EnvError::MismatchedCoinput);
-    }
+    cvstate.consume_pending_commit(&last_exec_blkid)?;
 
     // 2. Go through each block and process them.
     for block_data in segment.blocks() {
@@ -144,8 +173,9 @@ pub fn verify_chain_segment<E: ExecutionEnvironment>(
     Ok(())
 }
 
+/// Processes a single block.
 fn process_block<E: ExecutionEnvironment>(
-    cvstate: &mut ChainVerificationState<'_, E>,
+    cvstate: &mut ChainVerificationState<'_, '_, E>,
     block_data: &CommitBlockData,
 ) -> EnvResult<()> {
     // 1. Make sure the raw block data matches the package.
@@ -169,7 +199,7 @@ fn process_block<E: ExecutionEnvironment>(
         // 1:1 match, maybe this will be iterated on in the future if we rethink
         // the types.  But this is fine for now.
         let pi = PendingInputEntry::Deposit(SubjectDepositData::new(inp.dest(), inp.value()));
-        cvstate.input_tracker.consume_input(&pi)?;
+        cvstate.consume_pending_input(&pi)?;
     }
 
     // 4. Execute the block and make sure the outputs are consistent with the
@@ -201,12 +231,12 @@ pub fn apply_commit(
     extra: &UpdateExtraData,
 ) -> EnvResult<()> {
     // 1. The first part is easy, we just update the value.
-    astate.set_last_exec_blkid(commit.chunk_commitment());
+    astate.set_last_exec_blkid(*commit.new_tip_exec_blkid());
 
     // 2. The second part is a little harder, we have to figure out what pending
     // inputs we're consuming from the state so we can remove those.
-    astate.remove_pending_inputs(extra.processed_inputs() as usize);
-    astate.remove_pending_fincls(extra.processed_fincls() as usize);
+    astate.remove_pending_inputs(*extra.processed_inputs() as usize);
+    astate.remove_pending_fincls(*extra.processed_fincls() as usize);
 
     // TODO update tracked balance?  this involves a little more indirect reasoning
 

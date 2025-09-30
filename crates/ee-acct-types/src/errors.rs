@@ -2,23 +2,57 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EnvError {
+    /// An issue decoding a structure.
     #[error("decoding structure")]
     Decode,
 
-    #[error("extra coinputs provided")]
-    ExtraCoinputs,
+    /// Malformed extra data.
+    #[error("malformed extra data")]
+    MalformedExtraData,
 
+    /// Extra coinputs were provided than needed.
+    #[error("mismatched coinput count")]
+    MismatchedCoinputCnt,
+
+    /// Coinput could not be parsed.
     #[error("coinput invalid for msg")]
     MalformedCoinput,
 
-    #[error("coinput exactly did not match msg")]
+    /// Coinput could not be parsed.
+    #[error("coinput invalid for message (idx {0})")]
+    MalformedCoinputIdx(usize),
+
+    /// Coinput was parsed but did not match msg.
+    #[error("coinput did not correspond to msg")]
     MismatchedCoinput,
 
+    /// Coinput was parsed but did not match msg.
+    #[error("coinput did not correspond to msg (idx {0})")]
+    MismatchedCoinputIdx(usize),
+
+    /// Coinput was parsed and seemed to match msg, but was internally malformed.
     #[error("coinput is internally inconsistent")]
     InconsistentCoinput,
 
+    /// Coinput was parsed and seemed to match msg, but was internally malformed.
+    #[error("coinput is internally inconsistent (idx {0})")]
+    InconsistentCoinputIdx(usize),
+
+    /// Chain segment provided for EE verification was malformed.
     #[error("provided chain segment malformed")]
     MalformedChainSegment,
+
+    /// Chain segment provided for EE verification does not match pending commits.
+    #[error("tried to consume an unexpected chain segment")]
+    MismatchedChainSegment,
+
+    /// Tried to verify a chain segment without a waiting commit.
+    #[error("tried to consume a chain segment that was not provided")]
+    UncommittedChainSegment,
+
+    /// Some computation did not match public state we are constrained by.
+    #[error("conflict with external public state")]
+    ConflictingPublicState,
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;
