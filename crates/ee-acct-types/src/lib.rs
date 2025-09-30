@@ -8,7 +8,7 @@ mod state;
 mod traits;
 
 pub use commit::{CommitBlockData, CommitChainSegment};
-pub use errors::{EnvError, EnvResult};
+pub use errors::{EnvError, EnvResult, MessageDecodeError, MessageDecodeResult};
 pub use extra_data::UpdateExtraData;
 pub use messages::*;
 pub use outputs::ExecBlockOutput;

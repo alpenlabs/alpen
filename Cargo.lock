@@ -14187,6 +14187,7 @@ name = "strata-acct-types"
 version = "0.1.0"
 dependencies = [
  "int-enum",
+ "strata-codec",
  "strata-mmr",
  "thiserror 2.0.16",
 ]
@@ -14807,6 +14808,7 @@ dependencies = [
  "strata-acct-types",
  "strata-codec",
  "strata-ee-chain-types",
+ "strata-msg-fmt",
  "thiserror 2.0.16",
 ]
 

@@ -7,6 +7,7 @@ edition = "2024"
 strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-ee-chain-types.workspace = true
+strata-msg-fmt.workspace = true
 
 thiserror.workspace = true
 

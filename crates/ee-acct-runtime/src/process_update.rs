@@ -11,8 +11,9 @@
 //! understanding the execution environment.
 
 use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
-    CommitChainSegment, DecodedEeMessage, EeAccountState, EnvError, EnvResult,
+    CommitChainSegment, DecodedEeMessageData, EeAccountState, EnvError, EnvResult,
     ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::SubjectDepositData;
@@ -63,12 +64,12 @@ struct MsgMeta {
 /// Data unique to a message.
 struct MsgData {
     meta: MsgMeta,
-    message: DecodedEeMessage,
+    message: DecodedEeMessageData,
 }
 
 impl MsgData {
     fn from_entry(m: &MessageEntry) -> Option<Self> {
-        let message = DecodedEeMessage::decode_raw(m.payload_buf())?;
+        let message = DecodedEeMessageData::decode_raw(m.payload_buf()).ok()?;
         let meta = MsgMeta {
             source: m.source(),
             incl_epoch: m.incl_epoch(),
@@ -93,7 +94,7 @@ pub fn verify_and_apply_update_operation<'i>(
     let mut coinp_iter = coinputs.into_iter().fuse();
 
     // Basic parsing/handling for things.
-    let extra = UpdateExtraData::decode(operation.extra_data()).map_err(|_| EnvError::Decode)?;
+    let extra = decode_buf_exact(operation.extra_data()).map_err(|_| EnvError::Decode)?;
     let shared = SharedData {
         operation,
         extra: &extra,
@@ -204,18 +205,18 @@ fn apply_message(
     // TODO dispatch to handler depending on message type
 
     match &msg.message {
-        DecodedEeMessage::Deposit(data) => {
+        DecodedEeMessageData::Deposit(data) => {
             let deposit_data = SubjectDepositData::new(data.dest_subject(), msg.meta.value);
             astate.add_tracked_balance(msg.meta.value);
             astate.add_pending_input(PendingInputEntry::Deposit(deposit_data));
         }
 
-        DecodedEeMessage::SubjTransfer(_data) => {
+        DecodedEeMessageData::SubjTransfer(_data) => {
             astate.add_tracked_balance(msg.meta.value);
             // TODO
         }
 
-        DecodedEeMessage::Commit(_data) => {
+        DecodedEeMessageData::Commit(_data) => {
             if !msg.meta.value.is_zero() {
                 // TODO maybe do something here, not sure
             }

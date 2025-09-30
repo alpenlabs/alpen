@@ -18,6 +18,8 @@ macro_rules! impl_opaque_thin_wrapper {
             }
         }
 
+        $crate::strata_codec::impl_wrapper_codec!($target => $inner);
+
         impl From<$inner> for $target {
             fn from(value: $inner) -> $target {
                 <$target>::new(value)
