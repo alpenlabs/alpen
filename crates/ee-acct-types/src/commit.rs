@@ -1,6 +1,9 @@
 //! Commit operation types.
 
+use strata_acct_types::Hash;
 use strata_ee_chain_types::ExecBlockNotpackage;
+
+use crate::errors::EnvError;
 
 /// Chain segment data provided with a coinput.
 #[derive(Clone, Debug)]
@@ -13,13 +16,19 @@ impl CommitChainSegment {
         Self { blocks }
     }
 
-    pub fn decode_raw(buf: &[u8]) -> Option<CommitChainSegment> {
-        // TODO implement this function properly
+    pub fn decode(_buf: &[u8]) -> Result<Self, EnvError> {
+        // TODO
         unimplemented!()
     }
 
     pub fn blocks(&self) -> &[CommitBlockData] {
         &self.blocks
+    }
+
+    /// Gets the new exec tip blkid that we would refer to the chain segment
+    /// by in a commit.
+    pub fn new_exec_tip_blkid(&self) -> Option<Hash> {
+        self.blocks.last().map(|b| b.notpackage().exec_blkid())
     }
 }
 

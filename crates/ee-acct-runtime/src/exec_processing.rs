@@ -9,7 +9,7 @@ use strata_ee_acct_types::{
     ExecBlock, ExecBlockOutput, ExecHeader, ExecPartialState, ExecutionEnvironment,
     PendingInputEntry, UpdateExtraData,
 };
-use strata_ee_chain_types::{BlockInputs, ExecBlockNotpackage, SubjectDepositData};
+use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
 
 use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationState};
 
@@ -118,6 +118,16 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
 
         Ok(())
     }
+
+    /// Final checks to see if there's anything in the verification state that
+    /// were supposed to have been dealt with but weren't.
+    fn check_obligations(&self) -> EnvResult<()> {
+        if self.next_pending_commit().is_some() {
+            return Err(EnvError::UnsatisfiedObligations("pending_commits"));
+        }
+
+        Ok(())
+    }
 }
 
 /// Processes segments against accumulated update verification state by
@@ -132,18 +142,27 @@ pub fn process_segments<E: ExecutionEnvironment>(
 ) -> EnvResult<()> {
     // 1. Decode the various inputs to be able to construct the chain
     // verification state tracker thing.
+    // TODO maybe use more precise errors here
     let header = decode_buf_exact::<<E::Block as ExecBlock>::Header>(cur_tip_header)
-        .map_err(|_| EnvError::MalformedCoinput)?;
-    let partial_pre_state =
-        decode_buf_exact::<E::PartialState>(pre_state).map_err(|_| EnvError::MalformedCoinput)?;
+        .map_err(|_| EnvError::MismatchedCurStateData)?;
+    let partial_pre_state = decode_buf_exact::<E::PartialState>(pre_state)
+        .map_err(|_| EnvError::MismatchedCurStateData)?;
+
+    let pre_state_root = partial_pre_state.compute_state_root()?;
+    if pre_state_root != header.get_state_root() {
+        return Err(EnvError::MismatchedCurStateData);
+    }
 
     let mut cvstate =
         ChainVerificationState::new(uvstate, input_tracker, ee, partial_pre_state, header);
 
-    for i in 0..segments.len() {
-        let segment = &segments[i];
+    // 2. Process each segment in order, continually modifying the chain.
+    for segment in segments {
         process_chain_segment(&mut cvstate, segment)?;
     }
+
+    // 3. Final checks.
+    cvstate.check_obligations()?;
 
     Ok(())
 }
@@ -178,18 +197,18 @@ fn process_block<E: ExecutionEnvironment>(
     cvstate: &mut ChainVerificationState<'_, '_, E>,
     block_data: &CommitBlockData,
 ) -> EnvResult<()> {
-    // 1. Make sure the raw block data matches the package.
-    let raw_block_hash = Sha256::digest(block_data.raw_full_block());
-    if raw_block_hash.as_ref() != block_data.notpackage().raw_block_encoded_hash() {
-        return Err(EnvError::InconsistentCoinput);
-    }
-
-    // 2. Decode the block and make sure the actual block ID matches.
-    let block: E::Block =
-        decode_buf_exact(block_data.raw_full_block()).map_err(|_| EnvError::Decode)?;
+    // 1. Decode the block and make sure the actual block ID matches.
+    let block: E::Block = decode_and_check_commit_block::<E>(block_data)?;
     let header = block.get_header();
     let blkid = header.compute_block_id();
     if blkid != block_data.notpackage().exec_blkid() {
+        return Err(EnvError::InconsistentCoinput);
+    }
+
+    // 2. Execute the block and make sure the outputs are consistent with the
+    // package.
+    let exec_outp = cvstate.process_block(&block, block_data.notpackage().inputs())?;
+    if exec_outp.outputs() != block_data.notpackage().outputs() {
         return Err(EnvError::InconsistentCoinput);
     }
 
@@ -202,14 +221,7 @@ fn process_block<E: ExecutionEnvironment>(
         cvstate.consume_pending_input(&pi)?;
     }
 
-    // 4. Execute the block and make sure the outputs are consistent with the
-    // package.
-    let exec_outp = cvstate.process_block(&block, block_data.notpackage().inputs())?;
-    if exec_outp.outputs() != block_data.notpackage().outputs() {
-        return Err(EnvError::InconsistentCoinput);
-    }
-
-    // 5. Apply writes and check state root.  This checks the state root
+    // 4. Apply writes and check state root.  This checks the state root
     // matches the root expected in the header.
     cvstate.apply_write_batch(exec_outp.write_batch(), header.clone(), blkid)?;
 
@@ -223,6 +235,22 @@ fn process_block<E: ExecutionEnvironment>(
     // TODO other stuff?  how do we do fincls?
 
     Ok(())
+}
+
+/// Checks the raw exec block data from a commit block matches the hash in the
+/// notpackage, and then returns the decoded exec block if it matches.
+fn decode_and_check_commit_block<E: ExecutionEnvironment>(
+    block_data: &CommitBlockData,
+) -> EnvResult<E::Block> {
+    let raw_block_hash = Sha256::digest(block_data.raw_full_block());
+    if raw_block_hash.as_ref() != block_data.notpackage().raw_block_encoded_hash() {
+        return Err(EnvError::InconsistentCoinput);
+    }
+
+    let block = decode_buf_exact(block_data.raw_full_block())
+        .map_err(|_| EnvError::MalformedChainSegment)?;
+
+    Ok(block)
 }
 
 pub fn apply_commit(

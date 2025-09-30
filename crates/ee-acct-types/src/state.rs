@@ -1,6 +1,6 @@
 //! EE account internal state.
 
-use strata_acct_types::{BitcoinAmount, SubjectId};
+use strata_acct_types::{BitcoinAmount, SubjectId, VarVec};
 use strata_ee_chain_types::SubjectDepositData;
 
 type Hash = [u8; 32];
@@ -56,9 +56,10 @@ impl EeAccountState {
         self.pending_inputs.push(inp);
     }
 
+    /// Removing some number of pending inputs.
     pub fn remove_pending_inputs(&mut self, n: usize) -> bool {
         if self.pending_inputs.len() < n {
-            return false;
+            false
         } else {
             self.pending_inputs.drain(..n);
             true
@@ -73,9 +74,10 @@ impl EeAccountState {
         self.pending_fincls.push(inp);
     }
 
+    /// Removing some number of pending forced inclusions.
     pub fn remove_pending_fincls(&mut self, n: usize) -> bool {
         if self.pending_fincls.len() < n {
-            return false;
+            false
         } else {
             self.pending_fincls.drain(..n);
             true

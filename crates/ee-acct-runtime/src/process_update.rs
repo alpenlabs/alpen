@@ -14,7 +14,7 @@ use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
     DecodedEeMessageData, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
-    PendingInputEntry, UpdateExtraData,
+    MessageDecodeResult, PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::SubjectDepositData;
 use strata_snark_acct_types::{LedgerRefs, MessageEntry, UpdateOperationData, UpdateOutputs};
@@ -61,22 +61,22 @@ struct MsgMeta {
     value: BitcoinAmount,
 }
 
-/// Data unique to a message.
+/// Decoded message and its metadata.
 struct MsgData {
     meta: MsgMeta,
     message: DecodedEeMessageData,
 }
 
 impl MsgData {
-    fn from_entry(m: &MessageEntry) -> Option<Self> {
-        let message = DecodedEeMessageData::decode_raw(m.payload_buf()).ok()?;
+    fn from_entry(m: &MessageEntry) -> MessageDecodeResult<Self> {
+        let message = DecodedEeMessageData::decode_raw(m.payload_buf())?;
         let meta = MsgMeta {
             source: m.source(),
             incl_epoch: m.incl_epoch(),
             value: m.payload_value(),
         };
 
-        Some(Self { meta, message })
+        Ok(Self { meta, message })
     }
 }
 
@@ -85,7 +85,7 @@ impl MsgData {
 ///
 /// This accepts the update operation data as an argument.
 pub fn verify_and_apply_update_operation<'i>(
-    state: &mut EeAccountState,
+    astate: &mut EeAccountState,
     operation: &UpdateOperationData,
     coinputs: impl IntoIterator<Item = &'i [u8]>,
     shared_private: &SharedPrivateInput,
@@ -106,7 +106,7 @@ pub fn verify_and_apply_update_operation<'i>(
     // 1. Process each message in order.
     // FIXME the bounds/indexing checking on all of this is a little jank
     let mut cnt = 0;
-    let mut uvstate = UpdateVerificationState::new_from_state(state);
+    let mut uvstate = UpdateVerificationState::new_from_state(astate);
     for (i, (inp, coinp)) in operation
         .processed_messages()
         .iter()
@@ -115,18 +115,18 @@ pub fn verify_and_apply_update_operation<'i>(
     {
         cnt = i;
 
-        let Some(msg) = MsgData::from_entry(inp) else {
+        let Some(msg) = MsgData::from_entry(inp).ok() else {
             // Other type or invalid message, skip.
             continue;
         };
 
         // Process the coinput and message, probably verifying them against each
         // other and inserting entries in the verification state for later.
-        handle_coinput_for_message(&mut uvstate, state, &msg, coinp, &shared, ee)
+        handle_coinput_for_message(&mut uvstate, astate, &msg, coinp, &shared, ee)
             .map_err(make_inp_err_indexer(i))?;
 
         // Then apply the message.  This doesn't rely on the private coinput.
-        apply_message(state, &msg, &extra).map_err(make_inp_err_indexer(i))?;
+        apply_message(astate, &msg, &extra).map_err(make_inp_err_indexer(i))?;
     }
 
     // Make sure there are no more leftover coinputs we haven't recognized.
@@ -135,13 +135,14 @@ pub fn verify_and_apply_update_operation<'i>(
     }
 
     // 2. Ensure that the accumulated effects match the final state.
-    verify_accumulated_state(&mut uvstate, state, &shared, ee)?;
+    verify_accumulated_state(&mut uvstate, astate, &shared, ee)?;
+    uvstate.check_obligations()?;
 
     // 3. Apply final changes.
-    apply_final_update_changes(state, &extra)?;
+    apply_final_update_changes(astate, &extra)?;
 
     // 4. Verify the final EE state matches `new_state`.
-    // TODO
+    verify_acct_state_matches(astate, &operation.new_state().inner_state())?;
 
     Ok(())
 }
@@ -218,7 +219,7 @@ pub fn apply_update_operation_unconditionally(
 
     // 1. Apply the changes from the messages.
     for (i, inp) in operation.processed_messages().iter().enumerate() {
-        let Some(msg) = MsgData::from_entry(inp) else {
+        let Some(msg) = MsgData::from_entry(inp).ok() else {
             continue;
         };
 
@@ -229,7 +230,7 @@ pub fn apply_update_operation_unconditionally(
     apply_final_update_changes(astate, &extra)?;
 
     // 3. Verify the final EE state matches `new_state`.
-    // TODO
+    verify_acct_state_matches(astate, &operation.new_state().inner_state())?;
 
     Ok(())
 }
@@ -277,6 +278,14 @@ fn apply_final_update_changes(
     state.remove_pending_inputs(*extra.processed_inputs() as usize);
     state.remove_pending_fincls(*extra.processed_fincls() as usize);
 
+    Ok(())
+}
+
+fn verify_acct_state_matches(
+    astate: &EeAccountState,
+    exp_new_state: &[u8; 32],
+) -> Result<(), EnvError> {
+    // TODO use SSZ hash_tree_root
     Ok(())
 }
 

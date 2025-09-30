@@ -53,6 +53,16 @@ pub enum EnvError {
     /// Some computation did not match public state we are constrained by.
     #[error("conflict with external public state")]
     ConflictingPublicState,
+
+    /// If the header or state provided to start verification off with does not
+    /// match.
+    #[error("mismatched data in current state and whatever")]
+    MismatchedCurStateData,
+
+    /// There were some unsatisfied obligations left to deal with in the update
+    /// verification state.
+    #[error("unsatisfied '{0}' verification obligations")]
+    UnsatisfiedObligations(&'static str),
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;

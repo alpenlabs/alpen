@@ -104,6 +104,13 @@ impl UpdateVerificationState {
 
         self.total_val_sent = BitcoinAmount::sum(sent_amts_iter);
     }
+
+    /// Final checks to see if there's anything in the verification state that
+    /// were supposed to have been dealt with but weren't.
+    pub(crate) fn check_obligations(&self) -> EnvResult<()> {
+        // TODO
+        Ok(())
+    }
 }
 
 /// Data about a pending commit.
