@@ -25,15 +25,6 @@ impl Varint {
         Self(v)
     }
 
-    #[expect(unused, reason = "need simplest constructor, come on")]
-    fn new(v: VarintInner) -> Option<Self> {
-        if v > VARINT_MAX {
-            return None;
-        }
-
-        Some(Self::new_unchecked(v))
-    }
-
     fn new_usize(v: usize) -> Option<Self> {
         // This is implemented as a separate function from `new` just we don't
         // have to trust LLVM will optimize out the bounds checks.
