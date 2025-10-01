@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use bitcoind_async_client::Client;
-use strata_asm_worker::AsmWorkerHandle;
+use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState};
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
@@ -32,7 +32,7 @@ use crate::{
 pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
-    asm_controller: Arc<AsmWorkerHandle<AsmWorkerCtx>>,
+    asm_controller: Arc<AsmWorkerHandle>,
     status_channel: StatusChannel,
 }
 
@@ -45,7 +45,7 @@ impl SyncManager {
         self.params.clone()
     }
 
-    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle<AsmWorkerCtx>> {
+    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle> {
         self.asm_controller.clone()
     }
 
@@ -144,12 +144,12 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     })
 }
 
-fn spawn_csm_listener<W: strata_asm_worker::WorkerContext + Send + Sync + 'static>(
+fn spawn_csm_listener(
     executor: &TaskExecutor,
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
-    asm_monitor: &strata_service::ServiceMonitor<strata_asm_worker::AsmWorkerService<W>>,
+    asm_monitor: &strata_service::ServiceMonitor<AsmWorkerStatus>,
 ) -> anyhow::Result<()> {
     // Create CSM worker state
     let csm_state = CsmWorkerState::new(params, storage, status_channel)?;
@@ -224,7 +224,7 @@ fn spawn_asm_worker(
     storage: Arc<NodeStorage>,
     params: Arc<Params>,
     bitcoin_client: Arc<Client>,
-) -> anyhow::Result<AsmWorkerHandle<AsmWorkerCtx>> {
+) -> anyhow::Result<AsmWorkerHandle> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
     // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
     // block manager).

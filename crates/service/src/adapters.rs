@@ -12,7 +12,7 @@ use std::{any::Any, collections::*, fmt::Debug, future::Future, sync::Arc};
 use futures::stream::{Stream, StreamExt};
 use tokio::sync::{mpsc, watch, Mutex};
 
-use crate::{AsyncServiceInput, Service, ServiceError, ServiceInput, ServiceMsg, SyncServiceInput};
+use crate::{AsyncServiceInput, ServiceError, ServiceInput, ServiceMsg, SyncServiceInput};
 
 /// Adapter for using an [`Iterator`] as a [`SyncServiceInput`].
 pub struct IterInput<I> {
@@ -284,22 +284,15 @@ impl<T> FromIterator<T> for VecInput<T> {
     }
 }
 
-/// Adapter for using a [`ServiceMonitor`] as an input source for listener services.
+/// Adapter for using a watch receiver as a input.
 ///
-/// This adapter watches for status updates from another service and yields them as
-/// messages. The listener is passive and unaware to the monitored service.
-///
-/// When the watch channel closes (monitored service exits), this adapter returns
-/// `None` to signal the listener should also exit.
-pub struct StatusMonitorInput<S: Service> {
-    rx: watch::Receiver<S::Status>,
+/// Can be used by listener service (to construct an input to listen) or if watch is used.
+pub struct TokioWatchInput<T> {
+    rx: watch::Receiver<T>,
     closed: bool,
-    /// Optional Tokio runtime handle for sync services.
-    /// Required when using this input with `SyncService`.
-    handle: Option<tokio::runtime::Handle>,
 }
 
-impl<S: Service> StatusMonitorInput<S> {
+impl<T> TokioWatchInput<T> {
     /// Creates a new status monitor input from a service monitor.
     ///
     /// This is the primary way to create a listener that watches another service's status.
@@ -308,33 +301,20 @@ impl<S: Service> StatusMonitorInput<S> {
     /// # Example
     ///
     /// ```ignore
-    /// let listener_input = StatusMonitorInput::from_receiver(
+    /// let listener_input = TokioWatchInput::from_receiver(
     ///     monitored_monitor.status_rx.clone()
     /// );
     /// ```
-    pub fn from_receiver(rx: watch::Receiver<S::Status>) -> Self {
-        Self {
-            rx,
-            closed: false,
-            handle: None,
-        }
-    }
-
-    /// Sets the Tokio runtime handle for this input.
-    ///
-    /// This is required when using `StatusMonitorInput` with `SyncService`,
-    /// as sync services run in threads without an async runtime context.
-    pub fn with_handle(mut self, handle: tokio::runtime::Handle) -> Self {
-        self.handle = Some(handle);
-        self
+    pub fn from_receiver(rx: watch::Receiver<T>) -> Self {
+        Self { rx, closed: false }
     }
 }
 
-impl<S: Service> ServiceInput for StatusMonitorInput<S> {
-    type Msg = S::Status;
+impl<S: ServiceMsg> ServiceInput for TokioWatchInput<S> {
+    type Msg = S;
 }
 
-impl<S: Service> AsyncServiceInput for StatusMonitorInput<S> {
+impl<S: ServiceMsg + Clone> AsyncServiceInput for TokioWatchInput<S> {
     fn recv_next(&mut self) -> impl Future<Output = anyhow::Result<Option<Self::Msg>>> + Send {
         async move {
             // If already closed, don't try to receive again
@@ -359,38 +339,6 @@ impl<S: Service> AsyncServiceInput for StatusMonitorInput<S> {
     }
 }
 
-impl<S: Service> SyncServiceInput for StatusMonitorInput<S> {
-    fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
-        // If already closed, don't try to receive again
-        if self.closed {
-            return Ok(None);
-        }
-
-        // Get a runtime handle - either from our stored handle or try to get current
-        let handle = if let Some(ref h) = self.handle {
-            h.clone()
-        } else {
-            tokio::runtime::Handle::try_current().map_err(|_| ServiceError::WaitCancelled)?
-        };
-
-        // Wait for the next status change
-        handle.block_on(async {
-            match self.rx.changed().await {
-                Ok(()) => {
-                    // Get the new status value
-                    let status = self.rx.borrow_and_update().clone();
-                    Ok(Some(status))
-                }
-                Err(_) => {
-                    // Channel closed - monitored service has exited
-                    self.closed = true;
-                    Ok(None)
-                }
-            }
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use futures::stream;
@@ -398,7 +346,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::{AsyncService, Response, ServiceBuilder, ServiceState};
+    use crate::{AsyncService, Response, Service, ServiceBuilder, ServiceState};
 
     #[tokio::test]
     async fn test_stream_input() {
@@ -579,9 +527,8 @@ mod tests {
             .expect("test: launch monitored service");
 
         // Create listener using the monitored service's status
-        let listener_input = StatusMonitorInput::<TestMonitoredService>::from_receiver(
-            monitored_monitor.status_rx.clone(),
-        );
+        let listener_input =
+            TokioWatchInput::<TestStatus>::from_receiver(monitored_monitor.status_rx.clone());
         let listener_state = TestListenerState {
             last_seen: None,
             updates: 0,
