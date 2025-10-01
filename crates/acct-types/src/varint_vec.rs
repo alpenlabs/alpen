@@ -25,20 +25,23 @@ impl Varint {
         Self(v)
     }
 
+    #[expect(unused, reason = "need simplest constructor, come on")]
     fn new(v: VarintInner) -> Option<Self> {
         if v > VARINT_MAX {
             return None;
         }
 
-        Some(Self(v as VarintInner))
+        Some(Self::new_unchecked(v))
     }
 
     fn new_usize(v: usize) -> Option<Self> {
+        // This is implemented as a separate function from `new` just we don't
+        // have to trust LLVM will optimize out the bounds checks.
         if v > VARINT_MAX as usize {
             return None;
         }
 
-        Some(Self(v as VarintInner))
+        Some(Self::new_unchecked(v as VarintInner))
     }
 
     fn inner(self) -> VarintInner {
@@ -117,6 +120,8 @@ impl Codec for Varint {
     }
 }
 
+/// Describes the width that a varint will be encoded as, by referring to the
+/// unsigned integer type with that width.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum VarintWidth {
     U8,
