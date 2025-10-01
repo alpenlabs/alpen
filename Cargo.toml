@@ -13,7 +13,9 @@ members = [
   "crates/asm/subprotocols/bridge-v1",
   "crates/asm/subprotocols/debug-v1",
   "crates/asm/subprotocols/admin",
+  "crates/asm/subprotocols/checkpoint-v0",
   "crates/asm/txs/admin",
+  "crates/asm/txs/checkpoint",
   "crates/asm/txs/bridge-v1",
   "crates/asm-types",
   "crates/asm/worker",
@@ -124,6 +126,8 @@ strata-asm-logs = { path = "crates/asm/logs" }
 strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
 strata-asm-proto-administration = { path = "crates/asm/subprotocols/administration" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
+strata-asm-proto-checkpoint-txs = { path = "crates/asm/txs/checkpoint" }
+strata-asm-proto-checkpoint-v0 = { path = "crates/asm/subprotocols/checkpoint-v0" }
 strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-spec = { path = "crates/asm/spec" }

@@ -6,7 +6,9 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
-use strata_asm_proto_core::{CoreGenesisConfig, OLCoreSubproto};
+use strata_asm_proto_checkpoint_v0::{
+    CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
+};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     l1::BitcoinAmount,
@@ -23,7 +25,7 @@ pub struct StrataAsmSpec {
 
     // subproto params, which right now currently just contain the genesis data
     // TODO rename these
-    core_genesis: CoreGenesisConfig,
+    checkpoint_v0_params: CheckpointV0Params,
     bridge_v1_genesis: BridgeV1Config,
 }
 
@@ -34,12 +36,12 @@ impl AsmSpec for StrataAsmSpec {
 
     fn load_subprotocols(&self, loader: &mut impl Loader) {
         // TODO avoid clone?
-        loader.load_subprotocol::<OLCoreSubproto>(self.core_genesis.clone());
+        loader.load_subprotocol::<CheckpointV0Subproto>(self.checkpoint_v0_params.clone());
         loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
     }
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
-        stage.invoke_subprotocol::<OLCoreSubproto>();
+        stage.invoke_subprotocol::<CheckpointV0Subproto>();
         stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
 }
@@ -48,27 +50,30 @@ impl StrataAsmSpec {
     /// Creates a new ASM spec instance.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
-        core_genesis: CoreGenesisConfig,
+        checkpoint_v0_params: CheckpointV0Params,
         bridge_v1_genesis: BridgeV1Config,
     ) -> Self {
         Self {
             magic_bytes,
-            core_genesis,
+            checkpoint_v0_params,
             bridge_v1_genesis,
         }
     }
 
     pub fn from_params(params: &RollupParams) -> Self {
         let OperatorConfig::Static(operators) = params.operator_config.clone();
+
+        let checkpoint_v0_params = CheckpointV0Params {
+            verification_params: CheckpointV0VerificationParams {
+                genesis_l1_block: params.genesis_l1_view.blk,
+                cred_rule: params.cred_rule.clone(),
+                rollup_verifying_key: params.rollup_vk.clone(),
+            },
+        };
+
         Self {
             magic_bytes: params.magic_bytes,
-            core_genesis: CoreGenesisConfig {
-                // TODO(QQ): adjust
-                checkpoint_vk: Default::default(),
-                genesis_l1_block: params.genesis_l1_view.blk,
-                // TODO(QQ): adjust
-                sequencer_pubkey: Default::default(),
-            },
+            checkpoint_v0_params,
             bridge_v1_genesis: BridgeV1Config {
                 operators,
                 denomination: BitcoinAmount::from_sat(params.deposit_amount),

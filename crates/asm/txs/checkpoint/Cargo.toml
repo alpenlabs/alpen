@@ -1,0 +1,21 @@
+[package]
+name = "strata-asm-proto-checkpoint-txs"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-asm-common.workspace = true
+strata-l1tx.workspace = true
+strata-ol-chainstate-types.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+
+bitcoin.workspace = true
+borsh.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true
