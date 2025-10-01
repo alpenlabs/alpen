@@ -23,10 +23,7 @@ pub trait Service: Sync + Send + 'static {
     type Msg: ServiceMsg;
 
     /// The status type derived from the state.
-    ///
-    /// This implements [``Serialize``] so that we can unify different types of
-    /// services into a single metrics collection system.
-    type Status: Any + Clone + Debug + Sync + Send + Serialize + 'static;
+    type Status: ServiceStatus;
 
     /// Gets the status from the current state.
     fn get_status(s: &Self::State) -> Self::Status;
@@ -50,6 +47,17 @@ pub trait ServiceMsg: Debug + Sync + Send + 'static {
 
 /// Blanket auto-impl for any type that impls these traits.
 impl<T: Debug + Sync + Send + 'static> ServiceMsg for T {}
+
+/// Trait for service status.
+///
+/// This implements [``Serialize``] so that we can unify different types of
+/// services into a single metrics collection system.
+pub trait ServiceStatus: Any + Clone + Debug + Sync + Send + Serialize + 'static {
+    // nothing yet
+}
+
+/// Blanket auto-impl for any type that impls these traits.
+impl<T: Any + Clone + Debug + Sync + Send + Serialize + 'static> ServiceStatus for T {}
 
 /// Trait for async service impls to define their per-input logic.
 pub trait AsyncService: Service {

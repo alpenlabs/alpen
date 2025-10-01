@@ -97,12 +97,11 @@ mod status;
 mod sync_worker;
 mod types;
 
+// Re-export commonly used types for listener pattern
+pub use adapters::TokioWatchInput;
 pub use adapters::*;
 pub use builder::ServiceBuilder;
 pub use command::{CommandCompletionSender, CommandHandle};
 pub use errors::ServiceError;
 pub use status::{AnyStatus, GenericStatusMonitor, ServiceMonitor, StatusMonitor};
 pub use types::*;
-
-// Re-export commonly used types for listener pattern
-pub use adapters::StatusMonitorInput;
