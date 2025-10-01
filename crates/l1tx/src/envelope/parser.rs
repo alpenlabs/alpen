@@ -5,7 +5,6 @@ use bitcoin::{
 };
 use strata_primitives::l1::payload::{L1Payload, L1PayloadType};
 use thiserror::Error;
-use tracing::*;
 
 use crate::{
     filter::types::TxFilterConfig,

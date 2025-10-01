@@ -1,6 +1,5 @@
 use strata_primitives::prelude::*;
 use thiserror::Error;
-use tracing::*;
 
 /// Return type for worker messages.
 pub type WorkerResult<T> = Result<T, WorkerError>;
