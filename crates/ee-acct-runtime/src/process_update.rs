@@ -104,18 +104,21 @@ pub fn verify_and_apply_update_operation<'i>(
     };
 
     // 1. Process each message in order.
-    // FIXME the bounds/indexing checking on all of this is a little jank
-    let mut cnt = 0;
     let mut uvstate = UpdateVerificationState::new_from_state(astate);
-    for (i, (inp, coinp)) in operation
-        .processed_messages()
-        .iter()
-        .zip(&mut coinp_iter)
-        .enumerate()
-    {
-        cnt = i;
+    let processed_messages = operation.processed_messages();
+
+    for (i, inp) in processed_messages.iter().enumerate() {
+        // Get the corresponding coinput for this message.
+        let Some(coinp) = coinp_iter.next() else {
+            return Err(EnvError::MismatchedCoinputCnt);
+        };
 
         let Some(msg) = MsgData::from_entry(inp).ok() else {
+            // Don't allow coinputs if we're ignoring it.
+            if !coinp.is_empty() {
+                return Err(EnvError::MismatchedCoinputIdx(i));
+            }
+
             // Other type or invalid message, skip.
             continue;
         };
@@ -130,7 +133,7 @@ pub fn verify_and_apply_update_operation<'i>(
     }
 
     // Make sure there are no more leftover coinputs we haven't recognized.
-    if coinp_iter.next().is_some() || cnt != operation.processed_messages().len() {
+    if coinp_iter.next().is_some() {
         return Err(EnvError::MismatchedCoinputCnt);
     }
 
