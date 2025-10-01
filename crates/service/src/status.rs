@@ -3,26 +3,26 @@
 use std::{any::Any, fmt::Debug};
 
 use serde::de::DeserializeOwned;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
-use crate::Service;
+use crate::{ServiceStatus, TokioMpscInput};
 
 /// Generic boxed status value which can be downcast to a concrete type.
 pub type AnyStatus = Box<dyn Any + Sync + Send + 'static>;
 
 /// Service status monitor handle.
 #[derive(Clone, Debug)]
-pub struct ServiceMonitor<S: Service> {
-    pub(crate) status_rx: watch::Receiver<S::Status>,
+pub struct ServiceMonitor<S: ServiceStatus> {
+    pub(crate) status_rx: watch::Receiver<S>,
 }
 
-impl<S: Service> ServiceMonitor<S> {
-    pub(crate) fn new(status_rx: watch::Receiver<S::Status>) -> Self {
+impl<S: ServiceStatus> ServiceMonitor<S> {
+    pub(crate) fn new(status_rx: watch::Receiver<S>) -> Self {
         Self { status_rx }
     }
 
     /// Returns a clone of the current status.
-    pub fn get_current(&self) -> S::Status {
+    pub fn get_current(&self) -> S {
         self.status_rx.borrow().clone()
     }
 
@@ -41,9 +41,7 @@ impl<S: Service> ServiceMonitor<S> {
     pub fn create_listener_input(
         &self,
         executor: &strata_tasks::TaskExecutor,
-    ) -> crate::TokioMpscInput<S::Status> {
-        use tokio::sync::mpsc;
-
+    ) -> TokioMpscInput<S> {
         // Create an MPSC channel for forwarding status updates
         let (tx, rx) = mpsc::channel(100);
 
@@ -66,7 +64,7 @@ impl<S: Service> ServiceMonitor<S> {
             // Watch channel closed - monitored service exited
         });
 
-        crate::TokioMpscInput::new(rx)
+        TokioMpscInput::new(rx)
     }
 }
 
@@ -82,7 +80,7 @@ pub trait StatusMonitor {
     fn fetch_status_json(&self) -> anyhow::Result<serde_json::Value>;
 }
 
-impl<S: Service> StatusMonitor for ServiceMonitor<S> {
+impl<S: ServiceStatus> StatusMonitor for ServiceMonitor<S> {
     fn fetch_status_any(&self) -> anyhow::Result<AnyStatus> {
         let v = self.status_rx.borrow();
         Ok(Box::new(v.clone()))
@@ -108,7 +106,7 @@ pub struct GenericStatusMonitor {
 
 impl GenericStatusMonitor {
     /// Creates a new instance from a specific service monitor.
-    pub fn new<S: Service>(inner: ServiceMonitor<S>) -> Self {
+    pub fn new<S: ServiceStatus>(inner: ServiceMonitor<S>) -> Self {
         Self {
             inner: Box::new(inner),
         }
