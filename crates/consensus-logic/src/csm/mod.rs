@@ -11,3 +11,6 @@ pub mod config;
 pub mod ctl;
 pub mod message;
 pub mod worker;
+
+// Re-export the new service types
+pub use worker::{CsmListenerService, CsmListenerState, CsmListenerStatus};
