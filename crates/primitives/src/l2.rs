@@ -5,7 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
 
-use crate::{buf::Buf32, impl_buf_wrapper};
+use crate::buf::Buf32;
 
 /// ID of an L2 block, usually the hash of its root header.
 #[derive(

@@ -194,7 +194,7 @@ pub fn test_get_blockid_range(db: &impl L1Database) {
 
     let range = db.get_canonical_blockid_range(1, 4).unwrap();
     assert_eq!(range.len(), 3);
-    for (exp, obt) in vec![mf1, mf2, mf3].iter().zip(range) {
+    for (exp, obt) in [mf1, mf2, mf3].iter().zip(range) {
         assert_eq!(*exp.blkid(), obt);
     }
 }
