@@ -129,14 +129,16 @@ impl PendingCommit {
     }
 }
 
-/// Tracks pending inputs for while processing notpackages.
-pub(crate) struct InputTracker<'a> {
-    expected_inputs: &'a [PendingInputEntry],
+/// Tracks a list of entries that we want to compare a sequence of them against.
+///
+/// We use this for processing pending inputs while processing notpackages.
+pub(crate) struct InputTracker<'a, T> {
+    expected_inputs: &'a [T],
     consumed: usize,
 }
 
-impl<'a> InputTracker<'a> {
-    pub(crate) fn new(expected_inputs: &'a [PendingInputEntry]) -> Self {
+impl<'a, T> InputTracker<'a, T> {
+    pub(crate) fn new(expected_inputs: &'a [T]) -> Self {
         Self {
             expected_inputs,
             consumed: 0,
@@ -154,13 +156,15 @@ impl<'a> InputTracker<'a> {
     }
 
     /// Gets the next entry that would need to be be consumed, if there is one.
-    fn expected_next(&self) -> Option<&'a PendingInputEntry> {
+    fn expected_next(&self) -> Option<&'a T> {
         self.expected_inputs.get(self.consumed)
     }
+}
 
+impl<T: Eq + PartialEq> InputTracker<'_, T> {
     /// Checks if an input matches the next value we expect to consume.  If it
     /// matches, increments the pointer.  Errors on mismatch.
-    pub(crate) fn consume_input(&mut self, input: &PendingInputEntry) -> EnvResult<()> {
+    pub(crate) fn consume_input(&mut self, input: &T) -> EnvResult<()> {
         let Some(exp_next) = self.expected_next() else {
             return Err(EnvError::MalformedCoinput);
         };
@@ -169,6 +173,109 @@ impl<'a> InputTracker<'a> {
             return Err(EnvError::MalformedCoinput);
         }
 
+        self.consumed += 1;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_input_tracker_new() {
+        let inputs = vec![1, 2, 3];
+        let tracker = InputTracker::new(&inputs);
+
+        assert_eq!(tracker.consumed(), 0);
+        assert!(tracker.has_next());
+        assert_eq!(tracker.expected_next(), Some(&1));
+    }
+
+    #[test]
+    fn test_input_tracker_empty() {
+        let inputs: Vec<i32> = vec![];
+        let tracker = InputTracker::new(&inputs);
+
+        assert_eq!(tracker.consumed(), 0);
+        assert!(!tracker.has_next());
+        assert_eq!(tracker.expected_next(), None);
+    }
+
+    #[test]
+    fn test_input_tracker_consume_matching() {
+        let inputs = vec![1, 2, 3];
+        let mut tracker = InputTracker::new(&inputs);
+
+        assert!(tracker.consume_input(&1).is_ok());
+        assert_eq!(tracker.consumed(), 1);
+        assert!(tracker.has_next());
+        assert_eq!(tracker.expected_next(), Some(&2));
+
+        assert!(tracker.consume_input(&2).is_ok());
+        assert_eq!(tracker.consumed(), 2);
+        assert!(tracker.has_next());
+        assert_eq!(tracker.expected_next(), Some(&3));
+
+        assert!(tracker.consume_input(&3).is_ok());
+        assert_eq!(tracker.consumed(), 3);
+        assert!(!tracker.has_next());
+        assert_eq!(tracker.expected_next(), None);
+    }
+
+    #[test]
+    fn test_input_tracker_consume_mismatch() {
+        let inputs = vec![1, 2, 3];
+        let mut tracker = InputTracker::new(&inputs);
+
+        assert!(tracker.consume_input(&1).is_ok());
+        assert_eq!(tracker.consumed(), 1);
+
+        let result = tracker.consume_input(&99);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), EnvError::MalformedCoinput));
+        assert_eq!(tracker.consumed(), 1); // consumed count unchanged on error
+    }
+
+    #[test]
+    fn test_input_tracker_consume_beyond_end() {
+        let inputs = vec![1];
+        let mut tracker = InputTracker::new(&inputs);
+
+        assert!(tracker.consume_input(&1).is_ok());
+        assert_eq!(tracker.consumed(), 1);
+        assert!(!tracker.has_next());
+
+        let result = tracker.consume_input(&2);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), EnvError::MalformedCoinput));
+        assert_eq!(tracker.consumed(), 1);
+    }
+
+    #[test]
+    fn test_input_tracker_consume_wrong_order() {
+        let inputs = vec![1, 2, 3];
+        let mut tracker = InputTracker::new(&inputs);
+
+        let result = tracker.consume_input(&2);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), EnvError::MalformedCoinput));
+        assert_eq!(tracker.consumed(), 0);
+    }
+
+    #[test]
+    fn test_input_tracker_string_type() {
+        let inputs = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
+        let mut tracker = InputTracker::new(&inputs);
+
+        assert!(tracker.consume_input(&"foo".to_string()).is_ok());
+        assert_eq!(tracker.consumed(), 1);
+
+        assert!(tracker.consume_input(&"bar".to_string()).is_ok());
+        assert_eq!(tracker.consumed(), 2);
+
+        let result = tracker.consume_input(&"wrong".to_string());
+        assert!(result.is_err());
+        assert_eq!(tracker.consumed(), 2);
     }
 }

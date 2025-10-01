@@ -15,7 +15,7 @@ use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationS
 
 struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
     uvstate: &'v mut UpdateVerificationState,
-    input_tracker: &'v mut InputTracker<'a>,
+    input_tracker: &'v mut InputTracker<'a, PendingInputEntry>,
 
     ee: &'v E,
 
@@ -29,7 +29,7 @@ struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
 impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
     fn new(
         uvstate: &'v mut UpdateVerificationState,
-        input_tracker: &'v mut InputTracker<'a>,
+        input_tracker: &'v mut InputTracker<'a, PendingInputEntry>,
         ee: &'v E,
         exec_state: E::PartialState,
         last_exec_header: <E::Block as ExecBlock>::Header,
@@ -134,7 +134,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
 /// verifying the blocks and managing inputs/outputs/etc.
 pub fn process_segments<E: ExecutionEnvironment>(
     uvstate: &mut UpdateVerificationState,
-    input_tracker: &mut InputTracker<'_>,
+    input_tracker: &mut InputTracker<'_, PendingInputEntry>,
     segments: &[CommitChainSegment],
     pre_state: &[u8],
     cur_tip_header: &[u8],
