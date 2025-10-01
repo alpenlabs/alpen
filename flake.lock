@@ -20,11 +20,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1756911493,
-        "narHash": "sha256-6n/n1GZQ/vi+LhFXMSyoseKdNfc2QQaSBXJdgamrbkE=",
+        "lastModified": 1759070547,
+        "narHash": "sha256-JVZl8NaVRYb0+381nl7LvPE+A774/dRpif01FKLrYFQ=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "c6a788f552b7b7af703b1a29802a7233c0067908",
+        "rev": "647e5c14cbd5067f44ac86b74f014962df460840",
         "type": "github"
       },
       "original": {
@@ -112,11 +112,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1757039615,
-        "narHash": "sha256-qm53+EUFfzyF8F0MEscHGqf9tx462GV3/zUZrn9wiQU=",
+        "lastModified": 1759199574,
+        "narHash": "sha256-w24RYly3VSVKp98rVfCI1nFYfQ0VoWmShtKPCbXgK6A=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "4486e04adbb4b0e39f593767f2c36e2211003d01",
+        "rev": "381776b12d0d125edd7c1930c2041a1471e586c0",
         "type": "github"
       },
       "original": {
@@ -133,11 +133,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1754575663,
-        "narHash": "sha256-afOx8AG0KYtw7mlt6s6ahBBy7eEHZwws3iCRoiuRQS4=",
+        "lastModified": 1757212513,
+        "narHash": "sha256-ZTHwY7u8BQF1JUazhGk+ftCjsS57Ht6KSnnkxQoUBA8=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "6db0fb0e9cec2e9729dc52bf4898e6c135bb8a0f",
+        "rev": "a8c2f9348abb14647d8a4899d1b3acd0155ce2cd",
         "type": "github"
       },
       "original": {
@@ -158,11 +158,11 @@
         "sp1-src": "sp1-src"
       },
       "locked": {
-        "lastModified": 1754593308,
-        "narHash": "sha256-dTV+2eAt3vOieDR3M8rsYsshRvfsYNfjwv8vK/PS+Hk=",
+        "lastModified": 1757256615,
+        "narHash": "sha256-Grjuots3zboIu7j3t4yjJnrevt4pvSP7L/zon0CrGt0=",
         "owner": "alpenlabs",
         "repo": "sp1.nix",
-        "rev": "5be7eca7622b489de3494697d7adf0b2d839029a",
+        "rev": "3fa1a177c1d84840e27cb1e45cb73ec49aaff9f3",
         "type": "github"
       },
       "original": {
@@ -174,11 +174,11 @@
     "sp1-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1754501687,
-        "narHash": "sha256-No5idq4BGD6YGHQ0u5EEnWcMeTsPJBf8wT51lX8NuLg=",
+        "lastModified": 1756944687,
+        "narHash": "sha256-gjIUbLGqnYbJAqY4DI6TjCHMVF8qoRyGT5fYa6jTk4Q=",
         "owner": "succinctlabs",
         "repo": "sp1",
-        "rev": "429e95e00a51db1f3d7257e7db73c7fe0fd40801",
+        "rev": "d64934f4b9115f3e833c60609256e36a4c2ed9a6",
         "type": "github"
       },
       "original": {
