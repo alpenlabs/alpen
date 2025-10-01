@@ -27,6 +27,7 @@ members = [
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
+  "crates/csm-worker",
   "crates/crypto",
   "crates/csm-types",
   "crates/da-framework",
@@ -154,6 +155,7 @@ strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-crypto = { path = "crates/crypto", default-features = false }
+strata-csm-worker = { path = "crates/csm-worker" }
 strata-csm-types = { path = "crates/csm-types" }
 strata-da-framework = { path = "crates/da-framework" }
 strata-db = { path = "crates/db" }

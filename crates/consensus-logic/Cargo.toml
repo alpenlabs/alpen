@@ -7,8 +7,6 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-asm-common.workspace = true
-strata-asm-logs.workspace = true
 strata-asm-types.workspace = true
 strata-asm-worker.workspace = true
 strata-bridge-types.workspace = true
@@ -18,6 +16,7 @@ strata-chaintsn.workspace = true
 strata-checkpoint-types.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
+strata-csm-worker.workspace = true
 strata-db.workspace = true
 strata-eectl.workspace = true
 strata-ol-chain-types.workspace = true
@@ -34,7 +33,6 @@ anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 borsh.workspace = true
-serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

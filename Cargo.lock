@@ -13652,9 +13652,6 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "rand 0.8.5",
- "serde",
- "strata-asm-common",
- "strata-asm-logs",
  "strata-asm-types",
  "strata-asm-worker",
  "strata-bridge-types",
@@ -13663,7 +13660,7 @@ dependencies = [
  "strata-chaintsn",
  "strata-checkpoint-types",
  "strata-common",
- "strata-csm-types",
+ "strata-csm-worker",
  "strata-db",
  "strata-db-store-sled",
  "strata-eectl",
@@ -13700,19 +13697,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-csm-types"
-version = "0.3.0-alpha.1"
+name = "strata-csm-worker"
+version = "0.1.0"
 dependencies = [
- "arbitrary",
- "borsh",
- "const-hex",
- "num_enum 0.7.4",
+ "anyhow",
  "serde",
- "serde_json",
+ "strata-asm-common",
+ "strata-asm-logs",
+ "strata-asm-worker",
  "strata-checkpoint-types",
- "strata-l1-txfmt",
+ "strata-common",
+ "strata-db",
  "strata-primitives",
- "strata-test-utils",
+ "strata-service",
+ "strata-state",
+ "strata-status",
+ "strata-storage",
+ "tracing",
 ]
 
 [[package]]
