@@ -13,7 +13,7 @@ pub type AnyStatus = Box<dyn Any + Sync + Send + 'static>;
 /// Service status monitor handle.
 #[derive(Clone, Debug)]
 pub struct ServiceMonitor<S: Service> {
-    status_rx: watch::Receiver<S::Status>,
+    pub(crate) status_rx: watch::Receiver<S::Status>,
 }
 
 impl<S: Service> ServiceMonitor<S> {
@@ -29,6 +29,44 @@ impl<S: Service> ServiceMonitor<S> {
     /// Converts this service monitor into a generic one.
     pub fn into_generic(self) -> GenericStatusMonitor {
         GenericStatusMonitor::new(self)
+    }
+
+    /// Creates a listener input for this service monitor.
+    ///
+    /// This allows another service to listen to status updates from this service.
+    /// Returns an MPSC receiver that will receive status updates, and spawns a task
+    /// to forward watch channel updates to it.
+    ///
+    /// The listener task will automatically exit when the monitored service exits.
+    pub fn create_listener_input(
+        &self,
+        executor: &strata_tasks::TaskExecutor,
+    ) -> crate::TokioMpscInput<S::Status> {
+        use tokio::sync::mpsc;
+
+        // Create an MPSC channel for forwarding status updates
+        let (tx, rx) = mpsc::channel(100);
+
+        // Clone the watch receiver
+        let mut watch_rx = self.status_rx.clone();
+
+        // Spawn a task to forward watch updates to MPSC
+        // This is a non-critical background task that will exit when either:
+        // - The monitored service exits (watch channel closes)
+        // - The listener service exits (MPSC receiver dropped)
+        executor.handle().spawn(async move {
+            while watch_rx.changed().await.is_ok() {
+                // Get the new status and send it
+                let status = watch_rx.borrow_and_update().clone();
+                if tx.send(status).await.is_err() {
+                    // Receiver dropped, exit
+                    break;
+                }
+            }
+            // Watch channel closed - monitored service exited
+        });
+
+        crate::TokioMpscInput::new(rx)
     }
 }
 
