@@ -3,7 +3,7 @@
 //! The varints are optimized to short lengths, since most payloads will be
 //! small.  Below are the permitted layouts, always encoded big-endian.
 //!
-//! ```
+//! ```txt
 //! 0bbbbbbb
 //! 10bbbbbb_bbbbbbbb
 //! 11bbbbbb_bbbbbbbb_bbbbbbbb_bbbbbbbb
@@ -58,6 +58,7 @@ impl Varint {
     /// # Panics
     ///
     /// If out of bounds.
+    #[cfg(test)]
     fn sanity_check(&self) {
         assert!(self.0 <= VARINT_MAX, "varint_vec: varint out of bounds");
     }
@@ -278,6 +279,15 @@ impl<T> VarVec<T> {
     pub fn as_slice_mut(&mut self) -> &mut [T] {
         &mut self.inner
     }
+
+    /// Checks if the vec's length is in-bounds.
+    #[cfg(test)]
+    fn sanity_check(&self) {
+        assert!(
+            self.len() <= VARINT_MAX as usize,
+            "varint_vec: length out of bounds"
+        );
+    }
 }
 
 impl<T> Default for VarVec<T> {
@@ -486,6 +496,7 @@ mod tests {
         let mut vec = VarVec::from_vec(vec![1u32, 2, 3, 4, 5]).unwrap();
         vec.truncate(3);
         assert_eq!(vec.len(), 3);
+        vec.sanity_check();
         assert_eq!(vec.inner(), &[1, 2, 3]);
     }
 
@@ -505,6 +516,7 @@ mod tests {
         let buf = encode_to_vec(&vec).unwrap();
 
         let decoded: VarVec<u32> = decode_buf_exact(&buf).unwrap();
+        decoded.sanity_check();
         assert_eq!(decoded.inner(), vec.inner());
     }
 
@@ -610,11 +622,13 @@ mod tests {
         // Create a VarVec at VARINT_MAX capacity
         let data = vec![42u8; VARINT_MAX as usize];
         let mut vec = VarVec::from_vec(data).unwrap();
+        vec.sanity_check();
         assert_eq!(vec.len(), VARINT_MAX as usize);
 
         // Pushing should fail
         assert!(!vec.push(99));
         assert_eq!(vec.len(), VARINT_MAX as usize);
+        vec.sanity_check();
     }
 
     #[test]
@@ -628,13 +642,28 @@ mod tests {
 
     #[test]
     fn test_varvec_as_slice() {
-        use core::slice::SlicePattern;
-
         let vec = VarVec::from_vec(vec![1u32, 2, 3, 4, 5]).unwrap();
         let slice = vec.as_slice();
         assert_eq!(slice, &[1, 2, 3, 4, 5]);
 
         // Test that methods like strip_prefix work
         assert_eq!(slice.strip_prefix(&[1, 2]), Some(&[3, 4, 5][..]));
+        vec.sanity_check();
+    }
+
+    #[test]
+    fn test_varvec_new_too_large() {
+        let oversize_limit = VARINT_MAX as usize + 1;
+        let data = vec![42u8; oversize_limit];
+        let should_be_none = VarVec::from_vec(data);
+        assert!(should_be_none.is_none(), "test: created invalid vector");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_varvec_sanity_check_fail() {
+        let oversize_limit = VARINT_MAX as usize + 1;
+        let vec = VarVec::new_unchecked(vec![42u8; oversize_limit]);
+        vec.sanity_check();
     }
 }
