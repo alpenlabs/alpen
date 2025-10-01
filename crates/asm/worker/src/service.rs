@@ -111,3 +111,15 @@ pub struct AsmWorkerStatus {
     pub cur_block: Option<L1BlockCommitment>,
     pub cur_state: Option<AsmState>,
 }
+
+impl AsmWorkerStatus {
+    /// Get the logs from the current ASM state.
+    ///
+    /// Returns an empty slice if the state is not initialized.
+    pub fn logs(&self) -> &[strata_asm_common::AsmLogEntry] {
+        self.cur_state
+            .as_ref()
+            .map(|s| s.logs().as_slice())
+            .unwrap_or(&[])
+    }
+}

@@ -8,7 +8,7 @@ use bitcoind_async_client::Client;
 use strata_asm_worker::AsmWorkerHandle;
 use strata_chain_worker::ChainWorkerHandle;
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
-use strata_primitives::{l1::L1BlockCommitment, params::Params};
+use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
@@ -17,7 +17,7 @@ use tokio::{runtime::Handle, sync::mpsc};
 use crate::{
     asm_worker_context::AsmWorkerCtx,
     chain_worker_context::ChainWorkerCtx,
-    csm::{ctl::CsmController, message::ForkChoiceMessage, worker},
+    csm::{message::ForkChoiceMessage, CsmListenerService, CsmListenerState},
     exec_worker_context::ExecWorkerCtx,
     fork_choice_manager::{self},
 };
@@ -30,7 +30,6 @@ use crate::{
 pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
-    csm_controller: Arc<CsmController>,
     asm_controller: Arc<AsmWorkerHandle<AsmWorkerCtx>>,
     status_channel: StatusChannel,
 }
@@ -42,16 +41,6 @@ impl SyncManager {
 
     pub fn get_params(&self) -> Arc<Params> {
         self.params.clone()
-    }
-
-    /// Gets a ref to the CSM controller.
-    pub fn csm_controller(&self) -> &CsmController {
-        &self.csm_controller
-    }
-
-    /// Gets a clone of the CSM controller.
-    pub fn get_csm_ctl(&self) -> Arc<CsmController> {
-        self.csm_controller.clone()
     }
 
     pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle<AsmWorkerCtx>> {
@@ -84,8 +73,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
 ) -> anyhow::Result<SyncManager> {
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
-    let (btc_block_tx, btc_block_rx) = mpsc::channel::<L1BlockCommitment>(64);
-    let csm_controller = Arc::new(CsmController::new(btc_block_tx));
 
     // Exec worker.
     let ex_storage = storage.clone();
@@ -133,21 +120,50 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         )
     });
 
-    // Prepare the client worker state and start the thread for that.
-    let client_worker_state = worker::WorkerState::open(params.clone(), storage.clone())?;
-    let st_ch = status_channel.clone();
+    // Launch CSM listener service that listens to ASM status updates
+    let csm_params = params.clone();
+    let csm_storage = storage.clone();
+    let csm_st_ch = status_channel.clone();
+    let csm_asm_monitor = asm_controller.get_monitor();
 
-    executor.spawn_critical("client_worker_task", move |shutdown| {
-        worker::client_worker_task(shutdown, client_worker_state, btc_block_rx, st_ch)
-    });
+    spawn_csm_listener(
+        executor,
+        csm_params,
+        csm_storage,
+        csm_st_ch,
+        csm_asm_monitor,
+    )?;
 
     Ok(SyncManager {
         params,
         fc_manager_tx: fcm_tx,
-        csm_controller,
         asm_controller,
         status_channel,
     })
+}
+
+fn spawn_csm_listener<W: strata_asm_worker::WorkerContext + Send + Sync + 'static>(
+    executor: &TaskExecutor,
+    params: Arc<Params>,
+    storage: Arc<NodeStorage>,
+    status_channel: StatusChannel,
+    asm_monitor: &strata_service::ServiceMonitor<strata_asm_worker::AsmWorkerService<W>>,
+) -> anyhow::Result<()> {
+    use strata_service::ServiceBuilder;
+
+    // Create CSM listener state
+    let csm_state = CsmListenerState::new(params, storage, status_channel)?;
+
+    // Create input that listens to ASM status updates
+    let csm_input = asm_monitor.create_listener_input(executor);
+
+    // Launch the CSM listener service
+    let _csm_monitor = ServiceBuilder::<CsmListenerService, _>::new()
+        .with_state(csm_state)
+        .with_input(csm_input)
+        .launch_sync("csm_listener", executor)?;
+
+    Ok(())
 }
 
 fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(

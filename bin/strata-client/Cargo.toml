@@ -32,7 +32,6 @@ strata-rpc-api = { workspace = true, default-features = true }
 strata-rpc-types.workspace = true
 strata-rpc-utils.workspace = true
 strata-sequencer.workspace = true
-strata-state.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-sync.workspace = true
