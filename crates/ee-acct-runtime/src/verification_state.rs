@@ -10,7 +10,7 @@ type Hash = [u8; 32];
 /// State tracker that accumulates changes that we need to make checks about
 /// later on in update processing.
 #[derive(Debug)]
-pub struct UpdateVerificationState {
+pub(crate) struct UpdateVerificationState {
     // balance bookkeeping as additional checks to avoid overdraw
     orig_tracked_balance: BitcoinAmount,
     total_val_sent: BitcoinAmount,
@@ -36,7 +36,7 @@ impl UpdateVerificationState {
     /// We don't take ownership of it, because that makes the types less clean
     /// to work with later on and breaks our use of the type system to enforce
     /// correctness about not updating the state with private information.
-    pub fn new_from_state(state: &EeAccountState) -> Self {
+    pub(crate) fn new_from_state(state: &EeAccountState) -> Self {
         Self {
             orig_tracked_balance: state.tracked_balance(),
             total_val_sent: 0.into(),
@@ -48,24 +48,24 @@ impl UpdateVerificationState {
         }
     }
 
-    pub fn pending_commits(&self) -> &[PendingCommit] {
+    pub(crate) fn pending_commits(&self) -> &[PendingCommit] {
         &self.pending_commits
     }
 
-    pub fn add_pending_commit(&mut self, commit: PendingCommit) {
+    pub(crate) fn add_pending_commit(&mut self, commit: PendingCommit) {
         self.pending_commits.push(commit);
     }
 
-    pub fn consumed_inputs(&self) -> usize {
+    pub(crate) fn consumed_inputs(&self) -> usize {
         self.consumed_inputs
     }
 
     /// Increments the number of consumed inputs by some amount.
-    pub fn inc_consumed_inputs(&mut self, amt: usize) {
+    pub(crate) fn inc_consumed_inputs(&mut self, amt: usize) {
         self.consumed_inputs += amt;
     }
 
-    pub fn accumulated_outputs(&self) -> &UpdateOutputs {
+    pub(crate) fn accumulated_outputs(&self) -> &UpdateOutputs {
         &self.accumulated_outputs
     }
 
