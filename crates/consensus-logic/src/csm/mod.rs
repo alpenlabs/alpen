@@ -6,9 +6,6 @@
 // TODO clean up this module so that specific items are directly exported and
 // modules don't have to be
 
-pub mod client_transition;
-pub mod config;
-pub mod ctl;
 pub mod message;
 pub mod worker;
 

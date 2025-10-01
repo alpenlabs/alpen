@@ -13648,7 +13648,6 @@ name = "strata-consensus-logic"
 version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
- "async-trait",
  "bitcoin",
  "bitcoind-async-client",
  "borsh",
