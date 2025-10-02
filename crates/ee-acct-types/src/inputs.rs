@@ -11,6 +11,7 @@ use crate::traits::{ExecBlock, ExecHeader};
 /// inputs into the block which are specified separately (even if they do
 /// technically exist in some form within the block, as long as we don't
 /// directly check those).
+#[expect(missing_debug_implementations, reason = "clippy is wrong")]
 pub struct ExecPayload<'b, EB: ExecBlock> {
     header_intrinsics: &'b <EB::Header as ExecHeader>::Intrinsics,
     body: &'b EB::Body,

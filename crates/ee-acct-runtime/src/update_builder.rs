@@ -20,6 +20,8 @@ use crate::{
 /// This helps assemble all the pieces needed to call
 /// `verify_and_apply_update_operation` in tests. It tracks the account state
 /// and accumulates changes as messages are processed and segments are added.
+//#[expect(missing_debug_implementations, reason = "clippy is wrong")]
+#[derive(Debug)]
 pub struct UpdateBuilder {
     seq_no: u64,
     current_state: EeAccountState,
@@ -28,6 +30,7 @@ pub struct UpdateBuilder {
     ledger_refs: LedgerRefs,
     accumulated_outputs: UpdateOutputs,
     commit_segments: Vec<CommitChainSegment>,
+    total_inputs_processed: usize,
     total_fincls_processed: usize,
 }
 
@@ -42,6 +45,7 @@ impl UpdateBuilder {
             ledger_refs: LedgerRefs::new_empty(),
             accumulated_outputs: UpdateOutputs::new_empty(),
             commit_segments: Vec::new(),
+            total_inputs_processed: 0,
             total_fincls_processed: 0,
         }
     }
@@ -79,11 +83,20 @@ impl UpdateBuilder {
 
     /// Adds a chain segment to the update.
     ///
-    /// This automatically accumulates the outputs from all blocks in the segment.
+    /// This automatically accumulates the outputs from all blocks in the segment
+    /// and removes consumed inputs from the current state.
     pub fn add_segment(mut self, segment: CommitChainSegment) -> Self {
+        // Track total inputs consumed across all blocks
+        let mut total_inputs_consumed = 0;
+
         // Accumulate outputs from all blocks in the segment
         for block in segment.blocks() {
-            let block_outputs = block.notpackage().outputs();
+            let block_notpackage = block.notpackage();
+            let block_outputs = block_notpackage.outputs();
+            let block_inputs = block_notpackage.inputs();
+
+            // Count inputs consumed by this block
+            total_inputs_consumed += block_inputs.total_inputs();
 
             // Add transfers
             self.accumulated_outputs.transfers_mut().extend(
@@ -101,6 +114,13 @@ impl UpdateBuilder {
                     .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
             );
         }
+
+        // Remove consumed inputs from the current state
+        self.current_state
+            .remove_pending_inputs(total_inputs_consumed);
+
+        // Track total inputs processed
+        self.total_inputs_processed += total_inputs_consumed;
 
         self.commit_segments.push(segment);
         self
@@ -133,15 +153,10 @@ impl UpdateBuilder {
             .and_then(|seg| seg.new_exec_tip_blkid())
             .unwrap_or(initial_state.last_exec_blkid());
 
-        // Calculate total inputs consumed by comparing initial and current state
-        let initial_input_count = initial_state.pending_inputs().len();
-        let current_input_count = self.current_state.pending_inputs().len();
-        let processed_inputs = initial_input_count.saturating_sub(current_input_count);
-
-        // Construct the extra data
+        // Construct the extra data using tracked values
         let extra_data = UpdateExtraData::new(
             new_tip_blkid,
-            processed_inputs as u32,
+            self.total_inputs_processed as u32,
             self.total_fincls_processed as u32,
         );
 

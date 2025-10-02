@@ -19,6 +19,7 @@ use crate::{
 ///
 /// This builder manages the pending inputs queue and helps construct blocks
 /// that consume those inputs in order.
+#[expect(missing_debug_implementations, reason = "clippy is wrong")]
 pub struct ChainSegmentBuilder<E: ExecutionEnvironment> {
     ee: E,
     blocks: Vec<CommitBlockData>,
@@ -161,18 +162,18 @@ mod tests {
     use strata_acct_types::{BitcoinAmount, SubjectId};
     use strata_ee_acct_types::PendingInputEntry;
     use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
+    use strata_simple_ee::{
+        SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader, SimpleHeaderIntrinsics,
+        SimplePartialState, SimpleTransaction,
+    };
 
     use super::*;
-    use crate::test_utils::{
-        DummyBlockBody, DummyExecutionEnvironment, DummyHeader, DummyPartialState,
-        DummyTransaction, dummy_ee::types::DummyHeaderIntrinsics,
-    };
 
     #[test]
     fn test_chain_segment_builder_empty() {
-        let ee = DummyExecutionEnvironment;
-        let state = DummyPartialState::new_empty();
-        let header = DummyHeader::genesis();
+        let ee = SimpleExecutionEnvironment;
+        let state = SimplePartialState::new_empty();
+        let header = SimpleHeader::genesis();
         let pending_inputs = vec![];
 
         let builder = ChainSegmentBuilder::new(ee, state, header, pending_inputs);
@@ -183,17 +184,17 @@ mod tests {
 
     #[test]
     fn test_chain_segment_builder_single_block_no_inputs() {
-        let ee = DummyExecutionEnvironment;
-        let state = DummyPartialState::new_empty();
-        let header = DummyHeader::genesis();
+        let ee = SimpleExecutionEnvironment;
+        let state = SimplePartialState::new_empty();
+        let header = SimpleHeader::genesis();
         let pending_inputs = vec![];
 
         let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // Create an empty block body
-        let body = DummyBlockBody::new(vec![]);
+        let body = SimpleBlockBody::new(vec![]);
         let inputs = BlockInputs::new_empty();
-        let intrinsics = DummyHeaderIntrinsics {
+        let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
             index: header.index() + 1,
         };
@@ -208,11 +209,11 @@ mod tests {
 
     #[test]
     fn test_chain_segment_builder_with_deposit() {
-        let ee = DummyExecutionEnvironment;
+        let ee = SimpleExecutionEnvironment;
 
         // Create initial state with no accounts
-        let state = DummyPartialState::new_empty();
-        let header = DummyHeader::genesis();
+        let state = SimplePartialState::new_empty();
+        let header = SimpleHeader::genesis();
 
         // Create a pending deposit
         let dest = SubjectId::from([1u8; 32]);
@@ -223,10 +224,10 @@ mod tests {
         let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // Create a block that consumes the deposit
-        let body = DummyBlockBody::new(vec![]);
+        let body = SimpleBlockBody::new(vec![]);
         let mut inputs = BlockInputs::new_empty();
         inputs.add_subject_deposit(deposit);
-        let intrinsics = DummyHeaderIntrinsics {
+        let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
             index: header.index() + 1,
         };
@@ -248,14 +249,14 @@ mod tests {
 
     #[test]
     fn test_chain_segment_builder_multiple_blocks() {
-        let ee = DummyExecutionEnvironment;
+        let ee = SimpleExecutionEnvironment;
 
         // Create initial state
         let mut initial_accounts = std::collections::BTreeMap::new();
         let alice = SubjectId::from([1u8; 32]);
         initial_accounts.insert(alice, 1000u64);
-        let state = DummyPartialState::new(initial_accounts);
-        let header = DummyHeader::genesis();
+        let state = SimplePartialState::new(initial_accounts);
+        let header = SimpleHeader::genesis();
 
         // Create deposits for two blocks
         let bob = SubjectId::from([2u8; 32]);
@@ -269,10 +270,10 @@ mod tests {
         let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // First block: consume first deposit
-        let body1 = DummyBlockBody::new(vec![]);
+        let body1 = SimpleBlockBody::new(vec![]);
         let mut inputs1 = BlockInputs::new_empty();
         inputs1.add_subject_deposit(deposit1);
-        let intrinsics1 = DummyHeaderIntrinsics {
+        let intrinsics1 = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
             index: header.index() + 1,
         };
@@ -285,15 +286,15 @@ mod tests {
         assert_eq!(builder.pending_inputs().len(), 1);
 
         // Second block: consume second deposit and do a transfer
-        let transfer = DummyTransaction::Transfer {
+        let transfer = SimpleTransaction::Transfer {
             from: alice,
             to: bob,
             value: 100,
         };
-        let body2 = DummyBlockBody::new(vec![transfer]);
+        let body2 = SimpleBlockBody::new(vec![transfer]);
         let mut inputs2 = BlockInputs::new_empty();
         inputs2.add_subject_deposit(deposit2);
-        let intrinsics2 = DummyHeaderIntrinsics {
+        let intrinsics2 = SimpleHeaderIntrinsics {
             parent_blkid: builder.current_header().compute_block_id(),
             index: builder.current_header().index() + 1,
         };
@@ -311,9 +312,9 @@ mod tests {
 
     #[test]
     fn test_chain_segment_builder_input_mismatch() {
-        let ee = DummyExecutionEnvironment;
-        let state = DummyPartialState::new_empty();
-        let header = DummyHeader::genesis();
+        let ee = SimpleExecutionEnvironment;
+        let state = SimplePartialState::new_empty();
+        let header = SimpleHeader::genesis();
 
         let dest1 = SubjectId::from([1u8; 32]);
         let deposit1 = SubjectDepositData::new(dest1, BitcoinAmount::from(1000u64));
@@ -324,10 +325,10 @@ mod tests {
         // Try to append a block with a different deposit
         let dest2 = SubjectId::from([2u8; 32]);
         let deposit2 = SubjectDepositData::new(dest2, BitcoinAmount::from(1000u64));
-        let body = DummyBlockBody::new(vec![]);
+        let body = SimpleBlockBody::new(vec![]);
         let mut inputs = BlockInputs::new_empty();
         inputs.add_subject_deposit(deposit2);
-        let intrinsics = DummyHeaderIntrinsics {
+        let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
             index: header.index() + 1,
         };
@@ -338,9 +339,9 @@ mod tests {
 
     #[test]
     fn test_chain_segment_builder_insufficient_inputs() {
-        let ee = DummyExecutionEnvironment;
-        let state = DummyPartialState::new_empty();
-        let header = DummyHeader::genesis();
+        let ee = SimpleExecutionEnvironment;
+        let state = SimplePartialState::new_empty();
+        let header = SimpleHeader::genesis();
 
         let dest = SubjectId::from([1u8; 32]);
         let deposit = SubjectDepositData::new(dest, BitcoinAmount::from(1000u64));
@@ -349,11 +350,11 @@ mod tests {
         let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // Try to append a block that wants more inputs than available
-        let body = DummyBlockBody::new(vec![]);
+        let body = SimpleBlockBody::new(vec![]);
         let mut inputs = BlockInputs::new_empty();
         inputs.add_subject_deposit(deposit.clone());
         inputs.add_subject_deposit(deposit); // Add a second one that doesn't exist
-        let intrinsics = DummyHeaderIntrinsics {
+        let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
             index: header.index() + 1,
         };

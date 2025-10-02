@@ -14800,6 +14800,8 @@ dependencies = [
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
+ "strata-msg-fmt",
+ "strata-simple-ee",
  "strata-snark-acct-types",
  "thiserror 2.0.16",
 ]
@@ -15279,6 +15281,18 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-simple-ee"
+version = "0.1.0"
+dependencies = [
+ "digest 0.10.7",
+ "sha2 0.10.9",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
 ]
 
 [[package]]

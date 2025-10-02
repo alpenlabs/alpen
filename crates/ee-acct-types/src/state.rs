@@ -5,7 +5,7 @@ use strata_ee_chain_types::SubjectDepositData;
 
 type Hash = [u8; 32];
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EeAccountState {
     /// ID of the last execution block that we've processed.
     last_exec_blkid: Hash,
@@ -27,6 +27,20 @@ pub struct EeAccountState {
 }
 
 impl EeAccountState {
+    pub fn new(
+        last_exec_blkid: Hash,
+        tracked_balance: BitcoinAmount,
+        pending_inputs: Vec<PendingInputEntry>,
+        pending_fincls: Vec<PendingFinclEntry>,
+    ) -> Self {
+        Self {
+            last_exec_blkid,
+            tracked_balance,
+            pending_inputs,
+            pending_fincls,
+        }
+    }
+
     pub fn last_exec_blkid(&self) -> Hash {
         self.last_exec_blkid
     }
@@ -108,7 +122,7 @@ pub enum PendingInputType {
 
 /// A pending forced inclusion that's been accepted by the EE account but not
 /// included in a block yet.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PendingFinclEntry {
     epoch: u32,
     raw_tx_hash: Hash,

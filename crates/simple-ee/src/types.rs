@@ -1,32 +1,48 @@
-//! Types for the dummy execution environment.
+//! Simple execution environment types.
 
 use std::collections::BTreeMap;
 
 use digest::Digest;
 use sha2::Sha256;
-use strata_acct_types::{AccountId, BitcoinAmount, SubjectId, VarVec};
+use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState,
 };
-use strata_ee_chain_types::{BlockOutputs, OutputTransfer};
+use strata_ee_chain_types::BlockOutputs;
 
-type Hash = [u8; 32];
+pub(crate) type Hash = [u8; 32];
 
-/// Intrinsics for a dummy header (fields that are known before execution).
+/// Write batch containing the updated account state.
 #[derive(Clone, Debug)]
-pub struct DummyHeaderIntrinsics {
+pub struct SimpleWriteBatch {
+    accounts: BTreeMap<SubjectId, u64>,
+}
+
+impl SimpleWriteBatch {
+    pub fn new(accounts: BTreeMap<SubjectId, u64>) -> Self {
+        Self { accounts }
+    }
+
+    pub fn accounts(&self) -> &BTreeMap<SubjectId, u64> {
+        &self.accounts
+    }
+}
+
+/// Intrinsics for a simple header (fields that are known before execution).
+#[derive(Clone, Debug)]
+pub struct SimpleHeaderIntrinsics {
     pub parent_blkid: Hash,
     pub index: u64,
 }
 
 /// Partial state representing accounts as a simple mapping.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DummyPartialState {
+pub struct SimplePartialState {
     accounts: BTreeMap<SubjectId, u64>,
 }
 
-impl DummyPartialState {
+impl SimplePartialState {
     pub fn new(accounts: BTreeMap<SubjectId, u64>) -> Self {
         Self { accounts }
     }
@@ -48,7 +64,7 @@ impl DummyPartialState {
     }
 }
 
-impl ExecPartialState for DummyPartialState {
+impl ExecPartialState for SimplePartialState {
     fn compute_state_root(&self) -> EnvResult<Hash> {
         // Hash the account state by encoding it as a sorted list
         let mut hasher = Sha256::new();
@@ -62,7 +78,7 @@ impl ExecPartialState for DummyPartialState {
     }
 }
 
-impl Codec for DummyPartialState {
+impl Codec for SimplePartialState {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
         // Encode as (subject_id, balance) pairs
         let entries: Vec<_> = self.accounts.iter().collect();
@@ -90,9 +106,9 @@ impl Codec for DummyPartialState {
     }
 }
 
-/// Dummy block header.
+/// Simple block header.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DummyHeader {
+pub struct SimpleHeader {
     /// Parent block ID
     pub parent_blkid: Hash,
 
@@ -103,7 +119,7 @@ pub struct DummyHeader {
     pub index: u64,
 }
 
-impl DummyHeader {
+impl SimpleHeader {
     pub fn new(parent_blkid: Hash, state_root: Hash, index: u64) -> Self {
         Self {
             parent_blkid,
@@ -115,7 +131,7 @@ impl DummyHeader {
     pub fn genesis() -> Self {
         Self {
             parent_blkid: [0; 32],
-            state_root: DummyPartialState::new_empty()
+            state_root: SimplePartialState::new_empty()
                 .compute_state_root()
                 .expect("genesis state root"),
             index: 0,
@@ -127,11 +143,11 @@ impl DummyHeader {
     }
 }
 
-impl ExecHeader for DummyHeader {
-    type Intrinsics = DummyHeaderIntrinsics;
+impl ExecHeader for SimpleHeader {
+    type Intrinsics = SimpleHeaderIntrinsics;
 
     fn get_intrinsics(&self) -> Self::Intrinsics {
-        DummyHeaderIntrinsics {
+        SimpleHeaderIntrinsics {
             parent_blkid: self.parent_blkid,
             index: self.index,
         }
@@ -150,7 +166,7 @@ impl ExecHeader for DummyHeader {
     }
 }
 
-impl Codec for DummyHeader {
+impl Codec for SimpleHeader {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
         self.parent_blkid.encode(enc)?;
         self.state_root.encode(enc)?;
@@ -167,25 +183,25 @@ impl Codec for DummyHeader {
     }
 }
 
-/// Dummy block body containing transactions.
+/// Simple block body containing transactions.
 #[derive(Clone, Debug)]
-pub struct DummyBlockBody {
-    transactions: Vec<DummyTransaction>,
+pub struct SimpleBlockBody {
+    transactions: Vec<SimpleTransaction>,
 }
 
-impl DummyBlockBody {
-    pub fn new(transactions: Vec<DummyTransaction>) -> Self {
+impl SimpleBlockBody {
+    pub fn new(transactions: Vec<SimpleTransaction>) -> Self {
         Self { transactions }
     }
 
-    pub fn transactions(&self) -> &[DummyTransaction] {
+    pub fn transactions(&self) -> &[SimpleTransaction] {
         &self.transactions
     }
 }
 
-impl ExecBlockBody for DummyBlockBody {}
+impl ExecBlockBody for SimpleBlockBody {}
 
-impl Codec for DummyBlockBody {
+impl Codec for SimpleBlockBody {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
         (self.transactions.len() as u32).encode(enc)?;
 
@@ -201,40 +217,40 @@ impl Codec for DummyBlockBody {
         let mut transactions = Vec::with_capacity(len);
 
         for _ in 0..len {
-            transactions.push(DummyTransaction::decode(dec)?);
+            transactions.push(SimpleTransaction::decode(dec)?);
         }
 
         Ok(Self { transactions })
     }
 }
 
-/// Dummy block containing header and body.
+/// Simple block containing header and body.
 #[derive(Clone, Debug)]
-pub struct DummyBlock {
-    header: DummyHeader,
-    body: DummyBlockBody,
+pub struct SimpleBlock {
+    header: SimpleHeader,
+    body: SimpleBlockBody,
 }
 
-impl DummyBlock {
-    pub fn new(header: DummyHeader, body: DummyBlockBody) -> Self {
+impl SimpleBlock {
+    pub fn new(header: SimpleHeader, body: SimpleBlockBody) -> Self {
         Self { header, body }
     }
 
-    pub fn transactions(&self) -> &[DummyTransaction] {
+    pub fn transactions(&self) -> &[SimpleTransaction] {
         self.body.transactions()
     }
 }
 
-impl ExecBlock for DummyBlock {
-    type Header = DummyHeader;
-    type Body = DummyBlockBody;
+impl ExecBlock for SimpleBlock {
+    type Header = SimpleHeader;
+    type Body = SimpleBlockBody;
 
     fn from_parts(header: Self::Header, body: Self::Body) -> Self {
         Self { header, body }
     }
 
     fn check_header_matches_body(_header: &Self::Header, _body: &Self::Body) -> bool {
-        // For the dummy implementation, headers always match bodies
+        // For the simple implementation, headers always match bodies
         true
     }
 
@@ -247,7 +263,7 @@ impl ExecBlock for DummyBlock {
     }
 }
 
-impl Codec for DummyBlock {
+impl Codec for SimpleBlock {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
         self.header.encode(enc)?;
         self.body.encode(enc)?;
@@ -255,15 +271,15 @@ impl Codec for DummyBlock {
     }
 
     fn decode(dec: &mut impl strata_codec::Decoder) -> Result<Self, CodecError> {
-        let header = DummyHeader::decode(dec)?;
-        let body = DummyBlockBody::decode(dec)?;
+        let header = SimpleHeader::decode(dec)?;
+        let body = SimpleBlockBody::decode(dec)?;
         Ok(Self { header, body })
     }
 }
 
 /// Simple transaction that can transfer value or emit outputs.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DummyTransaction {
+pub enum SimpleTransaction {
     /// Transfer value from one subject to another
     Transfer {
         from: SubjectId,
@@ -278,7 +294,7 @@ pub enum DummyTransaction {
     },
 }
 
-impl DummyTransaction {
+impl SimpleTransaction {
     /// Apply this transaction to the account state.
     pub fn apply(
         &self,
@@ -286,7 +302,7 @@ impl DummyTransaction {
         outputs: &mut BlockOutputs,
     ) -> EnvResult<()> {
         match self {
-            DummyTransaction::Transfer { from, to, value } => {
+            SimpleTransaction::Transfer { from, to, value } => {
                 // Deduct from source
                 let from_bal = accounts
                     .get_mut(from)
@@ -301,7 +317,7 @@ impl DummyTransaction {
                     .checked_add(*value)
                     .ok_or(EnvError::ConflictingPublicState)?;
             }
-            DummyTransaction::EmitTransfer { from, dest, value } => {
+            SimpleTransaction::EmitTransfer { from, dest, value } => {
                 // Deduct from source
                 let from_bal = accounts
                     .get_mut(from)
@@ -311,6 +327,7 @@ impl DummyTransaction {
                     .ok_or(EnvError::ConflictingPublicState)?;
 
                 // Emit output
+                use strata_ee_chain_types::OutputTransfer;
                 outputs.add_transfer(OutputTransfer::new(*dest, BitcoinAmount::from(*value)));
             }
         }
@@ -319,16 +336,16 @@ impl DummyTransaction {
     }
 }
 
-impl Codec for DummyTransaction {
+impl Codec for SimpleTransaction {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
         match self {
-            DummyTransaction::Transfer { from, to, value } => {
+            SimpleTransaction::Transfer { from, to, value } => {
                 0u8.encode(enc)?;
                 from.encode(enc)?;
                 to.encode(enc)?;
                 value.encode(enc)?;
             }
-            DummyTransaction::EmitTransfer { from, dest, value } => {
+            SimpleTransaction::EmitTransfer { from, dest, value } => {
                 1u8.encode(enc)?;
                 from.encode(enc)?;
                 dest.encode(enc)?;
@@ -345,15 +362,15 @@ impl Codec for DummyTransaction {
                 let from = SubjectId::decode(dec)?;
                 let to = SubjectId::decode(dec)?;
                 let value = u64::decode(dec)?;
-                Ok(DummyTransaction::Transfer { from, to, value })
+                Ok(SimpleTransaction::Transfer { from, to, value })
             }
             1 => {
                 let from = SubjectId::decode(dec)?;
                 let dest = AccountId::decode(dec)?;
                 let value = u64::decode(dec)?;
-                Ok(DummyTransaction::EmitTransfer { from, dest, value })
+                Ok(SimpleTransaction::EmitTransfer { from, dest, value })
             }
-            _ => Err(CodecError::InvalidVariant("DummyTransaction")),
+            _ => Err(CodecError::InvalidVariant("SimpleTransaction")),
         }
     }
 }

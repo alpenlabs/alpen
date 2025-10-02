@@ -1,3 +1,5 @@
+#![expect(unused, reason = "in-development")]
+
 mod commit;
 mod errors;
 mod extra_data;

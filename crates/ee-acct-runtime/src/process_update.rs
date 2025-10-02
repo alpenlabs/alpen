@@ -173,8 +173,10 @@ fn verify_accumulated_state(
     ee: &impl ExecutionEnvironment,
 ) -> EnvResult<()> {
     // Temporary measure: interpret the new tip blkid in the extra data as a
-    // commit.
-    uvstate.add_pending_commit(PendingCommit::new(*shared.extra.new_tip_blkid()));
+    // commit, but only if it changed from the current tip.
+    if *shared.extra.new_tip_blkid() != astate.last_exec_blkid() {
+        uvstate.add_pending_commit(PendingCommit::new(*shared.extra.new_tip_blkid()));
+    }
 
     // 1. Validate that we got chain segments corresponding to the pending commits.
     if uvstate.pending_commits().len() != shared.private_input().commit_data().len() {
