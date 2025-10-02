@@ -12,7 +12,7 @@ use strata_snark_acct_types::{
 use crate::{
     builder_errors::{BuilderError, BuilderResult},
     private_input::SharedPrivateInput,
-    process_update::{MsgData, apply_message},
+    update_processing::{MsgData, apply_message},
 };
 
 /// Builder for constructing complete update operations.
