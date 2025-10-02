@@ -256,7 +256,11 @@ fn process_block<E: ExecutionEnvironment>(
 
     // 2. Execute the block body and make sure the outputs are consistent with
     // the package.
-    let exec_outp = cvstate.execute_block_body(&header.get_intrinsics(), block.get_body(), block_data.notpackage().inputs())?;
+    let exec_outp = cvstate.execute_block_body(
+        &header.get_intrinsics(),
+        block.get_body(),
+        block_data.notpackage().inputs(),
+    )?;
     if exec_outp.outputs() != block_data.notpackage().outputs() {
         return Err(EnvError::InconsistentCoinput);
     }

@@ -14,6 +14,4 @@ pub use inputs::ExecPayload;
 pub use messages::*;
 pub use outputs::ExecBlockOutput;
 pub use state::{EeAccountState, PendingFinclEntry, PendingInputEntry, PendingInputType};
-pub use traits::{
-    ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState, ExecutionEnvironment,
-};
+pub use traits::{ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState, ExecutionEnvironment};

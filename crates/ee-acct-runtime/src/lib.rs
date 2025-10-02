@@ -13,14 +13,13 @@ mod update_builder;
 #[cfg(test)]
 pub mod test_utils;
 
-pub use private_input::SharedPrivateInput;
-pub use process_update::{
-    apply_update_operation_unconditionally, verify_and_apply_update_operation,
-};
-
 #[cfg(feature = "builders")]
 pub use builder_errors::{BuilderError, BuilderResult};
 #[cfg(feature = "builders")]
 pub use chain_segment_builder::ChainSegmentBuilder;
+pub use private_input::SharedPrivateInput;
+pub use process_update::{
+    apply_update_operation_unconditionally, verify_and_apply_update_operation,
+};
 #[cfg(feature = "builders")]
 pub use update_builder::UpdateBuilder;

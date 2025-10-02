@@ -9,8 +9,11 @@ use strata_ee_acct_types::{
 };
 use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockNotpackage};
 
-use crate::builder_errors::{BuilderError, BuilderResult};
-use crate::{exec_processing::validate_block_inputs, verification_state::InputTracker};
+use crate::{
+    builder_errors::{BuilderError, BuilderResult},
+    exec_processing::validate_block_inputs,
+    verification_state::InputTracker,
+};
 
 /// Builder for constructing a chain of blocks as a segment.
 ///
@@ -88,9 +91,9 @@ impl<E: ExecutionEnvironment> ChainSegmentBuilder<E> {
 
         // 2. Execute the block body.
         let exec_payload = ExecPayload::new(header_intrinsics, &body);
-        let exec_output = self
-            .ee
-            .execute_block_body(&self.current_state, &exec_payload, &inputs)?;
+        let exec_output =
+            self.ee
+                .execute_block_body(&self.current_state, &exec_payload, &inputs)?;
 
         // 3. Complete the header using the execution output.
         let header = self.ee.complete_header(&exec_payload, &exec_output)?;
@@ -161,8 +164,8 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        dummy_ee::types::DummyHeaderIntrinsics, DummyBlockBody, DummyExecutionEnvironment,
-        DummyHeader, DummyPartialState, DummyTransaction,
+        DummyBlockBody, DummyExecutionEnvironment, DummyHeader, DummyPartialState,
+        DummyTransaction, dummy_ee::types::DummyHeaderIntrinsics,
     };
 
     #[test]
