@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use digest::Digest;
 use sha2::Sha256;
-use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage, SubjectId};
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState,
@@ -292,6 +292,14 @@ pub enum SimpleTransaction {
         dest: AccountId,
         value: u64,
     },
+    /// Emit a message output to a subject in another EE
+    EmitMessage {
+        from: SubjectId,
+        dest_account: AccountId,
+        dest_subject: SubjectId,
+        value: u64,
+        data: Vec<u8>,
+    },
 }
 
 impl SimpleTransaction {
@@ -304,31 +312,48 @@ impl SimpleTransaction {
         match self {
             SimpleTransaction::Transfer { from, to, value } => {
                 // Deduct from source
-                let from_bal = accounts
-                    .get_mut(from)
-                    .ok_or(EnvError::ConflictingPublicState)?;
+                let from_bal = accounts.get_mut(from).ok_or(EnvError::InvalidBlockTx)?;
                 *from_bal = from_bal
                     .checked_sub(*value)
-                    .ok_or(EnvError::ConflictingPublicState)?;
+                    .ok_or(EnvError::InvalidBlockTx)?;
 
                 // Add to destination
                 let to_bal = accounts.entry(*to).or_insert(0);
-                *to_bal = to_bal
-                    .checked_add(*value)
-                    .ok_or(EnvError::ConflictingPublicState)?;
+                *to_bal = to_bal.checked_add(*value).ok_or(EnvError::InvalidBlockTx)?;
             }
             SimpleTransaction::EmitTransfer { from, dest, value } => {
                 // Deduct from source
-                let from_bal = accounts
-                    .get_mut(from)
-                    .ok_or(EnvError::ConflictingPublicState)?;
+                let from_bal = accounts.get_mut(from).ok_or(EnvError::InvalidBlockTx)?;
                 *from_bal = from_bal
                     .checked_sub(*value)
-                    .ok_or(EnvError::ConflictingPublicState)?;
+                    .ok_or(EnvError::InvalidBlockTx)?;
 
                 // Emit output
                 use strata_ee_chain_types::OutputTransfer;
                 outputs.add_transfer(OutputTransfer::new(*dest, BitcoinAmount::from(*value)));
+            }
+            SimpleTransaction::EmitMessage {
+                from,
+                dest_account,
+                dest_subject,
+                value,
+                data,
+            } => {
+                // Deduct from source
+                let from_bal = accounts.get_mut(from).ok_or(EnvError::InvalidBlockTx)?;
+                *from_bal = from_bal
+                    .checked_sub(*value)
+                    .ok_or(EnvError::InvalidBlockTx)?;
+
+                // Encode message data: dest_subject + user data
+                let mut msg_data = Vec::new();
+                msg_data.extend_from_slice(dest_subject.inner());
+                msg_data.extend_from_slice(data);
+
+                // Emit message output
+                let payload = MsgPayload::new(BitcoinAmount::from(*value), msg_data);
+                let message = SentMessage::new(*dest_account, payload);
+                outputs.add_message(message);
             }
         }
 
@@ -351,6 +376,21 @@ impl Codec for SimpleTransaction {
                 dest.encode(enc)?;
                 value.encode(enc)?;
             }
+            SimpleTransaction::EmitMessage {
+                from,
+                dest_account,
+                dest_subject,
+                value,
+                data,
+            } => {
+                2u8.encode(enc)?;
+                from.encode(enc)?;
+                dest_account.encode(enc)?;
+                dest_subject.encode(enc)?;
+                value.encode(enc)?;
+                (data.len() as u32).encode(enc)?;
+                enc.write_buf(data)?;
+            }
         }
         Ok(())
     }
@@ -369,6 +409,22 @@ impl Codec for SimpleTransaction {
                 let dest = AccountId::decode(dec)?;
                 let value = u64::decode(dec)?;
                 Ok(SimpleTransaction::EmitTransfer { from, dest, value })
+            }
+            2 => {
+                let from = SubjectId::decode(dec)?;
+                let dest_account = AccountId::decode(dec)?;
+                let dest_subject = SubjectId::decode(dec)?;
+                let value = u64::decode(dec)?;
+                let len = u32::decode(dec)? as usize;
+                let mut data = vec![0u8; len];
+                dec.read_buf(&mut data)?;
+                Ok(SimpleTransaction::EmitMessage {
+                    from,
+                    dest_account,
+                    dest_subject,
+                    value,
+                    data,
+                })
             }
             _ => Err(CodecError::InvalidVariant("SimpleTransaction")),
         }

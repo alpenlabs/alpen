@@ -48,7 +48,7 @@ fn test_mismatched_processed_inputs_count() {
     );
 
     // Tamper with the processed_inputs count in extra_data
-    // This should cause ConflictingPublicState error
+    // This should cause InvalidBlock error
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_ee_acct_types::UpdateExtraData;
 
@@ -80,7 +80,7 @@ fn test_mismatched_processed_inputs_count() {
         &ee,
     );
 
-    assert!(matches!(result, Err(EnvError::ConflictingPublicState)));
+    assert!(matches!(result, Err(EnvError::InvalidBlock)));
 }
 
 #[test]

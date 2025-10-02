@@ -197,7 +197,7 @@ fn verify_accumulated_state(
     // 3. Check that the inputs we consumed match the number we're syaing were
     // consumed.
     if input_tracker.consumed() != *shared.extra().processed_inputs() as usize {
-        return Err(EnvError::ConflictingPublicState);
+        return Err(EnvError::InvalidBlock);
     }
 
     // A. Check balance changes are consistent.

@@ -33,7 +33,7 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
             let balance = accounts.entry(deposit.dest()).or_insert(0);
             *balance = balance
                 .checked_add(*deposit.value())
-                .ok_or(strata_ee_acct_types::EnvError::ConflictingPublicState)?;
+                .ok_or(strata_ee_acct_types::EnvError::InvalidBlockTx)?;
         }
 
         // 2. Apply transactions from the block body
@@ -608,7 +608,7 @@ mod tests {
         };
 
         let result = execute_block(ee, &pre_state, &intrinsics, body, inputs);
-        assert!(matches!(result, Err(EnvError::ConflictingPublicState)));
+        assert!(matches!(result, Err(EnvError::InvalidBlockTx)));
     }
 
     #[test]
@@ -632,7 +632,7 @@ mod tests {
         };
 
         let result = execute_block(ee, &pre_state, &intrinsics, body, inputs);
-        assert!(matches!(result, Err(EnvError::ConflictingPublicState)));
+        assert!(matches!(result, Err(EnvError::InvalidBlockTx)));
     }
 
     #[test]
@@ -658,7 +658,7 @@ mod tests {
         };
 
         let result = execute_block(ee, &pre_state, &intrinsics, body, inputs);
-        assert!(matches!(result, Err(EnvError::ConflictingPublicState)));
+        assert!(matches!(result, Err(EnvError::InvalidBlockTx)));
     }
 
     #[test]
@@ -682,7 +682,7 @@ mod tests {
         };
 
         let result = execute_block(ee, &pre_state, &intrinsics, body, inputs);
-        assert!(matches!(result, Err(EnvError::ConflictingPublicState)));
+        assert!(matches!(result, Err(EnvError::InvalidBlockTx)));
     }
 
     #[test]
@@ -767,7 +767,7 @@ mod tests {
 
         let result = execute_block(ee, &pre_state, &intrinsics, body, inputs);
         assert!(
-            matches!(result, Err(EnvError::ConflictingPublicState)),
+            matches!(result, Err(EnvError::InvalidBlockTx)),
             "Block should fail when any transaction underflows"
         );
     }
@@ -799,5 +799,282 @@ mod tests {
 
         assert_eq!(post_state.accounts().get(&alice()), Some(&0));
         assert_eq!(post_state.accounts().get(&bob()), Some(&1000));
+    }
+
+    #[test]
+    fn test_emit_message_simple() {
+        let ee = SimpleExecutionEnvironment;
+
+        // alice has 1000
+        let mut accounts = BTreeMap::new();
+        accounts.insert(alice(), 1000);
+        let pre_state = SimplePartialState::new(accounts);
+
+        // Send message with 300 value and some data to bob in another EE
+        let msg_data = vec![1, 2, 3, 4, 5];
+        let tx = SimpleTransaction::EmitMessage {
+            from: alice(),
+            dest_account: account_123(),
+            dest_subject: bob(),
+            value: 300,
+            data: msg_data.clone(),
+        };
+        let body = SimpleBlockBody::new(vec![tx]);
+        let inputs = BlockInputs::new_empty();
+        let intrinsics = SimpleHeaderIntrinsics {
+            parent_blkid: [0; 32],
+            index: 1,
+        };
+
+        let payload = ExecPayload::new(&intrinsics, &body);
+        let output = ee
+            .execute_block_body(&pre_state, &payload, &inputs)
+            .expect("execution should succeed");
+
+        let mut post_state = pre_state.clone();
+        ee.merge_write_into_state(&mut post_state, output.write_batch())
+            .expect("merge should succeed");
+
+        // alice: 1000 - 300 = 700
+        assert_eq!(post_state.accounts().get(&alice()), Some(&700));
+
+        // Verify the message output
+        assert_eq!(output.outputs().output_messages().len(), 1);
+        let message = &output.outputs().output_messages()[0];
+        assert_eq!(message.dest(), account_123());
+        assert_eq!(message.payload().value(), BitcoinAmount::from(300u64));
+
+        // Message data should contain: dest_subject (32 bytes) + user data
+        let msg_payload_data = message.payload().data();
+        assert_eq!(msg_payload_data.len(), 32 + msg_data.len());
+        assert_eq!(&msg_payload_data[0..32], bob().inner());
+        assert_eq!(&msg_payload_data[32..], &msg_data[..]);
+    }
+
+    #[test]
+    fn test_emit_multiple_messages() {
+        let ee = SimpleExecutionEnvironment;
+
+        // alice=2000, bob=1500
+        let mut accounts = BTreeMap::new();
+        accounts.insert(alice(), 2000);
+        accounts.insert(bob(), 1500);
+        let pre_state = SimplePartialState::new(accounts);
+
+        let account_456 = AccountId::from([45u8; 32]);
+        let charlie_remote = SubjectId::from([99u8; 32]);
+
+        // Multiple messages
+        let txs = vec![
+            SimpleTransaction::EmitMessage {
+                from: alice(),
+                dest_account: account_123(),
+                dest_subject: bob(),
+                value: 400,
+                data: vec![10, 20, 30],
+            },
+            SimpleTransaction::EmitMessage {
+                from: bob(),
+                dest_account: account_456,
+                dest_subject: charlie_remote,
+                value: 250,
+                data: vec![],
+            },
+            SimpleTransaction::EmitMessage {
+                from: alice(),
+                dest_account: account_456,
+                dest_subject: charlie(),
+                value: 600,
+                data: vec![99, 88, 77, 66],
+            },
+        ];
+
+        let body = SimpleBlockBody::new(txs);
+        let inputs = BlockInputs::new_empty();
+        let intrinsics = SimpleHeaderIntrinsics {
+            parent_blkid: [0; 32],
+            index: 1,
+        };
+
+        let payload = ExecPayload::new(&intrinsics, &body);
+        let output = ee
+            .execute_block_body(&pre_state, &payload, &inputs)
+            .expect("execution should succeed");
+
+        let mut post_state = pre_state.clone();
+        ee.merge_write_into_state(&mut post_state, output.write_batch())
+            .expect("merge should succeed");
+
+        // alice: 2000 - 400 - 600 = 1000
+        // bob: 1500 - 250 = 1250
+        assert_eq!(post_state.accounts().get(&alice()), Some(&1000));
+        assert_eq!(post_state.accounts().get(&bob()), Some(&1250));
+
+        // Verify all message outputs
+        assert_eq!(output.outputs().output_messages().len(), 3);
+
+        let msg1 = &output.outputs().output_messages()[0];
+        assert_eq!(msg1.dest(), account_123());
+        assert_eq!(msg1.payload().value(), BitcoinAmount::from(400u64));
+        assert_eq!(&msg1.payload().data()[0..32], bob().inner());
+        assert_eq!(&msg1.payload().data()[32..], &[10, 20, 30]);
+
+        let msg2 = &output.outputs().output_messages()[1];
+        assert_eq!(msg2.dest(), account_456);
+        assert_eq!(msg2.payload().value(), BitcoinAmount::from(250u64));
+        assert_eq!(&msg2.payload().data()[0..32], charlie_remote.inner());
+        assert_eq!(msg2.payload().data().len(), 32); // no user data
+
+        let msg3 = &output.outputs().output_messages()[2];
+        assert_eq!(msg3.dest(), account_456);
+        assert_eq!(msg3.payload().value(), BitcoinAmount::from(600u64));
+        assert_eq!(&msg3.payload().data()[0..32], charlie().inner());
+        assert_eq!(&msg3.payload().data()[32..], &[99, 88, 77, 66]);
+    }
+
+    #[test]
+    fn test_emit_message_insufficient_balance_fails() {
+        let ee = SimpleExecutionEnvironment;
+
+        // alice has only 100
+        let mut accounts = BTreeMap::new();
+        accounts.insert(alice(), 100);
+        let pre_state = SimplePartialState::new(accounts);
+
+        // Try to send message with 200 value (more than she has)
+        let tx = SimpleTransaction::EmitMessage {
+            from: alice(),
+            dest_account: account_123(),
+            dest_subject: bob(),
+            value: 200,
+            data: vec![1, 2, 3],
+        };
+        let body = SimpleBlockBody::new(vec![tx]);
+        let inputs = BlockInputs::new_empty();
+        let intrinsics = SimpleHeaderIntrinsics {
+            parent_blkid: [0; 32],
+            index: 1,
+        };
+
+        let result = execute_block(ee, &pre_state, &intrinsics, body, inputs);
+        assert!(matches!(result, Err(EnvError::InvalidBlockTx)));
+    }
+
+    #[test]
+    fn test_emit_message_from_nonexistent_account_fails() {
+        let ee = SimpleExecutionEnvironment;
+
+        // Empty state (no accounts exist)
+        let pre_state = SimplePartialState::new_empty();
+
+        // Try to send message from alice who doesn't exist
+        let tx = SimpleTransaction::EmitMessage {
+            from: alice(),
+            dest_account: account_123(),
+            dest_subject: bob(),
+            value: 100,
+            data: vec![],
+        };
+        let body = SimpleBlockBody::new(vec![tx]);
+        let inputs = BlockInputs::new_empty();
+        let intrinsics = SimpleHeaderIntrinsics {
+            parent_blkid: [0; 32],
+            index: 1,
+        };
+
+        let result = execute_block(ee, &pre_state, &intrinsics, body, inputs);
+        assert!(matches!(result, Err(EnvError::InvalidBlockTx)));
+    }
+
+    #[test]
+    fn test_mixed_transfers_and_messages() {
+        let ee = SimpleExecutionEnvironment;
+
+        // alice=3000, bob=2000
+        let mut accounts = BTreeMap::new();
+        accounts.insert(alice(), 3000);
+        accounts.insert(bob(), 2000);
+        let pre_state = SimplePartialState::new(accounts);
+
+        // Mix of transfers, withdrawals, and messages
+        let txs = vec![
+            // Internal transfer
+            SimpleTransaction::Transfer {
+                from: alice(),
+                to: charlie(),
+                value: 500,
+            },
+            // Message to another EE
+            SimpleTransaction::EmitMessage {
+                from: alice(),
+                dest_account: account_123(),
+                dest_subject: bob(),
+                value: 300,
+                data: vec![1, 2, 3],
+            },
+            // Withdrawal to OL
+            SimpleTransaction::EmitTransfer {
+                from: bob(),
+                dest: account_123(),
+                value: 400,
+            },
+            // Another internal transfer
+            SimpleTransaction::Transfer {
+                from: charlie(),
+                to: bob(),
+                value: 200,
+            },
+            // Another message
+            SimpleTransaction::EmitMessage {
+                from: bob(),
+                dest_account: account_123(),
+                dest_subject: charlie(),
+                value: 100,
+                data: vec![],
+            },
+        ];
+
+        let body = SimpleBlockBody::new(txs);
+        let inputs = BlockInputs::new_empty();
+        let intrinsics = SimpleHeaderIntrinsics {
+            parent_blkid: [0; 32],
+            index: 1,
+        };
+
+        let payload = ExecPayload::new(&intrinsics, &body);
+        let output = ee
+            .execute_block_body(&pre_state, &payload, &inputs)
+            .expect("execution should succeed");
+
+        let mut post_state = pre_state.clone();
+        ee.merge_write_into_state(&mut post_state, output.write_batch())
+            .expect("merge should succeed");
+
+        // alice: 3000 - 500 - 300 = 2200
+        // bob: 2000 - 400 + 200 - 100 = 1700
+        // charlie: 0 + 500 - 200 = 300
+        assert_eq!(post_state.accounts().get(&alice()), Some(&2200));
+        assert_eq!(post_state.accounts().get(&bob()), Some(&1700));
+        assert_eq!(post_state.accounts().get(&charlie()), Some(&300));
+
+        // Verify outputs: 1 transfer + 2 messages
+        assert_eq!(output.outputs().output_transfers().len(), 1);
+        assert_eq!(output.outputs().output_messages().len(), 2);
+
+        // Check transfer output
+        assert_eq!(output.outputs().output_transfers()[0].dest(), account_123());
+        assert_eq!(
+            output.outputs().output_transfers()[0].value(),
+            BitcoinAmount::from(400u64)
+        );
+
+        // Check message outputs
+        let msg1 = &output.outputs().output_messages()[0];
+        assert_eq!(msg1.dest(), account_123());
+        assert_eq!(msg1.payload().value(), BitcoinAmount::from(300u64));
+
+        let msg2 = &output.outputs().output_messages()[1];
+        assert_eq!(msg2.dest(), account_123());
+        assert_eq!(msg2.payload().value(), BitcoinAmount::from(100u64));
     }
 }

@@ -63,6 +63,20 @@ pub enum EnvError {
     /// verification state.
     #[error("unsatisfied '{0}' verification obligations")]
     UnsatisfiedObligations(&'static str),
+
+    /// For use when a there's state entries that the partial state doesn't have
+    /// information about that was referenced by some operation in processing a
+    /// block, so we can't check if the block is valid or not.
+    #[error("provided partial state insufficient for block being executed")]
+    InsufficientPartialState,
+
+    /// There was an invalid block within a segment, for some reason.
+    #[error("invalid block")]
+    InvalidBlock,
+
+    /// There was a tx that was invalid in a block, for some reason.
+    #[error("invalid tx in a block")]
+    InvalidBlockTx,
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;

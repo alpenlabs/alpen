@@ -30,7 +30,7 @@ pub fn validate_block_inputs(
     let remaining = tracker.remaining();
 
     if remaining.len() < expected_count {
-        return Err(EnvError::ConflictingPublicState);
+        return Err(EnvError::InvalidBlock);
     }
 
     // Create a tracker for deposits to validate against
@@ -47,7 +47,7 @@ pub fn validate_block_inputs(
 
     // Ensure all typed inputs were consumed
     if !deposit_tracker.is_empty() {
-        return Err(EnvError::ConflictingPublicState);
+        return Err(EnvError::InvalidBlock);
     }
 
     // All checks passed, now advance the main tracker

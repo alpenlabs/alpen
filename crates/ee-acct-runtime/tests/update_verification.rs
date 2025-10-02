@@ -201,18 +201,34 @@ fn test_deposits_with_transactions() {
     let deposit = SubjectDepositData::new(bob, deposit_value);
     let message = create_deposit_message(bob, deposit_value, source, 1);
 
-    // Build segment with deposit and a transaction
+    // Build segment with deposit and transactions including outputs
     let pending_inputs = vec![PendingInputEntry::Deposit(deposit.clone())];
     let mut builder =
         ChainSegmentBuilder::new(ee, exec_state.clone(), header.clone(), pending_inputs);
 
-    // Create a block with the deposit and a transfer from alice to bob
+    // Create a block with the deposit, internal transfer, and output transactions
+    let dest_account = AccountId::from([99u8; 32]);
+    let charlie = SubjectId::from([30u8; 32]);
+
     let transfer = SimpleTransaction::Transfer {
         from: alice,
         to: bob,
         value: 100,
     };
-    let body = SimpleBlockBody::new(vec![transfer]);
+    let emit_transfer = SimpleTransaction::EmitTransfer {
+        from: alice,
+        dest: dest_account,
+        value: 200,
+    };
+    let emit_message = SimpleTransaction::EmitMessage {
+        from: alice,
+        dest_account,
+        dest_subject: charlie,
+        value: 150,
+        data: vec![1, 2, 3, 4],
+    };
+
+    let body = SimpleBlockBody::new(vec![transfer, emit_transfer, emit_message]);
     let mut inputs = BlockInputs::new_empty();
     inputs.add_subject_deposit(deposit);
 
