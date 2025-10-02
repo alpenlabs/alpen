@@ -6,16 +6,14 @@
 
 use std::collections::BTreeMap;
 
-use digest::Digest;
-use sha2::Sha256;
 use strata_acct_types::SubjectId;
-use strata_codec::Codec;
 use strata_ee_acct_types::{
-    EnvError, EnvResult, ExecBlockOutput, ExecPartialState, ExecPayload, ExecutionEnvironment,
+    EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload,
+    ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
-use crate::test_utils::dummy_ee::types::{DummyBlock, DummyBlockBody, DummyPartialState};
+use crate::test_utils::dummy_ee::types::{DummyBlock, DummyPartialState};
 
 pub mod types;
 
@@ -33,6 +31,8 @@ impl ExecutionEnvironment for DummyExecutionEnvironment {
         exec_payload: &ExecPayload<'_, Self::Block>,
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
+        let body = exec_payload.body();
+
         // Start with a copy of the pre-state
         let mut accounts = pre_state.accounts().clone();
         let mut outputs = BlockOutputs::new_empty();
@@ -46,7 +46,7 @@ impl ExecutionEnvironment for DummyExecutionEnvironment {
         }
 
         // 2. Apply transactions from the block body
-        for tx in exec_payload.body().transactions() {
+        for tx in body.transactions() {
             tx.apply(&mut accounts, &mut outputs)?;
         }
 
@@ -60,14 +60,15 @@ impl ExecutionEnvironment for DummyExecutionEnvironment {
         &self,
         exec_payload: &ExecPayload<'_, Self::Block>,
         output: &ExecBlockOutput<Self>,
-    ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
+    ) -> EnvResult<<Self::Block as ExecBlock>::Header> {
         use crate::test_utils::dummy_ee::types::DummyHeader;
 
-        // Apply write batch to get state root
-        let mut post_state = DummyPartialState::new(output.write_batch().accounts().clone());
+        let intrinsics = exec_payload.header_intrinsics();
+
+        // Compute state root by applying the write batch
+        let post_state = DummyPartialState::new(output.write_batch().accounts().clone());
         let state_root = post_state.compute_state_root()?;
 
-        let intrinsics = exec_payload.header_intrinsics();
         Ok(DummyHeader::new(
             intrinsics.parent_blkid,
             state_root,
@@ -77,10 +78,10 @@ impl ExecutionEnvironment for DummyExecutionEnvironment {
 
     fn verify_outputs_against_header(
         &self,
-        _header: &<Self::Block as strata_ee_acct_types::ExecBlock>::Header,
+        _header: &<Self::Block as ExecBlock>::Header,
         _outputs: &ExecBlockOutput<Self>,
     ) -> EnvResult<()> {
-        // For dummy environment, no additional verification needed
+        // For the dummy EE, we don't need additional verification
         Ok(())
     }
 

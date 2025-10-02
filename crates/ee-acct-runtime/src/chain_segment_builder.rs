@@ -2,14 +2,14 @@
 
 use digest::Digest;
 use sha2::Sha256;
-use strata_codec::{encode_to_vec, Codec};
+use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     CommitBlockData, CommitChainSegment, ExecBlock, ExecHeader, ExecPartialState, ExecPayload,
     ExecutionEnvironment, PendingInputEntry,
 };
 use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockNotpackage};
 
-use super::errors::{BuilderError, BuilderResult};
+use crate::builder_errors::{BuilderError, BuilderResult};
 use crate::{exec_processing::validate_block_inputs, verification_state::InputTracker};
 
 /// Builder for constructing a chain of blocks as a segment.

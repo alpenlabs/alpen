@@ -9,8 +9,8 @@ use strata_snark_acct_types::{
     UpdateOutputs,
 };
 
-use super::errors::{BuilderError, BuilderResult};
 use crate::{
+    builder_errors::{BuilderError, BuilderResult},
     private_input::SharedPrivateInput,
     process_update::{MsgData, apply_message},
 };

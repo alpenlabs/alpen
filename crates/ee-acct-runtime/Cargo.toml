@@ -3,6 +3,10 @@ name = "strata-ee-acct-runtime"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["builders"]
+builders = ["dep:thiserror"]
+
 [dependencies]
 strata-acct-types.workspace = true
 strata-codec.workspace = true
@@ -12,9 +16,7 @@ strata-snark-acct-types.workspace = true
 
 digest.workspace = true
 sha2.workspace = true
-
-[dev-dependencies]
-thiserror.workspace = true
+thiserror = { workspace = true, optional = true }
 
 [lints]
 workspace = true
