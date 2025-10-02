@@ -2,9 +2,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EnvError {
-    /// An issue decoding a structure.
-    #[error("decoding structure")]
-    Decode,
+    /// Codec error during encoding or decoding.
+    #[error("codec error")]
+    Codec(#[from] strata_codec::CodecError),
 
     /// Malformed extra data.
     #[error("malformed extra data")]

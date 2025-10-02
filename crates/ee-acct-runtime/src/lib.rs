@@ -3,6 +3,9 @@ mod private_input;
 mod process_update;
 mod verification_state;
 
+#[cfg(test)]
+pub mod test_utils;
+
 pub use private_input::SharedPrivateInput;
 pub use process_update::{
     apply_update_operation_unconditionally, verify_and_apply_update_operation,

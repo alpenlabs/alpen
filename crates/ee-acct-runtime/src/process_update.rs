@@ -55,20 +55,20 @@ impl<'v> SharedData<'v> {
 }
 
 /// Meta fields extracted from a message.
-struct MsgMeta {
-    source: AccountId,
-    incl_epoch: u32,
-    value: BitcoinAmount,
+pub(crate) struct MsgMeta {
+    pub(crate) source: AccountId,
+    pub(crate) incl_epoch: u32,
+    pub(crate) value: BitcoinAmount,
 }
 
 /// Decoded message and its metadata.
-struct MsgData {
-    meta: MsgMeta,
-    message: DecodedEeMessageData,
+pub(crate) struct MsgData {
+    pub(crate) meta: MsgMeta,
+    pub(crate) message: DecodedEeMessageData,
 }
 
 impl MsgData {
-    fn from_entry(m: &MessageEntry) -> MessageDecodeResult<Self> {
+    pub(crate) fn from_entry(m: &MessageEntry) -> MessageDecodeResult<Self> {
         let message = DecodedEeMessageData::decode_raw(m.payload_buf())?;
         let meta = MsgMeta {
             source: m.source(),
@@ -239,7 +239,7 @@ pub fn apply_update_operation_unconditionally(
 }
 
 /// Applies state changes from the message.
-fn apply_message(
+pub(crate) fn apply_message(
     astate: &mut EeAccountState,
     msg: &MsgData,
     _extra: &UpdateExtraData,

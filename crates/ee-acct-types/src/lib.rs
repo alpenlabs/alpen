@@ -13,4 +13,6 @@ pub use extra_data::UpdateExtraData;
 pub use messages::*;
 pub use outputs::ExecBlockOutput;
 pub use state::{EeAccountState, PendingFinclEntry, PendingInputEntry, PendingInputType};
-pub use traits::{ExecBlock, ExecHeader, ExecPartialState, ExecutionEnvironment};
+pub use traits::{
+    EeHeaderBuilder, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState, ExecutionEnvironment,
+};

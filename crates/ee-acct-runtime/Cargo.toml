@@ -13,5 +13,8 @@ strata-snark-acct-types.workspace = true
 digest.workspace = true
 sha2.workspace = true
 
+[dev-dependencies]
+thiserror.workspace = true
+
 [lints]
 workspace = true

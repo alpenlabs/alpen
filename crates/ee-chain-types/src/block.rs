@@ -18,6 +18,18 @@ pub struct ExecBlockNotpackage {
 }
 
 impl ExecBlockNotpackage {
+    pub fn new(
+        commitment: ExecBlockCommitment,
+        inputs: BlockInputs,
+        outputs: BlockOutputs,
+    ) -> Self {
+        Self {
+            commitment,
+            inputs,
+            outputs,
+        }
+    }
+
     pub fn commitment(&self) -> &ExecBlockCommitment {
         &self.commitment
     }
@@ -104,6 +116,11 @@ impl BlockInputs {
 
     pub fn add_subject_deposit(&mut self, d: SubjectDepositData) {
         self.subject_deposits.push(d);
+    }
+
+    /// Returns the total number of inputs across all types.
+    pub fn total_inputs(&self) -> usize {
+        self.subject_deposits.len()
     }
 }
 

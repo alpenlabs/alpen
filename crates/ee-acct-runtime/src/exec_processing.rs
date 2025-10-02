@@ -9,9 +9,52 @@ use strata_ee_acct_types::{
     ExecBlock, ExecBlockOutput, ExecHeader, ExecPartialState, ExecutionEnvironment,
     PendingInputEntry, UpdateExtraData,
 };
-use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
+use strata_ee_chain_types::BlockInputs;
 
 use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationState};
+
+/// Validates that block inputs match pending inputs in the tracker.
+///
+/// This function checks that the provided `BlockInputs` (separated by type)
+/// match the heterogeneous list of pending inputs. It maintains counters for
+/// each input type by using nested `InputTracker` instances, and validates that
+/// each pending input matches the corresponding entry in the type-specific vectors.
+///
+/// Returns `Ok(())` if all inputs match, or an error if there's a mismatch.
+/// Does not modify the tracker's state unless all checks succeed.
+pub fn validate_block_inputs(
+    tracker: &mut InputTracker<'_, PendingInputEntry>,
+    block_inputs: &BlockInputs,
+) -> EnvResult<()> {
+    let expected_count = block_inputs.total_inputs();
+    let remaining = tracker.remaining();
+
+    if remaining.len() < expected_count {
+        return Err(EnvError::ConflictingPublicState);
+    }
+
+    // Create a tracker for deposits to validate against
+    let mut deposit_tracker = InputTracker::new(block_inputs.subject_deposits());
+
+    // Validate each pending input against the corresponding typed input
+    for pending_input in &remaining[..expected_count] {
+        match pending_input {
+            PendingInputEntry::Deposit(expected_deposit) => {
+                deposit_tracker.consume_input(&expected_deposit)?;
+            }
+        }
+    }
+
+    // Ensure all typed inputs were consumed
+    if !deposit_tracker.is_empty() {
+        return Err(EnvError::ConflictingPublicState);
+    }
+
+    // All checks passed, now advance the main tracker
+    tracker.advance_unchecked(expected_count);
+
+    Ok(())
+}
 
 struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
     uvstate: &'v mut UpdateVerificationState,
@@ -69,21 +112,25 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
         }
     }
 
-    /// Processes a block on top of the current exec state, producing an output
-    /// but not modifying the state.
-    fn process_block(
+    /// Executes a block body on top of the current exec state, producing an
+    /// output but not modifying the state.
+    fn execute_block_body(
         &self,
-        block: &E::Block,
+        body: &<E::Block as ExecBlock>::Body,
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<E>> {
-        self.ee.process_block(&self.exec_state, block, inputs)
+        self.ee
+            .execute_block_body(&self.exec_state, body, inputs)
     }
 
-    /// Checks that the next pending input entry is this one, and marks it as
-    /// consumed.
-    fn consume_pending_input(&mut self, input: &PendingInputEntry) -> EnvResult<()> {
-        self.input_tracker.consume_input(input)?;
-        self.uvstate.inc_consumed_inputs(1);
+    /// Validates and consumes pending inputs from a block.
+    ///
+    /// This checks that the block inputs match the expected pending inputs,
+    /// advances the tracker, and updates the consumed inputs count.
+    fn consume_pending_inputs_from_block(&mut self, block_inputs: &BlockInputs) -> EnvResult<()> {
+        validate_block_inputs(self.input_tracker, block_inputs)?;
+        let input_count = block_inputs.total_inputs();
+        self.uvstate.inc_consumed_inputs(input_count);
         Ok(())
     }
 
@@ -205,21 +252,15 @@ fn process_block<E: ExecutionEnvironment>(
         return Err(EnvError::InconsistentCoinput);
     }
 
-    // 2. Execute the block and make sure the outputs are consistent with the
-    // package.
-    let exec_outp = cvstate.process_block(&block, block_data.notpackage().inputs())?;
+    // 2. Execute the block body and make sure the outputs are consistent with
+    // the package.
+    let exec_outp = cvstate.execute_block_body(block.get_body(), block_data.notpackage().inputs())?;
     if exec_outp.outputs() != block_data.notpackage().outputs() {
         return Err(EnvError::InconsistentCoinput);
     }
 
-    // 3. Check that the inputs match what was expected.
-    for inp in block_data.notpackage().inputs().subject_deposits() {
-        // We kinda bodge this conversion for now since the concepts aren't a
-        // 1:1 match, maybe this will be iterated on in the future if we rethink
-        // the types.  But this is fine for now.
-        let pi = PendingInputEntry::Deposit(SubjectDepositData::new(inp.dest(), inp.value()));
-        cvstate.consume_pending_input(&pi)?;
-    }
+    // 3. Check that the inputs match what was expected and consume them.
+    cvstate.consume_pending_inputs_from_block(block_data.notpackage().inputs())?;
 
     // 4. Apply writes and check state root.  This checks the state root
     // matches the root expected in the header.

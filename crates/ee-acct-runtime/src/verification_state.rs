@@ -161,7 +161,7 @@ impl<'a, T> InputTracker<'a, T> {
     }
 }
 
-impl<T: Eq + PartialEq> InputTracker<'_, T> {
+impl<'a, T: Eq + PartialEq> InputTracker<'a, T> {
     /// Checks if an input matches the next value we expect to consume.  If it
     /// matches, increments the pointer.  Errors on mismatch.
     pub(crate) fn consume_input(&mut self, input: &T) -> EnvResult<()> {
@@ -175,6 +175,23 @@ impl<T: Eq + PartialEq> InputTracker<'_, T> {
 
         self.consumed += 1;
         Ok(())
+    }
+
+    /// Gets the remaining unconsumed entries.
+    pub(crate) fn remaining(&self) -> &'a [T] {
+        &self.expected_inputs[self.consumed..]
+    }
+
+    /// Checks if all entries have been consumed.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.consumed >= self.expected_inputs.len()
+    }
+
+    /// Advances the tracker by `count` entries without checking them.
+    ///
+    /// This should only be called after validation has been performed.
+    pub(crate) fn advance_unchecked(&mut self, count: usize) {
+        self.consumed += count;
     }
 }
 

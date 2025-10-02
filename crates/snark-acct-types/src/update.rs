@@ -32,6 +32,24 @@ pub struct UpdateOperationData {
 }
 
 impl UpdateOperationData {
+    pub fn new(
+        seq_no: u64,
+        new_state: ProofState,
+        processed_messages: Vec<MessageEntry>,
+        ledger_refs: LedgerRefs,
+        outputs: UpdateOutputs,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            seq_no,
+            new_state,
+            processed_messages,
+            ledger_refs,
+            outputs,
+            extra_data,
+        }
+    }
+
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }
@@ -66,6 +84,14 @@ pub struct LedgerRefs {
 }
 
 impl LedgerRefs {
+    pub fn new(l1_header_refs: Vec<AccumulatorClaim>) -> Self {
+        Self { l1_header_refs }
+    }
+
+    pub fn new_empty() -> Self {
+        Self::new(Vec::new())
+    }
+
     pub fn l1_header_refs(&self) -> &[AccumulatorClaim] {
         &self.l1_header_refs
     }
