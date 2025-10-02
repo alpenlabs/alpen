@@ -1,5 +1,8 @@
 //! Common test utilities for integration tests.
 
+#![allow(unreachable_pub, reason = "test utilities")]
+#![allow(dead_code, reason = "utilities used by different test files")]
+
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChainSegmentBuilder, UpdateBuilder};
@@ -51,7 +54,7 @@ pub fn assert_update_paths_match(
 }
 
 /// Creates a simple initial state for testing.
-pub fn create_initial_state() -> (EeAccountState, SimplePartialState, SimpleHeader) {
+pub(crate) fn create_initial_state() -> (EeAccountState, SimplePartialState, SimpleHeader) {
     let ee_state =
         EeAccountState::new([0u8; 32], BitcoinAmount::from(0u64), Vec::new(), Vec::new());
 
@@ -62,7 +65,7 @@ pub fn create_initial_state() -> (EeAccountState, SimplePartialState, SimpleHead
 }
 
 /// Helper to create a deposit message entry.
-pub fn create_deposit_message(
+pub(crate) fn create_deposit_message(
     dest: SubjectId,
     value: BitcoinAmount,
     source: AccountId,
@@ -84,7 +87,7 @@ pub fn create_deposit_message(
 }
 
 /// Helper to build a simple chain segment with deposits.
-pub fn build_chain_segment_with_deposits(
+pub(crate) fn build_chain_segment_with_deposits(
     ee: SimpleExecutionEnvironment,
     initial_state: SimplePartialState,
     initial_header: SimpleHeader,
@@ -121,7 +124,7 @@ pub fn build_chain_segment_with_deposits(
 ///
 /// This properly constructs the UpdateOperationData along with SharedPrivateInput
 /// and coinputs, which are all needed for testing.
-pub fn build_update_operation(
+pub(crate) fn build_update_operation(
     seq_no: u64,
     messages: Vec<MessageEntry>,
     segments: Vec<CommitChainSegment>,

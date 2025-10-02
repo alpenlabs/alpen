@@ -7,9 +7,7 @@
 mod execution;
 mod types;
 
-// Re-export execution environment
 pub use execution::SimpleExecutionEnvironment;
-// Re-export all types
 pub use types::{
     SimpleBlock, SimpleBlockBody, SimpleHeader, SimpleHeaderIntrinsics, SimplePartialState,
     SimpleTransaction, SimpleWriteBatch,

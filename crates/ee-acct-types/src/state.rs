@@ -1,6 +1,6 @@
 //! EE account internal state.
 
-use strata_acct_types::{BitcoinAmount, SubjectId, VarVec};
+use strata_acct_types::BitcoinAmount;
 use strata_ee_chain_types::SubjectDepositData;
 
 type Hash = [u8; 32];

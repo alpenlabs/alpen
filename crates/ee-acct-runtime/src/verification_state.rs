@@ -1,7 +1,7 @@
 //! Verification state accumulator.
 
 use strata_acct_types::BitcoinAmount;
-use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult, PendingInputEntry};
+use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult};
 use strata_ee_chain_types::BlockOutputs;
 use strata_snark_acct_types::{OutputMessage, OutputTransfer, UpdateOutputs};
 
@@ -12,8 +12,10 @@ type Hash = [u8; 32];
 #[derive(Debug)]
 pub(crate) struct UpdateVerificationState {
     // balance bookkeeping as additional checks to avoid overdraw
+    #[expect(dead_code, reason = "for future use")]
     orig_tracked_balance: BitcoinAmount,
     total_val_sent: BitcoinAmount,
+    #[expect(dead_code, reason = "for future use")]
     total_val_recv: BitcoinAmount,
 
     // commits to check
@@ -26,6 +28,7 @@ pub(crate) struct UpdateVerificationState {
     accumulated_outputs: UpdateOutputs,
 
     // Recorded DA.
+    #[expect(dead_code, reason = "for future use")]
     l1_da_blob_hashes: Vec<Hash>,
 }
 
@@ -56,6 +59,7 @@ impl UpdateVerificationState {
         self.pending_commits.push(commit);
     }
 
+    #[expect(dead_code, reason = "for future use")]
     pub(crate) fn consumed_inputs(&self) -> usize {
         self.consumed_inputs
     }
@@ -65,6 +69,7 @@ impl UpdateVerificationState {
         self.consumed_inputs += amt;
     }
 
+    #[expect(dead_code, reason = "for future use")]
     pub(crate) fn accumulated_outputs(&self) -> &UpdateOutputs {
         &self.accumulated_outputs
     }
@@ -72,7 +77,7 @@ impl UpdateVerificationState {
     /// Appends a notpackage block's outputs into the pending outputs being
     /// built internally.  This way we can compare it against the update op data
     /// later.
-    pub fn merge_block_outputs(&mut self, outputs: &BlockOutputs) {
+    pub(crate) fn merge_block_outputs(&mut self, outputs: &BlockOutputs) {
         // Just merge the entries into the buffer.  This is a little more
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
@@ -151,6 +156,7 @@ impl<'a, T> InputTracker<'a, T> {
     }
 
     /// Gets if there are more entries that could be consumed.
+    #[cfg(test)]
     fn has_next(&self) -> bool {
         self.consumed < self.expected_inputs.len()
     }

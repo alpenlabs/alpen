@@ -1,4 +1,8 @@
-#![expect(unused, reason = "in-development")]
+//! Types relating to exec env account structure and updates.
+//!
+//! This is generally not exposed directly to the orchestration layer, although
+//! some messages may be encoded in orchestration layer containers (which are
+//! treated opaquely).
 
 mod commit;
 mod errors;

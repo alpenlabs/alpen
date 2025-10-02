@@ -35,6 +35,14 @@ impl Varint {
         Some(Self::new_unchecked(v as VarintInner))
     }
 
+    #[cfg(test)]
+    fn new(v: VarintInner) -> Option<Self> {
+        if v > VARINT_MAX {
+            return None;
+        }
+        Some(Self::new_unchecked(v))
+    }
+
     fn inner(self) -> VarintInner {
         self.0
     }

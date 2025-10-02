@@ -1,6 +1,11 @@
+//! Basic EE account runtime framework.
+//!
+//! This is expected to be used within the SNARK proof program used as a snark
+//! account in order to implement an execution environment host account on the
+//! Strata orchestration layer.  There are a collection of utilities in order to
+//! help manipulate EE accounts like by building chain segments and updates.
+
 #![cfg_attr(test, expect(unused_crate_dependencies, reason = "test weirdness"))]
-#![expect(unused, reason = "in-development")]
-#![expect(unreachable_pub, reason = "in-development")]
 
 mod exec_processing;
 mod private_input;

@@ -3,7 +3,7 @@
 //! These tests verify that the verification logic correctly rejects
 //! malformed or invalid updates.
 
-#![allow(unused_crate_dependencies)]
+#![expect(unused_crate_dependencies, reason = "test dependencies")]
 
 mod common;
 
@@ -38,7 +38,7 @@ fn test_mismatched_processed_inputs_count() {
         build_chain_segment_with_deposits(ee, exec_state.clone(), header.clone(), vec![deposit]);
 
     // Build update operation
-    let (mut operation, shared_private, coinputs) = build_update_operation(
+    let (operation, shared_private, coinputs) = build_update_operation(
         1,
         vec![message],
         vec![segment],
@@ -52,7 +52,7 @@ fn test_mismatched_processed_inputs_count() {
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_ee_acct_types::UpdateExtraData;
 
-    let mut extra: UpdateExtraData = decode_buf_exact(operation.extra_data()).unwrap();
+    let extra: UpdateExtraData = decode_buf_exact(operation.extra_data()).unwrap();
     let tampered_extra = UpdateExtraData::new(
         *extra.new_tip_blkid(),
         extra.processed_inputs() + 1, // Wrong count!
@@ -63,7 +63,7 @@ fn test_mismatched_processed_inputs_count() {
     // Replace extra_data (we need to rebuild the operation)
     let tampered_operation = strata_snark_acct_types::UpdateOperationData::new(
         operation.seq_no(),
-        operation.new_state().clone(),
+        operation.new_state(),
         operation.processed_messages().to_vec(),
         operation.ledger_refs().clone(),
         operation.outputs().clone(),
@@ -100,7 +100,7 @@ fn test_mismatched_segment_count() {
         build_chain_segment_with_deposits(ee, exec_state.clone(), header.clone(), vec![deposit]);
 
     // Build update operation with the segment
-    let (operation, mut shared_private, coinputs) = build_update_operation(
+    let (operation, _initial_shared_private, coinputs) = build_update_operation(
         1,
         vec![message],
         vec![segment],
@@ -114,7 +114,7 @@ fn test_mismatched_segment_count() {
     let prev_header_buf = encode_to_vec(&header).unwrap();
     let prev_state_buf = encode_to_vec(&exec_state).unwrap();
 
-    shared_private = strata_ee_acct_runtime::SharedPrivateInput::new(
+    let shared_private = strata_ee_acct_runtime::SharedPrivateInput::new(
         vec![], // Empty segments!
         prev_header_buf,
         prev_state_buf,
@@ -135,7 +135,7 @@ fn test_mismatched_segment_count() {
 
 #[test]
 fn test_insufficient_pending_inputs() {
-    let (initial_state, exec_state, header) = create_initial_state();
+    let (_ee_state, exec_state, header) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
     // Create a deposit
@@ -165,15 +165,13 @@ fn test_insufficient_pending_inputs() {
 
 #[test]
 fn test_wrong_deposit_value_in_block() {
-    let (initial_state, exec_state, header) = create_initial_state();
+    let (_ee_state, exec_state, header) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
     // Create a deposit with value 1000
     let dest = SubjectId::from([1u8; 32]);
     let value = BitcoinAmount::from(1000u64);
-    let source = AccountId::from([2u8; 32]);
     let deposit = SubjectDepositData::new(dest, value);
-    let message = create_deposit_message(dest, value, source, 1);
 
     // Create a different deposit with value 500 to put in the block
     let wrong_value = BitcoinAmount::from(500u64);
@@ -227,7 +225,7 @@ fn test_mismatched_coinput_count() {
 
     // Try to verify with wrong number of coinputs (too many)
     let mut test_state = initial_state.clone();
-    let wrong_coinputs = vec![vec![], vec![]]; // Too many!
+    let wrong_coinputs = [vec![], vec![]]; // Too many!
 
     let result = strata_ee_acct_runtime::verify_and_apply_update_operation(
         &mut test_state,

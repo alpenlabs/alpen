@@ -71,7 +71,7 @@ impl ExecPartialState for SimplePartialState {
 
         for (subject, balance) in &self.accounts {
             hasher.update(subject.inner());
-            hasher.update(&balance.to_le_bytes());
+            hasher.update(balance.to_le_bytes());
         }
 
         Ok(hasher.finalize().into())
@@ -158,11 +158,7 @@ impl ExecHeader for SimpleHeader {
     }
 
     fn compute_block_id(&self) -> Hash {
-        let mut hasher = Sha256::new();
-        hasher.update(&self.parent_blkid);
-        hasher.update(&self.state_root);
-        hasher.update(&self.index.to_le_bytes());
-        hasher.finalize().into()
+        strata_acct_types::compute_codec_sha256(self).expect("encode header for block id")
     }
 }
 

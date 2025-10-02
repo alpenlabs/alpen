@@ -10,8 +10,7 @@ use strata_ee_acct_types::{
 use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockNotpackage};
 
 use crate::{
-    builder_errors::{BuilderError, BuilderResult},
-    exec_processing::validate_block_inputs,
+    builder_errors::BuilderResult, exec_processing::validate_block_inputs,
     verification_state::InputTracker,
 };
 

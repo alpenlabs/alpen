@@ -4,7 +4,7 @@
 //! building update operations, and ensuring both verified and unconditional
 //! application paths yield identical results.
 
-#![allow(unused_crate_dependencies)]
+#![expect(unused_crate_dependencies, reason = "test dependencies")]
 
 mod common;
 
@@ -181,7 +181,7 @@ fn test_multiple_blocks_in_segment() {
 
 #[test]
 fn test_deposits_with_transactions() {
-    let (initial_state, mut exec_state, mut header) = create_initial_state();
+    let (initial_state, _exec_state, mut header) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
     // Set up initial execution state with an existing account
@@ -189,7 +189,7 @@ fn test_deposits_with_transactions() {
     let bob = SubjectId::from([20u8; 32]);
     let mut initial_accounts = std::collections::BTreeMap::new();
     initial_accounts.insert(alice, 1000u64);
-    exec_state = SimplePartialState::new(initial_accounts.clone());
+    let exec_state = SimplePartialState::new(initial_accounts.clone());
 
     // Create a matching header for this exec_state
     let state_root = exec_state.compute_state_root().expect("compute state root");

@@ -5,9 +5,8 @@ use sha2::Sha256;
 use strata_acct_types::Hash;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
-    CommitBlockData, CommitChainSegment, CommitMsgData, EeAccountState, EnvError, EnvResult,
-    ExecBlock, ExecBlockOutput, ExecHeader, ExecPartialState, ExecPayload, ExecutionEnvironment,
-    PendingInputEntry, UpdateExtraData,
+    CommitBlockData, CommitChainSegment, EnvError, EnvResult, ExecBlock, ExecBlockOutput,
+    ExecHeader, ExecPartialState, ExecPayload, ExecutionEnvironment, PendingInputEntry,
 };
 use strata_ee_chain_types::BlockInputs;
 
@@ -22,7 +21,7 @@ use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationS
 ///
 /// Returns `Ok(())` if all inputs match, or an error if there's a mismatch.
 /// Does not modify the tracker's state unless all checks succeed.
-pub fn validate_block_inputs(
+pub(crate) fn validate_block_inputs(
     tracker: &mut InputTracker<'_, PendingInputEntry>,
     block_inputs: &BlockInputs,
 ) -> EnvResult<()> {
@@ -40,7 +39,7 @@ pub fn validate_block_inputs(
     for pending_input in &remaining[..expected_count] {
         match pending_input {
             PendingInputEntry::Deposit(expected_deposit) => {
-                deposit_tracker.consume_input(&expected_deposit)?;
+                deposit_tracker.consume_input(expected_deposit)?;
             }
         }
     }
@@ -181,7 +180,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
 
 /// Processes segments against accumulated update verification state by
 /// verifying the blocks and managing inputs/outputs/etc.
-pub fn process_segments<E: ExecutionEnvironment>(
+pub(crate) fn process_segments<E: ExecutionEnvironment>(
     uvstate: &mut UpdateVerificationState,
     input_tracker: &mut InputTracker<'_, PendingInputEntry>,
     segments: &[CommitChainSegment],
@@ -298,22 +297,4 @@ fn decode_and_check_commit_block<E: ExecutionEnvironment>(
         .map_err(|_| EnvError::MalformedChainSegment)?;
 
     Ok(block)
-}
-
-pub fn apply_commit(
-    astate: &mut EeAccountState,
-    commit: &CommitMsgData,
-    extra: &UpdateExtraData,
-) -> EnvResult<()> {
-    // 1. The first part is easy, we just update the value.
-    astate.set_last_exec_blkid(*commit.new_tip_exec_blkid());
-
-    // 2. The second part is a little harder, we have to figure out what pending
-    // inputs we're consuming from the state so we can remove those.
-    astate.remove_pending_inputs(*extra.processed_inputs() as usize);
-    astate.remove_pending_fincls(*extra.processed_fincls() as usize);
-
-    // TODO update tracked balance?  this involves a little more indirect reasoning
-
-    Ok(())
 }

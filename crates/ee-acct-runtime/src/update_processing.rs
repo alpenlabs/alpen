@@ -33,14 +33,17 @@ struct SharedData<'v> {
 }
 
 impl<'v> SharedData<'v> {
+    #[expect(dead_code, reason = "for future use")]
     fn seq_no(&self) -> u64 {
         self.operation.seq_no()
     }
 
+    #[expect(dead_code, reason = "for future use")]
     fn ledger_refs(&self) -> &'v LedgerRefs {
         self.operation.ledger_refs()
     }
 
+    #[expect(dead_code, reason = "for future use")]
     fn outputs(&self) -> &'v UpdateOutputs {
         self.operation.outputs()
     }
@@ -56,7 +59,9 @@ impl<'v> SharedData<'v> {
 
 /// Meta fields extracted from a message.
 pub(crate) struct MsgMeta {
+    #[expect(dead_code, reason = "for future use")]
     pub(crate) source: AccountId,
+    #[expect(dead_code, reason = "for future use")]
     pub(crate) incl_epoch: u32,
     pub(crate) value: BitcoinAmount,
 }
@@ -151,12 +156,12 @@ pub fn verify_and_apply_update_operation<'i>(
 }
 
 fn handle_coinput_for_message(
-    uvstate: &mut UpdateVerificationState,
-    astate: &EeAccountState,
-    msg: &MsgData,
+    _uvstate: &mut UpdateVerificationState,
+    _astate: &EeAccountState,
+    _msg: &MsgData,
     coinp: &[u8],
-    shared: &SharedData<'_>,
-    ee: &impl ExecutionEnvironment,
+    _shared: &SharedData<'_>,
+    _ee: &impl ExecutionEnvironment,
 ) -> EnvResult<()> {
     // Actually, new plan, we don't need any message coinputs right now.
     if !coinp.is_empty() {
@@ -287,8 +292,8 @@ fn apply_final_update_changes(
 }
 
 fn verify_acct_state_matches(
-    astate: &EeAccountState,
-    exp_new_state: &[u8; 32],
+    _astate: &EeAccountState,
+    _exp_new_state: &[u8; 32],
 ) -> Result<(), EnvError> {
     // TODO use SSZ hash_tree_root
     Ok(())

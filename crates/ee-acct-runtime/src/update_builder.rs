@@ -10,7 +10,7 @@ use strata_snark_acct_types::{
 };
 
 use crate::{
-    builder_errors::{BuilderError, BuilderResult},
+    builder_errors::BuilderResult,
     private_input::SharedPrivateInput,
     update_processing::{MsgData, apply_message},
 };
