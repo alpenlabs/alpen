@@ -7,7 +7,10 @@ pub mod update_builder;
 
 pub use builders::ChainSegmentBuilder;
 pub use dummy_ee::{
-    types::{DummyBlock, DummyBlockBody, DummyHeader, DummyPartialState, DummyTransaction},
+    types::{
+        DummyBlock, DummyBlockBody, DummyHeader, DummyHeaderIntrinsics, DummyPartialState,
+        DummyTransaction,
+    },
     DummyExecutionEnvironment, DummyWriteBatch,
 };
 pub use errors::{BuilderError, BuilderResult};

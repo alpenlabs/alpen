@@ -83,66 +83,96 @@ impl Codec for DummyPartialState {
     }
 }
 
-/// Dummy block header.
+/// Intrinsic data for a dummy block header.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DummyHeader {
+pub struct DummyHeaderIntrinsics {
     /// Parent block ID
     pub parent_blkid: Hash,
-
-    /// State root after applying this block
-    pub state_root: Hash,
 
     /// Block index/height
     pub index: u64,
 }
 
+/// Dummy block header.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DummyHeader {
+    /// Intrinsic data
+    intrinsics: DummyHeaderIntrinsics,
+
+    /// State root after applying this block
+    pub state_root: Hash,
+}
+
 impl DummyHeader {
     pub fn new(parent_blkid: Hash, state_root: Hash, index: u64) -> Self {
         Self {
-            parent_blkid,
+            intrinsics: DummyHeaderIntrinsics {
+                parent_blkid,
+                index,
+            },
             state_root,
-            index,
         }
     }
 
     pub fn genesis() -> Self {
         Self {
-            parent_blkid: [0; 32],
+            intrinsics: DummyHeaderIntrinsics {
+                parent_blkid: [0; 32],
+                index: 0,
+            },
             state_root: DummyPartialState::new_empty()
                 .compute_state_root()
                 .expect("genesis state root"),
-            index: 0,
         }
+    }
+
+    pub fn parent_blkid(&self) -> Hash {
+        self.intrinsics.parent_blkid
+    }
+
+    pub fn index(&self) -> u64 {
+        self.intrinsics.index
     }
 }
 
 impl ExecHeader for DummyHeader {
+    type Intrinsics = DummyHeaderIntrinsics;
+
+    fn get_intrinsics(&self) -> Self::Intrinsics {
+        self.intrinsics.clone()
+    }
+
     fn get_state_root(&self) -> Hash {
         self.state_root
     }
 
     fn compute_block_id(&self) -> Hash {
         let mut hasher = Sha256::new();
-        hasher.update(&self.parent_blkid);
+        hasher.update(&self.intrinsics.parent_blkid);
         hasher.update(&self.state_root);
-        hasher.update(&self.index.to_le_bytes());
+        hasher.update(&self.intrinsics.index.to_le_bytes());
         hasher.finalize().into()
     }
 }
 
 impl Codec for DummyHeader {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
-        self.parent_blkid.encode(enc)?;
+        self.intrinsics.parent_blkid.encode(enc)?;
         self.state_root.encode(enc)?;
-        self.index.encode(enc)?;
+        self.intrinsics.index.encode(enc)?;
         Ok(())
     }
 
     fn decode(dec: &mut impl strata_codec::Decoder) -> Result<Self, CodecError> {
+        let parent_blkid = Hash::decode(dec)?;
+        let state_root = Hash::decode(dec)?;
+        let index = u64::decode(dec)?;
         Ok(Self {
-            parent_blkid: Hash::decode(dec)?,
-            state_root: Hash::decode(dec)?,
-            index: u64::decode(dec)?,
+            intrinsics: DummyHeaderIntrinsics {
+                parent_blkid,
+                index,
+            },
+            state_root,
         })
     }
 }

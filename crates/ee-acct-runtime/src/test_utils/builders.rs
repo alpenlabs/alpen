@@ -2,14 +2,12 @@
 
 use digest::Digest;
 use sha2::Sha256;
-use strata_codec::{Codec, encode_to_vec};
+use strata_codec::{encode_to_vec, Codec};
 use strata_ee_acct_types::{
-    CommitBlockData, CommitChainSegment, EeHeaderBuilder, ExecBlock, ExecHeader, ExecPartialState,
+    CommitBlockData, CommitChainSegment, ExecBlock, ExecHeader, ExecPartialState, ExecPayload,
     ExecutionEnvironment, PendingInputEntry,
 };
-use strata_ee_chain_types::{
-    BlockInputs, ExecBlockCommitment, ExecBlockNotpackage, SubjectDepositData,
-};
+use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockNotpackage};
 
 use super::errors::{BuilderError, BuilderResult};
 use crate::{exec_processing::validate_block_inputs, verification_state::InputTracker};
@@ -77,12 +75,9 @@ impl<E: ExecutionEnvironment> ChainSegmentBuilder<E> {
     ///
     /// The `inputs` parameter specifies which inputs to include in this block.
     /// These inputs are validated against the internally-tracked pending inputs.
-    /// The `make_header` function is called with the computed state root and
-    /// should construct the appropriate header for the block.
-    pub fn append_block_body<HB: EeHeaderBuilder<E>>(
+    pub fn append_block_body(
         &mut self,
-        header_finalizer: &HB,
-        header_intrin: &HB::Intrinsics,
+        header_intrinsics: &<<E::Block as ExecBlock>::Header as ExecHeader>::Intrinsics,
         body: <E::Block as ExecBlock>::Body,
         inputs: BlockInputs,
     ) -> BuilderResult<()> {
@@ -92,17 +87,13 @@ impl<E: ExecutionEnvironment> ChainSegmentBuilder<E> {
         let input_count = inputs.total_inputs();
 
         // 2. Execute the block body.
+        let exec_payload = ExecPayload::new(header_intrinsics, &body);
         let exec_output = self
             .ee
-            .execute_block_body(&self.current_state, &body, &inputs)?;
+            .execute_block_body(&self.current_state, &exec_payload, &inputs)?;
 
-        // 3. Create the header using the provided function.
-        let header = header_finalizer.finalize_header(
-            header_intrin,
-            &self.current_header,
-            &body,
-            &exec_output,
-        )?;
+        // 3. Complete the header using the execution output.
+        let header = self.ee.complete_header(&exec_payload, &exec_output)?;
 
         // 4. Apply the write batch to compute the new state root.
         let mut post_state = self.current_state.clone();
@@ -165,39 +156,14 @@ impl<E: ExecutionEnvironment> ChainSegmentBuilder<E> {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{BitcoinAmount, SubjectId};
-    use strata_ee_acct_types::{EeHeaderBuilder, ExecBlockOutput, PendingInputEntry};
+    use strata_ee_acct_types::PendingInputEntry;
     use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
 
     use super::*;
     use crate::test_utils::{
-        DummyBlock, DummyBlockBody, DummyExecutionEnvironment, DummyHeader, DummyPartialState,
-        DummyTransaction,
+        dummy_ee::types::DummyHeaderIntrinsics, DummyBlockBody, DummyExecutionEnvironment,
+        DummyHeader, DummyPartialState, DummyTransaction,
     };
-
-    /// Simple header builder for tests that just increments the index.
-    struct TestHeaderBuilder;
-
-    impl EeHeaderBuilder<DummyExecutionEnvironment> for TestHeaderBuilder {
-        type Intrinsics = ();
-
-        fn finalize_header(
-            &self,
-            _intrin: &Self::Intrinsics,
-            prev_header: &DummyHeader,
-            _body: &DummyBlockBody,
-            exec_output: &ExecBlockOutput<DummyExecutionEnvironment>,
-        ) -> strata_ee_acct_types::EnvResult<DummyHeader> {
-            // Compute state root by applying the write batch
-            let post_state = DummyPartialState::new(exec_output.write_batch().accounts().clone());
-            let state_root = post_state.compute_state_root()?;
-
-            Ok(DummyHeader::new(
-                prev_header.compute_block_id(),
-                state_root,
-                prev_header.index + 1,
-            ))
-        }
-    }
 
     #[test]
     fn test_chain_segment_builder_empty() {
@@ -219,15 +185,18 @@ mod tests {
         let header = DummyHeader::genesis();
         let pending_inputs = vec![];
 
-        let mut builder = ChainSegmentBuilder::new(ee, state, header, pending_inputs);
+        let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // Create an empty block body
         let body = DummyBlockBody::new(vec![]);
         let inputs = BlockInputs::new_empty();
-        let header_builder = TestHeaderBuilder;
+        let intrinsics = DummyHeaderIntrinsics {
+            parent_blkid: header.compute_block_id(),
+            index: header.index() + 1,
+        };
 
         builder
-            .append_block_body(&header_builder, &(), body, inputs)
+            .append_block_body(&intrinsics, body, inputs)
             .expect("append block should succeed");
 
         let segment = builder.build();
@@ -248,16 +217,19 @@ mod tests {
         let deposit = SubjectDepositData::new(dest, value);
         let pending_inputs = vec![PendingInputEntry::Deposit(deposit.clone())];
 
-        let mut builder = ChainSegmentBuilder::new(ee, state, header, pending_inputs);
+        let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // Create a block that consumes the deposit
         let body = DummyBlockBody::new(vec![]);
         let mut inputs = BlockInputs::new_empty();
         inputs.add_subject_deposit(deposit);
-        let header_builder = TestHeaderBuilder;
+        let intrinsics = DummyHeaderIntrinsics {
+            parent_blkid: header.compute_block_id(),
+            index: header.index() + 1,
+        };
 
         builder
-            .append_block_body(&header_builder, &(), body, inputs)
+            .append_block_body(&intrinsics, body, inputs)
             .expect("append block should succeed");
 
         assert_eq!(builder.consumed_inputs(), 1);
@@ -291,16 +263,19 @@ mod tests {
             PendingInputEntry::Deposit(deposit2.clone()),
         ];
 
-        let mut builder = ChainSegmentBuilder::new(ee, state, header, pending_inputs);
-        let header_builder = TestHeaderBuilder;
+        let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // First block: consume first deposit
         let body1 = DummyBlockBody::new(vec![]);
         let mut inputs1 = BlockInputs::new_empty();
         inputs1.add_subject_deposit(deposit1);
+        let intrinsics1 = DummyHeaderIntrinsics {
+            parent_blkid: header.compute_block_id(),
+            index: header.index() + 1,
+        };
 
         builder
-            .append_block_body(&header_builder, &(), body1, inputs1)
+            .append_block_body(&intrinsics1, body1, inputs1)
             .expect("append first block should succeed");
 
         assert_eq!(builder.consumed_inputs(), 1);
@@ -315,9 +290,13 @@ mod tests {
         let body2 = DummyBlockBody::new(vec![transfer]);
         let mut inputs2 = BlockInputs::new_empty();
         inputs2.add_subject_deposit(deposit2);
+        let intrinsics2 = DummyHeaderIntrinsics {
+            parent_blkid: builder.current_header().compute_block_id(),
+            index: builder.current_header().index() + 1,
+        };
 
         builder
-            .append_block_body(&header_builder, &(), body2, inputs2)
+            .append_block_body(&intrinsics2, body2, inputs2)
             .expect("append second block should succeed");
 
         assert_eq!(builder.consumed_inputs(), 2);
@@ -337,7 +316,7 @@ mod tests {
         let deposit1 = SubjectDepositData::new(dest1, BitcoinAmount::from(1000u64));
         let pending_inputs = vec![PendingInputEntry::Deposit(deposit1)];
 
-        let mut builder = ChainSegmentBuilder::new(ee, state, header, pending_inputs);
+        let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // Try to append a block with a different deposit
         let dest2 = SubjectId::from([2u8; 32]);
@@ -345,9 +324,12 @@ mod tests {
         let body = DummyBlockBody::new(vec![]);
         let mut inputs = BlockInputs::new_empty();
         inputs.add_subject_deposit(deposit2);
-        let header_builder = TestHeaderBuilder;
+        let intrinsics = DummyHeaderIntrinsics {
+            parent_blkid: header.compute_block_id(),
+            index: header.index() + 1,
+        };
 
-        let result = builder.append_block_body(&header_builder, &(), body, inputs);
+        let result = builder.append_block_body(&intrinsics, body, inputs);
         assert!(result.is_err());
     }
 
@@ -361,16 +343,19 @@ mod tests {
         let deposit = SubjectDepositData::new(dest, BitcoinAmount::from(1000u64));
         let pending_inputs = vec![PendingInputEntry::Deposit(deposit.clone())];
 
-        let mut builder = ChainSegmentBuilder::new(ee, state, header, pending_inputs);
+        let mut builder = ChainSegmentBuilder::new(ee, state, header.clone(), pending_inputs);
 
         // Try to append a block that wants more inputs than available
         let body = DummyBlockBody::new(vec![]);
         let mut inputs = BlockInputs::new_empty();
         inputs.add_subject_deposit(deposit.clone());
         inputs.add_subject_deposit(deposit); // Add a second one that doesn't exist
-        let header_builder = TestHeaderBuilder;
+        let intrinsics = DummyHeaderIntrinsics {
+            parent_blkid: header.compute_block_id(),
+            index: header.index() + 1,
+        };
 
-        let result = builder.append_block_body(&header_builder, &(), body, inputs);
+        let result = builder.append_block_body(&intrinsics, body, inputs);
         assert!(result.is_err());
     }
 }

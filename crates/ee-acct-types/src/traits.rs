@@ -1,7 +1,7 @@
 use strata_codec::Codec;
 use strata_ee_chain_types::BlockInputs;
 
-use crate::{errors::EnvResult, outputs::ExecBlockOutput};
+use crate::{errors::EnvResult, inputs::ExecPayload, outputs::ExecBlockOutput};
 
 type Hash = [u8; 32];
 
@@ -14,6 +14,18 @@ pub trait ExecPartialState: Codec + Clone + Sized {
 
 /// Represents an execution block header.
 pub trait ExecHeader: Clone + Codec + Sized {
+    /// Data intrinsic to a block header, like the timestamp and parent block.
+    ///
+    /// This doesn't incldue data that's a commitment to external data, like
+    /// the body or anything that's computed as a result of execution.
+    ///
+    /// In practice, this MAY be the same structure as a header, but with some
+    /// fields stubbed out with dummy/zero values.
+    type Intrinsics: Clone;
+
+    /// Gets the header's intrinsics we can execute the block with.
+    fn get_intrinsics(&self) -> Self::Intrinsics;
+
     /// Gets the state root field.
     fn get_state_root(&self) -> Hash;
 
@@ -58,19 +70,37 @@ pub trait ExecutionEnvironment: Sized {
     type Block: ExecBlock;
 
     /// Write batch that can be applied to the partial state.
+    ///
+    /// This is NOT any kind of writes we check for in DA.
     type WriteBatch: Sized;
 
-    /// Executes a block body (without header) on top of a pre-state, returning
-    /// the execution output.
+    /// Executes a block payload on top of a pre-state, returning the execution
+    /// output.
     ///
-    /// This is used during both block assembly/construction and verification.
-    /// The write batch and outputs can be used to compute the final state root.
+    /// This should still be checked against a header when verifying a block, or
+    /// can be used to construct the final block header when assembling a block.
     fn execute_block_body(
         &self,
         pre_state: &Self::PartialState,
-        body: &<Self::Block as ExecBlock>::Body,
+        exec_payload: &ExecPayload<'_, Self::Block>,
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>>;
+
+    /// Completes a header for an exec payload using the exec outputs.  This can
+    /// be assembled into a final block.
+    fn complete_header(
+        &self,
+        exec_payload: &ExecPayload<'_, Self::Block>,
+        output: &ExecBlockOutput<Self>,
+    ) -> EnvResult<<Self::Block as ExecBlock>::Header>;
+
+    /// Performs any additional checks needed from the block outputs against the
+    /// header.
+    fn verify_outputs_against_header(
+        &self,
+        header: &<Self::Block as ExecBlock>::Header,
+        outputs: &ExecBlockOutput<Self>,
+    ) -> EnvResult<()>;
 
     /// Applies a pending write batch into the partial state.
     fn merge_write_into_state(
@@ -78,19 +108,4 @@ pub trait ExecutionEnvironment: Sized {
         state: &mut Self::PartialState,
         wb: &Self::WriteBatch,
     ) -> EnvResult<()>;
-}
-
-/// Used for final assembly of a block header.
-pub trait EeHeaderBuilder<E: ExecutionEnvironment> {
-    /// Any block intrinsic data.
-    type Intrinsics;
-
-    /// Finalizes data from an executed block into a header.
-    fn finalize_header(
-        &self,
-        intrin: &Self::Intrinsics,
-        prev_header: &<E::Block as ExecBlock>::Header,
-        body: &<E::Block as ExecBlock>::Body,
-        exec_output: &ExecBlockOutput<E>,
-    ) -> EnvResult<<E::Block as ExecBlock>::Header>;
 }

@@ -6,7 +6,7 @@ use strata_acct_types::Hash;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
     CommitBlockData, CommitChainSegment, CommitMsgData, EeAccountState, EnvError, EnvResult,
-    ExecBlock, ExecBlockOutput, ExecHeader, ExecPartialState, ExecutionEnvironment,
+    ExecBlock, ExecBlockOutput, ExecHeader, ExecPartialState, ExecPayload, ExecutionEnvironment,
     PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::BlockInputs;
@@ -112,15 +112,15 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
         }
     }
 
-    /// Executes a block body on top of the current exec state, producing an
+    /// Executes a block payload on top of the current exec state, producing an
     /// output but not modifying the state.
     fn execute_block_body(
         &self,
-        body: &<E::Block as ExecBlock>::Body,
+        exec_payload: &ExecPayload<'_, E::Block>,
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<E>> {
         self.ee
-            .execute_block_body(&self.exec_state, body, inputs)
+            .execute_block_body(&self.exec_state, exec_payload, inputs)
     }
 
     /// Validates and consumes pending inputs from a block.
@@ -254,7 +254,9 @@ fn process_block<E: ExecutionEnvironment>(
 
     // 2. Execute the block body and make sure the outputs are consistent with
     // the package.
-    let exec_outp = cvstate.execute_block_body(block.get_body(), block_data.notpackage().inputs())?;
+    let header_intrinsics = header.get_intrinsics();
+    let exec_payload = ExecPayload::new(&header_intrinsics, block.get_body());
+    let exec_outp = cvstate.execute_block_body(&exec_payload, block_data.notpackage().inputs())?;
     if exec_outp.outputs() != block_data.notpackage().outputs() {
         return Err(EnvError::InconsistentCoinput);
     }
@@ -262,7 +264,12 @@ fn process_block<E: ExecutionEnvironment>(
     // 3. Check that the inputs match what was expected and consume them.
     cvstate.consume_pending_inputs_from_block(block_data.notpackage().inputs())?;
 
-    // 4. Apply writes and check state root.  This checks the state root
+    // 4. Verify outputs against header.
+    cvstate
+        .ee
+        .verify_outputs_against_header(&header, &exec_outp)?;
+
+    // 5. Apply writes and check state root.  This checks the state root
     // matches the root expected in the header.
     cvstate.apply_write_batch(exec_outp.write_batch(), header.clone(), blkid)?;
 

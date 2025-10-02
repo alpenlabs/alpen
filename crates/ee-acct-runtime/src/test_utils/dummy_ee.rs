@@ -8,14 +8,14 @@ use std::collections::BTreeMap;
 
 use digest::Digest;
 use sha2::Sha256;
-use strata_acct_types::{SubjectId, VarVec};
-use strata_codec::{decode_buf_exact, Codec};
+use strata_acct_types::SubjectId;
+use strata_codec::Codec;
 use strata_ee_acct_types::{
-    EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecutionEnvironment,
+    EnvError, EnvResult, ExecBlockOutput, ExecPartialState, ExecPayload, ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
-use crate::test_utils::dummy_ee::types::{DummyBlock, DummyBlockBody, DummyHeader, DummyPartialState};
+use crate::test_utils::dummy_ee::types::{DummyBlock, DummyBlockBody, DummyPartialState};
 
 pub mod types;
 
@@ -30,7 +30,7 @@ impl ExecutionEnvironment for DummyExecutionEnvironment {
     fn execute_block_body(
         &self,
         pre_state: &Self::PartialState,
-        body: &DummyBlockBody,
+        exec_payload: &ExecPayload<'_, Self::Block>,
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
         // Start with a copy of the pre-state
@@ -46,7 +46,7 @@ impl ExecutionEnvironment for DummyExecutionEnvironment {
         }
 
         // 2. Apply transactions from the block body
-        for tx in body.transactions() {
+        for tx in exec_payload.body().transactions() {
             tx.apply(&mut accounts, &mut outputs)?;
         }
 
@@ -54,6 +54,34 @@ impl ExecutionEnvironment for DummyExecutionEnvironment {
         let write_batch = DummyWriteBatch::new(accounts.clone());
 
         Ok(ExecBlockOutput::new(write_batch, outputs))
+    }
+
+    fn complete_header(
+        &self,
+        exec_payload: &ExecPayload<'_, Self::Block>,
+        output: &ExecBlockOutput<Self>,
+    ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
+        use crate::test_utils::dummy_ee::types::DummyHeader;
+
+        // Apply write batch to get state root
+        let mut post_state = DummyPartialState::new(output.write_batch().accounts().clone());
+        let state_root = post_state.compute_state_root()?;
+
+        let intrinsics = exec_payload.header_intrinsics();
+        Ok(DummyHeader::new(
+            intrinsics.parent_blkid,
+            state_root,
+            intrinsics.index,
+        ))
+    }
+
+    fn verify_outputs_against_header(
+        &self,
+        _header: &<Self::Block as strata_ee_acct_types::ExecBlock>::Header,
+        _outputs: &ExecBlockOutput<Self>,
+    ) -> EnvResult<()> {
+        // For dummy environment, no additional verification needed
+        Ok(())
     }
 
     fn merge_write_into_state(
