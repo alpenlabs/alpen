@@ -8,5 +8,6 @@
 mod block;
 
 pub use block::{
-    BlockInputs, BlockOutputs, ExecBlockNotpackage, OutputTransfer, SubjectDepositData,
+    BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockNotpackage, OutputTransfer,
+    SubjectDepositData,
 };

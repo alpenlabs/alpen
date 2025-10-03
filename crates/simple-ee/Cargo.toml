@@ -1,16 +1,16 @@
 [package]
-name = "strata-acct-types"
+name = "strata-simple-ee"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+strata-acct-types.workspace = true
 strata-codec.workspace = true
-strata-mmr.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
 
 digest.workspace = true
-int-enum.workspace = true
 sha2.workspace = true
-thiserror.workspace = true
 
 [lints]
 workspace = true

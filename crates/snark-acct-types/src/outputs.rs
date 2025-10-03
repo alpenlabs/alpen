@@ -1,6 +1,6 @@
 //! Account output types that get applied to the ledger.
 
-use strata_acct_types::{AccountId, MsgPayload};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 
 /// Outputs from a snark account update.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,12 +17,24 @@ impl UpdateOutputs {
         }
     }
 
+    pub fn new_empty() -> Self {
+        Self::new(Vec::new(), Vec::new())
+    }
+
     pub fn transfers(&self) -> &[OutputTransfer] {
         &self.transfers
     }
 
+    pub fn transfers_mut(&mut self) -> &mut Vec<OutputTransfer> {
+        &mut self.transfers
+    }
+
     pub fn messages(&self) -> &[OutputMessage] {
         &self.messages
+    }
+
+    pub fn messages_mut(&mut self) -> &mut Vec<OutputMessage> {
+        &mut self.messages
     }
 }
 
@@ -34,11 +46,11 @@ impl UpdateOutputs {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct OutputTransfer {
     dest: AccountId,
-    value: u64,
+    value: BitcoinAmount,
 }
 
 impl OutputTransfer {
-    pub fn new(dest: AccountId, value: u64) -> Self {
+    pub fn new(dest: AccountId, value: BitcoinAmount) -> Self {
         Self { dest, value }
     }
 
@@ -46,7 +58,7 @@ impl OutputTransfer {
         self.dest
     }
 
-    pub fn value(&self) -> u64 {
+    pub fn value(&self) -> BitcoinAmount {
         self.value
     }
 }

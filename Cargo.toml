@@ -31,6 +31,8 @@ members = [
   "crates/db-store-sled",
   "crates/db-store-rocksdb",
   "crates/db-tests",
+  "crates/ee-acct-runtime",
+  "crates/ee-acct-types",
   "crates/ee-chain-types",
   "crates/eectl",
   "crates/evmexec",
@@ -56,6 +58,7 @@ members = [
   "crates/rpc/utils",
   "crates/sequencer",
   "crates/service",
+  "crates/simple-ee",
   "crates/snark-acct-types",
   "crates/state",
   "crates/status",
@@ -150,6 +153,8 @@ strata-db = { path = "crates/db" }
 strata-db-store-rocksdb = { path = "crates/db-store-rocksdb" }
 strata-db-store-sled = { path = "crates/db-store-sled" }
 strata-db-tests = { path = "crates/db-tests" }
+strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
+strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
@@ -169,6 +174,7 @@ strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
 strata-service = { path = "crates/service" }
+strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-types = { path = "crates/snark-acct-types" }
 strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
@@ -183,6 +189,8 @@ strata-test-utils-tx-indexer = { path = "crates/test-utils/tx-indexer" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
+strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 
@@ -388,7 +396,6 @@ inherits = "release"
 lto = "off"
 opt-level = 0
 strip = true
-
 
 [patch.crates-io]
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee", rev = "ffd5020e9c2940e1d5cfb49900b4a17518f24ec3" }
