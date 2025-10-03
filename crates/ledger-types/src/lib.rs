@@ -1,7 +1,8 @@
 //! Ledger data types.
 //!
 //! This crate is NOT about the basic data structures themselves.  This crate
-//! focuses on how we access the ledger data structures in different contexts.
+//! focuses on how we access the ledger data structures in state transition
+//! execution contexts.
 //!
 //! We present a trait that represents the various types of structures we
 //! interact with in the ledger's state, and expose accessor functions on it.
@@ -25,9 +26,11 @@
 //! when we finish a state transition.
 
 mod account;
+mod coin;
 mod global_state;
 mod state_accessor;
 
 pub use account::{AccountTypeState, IAccountState, ISnarkAccountState, ISnarkAccountStateExt};
+pub use coin::Coin;
 pub use global_state::IGlobalState;
 pub use state_accessor::StateAccessor;

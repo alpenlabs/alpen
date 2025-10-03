@@ -3,6 +3,8 @@ use strata_acct_types::{
 };
 use strata_snark_acct_types::MessageEntry;
 
+use crate::coin::Coin;
+
 type Seqno = u64;
 
 /// Abstract account state.
@@ -16,11 +18,11 @@ pub trait IAccountState: Sized {
     /// Gets the account's balance.
     fn balance(&self) -> BitcoinAmount;
 
-    /// Sets the account's balance.
-    ///
-    /// Care with this must be used when calling this to ensure that funds are
-    /// moved around safely without creating or destroying value.
-    fn set_balance(&self, amt: BitcoinAmount);
+    /// Adds a coin to this account's balance.
+    fn add_balance(&mut self, coin: Coin);
+
+    /// Takes a coin from this account's balance, if funds are available.
+    fn take_balance(&mut self, amt: BitcoinAmount) -> AcctResult<Coin>;
 
     /// Gets the account raw type ID.
     fn raw_ty(&self) -> AcctResult<RawAccountTypeId>;
