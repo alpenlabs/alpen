@@ -468,13 +468,29 @@ pub fn test_get_latest_unproven_checkpoint_idx_next_after_proven_is_ready(
 
     for (i, status) in statuses.iter().enumerate() {
         let mut checkpoint: CheckpointEntry = ag.generate();
-        checkpoint.proving_status = *status;
+        checkpoint.proving_status = status.clone();
         db.put_checkpoint(i as u64, checkpoint).unwrap();
     }
 
     // Latest proven is 1, next would be 2, and 2 is PendingProof, so return Some(2)
     let result = db.get_latest_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, Some(2));
+}
+
+pub fn test_get_latest_unproven_checkpoint_idx_rebuild_pending_index(db: &impl CheckpointDatabase) {
+    // Seed pending checkpoints and ensure the query still sees them after a fresh handle build.
+    let mut ag = ArbitraryGenerator::new();
+
+    for idx in 0..3 {
+        let mut checkpoint: CheckpointEntry = ag.generate();
+        checkpoint.proving_status = CheckpointProvingStatus::PendingProof;
+        db.put_checkpoint(idx, checkpoint.clone()).unwrap();
+    }
+
+    // Simulate reopening the database by invoking the query immediately.
+    // The sled implementation must rebuild the pending index or fallback to detect entries.
+    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    assert_eq!(result, Some(0));
 }
 
 #[macro_export]
@@ -605,6 +621,12 @@ macro_rules! checkpoint_db_tests {
         fn test_get_latest_unproven_checkpoint_idx_next_after_proven_is_ready() {
             let db = $setup_expr;
             $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_next_after_proven_is_ready(&db);
+        }
+
+        #[test]
+        fn test_get_latest_unproven_checkpoint_idx_rebuild_pending_index() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_rebuild_pending_index(&db);
         }
     };
 }

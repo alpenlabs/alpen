@@ -48,7 +48,11 @@ async fn process_checkpoint(
 ) -> anyhow::Result<()> {
     let res = fetch_latest_unproven_checkpoint_index(operator.cl_client()).await;
     let fetched_ckpt = match res {
-        Ok(idx) => idx,
+        Ok(Some(idx)) => idx,
+        Ok(None) => {
+            info!("no unproven checkpoints available");
+            return Ok(());
+        }
         Err(e) => {
             warn!(err = %e, "unable to fetch latest unproven checkpoint index");
             return Ok(());

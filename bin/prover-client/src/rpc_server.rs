@@ -11,6 +11,7 @@ use strata_primitives::{
     evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment,
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
+use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::ProofKey;
 use strata_rpc_utils::to_jsonrpsee_error;
 use tokio::sync::{oneshot, Mutex};

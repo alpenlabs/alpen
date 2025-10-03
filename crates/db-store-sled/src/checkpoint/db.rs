@@ -1,4 +1,8 @@
-use strata_db::{DbError, DbResult, traits::CheckpointDatabase, types::CheckpointEntry};
+use strata_db::{
+    DbError, DbResult,
+    traits::CheckpointDatabase,
+    types::{CheckpointEntry, CheckpointProvingStatus},
+};
 use strata_primitives::epoch::EpochCommitment;
 use strata_state::batch::EpochSummary;
 
@@ -9,6 +13,7 @@ define_sled_database!(
     pub struct CheckpointDBSled {
         checkpoint_tree: CheckpointSchema,
         epoch_summary_tree: EpochSummarySchema,
+        pending_proof_tree: PendingProofIndexSchema,
     }
 );
 
@@ -61,7 +66,24 @@ impl CheckpointDatabase for CheckpointDBSled {
     }
 
     fn put_checkpoint(&self, epoch: u64, entry: CheckpointEntry) -> DbResult<()> {
-        Ok(self.checkpoint_tree.insert(&epoch, &entry)?)
+        let is_pending = entry.proving_status == CheckpointProvingStatus::PendingProof;
+
+        self.config.with_retry(
+            (&self.checkpoint_tree, &self.pending_proof_tree),
+            |(ct, pt)| {
+                ct.insert(&epoch, &entry)?;
+
+                if is_pending {
+                    pt.insert(&epoch, &())?;
+                } else {
+                    pt.remove(&epoch)?;
+                }
+
+                Ok(())
+            },
+        )?;
+
+        Ok(())
     }
 
     fn get_checkpoint(&self, batchidx: u64) -> DbResult<Option<CheckpointEntry>> {
@@ -131,13 +153,18 @@ impl CheckpointDatabase for CheckpointDBSled {
     }
 
     fn del_checkpoint(&self, epoch: u64) -> DbResult<bool> {
-        let old_item = self.checkpoint_tree.get(&epoch)?;
-        let exists = old_item.is_some();
-        if exists {
-            self.checkpoint_tree
-                .compare_and_swap(epoch, old_item, None)?;
-        }
-        Ok(exists)
+        self.config.with_retry(
+            (&self.checkpoint_tree, &self.pending_proof_tree),
+            |(ct, pt)| {
+                let existing = ct.get(&epoch)?;
+                if existing.is_some() {
+                    ct.remove(&epoch)?;
+                    pt.remove(&epoch)?;
+                    return Ok(true);
+                }
+                Ok(false)
+            },
+        )
     }
 
     fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>> {
@@ -150,17 +177,26 @@ impl CheckpointDatabase for CheckpointDBSled {
             return Ok(Vec::new());
         }
 
-        let deleted_epochs = self.config.with_retry((&self.checkpoint_tree,), |(ct,)| {
-            let mut deleted_epochs = Vec::new();
-            for epoch in start_epoch..=last_epoch {
-                if ct.contains_key(&epoch)? {
-                    ct.remove(&epoch)?;
-                    deleted_epochs.push(epoch);
+        let deleted_epochs = self.config.with_retry(
+            (&self.checkpoint_tree, &self.pending_proof_tree),
+            |(ct, pt)| {
+                let mut deleted_epochs = Vec::new();
+                for epoch in start_epoch..=last_epoch {
+                    if ct.contains_key(&epoch)? {
+                        ct.remove(&epoch)?;
+                        pt.remove(&epoch)?;
+                        deleted_epochs.push(epoch);
+                    }
                 }
-            }
-            Ok(deleted_epochs)
-        })?;
+                Ok(deleted_epochs)
+            },
+        )?;
         Ok(deleted_epochs)
+    }
+
+    fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
+        let mut iter = self.pending_proof_tree.iter();
+        Ok(iter.next().transpose()?.map(first))
     }
 }
 
