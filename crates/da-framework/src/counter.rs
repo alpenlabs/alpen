@@ -168,10 +168,11 @@ impl<S: CounterScheme> DaWrite for DaCounter<S> {
         !self.is_changed()
     }
 
-    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) {
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), crate::DaError> {
         if let Self::Changed(v) = self {
             S::update(target, v);
         }
+        Ok(())
     }
 }
 
@@ -269,13 +270,13 @@ mod tests {
 
         let mut v = 32;
 
-        ctr1.apply(&mut v);
+        ctr1.apply(&mut v).unwrap();
         assert_eq!(v, 32);
 
-        ctr2.apply(&mut v);
+        ctr2.apply(&mut v).unwrap();
         assert_eq!(v, 33);
 
-        ctr3.apply(&mut v);
+        ctr3.apply(&mut v).unwrap();
         assert_eq!(v, 30);
     }
 }

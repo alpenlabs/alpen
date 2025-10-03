@@ -93,10 +93,11 @@ impl<T: Clone> DaWrite for DaRegister<T> {
         self.new_value.is_none()
     }
 
-    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) {
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), crate::DaError> {
         if let Some(v) = self.new_value.clone() {
             *target = v;
         }
+        Ok(())
     }
 }
 

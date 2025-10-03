@@ -83,10 +83,11 @@ impl<A: LinearAccumulator> DaWrite for DaLinacc<A> {
         self.new_entries.is_empty()
     }
 
-    fn apply(&self, target: &mut Self::Target, context: &Self::Context) {
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), crate::DaError> {
         for e in &self.new_entries {
             target.insert(e);
         }
+        Ok(())
     }
 }
 

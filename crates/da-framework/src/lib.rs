@@ -11,7 +11,7 @@ mod counter;
 pub use counter::DaCounter;
 
 mod errors;
-pub use errors::BuilderError;
+pub use errors::{BuilderError, DaError};
 
 mod register;
 pub use register::DaRegister;
