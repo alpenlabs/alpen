@@ -182,17 +182,19 @@ macro_rules! make_compound_traits {
                 v
             }
 
-            fn poll_context(&self, target: &Self::Target, context: &Self::Context) {
+            fn poll_context(&self, target: &Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
                 $(
-                    $crate::DaWrite::poll_context(&self.$fname, &target.$fname, context);
+                    $crate::DaWrite::poll_context(&self.$fname, &target.$fname, context)?;
                 )*
+                Ok(())
             }
 
-            fn apply(&self, target: &mut Self::Target, context: &Self::Context) {
+            fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
                 // Depends on all the members being accessible.
                 $(
-                    $crate::DaWrite::apply(&self.$fname, &mut target.$fname, context);
+                    $crate::DaWrite::apply(&self.$fname, &mut target.$fname, context)?;
                 )*
+                Ok(())
             }
         }
     };
@@ -320,15 +322,15 @@ mod tests {
         };
 
         let mut p1c = p1;
-        p12.apply(&mut p1c);
+        p12.apply(&mut p1c).unwrap();
         assert_eq!(p1c, p2);
 
         let mut p1c = p1;
-        p13.apply(&mut p1c);
+        p13.apply(&mut p1c).unwrap();
         assert_eq!(p1c, p3);
 
         let mut p2c = p2;
-        p23.apply(&mut p2c);
+        p23.apply(&mut p2c).unwrap();
         assert_eq!(p2c, p3);
     }
 }
