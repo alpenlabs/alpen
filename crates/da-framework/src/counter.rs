@@ -5,7 +5,7 @@ use crate::{
     Encoder,
 };
 
-/// Describes a value that can be updated by some counter.
+/// Describes scheme for a counter value and the quantity that it can change by.
 pub trait CounterScheme {
     /// The base value we're updating.
     type Base;
@@ -32,7 +32,7 @@ macro_rules! inst_direct_ctr_schemes {
         $(
             pub struct $name;
 
-            impl CounterScheme for $name {
+            impl $crate::CounterScheme for $name {
                 type Base = $basety;
                 type Incr = $incrty;
 
@@ -58,7 +58,7 @@ macro_rules! inst_via_ctr_schemes {
         $(
             pub struct $name;
 
-            impl CounterScheme for $name {
+            impl $crate::CounterScheme for $name {
                 type Base = $basety;
                 type Incr = $incrty;
 
@@ -79,24 +79,6 @@ macro_rules! inst_via_ctr_schemes {
             }
         )*
     };
-}
-
-inst_direct_ctr_schemes! {
-    CtrU64ByU8(u64, u8);
-    CtrU64ByU16(u64, u16);
-    CtrU32ByU8(u64, u8);
-    CtrU32ByU16(u32, u16);
-    CtrI64ByI8(i64, i8);
-    CtrI64ByI16(i64, i16);
-}
-
-inst_via_ctr_schemes! {
-    CtrU64ByI8(u64, i8; i64);
-    CtrU64ByI16(u64, i16; i64);
-    CtrU32ByI8(u32, i8; i64);
-    CtrU32ByI16(u32, i16; i64);
-    CtrI32ByI8(i32, i8; i64);
-    CtrI32ByI16(i32, i16; i64);
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -195,7 +177,7 @@ impl<S: CounterScheme> CompoundMember for DaCounter<S> {
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
         if <Self as CompoundMember>::is_default(self) {
-            return Err(CodecError::MalformedField("tried to encode default counter"));
+            return Err(CodecError::InvalidVariant("counter"));
         }
 
         if let DaCounter::Changed(d) = &self {
@@ -261,9 +243,30 @@ where
     }
 }
 
+/// Counter schemes.
+pub mod counter_schemes {
+    inst_direct_ctr_schemes! {
+        CtrU64ByU8(u64, u8);
+        CtrU64ByU16(u64, u16);
+        CtrU32ByU8(u64, u8);
+        CtrU32ByU16(u32, u16);
+        CtrI64ByI8(i64, i8);
+        CtrI64ByI16(i64, i16);
+    }
+
+    inst_via_ctr_schemes! {
+        CtrU64ByI8(u64, i8; i64);
+        CtrU64ByI16(u64, i16; i64);
+        CtrU32ByI8(u32, i8; i64);
+        CtrU32ByI16(u32, i16; i64);
+        CtrI32ByI8(i32, i8; i64);
+        CtrI32ByI16(i32, i16; i64);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CtrU64ByI16, DaCounter};
+    use super::{DaCounter, counter_schemes::CtrU64ByI16};
     use crate::ContextlessDaWrite;
 
     #[test]
