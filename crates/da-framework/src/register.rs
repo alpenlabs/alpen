@@ -87,11 +87,13 @@ impl<T> Default for DaRegister<T> {
 impl<T: Clone> DaWrite for DaRegister<T> {
     type Target = T;
 
+    type Context = ();
+
     fn is_default(&self) -> bool {
         self.new_value.is_none()
     }
 
-    fn apply(&self, target: &mut Self::Target) {
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) {
         if let Some(v) = self.new_value.clone() {
             *target = v;
         }

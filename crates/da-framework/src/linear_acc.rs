@@ -77,11 +77,13 @@ impl<A: LinearAccumulator> Default for DaLinacc<A> {
 impl<A: LinearAccumulator> DaWrite for DaLinacc<A> {
     type Target = A;
 
+    type Context = ();
+
     fn is_default(&self) -> bool {
         self.new_entries.is_empty()
     }
 
-    fn apply(&self, target: &mut Self::Target) {
+    fn apply(&self, target: &mut Self::Target, context: &Self::Context) {
         for e in &self.new_entries {
             target.insert(e);
         }
