@@ -27,7 +27,7 @@ pub fn extract_deposit_request_info(
 
     // if sent value is less than equal to what we expect for bridge denomination. The extra amount
     // is used for fees to create deposit transaction
-    if addr_txn.value.to_sat() <= config.deposit_amount {
+    if addr_txn.value.to_sat() <= config.deposit_amount.to_sat() {
         return None;
     }
 
@@ -100,12 +100,12 @@ fn parse_tag_script(
 
     // configured bytes for address
     let dest = &buf[32..];
-    if dest.len() != config.address_length as usize {
+    if dest.len() != config.max_address_length as usize {
         // casting is safe as address.len() < buf.len() < 80
         debug!(
             buf = ?buf,
             dest = ?dest,
-            expected = config.address_length,
+            expected = config.max_address_length,
             got = %dest.len(),
             "incorrect number of bytes in dest buf"
         );
@@ -121,6 +121,7 @@ fn parse_tag_script(
 #[cfg(test)]
 mod tests {
     use bitcoin::{absolute::LockTime, Amount, Transaction};
+    use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils_btc::{
         build_no_op_deposit_request_script, build_test_deposit_request_script,
         create_test_deposit_tx, test_taproot_addr,
@@ -155,7 +156,7 @@ mod tests {
         );
 
         let test_transaction = create_test_deposit_tx(
-            Amount::from_sat(config.deposit_amount + extra_amount),
+            Amount::from_sat(config.deposit_amount.to_sat() + extra_amount),
             &test_taproot_addr.address().script_pubkey(),
             &deposit_request_script,
             &keypair,
@@ -167,7 +168,13 @@ mod tests {
         assert!(out.is_some());
         let out = out.unwrap();
 
-        assert_eq!(out.amt, config.deposit_amount + extra_amount);
+        assert_eq!(
+            out.amt,
+            config
+                .deposit_amount
+                .saturating_add(BitcoinAmount::from_sat(extra_amount))
+                .to_sat()
+        );
         assert_eq!(out.address, evm_addr);
         assert_eq!(out.take_back_leaf_hash, dummy_control_block);
     }

@@ -64,7 +64,7 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
 ) -> anyhow::Result<()> {
     let target_next_block = calculate_target_next_block(
         storage.l1().as_ref(),
-        params.rollup().genesis_l1_view.height(),
+        params.rollup().genesis_l1_view.height_u64(),
     )?;
 
     let ctx = ReaderContext {
@@ -158,7 +158,7 @@ async fn init_reader_state<R: Reader>(
 
     let lookback = ctx.params.rollup().l1_reorg_safe_depth as usize * 2;
     let client = ctx.client.as_ref();
-    let genesis_height = ctx.params.rollup().genesis_l1_view.height();
+    let genesis_height = ctx.params.rollup().genesis_l1_view.height_u64();
     let pre_genesis = genesis_height.saturating_sub(1);
     let target = target_next_block as i64;
 
@@ -225,7 +225,9 @@ async fn poll_for_new_blocks<R: Reader>(
     if let Some((pivot_height, pivot_blkid)) = find_pivot_block(ctx.client.as_ref(), state).await? {
         if pivot_height < state.best_block_idx() {
             info!(%pivot_height, %pivot_blkid, "found apparent reorg");
-            let block = L1BlockCommitment::new(pivot_height, L1BlockId::from(pivot_blkid));
+            let block =
+                L1BlockCommitment::from_height_u64(pivot_height, L1BlockId::from(pivot_blkid))
+                    .expect("valid height");
             state.rollback_to_height(pivot_height);
 
             // Return with the revert event immediately
@@ -413,7 +415,7 @@ pub async fn fetch_genesis_l1_view(
 
     // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::new(block_height, block_id),
+        blk: L1BlockCommitment::from_height_u64(block_height, block_id).expect("valid height"),
         next_target: next_block_target,
         epoch_start_timestamp: current_epoch_start_header.time,
         last_11_timestamps: timestamps,
