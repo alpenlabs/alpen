@@ -63,6 +63,16 @@ impl<MH: MerkleHasher + Clone> MerkleMr64<MH> {
         }
     }
 
+    /// Gets the number of entries inserted into the MMR.
+    pub fn num_entries(&self) -> u64 {
+        self.num
+    }
+
+    /// Gets if there have been no entries inserted into the MMR.
+    pub fn is_empty(&self) -> bool {
+        self.num_entries() == 0
+    }
+
     /// Unpacks the MMR from a compact form.
     pub fn from_compact(compact: &CompactMmr<MH::Hash>) -> Self {
         // FIXME this is somewhat inefficient, we could consume the vec and just

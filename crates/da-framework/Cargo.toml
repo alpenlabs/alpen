@@ -1,0 +1,8 @@
+[package]
+name = "strata-da-framework"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
+thiserror.workspace = true
