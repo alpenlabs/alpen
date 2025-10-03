@@ -76,7 +76,7 @@ async fn fetch_genesis_l1_view(
 
     // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::new(block_height, block_id),
+        blk: L1BlockCommitment::from_height_u64(block_height, block_id).expect("valid height"),
         next_target: next_block_target,
         epoch_start_timestamp: current_epoch_start_header.time,
         last_11_timestamps: timestamps,

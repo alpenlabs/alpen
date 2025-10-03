@@ -81,6 +81,7 @@ impl Subprotocol for CheckpointV0Subproto {
     ) {
         // Get current L1 height from anchor state
         let current_l1_height = anchor_pre.chain_view.pow_state.last_verified_block.height();
+        let current_l1_height_u64 = current_l1_height.to_consensus_u32() as u64;
 
         for tx in txs {
             let tx_type = tx.tag().tx_type();
@@ -93,7 +94,7 @@ impl Subprotocol for CheckpointV0Subproto {
                 continue;
             }
 
-            match process_checkpoint_transaction_v0(state, tx, current_l1_height, relayer) {
+            match process_checkpoint_transaction_v0(state, tx, current_l1_height_u64, relayer) {
                 Ok(true) => {
                     logging::info!(
                         txid = %tx.tx().compute_txid(),
@@ -251,7 +252,9 @@ mod tests {
     use super::*;
 
     fn test_params() -> CheckpointV0Params {
-        let genesis_commitment = L1BlockCommitment::new(0, L1BlockId::from(Buf32::default()));
+        let genesis_commitment =
+            L1BlockCommitment::from_height_u64(0, L1BlockId::from(Buf32::default()))
+                .expect("genesis height should be valid");
         let verification_params = CheckpointV0VerificationParams {
             genesis_l1_block: genesis_commitment,
             cred_rule: CredRule::Unchecked,

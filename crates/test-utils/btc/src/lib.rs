@@ -186,7 +186,7 @@ pub fn build_test_deposit_script(
     data.extend(&idx.to_be_bytes()[..]);
     data.extend(dest_addr);
     data.extend(tapnode_hash);
-    data.extend(&dep_config.deposit_amount.to_be_bytes());
+    data.extend(&dep_config.deposit_amount.to_sat().to_be_bytes());
 
     let builder = script::Builder::new()
         .push_opcode(OP_RETURN)

@@ -3,6 +3,7 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
+use bitcoin::absolute;
 use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     logging::{error, info},
@@ -149,7 +150,10 @@ impl Subprotocol for BridgeV1Subproto {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
                     // TODO: Pass actual L1BlockId instead of placeholder
-                    let l1blk = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
+                    let l1blk = L1BlockCommitment::new(
+                        absolute::Height::ZERO,
+                        L1BlockId::from(Buf32::zero()),
+                    );
                     if let Err(e) = state.create_withdrawal_assignment(withdrawal_cmd, &l1blk) {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.

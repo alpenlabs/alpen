@@ -39,7 +39,7 @@ impl ClientStateManager {
 
         let latest_cs = ops.get_latest_client_state_blocking()?;
         if let Some((blk, cs)) = latest_cs {
-            cur_state.set(blk.height(), Arc::new(cs));
+            cur_state.set(blk.height_u64(), Arc::new(cs));
         }
 
         Ok(Self {
@@ -81,7 +81,7 @@ impl ClientStateManager {
         // FIXME this is a lot of cloning, good thing the type isn't gigantic,
         // still feels bad though
         let state = Arc::new(update.state().clone());
-        let height = block.height();
+        let height = block.height_u64();
         self.ops
             .put_client_update_blocking(*block, update.clone())?;
         self.maybe_update_cur_state_blocking(height, &state);

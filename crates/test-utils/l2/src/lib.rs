@@ -2,7 +2,10 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bitcoin::secp256k1::{SecretKey, SECP256K1};
+use bitcoin::{
+    secp256k1::{SecretKey, SECP256K1},
+    Amount,
+};
 use borsh::to_vec;
 use rand::{rngs::StdRng, SeedableRng};
 use strata_consensus_logic::genesis::make_l2_genesis;
@@ -117,8 +120,8 @@ fn gen_params_with_seed(seed: u64) -> Params {
                     .unwrap(),
             l1_reorg_safe_depth: 3,
             target_l2_batch_size: 64,
-            address_length: 20,
-            deposit_amount: 1_000_000_000,
+            max_address_length: 20,
+            deposit_amount: Amount::from_sat(1_000_000_000),
             rollup_vk: get_rollup_vk(),
             dispatch_assignment_dur: 64,
             proof_publish_mode: ProofPublishMode::Strict,

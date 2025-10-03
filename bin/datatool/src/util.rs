@@ -15,7 +15,7 @@ use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
-    Network,
+    Amount, Network,
 };
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
@@ -520,8 +520,8 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         // TODO make configurable
         l1_reorg_safe_depth: 4,
         target_l2_batch_size: config.epoch_slots as u64,
-        address_length: 20,
-        deposit_amount: config.deposit_sats,
+        max_address_length: 20,
+        deposit_amount: Amount::from_sat(config.deposit_sats),
         rollup_vk: config.rollup_vk,
         // TODO make configurable
         dispatch_assignment_dur: 64,

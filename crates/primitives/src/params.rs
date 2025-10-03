@@ -1,6 +1,6 @@
 //! Global consensus parameters for the rollup.
 
-use bitcoin::Network;
+use bitcoin::{absolute, Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_l1_txfmt::MagicBytes;
@@ -9,10 +9,11 @@ use thiserror::Error;
 use crate::{
     block_credential::CredRule,
     constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BitcoinAddress, L1BlockCommitment, L1BlockId, XOnlyPk},
+    l1::{BitcoinAddress, BitcoinAmount, L1BlockCommitment, L1BlockId, XOnlyPk},
     operator::OperatorPubkeys,
     prelude::Buf32,
     proof::RollupVerifyingKey,
+    serde_helpers::serde_amount_sat,
 };
 
 /// Consensus parameters that don't change for the lifetime of the network
@@ -51,11 +52,11 @@ pub struct RollupParams {
     pub target_l2_batch_size: u64,
 
     /// Maximum length of an EE address in a deposit.
-    // FIXME this should be "max address length"
-    pub address_length: u8,
+    pub max_address_length: u8,
 
     /// Exact "at-rest" deposit amount, in sats.
-    pub deposit_amount: u64,
+    #[serde(with = "serde_amount_sat")]
+    pub deposit_amount: Amount,
 
     /// SP1 verifying key that is used to verify the Groth16 proof posted on Bitcoin
     // FIXME which proof?  should this be `checkpoint_vk`?
@@ -83,8 +84,12 @@ pub struct GenesisL1View {
 }
 
 impl GenesisL1View {
-    pub fn height(&self) -> u64 {
+    pub fn height(&self) -> absolute::Height {
         self.blk.height()
+    }
+
+    pub fn height_u64(&self) -> u64 {
+        self.blk.height_u64()
     }
 
     pub fn blkid(&self) -> L1BlockId {
@@ -115,11 +120,11 @@ impl RollupParams {
             return Err(ParamsError::ZeroProperty("target_l2_batch_size"));
         }
 
-        if self.address_length == 0 {
+        if self.max_address_length == 0 {
             return Err(ParamsError::ZeroProperty("max_address_length"));
         }
 
-        if self.deposit_amount == 0 {
+        if self.deposit_amount == Amount::ZERO {
             return Err(ParamsError::ZeroProperty("deposit_amount"));
         }
 
@@ -151,16 +156,15 @@ pub struct DepositTxParams {
     pub magic_bytes: MagicBytes,
 
     /// Maximum EE address length.
-    // TODO rename to be `max_addr_len`
-    pub address_length: u8,
+    pub max_address_length: u8,
 
-    /// Exact bitcoin amount(sats) in the at-rest deposit.
-    pub deposit_amount: u64,
+    /// Exact [`BitcoinAmount`] in the at-rest deposit.
+    pub deposit_amount: BitcoinAmount,
 
-    /// federation address derived from operator entries
+    /// Federation address derived from operator entries
     pub address: BitcoinAddress,
 
-    /// Operators' aggregated pubkey(untweaked internal pubkey)
+    /// Operators' aggregated pubkey (untweaked internal pubkey).
     pub operators_pubkey: XOnlyPk,
 }
 
@@ -171,7 +175,7 @@ pub enum ProofPublishMode {
     /// Timeout in secs after which a blank proof is generated.
     Timeout(u64),
 
-    /// Expect and wait for non-empty proofs
+    /// Expect and wait for non-empty proofs.
     Strict,
 }
 

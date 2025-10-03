@@ -101,7 +101,7 @@ impl CheckpointState {
     }
 
     pub fn has_genesis_occurred(&self) -> bool {
-        self.block.height() > 0
+        self.block.height_u64() > 0
     }
 }
 
@@ -125,7 +125,7 @@ impl CheckpointL1Ref {
     }
 
     pub fn block_height(&self) -> u64 {
-        self.l1_commitment.height()
+        self.l1_commitment.height_u64()
     }
 
     pub fn block_id(&self) -> &L1BlockId {

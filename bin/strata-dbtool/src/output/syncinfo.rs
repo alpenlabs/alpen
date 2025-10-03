@@ -145,7 +145,7 @@ mod tests {
 
     fn create_test_l1_block_commitment(height: u64) -> L1BlockCommitment {
         let block_id = create_test_l1_block_id();
-        L1BlockCommitment::new(height, block_id)
+        L1BlockCommitment::from_height_u64(height, block_id).expect("height should be valid")
     }
 
     #[test]

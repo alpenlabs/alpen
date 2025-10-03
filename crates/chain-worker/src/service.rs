@@ -244,7 +244,8 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         );
         let new_tip_height = l1seg.new_height();
         let new_tip_blkid = l1seg.new_tip_blkid().expect("fcm: missing l1seg final L1");
-        let new_l1_block = L1BlockCommitment::new(new_tip_height, new_tip_blkid);
+        let new_l1_block = L1BlockCommitment::from_height_u64(new_tip_height, new_tip_blkid)
+            .expect("valid height");
 
         let epoch_final_state = last_block_output.computed_state_root();
 

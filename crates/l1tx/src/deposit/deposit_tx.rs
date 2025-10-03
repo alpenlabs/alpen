@@ -37,7 +37,7 @@ pub fn extract_deposit_info(tx: &Transaction, config: &DepositTxParams) -> Optio
     let op_return_out = tx.output.get(1)?;
 
     // Check if it is exact deposit denomination amount
-    if send_addr_out.value.to_sat() != config.deposit_amount {
+    if send_addr_out.value.to_sat() != config.deposit_amount.to_sat() {
         return None;
     }
 
@@ -156,7 +156,7 @@ fn parse_tag_script<'a>(
         return Err(DepositParseError::TagOversized);
     }
 
-    parse_tag(data, &config.magic_bytes, config.address_length)
+    parse_tag(data, &config.magic_bytes, config.max_address_length)
 }
 
 /// Parses the script buffer which has the following structure:
@@ -224,7 +224,7 @@ mod tests {
     };
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::{
-        l1::{BitcoinAddress, XOnlyPk},
+        l1::{BitcoinAddress, BitcoinAmount, XOnlyPk},
         params::DepositTxParams,
     };
 
@@ -242,8 +242,8 @@ mod tests {
         let addr = BitcoinAddress::parse(ADDRESS, Network::Regtest).unwrap();
         DepositTxParams {
             magic_bytes: MAGIC_BYTES,
-            address_length: 20,
-            deposit_amount: 10,
+            max_address_length: 20,
+            deposit_amount: BitcoinAmount::from_sat(10),
             address: addr.clone(),
             operators_pubkey: XOnlyPk::from_address(&addr).unwrap(),
         }

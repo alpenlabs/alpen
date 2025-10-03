@@ -346,7 +346,7 @@ impl BatchInfo {
     /// check for whether the L1 height is covered by the checkpoint
     pub fn includes_l1_block(&self, height: u64) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
-        if height <= last_l1_commitment.height() {
+        if height <= last_l1_commitment.height_u64() {
             return true;
         }
         false

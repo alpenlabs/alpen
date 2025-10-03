@@ -33,7 +33,7 @@ pub fn extract_ee_bytes<'a>(
 ) -> Result<&'a [u8], DepositParseError> {
     match next_bytes(instructions) {
         Some(ee_bytes) => {
-            if ee_bytes.len() as u8 != config.address_length {
+            if ee_bytes.len() as u8 != config.max_address_length {
                 return Err(DepositParseError::InvalidDestLen(ee_bytes.len() as u8));
             }
             Ok(ee_bytes)
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_extract_ee_bytes_valid() {
         let config = get_deposit_tx_config();
-        let ee_bytes = vec![0; config.address_length as usize];
+        let ee_bytes = vec![0; config.max_address_length as usize];
         let script = Builder::new()
             .push_slice(PushBytesBuf::try_from(ee_bytes.clone()).unwrap())
             .push_opcode(OP_RETURN)
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn test_extract_ee_bytes_invalid_length() {
         let config = get_deposit_tx_config();
-        let ee_bytes = vec![0; (config.address_length as usize) + 1];
+        let ee_bytes = vec![0; (config.max_address_length as usize) + 1];
         let script = Builder::new()
             .push_slice(PushBytesBuf::try_from(ee_bytes.clone()).unwrap())
             .push_opcode(OP_RETURN)

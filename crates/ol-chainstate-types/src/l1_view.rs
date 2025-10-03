@@ -28,7 +28,7 @@ impl L1ViewState {
     }
 
     pub fn safe_height(&self) -> u64 {
-        self.header_vs.last_verified_block.height()
+        self.header_vs.last_verified_block.height_u64()
     }
 
     pub fn header_vs(&self) -> &HeaderVerificationState {
@@ -41,7 +41,8 @@ impl L1ViewState {
 
     /// Gets the safe block as a [`L1BlockCommitment`].
     pub fn get_safe_block(&self) -> L1BlockCommitment {
-        L1BlockCommitment::new(self.safe_height(), *self.safe_blkid())
+        L1BlockCommitment::from_height_u64(self.safe_height(), *self.safe_blkid())
+            .expect("height should be valid")
     }
 
     /// The height of the next block we expect to be added.

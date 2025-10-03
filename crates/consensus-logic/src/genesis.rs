@@ -123,7 +123,7 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     );
 
     // This has to be empty since everyone should have an unambiguous view of the genesis block.
-    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_view.blk.height());
+    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_view.blk.height_u64());
 
     // TODO this is a total stub, we have to fill it in with something
     let exec_seg = ExecSegment::new(genesis_update);
@@ -151,7 +151,7 @@ fn make_genesis_chainstate(gblock: &L2BlockBundle, params: &Params) -> Chainstat
 
     let genesis_l1_view = &params.rollup().genesis_l1_view;
     let gheader_vs = HeaderVerificationState::new(params.network(), genesis_l1_view);
-    let l1vs = L1ViewState::new_at_genesis(genesis_l1_view.height(), gheader_vs);
+    let l1vs = L1ViewState::new_at_genesis(genesis_l1_view.height_u64(), gheader_vs);
 
     let optbl = construct_operator_table(&params.rollup().operator_config);
     let gdata = GenesisStateData::new(l1vs, optbl, gees);

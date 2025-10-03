@@ -237,14 +237,15 @@ fn create_checkpoint_prep_data_from_summary(
 
     // Determine the ranges for each of the fields we commit to.
     let l1_start_height = if let Some(ps) = prev_summary {
-        ps.new_l1().height() + 1
+        ps.new_l1().height().to_consensus_u32() as u64 + 1
     } else {
-        params.genesis_l1_view.blk.height() + 1
+        params.genesis_l1_view.blk.height().to_consensus_u32() as u64 + 1
     };
 
     // Reconstruct the L1 range.
     let l1_start_mf = fetch_l1_block_manifest(l1_start_height, l1man)?;
-    let l1_start_block = L1BlockCommitment::new(l1_start_height, *l1_start_mf.blkid());
+    let l1_start_block = L1BlockCommitment::from_height_u64(l1_start_height, *l1_start_mf.blkid())
+        .expect("height should be valid");
     let l1_range = (l1_start_block, *summary.new_l1());
 
     // Now just pull out the data about the blocks from the transition here.

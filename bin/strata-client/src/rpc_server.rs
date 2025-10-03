@@ -201,7 +201,8 @@ impl StrataApiServer for StrataRpcImpl {
 
         // Maybe set buried L1 block.
         let depth = self.sync_manager.params().rollup().l1_reorg_safe_depth;
-        let buried_height_checked = l1_block.height().checked_sub(depth as u64);
+        let current_height = l1_block.height().to_consensus_u32() as u64;
+        let buried_height_checked = current_height.checked_sub(depth as u64);
         // Checked fetch the canonical chain.
         if let Some(buried_height) = buried_height_checked {
             let manifest = self

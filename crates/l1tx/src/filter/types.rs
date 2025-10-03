@@ -65,8 +65,8 @@ impl TxFilterConfig {
 
         let deposit_config = DepositTxParams {
             magic_bytes: rollup_params.magic_bytes,
-            address_length: rollup_params.address_length,
-            deposit_amount: rollup_params.deposit_amount,
+            max_address_length: rollup_params.max_address_length,
+            deposit_amount: BitcoinAmount::from_sat(rollup_params.deposit_amount.to_sat()),
             address,
             operators_pubkey,
         };

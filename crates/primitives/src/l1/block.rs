@@ -1,11 +1,11 @@
-use std::{fmt, str};
+use std::{fmt, io, str};
 
-use arbitrary::Arbitrary;
-use bitcoin::{hashes::Hash, BlockHash};
+use arbitrary::{Arbitrary, Error as ArbitraryError, Result as ArbitraryResult, Unstructured};
+use bitcoin::{absolute, hashes::Hash, BlockHash};
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
-use serde::{Deserialize, Serialize};
+use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{buf::Buf32, hash::sha256d};
 
@@ -66,24 +66,149 @@ impl From<L1BlockId> for BlockHash {
     }
 }
 
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Default,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
-)]
+/// L1 Block commitment with block height and ID.
+///
+/// Note: Height is stored as u32 internally in Bitcoin's consensus format,
+/// but we serialize/deserialize using a custom implementation to maintain
+/// backwards compatibility with existing data (stored as u64).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Arbitrary)]
 pub struct L1BlockCommitment {
-    height: u64,
+    #[arbitrary(with = arbitrary_height)]
+    height: absolute::Height,
     blkid: L1BlockId,
+}
+
+// Custom Arbitrary implementation for Height
+fn arbitrary_height(u: &mut Unstructured<'_>) -> ArbitraryResult<absolute::Height> {
+    // Heights must be less than 500_000_000 (LOCK_TIME_THRESHOLD)
+    let h = u32::arbitrary(u)? % 500_000_000;
+    absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)
+}
+
+// Custom Borsh serialization to maintain backward compatibility with u64 storage
+impl BorshSerialize for L1BlockCommitment {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        // Serialize height as u64 for backward compatibility
+        let height_u64 = self.height.to_consensus_u32() as u64;
+        BorshSerialize::serialize(&height_u64, writer)?;
+        BorshSerialize::serialize(&self.blkid, writer)?;
+        Ok(())
+    }
+}
+
+impl BorshDeserialize for L1BlockCommitment {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let height_u64 = u64::deserialize_reader(reader)?;
+        let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid block height {height_u64}: {e}"),
+            )
+        })?;
+        let blkid = L1BlockId::deserialize_reader(reader)?;
+        Ok(Self { height, blkid })
+    }
+}
+
+// Custom serde implementation to maintain backward compatibility with u64 JSON
+impl Serialize for L1BlockCommitment {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("L1BlockCommitment", 2)?;
+        let height_u64 = self.height.to_consensus_u32() as u64;
+        state.serialize_field("height", &height_u64)?;
+        state.serialize_field("blkid", &self.blkid)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for L1BlockCommitment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct L1BlockCommitmentVisitor;
+
+        impl<'de> de::Visitor<'de> for L1BlockCommitmentVisitor {
+            type Value = L1BlockCommitment;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("struct L1BlockCommitment or tuple (u64, L1BlockId)")
+            }
+
+            // Support struct format (JSON, human-readable formats)
+            fn visit_map<V>(self, mut map: V) -> Result<L1BlockCommitment, V::Error>
+            where
+                V: de::MapAccess<'de>,
+            {
+                let mut height: Option<u64> = None;
+                let mut blkid: Option<L1BlockId> = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "height" => {
+                            height = Some(map.next_value()?);
+                        }
+                        "blkid" => {
+                            blkid = Some(map.next_value()?);
+                        }
+                        _ => {
+                            let _: de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                let height = height.ok_or_else(|| de::Error::missing_field("height"))?;
+                let blkid = blkid.ok_or_else(|| de::Error::missing_field("blkid"))?;
+
+                let height = absolute::Height::from_consensus(height as u32).map_err(|e| {
+                    de::Error::custom(format!("invalid block height {}: {}", height, e))
+                })?;
+
+                Ok(L1BlockCommitment { height, blkid })
+            }
+
+            // Support tuple format (bincode, compact binary formats)
+            fn visit_seq<A>(self, mut seq: A) -> Result<L1BlockCommitment, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let height_u64: u64 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let blkid: L1BlockId = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+
+                let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
+                    de::Error::custom(format!("invalid block height {}: {}", height_u64, e))
+                })?;
+
+                Ok(L1BlockCommitment { height, blkid })
+            }
+        }
+
+        // For human-readable formats (JSON), use deserialize_any to support both struct and tuple
+        // For binary formats (bincode), use deserialize_tuple for backward compatibility
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_any(L1BlockCommitmentVisitor)
+        } else {
+            // Bincode doesn't support deserialize_any, so we use deserialize_tuple
+            deserializer.deserialize_tuple(2, L1BlockCommitmentVisitor)
+        }
+    }
+}
+
+impl Default for L1BlockCommitment {
+    fn default() -> Self {
+        Self {
+            height: absolute::Height::ZERO,
+            blkid: L1BlockId::default(),
+        }
+    }
 }
 
 impl fmt::Display for L1BlockCommitment {
@@ -102,7 +227,7 @@ impl fmt::Display for L1BlockCommitment {
         write!(
             f,
             "{}@{}..{}",
-            self.height,
+            self.height.to_consensus_u32(),
             str::from_utf8(&first_hex)
                 .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
             str::from_utf8(&last_hex).expect("Failed to convert last 2 hex bytes to UTF-8 string")
@@ -115,20 +240,41 @@ impl fmt::Debug for L1BlockCommitment {
         write!(
             f,
             "L1BlockCommitment(height={}, blkid={:?})",
-            self.height, self.blkid
+            self.height.to_consensus_u32(),
+            self.blkid
         )
     }
 }
 
 impl L1BlockCommitment {
-    pub fn new(height: u64, blkid: L1BlockId) -> Self {
+    /// Create a new L1 block commitment.
+    ///
+    /// # Arguments
+    /// * `height` - The block height
+    /// * `blkid` - The block ID
+    pub fn new(height: absolute::Height, blkid: L1BlockId) -> Self {
         Self { height, blkid }
     }
 
-    pub fn height(&self) -> u64 {
+    /// Create a new L1 block commitment from a u64 height.
+    ///
+    /// Returns `None` if the height is invalid (greater than u32::MAX).
+    pub fn from_height_u64(height: u64, blkid: L1BlockId) -> Option<Self> {
+        let height = absolute::Height::from_consensus(height as u32).ok()?;
+        Some(Self { height, blkid })
+    }
+
+    /// Get the block height.
+    pub fn height(&self) -> absolute::Height {
         self.height
     }
 
+    /// Get the block height as u64 for compatibility.
+    pub fn height_u64(&self) -> u64 {
+        self.height.to_consensus_u32() as u64
+    }
+
+    /// Get the block ID.
     pub fn blkid(&self) -> &L1BlockId {
         &self.blkid
     }

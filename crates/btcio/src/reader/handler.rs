@@ -19,7 +19,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
         L1Event::RevertTo(block) => {
             // L1 reorgs will be handled in L2 STF, we just have to reflect
             // what the client is telling us in the database.
-            let height = block.height();
+            let height = block.height_u64();
             ctx.storage
                 .l1()
                 .revert_canonical_chain_async(height)
@@ -52,7 +52,7 @@ async fn handle_blockdata<R: Reader>(
     let height = blockdata.block_num();
 
     // Bail out fast if we don't have to care.
-    let genesis = params.rollup().genesis_l1_view.height();
+    let genesis = params.rollup().genesis_l1_view.height_u64();
     if height < genesis {
         warn!(%height, %genesis, "ignoring BlockData for block before genesis");
         return Ok(Option::None);
@@ -72,7 +72,9 @@ async fn handle_blockdata<R: Reader>(
 
     // Create a sync event if it's something we care about.
     let blkid: Buf32 = blockdata.block().block_hash().into();
-    Ok(Option::Some(L1BlockCommitment::new(height, blkid.into())))
+    Ok(Option::Some(
+        L1BlockCommitment::from_height_u64(height, blkid.into()).expect("valid height"),
+    ))
 }
 
 /// Given a block, generates a manifest of the parts we care about that we can

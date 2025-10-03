@@ -59,7 +59,13 @@ impl Subprotocol for AdministrationSubprotocol {
         params: &Self::Params,
     ) {
         // Calculate current height as the next block height
-        let current_height = anchor_pre.chain_view.pow_state.last_verified_block.height() + 1;
+        let current_height = anchor_pre
+            .chain_view
+            .pow_state
+            .last_verified_block
+            .height()
+            .to_consensus_u32() as u64
+            + 1;
 
         // Phase 1: Execute any pending updates that have reached their activation height
         handle_pending_updates(state, relayer, current_height);

@@ -53,7 +53,6 @@ mod test {
         secp256k1::{Keypair, Secp256k1, SecretKey},
         Amount, ScriptBuf,
     };
-    use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils_btc::{
         build_test_deposit_script, create_test_deposit_tx, test_taproot_addr,
     };
@@ -75,7 +74,7 @@ mod test {
             build_test_deposit_script(&deposit_config, idx, ee_addr.clone(), &tapnode_hash);
 
         let tx = create_test_deposit_tx(
-            Amount::from_sat(deposit_config.deposit_amount),
+            Amount::from_sat(deposit_config.deposit_amount.to_sat()),
             &deposit_config.address.address().script_pubkey(),
             &deposit_script,
             &keypair,
@@ -88,8 +87,7 @@ mod test {
         assert_eq!(deposits[0].deposit_idx, idx, "deposit idx should match");
         assert_eq!(deposits[0].address, ee_addr, "EE address should match");
         assert_eq!(
-            deposits[0].amt,
-            BitcoinAmount::from_sat(deposit_config.deposit_amount),
+            deposits[0].amt, deposit_config.deposit_amount,
             "Deposit amount should match"
         );
     }
@@ -104,7 +102,7 @@ mod test {
 
         // This won't have magic bytes in script so shouldn't get parsed.
         let tx = create_test_deposit_tx(
-            Amount::from_sat(deposit_conf.deposit_amount),
+            Amount::from_sat(deposit_conf.deposit_amount.to_sat()),
             &test_taproot_addr().address().script_pubkey(),
             &ScriptBuf::new(),
             &keypair,
@@ -135,7 +133,7 @@ mod test {
 
         // This won't have magic bytes in script so shouldn't get parsed.
         let tx = create_test_deposit_tx(
-            Amount::from_sat(deposit_conf.deposit_amount),
+            Amount::from_sat(deposit_conf.deposit_amount.to_sat()),
             &test_taproot_addr().address().script_pubkey(),
             &deposit_script,
             &keypair,
@@ -164,7 +162,7 @@ mod test {
         let secret_key = SecretKey::from_slice(&[111u8; 32]).unwrap();
         let invalid_keypair = Keypair::from_secret_key(&secp, &secret_key);
         let tx = create_test_deposit_tx(
-            Amount::from_sat(deposit_config.deposit_amount),
+            Amount::from_sat(deposit_config.deposit_amount.to_sat()),
             &deposit_config.address.address().script_pubkey(),
             &deposit_script,
             &invalid_keypair,

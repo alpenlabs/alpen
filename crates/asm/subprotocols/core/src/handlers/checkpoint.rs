@@ -70,8 +70,8 @@ pub(crate) fn handle_checkpoint_transaction(
     verification::verify_checkpoint_proof(checkpoint, public_values, proof, &rollup_vk)?;
 
     // 8. Validate L1→L2 Message Range using the rolling hash
-    let prev_l1_height = state.verified_checkpoint.new_l1().height();
-    let new_l1_height = checkpoint.batch_info().final_l1_block().height();
+    let prev_l1_height = state.verified_checkpoint.new_l1().height_u64();
+    let new_l1_height = checkpoint.batch_info().final_l1_block().height_u64();
     let expected_commitment = &public_params.l1_to_l2_msgs_range_commitment_hash;
     messages::validate_l1_to_l2_messages(
         prev_l1_height,
