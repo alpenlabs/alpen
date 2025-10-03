@@ -1,8 +1,6 @@
 use std::{
     fmt::{self, Debug, Display},
     io::{self, Read, Write},
-    iter::Sum,
-    ops::Add,
     str,
 };
 
@@ -305,22 +303,35 @@ impl BitcoinAmount {
         }
     }
 
+    /// Checked addition. Returns [`None`] if overflow occurred.
+    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+        self.0.checked_add(rhs.0).map(Self::from_sat)
+    }
+
+    /// Checked subtraction. Returns [`None`] if overflow occurred.
+    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
+        self.0.checked_sub(rhs.0).map(Self::from_sat)
+    }
+
+    /// Checked multiplication. Returns [`None`] if overflow occurred.
+    pub fn checked_mul(self, rhs: u64) -> Option<Self> {
+        self.0.checked_mul(rhs).map(Self::from_sat)
+    }
+
+    /// Checked division. Returns [`None`] if `rhs == 0`.
+    pub fn checked_div(self, rhs: u64) -> Option<Self> {
+        self.0.checked_div(rhs).map(Self::from_sat)
+    }
+
+    /// Saturating subtraction. Computes `self - rhs`, returning [`Self::ZERO`] if overflow
+    /// occurred.
     pub fn saturating_sub(self, rhs: Self) -> Self {
         Self::from_sat(self.to_sat().saturating_sub(rhs.to_sat()))
     }
-}
 
-impl Add for BitcoinAmount {
-    type Output = BitcoinAmount;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self::from_sat(self.to_sat() + rhs.to_sat())
-    }
-}
-
-impl Sum for BitcoinAmount {
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        Self::from_sat(iter.map(|amt| amt.to_sat()).sum())
+    /// Saturating addition. Computes `self + rhs`, saturating at the numeric bounds.
+    pub fn saturating_add(self, rhs: Self) -> Self {
+        Self::from_sat(self.to_sat().saturating_add(rhs.to_sat()))
     }
 }
 
