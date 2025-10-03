@@ -54,12 +54,12 @@ impl<W> AsmWorkerBuilder<W> {
         self
     }
 
-    /// Launch the chain worker service and return a handle to it.
+    /// Launch the ASM worker service and return a handle to it.
     ///
     /// This method validates all required dependencies, creates the service state,
     /// uses [`ServiceBuilder`] to set up the service infrastructure, and returns
     /// a handle for interacting with the worker.
-    pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<AsmWorkerHandle<W>>
+    pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<AsmWorkerHandle>
     where
         W: WorkerContext + Send + Sync + 'static,
     {
@@ -84,7 +84,7 @@ impl<W> AsmWorkerBuilder<W> {
         let command_handle = service_builder.create_command_handle(64);
 
         // Launch the service using the sync worker.
-        let service_monitor: strata_service::ServiceMonitor<AsmWorkerService<W>> = service_builder
+        let service_monitor = service_builder
             .launch_sync("asm_worker", executor)
             .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 

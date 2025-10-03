@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_consensus_logic::{csm::message::ForkChoiceMessage, sync_manager::SyncManager};
+use strata_consensus_logic::{message::ForkChoiceMessage, sync_manager::SyncManager};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_storage::L2BlockManager;
 use tokio::sync::{mpsc, oneshot};
