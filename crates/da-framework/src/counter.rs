@@ -168,7 +168,11 @@ impl<S: CounterScheme> DaWrite for DaCounter<S> {
         !self.is_changed()
     }
 
-    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), crate::DaError> {
+    fn apply(
+        &self,
+        target: &mut Self::Target,
+        _context: &Self::Context,
+    ) -> Result<(), crate::DaError> {
         if let Self::Changed(v) = self {
             S::update(target, v);
         }
