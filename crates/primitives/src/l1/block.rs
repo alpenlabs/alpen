@@ -73,14 +73,15 @@ impl From<L1BlockId> for BlockHash {
 /// backwards compatibility with existing data (stored as u64).
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Arbitrary)]
 pub struct L1BlockCommitment {
-    #[cfg_attr(target_endian = "little", arbitrary(with = arbitrary_height))]
+    #[arbitrary(with = arbitrary_height)]
     height: absolute::Height,
     blkid: L1BlockId,
 }
 
 // Custom Arbitrary implementation for Height
 fn arbitrary_height(u: &mut Unstructured<'_>) -> ArbitraryResult<absolute::Height> {
-    let h = u32::arbitrary(u)?;
+    // Heights must be less than 500_000_000 (LOCK_TIME_THRESHOLD)
+    let h = u32::arbitrary(u)? % 500_000_000;
     absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)
 }
 
@@ -135,9 +136,10 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
             type Value = L1BlockCommitment;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("struct L1BlockCommitment")
+                formatter.write_str("struct L1BlockCommitment or tuple (u64, L1BlockId)")
             }
 
+            // Support struct format (JSON, human-readable formats)
             fn visit_map<V>(self, mut map: V) -> Result<L1BlockCommitment, V::Error>
             where
                 V: de::MapAccess<'de>,
@@ -168,13 +170,35 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
 
                 Ok(L1BlockCommitment { height, blkid })
             }
+
+            // Support tuple format (bincode, compact binary formats)
+            fn visit_seq<A>(self, mut seq: A) -> Result<L1BlockCommitment, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let height_u64: u64 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let blkid: L1BlockId = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+
+                let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
+                    de::Error::custom(format!("invalid block height {}: {}", height_u64, e))
+                })?;
+
+                Ok(L1BlockCommitment { height, blkid })
+            }
         }
 
-        deserializer.deserialize_struct(
-            "L1BlockCommitment",
-            &["height", "blkid"],
-            L1BlockCommitmentVisitor,
-        )
+        // For human-readable formats (JSON), use deserialize_any to support both struct and tuple
+        // For binary formats (bincode), use deserialize_tuple for backward compatibility
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_any(L1BlockCommitmentVisitor)
+        } else {
+            // Bincode doesn't support deserialize_any, so we use deserialize_tuple
+            deserializer.deserialize_tuple(2, L1BlockCommitmentVisitor)
+        }
     }
 }
 
