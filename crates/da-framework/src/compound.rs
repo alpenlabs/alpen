@@ -119,6 +119,22 @@ macro_rules! make_compound_traits {
             )*
         }
     ) => {
+        $crate::make_compound_traits! {
+            $tyname < () > $maskty => $target {
+                $(
+                    $fname : $daty $fty ,
+                )*
+            }
+        }
+    };
+
+    (
+        $tyname:ident < $ctxty:ty > $maskty:ident => $target:ty {
+            $(
+                $fname:ident : $daty:ident $fty:ty ,
+            )*
+        }
+    ) => {
         impl $crate::Codec for $tyname {
             fn decode(dec: &mut impl $crate::Decoder) -> $crate::CodecResult<Self> {
                 let mask = <$maskty>::decode(dec)?;
@@ -130,6 +146,8 @@ macro_rules! make_compound_traits {
             }
 
             fn encode(&self, enc: &mut impl $crate::Encoder) -> $crate::CodecResult<()> {
+                use $crate::CompoundMember;
+
                 let mut bitw = $crate::compound::BitWriter::<$maskty>::new();
 
                 $(bitw.prepare_member(&self.$fname);)*
@@ -151,21 +169,29 @@ macro_rules! make_compound_traits {
         impl $crate::DaWrite for $tyname {
             type Target = $target;
 
+            type Context = $ctxty;
+
             fn is_default(&self) -> bool {
                 let mut v = true;
 
                 // Kinda weird way to && all these different values.
                 $(
-                    v &= self.$fname.is_default();
+                    v &= $crate::DaWrite::is_default(&self.$fname);
                 )*
 
                 v
             }
 
-            fn apply(&self, target: &mut Self::Target) {
+            fn poll_context(&self, target: &Self::Target, context: &Self::Context) {
+                $(
+                    $crate::DaWrite::poll_context(&self.$fname, &target.$fname, context);
+                )*
+            }
+
+            fn apply(&self, target: &mut Self::Target, context: &Self::Context) {
                 // Depends on all the members being accessible.
                 $(
-                    self.$fname.apply(&mut target.$fname);
+                    $crate::DaWrite::apply(&self.$fname, &mut target.$fname, context);
                 )*
             }
         }
@@ -221,7 +247,7 @@ impl<T: Codec + Clone> CompoundMember for DaRegister<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DaRegister, DaWrite, encode_to_vec};
+    use crate::{ContextlessDaWrite, DaRegister, encode_to_vec};
 
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
     pub struct Point {

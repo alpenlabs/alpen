@@ -162,11 +162,13 @@ impl<S: CounterScheme> DaCounter<S> {
 impl<S: CounterScheme> DaWrite for DaCounter<S> {
     type Target = S::Base;
 
+    type Context = ();
+
     fn is_default(&self) -> bool {
         !self.is_changed()
     }
 
-    fn apply(&self, target: &mut Self::Target) {
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) {
         if let Self::Changed(v) = self {
             S::update(target, v);
         }
@@ -257,7 +259,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{CtrU64ByI16, DaCounter};
-    use crate::DaWrite;
+    use crate::ContextlessDaWrite;
 
     #[test]
     fn test_counter_simple() {

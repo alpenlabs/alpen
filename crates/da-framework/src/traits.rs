@@ -7,13 +7,36 @@ pub trait DaWrite: Default {
     /// The target type we are applying the write to.
     type Target;
 
+    /// Context type we can provide additional inputs to.
+    ///
+    /// Default is nothing.
+    type Context;
+
     /// Returns if this write is the default operation, like a no-op.
     fn is_default(&self) -> bool;
 
+    /// Polls the context impl with the queries that would be made if we were
+    /// really applying the DA, but without making any changes.
+    fn poll_context(&self, _target: &Self::Target, _context: &Self::Context) {
+        // do nothing by default
+    }
+
     /// Applies the write to the target type.
-    fn apply(&self, target: &mut Self::Target);
+    fn apply(&self, target: &mut Self::Target, context: &Self::Context);
 }
 
+/// Extension trait for when a [`DaWrite`] uses an empty context.
+pub trait ContextlessDaWrite: DaWrite<Context = ()> {
+    fn apply(&self, target: &mut <Self as DaWrite>::Target);
+}
+
+impl<W: DaWrite<Context = ()>> ContextlessDaWrite for W {
+    fn apply(&self, target: &mut <Self as DaWrite>::Target) {
+        <Self as DaWrite>::apply(self, target, &())
+    }
+}
+
+/// Abstract DA write builder.
 pub trait DaBuilder<T> {
     /// Write type that will be generated when the builder is finalized.
     type Write;

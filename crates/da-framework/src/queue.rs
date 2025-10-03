@@ -19,7 +19,7 @@ pub type HeadTy = u16;
 const HEAD_WORD_INCR_MASK: u16 = 0x7fff;
 
 /// Bits we shift the tail flag bit by.
-const TAIL_BIT_SHIFT: u16 = IncrTy::MAX - 1;
+const TAIL_BIT_SHIFT: u32 = IncrTy::BITS - 1;
 
 /// Provides the interface for a Queue DA write to update a type.
 pub trait DaQueueTarget {
@@ -70,11 +70,13 @@ impl<Q: DaQueueTarget> Default for DaQueue<Q> {
 impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
     type Target = Q;
 
+    type Context = ();
+
     fn is_default(&self) -> bool {
         self.tail.is_empty() && self.incr_front == 0
     }
 
-    fn apply(&self, target: &mut Self::Target) {
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) {
         target.insert_entries(&self.tail);
         if self.incr_front > 0 {
             target.increment_front(self.incr_front);

@@ -1,7 +1,7 @@
 mod codec;
 pub use codec::{
-    decode_vec, encode_to_vec, Codec, CodecError, CodecResult, Decoder, Encoder, LargeVec,
-    MediumVec, SmallVec,
+    Codec, CodecError, CodecResult, Decoder, Encoder, LargeVec, MediumVec, SmallVec, decode_vec,
+    encode_to_vec,
 };
 
 mod compound;
@@ -17,7 +17,7 @@ mod register;
 pub use register::DaRegister;
 
 mod traits;
-pub use traits::{DaBuilder, DaWrite};
+pub use traits::{ContextlessDaWrite, DaBuilder, DaWrite};
 
 mod queue;
 pub use queue::{DaQueue, DaQueueTarget};
