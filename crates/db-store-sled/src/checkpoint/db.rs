@@ -194,7 +194,7 @@ impl CheckpointDatabase for CheckpointDBSled {
         Ok(deleted_epochs)
     }
 
-    fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
+    fn get_next_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
         let mut iter = self.pending_proof_tree.iter();
         Ok(iter.next().transpose()?.map(first))
     }

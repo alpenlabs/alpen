@@ -601,10 +601,10 @@ impl StrataApiServer for StrataRpcImpl {
         }
     }
 
-    async fn get_latest_unproven_checkpoint_index(&self) -> RpcResult<Option<u64>> {
+    async fn get_next_unproven_checkpoint_index(&self) -> RpcResult<Option<u64>> {
         let res = self
             .checkpoint_handle
-            .get_latest_unproven_checkpoint_idx()
+            .get_next_unproven_checkpoint_idx()
             .await
             .map_err(|e| Error::Other(e.to_string()))?;
 

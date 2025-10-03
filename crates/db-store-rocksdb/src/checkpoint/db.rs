@@ -209,7 +209,7 @@ impl CheckpointDatabase for RBCheckpointDB {
         Ok(deleted_epochs)
     }
 
-    fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
+    fn get_next_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
         use strata_db::types::CheckpointProvingStatus;
 
         // Use read transaction for consistency

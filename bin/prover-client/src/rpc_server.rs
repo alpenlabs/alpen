@@ -131,19 +131,19 @@ impl StrataProverClientApiServer for ProverClientRpc {
     }
 
     async fn prove_latest_checkpoint(&self) -> RpcResult<Vec<ProofKey>> {
-        let latest_unproven_idx = self
+        let next_unproven_idx = self
             .operator
             .checkpoint_operator()
             .cl_client()
-            .get_latest_unproven_checkpoint_index()
+            .get_next_unproven_checkpoint_index()
             .await
             .map_err(to_jsonrpsee_error(
-                "failed to fetch latest unproven checkpoint idx",
+                "failed to fetch next unproven checkpoint idx",
             ))?;
 
-        let checkpoint_idx = match latest_unproven_idx {
+        let checkpoint_idx = match next_unproven_idx {
             Some(idx) => {
-                info!(unproven_checkpoint = %idx, "proving latest unproven checkpoint");
+                info!(unproven_checkpoint = %idx, "proving next unproven checkpoint");
                 idx
             }
             None => {
@@ -158,7 +158,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
             .await
             .inspect_err(|e| tracing::error!(%e, "prover client Error"))
             .map_err(to_jsonrpsee_error(
-                "failed to create task for latest unproven checkpoint",
+                "failed to create task for next unproven checkpoint",
             ))
     }
 

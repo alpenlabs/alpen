@@ -89,12 +89,11 @@ impl CheckpointHandle {
         self.db_manager.get_last_checkpoint_blocking()
     }
 
-    pub async fn get_latest_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
-        self.db_manager.get_latest_unproven_checkpoint_idx().await
+    pub async fn get_next_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>> {
+        self.db_manager.get_next_unproven_checkpoint_idx().await
     }
 
-    pub fn get_latest_unproven_checkpoint_idx_blocking(&self) -> DbResult<Option<u64>> {
-        self.db_manager
-            .get_latest_unproven_checkpoint_idx_blocking()
+    pub fn get_next_unproven_checkpoint_idx_blocking(&self) -> DbResult<Option<u64>> {
+        self.db_manager.get_next_unproven_checkpoint_idx_blocking()
     }
 }

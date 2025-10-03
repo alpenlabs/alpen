@@ -6,11 +6,11 @@ use crate::checkpoint_runner::errors::CheckpointError;
 
 /// Fetches the next (lowest) unproven checkpoint index from the sequencer client.
 /// This keeps proofs contiguous and prevents gaps in the proven sequence.
-pub(crate) async fn fetch_latest_unproven_checkpoint_index(
+pub(crate) async fn fetch_next_unproven_checkpoint_index(
     cl_client: &HttpClient,
 ) -> CheckpointResult<Option<u64>> {
     cl_client
-        .get_latest_unproven_checkpoint_index()
+        .get_next_unproven_checkpoint_index()
         .await
         .map_err(|e| CheckpointError::FetchError(e.to_string()))
 }

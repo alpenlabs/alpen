@@ -365,13 +365,13 @@ pub fn test_del_checkpoints_empty_database(db: &impl CheckpointDatabase) {
     );
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_empty_db(db: &impl CheckpointDatabase) {
+pub fn test_get_next_unproven_checkpoint_idx_empty_db(db: &impl CheckpointDatabase) {
     // Test: Empty database should return None
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, None);
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_all_pending(db: &impl CheckpointDatabase) {
+pub fn test_get_next_unproven_checkpoint_idx_all_pending(db: &impl CheckpointDatabase) {
     // Test: All checkpoints have PendingProof - should return first one (sequential processing)
     let mut ag = ArbitraryGenerator::new();
 
@@ -382,11 +382,11 @@ pub fn test_get_latest_unproven_checkpoint_idx_all_pending(db: &impl CheckpointD
         db.put_checkpoint(i, checkpoint).unwrap();
     }
 
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, Some(0)); // Start from beginning when no proven checkpoints
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_all_ready(db: &impl CheckpointDatabase) {
+pub fn test_get_next_unproven_checkpoint_idx_all_ready(db: &impl CheckpointDatabase) {
     // Test: All checkpoints have ProofReady - should return None
     let mut ag = ArbitraryGenerator::new();
 
@@ -397,11 +397,11 @@ pub fn test_get_latest_unproven_checkpoint_idx_all_ready(db: &impl CheckpointDat
         db.put_checkpoint(i, checkpoint).unwrap();
     }
 
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, None);
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_mixed_sequential(db: &impl CheckpointDatabase) {
+pub fn test_get_next_unproven_checkpoint_idx_mixed_sequential(db: &impl CheckpointDatabase) {
     // Test: Sequential processing - some ready, some pending
     let mut ag = ArbitraryGenerator::new();
 
@@ -417,11 +417,11 @@ pub fn test_get_latest_unproven_checkpoint_idx_mixed_sequential(db: &impl Checkp
     }
 
     // Should return 3 (first unproven after last proven)
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, Some(3));
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_no_proven_yet(db: &impl CheckpointDatabase) {
+pub fn test_get_next_unproven_checkpoint_idx_no_proven_yet(db: &impl CheckpointDatabase) {
     // Test: No ProofReady checkpoints, should start from 0
     let mut ag = ArbitraryGenerator::new();
 
@@ -433,11 +433,11 @@ pub fn test_get_latest_unproven_checkpoint_idx_no_proven_yet(db: &impl Checkpoin
     }
 
     // Should return 0 (start from beginning when no proven checkpoints)
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, Some(0));
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_latest_proven_no_next(db: &impl CheckpointDatabase) {
+pub fn test_get_next_unproven_checkpoint_idx_latest_proven_no_next(db: &impl CheckpointDatabase) {
     // Test: Latest checkpoint is ProofReady, no next checkpoint exists
     let mut ag = ArbitraryGenerator::new();
 
@@ -449,11 +449,11 @@ pub fn test_get_latest_unproven_checkpoint_idx_latest_proven_no_next(db: &impl C
     }
 
     // Should return None (no next checkpoint to prove)
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, None);
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_next_after_proven_is_ready(
+pub fn test_get_next_unproven_checkpoint_idx_next_after_proven_is_ready(
     db: &impl CheckpointDatabase,
 ) {
     // Test: Next checkpoint after latest proven is also ProofReady
@@ -473,11 +473,11 @@ pub fn test_get_latest_unproven_checkpoint_idx_next_after_proven_is_ready(
     }
 
     // Latest proven is 1, next would be 2, and 2 is PendingProof, so return Some(2)
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, Some(2));
 }
 
-pub fn test_get_latest_unproven_checkpoint_idx_rebuild_pending_index(db: &impl CheckpointDatabase) {
+pub fn test_get_next_unproven_checkpoint_idx_rebuild_pending_index(db: &impl CheckpointDatabase) {
     // Seed pending checkpoints and ensure the query still sees them after a fresh handle build.
     let mut ag = ArbitraryGenerator::new();
 
@@ -489,7 +489,7 @@ pub fn test_get_latest_unproven_checkpoint_idx_rebuild_pending_index(db: &impl C
 
     // Simulate reopening the database by invoking the query immediately.
     // The sled implementation must rebuild the pending index or fallback to detect entries.
-    let result = db.get_latest_unproven_checkpoint_idx().unwrap();
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
     assert_eq!(result, Some(0));
 }
 
@@ -580,53 +580,53 @@ macro_rules! checkpoint_db_tests {
             $crate::checkpoint_tests::test_del_checkpoints_empty_database(&db);
         }
 
-        // Tests for get_latest_unproven_checkpoint_idx method
+        // Tests for get_next_unproven_checkpoint_idx method
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_empty_db() {
+        fn test_get_next_unproven_checkpoint_idx_empty_db() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_empty_db(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_empty_db(&db);
         }
 
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_all_pending() {
+        fn test_get_next_unproven_checkpoint_idx_all_pending() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_all_pending(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_all_pending(&db);
         }
 
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_all_ready() {
+        fn test_get_next_unproven_checkpoint_idx_all_ready() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_all_ready(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_all_ready(&db);
         }
 
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_no_proven_yet() {
+        fn test_get_next_unproven_checkpoint_idx_no_proven_yet() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_no_proven_yet(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_no_proven_yet(&db);
         }
 
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_mixed_sequential() {
+        fn test_get_next_unproven_checkpoint_idx_mixed_sequential() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_mixed_sequential(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_mixed_sequential(&db);
         }
 
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_latest_proven_no_next() {
+        fn test_get_next_unproven_checkpoint_idx_latest_proven_no_next() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_latest_proven_no_next(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_latest_proven_no_next(&db);
         }
 
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_next_after_proven_is_ready() {
+        fn test_get_next_unproven_checkpoint_idx_next_after_proven_is_ready() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_next_after_proven_is_ready(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_next_after_proven_is_ready(&db);
         }
 
         #[test]
-        fn test_get_latest_unproven_checkpoint_idx_rebuild_pending_index() {
+        fn test_get_next_unproven_checkpoint_idx_rebuild_pending_index() {
             let db = $setup_expr;
-            $crate::checkpoint_tests::test_get_latest_unproven_checkpoint_idx_rebuild_pending_index(&db);
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_rebuild_pending_index(&db);
         }
     };
 }

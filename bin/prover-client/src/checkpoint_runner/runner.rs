@@ -8,7 +8,7 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::{
-    checkpoint_runner::fetch::fetch_latest_unproven_checkpoint_index,
+    checkpoint_runner::fetch::fetch_next_unproven_checkpoint_index,
     operators::{checkpoint::CheckpointOperator, ProvingOp},
     task_tracker::TaskTracker,
 };
@@ -46,7 +46,7 @@ async fn process_checkpoint(
     db: &Arc<ProofDBSled>,
     runner_state: &mut CheckpointRunnerState,
 ) -> anyhow::Result<()> {
-    let res = fetch_latest_unproven_checkpoint_index(operator.cl_client()).await;
+    let res = fetch_next_unproven_checkpoint_index(operator.cl_client()).await;
     let fetched_ckpt = match res {
         Ok(Some(idx)) => idx,
         Ok(None) => {
@@ -54,7 +54,7 @@ async fn process_checkpoint(
             return Ok(());
         }
         Err(e) => {
-            warn!(err = %e, "unable to fetch latest unproven checkpoint index");
+            warn!(err = %e, "unable to fetch next unproven checkpoint index");
             return Ok(());
         }
     };
