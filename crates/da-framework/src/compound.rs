@@ -109,7 +109,7 @@ impl<T: ShiftBitmap> BitWriter<T> {
     }
 }
 
-/// Macro to generate encode/decode and apply impls for a compount DA type.
+/// Macro to generate encode/decode and apply impls for a compound DA type.
 #[macro_export]
 macro_rules! make_compound_traits {
     (
