@@ -195,7 +195,7 @@ impl<S: CounterScheme> CompoundMember for DaCounter<S> {
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
         if <Self as CompoundMember>::is_default(self) {
-            return Err(CodecError::WriteUnnecessaryDefault);
+            return Err(CodecError::MalformedField("tried to encode default counter"));
         }
 
         if let DaCounter::Changed(d) = &self {

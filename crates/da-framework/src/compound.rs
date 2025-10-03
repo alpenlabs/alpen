@@ -136,7 +136,7 @@ macro_rules! make_compound_traits {
         }
     ) => {
         impl $crate::Codec for $tyname {
-            fn decode(dec: &mut impl $crate::Decoder) -> $crate::CodecResult<Self> {
+            fn decode(dec: &mut impl $crate::Decoder) -> Result<Self, $crate::CodecError> {
                 let mask = <$maskty>::decode(dec)?;
                 let mut bitr = $crate::compound::BitReader::from_mask(mask);
 
@@ -145,7 +145,7 @@ macro_rules! make_compound_traits {
                 Ok(Self { $($fname,)* })
             }
 
-            fn encode(&self, enc: &mut impl $crate::Encoder) -> $crate::CodecResult<()> {
+            fn encode(&self, enc: &mut impl $crate::Encoder) -> Result<(), $crate::CodecError> {
                 use $crate::CompoundMember;
 
                 let mut bitw = $crate::compound::BitWriter::<$maskty>::new();

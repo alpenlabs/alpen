@@ -109,7 +109,7 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
         let cnt = <A::InsertCnt as Codec>::decode(dec)?;
 
         if cnt > A::MAX_INSERT {
-            return Err(CodecError::OversizeContainer);
+            return Err(CodecError::OverflowContainer);
         }
 
         let cnt: usize = cnt.into();

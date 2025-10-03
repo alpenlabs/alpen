@@ -62,7 +62,7 @@ impl<T: Codec> DaRegister<T> {
         if let Some(v) = &self.new_value {
             v.encode(enc)
         } else {
-            Err(CodecError::WriteUnnecessaryDefault)
+            Err(CodecError::MalformedField("tried to encode unset register"))
         }
     }
 
