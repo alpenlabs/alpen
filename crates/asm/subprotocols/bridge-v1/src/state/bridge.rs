@@ -192,8 +192,7 @@ impl BridgeV1State {
     ) -> Result<(), DepositValidationError> {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
-
-        let notary_operators = self.operators().current_multisig_indices();
+        let notary_operators = self.operators.current_multisig().clone();
         let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
         self.deposits.insert_deposit(entry)?;
 
@@ -255,7 +254,7 @@ impl BridgeV1State {
             deposit,
             withdrawal_cmd,
             exec_deadline,
-            &self.operators().current_multisig_indices(),
+            self.operators().current_multisig(),
             *l1_block.blkid(),
         )?;
 
@@ -294,7 +293,7 @@ impl BridgeV1State {
         self.assignments.reassign_expired_assignments(
             self.operator_fee,
             current_block_height,
-            &self.operators().current_multisig_indices(),
+            self.operators.current_multisig(),
             *l1_block_id,
         )
     }

@@ -14260,6 +14260,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
+ "bitvec",
  "borsh",
  "moho-types",
  "rand 0.8.5",
