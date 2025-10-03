@@ -14,11 +14,20 @@
 //! versions of these data structure we use on the wire are the "real" versions
 //! we want to think of them as being, but these traits are standins for those.
 //! Making up new names for these items would crate too much confusion.
+//!
+//! As for structure, this design is based around a "toplevel" state that is not
+//! ever actually directly accessed.  Below it, there are two parts:
+//!
+//! * A "global" state that is treated using the DA framework directly.
+//! * An "accounts" table, which are selectively loaded.
+//!
+//! These parts are committed to in the toplevel state, which is updated later
+//! when we finish a state transition.
 
 mod account;
+mod global_state;
 mod state_accessor;
-mod toplevel;
 
-pub use account::{AccountTypeState, IAccountState, ISnarkAccountState};
+pub use account::{AccountTypeState, IAccountState, ISnarkAccountState, ISnarkAccountStateExt};
+pub use global_state::IGlobalState;
 pub use state_accessor::StateAccessor;
-pub use toplevel::IToplevelState;

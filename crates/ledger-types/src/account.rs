@@ -1,7 +1,9 @@
 use strata_acct_types::{
-    AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, RawAccountTypeId,
+    AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64, RawAccountTypeId,
 };
 use strata_snark_acct_types::MessageEntry;
+
+type Seqno = u64;
 
 /// Abstract account state.
 pub trait IAccountState: Sized {
@@ -15,6 +17,9 @@ pub trait IAccountState: Sized {
     fn balance(&self) -> BitcoinAmount;
 
     /// Sets the account's balance.
+    ///
+    /// Care with this must be used when calling this to ensure that funds are
+    /// moved around safely without creating or destroying value.
     fn set_balance(&self, amt: BitcoinAmount);
 
     /// Gets the account raw type ID.
@@ -31,6 +36,7 @@ pub trait IAccountState: Sized {
 }
 
 /// Account type state enum.
+#[derive(Clone, Debug)]
 pub enum AccountTypeState<T: IAccountState> {
     /// Empty accounts with no state.
     Empty,
@@ -41,25 +47,48 @@ pub enum AccountTypeState<T: IAccountState> {
 
 /// Abstract snark account state.
 pub trait ISnarkAccountState: Sized {
-    // TODO accumulator accessors
-
-    /// Gets the next inbox msg index.
-    fn get_next_inbox_msg_idx(&self) -> u64;
+    // Proof state accessors
 
     /// Gets the update seqno.
-    // TODO convert to Seqno
-    fn seqno(&self) -> u64;
+    fn seqno(&self) -> Seqno;
 
     /// Gets the inner state root hash.
-    fn inner_state_root(&self) -> [u8; 32];
+    fn inner_state_root(&self) -> Hash;
 
-    /// Inserts a message into the inbox.  Performs no other operations.
+    /// Sets the inner state root unconditionally.
+    fn set_proof_state_directly(&mut self, state: Hash, seqno: Seqno);
+
+    /// Sets an account's inner state, but also taking the update extra data arg
+    /// (which is not used directly, but is useful for DA reasons).
+    ///
+    /// This should also ensure that the seqno always increases.
+    fn update_inner_state(
+        &mut self,
+        state: Hash,
+        seqno: Seqno,
+        extra_data: &[u8],
+    ) -> AcctResult<()>;
+
+    // Inbox accessors
+
+    /// Gets current the inbox MMR state, which we can use to check proofs
+    /// against the state.
+    fn inbox_mmr(&self) -> &Mmr64;
+
+    /// Inserts message data into the inbox.  Performs no other operations.
+    ///
+    /// This is exposed like this so that we can expose the message entry in DA.
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()>;
+}
 
-    /// Increments the sequence number by some amount.
-    // TODO convert to Seqno
-    fn increment_seqno(&mut self, amt: u64) -> AcctResult<u64>;
+/// Extension trait for abstract snark account state.
+pub trait ISnarkAccountStateExt: ISnarkAccountState {
+    /// Get the index of the next message that would be inserted into the MMR.
+    fn get_next_inbox_msg_idx(&self) -> u64;
+}
 
-    /// Sets the inner state root.
-    fn set_inner_state_root(&mut self, state: [u8; 32]);
+impl<A: ISnarkAccountState> ISnarkAccountStateExt for A {
+    fn get_next_inbox_msg_idx(&self) -> u64 {
+        self.inbox_mmr().num_entries()
+    }
 }
