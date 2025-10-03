@@ -17,7 +17,11 @@ pub trait DaWrite: Default {
 
     /// Polls the context impl with the queries that would be made if we were
     /// really applying the DA, but without making any changes.
-    fn poll_context(&self, _target: &Self::Target, _context: &Self::Context) -> Result<(), DaError> {
+    fn poll_context(
+        &self,
+        _target: &Self::Target,
+        _context: &Self::Context,
+    ) -> Result<(), DaError> {
         // do nothing by default
         Ok(())
     }
