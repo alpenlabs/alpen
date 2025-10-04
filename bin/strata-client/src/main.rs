@@ -19,10 +19,11 @@ use bitcoind_async_client::{traits::Reader, Client};
 use errors::InitError;
 use jsonrpsee::Methods;
 use rpc_client::sync_client;
+use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_btcio::{
     broadcaster::{spawn_broadcaster_task, L1BroadcastHandle},
     reader::query::bitcoin_data_reader_task,
-    writer::start_envelope_task,
+    writer::{start_envelope_task, EnvelopeTagEncoder},
 };
 use strata_common::{
     logging,
@@ -39,7 +40,11 @@ use strata_db::{
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
-use strata_primitives::params::{Params, ProofPublishMode};
+use strata_l1_txfmt::MagicBytes;
+use strata_primitives::{
+    l1::payload::L1PayloadType,
+    params::{Params, ProofPublishMode},
+};
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,
 };
@@ -401,6 +406,26 @@ fn start_sequencer_tasks(
     ))?;
 
     let btcio_config = Arc::new(config.btcio.clone());
+    let magic_bytes: MagicBytes = params.rollup().magic_bytes;
+    // NOTE: Only checkpoint envelopes are supported today. When new SPS-50 tagged transactions
+    // are introduced, extend this encoder so btcio stays agnostic of protocol-specific details.
+
+    let tag_encoder: Arc<EnvelopeTagEncoder> =
+        Arc::new(move |payload| -> anyhow::Result<Vec<u8>> {
+            match payload.payload_type() {
+                L1PayloadType::Checkpoint => {
+                    let mut tag = Vec::with_capacity(6);
+                    tag.extend_from_slice(&magic_bytes);
+                    tag.push(CHECKPOINT_V0_SUBPROTOCOL_ID);
+                    tag.push(OL_STF_CHECKPOINT_TX_TYPE);
+                    Ok(tag)
+                }
+                other => Err(anyhow!(
+                    "unsupported SPS-50 tag for payload type {:?}",
+                    other
+                )),
+            }
+        });
 
     // Start envelope tasks
     let envelope_handle = start_envelope_task(
@@ -413,6 +438,7 @@ fn start_sequencer_tasks(
         status_channel.clone(),
         pool.clone(),
         broadcast_handle.clone(),
+        tag_encoder,
     )?;
 
     let template_manager_handle = start_template_manager_task(&ctx, executor);
