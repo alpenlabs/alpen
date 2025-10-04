@@ -18,7 +18,7 @@ flake.lock @alpenlabs/ci
 # Note that the globbing here is to future-proof against new crates
 /crates/ @alpenlabs/rust # fallback catch all
 /crates/acct-types/ @alpenlabs/chain-protocol @alpenlabs/chain-core
-/crates/asm*/ @alpenlabs/@chain-protocol
+/crates/asm*/ @alpenlabs/chain-protocol 
 /crates/btc*/ @alpenlabs/chain-protocol
 /crates/chain*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
 /crates/common/ @alpenlabs/rust
