@@ -126,8 +126,6 @@ pub const KECCAK_EMPTY: B256 =
 /// - Consider switching the return type to `B256` for consistency with other parts of the codebase.
 #[inline]
 pub fn keccak(data: impl AsRef<[u8]>) -> [u8; 32] {
-    // TODO: Remove this benchmarking code once performance testing is complete.
-    // std::hint::black_box(sha2::Sha256::digest(&data));
     *revm_primitives::alloy_primitives::utils::keccak256(data)
 }
 
