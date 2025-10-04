@@ -3,7 +3,12 @@ import time
 import flexitest
 
 from envs.testenv import BasicEnvConfig, StrataTestBase
-from utils import ProverClientSettings, RollupParamsSettings, wait_until
+from utils import (
+    ProverClientSettings,
+    RollupParamsSettings,
+    wait_until,
+    wait_until_with_value,
+)
 
 
 @flexitest.register
@@ -65,7 +70,18 @@ class ProverClientRestartTest(StrataTestBase):
         self.prove_latest_checkpoint(prover_client_rpc)
 
     def prove_latest_checkpoint(self, prover_client_rpc):
-        task_ids = prover_client_rpc.dev_strata_proveLatestCheckPoint()
+        def fetch_tasks():
+            ids = prover_client_rpc.dev_strata_proveLatestCheckPoint()
+            self.debug(f"polled prover tasks: {ids}")
+            return ids
+
+        task_ids = wait_until_with_value(
+            fetch_tasks,
+            lambda ids: bool(ids),
+            error_with="Timed out waiting for prover tasks",
+            timeout=60,
+            step=1.0,
+        )
         prover_waiter = self.create_prover_waiter(prover_client_rpc, timeout=30)
         self.debug(f"got task ids: {task_ids}")
         task_id = task_ids[0]
