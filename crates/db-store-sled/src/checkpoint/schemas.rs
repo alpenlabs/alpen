@@ -12,3 +12,8 @@ define_table_with_integer_key!(
     /// Table mapping epoch indexes to the list of summaries in that index.
     (EpochSummarySchema) u64 => Vec<EpochSummary>
 );
+
+define_table_with_integer_key!(
+    /// Tracks checkpoints that still require proof generation.
+    (PendingProofIndexSchema) u64 => ()
+);

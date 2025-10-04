@@ -3,6 +3,7 @@ import flexitest
 from envs import net_settings, testenv
 from mixins.dbtool_mixin import FullnodeDbtoolMixin
 from utils.dbtool import send_tx
+from utils.utils import wait_until_with_value
 
 
 @flexitest.register
@@ -171,6 +172,30 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         self.seq_signer.start()
         self.follower_1_reth.start()
         self.follower_1_node.start()
+
+        def fetch_latest_checkpoint():
+            try:
+                return self.seqrpc.strata_getLatestCheckpointIndex()
+            except Exception as exc:
+                self.warning(f"failed to read latest checkpoint index: {exc}")
+                return None
+
+        current_checkpoint = wait_until_with_value(
+            fetch_latest_checkpoint,
+            lambda value: value is not None,
+            timeout=60,
+            step=1.0,
+            error_with="Timeout fetching latest checkpoint index after restart",
+        )
+        self.info(f"Checkpoint index before wait: {current_checkpoint}")
+
+        seq_waiter.wait_until_latest_checkpoint_at(
+            checkpt_idx_before_revert + 1,
+            timeout=120,
+        )
+
+        updated_checkpoint = fetch_latest_checkpoint()
+        self.info(f"Checkpoint index after wait: {updated_checkpoint}")
 
         # Wait for block production to resume to sync
         seq_waiter.wait_until_chain_tip_exceeds(old_seq_ol_block_number + 1, timeout=120)
