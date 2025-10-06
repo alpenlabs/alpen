@@ -3,6 +3,7 @@ use strata_acct_types::{AccountId, AccountSerial, AcctResult};
 use crate::{
     account::{AccountTypeState, IAccountState},
     global_state::IGlobalState,
+    l1vs::IL1ViewState,
 };
 
 /// Opaque interface for manipulating the chainstate, for all of the parts
@@ -14,6 +15,9 @@ pub trait StateAccessor {
     /// Type representing the global chainstate.
     type GlobalState: IGlobalState;
 
+    /// Type representing L1 view state.
+    type L1ViewState: IL1ViewState;
+
     /// Type representing a ledger account's state.
     type AccountState: IAccountState;
 
@@ -22,6 +26,12 @@ pub trait StateAccessor {
 
     /// Gets a mut ref to the global state.
     fn globlal_mut(&mut self) -> &mut Self::GlobalState;
+
+    /// Gets a ref to the L1 view state.
+    fn l1_view(&self) -> &Self::L1ViewState;
+
+    /// Gets a mut ref to the L1 view state.
+    fn l1_view_mut(&mut self) -> &mut Self::L1ViewState;
 
     /// Checks if an account exists.
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;
@@ -37,11 +47,13 @@ pub trait StateAccessor {
 
     /// Overwrites an existing account entry's state, if it exists.
     ///
-    /// This refuses to create new accounts in order to avoid accidents.
+    /// This refuses to create new accounts in order to avoid accidents like
+    /// screwing up serials.
     fn update_account_state(&mut self, id: AccountId, state: Self::AccountState) -> AcctResult<()>;
 
     /// Creates a new account as some ID with some type state, if that ID
-    /// doesn't exist, returning the serial.
+    /// doesn't exist, assigning it a fresh serial.  Returns the freshly created
+    /// serial.
     fn create_new_account(
         &mut self,
         id: AccountId,
