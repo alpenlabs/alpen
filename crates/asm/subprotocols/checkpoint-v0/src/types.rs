@@ -58,7 +58,7 @@ impl CheckpointV0VerifierState {
     pub fn new(params: &CheckpointV0VerificationParams) -> Self {
         Self {
             last_checkpoint: None,
-            last_checkpoint_l1_height: params.genesis_l1_block.height(),
+            last_checkpoint_l1_height: params.genesis_l1_block.height_u64(),
             current_verified_epoch: 0,
             cred_rule: params.cred_rule.clone(),
             rollup_verifying_key: params.rollup_verifying_key.clone(),

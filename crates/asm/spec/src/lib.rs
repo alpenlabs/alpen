@@ -76,7 +76,7 @@ impl StrataAsmSpec {
             checkpoint_v0_params,
             bridge_v1_genesis: BridgeV1Config {
                 operators,
-                denomination: BitcoinAmount::from_sat(params.deposit_amount),
+                denomination: BitcoinAmount::from_sat(params.deposit_amount.to_sat()),
                 deadline_duration: params.dispatch_assignment_dur as u64,
                 // TODO(QQ): adjust
                 operator_fee: BitcoinAmount::ZERO,

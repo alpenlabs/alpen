@@ -48,14 +48,14 @@ where
         build_test_deposit_script(&deposit_config, idx2, dest_addr2.clone(), &tapnodehash);
 
     let tx1 = create_test_deposit_tx(
-        Amount::from_sat(deposit_config.deposit_amount),
+        Amount::from_sat(deposit_config.deposit_amount.to_sat()),
         &deposit_config.address.address().script_pubkey(),
         &deposit_script1,
         &keypair,
         &tapnodehash,
     );
     let tx2 = create_test_deposit_tx(
-        Amount::from_sat(deposit_config.deposit_amount),
+        Amount::from_sat(deposit_config.deposit_amount.to_sat()),
         &deposit_config.address.address().script_pubkey(),
         &deposit_script2,
         &keypair,
@@ -85,8 +85,7 @@ where
                 "test: deposit idx should match"
             );
             assert_eq!(
-                deposit_info.amt,
-                BitcoinAmount::from_sat(deposit_config.deposit_amount),
+                deposit_info.amt, deposit_config.deposit_amount,
                 "test: deposit amount should match for transaction {i}",
             );
         } else {
@@ -111,7 +110,7 @@ where
     let tapnode_hash = [0u8; 32];
     let deposit_config = filter_config.deposit_config.clone();
     let irrelevant_tx = create_test_deposit_tx(
-        Amount::from_sat(deposit_config.deposit_amount),
+        Amount::from_sat(deposit_config.deposit_amount.to_sat()),
         &test_taproot_addr().address().script_pubkey(),
         &ScriptBuf::new(),
         &keypair,
@@ -143,7 +142,9 @@ where
     let mut deposit_config = filter_config.deposit_config.clone();
 
     let extra_amt = 10_000;
-    deposit_config.deposit_amount += extra_amt;
+    deposit_config.deposit_amount = deposit_config
+        .deposit_amount
+        .saturating_add(BitcoinAmount::from_sat(extra_amt));
 
     let dest_addr = vec![2u8; 20]; // EVM address
     let dummy_block = [0u8; 32]; // Take-back block hash
@@ -156,7 +157,7 @@ where
     );
 
     let tx = create_test_deposit_tx(
-        Amount::from_sat(deposit_config.deposit_amount),
+        Amount::from_sat(deposit_config.deposit_amount.to_sat()),
         &deposit_config.address.address().script_pubkey(),
         &deposit_request_script,
         &key_pair,
@@ -209,7 +210,7 @@ where
         build_test_deposit_script(&deposit_config, idx, ee_addr.clone(), &tapnode_hash);
 
     let tx = create_test_deposit_tx(
-        Amount::from_sat(deposit_config.deposit_amount),
+        Amount::from_sat(deposit_config.deposit_amount.to_sat()),
         &deposit_config.address.address().script_pubkey(),
         &deposit_script,
         &keypair,
@@ -231,8 +232,7 @@ where
             assert_eq!(deposit_info.address, ee_addr, "EE address should match");
             assert_eq!(deposit_info.deposit_idx, idx, "Deposit idx should match");
             assert_eq!(
-                deposit_info.amt,
-                BitcoinAmount::from_sat(deposit_config.deposit_amount),
+                deposit_info.amt, deposit_config.deposit_amount,
                 "Deposit amount should match"
             );
         }

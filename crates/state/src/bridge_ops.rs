@@ -62,7 +62,9 @@ impl WithdrawalBatch {
     /// Gets the total value of the batch.  This must be less than the size of
     /// the utxo it's assigned to.
     pub fn get_total_value(&self) -> BitcoinAmount {
-        self.intents.iter().map(|wi| wi.amt).sum()
+        self.intents
+            .iter()
+            .fold(BitcoinAmount::ZERO, |acc, wi| acc.saturating_add(wi.amt))
     }
 
     pub fn intents(&self) -> &[WithdrawalIntent] {

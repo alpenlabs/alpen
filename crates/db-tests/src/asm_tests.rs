@@ -18,7 +18,8 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
     db.put_asm_state(L1BlockCommitment::default(), state.clone())
         .expect("test insert");
 
-    let another_block = L1BlockCommitment::new(1, L1BlockId::default());
+    let another_block = L1BlockCommitment::from_height_u64(1, L1BlockId::default())
+        .expect("height should be valid");
     db.put_asm_state(another_block, state.clone())
         .expect("test: insert");
 

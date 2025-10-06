@@ -49,7 +49,9 @@ pub(crate) fn construct_checkpoint_proof_public_parameters(
     let new_l1_hight = new_batch_info.final_l1_block().height();
     if new_l1_hight <= prev_l1_height {
         return Err(CoreError::InvalidL1BlockHeight(format!(
-            "new L1 height {new_l1_hight} must be greater than previous height {prev_l1_height}"
+            "new L1 height {} must be greater than previous height {}",
+            new_l1_hight.to_consensus_u32(),
+            prev_l1_height.to_consensus_u32()
         )));
     }
 
@@ -78,8 +80,8 @@ pub(crate) fn construct_checkpoint_proof_public_parameters(
     // the l1_commitment should be and etc.
     let l1_to_l2_msgs_range_commitment_hash = messages::compute_rolling_hash(
         vec![], // TODO: fetch actual L1 commitments for this range
-        prev_l1_height,
-        new_l1_hight,
+        prev_l1_height.to_consensus_u32() as u64,
+        new_l1_hight.to_consensus_u32() as u64,
     )?;
 
     Ok(CheckpointProofPublicParameters {
