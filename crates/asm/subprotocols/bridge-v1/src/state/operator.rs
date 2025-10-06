@@ -409,7 +409,7 @@ impl OperatorTable {
     ///
     /// - `Some(&OperatorEntry)` if the operator exists
     /// - `None` if no operator with the given index is found
-    pub fn get_operator(&self, idx: u32) -> Option<&OperatorEntry> {
+    pub fn get_operator(&self, idx: OperatorIdx) -> Option<&OperatorEntry> {
         self.operators
             .as_slice()
             .binary_search_by_key(&idx, |e| e.idx)
@@ -424,8 +424,9 @@ impl OperatorTable {
     ///
     /// # Returns
     ///
-    /// `true` if the operator is in the current multisig, `false` otherwise.
-    pub fn is_in_current_multisig(&self, idx: u32) -> bool {
+    /// `true` if the operator is in the current multisig, `false` otherwise (even if the index is
+    /// out-of-bounds).
+    pub fn is_in_current_multisig(&self, idx: OperatorIdx) -> bool {
         self.current_multisig.is_active(idx)
     }
 
@@ -433,10 +434,6 @@ impl OperatorTable {
     ///
     /// The bitmap tracks which operators are part of the current N/N multisig configuration.
     /// This is used for assignment creation and deposit processing.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the [`OperatorBitmap`] representing current multisig membership.
     pub fn current_multisig(&self) -> &OperatorBitmap {
         &self.current_multisig
     }

@@ -122,20 +122,13 @@ impl DepositEntry {
         &self.output
     }
 
-    /// Returns the historical set of operators that formed the N/N multisig.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the operator bitmap that contains the operators active for this deposit.
+    /// Returns the reference to the bitmap of historical set of operators that formed the N/N
+    /// multisig.
     pub fn notary_operators(&self) -> &OperatorBitmap {
         &self.notary_operators
     }
 
     /// Returns the indices of operators that formed the N/N multisig for this deposit.
-    ///
-    /// # Returns
-    ///
-    /// Vector containing [`OperatorIdx`] for operators that were active for this deposit.
     pub fn notary_operators_indices(&self) -> Vec<OperatorIdx> {
         self.notary_operators.to_indices()
     }
