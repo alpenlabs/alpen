@@ -11,14 +11,17 @@ pub struct DaRegister<T> {
 }
 
 impl<T> DaRegister<T> {
+    /// Constructs a new instance with a possible write.
     pub fn new(new_value: Option<T>) -> Self {
         Self { new_value }
     }
 
+    /// Constructs a new instance that sets some value.
     pub fn new_set(v: T) -> Self {
         Self::new(Some(v))
     }
 
+    /// Constructs a new instance that does not write.
     pub fn new_unset() -> Self {
         Self::new(None)
     }
@@ -28,6 +31,7 @@ impl<T> DaRegister<T> {
         self.new_value = Some(v);
     }
 
+    /// Gets the new value being written, if present.
     pub fn new_value(&self) -> Option<&T> {
         self.new_value.as_ref()
     }
@@ -112,10 +116,12 @@ pub struct DaRegisterBuilder<T> {
 }
 
 impl<T> DaRegisterBuilder<T> {
+    /// Gets the current value.
     pub fn value(&self) -> &T {
         &self.new
     }
 
+    /// Sets the value.
     pub fn set(&mut self, t: T) {
         self.new = t;
     }

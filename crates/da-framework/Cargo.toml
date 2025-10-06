@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
+strata-codec.workspace = true
+
 thiserror.workspace = true
+
+[dev-dependencies]
+strata-mmr.workspace = true
+sha2.workspace = true

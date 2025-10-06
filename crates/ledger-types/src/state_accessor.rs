@@ -25,7 +25,7 @@ pub trait StateAccessor {
     fn global(&self) -> &Self::GlobalState;
 
     /// Gets a mut ref to the global state.
-    fn globlal_mut(&mut self) -> &mut Self::GlobalState;
+    fn global_mut(&mut self) -> &mut Self::GlobalState;
 
     /// Gets a ref to the L1 view state.
     fn l1_view(&self) -> &Self::L1ViewState;

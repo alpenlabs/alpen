@@ -23,62 +23,8 @@ pub trait CounterScheme {
     /// of an increment.
     ///
     /// Returns `None` if invalid or out of range.
+    // TODO should these be passed by ref?
     fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr>;
-}
-
-// This does the addition directly, which may not allow for decrementing.
-macro_rules! inst_direct_ctr_schemes {
-    ( $( $name:ident ($basety:ident, $incrty:ident); )* ) => {
-        $(
-            pub struct $name;
-
-            impl $crate::CounterScheme for $name {
-                type Base = $basety;
-                type Incr = $incrty;
-
-                fn is_zero(incr: &Self::Incr) -> bool {
-                    *incr == 0
-                }
-
-                fn update(base: &mut Self::Base, incr: &Self::Incr) {
-                    *base += (*incr as $basety);
-                }
-
-                fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
-                    <$incrty>::try_from(<$basety>::checked_sub(b, a)?).ok()
-                }
-            }
-        )*
-    };
-}
-
-// This casts to a more general intermediate type before converting down to the target.
-macro_rules! inst_via_ctr_schemes {
-    ( $( $name:ident ($basety:ident, $incrty:ident; $viaty:ident); )* ) => {
-        $(
-            pub struct $name;
-
-            impl $crate::CounterScheme for $name {
-                type Base = $basety;
-                type Incr = $incrty;
-
-                fn is_zero(incr: &Self::Incr) -> bool {
-                    *incr == 0
-                }
-
-                fn update(base: &mut Self::Base, incr: &Self::Incr) {
-                    // TODO add more overflow checks here
-                    *base = ((*base as $viaty) + (*incr as $viaty)) as $basety;
-                }
-
-                fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
-                    let aa = <$viaty>::try_from(a).ok()?;
-                    let bb = <$viaty>::try_from(b).ok()?;
-                    <$incrty>::try_from(<$viaty>::checked_sub(bb, aa)?).ok()
-                }
-            }
-        )*
-    };
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -199,14 +145,23 @@ where
     S::Base: Clone,
     S::Incr: Clone,
 {
-    pub fn value(&self) -> &S::Base {
+    /// Returns the new value currently being tracked.
+    pub fn new_value(&self) -> &S::Base {
         &self.new
     }
 
+    /// Updates the value, ensuring the diff is in-bounds.
     pub fn set(&mut self, v: S::Base) -> Result<(), BuilderError> {
         S::compare(self.original.clone(), v.clone()).ok_or(BuilderError::OutOfBoundsValue)?;
         self.new = v;
         Ok(())
+    }
+
+    /// Updates the value by adding an increment to it, ensuring it's in-bounds.
+    pub fn add(&mut self, d: &S::Incr) -> Result<(), BuilderError> {
+        let mut nv = self.new.clone();
+        S::update(&mut nv, d);
+        self.set(nv)
     }
 
     /// Sets the value without checking if the diff will be in-bounds.  This may
@@ -243,12 +198,67 @@ where
     }
 }
 
+// This does the addition directly, which may not allow for decrementing.
+macro_rules! inst_direct_ctr_schemes {
+    ( $( $name:ident ($basety:ident, $incrty:ident); )* ) => {
+        $(
+            pub struct $name;
+
+            impl $crate::CounterScheme for $name {
+                type Base = $basety;
+                type Incr = $incrty;
+
+                fn is_zero(incr: &Self::Incr) -> bool {
+                    *incr == 0
+                }
+
+                fn update(base: &mut Self::Base, incr: &Self::Incr) {
+                    *base += (*incr as $basety);
+                }
+
+                fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
+                    <$incrty>::try_from(<$basety>::checked_sub(b, a)?).ok()
+                }
+            }
+        )*
+    };
+}
+
+// This casts to a more general intermediate type before converting down to the target.
+macro_rules! inst_via_ctr_schemes {
+    ( $( $name:ident ($basety:ident, $incrty:ident; $viaty:ident); )* ) => {
+        $(
+            pub struct $name;
+
+            impl $crate::CounterScheme for $name {
+                type Base = $basety;
+                type Incr = $incrty;
+
+                fn is_zero(incr: &Self::Incr) -> bool {
+                    *incr == 0
+                }
+
+                fn update(base: &mut Self::Base, incr: &Self::Incr) {
+                    // TODO add more overflow checks here
+                    *base = ((*base as $viaty) + (*incr as $viaty)) as $basety;
+                }
+
+                fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
+                    let aa = <$viaty>::try_from(a).ok()?;
+                    let bb = <$viaty>::try_from(b).ok()?;
+                    <$incrty>::try_from(<$viaty>::checked_sub(bb, aa)?).ok()
+                }
+            }
+        )*
+    };
+}
+
 /// Counter schemes.
 pub mod counter_schemes {
     inst_direct_ctr_schemes! {
         CtrU64ByU8(u64, u8);
         CtrU64ByU16(u64, u16);
-        CtrU32ByU8(u64, u8);
+        CtrU32ByU8(u32, u8);
         CtrU32ByU16(u32, u16);
         CtrI64ByI8(i64, i8);
         CtrI64ByI16(i64, i16);

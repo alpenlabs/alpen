@@ -15,7 +15,7 @@ pub trait LinearAccumulator {
     /// Insert count type.
     ///
     /// This should just be an integer value.
-    type InsertCnt: Copy + Eq + Ord + Codec + From<usize> + Into<usize>;
+    type InsertCnt: Copy + Eq + Ord + Codec + TryFrom<usize> + TryInto<usize>;
 
     /// Entry type.
     type EntryData: Clone + Codec;
@@ -48,7 +48,9 @@ impl<A: LinearAccumulator> DaLinacc<A> {
 
     /// Returns if the write is full and cannot accept new entries
     pub fn is_write_full(&self) -> bool {
-        let val = <A::InsertCnt as From<usize>>::from(self.new_entries.len());
+        let Ok(val) = <A::InsertCnt as TryFrom<usize>>::try_from(self.new_entries.len()) else {
+            return true;
+        };
         val >= A::MAX_INSERT
     }
 
@@ -112,7 +114,7 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
             return Err(CodecError::OverflowContainer);
         }
 
-        let cnt: usize = cnt.into();
+        let cnt: usize = cnt.try_into().map_err(|_| CodecError::OverflowContainer)?;
 
         // Decode each entry.
         let mut new_entries = Vec::new();
@@ -126,7 +128,11 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
         // Encode the counter.
-        let cnt: A::InsertCnt = self.new_entries.len().into();
+        let cnt: A::InsertCnt = self
+            .new_entries
+            .len()
+            .try_into()
+            .map_err(|_| CodecError::OverflowContainer)?;
         cnt.encode(enc)?;
 
         // Encode each entry.
@@ -164,5 +170,204 @@ impl<A: LinearAccumulator> DaBuilder<A> for DaLinaccBuilder<A> {
         Ok(DaLinacc {
             new_entries: self.new_entries,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_codec::BufDecoder;
+    use strata_mmr::{MerkleMr64, Sha256Hasher, hasher::MerkleHasher};
+
+    use super::*;
+    use crate::{CompoundMember, DaWrite};
+
+    /// Wrapper for MerkleMr64 to implement LinearAccumulator
+    struct TestMmr(MerkleMr64<Sha256Hasher>);
+
+    impl TestMmr {
+        fn new() -> Self {
+            Self(MerkleMr64::new(14))
+        }
+    }
+
+    impl LinearAccumulator for TestMmr {
+        type InsertCnt = u64;
+        type EntryData = [u8; 128];
+        const MAX_INSERT: Self::InsertCnt = u64::MAX;
+
+        fn insert(&mut self, entry: &Self::EntryData) {
+            let hash = Sha256Hasher::hash_leaf(entry);
+            self.0.add_leaf(hash).expect("test: insert should succeed");
+        }
+    }
+
+    #[test]
+    fn test_mmr_linear_accumulator_round_trip() {
+        // Create initial MMR
+        let mut mmr = TestMmr::new();
+
+        // Create some test entries
+        let entry1 = [1u8; 128];
+        let entry2 = [2u8; 128];
+        let entry3 = [3u8; 128];
+
+        // Build a diff with multiple entries
+        let mut diff = DaLinacc::<TestMmr>::new();
+        assert!(diff.append_entry(entry1));
+        assert!(diff.append_entry(entry2));
+        assert!(diff.append_entry(entry3));
+
+        // Capture initial MMR state
+        let initial_entries = mmr.0.num_entries();
+
+        // Apply the diff to get the "after" state
+        DaWrite::apply(&diff, &mut mmr, &()).expect("test: apply should succeed");
+        let after_entries = mmr.0.num_entries();
+
+        // Verify entries were added
+        assert_eq!(after_entries, initial_entries + 3);
+
+        // Encode the diff using CompoundMember
+        let mut encoder = Vec::new();
+        CompoundMember::encode_set(&diff, &mut encoder).expect("test: encode should succeed");
+
+        // Decode the diff using CompoundMember
+        let mut decoder = BufDecoder::new(&encoder);
+        let decoded: DaLinacc<TestMmr> =
+            CompoundMember::decode_set(&mut decoder).expect("test: decode should succeed");
+
+        // Verify the decoded diff matches the original
+        assert_eq!(decoded.new_entries.len(), diff.new_entries.len());
+        assert_eq!(decoded.new_entries[0], entry1);
+        assert_eq!(decoded.new_entries[1], entry2);
+        assert_eq!(decoded.new_entries[2], entry3);
+
+        // Apply the decoded diff to a fresh MMR
+        let mut mmr2 = TestMmr::new();
+        DaWrite::apply(&decoded, &mut mmr2, &()).expect("test: apply should succeed");
+
+        // Verify that both MMRs have the same final state
+        assert_eq!(mmr2.0.num_entries(), mmr.0.num_entries());
+        assert_eq!(mmr2.0.num_entries(), 3);
+
+        // Verify that the peaks are identical
+        let peaks1: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let peaks2: Vec<_> = mmr2.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        assert_eq!(peaks1, peaks2, "test: MMR peaks should be identical");
+    }
+
+    #[test]
+    fn test_mmr_empty_diff() {
+        let mut mmr = TestMmr::new();
+        let diff = DaLinacc::<TestMmr>::new();
+
+        // Empty diff should be default
+        assert!(DaWrite::is_default(&diff));
+
+        // Encode and decode empty diff
+        let mut encoder = Vec::new();
+        CompoundMember::encode_set(&diff, &mut encoder).expect("test: encode should succeed");
+        let mut decoder = BufDecoder::new(&encoder);
+        let decoded: DaLinacc<TestMmr> =
+            CompoundMember::decode_set(&mut decoder).expect("test: decode should succeed");
+
+        // Apply decoded diff - should be a no-op
+        let initial_entries = mmr.0.num_entries();
+        let initial_peaks: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        DaWrite::apply(&decoded, &mut mmr, &()).expect("test: apply should succeed");
+        assert_eq!(mmr.0.num_entries(), initial_entries);
+
+        // Verify peaks unchanged
+        let final_peaks: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        assert_eq!(
+            initial_peaks, final_peaks,
+            "test: empty diff should not change MMR peaks"
+        );
+    }
+
+    #[test]
+    fn test_mmr_single_entry() {
+        let mut mmr = TestMmr::new();
+        let entry = [42u8; 128];
+
+        let mut diff = DaLinacc::<TestMmr>::new();
+        assert!(diff.append_entry(entry));
+
+        // Encode/decode round trip
+        let mut encoder = Vec::new();
+        CompoundMember::encode_set(&diff, &mut encoder).expect("test: encode should succeed");
+        let mut decoder = BufDecoder::new(&encoder);
+        let decoded: DaLinacc<TestMmr> =
+            CompoundMember::decode_set(&mut decoder).expect("test: decode should succeed");
+
+        // Apply the decoded diff
+        DaWrite::apply(&decoded, &mut mmr, &()).expect("test: apply should succeed");
+        assert_eq!(mmr.0.num_entries(), 1);
+
+        // Apply original diff to a fresh MMR and compare peaks
+        let mut mmr2 = TestMmr::new();
+        DaWrite::apply(&diff, &mut mmr2, &()).expect("test: apply should succeed");
+
+        let peaks1: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let peaks2: Vec<_> = mmr2.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        assert_eq!(
+            peaks1, peaks2,
+            "test: MMR peaks should be identical after applying decoded diff"
+        );
+    }
+
+    #[test]
+    fn test_mmr_sequential_diffs() {
+        // Test applying multiple diffs sequentially
+        let mut mmr = TestMmr::new();
+
+        // First diff
+        let mut diff1 = DaLinacc::<TestMmr>::new();
+        diff1.append_entry([1u8; 128]);
+        diff1.append_entry([2u8; 128]);
+
+        // Second diff
+        let mut diff2 = DaLinacc::<TestMmr>::new();
+        diff2.append_entry([3u8; 128]);
+        diff2.append_entry([4u8; 128]);
+
+        // Apply first diff
+        DaWrite::apply(&diff1, &mut mmr, &()).expect("test: apply should succeed");
+        assert_eq!(mmr.0.num_entries(), 2);
+
+        // Apply second diff
+        DaWrite::apply(&diff2, &mut mmr, &()).expect("test: apply should succeed");
+        assert_eq!(mmr.0.num_entries(), 4);
+
+        // Now verify the same result with encoded/decoded diffs
+        let mut mmr2 = TestMmr::new();
+
+        // Encode/decode/apply first diff
+        let mut encoder1 = Vec::new();
+        CompoundMember::encode_set(&diff1, &mut encoder1).expect("test: encode should succeed");
+        let mut decoder1 = BufDecoder::new(&encoder1);
+        let decoded1: DaLinacc<TestMmr> =
+            CompoundMember::decode_set(&mut decoder1).expect("test: decode should succeed");
+        DaWrite::apply(&decoded1, &mut mmr2, &()).expect("test: apply should succeed");
+
+        // Encode/decode/apply second diff
+        let mut encoder2 = Vec::new();
+        CompoundMember::encode_set(&diff2, &mut encoder2).expect("test: encode should succeed");
+        let mut decoder2 = BufDecoder::new(&encoder2);
+        let decoded2: DaLinacc<TestMmr> =
+            CompoundMember::decode_set(&mut decoder2).expect("test: decode should succeed");
+        DaWrite::apply(&decoded2, &mut mmr2, &()).expect("test: apply should succeed");
+
+        // Both MMRs should have the same final state
+        assert_eq!(mmr2.0.num_entries(), mmr.0.num_entries());
+        assert_eq!(mmr2.0.num_entries(), 4);
+
+        // Verify that the peaks are identical
+        let peaks1: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let peaks2: Vec<_> = mmr2.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        assert_eq!(
+            peaks1, peaks2,
+            "test: MMR peaks should be identical after sequential diffs"
+        );
     }
 }
