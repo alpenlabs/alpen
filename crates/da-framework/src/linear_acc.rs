@@ -49,7 +49,8 @@ impl<A: LinearAccumulator> DaLinacc<A> {
     /// Returns if the write is full and cannot accept new entries
     pub fn is_write_full(&self) -> bool {
         let Ok(val) = <A::InsertCnt as TryFrom<usize>>::try_from(self.new_entries.len()) else {
-            return true;
+            // If we get here then it means we somehow exceeded the limit.
+            panic!("da/linacc: buffer overfilled");
         };
         val >= A::MAX_INSERT
     }

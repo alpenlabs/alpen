@@ -111,8 +111,9 @@ impl<T: Bitmap> BitSeqWriter<T> {
 }
 
 /// Macro to generate encode/decode and apply impls for a compound DA type.
+// TODO turn this into a proc macro
 #[macro_export]
-macro_rules! make_compound_traits {
+macro_rules! make_compound_impl {
     (
         $tyname:ident $maskty:ident => $target:ty {
             $(
@@ -120,7 +121,7 @@ macro_rules! make_compound_traits {
             )*
         }
     ) => {
-        $crate::make_compound_traits! {
+        $crate::make_compound_impl! {
             $tyname < () > $maskty => $target {
                 $(
                     $fname : $daty $fty ,
@@ -249,7 +250,7 @@ mod tests {
         y: DaRegister<i32>,
     }
 
-    make_compound_traits! {
+    make_compound_impl! {
         DaPointDiff u16 => Point {
             x: register i32,
             y: register i32,
