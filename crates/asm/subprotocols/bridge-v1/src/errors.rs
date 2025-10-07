@@ -141,6 +141,9 @@ pub enum WithdrawalAssignmentError {
 pub enum BitmapError {
     /// Attempted to set a bit at an index that would create a gap in the bitmap.
     /// Only sequential indices are allowed.
-    #[error("Index {0} is out of bounds for sequential bitmap")]
-    IndexOutOfBounds(OperatorIdx),
+    #[error("Index {index} is out of bounds for sequential bitmap (valid range: 0..={max_valid_index})")]
+    IndexOutOfBounds {
+        index: OperatorIdx,
+        max_valid_index: OperatorIdx,
+    },
 }

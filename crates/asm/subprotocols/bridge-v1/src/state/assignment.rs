@@ -39,15 +39,15 @@ use crate::{
 ///
 /// # Returns
 ///
-/// `Result<OperatorBitmap, WithdrawalAssignmentError>` - Either the filtered bitmap of eligible operators,
-/// or an error if the input bitmaps have incompatible lengths.
+/// `Result<OperatorBitmap, WithdrawalAssignmentError>` - Either the filtered bitmap of eligible
+/// operators, or an error if the input bitmaps have incompatible lengths.
 ///
 /// # Errors
 ///
-/// - [`WithdrawalAssignmentError::MismatchedBitmapLengths`] - If notary_operators and previous_assignees
-///   have different lengths
-/// - [`WithdrawalAssignmentError::InsufficientActiveBitmapLength`] - If current_active_operators is shorter
-///   than notary_operators
+/// - [`WithdrawalAssignmentError::MismatchedBitmapLengths`] - If notary_operators and
+///   previous_assignees have different lengths
+/// - [`WithdrawalAssignmentError::InsufficientActiveBitmapLength`] - If current_active_operators is
+///   shorter than notary_operators
 fn filter_eligible_operators(
     notary_operators: &OperatorBitmap,
     previous_assignees: &OperatorBitmap,
@@ -170,16 +170,19 @@ impl AssignmentEntry {
             current_active_operators,
         )?;
 
-        if eligible_operators.active_count() == 0 {
+        let active_count = eligible_operators.active_count();
+        if active_count == 0 {
             return Err(WithdrawalAssignmentError::NoEligibleOperators {
                 deposit_idx: deposit_entry.idx(),
             });
         }
 
         // Select a random operator from eligible ones
-        let eligible_indices: Vec<OperatorIdx> = eligible_operators.active_indices().collect();
-        let random_index = (rng.next_u32() as usize) % eligible_indices.len();
-        let current_assignee = eligible_indices[random_index];
+        let random_index = (rng.next_u32() as usize) % active_count;
+        let current_assignee = eligible_operators
+            .active_indices()
+            .nth(random_index)
+            .expect("random_index is within bounds of active_count");
 
         Ok(Self {
             deposit_entry: deposit_entry.clone(),
@@ -264,16 +267,19 @@ impl AssignmentEntry {
         }
 
         // If still no eligible operators, return error
-        if eligible_operators.active_count() == 0 {
+        let active_count = eligible_operators.active_count();
+        if active_count == 0 {
             return Err(WithdrawalAssignmentError::NoEligibleOperators {
                 deposit_idx: self.deposit_entry.idx(),
             });
         }
 
         // Select a random operator from eligible ones
-        let eligible_indices: Vec<OperatorIdx> = eligible_operators.active_indices().collect();
-        let random_index = (rng.next_u32() as usize) % eligible_indices.len();
-        let new_assignee = eligible_indices[random_index];
+        let random_index = (rng.next_u32() as usize) % active_count;
+        let new_assignee = eligible_operators
+            .active_indices()
+            .nth(random_index)
+            .expect("random_index is within bounds of active_count");
 
         self.current_assignee = new_assignee;
         self.withdrawal_cmd.update_fee(new_operator_fee);
@@ -538,9 +544,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify reassignment
-        let previous_assignees: Vec<_> = assignment.previous_assignees.active_indices().collect();
-        assert_eq!(previous_assignees.len(), 1);
-        assert_eq!(previous_assignees[0], original_assignee);
+        assert_eq!(assignment.previous_assignees.active_count(), 1);
+        assert!(assignment.previous_assignees.is_active(original_assignee));
         assert_ne!(assignment.current_assignee(), original_assignee);
     }
 
@@ -581,8 +586,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Should have cleared previous assignees and reassigned to the same operator
-        let previous_assignees: Vec<_> = assignment.previous_assignees.active_indices().collect();
-        assert_eq!(previous_assignees.len(), 0);
+        assert_eq!(assignment.previous_assignees.active_count(), 0);
         assert_eq!(assignment.current_assignee(), 0); // Should be operator index 0
     }
 
@@ -687,20 +691,19 @@ mod tests {
 
         // Check that expired assignment was reassigned
         let expired_assignment_after = table.get_assignment(expired_deposit_idx).unwrap();
-        let previous_assignees: Vec<_> = expired_assignment_after
-            .previous_assignees
-            .active_indices()
-            .collect();
-        assert_eq!(previous_assignees.len(), 1);
-        assert_eq!(previous_assignees[0], original_assignee);
+        assert_eq!(
+            expired_assignment_after.previous_assignees.active_count(),
+            1
+        );
+        assert!(
+            expired_assignment_after
+                .previous_assignees
+                .is_active(original_assignee)
+        );
 
         // Check that non-expired assignment was not reassigned
         let future_assignment_after = table.get_assignment(future_deposit_idx).unwrap();
-        let previous_assignees: Vec<_> = future_assignment_after
-            .previous_assignees
-            .active_indices()
-            .collect();
-        assert_eq!(previous_assignees.len(), 0);
+        assert_eq!(future_assignment_after.previous_assignees.active_count(), 0);
         assert_eq!(
             future_assignment_after.current_assignee(),
             future_original_assignee

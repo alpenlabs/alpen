@@ -132,7 +132,10 @@ impl OperatorBitmap {
         let idx_usize = idx as usize;
         // Only allow increasing bitmap size by 1 at a time to maintain sequential indices
         if idx_usize > self.bits.len() {
-            return Err(BitmapError::IndexOutOfBounds(idx));
+            return Err(BitmapError::IndexOutOfBounds {
+                index: idx,
+                max_valid_index: self.bits.len() as OperatorIdx,
+            });
         }
         if idx_usize == self.bits.len() {
             self.bits.resize(idx_usize + 1, false);
@@ -257,7 +260,10 @@ mod tests {
         // Trying to set bit 3 (skipping 2) should fail
         assert_eq!(
             bitmap.try_set(3, true),
-            Err(BitmapError::IndexOutOfBounds(3))
+            Err(BitmapError::IndexOutOfBounds {
+                index: 3,
+                max_valid_index: 2
+            })
         );
         assert_eq!(bitmap.active_count(), 1);
 
@@ -280,7 +286,10 @@ mod tests {
         // Trying to unset bit 1000 (skipping 501..) should fail
         assert_eq!(
             bitmap.try_set(1000, false),
-            Err(BitmapError::IndexOutOfBounds(1000))
+            Err(BitmapError::IndexOutOfBounds {
+                index: 1000,
+                max_valid_index: 501
+            })
         );
         assert_eq!(bitmap.active_count(), 500);
     }
