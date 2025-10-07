@@ -613,29 +613,28 @@ mod tests {
         );
         assert_eq!(bitmap.active_count(), 1);
 
-        // Setting bit 2 (next sequential) should work
-        assert!(bitmap.try_set(2, true).is_ok());
-        assert!(bitmap.is_active(2));
-        assert_eq!(bitmap.active_count(), 2);
+        // Use a large initial bitmap
+        let mut bitmap = OperatorBitmap::new_with_size(500, true);
 
-        // Test modifying an existing bitmap created with macro
-        let mut existing_bitmap =
-            OperatorBitmap::from(bitvec![u8, bitvec::order::Lsb0; 1, 1, 1, 0, 0]);
-        assert_eq!(existing_bitmap.active_count(), 3);
+        // Setting bit active doesn't change the active count
+        assert!(bitmap.try_set(0, true).is_ok());
+        assert_eq!(bitmap.active_count(), 500);
 
-        // Turn off operator 1
-        assert!(existing_bitmap.try_set(1, false).is_ok());
+        // Setting bit inactive changes change the active count
+        assert!(bitmap.try_set(0, false).is_ok());
+        assert_eq!(bitmap.active_count(), 499);
+
+        // Setting bit 500 should work (sequential)
+        assert!(bitmap.try_set(500, true).is_ok());
+        assert!(bitmap.is_active(500));
+        assert_eq!(bitmap.active_count(), 500);
+
+        // Trying to unset bit 1000 (skipping 501..) should fail
         assert_eq!(
-            existing_bitmap.active_indices().collect::<Vec<_>>(),
-            vec![0, 2]
+            bitmap.try_set(1000, false),
+            Err(BitmapError::IndexOutOfBounds(1000))
         );
-
-        // Turn on operator 3
-        assert!(existing_bitmap.try_set(4, true).is_ok());
-        assert_eq!(
-            existing_bitmap.active_indices().collect::<Vec<_>>(),
-            vec![0, 2, 4]
-        );
+        assert_eq!(bitmap.active_count(), 500);
     }
 
     #[test]
