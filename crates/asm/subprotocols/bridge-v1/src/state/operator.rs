@@ -2,8 +2,6 @@
 //!
 //! This module contains types and tables for managing bridge operators
 
-use std::ops::{Deref, DerefMut};
-
 use arbitrary::Arbitrary;
 use bitvec::prelude::*;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -203,7 +201,7 @@ impl OperatorBitmap {
     ///
     /// `true` if the operator is active, `false` if not active or index out of bounds
     pub fn is_active(&self, idx: OperatorIdx) -> bool {
-        self.get(idx as usize).map(|b| *b).unwrap_or(false)
+        self.bits.get(idx as usize).map(|b| *b).unwrap_or(false)
     }
 
     /// Attempts to set the active state of an operator.
@@ -219,38 +217,39 @@ impl OperatorBitmap {
     pub fn try_set(&mut self, idx: OperatorIdx, active: bool) -> Result<(), BitmapError> {
         let idx_usize = idx as usize;
         // Only allow increasing bitmap size by 1 at a time to maintain sequential indices
-        if idx_usize > self.len() {
+        if idx_usize > self.bits.len() {
             return Err(BitmapError::IndexOutOfBounds(idx));
         }
-        if idx_usize == self.len() {
-            self.resize(idx_usize + 1, false);
+        if idx_usize == self.bits.len() {
+            self.bits.resize(idx_usize + 1, false);
         }
-        self.set(idx_usize, active);
+        self.bits.set(idx_usize, active);
         Ok(())
     }
 
     /// Returns an iterator over all active operator indices.
     pub fn active_indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
-        self.iter_ones().map(|i| i as OperatorIdx)
+        self.bits.iter_ones().map(|i| i as OperatorIdx)
     }
 
     /// Returns the number of active operators.
-    pub fn active_count(&self) -> u32 {
-        self.count_ones() as u32
+    pub fn active_count(&self) -> usize {
+        self.bits.count_ones()
     }
-}
 
-impl Deref for OperatorBitmap {
-    type Target = BitVec<u8>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.bits
+    /// Returns the number of inactive operators.
+    pub fn inactive_count(&self) -> usize {
+        self.bits.count_zeros()
     }
-}
 
-impl DerefMut for OperatorBitmap {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bits
+    /// Returns the number of bits in the bitmap.
+    pub fn len(&self) -> usize {
+        self.bits.len()
+    }
+
+    /// Returns `true` if the bitmap contains no bits.
+    pub fn is_empty(&self) -> bool {
+        self.bits.is_empty()
     }
 }
 
@@ -274,6 +273,50 @@ impl<'a> Arbitrary<'a> for OperatorBitmap {
 
         Ok(OperatorBitmap::from(bits))
     }
+}
+
+/// Filters and returns eligible operators for assignment or reassignment.
+///
+/// Returns a bitmap of operators who meet all eligibility criteria:
+/// - Must be part of the deposit's notary operator set
+/// - Must not have previously been assigned to this withdrawal (prevents reassignment to failed
+///   operators)
+/// - Must be currently active in the network
+///
+/// # Parameters
+///
+/// - `notary_operators` - Bitmap of notary operators authorized for this deposit
+/// - `previous_assignees` - Bitmap of operators who have previously been assigned but failed
+/// - `current_active_operators` - Bitmap of operators currently active in the network
+///
+/// # Returns
+///
+/// [`OperatorBitmap`] representing eligible operators for assignment.
+/// Returns empty bitmap if no operators meet all criteria.
+pub(crate) fn filter_eligible_operators(
+    notary_operators: &OperatorBitmap,
+    previous_assignees: &OperatorBitmap,
+    current_active_operators: &OperatorBitmap,
+) -> OperatorBitmap {
+    // Use BitVec's native operations for maximum efficiency
+    // Combined operation: (notary & !previous) & active in a single pass
+    let max_len = std::cmp::max(
+        std::cmp::max(notary_operators.len(), previous_assignees.len()),
+        current_active_operators.len(),
+    );
+
+    // Clone and resize all bitmaps to the same length
+    let mut notary_extended = notary_operators.bits.clone();
+    let mut previous_extended = previous_assignees.bits.clone();
+    let mut active_extended = current_active_operators.bits.clone();
+
+    notary_extended.resize(max_len, false);
+    previous_extended.resize(max_len, false);
+    active_extended.resize(max_len, false);
+
+    // Single BitVec operation: (notary & !previous) & active
+    let result = (notary_extended & (!previous_extended)) & active_extended;
+    result.into()
 }
 
 /// Table for managing registered bridge operators.

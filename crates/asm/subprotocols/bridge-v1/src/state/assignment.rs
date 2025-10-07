@@ -20,7 +20,10 @@ use strata_primitives::{
 use super::withdrawal::WithdrawalCommand;
 use crate::{
     errors::WithdrawalCommandError,
-    state::{deposit::DepositEntry, operator::OperatorBitmap},
+    state::{
+        deposit::DepositEntry,
+        operator::{OperatorBitmap, filter_eligible_operators},
+    },
 };
 
 /// Assignment entry linking a deposit UTXO to an operator for withdrawal processing.
@@ -67,50 +70,6 @@ impl Ord for AssignmentEntry {
     }
 }
 
-/// Filters and returns eligible operators for assignment or reassignment.
-///
-/// Returns a bitmap of operators who meet all eligibility criteria:
-/// - Must be part of the deposit's notary operator set
-/// - Must not have previously been assigned to this withdrawal (prevents reassignment to failed
-///   operators)
-/// - Must be currently active in the network
-///
-/// # Parameters
-///
-/// - `notary_operators` - Bitmap of notary operators authorized for this deposit
-/// - `previous_assignees` - Bitmap of operators who have previously been assigned but failed
-/// - `current_active_operators` - Bitmap of operators currently active in the network
-///
-/// # Returns
-///
-/// [`OperatorBitmap`] representing eligible operators for assignment.
-/// Returns empty bitmap if no operators meet all criteria.
-fn filter_eligible_operators(
-    notary_operators: &OperatorBitmap,
-    previous_assignees: &OperatorBitmap,
-    current_active_operators: &OperatorBitmap,
-) -> OperatorBitmap {
-    // Use BitVec's native operations for maximum efficiency
-    // Combined operation: (notary & !previous) & active in a single pass
-    let max_len = std::cmp::max(
-        std::cmp::max(notary_operators.len(), previous_assignees.len()),
-        current_active_operators.len(),
-    );
-
-    // Clone and resize all bitmaps to the same length
-    let mut notary_extended = (**notary_operators).clone();
-    let mut previous_extended = (**previous_assignees).clone();
-    let mut active_extended = (**current_active_operators).clone();
-
-    notary_extended.resize(max_len, false);
-    previous_extended.resize(max_len, false);
-    active_extended.resize(max_len, false);
-
-    // Single BitVec operation: (notary & !previous) & active
-    let result = (notary_extended & (!previous_extended)) & active_extended;
-    result.into()
-}
-
 impl AssignmentEntry {
     /// Creates a new assignment entry by randomly selecting an eligible operator.
     ///
@@ -152,7 +111,7 @@ impl AssignmentEntry {
             current_active_operators,
         );
 
-        if eligible_operators.not_any() {
+        if eligible_operators.active_count() == 0 {
             return Err(WithdrawalCommandError::NoEligibleOperators {
                 deposit_idx: deposit_entry.idx(),
             });
@@ -233,7 +192,7 @@ impl AssignmentEntry {
             current_active_operators,
         );
 
-        if eligible_operators.not_any() {
+        if eligible_operators.active_count() == 0 {
             // If no eligible operators left, clear previous assignees
             self.previous_assignees =
                 OperatorBitmap::new_with_size(self.deposit_entry.notary_operators().len(), false);
@@ -245,7 +204,7 @@ impl AssignmentEntry {
         }
 
         // If still no eligible operators, return error
-        if eligible_operators.not_any() {
+        if eligible_operators.active_count() == 0 {
             return Err(WithdrawalCommandError::NoEligibleOperators {
                 deposit_idx: self.deposit_entry.idx(),
             });
