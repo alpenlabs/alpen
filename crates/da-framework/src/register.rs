@@ -1,6 +1,9 @@
 //! Register DA type.
 
-use crate::{BuilderError, Codec, CodecError, CodecResult, DaBuilder, DaWrite, Decoder, Encoder};
+use crate::{
+    BuilderError, Codec, CodecError, CodecResult, CompoundMember, DaBuilder, DaWrite, Decoder,
+    Encoder,
+};
 
 /// A register value.
 ///
@@ -53,12 +56,6 @@ impl<T: Clone + Eq> DaRegister<T> {
 }
 
 impl<T: Codec> DaRegister<T> {
-    /// Constructs a `Some` instance from a decoder.
-    pub fn set_from_decoder(dec: &mut impl Decoder) -> CodecResult<Self> {
-        let v = T::decode(dec)?;
-        Ok(Self::new_set(v))
-    }
-
     /// Encodes the inner value, if set.  Returns error if unset as we should
     /// not have reached this point and should assume we're
     /// [`Default::default`].
@@ -68,17 +65,6 @@ impl<T: Codec> DaRegister<T> {
         } else {
             Err(CodecError::MalformedField("tried to encode unset register"))
         }
-    }
-
-    /// Encodes the inner value, if set.  Does nothing if unset.
-    ///
-    /// MUST be used in the context of a compound which can do bit flagging
-    /// to properly track set/unset fields.
-    pub fn encode_if_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
-        if let Some(v) = &self.new_value {
-            v.encode(enc)?;
-        }
-        Ok(())
     }
 }
 
@@ -104,6 +90,51 @@ impl<T: Clone> DaWrite for DaRegister<T> {
     ) -> Result<(), crate::DaError> {
         if let Some(v) = self.new_value.clone() {
             *target = v;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Codec> Codec for DaRegister<T> {
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        Ok(if bool::decode(dec)? {
+            Self::new_set(T::decode(dec)?)
+        } else {
+            Self::new_unset()
+        })
+    }
+
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        match &self.new_value {
+            Some(v) => {
+                true.encode(enc)?;
+                v.encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<T: Codec + Clone> CompoundMember for DaRegister<T> {
+    fn default() -> Self {
+        DaRegister::new_unset()
+    }
+
+    fn is_default(&self) -> bool {
+        <DaRegister<_> as DaWrite>::is_default(self)
+    }
+
+    fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self> {
+        let v = T::decode(dec)?;
+        Ok(Self::new_set(v))
+    }
+
+    fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
+        if let Some(v) = &self.new_value {
+            v.encode(enc)?;
         }
         Ok(())
     }

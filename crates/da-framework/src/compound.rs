@@ -3,7 +3,7 @@
 use crate::{Codec, CodecResult, DaRegister, DaWrite, Decoder, Encoder};
 
 /// Describes a bitmap we can read/write to.
-pub trait ShiftBitmap: Copy {
+pub trait Bitmap: Copy {
     /// Returns the total number of bits we can store.
     const BITS: u8;
 
@@ -17,9 +17,9 @@ pub trait ShiftBitmap: Copy {
     fn put(&mut self, off: u8, b: bool);
 }
 
-macro_rules! impl_shift_bitmap {
+macro_rules! impl_uint_bitmap {
     ($t:ident) => {
-        impl ShiftBitmap for $t {
+        impl Bitmap for $t {
             const BITS: u8 = $t::BITS as u8;
 
             fn zero() -> Self {
@@ -42,17 +42,18 @@ macro_rules! impl_shift_bitmap {
     };
 }
 
-impl_shift_bitmap!(u8);
-impl_shift_bitmap!(u16);
-impl_shift_bitmap!(u32);
+impl_uint_bitmap!(u8);
+impl_uint_bitmap!(u16);
+impl_uint_bitmap!(u32);
+impl_uint_bitmap!(u64);
 
-/// Safer interface around a [`ShiftBitmap`] that ensures we don't overflow.
-pub struct BitReader<T: ShiftBitmap> {
+/// Safer sequence interface around a [`Bitmap`] that ensures we don't overflow.
+pub struct BitSeqReader<T: Bitmap> {
     off: u8,
     mask: T,
 }
 
-impl<T: ShiftBitmap> BitReader<T> {
+impl<T: Bitmap> BitSeqReader<T> {
     pub fn from_mask(v: T) -> Self {
         Self { off: 0, mask: v }
     }
@@ -83,13 +84,13 @@ impl<T: ShiftBitmap> BitReader<T> {
     }
 }
 
-/// Safer interface around a [`ShiftBitmap`] that ensures we don't overflow.
-pub struct BitWriter<T: ShiftBitmap> {
+/// Safer sequence interface around a [`Bitmap`] that ensures we don't overflow.
+pub struct BitSeqWriter<T: Bitmap> {
     off: u8,
     mask: T,
 }
 
-impl<T: ShiftBitmap> BitWriter<T> {
+impl<T: Bitmap> BitSeqWriter<T> {
     pub fn new() -> Self {
         Self {
             off: 0,
@@ -138,7 +139,7 @@ macro_rules! make_compound_traits {
         impl $crate::Codec for $tyname {
             fn decode(dec: &mut impl $crate::Decoder) -> Result<Self, $crate::CodecError> {
                 let mask = <$maskty>::decode(dec)?;
-                let mut bitr = $crate::compound::BitReader::from_mask(mask);
+                let mut bitr = $crate::compound::BitSeqReader::from_mask(mask);
 
                 $(let $fname = _mct_field_decode!(bitr dec; $daty $fty);)*
 
@@ -148,7 +149,7 @@ macro_rules! make_compound_traits {
             fn encode(&self, enc: &mut impl $crate::Encoder) -> Result<(), $crate::CodecError> {
                 use $crate::CompoundMember;
 
-                let mut bitw = $crate::compound::BitWriter::<$maskty>::new();
+                let mut bitw = $crate::compound::BitSeqWriter::<$maskty>::new();
 
                 $(bitw.prepare_member(&self.$fname);)*
 
@@ -209,6 +210,9 @@ macro_rules! _mct_field_decode {
 }
 
 /// Describes a member of a compound DA type.
+///
+/// This is necessary because we want to consolidate tagging across multiple
+/// fields.
 pub trait CompoundMember: Sized {
     /// Returns the default value.
     fn default() -> Self;
@@ -227,24 +231,6 @@ pub trait CompoundMember: Sized {
     ///
     /// Returns error if actually unset.
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()>;
-}
-
-impl<T: Codec + Clone> CompoundMember for DaRegister<T> {
-    fn default() -> Self {
-        DaRegister::new_unset()
-    }
-
-    fn is_default(&self) -> bool {
-        <DaRegister<_> as DaWrite>::is_default(self)
-    }
-
-    fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self> {
-        DaRegister::set_from_decoder(dec)
-    }
-
-    fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
-        self.encode_if_set(enc)
-    }
 }
 
 #[cfg(test)]
