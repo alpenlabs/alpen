@@ -14,6 +14,6 @@ pub use compound::CompoundMember;
 pub use counter::{CounterScheme, DaCounter, DaCounterBuilder, counter_schemes};
 pub use errors::{BuilderError, DaError};
 pub use linear_acc::{DaLinacc, LinearAccumulator};
-pub use queue::{DaQueue, DaQueueTarget};
+pub use queue::{DaQueue, DaQueueBuilder, DaQueueTarget, QueueView};
 pub use register::DaRegister;
 pub use traits::{ContextlessDaWrite, DaBuilder, DaWrite};
