@@ -13,7 +13,7 @@ use strata_primitives::{
     sorted_vec::SortedVec,
 };
 
-use crate::{errors::DepositValidationError, state::operator::OperatorBitmap};
+use crate::{errors::DepositValidationError, state::bitmap::OperatorBitmap};
 
 /// Bitcoin deposit entry containing UTXO reference and historical multisig operators.
 ///

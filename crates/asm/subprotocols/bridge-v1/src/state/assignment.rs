@@ -19,12 +19,71 @@ use strata_primitives::{
 
 use super::withdrawal::WithdrawalCommand;
 use crate::{
-    errors::WithdrawalCommandError,
-    state::{
-        deposit::DepositEntry,
-        operator::{OperatorBitmap, filter_eligible_operators},
-    },
+    errors::{WithdrawalAssignmentError, WithdrawalCommandError},
+    state::{bitmap::OperatorBitmap, deposit::DepositEntry},
 };
+
+/// Filters and returns eligible operators for assignment or reassignment.
+///
+/// Returns a bitmap of operators who meet all eligibility criteria:
+/// - Must be part of the deposit's notary operator set
+/// - Must not have previously been assigned to this withdrawal (prevents reassignment to failed
+///   operators)
+/// - Must be currently active in the network
+///
+/// # Parameters
+///
+/// - `notary_operators` - Bitmap of notary operators authorized for this deposit
+/// - `previous_assignees` - Bitmap of operators who have previously been assigned but failed
+/// - `current_active_operators` - Bitmap of operators currently active in the network
+///
+/// # Returns
+///
+/// `Result<OperatorBitmap, WithdrawalAssignmentError>` - Either the filtered bitmap of eligible operators,
+/// or an error if the input bitmaps have incompatible lengths.
+///
+/// # Errors
+///
+/// - [`WithdrawalAssignmentError::MismatchedBitmapLengths`] - If notary_operators and previous_assignees
+///   have different lengths
+/// - [`WithdrawalAssignmentError::InsufficientActiveBitmapLength`] - If current_active_operators is shorter
+///   than notary_operators
+fn filter_eligible_operators(
+    notary_operators: &OperatorBitmap,
+    previous_assignees: &OperatorBitmap,
+    current_active_operators: &OperatorBitmap,
+) -> Result<OperatorBitmap, WithdrawalAssignmentError> {
+    // Notary operators and previous assignees must have the same length to ensure
+    // bitwise operations don't panic
+    if notary_operators.len() != previous_assignees.len() {
+        return Err(WithdrawalAssignmentError::MismatchedBitmapLengths {
+            notary_len: notary_operators.len(),
+            previous_len: previous_assignees.len(),
+        });
+    }
+
+    // If current_active_operators is shorter, this indicates a system inconsistency
+    // since we only append operator indices to bitmaps, never remove them.
+    // We also need to ensure sufficient length to avoid panics during bitwise operations.
+    if current_active_operators.len() < notary_operators.len() {
+        return Err(WithdrawalAssignmentError::InsufficientActiveBitmapLength {
+            active_len: current_active_operators.len(),
+            notary_len: notary_operators.len(),
+        });
+    }
+
+    let notary_len = notary_operators.len();
+
+    // Clone and truncate current_active_operators to match notary length
+    let mut active_truncated = current_active_operators.bits.clone();
+    active_truncated.truncate(notary_len);
+
+    // In-place operations: active = (notary & !previous) & active
+    active_truncated &= &notary_operators.bits;
+    active_truncated &= &!previous_assignees.bits.clone();
+
+    Ok(active_truncated.into())
+}
 
 /// Assignment entry linking a deposit UTXO to an operator for withdrawal processing.
 ///
@@ -88,7 +147,7 @@ impl AssignmentEntry {
     /// # Returns
     ///
     /// - `Ok(AssignmentEntry)` - A new assignment entry with randomly selected operator
-    /// - `Err(WithdrawalCommandError::NoEligibleOperators)` - If no eligible operators are
+    /// - `Err(WithdrawalAssignmentError::NoEligibleOperators)` - If no eligible operators are
     ///   available
     pub fn create_with_random_assignment(
         deposit_entry: DepositEntry,
@@ -96,7 +155,7 @@ impl AssignmentEntry {
         exec_deadline: BitcoinBlockHeight,
         current_active_operators: &OperatorBitmap,
         seed: L1BlockId,
-    ) -> Result<Self, WithdrawalCommandError> {
+    ) -> Result<Self, WithdrawalAssignmentError> {
         // Use ChaChaRng with L1 block ID as seed for deterministic random selection
         let seed_bytes: [u8; 32] = Buf32::from(seed).into();
         let mut rng = ChaChaRng::from_seed(seed_bytes);
@@ -109,10 +168,10 @@ impl AssignmentEntry {
             deposit_entry.notary_operators(),
             &previous_assignees,
             current_active_operators,
-        );
+        )?;
 
         if eligible_operators.active_count() == 0 {
-            return Err(WithdrawalCommandError::NoEligibleOperators {
+            return Err(WithdrawalAssignmentError::NoEligibleOperators {
                 deposit_idx: deposit_entry.idx(),
             });
         }
@@ -171,15 +230,16 @@ impl AssignmentEntry {
     /// # Returns
     ///
     /// - `Ok(())` - If the reassignment succeeded
-    /// - `Err(WithdrawalCommandError)` - If no eligible operators are available
+    /// - `Err(WithdrawalAssignmentError)` - If no eligible operators are available
     pub fn reassign(
         &mut self,
         new_operator_fee: BitcoinAmount,
         seed: L1BlockId,
         current_active_operators: &OperatorBitmap,
-    ) -> Result<(), WithdrawalCommandError> {
+    ) -> Result<(), WithdrawalAssignmentError> {
         self.previous_assignees
-            .try_set(self.current_assignee, true)?;
+            .try_set(self.current_assignee, true)
+            .map_err(WithdrawalAssignmentError::BitmapError)?;
 
         // Use ChaChaRng with L1 block ID as seed for deterministic random selection
         let seed_bytes: [u8; 32] = Buf32::from(seed).into();
@@ -190,7 +250,7 @@ impl AssignmentEntry {
             self.deposit_entry.notary_operators(),
             &self.previous_assignees,
             current_active_operators,
-        );
+        )?;
 
         if eligible_operators.active_count() == 0 {
             // If no eligible operators left, clear previous assignees
@@ -200,12 +260,12 @@ impl AssignmentEntry {
                 self.deposit_entry.notary_operators(),
                 &self.previous_assignees,
                 current_active_operators,
-            );
+            )?;
         }
 
         // If still no eligible operators, return error
         if eligible_operators.active_count() == 0 {
-            return Err(WithdrawalCommandError::NoEligibleOperators {
+            return Err(WithdrawalAssignmentError::NoEligibleOperators {
                 deposit_idx: self.deposit_entry.idx(),
             });
         }
@@ -436,7 +496,7 @@ mod tests {
 
         assert!(matches!(
             err,
-            WithdrawalCommandError::NoEligibleOperators { .. }
+            WithdrawalAssignmentError::InsufficientActiveBitmapLength { .. }
         ));
     }
 

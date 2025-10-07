@@ -95,15 +95,41 @@ pub enum WithdrawalCommandError {
     #[error("No unassigned deposits available for withdrawal command processing")]
     NoUnassignedDeposits,
 
+    /// Deposit amount doesn't match withdrawal command total value
+    #[error("Deposit amount mismatch {0}")]
+    DepositWithdrawalAmountMismatch(Mismatch<u64>),
+
+    /// Withdrawal assignment operation failed
+    #[error("Withdrawal assignment failed")]
+    AssignmentError(#[from] WithdrawalAssignmentError),
+}
+
+/// Errors that can occur when creating or managing withdrawal assignments.
+///
+/// These errors indicate issues with operator assignment logic, such as
+/// bitmap inconsistencies or invalid state.
+#[derive(Debug, Error)]
+pub enum WithdrawalAssignmentError {
     /// No eligible operators found for the deposit
     #[error(
         "No current multisig operator found in deposit's notary operators for deposit index {deposit_idx}"
     )]
     NoEligibleOperators { deposit_idx: u32 },
 
-    /// Deposit amount doesn't match withdrawal command total value
-    #[error("Deposit amount mismatch {0}")]
-    DepositWithdrawalAmountMismatch(Mismatch<u64>),
+    /// Notary operators and previous assignees bitmaps have mismatched lengths.
+    #[error("Notary operators length ({notary_len}) does not match previous assignees length ({previous_len})")]
+    MismatchedBitmapLengths {
+        notary_len: usize,
+        previous_len: usize,
+    },
+
+    /// Current active operators bitmap is shorter than notary operators bitmap.
+    /// This indicates a system inconsistency since operator indices are only appended.
+    #[error("Current active operators bitmap length ({active_len}) is shorter than notary operators length ({notary_len}). This should never happen as operator bitmaps only grow.")]
+    InsufficientActiveBitmapLength {
+        active_len: usize,
+        notary_len: usize,
+    },
 
     /// Bitmap operation failed
     #[error("Bitmap operation failed")]
