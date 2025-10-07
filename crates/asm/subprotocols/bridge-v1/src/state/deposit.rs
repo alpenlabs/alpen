@@ -8,7 +8,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{
-    bridge::OperatorIdx,
     l1::{BitcoinAmount, OutputRef},
     operator::OperatorIdx,
     sorted_vec::SortedVec,
@@ -126,11 +125,6 @@ impl DepositEntry {
     /// multisig.
     pub fn notary_operators(&self) -> &OperatorBitmap {
         &self.notary_operators
-    }
-
-    /// Returns the indices of operators that formed the N/N multisig for this deposit.
-    pub fn notary_operators_indices(&self) -> Vec<OperatorIdx> {
-        self.notary_operators.to_indices()
     }
 
     /// Returns the amount of Bitcoin locked in this deposit.

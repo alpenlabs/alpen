@@ -238,11 +238,6 @@ impl OperatorBitmap {
     pub fn active_count(&self) -> u32 {
         self.count_ones() as u32
     }
-
-    /// Collects all active operator indices into a vector.
-    pub fn to_indices(&self) -> Vec<OperatorIdx> {
-        self.active_indices().collect()
-    }
 }
 
 impl Deref for OperatorBitmap {
@@ -438,18 +433,6 @@ impl OperatorTable {
         &self.current_multisig
     }
 
-    /// Returns indices of operators in the current N/N multisig.
-    ///
-    /// Only returns indices of operators marked as active in the bitmap.
-    /// This is used for assignment creation and deposit processing.
-    ///
-    /// # Returns
-    ///
-    /// Vector containing [`OperatorIdx`] for operators in the current multisig.
-    pub fn current_multisig_indices(&self) -> Vec<OperatorIdx> {
-        self.current_multisig.to_indices()
-    }
-
     /// Updates the multisig membership status for multiple operators, inserts new operators,
     /// and recalculates the aggregated key.
     ///
@@ -569,7 +552,7 @@ mod tests {
         let bitmap = OperatorBitmap::new_empty();
         assert!(bitmap.is_empty());
         assert_eq!(bitmap.active_count(), 0);
-        assert_eq!(bitmap.to_indices(), Vec::<OperatorIdx>::new());
+        assert_eq!(bitmap.active_indices().count(), 0);
     }
 
     #[test]
@@ -579,7 +562,7 @@ mod tests {
         assert!(!cleared_bitmap.is_empty());
         assert_eq!(cleared_bitmap.len(), 5);
         assert_eq!(cleared_bitmap.active_count(), 0);
-        assert_eq!(cleared_bitmap.to_indices(), Vec::<OperatorIdx>::new());
+        assert_eq!(cleared_bitmap.active_indices().count(), 0);
 
         // Check individual bits are all false
         for i in 0..5 {
@@ -592,7 +575,10 @@ mod tests {
         assert!(!active_bitmap.is_empty());
         assert_eq!(active_bitmap.len(), 3);
         assert_eq!(active_bitmap.active_count(), 3);
-        assert_eq!(active_bitmap.to_indices(), vec![0, 1, 2]);
+        assert_eq!(
+            active_bitmap.active_indices().collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
 
         // Check individual bits are all true
         for i in 0..3 {
@@ -639,11 +625,17 @@ mod tests {
 
         // Turn off operator 1
         assert!(existing_bitmap.try_set(1, false).is_ok());
-        assert_eq!(existing_bitmap.to_indices(), vec![0, 2]);
+        assert_eq!(
+            existing_bitmap.active_indices().collect::<Vec<_>>(),
+            vec![0, 2]
+        );
 
         // Turn on operator 3
         assert!(existing_bitmap.try_set(4, true).is_ok());
-        assert_eq!(existing_bitmap.to_indices(), vec![0, 2, 4]);
+        assert_eq!(
+            existing_bitmap.active_indices().collect::<Vec<_>>(),
+            vec![0, 2, 4]
+        );
     }
 
     #[test]
@@ -727,14 +719,14 @@ mod tests {
         let mut table = OperatorTable::from_operator_list(&operators);
 
         // Initially, all operators should be in the current multisig set
-        let current_indices = table.current_multisig_indices();
+        let current_indices: Vec<_> = table.current_multisig().active_indices().collect();
         assert_eq!(current_indices, vec![0, 1, 2]);
 
         // Mark operator 1 as not in current multisig
         table.update_multisig_and_recalc_key(&[(1, false)], &[]);
 
         // Now only operators 0 and 2 should be in current multisig
-        let current_indices = table.current_multisig_indices();
+        let current_indices: Vec<_> = table.current_multisig().active_indices().collect();
         assert_eq!(current_indices, vec![0, 2]);
     }
 }

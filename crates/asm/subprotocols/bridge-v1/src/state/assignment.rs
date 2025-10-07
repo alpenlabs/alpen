@@ -159,7 +159,7 @@ impl AssignmentEntry {
         }
 
         // Select a random operator from eligible ones
-        let eligible_indices: Vec<OperatorIdx> = eligible_operators.to_indices();
+        let eligible_indices: Vec<OperatorIdx> = eligible_operators.active_indices().collect();
         let random_index = (rng.next_u32() as usize) % eligible_indices.len();
         let current_assignee = eligible_indices[random_index];
 
@@ -190,11 +190,6 @@ impl AssignmentEntry {
     /// Returns the index of the currently assigned operator.
     pub fn current_assignee(&self) -> OperatorIdx {
         self.current_assignee
-    }
-
-    /// Returns a reference to the list of previous assignees.
-    pub fn previous_assignees(&self) -> Vec<OperatorIdx> {
-        self.previous_assignees.to_indices()
     }
 
     /// Returns the execution deadline for this assignment.
@@ -257,7 +252,7 @@ impl AssignmentEntry {
         }
 
         // Select a random operator from eligible ones
-        let eligible_indices: Vec<OperatorIdx> = eligible_operators.to_indices();
+        let eligible_indices: Vec<OperatorIdx> = eligible_operators.active_indices().collect();
         let random_index = (rng.next_u32() as usize) % eligible_indices.len();
         let new_assignee = eligible_indices[random_index];
 
@@ -457,7 +452,7 @@ mod tests {
         assert_eq!(assignment.withdrawal_command(), &withdrawal_cmd);
         assert_eq!(assignment.exec_deadline(), exec_deadline);
         assert!(current_active_operators.is_active(assignment.current_assignee()));
-        assert_eq!(assignment.previous_assignees().len(), 0);
+        assert_eq!(assignment.previous_assignees.active_count(), 0);
     }
 
     #[test]
@@ -517,15 +512,16 @@ mod tests {
         .unwrap();
 
         let original_assignee = assignment.current_assignee();
-        assert_eq!(assignment.previous_assignees().len(), 0);
+        assert_eq!(assignment.previous_assignees.active_count(), 0);
 
         // Reassign to a new operator
         let result = assignment.reassign(new_fee, seed2, &current_active_operators);
         assert!(result.is_ok());
 
         // Verify reassignment
-        assert_eq!(assignment.previous_assignees().len(), 1);
-        assert_eq!(assignment.previous_assignees()[0], original_assignee);
+        let previous_assignees: Vec<_> = assignment.previous_assignees.active_indices().collect();
+        assert_eq!(previous_assignees.len(), 1);
+        assert_eq!(previous_assignees[0], original_assignee);
         assert_ne!(assignment.current_assignee(), original_assignee);
     }
 
@@ -566,7 +562,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Should have cleared previous assignees and reassigned to the same operator
-        assert_eq!(assignment.previous_assignees().len(), 0);
+        let previous_assignees: Vec<_> = assignment.previous_assignees.active_indices().collect();
+        assert_eq!(previous_assignees.len(), 0);
         assert_eq!(assignment.current_assignee(), 0); // Should be operator index 0
     }
 
@@ -671,15 +668,20 @@ mod tests {
 
         // Check that expired assignment was reassigned
         let expired_assignment_after = table.get_assignment(expired_deposit_idx).unwrap();
-        assert_eq!(expired_assignment_after.previous_assignees().len(), 1);
-        assert_eq!(
-            expired_assignment_after.previous_assignees()[0],
-            original_assignee
-        );
+        let previous_assignees: Vec<_> = expired_assignment_after
+            .previous_assignees
+            .active_indices()
+            .collect();
+        assert_eq!(previous_assignees.len(), 1);
+        assert_eq!(previous_assignees[0], original_assignee);
 
         // Check that non-expired assignment was not reassigned
         let future_assignment_after = table.get_assignment(future_deposit_idx).unwrap();
-        assert_eq!(future_assignment_after.previous_assignees().len(), 0);
+        let previous_assignees: Vec<_> = future_assignment_after
+            .previous_assignees
+            .active_indices()
+            .collect();
+        assert_eq!(previous_assignees.len(), 0);
         assert_eq!(
             future_assignment_after.current_assignee(),
             future_original_assignee
