@@ -147,8 +147,8 @@ impl AssignmentEntry {
     /// # Returns
     ///
     /// - `Ok(AssignmentEntry)` - A new assignment entry with randomly selected operator
-    /// - `Err(WithdrawalAssignmentError::NoEligibleOperators)` - If no eligible operators are
-    ///   available
+    /// - `Err(WithdrawalAssignmentError)` - If no eligible operators are available or bitmap
+    ///   operation fails
     pub fn create_with_random_assignment(
         deposit_entry: DepositEntry,
         withdrawal_cmd: WithdrawalCommand,
@@ -233,7 +233,8 @@ impl AssignmentEntry {
     /// # Returns
     ///
     /// - `Ok(())` - If the reassignment succeeded
-    /// - `Err(WithdrawalAssignmentError)` - If no eligible operators are available
+    /// - `Err(WithdrawalAssignmentError)` - If the bitmap operation fails or no eligible operators
+    ///   are available
     pub fn reassign(
         &mut self,
         new_operator_fee: BitcoinAmount,

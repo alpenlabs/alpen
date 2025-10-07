@@ -22,20 +22,6 @@ use crate::BitmapError;
 /// - **Operator Table**: Track which operators are in the current N/N multisig
 /// - **Deposit Entries**: Store historical notary operators for each deposit
 /// - **Assignment Creation**: Efficiently select operators for new tasks
-///
-/// # Memory Efficiency
-///
-/// For operator sets with densely packed indices, this bitmap uses significantly
-/// less memory than storing operator indices as `Vec<OperatorIdx>`.
-///
-/// # Examples
-///
-/// Basic usage:
-/// - Create a bitmap with `new_with_size(5, true)` to get operators 0, 1, 2, 3, 4 active
-/// - Use `is_active(idx)` to check if an operator is active
-/// - Use `try_set(idx, false)` to deactivate an operator
-/// - Use `to_indices()` to get a Vec of active operator indices
-/// - Sequential index constraint: can only add operators one by one without gaps
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperatorBitmap {
     /// Bitmap where bit `i` is set if operator index `i` is active.
@@ -119,6 +105,10 @@ impl OperatorBitmap {
     }
 
     /// Attempts to set the active state of an operator.
+    ///
+    /// The bitmap maintains sequential indices and only allows extending its size by exactly 1
+    /// position at a time. If the index equals the current length, the bitmap is extended by 1.
+    /// Indices that would skip positions (greater than current length) are rejected.
     ///
     /// # Parameters
     ///

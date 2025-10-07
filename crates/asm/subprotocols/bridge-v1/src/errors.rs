@@ -117,7 +117,9 @@ pub enum WithdrawalAssignmentError {
     NoEligibleOperators { deposit_idx: u32 },
 
     /// Notary operators and previous assignees bitmaps have mismatched lengths.
-    #[error("Notary operators length ({notary_len}) does not match previous assignees length ({previous_len})")]
+    #[error(
+        "Notary operators length ({notary_len}) does not match previous assignees length ({previous_len})"
+    )]
     MismatchedBitmapLengths {
         notary_len: usize,
         previous_len: usize,
@@ -125,7 +127,9 @@ pub enum WithdrawalAssignmentError {
 
     /// Current active operators bitmap is shorter than notary operators bitmap.
     /// This indicates a system inconsistency since operator indices are only appended.
-    #[error("Current active operators bitmap length ({active_len}) is shorter than notary operators length ({notary_len}). This should never happen as operator bitmaps only grow.")]
+    #[error(
+        "Current active operators bitmap length ({active_len}) is shorter than notary operators length ({notary_len}). This should never happen as operator bitmaps only grow."
+    )]
     InsufficientActiveBitmapLength {
         active_len: usize,
         notary_len: usize,
@@ -141,7 +145,9 @@ pub enum WithdrawalAssignmentError {
 pub enum BitmapError {
     /// Attempted to set a bit at an index that would create a gap in the bitmap.
     /// Only sequential indices are allowed.
-    #[error("Index {index} is out of bounds for sequential bitmap (valid range: 0..={max_valid_index})")]
+    #[error(
+        "Index {index} is out of bounds for sequential bitmap (valid range: 0..={max_valid_index})"
+    )]
     IndexOutOfBounds {
         index: OperatorIdx,
         max_valid_index: OperatorIdx,
