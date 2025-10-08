@@ -128,15 +128,15 @@ impl OperatorTable {
     }
 
     /// Inserts a new operator entry.
-    pub fn insert(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
+    pub fn insert(&mut self, operator_pubkeys: OperatorPubkeys) {
         let entry = OperatorEntry {
             idx: {
                 let idx = self.next_idx;
                 self.next_idx += 1;
                 idx
             },
-            signing_pk,
-            wallet_pk,
+            signing_pk: *operator_pubkeys.signing_pk(),
+            wallet_pk: *operator_pubkeys.wallet_pk(),
         };
         self.operators.push(entry);
     }

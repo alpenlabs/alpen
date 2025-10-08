@@ -8,7 +8,7 @@ use strata_bridge_types::{
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     l1::{BitcoinBlockHeight, *},
-    operator::OperatorIdx,
+    operator::{OperatorIdx, OperatorPubkeys},
     prelude::*,
 };
 
@@ -80,9 +80,10 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
 
     /// Inserts a new operator with the specified pubkeys into the operator table.
     pub fn insert_operator(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
+        let operator_pubkeys = OperatorPubkeys::new(signing_pk, wallet_pk);
         self.state_mut()
             .operator_table_mut()
-            .insert(signing_pk, wallet_pk);
+            .insert(operator_pubkeys);
     }
 
     /// Inserts a new deposit with some settings.
