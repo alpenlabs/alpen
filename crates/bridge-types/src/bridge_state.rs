@@ -9,10 +9,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
-    bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
-    l1::{BitcoinAmount, OutputRef},
-    operator::{OperatorKeyProvider, OperatorPubkeys},
+    l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
+    operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys},
 };
 
 /// Entry for an operator.
@@ -524,7 +523,7 @@ impl DispatchCommand {
     }
 }
 
-/// An output constructed from [`crate::bridge_ops::WithdrawalIntent`].
+/// An output constructed from [`super::bridge_ops::WithdrawalIntent`].
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct WithdrawOutput {

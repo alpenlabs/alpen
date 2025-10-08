@@ -6,7 +6,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_crypto::multisig::aggregate_schnorr_keys;
 use strata_primitives::{
-    bridge::OperatorIdx, buf::Buf32, l1::XOnlyPk, operator::OperatorPubkeys, sorted_vec::SortedVec,
+    buf::Buf32,
+    l1::XOnlyPk,
+    operator::{OperatorIdx, OperatorPubkeys},
+    sorted_vec::SortedVec,
 };
 
 /// Bridge operator entry containing identification and cryptographic keys.

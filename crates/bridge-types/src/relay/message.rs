@@ -4,10 +4,9 @@ use arbitrary::Arbitrary;
 use borsh::{io, BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
-use crate::{
-    bridge::OperatorIdx,
+use strata_primitives::{
     buf::{Buf32, Buf64},
+    operator::OperatorIdx,
     prelude::BitcoinTxid,
 };
 
@@ -258,14 +257,11 @@ impl fmt::Display for BridgeMsgId {
 
 #[cfg(test)]
 mod tests {
+    use strata_primitives::{buf::Buf64, l1::BitcoinTxid};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::{BridgeMessage, Scope};
-    use crate::{
-        bridge::{Musig2PartialSig, Musig2PubNonce},
-        buf::Buf64,
-        l1::BitcoinTxid,
-    };
+    use crate::bridge::{Musig2PartialSig, Musig2PubNonce};
 
     #[expect(unused, reason = "used for testing")]
     fn get_arb_bridge_msg() -> BridgeMessage {

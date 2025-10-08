@@ -12,9 +12,9 @@ use rand_chacha::{
 };
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
-    bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
-    l1::{BitcoinAmount, BitcoinTxid, L1BlockId},
+    l1::{BitcoinAmount, BitcoinBlockHeight, BitcoinTxid, L1BlockId},
+    operator::OperatorIdx,
     sorted_vec::SortedVec,
 };
 
@@ -400,7 +400,10 @@ impl AssignmentTable {
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::{bridge::BitcoinBlockHeight, l1::L1BlockId};
+    use strata_primitives::{
+        l1::{BitcoinBlockHeight, L1BlockId},
+        operator::OperatorIdx,
+    };
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;

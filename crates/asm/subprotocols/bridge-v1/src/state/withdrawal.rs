@@ -10,8 +10,8 @@ use moho_types::ExportEntry;
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
-    bridge::OperatorIdx,
     l1::{BitcoinAmount, BitcoinTxid},
+    operator::OperatorIdx,
 };
 
 /// Command specifying a Bitcoin output for a withdrawal operation.

@@ -11,6 +11,7 @@ use alloy_rpc_types::{
 use alpen_reth_evm::constants::COINBASE_ADDRESS;
 use alpen_reth_node::AlpenPayloadAttributes;
 use revm_primitives::{Address, B256};
+use strata_bridge_types::WithdrawalIntent;
 use strata_db::DbError;
 use strata_eectl::{
     engine::{BlockStatus, ExecEngineCtl, L2BlockRef, PayloadStatus},
@@ -19,10 +20,7 @@ use strata_eectl::{
 };
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l1::BitcoinAmount;
-use strata_state::{
-    bridge_ops,
-    exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput},
-};
+use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput};
 use strata_storage::L2BlockManager;
 use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
@@ -424,13 +422,13 @@ struct ForkchoiceStatePartial {
 
 fn to_bridge_withdrawal_intent(
     rpc_withdrawal_intent: alpen_reth_node::WithdrawalIntent,
-) -> bridge_ops::WithdrawalIntent {
+) -> WithdrawalIntent {
     let alpen_reth_node::WithdrawalIntent {
         amt,
         destination,
         withdrawal_txid,
     } = rpc_withdrawal_intent;
-    bridge_ops::WithdrawalIntent::new(BitcoinAmount::from_sat(amt), destination, withdrawal_txid)
+    WithdrawalIntent::new(BitcoinAmount::from_sat(amt), destination, withdrawal_txid)
 }
 
 #[cfg(test)]

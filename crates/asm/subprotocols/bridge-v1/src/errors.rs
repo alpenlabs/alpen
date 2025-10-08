@@ -6,8 +6,8 @@ use strata_asm_txs_bridge_v1::errors::{
 };
 use strata_l1_txfmt::TxType;
 use strata_primitives::{
-    bridge::OperatorIdx,
     l1::{BitcoinAmount, BitcoinTxid},
+    operator::OperatorIdx,
 };
 use thiserror::Error;
 

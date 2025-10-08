@@ -10,6 +10,7 @@ use bitcoin::{
 };
 use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult;
+use strata_bridge_types::{DepositState, PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
@@ -20,7 +21,6 @@ use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry,
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
-    bridge::{OperatorIdx, PublickeyTable},
     buf::Buf32,
     epoch::EpochCommitment,
     hash,
@@ -28,6 +28,7 @@ use strata_primitives::{
         payload::{L1Payload, PayloadDest, PayloadIntent},
         L1BlockCommitment, L1BlockId,
     },
+    operator::OperatorIdx,
     params::Params,
 };
 use strata_rpc_api::{
@@ -46,10 +47,7 @@ use strata_sequencer::{
     checkpoint::{verify_checkpoint_sig, CheckpointHandle},
     duty::{extractor::extract_duties, types::Duty},
 };
-use strata_state::{
-    bridge_ops::WithdrawalIntent, bridge_state::DepositState, client_state::ClientState,
-    operation::ClientUpdateOutput,
-};
+use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::sync::{oneshot, Mutex};

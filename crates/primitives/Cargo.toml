@@ -20,9 +20,7 @@ borsh.workspace = true
 const-hex = "1.14"
 digest.workspace = true
 hex.workspace = true
-musig2 = { workspace = true, features = ["serde"] }
 num_enum.workspace = true
-rand = { workspace = true, optional = true }
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
 sha2.workspace = true
@@ -37,10 +35,10 @@ k256 = { version = "0.13.4", features = ["schnorr"] }
 
 [dev-dependencies]
 strata-test-utils.workspace = true
+rand.workspace = true
 
 serde_json.workspace = true
 
 [features]
-default = ["std", "rand"]
-rand = ["std", "dep:rand"]
+default = ["std"]
 std = ["dep:secp256k1"]

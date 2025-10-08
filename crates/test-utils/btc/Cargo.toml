@@ -8,9 +8,9 @@ workspace = true
 
 [dependencies]
 strata-asm-types.workspace = true
+strata-bridge-types = { workspace = true, features = ["test_utils"] }
 strata-btcio.workspace = true
 strata-primitives.workspace = true
-strata-state = { workspace = true, features = ["test_utils"] }
 strata-test-utils.workspace = true
 
 anyhow.workspace = true

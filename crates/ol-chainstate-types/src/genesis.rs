@@ -1,7 +1,8 @@
 //! Types relating to constructing the genesis chainstate.
 
 use arbitrary::Arbitrary;
-use strata_state::{bridge_state::OperatorTable, exec_env::ExecEnvState};
+use strata_bridge_types::OperatorTable;
+use strata_state::exec_env::ExecEnvState;
 
 use crate::l1_view::L1ViewState;
 
