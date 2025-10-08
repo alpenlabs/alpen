@@ -207,7 +207,7 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     fn del_checkpoints_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
 
     /// Get the next checkpoint index that has PendingProof status.
-    /// Returns the highest index checkpoint that still needs proof generation.
+    /// Returns the lowest index checkpoint that still needs proof generation.
     fn get_next_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>>;
 }
 
