@@ -54,7 +54,7 @@ fn index_tx<V: TxVisitor>(
     mut visitor: V,
     filter_config: &TxFilterConfig,
 ) -> Option<V::Output> {
-    while let Some(ckpt) = parse_valid_checkpoint_envelope(tx, filter_config) {
+    if let Some(ckpt) = parse_valid_checkpoint_envelope(tx, filter_config) {
         visitor.visit_checkpoint(ckpt);
     }
 

@@ -24,12 +24,15 @@ pub enum EnvelopeParseError {
     InvalidPayload,
 }
 
-/// Parse [`L1Payload`]
+/// Parse envelope payload from a script
+///
+/// Extracts the raw payload bytes from a script containing an envelope structure.
+/// The envelope is expected to be wrapped in `OP_FALSE OP_IF ... OP_ENDIF`.
 ///
 /// # Errors
 ///
-/// This function errors if it cannot parse the [`L1Payload`]
-/// FIXME:PG update docstring
+/// Returns [`EnvelopeParseError`] if the script does not contain a valid envelope structure
+/// or if the payload cannot be extracted.
 pub fn parse_envelope_payload(script: &ScriptBuf) -> Result<Vec<u8>, EnvelopeParseError> {
     let mut instructions = script.instructions();
 

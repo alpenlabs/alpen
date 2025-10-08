@@ -150,6 +150,7 @@ pub fn create_envelope_transactions(
         env_config.reveal_amount,
         env_config.fee_rate,
         &reveal_script,
+        &tag_script,
         &taproot_spend_info,
     );
 
@@ -459,14 +460,21 @@ fn calculate_commit_output_value(
     reveal_value: u64,
     fee_rate: u64,
     reveal_script: &script::ScriptBuf,
+    tag_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
 ) -> u64 {
     get_size(
         &default_txin(),
-        &[TxOut {
-            script_pubkey: recipient.script_pubkey(),
-            value: Amount::from_sat(reveal_value),
-        }],
+        &[
+            TxOut {
+                script_pubkey: tag_script.clone(),
+                value: Amount::from_sat(0),
+            },
+            TxOut {
+                script_pubkey: recipient.script_pubkey(),
+                value: Amount::from_sat(reveal_value),
+            },
+        ],
         Some(reveal_script),
         Some(
             &taproot_spend_info
@@ -707,10 +715,10 @@ mod tests {
         assert_eq!(tx.input.len(), 1);
         assert_eq!(tx.input[0].previous_output.vout, utxo.vout);
 
-        assert_eq!(tx.output.len(), 1);
-        assert_eq!(tx.output[0].value.to_sat(), ctx.config.reveal_amount);
+        assert_eq!(tx.output.len(), 2);
+        assert_eq!(tx.output[1].value.to_sat(), ctx.config.reveal_amount);
         assert_eq!(
-            tx.output[0].script_pubkey,
+            tx.output[1].script_pubkey,
             ctx.sequencer_address.script_pubkey()
         );
 
@@ -752,7 +760,7 @@ mod tests {
         // check outputs
         assert_eq!(commit.output.len(), 2, "commit tx should have 2 outputs");
 
-        assert_eq!(reveal.output.len(), 1, "reveal tx should have 1 output");
+        assert_eq!(reveal.output.len(), 2, "reveal tx should have 2 outputs");
 
         assert_eq!(
             commit.input[0].previous_output.txid, utxos[2].txid,
@@ -774,7 +782,7 @@ mod tests {
         );
 
         assert_eq!(
-            reveal.output[0].script_pubkey,
+            reveal.output[1].script_pubkey,
             ctx.sequencer_address.script_pubkey(),
             "reveal should pay to the correct address"
         );

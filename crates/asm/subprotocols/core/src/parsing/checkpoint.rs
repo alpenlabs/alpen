@@ -4,8 +4,7 @@
 
 use strata_asm_common::TxInputRef;
 use strata_checkpoint_types::SignedCheckpoint;
-use strata_l1tx::{envelope::parser::parse_envelope_payloads, filter::types::TxFilterConfig};
-use strata_primitives::l1::payload::L1PayloadType;
+use strata_l1tx::{TxFilterConfig, filter::checkpoint::parse_valid_checkpoint_envelope};
 
 use crate::error::*;
 
