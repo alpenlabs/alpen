@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt};
+use strata_checkpoint_types::EpochSummary;
 use strata_db::{traits::CheckpointDatabase, types::CheckpointEntry, DbError, DbResult};
 use strata_primitives::epoch::EpochCommitment;
-use strata_state::batch::EpochSummary;
 
 use super::schemas::*;
 use crate::DbOpsConfig;

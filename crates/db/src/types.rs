@@ -9,15 +9,13 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     buf::Buf32,
     l1::payload::{L1Payload, PayloadIntent},
 };
-use strata_state::{
-    batch::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar},
-    client_state::CheckpointL1Ref,
-};
+use strata_state::client_state::CheckpointL1Ref;
 use zkaleido::Proof;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.

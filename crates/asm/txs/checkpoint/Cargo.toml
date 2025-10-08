@@ -8,9 +8,9 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
+strata-checkpoint-types.workspace = true
 strata-l1tx.workspace = true
 strata-ol-chainstate-types.workspace = true
-strata-primitives.workspace = true
 strata-state.workspace = true
 
 bitcoin.workspace = true

@@ -23,6 +23,7 @@ members = [
   "crates/chainexec",
   "crates/chaintsn",
   "crates/chain-worker",
+  "crates/checkpoint-types",
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
@@ -144,6 +145,7 @@ strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
+strata-checkpoint-types = { path = "crates/checkpoint-types" }
 strata-cli-common = { path = "crates/strata-cli-common" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }

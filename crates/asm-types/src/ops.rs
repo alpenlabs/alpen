@@ -5,8 +5,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use strata_checkpoint_types::SignedCheckpoint;
 use strata_primitives::{
-    batch::SignedCheckpoint,
     buf::Buf32,
     l1::{BitcoinAmount, OutputRef},
 };

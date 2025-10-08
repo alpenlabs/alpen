@@ -3,6 +3,7 @@ use std::{thread, time};
 use strata_asm_types::{L1BlockManifest, ProtocolOperation};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
+use strata_checkpoint_types::Checkpoint;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -22,7 +23,7 @@ use strata_primitives::{
     buf::Buf32,
     params::{Params, RollupParams},
 };
-use strata_state::{batch::Checkpoint, exec_update::construct_ops_from_deposit_intents};
+use strata_state::exec_update::construct_ops_from_deposit_intents;
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
 use tracing::*;
 

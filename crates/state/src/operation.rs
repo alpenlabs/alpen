@@ -4,7 +4,8 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{batch::Checkpoint, epoch::EpochCommitment};
+use strata_checkpoint_types::Checkpoint;
+use strata_primitives::epoch::EpochCommitment;
 
 use crate::client_state::{CheckpointL1Ref, ClientState};
 

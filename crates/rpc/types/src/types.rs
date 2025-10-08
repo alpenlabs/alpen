@@ -6,6 +6,7 @@
 
 use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
+use strata_checkpoint_types::BatchInfo;
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{
@@ -18,7 +19,6 @@ use strata_primitives::{
     prelude::L1Status,
 };
 use strata_state::{
-    batch::BatchInfo,
     bridge_ops::WithdrawalIntent,
     bridge_state::{DepositEntry, DepositState},
     client_state::CheckpointL1Ref,
