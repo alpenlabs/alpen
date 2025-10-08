@@ -13072,7 +13072,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.14.0",
+ "bitcoin_hashes 0.13.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -14616,7 +14616,7 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#59dbd8856782132fb7db4ef32694f508aa2c3609"
+source = "git+https://github.com/alpenlabs/strata-common#bab2caef4496c2b9c2bed2d7ebb9fd9c4d54a8ef"
 dependencies = [
  "thiserror 2.0.16",
 ]
@@ -14933,7 +14933,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?branch=feat%2Fowned-tag-data#910755be2a21b2bcfbcb8a4454ef02666ae88db7"
+source = "git+https://github.com/alpenlabs/strata-common#bab2caef4496c2b9c2bed2d7ebb9fd9c4d54a8ef"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14990,7 +14990,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#59dbd8856782132fb7db4ef32694f508aa2c3609"
+source = "git+https://github.com/alpenlabs/strata-common#bab2caef4496c2b9c2bed2d7ebb9fd9c4d54a8ef"
 dependencies = [
  "thiserror 2.0.16",
 ]
