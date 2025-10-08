@@ -1,6 +1,6 @@
 use serde::Serialize;
 use strata_db::types::L1BundleStatus;
-use strata_primitives::{buf::Buf32, l1::payload::L1Payload};
+use strata_primitives::{buf::Buf32, hash, l1::payload::L1Payload};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
@@ -62,13 +62,14 @@ impl Formattable for WriterPayloadInfo {
 
         // Add individual payload details
         for (payload_index, payload) in self.payloads.iter().enumerate() {
+            let payload_hash = hash::raw(payload.payload());
             output.push(porcelain_field(
-                &format!("payload.payload_{payload_index}.type"),
-                format!("{:?}", payload.payload_type()),
+                &format!("payload.payload_{payload_index}.tx_type"),
+                format!("{:?}", payload.tag().tx_type()),
             ));
             output.push(porcelain_field(
                 &format!("payload.payload_{payload_index}.data_hash"),
-                format!("{:?}", payload.hash()),
+                format!("{:?}", payload_hash),
             ));
         }
 

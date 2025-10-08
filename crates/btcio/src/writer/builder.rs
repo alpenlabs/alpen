@@ -25,6 +25,7 @@ use bitcoind_async_client::{
 };
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeePolicy;
+use strata_l1_txfmt::{self, ParseConfig, TxFmtError};
 use strata_l1tx::envelope::builder::build_envelope_script;
 use strata_primitives::{l1::payload::L1Payload, params::Params};
 use thiserror::Error;
@@ -81,6 +82,9 @@ pub enum EnvelopeError {
     #[error("Error building taproot")]
     Taproot(#[from] TaprootBuilderError),
 
+    #[error("sps tx fmt")]
+    Tag(#[from] TxFmtError),
+
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -121,7 +125,11 @@ pub fn create_envelope_transactions(
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
     // Start creating envelope content
-    let reveal_script = build_reveal_script(&public_key, payload)?;
+    let reveal_script = build_reveal_script(&public_key, payload.payload())?;
+
+    let tag_script = ParseConfig::new(env_config.params.rollup().magic_bytes)
+        .encode_script_buf(&payload.tag().as_ref())?;
+
     // Create spend info for tapscript
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())?
@@ -163,6 +171,7 @@ pub fn create_envelope_transactions(
         env_config.reveal_amount,
         env_config.fee_rate,
         &reveal_script,
+        tag_script,
         &taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
@@ -375,12 +384,20 @@ pub fn build_reveal_transaction(
     output_value: u64,
     fee_rate: u64,
     reveal_script: &ScriptBuf,
+    tag_script: ScriptBuf,
     control_block: &ControlBlock,
 ) -> Result<Transaction, EnvelopeError> {
-    let outputs: Vec<TxOut> = vec![TxOut {
-        value: Amount::from_sat(output_value),
-        script_pubkey: recipient.script_pubkey(),
-    }];
+    let outputs: Vec<TxOut> = vec![
+        // The first output should be SPS-50 tagged
+        TxOut {
+            value: Amount::from_sat(0),
+            script_pubkey: tag_script,
+        },
+        TxOut {
+            value: Amount::from_sat(output_value),
+            script_pubkey: recipient.script_pubkey(),
+        },
+    ];
 
     let v_out_for_reveal = 0u32;
     let input_utxo = input_transaction.output[v_out_for_reveal as usize].clone();
@@ -425,7 +442,7 @@ pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
 /// envelope block
 fn build_reveal_script(
     taproot_public_key: &XOnlyPublicKey,
-    payload: &L1Payload,
+    payload: &[u8],
 ) -> Result<ScriptBuf, anyhow::Error> {
     let mut script_bytes = script::Builder::new()
         .push_x_only_key(taproot_public_key)
@@ -526,6 +543,7 @@ mod tests {
         TxOut, Witness,
     };
     use bitcoind_async_client::types::ListUnspent;
+    use strata_l1_txfmt::{TagData, TagDataRef};
 
     use super::*;
     use crate::{
@@ -659,7 +677,11 @@ mod tests {
         let (ctx, _, _, utxos) = get_mock_data();
 
         let utxo = utxos.first().unwrap();
-        let _script = ScriptBuf::from_hex("62a58f2674fd840b6144bea2e63ebd35c16d7fd40252a2f28b2a01a648df356343e47976d7906a0e688bf5e134b6fd21bd365c016b57b1ace85cf30bf1206e27").unwrap();
+        let _reveal_script = ScriptBuf::from_hex("62a58f2674fd840b6144bea2e63ebd35c16d7fd40252a2f28b2a01a648df356343e47976d7906a0e688bf5e134b6fd21bd365c016b57b1ace85cf30bf1206e27").unwrap();
+
+        let td = TagDataRef::new(1, 1, &[]).unwrap();
+        let tag_script = ParseConfig::new(*b"ALPN").encode_script_buf(&td).unwrap();
+
         let control_block = ControlBlock::decode(&[
             193, 165, 246, 250, 6, 222, 28, 9, 130, 28, 217, 67, 171, 11, 229, 62, 48, 206, 219,
             111, 155, 208, 6, 7, 119, 63, 146, 90, 227, 254, 231, 232, 249,
@@ -672,13 +694,14 @@ mod tests {
             ctx.sequencer_address.clone(),
             ctx.config.reveal_amount,
             8,
-            &_script,
+            &_reveal_script,
+            tag_script.clone(),
             &control_block,
         )
         .unwrap();
 
         tx.input[0].witness.push([0; SCHNORR_SIGNATURE_SIZE]);
-        tx.input[0].witness.push(_script.clone());
+        tx.input[0].witness.push(_reveal_script.clone());
         tx.input[0].witness.push(control_block.serialize());
 
         assert_eq!(tx.input.len(), 1);
@@ -700,7 +723,8 @@ mod tests {
             ctx.sequencer_address.clone(),
             inp_required,
             750,
-            &_script,
+            &_reveal_script,
+            tag_script,
             &control_block,
         );
 
@@ -712,7 +736,8 @@ mod tests {
     fn test_create_envelope_transactions() {
         let (ctx, _, _, utxos) = get_mock_data();
 
-        let payload = L1Payload::new_da(vec![0u8; 100]);
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let payload = L1Payload::new(vec![0u8; 100], tag);
 
         let env_config = EnvelopeConfig::new(
             ctx.params.clone(),

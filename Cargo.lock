@@ -13072,7 +13072,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.13.0",
+ "bitcoin_hashes 0.14.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -14479,6 +14479,7 @@ dependencies = [
  "strata-config",
  "strata-db",
  "strata-db-store-sled",
+ "strata-l1-txfmt",
  "strata-l1tx",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -14591,6 +14592,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-eectl",
  "strata-evmexec",
+ "strata-l1-txfmt",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -14931,7 +14933,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#59dbd8856782132fb7db4ef32694f508aa2c3609"
+source = "git+https://github.com/alpenlabs/strata-common?branch=feat%2Fowned-tag-data#910755be2a21b2bcfbcb8a4454ef02666ae88db7"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",

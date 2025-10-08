@@ -22,6 +22,7 @@ strata-db-store-rocksdb = { workspace = true, optional = true }
 strata-db-store-sled = { workspace = true, optional = true }
 strata-eectl.workspace = true
 strata-evmexec.workspace = true
+strata-l1-txfmt.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true

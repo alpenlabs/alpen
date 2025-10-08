@@ -1,7 +1,6 @@
 use bitcoin::Transaction;
 use strata_checkpoint_types::{verify_signed_checkpoint_sig, SignedCheckpoint};
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::l1::payload::L1PayloadType;
 use tracing::warn;
 
 use super::TxFilterConfig;
@@ -56,6 +55,7 @@ fn validate_checkpoint(
 mod test {
     use strata_btcio::test_utils::create_checkpoint_envelope_tx;
     use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
+    use strata_l1_txfmt::TagData;
     use strata_ol_chainstate_types::Chainstate;
     use strata_primitives::{l1::payload::L1Payload, params::Params};
     use strata_test_utils::ArbitraryGenerator;
@@ -89,7 +89,9 @@ mod test {
             ),
             gen.generate(),
         );
-        let l1_payload = L1Payload::new_checkpoint(borsh::to_vec(&signed_checkpoint).unwrap());
+
+        let checkpoint_tag = TagData::new(1, 1, vec![]).unwrap();
+        let l1_payload = L1Payload::new(borsh::to_vec(&signed_checkpoint).unwrap(), checkpoint_tag);
 
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload.clone());
         let checkpoint = parse_valid_checkpoint_envelope(&tx, &filter_config).unwrap();
@@ -115,7 +117,8 @@ mod test {
             ),
             gen.generate(),
         );
-        let l1_payload = L1Payload::new_checkpoint(borsh::to_vec(&signed_checkpoint).unwrap());
+        let checkpoint_tag = TagData::new(1, 1, vec![]).unwrap();
+        let l1_payload = L1Payload::new(borsh::to_vec(&signed_checkpoint).unwrap(), checkpoint_tag);
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
         let res = parse_valid_checkpoint_envelope(&tx, &filter_config);
 

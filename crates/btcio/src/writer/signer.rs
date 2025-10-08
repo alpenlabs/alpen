@@ -61,6 +61,7 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
 #[cfg(test)]
 mod test {
     use strata_db::types::{BundledPayloadEntry, L1BundleStatus};
+    use strata_l1_txfmt::TagData;
     use strata_primitives::l1::payload::L1Payload;
 
     use super::*;
@@ -76,7 +77,8 @@ mod test {
         let ctx = get_writer_context();
 
         // First insert an unsigned blob
-        let payload = L1Payload::new_da([1; 100].to_vec());
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let payload = L1Payload::new([1; 100].to_vec(), tag);
         let entry = BundledPayloadEntry::new_unsigned(vec![payload]);
 
         assert_eq!(entry.status, L1BundleStatus::Unsigned);

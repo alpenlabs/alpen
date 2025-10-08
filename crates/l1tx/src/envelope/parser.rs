@@ -93,26 +93,22 @@ pub fn extract_until_op_endif(
 #[cfg(test)]
 mod tests {
 
-    use strata_primitives::l1::payload::L1Payload;
-
     use super::*;
     use crate::envelope::builder::build_envelope_script;
 
     #[test]
     fn test_parse_envelope_data() {
-        let bytes = vec![0, 1, 2, 3];
-        let small_envelope = L1Payload::new_checkpoint(bytes.clone());
+        let small_envelope = vec![0, 1, 2, 3];
         let script = build_envelope_script(&small_envelope).unwrap();
         let result = parse_envelope_payload(&script).unwrap();
 
-        assert_eq!(result, bytes);
+        assert_eq!(result, small_envelope);
 
         // Try with larger size
-        let bytes = vec![1; 2000];
-        let large_envelope = L1Payload::new_checkpoint(bytes.clone());
+        let large_envelope = vec![1; 2000];
         let script = build_envelope_script(&large_envelope).unwrap();
 
         let result = parse_envelope_payload(&script).unwrap();
-        assert_eq!(result, bytes);
+        assert_eq!(result, large_envelope);
     }
 }
