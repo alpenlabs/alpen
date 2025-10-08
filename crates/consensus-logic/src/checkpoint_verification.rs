@@ -1,8 +1,9 @@
 //! General handling around checkpoint verification.
 
 use strata_chaintsn::transition::verify_checkpoint_proof;
+use strata_checkpoint_types::{BatchTransition, Checkpoint};
 use strata_primitives::params::*;
-use strata_state::{batch::*, client_state::L1Checkpoint};
+use strata_state::client_state::L1Checkpoint;
 use tracing::*;
 use zkaleido::{ProofReceipt, ZkVmError, ZkVmResult};
 

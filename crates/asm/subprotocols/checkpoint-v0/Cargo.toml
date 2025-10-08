@@ -13,6 +13,7 @@ strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
+strata-checkpoint-types.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
 thiserror.workspace = true

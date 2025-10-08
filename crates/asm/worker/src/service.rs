@@ -56,10 +56,12 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         while pivot_anchor.is_err() && pivot_block.height() >= genesis_height {
             let block = ctx.get_l1_block(pivot_block.blkid())?;
-            let parent_block_id = L1BlockCommitment::new(
-                pivot_block.height() - 1,
+            let parent_height = pivot_block.height().to_consensus_u32() - 1;
+            let parent_block_id = L1BlockCommitment::from_height_u64(
+                parent_height as u64,
                 block.header.prev_blockhash.into(),
-            );
+            )
+            .expect("parent height should be valid");
 
             // Push the unprocessed block.
             skipped_blocks.push((block, pivot_block));

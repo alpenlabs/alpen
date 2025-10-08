@@ -11,6 +11,7 @@ use bitcoin::{
 use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult;
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
+use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
 use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
@@ -19,7 +20,6 @@ use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry,
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
-    batch::EpochSummary,
     bridge::{OperatorIdx, PublickeyTable},
     buf::Buf32,
     epoch::EpochCommitment,
@@ -47,10 +47,7 @@ use strata_sequencer::{
     duty::{extractor::extract_duties, types::Duty},
 };
 use strata_state::{
-    batch::{Checkpoint, SignedCheckpoint},
-    bridge_ops::WithdrawalIntent,
-    bridge_state::DepositState,
-    client_state::ClientState,
+    bridge_ops::WithdrawalIntent, bridge_state::DepositState, client_state::ClientState,
     operation::ClientUpdateOutput,
 };
 use strata_status::StatusChannel;
@@ -201,7 +198,8 @@ impl StrataApiServer for StrataRpcImpl {
 
         // Maybe set buried L1 block.
         let depth = self.sync_manager.params().rollup().l1_reorg_safe_depth;
-        let buried_height_checked = l1_block.height().checked_sub(depth as u64);
+        let current_height = l1_block.height().to_consensus_u32() as u64;
+        let buried_height_checked = current_height.checked_sub(depth as u64);
         // Checked fetch the canonical chain.
         if let Some(buried_height) = buried_height_checked {
             let manifest = self

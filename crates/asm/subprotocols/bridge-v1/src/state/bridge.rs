@@ -239,7 +239,7 @@ impl BridgeV1State {
             .ok_or(WithdrawalCommandError::NoUnassignedDeposits)?;
 
         // Create assignment with deadline calculated from current block height + deadline duration
-        let exec_deadline = l1_block.height() + self.deadline_duration();
+        let exec_deadline = l1_block.height().to_consensus_u32() as u64 + self.deadline_duration();
 
         if deposit.amt() != withdrawal_output.amt() {
             return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch(
@@ -288,7 +288,7 @@ impl BridgeV1State {
         &mut self,
         current_block: &L1BlockCommitment,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
-        let current_block_height = current_block.height();
+        let current_block_height = current_block.height_u64();
         let l1_block_id = current_block.blkid();
 
         self.assignments.reassign_expired_assignments(

@@ -1,5 +1,7 @@
 use arbitrary::Arbitrary;
-use bitcoin::{block::Header, hashes::Hash, params::Params, BlockHash, CompactTarget, Network};
+use bitcoin::{
+    absolute, block::Header, hashes::Hash, params::Params, BlockHash, CompactTarget, Network,
+};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
@@ -134,9 +136,8 @@ impl HeaderVerificationState {
     /// calculates a new target using the timespan between epoch start and current block.
     /// Otherwise, returns the current target unchanged.
     fn next_target(&mut self, header: &Header) -> u32 {
-        if !(self.last_verified_block.height() + 1)
-            .is_multiple_of(self.params.difficulty_adjustment_interval())
-        {
+        let next_height = self.last_verified_block.height().to_consensus_u32() + 1;
+        if !next_height.is_multiple_of(self.params.difficulty_adjustment_interval() as u32) {
             return self.next_block_target;
         }
 
@@ -154,8 +155,8 @@ impl HeaderVerificationState {
     fn update_timestamps(&mut self, timestamp: u32) {
         self.block_timestamp_history.insert(timestamp);
 
-        let new_block_num = self.last_verified_block.height();
-        if new_block_num.is_multiple_of(self.params.difficulty_adjustment_interval()) {
+        let new_block_num = self.last_verified_block.height().to_consensus_u32();
+        if new_block_num.is_multiple_of(self.params.difficulty_adjustment_interval() as u32) {
             self.epoch_start_timestamp = timestamp;
         }
     }
@@ -211,8 +212,11 @@ impl HeaderVerificationState {
         }
 
         // Increase the last verified block number by 1 and set the new block hash
-        self.last_verified_block =
-            L1BlockCommitment::new(self.last_verified_block.height() + 1, block_hash_raw.into());
+        let next_height = absolute::Height::from_consensus(
+            self.last_verified_block.height().to_consensus_u32() + 1,
+        )
+        .expect("height + 1 should be valid");
+        self.last_verified_block = L1BlockCommitment::new(next_height, block_hash_raw.into());
 
         // Update the timestamps
         self.update_timestamps(header.time);

@@ -2,8 +2,8 @@
 
 use bitcoin::Transaction;
 use strata_asm_types::{L1BlockManifest, L1Tx, ProtocolOperation};
+use strata_checkpoint_types::verify_signed_checkpoint_sig;
 use strata_primitives::{
-    batch::verify_signed_checkpoint_sig,
     l1::{L1BlockCommitment, L1BlockId},
     prelude::*,
 };
@@ -68,7 +68,7 @@ pub fn transition_client_state(
     params: &Params,
 ) -> Result<(ClientState, Vec<SyncAction>), Error> {
     let rparams: &RollupParams = params.rollup();
-    let genesis_height = rparams.genesis_l1_view.height();
+    let genesis_height = rparams.genesis_l1_view.height_u64();
     let next_block_height = next_block_mf.height();
 
     // Double check that we don't receive pre-genesis blocks.
@@ -78,7 +78,7 @@ pub fn transition_client_state(
     // The only case where this can be inaccurate is when cur_state is
     // a default pre-genesis mock, but it's handled by genesis.
     assert_eq!(next_block_mf.get_prev_blockid(), *cur_block.blkid());
-    assert_eq!(cur_block.height() + 1, next_block_mf.height());
+    assert_eq!(cur_block.height_u64() + 1, next_block_mf.height());
 
     let mut actions = vec![];
 
@@ -195,6 +195,7 @@ fn get_l1_reference(tx: &L1Tx, blockid: L1BlockId, height: u64) -> Result<Checkp
 
     let txid = btx.compute_txid().into();
     let wtxid = btx.compute_wtxid().into();
-    let l1_comm = L1BlockCommitment::new(height, blockid);
+    let l1_comm =
+        L1BlockCommitment::from_height_u64(height, blockid).expect("height should be valid");
     Ok(CheckpointL1Ref::new(l1_comm, txid, wtxid))
 }

@@ -1,7 +1,10 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{buf::Buf32, l1::L1BlockId};
+use strata_primitives::{
+    buf::Buf32,
+    l1::{L1BlockCommitment, L1BlockId},
+};
 
 use super::{L1HeaderRecord, L1Tx};
 
@@ -117,14 +120,14 @@ impl L1BlockManifest {
     }
 }
 
-impl From<L1BlockManifest> for strata_primitives::l1::L1BlockCommitment {
+impl From<L1BlockManifest> for L1BlockCommitment {
     fn from(value: L1BlockManifest) -> Self {
-        Self::new(value.height(), *value.blkid())
+        Self::from_height_u64(value.height(), *value.blkid()).expect("height should be valid")
     }
 }
 
-impl From<&L1BlockManifest> for strata_primitives::l1::L1BlockCommitment {
+impl From<&L1BlockManifest> for L1BlockCommitment {
     fn from(value: &L1BlockManifest) -> Self {
-        Self::new(value.height(), *value.blkid())
+        Self::from_height_u64(value.height(), *value.blkid()).expect("height should be valid")
     }
 }

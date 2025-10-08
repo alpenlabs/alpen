@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use strata_asm_types::L1BlockManifest;
+use strata_checkpoint_types::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
 use strata_db::{types::CheckpointEntry, DbError};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     self, epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, prelude::*,
 };
-use strata_state::batch::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
 use strata_status::*;
 use strata_storage::{CheckpointDbManager, L1BlockManager, L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;
@@ -237,14 +237,15 @@ fn create_checkpoint_prep_data_from_summary(
 
     // Determine the ranges for each of the fields we commit to.
     let l1_start_height = if let Some(ps) = prev_summary {
-        ps.new_l1().height() + 1
+        ps.new_l1().height().to_consensus_u32() as u64 + 1
     } else {
-        params.genesis_l1_view.blk.height() + 1
+        params.genesis_l1_view.blk.height().to_consensus_u32() as u64 + 1
     };
 
     // Reconstruct the L1 range.
     let l1_start_mf = fetch_l1_block_manifest(l1_start_height, l1man)?;
-    let l1_start_block = L1BlockCommitment::new(l1_start_height, *l1_start_mf.blkid());
+    let l1_start_block = L1BlockCommitment::from_height_u64(l1_start_height, *l1_start_mf.blkid())
+        .expect("height should be valid");
     let l1_range = (l1_start_block, *summary.new_l1());
 
     // Now just pull out the data about the blocks from the transition here.

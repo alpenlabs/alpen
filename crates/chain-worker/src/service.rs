@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use strata_chainexec::{BlockExecutionOutput, ChainExecutor};
+use strata_checkpoint_types::EpochSummary;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_ol_chain_types::{L2Block, L2Header};
-use strata_primitives::{batch::EpochSummary, params::Params, prelude::*};
+use strata_primitives::{params::Params, prelude::*};
 use strata_service::{Response, Service, ServiceState, SyncService};
 use strata_status::StatusChannel;
 use tokio::{runtime::Handle, sync::Mutex};
@@ -244,7 +245,8 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         );
         let new_tip_height = l1seg.new_height();
         let new_tip_blkid = l1seg.new_tip_blkid().expect("fcm: missing l1seg final L1");
-        let new_l1_block = L1BlockCommitment::new(new_tip_height, new_tip_blkid);
+        let new_l1_block = L1BlockCommitment::from_height_u64(new_tip_height, new_tip_blkid)
+            .expect("valid height");
 
         let epoch_final_state = last_block_output.computed_state_root();
 

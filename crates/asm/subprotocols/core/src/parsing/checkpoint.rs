@@ -3,8 +3,9 @@
 //! Handles extraction and parsing of signed checkpoint data from transactions.
 
 use strata_asm_common::TxInputRef;
+use strata_checkpoint_types::SignedCheckpoint;
 use strata_l1tx::{envelope::parser::parse_envelope_payloads, filter::types::TxFilterConfig};
-use strata_primitives::{batch::SignedCheckpoint, l1::payload::L1PayloadType};
+use strata_primitives::l1::payload::L1PayloadType;
 
 use crate::error::*;
 

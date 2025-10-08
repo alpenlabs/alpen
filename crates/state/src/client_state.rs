@@ -8,14 +8,12 @@ use core::fmt;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_checkpoint_types::{BatchInfo, BatchTransition};
 use strata_primitives::{
-    batch::BatchTransition,
     buf::Buf32,
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
-
-use crate::batch::BatchInfo;
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -101,7 +99,7 @@ impl CheckpointState {
     }
 
     pub fn has_genesis_occurred(&self) -> bool {
-        self.block.height() > 0
+        self.block.height_u64() > 0
     }
 }
 
@@ -125,7 +123,7 @@ impl CheckpointL1Ref {
     }
 
     pub fn block_height(&self) -> u64 {
-        self.l1_commitment.height()
+        self.l1_commitment.height_u64()
     }
 
     pub fn block_id(&self) -> &L1BlockId {

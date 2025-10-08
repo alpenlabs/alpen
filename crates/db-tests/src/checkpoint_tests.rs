@@ -1,8 +1,8 @@
+use strata_checkpoint_types::EpochSummary;
 use strata_db::{
     traits::CheckpointDatabase,
     types::{CheckpointEntry, CheckpointProvingStatus},
 };
-use strata_state::batch::EpochSummary;
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_insert_summary_single(db: &impl CheckpointDatabase) {

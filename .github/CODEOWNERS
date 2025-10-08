@@ -1,71 +1,75 @@
 # Order is important; the last matching pattern takes the most precedence.
 
-.github/           @alpenlabs/admins             # only admins should own the CODEOWNERS
-.gitignore         @alpenlabs/admins
+.github/ @alpenlabs/admins # only admins should own the CODEOWNERS
+.gitignore @alpenlabs/admins
 
 # CI/Local ENV
-.github/workflows/     @alpenlabs/ci
-.github/actions/       @alpenlabs/ci
+.github/workflows/ @alpenlabs/ci
+.github/actions/ @alpenlabs/ci
 .github/dependabot.yml @alpenlabs/ci
-Makefile               @alpenlabs/rust @alpenlabs/ci @alpenlabs/bin
-codecov.yml            @alpenlabs/ci
-contrib/               @alpenlabs/ci   @alpenlabs/bin
-tests/                 @alpenlabs/rust @alpenlabs/ci
-**/*.nix               @alpenlabs/ci
-flake.lock             @alpenlabs/ci
+.justfile @alpenlabs/rust @alpenlabs/ci @alpenlabs/bin
+codecov.yml @alpenlabs/ci
+contrib/ @alpenlabs/ci @alpenlabs/bin
+tests/ @alpenlabs/rust @alpenlabs/ci
+**/*.nix @alpenlabs/ci
+flake.lock @alpenlabs/ci
 
 # Libs
 # Note that the globbing here is to future-proof against new crates
-/crates/             @alpenlabs/rust    # fallback catch all
-/crates/bridge*/     @alpenlabs/bridge
-/crates/btc*/        @alpenlabs/btc
-/crates/common/      @alpenlabs/rust
-/crates/chaintsn/    @alpenlabs/rust
-/crates/consensus*/  @alpenlabs/chain-core
-/crates/db/          @alpenlabs/database
-/crates/eectl/       @alpenlabs/evm
-/crates/evm*/        @alpenlabs/evm
+/crates/ @alpenlabs/rust # fallback catch all
+/crates/acct-types/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/asm*/ @alpenlabs/chain-protocol 
+/crates/btc*/ @alpenlabs/chain-protocol
+/crates/chain*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/common/ @alpenlabs/rust
+/crates/config/ @alpenlabs/rust
+/crates/consensus*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/crypto/ @alpenlabs/crypto @alpenlabs/rust
+/crates/db*/ @alpenlabs/chain-core
+/crates/*ee*/ @alpenlabs/chain-core
+/crates/evm*/ @alpenlabs/chain-core
 /crates/key-derivation/ @alpenlabs/crypto @alpenlabs/rust
-/crates/primitives/  @alpenlabs/crypto @alpenlabs/rust
-/crates/crypto/      @alpenlabs/crypto @alpenlabs/rust
-/crates/proof*/      @alpenlabs/prover
-/crates/reth/        @alpenlabs/evm
-/crates/db-store*/   @alpenlabs/database
-/crates/rpc/         @alpenlabs/chain-core @alpenlabs/btc
-/crates/sequencer/   @alpenlabs/chain-core
-/crates/state/       @alpenlabs/chain-core
-/crates/status/      @alpenlabs/chain-core
-/crates/storage/     @alpenlabs/chain-core
-/crates/sync/        @alpenlabs/chain-core
-/crates/tasks/       @alpenlabs/chain-core
-/crates/test-utils/  @alpenlabs/rust @alpenlabs/ci
-/crates/util*/       @alpenlabs/rust
-/crates/tx-parser/   @alpenlabs/rust @alpenlabs/btc
-/crates/*jmt*/       @alpenlabs/database
-/crates/zkvm/        @alpenlabs/prover
-/prover/             @alpenlabs/prover
+/crates/l1tx/ @alpenlabs/chain-protocol
+/crates/mpt/ @alpenlabs/chain-protocol @alpenlabs/crypto
+/crates/ol*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/primitives/ @alpenlabs/crypto @alpenlabs/rust
+/crates/proof*/ @alpenlabs/chain-protocol
+/crates/reth*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/rpc/ @alpenlabs/chain-core
+/crates/sequencer/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/service/ @alpenlabs/rust
+/crates/snark*/ @alpenlabs/chain-protocol
+/crates/state/ @alpenlabs/chain-core
+/crates/status/ @alpenlabs/chain-core
+/crates/storage/ @alpenlabs/chain-core
+/crates/strata-cli*/ @alpenlabs/rust
+/crates/sync/ @alpenlabs/chain-core
+/crates/tasks/ @alpenlabs/chain-core
+/crates/*test-*/ @alpenlabs/rust @alpenlabs/ci
+/crates/util*/ @alpenlabs/rust
+/crates/*jmt*/ @alpenlabs/chain-core
+/crates/zkvm/ @alpenlabs/chain-protocol
+/provers/ @alpenlabs/chain-protocol
 
 # Binaries/CLIs
-bin/                          @alpenlabs/bin                   # catch all
-bin/bridge-client/            @alpenlabs/bin @alpenlabs/bridge
-bin/datatool/                 @alpenlabs/bin @alpenlabs/bin-datatool
-bin/prover*/                  @alpenlabs/bin @alpenlabs/prover
-bin/strata-client/            @alpenlabs/bin @alpenlabs/bin-strata-client
-bin/alpen-reth/              @alpenlabs/bin @alpenlabs/evm
-bin/strata-sequencer-client/  @alpenlabs/bin @alpenlabs/bin-strata-client
+bin/ @alpenlabs/bin # catch all
+bin/alpen-*/ @alpenlabs/bin @alpenlabs/chain-core
+bin/datatool/ @alpenlabs/bin @alpenlabs/chain-core
+bin/prover*/ @alpenlabs/bin @alpenlabs/chain-protocol
+bin/strata-*/ @alpenlabs/bin @alpenlabs/chain-core
 
 # Functional tests
-functional-tests/             @alpenlabs/python               # catch all
-functional-tests/fn_*.py      @alpenlabs/python @alpenlabs/ci
+functional-tests/ @alpenlabs/python # catch all
+functional-tests/fn_*.py @alpenlabs/python @alpenlabs/ci
 functional-tests/constants.py @alpenlabs/python @alpenlabs/ci
-functional-tests/entry.py     @alpenlabs/python @alpenlabs/ci
+functional-tests/entry.py @alpenlabs/python @alpenlabs/ci
 
 # Docker/Containers
-**/Docker*         @alpenlabs/docker
-docker/            @alpenlabs/docker
+**/Docker* @alpenlabs/docker
+docker/ @alpenlabs/docker
 
 # Dependencies and metadata
-**/Cargo.toml      @alpenlabs/dependencies       # dependencies and metadata
-**/Cargo.lock      @alpenlabs/dependencies       # updates
-.config/           @alpenlabs/rust @alpenlabs/ci # config for rustdev and CI
-**/*.toml          @alpenlabs/rust               # config files
+**/Cargo.toml @alpenlabs/dependencies # dependencies and metadata
+**/Cargo.lock @alpenlabs/dependencies # updates
+.config/ @alpenlabs/rust @alpenlabs/ci # config for rustdev and CI
+**/*.toml @alpenlabs/rust # config files

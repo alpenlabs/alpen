@@ -173,7 +173,9 @@ fn process_block_with_retries(
             skipped_blocks.push(cur_block_mf);
 
             // Set the cur block and state to point at the parent's block.
-            cur_block = L1BlockCommitment::new(cur_block.height() - 1, prev_block_id);
+            let parent_height = cur_block.height().to_consensus_u32() as u64 - 1;
+            cur_block = L1BlockCommitment::from_height_u64(parent_height, prev_block_id)
+                .expect("parent height should be valid");
             cur_state = ctx.get_client_state(&cur_block);
         }
 

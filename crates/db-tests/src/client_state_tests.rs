@@ -9,7 +9,8 @@ pub fn test_get_consensus_update(db: &impl ClientStateDatabase) {
     db.put_client_update(L1BlockCommitment::default(), output.clone())
         .expect("test: insert");
 
-    let another_block = L1BlockCommitment::new(1, L1BlockId::default());
+    let another_block = L1BlockCommitment::from_height_u64(1, L1BlockId::default())
+        .expect("height should be valid");
     db.put_client_update(another_block, output.clone())
         .expect("test: insert");
 
