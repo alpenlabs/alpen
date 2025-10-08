@@ -8,10 +8,10 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
+strata-bridge-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-l1tx.workspace = true
 strata-ol-chainstate-types.workspace = true
-strata-state.workspace = true
 
 bitcoin.workspace = true
 borsh.workspace = true

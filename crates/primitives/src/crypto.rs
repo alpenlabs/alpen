@@ -7,7 +7,6 @@ use secp256k1::{
 
 use crate::buf::{Buf32, Buf64};
 
-#[cfg(feature = "rand")]
 pub fn sign_schnorr_sig(msg: &Buf32, sk: &Buf32) -> Buf64 {
     let sk = SecretKey::from_slice(sk.as_ref()).expect("Invalid private key");
     let kp = Keypair::from_secret_key(SECP256K1, &sk);

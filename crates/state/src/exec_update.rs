@@ -4,14 +4,12 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_primitives::{
     buf::Buf32, evm_exec::create_evm_extra_payload, prelude::payload::BlobSpec,
 };
 
-use crate::{
-    bridge_ops::{self, DepositIntent},
-    prelude::StateQueue,
-};
+use crate::prelude::StateQueue;
 
 /// Full update payload containing inputs and outputs to an EE state update.
 #[derive(
@@ -120,7 +118,7 @@ pub struct UpdateOutput {
     new_state: Buf32,
 
     /// Bridge withdrawal intents.
-    withdrawals: Vec<bridge_ops::WithdrawalIntent>,
+    withdrawals: Vec<WithdrawalIntent>,
 
     /// DA blobs that we expect to see on L1.  This may be empty, probably is
     /// only set near the end of the range of blocks in a batch since we only
@@ -137,7 +135,7 @@ impl UpdateOutput {
         }
     }
 
-    pub fn with_withdrawals(mut self, withdrawals: Vec<bridge_ops::WithdrawalIntent>) -> Self {
+    pub fn with_withdrawals(mut self, withdrawals: Vec<WithdrawalIntent>) -> Self {
         self.withdrawals = withdrawals;
         self
     }
@@ -146,7 +144,7 @@ impl UpdateOutput {
         &self.new_state
     }
 
-    pub fn withdrawals(&self) -> &[bridge_ops::WithdrawalIntent] {
+    pub fn withdrawals(&self) -> &[WithdrawalIntent] {
         &self.withdrawals
     }
 

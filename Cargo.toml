@@ -141,6 +141,7 @@ strata-asm-txs-admin = { path = "crates/asm/txs/admin" }
 strata-asm-txs-bridge-v1 = { path = "crates/asm/txs/bridge-v1" }
 strata-asm-types = { path = "crates/asm-types" }
 strata-asm-worker = { path = "crates/asm/worker" }
+strata-bridge-types = { path = "crates/bridge-types" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chainexec = { path = "crates/chainexec" }

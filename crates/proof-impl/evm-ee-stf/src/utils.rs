@@ -1,9 +1,7 @@
+use strata_bridge_types::WithdrawalIntent;
 use strata_ol_chain_types::ExecSegment;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload, l1::BitcoinAmount};
-use strata_state::{
-    bridge_ops,
-    exec_update::{ELDepositData, ExecUpdate, Op, UpdateInput, UpdateOutput},
-};
+use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateInput, UpdateOutput};
 
 use crate::EvmBlockStfOutput;
 
@@ -14,7 +12,7 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
         .iter()
         .map(|intent| {
             // TODO: proper error handling
-            bridge_ops::WithdrawalIntent::new(
+            WithdrawalIntent::new(
                 BitcoinAmount::from_sat(intent.amt),
                 intent.destination.clone(),
                 intent.withdrawal_txid,

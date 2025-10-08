@@ -9,10 +9,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
-    bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
-    l1::{BitcoinAmount, OutputRef},
-    operator::{OperatorKeyProvider, OperatorPubkeys},
+    l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
+    operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys},
 };
 
 /// Entry for an operator.
@@ -129,15 +128,15 @@ impl OperatorTable {
     }
 
     /// Inserts a new operator entry.
-    pub fn insert(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
+    pub fn insert(&mut self, operator_pubkeys: OperatorPubkeys) {
         let entry = OperatorEntry {
             idx: {
                 let idx = self.next_idx;
                 self.next_idx += 1;
                 idx
             },
-            signing_pk,
-            wallet_pk,
+            signing_pk: *operator_pubkeys.signing_pk(),
+            wallet_pk: *operator_pubkeys.wallet_pk(),
         };
         self.operators.push(entry);
     }
@@ -524,7 +523,7 @@ impl DispatchCommand {
     }
 }
 
-/// An output constructed from [`crate::bridge_ops::WithdrawalIntent`].
+/// An output constructed from [`super::bridge_ops::WithdrawalIntent`].
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct WithdrawOutput {

@@ -2,13 +2,15 @@
 
 use bitcoin::block::Header;
 use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
+use strata_bridge_types::{
+    DepositEntry, DepositIntent, DepositState, DispatchCommand, DispatchedState, FulfilledState,
+};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
-    bridge::{BitcoinBlockHeight, OperatorIdx},
-    l1::*,
+    l1::{BitcoinBlockHeight, *},
+    operator::{OperatorIdx, OperatorPubkeys},
     prelude::*,
 };
-use strata_state::{bridge_ops::DepositIntent, bridge_state::*};
 
 use crate::{context::StateAccessor, macros::*};
 
@@ -78,9 +80,10 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
 
     /// Inserts a new operator with the specified pubkeys into the operator table.
     pub fn insert_operator(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
+        let operator_pubkeys = OperatorPubkeys::new(signing_pk, wallet_pk);
         self.state_mut()
             .operator_table_mut()
-            .insert(signing_pk, wallet_pk);
+            .insert(operator_pubkeys);
     }
 
     /// Inserts a new deposit with some settings.

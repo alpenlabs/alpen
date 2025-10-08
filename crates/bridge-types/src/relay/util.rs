@@ -5,13 +5,13 @@ use bitcoin::secp256k1::{
 };
 use borsh::BorshSerialize;
 use rand::rngs::OsRng;
-use thiserror::Error;
-
-use super::types::{BridgeMessage, Scope};
-use crate::{
+use strata_primitives::{
     buf::{Buf32, Buf64},
     operator::OperatorKeyProvider,
 };
+use thiserror::Error;
+
+use super::message::{BridgeMessage, Scope};
 
 /// Contains data needed to construct [`BridgeMessage`]s.
 #[derive(Debug, Clone)]
@@ -75,16 +75,14 @@ impl MessageSigner {
 }
 
 /// Computes the corresponding x-only pubkey as a buf32 for an sk.
-#[cfg(feature = "std")]
-pub fn compute_pubkey_for_privkey(sk: &Buf32) -> Buf32 {
+fn compute_pubkey_for_privkey(sk: &Buf32) -> Buf32 {
     let kp = Keypair::from_seckey_slice(SECP256K1, sk.as_ref()).unwrap();
     let (xonly_pk, _) = kp.public_key().x_only_public_key();
     Buf32::from(xonly_pk.serialize())
 }
 
 /// Generates a signature for the message.
-#[cfg(all(feature = "std", feature = "rand"))]
-pub fn sign_msg_hash(sk: &Buf32, msg_hash: &Buf32) -> Buf64 {
+fn sign_msg_hash(sk: &Buf32, msg_hash: &Buf32) -> Buf64 {
     let keypair = Keypair::from_secret_key(SECP256K1, &SecretKey::from_slice(sk.as_ref()).unwrap());
     let msg = Message::from_digest(*msg_hash.as_ref());
     let sig = SECP256K1.sign_schnorr_with_rng(&msg, &keypair, &mut OsRng);
@@ -93,8 +91,7 @@ pub fn sign_msg_hash(sk: &Buf32, msg_hash: &Buf32) -> Buf64 {
 }
 
 /// Returns if the signature is correct for the message.
-#[cfg(feature = "std")]
-pub fn verify_sig(pk: &Buf32, msg_hash: &Buf32, sig: &Buf64) -> bool {
+fn verify_sig(pk: &Buf32, msg_hash: &Buf32, sig: &Buf64) -> bool {
     let pk = XOnlyPublicKey::from_slice(pk.as_ref()).unwrap();
     let msg = Message::from_digest(*msg_hash.as_ref());
     let sig = Signature::from_slice(sig.as_ref()).unwrap();
@@ -132,13 +129,11 @@ pub fn verify_bridge_msg_sig(
 #[cfg(test)]
 mod tests {
     use rand::rngs::OsRng;
+    use strata_primitives::{buf::Buf32, l1::BitcoinTxid, operator::StubOpKeyProv};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        bridge::Musig2PubNonce, buf::Buf32, l1::BitcoinTxid, operator::StubOpKeyProv,
-        relay::types::*,
-    };
+    use crate::bridge::Musig2PubNonce;
 
     #[test]
     fn test_sign_verify_raw() {

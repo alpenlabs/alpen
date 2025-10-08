@@ -92,12 +92,12 @@ pub mod test_utils {
         secp256k1::{Keypair, Secp256k1, SecretKey},
         Address, Network,
     };
+    use strata_bridge_types::DepositEntry;
     use strata_primitives::{
         l1::{BitcoinAddress, XOnlyPk},
         params::Params,
         sorted_vec::FlatTable,
     };
-    use strata_state::bridge_state::DepositEntry;
 
     use crate::{filter::types::conv_deposit_to_fulfillment, TxFilterConfig};
 

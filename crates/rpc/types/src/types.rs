@@ -6,23 +6,20 @@
 
 use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
+use strata_bridge_types::{DepositEntry, DepositState, WithdrawalIntent};
 use strata_checkpoint_types::BatchInfo;
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
-    bridge::OperatorIdx,
     buf::Buf32,
     epoch::EpochCommitment,
     l1::{BitcoinAmount, L1BlockCommitment, OutputRef},
     l2::L2BlockCommitment,
+    operator::OperatorIdx,
     prelude::L1Status,
 };
-use strata_state::{
-    bridge_ops::WithdrawalIntent,
-    bridge_state::{DepositEntry, DepositState},
-    client_state::CheckpointL1Ref,
-};
+use strata_state::client_state::CheckpointL1Ref;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HexBytes(#[serde(with = "hex::serde")] pub Vec<u8>);

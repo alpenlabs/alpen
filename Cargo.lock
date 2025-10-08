@@ -14284,10 +14284,10 @@ dependencies = [
  "bitcoin",
  "borsh",
  "strata-asm-common",
+ "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-l1tx",
  "strata-ol-chainstate-types",
- "strata-state",
  "strata-test-utils",
  "thiserror 2.0.16",
 ]
@@ -14446,6 +14446,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-bridge-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "borsh",
+ "musig2",
+ "rand 0.8.5",
+ "serde",
+ "sha2 0.10.9",
+ "strata-primitives",
+ "strata-test-utils",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-btcio"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14520,6 +14536,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "strata-asm-types",
+ "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-crypto",
  "strata-ol-chain-types",
@@ -14563,6 +14580,7 @@ dependencies = [
  "futures",
  "jsonrpsee",
  "serde_json",
+ "strata-bridge-types",
  "strata-btcio",
  "strata-checkpoint-types",
  "strata-common",
@@ -14638,6 +14656,7 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-types",
  "strata-asm-worker",
+ "strata-bridge-types",
  "strata-chain-worker",
  "strata-chainexec",
  "strata-chaintsn",
@@ -14883,6 +14902,7 @@ dependencies = [
  "reth-rpc-api",
  "reth-rpc-layer",
  "revm-primitives",
+ "strata-bridge-types",
  "strata-db",
  "strata-eectl",
  "strata-ol-chain-types",
@@ -14926,13 +14946,13 @@ dependencies = [
  "borsh",
  "secp256k1 0.29.1",
  "strata-asm-types",
+ "strata-bridge-types",
  "strata-btcio",
  "strata-checkpoint-types",
  "strata-crypto",
  "strata-l1-txfmt",
  "strata-ol-chainstate-types",
  "strata-primitives",
- "strata-state",
  "strata-test-utils",
  "strata-test-utils-btc",
  "strata-test-utils-l2",
@@ -14997,6 +15017,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "strata-asm-types",
+ "strata-bridge-types",
  "strata-primitives",
  "strata-state",
  "tracing",
@@ -15015,7 +15036,6 @@ dependencies = [
  "digest 0.10.7",
  "hex",
  "k256",
- "musig2",
  "num_enum 0.7.4",
  "rand 0.8.5",
  "secp256k1 0.29.1",
@@ -15074,6 +15094,7 @@ dependencies = [
  "rsp-client-executor",
  "serde",
  "serde_json",
+ "strata-bridge-types",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
@@ -15204,6 +15225,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "jsonrpsee",
+ "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-common",
  "strata-db",
@@ -15224,6 +15246,7 @@ dependencies = [
  "jsonrpsee",
  "serde",
  "serde_json",
+ "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-db",
  "strata-ol-chain-types",
@@ -15352,6 +15375,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-stf",
  "strata-asm-types",
+ "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-primitives",
 ]
@@ -15360,6 +15384,7 @@ dependencies = [
 name = "strata-status"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "strata-bridge-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -15438,9 +15463,9 @@ dependencies = [
  "bitcoind-async-client",
  "hex",
  "strata-asm-types",
+ "strata-bridge-types",
  "strata-btcio",
  "strata-primitives",
- "strata-state",
  "strata-test-utils",
  "tokio",
 ]

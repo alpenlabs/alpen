@@ -7,10 +7,10 @@ use bitcoin::{
 };
 use borsh::BorshDeserialize;
 use strata_asm_common::TxInputRef;
+use strata_bridge_types::WithdrawalIntent;
 use strata_checkpoint_types::{Checkpoint, SignedCheckpoint};
 use strata_l1tx::envelope::parser::enter_envelope;
 use strata_ol_chainstate_types::Chainstate;
-use strata_state::bridge_ops::WithdrawalIntent;
 
 use crate::errors::{CheckpointTxError, CheckpointTxResult};
 

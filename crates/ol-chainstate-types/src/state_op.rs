@@ -7,16 +7,15 @@
 use bitcoin::block::Header;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
+use strata_bridge_types::{
+    DepositEntry, DepositIntent, DepositState, DispatchCommand, DispatchedState, FulfilledState,
+};
 use strata_primitives::{
-    bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, OutputRef},
+    l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
     l2::{L2BlockCommitment, L2BlockId},
-};
-use strata_state::{
-    bridge_ops::DepositIntent,
-    bridge_state::{DepositEntry, DepositState, DispatchCommand, DispatchedState, FulfilledState},
+    operator::{OperatorIdx, OperatorPubkeys},
 };
 use tracing::warn;
 
@@ -202,7 +201,8 @@ impl StateCache {
     /// Inserts a new operator with the specified pubkeys into the operator table.
     pub fn insert_operator(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
         let state = self.state_mut();
-        state.operator_table.insert(signing_pk, wallet_pk);
+        let operator_pubkeys = OperatorPubkeys::new(signing_pk, wallet_pk);
+        state.operator_table.insert(operator_pubkeys);
     }
 
     /// Inserts a new deposit with some settings.

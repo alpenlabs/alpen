@@ -2,6 +2,7 @@
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_bridge_types::{DepositsTable, OperatorTable, WithdrawalIntent};
 use strata_primitives::{
     buf::Buf32,
     epoch::EpochCommitment,
@@ -9,8 +10,6 @@ use strata_primitives::{
     l2::{L2BlockCommitment, L2BlockId},
 };
 use strata_state::{
-    bridge_ops,
-    bridge_state::{self, DepositsTable, OperatorTable},
     exec_env::{self, ExecEnvState},
     state_queue::StateQueue,
 };
@@ -54,17 +53,17 @@ pub struct Chainstate {
     pub(crate) l1_state: L1ViewState,
 
     /// Pending withdrawals that have been initiated but haven't been sent out.
-    pub(crate) pending_withdraws: StateQueue<bridge_ops::WithdrawalIntent>,
+    pub(crate) pending_withdraws: StateQueue<WithdrawalIntent>,
 
     /// Execution environment state.  This is just for the single EE we support
     /// right now.
     pub(crate) exec_env_state: exec_env::ExecEnvState,
 
     /// Operator table we store registered operators for.
-    pub(crate) operator_table: bridge_state::OperatorTable,
+    pub(crate) operator_table: OperatorTable,
 
     /// Deposits table tracking each deposit's state.
-    pub(crate) deposits_table: bridge_state::DepositsTable,
+    pub(crate) deposits_table: DepositsTable,
 }
 
 impl Chainstate {
@@ -81,7 +80,7 @@ impl Chainstate {
             pending_withdraws: StateQueue::new_empty(),
             exec_env_state: gdata.exec_state().clone(),
             operator_table: gdata.operator_table().clone(),
-            deposits_table: bridge_state::DepositsTable::new_empty(),
+            deposits_table: DepositsTable::new_empty(),
         }
     }
 
@@ -164,7 +163,7 @@ impl Chainstate {
         self.is_epoch_finishing
     }
 
-    pub fn pending_withdraws(&self) -> &StateQueue<bridge_ops::WithdrawalIntent> {
+    pub fn pending_withdraws(&self) -> &StateQueue<WithdrawalIntent> {
         &self.pending_withdraws
     }
 }
