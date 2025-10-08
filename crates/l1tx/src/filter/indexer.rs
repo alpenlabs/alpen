@@ -4,7 +4,7 @@ use strata_checkpoint_types::SignedCheckpoint;
 use strata_primitives::indexed::Indexed;
 
 use super::{
-    extract_da_blobs, find_deposit_spends, parse_valid_checkpoint_envelopes,
+    extract_da_blobs, find_deposit_spends, parse_valid_checkpoint_envelope,
     try_parse_tx_as_withdrawal_fulfillment, try_parse_tx_deposit, TxFilterConfig,
 };
 
@@ -54,7 +54,7 @@ fn index_tx<V: TxVisitor>(
     mut visitor: V,
     filter_config: &TxFilterConfig,
 ) -> Option<V::Output> {
-    for ckpt in parse_valid_checkpoint_envelopes(tx, filter_config) {
+    while let Some(ckpt) = parse_valid_checkpoint_envelope(tx, filter_config) {
         visitor.visit_checkpoint(ckpt);
     }
 

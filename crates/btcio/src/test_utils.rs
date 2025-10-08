@@ -26,7 +26,7 @@ use bitcoind_async_client::{
 use musig2::secp256k1::SECP256K1;
 use rand::{rngs::OsRng, RngCore};
 use strata_l1tx::envelope::builder::build_envelope_script;
-use strata_primitives::{l1::payload::L1Payload, params::Params};
+use strata_primitives::l1::payload::L1Payload;
 
 use crate::writer::builder::{build_reveal_transaction, EnvelopeError};
 
@@ -325,13 +325,6 @@ impl Signer for TestBitcoinClient {
     }
 }
 
-pub fn generate_envelope_script_test(
-    payloads: &[L1Payload],
-    params: &Params,
-) -> anyhow::Result<ScriptBuf> {
-    build_envelope_script(params, payloads)
-}
-
 pub fn build_reveal_transaction_test(
     input_transaction: Transaction,
     recipient: Address,
@@ -399,11 +392,7 @@ pub mod corepc_node_helpers {
 
 // Create an envelope transaction. The focus here is to create a tapscript, rather than a
 // completely valid control block. Includes `n_envelopes` envelopes in the tapscript.
-pub fn create_checkpoint_envelope_tx(
-    params: &Params,
-    address: &str,
-    l1_payloads: Vec<L1Payload>,
-) -> Transaction {
+pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Transaction {
     let address = Address::from_str(address)
         .unwrap()
         .require_network(Network::Regtest)
@@ -417,7 +406,7 @@ pub fn create_checkpoint_envelope_tx(
             script_pubkey: address.script_pubkey(),
         }],
     };
-    let script = generate_envelope_script_test(&l1_payloads, params).unwrap();
+    let script = build_envelope_script(&l1_payload).unwrap();
     // Create controlblock
     let mut rand_bytes = [0; 32];
     OsRng.fill_bytes(&mut rand_bytes);

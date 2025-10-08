@@ -90,7 +90,7 @@ pub enum EnvelopeError {
 // dependencies on `tx-parser`, we include {btcio, feature="strata_test_utils"} , so cyclic
 // dependency doesn't happen
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
-    payloads: &[L1Payload],
+    payload: &L1Payload,
     ctx: &WriterContext<R>,
 ) -> anyhow::Result<(Transaction, Transaction)> {
     let network = ctx.client.network().await?;
@@ -107,13 +107,13 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         fee_rate,
         BITCOIN_DUST_LIMIT,
     );
-    create_envelope_transactions(&env_config, payloads, utxos)
+    create_envelope_transactions(&env_config, payload, utxos)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
-    payloads: &[L1Payload],
+    payload: &L1Payload,
     utxos: Vec<ListUnspent>,
 ) -> Result<(Transaction, Transaction), EnvelopeError> {
     // Create commit key
@@ -121,7 +121,7 @@ pub fn create_envelope_transactions(
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
     // Start creating envelope content
-    let reveal_script = build_reveal_script(env_config.params.as_ref(), &public_key, payloads)?;
+    let reveal_script = build_reveal_script(&public_key, payload)?;
     // Create spend info for tapscript
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())?
@@ -424,16 +424,15 @@ pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
 /// Builds reveal script such that it contains opcodes for verifying the internal key as well as the
 /// envelope block
 fn build_reveal_script(
-    params: &Params,
     taproot_public_key: &XOnlyPublicKey,
-    payloads: &[L1Payload],
+    payload: &L1Payload,
 ) -> Result<ScriptBuf, anyhow::Error> {
     let mut script_bytes = script::Builder::new()
         .push_x_only_key(taproot_public_key)
         .push_opcode(OP_CHECKSIG)
         .into_script()
         .into_bytes();
-    let script = build_envelope_script(params, payloads)?;
+    let script = build_envelope_script(payload)?;
     script_bytes.extend(script.into_bytes());
     Ok(ScriptBuf::from(script_bytes))
 }
@@ -723,7 +722,7 @@ mod tests {
             546,
         );
         let (commit, reveal) =
-            super::create_envelope_transactions(&env_config, &[payload], utxos.to_vec()).unwrap();
+            super::create_envelope_transactions(&env_config, &payload, utxos.to_vec()).unwrap();
 
         // check outputs
         assert_eq!(commit.output.len(), 2, "commit tx should have 2 outputs");

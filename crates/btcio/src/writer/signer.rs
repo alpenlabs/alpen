@@ -24,7 +24,9 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
     ctx: Arc<WriterContext<R>>,
 ) -> Result<(Buf32, Buf32), EnvelopeError> {
     trace!("Creating and signing payload envelopes");
-    let (commit, reveal) = build_envelope_txs(&payloadentry.payloads, ctx.as_ref()).await?;
+    // FIXME: PG handle the case when the payload entry is empty or larger than one
+    // In SPS-50 transaction, a transaction can only contain a single type of transaction
+    let (commit, reveal) = build_envelope_txs(&payloadentry.payloads[0], ctx.as_ref()).await?;
 
     let ctxid = commit.compute_txid();
     debug!(commit_txid = ?ctxid, "Signing commit transaction");

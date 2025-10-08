@@ -5,35 +5,21 @@ use strata_primitives::l1::payload::L1PayloadType;
 use tracing::warn;
 
 use super::TxFilterConfig;
-use crate::envelope::parser::parse_envelope_payloads;
+use crate::envelope::parser::parse_envelope_payload;
 
 /// Parses envelope from the given transaction. Currently, the only envelope recognizable is
 /// the checkpoint envelope.
 // TODO: we need to change envelope structure and possibly have envelopes for checkpoints and
 // DA separately
-pub(crate) fn parse_valid_checkpoint_envelopes<'a>(
-    tx: &'a Transaction,
-    filter_conf: &'a TxFilterConfig,
-) -> impl Iterator<Item = SignedCheckpoint> + 'a {
-    tx.input.iter().flat_map(move |inp| {
+pub fn parse_valid_checkpoint_envelope(
+    tx: &Transaction,
+    filter_conf: &TxFilterConfig,
+) -> Option<SignedCheckpoint> {
+    tx.input.iter().find_map(|inp| {
         inp.witness
             .taproot_leaf_script()
-            .and_then(|scr| parse_envelope_payloads(&scr.script.into(), filter_conf).ok())
-            .map(|items| {
-                items
-                    .into_iter()
-                    .filter_map(|item| match *item.payload_type() {
-                        L1PayloadType::Checkpoint => {
-                            parse_and_validate_checkpoint(item.data(), filter_conf)
-                        }
-                        L1PayloadType::Da => {
-                            warn!("Da parsing is not supported yet");
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default()
+            .and_then(|scr| parse_envelope_payload(&scr.script.into()).ok())
+            .and_then(|data| parse_and_validate_checkpoint(&data, filter_conf))
     })
 }
 
@@ -76,7 +62,7 @@ mod test {
     use strata_test_utils_l2::gen_params;
 
     use super::TxFilterConfig;
-    use crate::filter::parse_valid_checkpoint_envelopes;
+    use crate::filter::parse_valid_checkpoint_envelope;
 
     const TEST_ADDR: &str = "bcrt1q6u6qyya3sryhh42lahtnz2m7zuufe7dlt8j0j5";
 
@@ -86,40 +72,29 @@ mod test {
     }
 
     #[test]
-    fn test_parse_envelopes() {
+    fn test_parse_envelope() {
         // Test with valid name
-        let mut params: Params = gen_params();
+        let params: Params = gen_params();
         let filter_config = create_tx_filter_config(&params);
 
-        // Testing multiple envelopes are parsed
-        let num_envelopes = 2;
-        let l1_payloads: Vec<_> = (0..num_envelopes)
-            .map(|_| {
-                let mut gen = ArbitraryGenerator::new();
-                let chainstate: Chainstate = gen.generate();
-                let signed_checkpoint = SignedCheckpoint::new(
-                    Checkpoint::new(
-                        gen.generate(),
-                        gen.generate(),
-                        gen.generate(),
-                        CheckpointSidecar::new(borsh::to_vec(&chainstate).unwrap()),
-                    ),
-                    gen.generate(),
-                );
-                L1Payload::new_checkpoint(borsh::to_vec(&signed_checkpoint).unwrap())
-            })
-            .collect();
-        let tx = create_checkpoint_envelope_tx(&params, TEST_ADDR, l1_payloads.clone());
-        let checkpoints: Vec<_> = parse_valid_checkpoint_envelopes(&tx, &filter_config).collect();
+        // Testing envelope is parsed
+        let mut gen = ArbitraryGenerator::new();
+        let chainstate: Chainstate = gen.generate();
+        let signed_checkpoint = SignedCheckpoint::new(
+            Checkpoint::new(
+                gen.generate(),
+                gen.generate(),
+                gen.generate(),
+                CheckpointSidecar::new(borsh::to_vec(&chainstate).unwrap()),
+            ),
+            gen.generate(),
+        );
+        let l1_payload = L1Payload::new_checkpoint(borsh::to_vec(&signed_checkpoint).unwrap());
 
-        assert_eq!(checkpoints.len(), 2, "Should filter relevant envelopes");
+        let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload.clone());
+        let checkpoint = parse_valid_checkpoint_envelope(&tx, &filter_config).unwrap();
 
-        // Test with invalid checkpoint tag
-        params.rollup.checkpoint_tag = "invalid_checkpoint_tag".to_string();
-
-        let tx = create_checkpoint_envelope_tx(&params, TEST_ADDR, l1_payloads);
-        let checkpoints: Vec<_> = parse_valid_checkpoint_envelopes(&tx, &filter_config).collect();
-        assert!(checkpoints.is_empty(), "There should be no envelopes");
+        assert_eq!(signed_checkpoint, checkpoint);
     }
 
     #[test]
@@ -128,27 +103,22 @@ mod test {
         let params: Params = gen_params();
         let filter_config = create_tx_filter_config(&params);
 
-        // Testing multiple envelopes are parsed
-        let num_envelopes = 2;
-        let l1_payloads: Vec<_> = (0..num_envelopes)
-            .map(|_| {
-                let mut gen = ArbitraryGenerator::new();
-                let invalid_chainstate: [u8; 100] = gen.generate();
-                let signed_checkpoint = SignedCheckpoint::new(
-                    Checkpoint::new(
-                        gen.generate(),
-                        gen.generate(),
-                        gen.generate(),
-                        CheckpointSidecar::new(borsh::to_vec(&invalid_chainstate).unwrap()),
-                    ),
-                    gen.generate(),
-                );
-                L1Payload::new_checkpoint(borsh::to_vec(&signed_checkpoint).unwrap())
-            })
-            .collect();
-        let tx = create_checkpoint_envelope_tx(&params, TEST_ADDR, l1_payloads.clone());
-        let checkpoints: Vec<_> = parse_valid_checkpoint_envelopes(&tx, &filter_config).collect();
+        // Testing envelope is parsed
+        let mut gen = ArbitraryGenerator::new();
+        let invalid_chainstate: [u8; 100] = gen.generate();
+        let signed_checkpoint = SignedCheckpoint::new(
+            Checkpoint::new(
+                gen.generate(),
+                gen.generate(),
+                gen.generate(),
+                CheckpointSidecar::new(borsh::to_vec(&invalid_chainstate).unwrap()),
+            ),
+            gen.generate(),
+        );
+        let l1_payload = L1Payload::new_checkpoint(borsh::to_vec(&signed_checkpoint).unwrap());
+        let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
+        let res = parse_valid_checkpoint_envelope(&tx, &filter_config);
 
-        assert!(checkpoints.is_empty(), "There should be no envelopes");
+        assert!(res.is_none(), "There should be no envelopes");
     }
 }
