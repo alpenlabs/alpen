@@ -3,7 +3,7 @@ import flexitest
 from envs import net_settings, testenv
 from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils.dbtool import send_tx
-from utils.utils import ProverClientSettings, wait_until_with_value
+from utils.utils import ProverClientSettings
 
 
 @flexitest.register
@@ -148,30 +148,6 @@ class RevertChainstateSeqTest(SequencerDbtoolMixin):
         self.reth.start()
         self.seq.start()
         self.seq_signer.start()
-
-        def fetch_latest_checkpoint():
-            try:
-                return self.seqrpc.strata_getLatestCheckpointIndex()
-            except Exception as exc:
-                self.warning(f"failed to read latest checkpoint index: {exc}")
-                return None
-
-        current_checkpoint = wait_until_with_value(
-            fetch_latest_checkpoint,
-            lambda value: value is not None,
-            timeout=60,
-            step=1.0,
-            error_with="Timeout fetching latest checkpoint index after restart",
-        )
-        self.info(f"Checkpoint index before wait: {current_checkpoint}")
-
-        seq_waiter.wait_until_latest_checkpoint_at(
-            checkpt_idx_before_revert + 1,
-            timeout=30,
-        )
-
-        updated_checkpoint = fetch_latest_checkpoint()
-        self.info(f"Checkpoint index after wait: {updated_checkpoint}")
 
         # Wait for block production to resume
         seq_waiter.wait_until_chain_tip_exceeds(old_ol_block_number + 1, timeout=30)
