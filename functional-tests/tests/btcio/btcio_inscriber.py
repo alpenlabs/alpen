@@ -20,7 +20,11 @@ class L1WriterTest(testenv.StrataTestBase):
         generate_n_blocks(btcrpc, 5)
 
         # Submit blob
+        # blobdata is 32 bytes length
         blobdata = "2c4253d512da5bb4223f10e8e6017ede69cc63d6e6126916f4b68a1830b7f805"
+        # blobdata now is 128 byes length
+        # This is required by the sps-50 tagged data handling (minimal length is 124b).
+        blobdata = blobdata * 4
         tx = submit_da_blob(btcrpc, seqrpc, blobdata)
 
         assert any([blobdata in w.hex() for w in tx.inputs[0].witnesses]), (

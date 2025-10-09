@@ -205,7 +205,7 @@ impl<'de> Deserialize<'de> for L1Payload {
     {
         #[derive(Deserialize)]
         struct Helper {
-            data: Vec<Vec<u8>>,
+            payload: Vec<Vec<u8>>,
             subproto_id: u8,
             tx_type: u8,
             aux_data: Vec<u8>,
@@ -213,7 +213,10 @@ impl<'de> Deserialize<'de> for L1Payload {
 
         Helper::deserialize(deserializer).and_then(|h| {
             TagData::new(h.subproto_id, h.tx_type, h.aux_data)
-                .map(|tag| L1Payload { data: h.data, tag })
+                .map(|tag| L1Payload {
+                    data: h.payload,
+                    tag,
+                })
                 .map_err(serde::de::Error::custom)
         })
     }
