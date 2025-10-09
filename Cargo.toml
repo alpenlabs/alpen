@@ -194,7 +194,7 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 # strata-common
 strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
-strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", branch = "feat/sps-envelope-fmt" }
+strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 

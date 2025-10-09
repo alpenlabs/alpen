@@ -91,7 +91,10 @@ mod test {
         );
 
         let checkpoint_tag = TagData::new(1, 1, vec![]).unwrap();
-        let l1_payload = L1Payload::new(borsh::to_vec(&signed_checkpoint).unwrap(), checkpoint_tag);
+        let l1_payload = L1Payload::new(
+            vec![borsh::to_vec(&signed_checkpoint).unwrap()],
+            checkpoint_tag,
+        );
 
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload.clone());
         let checkpoint = parse_valid_checkpoint_envelope(&tx, &filter_config).unwrap();
@@ -118,7 +121,10 @@ mod test {
             gen.generate(),
         );
         let checkpoint_tag = TagData::new(1, 1, vec![]).unwrap();
-        let l1_payload = L1Payload::new(borsh::to_vec(&signed_checkpoint).unwrap(), checkpoint_tag);
+        let l1_payload = L1Payload::new(
+            vec![borsh::to_vec(&signed_checkpoint).unwrap()],
+            checkpoint_tag,
+        );
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
         let res = parse_valid_checkpoint_envelope(&tx, &filter_config);
 

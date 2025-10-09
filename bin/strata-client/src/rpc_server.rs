@@ -740,7 +740,7 @@ impl StrataSequencerApiServer for SequencerServerImpl {
         // For now, we can use any subprotocol id and tx type, as the parsing is not required.
         let da_tag =
             TagData::new(u8::MAX, u8::MAX, vec![]).map_err(|e| Error::Other(e.to_string()))?;
-        let payload = L1Payload::new(blob.0, da_tag);
+        let payload = L1Payload::new(vec![blob.0], da_tag);
         let blobintent = PayloadIntent::new(PayloadDest::L1, commitment, payload);
         // NOTE: It would be nice to return reveal txid from the submit method. But creation of txs
         // is deferred to signer in the writer module
@@ -905,7 +905,7 @@ impl StrataSequencerApiServer for SequencerServerImpl {
         )
         .map_err(|e| Error::Other(e.to_string()))?;
         let payload = L1Payload::new(
-            borsh::to_vec(&signed_checkpoint).map_err(|e| Error::Other(e.to_string()))?,
+            vec![borsh::to_vec(&signed_checkpoint).map_err(|e| Error::Other(e.to_string()))?],
             checkpoint_tag,
         );
         let sighash = signed_checkpoint.checkpoint().hash();

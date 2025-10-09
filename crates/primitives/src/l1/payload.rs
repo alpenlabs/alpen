@@ -128,17 +128,17 @@ impl PayloadSpec {
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct L1Payload {
-    payload: Vec<u8>,
+    data: Vec<Vec<u8>>,
     tag: TagData,
 }
 
 impl L1Payload {
-    pub fn new(payload: Vec<u8>, tag: TagData) -> Self {
-        Self { payload, tag }
+    pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Self {
+        Self { data: payload, tag }
     }
 
-    pub fn payload(&self) -> &[u8] {
-        &self.payload
+    pub fn data(&self) -> &[Vec<u8>] {
+        &self.data
     }
 
     pub fn tag(&self) -> &TagData {
@@ -148,8 +148,8 @@ impl L1Payload {
 
 impl BorshSerialize for L1Payload {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        // Serialize payload Vec<u8>
-        BorshSerialize::serialize(&self.payload, writer)?;
+        // Serialize payload Vec<Vec<u8>>
+        BorshSerialize::serialize(&self.data, writer)?;
 
         // Serialize TagData fields
         BorshSerialize::serialize(&self.tag.subproto_id(), writer)?;
@@ -162,8 +162,8 @@ impl BorshSerialize for L1Payload {
 
 impl BorshDeserialize for L1Payload {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        // Deserialize payload Vec<u8>
-        let payload = Vec::<u8>::deserialize_reader(reader)?;
+        // Deserialize payload Vec<Vec<u8>>
+        let data = Vec::<Vec<u8>>::deserialize_reader(reader)?;
 
         // Deserialize TagData fields
         let subproto_id = u8::deserialize_reader(reader)?;
@@ -177,7 +177,7 @@ impl BorshDeserialize for L1Payload {
             )
         })?;
 
-        Ok(Self { payload, tag })
+        Ok(Self { data, tag })
     }
 }
 
@@ -189,7 +189,7 @@ impl Serialize for L1Payload {
     {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("L1Payload", 4)?;
-        state.serialize_field("payload", &self.payload)?;
+        state.serialize_field("payload", &self.data)?;
         state.serialize_field("subproto_id", &self.tag.subproto_id())?;
         state.serialize_field("tx_type", &self.tag.tx_type())?;
         state.serialize_field("aux_data", &self.tag.aux_data())?;
@@ -205,7 +205,7 @@ impl<'de> Deserialize<'de> for L1Payload {
     {
         #[derive(Deserialize)]
         struct Helper {
-            payload: Vec<u8>,
+            data: Vec<Vec<u8>>,
             subproto_id: u8,
             tx_type: u8,
             aux_data: Vec<u8>,
@@ -213,10 +213,7 @@ impl<'de> Deserialize<'de> for L1Payload {
 
         Helper::deserialize(deserializer).and_then(|h| {
             TagData::new(h.subproto_id, h.tx_type, h.aux_data)
-                .map(|tag| L1Payload {
-                    payload: h.payload,
-                    tag,
-                })
+                .map(|tag| L1Payload { data: h.data, tag })
                 .map_err(serde::de::Error::custom)
         })
     }
@@ -224,7 +221,7 @@ impl<'de> Deserialize<'de> for L1Payload {
 
 impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let payload = Vec::<u8>::arbitrary(u)?;
+        let data = Vec::<Vec<u8>>::arbitrary(u)?;
 
         let subproto_id = u8::arbitrary(u)?;
         let tx_type = u8::arbitrary(u)?;
@@ -238,7 +235,7 @@ impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
         let tag = TagData::new(subproto_id, tx_type, aux_data)
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
-        Ok(Self { payload, tag })
+        Ok(Self { data, tag })
     }
 }
 

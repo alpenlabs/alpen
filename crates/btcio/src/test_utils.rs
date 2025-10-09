@@ -409,7 +409,9 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
             script_pubkey: address.script_pubkey(),
         }],
     };
-    let reveal_script = build_envelope_script(l1_payload.payload()).unwrap();
+    // Concatenate all payload chunks into a single payload
+    let concatenated_payload: Vec<u8> = l1_payload.data().iter().flatten().copied().collect();
+    let reveal_script = build_envelope_script(&concatenated_payload).unwrap();
 
     let td = TagDataRef::new(1, 1, &[]).unwrap();
     let tag_script = ParseConfig::new(*b"ALPN").encode_script_buf(&td).unwrap();

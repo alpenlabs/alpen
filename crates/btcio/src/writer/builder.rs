@@ -1,10 +1,10 @@
-use core::{result::Result::Ok, str::FromStr};
+use core::result::Result::Ok;
 use std::{cmp::Reverse, sync::Arc};
 
 use anyhow::anyhow;
 use bitcoin::{
     absolute::LockTime,
-    blockdata::{opcodes::all::OP_CHECKSIG, script},
+    blockdata::script,
     hashes::Hash,
     key::{TapTweak, TweakedPublicKey, UntweakedKeypair},
     secp256k1::{
@@ -25,7 +25,7 @@ use bitcoind_async_client::{
 };
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeePolicy;
-use strata_l1_envelope_fmt::builder::build_envelope_script;
+use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
 use strata_l1_txfmt::{self, ParseConfig, TxFmtError};
 use strata_primitives::{l1::payload::L1Payload, params::Params};
 use thiserror::Error;
@@ -85,6 +85,9 @@ pub enum EnvelopeError {
     #[error("sps tx fmt")]
     Tag(#[from] TxFmtError),
 
+    #[error("envelope build error")]
+    EnvelopeBuild(#[from] EnvelopeBuildError),
+
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -124,8 +127,9 @@ pub fn create_envelope_transactions(
     let key_pair = generate_key_pair()?;
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
-    // Start creating envelope content
-    let reveal_script = build_reveal_script(&public_key, payload.payload())?;
+    let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?
+        .add_envelopes(payload.data())?
+        .build()?;
 
     let tag_script = ParseConfig::new(env_config.params.rollup().magic_bytes)
         .encode_script_buf(&payload.tag().as_ref())?;
@@ -212,9 +216,10 @@ fn get_size(
     };
 
     for i in 0..tx.input.len() {
+        // Safe: Creating a signature from a fixed-size array of correct length
         tx.input[i].witness.push(
             Signature::from_slice(&[0; SCHNORR_SIGNATURE_SIZE])
-                .unwrap()
+                .expect("valid signature size")
                 .as_ref(),
         );
     }
@@ -367,10 +372,7 @@ fn build_commit_transaction(
 fn default_txin() -> Vec<TxIn> {
     vec![TxIn {
         previous_output: OutPoint {
-            txid: Txid::from_str(
-                "0000000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap(),
+            txid: Txid::all_zeros(),
             vout: 0,
         },
         script_sig: script::Builder::new().into_script(),
@@ -439,22 +441,6 @@ pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
     Ok(UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)?)
 }
 
-/// Builds reveal script such that it contains opcodes for verifying the internal key as well as the
-/// envelope block
-fn build_reveal_script(
-    taproot_public_key: &XOnlyPublicKey,
-    payload: &[u8],
-) -> Result<ScriptBuf, anyhow::Error> {
-    let mut script_bytes = script::Builder::new()
-        .push_x_only_key(taproot_public_key)
-        .push_opcode(OP_CHECKSIG)
-        .into_script()
-        .into_bytes();
-    let script = build_envelope_script(payload)?;
-    script_bytes.extend(script.into_bytes());
-    Ok(ScriptBuf::from(script_bytes))
-}
-
 fn calculate_commit_output_value(
     recipient: &Address,
     reveal_value: u64,
@@ -510,7 +496,9 @@ fn sign_reveal_transaction(
         &randbytes,
     );
 
-    let witness = sighash_cache.witness_mut(0).unwrap();
+    let witness = sighash_cache
+        .witness_mut(0)
+        .ok_or(anyhow!("Could not access witness for input 0"))?;
     witness.push(signature.as_ref());
     witness.push(reveal_script);
     witness.push(
@@ -745,7 +733,8 @@ mod tests {
         let (ctx, _, _, utxos) = get_mock_data();
 
         let tag = TagData::new(1, 1, vec![]).unwrap();
-        let payload = L1Payload::new(vec![0u8; 100], tag);
+        // Use 150 bytes to meet minimum envelope payload size of 126 bytes
+        let payload = L1Payload::new(vec![vec![0u8; 150]], tag);
 
         let env_config = EnvelopeConfig::new(
             ctx.params.clone(),

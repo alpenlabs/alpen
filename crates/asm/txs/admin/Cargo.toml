@@ -13,7 +13,7 @@ strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
-bitcoin.workspace = true
+bitcoin = { workspace = true, optional = true }
 bitvec.workspace = true
 borsh.workspace = true
 rand = { workspace = true, optional = true }
@@ -22,7 +22,7 @@ thiserror.workspace = true
 zkaleido.workspace = true
 
 [features]
-test-utils = ["rand", "strata-crypto/test-utils"]
+test-utils = ["dep:rand", "dep:bitcoin", "strata-crypto/test-utils"]
 
 [dev-dependencies]
 strata-test-utils.workspace = true
