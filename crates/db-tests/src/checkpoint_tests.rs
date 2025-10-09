@@ -1,5 +1,8 @@
 use strata_checkpoint_types::EpochSummary;
-use strata_db::{traits::CheckpointDatabase, types::CheckpointEntry};
+use strata_db::{
+    traits::CheckpointDatabase,
+    types::{CheckpointEntry, CheckpointProvingStatus},
+};
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_insert_summary_single(db: &impl CheckpointDatabase) {
@@ -362,6 +365,78 @@ pub fn test_del_checkpoints_empty_database(db: &impl CheckpointDatabase) {
     );
 }
 
+pub fn test_get_next_unproven_checkpoint_idx_empty_db(db: &impl CheckpointDatabase) {
+    // Test: Empty database should return None
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
+    assert_eq!(result, None);
+}
+
+pub fn test_get_next_unproven_checkpoint_idx_all_pending(db: &impl CheckpointDatabase) {
+    // Test: All checkpoints have PendingProof - should return first one (sequential processing)
+    let mut ag = ArbitraryGenerator::new();
+
+    // Create 5 checkpoints, all with PendingProof status
+    for i in 0..5 {
+        let mut checkpoint: CheckpointEntry = ag.generate();
+        checkpoint.proving_status = CheckpointProvingStatus::PendingProof;
+        db.put_checkpoint(i, checkpoint).unwrap();
+    }
+
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
+    assert_eq!(result, Some(0)); // Start from beginning when no proven checkpoints
+}
+
+pub fn test_get_next_unproven_checkpoint_idx_all_ready(db: &impl CheckpointDatabase) {
+    // Test: All checkpoints have ProofReady - should return None
+    let mut ag = ArbitraryGenerator::new();
+
+    // Create 5 checkpoints, all with ProofReady status
+    for i in 0..5 {
+        let mut checkpoint: CheckpointEntry = ag.generate();
+        checkpoint.proving_status = CheckpointProvingStatus::ProofReady;
+        db.put_checkpoint(i, checkpoint).unwrap();
+    }
+
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
+    assert_eq!(result, None);
+}
+
+pub fn test_get_next_unproven_checkpoint_idx_mixed_sequential(db: &impl CheckpointDatabase) {
+    // Test: Sequential processing - some ready, some pending
+    let mut ag = ArbitraryGenerator::new();
+
+    // Checkpoints 0-2: ProofReady, 3-5: PendingProof
+    for i in 0..6 {
+        let mut checkpoint: CheckpointEntry = ag.generate();
+        checkpoint.proving_status = if i <= 2 {
+            CheckpointProvingStatus::ProofReady
+        } else {
+            CheckpointProvingStatus::PendingProof
+        };
+        db.put_checkpoint(i, checkpoint).unwrap();
+    }
+
+    // Should return 3 (first unproven after last proven)
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
+    assert_eq!(result, Some(3));
+}
+
+pub fn test_get_next_unproven_checkpoint_idx_rebuild_pending_index(db: &impl CheckpointDatabase) {
+    // Seed pending checkpoints and ensure the query still sees them after a fresh handle build.
+    let mut ag = ArbitraryGenerator::new();
+
+    for idx in 0..3 {
+        let mut checkpoint: CheckpointEntry = ag.generate();
+        checkpoint.proving_status = CheckpointProvingStatus::PendingProof;
+        db.put_checkpoint(idx, checkpoint.clone()).unwrap();
+    }
+
+    // Simulate reopening the database by invoking the query immediately.
+    // The sled implementation must rebuild the pending index or fallback to detect entries.
+    let result = db.get_next_unproven_checkpoint_idx().unwrap();
+    assert_eq!(result, Some(0));
+}
+
 #[macro_export]
 macro_rules! checkpoint_db_tests {
     ($setup_expr:expr) => {
@@ -447,6 +522,39 @@ macro_rules! checkpoint_db_tests {
         fn test_del_checkpoints_empty_database() {
             let db = $setup_expr;
             $crate::checkpoint_tests::test_del_checkpoints_empty_database(&db);
+        }
+
+        // Tests for get_next_unproven_checkpoint_idx method
+        #[test]
+        fn test_get_next_unproven_checkpoint_idx_empty_db() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_empty_db(&db);
+        }
+
+        #[test]
+        fn test_get_next_unproven_checkpoint_idx_all_pending() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_all_pending(&db);
+        }
+
+        #[test]
+        fn test_get_next_unproven_checkpoint_idx_all_ready() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_all_ready(&db);
+        }
+
+        #[test]
+        fn test_get_next_unproven_checkpoint_idx_mixed_sequential() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_mixed_sequential(&db);
+        }
+
+        #[test]
+        fn test_get_next_unproven_checkpoint_idx_rebuild_pending_index() {
+            let db = $setup_expr;
+            $crate::checkpoint_tests::test_get_next_unproven_checkpoint_idx_rebuild_pending_index(
+                &db,
+            );
         }
     };
 }

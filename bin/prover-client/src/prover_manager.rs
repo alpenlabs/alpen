@@ -251,7 +251,6 @@ fn handle_checkpoint_error(chkpt_err: CheckpointError) -> ProvingTaskError {
                 ProvingTaskError::RpcError(error)
             }
         }
-        CheckpointError::CheckpointNotFound(_) => ProvingTaskError::WitnessNotFound,
         CheckpointError::ProofErr(proving_task_error) => proving_task_error,
     }
 }

@@ -597,6 +597,16 @@ impl StrataApiServer for StrataRpcImpl {
         }
     }
 
+    async fn get_next_unproven_checkpoint_index(&self) -> RpcResult<Option<u64>> {
+        let res = self
+            .checkpoint_handle
+            .get_next_unproven_checkpoint_idx()
+            .await
+            .map_err(|e| Error::Other(e.to_string()))?;
+
+        Ok(res)
+    }
+
     // TODO this logic should be moved into `SyncManager` or *something* that
     // has easier access to the context about block status instead of
     // implementing protocol-aware deliberation in the RPC method impl

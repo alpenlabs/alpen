@@ -158,16 +158,6 @@ impl CheckpointOperator {
             .ok_or(ProvingTaskError::WitnessNotFound)
     }
 
-    /// Retrieves the latest checkpoint index
-    pub(crate) async fn fetch_latest_ckp_idx(&self) -> Result<u64, ProvingTaskError> {
-        self.cl_client
-            .get_latest_checkpoint_index(None)
-            .await
-            .inspect_err(|_| error!("Failed to fetch latest checkpoint"))
-            .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?
-            .ok_or(ProvingTaskError::WitnessNotFound)
-    }
-
     /// Returns a reference to the internal CL (Consensus Layer) [`HttpClient`].
     pub(crate) fn cl_client(&self) -> &HttpClient {
         &self.cl_client

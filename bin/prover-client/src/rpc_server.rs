@@ -11,6 +11,7 @@ use strata_primitives::{
     evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment,
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
+use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::ProofKey;
 use strata_rpc_utils::to_jsonrpsee_error;
 use tokio::sync::{oneshot, Mutex};
@@ -130,20 +131,34 @@ impl StrataProverClientApiServer for ProverClientRpc {
     }
 
     async fn prove_latest_checkpoint(&self) -> RpcResult<Vec<ProofKey>> {
-        let latest_ckp_idx = self
+        let next_unproven_idx = self
             .operator
             .checkpoint_operator()
-            .fetch_latest_ckp_idx()
+            .cl_client()
+            .get_next_unproven_checkpoint_index()
             .await
-            .map_err(to_jsonrpsee_error("failed to fetch latest checkpoint idx"))?;
-        info!(%latest_ckp_idx);
+            .map_err(to_jsonrpsee_error(
+                "failed to fetch next unproven checkpoint idx",
+            ))?;
+
+        let checkpoint_idx = match next_unproven_idx {
+            Some(idx) => {
+                info!(unproven_checkpoint = %idx, "proving next unproven checkpoint");
+                idx
+            }
+            None => {
+                info!("no unproven checkpoints found");
+                return Ok(vec![]);
+            }
+        };
+
         self.operator
             .checkpoint_operator()
-            .create_task(latest_ckp_idx, self.task_tracker.clone(), &self.db)
+            .create_task(checkpoint_idx, self.task_tracker.clone(), &self.db)
             .await
             .inspect_err(|e| tracing::error!(%e, "prover client Error"))
             .map_err(to_jsonrpsee_error(
-                "failed to create task for latest checkpoint",
+                "failed to create task for next unproven checkpoint",
             ))
     }
 
