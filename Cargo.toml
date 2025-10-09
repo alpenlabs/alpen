@@ -28,6 +28,7 @@ members = [
   "crates/config",
   "crates/consensus-logic",
   "crates/crypto",
+  "crates/da-framework",
   "crates/db",
   "crates/db-store-sled",
   "crates/db-store-rocksdb",
@@ -39,6 +40,7 @@ members = [
   "crates/evmexec",
   "crates/key-derivation",
   "crates/l1tx",
+  "crates/ledger-types",
   "crates/mpt",
   "crates/ol-chain-types",
   "crates/ol-chainstate-types",
@@ -152,6 +154,7 @@ strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-crypto = { path = "crates/crypto", default-features = false }
+strata-da-framework = { path = "crates/da-framework" }
 strata-db = { path = "crates/db" }
 strata-db-store-rocksdb = { path = "crates/db-store-rocksdb" }
 strata-db-store-sled = { path = "crates/db-store-sled" }
@@ -163,6 +166,7 @@ strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-l1tx = { path = "crates/l1tx" }
+strata-ledger-types = { path = "crates/ledger-types" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
 strata-ol-chain-types = { path = "crates/ol-chain-types" }

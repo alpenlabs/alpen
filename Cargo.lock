@@ -14697,6 +14697,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-da-framework"
+version = "0.1.0"
+dependencies = [
+ "sha2 0.10.9",
+ "strata-codec",
+ "strata-mmr",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-datatool"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14958,6 +14968,14 @@ dependencies = [
  "strata-test-utils-l2",
  "thiserror 2.0.16",
  "tracing",
+]
+
+[[package]]
+name = "strata-ledger-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-snark-acct-types",
 ]
 
 [[package]]
