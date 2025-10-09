@@ -25,8 +25,8 @@ use bitcoind_async_client::{
 };
 use musig2::secp256k1::SECP256K1;
 use rand::{rngs::OsRng, RngCore};
+use strata_l1_envelope_fmt::builder::build_envelope_script;
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
-use strata_l1tx::envelope::builder::build_envelope_script;
 use strata_primitives::l1::payload::L1Payload;
 
 use crate::writer::builder::{build_reveal_transaction, EnvelopeError};

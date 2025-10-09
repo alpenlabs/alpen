@@ -13072,7 +13072,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.13.0",
+ "bitcoin_hashes 0.14.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -14286,9 +14286,8 @@ dependencies = [
  "strata-asm-common",
  "strata-bridge-types",
  "strata-checkpoint-types",
- "strata-l1tx",
+ "strata-l1-envelope-fmt",
  "strata-ol-chainstate-types",
- "strata-test-utils",
  "thiserror 2.0.16",
 ]
 
@@ -14382,8 +14381,8 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-common",
  "strata-crypto",
+ "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
- "strata-l1tx",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
@@ -14479,6 +14478,7 @@ dependencies = [
  "strata-config",
  "strata-db",
  "strata-db-store-sled",
+ "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-l1tx",
  "strata-ol-chainstate-types",
@@ -14931,6 +14931,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-l1-envelope-fmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?branch=feat%2Fsps-envelope-fmt#e170b8e75d50f5476c8d02e9d805391ec88be839"
+dependencies = [
+ "bitcoin",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common#bab2caef4496c2b9c2bed2d7ebb9fd9c4d54a8ef"
@@ -14952,6 +14961,7 @@ dependencies = [
  "strata-btcio",
  "strata-checkpoint-types",
  "strata-crypto",
+ "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-ol-chainstate-types",
  "strata-primitives",

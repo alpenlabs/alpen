@@ -1,7 +1,5 @@
-use std::io;
-
 use borsh::io::Error as BorshIoError;
-use strata_l1tx::envelope::parser::EnvelopeParseError;
+use strata_l1_envelope_fmt::errors::EnvelopeParseError;
 use thiserror::Error;
 
 /// Errors that can occur while parsing checkpoint transactions from SPS-50 envelopes.
@@ -21,11 +19,7 @@ pub enum CheckpointTxError {
 
     /// Failed to parse the envelope script structure.
     #[error("failed to parse checkpoint envelope script: {0}")]
-    EnvelopeParse(EnvelopeParseError),
-
-    /// Failed due to malformed envelope bytes encountered during streaming.
-    #[error("failed to parse checkpoint envelope script: {0}")]
-    EnvelopeIo(#[source] io::Error),
+    EnvelopeParse(#[from] EnvelopeParseError),
 
     /// Failed to deserialize data embedded inside the envelope.
     #[error("failed to deserialize checkpoint payload")]

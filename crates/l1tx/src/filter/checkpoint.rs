@@ -1,10 +1,10 @@
 use bitcoin::Transaction;
 use strata_checkpoint_types::{verify_signed_checkpoint_sig, SignedCheckpoint};
+use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 use strata_ol_chainstate_types::Chainstate;
 use tracing::warn;
 
 use super::TxFilterConfig;
-use crate::envelope::parser::parse_envelope_payload;
 
 /// Parses envelope from the given transaction. Currently, the only envelope recognizable is
 /// the checkpoint envelope.

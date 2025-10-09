@@ -17,7 +17,7 @@ bitcoin.workspace = true
 bitvec.workspace = true
 borsh.workspace = true
 rand = { workspace = true, optional = true }
-strata-l1tx.workspace = true
+strata-l1-envelope-fmt.workspace = true
 thiserror.workspace = true
 zkaleido.workspace = true
 
