@@ -14200,7 +14200,7 @@ dependencies = [
  "borsh",
  "serde",
  "strata-asm-types",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-msg-fmt",
  "thiserror 2.0.16",
  "tracing",
@@ -14271,7 +14271,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-txs-bridge-v1",
  "strata-crypto",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
@@ -14315,7 +14315,7 @@ dependencies = [
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-crypto",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-l1tx",
  "strata-msg-fmt",
  "strata-primitives",
@@ -14332,7 +14332,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-proto-bridge-v1",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-primitives",
  "thiserror 2.0.16",
 ]
@@ -14344,7 +14344,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-v0",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-primitives",
 ]
 
@@ -14357,7 +14357,7 @@ dependencies = [
  "strata-asm-proto-checkpoint-v0",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
 ]
 
 [[package]]
@@ -14367,7 +14367,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "strata-asm-common",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
 ]
 
 [[package]]
@@ -14382,7 +14382,7 @@ dependencies = [
  "strata-asm-common",
  "strata-crypto",
  "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
@@ -14400,7 +14400,7 @@ dependencies = [
  "secp256k1 0.29.1",
  "strata-asm-common",
  "strata-crypto",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
@@ -14479,7 +14479,7 @@ dependencies = [
  "strata-db",
  "strata-db-store-sled",
  "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-l1tx",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -14581,6 +14581,7 @@ dependencies = [
  "futures",
  "jsonrpsee",
  "serde_json",
+ "strata-asm-proto-checkpoint-txs",
  "strata-bridge-types",
  "strata-btcio",
  "strata-checkpoint-types",
@@ -14592,7 +14593,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-eectl",
  "strata-evmexec",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -14719,7 +14720,7 @@ dependencies = [
  "sp1-verifier",
  "strata-asm-types",
  "strata-key-derivation",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-primitives",
  "strata-risc0-guest-builder",
  "strata-sp1-guest-builder",
@@ -14933,7 +14934,17 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?branch=feat%2Fsps-envelope-fmt#e170b8e75d50f5476c8d02e9d805391ec88be839"
+source = "git+https://github.com/alpenlabs/strata-common?branch=feat%2Fsps-envelope-fmt#dd067358903852cf8fbee0d6945fa934a65b6a81"
+dependencies = [
+ "bitcoin",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common?branch=feat%2Fsps-envelope-fmt)",
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-l1-txfmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?branch=feat%2Fsps-envelope-fmt#dd067358903852cf8fbee0d6945fa934a65b6a81"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14962,7 +14973,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-crypto",
  "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-ol-chainstate-types",
  "strata-primitives",
  "strata-test-utils",
@@ -15054,7 +15065,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "strata-l1-txfmt",
+ "strata-l1-txfmt 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-test-utils",
  "thiserror 2.0.16",
  "zeroize",

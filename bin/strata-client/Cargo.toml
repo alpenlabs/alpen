@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 strata-bridge-types.workspace = true
+strata-asm-proto-checkpoint-txs.workspace = true
 strata-btcio.workspace = true
 strata-checkpoint-types.workspace = true
 strata-common = { workspace = true, default-features = true }
