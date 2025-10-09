@@ -3,11 +3,11 @@
 use bitcoin::Transaction;
 use strata_asm_types::{L1BlockManifest, L1Tx, ProtocolOperation};
 use strata_checkpoint_types::verify_signed_checkpoint_sig;
+use strata_csm_types::{CheckpointL1Ref, ClientState, L1Checkpoint, SyncAction};
 use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
     prelude::*,
 };
-use strata_state::{client_state::*, operation::*};
 use strata_storage::NodeStorage;
 use tracing::*;
 

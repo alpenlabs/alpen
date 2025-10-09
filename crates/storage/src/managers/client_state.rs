@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
+use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db::{traits::ClientStateDatabase, DbResult};
 use strata_primitives::l1::L1BlockCommitment;
-use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
 use threadpool::ThreadPool;
 use tokio::sync::Mutex;
 

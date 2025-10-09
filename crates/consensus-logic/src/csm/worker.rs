@@ -3,12 +3,9 @@
 use std::{sync::Arc, thread};
 
 use strata_asm_types::L1BlockManifest;
+use strata_csm_types::{ClientState, ClientUpdateOutput, SyncAction};
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry, CheckpointProvingStatus};
 use strata_primitives::prelude::*;
-use strata_state::{
-    client_state::ClientState,
-    operation::{ClientUpdateOutput, SyncAction},
-};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::ShutdownGuard;

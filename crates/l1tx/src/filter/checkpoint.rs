@@ -55,9 +55,10 @@ fn validate_checkpoint(
 mod test {
     use strata_btcio::test_utils::create_checkpoint_envelope_tx;
     use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
+    use strata_csm_types::L1Payload;
     use strata_l1_txfmt::TagData;
     use strata_ol_chainstate_types::Chainstate;
-    use strata_primitives::{l1::payload::L1Payload, params::Params};
+    use strata_primitives::params::Params;
     use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_l2::gen_params;
 

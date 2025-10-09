@@ -6,14 +6,12 @@ use bitcoind_async_client::{
     Client,
 };
 use strata_config::btcio::WriterConfig;
+use strata_csm_types::{PayloadDest, PayloadIntent};
 use strata_db::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry, L1BundleStatus, L1TxStatus},
 };
-use strata_primitives::{
-    l1::payload::{PayloadDest, PayloadIntent},
-    params::Params,
-};
+use strata_primitives::params::Params;
 use strata_status::StatusChannel;
 use strata_storage::ops::writer::{Context, EnvelopeDataOps};
 use strata_tasks::TaskExecutor;

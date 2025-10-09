@@ -1,6 +1,6 @@
+use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db::{DbResult, traits::*};
 use strata_primitives::l1::L1BlockCommitment;
-use strata_state::{client_state::ClientState, operation::*};
 
 use super::schemas::ClientUpdateOutputSchema;
 use crate::define_sled_database;

@@ -3,8 +3,7 @@ use std::{fmt, str};
 use arbitrary::Arbitrary;
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
-
-use crate::buf::Buf32;
+use strata_primitives::buf::Buf32;
 
 /// Data that reflects what's happening around L1
 #[derive(Clone, Serialize, Deserialize, Default, Arbitrary)]

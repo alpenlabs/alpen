@@ -1,7 +1,6 @@
 //! Consensus types that track node behavior as we receive messages from the L1
 //! chain and the p2p network. These will be expanded further as we actually
 //! implement the consensus logic.
-// TODO move this to another crate that contains our sync logic
 
 use core::fmt;
 
