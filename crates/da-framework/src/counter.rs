@@ -76,13 +76,10 @@ impl<S: CounterScheme> DaCounter<S> {
 
     /// If we're changing the value by "zero" then
     pub fn normalize(&mut self) {
-        match self {
-            Self::Changed(v) => {
-                if S::is_zero(v) {
-                    *self = Self::Unchanged
-                }
-            }
-            _ => {}
+        if let Self::Changed(v) = self
+            && S::is_zero(v)
+        {
+            *self = Self::Unchanged
         }
     }
 }

@@ -9,7 +9,7 @@ use strata_acct_types::BitcoinAmount;
 /// complexity of bookkeeping by making it more likely that accounting bugs are
 /// turned into panics.
 ///
-/// Triggers a panic when dropped without [`safely_consume_unchecked`] being
+/// Triggers a panic when dropped without [`Self::safely_consume_unchecked`] being
 /// called.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Coin(BitcoinAmount);

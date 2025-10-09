@@ -308,7 +308,7 @@ impl<'a, Q: DaQueueTarget> QueueView<'a, Q> {
     pub fn len(&self) -> usize {
         let next = self.next();
         let front = self.front();
-        if next > front { next - front } else { 0 }
+        next.saturating_sub(front)
     }
 
     /// Returns `true` if the effective queue is empty.

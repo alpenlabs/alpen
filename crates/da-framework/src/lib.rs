@@ -1,3 +1,8 @@
+#![expect(
+    unused,
+    reason = "will be used shortly, clippy is confused because of macros"
+)]
+
 mod codec;
 mod compound;
 mod counter;
