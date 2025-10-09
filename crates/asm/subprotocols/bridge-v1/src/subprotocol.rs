@@ -150,7 +150,7 @@ impl Subprotocol for BridgeV1Subproto {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
                     // TODO: Pass actual L1BlockId instead of placeholder
-                    let l1blk = L1BlockCommitment::new(
+                    let l1blk = L1BlockCommitment::new_btc(
                         absolute::Height::ZERO,
                         L1BlockId::from(Buf32::zero()),
                     );

@@ -2,7 +2,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
+use strata_crypto::proof_vk::{ProofContext, ProofKey, ProofZkVm};
 use tracing::{info, warn};
 
 use crate::{errors::ProvingTaskError, status::ProvingTaskStatus};

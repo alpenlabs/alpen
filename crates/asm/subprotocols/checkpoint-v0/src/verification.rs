@@ -12,7 +12,7 @@ use strata_checkpoint_types::{
     verify_signed_checkpoint_sig, BatchTransition, Checkpoint, SignedCheckpoint,
 };
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_primitives::proof::RollupVerifyingKey;
+use strata_crypto::proof_vk::RollupVerifyingKey;
 
 use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
 

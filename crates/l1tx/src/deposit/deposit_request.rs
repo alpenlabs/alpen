@@ -3,8 +3,8 @@
 use std::convert::TryInto;
 
 use bitcoin::{opcodes::all::OP_RETURN, ScriptBuf, Transaction};
-use strata_asm_types::DepositRequestInfo;
-use strata_primitives::params::DepositTxParams;
+use strata_btc_types::DepositRequestInfo;
+use strata_params::DepositTxParams;
 use tracing::debug;
 
 use super::{common::DepositRequestScriptInfo, error::DepositParseError};

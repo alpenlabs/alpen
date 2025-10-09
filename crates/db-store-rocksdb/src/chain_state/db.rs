@@ -3,7 +3,7 @@ use std::sync::Arc;
 use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt};
 use strata_db::{chainstate::*, DbError, DbResult};
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 use super::{schemas::*, types::*};
 use crate::DbOpsConfig;

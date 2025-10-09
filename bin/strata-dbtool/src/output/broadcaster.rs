@@ -3,7 +3,7 @@ use std::fmt;
 use hex::encode_to_slice;
 use serde::Serialize;
 use strata_db::types::L1TxStatus;
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 use super::{helpers::porcelain_field, traits::Formattable};
 

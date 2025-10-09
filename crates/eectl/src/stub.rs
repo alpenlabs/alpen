@@ -7,11 +7,9 @@
 
 use std::{collections::*, sync::Mutex, time};
 
-use strata_primitives::buf::Buf32;
-use strata_state::{
-    exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
-    prelude::*,
-};
+use strata_identifiers::Buf32;
+use strata_ol_chain_types::{ExecUpdate, UpdateInput, UpdateOutput};
+use strata_state::prelude::*;
 
 use crate::{engine::*, errors::*, messages::*};
 

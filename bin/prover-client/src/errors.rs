@@ -1,5 +1,5 @@
 use strata_db::DbError;
-use strata_primitives::proof::ProofKey;
+use strata_crypto::proof_vk::ProofKey;
 use thiserror::Error;
 use zkaleido::ZkVmError;
 

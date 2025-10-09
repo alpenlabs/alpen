@@ -1,11 +1,13 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_asm_types::L1BlockManifest;
-use strata_primitives::prelude::*;
-use strata_state::exec_update::ExecUpdate;
+use strata_btc_types::L1BlockManifest;
+use strata_identifiers::*;
 
-use crate::header::{L2BlockHeader, SignedL2BlockHeader};
+use crate::{
+    exec_update::ExecUpdate,
+    header::{L2BlockHeader, SignedL2BlockHeader},
+};
 
 /// Full contents of the bare L2 block.
 #[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]

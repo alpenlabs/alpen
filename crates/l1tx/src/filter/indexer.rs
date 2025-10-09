@@ -1,5 +1,5 @@
 use bitcoin::{Block, Transaction};
-use strata_asm_types::{DepositInfo, DepositSpendInfo, WithdrawalFulfillmentInfo};
+use strata_btc_types::{DepositInfo, DepositSpendInfo, WithdrawalFulfillmentInfo};
 use strata_checkpoint_types::SignedCheckpoint;
 use strata_primitives::indexed::Indexed;
 

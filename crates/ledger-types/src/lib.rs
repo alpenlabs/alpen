@@ -38,6 +38,6 @@ pub use global_state::IGlobalState;
 pub use l1vs::IL1ViewState;
 pub use state_accessor::StateAccessor;
 
-// transitional crap
+// transitional crap, still not happy with the way these crates go together
 #[rustfmt::skip]
-pub use l1vs::{AsmManifest, EpochCommitment, Height, L1BlockId};
+pub use l1vs::{AsmManifest, EpochCommitment, L1Height, L1BlockId};

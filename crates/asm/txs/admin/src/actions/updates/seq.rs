@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 /// An update to the public key of the sequencer.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]

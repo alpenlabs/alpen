@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::{DatabaseBackend, L1Database};
-use strata_primitives::l1::L1BlockId;
+use strata_identifiers::L1BlockId;
 
 use crate::{
     cli::OutputFormat,

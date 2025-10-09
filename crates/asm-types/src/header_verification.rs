@@ -4,12 +4,9 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32,
-    hash::compute_borsh_hash,
-    l1::{BtcParams, L1BlockCommitment, L1BlockId},
-    params::GenesisL1View,
-};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, hash::compute_borsh_hash};
+use strata_params::GenesisL1View;
+use strata_primitives::l1::BtcParams;
 use thiserror::Error;
 
 use super::{timestamp_store::TimestampStore, utils::compute_block_hash, BtcWork};
@@ -216,7 +213,7 @@ impl HeaderVerificationState {
             self.last_verified_block.height().to_consensus_u32() + 1,
         )
         .expect("height + 1 should be valid");
-        self.last_verified_block = L1BlockCommitment::new(next_height, block_hash_raw.into());
+        self.last_verified_block = L1BlockCommitment::new_btc(next_height, block_hash_raw.into());
 
         // Update the timestamps
         self.update_timestamps(header.time);

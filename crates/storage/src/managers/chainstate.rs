@@ -9,7 +9,7 @@ use strata_db::{
 };
 use strata_ol_chain_types::L2BlockId;
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 use threadpool::ThreadPool;
 use tracing::*;
 

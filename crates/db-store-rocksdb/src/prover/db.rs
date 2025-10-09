@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt, TransactionRetry};
 use strata_db::{errors::DbError, traits::ProofDatabase, DbResult};
-use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_crypto::proof_vk::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
 use super::schemas::{ProofDepsSchema, ProofSchema};

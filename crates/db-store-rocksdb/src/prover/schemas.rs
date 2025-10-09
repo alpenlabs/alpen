@@ -1,4 +1,4 @@
-use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_crypto::proof_vk::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{define_table_with_default_codec, define_table_without_codec, impl_borsh_value_codec};

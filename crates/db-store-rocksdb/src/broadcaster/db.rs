@@ -4,7 +4,7 @@ use rockbound::{
     utils::get_last, OptimisticTransactionDB as DB, SchemaDBOperationsExt, TransactionRetry,
 };
 use strata_db::{errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry, DbResult};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 use crate::{sequence::get_next_id, DbOpsConfig};

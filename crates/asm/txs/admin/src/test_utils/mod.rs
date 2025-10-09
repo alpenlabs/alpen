@@ -19,7 +19,7 @@ use strata_crypto::{
     multisig::{schemes::SchnorrScheme, signature::AggregatedSignature},
     test_utils::schnorr::create_musig2_signature,
 };
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_identifiers::{Buf32, Buf64};
 
 pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 

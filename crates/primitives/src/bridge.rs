@@ -15,10 +15,11 @@ use musig2::{errors::KeyAggError, KeyAggContext, NonceSeed, PartialSignature, Pu
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    constants::{MUSIG2_PARTIAL_SIG_SIZE, NONCE_SEED_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE},
-    l1::{BitcoinPsbt, TaprootSpendPath},
+use strata_crypto::multisig::constants::{
+    MUSIG2_PARTIAL_SIG_SIZE, NONCE_SEED_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE,
 };
+
+use crate::l1::{BitcoinPsbt, TaprootSpendPath};
 
 /// The ID of an operator.
 ///
@@ -338,11 +339,12 @@ mod tests {
     };
     use borsh::{BorshDeserialize, BorshSerialize};
 
-    use super::{Musig2PubNonce, PublickeyTable};
-    use crate::{
-        bridge::{Musig2PartialSig, Musig2SecNonce},
-        constants::{MUSIG2_PARTIAL_SIG_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE},
+    use strata_crypto::multisig::constants::{
+        MUSIG2_PARTIAL_SIG_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE,
     };
+
+    use super::{Musig2PubNonce, PublickeyTable};
+    use crate::bridge::{Musig2PartialSig, Musig2SecNonce};
 
     #[test]
     fn test_publickeytable_serialize_deserialize() {

@@ -1,4 +1,4 @@
-use strata_primitives::proof::ProofContext;
+use strata_crypto::proof_vk::ProofContext;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
 use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;

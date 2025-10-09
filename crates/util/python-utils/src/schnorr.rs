@@ -5,7 +5,7 @@ use secp256k1::{schnorr::Signature, Keypair, SecretKey, SECP256K1};
 use strata_crypto::{
     sign_schnorr_sig as sign_schnorr_sig_inner, verify_schnorr_sig as verify_schnorr_sig_inner,
 };
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_identifiers::{Buf32, Buf64};
 
 /// Signs a message using the Schnorr signature scheme.
 ///

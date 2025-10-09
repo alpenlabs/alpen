@@ -444,7 +444,7 @@ mod tests {
     use revm_primitives::{alloy_primitives::Bloom, Bytes, FixedBytes, U256};
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
     use strata_ol_chain_types::{L2Block, L2BlockAccessory};
-    use strata_primitives::buf::Buf32;
+    use strata_identifiers::Buf32;
 
     use super::*;
     use crate::http_client::MockEngineRpc;

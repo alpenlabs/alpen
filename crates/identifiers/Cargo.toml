@@ -1,0 +1,29 @@
+[package]
+name = "strata-identifiers"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arbitrary.workspace = true
+bitcoin = { workspace = true, optional = true }
+bitcoin-primitives.workspace = true
+borsh.workspace = true
+const-hex.workspace = true
+hex.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+bincode.workspace = true
+bitcoin_hashes.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["fullbtc"]
+fullbtc = ["dep:bitcoin"]

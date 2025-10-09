@@ -1,6 +1,7 @@
 //! Extra utility functions for block proposal correctness checks.
 
 use strata_ol_chain_types::{BlockCheckError, L2Block, L2Header, check_block_credential};
+use strata_params::RollupParams;
 use strata_primitives::prelude::*;
 
 /// Checks a block's credential to ensure that it was authentically proposed.

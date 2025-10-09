@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
+use strata_crypto::proof_vk::{ProofContext, ProofKey, ProofZkVm};
 use tokio::{spawn, sync::Mutex, time::sleep};
 use tracing::{debug, error, info, warn};
 
@@ -260,7 +260,7 @@ fn handle_checkpoint_error(chkpt_err: CheckpointError) -> ProvingTaskError {
 mod tests {
     use std::collections::HashMap;
 
-    use strata_primitives::proof::{ProofContext, ProofZkVm};
+    use strata_crypto::proof_vk::{ProofContext, ProofZkVm};
     use strata_rpc_types::ProofKey;
 
     use super::{handle_task_error, ProverManagerConfig, ProvingTaskError, ProvingTaskStatus};

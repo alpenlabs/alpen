@@ -5,7 +5,8 @@ use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
-use strata_primitives::{l1::L1BlockCommitment, params::Params};
+use strata_identifiers::L1BlockCommitment;
+use strata_params::Params;
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
 

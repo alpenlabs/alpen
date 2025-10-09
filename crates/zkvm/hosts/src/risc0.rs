@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use strata_primitives::proof::ProofContext;
+use strata_crypto::proof_vk::ProofContext;
 #[cfg(feature = "risc0-builder")]
 use strata_risc0_guest_builder::{
     GUEST_RISC0_CHECKPOINT_ELF, GUEST_RISC0_CL_STF_ELF, GUEST_RISC0_EVM_EE_STF_ELF,

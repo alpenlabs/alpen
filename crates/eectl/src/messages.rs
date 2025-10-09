@@ -1,6 +1,6 @@
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::{bitcoin_bosd::Descriptor, prelude::*};
-use strata_state::exec_update::{ExecUpdate, Op};
+use strata_ol_chain_types::{ExecUpdate, Op};
 
 /// Succinct commitment to relevant EL block data.
 // This ended up being the same as the EL payload types in the state crate,

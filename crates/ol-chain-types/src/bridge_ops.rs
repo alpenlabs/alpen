@@ -1,8 +1,10 @@
 //! Types for managing pending bridging operations in the CL state.
+// TODO rework this module since this types have different relationships now
 
+use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
+use strata_identifiers::{BitcoinAmount, Buf32};
 
 // TODO make this not hardcoded!
 pub const WITHDRAWAL_DENOMINATION: BitcoinAmount = BitcoinAmount::from_int_btc(10);

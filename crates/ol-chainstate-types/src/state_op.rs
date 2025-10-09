@@ -6,7 +6,8 @@
 
 use bitcoin::block::Header;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
+use strata_asm_types::L1VerificationError;
+use strata_btc_types::WithdrawalFulfillmentInfo;
 use strata_primitives::{
     bridge::{BitcoinBlockHeight, OperatorIdx},
     buf::Buf32,
@@ -14,8 +15,8 @@ use strata_primitives::{
     l1::{BitcoinAmount, OutputRef},
     l2::{L2BlockCommitment, L2BlockId},
 };
+use strata_ol_chain_types::DepositIntent;
 use strata_state::{
-    bridge_ops::DepositIntent,
     bridge_state::{DepositEntry, DepositState, DispatchCommand, DispatchedState, FulfilledState},
 };
 use tracing::warn;

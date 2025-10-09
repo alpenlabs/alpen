@@ -1,12 +1,8 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32,
-    l1::{L1BlockCommitment, L1BlockId},
-};
-
-use super::{L1HeaderRecord, L1Tx};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
+use strata_btc_types::{L1HeaderRecord, L1Tx};
 
 /// Reference to a Bitcoin transaction by block ID and transaction index.
 #[derive(
@@ -43,91 +39,5 @@ impl From<(L1BlockId, u32)> for L1TxRef {
 impl From<(&L1BlockId, u32)> for L1TxRef {
     fn from(val: (&L1BlockId, u32)) -> Self {
         Self::new(*val.0, val.1)
-    }
-}
-
-/// Bitcoin-anchored block manifest containing header record and transactions.
-#[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Deserialize, Serialize,
-)]
-pub struct L1BlockManifest {
-    /// The actual l1 record
-    record: L1HeaderRecord,
-
-    /// List of interesting transactions we took out.
-    txs: Vec<L1Tx>,
-
-    /// Epoch, which was used to generate this manifest.
-    epoch: u64,
-
-    /// Block height.
-    height: u64,
-}
-
-impl L1BlockManifest {
-    pub fn new(record: L1HeaderRecord, txs: Vec<L1Tx>, epoch: u64, height: u64) -> Self {
-        Self {
-            record,
-            txs,
-            epoch,
-            height,
-        }
-    }
-
-    pub fn record(&self) -> &L1HeaderRecord {
-        &self.record
-    }
-
-    pub fn txs(&self) -> &[L1Tx] {
-        &self.txs
-    }
-
-    pub fn txs_vec(&self) -> &Vec<L1Tx> {
-        &self.txs
-    }
-
-    pub fn epoch(&self) -> u64 {
-        self.epoch
-    }
-
-    pub fn blkid(&self) -> &L1BlockId {
-        &self.record.blkid
-    }
-
-    #[deprecated(note = "use .blkid()")]
-    pub fn block_hash(&self) -> L1BlockId {
-        *self.record.blkid()
-    }
-
-    pub fn height(&self) -> u64 {
-        self.height
-    }
-
-    pub fn header(&self) -> &[u8] {
-        self.record.buf()
-    }
-
-    pub fn txs_root(&self) -> Buf32 {
-        *self.record.wtxs_root()
-    }
-
-    pub fn get_prev_blockid(&self) -> L1BlockId {
-        self.record().parent_blkid()
-    }
-
-    pub fn into_record(self) -> L1HeaderRecord {
-        self.record
-    }
-}
-
-impl From<L1BlockManifest> for L1BlockCommitment {
-    fn from(value: L1BlockManifest) -> Self {
-        Self::from_height_u64(value.height(), *value.blkid()).expect("height should be valid")
-    }
-}
-
-impl From<&L1BlockManifest> for L1BlockCommitment {
-    fn from(value: &L1BlockManifest) -> Self {
-        Self::from_height_u64(value.height(), *value.blkid()).expect("height should be valid")
     }
 }

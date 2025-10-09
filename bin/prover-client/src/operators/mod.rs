@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_crypto::proof_vk::{ProofContext, ProofKey};
 use tokio::sync::Mutex;
 use tracing::{error, info, instrument};
 use zkaleido::{ZkVmHost, ZkVmProgram};

@@ -1,35 +1,18 @@
 //! Constants for magic numbers and strings used in the primitives.
 
+// Re-export BTC constants
+pub use strata_btc_types::constants::*;
+
 use std::sync::LazyLock;
 
 use bitcoin::{bip32::ChildNumber, XOnlyPublicKey};
 use secp256k1::hashes::{sha256, Hash};
-
-/// The size (in bytes) of a [`musig2::PartialSignature`].
-pub const MUSIG2_PARTIAL_SIG_SIZE: usize = 32;
-
-/// The size (in bytes) of a [`musig2::NonceSeed`].
-pub const NONCE_SEED_SIZE: usize = 32;
-
-/// The size (in bytes) of a [`musig2::PubNonce`].
-pub const PUB_NONCE_SIZE: usize = 66;
-
-/// The size (in bytes) of a [`musig2::SecNonce`].
-pub const SEC_NONCE_SIZE: usize = 64;
-
-/// The size (in bytes) of a Hash (such as [`Txid`](bitcoin::Txid)).
-pub const HASH_SIZE: usize = 32;
 
 /// The size (in bytes) Execution environment Address.
 pub const EE_ADDRESS_LEN: u8 = 20;
 
 /// Number of blocks after bridge in transaction confirmation that the recovery path can be spent.
 pub const RECOVER_DELAY: u32 = 1_008;
-
-/// The number of timestamps used for calculating the median in Bitcoin header verification.
-/// According to Bitcoin consensus rules, we need to check that a block's timestamp
-/// is not lower than the median of the last eleven blocks' timestamps.
-pub const TIMESTAMPS_FOR_MEDIAN: usize = 11;
 
 /// Strata base index for keys.
 ///

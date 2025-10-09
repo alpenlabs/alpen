@@ -8,10 +8,13 @@ workspace = true
 
 [dependencies]
 strata-asm-types.workspace = true
+strata-btc-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-crypto.workspace = true
+strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 

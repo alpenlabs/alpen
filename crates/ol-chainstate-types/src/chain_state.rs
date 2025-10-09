@@ -8,11 +8,10 @@ use strata_primitives::{
     hash::compute_borsh_hash,
     l2::{L2BlockCommitment, L2BlockId},
 };
+use strata_ol_chain_types::{DepositIntent, StateQueue, WithdrawalIntent};
 use strata_state::{
-    bridge_ops,
     bridge_state::{self, DepositsTable, OperatorTable},
     exec_env::{self, ExecEnvState},
-    state_queue::StateQueue,
 };
 
 use crate::{genesis::GenesisStateData, l1_view::L1ViewState};
@@ -54,7 +53,7 @@ pub struct Chainstate {
     pub(crate) l1_state: L1ViewState,
 
     /// Pending withdrawals that have been initiated but haven't been sent out.
-    pub(crate) pending_withdraws: StateQueue<bridge_ops::WithdrawalIntent>,
+    pub(crate) pending_withdraws: StateQueue<WithdrawalIntent>,
 
     /// Execution environment state.  This is just for the single EE we support
     /// right now.
@@ -164,7 +163,7 @@ impl Chainstate {
         self.is_epoch_finishing
     }
 
-    pub fn pending_withdraws(&self) -> &StateQueue<bridge_ops::WithdrawalIntent> {
+    pub fn pending_withdraws(&self) -> &StateQueue<WithdrawalIntent> {
         &self.pending_withdraws
     }
 }

@@ -2,21 +2,17 @@
 //! we'll replace components with real implementations as we go along.
 
 use rand_core::{RngCore, SeedableRng};
-use strata_asm_types::{
+use strata_btc_types::{
     DepositInfo, DepositSpendInfo, L1BlockManifest, ProtocolOperation, WithdrawalFulfillmentInfo,
 };
 use strata_checkpoint_types::{verify_signed_checkpoint_sig, Checkpoint, SignedCheckpoint};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::{L2BlockBody, L2BlockHeader, L2Header};
 use strata_ol_chainstate_types::StateCache;
-use strata_primitives::{
-    epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockCommitment, params::RollupParams,
-};
-use strata_state::{
-    bridge_ops::{DepositIntent, WithdrawalIntent},
-    bridge_state::{DepositState, DispatchCommand, WithdrawOutput},
-    exec_update::{self, Op},
-};
+use strata_params::RollupParams;
+use strata_identifiers::{EpochCommitment, L1BlockId, L2BlockCommitment};
+use strata_ol_chain_types::{DepositIntent, ExecUpdate, Op, WithdrawalIntent};
+use strata_state::bridge_state::{DepositState, DispatchCommand, WithdrawOutput};
 use tracing::warn;
 use zkaleido::ZkVmResult;
 
@@ -354,7 +350,7 @@ fn check_chain_integrity(
 /// This will probably be substantially refactored in the future though.
 fn process_execution_update<'s, 'u, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
-    update: &'u exec_update::ExecUpdate,
+    update: &'u ExecUpdate,
 ) -> Result<&'u [WithdrawalIntent], TsnError> {
     // for all the ops, corresponding to DepositIntent, remove those DepositIntent the ExecEnvState
     let applied_ops = update.input().applied_ops();
@@ -521,9 +517,10 @@ fn next_rand_op_pos(rng: &mut SlotRng, num: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use rand_core::SeedableRng;
-    use strata_asm_types::{L1BlockManifest, L1Tx, ProtocolOperation, WithdrawalFulfillmentInfo};
+    use strata_btc_types::legacy::{L1BlockManifest, L1Tx, ProtocolOperation, WithdrawalFulfillmentInfo};
     use strata_ol_chainstate_types::{Chainstate, StateCache};
-    use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
+    use strata_identifiers::Buf32;
+    use strata_primitives::l1::BitcoinAmount;
     use strata_state::bridge_state::{
         DepositState, DepositsTable, DispatchCommand, DispatchedState,
     };

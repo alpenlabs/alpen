@@ -8,7 +8,7 @@ use strata_ol_chain_types::{
     L1Segment, L2Block, L2BlockBody, L2BlockHeader, L2Header, SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_identifiers::{Buf32, Buf64};
 use strata_proofimpl_evm_ee_stf::{
     executor::process_block,
     primitives::{EvmEeProofInput, EvmEeProofOutput},

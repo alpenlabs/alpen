@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db::traits::L1WriterDatabase;
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 use super::checkpoint::{get_checkpoint_at_index, get_checkpoint_index_range};
 use crate::{

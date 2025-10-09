@@ -4,13 +4,15 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{buf::Buf32, l1::payload::BlobSpec};
 
-use crate::{bridge_ops, exec_update, forced_inclusion, state_queue::StateQueue};
+use strata_ol_chain_types::{DepositIntent, StateQueue, UpdateInput};
+
+use crate::forced_inclusion;
 
 #[derive(Debug, Clone, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct ExecEnvState {
     /// The last processed exec update, which we've checked to be valid.  We may
     /// not have seen its DA blobs on the L1 yet.
-    last_update_input: exec_update::UpdateInput,
+    last_update_input: UpdateInput,
 
     /// Current state root.
     cur_state: Buf32,
@@ -25,7 +27,7 @@ pub struct ExecEnvState {
     /// an update yet.  The sequencer should be processing these as soon as
     /// possible.
     // TODO make this not pub
-    pub pending_deposits: StateQueue<bridge_ops::DepositIntent>,
+    pub pending_deposits: StateQueue<DepositIntent>,
 
     /// Forced inclusions that have been accepted by the CL but not processed by
     /// a CL payload yet.
@@ -37,7 +39,7 @@ pub struct ExecEnvState {
 impl ExecEnvState {
     /// Constructs an env state from a starting input and the a state root,
     /// without producing any blobs, deposits, forced inclusions, etc.
-    pub fn from_base_input(base_input: exec_update::UpdateInput, state: Buf32) -> Self {
+    pub fn from_base_input(base_input: UpdateInput, state: Buf32) -> Self {
         Self {
             last_update_input: base_input,
             cur_state: state,
@@ -55,18 +57,18 @@ impl ExecEnvState {
         &self.cur_state
     }
 
-    pub fn pending_deposits(&self) -> &StateQueue<bridge_ops::DepositIntent> {
+    pub fn pending_deposits(&self) -> &StateQueue<DepositIntent> {
         &self.pending_deposits
     }
 
-    pub fn pending_deposits_mut(&mut self) -> &mut StateQueue<bridge_ops::DepositIntent> {
+    pub fn pending_deposits_mut(&mut self) -> &mut StateQueue<DepositIntent> {
         &mut self.pending_deposits
     }
 }
 
 impl<'a> Arbitrary<'a> for ExecEnvState {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let inp = exec_update::UpdateInput::arbitrary(u)?;
+        let inp = UpdateInput::arbitrary(u)?;
         let state = Buf32::arbitrary(u)?;
         Ok(Self::from_base_input(inp, state))
     }

@@ -1,7 +1,8 @@
 use bitcoin::{consensus::serialize, hashes::Hash, Block};
 use bitcoind_async_client::traits::Reader;
-use strata_asm_types::{generate_l1_tx, L1BlockManifest, L1HeaderRecord, L1Tx};
-use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
+use strata_btc_types::legacy::{generate_l1_tx, L1BlockManifest, L1HeaderRecord, L1Tx};
+use strata_identifiers::Buf32;
+use strata_primitives::l1::L1BlockCommitment;
 use strata_state::BlockSubmitter;
 use tracing::*;
 

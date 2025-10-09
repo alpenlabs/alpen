@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bitcoin::{consensus, Transaction};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_db::types::{BundledPayloadEntry, L1TxEntry};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 use tracing::*;
 
 use super::{

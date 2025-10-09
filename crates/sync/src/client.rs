@@ -2,7 +2,7 @@ use std::cmp::min;
 
 use futures::stream::{self, Stream, StreamExt};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
-use strata_primitives::l2::L2BlockCommitment;
+use strata_identifiers::L2BlockCommitment;
 use strata_rpc_api::StrataApiClient;
 use tracing::error;
 

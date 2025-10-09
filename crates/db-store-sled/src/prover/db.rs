@@ -1,5 +1,5 @@
 use strata_db::{DbResult, errors::DbError, traits::ProofDatabase};
-use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_crypto::proof_vk::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
 use super::schemas::{ProofDepsSchema, ProofSchema};

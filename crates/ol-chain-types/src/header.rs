@@ -3,11 +3,7 @@ use std::io::{self, Cursor, Write};
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::{Buf32, Buf64},
-    hash,
-    l2::{L2BlockCommitment, L2BlockId},
-};
+use strata_identifiers::{hash, Buf32, Buf64, L2BlockCommitment, L2BlockId};
 
 use crate::block::L2BlockBody;
 
@@ -87,7 +83,7 @@ impl L2BlockHeader {
         // 8 + 8 + 8 + 32 + 32 + 32 + 32 = 152
         let mut buf = [0; 152];
         fill_sighash_buf(self, &mut buf).expect("blockasm: compute sighash");
-        strata_primitives::hash::raw(&buf)
+        strata_identifiers::hash::raw(&buf)
     }
 }
 
