@@ -1,20 +1,13 @@
 //! Global consensus parameters for the rollup.
 
-use bitcoin::{absolute, Amount, Network};
+use bitcoin::Network;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_btc_types::{constants::TIMESTAMPS_FOR_MEDIAN, BitcoinAddress, OperatorPubkeys, XOnlyPk};
+use strata_crypto::proof_vk::RollupVerifyingKey;
+use strata_identifiers::{hash, BitcoinAmount, Buf32, CredRule, L1BlockCommitment, L1BlockId, L1Height};
 use strata_l1_txfmt::MagicBytes;
 use thiserror::Error;
-
-use crate::{
-    block_credential::CredRule,
-    constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BitcoinAddress, BitcoinAmount, L1BlockCommitment, L1BlockId, XOnlyPk},
-    operator::OperatorPubkeys,
-    prelude::Buf32,
-    proof::RollupVerifyingKey,
-    serde_helpers::serde_amount_sat,
-};
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
@@ -55,8 +48,7 @@ pub struct RollupParams {
     pub max_address_length: u8,
 
     /// Exact "at-rest" deposit amount, in sats.
-    #[serde(with = "serde_amount_sat")]
-    pub deposit_amount: Amount,
+    pub deposit_amount: BitcoinAmount,
 
     /// SP1 verifying key that is used to verify the Groth16 proof posted on Bitcoin
     // FIXME which proof?  should this be `checkpoint_vk`?
@@ -84,8 +76,8 @@ pub struct GenesisL1View {
 }
 
 impl GenesisL1View {
-    pub fn height(&self) -> absolute::Height {
-        self.blk.height()
+    pub fn height(&self) -> L1Height {
+        self.blk.height().to_consensus_u32()
     }
 
     pub fn height_u64(&self) -> u64 {
@@ -124,7 +116,7 @@ impl RollupParams {
             return Err(ParamsError::ZeroProperty("max_address_length"));
         }
 
-        if self.deposit_amount == Amount::ZERO {
+        if self.deposit_amount == BitcoinAmount::ZERO {
             return Err(ParamsError::ZeroProperty("deposit_amount"));
         }
 
@@ -141,7 +133,7 @@ impl RollupParams {
 
     pub fn compute_hash(&self) -> Buf32 {
         let raw_bytes = bincode::serialize(&self).expect("rollup params serialization failed");
-        crate::hash::raw(&raw_bytes)
+        hash::raw(&raw_bytes)
     }
 
     pub fn rollup_vk(&self) -> &RollupVerifyingKey {
@@ -182,42 +174,6 @@ pub enum ProofPublishMode {
 impl ProofPublishMode {
     pub fn allow_empty(&self) -> bool {
         !matches!(self, Self::Strict)
-    }
-}
-
-/// Client sync parameters that are used to make the network work but don't
-/// strictly have to be pre-agreed.  These have to do with grace periods in
-/// message delivery and whatnot.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SyncParams {
-    /// Number of blocks that we follow the L1 from.
-    pub l1_follow_distance: u64,
-
-    /// Number of events after which we checkpoint the client
-    pub client_checkpoint_interval: u32,
-
-    /// Max number of recent l2 blocks that can be fetched from RPC
-    pub l2_blocks_fetch_limit: u64,
-}
-
-/// Combined set of parameters across all the consensus logic.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Params {
-    pub rollup: RollupParams,
-    pub run: SyncParams,
-}
-
-impl Params {
-    pub fn rollup(&self) -> &RollupParams {
-        &self.rollup
-    }
-
-    pub fn run(&self) -> &SyncParams {
-        &self.run
-    }
-
-    pub fn network(&self) -> Network {
-        self.rollup.network
     }
 }
 

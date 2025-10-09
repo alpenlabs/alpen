@@ -1,4 +1,4 @@
-use strata_asm_types::{DaCommitment, ProtocolOperation};
+use strata_btc_types::{DaCommitment, ProtocolOperation};
 use strata_primitives::indexed::Indexed;
 
 /// Container for the different kinds of messages that we could extract from a L1 tx.

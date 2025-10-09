@@ -42,7 +42,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         // Handle pre-genesis: if the block is before genesis we don't care about it.
         let genesis_height = state.params.rollup().genesis_l1_view.height();
-        let height = incoming_block.height();
+        let height = incoming_block.height().to_consensus_u32();
         if height < genesis_height {
             warn!(%height, "ignoring unexpected L1 block before genesis");
             return Ok(Response::Continue);
@@ -54,7 +54,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         let mut pivot_block = *incoming_block;
         let mut pivot_anchor = ctx.get_anchor_state(&pivot_block);
 
-        while pivot_anchor.is_err() && pivot_block.height() >= genesis_height {
+        while pivot_anchor.is_err() && pivot_block.height().to_consensus_u32() >= genesis_height {
             let block = ctx.get_l1_block(pivot_block.blkid())?;
             let parent_height = pivot_block.height().to_consensus_u32() - 1;
             let parent_block_id = L1BlockCommitment::from_height_u64(
@@ -72,7 +72,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         }
 
         // We reached the height before genesis (while traversing), but didn't find genesis state.
-        if pivot_block.height() < genesis_height {
+        if pivot_block.height().to_consensus_u32() < genesis_height {
             warn!("ASM hasn't found pivot anchor state at genesis.");
             return Ok(Response::ShouldExit);
         }

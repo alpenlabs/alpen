@@ -1,5 +1,5 @@
 use bitcoin::{ScriptBuf, Transaction};
-use strata_asm_types::WithdrawalFulfillmentInfo;
+use strata_btc_types::WithdrawalFulfillmentInfo;
 use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 use tracing::{debug, error};
 

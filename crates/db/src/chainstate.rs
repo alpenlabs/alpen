@@ -14,7 +14,7 @@
 //! potentially-many ledger entries.
 
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 use crate::DbResult;
 

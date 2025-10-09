@@ -3,7 +3,7 @@ use revm::precompile::{
 };
 use revm_primitives::Bytes;
 use strata_crypto::verify_schnorr_sig;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_identifiers::{Buf32, Buf64};
 
 use crate::constants::SCHNORR_ADDRESS;
 
@@ -52,7 +52,7 @@ fn verify_schnorr_precompile(input: &[u8], _gas_limit: u64) -> PrecompileResult 
 mod tests {
     use secp256k1::{Keypair, SecretKey, SECP256K1};
     use strata_crypto::sign_schnorr_sig;
-    use strata_primitives::buf::{Buf32, Buf64};
+    use strata_identifiers::{Buf32, Buf64};
 
     use super::*;
 

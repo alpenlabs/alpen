@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use strata_primitives::proof::ProofContext;
+use strata_crypto::proof_vk::ProofContext;
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder::*;
 use zkaleido_sp1_host::SP1Host;

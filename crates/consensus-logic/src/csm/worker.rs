@@ -2,8 +2,9 @@
 
 use std::{sync::Arc, thread};
 
-use strata_asm_types::L1BlockManifest;
+use strata_btc_types::L1BlockManifest;
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry, CheckpointProvingStatus};
+use strata_params::Params;
 use strata_primitives::prelude::*;
 use strata_state::{
     client_state::ClientState,
@@ -146,7 +147,7 @@ fn process_block_with_retries(
     // Handle pre-genesis: if the block is before genesis we don't care about it.
     let genesis_trigger = state.params.rollup().genesis_l1_view.height();
     let height = incoming_block.height();
-    if incoming_block.height() < genesis_trigger {
+    if incoming_block.height().to_consensus_u32() < genesis_trigger {
         #[cfg(test)]
         eprintln!(
                     "early L1 block at h={height} (gt={genesis_trigger}) you may have set up the test env wrong"
@@ -164,7 +165,7 @@ fn process_block_with_retries(
         let mut cur_state = ctx.get_client_state(&cur_block);
 
         while cur_state.is_err()
-            && cur_block.height() >= state.params.rollup().genesis_l1_view.height()
+            && cur_block.height().to_consensus_u32() >= state.params.rollup().genesis_l1_view.height()
         {
             let cur_block_mf = ctx.get_l1_block_manifest(cur_block.blkid())?;
             let prev_block_id = cur_block_mf.get_prev_blockid();
@@ -179,7 +180,7 @@ fn process_block_with_retries(
             cur_state = ctx.get_client_state(&cur_block);
         }
 
-        if cur_block.height() < state.params.rollup().genesis_l1_view.height() {
+        if cur_block.height().to_consensus_u32() < state.params.rollup().genesis_l1_view.height() {
             // we reached the height before genesis (while traversing the tree of ClientStates),
             // for such a case there shouldn't be any ClientState besides the default one.
             (Default::default(), Default::default())

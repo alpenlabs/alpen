@@ -1,18 +1,19 @@
-//! Logic to check block credentials.
 use std::ops::Deref;
 
+#[cfg(target_os = "zkvm")]
+use k256::Signature;
+#[cfg(not(target_os = "zkvm"))]
 use secp256k1::{
     schnorr::Signature, Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1,
 };
+use strata_identifiers::{Buf32, Buf64};
 
-use crate::buf::{Buf32, Buf64};
-
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", not(target_os = "zkvm")))]
 pub fn sign_schnorr_sig(msg: &Buf32, sk: &Buf32) -> Buf64 {
-    let sk = SecretKey::from_slice(sk.as_ref()).expect("Invalid private key");
+    let sk = SecretKey::from_slice(sk.as_ref()).expect("crypto: invalid private key");
     let kp = Keypair::from_secret_key(SECP256K1, &sk);
-    let msg = Message::from_digest_slice(msg.as_ref()).expect("Invalid message hash");
-    let sig = SECP256K1.sign_schnorr(&msg, &kp);
+    let msg = Message::from_digest_slice(msg.as_ref()).expect("crypto: invalid message hash");
+    let sig = SECP256K1.sign_schnorr_no_aux_rand(&msg, &kp);
     Buf64::from(sig.serialize())
 }
 
@@ -53,9 +54,11 @@ pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
 }
 
 /// A secret key that is guaranteed to have a even x-only public key
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, Copy)]
 pub struct EvenSecretKey(SecretKey);
 
+#[cfg(feature = "std")]
 impl Deref for EvenSecretKey {
     type Target = SecretKey;
 
@@ -64,12 +67,14 @@ impl Deref for EvenSecretKey {
     }
 }
 
+#[cfg(feature = "std")]
 impl AsRef<SecretKey> for EvenSecretKey {
     fn as_ref(&self) -> &SecretKey {
         &self.0
     }
 }
 
+#[cfg(feature = "std")]
 impl From<SecretKey> for EvenSecretKey {
     fn from(value: SecretKey) -> Self {
         match value.x_only_public_key(SECP256K1).1 == Parity::Odd {
@@ -79,6 +84,7 @@ impl From<SecretKey> for EvenSecretKey {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<EvenSecretKey> for SecretKey {
     fn from(value: EvenSecretKey) -> Self {
         value.0
@@ -86,9 +92,11 @@ impl From<EvenSecretKey> for SecretKey {
 }
 
 /// A public key with guaranteed even parity
+#[cfg(feature = "std")]
 #[derive(Debug)]
 pub struct EvenPublicKey(PublicKey);
 
+#[cfg(feature = "std")]
 impl Deref for EvenPublicKey {
     type Target = PublicKey;
 
@@ -97,12 +105,14 @@ impl Deref for EvenPublicKey {
     }
 }
 
+#[cfg(feature = "std")]
 impl AsRef<PublicKey> for EvenPublicKey {
     fn as_ref(&self) -> &PublicKey {
         &self.0
     }
 }
 
+#[cfg(feature = "std")]
 impl From<PublicKey> for EvenPublicKey {
     fn from(value: PublicKey) -> Self {
         match value.x_only_public_key().1 == Parity::Odd {
@@ -112,6 +122,7 @@ impl From<PublicKey> for EvenPublicKey {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<EvenPublicKey> for PublicKey {
     fn from(value: EvenPublicKey) -> Self {
         value.0
@@ -119,6 +130,7 @@ impl From<EvenPublicKey> for PublicKey {
 }
 
 /// Ensures a keypair is even by checking the public key's parity and negating if odd.
+#[cfg(feature = "std")]
 pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKey) {
     match (sk, pk) {
         (sk, pk) if pk.x_only_public_key().1 == Parity::Odd => (
@@ -133,9 +145,9 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 mod tests {
     use rand::{rngs::OsRng, Rng};
     use secp256k1::{SecretKey, SECP256K1};
+    use strata_identifiers::Buf32;
 
     use super::{sign_schnorr_sig, verify_schnorr_sig};
-    use crate::buf::Buf32;
 
     #[test]
     fn test_schnorr_signature_pass() {

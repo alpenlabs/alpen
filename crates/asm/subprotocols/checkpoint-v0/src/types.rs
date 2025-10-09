@@ -8,9 +8,8 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_checkpoint_types::Checkpoint;
-use strata_primitives::{
-    block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment, proof::RollupVerifyingKey,
-};
+use strata_crypto::proof_vk::RollupVerifyingKey;
+use strata_identifiers::{Buf32, CredRule, L1BlockCommitment};
 
 /// Checkpoint verifier state for checkpoint v0
 ///

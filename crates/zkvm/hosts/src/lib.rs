@@ -1,6 +1,6 @@
 //! ZKVM hosts for the Alpen codebase.
 
-use strata_primitives::proof::{ProofKey, ProofZkVm};
+use strata_crypto::proof_vk::{ProofKey, ProofZkVm};
 use zkaleido::{VerifyingKey, ZkVmVkProvider};
 
 pub mod native;

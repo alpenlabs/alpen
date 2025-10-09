@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 strata-asm-types.workspace = true
 strata-asm-worker.workspace = true
+strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
@@ -16,8 +17,10 @@ strata-checkpoint-types.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-db.workspace = true
 strata-eectl.workspace = true
+strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true

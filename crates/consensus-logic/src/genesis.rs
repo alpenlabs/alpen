@@ -5,17 +5,15 @@ use strata_ol_chain_types::{
     L2Header, SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::{Chainstate, GenesisStateData, L1ViewState, WriteBatch};
-use strata_primitives::{
-    buf::{Buf32, Buf64},
-    constants::TIMESTAMPS_FOR_MEDIAN,
-    evm_exec::create_evm_extra_payload,
-    params::{OperatorConfig, Params},
-};
+use strata_btc_types::constants::TIMESTAMPS_FOR_MEDIAN;
+use strata_identifiers::{Buf32, Buf64};
+use strata_params::{OperatorConfig, Params};
+use strata_primitives::evm_exec::create_evm_extra_payload;
+use strata_ol_chain_types::{ExecUpdate, UpdateInput, UpdateOutput};
 use strata_state::{
     bridge_state::OperatorTable,
     client_state::ClientState,
     exec_env::ExecEnvState,
-    exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
     operation::ClientUpdateOutput,
     prelude::*,
 };

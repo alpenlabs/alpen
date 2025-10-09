@@ -9,8 +9,9 @@ use bitcoin::{
     Amount, OutPoint, ScriptBuf, TapNodeHash, Transaction, TxOut, XOnlyPublicKey,
 };
 use secp256k1::Message;
-use strata_asm_types::DepositInfo;
-use strata_primitives::{buf::Buf32, l1::OutputRef, prelude::DepositTxParams};
+use strata_btc_types::{DepositInfo, OutputRef};
+use strata_identifiers::Buf32;
+use strata_params::DepositTxParams;
 
 use crate::{
     deposit::error::DepositParseError,

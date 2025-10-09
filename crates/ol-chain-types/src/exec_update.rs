@@ -1,16 +1,16 @@
 //! Chain data types relating to the CL's updating view of an execution
 //! environment's state.  For now the EVM EL is the only execution environment.
+// TODO remove this whole module soon, it's irrelevant
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32, evm_exec::create_evm_extra_payload, prelude::payload::BlobSpec,
-};
+use strata_identifiers::Buf32;
 
 use crate::{
     bridge_ops::{self, DepositIntent},
-    prelude::StateQueue,
+    legacy_da_payload::*,
+    state_queue::StateQueue,
 };
 
 /// Full update payload containing inputs and outputs to an EE state update.
@@ -77,6 +77,15 @@ impl<'a> Arbitrary<'a> for UpdateInput {
             extra_payload,
         })
     }
+}
+
+/// Generate extra_payload for evm el
+///
+/// This corresponds to the version in `strata-primitives::evm_exec`, which we
+/// don't want to depend on here.
+fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
+    // This is silly, but it is actually equivalent.
+    block_hash.as_bytes().to_vec()
 }
 
 impl UpdateInput {

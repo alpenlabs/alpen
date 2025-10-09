@@ -4,5 +4,5 @@ pub mod errors;
 pub mod types;
 
 pub use errors::*;
-pub use strata_primitives::proof::ProofKey;
+pub use strata_crypto::proof_vk::ProofKey;
 pub use types::*;

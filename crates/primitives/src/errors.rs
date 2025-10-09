@@ -34,3 +34,13 @@ pub enum ParseError {
     #[error("descriptor: {0}")]
     Descriptor(String),
 }
+
+impl From<strata_identifiers::ParseError> for ParseError {
+    fn from(value: strata_identifiers::ParseError) -> Self {
+        match value {
+            strata_identifiers::ParseError::InvalidPubkey(e) => Self::InvalidPubkey(e),
+            strata_identifiers::ParseError::InvalidPoint(buf) => Self::InvalidPoint(buf),
+            strata_identifiers::ParseError::UnsupportedAddress(ty) => Self::UnsupportedAddress(ty),
+        }
+    }
+}

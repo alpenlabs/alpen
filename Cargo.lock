@@ -2582,8 +2582,8 @@ dependencies = [
  "base64 0.21.7",
  "bech32",
  "bitcoin-internals 0.3.0",
- "bitcoin-io",
- "bitcoin-units",
+ "bitcoin-io 0.1.3",
+ "bitcoin-units 0.1.2",
  "bitcoin_hashes 0.14.0",
  "hex-conservative 0.2.1",
  "hex_lit",
@@ -2621,10 +2621,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin-internals"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b854212e29b96c8f0fe04cab11d57586c8f3257de0d146c76cb3b42b3eb9118"
+
+[[package]]
 name = "bitcoin-io"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b47c4ab7a93edb0c7198c5535ed9b52b63095f4e9b45279c6736cec4b856baf"
+
+[[package]]
+name = "bitcoin-io"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26792cd2bf245069a1c5acb06aa7ad7abe1de69b507c90b490bca81e0665d0ee"
+dependencies = [
+ "bitcoin-internals 0.4.0",
+]
+
+[[package]]
+name = "bitcoin-primitives"
+version = "0.101.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5871b575b49663222d29f4435160191ed8e0abc6d97df787ffb45ad28da39b1d"
+dependencies = [
+ "bitcoin-internals 0.4.0",
+ "bitcoin-io 0.2.0",
+ "bitcoin-units 0.2.0",
+ "bitcoin_hashes 0.15.0",
+ "hex-conservative 0.3.0",
+]
 
 [[package]]
 name = "bitcoin-units"
@@ -2634,6 +2662,15 @@ checksum = "5285c8bcaa25876d07f37e3d30c303f2609179716e11d688f51e8f1fe70063e2"
 dependencies = [
  "bitcoin-internals 0.3.0",
  "serde",
+]
+
+[[package]]
+name = "bitcoin-units"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d61aec975b0c91f4d2ee891c6e69e6ec2b94b3791336b7b76f9f4a9cbdeae3f7"
+dependencies = [
+ "bitcoin-internals 0.4.0",
 ]
 
 [[package]]
@@ -2652,9 +2689,19 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb18c03d0db0247e147a21a6faafd5a7eb851c743db062de72018b6b7e8e4d16"
 dependencies = [
- "bitcoin-io",
+ "bitcoin-io 0.1.3",
  "hex-conservative 0.2.1",
  "serde",
+]
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0982261c82a50d89d1a411602afee0498b3e0debe3d36693f0c661352809639"
+dependencies = [
+ "bitcoin-io 0.2.0",
+ "hex-conservative 0.3.0",
 ]
 
 [[package]]
@@ -3911,7 +3958,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -5453,6 +5500,15 @@ name = "hex-conservative"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5313b072ce3c597065a808dbf612c4c8e8590bdbf8b579508bf7a762c5eae6cd"
+dependencies = [
+ "arrayvec",
+]
+
+[[package]]
+name = "hex-conservative"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4afe881d0527571892c4034822e59bb10c6c991cce6abe8199b6f5cf10766f55"
 dependencies = [
  "arrayvec",
 ]
@@ -13072,7 +13128,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.13.0",
+ "bitcoin_hashes 0.14.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -14286,8 +14342,8 @@ dependencies = [
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-l1tx",
+ "strata-ol-chain-types",
  "strata-ol-chainstate-types",
- "strata-state",
  "strata-test-utils",
  "thiserror 2.0.16",
 ]
@@ -14303,6 +14359,7 @@ dependencies = [
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types",
  "strata-crypto",
+ "strata-identifiers",
  "strata-primitives",
  "thiserror 2.0.16",
 ]
@@ -14346,6 +14403,7 @@ dependencies = [
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-v0",
  "strata-l1-txfmt",
+ "strata-params",
  "strata-primitives",
 ]
 
@@ -14418,7 +14476,10 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sha2 0.10.9",
+ "strata-btc-types",
  "strata-checkpoint-types",
+ "strata-identifiers",
+ "strata-params",
  "strata-primitives",
  "strata-test-utils-btc",
  "thiserror 2.0.16",
@@ -14436,6 +14497,8 @@ dependencies = [
  "strata-asm-spec",
  "strata-asm-stf",
  "strata-asm-types",
+ "strata-identifiers",
+ "strata-params",
  "strata-primitives",
  "strata-service",
  "strata-state",
@@ -14443,6 +14506,22 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-btc-types"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "bitcoin-bosd",
+ "borsh",
+ "hex",
+ "serde",
+ "sha2 0.10.9",
+ "strata-checkpoint-types",
+ "strata-identifiers",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -14491,6 +14570,7 @@ dependencies = [
  "strata-eectl",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
+ "strata-params",
  "strata-primitives",
  "strata-service",
  "strata-status",
@@ -14508,6 +14588,7 @@ dependencies = [
  "strata-chaintsn",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
+ "strata-params",
  "strata-primitives",
  "thiserror 2.0.16",
 ]
@@ -14520,10 +14601,13 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "strata-asm-types",
+ "strata-btc-types",
  "strata-checkpoint-types",
  "strata-crypto",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
+ "strata-params",
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
@@ -14540,7 +14624,8 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
- "strata-primitives",
+ "strata-crypto",
+ "strata-identifiers",
  "zkaleido",
 ]
 
@@ -14638,6 +14723,7 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-types",
  "strata-asm-worker",
+ "strata-btc-types",
  "strata-chain-worker",
  "strata-chainexec",
  "strata-chaintsn",
@@ -14646,8 +14732,10 @@ dependencies = [
  "strata-db",
  "strata-db-store-sled",
  "strata-eectl",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
+ "strata-params",
  "strata-primitives",
  "strata-state",
  "strata-status",
@@ -14666,15 +14754,21 @@ name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
+ "bincode",
  "bitcoin",
  "bitvec",
  "borsh",
+ "k256",
  "musig2",
  "rand 0.8.5",
- "strata-primitives",
+ "secp256k1 0.29.1",
+ "serde",
+ "strata-identifiers",
  "strata-test-utils",
  "thiserror 2.0.16",
  "zkaleido",
+ "zkaleido-risc0-groth16-verifier",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -14720,7 +14814,10 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-asm-types",
+ "strata-btc-types",
  "strata-checkpoint-types",
+ "strata-crypto",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -14854,6 +14951,7 @@ dependencies = [
  "anyhow",
  "strata-common",
  "strata-db",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
@@ -14898,6 +14996,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-identifiers"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bincode",
+ "bitcoin",
+ "bitcoin-primitives",
+ "bitcoin_hashes 0.15.0",
+ "borsh",
+ "const-hex",
+ "hex",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.16",
+ "zeroize",
+]
+
+[[package]]
 name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14925,12 +15043,14 @@ dependencies = [
  "bitcoin",
  "borsh",
  "secp256k1 0.29.1",
- "strata-asm-types",
+ "strata-btc-types",
  "strata-btcio",
  "strata-checkpoint-types",
  "strata-crypto",
+ "strata-identifiers",
  "strata-l1-txfmt",
  "strata-ol-chainstate-types",
+ "strata-params",
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
@@ -14978,12 +15098,14 @@ name = "strata-ol-chain-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
+ "bitcoin-bosd",
  "borsh",
+ "num_enum 0.7.4",
  "serde",
- "strata-asm-types",
+ "strata-btc-types",
  "strata-crypto",
- "strata-primitives",
- "strata-state",
+ "strata-identifiers",
+ "strata-params",
  "strata-test-utils",
  "thiserror 2.0.16",
  "tracing",
@@ -14997,9 +15119,26 @@ dependencies = [
  "bitcoin",
  "borsh",
  "strata-asm-types",
+ "strata-btc-types",
+ "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
  "tracing",
+]
+
+[[package]]
+name = "strata-params"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bitcoin",
+ "borsh",
+ "serde",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -15012,8 +15151,6 @@ dependencies = [
  "bitcoin-bosd",
  "borsh",
  "const-hex",
- "digest 0.10.7",
- "hex",
  "k256",
  "musig2",
  "num_enum 0.7.4",
@@ -15022,12 +15159,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-ol-chain-types",
  "strata-test-utils",
  "thiserror 2.0.16",
  "zeroize",
- "zkaleido-risc0-groth16-verifier",
- "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -15351,8 +15490,10 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-stf",
- "strata-asm-types",
+ "strata-btc-types",
  "strata-checkpoint-types",
+ "strata-identifiers",
+ "strata-ol-chain-types",
  "strata-primitives",
 ]
 
@@ -15379,8 +15520,10 @@ dependencies = [
  "lru 0.12.5",
  "paste",
  "strata-asm-types",
+ "strata-btc-types",
  "strata-checkpoint-types",
  "strata-db",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",

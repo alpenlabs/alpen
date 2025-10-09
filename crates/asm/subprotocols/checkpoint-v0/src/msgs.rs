@@ -1,7 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_proto_checkpoint_txs::CHECKPOINT_V0_SUBPROTOCOL_ID;
-use strata_primitives::{buf::Buf32, proof::RollupVerifyingKey};
+use strata_crypto::proof_vk::RollupVerifyingKey;
+use strata_identifiers::Buf32;
 
 /// Incoming messages that the checkpoint v0 subprotocol can receive from other subprotocols.
 ///

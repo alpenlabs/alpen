@@ -11,7 +11,7 @@ use strata_db::{
     types::IntentStatus,
 };
 use strata_ol_chainstate_types::WriteBatch;
-use strata_primitives::l2::L2BlockId;
+use strata_identifiers::L2BlockId;
 
 use super::{
     checkpoint::get_latest_checkpoint_entry,

@@ -19,6 +19,7 @@ members = [
   "crates/asm/txs/bridge-v1",
   "crates/asm-types",
   "crates/asm/worker",
+  "crates/btc-types",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -37,11 +38,13 @@ members = [
   "crates/ee-chain-types",
   "crates/eectl",
   "crates/evmexec",
+  "crates/identifiers",
   "crates/key-derivation",
   "crates/l1tx",
   "crates/mpt",
   "crates/ol-chain-types",
   "crates/ol-chainstate-types",
+  "crates/params",
   "crates/primitives",
   "crates/proof-impl/checkpoint",
   "crates/proof-impl/cl-stf",
@@ -141,6 +144,7 @@ strata-asm-txs-admin = { path = "crates/asm/txs/admin" }
 strata-asm-txs-bridge-v1 = { path = "crates/asm/txs/bridge-v1" }
 strata-asm-types = { path = "crates/asm-types" }
 strata-asm-worker = { path = "crates/asm/worker" }
+strata-btc-types = { path = "crates/btc-types" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chainexec = { path = "crates/chainexec" }
@@ -160,12 +164,14 @@ strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
+strata-identifiers = { path = "crates/identifiers" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-l1tx = { path = "crates/l1tx" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
 strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
+strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
@@ -322,14 +328,17 @@ bdk_esplora = { version = "0.20.1", features = [
 ], default-features = false }
 bdk_wallet = "1.0.0"
 bincode = "1.3"
-bitcoin = { version = "0.32.6", features = ["serde"] }
+bitcoin = { version = "0.32.7", features = ["serde"] }
 bitcoin-bosd = { version = "0.4.0", default-features = false }
+bitcoin_hashes = "0.15"
+bitcoin-primitives = "0.101"
 bitcoind-async-client = "0.1.1"
 bitvec = "1.0.1"
 borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.6.0"
 cfg-if = "1.0.0"
 chrono = "0.4.38"
+const-hex = "1.14"
 clap = { version = "4.5.39", default-features = false, features = ["derive"] }
 criterion = { version = "0.7.0", features = ["html_reports"] }
 deadpool = "0.12.1"

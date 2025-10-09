@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 /// An update to the Bridge Operator Set:
 /// - removes the specified `remove_members`

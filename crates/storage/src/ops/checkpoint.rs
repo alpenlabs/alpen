@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
 use strata_db::{traits::*, types::CheckpointEntry};
-use strata_primitives::epoch::EpochCommitment;
+use strata_identifiers::EpochCommitment;
 
 use crate::exec::*;
 

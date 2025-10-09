@@ -2,7 +2,7 @@ use strata_db::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry},
 };
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 use strata_test_utils::ArbitraryGenerator;
 
 // ===== Payload Entry Tests =====

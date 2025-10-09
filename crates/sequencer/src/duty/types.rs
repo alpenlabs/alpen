@@ -164,7 +164,7 @@ mod tests {
 
     use bitcoin::{bip32::Xpriv, Network};
     use strata_key_derivation::sequencer::SequencerKeys;
-    use strata_primitives::buf::Buf32;
+    use strata_identifiers::Buf32;
     use zeroize::Zeroize;
 
     use super::*;

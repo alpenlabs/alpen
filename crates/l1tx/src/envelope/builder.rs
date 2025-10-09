@@ -7,10 +7,8 @@ use bitcoin::{
     script::PushBytesBuf,
     ScriptBuf,
 };
-use strata_primitives::{
-    l1::payload::{L1Payload, L1PayloadType},
-    params::Params,
-};
+use strata_params::Params;
+use strata_primitives::l1::payload::{L1Payload, L1PayloadType};
 
 // Generates a [`ScriptBuf`] that consists of `OP_IF .. OP_ENDIF` block
 pub fn build_envelope_script(params: &Params, payloads: &[L1Payload]) -> anyhow::Result<ScriptBuf> {

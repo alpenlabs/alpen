@@ -1,5 +1,5 @@
 use strata_db::DbError;
-use strata_primitives::l2::L2BlockCommitment;
+use strata_identifiers::L2BlockCommitment;
 use thiserror::Error;
 
 pub type EngineResult<T> = Result<T, EngineError>;

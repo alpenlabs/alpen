@@ -7,7 +7,10 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-btc-types.workspace = true
 strata-checkpoint-types.workspace = true
+strata-identifiers.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true

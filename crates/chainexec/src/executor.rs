@@ -5,6 +5,7 @@ use strata_chaintsn::{
     transition::process_block,
 };
 use strata_ol_chain_types::{L2BlockBody, L2Header};
+use strata_params::RollupParams;
 use strata_primitives::prelude::*;
 
 use crate::{BlockExecutionOutput, Error, ExecContext, MemStateAccessor};

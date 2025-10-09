@@ -16,7 +16,7 @@ use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_primitives::crypto::even_kp;
+use strata_crypto::schnorr::even_kp;
 
 use crate::{
     alpen::AlpenWallet,

@@ -1,0 +1,25 @@
+[package]
+name = "strata-btc-types"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strata-checkpoint-types.workspace = true
+strata-identifiers.workspace = true
+
+arbitrary.workspace = true
+bitcoin = { workspace = true, features = ["serde", "rand-std"] }
+bitcoin-bosd = { workspace = true, features = [
+  "address",
+  "serde",
+  "borsh",
+  "arbitrary",
+] }
+borsh.workspace = true
+hex.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

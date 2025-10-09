@@ -1,5 +1,5 @@
 use strata_db::{DbResult, errors::DbError, traits::L1BroadcastDatabase, types::L1TxEntry};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 use super::schemas::{BcastL1TxIdSchema, BcastL1TxSchema};
 use crate::{

@@ -1,11 +1,11 @@
 use bitcoin::{key::Parity, secp256k1::PublicKey, XOnlyPublicKey};
 use musig2::KeyAggContext;
-use strata_primitives::{
-    buf::{Buf32, Buf64},
-    crypto::verify_schnorr_sig,
-};
+use strata_identifiers::{Buf32, Buf64};
 
-use crate::multisig::{errors::MultisigError, traits::CryptoScheme};
+use crate::{
+    multisig::{errors::MultisigError, traits::CryptoScheme},
+    schnorr::verify_schnorr_sig,
+};
 
 /// Schnorr signature scheme using MuSig2 key aggregation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,14 +41,17 @@ impl CryptoScheme for SchnorrScheme {
 /// Aggregates a collection of Schnorr public keys using MuSig2 key aggregation.
 ///
 /// # Arguments
+///
 /// * `keys` - An iterator over 32-byte public keys to aggregate
 ///
 /// # Returns
+///
 /// Returns the aggregated public key on success, or an error if:
 /// - Any key is not a valid x-only public key
 /// - MuSig2 key aggregation context creation fails
 ///
 /// # Errors
+///
 /// * `MultisigError::InvalidPubKey` - If a key is not a valid x-only public key
 /// * `MultisigError::AggregationContextFailed` - If MuSig2 context creation fails
 pub fn aggregate_schnorr_keys<'k>(

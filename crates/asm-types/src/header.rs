@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{buf::Buf32, hash, l1::L1BlockId};
+use strata_identifiers::{Buf32, L1BlockId, hash};
 
 /// Header and the wtxs root.
 ///

@@ -7,11 +7,9 @@ use bitcoin::{
     Address, Network, Opcode, XOnlyPublicKey,
 };
 use strata_crypto::multisig::aggregate_schnorr_keys;
-use strata_primitives::{
-    buf::Buf32,
-    l1::BitcoinAddress,
-    params::{OperatorConfig, RollupParams},
-};
+use strata_identifiers::Buf32;
+use strata_params::{OperatorConfig, RollupParams};
+use strata_primitives::l1::BitcoinAddress;
 
 /// Extract next instruction and try to parse it as an opcode
 pub fn next_op(instructions: &mut Instructions<'_>) -> Option<Opcode> {
@@ -92,9 +90,9 @@ pub mod test_utils {
         secp256k1::{Keypair, Secp256k1, SecretKey},
         Address, Network,
     };
+    use strata_params::Params;
     use strata_primitives::{
         l1::{BitcoinAddress, XOnlyPk},
-        params::Params,
         sorted_vec::FlatTable,
     };
     use strata_state::bridge_state::DepositEntry;

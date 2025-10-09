@@ -1,12 +1,11 @@
 //! Core state transition function.
 
 use bitcoin::Transaction;
-use strata_asm_types::{L1BlockManifest, L1Tx, ProtocolOperation};
+use strata_btc_types::{L1BlockManifest, L1Tx, ProtocolOperation};
 use strata_checkpoint_types::verify_signed_checkpoint_sig;
-use strata_primitives::{
-    l1::{L1BlockCommitment, L1BlockId},
-    prelude::*,
-};
+use strata_identifiers::{L1BlockCommitment, L1BlockId};
+use strata_params::{Params, RollupParams};
+use strata_primitives::prelude::*;
 use strata_state::{client_state::*, operation::*};
 use strata_storage::NodeStorage;
 use tracing::*;

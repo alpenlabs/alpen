@@ -1,10 +1,8 @@
-use strata_crypto::verify_schnorr_sig;
-use strata_primitives::{
-    block_credential::CredRule,
-    buf::{Buf32, Buf64},
-    hash,
-    params::RollupParams,
-};
+// TODO this module should probably also be moved to some "validation-type" crate
+
+use strata_crypto::schnorr::verify_schnorr_sig;
+use strata_identifiers::{hash, Buf32, Buf64, CredRule};
+use strata_params::RollupParams;
 use thiserror::Error;
 use tracing::warn;
 

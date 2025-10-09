@@ -7,6 +7,12 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-btc-types.workspace = true
+strata-crypto.workspace = true
+strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
+strata-ol-chain-types.workspace = true
+
 arbitrary.workspace = true
 bincode.workspace = true
 bitcoin = { workspace = true, features = ["serde", "rand-std"] }
@@ -17,20 +23,15 @@ bitcoin-bosd = { workspace = true, features = [
   "arbitrary",
 ] }
 borsh.workspace = true
-const-hex = "1.14"
-digest.workspace = true
-hex.workspace = true
+const-hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
 num_enum.workspace = true
 rand = { workspace = true, optional = true }
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
 sha2.workspace = true
-strata-l1-txfmt.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
-zkaleido-risc0-groth16-verifier.workspace = true
-zkaleido-sp1-groth16-verifier.workspace = true
 
 [target.'cfg(target_os = "zkvm")'.dependencies]
 k256 = { version = "0.13.4", features = ["schnorr"] }
@@ -43,4 +44,4 @@ serde_json.workspace = true
 [features]
 default = ["std", "rand"]
 rand = ["std", "dep:rand"]
-std = ["dep:secp256k1"]
+std = ["dep:secp256k1", "strata-crypto/std"]

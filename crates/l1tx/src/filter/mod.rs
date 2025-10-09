@@ -1,5 +1,5 @@
 use bitcoin::Transaction;
-use strata_asm_types::{DepositInfo, DepositSpendInfo};
+use strata_btc_types::{DepositInfo, DepositSpendInfo};
 use strata_primitives::l1::OutputRef;
 
 mod checkpoint;

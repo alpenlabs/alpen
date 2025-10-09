@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_db::{traits::*, types::L1TxEntry, DbResult};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 use crate::exec::*;
 

@@ -1,14 +1,14 @@
 //! L1 check-in logic.
 
 use bitcoin::{block::Header, consensus};
-use strata_asm_types::{
+use strata_btc_types::{
     DepositInfo, DepositSpendInfo, L1BlockManifest, ProtocolOperation, WithdrawalFulfillmentInfo,
 };
+use strata_ol_chain_types::DepositIntent;
 use strata_checkpoint_types::{verify_signed_checkpoint_sig, SignedCheckpoint};
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::L1Segment;
-use strata_primitives::params::RollupParams;
-use strata_state::bridge_ops::DepositIntent;
+use strata_params::RollupParams;
 
 use crate::{
     context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},

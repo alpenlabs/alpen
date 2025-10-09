@@ -15,9 +15,9 @@ use strata_asm_proto_checkpoint_txs::{
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
 };
-use strata_primitives::{
-    block_credential::CredRule, buf::Buf32, l1::BitcoinTxid, proof::RollupVerifyingKey,
-};
+use strata_crypto::proof_vk::RollupVerifyingKey;
+use strata_identifiers::{Buf32, CredRule};
+use strata_primitives::l1::BitcoinTxid;
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
