@@ -180,7 +180,7 @@ strata-l1tx = { path = "crates/l1tx" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
-strata-ol-chain-types = { path = "crates/ol/chain-types" }
+strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-params = { path = "crates/params" }
