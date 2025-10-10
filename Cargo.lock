@@ -13456,6 +13456,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-btc-types"
+version = "0.1.0"
+
+[[package]]
 name = "strata-btcio"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -13944,6 +13948,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-identifiers"
+version = "0.1.0"
+
+[[package]]
 name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14067,6 +14075,10 @@ dependencies = [
  "strata-state",
  "tracing",
 ]
+
+[[package]]
+name = "strata-params"
+version = "0.1.0"
 
 [[package]]
 name = "strata-primitives"
