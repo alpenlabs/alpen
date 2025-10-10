@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use zkaleido_risc0_groth16_verifier::Risc0Groth16Verifier;
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
-use crate::{evm_exec::EvmEeBlockCommitment, l2::L2BlockCommitment};
+use crate::{EvmEeBlockCommitment, L2BlockCommitment};
 
 pub type Epoch = u64;
 

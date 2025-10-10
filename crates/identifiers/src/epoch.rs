@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     buf::Buf32,
-    l2::{L2BlockCommitment, L2BlockId},
+    ol::{OLBlockCommitment, OLBlockId},
 };
 
 /// Commits to a particular epoch by the last block and slot.
@@ -43,11 +43,11 @@ use crate::{
 pub struct EpochCommitment {
     epoch: u64,
     last_slot: u64,
-    last_blkid: L2BlockId,
+    last_blkid: OLBlockId,
 }
 
 impl EpochCommitment {
-    pub fn new(epoch: u64, last_slot: u64, last_blkid: L2BlockId) -> Self {
+    pub fn new(epoch: u64, last_slot: u64, last_blkid: OLBlockId) -> Self {
         Self {
             epoch,
             last_slot,
@@ -57,13 +57,13 @@ impl EpochCommitment {
 
     /// Creates a new instance given the terminal block of an epoch and the
     /// epoch index.
-    pub fn from_terminal(epoch: u64, block: L2BlockCommitment) -> Self {
+    pub fn from_terminal(epoch: u64, block: OLBlockCommitment) -> Self {
         Self::new(epoch, block.slot(), *block.blkid())
     }
 
     /// Creates a "null" epoch with 0 slot, epoch 0, and zeroed blkid.
     pub fn null() -> Self {
-        Self::new(0, 0, L2BlockId::from(Buf32::zero()))
+        Self::new(0, 0, OLBlockId::from(Buf32::zero()))
     }
 
     pub fn epoch(&self) -> u64 {
@@ -74,13 +74,13 @@ impl EpochCommitment {
         self.last_slot
     }
 
-    pub fn last_blkid(&self) -> &L2BlockId {
+    pub fn last_blkid(&self) -> &OLBlockId {
         &self.last_blkid
     }
 
-    /// Returns a [`L2BlockCommitment`] for the final block of the epoch.
-    pub fn to_block_commitment(&self) -> L2BlockCommitment {
-        L2BlockCommitment::new(self.last_slot, self.last_blkid)
+    /// Returns a [`OLBlockCommitment`] for the final block of the epoch.
+    pub fn to_block_commitment(&self) -> OLBlockCommitment {
+        OLBlockCommitment::new(self.last_slot, self.last_blkid)
     }
 
     /// Returns if the terminal blkid is zero.  This signifies a special case
