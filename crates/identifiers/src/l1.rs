@@ -15,6 +15,9 @@ pub use bitcoin::{absolute, BlockHash};
 /// The bitcoin block height
 pub type BitcoinBlockHeight = u64;
 
+/// L1 block height (as a simple u32)
+pub type L1Height = u32;
+
 /// ID of an L1 block, usually the hash of its header.
 #[derive(
     Copy,

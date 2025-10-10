@@ -14026,6 +14026,7 @@ name = "strata-ledger-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
+ "strata-identifiers",
  "strata-snark-acct-types",
 ]
 
