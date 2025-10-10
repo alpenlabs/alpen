@@ -14463,6 +14463,23 @@ dependencies = [
 [[package]]
 name = "strata-btc-types"
 version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "bitcoin-bosd",
+ "borsh",
+ "const-hex",
+ "hex",
+ "num_enum 0.7.4",
+ "rand 0.8.5",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-test-utils",
+ "thiserror 2.0.16",
+]
 
 [[package]]
 name = "strata-btcio"
@@ -14562,6 +14579,7 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
+ "strata-crypto",
  "strata-primitives",
  "zkaleido",
 ]
@@ -15081,6 +15099,15 @@ dependencies = [
 [[package]]
 name = "strata-params"
 version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bitcoin",
+ "borsh",
+ "serde",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "thiserror 2.0.16",
+]
 
 [[package]]
 name = "strata-primitives"
@@ -15091,17 +15118,12 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
- "const-hex",
- "hex",
  "k256",
- "num_enum 0.7.4",
- "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
- "serde_json",
+ "strata-btc-types",
  "strata-identifiers",
  "strata-l1-txfmt",
- "strata-test-utils",
  "thiserror 2.0.16",
  "zeroize",
  "zkaleido-risc0-groth16-verifier",

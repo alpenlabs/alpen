@@ -17,11 +17,9 @@ bitcoin-bosd = { workspace = true, features = [
   "arbitrary",
 ] }
 borsh.workspace = true
-const-hex = "1.14"
-hex.workspace = true
-num_enum.workspace = true
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
+strata-btc-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 thiserror.workspace = true
@@ -33,10 +31,6 @@ zkaleido-sp1-groth16-verifier.workspace = true
 k256 = { version = "0.13.4", features = ["schnorr"] }
 
 [dev-dependencies]
-strata-test-utils.workspace = true
-rand.workspace = true
-
-serde_json.workspace = true
 
 [features]
 default = ["std"]
