@@ -8,18 +8,25 @@ workspace = true
 
 [dependencies]
 arbitrary.workspace = true
-bitcoin = { workspace = true, features = ["serde", "rand-std"] }
+bitcoin = { workspace = true, features = ["serde", "rand-std"], optional = true }
 bitcoin-bosd = { workspace = true, features = ["address"] }
 borsh.workspace = true
 const-hex = "1.14"
+digest.workspace = true
 hex.workspace = true
 num_enum.workspace = true
 rand.workspace = true
 serde.workspace = true
 secp256k1 = { workspace = true, features = ["global-context"] }
+sha2.workspace = true
+strata-checkpoint-types.workspace = true
 strata-identifiers = { workspace = true, features = ["bitcoin"] }
 strata-l1-txfmt.workspace = true
 thiserror.workspace = true
+
+[features]
+default = ["bitcoin"]
+bitcoin = ["dep:bitcoin"]
 
 [dev-dependencies]
 borsh.workspace = true

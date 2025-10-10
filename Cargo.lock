@@ -14193,6 +14193,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-chain-types"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "serde",
+]
+
+[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
@@ -14361,6 +14369,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-state-types"
+version = "0.1.0"
+
+[[package]]
 name = "strata-asm-stf"
 version = "0.1.0"
 dependencies = [
@@ -14410,17 +14422,10 @@ dependencies = [
 name = "strata-asm-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
- "bitcoin",
- "borsh",
- "digest 0.10.7",
  "rand 0.8.5",
- "serde",
- "sha2 0.10.9",
- "strata-checkpoint-types",
- "strata-primitives",
+ "strata-btc-types",
+ "strata-btc-verification",
  "strata-test-utils-btc",
- "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -14469,15 +14474,33 @@ dependencies = [
  "bitcoin-bosd",
  "borsh",
  "const-hex",
+ "digest 0.10.7",
  "hex",
  "num_enum 0.7.4",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "strata-checkpoint-types",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-test-utils",
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-btc-verification"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "borsh",
+ "rand 0.8.5",
+ "serde",
+ "strata-btc-types",
+ "strata-identifiers",
+ "strata-test-utils-btc",
  "thiserror 2.0.16",
 ]
 
@@ -14580,7 +14603,7 @@ dependencies = [
  "borsh",
  "serde",
  "strata-crypto",
- "strata-primitives",
+ "strata-identifiers",
  "zkaleido",
 ]
 
@@ -14710,17 +14733,20 @@ name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bitcoin",
+ "bincode",
  "bitvec",
  "borsh",
  "k256",
  "musig2",
  "rand 0.8.5",
+ "secp256k1 0.29.1",
+ "serde",
  "strata-identifiers",
- "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
  "zkaleido",
+ "zkaleido-risc0-groth16-verifier",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -15030,6 +15056,7 @@ name = "strata-ledger-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
+ "strata-asm-chain-types",
  "strata-identifiers",
  "strata-snark-acct-types",
 ]

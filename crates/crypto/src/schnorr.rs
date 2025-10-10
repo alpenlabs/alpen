@@ -5,7 +5,7 @@ use std::ops::Deref;
 use strata_identifiers::{Buf32, Buf64};
 
 #[cfg(not(target_os = "zkvm"))]
-use bitcoin::secp256k1::{Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
+use secp256k1::{Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
 
 /// Sign a message with a Schnorr signature.
 #[cfg(not(target_os = "zkvm"))]
@@ -13,7 +13,7 @@ pub fn sign_schnorr_sig(msg: &Buf32, sk: &Buf32) -> Buf64 {
     let sk = SecretKey::from_slice(sk.as_ref()).expect("Invalid private key");
     let kp = Keypair::from_secret_key(SECP256K1, &sk);
     let msg = Message::from_digest_slice(msg.as_ref()).expect("Invalid message hash");
-    let sig = SECP256K1.sign_schnorr(&msg, &kp);
+    let sig = SECP256K1.sign_schnorr_no_aux_rand(&msg, &kp);
     Buf64::from(sig.serialize())
 }
 
@@ -27,7 +27,7 @@ pub fn sign_schnorr_sig(_msg: &Buf32, _sk: &Buf32) -> Buf64 {
 /// Verify a Schnorr signature (non-zkvm version using secp256k1).
 #[cfg(not(target_os = "zkvm"))]
 pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
-    use bitcoin::secp256k1::schnorr::Signature;
+    use secp256k1::schnorr::Signature;
 
     let msg = match Message::from_digest_slice(msg.as_ref()) {
         Ok(msg) => msg,
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "zkvm"))]
     fn test_schnorr_signature_pass() {
-        use bitcoin::secp256k1::{SecretKey, SECP256K1};
+        use secp256k1::{SecretKey, SECP256K1};
 
         let msg: [u8; 32] = [(); 32].map(|_| OsRng.gen());
 

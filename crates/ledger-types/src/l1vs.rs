@@ -4,14 +4,8 @@
 // it's only updated at the epoch boundaries anyways)
 
 use strata_acct_types::BitcoinAmount;
+pub use strata_asm_chain_types::AsmManifest;
 pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
-
-/// Transitional type until we update crate hierarchy.
-/// TODO: Move to appropriate crate (possibly ol-chain-types or asm-types)
-#[derive(Clone, Debug)]
-pub struct AsmManifest {
-    // TODO
-}
 
 /// State relating to the L1 view.
 ///

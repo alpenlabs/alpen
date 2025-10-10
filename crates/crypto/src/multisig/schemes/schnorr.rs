@@ -1,4 +1,4 @@
-use bitcoin::{key::Parity, secp256k1::PublicKey, XOnlyPublicKey};
+use secp256k1::{Parity, PublicKey, XOnlyPublicKey};
 use musig2::KeyAggContext;
 use strata_identifiers::{Buf32, Buf64};
 

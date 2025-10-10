@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 strata-crypto.workspace = true
-strata-primitives.workspace = true
+strata-identifiers.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
