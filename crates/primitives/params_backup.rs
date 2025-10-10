@@ -3,26 +3,18 @@
 use bitcoin::{absolute, Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
 use strata_l1_txfmt::MagicBytes;
 use thiserror::Error;
 
-pub mod block_credential;
-pub mod operator;
-pub mod serde_helpers;
-
-pub use block_credential::CredRule;
-pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
-
-// Re-export from primitives for types that need to stay there
-// We'll import these from primitives once the module is set up
-use serde_helpers::serde_amount_sat;
-
-// These need to come from primitives as they depend on other primitives types
-// For now, we'll define placeholder types and fix circular dependencies later
-
-/// Number of timestamps for median calculation
-pub const TIMESTAMPS_FOR_MEDIAN: usize = 11;
+use crate::{
+    block_credential::CredRule,
+    constants::TIMESTAMPS_FOR_MEDIAN,
+    l1::{BitcoinAddress, BitcoinAmount, L1BlockCommitment, L1BlockId, XOnlyPk},
+    operator::OperatorPubkeys,
+    prelude::Buf32,
+    proof::RollupVerifyingKey,
+    serde_helpers::serde_amount_sat,
+};
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
@@ -68,7 +60,6 @@ pub struct RollupParams {
 
     /// SP1 verifying key that is used to verify the Groth16 proof posted on Bitcoin
     // FIXME which proof?  should this be `checkpoint_vk`?
-    // Note: RollupVerifyingKey stays in primitives due to circular dependencies
     pub rollup_vk: RollupVerifyingKey,
 
     /// Number of Bitcoin blocks a withdrawal dispatch assignment is valid for.
@@ -83,10 +74,6 @@ pub struct RollupParams {
     /// network the l1 is set on
     pub network: bitcoin::Network,
 }
-
-// Temporary placeholder - will be imported from primitives
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RollupVerifyingKey;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GenesisL1View {
@@ -154,23 +141,13 @@ impl RollupParams {
 
     pub fn compute_hash(&self) -> Buf32 {
         let raw_bytes = bincode::serialize(&self).expect("rollup params serialization failed");
-        strata_identifiers::hash::raw(&raw_bytes)
+        crate::hash::raw(&raw_bytes)
     }
 
     pub fn rollup_vk(&self) -> &RollupVerifyingKey {
         &self.rollup_vk
     }
 }
-
-// Temporary placeholders - will need to import from primitives l1 module
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BitcoinAddress;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BitcoinAmount;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct XOnlyPk;
 
 /// Configuration common among deposit and deposit request transaction
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Deserialize, Serialize)]

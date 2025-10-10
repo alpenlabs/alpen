@@ -7,7 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use strata_l1_txfmt::TagData;
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 /// DA destination identifier. This will eventually be used to enable
 /// storing payloads on alternative availability schemes.

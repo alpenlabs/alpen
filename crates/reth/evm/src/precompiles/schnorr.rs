@@ -2,7 +2,7 @@ use revm::precompile::{
     utilities::right_pad, PrecompileOutput, PrecompileResult, PrecompileWithAddress,
 };
 use revm_primitives::Bytes;
-use strata_crypto::verify_schnorr_sig;
+use strata_crypto::schnorr::verify_schnorr_sig;
 use strata_primitives::buf::{Buf32, Buf64};
 
 use crate::constants::SCHNORR_ADDRESS;

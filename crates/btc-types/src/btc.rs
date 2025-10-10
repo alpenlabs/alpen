@@ -10,8 +10,8 @@ use bitcoin::{
     address::NetworkUnchecked,
     consensus::{deserialize, encode, serialize},
     hashes::{sha256d, Hash},
-    key::{rand, Keypair, Parity, TapTweak},
-    secp256k1::{SecretKey, XOnlyPublicKey, SECP256K1},
+    key::{Keypair, Parity, TapTweak},
+    secp256k1::{SecretKey, XOnlyPublicKey},
     taproot::{ControlBlock, LeafVersion, TaprootMerkleBranch},
     transaction::Version,
     Address, AddressType, Amount, Network, OutPoint, Psbt, ScriptBuf, Sequence, TapNodeHash,
@@ -21,9 +21,14 @@ use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex::encode_to_slice;
 use rand::rngs::OsRng;
+use secp256k1::SECP256K1;
 use serde::{de, Deserialize, Deserializer, Serialize};
 
-use crate::{buf::Buf32, constants::HASH_SIZE, errors::ParseError};
+use strata_identifiers::Buf32;
+
+use crate::ParseError;
+
+const HASH_SIZE: usize = 32;
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -840,8 +845,7 @@ impl TryFrom<XOnlyPk> for Descriptor {
     type Error = ParseError;
 
     fn try_from(value: XOnlyPk) -> Result<Self, Self::Error> {
-        let inner_xonly_pk = XOnlyPublicKey::try_from(value.0)?;
-        Ok(inner_xonly_pk.into())
+        value.to_descriptor()
     }
 }
 
@@ -1008,11 +1012,9 @@ mod tests {
         BitcoinAddress, BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
         BorshDeserialize, BorshSerialize, RawBitcoinTx, XOnlyPk,
     };
-    use crate::{
-        buf::Buf32,
-        errors::ParseError,
-        l1::{BitcoinPsbt, TaprootSpendPath},
-    };
+    use strata_identifiers::Buf32;
+
+    use crate::{BitcoinPsbt, ParseError, TaprootSpendPath};
 
     #[test]
     fn test_parse_bitcoin_address_network() {

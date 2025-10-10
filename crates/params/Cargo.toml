@@ -3,7 +3,14 @@ name = "strata-params"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-
 [lints]
 workspace = true
+
+[dependencies]
+bincode.workspace = true
+bitcoin.workspace = true
+borsh.workspace = true
+serde.workspace = true
+strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
+thiserror.workspace = true

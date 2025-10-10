@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-crypto.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
