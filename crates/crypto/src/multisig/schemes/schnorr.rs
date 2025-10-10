@@ -1,9 +1,8 @@
 use bitcoin::{key::Parity, secp256k1::PublicKey, XOnlyPublicKey};
 use musig2::KeyAggContext;
-use strata_primitives::{
-    buf::{Buf32, Buf64},
-    crypto::verify_schnorr_sig,
-};
+use strata_identifiers::{Buf32, Buf64};
+
+use crate::schnorr::verify_schnorr_sig;
 
 use crate::multisig::{errors::MultisigError, traits::CryptoScheme};
 
