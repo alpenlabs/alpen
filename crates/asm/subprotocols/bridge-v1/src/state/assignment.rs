@@ -443,10 +443,7 @@ impl AssignmentTable {
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::{
-        l1::{BitcoinBlockHeight, L1BlockId},
-        operator::OperatorIdx,
-    };
+    use strata_primitives::l1::{BitcoinBlockHeight, L1BlockId};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;

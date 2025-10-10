@@ -6,7 +6,7 @@
 use arbitrary::Arbitrary;
 use bitvec::prelude::*;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::bridge::OperatorIdx;
+use strata_primitives::operator::OperatorIdx;
 
 use crate::BitmapError;
 
