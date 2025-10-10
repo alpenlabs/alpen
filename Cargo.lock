@@ -13481,6 +13481,7 @@ dependencies = [
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-test-utils",
+ "strata-test-utils-btc",
  "thiserror 2.0.16",
 ]
 
