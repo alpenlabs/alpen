@@ -4,15 +4,11 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32,
-    hash::compute_borsh_hash,
-    l1::{BtcParams, L1BlockCommitment, L1BlockId},
-    params::GenesisL1View,
-};
+use strata_btc_types::{BtcParams, GenesisL1View};
+use strata_identifiers::{hash::compute_borsh_hash, Buf32, L1BlockCommitment, L1BlockId};
 use thiserror::Error;
 
-use super::{timestamp_store::TimestampStore, utils::compute_block_hash, BtcWork};
+use crate::{timestamp_store::TimestampStore, utils_btc::compute_block_hash, BtcWork};
 
 /// Errors that can occur during Bitcoin header verification.
 #[derive(Debug, Error)]
@@ -257,7 +253,7 @@ mod tests {
     use rand::{rngs::OsRng, Rng};
     use strata_test_utils_btc::segment::BtcChainSegment;
 
-    use super::*;
+    use crate::*;
 
     #[test]
     fn test_blocks() {

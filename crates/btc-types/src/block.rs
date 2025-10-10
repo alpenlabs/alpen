@@ -1,12 +1,9 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32,
-    l1::{L1BlockCommitment, L1BlockId},
-};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
 
-use super::{L1HeaderRecord, L1Tx};
+use crate::{L1HeaderRecord, L1Tx};
 
 /// Reference to a Bitcoin transaction by block ID and transaction index.
 #[derive(

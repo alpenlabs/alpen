@@ -6,10 +6,8 @@ use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use strata_checkpoint_types::SignedCheckpoint;
-use strata_primitives::{
-    buf::Buf32,
-    l1::{BitcoinAmount, OutputRef},
-};
+use crate::{BitcoinAmount, OutputRef};
+use strata_identifiers::Buf32;
 
 /// Commits to a DA blob.  This is just the hash of the DA blob.
 #[derive(

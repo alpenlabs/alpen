@@ -4,7 +4,9 @@ use bitcoin::{
 };
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
 use rand::{rngs::OsRng, RngCore};
-use strata_primitives::{buf::Buf32, crypto::EvenSecretKey};
+use strata_identifiers::Buf32;
+
+use crate::schnorr::EvenSecretKey;
 
 use crate::multisig::aggregate_schnorr_keys;
 

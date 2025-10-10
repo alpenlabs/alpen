@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::buf::Buf32;
+use strata_identifiers::Buf32;
 
 /// Contains transition information in a batch checkpoint, verified by the proof
 #[derive(
