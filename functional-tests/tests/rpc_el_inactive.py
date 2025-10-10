@@ -84,7 +84,7 @@ class SeqStatusElInactiveTest(testenv.StrataTestBase):
         )
 
 
-def transfer_balance(web3: Web3, dest, to_transfer: int):
+def transfer_balance(web3: Web3, dest: str, to_transfer: int) -> None:
     source = web3.address
     web3.eth.send_transaction(
         {"to": dest, "value": hex(to_transfer), "gas": hex(100000), "from": source}

@@ -84,7 +84,7 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         assert total_gas_used < GAS_PER_TX * TX_COUNT, "all txns should NOT be processed"
 
 
-def make_burner_transaction(web3: Web3, nonce: int):
+def make_burner_transaction(web3: Web3, nonce: int) -> str:
     """
     :param web3: Web3 instance.
     :nonce: Nonce for the transaction.
