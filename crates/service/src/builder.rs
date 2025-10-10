@@ -54,7 +54,7 @@ where
         self,
         name: &'static str,
         texec: &strata_tasks::TaskExecutor,
-    ) -> anyhow::Result<ServiceMonitor<S>> {
+    ) -> anyhow::Result<ServiceMonitor<S::Status>> {
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
         let inp = self.inp.expect("service/builder: missing input");
@@ -78,7 +78,7 @@ where
         self,
         name: &'static str,
         texec: &strata_tasks::TaskExecutor,
-    ) -> anyhow::Result<ServiceMonitor<S>> {
+    ) -> anyhow::Result<ServiceMonitor<S::Status>> {
         // TODO convert to fallible results?
         let state = self.state.expect("service/builder: missing state");
         let inp = self.inp.expect("service/builder: missing input");

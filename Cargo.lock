@@ -14440,7 +14440,6 @@ dependencies = [
  "strata-state",
  "strata-tasks",
  "thiserror 2.0.16",
- "tokio",
  "tracing",
 ]
 
@@ -14652,7 +14651,6 @@ name = "strata-consensus-logic"
 version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
- "async-trait",
  "bitcoin",
  "bitcoind-async-client",
  "borsh",
@@ -14665,12 +14663,14 @@ dependencies = [
  "strata-chaintsn",
  "strata-checkpoint-types",
  "strata-common",
+ "strata-csm-worker",
  "strata-db",
  "strata-db-store-sled",
  "strata-eectl",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
+ "strata-service",
  "strata-state",
  "strata-status",
  "strata-storage",
@@ -14697,6 +14697,26 @@ dependencies = [
  "strata-test-utils",
  "thiserror 2.0.16",
  "zkaleido",
+]
+
+[[package]]
+name = "strata-csm-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "strata-asm-common",
+ "strata-asm-logs",
+ "strata-asm-worker",
+ "strata-checkpoint-types",
+ "strata-common",
+ "strata-db",
+ "strata-primitives",
+ "strata-service",
+ "strata-state",
+ "strata-status",
+ "strata-storage",
+ "tracing",
 ]
 
 [[package]]
