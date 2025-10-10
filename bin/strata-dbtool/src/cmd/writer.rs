@@ -103,7 +103,7 @@ pub(crate) fn get_writer_payload(
         let payload_info = WriterPayloadInfo {
             index: args.index,
             status: payload_entry.status.clone(),
-            payloads: payload_entry.payloads.clone(),
+            payload: payload_entry.payload.clone(),
             commit_txid: if payload_entry.commit_txid == Buf32::zero() {
                 None
             } else {

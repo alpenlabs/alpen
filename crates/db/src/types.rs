@@ -58,7 +58,7 @@ pub enum IntentStatus {
 /// Represents data for a payload we're still planning to post to L1.
 #[derive(Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct BundledPayloadEntry {
-    pub payloads: Vec<L1Payload>,
+    pub payload: L1Payload,
     pub commit_txid: Buf32,
     pub reveal_txid: Buf32,
     pub status: L1BundleStatus,
@@ -66,13 +66,13 @@ pub struct BundledPayloadEntry {
 
 impl BundledPayloadEntry {
     pub fn new(
-        payloads: Vec<L1Payload>,
+        payload: L1Payload,
         commit_txid: Buf32,
         reveal_txid: Buf32,
         status: L1BundleStatus,
     ) -> Self {
         Self {
-            payloads,
+            payload,
             commit_txid,
             reveal_txid,
             status,
@@ -84,10 +84,10 @@ impl BundledPayloadEntry {
     /// NOTE: This won't have commit - reveal pairs associated with it.
     ///   Because it is better to defer gathering utxos as late as possible to prevent being spent
     ///   by others. Those will be created and signed in a single step.
-    pub fn new_unsigned(payloads: Vec<L1Payload>) -> Self {
+    pub fn new_unsigned(payload: L1Payload) -> Self {
         let cid = Buf32::zero();
         let rid = Buf32::zero();
-        Self::new(payloads, cid, rid, L1BundleStatus::Unsigned)
+        Self::new(payload, cid, rid, L1BundleStatus::Unsigned)
     }
 }
 
@@ -112,7 +112,7 @@ impl fmt::Debug for BundledPayloadEntry {
         };
 
         f.debug_struct("BundledPayloadEntry")
-            .field("payloads", &self.payloads)
+            .field("payload", &self.payload)
             .field("commit_txid", &commit_txid_le)
             .field("reveal_txid", &reveal_txid_le)
             .field("status", &self.status)
@@ -142,8 +142,8 @@ impl fmt::Display for BundledPayloadEntry {
 
         write!(
             f,
-            "BundledPayloadEntry {{ payloads: {} items, commit_txid: {}, reveal_txid: {}, status: {:?} }}",
-            self.payloads.len(), commit_txid_le, reveal_txid_le, self.status
+            "BundledPayloadEntry {{ payload: {:?}, commit_txid: {}, reveal_txid: {}, status: {:?} }}",
+            self.payload, commit_txid_le, reveal_txid_le, self.status
         )
     }
 }

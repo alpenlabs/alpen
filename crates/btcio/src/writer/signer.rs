@@ -24,7 +24,7 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
     ctx: Arc<WriterContext<R>>,
 ) -> Result<(Buf32, Buf32), EnvelopeError> {
     trace!("Creating and signing payload envelopes");
-    let (commit, reveal) = build_envelope_txs(&payloadentry.payloads, ctx.as_ref()).await?;
+    let (commit, reveal) = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
 
     let ctxid = commit.compute_txid();
     debug!(commit_txid = ?ctxid, "Signing commit transaction");
@@ -59,6 +59,7 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
 #[cfg(test)]
 mod test {
     use strata_db::types::{BundledPayloadEntry, L1BundleStatus};
+    use strata_l1_txfmt::TagData;
     use strata_primitives::l1::payload::L1Payload;
 
     use super::*;
@@ -74,8 +75,9 @@ mod test {
         let ctx = get_writer_context();
 
         // First insert an unsigned blob
-        let payload = L1Payload::new_da([1; 100].to_vec());
-        let entry = BundledPayloadEntry::new_unsigned(vec![payload]);
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
+        let entry = BundledPayloadEntry::new_unsigned(payload);
 
         assert_eq!(entry.status, L1BundleStatus::Unsigned);
         assert_eq!(entry.commit_txid, Buf32::zero());

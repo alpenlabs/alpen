@@ -1,10 +1,10 @@
-use core::{result::Result::Ok, str::FromStr};
+use core::result::Result::Ok;
 use std::{cmp::Reverse, sync::Arc};
 
 use anyhow::anyhow;
 use bitcoin::{
     absolute::LockTime,
-    blockdata::{opcodes::all::OP_CHECKSIG, script},
+    blockdata::script,
     hashes::Hash,
     key::{TapTweak, TweakedPublicKey, UntweakedKeypair},
     secp256k1::{
@@ -25,7 +25,8 @@ use bitcoind_async_client::{
 };
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeePolicy;
-use strata_l1tx::envelope::builder::build_envelope_script;
+use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
+use strata_l1_txfmt::{self, ParseConfig, TxFmtError};
 use strata_primitives::{l1::payload::L1Payload, params::Params};
 use thiserror::Error;
 
@@ -81,6 +82,12 @@ pub enum EnvelopeError {
     #[error("Error building taproot")]
     Taproot(#[from] TaprootBuilderError),
 
+    #[error("sps tx fmt")]
+    Tag(#[from] TxFmtError),
+
+    #[error("envelope build error")]
+    EnvelopeBuild(#[from] EnvelopeBuildError),
+
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -90,7 +97,7 @@ pub enum EnvelopeError {
 // dependencies on `tx-parser`, we include {btcio, feature="strata_test_utils"} , so cyclic
 // dependency doesn't happen
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
-    payloads: &[L1Payload],
+    payload: &L1Payload,
     ctx: &WriterContext<R>,
 ) -> anyhow::Result<(Transaction, Transaction)> {
     let network = ctx.client.network().await?;
@@ -107,21 +114,26 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         fee_rate,
         BITCOIN_DUST_LIMIT,
     );
-    create_envelope_transactions(&env_config, payloads, utxos)
+    create_envelope_transactions(&env_config, payload, utxos)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
-    payloads: &[L1Payload],
+    payload: &L1Payload,
     utxos: Vec<ListUnspent>,
 ) -> Result<(Transaction, Transaction), EnvelopeError> {
     // Create commit key
     let key_pair = generate_key_pair()?;
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
-    // Start creating envelope content
-    let reveal_script = build_reveal_script(env_config.params.as_ref(), &public_key, payloads)?;
+    let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?
+        .add_envelopes(payload.data())?
+        .build()?;
+
+    let tag_script = ParseConfig::new(env_config.params.rollup().magic_bytes)
+        .encode_script_buf(&payload.tag().as_ref())?;
+
     // Create spend info for tapscript
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())?
@@ -142,6 +154,7 @@ pub fn create_envelope_transactions(
         env_config.reveal_amount,
         env_config.fee_rate,
         &reveal_script,
+        &tag_script,
         &taproot_spend_info,
     );
 
@@ -163,6 +176,7 @@ pub fn create_envelope_transactions(
         env_config.reveal_amount,
         env_config.fee_rate,
         &reveal_script,
+        tag_script,
         &taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
@@ -202,9 +216,10 @@ fn get_size(
     };
 
     for i in 0..tx.input.len() {
+        // Safe: Creating a signature from a fixed-size array of correct length
         tx.input[i].witness.push(
             Signature::from_slice(&[0; SCHNORR_SIGNATURE_SIZE])
-                .unwrap()
+                .expect("valid signature size")
                 .as_ref(),
         );
     }
@@ -357,10 +372,7 @@ fn build_commit_transaction(
 fn default_txin() -> Vec<TxIn> {
     vec![TxIn {
         previous_output: OutPoint {
-            txid: Txid::from_str(
-                "0000000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap(),
+            txid: Txid::all_zeros(),
             vout: 0,
         },
         script_sig: script::Builder::new().into_script(),
@@ -375,12 +387,20 @@ pub fn build_reveal_transaction(
     output_value: u64,
     fee_rate: u64,
     reveal_script: &ScriptBuf,
+    tag_script: ScriptBuf,
     control_block: &ControlBlock,
 ) -> Result<Transaction, EnvelopeError> {
-    let outputs: Vec<TxOut> = vec![TxOut {
-        value: Amount::from_sat(output_value),
-        script_pubkey: recipient.script_pubkey(),
-    }];
+    let outputs: Vec<TxOut> = vec![
+        // The first output should be SPS-50 tagged
+        TxOut {
+            value: Amount::from_sat(0),
+            script_pubkey: tag_script,
+        },
+        TxOut {
+            value: Amount::from_sat(output_value),
+            script_pubkey: recipient.script_pubkey(),
+        },
+    ];
 
     let v_out_for_reveal = 0u32;
     let input_utxo = input_transaction.output[v_out_for_reveal as usize].clone();
@@ -421,36 +441,26 @@ pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
     Ok(UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)?)
 }
 
-/// Builds reveal script such that it contains opcodes for verifying the internal key as well as the
-/// envelope block
-fn build_reveal_script(
-    params: &Params,
-    taproot_public_key: &XOnlyPublicKey,
-    payloads: &[L1Payload],
-) -> Result<ScriptBuf, anyhow::Error> {
-    let mut script_bytes = script::Builder::new()
-        .push_x_only_key(taproot_public_key)
-        .push_opcode(OP_CHECKSIG)
-        .into_script()
-        .into_bytes();
-    let script = build_envelope_script(params, payloads)?;
-    script_bytes.extend(script.into_bytes());
-    Ok(ScriptBuf::from(script_bytes))
-}
-
 fn calculate_commit_output_value(
     recipient: &Address,
     reveal_value: u64,
     fee_rate: u64,
     reveal_script: &script::ScriptBuf,
+    tag_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
 ) -> u64 {
     get_size(
         &default_txin(),
-        &[TxOut {
-            script_pubkey: recipient.script_pubkey(),
-            value: Amount::from_sat(reveal_value),
-        }],
+        &[
+            TxOut {
+                script_pubkey: tag_script.clone(),
+                value: Amount::from_sat(0),
+            },
+            TxOut {
+                script_pubkey: recipient.script_pubkey(),
+                value: Amount::from_sat(reveal_value),
+            },
+        ],
         Some(reveal_script),
         Some(
             &taproot_spend_info
@@ -486,7 +496,9 @@ fn sign_reveal_transaction(
         &randbytes,
     );
 
-    let witness = sighash_cache.witness_mut(0).unwrap();
+    let witness = sighash_cache
+        .witness_mut(0)
+        .ok_or(anyhow!("Could not access witness for input 0"))?;
     witness.push(signature.as_ref());
     witness.push(reveal_script);
     witness.push(
@@ -527,6 +539,7 @@ mod tests {
         TxOut, Witness,
     };
     use bitcoind_async_client::types::ListUnspent;
+    use strata_l1_txfmt::{TagData, TagDataRef};
 
     use super::*;
     use crate::{
@@ -660,7 +673,11 @@ mod tests {
         let (ctx, _, _, utxos) = get_mock_data();
 
         let utxo = utxos.first().unwrap();
-        let _script = ScriptBuf::from_hex("62a58f2674fd840b6144bea2e63ebd35c16d7fd40252a2f28b2a01a648df356343e47976d7906a0e688bf5e134b6fd21bd365c016b57b1ace85cf30bf1206e27").unwrap();
+        let _reveal_script = ScriptBuf::from_hex("62a58f2674fd840b6144bea2e63ebd35c16d7fd40252a2f28b2a01a648df356343e47976d7906a0e688bf5e134b6fd21bd365c016b57b1ace85cf30bf1206e27").unwrap();
+
+        let td = TagDataRef::new(1, 1, &[]).unwrap();
+        let tag_script = ParseConfig::new(*b"ALPN").encode_script_buf(&td).unwrap();
+
         let control_block = ControlBlock::decode(&[
             193, 165, 246, 250, 6, 222, 28, 9, 130, 28, 217, 67, 171, 11, 229, 62, 48, 206, 219,
             111, 155, 208, 6, 7, 119, 63, 146, 90, 227, 254, 231, 232, 249,
@@ -673,22 +690,23 @@ mod tests {
             ctx.sequencer_address.clone(),
             ctx.config.reveal_amount,
             8,
-            &_script,
+            &_reveal_script,
+            tag_script.clone(),
             &control_block,
         )
         .unwrap();
 
         tx.input[0].witness.push([0; SCHNORR_SIGNATURE_SIZE]);
-        tx.input[0].witness.push(_script.clone());
+        tx.input[0].witness.push(_reveal_script.clone());
         tx.input[0].witness.push(control_block.serialize());
 
         assert_eq!(tx.input.len(), 1);
         assert_eq!(tx.input[0].previous_output.vout, utxo.vout);
 
-        assert_eq!(tx.output.len(), 1);
-        assert_eq!(tx.output[0].value.to_sat(), ctx.config.reveal_amount);
+        assert_eq!(tx.output.len(), 2);
+        assert_eq!(tx.output[1].value.to_sat(), ctx.config.reveal_amount);
         assert_eq!(
-            tx.output[0].script_pubkey,
+            tx.output[1].script_pubkey,
             ctx.sequencer_address.script_pubkey()
         );
 
@@ -701,7 +719,8 @@ mod tests {
             ctx.sequencer_address.clone(),
             inp_required,
             750,
-            &_script,
+            &_reveal_script,
+            tag_script,
             &control_block,
         );
 
@@ -713,7 +732,9 @@ mod tests {
     fn test_create_envelope_transactions() {
         let (ctx, _, _, utxos) = get_mock_data();
 
-        let payload = L1Payload::new_da(vec![0u8; 100]);
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        // Use 150 bytes to meet minimum envelope payload size of 126 bytes
+        let payload = L1Payload::new(vec![vec![0u8; 150]], tag);
 
         let env_config = EnvelopeConfig::new(
             ctx.params.clone(),
@@ -723,12 +744,12 @@ mod tests {
             546,
         );
         let (commit, reveal) =
-            super::create_envelope_transactions(&env_config, &[payload], utxos.to_vec()).unwrap();
+            super::create_envelope_transactions(&env_config, &payload, utxos.to_vec()).unwrap();
 
         // check outputs
         assert_eq!(commit.output.len(), 2, "commit tx should have 2 outputs");
 
-        assert_eq!(reveal.output.len(), 1, "reveal tx should have 1 output");
+        assert_eq!(reveal.output.len(), 2, "reveal tx should have 2 outputs");
 
         assert_eq!(
             commit.input[0].previous_output.txid, utxos[2].txid,
@@ -750,7 +771,7 @@ mod tests {
         );
 
         assert_eq!(
-            reveal.output[0].script_pubkey,
+            reveal.output[1].script_pubkey,
             ctx.sequencer_address.script_pubkey(),
             "reveal should pay to the correct address"
         );

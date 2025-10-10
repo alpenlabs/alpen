@@ -65,7 +65,7 @@ async fn process_unbundled_entries(
         }
         // NOTE: In future, the logic to create payload will be different. We need to group
         // intents and create payload entries accordingly
-        let payload_entry = BundledPayloadEntry::new_unsigned(vec![entry.payload().clone()]);
+        let payload_entry = BundledPayloadEntry::new_unsigned(entry.payload().clone());
 
         // TODO: the following block till "Atomic Ends" should be atomic.
         let idx = ops.get_next_payload_idx_async().await?;

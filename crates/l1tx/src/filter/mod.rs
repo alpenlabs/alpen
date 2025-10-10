@@ -2,12 +2,12 @@ use bitcoin::Transaction;
 use strata_asm_types::{DepositInfo, DepositSpendInfo};
 use strata_primitives::l1::OutputRef;
 
-mod checkpoint;
+pub mod checkpoint;
 pub mod indexer;
 pub mod types;
 mod withdrawal_fulfillment;
 
-use checkpoint::parse_valid_checkpoint_envelopes;
+use checkpoint::parse_valid_checkpoint_envelope;
 use withdrawal_fulfillment::try_parse_tx_as_withdrawal_fulfillment;
 
 use crate::{deposit::deposit_tx::extract_deposit_info, filter::types::TxFilterConfig};

@@ -1,6 +1,6 @@
 use serde::Serialize;
 use strata_db::types::L1BundleStatus;
-use strata_primitives::{buf::Buf32, l1::payload::L1Payload};
+use strata_primitives::{buf::Buf32, hash, l1::payload::L1Payload};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
@@ -38,8 +38,7 @@ impl Formattable for WriterSummary {
 pub(crate) struct WriterPayloadInfo {
     pub(crate) index: u64,
     pub(crate) status: L1BundleStatus,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) payloads: Vec<L1Payload>,
+    pub(crate) payload: L1Payload,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) commit_txid: Option<Buf32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,22 +54,23 @@ impl Formattable for WriterPayloadInfo {
             "payload.status",
             format!("{:?}", self.status),
         ));
-        output.push(porcelain_field(
-            "payload.payload_count",
-            self.payloads.len(),
-        ));
 
-        // Add individual payload details
-        for (payload_index, payload) in self.payloads.iter().enumerate() {
-            output.push(porcelain_field(
-                &format!("payload.payload_{payload_index}.type"),
-                format!("{:?}", payload.payload_type()),
-            ));
-            output.push(porcelain_field(
-                &format!("payload.payload_{payload_index}.data_hash"),
-                format!("{:?}", payload.hash()),
-            ));
-        }
+        // Add payload details
+        // Concatenate all payload chunks into a single payload for hashing
+        let concatenated_payload: Vec<u8> = self.payload.data().iter().flatten().copied().collect();
+        let payload_hash = hash::raw(&concatenated_payload);
+        output.push(porcelain_field(
+            "payload.subproto_id",
+            format!("{:?}", self.payload.tag().subproto_id()),
+        ));
+        output.push(porcelain_field(
+            "payload.tx_type",
+            format!("{:?}", self.payload.tag().tx_type()),
+        ));
+        output.push(porcelain_field(
+            "payload.data_hash",
+            format!("{:?}", payload_hash),
+        ));
 
         // Add transaction IDs if available
         if let Some(commit_txid) = &self.commit_txid {

@@ -10,12 +10,9 @@ workspace = true
 strata-asm-common.workspace = true
 strata-bridge-types.workspace = true
 strata-checkpoint-types.workspace = true
-strata-l1tx.workspace = true
+strata-l1-envelope-fmt.workspace = true
 strata-ol-chainstate-types.workspace = true
 
 bitcoin.workspace = true
 borsh.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-strata-test-utils.workspace = true

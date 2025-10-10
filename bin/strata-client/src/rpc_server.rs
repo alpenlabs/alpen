@@ -10,6 +10,7 @@ use bitcoin::{
 };
 use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult;
+use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_bridge_types::{DepositState, PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
@@ -18,6 +19,7 @@ use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
 use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
 use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus};
+use strata_l1_txfmt::TagData;
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
@@ -744,7 +746,11 @@ impl StrataSequencerApiServer for SequencerServerImpl {
 
     async fn submit_da_blob(&self, blob: HexBytes) -> RpcResult<()> {
         let commitment = hash::raw(&blob.0);
-        let payload = L1Payload::new_da(blob.0);
+        // REVIEW: Check if DA blob handling is still required.
+        // For now, we can use any subprotocol id and tx type, as the parsing is not required.
+        let da_tag =
+            TagData::new(u8::MAX, u8::MAX, vec![]).map_err(|e| Error::Other(e.to_string()))?;
+        let payload = L1Payload::new(vec![blob.0], da_tag);
         let blobintent = PayloadIntent::new(PayloadDest::L1, commitment, payload);
         // NOTE: It would be nice to return reveal txid from the submit method. But creation of txs
         // is deferred to signer in the writer module
@@ -902,8 +908,15 @@ impl StrataSequencerApiServer for SequencerServerImpl {
 
         trace!(%checkpoint_idx, "signature OK");
 
-        let payload = L1Payload::new_checkpoint(
-            borsh::to_vec(&signed_checkpoint).map_err(|e| Error::Other(e.to_string()))?,
+        let checkpoint_tag = TagData::new(
+            CHECKPOINT_V0_SUBPROTOCOL_ID,
+            OL_STF_CHECKPOINT_TX_TYPE,
+            vec![],
+        )
+        .map_err(|e| Error::Other(e.to_string()))?;
+        let payload = L1Payload::new(
+            vec![borsh::to_vec(&signed_checkpoint).map_err(|e| Error::Other(e.to_string()))?],
+            checkpoint_tag,
         );
         let sighash = signed_checkpoint.checkpoint().hash();
 

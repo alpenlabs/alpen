@@ -6,8 +6,9 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
+use strata_l1_txfmt::TagData;
 
-use crate::{buf::Buf32, hash};
+use crate::buf::Buf32;
 
 /// DA destination identifier. This will eventually be used to enable
 /// storing payloads on alternative availability schemes.
@@ -125,48 +126,120 @@ impl PayloadSpec {
 }
 
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct L1Payload {
-    data: Vec<u8>,
-    payload_type: L1PayloadType,
+    data: Vec<Vec<u8>>,
+    tag: TagData,
 }
 
 impl L1Payload {
-    pub fn new(data: Vec<u8>, payload_type: L1PayloadType) -> Self {
-        Self { data, payload_type }
+    pub fn new(payload: Vec<Vec<u8>>, tag: TagData) -> Self {
+        Self { data: payload, tag }
     }
 
-    pub fn new_checkpoint(data: Vec<u8>) -> Self {
-        Self::new(data, L1PayloadType::Checkpoint)
-    }
-
-    pub fn new_da(data: Vec<u8>) -> Self {
-        Self::new(data, L1PayloadType::Da)
-    }
-
-    pub fn data(&self) -> &[u8] {
+    pub fn data(&self) -> &[Vec<u8>] {
         &self.data
     }
 
-    pub fn payload_type(&self) -> &L1PayloadType {
-        &self.payload_type
-    }
-
-    pub fn hash(&self) -> Buf32 {
-        let mut buf = self.data.clone();
-        buf.extend(borsh::to_vec(&self.payload_type).expect("Could not serialize payload type"));
-        hash::raw(&buf)
+    pub fn tag(&self) -> &TagData {
+        &self.tag
     }
 }
 
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
-)]
-pub enum L1PayloadType {
-    Checkpoint,
-    Da,
+impl BorshSerialize for L1Payload {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        // Serialize payload Vec<Vec<u8>>
+        BorshSerialize::serialize(&self.data, writer)?;
+
+        // Serialize TagData fields
+        BorshSerialize::serialize(&self.tag.subproto_id(), writer)?;
+        BorshSerialize::serialize(&self.tag.tx_type(), writer)?;
+        BorshSerialize::serialize(&self.tag.aux_data().to_vec(), writer)?;
+
+        Ok(())
+    }
+}
+
+impl BorshDeserialize for L1Payload {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        // Deserialize payload Vec<Vec<u8>>
+        let data = Vec::<Vec<u8>>::deserialize_reader(reader)?;
+
+        // Deserialize TagData fields
+        let subproto_id = u8::deserialize_reader(reader)?;
+        let tx_type = u8::deserialize_reader(reader)?;
+        let aux_data = Vec::<u8>::deserialize_reader(reader)?;
+
+        let tag = TagData::new(subproto_id, tx_type, aux_data).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid TagData: {}", e),
+            )
+        })?;
+
+        Ok(Self { data, tag })
+    }
+}
+
+// REVIEW: serde serialize/deserialize is only needed for the strata-dbtool
+impl Serialize for L1Payload {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("L1Payload", 4)?;
+        state.serialize_field("payload", &self.data)?;
+        state.serialize_field("subproto_id", &self.tag.subproto_id())?;
+        state.serialize_field("tx_type", &self.tag.tx_type())?;
+        state.serialize_field("aux_data", &self.tag.aux_data())?;
+        state.end()
+    }
+}
+
+// REVIEW: serde serialize/deserialize is only needed for the strata-dbtool
+impl<'de> Deserialize<'de> for L1Payload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            payload: Vec<Vec<u8>>,
+            subproto_id: u8,
+            tx_type: u8,
+            aux_data: Vec<u8>,
+        }
+
+        Helper::deserialize(deserializer).and_then(|h| {
+            TagData::new(h.subproto_id, h.tx_type, h.aux_data)
+                .map(|tag| L1Payload {
+                    data: h.payload,
+                    tag,
+                })
+                .map_err(serde::de::Error::custom)
+        })
+    }
+}
+
+impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let data = Vec::<Vec<u8>>::arbitrary(u)?;
+
+        let subproto_id = u8::arbitrary(u)?;
+        let tx_type = u8::arbitrary(u)?;
+        // Limit aux_data to a reasonable size (max 74 bytes as per TagData)
+        let aux_data_len = u.int_in_range(0..=74)?;
+        let mut aux_data = Vec::with_capacity(aux_data_len);
+        for _ in 0..aux_data_len {
+            aux_data.push(u8::arbitrary(u)?);
+        }
+
+        let tag = TagData::new(subproto_id, tx_type, aux_data)
+            .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+
+        Ok(Self { data, tag })
+    }
 }
 
 /// Intent produced by the EE on a "full" verification, but if we're just
@@ -174,7 +247,7 @@ pub enum L1PayloadType {
 /// about it.
 ///
 /// These are never stored on-chain.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
 // TODO: rename this to L1PayloadIntent and remove the dest field
 pub struct PayloadIntent {
     /// The destination for this payload.
@@ -217,5 +290,28 @@ impl PayloadIntent {
     /// uniquely refers to the payload data.
     pub fn to_spec(&self) -> PayloadSpec {
         PayloadSpec::new(self.dest, self.commitment)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils::ArbitraryGenerator;
+
+    use crate::l1::payload::L1Payload;
+
+    #[test]
+    fn test_l1_payload_borsh_roundtrip() {
+        let l1_payload: L1Payload = ArbitraryGenerator::new().generate();
+        let buf = borsh::to_vec(&l1_payload).unwrap();
+        let res: L1Payload = borsh::from_slice(&buf).unwrap();
+        assert_eq!(res, l1_payload);
+    }
+
+    #[test]
+    fn test_l1_payload_serde_roundtrip() {
+        let l1_payload: L1Payload = ArbitraryGenerator::new().generate();
+        let json = serde_json::to_string(&l1_payload).unwrap();
+        let res: L1Payload = serde_json::from_str(&json).unwrap();
+        assert_eq!(res, l1_payload);
     }
 }

@@ -1,8 +1,7 @@
-use bitcoin::ScriptBuf;
 use bitvec::vec::BitVec;
 use strata_asm_common::TxInputRef;
 use strata_crypto::multisig::SchnorrMultisigSignature;
-use strata_l1tx::envelope::parser::{enter_envelope, extract_until_op_endif};
+use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
 use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
 
@@ -82,32 +81,4 @@ pub fn parse_aggregated_multisig(
     let indices: BitVec<u8> = BitVec::from_slice(signer_indices_bytes);
 
     Ok(SchnorrMultisigSignature::new(indices, sig.into()))
-}
-
-/// Extracts the payload data from an envelope script.
-///
-/// This function parses a Bitcoin script that contains an envelope structure,
-/// extracting the payload data that is encapsulated within the envelope.
-/// The envelope format uses specific Bitcoin opcodes to delimit the payload data.
-///
-/// # Arguments
-/// * `script` - The Bitcoin script containing the envelope structure
-///
-/// # Returns
-/// The extracted payload as a byte vector
-///
-/// # Errors
-/// Returns `AdministrationTxParseError::MalformedEnvelope` if:
-/// - The script doesn't contain a valid envelope structure
-/// - The envelope cannot be properly parsed or extracted
-pub fn parse_envelope_payload(script: &ScriptBuf) -> Result<Vec<u8>, AdministrationTxParseError> {
-    let mut instructions = script.instructions();
-
-    // Enter the envelope structure in the script
-    enter_envelope(&mut instructions).map_err(AdministrationTxParseError::MalformedEnvelope)?;
-
-    // Extract all data until the envelope closing opcode
-    let payload = extract_until_op_endif(&mut instructions)?;
-
-    Ok(payload)
 }

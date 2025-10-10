@@ -1,5 +1,5 @@
+use strata_l1_envelope_fmt::errors::EnvelopeParseError;
 use strata_l1_txfmt::TxType;
-use strata_l1tx::envelope::parser::EnvelopeParseError;
 use thiserror::Error;
 
 /// Top-level error type for the administration subprotocol, composed of smaller error categories.
