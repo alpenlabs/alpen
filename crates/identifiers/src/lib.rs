@@ -13,5 +13,5 @@ pub mod ol;
 pub use buf::{Buf20, Buf32, Buf64};
 pub use epoch::EpochCommitment;
 pub use exec::{EvmEeBlockCommitment, ExecBlockCommitment};
-pub use l1::{BitcoinBlockHeight, L1BlockCommitment, L1BlockId};
+pub use l1::{BitcoinBlockHeight, L1BlockCommitment, L1BlockId, L1Height};
 pub use ol::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId};

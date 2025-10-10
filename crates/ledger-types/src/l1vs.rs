@@ -4,22 +4,12 @@
 // it's only updated at the epoch boundaries anyways)
 
 use strata_acct_types::BitcoinAmount;
+pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
 
 /// Transitional type until we update crate hierarchy.
-pub type L1BlockId = [u8; 32];
-
-/// Transitional type until we update crate hierarchy.
-pub type Height = u32;
-
-/// Transitional type until we update crate hierarchy.
+/// TODO: Move to appropriate crate (possibly ol-chain-types or asm-types)
 #[derive(Clone, Debug)]
 pub struct AsmManifest {
-    // TODO
-}
-
-/// Transitional type until we update crate hierarchy.
-#[derive(Clone, Debug)]
-pub struct EpochCommitment {
     // TODO
 }
 
@@ -39,7 +29,7 @@ pub trait IL1ViewState {
     fn last_l1_blkid(&self) -> &L1BlockId;
 
     /// Last L1 block height.
-    fn last_l1_height(&self) -> Height;
+    fn last_l1_height(&self) -> L1Height;
 
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
     /// block height and other fields.

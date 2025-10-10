@@ -20,7 +20,7 @@ borsh.workspace = true
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
 strata-btc-types.workspace = true
-strata-identifiers.workspace = true
+strata-identifiers = { workspace = true, features = ["bitcoin"] }
 strata-l1-txfmt.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
