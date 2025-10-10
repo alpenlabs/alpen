@@ -44,7 +44,7 @@ def get_contract():
         contract Greeter {
             string public greeting;
 
-            constructor() public {
+            constructor() {
                 greeting = 'Hello';
             }
         }
