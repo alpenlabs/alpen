@@ -3,11 +3,8 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32,
-    epoch::EpochCommitment,
-    l1::L1BlockCommitment,
-    l2::{L2BlockCommitment, L2BlockId},
+use strata_identifiers::{
+    Buf32, EpochCommitment, L1BlockCommitment, L2BlockCommitment, L2BlockId,
 };
 
 /// Summary generated when we accept the last block of an epoch.

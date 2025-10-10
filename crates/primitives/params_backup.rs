@@ -8,14 +8,13 @@ use thiserror::Error;
 
 use crate::{
     block_credential::CredRule,
-    l1::{BitcoinAddress, BitcoinAmount, XOnlyPk},
+    constants::TIMESTAMPS_FOR_MEDIAN,
+    l1::{BitcoinAddress, BitcoinAmount, L1BlockCommitment, L1BlockId, XOnlyPk},
     operator::OperatorPubkeys,
     prelude::Buf32,
     proof::RollupVerifyingKey,
     serde_helpers::serde_amount_sat,
 };
-
-pub use strata_btc_types::{GenesisL1View, TIMESTAMPS_FOR_MEDIAN};
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
@@ -74,6 +73,28 @@ pub struct RollupParams {
 
     /// network the l1 is set on
     pub network: bitcoin::Network,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GenesisL1View {
+    pub blk: L1BlockCommitment,
+    pub next_target: u32,
+    pub epoch_start_timestamp: u32,
+    pub last_11_timestamps: [u32; TIMESTAMPS_FOR_MEDIAN],
+}
+
+impl GenesisL1View {
+    pub fn height(&self) -> absolute::Height {
+        self.blk.height()
+    }
+
+    pub fn height_u64(&self) -> u64 {
+        self.blk.height_u64()
+    }
+
+    pub fn blkid(&self) -> L1BlockId {
+        *self.blk.blkid()
+    }
 }
 
 impl RollupParams {

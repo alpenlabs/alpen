@@ -28,6 +28,10 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     borsh::to_vec(&extra_payload).expect("extra_payload vec")
 }
 
+/// Commitment to an execution block, containing slot and block ID.
+///
+/// This type was previously named `EvmEeBlockCommitment` but has been renamed
+/// to `ExecBlockCommitment` to be more generic and not tied to EVM.
 #[derive(
     Copy,
     Clone,
@@ -43,12 +47,12 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     Deserialize,
     Serialize,
 )]
-pub struct EvmEeBlockCommitment {
+pub struct ExecBlockCommitment {
     slot: u64,
     blkid: Buf32,
 }
 
-impl EvmEeBlockCommitment {
+impl ExecBlockCommitment {
     pub fn new(slot: u64, blkid: Buf32) -> Self {
         Self { slot, blkid }
     }
@@ -69,3 +73,6 @@ impl EvmEeBlockCommitment {
         self.slot == 0 && self.blkid().is_zero()
     }
 }
+
+/// Alias for backward compatibility
+pub type EvmEeBlockCommitment = ExecBlockCommitment;

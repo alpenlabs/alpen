@@ -3,21 +3,27 @@
 // TODO import address types
 // TODO import generic account types
 
-#[macro_use]
-mod macros;
+// Re-export identifier types from strata-identifiers
+pub use strata_identifiers::{
+    buf, create_evm_extra_payload, epoch, exec as evm_exec, hash, impl_buf_wrapper,
+    l1 as l1_identifiers, ol, ol as l2, BitcoinBlockHeight, Buf20, Buf32, Buf64, CredRule,
+    EpochCommitment, EvmEeBlockCommitment, EVMExtraPayload, ExecBlockCommitment, L1BlockCommitment,
+    L1BlockId, L1Height, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId,
+};
+
+// Re-export crypto types
+pub mod crypto {
+    pub use strata_crypto::schnorr::*;
+    pub use strata_crypto::RollupVerifyingKey;
+}
+pub use strata_crypto::RollupVerifyingKey;
 
 pub mod block_credential;
-pub mod buf;
 pub mod constants;
-pub mod crypto;
-pub mod epoch;
 pub mod errors;
-pub mod evm_exec;
-pub mod hash;
 pub mod indexed;
 pub mod keys;
 pub mod l1;
-pub mod l2;
 pub mod operator;
 pub mod params;
 pub mod prelude;

@@ -3,12 +3,14 @@ resolver = "2"
 
 members = [
   "crates/acct-types",
+  "crates/asm/chain-types",
   "crates/asm/common",
   "crates/asm/logs",
   "crates/asm/stf",
   "crates/asm/moho-program",
   "crates/asm/spec",
   "crates/asm/spec-debug",
+  "crates/asm/state-types",
   "crates/asm/subprotocols/core",
   "crates/asm/subprotocols/bridge-v1",
   "crates/asm/subprotocols/debug-v1",
@@ -19,6 +21,8 @@ members = [
   "crates/asm/txs/bridge-v1",
   "crates/asm-types",
   "crates/asm/worker",
+  "crates/btc-types",
+  "crates/btc-verification",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -38,12 +42,14 @@ members = [
   "crates/ee-chain-types",
   "crates/eectl",
   "crates/evmexec",
+  "crates/identifiers",
   "crates/key-derivation",
   "crates/l1tx",
   "crates/ledger-types",
   "crates/mpt",
   "crates/ol-chain-types",
   "crates/ol-chainstate-types",
+  "crates/params",
   "crates/primitives",
   "crates/proof-impl/checkpoint",
   "crates/proof-impl/cl-stf",
@@ -127,6 +133,7 @@ alpen-reth-primitives = { path = "crates/reth/primitives" }
 alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff" }
 strata-acct-types = { path = "crates/acct-types" }
+strata-asm-chain-types = { path = "crates/asm/chain-types" }
 strata-asm-common = { path = "crates/asm/common" }
 strata-asm-logs = { path = "crates/asm/logs" }
 strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
@@ -138,12 +145,15 @@ strata-asm-proto-core = { path = "crates/asm/subprotocols/core" }
 strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-spec = { path = "crates/asm/spec" }
 strata-asm-spec-debug = { path = "crates/asm/spec-debug" }
+strata-asm-state-types = { path = "crate/asm/state-types" }
 strata-asm-stf = { path = "crates/asm/stf" }
 strata-asm-txs-admin = { path = "crates/asm/txs/admin" }
 strata-asm-txs-bridge-v1 = { path = "crates/asm/txs/bridge-v1" }
 strata-asm-types = { path = "crates/asm-types" }
 strata-asm-worker = { path = "crates/asm/worker" }
 strata-bridge-types = { path = "crates/bridge-types" }
+strata-btc-types = { path = "crates/btc-types" }
+strata-btc-verification = { path = "crates/btc-verification" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chainexec = { path = "crates/chainexec" }
@@ -164,6 +174,7 @@ strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
+strata-identifiers = { path = "crates/identifiers", default-features = false }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-l1tx = { path = "crates/l1tx" }
 strata-ledger-types = { path = "crates/ledger-types" }
@@ -171,6 +182,7 @@ strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
 strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
+strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }

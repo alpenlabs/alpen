@@ -255,7 +255,7 @@ impl<S: CryptoScheme> MultisigConfig<S> {
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::buf::Buf32;
+    use strata_identifiers::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;

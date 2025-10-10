@@ -40,4 +40,4 @@ pub use state_accessor::StateAccessor;
 
 // transitional crap
 #[rustfmt::skip]
-pub use l1vs::{AsmManifest, EpochCommitment, Height, L1BlockId};
+pub use l1vs::{AsmManifest, EpochCommitment, L1BlockId, L1Height};
