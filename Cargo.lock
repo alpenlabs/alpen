@@ -15152,12 +15152,11 @@ dependencies = [
  "secp256k1 0.29.1",
  "serde",
  "strata-btc-types",
+ "strata-crypto",
  "strata-identifiers",
  "strata-l1-txfmt",
  "thiserror 2.0.16",
  "zeroize",
- "zkaleido-risc0-groth16-verifier",
- "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
