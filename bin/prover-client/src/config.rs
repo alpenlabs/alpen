@@ -82,10 +82,6 @@ pub(crate) struct WorkerConfig {
     /// Number of SP1 prover workers.
     #[serde(default = "default_values::workers")]
     pub(crate) sp1: usize,
-
-    /// Number of Risc0 prover workers.
-    #[serde(default = "default_values::workers")]
-    pub(crate) risc0: usize,
 }
 
 /// Timing configuration for the prover client.
@@ -201,7 +197,6 @@ dev_url = "0.0.0.0"
 # Adjust these values based on your hardware capabilities and workload
 native = 20
 sp1 = 20
-risc0 = 20
 
 [timing]
 # Polling and timing configuration (in milliseconds and seconds)
@@ -244,7 +239,6 @@ enable_checkpoint_runner = false # Enable automatic checkpoint proving
         assert_eq!(original_config.rpc.dev_url, DEFAULT_DEV_RPC_HOST);
         assert_eq!(original_config.workers.native, DEFAULT_WORKERS);
         assert_eq!(original_config.workers.sp1, DEFAULT_WORKERS);
-        assert_eq!(original_config.workers.risc0, DEFAULT_WORKERS);
         assert_eq!(
             original_config.timing.polling_interval_ms,
             DEFAULT_POLLING_INTERVAL_MS

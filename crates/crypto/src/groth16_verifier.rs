@@ -6,7 +6,6 @@ pub fn verify_rollup_groth16_proof_receipt(
     rollup_vk: &RollupVerifyingKey,
 ) -> ZkVmResult<()> {
     match rollup_vk {
-        RollupVerifyingKey::Risc0VerifyingKey(vk) => ZkVmVerifier::verify(vk, proof_receipt),
         RollupVerifyingKey::SP1VerifyingKey(vk) => ZkVmVerifier::verify(vk, proof_receipt),
         // In Native Execution mode, we do not actually generate the proof to verify. Checking
         // public parameters is sufficient.

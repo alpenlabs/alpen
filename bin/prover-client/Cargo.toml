@@ -47,22 +47,12 @@ tracing.workspace = true
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16", optional = true }
 
-# risc0
-strata-risc0-guest-builder = { path = "../../provers/risc0", optional = true }
-zkaleido-risc0-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16", optional = true }
-
 [dev-dependencies]
 strata-test-utils.workspace = true
 sled.workspace = true
 
 [features]
 default = []
-risc0 = ["strata-zkvm-hosts/risc0", "dep:zkaleido-risc0-host"]
-risc0-builder = [
-  "risc0",
-  "strata-zkvm-hosts/risc0-builder",
-  "dep:strata-risc0-guest-builder",
-]
 sp1 = ["strata-zkvm-hosts/sp1", "dep:zkaleido-sp1-host"]
 sp1-builder = [
   "sp1",

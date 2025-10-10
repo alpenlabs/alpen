@@ -74,7 +74,6 @@ members = [
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
   "crates/util/mmr",
-  "provers/risc0",
   "provers/sp1",
 
   # binaries listed separately
@@ -213,7 +212,6 @@ moho-types = { git = "https://github.com/alpenlabs/moho" }
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
 zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
-zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }

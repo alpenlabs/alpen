@@ -102,18 +102,11 @@ fn export_elf(_elf_path: &Path) -> anyhow::Result<()> {
 ///
 /// # Behavior
 ///
-/// - If the **sp1** feature is exclusively enabled, returns an `SP1VerifyingKey`.
-/// - If the **risc0** feature is exclusively enabled, returns a `Risc0VerifyingKey`.
-/// - If **both** `sp1` and `risc0` are enabled at once, this function will **panic**.
-/// - If **neither** `sp1` nor `risc0` is enabled, returns a `NativeVerifyingKey`.
-///
-/// # Panics
-///
-/// Panics if both `sp1` and `risc0` features are enabled simultaneously, since
-/// only one ZKVM can be supported at a time.
+/// - If the **sp1** feature is enabled, returns an `SP1VerifyingKey`.
+/// - If **sp1** is not enabled, returns a `NativeVerifyingKey`.
 fn resolve_rollup_vk() -> RollupVerifyingKey {
-    // Use SP1 if only `sp1` feature is enabled
-    #[cfg(all(feature = "sp1-builder", not(feature = "risc0-builder")))]
+    // Use SP1 if `sp1` feature is enabled
+    #[cfg(feature = "sp1-builder")]
     {
         use strata_sp1_guest_builder::GUEST_CHECKPOINT_VK_HASH_STR;
         use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
@@ -125,32 +118,8 @@ fn resolve_rollup_vk() -> RollupVerifyingKey {
         RollupVerifyingKey::SP1VerifyingKey(sp1_verifier)
     }
 
-    // Use Risc0 if only `risc0` feature is enabled
-    #[cfg(all(feature = "risc0-builder", not(feature = "sp1-builder")))]
-    {
-        use strata_risc0_guest_builder::GUEST_RISC0_CHECKPOINT_ID;
-        use zkaleido_risc0_groth16_verifier::Risc0Groth16Verifier;
-        let risc0_verifier = Risc0Groth16Verifier::load(
-            risc0_groth16::verifying_key(),
-            risc0_zkvm::BN254_IDENTITY_CONTROL_ID,
-            risc0_zkvm::ALLOWED_CONTROL_ROOT,
-            Digest::new(GUEST_RISC0_CHECKPOINT_ID),
-        )
-        .expect("Failed to load Risc0 Groth16 verifier");
-        RollupVerifyingKey::Risc0VerifyingKey(risc0_verifier)
-    }
-
-    // Panic if both `sp1` and `risc0` feature are enabled
-    #[cfg(all(feature = "risc0-builder", feature = "sp1-builder"))]
-    {
-        panic!(
-            "Conflicting ZKVM features: both 'sp1' and 'risc0' are enabled. \
-             Please disable one of them, as only a single ZKVM can be supported at a time."
-        )
-    }
-
-    // If neither `risc0` nor `sp1` is enabled, use the Native verifying key
-    #[cfg(all(not(feature = "risc0-builder"), not(feature = "sp1-builder")))]
+    // If `sp1` is not enabled, use the Native verifying key
+    #[cfg(not(feature = "sp1-builder"))]
     {
         RollupVerifyingKey::NativeVerifyingKey
     }
