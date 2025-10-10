@@ -15132,6 +15132,8 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-btc-types",
+ "strata-crypto",
  "strata-identifiers",
  "strata-l1-txfmt",
  "thiserror 2.0.16",
