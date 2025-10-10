@@ -78,7 +78,7 @@ class StrataRunContext(flexitest.RunContext):
             )
             .with_pubkey(agg_pubkey)
             .with_magic_bytes("".join(chr(b) for b in rollup_cfg.magic_bytes))
-            .with_datadir(self.datadir_root)
+            .with_datadir(os.path.join(self.datadir_root, name))
         )
 
         self.alpen_cli = builder.build(self)

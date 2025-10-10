@@ -1,25 +1,27 @@
-import logging
-
 import flexitest
 
 from envs import net_settings, testenv
 from mixins.bridge_out_precompile_contract_mixin import BridgePrecompileMixin
+from utils import ProverClientSettings, get_priv_keys
 
 
 @flexitest.register
 class ContractBridgeOutWithContractBalanceTest(BridgePrecompileMixin):
     def __init__(self, ctx: flexitest.InitContext):
-        fast_batch_settings = net_settings.get_fast_batch_settings()
         ctx.set_env(
-            testenv.BasicEnvConfig(pre_generate_blocks=101, rollup_settings=fast_batch_settings)
+            testenv.BasicEnvConfig(
+                101,
+                prover_client_settings=ProverClientSettings.new_with_proving(),
+                rollup_settings=net_settings.get_fast_batch_settings(),
+                auto_generate_blocks=True,
+            )
         )
 
     def main(self, ctx: flexitest.RunContext):
-        logging.warn("test temporarily disabled")
-        return
-
         # Deposit to contract Address
-        self.deposit(ctx, self.deployed_contract_receipt.contractAddress, self.bridge_pk)
+        priv_keys = get_priv_keys(ctx)
+        self.deposit(ctx, self.deployed_contract_receipt.contractAddress, priv_keys)
+        self.deposit(ctx, self.web3.address, priv_keys)
 
         # withdraw
         # TODO: use self.txs.deploy and self.txs.call

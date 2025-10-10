@@ -50,7 +50,7 @@ class BridgeMixin(BaseMixin):
         self.info(f"Initial EL balance: {initial_balance}")
 
         # Make DRT (deposit request transaction)
-        drt_tx_id, raw_drt_bytes = self.make_drt()
+        drt_tx_id, raw_drt_bytes = self.make_drt(el_address)
         self.info(f"Deposit Request Transaction ID: {drt_tx_id}")
 
         # Create managed DT (deposit transaction) with auto-incremented ID
@@ -178,7 +178,7 @@ class BridgeMixin(BaseMixin):
 
         return l2_tx_hash, tx_receipt, total_gas_used
 
-    def make_drt(self) -> tuple[str, str]:
+    def make_drt(self, el_address=None) -> tuple[str, str]:
         """
         Creates and matures a Deposit Request Transaction (DRT).
 
@@ -193,7 +193,7 @@ class BridgeMixin(BaseMixin):
         self.btcrpc.proxy.sendtoaddress(addr, 10.01)
         self.btcrpc.proxy.generatetoaddress(1, seq_addr)
         # Create and send deposit request transaction
-        drt_tx_id = self.alpen_cli.deposit()
+        drt_tx_id = self.alpen_cli.deposit(el_address)
         current_height = self.btcrpc.proxy.getblockcount()
         # time to mature DRT
         self.btcrpc.proxy.generatetoaddress(6, seq_addr)

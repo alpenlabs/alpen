@@ -1,6 +1,3 @@
-import os
-
-import base58
 import flexitest
 from strata_utils import (
     extract_p2tr_pubkey,
@@ -30,24 +27,7 @@ class BridgeTest(bridge_mixin.BridgeMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        path = os.path.join(ctx.datadir_root, "_bridge_test", "_init")
-        print(path)
-        priv_keys = []
-        opkeys = sorted(
-            filter(lambda file: file.startswith("opkey"), os.listdir(path)),
-            key=lambda x: int("".join(filter(str.isdigit, x))),
-        )
-        print(opkeys)
-        for filename in opkeys:
-            if not filename.startswith("op"):
-                continue
-
-            full_path = os.path.join(path, filename)
-            with open(full_path) as f:
-                content = f.read().strip()
-                decoded = base58.b58decode(content)[:-4]  # remove checksum
-                priv_keys.append(decoded)
-
+        priv_keys = get_priv_keys(ctx)
         el_address = self.alpen_cli.l2_address()
         print("-----------------------")
         print(el_address)
