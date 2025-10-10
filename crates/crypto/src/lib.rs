@@ -7,5 +7,5 @@ pub mod schnorr;
 pub mod test_utils;
 pub mod verifying_key;
 
-pub use schnorr::verify_schnorr_sig;
+pub use schnorr::*;
 pub use verifying_key::RollupVerifyingKey;

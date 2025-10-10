@@ -32,3 +32,4 @@ bitcoin = ["dep:bitcoin"]
 borsh.workspace = true
 serde_json.workspace = true
 strata-test-utils.workspace = true
+strata-test-utils-btc.workspace = true
