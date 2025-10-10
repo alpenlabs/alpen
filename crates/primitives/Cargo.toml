@@ -25,7 +25,6 @@ strata-identifiers = { workspace = true, features = ["bitcoin"] }
 strata-l1-txfmt.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
-zkaleido-sp1-groth16-verifier.workspace = true
 
 [target.'cfg(target_os = "zkvm")'.dependencies]
 k256 = { version = "0.13.4", features = ["schnorr"] }
