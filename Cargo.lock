@@ -13950,6 +13950,20 @@ dependencies = [
 [[package]]
 name = "strata-identifiers"
 version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bincode",
+ "bitcoin",
+ "borsh",
+ "const-hex",
+ "digest 0.10.7",
+ "hex",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "zeroize",
+]
 
 [[package]]
 name = "strata-key-derivation"
@@ -14090,14 +14104,13 @@ dependencies = [
  "bitcoin-bosd",
  "borsh",
  "const-hex",
- "digest 0.10.7",
  "hex",
  "k256",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "strata-identifiers",
  "strata-l1-txfmt",
  "strata-test-utils",
  "thiserror 2.0.16",
