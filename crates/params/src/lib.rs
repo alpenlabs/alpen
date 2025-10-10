@@ -3,26 +3,18 @@
 use bitcoin::{absolute, Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
+use strata_btc_types::{BitcoinAddress, BitcoinAmount, GenesisL1View, TIMESTAMPS_FOR_MEDIAN, XOnlyPk};
+use strata_crypto::RollupVerifyingKey;
+use strata_identifiers::{Buf32, CredRule};
 use strata_l1_txfmt::MagicBytes;
 use thiserror::Error;
 
-pub mod block_credential;
 pub mod operator;
 pub mod serde_helpers;
 
-pub use block_credential::CredRule;
 pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
 
-// Re-export from primitives for types that need to stay there
-// We'll import these from primitives once the module is set up
 use serde_helpers::serde_amount_sat;
-
-// These need to come from primitives as they depend on other primitives types
-// For now, we'll define placeholder types and fix circular dependencies later
-
-/// Number of timestamps for median calculation
-pub const TIMESTAMPS_FOR_MEDIAN: usize = 11;
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
@@ -84,32 +76,6 @@ pub struct RollupParams {
     pub network: bitcoin::Network,
 }
 
-// Temporary placeholder - will be imported from primitives
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RollupVerifyingKey;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct GenesisL1View {
-    pub blk: L1BlockCommitment,
-    pub next_target: u32,
-    pub epoch_start_timestamp: u32,
-    pub last_11_timestamps: [u32; TIMESTAMPS_FOR_MEDIAN],
-}
-
-impl GenesisL1View {
-    pub fn height(&self) -> absolute::Height {
-        self.blk.height()
-    }
-
-    pub fn height_u64(&self) -> u64 {
-        self.blk.height_u64()
-    }
-
-    pub fn blkid(&self) -> L1BlockId {
-        *self.blk.blkid()
-    }
-}
-
 impl RollupParams {
     pub fn check_well_formed(&self) -> Result<(), ParamsError> {
         match &self.operator_config {
@@ -161,16 +127,6 @@ impl RollupParams {
         &self.rollup_vk
     }
 }
-
-// Temporary placeholders - will need to import from primitives l1 module
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BitcoinAddress;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BitcoinAmount;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct XOnlyPk;
 
 /// Configuration common among deposit and deposit request transaction
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Deserialize, Serialize)]
