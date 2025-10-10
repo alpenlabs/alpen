@@ -118,6 +118,12 @@ impl OperatorBitmap {
     /// # Returns
     ///
     /// `Ok(())` on success, `Err(BitmapError)` if index would create a gap in the bitmap
+    ///
+    /// # Index Overflow
+    ///
+    /// **WARNING**: Since `OperatorIdx` is `u32`, this method cannot handle indices beyond
+    /// `u32::MAX` (4,294,967,295). This limits the total number of unique operators that can
+    /// ever be registered over the bridge's lifetime.
     pub fn try_set(&mut self, idx: OperatorIdx, active: bool) -> Result<(), BitmapError> {
         let idx_usize = idx as usize;
         // Only allow increasing bitmap size by 1 at a time to maintain sequential indices
@@ -135,6 +141,13 @@ impl OperatorBitmap {
     }
 
     /// Returns an iterator over all active operator indices.
+    ///
+    /// # Index Overflow
+    ///
+    /// **WARNING**: This method casts internal bit positions (`usize`) to `OperatorIdx` (`u32`).
+    /// If the bitmap contains indices beyond `u32::MAX`, this cast will truncate/wrap the values,
+    /// producing incorrect results. In practice, this is constrained by the system's operator
+    /// registration limit of `u32::MAX` unique operators.
     pub fn active_indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
         self.bits.iter_ones().map(|i| i as OperatorIdx)
     }

@@ -107,9 +107,16 @@ impl OperatorEntry {
 ///
 /// # Index Management
 ///
-/// - `next_idx` tracks the next available operator index for new registrations
+/// The table uses `next_idx` to track and assign operator indices:
+///
 /// - Indices are assigned sequentially starting from 0
-/// - Once assigned, indices are never reused (no deletion support)
+/// - Each new registration increments `next_idx`
+/// - Indices are never reused, even after operator exits
+///
+/// **WARNING**: Since indices are never reused and `OperatorIdx` is `u32`, the table
+/// can support at most `u32::MAX` (4,294,967,295) unique operator registrations over
+/// its entire lifetime. After reaching this limit, `next_idx` would overflow and the
+/// table cannot accept new registrations.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct OperatorTable {
     /// Next unassigned operator index for new registrations.
@@ -266,7 +273,12 @@ impl OperatorTable {
     ///
     /// # Panics
     ///
-    /// Panics if the updates would result in no operators being in the multisig.
+    /// Panics if:
+    /// - The updates would result in no operators being in the multisig
+    /// - Sequential operator insertion fails (bitmap index management error)
+    /// - `next_idx` overflows `u32::MAX` when inserting new operators (since operator indices are
+    ///   never reused, this limits the total number of unique operators that can ever be registered
+    ///   to `u32::MAX` or 4,294,967,295 over the bridge's lifetime)
     pub fn update_multisig_and_recalc_key(
         &mut self,
         updates: &[(OperatorIdx, bool)],
