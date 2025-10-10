@@ -26,8 +26,6 @@ pub enum WorkerError {
 
     #[error("missing required dependency: {0}")]
     MissingDependency(&'static str),
-    #[error("unexpected error: {0}")]
-    Unexpected(String),
 
     #[error("not yet implemented")]
     Unimplemented,

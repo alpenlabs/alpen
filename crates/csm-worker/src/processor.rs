@@ -14,17 +14,31 @@ use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
 
-/// Process a single ASM log entry, extracting and handling checkpoint updates.
-pub(crate) fn process_checkpoint_log(
+pub(crate) fn process_logs(
     state: &mut CsmWorkerState,
     log: &AsmLogEntry,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
-    // Check if this is a checkpoint update log
-    if log.ty() != Some(CHECKPOINT_UPDATE_LOG_TYPE) {
-        trace!("Skipping non-checkpoint log");
-        return Ok(());
+    match log.ty() {
+        Some(CHECKPOINT_UPDATE_LOG_TYPE) => return process_checkpoint_log(state, log, asm_block),
+        Some(log_type) => {
+            warn!(log_type, "not yet supported");
+        }
+        None => {
+            warn!("logs without a type ID?");
+        }
     }
+    Ok(())
+}
+
+/// Process a single ASM log entry, extracting and handling checkpoint updates.
+fn process_checkpoint_log(
+    state: &mut CsmWorkerState,
+    log: &AsmLogEntry,
+    asm_block: &L1BlockCommitment,
+) -> anyhow::Result<()> {
+    // Assert that the dispatch is fine.
+    assert_eq!(log.ty(), Some(CHECKPOINT_UPDATE_LOG_TYPE));
 
     // Deserialize the checkpoint update using the AsmLog trait
     let checkpoint_update: CheckpointUpdate = log
@@ -37,7 +51,7 @@ pub(crate) fn process_checkpoint_log(
         %epoch,
         %asm_block,
         checkpoint_txid = ?checkpoint_update.checkpoint_txid,
-        "Processing checkpoint update from ASM log"
+        "CSM is processing checkpoint update from ASM log"
     );
 
     // Create L1 checkpoint reference from the log data
@@ -96,7 +110,7 @@ fn update_client_state_with_checkpoint(
             }
         }
         None => {
-            // First checkpoint becomes recent
+            // New checkpoint is the first checkpoint, and it is marked recent
             (None, Some(new_checkpoint))
         }
     };
@@ -142,6 +156,10 @@ fn update_client_state_with_checkpoint(
 ///
 /// Note: The log doesn't contain the full signed checkpoint, so we reconstruct
 /// what we can. The signature verification was already done by ASM.
+///
+/// TODO: This function is created for compatibility reason to avoid making larger changes.
+/// This will be largely changed as we move to the new OL STF as the checkpoint structure
+/// will be different than the existing ones.
 fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
     let epoch = update.batch_info.epoch();
 

@@ -12,11 +12,9 @@ pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> an
     let ckpt_db = storage.checkpoint();
     match action {
         SyncAction::FinalizeEpoch(epoch_comm) => {
-            // For the fork choice manager this gets picked up later.  We don't have
-            // to do anything here *necessarily*.
             info!(?epoch_comm, "finalizing epoch");
 
-            strata_common::check_bail_trigger("sync_event_finalize_epoch");
+            strata_common::check_bail_trigger("csm_event_finalize_epoch");
 
             // Write that the checkpoint is finalized.
             //
