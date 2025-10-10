@@ -107,7 +107,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let csm_params = params.clone();
     let csm_storage = storage.clone();
     let csm_st_ch = status_channel.clone();
-    let csm_asm_monitor = asm_controller.get_monitor();
+    let csm_asm_monitor = asm_controller.monitor();
 
     spawn_csm_listener(
         executor,
@@ -151,17 +151,15 @@ fn spawn_csm_listener(
     status_channel: StatusChannel,
     asm_monitor: &strata_service::ServiceMonitor<AsmWorkerStatus>,
 ) -> anyhow::Result<()> {
-    // Create CSM worker state
+    // Create CSM worker state.
     let csm_state = CsmWorkerState::new(params, storage, status_channel)?;
 
-    // Create input that listens to ASM status updates via MPSC
-    // This spawns a forwarder task that converts watch channel updates to MPSC messages
+    // Create an input that listens to ASM status updates.
     let async_input = asm_monitor.create_listener_input(executor);
-
-    // Wrap in SyncAsyncInput adapter since CSM worker is a sync service
+    // Wrap in SyncAsyncInput adapter since CSM worker is a sync service.
     let csm_input = SyncAsyncInput::new(async_input, executor.handle().clone());
 
-    // Launch the CSM worker service (which acts as a listener to ASM worker)
+    // Launch the CSM worker service (which acts as a listener to ASM worker).
     let _csm_monitor = ServiceBuilder::<CsmWorkerService, _>::new()
         .with_state(csm_state)
         .with_input(csm_input)
@@ -239,7 +237,6 @@ fn spawn_asm_worker(
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
         .with_params(params)
-        .with_runtime(handle)
         .launch(executor)?;
 
     Ok(handle)

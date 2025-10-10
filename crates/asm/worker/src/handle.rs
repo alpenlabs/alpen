@@ -10,7 +10,7 @@ use crate::AsmWorkerStatus;
 #[derive(Debug)]
 pub struct AsmWorkerHandle {
     command_handle: CommandHandle<L1BlockCommitment>,
-    service_monitor: ServiceMonitor<AsmWorkerStatus>,
+    monitor: ServiceMonitor<AsmWorkerStatus>,
 }
 
 impl AsmWorkerHandle {
@@ -21,15 +21,15 @@ impl AsmWorkerHandle {
     ) -> Self {
         Self {
             command_handle,
-            service_monitor: monitor,
+            monitor,
         }
     }
 
     /// Allows other services to listen to status updates.
     ///
     /// Can be useful for logic that want to listen to logs/updates of ASM state.
-    pub fn get_monitor(&self) -> &ServiceMonitor<AsmWorkerStatus> {
-        &self.service_monitor
+    pub fn monitor(&self) -> &ServiceMonitor<AsmWorkerStatus> {
+        &self.monitor
     }
 }
 

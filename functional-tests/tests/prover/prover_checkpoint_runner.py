@@ -56,6 +56,8 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         epoch = seq_waiter.wait_until_next_chain_epoch()
         logging.info(f"it's now epoch {epoch}")
 
+        # Note: weird implementation of `getLatestCheckpointIndex`.
+        # with True - waits until *the most recent* checkpoint reaches the value.
         def consecutive_checkpoints_verified():
             ckpt_idx = sequencer_rpc.strata_getLatestCheckpointIndex(True)
             logging.info(f"cur checkpoint idx: {ckpt_idx}")
@@ -74,14 +76,16 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         sequencer.start()
         sequencer_rpc = sequencer.create_rpc()
 
+        # Note: weird implementation of `getLatestCheckpointIndex`.
+        # with False - waits until the *finalized* checkpoint reaches the value.
         def _ck2():
-            ckpt_idx = sequencer_rpc.strata_getLatestCheckpointIndex(True)
+            ckpt_idx = sequencer_rpc.strata_getLatestCheckpointIndex(False)
             logging.info(f"cur checkpoint idx: {ckpt_idx}")
             return ckpt_idx == self.checkpoint_settings.consecutive_proofs_required
 
-        # Wait until another portion of consecutive proofs are generated and verified
-        # after the restart of the sequencer.
-        wait_until(
-            _ck2,
-            timeout=self.checkpoint_settings.prover_timeout_seconds,
-        )
+        # We check the the proves were submitted after sequencer restart:
+        # we wait until the most recent checkpoint we observed before the restart
+        # actually became finalized.
+        # This can only happen if checkpointing continued and proofs for several next
+        # checkpoints were accepted (otherwise the checkpoint wouldn't become finalized).
+        wait_until(_ck2, timeout=self.checkpoint_settings.prover_timeout_seconds)
