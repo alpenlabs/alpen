@@ -1,10 +1,11 @@
 [package]
-name = "state-types"
+name = "ol-state-types"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 strata-primitives.workspace = true
+strata-ol-chain-types-new.workspace = true
 
 [lints]
 workspace = true

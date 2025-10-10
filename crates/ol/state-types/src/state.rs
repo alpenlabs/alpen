@@ -1,4 +1,5 @@
-use strata_primitives::buf::Buf32;
+use strata_ol_chain_types_new::EpochCommitment;
+use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 
 /// The Orchestration Layer(OL) State.
 #[derive(Debug, Clone)]
@@ -7,8 +8,7 @@ pub struct OLState {
     l1_view: L1View,
     cur_slot: u64,
     cur_epoch: u64,
-    l1_recorded_epoch: EpochCommitment,
-    total_btc_bridged: u64, // sats
+    total_btc_bridged: BitcoinAmount,
 }
 
 impl OLState {
@@ -17,15 +17,13 @@ impl OLState {
         l1_view: L1View,
         cur_slot: u64,
         cur_epoch: u64,
-        l1_recorded_epoch: EpochCommitment,
-        total_btc_bridged: u64,
+        total_btc_bridged: BitcoinAmount,
     ) -> Self {
         Self {
             accounts_root,
             l1_view,
             cur_slot,
             cur_epoch,
-            l1_recorded_epoch,
             total_btc_bridged,
         }
     }
@@ -46,11 +44,7 @@ impl OLState {
         self.cur_epoch
     }
 
-    pub fn l1_recorded_epoch(&self) -> &EpochCommitment {
-        &self.l1_recorded_epoch
-    }
-
-    pub fn total_btc_bridged(&self) -> u64 {
+    pub fn total_btc_bridged(&self) -> BitcoinAmount {
         self.total_btc_bridged
     }
 }
@@ -58,64 +52,33 @@ impl OLState {
 /// View of L1 as seen by OL.
 #[derive(Debug, Clone)]
 pub struct L1View {
-    block_hash: Buf32,
+    /// Latest seen block id.
+    block_id: Buf32,
+    /// Latest seen block height.
     block_height: u64,
+    /// Latest seen checkpoint corresponding to an epoch.
+    recorded_epoch: EpochCommitment,
     // TODO: add witness root mmr
 }
 
 impl L1View {
-    pub fn new(block_hash: Buf32, block_height: u64) -> Self {
+    pub fn new(block_id: Buf32, block_height: u64, recorded_epoch: EpochCommitment) -> Self {
         Self {
-            block_hash,
+            block_id,
             block_height,
+            recorded_epoch,
         }
     }
 
-    pub fn block_hash(&self) -> Buf32 {
-        self.block_hash
+    pub fn block_id(&self) -> Buf32 {
+        self.block_id
+    }
+
+    pub fn recorded_epoch(&self) -> &EpochCommitment {
+        &self.recorded_epoch
     }
 
     pub fn block_height(&self) -> u64 {
         self.block_height
-    }
-}
-
-/// Commitment to an epoch.
-#[derive(Debug, Clone)]
-pub struct EpochCommitment {
-    /// Epoch number.
-    epoch: u64,
-    /// State root at the end of the epoch.
-    state_root: Buf32,
-    /// Terminal slot.
-    terminal_slot: u64,
-    /// Terminal block id.
-    terminal_blockid: Buf32,
-}
-
-impl EpochCommitment {
-    pub fn new(epoch: u64, state_root: Buf32, terminal_slot: u64, terminal_blockid: Buf32) -> Self {
-        Self {
-            epoch,
-            state_root,
-            terminal_slot,
-            terminal_blockid,
-        }
-    }
-
-    pub fn epoch(&self) -> u64 {
-        self.epoch
-    }
-
-    pub fn state_root(&self) -> Buf32 {
-        self.state_root
-    }
-
-    pub fn terminal_slot(&self) -> u64 {
-        self.terminal_slot
-    }
-
-    pub fn terminal_blockid(&self) -> Buf32 {
-        self.terminal_blockid
     }
 }
