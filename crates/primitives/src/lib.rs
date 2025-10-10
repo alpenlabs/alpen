@@ -12,7 +12,6 @@ pub use strata_identifiers::{
 
 pub mod block_credential;
 pub mod constants;
-pub mod crypto;
 pub mod errors;
 pub mod indexed;
 pub mod keys;
