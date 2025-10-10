@@ -11,6 +11,24 @@ use strata_primitives::{
 };
 use thiserror::Error;
 
+#[derive(Debug, Error)]
+pub enum BridgeSubprotocolError {
+    #[error("failed to parse deposit tx")]
+    DepositTxParse(#[from] DepositTxParseError),
+
+    #[error("failed to process deposit tx")]
+    DepositTxProcess(#[from] DepositValidationError),
+
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxParse(#[from] WithdrawalParseError),
+
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxProcess(#[from] WithdrawalValidationError),
+
+    #[error("unsupported tx type {0}")]
+    UnsupportedTxType(TxType),
+}
+
 /// Errors that can occur when validating deposit transactions at the subprotocol level.
 ///
 /// These errors represent state-level validation failures that occur after successful
@@ -38,24 +56,6 @@ pub enum DepositValidationError {
     /// Each deposit must have at least one notary operator.
     #[error("Cannot create deposit entry with empty operators.")]
     EmptyOperators,
-}
-
-#[derive(Debug, Error)]
-pub enum BridgeSubprotocolError {
-    #[error("failed to parse deposit tx")]
-    DepositTxParse(#[from] DepositTxParseError),
-
-    #[error("failed to process deposit tx")]
-    DepositTxProcess(#[from] DepositValidationError),
-
-    #[error("failed to parse withdrawal fulfillment tx")]
-    WithdrawalTxParse(#[from] WithdrawalParseError),
-
-    #[error("failed to parse withdrawal fulfillment tx")]
-    WithdrawalTxProcess(#[from] WithdrawalValidationError),
-
-    #[error("unsupported tx type {0}")]
-    UnsupportedTxType(TxType),
 }
 
 /// Errors that can occur when validating withdrawal fulfillment transactions.
@@ -95,13 +95,61 @@ pub enum WithdrawalCommandError {
     #[error("No unassigned deposits available for withdrawal command processing")]
     NoUnassignedDeposits,
 
+    /// Deposit amount doesn't match withdrawal command total value
+    #[error("Deposit amount mismatch {0}")]
+    DepositWithdrawalAmountMismatch(Mismatch<u64>),
+
+    /// Withdrawal assignment operation failed
+    #[error("Withdrawal assignment failed")]
+    AssignmentError(#[from] WithdrawalAssignmentError),
+}
+
+/// Errors that can occur when creating or managing withdrawal assignments.
+///
+/// These errors indicate issues with operator assignment logic, such as
+/// bitmap inconsistencies or invalid state.
+#[derive(Debug, Error)]
+pub enum WithdrawalAssignmentError {
     /// No eligible operators found for the deposit
     #[error(
         "No current multisig operator found in deposit's notary operators for deposit index {deposit_idx}"
     )]
     NoEligibleOperators { deposit_idx: u32 },
 
-    /// Deposit amount doesn't match withdrawal command total value
-    #[error("Deposit amount mismatch {0}")]
-    DepositWithdrawalAmountMismatch(Mismatch<u64>),
+    /// Notary operators and previous assignees bitmaps have mismatched lengths.
+    #[error(
+        "Notary operators length ({notary_len}) does not match previous assignees length ({previous_len})"
+    )]
+    MismatchedBitmapLengths {
+        notary_len: usize,
+        previous_len: usize,
+    },
+
+    /// Current active operators bitmap is shorter than notary operators bitmap.
+    /// This indicates a system inconsistency since operator indices are only appended.
+    #[error(
+        "Current active operators bitmap length ({active_len}) is shorter than notary operators length ({notary_len}). This should never happen as operator bitmaps only grow."
+    )]
+    InsufficientActiveBitmapLength {
+        active_len: usize,
+        notary_len: usize,
+    },
+
+    /// Bitmap operation failed
+    #[error("Bitmap operation failed")]
+    BitmapError(#[from] BitmapError),
+}
+
+/// Error type for OperatorBitmap operations.
+#[derive(Debug, Error, PartialEq)]
+pub enum BitmapError {
+    /// Attempted to set a bit at an index that would create a gap in the bitmap.
+    /// Only sequential indices are allowed.
+    #[error(
+        "Index {index} is out of bounds for sequential bitmap (valid range: 0..={max_valid_index})"
+    )]
+    IndexOutOfBounds {
+        index: OperatorIdx,
+        max_valid_index: OperatorIdx,
+    },
 }

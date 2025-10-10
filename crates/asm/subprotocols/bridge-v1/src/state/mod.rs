@@ -1,4 +1,5 @@
 pub(crate) mod assignment;
+pub(crate) mod bitmap;
 pub(crate) mod bridge;
 pub(crate) mod config;
 pub(crate) mod deposit;
