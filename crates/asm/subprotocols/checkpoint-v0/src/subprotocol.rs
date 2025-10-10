@@ -235,7 +235,6 @@ fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_vk: RollupV
 fn rollup_vk_kind(vk: &RollupVerifyingKey) -> &'static str {
     match vk {
         RollupVerifyingKey::SP1VerifyingKey(_) => "sp1",
-        RollupVerifyingKey::Risc0VerifyingKey(_) => "risc0",
         RollupVerifyingKey::NativeVerifyingKey => "native",
     }
 }

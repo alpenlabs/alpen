@@ -14629,7 +14629,6 @@ dependencies = [
  "strata-test-utils",
  "thiserror 2.0.16",
  "zeroize",
- "zkaleido-risc0-groth16-verifier",
  "zkaleido-sp1-groth16-verifier",
 ]
 
@@ -17361,21 +17360,6 @@ dependencies = [
  "bincode",
  "borsh",
  "serde",
- "zkaleido",
-]
-
-[[package]]
-name = "zkaleido-risc0-groth16-verifier"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16#0144e0a1d1ec0b32769139a202f168f2c398ea30"
-dependencies = [
- "bytemuck",
- "risc0-binfmt",
- "risc0-groth16",
- "risc0-zkp",
- "serde",
- "sha2 0.10.9",
- "thiserror 1.0.69",
  "zkaleido",
 ]
 
