@@ -66,13 +66,6 @@ pub(crate) struct Args {
     #[argh(option, short = 'p', description = "custom rollup config path")]
     pub rollup_params: PathBuf,
 
-    /// The number of Risc0 prover workers to spawn.
-    ///
-    /// This setting is only available if the `risc0` feature is enabled.
-    #[cfg(feature = "risc0")]
-    #[argh(option, description = "number of risc0 prover workers to spawn")]
-    pub risc0_workers: Option<usize>,
-
     /// The number of SP1 prover workers to spawn.
     ///
     /// This setting is only available if the `sp1` feature is enabled.
@@ -129,8 +122,6 @@ impl Args {
             native_workers: self.native_workers.unwrap_or(base_config.workers.native),
             #[cfg(feature = "sp1")]
             sp1_workers: self.sp1_workers.unwrap_or(base_config.workers.sp1),
-            #[cfg(feature = "risc0")]
-            risc0_workers: self.risc0_workers.unwrap_or(base_config.workers.risc0),
 
             // Timing configuration with CLI overrides
             polling_interval: self
@@ -193,10 +184,6 @@ pub(crate) struct ResolvedConfig {
     /// Number of SP1 prover workers to spawn.
     #[cfg(feature = "sp1")]
     pub(crate) sp1_workers: usize,
-
-    /// Number of Risc0 prover workers to spawn.
-    #[cfg(feature = "risc0")]
-    pub(crate) risc0_workers: usize,
 
     /// Wait time in milliseconds for the prover manager loop.
     pub(crate) polling_interval: u64,
@@ -268,7 +255,7 @@ impl ResolvedConfig {
     /// features.
     ///
     /// This function populates the `HashMap` based on which features are enabled at compile time.
-    /// For example, if the `sp1` or `risc0` features are enabled, corresponding entries will be
+    /// For example, if the `sp1` feature is enabled, corresponding entries will be
     /// included with their configured number of worker threads.
     pub(crate) fn get_workers(&self) -> HashMap<ProofZkVm, usize> {
         let mut workers = HashMap::new();
@@ -277,11 +264,6 @@ impl ResolvedConfig {
         #[cfg(feature = "sp1")]
         {
             workers.insert(ProofZkVm::SP1, self.sp1_workers);
-        }
-
-        #[cfg(feature = "risc0")]
-        {
-            workers.insert(ProofZkVm::Risc0, self.risc0_workers);
         }
 
         workers

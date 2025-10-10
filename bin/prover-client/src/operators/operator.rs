@@ -78,9 +78,6 @@ impl ProofOperator {
             #[cfg(feature = "sp1")]
             ZkVmHostInstance::SP1(host) => operator.prove(proof_key, db, host).await,
 
-            #[cfg(feature = "risc0")]
-            ZkVmHostInstance::Risc0(host) => operator.prove(proof_key, db, host).await,
-
             _ => unreachable!("Unexpected host variant"),
         }
     }

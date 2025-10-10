@@ -15145,7 +15145,6 @@ dependencies = [
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-prover-client-rpc-api",
- "strata-risc0-guest-builder",
  "strata-rpc-api",
  "strata-rpc-types",
  "strata-rpc-utils",
@@ -15158,7 +15157,6 @@ dependencies = [
  "tracing",
  "typed-sled",
  "zkaleido",
- "zkaleido-risc0-host",
  "zkaleido-sp1-host",
 ]
 
