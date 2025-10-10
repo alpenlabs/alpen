@@ -1,0 +1,15 @@
+[package]
+# TODO: replace the older ol-chain-types crate with this and remove "-new" suffix
+# "-new" is added to maintain compatibility with existing code without disruptive changes
+name = "strata-ol-chain-types-new"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-acct-types.workspace = true
+strata-asm-common.workspace = true
+strata-primitives.workspace = true
+strata-snark-acct-types.workspace = true
+
+[lints]
+workspace = true
