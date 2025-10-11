@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use strata_csm_types::SyncAction;
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry, CheckpointProvingStatus};
-use strata_state::operation::SyncAction;
 use strata_storage::NodeStorage;
 use tracing::*;
 

@@ -66,6 +66,54 @@ impl<S: ServiceStatus> ServiceMonitor<S> {
 
         TokioMpscInput::new(rx)
     }
+
+    /// Creates a listener input for this service monitor with some initial data served first.
+    ///
+    /// This allows another service to listen to status updates from this service.
+    /// Returns an MPSC receiver that will receive status updates, and spawns a task
+    /// to forward watch channel updates to it.
+    ///
+    /// The listener task will automatically exit when the monitored service exits.
+    ///
+    /// Useful for catching up or replaying updates from a specific point.
+    pub fn create_listener_input_with(
+        &self,
+        executor: &strata_tasks::TaskExecutor,
+        initial_updates: Vec<S>,
+    ) -> TokioMpscInput<S> {
+        // Create an MPSC channel for forwarding status updates
+        let (tx, rx) = mpsc::channel(100);
+
+        // Clone the watch receiver
+        let mut watch_rx = self.status_rx.clone();
+
+        // Spawn a task to forward watch updates to MPSC
+        // This is a non-critical background task that will exit when either:
+        // - The monitored service exits (watch channel closes)
+        // - The listener service exits (MPSC receiver dropped)
+        executor.handle().spawn(async move {
+            for s in initial_updates {
+                // First, send the initial status to prepend it
+                if tx.send(s).await.is_err() {
+                    // Receiver dropped, exit early
+                    return;
+                }
+            }
+
+            // Then continue forwarding new status updates
+            while watch_rx.changed().await.is_ok() {
+                // Get the new status and send it
+                let status = watch_rx.borrow_and_update().clone();
+                if tx.send(status).await.is_err() {
+                    // Receiver dropped, exit
+                    break;
+                }
+            }
+            // Watch channel closed - monitored service exited
+        });
+
+        TokioMpscInput::new(rx)
+    }
 }
 
 /// Service monitor type.

@@ -13659,6 +13659,7 @@ dependencies = [
  "strata-chaintsn",
  "strata-checkpoint-types",
  "strata-common",
+ "strata-csm-types",
  "strata-csm-worker",
  "strata-db",
  "strata-db-store-sled",
@@ -13696,6 +13697,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-csm-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "const-hex",
+ "num_enum 0.7.4",
+ "serde",
+ "serde_json",
+ "strata-checkpoint-types",
+ "strata-l1-txfmt",
+ "strata-primitives",
+ "strata-test-utils",
+]
+
+[[package]]
 name = "strata-csm-worker"
 version = "0.1.0"
 dependencies = [
@@ -13706,10 +13723,10 @@ dependencies = [
  "strata-asm-worker",
  "strata-checkpoint-types",
  "strata-common",
+ "strata-csm-types",
  "strata-db",
  "strata-primitives",
  "strata-service",
- "strata-state",
  "strata-status",
  "strata-storage",
  "tracing",

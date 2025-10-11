@@ -47,6 +47,16 @@ pub trait AsmDatabase: Send + Sync + 'static {
 
     /// Gets latest ASM state (the entry that corresponds to the highest l1 block).
     fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>>;
+
+    /// Gets ASM states starting from a given L1BlockCommitment up to a maximum count.
+    ///
+    /// Returns entries in ascending order (oldest first). If `from_block` doesn't exist,
+    /// starts from the next available block after it.
+    fn get_asm_states_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>>;
 }
 
 /// Database interface to control our view of L1 data.
@@ -107,6 +117,19 @@ pub trait ClientStateDatabase: Send + Sync + 'static {
 
     /// Gets latest client state (the entry that corresponds to the highest l1 block).
     fn get_latest_client_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>>;
+
+    /// Deletes a client update for a given l1 block.
+    fn del_client_update(&self, block: L1BlockCommitment) -> DbResult<()>;
+
+    /// Gets client updates starting from a given L1BlockCommitment up to a maximum count.
+    ///
+    /// Returns entries in ascending order (oldest first). If `from_block` doesn't exist,
+    /// starts from the next available block after it.
+    fn get_client_updates_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(L1BlockCommitment, ClientUpdateOutput)>>;
 }
 
 /// L2 data store for CL blocks.  Does not store anything about what we think

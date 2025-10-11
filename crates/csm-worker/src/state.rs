@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use strata_csm_types::ClientState;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
-use strata_state::client_state::ClientState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
@@ -26,7 +26,7 @@ pub struct CsmWorkerState {
     /// Current client state.
     pub(crate) cur_state: Arc<ClientState>,
 
-    /// Last ASM block we processed.
+    /// Last ASM update we processed.
     pub(crate) last_asm_block: Option<L1BlockCommitment>,
 
     /// Last epoch we processed a checkpoint for.
@@ -57,6 +57,11 @@ impl CsmWorkerState {
             last_processed_epoch: None,
             status_channel,
         })
+    }
+
+    /// Get the last ASM block that was processed.
+    pub fn last_asm_block(&self) -> Option<L1BlockCommitment> {
+        self.last_asm_block
     }
 }
 

@@ -37,4 +37,17 @@ impl AsmStateManager {
     pub fn put_state(&self, block: L1BlockCommitment, asm_state: AsmState) -> DbResult<()> {
         self.ops.put_asm_state_blocking(block, asm_state)
     }
+
+    /// Returns [`AsmState`] entries starting from a given block up to a maximum count.
+    ///
+    /// Returns entries in ascending order (oldest first). If `from_block` doesn't exist,
+    /// starts from the next available block after it.
+    pub fn get_states_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>> {
+        self.ops
+            .get_asm_states_from_blocking(from_block, max_count)
+    }
 }

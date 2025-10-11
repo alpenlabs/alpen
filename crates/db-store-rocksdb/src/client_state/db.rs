@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use rockbound::{OptimisticTransactionDB, SchemaDBOperationsExt};
+use rockbound::{
+    rocksdb::ReadOptions, schema::KeyEncoder, OptimisticTransactionDB, SchemaDBOperationsExt,
+};
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db::{traits::*, DbResult};
+use strata_db::{traits::*, DbError, DbResult};
 use strata_primitives::l1::L1BlockCommitment;
 
 use super::schemas::ClientUpdateOutputSchema;
@@ -52,6 +54,37 @@ impl ClientStateDatabase for ClientStateDb {
         };
 
         Ok(opt)
+    }
+
+    fn del_client_update(&self, block: L1BlockCommitment) -> DbResult<()> {
+        self.db.delete::<ClientUpdateOutputSchema>(&block)?;
+        Ok(())
+    }
+
+    fn get_client_updates_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(L1BlockCommitment, ClientUpdateOutput)>> {
+        // Set the iterator to iterate from the given from onwards.
+        let mut opt = ReadOptions::default();
+        opt.set_iterate_lower_bound(
+            KeyEncoder::<ClientUpdateOutputSchema>::encode_key(&from_block)
+                .map_err(|err| DbError::CodecError(err.to_string()))?,
+        );
+        let iterator = self.db.iter_with_opts::<ClientUpdateOutputSchema>(opt)?;
+
+        let mut result = Vec::new();
+        for item in iterator {
+            let (block, update) = item?.into_tuple();
+            result.push((block, update));
+
+            if result.len() >= max_count {
+                break;
+            }
+        }
+
+        Ok(result)
     }
 }
 

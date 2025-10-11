@@ -4,12 +4,13 @@
 
 use std::sync::Arc;
 
+use bitcoin::absolute::Height;
 use bitcoind_async_client::Client;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState};
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
-use strata_primitives::params::Params;
+use strata_primitives::{params::Params, prelude::L1BlockCommitment};
 use strata_service::{ServiceBuilder, SyncAsyncInput};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -152,10 +153,45 @@ fn spawn_csm_listener(
     asm_monitor: &strata_service::ServiceMonitor<AsmWorkerStatus>,
 ) -> anyhow::Result<()> {
     // Create CSM worker state.
-    let csm_state = CsmWorkerState::new(params, storage, status_channel)?;
+    let csm_state = CsmWorkerState::new(params, storage.clone(), status_channel.clone())?;
 
-    // Create an input that listens to ASM status updates.
-    let async_input = asm_monitor.create_listener_input(executor);
+    // Get the starting block from CSM's last processed block
+    // If CSM hasn't processed any blocks yet, we get the latest ASM state from storage
+    let from_block = if let Some(last_block) = csm_state.last_asm_block() {
+        last_block
+    } else {
+        // Get the latest ASM state as fallback
+        let (latest_block, _) = storage
+            .asm()
+            .fetch_most_recent_state()?
+            .expect("No ASM state available");
+        latest_block
+    };
+
+    // Fetch historical ASM states starting from the specified block
+    let max_historical_blocks = 1000;
+    let nh =         // Increase the last verified block number by 1 and set the new block hash
+        Height::from_consensus(
+            from_block.height().to_consensus_u32() + 1,
+        )
+        .expect("height + 1 should be valid");
+    let historical_states = storage.asm().get_states_from(
+        L1BlockCommitment::new(nh, Default::default()),
+        max_historical_blocks,
+    )?;
+
+    // Convert historical states to ASM worker status updates
+    let initial_updates: Vec<AsmWorkerStatus> = historical_states
+        .into_iter()
+        .map(|(block, state)| AsmWorkerStatus {
+            is_initialized: true,
+            cur_block: Some(block),
+            cur_state: Some(state),
+        })
+        .collect();
+
+    // Create an input that listens to ASM status updates with historical prepended
+    let async_input = asm_monitor.create_listener_input_with(executor, initial_updates);
     // Wrap in SyncAsyncInput adapter since CSM worker is a sync service.
     let csm_input = SyncAsyncInput::new(async_input, executor.handle().clone());
 

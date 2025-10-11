@@ -5,11 +5,10 @@ use std::sync::Arc;
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
 use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
-use strata_primitives::prelude::*;
-use strata_state::{
-    client_state::{CheckpointL1Ref, ClientState, L1Checkpoint},
-    operation::{ClientUpdateOutput, SyncAction},
+use strata_csm_types::{
+    CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
+use strata_primitives::prelude::*;
 use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
