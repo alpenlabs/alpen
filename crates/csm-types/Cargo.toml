@@ -1,0 +1,26 @@
+[package]
+edition = "2021"
+name = "strata-csm-types"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-checkpoint-types.workspace = true
+strata-l1-txfmt.workspace = true
+strata-primitives.workspace = true
+
+arbitrary.workspace = true
+borsh.workspace = true
+const-hex = "1.14"
+num_enum.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true
+serde_json.workspace = true
+
+[features]
+default = ["std"]
+std = []

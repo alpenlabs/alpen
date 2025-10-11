@@ -24,10 +24,11 @@ tracing.workspace = true
 
 [dev-dependencies]
 strata-btcio = { workspace = true, features = ["test_utils"] }
+strata-csm-types.workspace = true
+strata-l1-txfmt.workspace = true
 strata-test-utils.workspace = true
 strata-test-utils-btc.workspace = true
 strata-test-utils-l2.workspace = true
-strata-l1-txfmt.workspace = true
 
 [features]
 test_utils = []

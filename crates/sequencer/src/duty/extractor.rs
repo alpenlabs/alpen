@@ -1,9 +1,9 @@
 //! Extracts new duties for sequencer for a given consensus state.
 
+use strata_csm_types::ClientState;
 use strata_db::types::CheckpointConfStatus;
 use strata_ol_chain_types::{L2BlockId, L2Header};
 use strata_primitives::params::Params;
-use strata_state::client_state::ClientState;
 use strata_storage::L2BlockManager;
 use tracing::*;
 

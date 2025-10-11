@@ -7,8 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use strata_l1_txfmt::TagData;
-
-use crate::buf::Buf32;
+use strata_primitives::buf::Buf32;
 
 /// DA destination identifier. This will eventually be used to enable
 /// storing payloads on alternative availability schemes.
@@ -297,7 +296,7 @@ impl PayloadIntent {
 mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
-    use crate::l1::payload::L1Payload;
+    use crate::payload::L1Payload;
 
     #[test]
     fn test_l1_payload_borsh_roundtrip() {

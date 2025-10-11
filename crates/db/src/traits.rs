@@ -7,12 +7,13 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
+use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_ol_chain_types::L2BlockBundle;
 use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
-use strata_state::{asm_state::AsmState, client_state::ClientState, operation::*};
+use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{

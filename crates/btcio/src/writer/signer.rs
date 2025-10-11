@@ -58,9 +58,9 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
 
 #[cfg(test)]
 mod test {
+    use strata_csm_types::L1Payload;
     use strata_db::types::{BundledPayloadEntry, L1BundleStatus};
     use strata_l1_txfmt::TagData;
-    use strata_primitives::l1::payload::L1Payload;
 
     use super::*;
     use crate::{

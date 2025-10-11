@@ -20,7 +20,6 @@ borsh.workspace = true
 const-hex = "1.14"
 digest.workspace = true
 hex.workspace = true
-num_enum.workspace = true
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
 sha2.workspace = true

@@ -1,6 +1,7 @@
 use serde::Serialize;
+use strata_csm_types::L1Payload;
 use strata_db::types::L1BundleStatus;
-use strata_primitives::{buf::Buf32, hash, l1::payload::L1Payload};
+use strata_primitives::{buf::Buf32, hash};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 

@@ -5,9 +5,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::{DepositIntent, WithdrawalIntent};
-use strata_primitives::{
-    buf::Buf32, evm_exec::create_evm_extra_payload, prelude::payload::BlobSpec,
-};
+use strata_csm_types::BlobSpec;
+use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload};
 
 use crate::prelude::StateQueue;
 

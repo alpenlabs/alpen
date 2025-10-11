@@ -2,10 +2,10 @@
 use std::sync::Arc;
 
 use strata_bridge_types::{DepositsTable, OperatorTable};
+use strata_csm_types::{CheckpointState, ClientState, L1Checkpoint, L1Status};
 use strata_ol_chain_types::L2BlockId;
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::l1::{L1BlockCommitment, L1Status};
-use strata_state::client_state::{CheckpointState, ClientState, L1Checkpoint};
+use strata_primitives::l1::L1BlockCommitment;
 use thiserror::Error;
 use tokio::sync::watch::{self, error::RecvError};
 use tracing::warn;
