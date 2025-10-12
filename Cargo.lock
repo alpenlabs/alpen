@@ -15150,6 +15150,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-glock-bridge-counter"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "moho-types",
+ "strata-asm-common",
+ "strata-asm-moho-program-impl",
+ "strata-asm-proto-bridge-v1",
+ "strata-asm-types",
+ "strata-crypto",
+ "strata-primitives",
+ "zkaleido",
+]
+
+[[package]]
 name = "strata-prover-client"
 version = "0.3.0-alpha.1"
 dependencies = [

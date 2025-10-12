@@ -1,0 +1,21 @@
+[package]
+edition = "2021"
+name = "strata-proofimpl-glock-bridge-counter"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+borsh.workspace = true
+moho-types.workspace = true
+strata-asm-common.workspace = true
+strata-asm-moho-program-impl.workspace = true
+strata-asm-proto-bridge-v1.workspace = true
+strata-crypto.workspace = true
+strata-primitives.workspace = true
+zkaleido.workspace = true
+
+[dev-dependencies]
+strata-asm-types.workspace = true
