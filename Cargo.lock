@@ -15143,6 +15143,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-moho-program-impl",
  "strata-asm-proto-bridge-v1",
+ "strata-asm-types",
  "strata-crypto",
  "strata-primitives",
  "zkaleido",

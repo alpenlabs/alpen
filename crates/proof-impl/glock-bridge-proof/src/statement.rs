@@ -31,7 +31,7 @@ pub fn process_bridge_proof(
 ) -> BridgeProofPublicOutput {
     let proof = &input.moho_recursive_proof;
 
-    // Verify the recursive Moho proof and reconstruct its public parameters
+    // Verify the recursive MOHOproof and reconstruct its public parameters
     verify_rollup_groth16_proof_receipt(proof, &MOHO_VK).expect("Failed to verify groth16 proof");
 
     let moho_attestation = borsh::from_slice::<MohoAttestation>(proof.public_values().as_bytes())
@@ -40,7 +40,7 @@ pub fn process_bridge_proof(
     // Ensure the proof chain starts from the canonical genesis state
     assert_eq!(moho_attestation.genesis(), genesis_moho, "Genesis mismatch");
 
-    // Verify that the provided Moho state matches the committed attestation
+    // Verify that the provided MOHOstate matches the committed attestation
     assert_eq!(
         &input.moho_state.compute_commitment(),
         moho_attestation.proven().commitment(),
@@ -85,5 +85,106 @@ pub fn process_bridge_proof(
         deposit_idx: operator_claim.deposit_idx,
         operator_idx: operator_claim.operator_idx,
         tip_total_work,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{Txid, hashes::Hash};
+    use moho_types::{
+        ExportContainer, ExportEntry, ExportState, MohoStateCommitment, StateReference,
+    };
+    use strata_asm_common::ChainViewState;
+    use strata_asm_types::{BtcWork, HeaderVerificationState};
+    use strata_primitives::l1::BitcoinTxid;
+    use zkaleido::{Proof, PublicValues, VerifyingKey};
+
+    use super::*;
+
+    fn gen_mock_operator_claim_unlock(deposit_idx: u32, operator_idx: u32) -> OperatorClaimUnlock {
+        OperatorClaimUnlock {
+            withdrawal_txid: BitcoinTxid::new(&Txid::all_zeros()),
+            deposit_txid: BitcoinTxid::new(&Txid::all_zeros()),
+            deposit_idx,
+            operator_idx,
+        }
+    }
+
+    fn gen_mock_genesis_commitment() -> StateRefAttestation {
+        StateRefAttestation::new(
+            StateReference::new([0u8; 32]),
+            MohoStateCommitment::new([0u8; 32]),
+        )
+    }
+
+    fn gen_mock_bridge_proof_input(
+        genesis_ref: &StateRefAttestation,
+        operator_claim_payload: Vec<u8>,
+        claim_entry_id: u32,
+        header_verification_state: HeaderVerificationState,
+    ) -> BridgeProofInput {
+        let anchor_state = AnchorState {
+            chain_view: ChainViewState {
+                pow_state: header_verification_state,
+            },
+            sections: vec![],
+        };
+
+        let inner_state_commitment = AsmStfProgram::compute_state_commitment(&anchor_state);
+
+        let export_entry = ExportEntry::new(claim_entry_id, operator_claim_payload);
+        let bridge_container = ExportContainer::new(BRIDGE_ID, vec![], vec![export_entry]);
+        let export_state = ExportState::new(vec![bridge_container]);
+
+        let next_vk = VerifyingKey::default();
+        let moho_state = MohoState::new(inner_state_commitment, next_vk, export_state);
+
+        let moho_state_commitment = moho_state.compute_commitment();
+
+        let proven_ref =
+            StateRefAttestation::new(StateReference::new([1u8; 32]), moho_state_commitment);
+
+        let moho_attestation = MohoAttestation::new(genesis_ref.clone(), proven_ref);
+
+        let moho_attestation_bytes = borsh::to_vec(&moho_attestation).unwrap();
+        let public_values = PublicValues::new(moho_attestation_bytes);
+        let proof_receipt = ProofReceipt::new(Proof::default(), public_values);
+
+        BridgeProofInput {
+            moho_recursive_proof: proof_receipt,
+            moho_state,
+            anchor_state,
+            claim_entry_id,
+        }
+    }
+
+    #[test]
+    fn test_process_bridge_proof() {
+        let deposit_idx: u32 = 42;
+        let operator_idx: u32 = 7;
+        let claim_entry_id: u32 = 1;
+
+        let operator_claim = gen_mock_operator_claim_unlock(deposit_idx, operator_idx);
+        let operator_claim_payload = borsh::to_vec(&operator_claim).unwrap();
+        let genesis_ref = gen_mock_genesis_commitment();
+
+        let mut header_verification_state = HeaderVerificationState::default();
+        header_verification_state.total_accumulated_pow =
+            BtcWork::from(Work::from_le_bytes([42u8; 32]));
+        let expected_tip_total_work: Work =
+            header_verification_state.total_accumulated_pow.clone().into();
+
+        let input = gen_mock_bridge_proof_input(
+            &genesis_ref,
+            operator_claim_payload,
+            claim_entry_id,
+            header_verification_state,
+        );
+
+        let output = process_bridge_proof(&input, &genesis_ref);
+
+        assert_eq!(output.deposit_idx, deposit_idx);
+        assert_eq!(output.operator_idx, operator_idx);
+        assert_eq!(output.tip_total_work, expected_tip_total_work);
     }
 }
