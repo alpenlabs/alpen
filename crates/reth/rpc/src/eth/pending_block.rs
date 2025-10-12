@@ -3,15 +3,14 @@
 use std::sync::Arc;
 
 use alloy_eips::BlockNumberOrTag;
-use reth_primitives_traits::block::RecoveredBlock;
-use reth_provider::{
-    BlockReader, BlockReaderIdExt, ProviderBlock, ProviderReceipt, ReceiptProvider,
-};
 use reth_rpc_eth_api::{
     helpers::{pending_block::PendingEnvBuilder, LoadPendingBlock},
     FromEvmError, RpcConvert, RpcNodeCore,
 };
-use reth_rpc_eth_types::{builder::config::PendingBlockKind, EthApiError, PendingBlock};
+use reth_rpc_eth_types::{
+    block::BlockAndReceipts, builder::config::PendingBlockKind, EthApiError, PendingBlock,
+};
+use reth_storage_api::{BlockReader, BlockReaderIdExt, ReceiptProvider};
 
 use crate::AlpenEthApi;
 
@@ -39,13 +38,7 @@ where
     /// Returns the locally built pending block
     async fn local_pending_block(
         &self,
-    ) -> Result<
-        Option<(
-            Arc<RecoveredBlock<ProviderBlock<Self::Provider>>>,
-            Arc<Vec<ProviderReceipt<Self::Provider>>>,
-        )>,
-        Self::Error,
-    > {
+    ) -> Result<Option<BlockAndReceipts<Self::Primitives>>, Self::Error> {
         // See: <https://github.com/ethereum-optimism/op-geth/blob/f2e69450c6eec9c35d56af91389a1c47737206ca/miner/worker.go#L367-L375>
         let latest = self
             .provider()
@@ -62,6 +55,9 @@ where
             .receipts_by_block(block_id)?
             .ok_or(EthApiError::ReceiptsNotFound(block_id.into()))?;
 
-        Ok(Some((Arc::new(block), Arc::new(receipts))))
+        Ok(Some(BlockAndReceipts {
+            block: Arc::new(block),
+            receipts: Arc::new(receipts),
+        }))
     }
 }
