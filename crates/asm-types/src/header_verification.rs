@@ -113,7 +113,7 @@ pub struct HeaderVerificationState {
     block_timestamp_history: TimestampStore,
 
     /// Total accumulated proof of work
-    total_accumulated_pow: BtcWork,
+    pub total_accumulated_pow: BtcWork,
 }
 
 impl HeaderVerificationState {

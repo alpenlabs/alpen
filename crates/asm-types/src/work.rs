@@ -19,6 +19,12 @@ impl From<Work> for BtcWork {
     }
 }
 
+impl From<BtcWork> for Work {
+    fn from(btc_work: BtcWork) -> Self {
+        btc_work.0
+    }
+}
+
 impl AddAssign for BtcWork {
     fn add_assign(&mut self, rhs: Self) {
         self.0 = self.0 + rhs.0;

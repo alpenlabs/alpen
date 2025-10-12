@@ -1,74 +1,89 @@
-use moho_types::{MerkleProof, MohoAttestation, MohoState};
+use bitcoin::Work;
+use moho_types::{MohoAttestation, MohoState, StateRefAttestation};
+use strata_asm_common::AnchorState;
+use strata_asm_moho_program_impl::{AsmStfProgram, MohoProgram};
 use strata_asm_proto_bridge_v1::OperatorClaimUnlock;
+use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
+use strata_primitives::proof::RollupVerifyingKey;
+use zkaleido::ProofReceipt;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct BridgeProofPublicOutput {
-    pub tip_total_work: u64,
+    pub tip_total_work: Work,
     pub deposit_idx: u32,
     pub operator_idx: u32,
 }
 
-pub(crate) type Groth16Proof = Vec<u8>;
-const BRIGE_ID: u16 = 1;
+const BRIDGE_ID: u16 = 0;
+const MOHO_VK: RollupVerifyingKey = RollupVerifyingKey::NativeVerifyingKey;
 
 #[derive(Debug)]
 pub struct BridgeProofInput {
+    pub moho_recursive_proof: ProofReceipt,
     pub moho_state: MohoState,
-    pub moho_recursive_proof: Groth16Proof,
-    pub claim: OperatorClaimUnlock,
-    pub claim_inclusion_proof: MerkleProof,
+    pub anchor_state: AnchorState,
+    pub claim_entry_id: u32,
 }
 
-pub fn process_bridge_proof(input: BridgeProofInput) -> BridgeProofPublicOutput {
-    let moho_attestation = verify_and_extract_public_params(input.moho_recursive_proof);
+pub fn process_bridge_proof(
+    input: &BridgeProofInput,
+    genesis_moho: &StateRefAttestation,
+) -> BridgeProofPublicOutput {
+    let proof = &input.moho_recursive_proof;
+
+    // Verify the recursive Moho proof and reconstruct its public parameters
+    verify_rollup_groth16_proof_receipt(proof, &MOHO_VK).expect("Failed to verify groth16 proof");
+
+    let moho_attestation = borsh::from_slice::<MohoAttestation>(proof.public_values().as_bytes())
+        .expect("Failed to decode public params");
+
+    // Ensure the proof chain starts from the canonical genesis state
+    assert_eq!(moho_attestation.genesis(), genesis_moho, "Genesis mismatch");
+
+    // Verify that the provided Moho state matches the committed attestation
     assert_eq!(
         &input.moho_state.compute_commitment(),
-        moho_attestation.proven().commitment()
+        moho_attestation.proven().commitment(),
+        "State commitment mismatch"
     );
 
-    // TODO: assert
+    // Locate and extract the operator claim from the bridge sub-protocol export logs
     let export_state = input.moho_state.export_state();
-    let _bridge_container = export_state
+
+    let bridge_container = export_state
         .containers()
         .iter()
-        .find(|x| x.container_id() == BRIGE_ID)
-        .expect("Could not find bridge container in moho state");
+        .find(|x| x.container_id() == BRIDGE_ID)
+        .expect("Bridge container not found in moho state");
 
-    // TODO: assert claim in bridge_container
+    let export_entry = bridge_container
+        .entries()
+        .iter()
+        .find(|x| x.entry_id() == input.claim_entry_id)
+        .expect("Bridge entry not found in container");
+
+    let operator_claim = borsh::from_slice::<OperatorClaimUnlock>(export_entry.payload())
+        .expect("Failed to deserialize OperatorClaimUnlock");
+
+    // Verify the anchor state commitment matches Moho's inner state
+    assert_eq!(
+        input.moho_state.inner_state(),
+        AsmStfProgram::compute_state_commitment(&input.anchor_state),
+        "Inner state commitment mismatch"
+    );
+
+    // Extract the total accumulated proof-of-work
+    let tip_total_work = input
+        .anchor_state
+        .chain_view
+        .pow_state
+        .total_accumulated_pow
+        .clone()
+        .into();
 
     BridgeProofPublicOutput {
-        deposit_idx: input.claim.deposit_idx,
-        operator_idx: input.claim.operator_idx,
-        tip_total_work: 0,
-    }
-}
-
-fn verify_and_extract_public_params(proof: Groth16Proof) -> MohoAttestation {
-    get_mock_moho_attestation()
-}
-
-fn get_mock_moho_attestation() -> MohoAttestation {
-    todo!()
-}
-
-fn get_mock_claim() -> OperatorClaimUnlock {
-    todo!()
-}
-
-fn get_mock_bridge_proof_input() -> BridgeProofInput {
-    todo!()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn public_params_resolves_bridge_input() {
-        let input = get_mock_bridge_proof_input();
-        let output = process_bridge_proof(input);
-
-        assert_eq!(output.deposit_idx, input.claim.deposit_idx);
-        assert_eq!(output.operator_idx, input.claim.operator_idx);
+        deposit_idx: operator_claim.deposit_idx,
+        operator_idx: operator_claim.operator_idx,
+        tip_total_work,
     }
 }

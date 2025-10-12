@@ -7,5 +7,12 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+bitcoin.workspace = true
+borsh.workspace = true
 moho-types.workspace = true
+strata-asm-common.workspace = true
+strata-asm-moho-program-impl.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
+strata-crypto.workspace = true
+strata-primitives.workspace = true
+zkaleido.workspace = true
