@@ -48,6 +48,7 @@ members = [
   "crates/proof-impl/checkpoint",
   "crates/proof-impl/cl-stf",
   "crates/proof-impl/evm-ee-stf",
+  "crates/proof-impl/glock-bridge-proof",
   "crates/zkvm/hosts",
   "crates/reth/chainspec",
   "crates/reth/db",
@@ -175,6 +176,7 @@ strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
+strata-proofimpl-glock-bridge = { path = "crates/proof-impl/glock-bridge-proof" }
 strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
 strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-types = { path = "crates/rpc/types" }

@@ -15134,6 +15134,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-glock-bridge"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "moho-types",
+ "strata-asm-proto-bridge-v1",
+]
+
+[[package]]
 name = "strata-prover-client"
 version = "0.3.0-alpha.1"
 dependencies = [

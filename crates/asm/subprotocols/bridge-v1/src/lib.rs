@@ -28,5 +28,8 @@ mod subprotocol;
 
 pub use errors::*;
 pub use msgs::BridgeIncomingMsg;
-pub use state::{BridgeV1Config, BridgeV1State, withdrawal::WithdrawOutput};
+pub use state::{
+    BridgeV1Config, BridgeV1State,
+    withdrawal::{OperatorClaimUnlock, WithdrawOutput},
+};
 pub use subprotocol::BridgeV1Subproto;

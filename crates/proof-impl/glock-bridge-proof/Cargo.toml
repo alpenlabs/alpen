@@ -1,0 +1,11 @@
+[package]
+edition = "2021"
+name = "strata-proofimpl-glock-bridge"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+moho-types.workspace = true
+strata-asm-proto-bridge-v1.workspace = true
