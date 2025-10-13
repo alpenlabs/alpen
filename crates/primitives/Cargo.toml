@@ -7,6 +7,11 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-btc-types.workspace = true
+strata-crypto.workspace = true
+strata-identifiers = { workspace = true, features = ["bitcoin"] }
+strata-l1-txfmt.workspace = true
+
 arbitrary.workspace = true
 bincode.workspace = true
 bitcoin = { workspace = true, features = ["serde", "rand-std"] }
@@ -19,10 +24,6 @@ bitcoin-bosd = { workspace = true, features = [
 borsh.workspace = true
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
-strata-btc-types.workspace = true
-strata-crypto.workspace = true
-strata-identifiers = { workspace = true, features = ["bitcoin"] }
-strata-l1-txfmt.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 

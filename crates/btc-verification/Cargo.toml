@@ -4,17 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+strata-btc-types.workspace = true
+strata-identifiers = { workspace = true, features = ["bitcoin"] }
+
 arbitrary.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
 serde.workspace = true
-strata-btc-types.workspace = true
-strata-identifiers = { workspace = true, features = ["bitcoin"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-rand.workspace = true
 strata-test-utils-btc.workspace = true
+
+rand.workspace = true
 
 [lints]
 workspace = true
