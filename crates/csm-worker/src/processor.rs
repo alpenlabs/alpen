@@ -27,7 +27,7 @@ pub(crate) fn process_log(
             return process_checkpoint_log(state, &ckpt_upd, asm_block);
         }
         Some(log_type) => {
-            warn!(log_type, "not yet supported");
+            debug!(log_type, "log type not processed by CSM");
         }
         None => {
             warn!("logs without a type ID?");
