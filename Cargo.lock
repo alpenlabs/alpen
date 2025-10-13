@@ -13717,7 +13717,10 @@ name = "strata-csm-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitcoin",
+ "borsh",
  "serde",
+ "serde_json",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-worker",
@@ -13725,10 +13728,13 @@ dependencies = [
  "strata-common",
  "strata-csm-types",
  "strata-db",
+ "strata-db-store-sled",
  "strata-primitives",
  "strata-service",
  "strata-status",
  "strata-storage",
+ "strata-test-utils",
+ "threadpool",
  "tracing",
 ]
 

@@ -181,3 +181,318 @@ fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
         sidecar,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use bitcoin::absolute::Height;
+    use borsh::to_vec;
+    use strata_asm_common::AsmLogEntry;
+    use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+    use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_primitives::{
+        buf::Buf32,
+        epoch::EpochCommitment,
+        l1::BitcoinTxid,
+        l2::{L2BlockCommitment, L2BlockId},
+        prelude::*,
+    };
+    use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
+    use strata_status::StatusChannel;
+    use strata_storage::create_node_storage;
+    use strata_test_utils::ArbitraryGenerator;
+
+    use super::process_log;
+    use crate::state::CsmWorkerState;
+
+    /// Helper to create a test CSM worker state
+    fn create_test_state() -> (CsmWorkerState, Arc<strata_storage::NodeStorage>) {
+        // rollup params (taken from a fntests run).
+        // Don't we have some util fn for such?
+        let params_json = r#"{
+            "magic_bytes": [65, 76, 80, 78],
+            "block_time": 1000,
+            "da_tag": "strata-da",
+            "checkpoint_tag": "strata-ckpt",
+            "cred_rule": {
+                "schnorr_key": "c18d86b16f91b01a6599c3a290c1f255784f89dfe31ea65f64c4bdbd01564873"
+            },
+            "genesis_l1_view": {
+                "blk": {
+                    "height": 100,
+                    "blkid": "a99c81cc79d156fda27bf222537ce1de784921a52730df60ead99404b43f622a"
+                },
+                "next_target": 545259519,
+                "epoch_start_timestamp": 1296688602,
+                "last_11_timestamps": [
+                    1760287556, 1760287556, 1760287557, 1760287557, 1760287557,
+                    1760287557, 1760287557, 1760287557, 1760287558, 1760287558, 1760287558
+                ]
+            },
+            "operator_config": {
+                "static": [
+                    {
+                        "signing_pk": "6e31167a21a20186c270091f3705ba9ba0f9649af9281a4331962a2f02f0b382",
+                        "wallet_pk": "59df7b48d6adbb11fb9f8e4d4a296df83b3edcff6573e80b6c77cdcc4a729ecc"
+                    },
+                    {
+                        "signing_pk": "9ac5088dcf5dea3593e6095250875c89a0138b3e027f615d782be2080a5e4bac",
+                        "wallet_pk": "f86435262dde652b3aef97a4a8cc9ae19aa5da13159e778da0fbceb3a3adb923"
+                    }
+                ]
+            },
+            "evm_genesis_block_hash": "46c0dc60fb131be4ccc55306a345fcc20e44233324950f978ba5f185aa2af4dc",
+            "evm_genesis_block_state_root": "351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
+            "l1_reorg_safe_depth": 4,
+            "target_l2_batch_size": 64,
+            "max_address_length": 20,
+            "deposit_amount": 1000000000,
+            "rollup_vk": "native",
+            "dispatch_assignment_dur": 64,
+            "proof_publish_mode": {
+                "timeout": 1
+            },
+            "max_deposits_in_block": 16,
+            "network": "signet"
+        }"#;
+
+        let rollup_params: RollupParams =
+            serde_json::from_str(params_json).expect("Failed to parse test params");
+
+        let params = Params {
+            rollup: rollup_params,
+            run: SyncParams {
+                l1_follow_distance: 10,
+                client_checkpoint_interval: 100,
+                l2_blocks_fetch_limit: 1000,
+            },
+        };
+        let params = Arc::new(params);
+
+        // Create an in-memory database for testing
+        let db = get_test_sled_backend();
+        let pool = threadpool::ThreadPool::new(4);
+
+        let storage = Arc::new(create_node_storage(db, pool).expect("Failed to create storage"));
+
+        // Initialize with empty client state
+        let initial_state = ClientState::new(None, None);
+        let initial_block = L1BlockCommitment::new(Height::ZERO, L1BlockId::default());
+
+        storage
+            .client_state()
+            .put_update_blocking(
+                &initial_block,
+                ClientUpdateOutput::new(initial_state.clone(), vec![]),
+            )
+            .expect("Failed to initialize client state");
+
+        // Create status channel with proper arguments
+        let mut arbgen = ArbitraryGenerator::new();
+        let status_channel = StatusChannel::new(
+            arbgen.generate(),
+            arbgen.generate(),
+            arbgen.generate(),
+            None,
+        );
+
+        let state =
+            CsmWorkerState::new(params.clone(), storage.clone(), status_channel.clone()).unwrap();
+
+        (state, storage)
+    }
+
+    /// Helper to create an unknown log type entry
+    fn create_unknown_log_type() -> AsmLogEntry {
+        AsmLogEntry::from_msg(999, vec![1, 2, 3, 4]).expect("Failed to create log")
+    }
+
+    /// Helper to create a log entry without a type
+    fn create_typeless_log() -> AsmLogEntry {
+        AsmLogEntry::from_raw(vec![5, 6, 7, 8])
+    }
+
+    #[test]
+    fn test_process_log_with_unknown_log_type() {
+        let (mut state, _) = create_test_state();
+        let asm_block =
+            L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
+
+        let log = create_unknown_log_type();
+
+        // Should succeed but do nothing
+        let result = process_log(&mut state, &log, &asm_block);
+        assert!(result.is_ok(), "process_log should handle unknown types");
+
+        // State should not be updated
+        assert_eq!(state.last_processed_epoch, None);
+    }
+
+    #[test]
+    fn test_process_log_with_no_log_type() {
+        let (mut state, _) = create_test_state();
+        let asm_block =
+            L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
+
+        let log = create_typeless_log();
+
+        // Should succeed but do nothing
+        let result = process_log(&mut state, &log, &asm_block);
+        assert!(result.is_ok(), "process_log should handle typeless logs");
+
+        // State should not be updated
+        assert_eq!(state.last_processed_epoch, None);
+    }
+
+    #[test]
+    fn test_process_log_with_invalid_checkpoint_data() {
+        let (mut state, _) = create_test_state();
+        let asm_block =
+            L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
+        state.last_asm_block = Some(asm_block);
+
+        // Create a log with checkpoint type but invalid data
+        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, vec![1, 2, 3])
+            .expect("Failed to create log");
+
+        // Should fail with deserialization error
+        let result = process_log(&mut state, &invalid_log, &asm_block);
+        assert!(
+            result.is_err(),
+            "process_log should fail with invalid checkpoint data"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to deserialize CheckpointUpdate"),
+            "Error should mention deserialization failure"
+        );
+    }
+
+    #[test]
+    fn test_process_sequential_checkpoint_logs_happy_path() {
+        let (mut state, storage) = create_test_state();
+
+        // Create 3 sequential checkpoints with increasing epochs
+        let mut arbgen = ArbitraryGenerator::new();
+
+        for epoch in 1u64..=3u64 {
+            // Create L1 block commitment for this checkpoint
+            let asm_block = L1BlockCommitment::new(
+                Height::from_consensus(100 + epoch as u32).unwrap(),
+                arbgen.generate(),
+            );
+            state.last_asm_block = Some(asm_block);
+
+            // Create L2 block range
+            let l2_start = L2BlockCommitment::new(
+                (epoch - 1) * 10,
+                L2BlockId::from(Buf32::from([epoch as u8; 32])),
+            );
+            let l2_end = L2BlockCommitment::new(
+                epoch * 10,
+                L2BlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
+            );
+
+            // Create L1 block range
+            let l1_start = L1BlockCommitment::new(
+                Height::from_consensus(90 + epoch as u32 - 1).unwrap(),
+                arbgen.generate(),
+            );
+            let l1_end = L1BlockCommitment::new(
+                Height::from_consensus(90 + epoch as u32).unwrap(),
+                arbgen.generate(),
+            );
+
+            // Create batch info
+            let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (l2_start, l2_end));
+
+            // Create epoch commitment
+            let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
+
+            // Create chainstate transition
+            let chainstate_transition = ChainstateRootTransition {
+                pre_state_root: Buf32::from([0u8; 32]),
+                post_state_root: Buf32::from([epoch as u8; 32]),
+            };
+
+            // Create checkpoint txid
+            let checkpoint_txid: BitcoinTxid = arbgen.generate();
+
+            // Create CheckpointUpdate
+            let checkpoint_update = CheckpointUpdate::new(
+                epoch_commitment,
+                batch_info,
+                chainstate_transition,
+                checkpoint_txid,
+            );
+
+            // Serialize to bytes using borsh
+            let checkpoint_bytes =
+                to_vec(&checkpoint_update).expect("Failed to serialize checkpoint");
+
+            // Create log entry
+            let log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, checkpoint_bytes)
+                .expect("Failed to create log");
+
+            // Process the log
+            let result = process_log(&mut state, &log, &asm_block);
+            assert!(
+                result.is_ok(),
+                "process_log should succeed for epoch {}: {:?}",
+                epoch,
+                result
+            );
+
+            // Verify state was updated
+            assert_eq!(
+                state.last_processed_epoch,
+                Some(epoch),
+                "Last processed epoch should be updated to {}",
+                epoch
+            );
+
+            // Verify checkpoint was stored in database
+            let stored_checkpoint = storage
+                .checkpoint()
+                .get_checkpoint_blocking(epoch)
+                .expect("Failed to query checkpoint database");
+            assert!(
+                stored_checkpoint.is_some(),
+                "Checkpoint for epoch {} should be stored in database",
+                epoch
+            );
+
+            // Verify client state was updated
+            let current_client_state = state.cur_state.as_ref();
+            let last_checkpoint = current_client_state.get_last_checkpoint();
+            assert!(
+                last_checkpoint.is_some(),
+                "Client state should have a last checkpoint after epoch {}",
+                epoch
+            );
+            assert_eq!(
+                last_checkpoint.unwrap().batch_info.epoch(),
+                epoch,
+                "Last checkpoint in client state should be for epoch {}",
+                epoch
+            );
+        }
+
+        // After processing 3 checkpoints, verify we have all of them in the database
+        for epoch in 1u64..=3u64 {
+            let stored_checkpoint = storage
+                .checkpoint()
+                .get_checkpoint_blocking(epoch)
+                .expect("Failed to query checkpoint database");
+            assert!(
+                stored_checkpoint.is_some(),
+                "Checkpoint for epoch {} should still be in database",
+                epoch
+            );
+        }
+    }
+}

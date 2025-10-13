@@ -168,12 +168,9 @@ fn spawn_csm_listener(
         latest_block
     };
 
-    // Fetch historical ASM states starting from the specified block
+    // Fetch historical ASM states starting from the next height.
     let max_historical_blocks = 1000;
-    let nh =         // Increase the last verified block number by 1 and set the new block hash
-        Height::from_consensus(
-            from_block.height().to_consensus_u32() + 1,
-        )
+    let nh = Height::from_consensus(from_block.height().to_consensus_u32() + 1)
         .expect("height + 1 should be valid");
     let historical_states = storage.asm().get_states_from(
         L1BlockCommitment::new(nh, Default::default()),
