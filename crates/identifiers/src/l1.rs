@@ -8,9 +8,9 @@ use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{buf::Buf32, hash::sha256d};
 
-// Re-export bitcoin types for convenience
+// Re-export bitcoin types for internal use
 #[cfg(feature = "bitcoin")]
-pub use bitcoin::{absolute, BlockHash};
+pub(crate) use bitcoin::{absolute, BlockHash};
 
 /// The bitcoin block height
 pub type BitcoinBlockHeight = u64;
