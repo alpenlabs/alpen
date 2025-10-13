@@ -47,7 +47,6 @@ impl AsmStateManager {
         from_block: L1BlockCommitment,
         max_count: usize,
     ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>> {
-        self.ops
-            .get_asm_states_from_blocking(from_block, max_count)
+        self.ops.get_asm_states_from_blocking(from_block, max_count)
     }
 }

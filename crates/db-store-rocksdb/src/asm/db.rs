@@ -87,7 +87,10 @@ impl AsmDatabase for AsmDb {
         self.db
             .with_optimistic_txn(
                 TransactionRetry::Count(self.ops.retry_count),
-                |txn| -> Result<Vec<(strata_primitives::prelude::L1BlockCommitment, AsmState)>, anyhow::Error> {
+                |txn| -> Result<
+                    Vec<(strata_primitives::prelude::L1BlockCommitment, AsmState)>,
+                    anyhow::Error,
+                > {
                     let mut result = Vec::new();
 
                     // Create iterator for states
