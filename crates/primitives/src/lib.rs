@@ -10,10 +10,25 @@ pub use strata_identifiers::{
     L1BlockId, L1Height, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId,
 };
 
-// Re-export identifier modules for convenience
-pub use strata_identifiers::{buf, epoch, hash};
-pub use strata_identifiers::exec as evm_exec;
-pub use strata_identifiers::ol as l2;
+// Create module aliases that re-export from identifiers
+pub mod buf {
+    pub use strata_identifiers::{Buf20, Buf32, Buf64};
+}
+pub mod epoch {
+    pub use strata_identifiers::EpochCommitment;
+}
+pub mod hash {
+    pub use strata_identifiers::hash::*;
+}
+pub mod evm_exec {
+    pub use strata_identifiers::{create_evm_extra_payload, EvmEeBlockCommitment, ExecBlockCommitment, EVMExtraPayload};
+}
+pub mod l2 {
+    pub use strata_identifiers::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId};
+}
+pub mod ol {
+    pub use strata_identifiers::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId};
+}
 
 // Re-export crypto types
 pub mod crypto {

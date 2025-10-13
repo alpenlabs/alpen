@@ -25,6 +25,7 @@ zkaleido-sp1-groth16-verifier.workspace = true
 k256 = { version = "0.13.4", features = ["schnorr"] }
 
 [dev-dependencies]
+bitcoin.workspace = true
 rand.workspace = true
 strata-test-utils.workspace = true
 

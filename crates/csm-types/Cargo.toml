@@ -7,14 +7,14 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-btc-types.workspace = true
 strata-checkpoint-types.workspace = true
-strata-l1-txfmt.workspace = true
+strata-identifiers.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
 const-hex = "1.14"
-num_enum.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
