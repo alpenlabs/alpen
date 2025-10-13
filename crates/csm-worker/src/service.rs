@@ -4,7 +4,7 @@ use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{processor::process_logs, state::CsmWorkerState, status::CsmWorkerStatus};
+use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStatus};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -59,7 +59,7 @@ impl SyncService for CsmWorkerService {
 
         // Process each checkpoint update log
         for log in logs {
-            if let Err(e) = process_logs(state, log, &asm_block) {
+            if let Err(e) = process_log(state, log, &asm_block) {
                 error!(%asm_block, err = %e, "Failed to process ASM log");
                 // Continue processing other logs instead of failing completely
             }

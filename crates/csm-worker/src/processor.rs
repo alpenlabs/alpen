@@ -13,13 +13,19 @@ use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
 
-pub(crate) fn process_logs(
+pub(crate) fn process_log(
     state: &mut CsmWorkerState,
     log: &AsmLogEntry,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
     match log.ty() {
-        Some(CHECKPOINT_UPDATE_LOG_TYPE) => return process_checkpoint_log(state, log, asm_block),
+        Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
+            let ckpt_upd = log
+                .try_into_log()
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
+
+            return process_checkpoint_log(state, &ckpt_upd, asm_block);
+        }
         Some(log_type) => {
             warn!(log_type, "not yet supported");
         }
@@ -33,17 +39,9 @@ pub(crate) fn process_logs(
 /// Process a single ASM log entry, extracting and handling checkpoint updates.
 fn process_checkpoint_log(
     state: &mut CsmWorkerState,
-    log: &AsmLogEntry,
+    checkpoint_update: &CheckpointUpdate,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
-    // Assert that the dispatch is fine.
-    assert_eq!(log.ty(), Some(CHECKPOINT_UPDATE_LOG_TYPE));
-
-    // Deserialize the checkpoint update using the AsmLog trait
-    let checkpoint_update: CheckpointUpdate = log
-        .try_into_log()
-        .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
-
     let epoch = checkpoint_update.batch_info.epoch();
 
     info!(
@@ -75,7 +73,7 @@ fn process_checkpoint_log(
 
     // Create sync action to update checkpoint entry in database
     let sync_action = SyncAction::UpdateCheckpointInclusion {
-        checkpoint: create_checkpoint_from_update(&checkpoint_update),
+        checkpoint: create_checkpoint_from_update(checkpoint_update),
         l1_reference,
     };
 
@@ -97,7 +95,15 @@ fn update_client_state_with_checkpoint(
     // Get the current client state
     let cur_state = state.cur_state.as_ref();
 
-    // Determine if this checkpoint should be the last finalized or just recent
+    // Determine if this checkpoint should be the last finalized or just recent.
+
+    // TODO: This comes from the legacy design currently and will be simplified in the future.
+    // Currently, `last_finalized` is the buried checkpoint and recent and the last be observed (the
+    // checkpoint that makes the the finalized one to be buried).
+
+    // TODO: it's better to store `L1Checkpoint` separately, move the logic of "recent/finalized"
+    // to the DbManager (that can actually fetches actual persisted data and doesn't rely on the
+    // current state).
     let (last_finalized, recent) = match cur_state.get_last_checkpoint() {
         Some(existing) => {
             // If the new checkpoint is for a later epoch, it becomes recent
