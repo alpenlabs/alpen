@@ -13364,10 +13364,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-state-types"
-version = "0.1.0"
-
-[[package]]
 name = "strata-asm-stf"
 version = "0.1.0"
 dependencies = [
