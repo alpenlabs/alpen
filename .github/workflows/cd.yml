@@ -31,7 +31,7 @@ jobs:
       id-token: write
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'development') }}
+    # environment: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'development') }}
     strategy:
       matrix:
         # The names of the programs must match the names of the directories that we
@@ -131,75 +131,75 @@ jobs:
             fi
           fi
 
-  update-helm-values:
-    name: Update Helm Values
-    needs: [build-and-push]
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'development') }}
-    steps:
-      - name: Set up SSH for private repo access
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
-        with:
-          ssh-private-key: ${{ secrets.DEPLOYMENTS_REPO_WRITE }}
+  # update-helm-values:
+  #   name: Update Helm Values
+  #   needs: [build-and-push]
+  #   runs-on: ubuntu-latest
+  #   environment: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'development') }}
+  #   steps:
+  #     - name: Set up SSH for private repo access
+  #       uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+  #       with:
+  #         ssh-private-key: ${{ secrets.DEPLOYMENTS_REPO_WRITE }}
 
-      - name: Clone deployments repo (specific branch)
-        env:
-          BRANCH_OF_DEPLOYMENT_REPO: ${{ vars.BRANCH_OF_DEPLOYMENT_REPO }}
-        run: |
-          git clone --depth=1 --branch "$BRANCH_OF_DEPLOYMENT_REPO" git@github.com:alpenlabs/deployments.git deployments
-          cd deployments || exit
-          git checkout "$BRANCH_OF_DEPLOYMENT_REPO"
+  #     - name: Clone deployments repo (specific branch)
+  #       env:
+  #         BRANCH_OF_DEPLOYMENT_REPO: ${{ vars.BRANCH_OF_DEPLOYMENT_REPO }}
+  #       run: |
+  #         git clone --depth=1 --branch "$BRANCH_OF_DEPLOYMENT_REPO" git@github.com:alpenlabs/deployments.git deployments
+  #         cd deployments || exit
+  #         git checkout "$BRANCH_OF_DEPLOYMENT_REPO"
 
-      - name: Install yq
-        run: |
-          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
-          sudo chmod +x /usr/local/bin/yq
+  #     - name: Install yq
+  #       run: |
+  #         sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+  #         sudo chmod +x /usr/local/bin/yq
 
-      - name: Update Docker image tag in Helm values
-        env:
-          SHORT_TAG: ${{ github.sha }}
-          CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
-          SP1_VALUE: ${{ needs.build-and-push.outputs.sp1_value || 'default_value' }}
-        run: |
-          # Sanitize SHORT_TAG
-          SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
-          SHORT_TAG="${SHORT_TAG:0:7}"
+  #     - name: Update Docker image tag in Helm values
+  #       env:
+  #         SHORT_TAG: ${{ github.sha }}
+  #         CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+  #         SP1_VALUE: ${{ needs.build-and-push.outputs.sp1_value || 'default_value' }}
+  #       run: |
+  #         # Sanitize SHORT_TAG
+  #         SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
+  #         SHORT_TAG="${SHORT_TAG:0:7}"
 
-          VALUES_FILE_NODES="deployments/clusters/${CLUSTER_NAME}/values/strata-nodes-values.yaml"
-          VALUES_FILE_PROVER="deployments/clusters/${CLUSTER_NAME}/values/strata-prover-values.yaml"
+  #         VALUES_FILE_NODES="deployments/clusters/${CLUSTER_NAME}/values/strata-nodes-values.yaml"
+  #         VALUES_FILE_PROVER="deployments/clusters/${CLUSTER_NAME}/values/strata-prover-values.yaml"
 
-          # update sequencer tags
-          yq eval -i ".client.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
-          yq eval -i ".reth.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
-          yq eval -i ".sequencerSigner.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
+  #         # update sequencer tags
+  #         yq eval -i ".client.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
+  #         yq eval -i ".reth.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
+  #         yq eval -i ".sequencerSigner.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
 
-          # update prover tags
-          yq eval -i ".proverClient.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_PROVER"
+  #         # update prover tags
+  #         yq eval -i ".proverClient.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_PROVER"
 
-          # update sp1 value in prover's and node's params.json
-          sed -i "s|\"sp1\": \"[a-f0-9]*\"|\"sp1\": \"${SP1_VALUE}\"|g" "$VALUES_FILE_NODES"
-          sed -i "s|\"sp1\": \"[a-f0-9]*\"|\"sp1\": \"${SP1_VALUE}\"|g" "$VALUES_FILE_PROVER"
+  #         # update sp1 value in prover's and node's params.json
+  #         sed -i "s|\"sp1\": \"[a-f0-9]*\"|\"sp1\": \"${SP1_VALUE}\"|g" "$VALUES_FILE_NODES"
+  #         sed -i "s|\"sp1\": \"[a-f0-9]*\"|\"sp1\": \"${SP1_VALUE}\"|g" "$VALUES_FILE_PROVER"
 
-      - name: Commit and push changes
-        env:
-          SHORT_TAG: ${{ github.sha }}
-          GH_ACTIONS_USER_NAME: ${{ vars.GH_ACTIONS_USER_NAME }}
-          CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
-          BRANCH_OF_DEPLOYMENT_REPO: ${{ vars.BRANCH_OF_DEPLOYMENT_REPO }}
-        run: |
-          SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
-          SHORT_TAG="${SHORT_TAG:0:7}"
+  #     - name: Commit and push changes
+  #       env:
+  #         SHORT_TAG: ${{ github.sha }}
+  #         GH_ACTIONS_USER_NAME: ${{ vars.GH_ACTIONS_USER_NAME }}
+  #         CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+  #         BRANCH_OF_DEPLOYMENT_REPO: ${{ vars.BRANCH_OF_DEPLOYMENT_REPO }}
+  #       run: |
+  #         SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
+  #         SHORT_TAG="${SHORT_TAG:0:7}"
 
-          cd deployments || exit
-          git config user.name "$GH_ACTIONS_USER_NAME"
-          git config user.email "$GH_ACTIONS_USER_NAME@alpenlabs.io"
+  #         cd deployments || exit
+  #         git config user.name "$GH_ACTIONS_USER_NAME"
+  #         git config user.email "$GH_ACTIONS_USER_NAME@alpenlabs.io"
 
-          # only if there is a change in any of the values file, commit and push
-          if git diff --quiet; then
-            echo "No changes to commit."
-          else
-            git add "clusters/$CLUSTER_NAME/values"
-            git commit -m "Update image tags to \"$SHORT_TAG\"."
-            git pull --rebase origin "$BRANCH_OF_DEPLOYMENT_REPO"
-            git push origin "$BRANCH_OF_DEPLOYMENT_REPO"
-          fi
+  #         # only if there is a change in any of the values file, commit and push
+  #         if git diff --quiet; then
+  #           echo "No changes to commit."
+  #         else
+  #           git add "clusters/$CLUSTER_NAME/values"
+  #           git commit -m "Update image tags to \"$SHORT_TAG\"."
+  #           git pull --rebase origin "$BRANCH_OF_DEPLOYMENT_REPO"
+  #           git push origin "$BRANCH_OF_DEPLOYMENT_REPO"
+  #         fi
