@@ -13,7 +13,6 @@
 //!
 //! - Native
 //! - SP1 (requires `sp1` feature enabled)
-//! - Risc0 (requires `risc0` feature enabled)
 
 use std::sync::Arc;
 

@@ -33,12 +33,7 @@ impl TaskTracker {
             vms.push(ProofZkVm::SP1);
         }
 
-        #[cfg(feature = "risc0")]
-        {
-            vms.push(ProofZkVm::Risc0);
-        }
-
-        #[cfg(all(not(feature = "risc0"), not(feature = "sp1")))]
+        #[cfg(not(feature = "sp1"))]
         {
             vms.push(ProofZkVm::Native);
         }
