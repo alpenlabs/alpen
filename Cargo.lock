@@ -14154,7 +14154,6 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
- "k256",
  "secp256k1 0.29.1",
  "serde",
  "strata-btc-types",
