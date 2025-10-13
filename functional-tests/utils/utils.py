@@ -661,13 +661,11 @@ def get_priv_keys(ctx, env=None):
     else:
         path = os.path.join(ctx.datadir_root, env, "_init")
 
-    print(path)
     priv_keys = []
     opkeys = sorted(
         filter(lambda file: file.startswith("opkey"), os.listdir(path)),
         key=lambda x: int("".join(filter(str.isdigit, x))),
     )
-    print(opkeys)
     for filename in opkeys:
         if not filename.startswith("op"):
             continue
