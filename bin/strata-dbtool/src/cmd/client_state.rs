@@ -1,8 +1,8 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_csm_types::ClientUpdateOutput;
 use strata_db::traits::{ClientStateDatabase, DatabaseBackend};
 use strata_primitives::l1::L1BlockCommitment;
-use strata_state::operation::ClientUpdateOutput;
 
 use crate::{
     cli::OutputFormat,

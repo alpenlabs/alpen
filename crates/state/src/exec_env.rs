@@ -3,7 +3,8 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::DepositIntent;
-use strata_primitives::{buf::Buf32, l1::payload::BlobSpec};
+use strata_csm_types::BlobSpec;
+use strata_primitives::buf::Buf32;
 
 use crate::{exec_update, forced_inclusion, state_queue::StateQueue};
 

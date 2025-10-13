@@ -18,6 +18,7 @@ use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
 use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
+use strata_csm_types::{ClientState, ClientUpdateOutput, L1Payload, PayloadDest, PayloadIntent};
 use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus};
 use strata_l1_txfmt::TagData;
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
@@ -26,10 +27,7 @@ use strata_primitives::{
     buf::Buf32,
     epoch::EpochCommitment,
     hash,
-    l1::{
-        payload::{L1Payload, PayloadDest, PayloadIntent},
-        L1BlockCommitment, L1BlockId,
-    },
+    l1::{L1BlockCommitment, L1BlockId},
     operator::OperatorIdx,
     params::Params,
 };
@@ -49,7 +47,6 @@ use strata_sequencer::{
     checkpoint::{verify_checkpoint_sig, CheckpointHandle},
     duty::{extractor::extract_duties, types::Duty},
 };
-use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::sync::{oneshot, Mutex};

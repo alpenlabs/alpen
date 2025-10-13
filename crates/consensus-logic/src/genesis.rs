@@ -1,5 +1,6 @@
 use strata_asm_types::HeaderVerificationState;
 use strata_bridge_types::OperatorTable;
+use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db::errors::DbError;
 use strata_ol_chain_types::{
     ExecSegment, L1Segment, L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader,
@@ -13,10 +14,8 @@ use strata_primitives::{
     params::{OperatorConfig, Params},
 };
 use strata_state::{
-    client_state::ClientState,
     exec_env::ExecEnvState,
     exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
-    operation::ClientUpdateOutput,
     prelude::*,
 };
 use strata_storage::{L2BlockManager, NodeStorage};

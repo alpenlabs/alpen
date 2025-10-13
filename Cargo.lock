@@ -13471,6 +13471,7 @@ dependencies = [
  "strata-asm-types",
  "strata-checkpoint-types",
  "strata-config",
+ "strata-csm-types",
  "strata-db",
  "strata-db-store-sled",
  "strata-l1-envelope-fmt",
@@ -13583,6 +13584,7 @@ dependencies = [
  "strata-common",
  "strata-config",
  "strata-consensus-logic",
+ "strata-csm-types",
  "strata-db",
  "strata-db-store-rocksdb",
  "strata-db-store-sled",
@@ -13660,6 +13662,7 @@ dependencies = [
  "strata-chaintsn",
  "strata-checkpoint-types",
  "strata-common",
+ "strata-csm-types",
  "strata-db",
  "strata-db-store-sled",
  "strata-eectl",
@@ -13692,6 +13695,22 @@ dependencies = [
  "strata-test-utils",
  "thiserror 2.0.16",
  "zkaleido",
+]
+
+[[package]]
+name = "strata-csm-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "const-hex",
+ "num_enum 0.7.4",
+ "serde",
+ "serde_json",
+ "strata-checkpoint-types",
+ "strata-l1-txfmt",
+ "strata-primitives",
+ "strata-test-utils",
 ]
 
 [[package]]
@@ -13743,6 +13762,7 @@ dependencies = [
  "serde_json",
  "strata-asm-types",
  "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
@@ -13763,6 +13783,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-db",
  "strata-db-tests",
  "strata-ol-chain-types",
@@ -13785,6 +13806,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-db",
  "strata-db-tests",
  "strata-ol-chain-types",
@@ -13803,6 +13825,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-db",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
@@ -13825,13 +13848,13 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-cli-common",
  "strata-consensus-logic",
+ "strata-csm-types",
  "strata-db",
  "strata-db-store-rocksdb",
  "strata-db-store-sled",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
- "strata-state",
  "tracing-subscriber 0.3.20",
 ]
 
@@ -13962,6 +13985,7 @@ dependencies = [
  "strata-btcio",
  "strata-checkpoint-types",
  "strata-crypto",
+ "strata-csm-types",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-ol-chainstate-types",
@@ -14057,7 +14081,6 @@ dependencies = [
  "digest 0.10.7",
  "hex",
  "k256",
- "num_enum 0.7.4",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
@@ -14224,12 +14247,12 @@ dependencies = [
  "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-common",
+ "strata-csm-types",
  "strata-db",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-rpc-types",
  "strata-sequencer",
- "strata-state",
  "zkaleido",
 ]
 
@@ -14244,10 +14267,10 @@ dependencies = [
  "serde_json",
  "strata-bridge-types",
  "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-db",
  "strata-ol-chain-types",
  "strata-primitives",
- "strata-state",
  "thiserror 2.0.16",
 ]
 
@@ -14272,6 +14295,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-common",
  "strata-consensus-logic",
+ "strata-csm-types",
  "strata-db",
  "strata-eectl",
  "strata-key-derivation",
@@ -14372,7 +14396,7 @@ dependencies = [
  "strata-asm-stf",
  "strata-asm-types",
  "strata-bridge-types",
- "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-primitives",
 ]
 
@@ -14381,10 +14405,10 @@ name = "strata-status"
 version = "0.3.0-alpha.1"
 dependencies = [
  "strata-bridge-types",
+ "strata-csm-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
- "strata-state",
  "thiserror 2.0.16",
  "tokio",
  "tracing",
@@ -14401,6 +14425,7 @@ dependencies = [
  "paste",
  "strata-asm-types",
  "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-db",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",

@@ -5,11 +5,9 @@ use bitcoin::{Address, Network};
 use bitcoind_async_client::{traits::Wallet, Client};
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
+use strata_csm_types::L1Status;
 use strata_evmexec::{engine::RpcExecEngineCtl, fetch_init_fork_choice_state, EngineRpcClient};
-use strata_primitives::{
-    l1::L1Status,
-    params::{Params, RollupParams, SyncParams},
-};
+use strata_primitives::params::{Params, RollupParams, SyncParams};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
