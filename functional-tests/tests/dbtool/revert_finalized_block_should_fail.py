@@ -2,7 +2,7 @@ import flexitest
 
 from envs import net_settings, testenv
 from mixins.dbtool_mixin import SequencerDbtoolMixin
-from utils.dbtool import send_tx
+from utils.dbtool import setup_revert_chainstate_test
 from utils.utils import ProverClientSettings
 
 
@@ -20,22 +20,8 @@ class RevertFinalizedBlockShouldFailTest(SequencerDbtoolMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        """Main test method"""
-        seq_waiter = self.create_strata_waiter(self.seqrpc)
-
-        # Wait for genesis and generate some initial blocks
-        seq_waiter.wait_until_genesis()
-
-        # Generate some transactions to create blocks
-        for _ in range(10):
-            send_tx(self.w3)
-
-        # Wait for epoch finalization to ensure we have some finalized blocks
-        seq_waiter.wait_until_epoch_finalized(1, timeout=30)
-
-        # Generate more blocks to have a longer chain
-        for _ in range(5):
-            send_tx(self.w3)
+        # Setup: generate blocks and finalize epoch
+        setup_revert_chainstate_test(self)
 
         # Stop services to ensure database is not being modified
         self.seq.stop()
