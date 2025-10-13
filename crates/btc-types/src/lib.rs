@@ -8,7 +8,6 @@ mod ops;
 mod params;
 pub mod payload;
 mod proof;
-mod status;
 mod tx;
 pub mod utils;
 mod utils_generate;
@@ -22,7 +21,6 @@ pub use inclusion_proof::*;
 pub use ops::*;
 pub use params::*;
 pub use proof::*;
-pub use status::*;
 pub use tx::*;
 pub use utils::*;
 

@@ -11,7 +11,6 @@ arbitrary.workspace = true
 bitcoin = { workspace = true, features = ["serde", "rand-std"], optional = true }
 bitcoin-bosd = { workspace = true, features = ["address"] }
 borsh.workspace = true
-const-hex = "1.14"
 digest.workspace = true
 hex.workspace = true
 num_enum.workspace = true

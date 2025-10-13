@@ -5,11 +5,15 @@
 
 // Re-export identifier types from strata-identifiers
 pub use strata_identifiers::{
-    buf, create_evm_extra_payload, epoch, exec as evm_exec, hash, impl_buf_wrapper,
-    l1 as l1_identifiers, ol, ol as l2, BitcoinBlockHeight, Buf20, Buf32, Buf64, CredRule,
+    create_evm_extra_payload, impl_buf_wrapper, BitcoinBlockHeight, Buf20, Buf32, Buf64, CredRule,
     EpochCommitment, EvmEeBlockCommitment, EVMExtraPayload, ExecBlockCommitment, L1BlockCommitment,
     L1BlockId, L1Height, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId,
 };
+
+// Re-export identifier modules for convenience
+pub use strata_identifiers::{buf, epoch, hash};
+pub use strata_identifiers::exec as evm_exec;
+pub use strata_identifiers::ol as l2;
 
 // Re-export crypto types
 pub mod crypto {
