@@ -1,6 +1,6 @@
 //! Global consensus parameters for the rollup.
 
-use bitcoin::{absolute, Amount, Network};
+use bitcoin::{Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_l1_txfmt::MagicBytes;
