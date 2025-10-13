@@ -14132,6 +14132,7 @@ dependencies = [
  "strata-asm-common",
  "strata-primitives",
  "strata-snark-acct-types",
+ "thiserror 2.0.16",
 ]
 
 [[package]]

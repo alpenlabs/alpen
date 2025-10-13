@@ -4,10 +4,19 @@ use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 /// The Orchestration Layer(OL) State.
 #[derive(Debug, Clone)]
 pub struct OLState {
+    /// The root of the accounts tree which is stored outside this toplevel state.
     accounts_root: Buf32,
+
+    /// The OL's view of L1.
     l1_view: L1View,
+
+    /// The current slot.
     cur_slot: u64,
+
+    /// The current epoch.
     cur_epoch: u64,
+
+    /// Total deposits into OL.
     total_btc_bridged: BitcoinAmount,
 }
 
@@ -54,8 +63,10 @@ impl OLState {
 pub struct L1View {
     /// Latest seen block id.
     block_id: Buf32,
+
     /// Latest seen block height.
     block_height: u64,
+
     /// Latest seen checkpoint corresponding to an epoch.
     recorded_epoch: EpochCommitment,
     // TODO: add witness root mmr

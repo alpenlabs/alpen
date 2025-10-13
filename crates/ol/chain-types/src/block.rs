@@ -57,16 +57,22 @@ impl SignedOLBlockHeader {
 pub struct OLBlockHeader {
     /// The timestamp the block was created at.
     timestamp: u64,
+
     /// Slot the block was created for.
     slot: Slot,
+
     /// Epoch the block was created in.
     epoch: Epoch,
+
     /// Parent block id.
-    parent_blk_id: OLBlockId,
+    parent_blkid: OLBlockId,
+
     /// Root of the block body.
     body_root: Buf32,
+
     /// Root of the block logs.
     logs_root: Buf32,
+
     /// The state root resulting after the block execution.
     state_root: Buf32,
 }
@@ -76,7 +82,7 @@ impl OLBlockHeader {
         timestamp: u64,
         slot: Slot,
         epoch: Epoch,
-        parent_blk_id: OLBlockId,
+        parent_blkid: OLBlockId,
         body_root: Buf32,
         logs_root: Buf32,
         state_root: Buf32,
@@ -85,7 +91,7 @@ impl OLBlockHeader {
             timestamp,
             slot,
             epoch,
-            parent_blk_id,
+            parent_blkid,
             body_root,
             logs_root,
             state_root,
@@ -104,8 +110,8 @@ impl OLBlockHeader {
         self.epoch
     }
 
-    pub fn parent_blk_id(&self) -> Buf32 {
-        self.parent_blk_id
+    pub fn parent_blkid(&self) -> Buf32 {
+        self.parent_blkid
     }
 
     pub fn body_root(&self) -> Buf32 {
@@ -125,22 +131,47 @@ impl OLBlockHeader {
 #[derive(Clone, Debug)]
 pub struct OLBlockBody {
     /// The transactions contained in an OL block.
-    txs: Vec<OLTransaction>,
-    /// Updates from L1
+    tx_segment: OLTxSegment,
+
+    /// Updates from L1.
     l1_update: L1Update,
 }
 
 impl OLBlockBody {
-    pub fn new(txs: Vec<OLTransaction>, l1_update: L1Update) -> Self {
-        Self { txs, l1_update }
+    pub fn new(tx_segment: OLTxSegment, l1_update: L1Update) -> Self {
+        Self {
+            tx_segment,
+            l1_update,
+        }
     }
 
     pub fn txs(&self) -> &[OLTransaction] {
-        &self.txs
+        self.tx_segment.txs()
     }
 
     pub fn l1_update(&self) -> &L1Update {
         &self.l1_update
+    }
+
+    pub fn tx_segment(&self) -> &OLTxSegment {
+        &self.tx_segment
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct OLTxSegment {
+    /// Transactions in the segment.
+    txs: Vec<OLTransaction>,
+    // Add other attributes.
+}
+
+impl OLTxSegment {
+    pub fn new(txs: Vec<OLTransaction>) -> Self {
+        Self { txs }
+    }
+
+    pub fn txs(&self) -> &[OLTransaction] {
+        &self.txs
     }
 }
 
@@ -154,7 +185,7 @@ pub struct L1Update {
     pub new_l1_blk_height: u64,
 
     /// L1 block hash the manifests are read upto.
-    pub new_l1_blk_hash: Buf32,
+    pub new_l1_blkid: Buf32,
 
     /// Manifests from last l1 height to the new l1 height.
     pub manifests: Vec<AsmManifest>,
@@ -164,13 +195,13 @@ impl L1Update {
     pub fn new(
         preseal_state_root: Buf32,
         new_l1_blk_height: u64,
-        new_l1_blk_hash: Buf32,
+        new_l1_blkid: Buf32,
         manifests: Vec<AsmManifest>,
     ) -> Self {
         Self {
             preseal_state_root,
             new_l1_blk_height,
-            new_l1_blk_hash,
+            new_l1_blkid,
             manifests,
         }
     }
@@ -183,8 +214,8 @@ impl L1Update {
         self.new_l1_blk_height
     }
 
-    pub fn new_l1_blk_hash(&self) -> Buf32 {
-        self.new_l1_blk_hash
+    pub fn new_l1_blkid(&self) -> Buf32 {
+        self.new_l1_blkid
     }
 }
 
@@ -192,19 +223,19 @@ impl L1Update {
 #[derive(Debug, Clone)]
 pub struct AsmManifest {
     /// L1 block id.
-    blockid: Buf32,
+    l1blkid: Buf32,
 
     /// Logs from ASM STF.
     logs: Vec<AsmLogEntry>,
 }
 
 impl AsmManifest {
-    pub fn new(blockid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
-        Self { blockid, logs }
+    pub fn new(l1blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
+        Self { l1blkid, logs }
     }
 
-    pub fn blockid(&self) -> &Buf32 {
-        &self.blockid
+    pub fn l1blkid(&self) -> Buf32 {
+        self.l1blkid
     }
 
     pub fn logs(&self) -> &[AsmLogEntry] {
