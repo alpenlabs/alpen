@@ -3,6 +3,7 @@
 use bitcoin::{Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+pub use strata_btc_types::{GenesisL1View, TIMESTAMPS_FOR_MEDIAN};
 use strata_l1_txfmt::MagicBytes;
 use thiserror::Error;
 
@@ -14,8 +15,6 @@ use crate::{
     proof::RollupVerifyingKey,
     serde_helpers::serde_amount_sat,
 };
-
-pub use strata_btc_types::{GenesisL1View, TIMESTAMPS_FOR_MEDIAN};
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).

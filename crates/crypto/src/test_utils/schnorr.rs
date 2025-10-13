@@ -1,11 +1,9 @@
-use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
 use rand::{rngs::OsRng, RngCore};
+use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use strata_identifiers::Buf32;
 
-use crate::schnorr::EvenSecretKey;
-
-use crate::multisig::aggregate_schnorr_keys;
+use crate::{multisig::aggregate_schnorr_keys, schnorr::EvenSecretKey};
 
 /// Creates a MuSig2 signature from multiple operators.
 ///

@@ -2,10 +2,9 @@
 
 use std::ops::Deref;
 
-use strata_identifiers::{Buf32, Buf64};
-
 #[cfg(not(target_os = "zkvm"))]
 use secp256k1::{Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
+use strata_identifiers::{Buf32, Buf64};
 
 /// Sign a message with a Schnorr signature.
 #[cfg(not(target_os = "zkvm"))]
@@ -156,9 +155,9 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 #[cfg(test)]
 mod tests {
     use rand::{rngs::OsRng, Rng};
+    use strata_identifiers::Buf32;
 
     use super::{sign_schnorr_sig, verify_schnorr_sig};
-    use strata_identifiers::Buf32;
 
     #[test]
     #[cfg(not(target_os = "zkvm"))]

@@ -1,10 +1,9 @@
+#[cfg(feature = "bitcoin")]
+use bitcoin::absolute;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
 
 use crate::TIMESTAMPS_FOR_MEDIAN;
-
-#[cfg(feature = "bitcoin")]
-use bitcoin::absolute;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GenesisL1View {

@@ -13,7 +13,6 @@ pub mod operator;
 pub mod serde_helpers;
 
 pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
-
 use serde_helpers::serde_amount_sat;
 
 /// Consensus parameters that don't change for the lifetime of the network

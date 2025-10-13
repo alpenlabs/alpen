@@ -103,7 +103,8 @@ impl fmt::Display for OLBlockCommitment {
             self.slot,
             std::str::from_utf8(&first_hex)
                 .expect("Failed to convert first hex bytes to UTF-8 string"),
-            std::str::from_utf8(&last_hex).expect("Failed to convert last hex bytes to UTF-8 string")
+            std::str::from_utf8(&last_hex)
+                .expect("Failed to convert last hex bytes to UTF-8 string")
         )
     }
 }

@@ -6,24 +6,23 @@ use std::{
 
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::{
+    Address, AddressType, Amount, Network, OutPoint, Psbt, ScriptBuf, Sequence, TapNodeHash,
+    Transaction, TxIn, TxOut, Txid, Witness,
     absolute::LockTime,
     address::NetworkUnchecked,
     consensus::{deserialize, encode, serialize},
-    hashes::{sha256d, Hash},
+    hashes::{Hash, sha256d},
     key::{Keypair, Parity, TapTweak},
     secp256k1::{SecretKey, XOnlyPublicKey},
     taproot::{ControlBlock, LeafVersion, TaprootMerkleBranch},
     transaction::Version,
-    Address, AddressType, Amount, Network, OutPoint, Psbt, ScriptBuf, Sequence, TapNodeHash,
-    Transaction, TxIn, TxOut, Txid, Witness,
 };
 use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex::encode_to_slice;
 use rand::rngs::OsRng;
 use secp256k1::SECP256K1;
-use serde::{de, Deserialize, Deserializer, Serialize};
-
+use serde::{Deserialize, Deserializer, Serialize, de};
 use strata_identifiers::Buf32;
 
 use crate::ParseError;
@@ -814,7 +813,7 @@ impl XOnlyPk {
 
     /// Convert the [`XOnlyPk`] to an [`Address`].
     pub fn to_p2tr_address(&self, network: Network) -> Result<Address, ParseError> {
-        let buf: [u8; 32] = self.0 .0;
+        let buf: [u8; 32] = self.0.0;
         let pubkey = XOnlyPublicKey::from_slice(&buf)?;
 
         Ok(Address::p2tr_tweaked(
@@ -996,24 +995,23 @@ mod tests {
 
     use arbitrary::{Arbitrary, Unstructured};
     use bitcoin::{
+        Address, Amount, Network, ScriptBuf, TapNodeHash, Transaction, TxOut, XOnlyPublicKey,
         hashes::Hash,
         key::Keypair,
         opcodes::all::OP_CHECKSIG,
         script::Builder,
-        secp256k1::{Parity, SecretKey, SECP256K1},
+        secp256k1::{Parity, SECP256K1, SecretKey},
         taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootMerkleBranch},
-        Address, Amount, Network, ScriptBuf, TapNodeHash, Transaction, TxOut, XOnlyPublicKey,
     };
     use bitcoin_bosd::DescriptorType;
-    use rand::{rngs::OsRng, Rng};
+    use rand::{Rng, rngs::OsRng};
+    use strata_identifiers::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::{
         BitcoinAddress, BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
         BorshDeserialize, BorshSerialize, RawBitcoinTx, XOnlyPk,
     };
-    use strata_identifiers::Buf32;
-
     use crate::{BitcoinPsbt, ParseError, TaprootSpendPath};
 
     #[test]

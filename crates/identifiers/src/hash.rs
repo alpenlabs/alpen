@@ -39,8 +39,8 @@ pub fn sha256d(buf: &[u8]) -> Buf32 {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::hashes::{sha256d, Hash};
-    use rand::{rngs::OsRng, RngCore};
+    use bitcoin::hashes::{Hash, sha256d};
+    use rand::{RngCore, rngs::OsRng};
 
     use super::sha256d;
     use crate::buf::Buf32;

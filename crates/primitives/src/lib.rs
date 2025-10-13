@@ -6,7 +6,7 @@
 // Re-export identifier types from strata-identifiers
 pub use strata_identifiers::{
     create_evm_extra_payload, impl_buf_wrapper, BitcoinBlockHeight, Buf20, Buf32, Buf64, CredRule,
-    EpochCommitment, EvmEeBlockCommitment, EVMExtraPayload, ExecBlockCommitment, L1BlockCommitment,
+    EVMExtraPayload, EpochCommitment, EvmEeBlockCommitment, ExecBlockCommitment, L1BlockCommitment,
     L1BlockId, L1Height, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId,
 };
 
@@ -21,7 +21,9 @@ pub mod hash {
     pub use strata_identifiers::hash::*;
 }
 pub mod evm_exec {
-    pub use strata_identifiers::{create_evm_extra_payload, EvmEeBlockCommitment, ExecBlockCommitment, EVMExtraPayload};
+    pub use strata_identifiers::{
+        create_evm_extra_payload, EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment,
+    };
 }
 pub mod l2 {
     pub use strata_identifiers::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId};
@@ -32,8 +34,7 @@ pub mod ol {
 
 // Re-export crypto types
 pub mod crypto {
-    pub use strata_crypto::schnorr::*;
-    pub use strata_crypto::RollupVerifyingKey;
+    pub use strata_crypto::{schnorr::*, RollupVerifyingKey};
 }
 pub use strata_crypto::RollupVerifyingKey;
 

@@ -1,16 +1,15 @@
 use std::{fmt, io, str};
 
 use arbitrary::{Arbitrary, Error as ArbitraryError, Result as ArbitraryResult, Unstructured};
+// Re-export bitcoin types for internal use
+#[cfg(feature = "bitcoin")]
+pub(crate) use bitcoin::{BlockHash, absolute};
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
-use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
 
 use crate::{buf::Buf32, hash::sha256d};
-
-// Re-export bitcoin types for internal use
-#[cfg(feature = "bitcoin")]
-pub(crate) use bitcoin::{absolute, BlockHash};
 
 /// The bitcoin block height
 pub type BitcoinBlockHeight = u64;
@@ -97,7 +96,8 @@ impl Arbitrary<'_> for L1BlockCommitment {
     fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
         // Heights must be less than 500_000_000 (LOCK_TIME_THRESHOLD)
         let h = u32::arbitrary(u)? % 500_000_000;
-        let height = absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)?;
+        let height =
+            absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)?;
         let blkid = L1BlockId::arbitrary(u)?;
         Ok(Self { height, blkid })
     }
@@ -308,7 +308,8 @@ impl fmt::Debug for L1BlockCommitment {
 impl L1BlockCommitment {
     /// Create a new L1 block commitment from a u64 height.
     ///
-    /// Returns `None` if the height is invalid (greater than u32::MAX) when bitcoin feature is enabled.
+    /// Returns `None` if the height is invalid (greater than u32::MAX) when bitcoin feature is
+    /// enabled.
     pub fn from_height_u64(height: u64, blkid: L1BlockId) -> Option<Self> {
         #[cfg(feature = "bitcoin")]
         {
@@ -376,7 +377,7 @@ impl L1BlockCommitment {
 // Custom debug implementation to print the block hash in little endian
 impl fmt::Debug for L1BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = self.0 .0;
+        let mut bytes = self.0.0;
         bytes.reverse();
         let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
         encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
@@ -389,7 +390,7 @@ impl fmt::Debug for L1BlockId {
 // Custom display implementation to print the block hash in little endian
 impl fmt::Display for L1BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = self.0 .0;
+        let mut bytes = self.0.0;
         bytes.reverse();
         let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
         encode_to_slice(bytes, &mut buf).expect("buf: enc hex");

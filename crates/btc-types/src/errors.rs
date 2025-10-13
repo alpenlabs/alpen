@@ -1,6 +1,6 @@
 //! Errors during parsing/handling/conversion of Bitcoin types.
 
-use bitcoin::{address, secp256k1, AddressType};
+use bitcoin::{AddressType, address, secp256k1};
 use strata_identifiers::Buf32;
 use thiserror::Error;
 

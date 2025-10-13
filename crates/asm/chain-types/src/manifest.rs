@@ -16,7 +16,6 @@ pub struct AsmManifest {
 
     /// Additional encoded data from ASM execution
     pub encoded_data: Vec<u8>,
-
     // TODO: Add other fields as needed based on actual ASM execution output
 }
 

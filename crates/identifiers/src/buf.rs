@@ -131,7 +131,8 @@ impl From<bitcoin::secp256k1::SecretKey> for Buf32 {
 #[cfg(feature = "bitcoin")]
 impl From<Buf32> for bitcoin::secp256k1::SecretKey {
     fn from(value: Buf32) -> Self {
-        bitcoin::secp256k1::SecretKey::from_slice(value.0.as_slice()).expect("could not convert Buf32 into SecretKey")
+        bitcoin::secp256k1::SecretKey::from_slice(value.0.as_slice())
+            .expect("could not convert Buf32 into SecretKey")
     }
 }
 

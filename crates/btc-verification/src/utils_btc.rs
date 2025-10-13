@@ -1,5 +1,5 @@
 use bitcoin::{block::Header, consensus::Encodable};
-use strata_identifiers::{hash::sha256d, Buf32};
+use strata_identifiers::{Buf32, hash::sha256d};
 
 /// Returns the block hash.
 ///

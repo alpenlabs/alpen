@@ -1,5 +1,5 @@
 //! Serde helper modules for serialization/deserialization of Bitcoin types.
-use bitcoin::{absolute, Amount};
+use bitcoin::{Amount, absolute};
 use serde::{Deserialize, Deserializer, Serializer};
 
 /// Serialize/deserialize [`Amount`] as integer satoshis ([`u64`]).
