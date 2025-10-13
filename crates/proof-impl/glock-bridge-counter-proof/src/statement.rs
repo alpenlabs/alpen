@@ -1,190 +1,186 @@
-use bitcoin::Work;
-use moho_types::{MohoAttestation, MohoState, StateRefAttestation};
-use strata_asm_common::AnchorState;
-use strata_asm_moho_program_impl::{AsmStfProgram, MohoProgram};
-use strata_asm_proto_bridge_v1::OperatorClaimUnlock;
-use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
+use bitcoin::{
+    consensus::deserialize,
+    secp256k1::{self, schnorr},
+    sighash,
+};
+use strata_crypto::groth16_verifier;
 use strata_primitives::proof::RollupVerifyingKey;
-use zkaleido::ProofReceipt;
+use zkaleido::{Proof, ProofReceipt, PublicValues};
 
-#[derive(Debug, Clone, Copy)]
-pub struct BridgeCounterProofPublicOutput {
-    pub tip_total_work: Work,
-    pub deposit_idx: u32,
-    pub operator_idx: u32,
-}
+use crate::{CounterproofInputBorsh, CounterproofMode, CounterproofPublicOutput};
 
-const BRIDGE_ID: u16 = 0;
-const MOHO_VK: RollupVerifyingKey = RollupVerifyingKey::NativeVerifyingKey;
+/// Takes witness data; returns public inputs that match given witness.
+/// Fails if witness is invalid.
+///
+/// Verification will check if
+/// 1. Witness is valid (matches program), and
+/// 2. Witness matches expected public inputs.
+pub(crate) fn process_counterproof(
+    input: CounterproofInputBorsh,
+) -> Result<CounterproofPublicOutput, &'static str> {
+    let CounterproofInputBorsh {
+        bridge_proof_master_key,
+        deposit_index,
+        bridge_proof_tx_bytes,
+        bridge_proof_prevouts,
+        mode,
+    } = input;
 
-#[derive(Debug)]
-pub struct BridgeCounterProofInput {
-    pub moho_recursive_proof: ProofReceipt,
-    pub moho_state: MohoState,
-    pub anchor_state: AnchorState,
-    pub claim_entry_id: u32,
-}
+    // Deserialize the transaction
+    let bridge_proof_tx = deserialize::<bitcoin::Transaction>(&bridge_proof_tx_bytes)
+        .map_err(|_| "failed to deserialize bridge proof transaction")?;
 
-pub fn process_bridge_counter_proof(
-    input: &BridgeCounterProofInput,
-    genesis_moho: &StateRefAttestation,
-) -> BridgeCounterProofPublicOutput {
-    let proof = &input.moho_recursive_proof;
-
-    // Verify the recursive MOHO proof and reconstruct its public parameters
-    verify_rollup_groth16_proof_receipt(proof, &MOHO_VK).expect("Failed to verify groth16 proof");
-
-    let moho_attestation = borsh::from_slice::<MohoAttestation>(proof.public_values().as_bytes())
-        .expect("Failed to decode public params");
-
-    // Ensure the proof chain starts from the canonical genesis state
-    assert_eq!(moho_attestation.genesis(), genesis_moho, "Genesis mismatch");
-
-    // Verify that the provided MOHO state matches the committed attestation
-    assert_eq!(
-        &input.moho_state.compute_commitment(),
-        moho_attestation.proven().commitment(),
-        "State commitment mismatch"
-    );
-
-    // Locate and extract the operator claim from the bridge sub-protocol export logs
-    let export_state = input.moho_state.export_state();
-
-    let bridge_container = export_state
-        .containers()
+    // Deserialize the prevouts
+    let bridge_proof_prevouts: Result<Vec<bitcoin::TxOut>, _> = bridge_proof_prevouts
         .iter()
-        .find(|x| x.container_id() == BRIDGE_ID)
-        .expect("Bridge container not found in moho state");
+        .map(|bytes| deserialize(bytes))
+        .collect();
+    let bridge_proof_prevouts =
+        bridge_proof_prevouts.map_err(|_| "failed to deserialize bridge proof prevouts")?;
 
-    let export_entry = bridge_container
-        .entries()
-        .iter()
-        .find(|x| x.entry_id() == input.claim_entry_id)
-        .expect("Bridge entry not found in container");
+    // Convert master key bytes back to XOnlyPublicKey
+    let bridge_proof_master_key = secp256k1::XOnlyPublicKey::from_slice(&bridge_proof_master_key)
+        .map_err(|_| "invalid bridge proof master key")?;
 
-    let operator_claim = borsh::from_slice::<OperatorClaimUnlock>(export_entry.payload())
-        .expect("Failed to deserialize OperatorClaimUnlock");
-
-    // Verify the anchor state commitment matches Moho's inner state
-    assert_eq!(
-        input.moho_state.inner_state(),
-        AsmStfProgram::compute_state_commitment(&input.anchor_state),
-        "Inner state commitment mismatch"
-    );
-
-    // Extract the total accumulated proof-of-work
-    let tip_total_work = input
-        .anchor_state
-        .chain_view
-        .pow_state
-        .total_accumulated_pow
-        .clone()
-        .into();
-
-    BridgeCounterProofPublicOutput {
-        deposit_idx: operator_claim.deposit_idx,
-        operator_idx: operator_claim.operator_idx,
-        tip_total_work,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bitcoin::{Txid, hashes::Hash};
-    use moho_types::{
-        ExportContainer, ExportEntry, ExportState, MohoStateCommitment, StateReference,
+    let mut deposit_index_le_bytes = [0; 32];
+    deposit_index_le_bytes[0..4].copy_from_slice(&deposit_index.to_le_bytes());
+    let deposit_index_scalar = match secp256k1::Scalar::from_le_bytes(deposit_index_le_bytes) {
+        Ok(scalar) => scalar,
+        Err(_) => unreachable!(),
     };
-    use strata_asm_common::ChainViewState;
-    use strata_asm_types::{BtcWork, HeaderVerificationState};
-    use strata_primitives::l1::BitcoinTxid;
-    use zkaleido::{Proof, PublicValues, VerifyingKey};
 
-    use super::*;
+    let bridge_proof_deposit_key = match bridge_proof_master_key.add_tweak(secp256k1::SECP256K1, &deposit_index_scalar) {
+        Ok((key, _parity)) => key,
+        Err(_) => return Err("deposit index is negation of discrete logarithm of bridge proof master key (this is impossible for secure a master key)"),
+    };
 
-    fn gen_mock_operator_claim_unlock(deposit_idx: u32, operator_idx: u32) -> OperatorClaimUnlock {
-        OperatorClaimUnlock {
-            withdrawal_txid: BitcoinTxid::new(&Txid::all_zeros()),
-            deposit_txid: BitcoinTxid::new(&Txid::all_zeros()),
-            deposit_idx,
-            operator_idx,
-        }
+    if bridge_proof_tx.input.is_empty() {
+        return Err("bridge proof transaction must have at least one input");
     }
 
-    fn gen_mock_genesis_commitment() -> StateRefAttestation {
-        StateRefAttestation::new(
-            StateReference::new([0u8; 32]),
-            MohoStateCommitment::new([0u8; 32]),
+    let bridge_proof_signature =
+        extract_schnorr_signature_sighash_default(&bridge_proof_tx.input[0].witness)?;
+
+    let mut sighash_cache = sighash::SighashCache::new(&bridge_proof_tx);
+    let bridge_proof_sighash = sighash_cache
+        .taproot_key_spend_signature_hash(
+            0,
+            &sighash::Prevouts::All(bridge_proof_prevouts.as_ref()),
+            bitcoin::TapSighashType::Default,
         )
+        .map_err(|_| "taproot error")?;
+
+    let bridge_proof_sighash_msg = secp256k1::Message::from(bridge_proof_sighash);
+
+    if secp256k1::SECP256K1
+        .verify_schnorr(
+            &bridge_proof_signature,
+            &bridge_proof_sighash_msg,
+            &bridge_proof_deposit_key,
+        )
+        .is_err()
+    {
+        return Err("bridge proof tx failed signature check");
     }
 
-    fn gen_mock_bridge_counter_proof_input(
-        genesis_ref: &StateRefAttestation,
-        operator_claim_payload: Vec<u8>,
-        claim_entry_id: u32,
-        header_verification_state: HeaderVerificationState,
-    ) -> BridgeCounterProofInput {
-        let anchor_state = AnchorState {
-            chain_view: ChainViewState {
-                pow_state: header_verification_state,
-            },
-            sections: vec![],
-        };
+    if bridge_proof_tx.output.is_empty() {
+        return Err("bridge proof transaction must have at least one output");
+    }
 
-        let inner_state_commitment = AsmStfProgram::compute_state_commitment(&anchor_state);
+    let bridge_proof_data = extract_op_return_data(&bridge_proof_tx.output[0])?;
+    // FIXME: Extract pow from public values
+    let mut public_values = [0; 36];
+    public_values.copy_from_slice(&bridge_proof_data[0..36]);
+    let mut acc_pow_high_bytes = [0; 4];
+    acc_pow_high_bytes.copy_from_slice(&bridge_proof_data[32..32 + 4]);
+    let acc_pow_high_bytes = u32::from_be_bytes(acc_pow_high_bytes);
+    // TODO: Reduce to 128 bytes using compressed Groth proof
+    //       This requires changes in zkaleido
+    let mut bridge_proof_bytes = [0; 256];
+    bridge_proof_bytes.copy_from_slice(&bridge_proof_data[32 + 4..]);
 
-        let export_entry = ExportEntry::new(claim_entry_id, operator_claim_payload);
-        let bridge_container = ExportContainer::new(BRIDGE_ID, vec![], vec![export_entry]);
-        let export_state = ExportState::new(vec![bridge_container]);
-
-        let next_vk = VerifyingKey::default();
-        let moho_state = MohoState::new(inner_state_commitment, next_vk, export_state);
-
-        let moho_state_commitment = moho_state.compute_commitment();
-
-        let proven_ref =
-            StateRefAttestation::new(StateReference::new([1u8; 32]), moho_state_commitment);
-
-        let moho_attestation = MohoAttestation::new(genesis_ref.clone(), proven_ref);
-
-        let moho_attestation_bytes = borsh::to_vec(&moho_attestation).unwrap();
-        let public_values = PublicValues::new(moho_attestation_bytes);
-        let proof_receipt = ProofReceipt::new(Proof::default(), public_values);
-
-        BridgeCounterProofInput {
-            moho_recursive_proof: proof_receipt,
-            moho_state,
-            anchor_state,
-            claim_entry_id,
+    match mode {
+        CounterproofMode::InvalidBridgeProof => {
+            let proof = Proof::new(bridge_proof_bytes.to_vec());
+            // FIXME: Create public values from bridge proof tx
+            // Same number of bytes as bridge proof public values
+            let public_values = PublicValues::new(Vec::new());
+            let proof_receipt = ProofReceipt::new(proof, public_values);
+            // TODO: Move Buf32 into constant (Buf32::new needs to become const fn first)
+            // TODO: Add SP1 key of dummy statement for testing
+            //       We need a valid proof and an invalid proof for the given statement to put into
+            // the bridge proof tx.
+            let proof_vk = RollupVerifyingKey::NativeVerifyingKey;
+            if groth16_verifier::verify_rollup_groth16_proof_receipt(&proof_receipt, &proof_vk)
+                .is_ok()
+            {
+                // FIXME:
+                // return Err("bridge proof should be invalid for counterproof to be valid");
+            }
+        }
+        CounterproofMode::HeavierChain(heavier_chain) => {
+            println!("User acc pow {}", acc_pow_high_bytes);
+            let heavier_acc_pow = verify_header_chain(heavier_chain)?;
+            let x = heavier_acc_pow.to_be_bytes();
+            let heavier_acc_pow_high_bytes = u32::from_be_bytes([x[0], x[1], x[2], x[3]]);
+            if heavier_acc_pow_high_bytes <= acc_pow_high_bytes {
+                return Err(
+                    "heavier chain must have more accumulated work than the operator chain",
+                );
+            }
         }
     }
 
-    #[test]
-    fn test_process_bridge_counter_proof() {
-        let deposit_idx: u32 = 42;
-        let operator_idx: u32 = 7;
-        let claim_entry_id: u32 = 1;
+    Ok(CounterproofPublicOutput {
+        bridge_proof_master_key: bridge_proof_master_key.serialize(),
+        deposit_index,
+    })
+}
 
-        let operator_claim = gen_mock_operator_claim_unlock(deposit_idx, operator_idx);
-        let operator_claim_payload = borsh::to_vec(&operator_claim).unwrap();
-        let genesis_ref = gen_mock_genesis_commitment();
+/// Verifies that the given header chain is valid under Bitcoin consensus rules.
+/// Returns the accumulated proof of work.
+fn verify_header_chain(_chain: Vec<[u8; 80]>) -> Result<bitcoin::Work, &'static str> {
+    // TODO: Construct header verification state without requiring rollup parameters.
+    //       This function does NOT care about any L2 stuff!
+    // TODO: Verify genesis header: not infinite pow
+    //       Latest part of recursive proof
+    // let btc_params = Params::new(rollup_params.network);
+    // for header in &headers {
+    //     header_vs.check_and_update_continuity(header, &btc_params)?;
+    // }
+    Ok(bitcoin::Work::from_be_bytes([0xff; 32]))
+}
 
-        let mut header_verification_state = HeaderVerificationState::default();
-        header_verification_state.total_accumulated_pow =
-            BtcWork::from(Work::from_le_bytes([42u8; 32]));
-        let expected_tip_total_work: Work =
-            header_verification_state.total_accumulated_pow.clone().into();
-
-        let input = gen_mock_bridge_counter_proof_input(
-            &genesis_ref,
-            operator_claim_payload,
-            claim_entry_id,
-            header_verification_state,
-        );
-
-        let output = process_bridge_counter_proof(&input, &genesis_ref);
-
-        assert_eq!(output.deposit_idx, deposit_idx);
-        assert_eq!(output.operator_idx, operator_idx);
-        assert_eq!(output.tip_total_work, expected_tip_total_work);
+/// Extracts a Schnorr signature from a Taproot witness, ensuring it uses SIGHASH_DEFAULT.
+fn extract_schnorr_signature_sighash_default(
+    witness: &bitcoin::Witness,
+) -> Result<schnorr::Signature, &'static str> {
+    if witness.len() != 1 {
+        return Err("witness must have length 1 (taproot key path spend)");
     }
+    let sig_bytes = &witness[0];
+    if sig_bytes.len() != 64 {
+        return Err("sighash mode must be SIGHASH_DEFAULT, which means that the signature must be exactly 64 bytes");
+    }
+
+    schnorr::Signature::from_slice(sig_bytes).map_err(|_| "invalid signature")
+}
+
+fn extract_op_return_data(txout: &bitcoin::TxOut) -> Result<&[u8], &'static str> {
+    let script = &txout.script_pubkey;
+    if !script.is_op_return() {
+        return Err("locking script must be an OP_RETURN script");
+    }
+    // OP_RETURN OP_PUSHDATA2 <32 + 4 + 256 = 292> (292 additional bytes...)
+    //  32 bytes: tip hash
+    //   4 bytes: accumulated proof of work (high bytes)
+    // 256 bytes: Groth16 proof
+    // Total length = 2 + 2 + 292 = 296
+    if script.as_bytes().len() != 296 {
+        return Err("OP_RETURN script must push exactly 292 bytes");
+    }
+    let data = &script.as_bytes()[2 + 2..];
+    debug_assert_eq!(data.len(), 292);
+
+    Ok(data)
 }

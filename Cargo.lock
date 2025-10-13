@@ -15155,14 +15155,11 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "borsh",
- "moho-types",
- "strata-asm-common",
- "strata-asm-moho-program-impl",
- "strata-asm-proto-bridge-v1",
- "strata-asm-types",
  "strata-crypto",
  "strata-primitives",
+ "tracing",
  "zkaleido",
+ "zkaleido-native-adapter",
 ]
 
 [[package]]

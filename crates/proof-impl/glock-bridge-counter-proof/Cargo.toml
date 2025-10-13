@@ -9,13 +9,12 @@ workspace = true
 [dependencies]
 bitcoin.workspace = true
 borsh.workspace = true
-moho-types.workspace = true
-strata-asm-common.workspace = true
-strata-asm-moho-program-impl.workspace = true
-strata-asm-proto-bridge-v1.workspace = true
+# moho-types.workspace = true
+# strata-asm-common.workspace = true
+# strata-asm-moho-program-impl.workspace = true
+# strata-asm-proto-bridge-v1.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
+tracing.workspace = true
 zkaleido.workspace = true
-
-[dev-dependencies]
-strata-asm-types.workspace = true
+zkaleido-native-adapter.workspace = true
