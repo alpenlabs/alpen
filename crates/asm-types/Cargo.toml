@@ -11,5 +11,3 @@ strata-btc-types.workspace = true
 strata-btc-verification.workspace = true
 
 [dev-dependencies]
-strata-test-utils-btc.workspace = true
-rand.workspace = true

@@ -1,7 +1,4 @@
-use bitcoin::{
-    secp256k1::{PublicKey, Secp256k1},
-    XOnlyPublicKey,
-};
+use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use musig2::{FirstRound, KeyAggContext, SecNonceSpices};
 use rand::{rngs::OsRng, RngCore};
 use strata_identifiers::Buf32;

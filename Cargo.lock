@@ -13417,10 +13417,8 @@ dependencies = [
 name = "strata-asm-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "rand 0.8.5",
  "strata-btc-types",
  "strata-btc-verification",
- "strata-test-utils-btc",
 ]
 
 [[package]]
@@ -13755,12 +13753,10 @@ dependencies = [
  "borsh",
  "const-hex",
  "serde",
- "serde_json",
  "strata-btc-types",
  "strata-checkpoint-types",
  "strata-identifiers",
  "strata-primitives",
- "strata-test-utils",
 ]
 
 [[package]]

@@ -172,7 +172,9 @@ mod tests {
         let msg = Buf32::from(msg);
         let mod_msg = Buf32::from(mod_msg);
 
-        let sk = SecretKey::new(&mut OsRng);
+        let mut sk_bytes = [0u8; 32];
+        OsRng.fill(&mut sk_bytes);
+        let sk = SecretKey::from_slice(&sk_bytes).expect("valid key");
         let (pk, _) = sk.x_only_public_key(SECP256K1);
 
         let sk = Buf32::from(*sk.as_ref());
