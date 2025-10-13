@@ -1,14 +1,9 @@
 use std::str::FromStr;
 
-use bitcoin::{
-    hashes::Hash,
-    secp256k1::{schnorr, SecretKey, XOnlyPublicKey},
-    BlockHash, Txid, Wtxid,
-};
 use const_hex as hex;
 use zeroize::Zeroize;
 
-use crate::{errors::ParseError, macros::internal};
+use crate::macros::internal;
 
 /// A 20-byte buffer.
 ///
@@ -21,7 +16,7 @@ use crate::{errors::ParseError, macros::internal};
 /// # Example
 ///
 /// ```
-/// # use strata_primitives::prelude::Buf20;
+/// # use strata_identifiers::Buf20;
 /// use zeroize::Zeroize;
 ///
 /// let mut buf = Buf20::from([1; 20]);
@@ -55,7 +50,7 @@ impl Zeroize for Buf20 {
 /// # Example
 ///
 /// ```
-/// # use strata_primitives::prelude::Buf32;
+/// # use strata_identifiers::Buf32;
 /// use zeroize::Zeroize;
 ///
 /// let mut buf = Buf32::from([1; 32]);
@@ -76,72 +71,91 @@ impl FromStr for Buf32 {
     }
 }
 
-impl From<BlockHash> for Buf32 {
-    fn from(value: BlockHash) -> Self {
+#[cfg(feature = "bitcoin")]
+impl From<bitcoin::BlockHash> for Buf32 {
+    fn from(value: bitcoin::BlockHash) -> Self {
+        use bitcoin::hashes::Hash;
         (*value.as_raw_hash().as_byte_array()).into()
     }
 }
 
-impl From<Txid> for Buf32 {
-    fn from(value: Txid) -> Self {
+#[cfg(feature = "bitcoin")]
+impl From<bitcoin::Txid> for Buf32 {
+    fn from(value: bitcoin::Txid) -> Self {
+        use bitcoin::hashes::Hash;
         let bytes: [u8; 32] = *value.as_raw_hash().as_byte_array();
         bytes.into()
     }
 }
 
-impl From<&Txid> for Buf32 {
-    fn from(value: &Txid) -> Self {
+#[cfg(feature = "bitcoin")]
+impl From<&bitcoin::Txid> for Buf32 {
+    fn from(value: &bitcoin::Txid) -> Self {
         Self::from(*value)
     }
 }
 
-impl From<Buf32> for Txid {
+#[cfg(feature = "bitcoin")]
+impl From<Buf32> for bitcoin::Txid {
     fn from(value: Buf32) -> Self {
-        let mut bytes: [u8; 32] = [0; 32];
-        bytes.copy_from_slice(value.0.as_slice());
-        Txid::from_byte_array(bytes)
+        use bitcoin::hashes::Hash;
+        bitcoin::Txid::from_slice(&value.0).expect("valid txid")
     }
 }
 
-impl From<Wtxid> for Buf32 {
-    fn from(value: Wtxid) -> Self {
+#[cfg(feature = "bitcoin")]
+impl From<bitcoin::Wtxid> for Buf32 {
+    fn from(value: bitcoin::Wtxid) -> Self {
+        use bitcoin::hashes::Hash;
         let bytes: [u8; 32] = *value.as_raw_hash().as_byte_array();
         bytes.into()
     }
 }
 
-impl From<Buf32> for Wtxid {
+#[cfg(feature = "bitcoin")]
+impl From<Buf32> for bitcoin::Wtxid {
     fn from(value: Buf32) -> Self {
-        let mut bytes: [u8; 32] = [0; 32];
-        bytes.copy_from_slice(value.0.as_slice());
-        Wtxid::from_byte_array(bytes)
+        use bitcoin::hashes::Hash;
+        bitcoin::Wtxid::from_slice(&value.0).expect("valid wtxid")
     }
 }
 
-impl From<SecretKey> for Buf32 {
-    fn from(value: SecretKey) -> Self {
+#[cfg(feature = "bitcoin")]
+impl From<bitcoin::secp256k1::SecretKey> for Buf32 {
+    fn from(value: bitcoin::secp256k1::SecretKey) -> Self {
         let bytes: [u8; 32] = value.secret_bytes();
         bytes.into()
     }
 }
 
-impl From<Buf32> for SecretKey {
+#[cfg(feature = "bitcoin")]
+impl From<Buf32> for bitcoin::secp256k1::SecretKey {
     fn from(value: Buf32) -> Self {
-        SecretKey::from_slice(value.0.as_slice()).expect("could not convert Buf32 into SecretKey")
+        bitcoin::secp256k1::SecretKey::from_slice(value.0.as_slice())
+            .expect("could not convert Buf32 into SecretKey")
     }
 }
 
-impl TryFrom<Buf32> for XOnlyPublicKey {
-    type Error = ParseError;
+#[cfg(feature = "bitcoin")]
+impl TryFrom<Buf32> for bitcoin::secp256k1::XOnlyPublicKey {
+    type Error = bitcoin::secp256k1::Error;
 
     fn try_from(value: Buf32) -> Result<Self, Self::Error> {
-        XOnlyPublicKey::from_slice(&value.0).map_err(|_| ParseError::InvalidPoint(value))
+        bitcoin::secp256k1::XOnlyPublicKey::from_slice(&value.0)
     }
 }
 
-impl From<XOnlyPublicKey> for Buf32 {
-    fn from(value: XOnlyPublicKey) -> Self {
+#[cfg(feature = "bitcoin")]
+impl From<bitcoin::secp256k1::XOnlyPublicKey> for Buf32 {
+    fn from(value: bitcoin::secp256k1::XOnlyPublicKey) -> Self {
         Self::from(value.serialize())
+    }
+}
+
+#[cfg(feature = "bitcoin")]
+impl From<bitcoin::secp256k1::schnorr::Signature> for Buf64 {
+    fn from(value: bitcoin::secp256k1::schnorr::Signature) -> Self {
+        value.serialize().into()
     }
 }
 
@@ -166,7 +180,7 @@ impl Zeroize for Buf32 {
 /// # Example
 ///
 /// ```
-/// # use strata_primitives::prelude::Buf64;
+/// # use strata_identifiers::Buf64;
 /// use zeroize::Zeroize;
 ///
 /// let mut buf = Buf64::from([1; 64]);
@@ -178,12 +192,6 @@ impl Zeroize for Buf32 {
 pub struct Buf64(pub [u8; 64]);
 internal::impl_buf_common!(Buf64, 64);
 internal::impl_buf_serde!(Buf64, 64);
-
-impl From<schnorr::Signature> for Buf64 {
-    fn from(value: schnorr::Signature) -> Self {
-        value.serialize().into()
-    }
-}
 
 // NOTE: we cannot do `ZeroizeOnDrop` since `Buf64` is `Copy`.
 impl Zeroize for Buf64 {

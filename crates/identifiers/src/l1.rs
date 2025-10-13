@@ -1,16 +1,21 @@
 use std::{fmt, io, str};
 
 use arbitrary::{Arbitrary, Error as ArbitraryError, Result as ArbitraryResult, Unstructured};
-use bitcoin::{absolute, hashes::Hash, BlockHash};
+// Re-export bitcoin types for internal use
+#[cfg(feature = "bitcoin")]
+pub(crate) use bitcoin::{BlockHash, absolute};
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
-use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
 
 use crate::{buf::Buf32, hash::sha256d};
 
 /// The bitcoin block height
 pub type BitcoinBlockHeight = u64;
+
+/// L1 block height (as a simple u32)
+pub type L1Height = u32;
 
 /// ID of an L1 block, usually the hash of its header.
 #[derive(
@@ -57,14 +62,17 @@ impl AsRef<[u8; 32]> for L1BlockId {
     }
 }
 
+#[cfg(feature = "bitcoin")]
 impl From<BlockHash> for L1BlockId {
     fn from(value: BlockHash) -> Self {
         L1BlockId(value.into())
     }
 }
 
+#[cfg(feature = "bitcoin")]
 impl From<L1BlockId> for BlockHash {
     fn from(value: L1BlockId) -> Self {
+        use bitcoin::hashes::Hash;
         BlockHash::from_byte_array(value.0.into())
     }
 }
@@ -74,25 +82,45 @@ impl From<L1BlockId> for BlockHash {
 /// Note: Height is stored as u32 internally in Bitcoin's consensus format,
 /// but we serialize/deserialize using a custom implementation to maintain
 /// backwards compatibility with existing data (stored as u64).
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Arbitrary)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct L1BlockCommitment {
-    #[arbitrary(with = arbitrary_height)]
+    #[cfg(feature = "bitcoin")]
     height: absolute::Height,
+    #[cfg(not(feature = "bitcoin"))]
+    height: u64,
     blkid: L1BlockId,
 }
 
-// Custom Arbitrary implementation for Height
-fn arbitrary_height(u: &mut Unstructured<'_>) -> ArbitraryResult<absolute::Height> {
-    // Heights must be less than 500_000_000 (LOCK_TIME_THRESHOLD)
-    let h = u32::arbitrary(u)? % 500_000_000;
-    absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)
+#[cfg(feature = "bitcoin")]
+impl Arbitrary<'_> for L1BlockCommitment {
+    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
+        // Heights must be less than 500_000_000 (LOCK_TIME_THRESHOLD)
+        let h = u32::arbitrary(u)? % 500_000_000;
+        let height =
+            absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)?;
+        let blkid = L1BlockId::arbitrary(u)?;
+        Ok(Self { height, blkid })
+    }
+}
+
+#[cfg(not(feature = "bitcoin"))]
+impl Arbitrary<'_> for L1BlockCommitment {
+    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
+        let height = u64::arbitrary(u)?;
+        let blkid = L1BlockId::arbitrary(u)?;
+        Ok(Self { height, blkid })
+    }
 }
 
 // Custom Borsh serialization to maintain backward compatibility with u64 storage
 impl BorshSerialize for L1BlockCommitment {
     fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize height as u64 for backward compatibility
+        #[cfg(feature = "bitcoin")]
         let height_u64 = self.height.to_consensus_u32() as u64;
+        #[cfg(not(feature = "bitcoin"))]
+        let height_u64 = self.height;
+
         BorshSerialize::serialize(&height_u64, writer)?;
         BorshSerialize::serialize(&self.blkid, writer)?;
         Ok(())
@@ -102,12 +130,17 @@ impl BorshSerialize for L1BlockCommitment {
 impl BorshDeserialize for L1BlockCommitment {
     fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let height_u64 = u64::deserialize_reader(reader)?;
+
+        #[cfg(feature = "bitcoin")]
         let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("invalid block height {height_u64}: {e}"),
             )
         })?;
+        #[cfg(not(feature = "bitcoin"))]
+        let height = height_u64;
+
         let blkid = L1BlockId::deserialize_reader(reader)?;
         Ok(Self { height, blkid })
     }
@@ -121,7 +154,12 @@ impl Serialize for L1BlockCommitment {
     {
         use ser::SerializeStruct;
         let mut state = serializer.serialize_struct("L1BlockCommitment", 2)?;
+
+        #[cfg(feature = "bitcoin")]
         let height_u64 = self.height.to_consensus_u32() as u64;
+        #[cfg(not(feature = "bitcoin"))]
+        let height_u64 = self.height;
+
         state.serialize_field("height", &height_u64)?;
         state.serialize_field("blkid", &self.blkid)?;
         state.end()
@@ -164,12 +202,15 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
                     }
                 }
 
-                let height = height.ok_or_else(|| de::Error::missing_field("height"))?;
+                let height_u64 = height.ok_or_else(|| de::Error::missing_field("height"))?;
                 let blkid = blkid.ok_or_else(|| de::Error::missing_field("blkid"))?;
 
-                let height = absolute::Height::from_consensus(height as u32).map_err(|e| {
-                    de::Error::custom(format!("invalid block height {}: {}", height, e))
+                #[cfg(feature = "bitcoin")]
+                let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
+                    de::Error::custom(format!("invalid block height {}: {}", height_u64, e))
                 })?;
+                #[cfg(not(feature = "bitcoin"))]
+                let height = height_u64;
 
                 Ok(L1BlockCommitment { height, blkid })
             }
@@ -186,9 +227,12 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(1, &self))?;
 
+                #[cfg(feature = "bitcoin")]
                 let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
                     de::Error::custom(format!("invalid block height {}: {}", height_u64, e))
                 })?;
+                #[cfg(not(feature = "bitcoin"))]
+                let height = height_u64;
 
                 Ok(L1BlockCommitment { height, blkid })
             }
@@ -208,7 +252,10 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
 impl Default for L1BlockCommitment {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "bitcoin")]
             height: absolute::Height::ZERO,
+            #[cfg(not(feature = "bitcoin"))]
+            height: 0,
             blkid: L1BlockId::default(),
         }
     }
@@ -227,10 +274,15 @@ impl fmt::Display for L1BlockCommitment {
             .expect("Failed to encode first 2 bytes to hex");
         hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
 
+        #[cfg(feature = "bitcoin")]
+        let height_display = self.height.to_consensus_u32();
+        #[cfg(not(feature = "bitcoin"))]
+        let height_display = self.height;
+
         write!(
             f,
             "{}@{}..{}",
-            self.height.to_consensus_u32(),
+            height_display,
             str::from_utf8(&first_hex)
                 .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
             str::from_utf8(&last_hex).expect("Failed to convert last 2 hex bytes to UTF-8 string")
@@ -240,15 +292,55 @@ impl fmt::Display for L1BlockCommitment {
 
 impl fmt::Debug for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(feature = "bitcoin")]
+        let height_display = self.height.to_consensus_u32();
+        #[cfg(not(feature = "bitcoin"))]
+        let height_display = self.height;
+
         write!(
             f,
             "L1BlockCommitment(height={}, blkid={:?})",
-            self.height.to_consensus_u32(),
-            self.blkid
+            height_display, self.blkid
         )
     }
 }
 
+impl L1BlockCommitment {
+    /// Create a new L1 block commitment from a u64 height.
+    ///
+    /// Returns `None` if the height is invalid (greater than u32::MAX) when bitcoin feature is
+    /// enabled.
+    pub fn from_height_u64(height: u64, blkid: L1BlockId) -> Option<Self> {
+        #[cfg(feature = "bitcoin")]
+        {
+            let height = absolute::Height::from_consensus(height as u32).ok()?;
+            Some(Self { height, blkid })
+        }
+        #[cfg(not(feature = "bitcoin"))]
+        {
+            Some(Self { height, blkid })
+        }
+    }
+
+    /// Get the block height as u64 for compatibility.
+    pub fn height_u64(&self) -> u64 {
+        #[cfg(feature = "bitcoin")]
+        {
+            self.height.to_consensus_u32() as u64
+        }
+        #[cfg(not(feature = "bitcoin"))]
+        {
+            self.height
+        }
+    }
+
+    /// Get the block ID.
+    pub fn blkid(&self) -> &L1BlockId {
+        &self.blkid
+    }
+}
+
+#[cfg(feature = "bitcoin")]
 impl L1BlockCommitment {
     /// Create a new L1 block commitment.
     ///
@@ -259,34 +351,33 @@ impl L1BlockCommitment {
         Self { height, blkid }
     }
 
-    /// Create a new L1 block commitment from a u64 height.
-    ///
-    /// Returns `None` if the height is invalid (greater than u32::MAX).
-    pub fn from_height_u64(height: u64, blkid: L1BlockId) -> Option<Self> {
-        let height = absolute::Height::from_consensus(height as u32).ok()?;
-        Some(Self { height, blkid })
-    }
-
     /// Get the block height.
     pub fn height(&self) -> absolute::Height {
         self.height
     }
+}
 
-    /// Get the block height as u64 for compatibility.
-    pub fn height_u64(&self) -> u64 {
-        self.height.to_consensus_u32() as u64
+#[cfg(not(feature = "bitcoin"))]
+impl L1BlockCommitment {
+    /// Create a new L1 block commitment.
+    ///
+    /// # Arguments
+    /// * `height` - The block height
+    /// * `blkid` - The block ID
+    pub fn new(height: u64, blkid: L1BlockId) -> Self {
+        Self { height, blkid }
     }
 
-    /// Get the block ID.
-    pub fn blkid(&self) -> &L1BlockId {
-        &self.blkid
+    /// Get the block height.
+    pub fn height(&self) -> u64 {
+        self.height
     }
 }
 
 // Custom debug implementation to print the block hash in little endian
 impl fmt::Debug for L1BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = self.0 .0;
+        let mut bytes = self.0.0;
         bytes.reverse();
         let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
         encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
@@ -299,7 +390,7 @@ impl fmt::Debug for L1BlockId {
 // Custom display implementation to print the block hash in little endian
 impl fmt::Display for L1BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = self.0 .0;
+        let mut bytes = self.0.0;
         bytes.reverse();
         let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
         encode_to_slice(bytes, &mut buf).expect("buf: enc hex");

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::buf::Buf32;
 
-/// ID of an L2 block, usually the hash of its root header.
+/// ID of an OL (Optimistic Ledger) block, usually the hash of its root header.
 #[derive(
     Copy,
     Clone,
@@ -23,11 +23,11 @@ use crate::buf::Buf32;
     Serialize,
     Deserialize,
 )]
-pub struct L2BlockId(Buf32);
+pub struct OLBlockId(Buf32);
 
-impl_buf_wrapper!(L2BlockId, Buf32, 32);
+impl_buf_wrapper!(OLBlockId, Buf32, 32);
 
-impl L2BlockId {
+impl OLBlockId {
     /// Returns a dummy blkid that is all zeroes.
     pub fn null() -> Self {
         Self::from(Buf32::zero())
@@ -38,6 +38,9 @@ impl L2BlockId {
         self.0.is_zero()
     }
 }
+
+/// Alias for backward compatibility
+pub type L2BlockId = OLBlockId;
 
 /// Commits to a specific block at some slot.
 #[derive(
@@ -54,25 +57,25 @@ impl L2BlockId {
     Deserialize,
     Serialize,
 )]
-pub struct L2BlockCommitment {
+pub struct OLBlockCommitment {
     slot: u64,
-    blkid: L2BlockId,
+    blkid: OLBlockId,
 }
 
-impl L2BlockCommitment {
-    pub fn new(slot: u64, blkid: L2BlockId) -> Self {
+impl OLBlockCommitment {
+    pub fn new(slot: u64, blkid: OLBlockId) -> Self {
         Self { slot, blkid }
     }
 
     pub fn null() -> Self {
-        Self::new(0, L2BlockId::from(Buf32::zero()))
+        Self::new(0, OLBlockId::from(Buf32::zero()))
     }
 
     pub fn slot(&self) -> u64 {
         self.slot
     }
 
-    pub fn blkid(&self) -> &L2BlockId {
+    pub fn blkid(&self) -> &OLBlockId {
         &self.blkid
     }
 
@@ -81,7 +84,7 @@ impl L2BlockCommitment {
     }
 }
 
-impl fmt::Display for L2BlockCommitment {
+impl fmt::Display for OLBlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Show first 2 and last 2 bytes of block ID (4 hex chars each)
         let blkid_bytes = self.blkid.as_ref();
@@ -106,12 +109,15 @@ impl fmt::Display for L2BlockCommitment {
     }
 }
 
-impl fmt::Debug for L2BlockCommitment {
+impl fmt::Debug for OLBlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "L2BlockCommitment(slot={}, blkid={:?})",
+            "OLBlockCommitment(slot={}, blkid={:?})",
             self.slot, self.blkid
         )
     }
 }
+
+/// Alias for backward compatibility
+pub type L2BlockCommitment = OLBlockCommitment;

@@ -1,18 +1,14 @@
 use arbitrary::Arbitrary;
 use bitcoin::{
-    absolute, block::Header, hashes::Hash, params::Params, BlockHash, CompactTarget, Network,
+    BlockHash, CompactTarget, Network, absolute, block::Header, hashes::Hash, params::Params,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    buf::Buf32,
-    hash::compute_borsh_hash,
-    l1::{BtcParams, L1BlockCommitment, L1BlockId},
-    params::GenesisL1View,
-};
+use strata_btc_types::{BtcParams, GenesisL1View};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, hash::compute_borsh_hash};
 use thiserror::Error;
 
-use super::{timestamp_store::TimestampStore, utils::compute_block_hash, BtcWork};
+use crate::{BtcWork, timestamp_store::TimestampStore, utils_btc::compute_block_hash};
 
 /// Errors that can occur during Bitcoin header verification.
 #[derive(Debug, Error)]
@@ -25,7 +21,9 @@ pub enum L1VerificationError {
     },
 
     /// Occurs when the header's encoded target does not match the expected target.
-    #[error("Invalid Proof-of-Work: header target {found:?} does not match expected target {expected:?}")]
+    #[error(
+        "Invalid Proof-of-Work: header target {found:?} does not match expected target {expected:?}"
+    )]
     PowMismatch { expected: u32, found: u32 },
 
     /// Occurs when the computed block hash does not meet the target difficulty.
@@ -39,7 +37,9 @@ pub enum L1VerificationError {
 
     /// Occurs when the new headers provided in a reorganization are fewer than the headers being
     /// removed.
-    #[error("Reorg error: new headers length {new_headers} is less than old headers length {old_headers}")]
+    #[error(
+        "Reorg error: new headers length {new_headers} is less than old headers length {old_headers}"
+    )]
     ReorgLengthError {
         new_headers: usize,
         old_headers: usize,
@@ -254,10 +254,10 @@ pub fn get_relative_difficulty_adjustment_height(idx: u64, start: u64, params: &
 mod tests {
 
     use bitcoin::params::MAINNET;
-    use rand::{rngs::OsRng, Rng};
+    use rand::{Rng, rngs::OsRng};
     use strata_test_utils_btc::segment::BtcChainSegment;
 
-    use super::*;
+    use crate::*;
 
     #[test]
     fn test_blocks() {

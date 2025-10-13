@@ -1,4 +1,4 @@
-use bitcoin::params::{Params, MAINNET};
+use bitcoin::params::{MAINNET, Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +32,7 @@ impl BorshSerialize for BtcParams {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Unsupported network type",
-                ))
+                ));
             }
         };
         BorshSerialize::serialize(&network_index, writer)
@@ -51,7 +51,7 @@ impl BorshDeserialize for BtcParams {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Invalid network index",
-                ))
+                ));
             }
         };
         Ok(BtcParams::from(Params::from(network)))

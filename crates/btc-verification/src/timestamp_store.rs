@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::constants::TIMESTAMPS_FOR_MEDIAN;
+use strata_btc_types::TIMESTAMPS_FOR_MEDIAN;
 
 /// The middle index for selecting the median timestamp.
 /// Since TIMESTAMPS_FOR_MEDIAN is odd, the median is the element at index 5 (the 6th element)

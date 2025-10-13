@@ -1,5 +1,6 @@
-use strata_primitives::proof::RollupVerifyingKey;
 use zkaleido::{ProofReceipt, ZkVmResult, ZkVmVerifier};
+
+use crate::RollupVerifyingKey;
 
 pub fn verify_rollup_groth16_proof_receipt(
     proof_receipt: &ProofReceipt,

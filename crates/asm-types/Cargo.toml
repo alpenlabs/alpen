@@ -7,17 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-checkpoint-types.workspace = true
-strata-primitives.workspace = true
-
-arbitrary.workspace = true
-bitcoin.workspace = true
-borsh.workspace = true
-digest.workspace = true
-serde.workspace = true
-sha2.workspace = true
-thiserror.workspace = true
+strata-btc-types.workspace = true
+strata-btc-verification.workspace = true
 
 [dev-dependencies]
-strata-test-utils-btc.workspace = true
-rand.workspace = true

@@ -1,9 +1,8 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::l1::RawBitcoinTx;
 
-use super::{L1TxProof, ProtocolOperation};
+use crate::{ProtocolOperation, RawBitcoinTx, inclusion_proof::L1TxProof};
 
 /// Bitcoin-anchored transaction with proof and protocol operations.
 #[derive(

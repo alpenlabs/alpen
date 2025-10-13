@@ -1,22 +1,33 @@
-//! Logic to check block credentials.
+//! Schnorr signature signing and verification.
+
 use std::ops::Deref;
 
-use secp256k1::{
-    schnorr::Signature, Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1,
-};
+#[cfg(not(target_os = "zkvm"))]
+use secp256k1::{Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
+use strata_identifiers::{Buf32, Buf64};
 
-use crate::buf::{Buf32, Buf64};
-
+/// Sign a message with a Schnorr signature.
+#[cfg(not(target_os = "zkvm"))]
 pub fn sign_schnorr_sig(msg: &Buf32, sk: &Buf32) -> Buf64 {
     let sk = SecretKey::from_slice(sk.as_ref()).expect("Invalid private key");
     let kp = Keypair::from_secret_key(SECP256K1, &sk);
     let msg = Message::from_digest_slice(msg.as_ref()).expect("Invalid message hash");
-    let sig = SECP256K1.sign_schnorr(&msg, &kp);
+    let sig = SECP256K1.sign_schnorr_no_aux_rand(&msg, &kp);
     Buf64::from(sig.serialize())
 }
 
+/// Sign a message with a Schnorr signature (zkvm version).
+#[cfg(target_os = "zkvm")]
+pub fn sign_schnorr_sig(_msg: &Buf32, _sk: &Buf32) -> Buf64 {
+    // Signing is not typically done in zkvm
+    unimplemented!("Schnorr signing not available in zkvm")
+}
+
+/// Verify a Schnorr signature (non-zkvm version using secp256k1).
 #[cfg(not(target_os = "zkvm"))]
 pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
+    use secp256k1::schnorr::Signature;
+
     let msg = match Message::from_digest_slice(msg.as_ref()) {
         Ok(msg) => msg,
         Err(_) => return false,
@@ -35,9 +46,11 @@ pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
     sig.verify(&msg, &pk).is_ok()
 }
 
+/// Verify a Schnorr signature (zkvm version using k256).
 #[cfg(target_os = "zkvm")]
 pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
     use k256::schnorr::{signature::hazmat::PrehashVerifier, Signature, VerifyingKey};
+
     let sig = match Signature::try_from(sig.as_slice()) {
         Ok(sig) => sig,
         Err(_) => return false,
@@ -52,9 +65,11 @@ pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
 }
 
 /// A secret key that is guaranteed to have a even x-only public key
+#[cfg(not(target_os = "zkvm"))]
 #[derive(Debug, Clone, Copy)]
 pub struct EvenSecretKey(SecretKey);
 
+#[cfg(not(target_os = "zkvm"))]
 impl Deref for EvenSecretKey {
     type Target = SecretKey;
 
@@ -63,12 +78,14 @@ impl Deref for EvenSecretKey {
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl AsRef<SecretKey> for EvenSecretKey {
     fn as_ref(&self) -> &SecretKey {
         &self.0
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl From<SecretKey> for EvenSecretKey {
     fn from(value: SecretKey) -> Self {
         match value.x_only_public_key(SECP256K1).1 == Parity::Odd {
@@ -78,6 +95,7 @@ impl From<SecretKey> for EvenSecretKey {
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl From<EvenSecretKey> for SecretKey {
     fn from(value: EvenSecretKey) -> Self {
         value.0
@@ -85,9 +103,11 @@ impl From<EvenSecretKey> for SecretKey {
 }
 
 /// A public key with guaranteed even parity
+#[cfg(not(target_os = "zkvm"))]
 #[derive(Debug)]
 pub struct EvenPublicKey(PublicKey);
 
+#[cfg(not(target_os = "zkvm"))]
 impl Deref for EvenPublicKey {
     type Target = PublicKey;
 
@@ -96,12 +116,14 @@ impl Deref for EvenPublicKey {
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl AsRef<PublicKey> for EvenPublicKey {
     fn as_ref(&self) -> &PublicKey {
         &self.0
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl From<PublicKey> for EvenPublicKey {
     fn from(value: PublicKey) -> Self {
         match value.x_only_public_key().1 == Parity::Odd {
@@ -111,6 +133,7 @@ impl From<PublicKey> for EvenPublicKey {
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl From<EvenPublicKey> for PublicKey {
     fn from(value: EvenPublicKey) -> Self {
         value.0
@@ -118,6 +141,7 @@ impl From<EvenPublicKey> for PublicKey {
 }
 
 /// Ensures a keypair is even by checking the public key's parity and negating if odd.
+#[cfg(not(target_os = "zkvm"))]
 pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKey) {
     match (sk, pk) {
         (sk, pk) if pk.x_only_public_key().1 == Parity::Odd => (
@@ -131,13 +155,15 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 #[cfg(test)]
 mod tests {
     use rand::{rngs::OsRng, Rng};
-    use secp256k1::{SecretKey, SECP256K1};
+    use strata_identifiers::Buf32;
 
     use super::{sign_schnorr_sig, verify_schnorr_sig};
-    use crate::buf::Buf32;
 
     #[test]
+    #[cfg(not(target_os = "zkvm"))]
     fn test_schnorr_signature_pass() {
+        use secp256k1::{SecretKey, SECP256K1};
+
         let msg: [u8; 32] = [(); 32].map(|_| OsRng.gen());
 
         let mut mod_msg = msg;
@@ -145,7 +171,9 @@ mod tests {
         let msg = Buf32::from(msg);
         let mod_msg = Buf32::from(mod_msg);
 
-        let sk = SecretKey::new(&mut OsRng);
+        let mut sk_bytes = [0u8; 32];
+        OsRng.fill(&mut sk_bytes);
+        let sk = SecretKey::from_slice(&sk_bytes).expect("valid key");
         let (pk, _) = sk.x_only_public_key(SECP256K1);
 
         let sk = Buf32::from(*sk.as_ref());

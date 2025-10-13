@@ -3,21 +3,47 @@
 // TODO import address types
 // TODO import generic account types
 
-#[macro_use]
-mod macros;
+// Re-export identifier types from strata-identifiers
+pub use strata_identifiers::{
+    create_evm_extra_payload, impl_buf_wrapper, BitcoinBlockHeight, Buf20, Buf32, Buf64, CredRule,
+    EVMExtraPayload, EpochCommitment, EvmEeBlockCommitment, ExecBlockCommitment, L1BlockCommitment,
+    L1BlockId, L1Height, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId,
+};
+
+// Create module aliases that re-export from identifiers
+pub mod buf {
+    pub use strata_identifiers::{Buf20, Buf32, Buf64};
+}
+pub mod epoch {
+    pub use strata_identifiers::EpochCommitment;
+}
+pub mod hash {
+    pub use strata_identifiers::hash::*;
+}
+pub mod evm_exec {
+    pub use strata_identifiers::{
+        create_evm_extra_payload, EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment,
+    };
+}
+pub mod l2 {
+    pub use strata_identifiers::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId};
+}
+pub mod ol {
+    pub use strata_identifiers::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId};
+}
+
+// Re-export crypto types
+pub mod crypto {
+    pub use strata_crypto::{schnorr::*, RollupVerifyingKey};
+}
+pub use strata_crypto::RollupVerifyingKey;
 
 pub mod block_credential;
-pub mod buf;
 pub mod constants;
-pub mod crypto;
-pub mod epoch;
 pub mod errors;
-pub mod evm_exec;
-pub mod hash;
 pub mod indexed;
 pub mod keys;
 pub mod l1;
-pub mod l2;
 pub mod operator;
 pub mod params;
 pub mod prelude;

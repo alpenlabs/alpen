@@ -1,11 +1,11 @@
-use bitcoin::{key::Parity, secp256k1::PublicKey, XOnlyPublicKey};
 use musig2::KeyAggContext;
-use strata_primitives::{
-    buf::{Buf32, Buf64},
-    crypto::verify_schnorr_sig,
-};
+use secp256k1::{Parity, PublicKey, XOnlyPublicKey};
+use strata_identifiers::{Buf32, Buf64};
 
-use crate::multisig::{errors::MultisigError, traits::CryptoScheme};
+use crate::{
+    multisig::{errors::MultisigError, traits::CryptoScheme},
+    schnorr::verify_schnorr_sig,
+};
 
 /// Schnorr signature scheme using MuSig2 key aggregation.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -3,18 +3,17 @@
 use bitcoin::{Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-pub use strata_btc_types::{GenesisL1View, TIMESTAMPS_FOR_MEDIAN};
+use strata_btc_types::{BitcoinAddress, BitcoinAmount, GenesisL1View, XOnlyPk};
+use strata_crypto::RollupVerifyingKey;
+use strata_identifiers::{Buf32, CredRule};
 use strata_l1_txfmt::MagicBytes;
 use thiserror::Error;
 
-use crate::{
-    block_credential::CredRule,
-    l1::{BitcoinAddress, BitcoinAmount, XOnlyPk},
-    operator::OperatorPubkeys,
-    prelude::Buf32,
-    proof::RollupVerifyingKey,
-    serde_helpers::serde_amount_sat,
-};
+pub mod operator;
+pub mod serde_helpers;
+
+pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
+use serde_helpers::serde_amount_sat;
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
@@ -60,6 +59,7 @@ pub struct RollupParams {
 
     /// SP1 verifying key that is used to verify the Groth16 proof posted on Bitcoin
     // FIXME which proof?  should this be `checkpoint_vk`?
+    // Note: RollupVerifyingKey stays in primitives due to circular dependencies
     pub rollup_vk: RollupVerifyingKey,
 
     /// Number of Bitcoin blocks a withdrawal dispatch assignment is valid for.
@@ -119,7 +119,7 @@ impl RollupParams {
 
     pub fn compute_hash(&self) -> Buf32 {
         let raw_bytes = bincode::serialize(&self).expect("rollup params serialization failed");
-        crate::hash::raw(&raw_bytes)
+        strata_identifiers::hash::raw(&raw_bytes)
     }
 
     pub fn rollup_vk(&self) -> &RollupVerifyingKey {
