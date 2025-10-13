@@ -191,6 +191,7 @@ mod tests {
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
+    use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_primitives::{
         buf::Buf32,
@@ -199,7 +200,6 @@ mod tests {
         l2::{L2BlockCommitment, L2BlockId},
         prelude::*,
     };
-    use strata_state::{client_state::ClientState, operation::ClientUpdateOutput};
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
