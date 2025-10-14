@@ -132,10 +132,41 @@ impl L1WriterDatabase for RBL1WriterDb {
 
     fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
         let exists = self.db.get::<IntentSchema>(&id)?.is_some();
-        if exists {
-            self.db.delete::<IntentSchema>(&id)?;
+        if !exists {
+            return Ok(false);
         }
-        Ok(exists)
+
+        // Delete both the intent entry and its index mapping
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    // Find ALL index entries pointing to this ID by scanning IntentIdxSchema
+                    // Note: IDs are not unique, multiple indices can point to the same ID
+                    let mut iterator = txn.iter::<IntentIdxSchema>()?;
+                    iterator.seek_to_first();
+
+                    let mut indices_to_delete = Vec::new();
+                    for item in iterator {
+                        let (idx, intent_id) = item?.into_tuple();
+                        if intent_id == id {
+                            indices_to_delete.push(idx);
+                        }
+                    }
+
+                    // Delete all index mappings found
+                    for idx in indices_to_delete {
+                        txn.delete::<IntentIdxSchema>(&idx)?;
+                    }
+
+                    // Delete the intent entry
+                    txn.delete::<IntentSchema>(&id)?;
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(true)
     }
 
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
