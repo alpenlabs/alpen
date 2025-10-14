@@ -3,32 +3,116 @@
 use std::{any::Any, fmt::Debug};
 
 use serde::de::DeserializeOwned;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
-use crate::Service;
+use crate::{ServiceStatus, TokioMpscInput};
 
 /// Generic boxed status value which can be downcast to a concrete type.
 pub type AnyStatus = Box<dyn Any + Sync + Send + 'static>;
 
 /// Service status monitor handle.
 #[derive(Clone, Debug)]
-pub struct ServiceMonitor<S: Service> {
-    status_rx: watch::Receiver<S::Status>,
+pub struct ServiceMonitor<S: ServiceStatus> {
+    pub(crate) status_rx: watch::Receiver<S>,
 }
 
-impl<S: Service> ServiceMonitor<S> {
-    pub(crate) fn new(status_rx: watch::Receiver<S::Status>) -> Self {
+impl<S: ServiceStatus> ServiceMonitor<S> {
+    pub(crate) fn new(status_rx: watch::Receiver<S>) -> Self {
         Self { status_rx }
     }
 
     /// Returns a clone of the current status.
-    pub fn get_current(&self) -> S::Status {
+    pub fn get_current(&self) -> S {
         self.status_rx.borrow().clone()
     }
 
     /// Converts this service monitor into a generic one.
     pub fn into_generic(self) -> GenericStatusMonitor {
         GenericStatusMonitor::new(self)
+    }
+
+    /// Creates a listener input for this service monitor.
+    ///
+    /// This allows another service to listen to status updates from this service.
+    /// Returns an MPSC receiver that will receive status updates, and spawns a task
+    /// to forward watch channel updates to it.
+    ///
+    /// The listener task will automatically exit when the monitored service exits.
+    pub fn create_listener_input(
+        &self,
+        executor: &strata_tasks::TaskExecutor,
+    ) -> TokioMpscInput<S> {
+        // Create an MPSC channel for forwarding status updates
+        let (tx, rx) = mpsc::channel(100);
+
+        // Clone the watch receiver
+        let mut watch_rx = self.status_rx.clone();
+
+        // Spawn a task to forward watch updates to MPSC
+        // This is a non-critical background task that will exit when either:
+        // - The monitored service exits (watch channel closes)
+        // - The listener service exits (MPSC receiver dropped)
+        executor.handle().spawn(async move {
+            while watch_rx.changed().await.is_ok() {
+                // Get the new status and send it
+                let status = watch_rx.borrow_and_update().clone();
+                if tx.send(status).await.is_err() {
+                    // Receiver dropped, exit
+                    break;
+                }
+            }
+            // Watch channel closed - monitored service exited
+        });
+
+        TokioMpscInput::new(rx)
+    }
+
+    /// Creates a listener input for this service monitor with some initial data served first.
+    ///
+    /// This allows another service to listen to status updates from this service.
+    /// Returns an MPSC receiver that will receive status updates, and spawns a task
+    /// to forward watch channel updates to it.
+    ///
+    /// The listener task will automatically exit when the monitored service exits.
+    ///
+    /// Useful for catching up or replaying updates from a specific point.
+    pub fn create_listener_input_with(
+        &self,
+        executor: &strata_tasks::TaskExecutor,
+        initial_updates: Vec<S>,
+    ) -> TokioMpscInput<S> {
+        // Create an MPSC channel for forwarding status updates
+        let (tx, rx) = mpsc::channel(100);
+
+        // Clone the watch receiver
+        let mut watch_rx = self.status_rx.clone();
+
+        // Spawn a task to forward watch updates to MPSC
+        // This is a non-critical background task that will exit when either:
+        // - The monitored service exits (watch channel closes)
+        // - The listener service exits (MPSC receiver dropped)
+        executor.handle().spawn(async move {
+            for s in initial_updates {
+                // First, send the initial status to prepend it
+                if tx.send(s).await.is_err() {
+                    // Receiver dropped, exit early
+                    return;
+                }
+            }
+
+            // Then continue forwarding new status updates
+            while watch_rx.changed().await.is_ok() {
+                // Get the new status and send it
+                let status = watch_rx.borrow_and_update().clone();
+                if tx.send(status).await.is_err() {
+                    // Receiver dropped, exit
+                    break;
+                }
+            }
+            // Watch channel closed - monitored service exited
+        });
+
+        TokioMpscInput::new(rx)
     }
 }
 
@@ -44,7 +128,7 @@ pub trait StatusMonitor {
     fn fetch_status_json(&self) -> anyhow::Result<serde_json::Value>;
 }
 
-impl<S: Service> StatusMonitor for ServiceMonitor<S> {
+impl<S: ServiceStatus> StatusMonitor for ServiceMonitor<S> {
     fn fetch_status_any(&self) -> anyhow::Result<AnyStatus> {
         let v = self.status_rx.borrow();
         Ok(Box::new(v.clone()))
@@ -70,7 +154,7 @@ pub struct GenericStatusMonitor {
 
 impl GenericStatusMonitor {
     /// Creates a new instance from a specific service monitor.
-    pub fn new<S: Service>(inner: ServiceMonitor<S>) -> Self {
+    pub fn new<S: ServiceStatus>(inner: ServiceMonitor<S>) -> Self {
         Self {
             inner: Box::new(inner),
         }

@@ -13,5 +13,7 @@ inst_ops_simple! {
         put_client_update(block: L1BlockCommitment, output: ClientUpdateOutput) => ();
         get_client_update(block: L1BlockCommitment) => Option<ClientUpdateOutput>;
         get_latest_client_state() => Option<(L1BlockCommitment, ClientState)>;
+        del_client_update(block: L1BlockCommitment) => ();
+        get_client_updates_from(from_block: L1BlockCommitment, max_count: usize) => Vec<(L1BlockCommitment, ClientUpdateOutput)>;
     }
 }

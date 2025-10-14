@@ -1,0 +1,32 @@
+[package]
+name = "strata-csm-worker"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-asm-common.workspace = true
+strata-asm-logs.workspace = true
+strata-asm-worker.workspace = true
+strata-checkpoint-types.workspace = true
+strata-common = { workspace = true, default-features = true }
+strata-csm-types.workspace = true
+strata-db.workspace = true
+strata-primitives.workspace = true
+strata-service.workspace = true
+strata-status.workspace = true
+strata-storage.workspace = true
+
+anyhow.workspace = true
+serde.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true
+strata-db-store-sled = { workspace = true, features = ["test_utils"] }
+bitcoin.workspace = true
+threadpool.workspace = true
+serde_json.workspace = true
+borsh.workspace = true

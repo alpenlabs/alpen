@@ -4,11 +4,14 @@
 
 use std::sync::Arc;
 
+use bitcoin::absolute::Height;
 use bitcoind_async_client::Client;
-use strata_asm_worker::AsmWorkerHandle;
+use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
+use strata_csm_worker::{CsmWorkerService, CsmWorkerState};
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
-use strata_primitives::{l1::L1BlockCommitment, params::Params};
+use strata_primitives::{params::Params, prelude::L1BlockCommitment};
+use strata_service::{ServiceBuilder, SyncAsyncInput};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
@@ -17,9 +20,9 @@ use tokio::{runtime::Handle, sync::mpsc};
 use crate::{
     asm_worker_context::AsmWorkerCtx,
     chain_worker_context::ChainWorkerCtx,
-    csm::{ctl::CsmController, message::ForkChoiceMessage, worker},
     exec_worker_context::ExecWorkerCtx,
     fork_choice_manager::{self},
+    message::ForkChoiceMessage,
 };
 
 /// Handle to the core pipeline tasks.
@@ -30,8 +33,7 @@ use crate::{
 pub struct SyncManager {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
-    csm_controller: Arc<CsmController>,
-    asm_controller: Arc<AsmWorkerHandle<AsmWorkerCtx>>,
+    asm_controller: Arc<AsmWorkerHandle>,
     status_channel: StatusChannel,
 }
 
@@ -44,17 +46,7 @@ impl SyncManager {
         self.params.clone()
     }
 
-    /// Gets a ref to the CSM controller.
-    pub fn csm_controller(&self) -> &CsmController {
-        &self.csm_controller
-    }
-
-    /// Gets a clone of the CSM controller.
-    pub fn get_csm_ctl(&self) -> Arc<CsmController> {
-        self.csm_controller.clone()
-    }
-
-    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle<AsmWorkerCtx>> {
+    pub fn get_asm_ctl(&self) -> Arc<AsmWorkerHandle> {
         self.asm_controller.clone()
     }
 
@@ -84,8 +76,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
 ) -> anyhow::Result<SyncManager> {
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
-    let (btc_block_tx, btc_block_rx) = mpsc::channel::<L1BlockCommitment>(64);
-    let csm_controller = Arc::new(CsmController::new(btc_block_tx));
 
     // Exec worker.
     let ex_storage = storage.clone();
@@ -114,6 +104,20 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         bitcoin_client,
     )?);
 
+    // Launch CSM listener service that listens to ASM status updates
+    let csm_params = params.clone();
+    let csm_storage = storage.clone();
+    let csm_st_ch = status_channel.clone();
+    let csm_asm_monitor = asm_controller.monitor();
+
+    spawn_csm_listener(
+        executor,
+        csm_params,
+        csm_storage,
+        csm_st_ch,
+        csm_asm_monitor,
+    )?;
+
     // Start the fork choice manager thread.  If we haven't done genesis yet
     // this will just wait until the CSM says we have.
     let fcm_storage = storage.clone();
@@ -133,21 +137,68 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         )
     });
 
-    // Prepare the client worker state and start the thread for that.
-    let client_worker_state = worker::WorkerState::open(params.clone(), storage.clone())?;
-    let st_ch = status_channel.clone();
-
-    executor.spawn_critical("client_worker_task", move |shutdown| {
-        worker::client_worker_task(shutdown, client_worker_state, btc_block_rx, st_ch)
-    });
-
     Ok(SyncManager {
         params,
         fc_manager_tx: fcm_tx,
-        csm_controller,
         asm_controller,
         status_channel,
     })
+}
+
+fn spawn_csm_listener(
+    executor: &TaskExecutor,
+    params: Arc<Params>,
+    storage: Arc<NodeStorage>,
+    status_channel: StatusChannel,
+    asm_monitor: &strata_service::ServiceMonitor<AsmWorkerStatus>,
+) -> anyhow::Result<()> {
+    // Create CSM worker state.
+    let csm_state = CsmWorkerState::new(params, storage.clone(), status_channel.clone())?;
+
+    // Get the starting block from CSM's last processed block
+    // If CSM hasn't processed any blocks yet, we get the latest ASM state from storage
+    let from_block = if let Some(last_block) = csm_state.last_asm_block() {
+        last_block
+    } else {
+        // Get the latest ASM state as fallback
+        let (latest_block, _) = storage
+            .asm()
+            .fetch_most_recent_state()?
+            .expect("No ASM state available");
+        latest_block
+    };
+
+    // Fetch historical ASM states starting from the next height.
+    let max_historical_blocks = 1000;
+    let nh = Height::from_consensus(from_block.height().to_consensus_u32() + 1)
+        .expect("height + 1 should be valid");
+    let historical_states = storage.asm().get_states_from(
+        L1BlockCommitment::new(nh, Default::default()),
+        max_historical_blocks,
+    )?;
+
+    // Convert historical states to ASM worker status updates
+    let initial_updates: Vec<AsmWorkerStatus> = historical_states
+        .into_iter()
+        .map(|(block, state)| AsmWorkerStatus {
+            is_initialized: true,
+            cur_block: Some(block),
+            cur_state: Some(state),
+        })
+        .collect();
+
+    // Create an input that listens to ASM status updates with historical prepended
+    let async_input = asm_monitor.create_listener_input_with(executor, initial_updates);
+    // Wrap in SyncAsyncInput adapter since CSM worker is a sync service.
+    let csm_input = SyncAsyncInput::new(async_input, executor.handle().clone());
+
+    // Launch the CSM worker service (which acts as a listener to ASM worker).
+    let _csm_monitor = ServiceBuilder::<CsmWorkerService, _>::new()
+        .with_state(csm_state)
+        .with_input(csm_input)
+        .launch_sync("csm_worker", executor)?;
+
+    Ok(())
 }
 
 fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
@@ -204,7 +255,7 @@ fn spawn_asm_worker(
     storage: Arc<NodeStorage>,
     params: Arc<Params>,
     bitcoin_client: Arc<Client>,
-) -> anyhow::Result<AsmWorkerHandle<AsmWorkerCtx>> {
+) -> anyhow::Result<AsmWorkerHandle> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
     // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
     // block manager).
@@ -219,7 +270,6 @@ fn spawn_asm_worker(
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
         .with_params(params)
-        .with_runtime(handle)
         .launch(executor)?;
 
     Ok(handle)

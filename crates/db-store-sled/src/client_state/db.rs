@@ -30,6 +30,35 @@ impl ClientStateDatabase for ClientStateDBSled {
         let res = iter.next().map(|r| r.map(|(k, v)| (k, v.into_state())));
         Ok(res.transpose()?)
     }
+
+    fn del_client_update(&self, block: L1BlockCommitment) -> DbResult<()> {
+        self.client_update_tree.remove(&block)?;
+        Ok(())
+    }
+
+    fn get_client_updates_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(L1BlockCommitment, ClientUpdateOutput)>> {
+        let Ok(Some((last_block, _))) = self.client_update_tree.last() else {
+            return Ok(vec![]);
+        };
+
+        let mut result = Vec::new();
+
+        // Iterate through all blocks and filter those >= from_block
+        for item in self.client_update_tree.range(from_block..=last_block)? {
+            let (block, update) = item?;
+            result.push((block, update));
+
+            if result.len() >= max_count {
+                break;
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(feature = "test_utils")]

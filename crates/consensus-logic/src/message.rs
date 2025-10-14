@@ -1,3 +1,5 @@
+//! Messages used in consensus logic.
+
 use strata_ol_chain_types::L2BlockId;
 
 /// Message about a new block the fork choice manager might do something with.

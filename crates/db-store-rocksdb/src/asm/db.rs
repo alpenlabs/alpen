@@ -78,6 +78,47 @@ impl AsmDatabase for AsmDb {
             })
         }))
     }
+
+    fn get_asm_states_from(
+        &self,
+        from_block: strata_primitives::prelude::L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(strata_primitives::prelude::L1BlockCommitment, AsmState)>> {
+        self.db
+            .with_optimistic_txn(
+                TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<
+                    Vec<(strata_primitives::prelude::L1BlockCommitment, AsmState)>,
+                    anyhow::Error,
+                > {
+                    let mut result = Vec::new();
+
+                    // Create iterator for states
+                    let state_iter = txn.iter::<AsmStateSchema>()?;
+
+                    for item in state_iter {
+                        let (block, state) = item?.into_tuple();
+
+                        // Skip blocks before the starting block
+                        if block < from_block {
+                            continue;
+                        }
+
+                        // Get corresponding logs
+                        if let Some(logs) = txn.get::<AsmLogSchema>(&block)? {
+                            result.push((block, AsmState::new(state, logs)));
+
+                            if result.len() >= max_count {
+                                break;
+                            }
+                        }
+                    }
+
+                    Ok(result)
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))
+    }
 }
 
 #[cfg(test)]

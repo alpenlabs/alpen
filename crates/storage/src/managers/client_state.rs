@@ -99,6 +99,19 @@ impl ClientStateManager {
     pub fn fetch_most_recent_state(&self) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
         self.ops.get_latest_client_state_blocking()
     }
+
+    /// Returns [`ClientUpdateOutput`] entries starting from a given block up to a maximum count.
+    ///
+    /// Returns entries in ascending order (oldest first). If `from_block` doesn't exist,
+    /// starts from the next available block after it.
+    pub fn get_updates_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(L1BlockCommitment, ClientUpdateOutput)>> {
+        self.ops
+            .get_client_updates_from_blocking(from_block, max_count)
+    }
 }
 
 /// Internally tracks the current state so we can fetch it as needed.

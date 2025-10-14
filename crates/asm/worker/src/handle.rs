@@ -4,36 +4,37 @@ use strata_service::{CommandHandle, ServiceMonitor};
 use strata_state::BlockSubmitter;
 use tracing::warn;
 
-use crate::{AsmWorkerService, WorkerContext};
-
-type Monitor<W> = ServiceMonitor<AsmWorkerService<W>>;
+use crate::AsmWorkerStatus;
 
 /// Handle for interacting with the ASM worker service.
 #[derive(Debug)]
-pub struct AsmWorkerHandle<W: WorkerContext + Send + Sync + 'static> {
+pub struct AsmWorkerHandle {
     command_handle: CommandHandle<L1BlockCommitment>,
-    service_monitor: Monitor<W>,
+    monitor: ServiceMonitor<AsmWorkerStatus>,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerHandle<W> {
+impl AsmWorkerHandle {
     /// Create a new ASM worker handle from a service command handle.
-    pub fn new(command_handle: CommandHandle<L1BlockCommitment>, monitor: Monitor<W>) -> Self {
+    pub fn new(
+        command_handle: CommandHandle<L1BlockCommitment>,
+        monitor: ServiceMonitor<AsmWorkerStatus>,
+    ) -> Self {
         Self {
             command_handle,
-            service_monitor: monitor,
+            monitor,
         }
     }
 
     /// Allows other services to listen to status updates.
     ///
     /// Can be useful for logic that want to listen to logs/updates of ASM state.
-    pub fn get_monitor(&self) -> &Monitor<W> {
-        &self.service_monitor
+    pub fn monitor(&self) -> &ServiceMonitor<AsmWorkerStatus> {
+        &self.monitor
     }
 }
 
 #[async_trait]
-impl<W: WorkerContext + Send + Sync + 'static> BlockSubmitter for AsmWorkerHandle<W> {
+impl BlockSubmitter for AsmWorkerHandle {
     /// Sends a new l1 block to the ASM service.
     fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
         if self.command_handle.send_blocking(block).is_err() {

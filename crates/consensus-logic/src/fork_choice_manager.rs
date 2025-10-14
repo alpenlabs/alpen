@@ -20,8 +20,8 @@ use tokio::{
 use tracing::*;
 
 use crate::{
-    csm::message::ForkChoiceMessage,
     errors::*,
+    message::ForkChoiceMessage,
     tip_update::{compute_tip_update, TipUpdate},
     unfinalized_tracker::{self, UnfinalizedBlockTracker},
 };

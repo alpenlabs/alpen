@@ -93,7 +93,7 @@ fn verify_checkpoint_proof(
     );
 
     if is_empty_proof {
-        if allow_empty && cfg!(feature = "debug-utils") {
+        if allow_empty {
             logging::warn!(
                 epoch = checkpoint.batch_info().epoch(),
                 "Accepting empty checkpoint proof"

@@ -47,7 +47,6 @@ use strata_sequencer::{
     block_template,
     checkpoint::{checkpoint_expiry_worker, checkpoint_worker, CheckpointHandle},
 };
-use strata_state::CombinedBlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::{create_node_storage, NodeStorage};
 use strata_sync::{self, L2SyncContext, RpcSyncPeer};
@@ -343,11 +342,8 @@ fn start_core_tasks(
     )?
     .into();
 
-    // Creating a combined block consumer both for CSM and for ASM, so they are in-sync.
-    // TODO: Ideally, ASM service would use its own reader task with its own reader config.
-    let block_submitter =
-        CombinedBlockSubmitter::new(vec![sync_manager.get_csm_ctl(), sync_manager.get_asm_ctl()]);
-
+    // ASM processes L1 blocks from the bitcoin reader.
+    // CSM listens to ASM logs (via the service framework listener pattern).
     // Start the L1 tasks to get that going.
     executor.spawn_critical_async(
         "bitcoin_data_reader_task",
@@ -357,7 +353,7 @@ fn start_core_tasks(
             Arc::new(config.btcio.reader.clone()),
             sync_manager.get_params(),
             status_channel.clone(),
-            Arc::new(block_submitter),
+            sync_manager.get_asm_ctl(),
         ),
     );
 

@@ -53,6 +53,36 @@ impl AsmDatabase for AsmDBSled {
             })
         }))
     }
+
+    fn get_asm_states_from(
+        &self,
+        from_block: L1BlockCommitment,
+        max_count: usize,
+    ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>> {
+        let mut result = Vec::new();
+
+        // Use non-transactional iteration since we only need reads
+        // Iterate through all blocks and filter those >= from_block
+        for item in self.asm_state_tree.iter() {
+            let (block, state) = item?;
+
+            // Skip blocks before the starting block
+            if block < from_block {
+                continue;
+            }
+
+            // Get corresponding logs (also non-transactional read)
+            if let Some(logs) = self.asm_log_tree.get(&block)? {
+                result.push((block, AsmState::new(state, logs)));
+
+                if result.len() >= max_count {
+                    break;
+                }
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(feature = "test_utils")]
