@@ -6,6 +6,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     # Group all updates into a single PR
     groups:
       all-dependencies:
@@ -26,6 +29,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     # Group non-security updates
     groups:
       rust-dependencies:
@@ -60,6 +66,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       risc0-guest-programs:
         patterns:
@@ -77,6 +86,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       risc0-guest-programs:
         patterns:
@@ -94,6 +106,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       risc0-guest-programs:
         patterns:
@@ -111,6 +126,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       risc0-guest-programs:
         patterns:
@@ -129,6 +147,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       sp1-guest-programs:
         patterns:
@@ -146,6 +167,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       sp1-guest-programs:
         patterns:
@@ -163,6 +187,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       sp1-guest-programs:
         patterns:
@@ -180,6 +207,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     groups:
       sp1-guest-programs:
         patterns:
@@ -198,6 +228,9 @@ updates:
     schedule:
       interval: "monthly"
       time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 5
     # Group all updates into a single PR
     groups:
       python-dependencies:
