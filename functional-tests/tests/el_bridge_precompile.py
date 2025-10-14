@@ -6,7 +6,7 @@ from envs import net_settings, testenv
 from mixins.bridge_out_precompile_contract_mixin import BridgePrecompileMixin
 from utils import *
 from utils.constants import PRECOMPILE_BRIDGEOUT_ADDRESS
-from utils.wait.strata import StrataWaiter
+from utils.wait.reth import RethWaiter
 
 withdrawal_intent_event_abi = {
     "anonymous": False,
@@ -65,7 +65,7 @@ class ElBridgePrecompileTest(BridgePrecompileMixin):
             }
         )
 
-        receipt_waiter = StrataWaiter(web3.eth, self.logger, 60, 0.5)
+        receipt_waiter = RethWaiter(web3.eth, self.logger, 60, 0.5)
         receipt = receipt_waiter.wait_until_tx_included_in_block(txid.hex())
 
         assert receipt.status == 1, "precompile transaction failed"
