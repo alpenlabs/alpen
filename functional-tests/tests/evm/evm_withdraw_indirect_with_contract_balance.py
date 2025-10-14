@@ -15,7 +15,7 @@ class ContractBridgeOutWithContractBalanceTest(BridgePrecompileMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        logging.warn("test temporarily disabled")
+        logging.warning("test temporarily disabled")
         return
 
         # Deposit to contract Address

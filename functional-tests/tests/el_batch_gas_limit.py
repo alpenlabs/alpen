@@ -34,7 +34,7 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
 
     def main(self, ctx: flexitest.RunContext):
         # TODO: Fix @mdteach @sapinb
-        logging.warn("test temporarily disabled")
+        logging.warning("test temporarily disabled")
         return
         seq_signer = ctx.get_service("sequencer_signer")
         seq_signer.stop()
@@ -84,7 +84,7 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
         assert total_gas_used < GAS_PER_TX * TX_COUNT, "all txns should NOT be processed"
 
 
-def make_burner_transaction(web3: Web3, nonce: int):
+def make_burner_transaction(web3: Web3, nonce: int) -> str:
     """
     :param web3: Web3 instance.
     :nonce: Nonce for the transaction.

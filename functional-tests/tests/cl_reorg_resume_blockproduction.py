@@ -6,7 +6,7 @@ from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils import *
 
 
-def send_tx(web3: Web3):
+def send_tx(web3: Web3) -> None:
     dest = web3.to_checksum_address("deedf001900dca3ebeefdeadf001900dca3ebeef")
     txid = web3.eth.send_transaction(
         {
