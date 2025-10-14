@@ -1,11 +1,4 @@
-//! Client State Machine (CSM) types for the Strata rollup.
-//!
-//! This crate contains types related to the client state machine, including:
-//! - Payload types for L1 data availability
-//! - Status types for L1 connectivity and state
-//! - Client state types for checkpoint tracking
-//! - Operation types for state transitions
-
+//! Client State Machine (CSM) types.
 mod client_state;
 mod operation;
 mod status;
