@@ -46,3 +46,19 @@ class RethWaiter(RpcWaiter):
             error_with="Finding non empty witness for blockhash {blockhash} timed out",
             timeout=timeout or self.timeout,
         )
+
+    def wait_until_tx_included_in_block(self, txid: str):
+        def _query():
+            try:
+                receipt = self.rpc_client.get_transaction_receipt(txid)
+                return receipt
+            except Exception as e:
+                return e
+
+        result = self._wait_until_with_value(
+            _query,
+            lambda result: not isinstance(result, Exception),
+            error_with="Transaction receipt for txid not available",
+            timeout=self.timeout,
+        )
+        return result

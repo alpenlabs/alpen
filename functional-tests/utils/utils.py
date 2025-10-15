@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from threading import Thread
 from typing import Any, TypeVar
 
+import base58
 from bitcoinlib.services.bitcoind import BitcoindClient
 from strata_utils import convert_to_xonly_pk, musig_aggregate_pks
 
@@ -652,3 +653,26 @@ def check_initial_eth_balance(rethrpc, address, debug_fn=print):
     balance = int(rethrpc.eth_getBalance(address), 16)
     debug_fn(f"Strata Balance before deposits: {balance}")
     assert balance == 0, "Strata balance is not expected (should be zero initially)"
+
+
+def get_priv_keys(ctx, env=None):
+    if env is None:
+        path = os.path.join(ctx.datadir_root, f"_{ctx.name}", "_init")
+    else:
+        path = os.path.join(ctx.datadir_root, env, "_init")
+
+    priv_keys = []
+    opkeys = sorted(
+        filter(lambda file: file.startswith("opkey"), os.listdir(path)),
+        key=lambda x: int("".join(filter(str.isdigit, x))),
+    )
+    for filename in opkeys:
+        if not filename.startswith("op"):
+            continue
+
+        full_path = os.path.join(path, filename)
+        with open(full_path) as f:
+            content = f.read().strip()
+            decoded = base58.b58decode(content)[:-4]  # remove checksum
+            priv_keys.append(decoded)
+    return priv_keys
