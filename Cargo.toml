@@ -48,7 +48,8 @@ members = [
   "crates/l1tx",
   "crates/ledger-types",
   "crates/mpt",
-  "crates/ol-chain-types",
+  "crates/ol/chain-types",
+  "crates/ol/state-types",
   "crates/ol-chainstate-types",
   "crates/params",
   "crates/primitives",
@@ -182,7 +183,9 @@ strata-ledger-types = { path = "crates/ledger-types" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
 strata-ol-chain-types = { path = "crates/ol-chain-types" }
+strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
+strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
