@@ -229,7 +229,7 @@ fn process_chain_segment<E: ExecutionEnvironment>(
         return Err(EnvError::MalformedCoinput);
     };
 
-    let last_exec_blkid = last.notpackage().exec_blkid();
+    let last_exec_blkid = last.package().exec_blkid();
     cvstate.consume_pending_commit(&last_exec_blkid)?;
 
     // 2. Go through each block and process them.
@@ -249,7 +249,7 @@ fn process_block<E: ExecutionEnvironment>(
     let block: E::Block = decode_and_check_commit_block::<E>(block_data)?;
     let header = block.get_header();
     let blkid = header.compute_block_id();
-    if blkid != block_data.notpackage().exec_blkid() {
+    if blkid != block_data.package().exec_blkid() {
         return Err(EnvError::InconsistentCoinput);
     }
 
@@ -258,14 +258,14 @@ fn process_block<E: ExecutionEnvironment>(
     let exec_outp = cvstate.execute_block_body(
         &header.get_intrinsics(),
         block.get_body(),
-        block_data.notpackage().inputs(),
+        block_data.package().inputs(),
     )?;
-    if exec_outp.outputs() != block_data.notpackage().outputs() {
+    if exec_outp.outputs() != block_data.package().outputs() {
         return Err(EnvError::InconsistentCoinput);
     }
 
     // 3. Check that the inputs match what was expected and consume them.
-    cvstate.consume_pending_inputs_from_block(block_data.notpackage().inputs())?;
+    cvstate.consume_pending_inputs_from_block(block_data.package().inputs())?;
 
     // 4. Apply writes and check state root.  This checks the state root
     // matches the root expected in the header.
@@ -276,7 +276,7 @@ fn process_block<E: ExecutionEnvironment>(
     // 6. Update bookkeeping outputs.
     cvstate
         .uvstate
-        .merge_block_outputs(block_data.notpackage().outputs());
+        .merge_block_outputs(block_data.package().outputs());
 
     // TODO other stuff?  how do we do fincls?
 
@@ -284,12 +284,12 @@ fn process_block<E: ExecutionEnvironment>(
 }
 
 /// Checks the raw exec block data from a commit block matches the hash in the
-/// notpackage, and then returns the decoded exec block if it matches.
+/// package, and then returns the decoded exec block if it matches.
 fn decode_and_check_commit_block<E: ExecutionEnvironment>(
     block_data: &CommitBlockData,
 ) -> EnvResult<E::Block> {
     let raw_block_hash = Sha256::digest(block_data.raw_full_block());
-    if raw_block_hash.as_ref() != block_data.notpackage().raw_block_encoded_hash() {
+    if raw_block_hash.as_ref() != block_data.package().raw_block_encoded_hash() {
         return Err(EnvError::InconsistentCoinput);
     }
 

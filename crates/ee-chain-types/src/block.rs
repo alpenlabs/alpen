@@ -6,7 +6,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, Hash, SentMessage, SubjectId};
 // TODO better name, using an intentionally bad one for now
 // TODO SSZ
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExecBlockNotpackage {
+pub struct ExecBlockPackage {
     /// Commitment to the block itself.
     commitment: ExecBlockCommitment,
 
@@ -17,7 +17,7 @@ pub struct ExecBlockNotpackage {
     outputs: BlockOutputs,
 }
 
-impl ExecBlockNotpackage {
+impl ExecBlockPackage {
     pub fn new(
         commitment: ExecBlockCommitment,
         inputs: BlockInputs,

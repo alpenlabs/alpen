@@ -91,7 +91,7 @@ impl UpdateBuilder {
 
         // Accumulate outputs from all blocks in the segment
         for block in segment.blocks() {
-            let block_notpackage = block.notpackage();
+            let block_notpackage = block.package();
             let block_outputs = block_notpackage.outputs();
             let block_inputs = block_notpackage.inputs();
 
