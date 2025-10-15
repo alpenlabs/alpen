@@ -13181,6 +13181,7 @@ dependencies = [
  "digest 0.10.7",
  "int-enum",
  "sha2 0.10.9",
+ "strata-btc-types",
  "strata-codec",
  "strata-mmr",
  "thiserror 2.0.16",

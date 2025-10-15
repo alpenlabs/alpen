@@ -242,7 +242,9 @@ impl BorshDeserialize for BitcoinAddress {
     Deserialize,
     Eq,
     Hash,
+    Ord,
     PartialEq,
+    PartialOrd,
     Serialize,
 )]
 pub struct BitcoinAmount(u64);
@@ -262,6 +264,32 @@ impl From<Amount> for BitcoinAmount {
 impl From<BitcoinAmount> for Amount {
     fn from(value: BitcoinAmount) -> Self {
         Self::from_sat(value.to_sat())
+    }
+}
+
+impl From<u64> for BitcoinAmount {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<BitcoinAmount> for u64 {
+    fn from(value: BitcoinAmount) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for BitcoinAmount {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for BitcoinAmount {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -336,6 +364,24 @@ impl BitcoinAmount {
     /// Saturating addition. Computes `self + rhs`, saturating at the numeric bounds.
     pub fn saturating_add(self, rhs: Self) -> Self {
         Self::from_sat(self.to_sat().saturating_add(rhs.to_sat()))
+    }
+
+    /// Returns a zero amount.
+    pub const fn zero() -> Self {
+        Self::ZERO
+    }
+
+    /// Returns true if the amount is zero.
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
+    /// Sums an iterator of [`BitcoinAmount`] values.
+    pub fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::ZERO, |acc, amt| {
+            acc.checked_add(amt)
+                .expect("BitcoinAmount overflow during sum")
+        })
     }
 }
 
