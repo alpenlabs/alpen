@@ -1,0 +1,16 @@
+class L1BlockCommitment(Container):
+    height: uint64
+    blkid: Vector[byte, 32]
+
+class L2BlockCommitment(Container):
+    slot: uint64
+    blkid: Vector[byte, 32]
+
+class EpochCommitment(Container):
+    epoch: uint64
+    last_slot: uint64
+    last_blkid: Vector[byte, 32]
+
+class ExecBlockCommitment(Container):
+    slot: uint64
+    blkid: Vector[byte, 32]
