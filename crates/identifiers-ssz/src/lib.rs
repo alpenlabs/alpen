@@ -48,3 +48,5 @@ mod generated {
 pub use generated::*;
 pub use ssz::{Decode, Encode};
 pub use tree_hash::TreeHash;
+
+mod conversions;
