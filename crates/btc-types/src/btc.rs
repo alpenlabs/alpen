@@ -1,5 +1,5 @@
 use std::{
-    fmt::{self, Debug, Display},
+    fmt::{Debug, Display},
     io::{self, Read, Write},
     str,
 };
@@ -19,7 +19,6 @@ use bitcoin::{
 };
 use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
-use hex::encode_to_slice;
 use rand::rngs::OsRng;
 use secp256k1::SECP256K1;
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -767,50 +766,6 @@ impl<'a> Arbitrary<'a> for TaprootSpendPath {
             }
             _ => unreachable!(),
         }
-    }
-}
-
-/// Outpoint of a bitcoin tx
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
-pub struct Outpoint {
-    pub txid: Buf32,
-    pub vout: u32,
-}
-
-// Custom debug implementation to print txid in little endian
-impl Debug for Outpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut txid_buf = [0u8; 64];
-        {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
-        }
-
-        f.debug_struct("Outpoint")
-            .field("txid", &unsafe { std::str::from_utf8_unchecked(&txid_buf) })
-            .field("vout", &self.vout)
-            .finish()
-    }
-}
-
-// Custom display implementation to print txid in little endian
-impl Display for Outpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut txid_buf = [0u8; 64];
-        {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
-        }
-
-        write!(
-            f,
-            "Outpoint {{ txid: {}, vout: {} }}",
-            // SAFETY: hex encoding always produces valid UTF-8
-            unsafe { str::from_utf8_unchecked(&txid_buf) },
-            self.vout
-        )
     }
 }
 

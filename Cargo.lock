@@ -13463,7 +13463,6 @@ dependencies = [
  "bitcoin-bosd",
  "borsh",
  "digest 0.10.7",
- "hex",
  "num_enum 0.7.4",
  "rand 0.8.5",
  "secp256k1 0.29.1",
