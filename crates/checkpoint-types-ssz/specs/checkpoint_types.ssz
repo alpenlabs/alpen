@@ -1,0 +1,33 @@
+class ChainstateRootTransition(Container):
+    pre_state_root: Vector[byte, 32]
+    post_state_root: Vector[byte, 32]
+
+class BatchTransition(Container):
+    epoch: uint64
+    pre_state_root: Vector[byte, 32]
+    post_state_root: Vector[byte, 32]
+
+class BatchInfo(Container):
+    epoch: uint64
+    l1_range_start_height: uint64
+    l1_range_start_blkid: Vector[byte, 32]
+    l1_range_end_height: uint64
+    l1_range_end_blkid: Vector[byte, 32]
+    l2_range_start_slot: uint64
+    l2_range_start_blkid: Vector[byte, 32]
+    l2_range_end_slot: uint64
+    l2_range_end_blkid: Vector[byte, 32]
+
+class EpochSummary(Container):
+    epoch: uint64
+    terminal_slot: uint64
+    terminal_blkid: Vector[byte, 32]
+    prev_terminal_slot: uint64
+    prev_terminal_blkid: Vector[byte, 32]
+    new_l1_height: uint64
+    new_l1_blkid: Vector[byte, 32]
+    final_state: Vector[byte, 32]
+
+class CommitmentInfo(Container):
+    blockhash: Vector[byte, 32]
+    txid: Vector[byte, 32]
