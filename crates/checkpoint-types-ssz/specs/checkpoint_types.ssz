@@ -31,3 +31,27 @@ class EpochSummary(Container):
 class CommitmentInfo(Container):
     blockhash: Vector[byte, 32]
     txid: Vector[byte, 32]
+
+MAX_PROOF_BYTES = 1 << 24
+MAX_CHAINSTATE_BYTES = 1 << 24
+MAX_SIGNATURE_BYTES = 64
+
+class CheckpointCommitment(Container):
+    batch_info: BatchInfo
+    transition: BatchTransition
+
+class CheckpointSidecar(Container):
+    chainstate: List[byte, MAX_CHAINSTATE_BYTES]
+
+class Checkpoint(Container):
+    commitment: CheckpointCommitment
+    proof: List[byte, MAX_PROOF_BYTES]
+    sidecar: CheckpointSidecar
+
+class SignedCheckpoint(Container):
+    inner: Checkpoint
+    signature: Vector[byte, MAX_SIGNATURE_BYTES]
+
+class L1CommittedCheckpoint(Container):
+    checkpoint: Checkpoint
+    commitment: CommitmentInfo

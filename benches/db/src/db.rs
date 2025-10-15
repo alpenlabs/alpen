@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 // Compile-time check to ensure at least one database backend is enabled
-#[cfg(all(feature = "db", not(any(feature = "sled", feature = "rocksdb"))))]
+#[cfg(not(any(feature = "sled", feature = "rocksdb")))]
 compile_error!("Database benchmarks require at least one backend feature: 'sled' or 'rocksdb'");
 
 /// `Sled` backend support.
@@ -108,5 +108,3 @@ macro_rules! bench_all_backends {
         }
     };
 }
-
-pub use bench_all_backends;

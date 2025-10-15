@@ -100,7 +100,8 @@ members = [
   "crates/util/python-utils",
 
   # benchmarks
-  "benches",
+  "benches/db",
+  "benches/serialization",
 ]
 
 default-members = [

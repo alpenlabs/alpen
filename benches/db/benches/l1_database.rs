@@ -5,7 +5,7 @@
 
 use std::hint::black_box;
 
-use alpen_benchmarks::db::DatabaseBackend;
+use alpen_db_benchmarks::db::DatabaseBackend;
 use arbitrary::Arbitrary;
 // Suppress unused crate warnings
 #[allow(
@@ -38,14 +38,14 @@ use strata_state as _;
 use tempfile::TempDir;
 #[cfg(feature = "rocksdb")]
 use {
-    alpen_benchmarks::db::rocksdb::{create_temp_rocksdb, default_rocksdb_ops_config},
+    alpen_db_benchmarks::db::rocksdb::{create_temp_rocksdb, default_rocksdb_ops_config},
     rockbound as _,
     strata_db_store_rocksdb::l1::db::L1Db as L1DbRocks,
 };
 // Feature-gated imports
 #[cfg(feature = "sled")]
 use {
-    alpen_benchmarks::db::sled::{create_temp_sled, default_sled_ops_config},
+    alpen_db_benchmarks::db::sled::{create_temp_sled, default_sled_ops_config},
     strata_db_store_sled::l1::db::L1DBSled,
     typed_sled as _,
 };
@@ -270,9 +270,9 @@ fn bench_get_canonical_blockid_at_height_impl(backend: DatabaseBackend, c: &mut 
 }
 
 // Use the macro to generate benchmarks for all available backends
-alpen_benchmarks::bench_all_backends!(bench_put_block_data, bench_put_block_data_impl);
-alpen_benchmarks::bench_all_backends!(bench_get_block_manifest, bench_get_block_manifest_impl);
-alpen_benchmarks::bench_all_backends!(
+alpen_db_benchmarks::bench_all_backends!(bench_put_block_data, bench_put_block_data_impl);
+alpen_db_benchmarks::bench_all_backends!(bench_get_block_manifest, bench_get_block_manifest_impl);
+alpen_db_benchmarks::bench_all_backends!(
     bench_get_canonical_blockid_at_height,
     bench_get_canonical_blockid_at_height_impl
 );

@@ -969,25 +969,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-benchmarks"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "bitcoin",
- "criterion",
- "rockbound",
- "strata-asm-types",
- "strata-db",
- "strata-db-store-rocksdb",
- "strata-db-store-sled",
- "strata-ol-chain-types",
- "strata-primitives",
- "strata-state",
- "tempfile",
- "typed-sled",
-]
-
-[[package]]
 name = "alpen-chainspec"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1033,6 +1014,25 @@ dependencies = [
  "toml 0.8.23",
  "zeroize",
  "zxcvbn",
+]
+
+[[package]]
+name = "alpen-db-benchmarks"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "criterion",
+ "rockbound",
+ "strata-asm-types",
+ "strata-db",
+ "strata-db-store-rocksdb",
+ "strata-db-store-sled",
+ "strata-ol-chain-types",
+ "strata-primitives",
+ "strata-state",
+ "tempfile",
+ "typed-sled",
 ]
 
 [[package]]
@@ -1217,6 +1217,21 @@ dependencies = [
  "serde_json",
  "strata-mpt",
  "thiserror 2.0.16",
+]
+
+[[package]]
+name = "alpen-serialization-benchmarks"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "criterion",
+ "ssz",
+ "ssz_types",
+ "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
+ "strata-identifiers",
+ "strata-identifiers-ssz",
+ "tree_hash 0.2.0",
 ]
 
 [[package]]
