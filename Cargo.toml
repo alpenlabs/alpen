@@ -44,6 +44,7 @@ members = [
   "crates/eectl",
   "crates/evmexec",
   "crates/identifiers",
+  "crates/identifiers-ssz",
   "crates/key-derivation",
   "crates/l1tx",
   "crates/ledger-types",
@@ -176,6 +177,7 @@ strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
 strata-identifiers = { path = "crates/identifiers", default-features = false }
+strata-identifiers-ssz = { path = "crates/identifiers-ssz" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-l1tx = { path = "crates/l1tx" }
 strata-ledger-types = { path = "crates/ledger-types" }
@@ -227,6 +229,15 @@ moho-types = { git = "https://github.com/alpenlabs/moho" }
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
 zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
+
+# SSZ (Simple Serialize) - for merkleization and proof-friendly serialization
+# All SSZ crates come from the ssz-gen repository
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 

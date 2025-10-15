@@ -1,0 +1,32 @@
+[package]
+name = "strata-identifiers-ssz"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+# SSZ runtime dependencies
+ssz = { workspace = true }
+ssz_derive = { workspace = true }
+ssz_types = { workspace = true }
+tree_hash = { workspace = true }
+tree_hash_derive = { workspace = true }
+
+# For conversions to/from legacy Borsh types
+strata-identifiers = { workspace = true }
+
+# Standard dependencies
+arbitrary = { workspace = true, optional = true }
+serde = { workspace = true }
+
+[build-dependencies]
+ssz_codegen = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+
+[features]
+default = []
+arbitrary = ["dep:arbitrary"]
