@@ -7,7 +7,7 @@ use strata_ee_acct_types::{
     CommitBlockData, CommitChainSegment, ExecBlock, ExecHeader, ExecPartialState, ExecPayload,
     ExecutionEnvironment, PendingInputEntry,
 };
-use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockNotpackage};
+use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockPackage};
 
 use crate::{
     builder_errors::BuilderResult, exec_processing::validate_block_inputs,
@@ -71,7 +71,7 @@ impl<E: ExecutionEnvironment> ChainSegmentBuilder<E> {
 
     /// Returns the new execution tip block ID if there are any blocks.
     pub fn new_tip_blkid(&self) -> Option<[u8; 32]> {
-        self.blocks.last().map(|b| b.notpackage().exec_blkid())
+        self.blocks.last().map(|b| b.package().exec_blkid())
     }
 
     /// Appends a block body to the chain segment, consuming pending inputs.
@@ -126,12 +126,11 @@ impl<E: ExecutionEnvironment> ChainSegmentBuilder<E> {
         let raw_block_hash = Sha256::digest(&raw_block).into();
         let commitment = ExecBlockCommitment::new(exec_blkid, raw_block_hash);
 
-        // 8. Create the notpackage.
-        let notpackage =
-            ExecBlockNotpackage::new(commitment, inputs, exec_output.outputs().clone());
+        // 8. Create the package.
+        let package = ExecBlockPackage::new(commitment, inputs, exec_output.outputs().clone());
 
         // 9. Add to the chain
-        let block_data = CommitBlockData::new(notpackage, raw_block);
+        let block_data = CommitBlockData::new(package, raw_block);
         self.blocks.push(block_data);
         self.current_state = post_state;
         self.current_header = header;
@@ -243,7 +242,7 @@ mod tests {
 
         // Verify the block consumed the deposit
         let block_data = &segment.blocks()[0];
-        assert_eq!(block_data.notpackage().inputs().subject_deposits().len(), 1);
+        assert_eq!(block_data.package().inputs().subject_deposits().len(), 1);
     }
 
     #[test]

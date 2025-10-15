@@ -74,7 +74,7 @@ impl UpdateVerificationState {
         &self.accumulated_outputs
     }
 
-    /// Appends a notpackage block's outputs into the pending outputs being
+    /// Appends a package block's outputs into the pending outputs being
     /// built internally.  This way we can compare it against the update op data
     /// later.
     pub(crate) fn merge_block_outputs(&mut self, outputs: &BlockOutputs) {
