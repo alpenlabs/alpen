@@ -45,8 +45,8 @@ impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 pub type RawAccountTypeId = u16;
 
 /// Distinguishes between account types.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, IntEnum)]
 #[repr(u16)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, IntEnum)]
 pub enum AccountTypeId {
     /// "Inert" account type for a stub that exists but does nothing, but store
     /// balance.

@@ -1,6 +1,8 @@
+use std::fmt;
+
+use int_enum::IntEnum;
 use strata_acct_types::AccountId;
 use strata_snark_acct_types::SnarkAccountUpdate;
-use thiserror::Error;
 
 use crate::Slot;
 
@@ -88,34 +90,21 @@ impl TransactionExtra {
 
 /// A type-safe representation of transaction type id.
 #[repr(u16)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, IntEnum)]
 pub enum TxTypeId {
+    /// Transactions that are messages being sent to other accounts.
     GenericAccountMessage = 1,
+
+    /// Transactions that are snark account updates.
     SnarkAccountUpdate = 2,
 }
 
-impl From<TxTypeId> for u16 {
-    #[inline]
-    fn from(value: TxTypeId) -> Self {
-        value as u16
+impl fmt::Display for TxTypeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            TxTypeId::SnarkAccountUpdate => "snark-account-update",
+            TxTypeId::GenericAccountMessage => "generic-account-message",
+        };
+        write!(f, "{}", s)
     }
-}
-
-impl TryFrom<u16> for TxTypeId {
-    type Error = TxTypeError;
-
-    #[inline]
-    fn try_from(v: u16) -> Result<Self, Self::Error> {
-        match v {
-            1 => Ok(TxTypeId::GenericAccountMessage),
-            2 => Ok(TxTypeId::SnarkAccountUpdate),
-            _ => Err(TxTypeError::InvalidTxType(v)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Error)]
-pub enum TxTypeError {
-    #[error("Invalid tx-type value: {0}")]
-    InvalidTxType(u16),
 }

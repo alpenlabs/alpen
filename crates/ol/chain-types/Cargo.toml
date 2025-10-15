@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-thiserror.workspace = true
+int-enum.workspace = true
 
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
