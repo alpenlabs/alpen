@@ -4,7 +4,7 @@ import logging
 import time
 
 import flexitest
-from strata_utils import get_address
+from factory.test_cli import get_address
 
 from envs.rollup_params_cfg import RollupConfig
 from factory.alpen_client import AlpenCliBuilder

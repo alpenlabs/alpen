@@ -1,6 +1,6 @@
 import hashlib
 
-from strata_utils import sign_schnorr_sig
+from factory.test_cli import sign_schnorr_sig
 from web3 import Web3
 
 from utils import wait_until_with_value

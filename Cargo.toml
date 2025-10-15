@@ -76,6 +76,7 @@ members = [
   # integration tests
   "tests",
   "crates/util/python-utils",
+  "bin/strata-test-cli",
 
   # benchmarks
   "benches",

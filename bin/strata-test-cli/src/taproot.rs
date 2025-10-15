@@ -10,7 +10,6 @@ use bdk_wallet::{
     KeychainKind, Wallet,
 };
 use musig2::KeyAggContext;
-use pyo3::prelude::*;
 
 use crate::{
     constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
@@ -44,10 +43,10 @@ impl ExtractP2trPubkey for Address {
 ///
 /// This uses the hardcoded `[DESCRIPTOR]` and `[CHANGE_DESCRIPTOR]`.
 pub(crate) fn taproot_wallet() -> Result<Wallet, Error> {
-    Ok(Wallet::create(*DESCRIPTOR, *CHANGE_DESCRIPTOR)
+    Wallet::create(*DESCRIPTOR, *CHANGE_DESCRIPTOR)
         .network(NETWORK)
         .create_wallet_no_persist()
-        .map_err(|_| Error::Wallet))?
+        .map_err(|_| Error::Wallet)
 }
 
 /// Syncs a wallet with the network using `bitcoind` as the backend.
@@ -75,7 +74,7 @@ pub(crate) fn new_bitcoind_client(
     rpc_user: Option<&str>,
     rpc_pass: Option<&str>,
 ) -> Result<Client, Error> {
-    Ok(Client::new(
+    Client::new(
         url,
         match (rpc_cookie, rpc_user, rpc_pass) {
             (None, None, None) => Auth::None,
@@ -85,23 +84,12 @@ pub(crate) fn new_bitcoind_client(
             (_, None, Some(_)) => panic!("rpc auth: missing rpc_user"),
         },
     )
-    .map_err(|_| Error::RpcClient))?
+    .map_err(|_| Error::RpcClient)
 }
 
-/// MuSig2 aggregates public keys into a single public key.
-///
-/// # Note
-///
-/// These should all be X-only public keys, assuming that all are [`Parity::Even`].
-pub(crate) fn musig_aggregate_pks_inner(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
-    let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
-    let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
-    Ok(key_agg_ctx.aggregated_pubkey())
-}
 
 /// Gets a (receiving/external) address from the [`taproot_wallet`] at the given `index`.
-#[pyfunction]
-pub(crate) fn get_address(index: u32) -> PyResult<String> {
+pub(crate) fn get_address_inner(index: u32) -> Result<String, Error> {
     let wallet = taproot_wallet()?;
     let address = wallet
         .peek_address(KeychainKind::External, index)
@@ -110,42 +98,50 @@ pub(crate) fn get_address(index: u32) -> PyResult<String> {
     Ok(address)
 }
 
-
 /// MuSig2 aggregates public keys into a single public key.
 ///
 /// # Note
 ///
 /// These should all be X-only public keys.
-#[pyfunction]
-pub(crate) fn musig_aggregate_pks(pks: Vec<String>) -> PyResult<String> {
+pub(crate) fn musig_aggregate_pks_inner(pks: Vec<String>) -> Result<String, Error> {
     let pks = pks
         .into_iter()
         .map(|pk| parse_xonly_pk(&pk).map_err(|_| Error::XOnlyPublicKey))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let result = musig_aggregate_pks_inner(pks)?.to_string();
+    let result = musig_aggregate_pks_core(pks)?.to_string();
 
     Ok(result)
 }
 
-/// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].
+/// MuSig2 aggregates XOnlyPublicKeys into a single public key (core implementation).
+///
+/// # Note
+///
+/// These should all be X-only public keys, assuming that all are [`Parity::Even`].
+fn musig_aggregate_pks_core(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
+    let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
+    let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
+    Ok(key_agg_ctx.aggregated_pubkey())
+}
+
+/// Converts a [`PublicKey`] string to an [`XOnlyPublicKey`] string.
 ///
 /// # Note
 ///
 /// This only works for even keys (i.e. starts with `"02"`) and will return an error otherwise.
-#[pyfunction]
-pub(crate) fn convert_to_xonly_pk(pk: String) -> PyResult<String> {
+pub(crate) fn convert_to_xonly_pk_inner(pk: String) -> Result<String, Error> {
     let pk = parse_pk(&pk)?;
-    let x_only_pk = convert_to_xonly_pk_inner(pk)?;
+    let x_only_pk = convert_to_xonly_pk_core(pk)?;
     Ok(x_only_pk.to_string())
 }
 
-/// Converts a [`PublicKey`] to an [`XOnlyPublicKey`].
+/// Converts a [`PublicKey`] to an [`XOnlyPublicKey`] (core implementation).
 ///
 /// # Note
 ///
 /// This only works for even keys (i.e. starts with `"02"`) and will return an error otherwise.
-fn convert_to_xonly_pk_inner(pk: PublicKey) -> Result<XOnlyPublicKey, Error> {
+fn convert_to_xonly_pk_core(pk: PublicKey) -> Result<XOnlyPublicKey, Error> {
     // assert that the first byte is 0x02 as string.
     if !pk.to_string().starts_with("02") {
         return Err(Error::PublicKey);
@@ -159,8 +155,7 @@ fn convert_to_xonly_pk_inner(pk: PublicKey) -> Result<XOnlyPublicKey, Error> {
 /// # Note
 ///
 /// This assumes that the caller has verified the `address`.
-#[pyfunction]
-pub(crate) fn extract_p2tr_pubkey(address: String) -> PyResult<String> {
+pub(crate) fn extract_p2tr_pubkey_inner(address: String) -> Result<String, Error> {
     let address = &address
         .parse::<Address<_>>()
         .map_err(|_| Error::NotTaprootAddress)?

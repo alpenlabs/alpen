@@ -1,14 +1,11 @@
 use bdk_wallet::bitcoin::XOnlyPublicKey;
-use pyo3::prelude::*;
 use shrex::decode_alloc;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::error::Error;
 
-
 /// Converts a [`XOnlyPublicKey`] to a BOSD [`Descriptor`].
-#[pyfunction]
-pub(crate) fn xonlypk_to_descriptor(xonly: &str) -> Result<String, Error> {
+pub(crate) fn xonlypk_to_descriptor_inner(xonly: &str) -> Result<String, Error> {
     // convert the hex-string into bytes
     let xonly_bytes = decode_alloc(xonly).map_err(|_| Error::XOnlyPublicKey)?;
     // parse the xonly public key

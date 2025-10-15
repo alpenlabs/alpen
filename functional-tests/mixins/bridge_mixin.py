@@ -1,7 +1,7 @@
 from typing import Any
 
 import flexitest
-from strata_utils import create_deposit_transaction, create_withdrawal_fulfillment
+from factory.test_cli import create_deposit_transaction, create_withdrawal_fulfillment
 from web3.middleware.signing import SignAndSendRawMiddlewareBuilder
 
 from envs.rollup_params_cfg import RollupConfig

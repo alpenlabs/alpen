@@ -18,12 +18,6 @@ pub(crate) enum Error {
     /// Not a Taproot address.
     NotTaprootAddress,
 
-    /// Invalid Bitcoin address.
-    BitcoinAddress,
-
-    /// `OP_RETURN` bigger than 80 bytes.
-    OpReturnTooLong,
-
     /// Could not create a BitcoinD RPC client.
     RpcClient,
 
@@ -49,8 +43,6 @@ impl From<Error> for PyErr {
             Error::PublicKey => "Invalid public key",
             Error::OutPoint => "Invalid outpoint",
             Error::NotTaprootAddress => "Not a P2TR address",
-            Error::BitcoinAddress => "Not a valid bitcoin address",
-            Error::OpReturnTooLong => "OP_RETURN bigger than 80 bytes",
             Error::RpcClient => "Could not create RPC client",
             Error::BitcoinD => "Invalid BitcoinD response",
             Error::TxBuilder(ref msg) => msg,
