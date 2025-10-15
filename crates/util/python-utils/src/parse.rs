@@ -5,7 +5,7 @@ use strata_crypto::EvenSecretKey;
 use strata_l1tx::deposit::deposit_request::extract_deposit_request_info;
 use strata_primitives::{
     constants::{EE_ADDRESS_LEN, STRATA_OP_WALLET_DERIVATION_PATH},
-    l1::{BitcoinAddress, BitcoinAmount, XOnlyPk},
+    l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey},
     params::DepositTxParams,
 };
 
@@ -61,7 +61,7 @@ pub(crate) fn parse_drt(
         max_address_length: EE_ADDRESS_LEN,
         deposit_amount: BitcoinAmount::from_sat(BRIDGE_OUT_AMOUNT.to_sat()),
         address,
-        operators_pubkey: XOnlyPk::new(operators_pubkey.serialize().into())
+        operators_pubkey: BitcoinXOnlyPublicKey::new(operators_pubkey.serialize().into())
             .expect("good XOnlyPublicKey"),
     };
 

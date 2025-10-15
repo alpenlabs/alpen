@@ -8,7 +8,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{
-    l1::{BitcoinAmount, OutputRef},
+    l1::{BitcoinAmount, BitcoinOutPoint},
     sorted_vec::SortedVec,
 };
 
@@ -46,7 +46,7 @@ pub struct DepositEntry {
     deposit_idx: u32,
 
     /// Bitcoin UTXO reference (transaction hash + output index).
-    output: OutputRef,
+    output: BitcoinOutPoint,
 
     /// Historical set of operators that formed the N/N multisig for this deposit.
     ///
@@ -94,7 +94,7 @@ impl DepositEntry {
     /// Each deposit must have at least one notary operator.
     pub fn new(
         idx: u32,
-        output: OutputRef,
+        output: BitcoinOutPoint,
         notary_operators: OperatorBitmap,
         amt: BitcoinAmount,
     ) -> Result<Self, DepositValidationError> {
@@ -116,7 +116,7 @@ impl DepositEntry {
     }
 
     /// Returns a reference to the Bitcoin UTXO being tracked.
-    pub fn output(&self) -> &OutputRef {
+    pub fn output(&self) -> &BitcoinOutPoint {
         &self.output
     }
 
@@ -138,7 +138,7 @@ impl<'a> Arbitrary<'a> for DepositEntry {
         let deposit_idx: u32 = u.arbitrary()?;
 
         // Generate a random Bitcoin UTXO reference
-        let output: OutputRef = u.arbitrary()?;
+        let output: BitcoinOutPoint = u.arbitrary()?;
 
         // Create OperatorBitmap directly by setting sequential operators as active
         let notary_operators = u.arbitrary()?;
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_deposit_entry_new_empty_operators() {
-        let output: OutputRef = ArbitraryGenerator::new().generate();
+        let output: BitcoinOutPoint = ArbitraryGenerator::new().generate();
         let operators = OperatorBitmap::new_empty();
         let amount = BitcoinAmount::from_sat(1_000_000);
 

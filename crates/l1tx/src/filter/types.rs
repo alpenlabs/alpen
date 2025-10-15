@@ -5,7 +5,7 @@ use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     block_credential::CredRule,
     buf::Buf32,
-    l1::{BitcoinAddress, BitcoinAmount, BitcoinScriptBuf, OutputRef, XOnlyPk},
+    l1::{BitcoinAddress, BitcoinAmount, BitcoinOutPoint, BitcoinScriptBuf, BitcoinXOnlyPublicKey},
     params::{DepositTxParams, RollupParams},
     sorted_vec::{FlatTable, SortedVec, TableEntry},
 };
@@ -60,8 +60,8 @@ impl TxFilterConfig {
             da_tag: rollup_params.da_tag.clone(),
         };
 
-        let operators_pubkey =
-            XOnlyPk::new(int_pubkey.serialize().into()).expect("Aggregated pubkey should be valid");
+        let operators_pubkey = BitcoinXOnlyPublicKey::new(int_pubkey.serialize().into())
+            .expect("Aggregated pubkey should be valid");
 
         let deposit_config = DepositTxParams {
             magic_bytes: rollup_params.magic_bytes,
@@ -122,14 +122,14 @@ pub struct DepositUtxoInfo {
     /// The utxo's outpoint.
     ///
     /// This is used as the key in the expected outpoints table.
-    pub output: OutputRef,
+    pub output: BitcoinOutPoint,
 
     /// Deposit index that this utxo corresponds to.
     pub deposit_idx: u32,
 }
 
 impl TableEntry for DepositUtxoInfo {
-    type Key = OutputRef;
+    type Key = BitcoinOutPoint;
     fn get_key(&self) -> &Self::Key {
         &self.output
     }

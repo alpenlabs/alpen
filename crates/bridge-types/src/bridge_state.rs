@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
     buf::Buf32,
-    l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
+    l1::{BitcoinAmount, BitcoinBlockHeight, BitcoinOutPoint},
     operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys},
 };
 
@@ -274,7 +274,7 @@ impl DepositsTable {
     /// Adds a new deposit to the table and returns the index of the new deposit.
     pub fn create_next_deposit(
         &mut self,
-        tx_ref: OutputRef,
+        tx_ref: BitcoinOutPoint,
         operators: Vec<OperatorIdx>,
         amt: BitcoinAmount,
     ) -> u32 {
@@ -292,7 +292,7 @@ impl DepositsTable {
     pub fn try_create_deposit_at(
         &mut self,
         idx: u32,
-        tx_ref: OutputRef,
+        tx_ref: BitcoinOutPoint,
         operators: Vec<OperatorIdx>,
         amt: BitcoinAmount,
     ) -> bool {
@@ -336,7 +336,7 @@ pub struct DepositEntry {
     deposit_idx: u32,
 
     /// The outpoint that this deposit entry references.
-    output: OutputRef,
+    output: BitcoinOutPoint,
 
     /// List of notary operators, by their indexes.
     // TODO convert this to a windowed bitmap or something
@@ -355,7 +355,7 @@ pub struct DepositEntry {
 impl DepositEntry {
     pub fn new(
         idx: u32,
-        output: OutputRef,
+        output: BitcoinOutPoint,
         operators: Vec<OperatorIdx>,
         amt: BitcoinAmount,
         withdrawal_request_txid: Option<Buf32>,
@@ -374,7 +374,7 @@ impl DepositEntry {
         self.deposit_idx
     }
 
-    pub fn output(&self) -> &OutputRef {
+    pub fn output(&self) -> &BitcoinOutPoint {
         &self.output
     }
 

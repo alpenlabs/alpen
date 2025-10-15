@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use strata_crypto::multisig::aggregate_schnorr_keys;
 use strata_primitives::{
     buf::Buf32,
-    l1::XOnlyPk,
+    l1::BitcoinXOnlyPublicKey,
     operator::{OperatorIdx, OperatorPubkeys},
     sorted_vec::SortedVec,
 };
@@ -148,7 +148,7 @@ pub struct OperatorTable {
     ///
     /// The key is automatically computed when the operator table is created or
     /// updated, ensuring it always reflects the current active multisig participants.
-    agg_key: XOnlyPk,
+    agg_key: BitcoinXOnlyPublicKey,
 }
 
 impl OperatorTable {
@@ -213,7 +213,7 @@ impl OperatorTable {
     }
 
     /// Returns the aggregated public key of the current active operators
-    pub fn agg_key(&self) -> &XOnlyPk {
+    pub fn agg_key(&self) -> &BitcoinXOnlyPublicKey {
         &self.agg_key
     }
 

@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::{
     block_credential::CredRule,
-    l1::{BitcoinAddress, BitcoinAmount, XOnlyPk},
+    l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey},
     operator::OperatorPubkeys,
     prelude::Buf32,
     proof::RollupVerifyingKey,
@@ -143,7 +143,7 @@ pub struct DepositTxParams {
     pub address: BitcoinAddress,
 
     /// Operators' aggregated pubkey (untweaked internal pubkey).
-    pub operators_pubkey: XOnlyPk,
+    pub operators_pubkey: BitcoinXOnlyPublicKey,
 }
 
 /// Describes how we decide to wait for proofs for checkpoints to generate.

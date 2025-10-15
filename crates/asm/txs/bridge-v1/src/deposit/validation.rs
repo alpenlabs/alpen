@@ -6,7 +6,7 @@ use bitcoin::{
     taproot::{self},
 };
 use secp256k1::Message;
-use strata_primitives::{buf::Buf32, l1::XOnlyPk};
+use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey};
 
 use crate::{
     deposit::DEPOSIT_OUTPUT_INDEX,
@@ -51,7 +51,7 @@ use crate::{
 pub fn validate_drt_spending_signature(
     tx: &Transaction,
     drt_tapnode_hash: Buf32,
-    operators_pubkey: &XOnlyPk,
+    operators_pubkey: &BitcoinXOnlyPublicKey,
     deposit_amount: Amount,
 ) -> Result<(), DrtSignatureError> {
     // Initialize necessary variables and dependencies
@@ -126,7 +126,7 @@ pub fn validate_drt_spending_signature(
 /// - `Err(DepositOutputError)` - If the output is missing, has wrong script type, or wrong key
 pub fn validate_deposit_output_lock(
     tx: &Transaction,
-    operators_agg_pubkey: &XOnlyPk,
+    operators_agg_pubkey: &BitcoinXOnlyPublicKey,
 ) -> Result<(), DepositOutputError> {
     // Get the deposit output at the expected index.
     let deposit_output =
@@ -161,14 +161,14 @@ mod tests {
     use musig2::KeyAggContext;
     use rand::Rng;
     use strata_crypto::EvenSecretKey;
-    use strata_primitives::{buf::Buf32, l1::XOnlyPk};
+    use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::{deposit::parse::DepositInfo, test_utils::create_test_deposit_tx};
 
     // Helper function to create test operator keys with proper MuSig2 aggregation
-    fn create_test_operators() -> (XOnlyPk, Vec<EvenSecretKey>) {
+    fn create_test_operators() -> (BitcoinXOnlyPublicKey, Vec<EvenSecretKey>) {
         let secp = Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
         let num_operators = rng.gen_range(2..=5);
@@ -191,14 +191,14 @@ mod tests {
 
         // Use MuSig2 aggregated key to ensure consistency with create_test_deposit_tx
         let aggregated_xonly: bitcoin::secp256k1::XOnlyPublicKey = key_agg_ctx.aggregated_pubkey();
-        let operators_pubkey = XOnlyPk::new(Buf32::new(aggregated_xonly.serialize()))
+        let operators_pubkey = BitcoinXOnlyPublicKey::new(Buf32::new(aggregated_xonly.serialize()))
             .expect("Valid aggregated public key");
 
         (operators_pubkey, operators_privkeys)
     }
 
     // Helper function to create a test transaction and return both tx and aggregated pubkey
-    fn create_test_tx_with_agg_pubkey() -> (Transaction, XOnlyPk) {
+    fn create_test_tx_with_agg_pubkey() -> (Transaction, BitcoinXOnlyPublicKey) {
         let (operators_pubkey, operators_privkeys) = create_test_operators();
         let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
         let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
