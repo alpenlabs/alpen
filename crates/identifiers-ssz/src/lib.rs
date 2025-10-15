@@ -50,3 +50,6 @@ pub use ssz::{Decode, Encode};
 pub use tree_hash::TreeHash;
 
 mod conversions;
+
+#[cfg(test)]
+mod tests;

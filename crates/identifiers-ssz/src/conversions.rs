@@ -108,3 +108,65 @@ impl From<crate::ExecBlockCommitment> for borsh::ExecBlockCommitment {
         borsh::ExecBlockCommitment::new(value.slot, borsh::Buf32::from(blkid_bytes))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_l1_block_commitment_borsh_conversion() {
+        let borsh_commitment = borsh::L1BlockCommitment::from_height_u64(
+            100,
+            borsh::L1BlockId::from(borsh::Buf32::from([1u8; 32])),
+        )
+        .expect("valid height");
+
+        let ssz_commitment: crate::L1BlockCommitment = borsh_commitment.into();
+        assert_eq!(ssz_commitment.height, 100);
+
+        let borsh_roundtrip: borsh::L1BlockCommitment = ssz_commitment.into();
+        assert_eq!(borsh_roundtrip.height_u64(), 100);
+    }
+
+    #[test]
+    fn test_l2_block_commitment_borsh_conversion() {
+        let borsh_commitment = borsh::L2BlockCommitment::new(
+            200,
+            borsh::L2BlockId::from(borsh::Buf32::from([2u8; 32])),
+        );
+
+        let ssz_commitment: crate::L2BlockCommitment = borsh_commitment.into();
+        assert_eq!(ssz_commitment.slot, 200);
+
+        let borsh_roundtrip: borsh::L2BlockCommitment = ssz_commitment.into();
+        assert_eq!(borsh_roundtrip.slot(), 200);
+    }
+
+    #[test]
+    fn test_epoch_commitment_borsh_conversion() {
+        let borsh_commitment = borsh::EpochCommitment::new(
+            15,
+            300,
+            borsh::L2BlockId::from(borsh::Buf32::from([3u8; 32])),
+        );
+
+        let ssz_commitment: crate::EpochCommitment = borsh_commitment.into();
+        assert_eq!(ssz_commitment.epoch, 15);
+        assert_eq!(ssz_commitment.last_slot, 300);
+
+        let borsh_roundtrip: borsh::EpochCommitment = ssz_commitment.into();
+        assert_eq!(borsh_roundtrip.epoch(), 15);
+        assert_eq!(borsh_roundtrip.last_slot(), 300);
+    }
+
+    #[test]
+    fn test_exec_block_commitment_borsh_conversion() {
+        let borsh_commitment = borsh::ExecBlockCommitment::new(400, borsh::Buf32::from([4u8; 32]));
+
+        let ssz_commitment: crate::ExecBlockCommitment = borsh_commitment.into();
+        assert_eq!(ssz_commitment.slot, 400);
+
+        let borsh_roundtrip: borsh::ExecBlockCommitment = ssz_commitment.into();
+        assert_eq!(borsh_roundtrip.slot(), 400);
+    }
+}
