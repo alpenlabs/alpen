@@ -1040,6 +1040,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-client"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-genesis",
+ "alloy-primitives",
+ "alloy-rpc-types-engine",
+ "alpen-chainspec",
+ "alpen-reth-db",
+ "alpen-reth-exex",
+ "alpen-reth-node",
+ "alpen-reth-rpc",
+ "async-trait",
+ "clap",
+ "eyre",
+ "reth-chainspec",
+ "reth-cli-commands",
+ "reth-cli-runner",
+ "reth-cli-util",
+ "reth-db",
+ "reth-node-builder",
+ "reth-node-core",
+ "rockbound",
+ "sled",
+ "strata-acct-types",
+ "strata-db-store-rocksdb",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "thiserror 2.0.16",
+ "tracing",
+ "typed-sled",
+]
+
+[[package]]
 name = "alpen-reth"
 version = "0.3.0-alpha.1"
 dependencies = [
