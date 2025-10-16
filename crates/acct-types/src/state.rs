@@ -1,3 +1,7 @@
+use ssz_derive::{Decode, Encode};
+use ssz_types::VariableList;
+use tree_hash_derive::TreeHash;
+
 use crate::{
     amount::BitcoinAmount,
     errors::{AcctError, AcctResult},
@@ -7,13 +11,15 @@ use crate::{
 
 type Root = Hash;
 
+/// Variable-length byte list for account encoded state (max 64 KiB)
+type AccountEncodedState = VariableList<u8, 65536>;
+
 /// Account state.
-// TODO SSZ
 // TODO builder
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Encode, Decode, TreeHash)]
 pub struct AccountState {
     intrinsics: IntrinsicAccountState,
-    encoded_state: Vec<u8>,
+    encoded_state: AccountEncodedState,
 }
 
 impl AccountState {
@@ -54,8 +60,7 @@ impl AccountState {
 }
 
 /// SSZ summary *structure*, not equivalent encoding.  It's an SSZ thing.
-// TODO SSZ
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Encode, Decode, TreeHash)]
 pub struct AcctStateSummary {
     intrinsics: IntrinsicAccountState,
     typed_state_root: Root,
@@ -80,8 +85,7 @@ impl AcctStateSummary {
 }
 
 /// Intrinsic account fields.
-// TODO SSZ
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Encode, Decode, TreeHash)]
 pub struct IntrinsicAccountState {
     // immutable fields, these MUST NOT change
     /// Account type, which determines how we interact with it.
@@ -151,4 +155,126 @@ pub trait AccountTypeState {
     const ID: AccountTypeId;
 
     // TODO decoding
+}
+
+#[cfg(test)]
+mod tests {
+    use ssz::{Decode, Encode};
+    use ssz_types::VariableList;
+    use tree_hash::TreeHash;
+
+    use super::*;
+
+    #[test]
+    fn test_intrinsic_account_state_ssz_roundtrip() {
+        let state = IntrinsicAccountState::new(
+            AccountTypeId::Snark,
+            AccountSerial::new(42),
+            BitcoinAmount::new(1000),
+        );
+
+        let encoded = state.as_ssz_bytes();
+        let decoded = IntrinsicAccountState::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(state, decoded);
+    }
+
+    #[test]
+    fn test_intrinsic_account_state_tree_hash() {
+        let state1 = IntrinsicAccountState::new(
+            AccountTypeId::Empty,
+            AccountSerial::new(1),
+            BitcoinAmount::new(100),
+        );
+
+        let state2 = IntrinsicAccountState::new(
+            AccountTypeId::Empty,
+            AccountSerial::new(1),
+            BitcoinAmount::new(100),
+        );
+
+        // Same state should produce same hash
+        assert_eq!(state1.tree_hash_root(), state2.tree_hash_root());
+    }
+
+    #[test]
+    fn test_account_state_ssz_roundtrip() {
+        let intrinsics = IntrinsicAccountState::new(
+            AccountTypeId::Snark,
+            AccountSerial::new(5),
+            BitcoinAmount::new(5000),
+        );
+
+        let encoded_state_data = vec![1, 2, 3, 4, 5];
+        let state = AccountState {
+            intrinsics,
+            encoded_state: VariableList::from(encoded_state_data.clone()),
+        };
+
+        let encoded = state.as_ssz_bytes();
+        let decoded = AccountState::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(state.raw_ty(), decoded.raw_ty());
+        assert_eq!(state.serial(), decoded.serial());
+        assert_eq!(state.balance(), decoded.balance());
+        assert_eq!(state.encoded_state_buf(), decoded.encoded_state_buf());
+    }
+
+    #[test]
+    fn test_account_state_with_empty_encoded_state() {
+        let intrinsics = IntrinsicAccountState::new_empty(AccountSerial::new(10));
+        let state = AccountState {
+            intrinsics,
+            encoded_state: VariableList::from(vec![]),
+        };
+
+        let encoded = state.as_ssz_bytes();
+        let decoded = AccountState::from_ssz_bytes(&encoded).unwrap();
+
+        assert!(decoded.encoded_state_buf().is_empty());
+        assert_eq!(decoded.balance(), BitcoinAmount::zero());
+    }
+
+    #[test]
+    fn test_acct_state_summary_ssz_roundtrip() {
+        let intrinsics = IntrinsicAccountState::new(
+            AccountTypeId::Snark,
+            AccountSerial::new(100),
+            BitcoinAmount::new(10000),
+        );
+
+        let summary = AcctStateSummary {
+            intrinsics,
+            typed_state_root: [55u8; 32],
+        };
+
+        let encoded = summary.as_ssz_bytes();
+        let decoded = AcctStateSummary::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(summary.raw_ty(), decoded.raw_ty());
+        assert_eq!(summary.serial(), decoded.serial());
+        assert_eq!(summary.balance(), decoded.balance());
+        assert_eq!(summary.typed_state_root(), decoded.typed_state_root());
+    }
+
+    #[test]
+    fn test_account_state_large_encoded_state() {
+        let intrinsics = IntrinsicAccountState::new(
+            AccountTypeId::Empty,
+            AccountSerial::new(1),
+            BitcoinAmount::new(1),
+        );
+
+        // Test with large encoded state (1 KiB)
+        let large_data = vec![0xABu8; 1024];
+        let state = AccountState {
+            intrinsics,
+            encoded_state: VariableList::from(large_data.clone()),
+        };
+
+        let encoded = state.as_ssz_bytes();
+        let decoded = AccountState::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(state.encoded_state_buf(), decoded.encoded_state_buf());
+        assert_eq!(decoded.encoded_state_buf().len(), 1024);
+    }
 }
