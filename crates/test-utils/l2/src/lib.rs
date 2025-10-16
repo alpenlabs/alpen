@@ -118,7 +118,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
             target_l2_batch_size: 64,
             max_address_length: 20,
             deposit_amount: Amount::from_sat(1_000_000_000),
-            checkpoint_predicate: PredicateKey::always_accept(),
+            checkpoint_predicate: PredicateKey::never_accept(),
             dispatch_assignment_dur: 64,
             proof_publish_mode: ProofPublishMode::Strict,
             max_deposits_in_block: 16,

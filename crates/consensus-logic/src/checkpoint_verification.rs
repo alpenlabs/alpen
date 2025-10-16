@@ -161,7 +161,7 @@ mod tests {
         let (mut checkpoint, rollup_params) = get_test_input();
 
         // Ensure non native mode
-        assert_eq!(
+        assert_ne!(
             rollup_params.checkpoint_predicate,
             PredicateKey::always_accept()
         );
@@ -183,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_proof_on_non_native_mode_with_timeout() {
+    fn test_empty_proof_on_non_always_accept_predicate_mode_with_timeout() {
         let (mut checkpoint, mut rollup_params) = get_test_input();
 
         // Ensure the mode is Timeout for this test
@@ -192,7 +192,7 @@ mod tests {
         // Ensure non native mode
         assert_eq!(
             rollup_params.checkpoint_predicate,
-            PredicateKey::always_accept()
+            PredicateKey::never_accept()
         );
 
         let public_values = checkpoint.batch_transition();

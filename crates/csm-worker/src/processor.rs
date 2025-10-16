@@ -250,7 +250,7 @@ mod tests {
             "target_l2_batch_size": 64,
             "max_address_length": 20,
             "deposit_amount": 1000000000,
-            "rollup_vk": "native",
+            "checkpoint_predicate": "AlwaysAccept",
             "dispatch_assignment_dur": 64,
             "proof_publish_mode": {
                 "timeout": 1
