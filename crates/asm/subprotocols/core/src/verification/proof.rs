@@ -3,9 +3,7 @@
 //! Handles verification of zero-knowledge proofs submitted with checkpoint transactions.
 
 use strata_checkpoint_types::Checkpoint;
-use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_primitives::{hash, proof::RollupVerifyingKey};
-use zkaleido::{Proof, ProofReceipt, PublicValues};
+use strata_primitives::hash;
 
 use crate::{CoreOLState, error::*, messages, types::CheckpointProofPublicParameters};
 
@@ -92,45 +90,4 @@ pub(crate) fn construct_checkpoint_proof_public_parameters(
         prev_l1_ref: *prev_epoch_summary.new_l1(),
         l1_to_l2_msgs_range_commitment_hash,
     })
-}
-
-/// Verifies that the provided checkpoint proof is valid for the verifier key
-///
-/// This function performs zk-SNARK proof verification using the rollup verifying key.
-/// It includes logic for handling empty proofs during development/testing phases.
-pub(crate) fn verify_checkpoint_proof(
-    checkpoint: &Checkpoint,
-    public_values: PublicValues,
-    proof: Proof,
-    rollup_vk: &RollupVerifyingKey,
-) -> Result<()> {
-    let _checkpoint_idx = checkpoint.batch_info().epoch();
-
-    let proof_receipt = ProofReceipt::new(proof.clone(), public_values);
-
-    // FIXME: we are accepting empty proofs for now (devnet) to reduce dependency on the prover
-    // infra.
-    #[cfg(feature = "debug-utils")]
-    let allow_empty = true;
-    #[cfg(not(feature = "debug-utils"))]
-    let allow_empty = false;
-    let is_empty_proof = proof_receipt.proof().is_empty();
-    let accept_empty_proof = is_empty_proof && allow_empty;
-    let skip_public_param_check = proof_receipt.public_values().is_empty() && allow_empty;
-    let is_non_native_vk = !matches!(rollup_vk, RollupVerifyingKey::NativeVerifyingKey);
-
-    if !skip_public_param_check {
-        // TODO: Update here based on asm compatible proof structure
-    }
-
-    if accept_empty_proof && is_non_native_vk {
-        return Ok(());
-    }
-
-    if !allow_empty && is_empty_proof {
-        return Err(CoreError::InvalidProof);
-    }
-
-    verify_rollup_groth16_proof_receipt(&proof_receipt, rollup_vk)
-        .map_err(|_| CoreError::InvalidProof)
 }
