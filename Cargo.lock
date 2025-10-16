@@ -630,8 +630,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror 2.0.16",
- "tree_hash",
- "tree_hash_derive",
+ "tree_hash 0.10.0",
+ "tree_hash_derive 0.10.0",
 ]
 
 [[package]]
@@ -13171,6 +13171,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "hex",
+ "itertools 0.13.0",
+ "serde",
+ "smallvec",
+ "ssz_primitives",
+]
+
+[[package]]
+name = "ssz_derive"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "ssz_primitives"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "ruint",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14482,7 +14514,11 @@ dependencies = [
 name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
+ "ssz",
+ "ssz_derive",
  "strata-acct-types",
+ "tree_hash 0.2.0",
+ "tree_hash_derive 0.2.0",
 ]
 
 [[package]]
@@ -15515,6 +15551,18 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "digest 0.10.7",
+ "sha2 0.10.9",
+ "smallvec",
+ "ssz",
+ "ssz_primitives",
+]
+
+[[package]]
+name = "tree_hash"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee44f4cef85f88b4dea21c0b1f58320bdf35715cf56d840969487cff00613321"
@@ -15524,6 +15572,16 @@ dependencies = [
  "ethereum_ssz",
  "smallvec",
  "typenum",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
