@@ -14014,7 +14014,12 @@ dependencies = [
 name = "strata-ee-chain-types"
 version = "0.1.0"
 dependencies = [
+ "ssz",
+ "ssz_derive",
+ "ssz_types",
  "strata-acct-types",
+ "tree_hash 0.2.0",
+ "tree_hash_derive 0.2.0",
 ]
 
 [[package]]
