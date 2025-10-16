@@ -44,8 +44,6 @@ pub mod errors;
 pub mod indexed;
 pub mod keys;
 pub mod l1;
-pub mod operator;
-pub mod params;
 pub mod prelude;
 pub mod proof;
 pub mod roles;

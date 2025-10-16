@@ -11,6 +11,7 @@ strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true

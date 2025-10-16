@@ -39,7 +39,7 @@ use strata_db::{
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
-use strata_primitives::params::{Params, ProofPublishMode};
+use strata_params::{Params, ProofPublishMode};
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,
 };

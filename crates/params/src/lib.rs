@@ -3,16 +3,15 @@
 use bitcoin::{Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_bridge_types::OperatorPubkeys;
 use strata_btc_types::{BitcoinAddress, BitcoinAmount, GenesisL1View, XOnlyPk};
 use strata_crypto::RollupVerifyingKey;
 use strata_identifiers::{Buf32, CredRule};
 use strata_l1_txfmt::MagicBytes;
 use thiserror::Error;
 
-pub mod operator;
 pub mod serde_helpers;
 
-pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
 use serde_helpers::serde_amount_sat;
 
 /// Consensus parameters that don't change for the lifetime of the network

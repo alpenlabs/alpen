@@ -14,12 +14,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use musig2::{errors::KeyAggError, KeyAggContext, NonceSeed, PartialSignature, PubNonce, SecNonce};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
-use strata_primitives::{
-    l1::{BitcoinPsbt, TaprootSpendPath},
+use strata_primitives::l1::{BitcoinPsbt, TaprootSpendPath};
+
+use crate::{
+    constants::{MUSIG2_PARTIAL_SIG_SIZE, NONCE_SEED_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE},
     operator::OperatorIdx,
 };
-
-use crate::constants::{MUSIG2_PARTIAL_SIG_SIZE, NONCE_SEED_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE};
 
 /// Musig2 partial signature wrapper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

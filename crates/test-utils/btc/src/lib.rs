@@ -18,11 +18,11 @@ use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
 };
+use strata_params::DepositTxParams;
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
     buf::Buf32,
     l1::{BitcoinAddress, BitcoinAmount, OutputRef},
-    params::DepositTxParams,
 };
 use strata_test_utils::ArbitraryGenerator;
 

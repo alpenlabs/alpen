@@ -2,11 +2,11 @@ use bitcoin::{hashes::Hash, Amount};
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::{DepositEntry, DepositState};
 use strata_ol_chainstate_types::Chainstate;
+use strata_params::{DepositTxParams, RollupParams};
 use strata_primitives::{
     block_credential::CredRule,
     buf::Buf32,
     l1::{BitcoinAddress, BitcoinAmount, BitcoinScriptBuf, OutputRef, XOnlyPk},
-    params::{DepositTxParams, RollupParams},
     sorted_vec::{FlatTable, SortedVec, TableEntry},
 };
 

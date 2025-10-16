@@ -12,9 +12,8 @@ use strata_checkpoint_types::{verify_signed_checkpoint_sig, Checkpoint, SignedCh
 use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::{L2BlockBody, L2BlockHeader, L2Header};
 use strata_ol_chainstate_types::StateCache;
-use strata_primitives::{
-    epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockCommitment, params::RollupParams,
-};
+use strata_params::RollupParams;
+use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockCommitment};
 use strata_state::exec_update::{self, Op};
 use tracing::warn;
 use zkaleido::ZkVmResult;

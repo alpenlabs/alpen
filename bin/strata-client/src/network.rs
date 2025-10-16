@@ -5,7 +5,7 @@ use std::{
     fs,
 };
 
-use strata_primitives::params::RollupParams;
+use strata_params::RollupParams;
 use tracing::warn;
 
 /// Rollup params we initialize with if not overridden.  Optionally set at compile time.
@@ -49,7 +49,7 @@ pub(crate) fn get_envvar_params() -> anyhow::Result<Option<RollupParams>> {
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::params::RollupParams;
+    use strata_params::RollupParams;
 
     use super::DEFAULT_NETWORK_ROLLUP_PARAMS;
 

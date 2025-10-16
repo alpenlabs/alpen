@@ -11,7 +11,11 @@ use strata_primitives::{
     bitcoin_bosd::Descriptor,
     buf::Buf32,
     l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
-    operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys},
+};
+
+use crate::{
+    operator::{OperatorIdx, OperatorPubkeys},
+    OperatorKeyProvider,
 };
 
 /// Entry for an operator.

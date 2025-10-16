@@ -13,8 +13,10 @@ path = "src/main.rs"
 [dependencies]
 alpen-chainspec.workspace = true
 strata-asm-types.workspace = true
+strata-bridge-types.workspace = true
 strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 
 sp1-verifier = { version = "5.2.1", optional = true }

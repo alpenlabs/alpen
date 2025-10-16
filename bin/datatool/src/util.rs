@@ -20,15 +20,12 @@ use bitcoin::{
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use shrex::Hex;
+use strata_bridge_types::OperatorPubkeys;
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_l1_txfmt::MagicBytes;
+use strata_params::{OperatorConfig, ProofPublishMode, RollupParams};
 use strata_primitives::{
-    block_credential,
-    buf::Buf32,
-    crypto::EvenSecretKey,
-    keys::ZeroizableXpriv,
-    operator::OperatorPubkeys,
-    params::{GenesisL1View, ProofPublishMode, RollupParams},
+    block_credential, buf::Buf32, crypto::EvenSecretKey, keys::ZeroizableXpriv, l1::GenesisL1View,
     proof::RollupVerifyingKey,
 };
 use zeroize::Zeroize;
@@ -483,7 +480,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         cred_rule: cr,
         // TODO do we want to remove this?
         genesis_l1_view: config.genesis_l1_view,
-        operator_config: strata_primitives::params::OperatorConfig::Static(pub_opkeys.collect()),
+        operator_config: OperatorConfig::Static(pub_opkeys.collect()),
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
         // TODO make configurable

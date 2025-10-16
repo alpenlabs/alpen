@@ -13,10 +13,10 @@ use strata_l1tx::{
     filter::{indexer::index_block, types::TxFilterConfig},
     messages::RelevantTxEntry,
 };
+use strata_params::Params;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BtcParams, L1BlockCommitment, L1BlockId},
-    params::{GenesisL1View, Params},
+    l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1BlockId},
 };
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;

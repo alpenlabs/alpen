@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 strata-asm-types.workspace = true
 strata-crypto.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 

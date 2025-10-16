@@ -8,6 +8,7 @@ use bitcoin::{
 };
 use borsh::to_vec;
 use rand::{rngs::StdRng, SeedableRng};
+use strata_bridge_types::OperatorPubkeys;
 use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
 use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_ol_chain_types::{
@@ -15,13 +16,8 @@ use strata_ol_chain_types::{
     SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::{
-    block_credential,
-    buf::Buf64,
-    operator::OperatorPubkeys,
-    params::{OperatorConfig, Params, ProofPublishMode, RollupParams, SyncParams},
-    proof::RollupVerifyingKey,
-};
+use strata_params::{OperatorConfig, Params, ProofPublishMode, RollupParams, SyncParams};
+use strata_primitives::{block_credential, buf::Buf64, proof::RollupVerifyingKey};
 use strata_test_utils::ArbitraryGenerator;
 use strata_test_utils_btc::segment::BtcChainSegment;
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;

@@ -15,6 +15,7 @@ strata-db.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true
