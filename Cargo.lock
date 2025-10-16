@@ -13254,15 +13254,14 @@ dependencies = [
  "bitvec",
  "borsh",
  "rand 0.8.5",
- "serde_json",
  "strata-asm-common",
  "strata-asm-proto-checkpoint-v0",
  "strata-asm-txs-admin",
  "strata-crypto",
+ "strata-predicate",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -13313,7 +13312,7 @@ dependencies = [
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types",
- "strata-crypto",
+ "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.16",
 ]
