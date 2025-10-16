@@ -217,6 +217,7 @@ strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
@@ -229,7 +230,6 @@ moho-types = { git = "https://github.com/alpenlabs/moho" }
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
 zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 

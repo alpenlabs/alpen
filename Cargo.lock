@@ -3778,7 +3778,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -6818,7 +6818,7 @@ dependencies = [
  "borsh",
  "hex",
  "sha2 0.10.9",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -7159,7 +7159,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
 dependencies = [
- "proc-macro-crate 3.3.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -12093,7 +12093,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.13.0",
+ "bitcoin_hashes 0.14.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -13226,8 +13226,8 @@ dependencies = [
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-msg-fmt",
+ "strata-predicate",
  "strata-primitives",
- "zkaleido",
 ]
 
 [[package]]
@@ -13241,9 +13241,9 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-spec",
  "strata-asm-stf",
+ "strata-predicate",
  "strata-primitives",
  "strata-test-utils-btc",
- "zkaleido",
 ]
 
 [[package]]
@@ -13255,15 +13255,14 @@ dependencies = [
  "bitvec",
  "borsh",
  "rand 0.8.5",
- "serde_json",
  "strata-asm-common",
  "strata-asm-proto-checkpoint-v0",
  "strata-asm-txs-admin",
  "strata-crypto",
+ "strata-predicate",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
- "zkaleido",
 ]
 
 [[package]]
@@ -13314,7 +13313,7 @@ dependencies = [
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types",
- "strata-crypto",
+ "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.16",
 ]
@@ -13324,16 +13323,14 @@ name = "strata-asm-proto-core"
 version = "0.1.0"
 dependencies = [
  "borsh",
- "serde_json",
  "strata-asm-common",
  "strata-checkpoint-types",
- "strata-crypto",
  "strata-l1-txfmt",
  "strata-l1tx",
  "strata-msg-fmt",
+ "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.16",
- "zkaleido",
 ]
 
 [[package]]
@@ -13397,10 +13394,10 @@ dependencies = [
  "strata-crypto",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
+ "strata-predicate",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.16",
- "zkaleido",
 ]
 
 [[package]]
@@ -13587,17 +13584,16 @@ dependencies = [
  "strata-asm-types",
  "strata-bridge-types",
  "strata-checkpoint-types",
- "strata-crypto",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
  "strata-test-utils-l2",
  "thiserror 2.0.16",
  "tracing",
- "zkaleido",
 ]
 
 [[package]]
@@ -13609,7 +13605,7 @@ dependencies = [
  "serde",
  "strata-crypto",
  "strata-identifiers",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -13662,13 +13658,13 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#33aff52fb0652b5a3f3352613486648c0a52af8c"
+source = "git+https://github.com/alpenlabs/strata-common#aaea159b6662d87bdd44efe19dbbfa169abceb33"
 dependencies = [
  "thiserror 2.0.16",
 ]
@@ -13723,6 +13719,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-service",
  "strata-state",
@@ -13734,7 +13731,7 @@ dependencies = [
  "threadpool",
  "tokio",
  "tracing",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -13742,7 +13739,6 @@ name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bincode",
  "bitcoin",
  "bitvec",
  "borsh",
@@ -13750,12 +13746,9 @@ dependencies = [
  "musig2",
  "rand 0.8.5",
  "secp256k1 0.29.1",
- "serde",
  "strata-identifiers",
  "strata-test-utils",
  "thiserror 2.0.16",
- "zkaleido",
- "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -13830,11 +13823,12 @@ dependencies = [
  "strata-key-derivation",
  "strata-l1-txfmt",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-sp1-guest-builder",
  "tokio",
  "zeroize",
- "zkaleido-sp1-groth16-verifier",
+ "zkaleido-sp1-groth16-verifier 0.1.0 (git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh)",
 ]
 
 [[package]]
@@ -13857,7 +13851,7 @@ dependencies = [
  "strata-state",
  "thiserror 2.0.16",
  "typed-sled",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -13880,7 +13874,7 @@ dependencies = [
  "strata-state",
  "tempfile",
  "tracing",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -13902,7 +13896,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "typed-sled",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -13921,7 +13915,7 @@ dependencies = [
  "strata-state",
  "strata-test-utils",
  "strata-test-utils-btc",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -14064,7 +14058,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#33aff52fb0652b5a3f3352613486648c0a52af8c"
+source = "git+https://github.com/alpenlabs/strata-common#aaea159b6662d87bdd44efe19dbbfa169abceb33"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14073,7 +14067,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#33aff52fb0652b5a3f3352613486648c0a52af8c"
+source = "git+https://github.com/alpenlabs/strata-common#aaea159b6662d87bdd44efe19dbbfa169abceb33"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14143,7 +14137,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#33aff52fb0652b5a3f3352613486648c0a52af8c"
+source = "git+https://github.com/alpenlabs/strata-common#aaea159b6662d87bdd44efe19dbbfa169abceb33"
 dependencies = [
  "thiserror 2.0.16",
 ]
@@ -14200,10 +14194,25 @@ dependencies = [
  "serde",
  "strata-bridge-types",
  "strata-btc-types",
- "strata-crypto",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-predicate",
  "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-predicate"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common#aaea159b6662d87bdd44efe19dbbfa169abceb33"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "hex",
+ "k256",
+ "serde",
+ "signature",
+ "thiserror 2.0.16",
+ "zkaleido-sp1-groth16-verifier 0.1.0 (git+https://github.com/alpenlabs/zkaleido)",
 ]
 
 [[package]]
@@ -14229,7 +14238,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-checkpoint-types",
  "strata-proofimpl-cl-stf",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
  "zkaleido-native-adapter",
 ]
 
@@ -14244,7 +14253,7 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-params",
  "strata-primitives",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
  "zkaleido-native-adapter",
 ]
 
@@ -14272,7 +14281,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
  "zkaleido-native-adapter",
 ]
 
@@ -14313,7 +14322,7 @@ dependencies = [
  "toml 0.5.11",
  "tracing",
  "typed-sled",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
  "zkaleido-sp1-host",
 ]
 
@@ -14324,7 +14333,7 @@ dependencies = [
  "jsonrpsee",
  "strata-primitives",
  "strata-rpc-types",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -14346,7 +14355,7 @@ dependencies = [
  "strata-zkvm-hosts",
  "tokio",
  "tracing",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
  "zkaleido-sp1-host",
 ]
 
@@ -14386,7 +14395,7 @@ dependencies = [
  "strata-primitives",
  "strata-rpc-types",
  "strata-sequencer",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -14648,17 +14657,16 @@ dependencies = [
  "bitcoin",
  "borsh",
  "rand 0.8.5",
- "serde_json",
  "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-consensus-logic",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-test-utils",
  "strata-test-utils-btc",
- "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -14682,7 +14690,7 @@ dependencies = [
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
  "zkaleido-native-adapter",
  "zkaleido-sp1-host",
 ]
@@ -16922,6 +16930,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "zkaleido"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh#b3bb9e6f61a3eb083965f642fd254c9f6f530121"
+dependencies = [
+ "arbitrary",
+ "async-trait",
+ "bincode",
+ "borsh",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "zkaleido"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido#3cd4f232d2807fa61b6545847f695a7119841adb"
+dependencies = [
+ "arbitrary",
+ "async-trait",
+ "bincode",
+ "borsh",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16#0144e0a1d1ec0b32769139a202f168f2c398ea30"
@@ -16929,13 +16963,13 @@ dependencies = [
  "bincode",
  "borsh",
  "serde",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16#0144e0a1d1ec0b32769139a202f168f2c398ea30"
+source = "git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh#b3bb9e6f61a3eb083965f642fd254c9f6f530121"
 dependencies = [
  "blake3",
  "borsh",
@@ -16944,7 +16978,22 @@ dependencies = [
  "sha2 0.10.9",
  "substrate-bn",
  "thiserror 1.0.69",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?branch=feat%2Ffeature-gate-serde-borsh)",
+]
+
+[[package]]
+name = "zkaleido-sp1-groth16-verifier"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido#3cd4f232d2807fa61b6545847f695a7119841adb"
+dependencies = [
+ "blake3",
+ "borsh",
+ "hex",
+ "serde",
+ "sha2 0.10.9",
+ "substrate-bn",
+ "thiserror 1.0.69",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido)",
 ]
 
 [[package]]
@@ -16958,7 +17007,7 @@ dependencies = [
  "sp1-prover",
  "sp1-sdk",
  "sp1-stark",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]

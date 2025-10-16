@@ -5,9 +5,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorPubkeys;
 use strata_btc_types::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey, GenesisL1View};
-use strata_crypto::RollupVerifyingKey;
 use strata_identifiers::{Buf32, CredRule};
 use strata_l1_txfmt::MagicBytes;
+use strata_predicate::PredicateKey;
 use thiserror::Error;
 
 pub mod serde_helpers;
@@ -56,10 +56,8 @@ pub struct RollupParams {
     #[serde(with = "serde_amount_sat")]
     pub deposit_amount: Amount,
 
-    /// SP1 verifying key that is used to verify the Groth16 proof posted on Bitcoin
-    // FIXME which proof?  should this be `checkpoint_vk`?
-    // Note: RollupVerifyingKey stays in primitives due to circular dependencies
-    pub rollup_vk: RollupVerifyingKey,
+    /// Predicate to verify the validity of checkpoint
+    pub checkpoint_predicate: PredicateKey,
 
     /// Number of Bitcoin blocks a withdrawal dispatch assignment is valid for.
     pub dispatch_assignment_dur: u32,
@@ -121,8 +119,8 @@ impl RollupParams {
         strata_identifiers::hash::raw(&raw_bytes)
     }
 
-    pub fn rollup_vk(&self) -> &RollupVerifyingKey {
-        &self.rollup_vk
+    pub fn checkpoint_predicate(&self) -> &PredicateKey {
+        &self.checkpoint_predicate
     }
 }
 

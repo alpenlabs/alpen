@@ -9,9 +9,9 @@ workspace = true
 [dependencies]
 strata-bridge-types.workspace = true
 strata-btc-types.workspace = true
-strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
+strata-predicate.workspace = true
 
 bincode.workspace = true
 bitcoin.workspace = true

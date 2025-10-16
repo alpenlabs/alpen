@@ -97,7 +97,7 @@ impl Subprotocol for OLCoreSubproto {
 
         // Initialize the Core subprotocol state from genesis configuration
         Ok(CoreOLState {
-            checkpoint_vk: params.checkpoint_vk.clone(),
+            checkpoint_predicate: params.checkpoint_predicate.clone(),
             verified_checkpoint: genesis_epoch_summary,
             last_checkpoint_ref: *params.genesis_l1_block.blkid(),
             sequencer_pubkey: params.sequencer_pubkey,

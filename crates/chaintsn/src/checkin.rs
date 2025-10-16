@@ -6,7 +6,6 @@ use strata_asm_types::{
 };
 use strata_bridge_types::DepositIntent;
 use strata_checkpoint_types::{verify_signed_checkpoint_sig, SignedCheckpoint};
-use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
 
@@ -202,10 +201,16 @@ fn process_l1_checkpoint<'s, S: StateAccessor>(
         }
     } else {
         // Otherwise, verify the non-empty proof.
-        verify_rollup_groth16_proof_receipt(&receipt, &params.rollup_vk).map_err(|error| {
-            error!(%ckpt_epoch, %error, "Failed to verify non-empty proof for epoch");
-            OpError::InvalidProof
-        })?;
+        params
+            .checkpoint_predicate()
+            .verify_claim_witness(
+                receipt.public_values().as_bytes(),
+                receipt.proof().as_bytes(),
+            )
+            .map_err(|error| {
+                error!(%ckpt_epoch, %error, "Failed to verify non-empty proof for epoch");
+                OpError::InvalidProof
+            })?;
     }
 
     // Copy the epoch commitment and make it finalized.

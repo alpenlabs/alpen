@@ -24,9 +24,9 @@ use strata_bridge_types::OperatorPubkeys;
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, ProofPublishMode, RollupParams};
+use strata_predicate::PredicateKey;
 use strata_primitives::{
     block_credential, buf::Buf32, crypto::EvenSecretKey, keys::ZeroizableXpriv, l1::GenesisL1View,
-    proof::RollupVerifyingKey,
 };
 use zeroize::Zeroize;
 
@@ -95,16 +95,19 @@ fn export_elf(_elf_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Returns the appropriate [`RollupVerifyingKey`] based on the enabled features.
+/// Returns the appropriate [`PredicateKey`] based on the enabled features.
 ///
 /// # Behavior
 ///
-/// - If the **sp1** feature is enabled, returns an `SP1VerifyingKey`.
-/// - If **sp1** is not enabled, returns a `NativeVerifyingKey`.
-fn resolve_rollup_vk() -> RollupVerifyingKey {
+/// - If the **sp1** feature is enabled, returns an
+///   [Sp1Groth16](strata_predicate::PredicateTypeId::Sp1Groth16) PredicateKey.
+/// - If **sp1** is not enabled, returns a
+///   [AlwaysAccept](strata_predicate::PredicateTypeId::AlwaysAccept) PredicateKey.
+fn resolve_checkpoint_predicate() -> PredicateKey {
     // Use SP1 if `sp1` feature is enabled
     #[cfg(feature = "sp1-builder")]
     {
+        use strata_predicate::PredicateTypeId;
         use strata_sp1_guest_builder::GUEST_CHECKPOINT_VK_HASH_STR;
         use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
         let vk_buf32: Buf32 = GUEST_CHECKPOINT_VK_HASH_STR
@@ -112,13 +115,14 @@ fn resolve_rollup_vk() -> RollupVerifyingKey {
             .expect("invalid sp1 checkpoint verifier key hash");
         let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0)
             .expect("Failed to load SP1 Groth16 verifier");
-        RollupVerifyingKey::SP1VerifyingKey(sp1_verifier)
+        let condition_bytes = sp1_verifier.vk.to_uncompressed_bytes();
+        PredicateKey::new(PredicateTypeId::Sp1Groth16, condition_bytes)
     }
 
-    // If `sp1` is not enabled, use the Native verifying key
+    // If `sp1` is not enabled, use the AlwaysAccept predicate
     #[cfg(not(feature = "sp1-builder"))]
     {
-        RollupVerifyingKey::NativeVerifyingKey
+        PredicateKey::always_accept()
     }
 }
 
@@ -276,7 +280,7 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         .unwrap_or(1_000_000_000);
 
     // Parse the checkpoint verification key.
-    let rollup_vk = resolve_rollup_vk();
+    let rollup_vk = resolve_checkpoint_predicate();
 
     let chainspec_json = match cmd.chain_config {
         Some(path) => fs::read_to_string(path)?,
@@ -318,7 +322,7 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         epoch_slots: cmd.epoch_slots.unwrap_or(64),
         seqkey,
         opkeys,
-        rollup_vk,
+        checkpoint_predicate: rollup_vk,
         // TODO make a const
         deposit_sats,
         proof_timeout: cmd.proof_timeout,
@@ -434,7 +438,7 @@ pub(crate) struct ParamsConfig {
     /// Operators' master keys.
     opkeys: Vec<Xpriv>,
     /// Verifier's key.
-    rollup_vk: RollupVerifyingKey,
+    checkpoint_predicate: PredicateKey,
     /// Amount of sats to deposit.
     deposit_sats: u64,
     /// Timeout for proofs.
@@ -488,7 +492,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         target_l2_batch_size: config.epoch_slots as u64,
         max_address_length: 20,
         deposit_amount: Amount::from_sat(config.deposit_sats),
-        rollup_vk: config.rollup_vk,
+        checkpoint_predicate: config.checkpoint_predicate,
         // TODO make configurable
         dispatch_assignment_dur: 64,
         proof_publish_mode: config
