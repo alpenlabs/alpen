@@ -38,7 +38,7 @@ tokio = { workspace = true, optional = true }
 zeroize.workspace = true
 
 [features]
-default = ["btc-client", "sp1-builder"]
+default = ["btc-client"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
 sp1-builder = [
   "strata-sp1-guest-builder/sp1-dev",

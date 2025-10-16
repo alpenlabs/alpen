@@ -117,10 +117,10 @@ fn resolve_checkpoint_predicate() -> PredicateKey {
         PredicateKey::new(PredicateTypeId::Sp1Groth16, condition_bytes)
     }
 
-    // If `sp1` is not enabled, use the Native verifying key
+    // If `sp1` is not enabled, use the AlwaysAccept predicate
     #[cfg(not(feature = "sp1-builder"))]
     {
-        RollupVerifyingKey::NativeVerifyingKey
+        PredicateKey::always_accept()
     }
 }
 
