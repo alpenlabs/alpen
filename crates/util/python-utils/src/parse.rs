@@ -3,10 +3,10 @@ use secp256k1::SECP256K1;
 use strata_asm_types::DepositRequestInfo;
 use strata_crypto::EvenSecretKey;
 use strata_l1tx::deposit::deposit_request::extract_deposit_request_info;
+use strata_params::DepositTxParams;
 use strata_primitives::{
     constants::{EE_ADDRESS_LEN, STRATA_OP_WALLET_DERIVATION_PATH},
     l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey},
-    params::DepositTxParams,
 };
 
 use crate::{

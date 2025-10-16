@@ -193,6 +193,7 @@ mod tests {
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_params::{Params, RollupParams, SyncParams};
     use strata_primitives::{
         buf::Buf32,
         epoch::EpochCommitment,

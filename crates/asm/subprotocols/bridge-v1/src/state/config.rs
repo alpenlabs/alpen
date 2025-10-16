@@ -5,7 +5,8 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_primitives::{l1::BitcoinAmount, operator::OperatorPubkeys};
+use strata_bridge_types::OperatorPubkeys;
+use strata_primitives::l1::BitcoinAmount;
 
 /// Configuration for the BridgeV1 subprotocol.
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]

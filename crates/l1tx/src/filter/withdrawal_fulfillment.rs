@@ -137,7 +137,8 @@ fn extract_op_return_data(script: &ScriptBuf) -> Option<&[u8]> {
 #[cfg(test)]
 mod test {
     use bitcoin::{absolute::LockTime, transaction::Version, Amount, Transaction, TxOut};
-    use strata_primitives::{bitcoin_bosd::Descriptor, params::Params, sorted_vec::FlatTable};
+    use strata_params::Params;
+    use strata_primitives::{bitcoin_bosd::Descriptor, sorted_vec::FlatTable};
     use strata_test_utils_btc::{create_opreturn_metadata, generate_withdrawal_fulfillment_data};
     use strata_test_utils_l2::gen_params;
 

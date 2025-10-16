@@ -17,7 +17,7 @@ use bitcoind_async_client::{
 };
 use strata_asm_types::{HeaderVerificationState, L1BlockManifest, L1HeaderRecord};
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
-use strata_primitives::{buf::Buf32, params::GenesisL1View};
+use strata_primitives::{buf::Buf32, l1::GenesisL1View};
 
 #[derive(Debug)]
 pub struct BtcChainSegment {

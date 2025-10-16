@@ -11,7 +11,7 @@ use strata_db::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry, L1BundleStatus, L1TxStatus},
 };
-use strata_primitives::params::Params;
+use strata_params::Params;
 use strata_status::StatusChannel;
 use strata_storage::ops::writer::{Context, EnvelopeDataOps};
 use strata_tasks::TaskExecutor;

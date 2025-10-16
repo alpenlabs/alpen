@@ -1,10 +1,8 @@
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::{ScriptBuf, Txid, hashes::Hash};
 use strata_asm_common::TxInputRef;
-use strata_primitives::{
-    l1::{BitcoinAmount, BitcoinTxid},
-    operator::OperatorIdx,
-};
+use strata_bridge_types::OperatorIdx;
+use strata_primitives::l1::{BitcoinAmount, BitcoinTxid};
 
 use crate::{
     constants::WITHDRAWAL_TX_TYPE, errors::WithdrawalParseError,
@@ -143,6 +141,7 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
 mod tests {
 
     use strata_asm_common::TxInputRef;
+    use strata_bridge_types::OperatorIdx;
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils::ArbitraryGenerator;
 

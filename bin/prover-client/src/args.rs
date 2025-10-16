@@ -2,7 +2,8 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 use argh::FromArgs;
 use serde_json::from_str;
-use strata_primitives::{params::RollupParams, proof::ProofZkVm};
+use strata_params::RollupParams;
+use strata_primitives::proof::ProofZkVm;
 
 use crate::config::ProverConfig;
 

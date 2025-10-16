@@ -19,10 +19,8 @@ use strata_ol_chain_types::{
     L2Header,
 };
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::{
-    buf::Buf32,
-    params::{Params, RollupParams},
-};
+use strata_params::{Params, RollupParams};
+use strata_primitives::buf::Buf32;
 use strata_state::exec_update::construct_ops_from_deposit_intents;
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
 use tracing::*;

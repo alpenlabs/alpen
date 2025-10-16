@@ -4,11 +4,9 @@ use bitcoin::ScriptBuf;
 use strata_asm_txs_bridge_v1::errors::{
     DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
 };
+use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
-use strata_primitives::{
-    l1::{BitcoinAmount, BitcoinTxid},
-    operator::OperatorIdx,
-};
+use strata_primitives::l1::{BitcoinAmount, BitcoinTxid};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

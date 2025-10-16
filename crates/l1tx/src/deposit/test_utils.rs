@@ -1,7 +1,5 @@
-use strata_primitives::{
-    l1::{BitcoinAmount, BitcoinXOnlyPublicKey},
-    params::DepositTxParams,
-};
+use strata_params::DepositTxParams;
+use strata_primitives::l1::{BitcoinAmount, BitcoinXOnlyPublicKey};
 use strata_test_utils_btc::test_taproot_addr;
 
 pub fn get_deposit_tx_config() -> DepositTxParams {

@@ -3,7 +3,7 @@
 use strata_chaintsn::transition::verify_checkpoint_proof;
 use strata_checkpoint_types::{BatchTransition, Checkpoint};
 use strata_csm_types::L1Checkpoint;
-use strata_primitives::params::*;
+use strata_params::RollupParams;
 use tracing::*;
 use zkaleido::{ProofReceipt, ZkVmError, ZkVmResult};
 
@@ -103,7 +103,8 @@ pub fn verify_proof(
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::{params::ProofPublishMode, proof::RollupVerifyingKey};
+    use strata_params::ProofPublishMode;
+    use strata_primitives::proof::RollupVerifyingKey;
     use strata_test_utils_l2::{gen_params, get_test_signed_checkpoint};
     use zkaleido::{Proof, ProofReceipt, PublicValues, ZkVmError};
 

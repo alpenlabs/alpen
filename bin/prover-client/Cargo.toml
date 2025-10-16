@@ -16,6 +16,7 @@ strata-db.workspace = true
 strata-db-store-sled.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-cl-stf.workspace = true

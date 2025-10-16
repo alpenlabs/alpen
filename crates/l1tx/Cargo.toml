@@ -13,6 +13,7 @@ strata-checkpoint-types.workspace = true
 strata-crypto.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 
 anyhow.workspace = true

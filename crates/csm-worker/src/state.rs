@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use strata_csm_types::ClientState;
+use strata_params::Params;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
 use strata_status::StatusChannel;

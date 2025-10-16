@@ -1,9 +1,9 @@
 use strata_crypto::verify_schnorr_sig;
+use strata_params::RollupParams;
 use strata_primitives::{
     block_credential::CredRule,
     buf::{Buf32, Buf64},
     hash,
-    params::RollupParams,
 };
 use thiserror::Error;
 use tracing::warn;
