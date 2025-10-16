@@ -90,7 +90,7 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
     pub fn insert_deposit_entry(
         &mut self,
         idx: u32,
-        tx_ref: OutputRef,
+        tx_ref: BitcoinOutPoint,
         amt: BitcoinAmount,
         operators: Vec<OperatorIdx>,
     ) -> bool {

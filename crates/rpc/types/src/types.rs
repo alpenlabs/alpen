@@ -15,7 +15,7 @@ use strata_primitives::{
     bitcoin_bosd::Descriptor,
     buf::Buf32,
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, L1BlockCommitment, OutputRef},
+    l1::{BitcoinAmount, BitcoinOutPoint, L1BlockCommitment},
     l2::L2BlockCommitment,
     operator::OperatorIdx,
 };
@@ -356,7 +356,7 @@ pub struct RpcDepositEntry {
     deposit_idx: u32,
 
     /// The outpoint that this deposit entry references.
-    output: OutputRef,
+    output: BitcoinOutPoint,
 
     /// List of notary operators, by their indexes.
     // TODO convert this to a windowed bitmap or something

@@ -21,7 +21,7 @@ use strata_bridge_types::{
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
     buf::Buf32,
-    l1::{BitcoinAddress, BitcoinAmount, OutputRef},
+    l1::{BitcoinAddress, BitcoinAmount, BitcoinOutPoint},
     params::DepositTxParams,
 };
 use strata_test_utils::ArbitraryGenerator;
@@ -85,7 +85,7 @@ pub fn create_test_deposit_tx(
     keypair: &Keypair,
     tapnode_hash: &[u8; 32],
 ) -> Transaction {
-    let mut previous_output: OutputRef = ArbitraryGenerator::new().generate();
+    let mut previous_output: BitcoinOutPoint = ArbitraryGenerator::new().generate();
     previous_output.0.vout = 0;
 
     let secp = Secp256k1::new();

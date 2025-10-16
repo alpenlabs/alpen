@@ -12,7 +12,7 @@ mod relay;
 
 // Re-export commonly used types
 pub use bridge::{
-    Musig2PartialSig, Musig2PubNonce, Musig2SecNonce, OperatorPartialSig, PublickeyTable,
+    Musig2PartialSignature, Musig2PubNonce, Musig2SecNonce, OperatorPartialSig, PublickeyTable,
     TxSigningData,
 };
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};

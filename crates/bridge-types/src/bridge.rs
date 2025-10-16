@@ -21,30 +21,33 @@ use strata_primitives::{
 
 use crate::constants::{MUSIG2_PARTIAL_SIG_SIZE, NONCE_SEED_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE};
 
-/// Musig2 partial signature wrapper.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Musig2PartialSig(PartialSignature);
+// Wrapper naming: {UpstreamCrate}{TypeName}, preserving upstream abbreviations.
+// E.g., musig2::PartialSignature -> Musig2PartialSignature, musig2::PubNonce -> Musig2PubNonce
 
-impl Musig2PartialSig {
+/// Wrapper around [`musig2::PartialSignature`] with Borsh serialization support.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Musig2PartialSignature(PartialSignature);
+
+impl Musig2PartialSignature {
     pub fn inner(&self) -> &PartialSignature {
         &self.0
     }
 }
 
-impl From<PartialSignature> for Musig2PartialSig {
+impl From<PartialSignature> for Musig2PartialSignature {
     fn from(value: PartialSignature) -> Self {
         Self(value)
     }
 }
 
-impl BorshSerialize for Musig2PartialSig {
+impl BorshSerialize for Musig2PartialSignature {
     fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let sig_bytes = self.0.serialize();
         writer.write_all(&sig_bytes)
     }
 }
 
-impl BorshDeserialize for Musig2PartialSig {
+impl BorshDeserialize for Musig2PartialSignature {
     fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
         let mut sig_bytes = vec![0u8; MUSIG2_PARTIAL_SIG_SIZE];
         reader.read_exact(&mut sig_bytes)?;
@@ -58,7 +61,7 @@ impl BorshDeserialize for Musig2PartialSig {
     }
 }
 
-impl<'a> Arbitrary<'a> for Musig2PartialSig {
+impl<'a> Arbitrary<'a> for Musig2PartialSignature {
     fn arbitrary(_u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let secret_key = SecretKey::new(&mut OsRng);
         let partial_sig = PartialSignature::from_slice(secret_key.as_ref())
@@ -67,7 +70,7 @@ impl<'a> Arbitrary<'a> for Musig2PartialSig {
     }
 }
 
-/// Musig2 public nonce wrapper.
+/// Wrapper around [`musig2::PubNonce`] with Borsh serialization support.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Musig2PubNonce(PubNonce);
 
@@ -112,7 +115,7 @@ impl<'a> Arbitrary<'a> for Musig2PubNonce {
     }
 }
 
-/// Musig2 secret nonce wrapper.
+/// Wrapper around [`musig2::SecNonce`] with Borsh serialization support.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Musig2SecNonce(SecNonce);
 
@@ -273,7 +276,7 @@ pub struct TxSigningData {
 #[derive(Debug, Clone, Copy, Arbitrary, Serialize, Deserialize)]
 pub struct OperatorPartialSig {
     /// The schnorr signature for a given message.
-    partial_sig: Musig2PartialSig,
+    partial_sig: Musig2PartialSignature,
 
     /// The index of the operator that can be used to query the corresponding pubkey.
     signer_index: OperatorIdx,
@@ -281,7 +284,7 @@ pub struct OperatorPartialSig {
 
 impl OperatorPartialSig {
     /// Create a new [`OperatorPartialSig`].
-    pub fn new(partial_sig: Musig2PartialSig, signer_index: OperatorIdx) -> Self {
+    pub fn new(partial_sig: Musig2PartialSignature, signer_index: OperatorIdx) -> Self {
         Self {
             partial_sig,
             signer_index,
@@ -289,7 +292,7 @@ impl OperatorPartialSig {
     }
 
     /// Get the partial Musig2 schnorr signature.
-    pub fn signature(&self) -> &Musig2PartialSig {
+    pub fn signature(&self) -> &Musig2PartialSignature {
         &self.partial_sig
     }
 
@@ -310,7 +313,7 @@ mod tests {
     };
     use borsh::{BorshDeserialize, BorshSerialize};
 
-    use super::{Musig2PartialSig, Musig2PubNonce, Musig2SecNonce, PublickeyTable};
+    use super::{Musig2PartialSignature, Musig2PubNonce, Musig2SecNonce, PublickeyTable};
     use crate::constants::{MUSIG2_PARTIAL_SIG_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE};
 
     #[test]
@@ -377,8 +380,8 @@ mod tests {
         let raw_bytes = vec![0u8; 1024];
         let mut u = Unstructured::new(&raw_bytes);
 
-        // Generate a random Musig2PartialSig using Arbitrary
-        let musig2_partial_sig = Musig2PartialSig::arbitrary(&mut u);
+        // Generate a random Musig2PartialSignature using Arbitrary
+        let musig2_partial_sig = Musig2PartialSignature::arbitrary(&mut u);
         assert!(
             musig2_partial_sig.is_ok(),
             "should be able to generate musig2 partial sig but got: {}",
@@ -387,7 +390,7 @@ mod tests {
 
         let musig2_partial_sig = musig2_partial_sig.unwrap();
 
-        // Serialize Musig2PartialSig using Borsh
+        // Serialize Musig2PartialSignature using Borsh
         let mut serialized_sig = vec![];
         let result = musig2_partial_sig.serialize(&mut serialized_sig);
 
@@ -406,9 +409,9 @@ mod tests {
             serialized_sig.len()
         );
 
-        // Deserialize Musig2PartialSig using Borsh
-        let deserialized_sig: Musig2PartialSig =
-            Musig2PartialSig::deserialize(&mut &serialized_sig[..])
+        // Deserialize Musig2PartialSignature using Borsh
+        let deserialized_sig: Musig2PartialSignature =
+            Musig2PartialSignature::deserialize(&mut &serialized_sig[..])
                 .expect("deserialization should work");
 
         // Ensure the original and deserialized signatures are the same
@@ -420,7 +423,7 @@ mod tests {
         // check that serde works when sig is embedded
         #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
         struct TestSigContainer {
-            sig: Musig2PartialSig,
+            sig: Musig2PartialSignature,
         }
 
         let test_sig_container = TestSigContainer {

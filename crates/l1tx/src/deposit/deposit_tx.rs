@@ -10,7 +10,7 @@ use bitcoin::{
 };
 use secp256k1::Message;
 use strata_asm_types::DepositInfo;
-use strata_primitives::{buf::Buf32, l1::OutputRef, prelude::DepositTxParams};
+use strata_primitives::{buf::Buf32, l1::BitcoinOutPoint, prelude::DepositTxParams};
 
 use crate::{
     deposit::error::DepositParseError,
@@ -50,7 +50,7 @@ pub fn extract_deposit_info(tx: &Transaction, config: &DepositTxParams) -> Optio
     let tag_data = parse_tag_script(&op_return_out.script_pubkey, config).ok()?;
 
     // Get the first input of the transaction
-    let deposit_outpoint = OutputRef::from(OutPoint {
+    let deposit_outpoint = BitcoinOutPoint::from(OutPoint {
         txid: tx.compute_txid(),
         vout: 0, // deposit must always exist in the first output
     });
@@ -224,7 +224,7 @@ mod tests {
     };
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::{
-        l1::{BitcoinAddress, BitcoinAmount, XOnlyPk},
+        l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey},
         params::DepositTxParams,
     };
 
@@ -245,7 +245,7 @@ mod tests {
             max_address_length: 20,
             deposit_amount: BitcoinAmount::from_sat(10),
             address: addr.clone(),
-            operators_pubkey: XOnlyPk::from_address(&addr).unwrap(),
+            operators_pubkey: BitcoinXOnlyPublicKey::from_address(&addr).unwrap(),
         }
     }
 

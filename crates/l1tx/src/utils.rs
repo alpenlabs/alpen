@@ -94,7 +94,7 @@ pub mod test_utils {
     };
     use strata_bridge_types::DepositEntry;
     use strata_primitives::{
-        l1::{BitcoinAddress, XOnlyPk},
+        l1::{BitcoinAddress, BitcoinXOnlyPublicKey},
         params::Params,
         sorted_vec::FlatTable,
     };
@@ -123,7 +123,8 @@ pub mod test_utils {
         let mut deposit_config = txconfig.deposit_config.clone();
         let (taproot_addr, keypair) = get_taproot_addr_and_keypair();
         let (op_key, _) = keypair.x_only_public_key();
-        deposit_config.operators_pubkey = XOnlyPk::new(op_key.serialize().into()).unwrap();
+        deposit_config.operators_pubkey =
+            BitcoinXOnlyPublicKey::new(op_key.serialize().into()).unwrap();
         deposit_config.address =
             BitcoinAddress::from_bytes(taproot_addr.script_pubkey().as_bytes(), Network::Regtest)
                 .unwrap();

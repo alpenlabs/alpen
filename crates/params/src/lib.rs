@@ -3,7 +3,7 @@
 use bitcoin::{Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_btc_types::{BitcoinAddress, BitcoinAmount, GenesisL1View, XOnlyPk};
+use strata_btc_types::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey, GenesisL1View};
 use strata_crypto::RollupVerifyingKey;
 use strata_identifiers::{Buf32, CredRule};
 use strata_l1_txfmt::MagicBytes;
@@ -143,7 +143,7 @@ pub struct DepositTxParams {
     pub address: BitcoinAddress,
 
     /// Operators' aggregated pubkey (untweaked internal pubkey).
-    pub operators_pubkey: XOnlyPk,
+    pub operators_pubkey: BitcoinXOnlyPublicKey,
 }
 
 /// Describes how we decide to wait for proofs for checkpoints to generate.
