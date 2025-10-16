@@ -13741,7 +13741,6 @@ name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bincode",
  "bitcoin",
  "bitvec",
  "borsh",
@@ -13749,12 +13748,9 @@ dependencies = [
  "musig2",
  "rand 0.8.5",
  "secp256k1 0.29.1",
- "serde",
  "strata-identifiers",
  "strata-test-utils",
  "thiserror 2.0.16",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
- "zkaleido-sp1-groth16-verifier 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]

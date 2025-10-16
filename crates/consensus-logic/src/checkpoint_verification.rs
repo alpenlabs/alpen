@@ -106,7 +106,7 @@ mod tests {
     use strata_params::ProofPublishMode;
     use strata_predicate::PredicateKey;
     use strata_test_utils_l2::{gen_params, get_test_signed_checkpoint};
-    use zkaleido::{Proof, ProofReceipt, PublicValues, ZkVmError};
+    use zkaleido::{Proof, ProofReceipt, PublicValues};
 
     use super::*;
 
@@ -161,10 +161,10 @@ mod tests {
         let (mut checkpoint, rollup_params) = get_test_input();
 
         // Ensure non native mode
-        assert!(!matches!(
+        assert_eq!(
             rollup_params.checkpoint_predicate,
             PredicateKey::always_accept()
-        ));
+        );
 
         let public_values = checkpoint.batch_transition();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();
