@@ -10,6 +10,7 @@ workspace = true
 strata-asm-common.workspace = true
 strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
+strata-predicate = { workspace = true, features = ["arbitrary"] }
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
@@ -19,7 +20,6 @@ borsh.workspace = true
 rand = { workspace = true, optional = true }
 strata-l1-envelope-fmt.workspace = true
 thiserror.workspace = true
-zkaleido.workspace = true
 
 [features]
 test-utils = ["dep:rand", "dep:bitcoin", "strata-crypto/test-utils"]

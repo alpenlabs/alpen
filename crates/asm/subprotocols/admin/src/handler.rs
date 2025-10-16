@@ -198,7 +198,7 @@ mod tests {
     use strata_asm_txs_admin::{
         actions::{
             CancelAction, MultisigAction, UpdateAction,
-            updates::{seq::SequencerUpdate, vk::VerifyingKeyUpdate},
+            updates::{predicate::PredicateUpdate, seq::SequencerUpdate},
         },
         test_utils::create_multisig_signature,
     };
@@ -515,7 +515,7 @@ mod tests {
         let vk_bytes = serde_json::to_vec(&rollup_vk).expect("serialize vk");
         let verifying_key = VerifyingKey::new(vk_bytes);
 
-        let update = VerifyingKeyUpdate::new(verifying_key, ProofType::OlStf);
+        let update = PredicateUpdate::new(verifying_key, ProofType::OlStf);
         let update_id = state.next_update_id();
         let activation_height = 42;
         state.enqueue(QueuedUpdate::new(
