@@ -99,8 +99,10 @@ fn export_elf(_elf_path: &Path) -> anyhow::Result<()> {
 ///
 /// # Behavior
 ///
-/// - If the **sp1** feature is enabled, returns an [Sp1Groth16] PredicateKey.
-/// - If **sp1** is not enabled, returns a AlwaysAccept PredicateKey.
+/// - If the **sp1** feature is enabled, returns an
+///   [Sp1Groth16](strata_predicate::PredicateTypeId::Sp1Groth16) PredicateKey.
+/// - If **sp1** is not enabled, returns a
+///   [AlwaysAccept](strata_predicate::PredicateTypeId::AlwaysAccept) PredicateKey.
 fn resolve_checkpoint_predicate() -> PredicateKey {
     // Use SP1 if `sp1` feature is enabled
     #[cfg(feature = "sp1-builder")]
