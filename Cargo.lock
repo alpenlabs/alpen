@@ -630,8 +630,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror 2.0.16",
- "tree_hash",
- "tree_hash_derive",
+ "tree_hash 0.10.0",
+ "tree_hash_derive 0.10.0",
 ]
 
 [[package]]
@@ -13171,6 +13171,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "hex",
+ "itertools 0.13.0",
+ "serde",
+ "smallvec",
+ "ssz_primitives",
+]
+
+[[package]]
+name = "ssz_derive"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "ssz_primitives"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "ruint",
+]
+
+[[package]]
+name = "ssz_types"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
+ "ssz",
+ "ssz_primitives",
+ "tree_hash 0.2.0",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13181,6 +13226,19 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "strata-acct-ssz-types"
+version = "0.1.0"
+dependencies = [
+ "int-enum",
+ "ssz",
+ "ssz_derive",
+ "ssz_types",
+ "strata-btc-types",
+ "tree_hash 0.2.0",
+ "tree_hash_derive 0.2.0",
+]
 
 [[package]]
 name = "strata-acct-types"
@@ -13477,12 +13535,15 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "ssz",
+ "ssz_derive",
  "strata-checkpoint-types",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-test-utils",
  "strata-test-utils-btc",
  "thiserror 2.0.16",
+ "tree_hash 0.2.0",
 ]
 
 [[package]]
@@ -15515,6 +15576,18 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "digest 0.10.7",
+ "sha2 0.10.9",
+ "smallvec",
+ "ssz",
+ "ssz_primitives",
+]
+
+[[package]]
+name = "tree_hash"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee44f4cef85f88b4dea21c0b1f58320bdf35715cf56d840969487cff00613321"
@@ -15524,6 +15597,16 @@ dependencies = [
  "ethereum_ssz",
  "smallvec",
  "typenum",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]

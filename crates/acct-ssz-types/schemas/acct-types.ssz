@@ -1,0 +1,72 @@
+# SSZ Schema for Account Types
+# This schema defines the SSZ serialization format for account system types
+
+# Constants
+MAX_ACCOUNT_ENCODED_STATE_BYTES = 1 << 16  # 64 KiB (2^16)
+MAX_MSG_PAYLOAD_DATA_BYTES = 1 << 20       # 1 MiB (2^20)
+
+# External types
+# BitcoinAmount is defined in strata-btc-types with SSZ support
+class BitcoinAmount(uint64):
+    """Amount of bitcoin in satoshis"""
+    pass
+
+# Basic wrapper types (transparent)
+
+class AccountId(Bytes32):
+    """Unique identifier for an account"""
+    pass
+
+class SubjectId(Bytes32):
+    """Unique identifier for a subject within an execution environment"""
+    pass
+
+class AccountSerial(uint32):
+    """Serial number for account state transitions"""
+    pass
+
+# Account type enumeration
+class AccountTypeId(uint16):
+    """Type identifier for different account types"""
+    # Note: This is a C-like enum, values:
+    # Snark = 1
+    # Token = 2
+    pass
+
+# Intrinsic account state
+class IntrinsicAccountState(Container):
+    """Core account state that all accounts share"""
+    raw_ty: uint16        # Raw account type ID
+    serial: AccountSerial # State transition serial number
+    balance: BitcoinAmount # Account balance in satoshis
+
+# Account state
+class AccountState(Container):
+    """Complete account state including intrinsics and type-specific data"""
+    intrinsics: IntrinsicAccountState
+    encoded_state: List[uint8, MAX_ACCOUNT_ENCODED_STATE_BYTES]
+
+# Account state summary
+class AcctStateSummary(Container):
+    """Summary of account state for merkle proofs"""
+    serial: AccountSerial
+    balance: BitcoinAmount
+    state_root: Bytes32
+
+# Message payload
+class MsgPayload(Container):
+    """Contents of a message between accounts"""
+    value: BitcoinAmount  # Value sent with message
+    data: List[uint8, MAX_MSG_PAYLOAD_DATA_BYTES]  # Arbitrary message data
+
+# Sent message
+class SentMessage(Container):
+    """Message being sent from one account to another"""
+    dest: AccountId       # Destination account
+    payload: MsgPayload   # Message contents
+
+# Received message
+class ReceivedMessage(Container):
+    """Message received by an account"""
+    source: AccountId     # Source account
+    payload: MsgPayload   # Message contents
