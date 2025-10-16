@@ -71,6 +71,7 @@ members = [
   "crates/service",
   "crates/simple-ee",
   "crates/snark-acct-types",
+  "crates/sps62-checkpoint-types",
   "crates/state",
   "crates/status",
   "crates/storage",
@@ -396,6 +397,9 @@ sha2 = "0.10"
 shrex = { version = "1", features = ["serde"] }
 shrex_macros = "1"
 sled = "0.34.7"
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
 tempfile = "3.10.1"
 terrors = "0.3.0"
 thiserror = "2.0.11"
@@ -406,6 +410,8 @@ tower = "0.5"
 tracing = "0.1"
 tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "main" }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 

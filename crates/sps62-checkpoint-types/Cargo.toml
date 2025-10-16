@@ -1,0 +1,17 @@
+[package]
+name = "sps62-checkpoint-types"
+version = "0.1.0"
+edition = "2021"
+description = "SPS-62 checkpoint types with SSZ serialization"
+
+[lints]
+workspace = true
+
+[dependencies]
+ssz = { workspace = true }
+ssz_derive = { workspace = true }
+ssz_types = { workspace = true }
+tree_hash = { workspace = true }
+tree_hash_derive = { workspace = true }
+
+[dev-dependencies]

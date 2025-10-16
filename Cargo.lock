@@ -630,8 +630,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror 2.0.16",
- "tree_hash",
- "tree_hash_derive",
+ "tree_hash 0.10.0",
+ "tree_hash_derive 0.10.0",
 ]
 
 [[package]]
@@ -3778,7 +3778,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -12093,7 +12093,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.13.0",
+ "bitcoin_hashes 0.14.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -13168,6 +13168,62 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "sps62-checkpoint-types"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_derive",
+ "ssz_types",
+ "tree_hash 0.2.0",
+ "tree_hash_derive 0.2.0",
+]
+
+[[package]]
+name = "ssz"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "hex",
+ "itertools 0.13.0",
+ "serde",
+ "smallvec",
+ "ssz_primitives",
+]
+
+[[package]]
+name = "ssz_derive"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "ssz_primitives"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "ruint",
+]
+
+[[package]]
+name = "ssz_types"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
+ "ssz",
+ "ssz_primitives",
+ "tree_hash 0.2.0",
 ]
 
 [[package]]
@@ -15515,6 +15571,18 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "digest 0.10.7",
+ "sha2 0.10.9",
+ "smallvec",
+ "ssz",
+ "ssz_primitives",
+]
+
+[[package]]
+name = "tree_hash"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee44f4cef85f88b4dea21c0b1f58320bdf35715cf56d840969487cff00613321"
@@ -15524,6 +15592,16 @@ dependencies = [
  "ethereum_ssz",
  "smallvec",
  "typenum",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=main#2e6d0ba5033c42eb960436914ccc75170f11a22a"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
