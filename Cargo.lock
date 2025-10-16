@@ -13586,17 +13586,16 @@ dependencies = [
  "strata-asm-types",
  "strata-bridge-types",
  "strata-checkpoint-types",
- "strata-crypto",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-state",
  "strata-test-utils",
  "strata-test-utils-l2",
  "thiserror 2.0.16",
  "tracing",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]
@@ -13722,6 +13721,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-service",
  "strata-state",
@@ -13829,6 +13829,7 @@ dependencies = [
  "strata-key-derivation",
  "strata-l1-txfmt",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-sp1-guest-builder",
  "tokio",
@@ -14199,9 +14200,9 @@ dependencies = [
  "serde",
  "strata-bridge-types",
  "strata-btc-types",
- "strata-crypto",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-predicate",
  "thiserror 2.0.16",
 ]
 
@@ -14662,17 +14663,16 @@ dependencies = [
  "bitcoin",
  "borsh",
  "rand 0.8.5",
- "serde_json",
  "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-consensus-logic",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-test-utils",
  "strata-test-utils-btc",
- "zkaleido-sp1-groth16-verifier 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc16)",
 ]
 
 [[package]]

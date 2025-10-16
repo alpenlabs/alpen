@@ -9,14 +9,13 @@ use strata_bridge_types::{
     DepositIntent, DepositState, DispatchCommand, WithdrawOutput, WithdrawalIntent,
 };
 use strata_checkpoint_types::{verify_signed_checkpoint_sig, Checkpoint, SignedCheckpoint};
-use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
 use strata_ol_chain_types::{L2BlockBody, L2BlockHeader, L2Header};
 use strata_ol_chainstate_types::StateCache;
 use strata_params::RollupParams;
+use strata_predicate::PredicateResult;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, l2::L2BlockCommitment};
 use strata_state::exec_update::{self, Op};
 use tracing::warn;
-use zkaleido::ZkVmResult;
 
 use crate::{
     checkin::{process_l1_view_update, SegmentAuxData},
@@ -192,7 +191,7 @@ fn process_l1_checkpoint(
 pub fn verify_checkpoint_proof(
     checkpoint: &Checkpoint,
     rollup_params: &RollupParams,
-) -> ZkVmResult<()> {
+) -> PredicateResult<()> {
     let checkpoint_idx = checkpoint.batch_info().epoch();
     let proof_receipt = checkpoint.construct_receipt();
 
@@ -206,7 +205,10 @@ pub fn verify_checkpoint_proof(
         return Ok(());
     }
 
-    verify_rollup_groth16_proof_receipt(&proof_receipt, rollup_params.rollup_vk())
+    rollup_params.checkpoint_predicate().verify_claim_witness(
+        proof_receipt.public_values().as_bytes(),
+        proof_receipt.proof().as_bytes(),
+    )
 }
 
 /// Checks if the given checkpoint is null based on previous finalized epoch. A checkpoint is

@@ -65,7 +65,7 @@ impl StrataAsmSpec {
             verification_params: CheckpointV0VerificationParams {
                 genesis_l1_block: params.genesis_l1_view.blk,
                 cred_rule: params.cred_rule.clone(),
-                predicate: params.rollup_vk.clone(),
+                predicate: params.checkpoint_predicate.clone(),
             },
         };
 

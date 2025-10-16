@@ -17,10 +17,10 @@ use strata_ol_chain_types::{
 };
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{OperatorConfig, Params, ProofPublishMode, RollupParams, SyncParams};
-use strata_primitives::{block_credential, buf::Buf64, proof::RollupVerifyingKey};
+use strata_predicate::PredicateKey;
+use strata_primitives::{block_credential, buf::Buf64};
 use strata_test_utils::ArbitraryGenerator;
 use strata_test_utils_btc::segment::BtcChainSegment;
-use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
 /// Generates a sequence of L2 block bundles starting from an optional parent block.
 ///
@@ -118,7 +118,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
             target_l2_batch_size: 64,
             max_address_length: 20,
             deposit_amount: Amount::from_sat(1_000_000_000),
-            rollup_vk: get_rollup_vk(),
+            checkpoint_predicate: PredicateKey::always_accept(),
             dispatch_assignment_dur: 64,
             proof_publish_mode: ProofPublishMode::Strict,
             max_deposits_in_block: 16,
@@ -138,13 +138,6 @@ fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> OperatorPubkeys {
     let x_only_public_key = sk.x_only_public_key(SECP256K1);
     let (pk, _) = x_only_public_key;
     OperatorPubkeys::new(pk.into(), pk.into())
-}
-
-fn get_rollup_vk() -> RollupVerifyingKey {
-    let sp1_vk: SP1Groth16Verifier =
-        serde_json::from_slice(include_bytes!("../../data/sp1_rollup_vk.json")).unwrap();
-
-    RollupVerifyingKey::SP1VerifyingKey(sp1_vk)
 }
 
 /// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.

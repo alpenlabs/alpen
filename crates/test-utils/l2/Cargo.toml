@@ -13,6 +13,7 @@ strata-consensus-logic.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-params.workspace = true
+strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-test-utils.workspace = true
 strata-test-utils-btc.workspace = true
@@ -20,5 +21,3 @@ strata-test-utils-btc.workspace = true
 bitcoin = { workspace = true, features = ["rand-std"] }
 borsh.workspace = true
 rand.workspace = true
-serde_json.workspace = true
-zkaleido-sp1-groth16-verifier.workspace = true

@@ -17,6 +17,7 @@ strata-bridge-types.workspace = true
 strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true
 strata-params.workspace = true
+strata-predicate.workspace = true
 strata-primitives.workspace = true
 
 sp1-verifier = { version = "5.2.1", optional = true }
@@ -37,7 +38,7 @@ tokio = { workspace = true, optional = true }
 zeroize.workspace = true
 
 [features]
-default = ["btc-client"]
+default = ["btc-client", "sp1-builder"]
 btc-client = ["dep:bitcoind-async-client", "dep:tokio"]
 sp1-builder = [
   "strata-sp1-guest-builder/sp1-dev",
