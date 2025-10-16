@@ -46,7 +46,7 @@ class RevertCheckpointedBlockShouldFailTest(SequencerDbtoolMixin):
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
         # Try to revert to a checkpointed block WITHOUT -c flag - this should fail
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id)
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-f")
 
         # The command should fail with an error
         if return_code == 0:
