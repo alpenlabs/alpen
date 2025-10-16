@@ -5,7 +5,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::{ExportState, InnerStateCommitment, StateReference};
-use zkaleido::VerifyingKey;
+use strata_predicate::PredicateKey;
 
 /// Trait implementation for the Moho program.
 pub trait MohoProgram {
@@ -46,7 +46,7 @@ pub trait MohoProgram {
     ///
     /// - `Some(VerifyingKey)` if the inner verifying key has been updated.
     /// - `None` if there is no update to the inner verification key.
-    fn extract_next_vk(output: &Self::StepOutput) -> Option<VerifyingKey>;
+    fn extract_next_predicate(output: &Self::StepOutput) -> Option<PredicateKey>;
 
     /// Extracts the inner state after a transition from the step’s output.
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State;
