@@ -75,6 +75,69 @@ impl UpdateOperationData {
     }
 }
 
+/// Subset of UpdateOperationData fields needed for unconditional update.
+/// This represents all the data of an update operation that is available to a DA-only synced OL
+/// fullnode.
+#[derive(Clone, Debug)]
+pub struct UpdateOperationUnconditionalData {
+    /// Sequence number to prevent replays, since we can't just rely on message
+    /// index.
+    seq_no: u64,
+
+    /// The new state we're claiming.
+    new_state: ProofState,
+
+    /// Messages we processed in the inbox.
+    processed_messages: Vec<MessageEntry>,
+
+    /// Arbitrary data we persist in DA.  This is formatted according to the
+    /// needs of the snark account's application.
+    extra_data: Vec<u8>,
+}
+
+impl UpdateOperationUnconditionalData {
+    pub fn new(
+        seq_no: u64,
+        new_state: ProofState,
+        processed_messages: Vec<MessageEntry>,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            seq_no,
+            new_state,
+            processed_messages,
+            extra_data,
+        }
+    }
+
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    pub fn new_state(&self) -> ProofState {
+        self.new_state
+    }
+
+    pub fn processed_messages(&self) -> &[MessageEntry] {
+        &self.processed_messages
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+}
+
+impl From<UpdateOperationData> for UpdateOperationUnconditionalData {
+    fn from(value: UpdateOperationData) -> Self {
+        Self {
+            seq_no: value.seq_no,
+            new_state: value.new_state,
+            processed_messages: value.processed_messages,
+            extra_data: value.extra_data,
+        }
+    }
+}
+
 /// Describes references to entries in accumulators available in the ledger.
 ///
 /// These is generated from a [`LedgerRefProofs`].
