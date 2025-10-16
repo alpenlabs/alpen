@@ -53,16 +53,21 @@ strata-dbtool get-syncinfo
 ```
 
 ### `get-client-state-update`
-Shows the latest client state update information.
+Shows client state update information for a given L1 block.
 
 ```bash
-strata-dbtool get-client-state-update [<block_id>] [OPTIONS]
+strata-dbtool get-client-state-update <block_id> [OPTIONS]
 ```
 **Arguments:**
-- `block_id` -  Client state block_id
+- `block_id` - L1 block ID (hex string)
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
+
+**Example:**
+```bash
+strata-dbtool get-client-state-update 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
+```
 
 ### `get-l1-summary`
 Shows a summary of all L1 manifests in the database.
@@ -264,6 +269,8 @@ strata-dbtool get-chainstate 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a
 ### `revert-chainstate`
 Reverts the chain state to a specific block ID. **Use with caution!**
 
+**By default, this command runs in dry run mode** and shows what would be deleted without making any changes. To actually execute the revert operation, you must explicitly use the `--force` flag.
+
 ```bash
 strata-dbtool revert-chainstate <block_id> [OPTIONS]
 ```
@@ -272,12 +279,25 @@ strata-dbtool revert-chainstate <block_id> [OPTIONS]
 - `block_id` - Target L2 block ID to revert to (hex string)
 
 **Options:**
-- `-d, --delete-blocks` - delete blocks after target block
-- `-c, --revert-checkpointed-blocks` - allow reverting blocks inside checkpointed epoch
+- `-f, --force` - Force execution (without this flag, only a dry run is performed)
+- `-d, --delete-blocks` - Delete blocks after target block (not just mark as unchecked)
+- `-c, --revert-checkpointed-blocks` - Allow reverting blocks inside checkpointed epoch
 
-**Example:**
+**Examples:**
+
+Dry run (default behavior - shows what would be affected):
 ```bash
 strata-dbtool revert-chainstate 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+```
+
+Actually execute the revert:
+```bash
+strata-dbtool revert-chainstate --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+```
+
+Execute revert with block deletion:
+```bash
+strata-dbtool revert-chainstate -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
 ```
 
 ## Output Formats

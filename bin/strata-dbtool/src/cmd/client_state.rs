@@ -13,9 +13,9 @@ use crate::{
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-client-state-update")]
-/// Get client state update
+/// Get client state update for a given L1 block
 pub(crate) struct GetClientStateUpdateArgs {
-    /// client state block_id
+    /// L1 block ID (hex string)
     #[argh(positional)]
     pub(crate) block_id: String,
 
@@ -24,7 +24,7 @@ pub(crate) struct GetClientStateUpdateArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-/// Get client state update at specified index.
+/// Get client state update for the specified L1 block.
 pub(crate) fn get_client_state_update(
     db: &impl DatabaseBackend,
     args: GetClientStateUpdateArgs,
