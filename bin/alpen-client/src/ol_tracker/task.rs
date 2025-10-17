@@ -12,13 +12,14 @@ use crate::{
     traits::{ol_client::OlClient, storage::Storage},
 };
 
-/// Number of Ol blocks to process in one cycle
-const MAX_BLOCKS_FETCH: u64 = 10;
+/// Default number of Ol blocks to process in one cycle
+pub(crate) const DEFAULT_MAX_BLOCKS_FETCH: u64 = 10;
 
 pub(crate) struct OlTrackerCtx<TStorage, TOlClient> {
     pub(crate) storage: Arc<TStorage>,
     pub(crate) ol_client: Arc<TOlClient>,
     pub(crate) ee_state_tx: watch::Sender<EeAccountState>,
+    pub(crate) max_blocks_fetch: u64,
 }
 
 pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
@@ -31,9 +32,13 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
     loop {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        match track_ol_state(&state, ctx.ol_client.as_ref()).await {
+        match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_blocks_fetch).await {
             Ok(TrackOlAction::Extend(block_operations)) => {
-                handle_extend_ee_state(&block_operations, &mut state, &ctx).await;
+                if let Err(error) =
+                    handle_extend_ee_state(&block_operations, &mut state, &ctx).await
+                {
+                    error!(%error, "failed to extend ee state");
+                }
             }
             Ok(TrackOlAction::Reorg) => {
                 handle_reorg(&mut state, &ctx).await;
@@ -47,13 +52,13 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
 }
 
 #[derive(Debug)]
-struct OlBlockOperations {
-    block: OLBlockCommitment,
-    operations: Vec<UpdateOperationUnconditionalData>,
+pub(crate) struct OlBlockOperations {
+    pub(crate) block: OLBlockCommitment,
+    pub(crate) operations: Vec<UpdateOperationUnconditionalData>,
 }
 
 #[derive(Debug)]
-enum TrackOlAction {
+pub(crate) enum TrackOlAction {
     /// Extend local view of the OL chain with new blocks.
     Extend(Vec<OlBlockOperations>),
     /// Local tip not present in OL chain, need to resolve local view.
@@ -62,9 +67,10 @@ enum TrackOlAction {
     Noop,
 }
 
-async fn track_ol_state(
+pub(crate) async fn track_ol_state(
     state: &OlTrackerState,
     ol_client: &impl OlClient,
+    max_blocks_fetch: u64,
 ) -> eyre::Result<TrackOlAction> {
     let ol_status = ol_client.chain_status().await?;
 
@@ -93,7 +99,7 @@ async fn track_ol_state(
     let fetch_blocks_count = best_ol_block
         .slot()
         .saturating_sub(state.ol_block.slot())
-        .min(MAX_BLOCKS_FETCH);
+        .min(max_blocks_fetch);
 
     // Fetch block commitments in from current local slot.
     // Also fetch height of last known local block to check for reorg.
@@ -104,8 +110,9 @@ async fn track_ol_state(
         )
         .await?;
 
-    let (expected_local_block, new_blocks) =
-        blocks.split_first().expect("non empty block commitments");
+    let (expected_local_block, new_blocks) = blocks
+        .split_first()
+        .ok_or_else(|| eyre::eyre!("empty block commitments returned from ol_client"))?;
 
     // If last block isnt as expected, trigger reorg
     if expected_local_block != &state.ol_block {
@@ -132,7 +139,7 @@ async fn track_ol_state(
     Ok(TrackOlAction::Extend(res))
 }
 
-fn apply_block_operations(
+pub(crate) fn apply_block_operations(
     state: &mut EeAccountState,
     block_operations: &[UpdateOperationUnconditionalData],
 ) -> eyre::Result<()> {
@@ -143,11 +150,30 @@ fn apply_block_operations(
     Ok(())
 }
 
+/// Pure function to update tracker state with new block and ee state.
+pub(crate) fn update_tracker_state(
+    state: &mut OlTrackerState,
+    ol_block: OLBlockCommitment,
+    ee_state: EeAccountState,
+) {
+    state.ol_block = ol_block;
+    state.ee_state = ee_state;
+}
+
+/// Notify watchers of state update.
+pub(crate) fn notify_state_update(
+    sender: &watch::Sender<EeAccountState>,
+    state: &EeAccountState,
+) {
+    let _ = sender.send(state.clone());
+}
+
 async fn handle_extend_ee_state<TStorage, TOlClient>(
     block_operations: &[OlBlockOperations],
     state: &mut OlTrackerState,
     ctx: &OlTrackerCtx<TStorage, TOlClient>,
-) where
+) -> eyre::Result<()>
+where
     TStorage: Storage,
     TOlClient: OlClient,
 {
@@ -160,31 +186,36 @@ async fn handle_extend_ee_state<TStorage, TOlClient>(
         let mut ee_state = state.ee_state.clone();
 
         // 1. Apply all operations in the block to update local ee account state.
-        if let Err(error) = apply_block_operations(&mut ee_state, &operations) {
+        apply_block_operations(&mut ee_state, &operations).map_err(|error| {
             error!(
                 slot = ol_block.slot(),
                 %error,
                 "failed to apply ol block operation"
             );
-            return;
-        }
+            error
+        })?;
+
         // 2. Persist corresponding ee state for every ol block
-        if let Err(error) = ctx
-            .storage
+        ctx.storage
             .store_ee_account_state(ol_block, &ee_state)
             .await
-        {
-            error!(
-                slot = ol_block.slot(),
-                %error,
-                "failed to store ee account state"
-            );
-            return;
-        }
+            .map_err(|error| {
+                error!(
+                    slot = ol_block.slot(),
+                    %error,
+                    "failed to store ee account state"
+                );
+                error
+            })?;
+
         // 3. update local state
-        state.ee_state = ee_state;
-        // TODO: notify state update
+        update_tracker_state(state, *ol_block, ee_state.clone());
+
+        // 4. notify watchers
+        notify_state_update(&ctx.ee_state_tx, &ee_state);
     }
+
+    Ok(())
 }
 
 async fn handle_reorg<TStorage, TOlClient>(

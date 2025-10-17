@@ -5,7 +5,7 @@ use tokio::sync::watch;
 
 use crate::{
     ol_tracker::{
-        task::{ol_tracker_task, OlTrackerCtx},
+        task::{ol_tracker_task, OlTrackerCtx, DEFAULT_MAX_BLOCKS_FETCH},
         OlTrackerState,
     },
     traits::{ol_client::OlClient, storage::Storage},
@@ -20,6 +20,7 @@ impl OlTrackerHandle {
         state: OlTrackerState,
         storage: Arc<TStorage>,
         ol_client: Arc<TOlClient>,
+        max_block_fetch: Option<u64>,
     ) -> (Self, impl Future<Output = ()>)
     where
         TStorage: Storage,
@@ -31,6 +32,7 @@ impl OlTrackerHandle {
             storage,
             ol_client,
             ee_state_tx,
+            max_blocks_fetch: max_block_fetch.unwrap_or(DEFAULT_MAX_BLOCKS_FETCH),
         };
         let task = ol_tracker_task(state, ctx);
         (handle, task)
