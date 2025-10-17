@@ -212,7 +212,7 @@ where
                     %error,
                     "failed to store ee account state"
                 );
-                error
+                eyre::eyre!(error)
             })?;
 
         // 3. update local state
@@ -238,18 +238,12 @@ async fn handle_reorg<TStorage, TOlClient>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use strata_acct_types::BitcoinAmount;
-    use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-    use strata_snark_acct_types::UpdateOperationUnconditionalData;
+    use strata_identifiers::{Buf32, OLBlockCommitment};
     use tokio::sync::watch;
 
     use super::*;
-    use crate::traits::{
-        ol_client::{MockOlClient, OlChainStatus},
-        storage::MockStorage,
-    };
+    use crate::traits::ol_client::{MockOlClient, OlChainStatus};
 
     /// Helper to create a block commitment for testing
     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
