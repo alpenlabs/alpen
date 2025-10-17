@@ -168,9 +168,7 @@ mod tests {
             let mut mock_client = MockOlClient::new();
 
             // Should not call the underlying method if validation fails
-            mock_client
-                .expect_block_commitments_in_range()
-                .times(0);
+            mock_client.expect_block_commitments_in_range().times(0);
 
             let result = block_commitments_in_range_checked(&mock_client, 100, 100).await;
 
@@ -185,9 +183,7 @@ mod tests {
         async fn test_validates_end_less_than_start() {
             let mut mock_client = MockOlClient::new();
 
-            mock_client
-                .expect_block_commitments_in_range()
-                .times(0);
+            mock_client.expect_block_commitments_in_range().times(0);
 
             let result = block_commitments_in_range_checked(&mock_client, 100, 50).await;
 
@@ -312,8 +308,7 @@ mod tests {
                     Ok(vec![vec![], vec![]])
                 });
 
-            let result =
-                get_update_operations_for_blocks_checked(&mock_client, block_ids).await;
+            let result = get_update_operations_for_blocks_checked(&mock_client, block_ids).await;
 
             assert!(result.is_err());
             match result.unwrap_err() {
@@ -336,10 +331,9 @@ mod tests {
                 .times(1)
                 .returning(|_| Ok(vec![]));
 
-            let result =
-                get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
-                    .await
-                    .unwrap();
+            let result = get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
+                .await
+                .unwrap();
 
             assert_eq!(result.len(), 0);
         }
@@ -355,10 +349,9 @@ mod tests {
                 .times(1)
                 .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
 
-            let result =
-                get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
-                    .await
-                    .unwrap();
+            let result = get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
+                .await
+                .unwrap();
 
             assert_eq!(result.len(), 1);
             assert_eq!(result[0].len(), 0);
@@ -381,10 +374,9 @@ mod tests {
                 .times(1)
                 .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
 
-            let result =
-                get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
-                    .await
-                    .unwrap();
+            let result = get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
+                .await
+                .unwrap();
 
             assert_eq!(result.len(), 5);
         }
@@ -400,8 +392,7 @@ mod tests {
                 .times(1)
                 .returning(|_| Err(OlClientError::rpc("rpc error")));
 
-            let result =
-                get_update_operations_for_blocks_checked(&mock_client, block_ids).await;
+            let result = get_update_operations_for_blocks_checked(&mock_client, block_ids).await;
 
             assert!(result.is_err());
             assert!(matches!(result.unwrap_err(), OlClientError::Rpc(_)));
