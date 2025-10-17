@@ -1043,7 +1043,6 @@ dependencies = [
 name = "alpen-client"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-genesis",
  "alloy-primitives",
  "alloy-rpc-types-engine",
  "alpen-chainspec",
@@ -1065,9 +1064,12 @@ dependencies = [
  "sled",
  "strata-acct-types",
  "strata-db-store-rocksdb",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
  "strata-identifiers",
  "strata-snark-acct-types",
  "thiserror 2.0.16",
+ "tokio",
  "tracing",
  "typed-sled",
 ]

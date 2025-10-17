@@ -1,4 +1,4 @@
-#![allow(unused_crate_dependencies, reason = "temporary")]
+#![warn(unused_crate_dependencies, reason = "temporary")]
 //! Reth node for the Alpen codebase.
 
 // Ensure only one database backend is configured at a time
@@ -14,27 +14,28 @@ compile_error!(
 // mod init_db;
 mod config;
 mod genesis;
+mod ol_tracker;
+mod traits;
 
 use std::sync::Arc;
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
-use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
 use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
-use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
-// use init_db::init_witness_db;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use strata_acct_types::AccountId;
-use strata_identifiers::CredRule;
+use strata_identifiers::{CredRule, OLBlockId};
 use tracing::info;
 
 use crate::{
     config::{AlpenEeConfig, AlpenEeParams},
     genesis::ee_genesis_block_info,
+    ol_tracker::{init_ol_tracker_state, OlTrackerHandle},
+    traits::{ol_client::DummyOlClient, storage::DummyStorage},
 };
 
 fn main() {
@@ -70,19 +71,37 @@ fn main() {
                 account_id: AccountId::new([0; 32]),
                 genesis_blockhash: genesis_info.blockhash,
                 genesis_stateroot: genesis_info.stateroot,
+                genesis_ol_blockid: OLBlockId::null(), // TODO
+                genesis_ol_slot: 0,
             };
 
-            let config = AlpenEeConfig {
+            let config = Arc::new(AlpenEeConfig {
                 params,
                 sequencer_credrule: CredRule::Unchecked,
                 ee_sequencer_http: ext.sequencer_http,
                 ol_client_http: ext.ol_client_http,
-            };
+            });
+
+            let storage = Arc::new(DummyStorage::default());
+            let ol_client = Arc::new(DummyOlClient::default());
+
+            let ol_tracker_state = builder
+                .task_executor()
+                .handle()
+                .block_on(init_ol_tracker_state(config.clone(), storage.clone()))
+                .expect("ol tracker state initialization should not fail");
 
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
                 .on_node_started(|node| {
                     // TODO: ...
+
+                    let (_ol_tracker, ol_tracker_task) =
+                        OlTrackerHandle::create(ol_tracker_state, storage, ol_client);
+
+                    node.task_executor
+                        .spawn_critical("ol_tracker_task", ol_tracker_task);
+
                     Ok(())
                 });
 

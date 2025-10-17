@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use strata_acct_types::AccountId;
-use strata_identifiers::CredRule;
+use strata_identifiers::{CredRule, OLBlockId};
 
 /// Chain specific config, that needs to remain constant on all nodes
 /// to ensure all stay on the same chain.
@@ -14,6 +14,12 @@ pub(crate) struct AlpenEeParams {
 
     /// Genesis stateroot of execution chain
     pub genesis_stateroot: B256,
+
+    /// OL slot of Alpen ee account genesis
+    pub genesis_ol_slot: u64,
+
+    /// Ol block of Alpen ee account genesis
+    pub genesis_ol_blockid: OLBlockId,
 }
 
 /// Local config that may differ between nodes + params.

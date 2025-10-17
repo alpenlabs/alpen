@@ -27,10 +27,11 @@ alpen-reth-node.workspace = true
 alpen-reth-rpc.workspace = true
 strata-acct-types.workspace = true
 strata-db-store-rocksdb = { workspace = true, optional = true }
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
-alloy-genesis.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types-engine.workspace = true
 async-trait.workspace = true
@@ -46,5 +47,6 @@ reth-node-core.workspace = true
 rockbound = { workspace = true, optional = true }
 sled = { workspace = true, optional = true }
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 typed-sled = { workspace = true, optional = true }
