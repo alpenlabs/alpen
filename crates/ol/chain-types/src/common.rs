@@ -27,38 +27,6 @@ impl OLBlockCommitment {
     }
 }
 
-/// Commitment to the terminal block of a particular epoch.
-#[derive(Clone, Debug)]
-pub struct EpochCommitment {
-    epoch: Epoch,
-    terminal_block: OLBlockCommitment,
-}
-
-impl EpochCommitment {
-    pub fn new(epoch: Epoch, terminal_block: OLBlockCommitment) -> Self {
-        Self {
-            epoch,
-            terminal_block,
-        }
-    }
-
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
-    }
-
-    pub fn terminal_block(&self) -> &OLBlockCommitment {
-        &self.terminal_block
-    }
-
-    pub fn terminal_slot(&self) -> Slot {
-        self.terminal_block.slot()
-    }
-
-    pub fn terminal_blkid(&self) -> &OLBlockId {
-        self.terminal_block.blkid()
-    }
-}
-
 /// Commitment to an L1 block by ID at a particular height.
 /// Useful since Bitcoin blocks do not include height in their header.
 #[derive(Clone, Debug)]

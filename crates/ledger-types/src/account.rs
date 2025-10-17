@@ -33,6 +33,9 @@ pub trait IAccountState: Sized {
     /// Gets the account type state, if valid.
     fn get_type_state(&self) -> AcctResult<AccountTypeState<Self>>;
 
+    /// Gets the mutable account type state, if valid.
+    fn get_type_state_mut(&mut self) -> AcctResult<&mut AccountTypeState<Self>>;
+
     /// Sets the account type state.
     fn set_type_state(&self, state: AccountTypeState<Self>) -> AcctResult<()>;
 }
