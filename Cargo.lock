@@ -14276,6 +14276,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-stf"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-asm-common",
+ "strata-asm-logs",
+ "strata-crypto",
+ "strata-ledger-types",
+ "strata-ol-chain-types-new",
+ "strata-ol-state-types",
+ "strata-primitives",
+ "strata-snark-acct-types",
+]
+
+[[package]]
 name = "strata-params"
 version = "0.1.0"
 dependencies = [

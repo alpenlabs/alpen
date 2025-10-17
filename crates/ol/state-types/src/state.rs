@@ -1,5 +1,4 @@
-use strata_ol_chain_types_new::EpochCommitment;
-use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
+use strata_primitives::{EpochCommitment, buf::Buf32, l1::BitcoinAmount};
 
 /// The Orchestration Layer(OL) State.
 #[derive(Debug, Clone)]
@@ -41,8 +40,12 @@ impl OLState {
         self.accounts_root
     }
 
-    pub fn l1_view_mut(&self) -> &L1View {
+    pub fn l1_view(&self) -> &L1View {
         &self.l1_view
+    }
+
+    pub fn l1_view_mut(&mut self) -> &mut L1View {
+        &mut self.l1_view
     }
 
     pub fn cur_slot_mut(&self) -> u64 {
@@ -55,6 +58,26 @@ impl OLState {
 
     pub fn total_btc_bridged(&self) -> BitcoinAmount {
         self.total_btc_bridged
+    }
+
+    pub fn increment_total_deposited_balance(&self, amt: BitcoinAmount) {
+        self.total_btc_bridged
+            .checked_add(amt)
+            .expect("Bitcoin amount overflow while adding");
+    }
+
+    pub fn decrement_total_deposited_balance(&self, amt: BitcoinAmount) {
+        self.total_btc_bridged
+            .checked_sub(amt)
+            .expect("Bitcoin amount overflow while subtracting");
+    }
+
+    pub fn compute_root(&self) -> Buf32 {
+        todo!()
+    }
+
+    pub fn set_cur_epoch(&mut self, cur_epoch: u64) {
+        self.cur_epoch = cur_epoch;
     }
 }
 
@@ -91,5 +114,17 @@ impl L1View {
 
     pub fn block_height(&self) -> u64 {
         self.block_height
+    }
+
+    pub fn set_recorded_epoch(&mut self, epoch_commitment: EpochCommitment) {
+        self.recorded_epoch = epoch_commitment;
+    }
+
+    pub fn set_block_id(&mut self, block_id: Buf32) {
+        self.block_id = block_id;
+    }
+
+    pub fn set_block_height(&mut self, block_height: u64) {
+        self.block_height = block_height
     }
 }

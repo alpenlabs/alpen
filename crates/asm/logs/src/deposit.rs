@@ -24,6 +24,11 @@ impl DepositLog {
             addr,
         }
     }
+
+    // TODO: this will probably be ssz
+    pub fn as_raw_msg_bytes(&self) -> Vec<u8> {
+        todo!()
+    }
 }
 
 impl AsmLog for DepositLog {

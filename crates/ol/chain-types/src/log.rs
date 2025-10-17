@@ -1,4 +1,5 @@
 use strata_acct_types::AccountSerial;
+use strata_primitives::Buf32;
 
 /// Log emitted during OL block execution.
 #[derive(Clone, Debug)]
@@ -27,4 +28,9 @@ impl OLLog {
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
+}
+
+pub fn compute_logs_root(_logs: &[OLLog]) -> Buf32 {
+    // TODO: this will be ssz
+    todo!()
 }

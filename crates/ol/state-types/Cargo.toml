@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-strata-ol-chain-types-new.workspace = true
 strata-primitives.workspace = true
 
 [lints]
