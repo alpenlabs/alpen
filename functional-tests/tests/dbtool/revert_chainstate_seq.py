@@ -65,9 +65,8 @@ class RevertChainstateSeqTest(SequencerDbtoolMixin):
 
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
-        # Execute revert chainstate with no flags
-        self.info(f"Testing revert-chainstate to {target_block_id} with no flags")
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id)
+        # Execute revert chainstate
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-f")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")

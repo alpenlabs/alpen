@@ -67,7 +67,7 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
 
         # Execute revert chainstate with -d flag (to delete blocks)
         self.info(f"Testing revert-chainstate to {target_block_id} with -d flag")
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-d")
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-f", "-d")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")

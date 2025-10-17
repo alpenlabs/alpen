@@ -81,7 +81,7 @@ class RevertChainstateFnTest(FullnodeDbtoolMixin):
 
         # Execute revert chainstate to the last L2 block of checkpointed range
         self.info(f"Testing revert-chainstate to {target_block_id} using fullnode (fn) database")
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id)
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-f")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")
