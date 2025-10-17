@@ -19,12 +19,15 @@ use crate::{
 
 /// Default number of Ol blocks to process in one cycle
 pub(crate) const DEFAULT_MAX_BLOCKS_FETCH: u64 = 10;
+/// Default ms to wait between ol polls
+pub(crate) const DEFAULT_POLL_WAIT_MS: u64 = 100;
 
 pub(crate) struct OlTrackerCtx<TStorage, TOlClient> {
     pub(crate) storage: Arc<TStorage>,
     pub(crate) ol_client: Arc<TOlClient>,
     pub(crate) ee_state_tx: watch::Sender<EeAccountState>,
     pub(crate) max_blocks_fetch: u64,
+    pub(crate) poll_wait_ms: u64,
 }
 
 pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
@@ -35,7 +38,7 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
     TOlClient: OlClient,
 {
     loop {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
 
         match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_blocks_fetch).await {
             Ok(TrackOlAction::Extend(block_operations)) => {
@@ -65,6 +68,7 @@ pub(crate) struct OlBlockOperations {
 #[derive(Debug)]
 pub(crate) enum TrackOlAction {
     /// Extend local view of the OL chain with new blocks.
+    /// TODO: stream
     Extend(Vec<OlBlockOperations>),
     /// Local tip not present in OL chain, need to resolve local view.
     Reorg,
