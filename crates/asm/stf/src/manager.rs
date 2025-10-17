@@ -2,11 +2,12 @@
 
 use std::{any::Any, collections::BTreeMap};
 
-use borsh::BorshDeserialize;
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, AuxRequest, InterprotoMsg, Loader,
-    MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, AuxPayload, AuxRequest, InterprotoMsg,
+    Loader, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
 };
+
+use crate::AsmAuxInput;
 
 /// Wrapper around the common subprotocol interface that handles the common
 /// buffering logic for interproto messages.
@@ -65,23 +66,22 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_pre: &AnchorState,
-        aux_input_data: &[u8],
+        aux_input_data: &[AuxPayload],
     ) {
         let relayer = relayer
             .as_mut_any()
             .downcast_mut::<R>()
             .expect("asm: handler");
 
-        // TODO better error handling
-        let parsed_aux = <S::AuxInput as BorshDeserialize>::try_from_slice(aux_input_data)
-            .map_err(|e| AsmError::Deserialization(S::ID, e))
-            .unwrap();
-
+        for aux in aux_input_data {
+            aux.validate::<S>()
+                .expect("asm: invalid aux payload for subprotocol");
+        }
         S::process_txs(
             &mut self.state,
             txs,
             anchor_pre,
-            &parsed_aux,
+            aux_input_data,
             relayer,
             &self.params,
         );
@@ -149,7 +149,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_input_data: &[u8],
+        aux_input_data: &AsmAuxInput,
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
@@ -157,6 +157,10 @@ impl SubprotoManager {
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
+
+        // extract the subprotocol-specific aux input
+        let aux_input_data = aux_input_data.get(&S::ID).unwrap();
+
         h.process_txs(txs, self, anchor_pre, aux_input_data);
         self.insert_handler(h);
     }

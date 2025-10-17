@@ -11,7 +11,7 @@ use strata_l1_txfmt::SubprotocolId;
 /// Each subprotocol is expected to emit **at most one** auxiliary payload per L1 transaction.
 /// The preprocessing collector enforces this, so the caller can index the map directly by
 /// `(subprotocol id, requester l1 index)` without handling duplicates.
-pub type AsmAuxInput = BTreeMap<(SubprotocolId, RequesterL1Index), AuxPayload>;
+pub type AsmAuxInput = BTreeMap<SubprotocolId, Vec<AuxPayload>>;
 
 /// Auxiliary request produced during ASM STF preprocessing phase.
 pub(crate) type AsmAuxRequest = BTreeMap<(SubprotocolId, RequesterL1Index), AuxRequest>;

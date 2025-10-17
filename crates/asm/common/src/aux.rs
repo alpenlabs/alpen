@@ -1,31 +1,36 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_aux::{AuxRequestSpec, AuxResponseSpec};
 
 use crate::{AsmError, RequesterL1Index, Subprotocol};
 
 /// A single auxiliary input request from a subprotocol during preprocessing.
 ///
-/// The `data` field contains the raw bytes that will be processed to generate
-/// the corresponding auxiliary input data in the final [`AuxPayload`].
+/// The `data` field captures the schema required to derive the corresponding
+/// auxiliary input data in the final [`AuxPayload`].
 #[derive(Debug)]
 pub struct AuxRequest {
-    /// Raw data for the auxiliary input request.
-    data: Vec<u8>,
+    /// Schema describing how to fulfil the auxiliary input request.
+    data: AuxRequestSpec,
 
     /// The L1 transaction index that this aux request is associated with.
     l1_tx_index: RequesterL1Index,
 }
 
 impl AuxRequest {
-    pub fn new(data: Vec<u8>, l1_tx_index: RequesterL1Index) -> Self {
+    pub fn new(data: AuxRequestSpec, l1_tx_index: RequesterL1Index) -> Self {
         Self { data, l1_tx_index }
     }
 
-    pub fn data(&self) -> &[u8] {
+    pub fn data(&self) -> &AuxRequestSpec {
         &self.data
     }
 
     pub fn requester_index(&self) -> RequesterL1Index {
         self.l1_tx_index
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        borsh::to_vec(&self.data).expect("asm: serialize aux request")
     }
 }
 
@@ -36,22 +41,19 @@ impl AuxRequest {
 /// [`Subprotocol::AuxInput`] for the associated subprotocol.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AuxPayload {
-    /// Processed auxiliary input data as raw bytes.
-    ///
-    /// This `Vec<u8>` must deserialize into one
-    /// `<P as Subprotocol>::AuxInput` for the corresponding subprotocol P.
-    pub data: Vec<u8>,
+    /// Processed auxiliary data returned by the aux service.
+    pub data: AuxResponseSpec,
 
     /// The L1 transaction index that this aux payload is associated with.
     pub l1_tx_index: RequesterL1Index,
 }
 
 impl AuxPayload {
-    pub fn new(data: Vec<u8>, l1_tx_index: RequesterL1Index) -> Self {
+    pub fn new(data: AuxResponseSpec, l1_tx_index: RequesterL1Index) -> Self {
         Self { data, l1_tx_index }
     }
 
-    pub fn data(&self) -> &[u8] {
+    pub fn response(&self) -> &AuxResponseSpec {
         &self.data
     }
 
@@ -59,12 +61,11 @@ impl AuxPayload {
         self.l1_tx_index
     }
 
-    /// Tries to parse as a subprotocol's aux input.
-    ///
-    /// This MUST NOT be called on a payload that does not correspond to the
-    /// subprotocol type, because this may lead to silent errors.
-    pub fn try_to_aux_input<S: Subprotocol>(&self) -> Result<S::AuxInput, AsmError> {
-        <S::AuxInput as BorshDeserialize>::try_from_slice(&self.data)
-            .map_err(|e| AsmError::Deserialization(S::ID, e))
+    /// Tries to merkle-proof validate the aux payload for the given subprotocol.
+    pub fn validate<S: Subprotocol>(&self) -> Result<(), AsmError> {
+        match &self.data {
+            AuxResponseSpec::Single(_resp) => todo!(),
+            AuxResponseSpec::Range(_resps) => todo!(),
+        }
     }
 }

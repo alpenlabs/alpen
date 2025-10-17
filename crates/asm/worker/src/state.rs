@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::Block;
 use strata_acct_types::CompactMmr64;
+use strata_asm_aux::{AuxResponseSpec, HistoricalAuxRangeResponse};
 use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
@@ -109,8 +110,17 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         let aux_input = pre_process
             .aux_requests
             .iter()
-            .map(|((k, i), _)| ((*k, *i), AuxPayload::new(vec![], 0)))
-            .collect();
+            .map(|((k, i), _)| {
+                let response = AuxResponseSpec::Range(HistoricalAuxRangeResponse {
+                    logs: Vec::new(),
+                    proofs: Vec::new(),
+                });
+                (*k, AuxPayload::new(response, *i))
+            })
+            .fold(BTreeMap::new(), |mut acc, (k, payload)| {
+                acc.entry(k).or_insert_with(Vec::new).push(payload);
+                acc
+            });
 
         let stf_input = AsmStfInput {
             protocol_txs,

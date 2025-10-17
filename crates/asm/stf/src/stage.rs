@@ -84,15 +84,8 @@ impl Stage for ProcessStage<'_> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        // Extract the auxiliary input for this subprotocol from the bundle
-        let aux_input_data = self
-            .aux_inputs
-            .iter()
-            .find_map(|((id, _), a)| (*id == S::ID).then(|| a.data()))
-            .unwrap_or_default();
-
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, aux_input_data);
+            .invoke_process_txs::<S>(txs, self.anchor_state, self.aux_inputs);
     }
 }
 

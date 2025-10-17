@@ -63,6 +63,10 @@ pub enum AsmError {
     /// Missing genesis configuration for subprotocol
     #[error("missing genesis configuration for subprotocol {0}")]
     MissingGenesisConfig(SubprotocolId),
+
+    /// Unsupported auxiliary response spec for subprotocol
+    #[error("unsupported auxiliary response spec for subprotocol {0}")]
+    UnsupportedAuxResponseSpec(SubprotocolId),
 }
 
 /// Wrapper result type for database operations.

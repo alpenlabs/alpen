@@ -1,9 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
 use zkaleido::VerifyingKey;
 
-use crate::constants::ASM_STF_UPDATE_LOG_TYPE_ID;
+use crate::{constants::ASM_STF_UPDATE_LOG_TYPE_ID, AsmLog};
 
 /// Details for an execution environment verification key update.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

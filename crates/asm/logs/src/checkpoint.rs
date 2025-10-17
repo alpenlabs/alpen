@@ -1,10 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::AsmLog;
 use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
 use strata_msg_fmt::TypeId;
 use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
 
-use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE_ID;
+use crate::{constants::CHECKPOINT_UPDATE_LOG_TYPE_ID, AsmLog};
 
 /// Details for a checkpoint update event.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
