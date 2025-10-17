@@ -75,7 +75,10 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // 5. Construct the final `AnchorState` and output.
     // Export the updated state sections and logs from all subprotocols to build the result.
     let (sections, logs) = manager.export_sections_and_logs();
-    let chain_view = ChainViewState { pow_state };
+    let chain_view = ChainViewState {
+        pow_state,
+        history_mmr: pre_state.chain_view.history_mmr.clone(),
+    };
     let state = AnchorState {
         chain_view,
         sections,

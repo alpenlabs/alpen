@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_acct_types::CompactMmr64;
 use strata_asm_types::HeaderVerificationState;
 
 use crate::{AsmError, Mismatched, Subprotocol, SubprotocolId};
@@ -36,7 +37,8 @@ pub struct ChainViewState {
     /// All data needed to validate a Bitcoin block header, including past‐n timestamps,
     /// accumulated work, and difficulty adjustments.
     pub pow_state: HeaderVerificationState,
-    // TODO header MMR
+    /// The compact MMR committing to the history of all emitted logs in the subprotocols.
+    pub history_mmr: CompactMmr64,
 }
 
 /// Holds the off‐chain serialized state for a single subprotocol section within the ASM.

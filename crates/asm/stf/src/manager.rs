@@ -276,7 +276,10 @@ impl BasicAuxCollector {
 }
 
 impl AuxInputCollector for BasicAuxCollector {
-    fn request_aux_input(&mut self, req: AuxRequest) {
+    fn create_aux_request(&mut self, req: AuxRequest) {
+        if self.req.is_some() {
+            panic!("asm: subprotocol issued multiple aux requests for the same L1 transaction");
+        }
         self.req = Some(req);
     }
 

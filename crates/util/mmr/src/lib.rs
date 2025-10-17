@@ -16,17 +16,28 @@ use std::marker::PhantomData;
 use borsh::{BorshDeserialize, BorshSerialize};
 use error::MerkleError;
 use hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
 /// Merkle hash impl for SHA-256 `Digest` impl.
 pub type Sha256Hasher = DigestMerkleHasher<Sha256, 32>;
 
 /// Compact representation of the MMR that should be borsh serializable easily.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct CompactMmr<H: MerkleHash> {
     entries: u64,
     cap_log2: u8,
     roots: Vec<H>,
+}
+
+impl<H: MerkleHash> Default for CompactMmr<H> {
+    fn default() -> Self {
+        Self {
+            entries: 0,
+            cap_log2: 0,
+            roots: Vec::new(),
+        }
+    }
 }
 
 /// Merkle mountain range that can hold up to 2**64 elements.

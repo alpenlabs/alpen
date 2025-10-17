@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{AsmError, Subprotocol};
+use crate::{AsmError, RequesterL1Index, Subprotocol};
 
 /// A single auxiliary input request from a subprotocol during preprocessing.
 ///
@@ -10,15 +10,22 @@ use crate::{AsmError, Subprotocol};
 pub struct AuxRequest {
     /// Raw data for the auxiliary input request.
     data: Vec<u8>,
+
+    /// The L1 transaction index that this aux request is associated with.
+    l1_tx_index: RequesterL1Index,
 }
 
 impl AuxRequest {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self { data }
+    pub fn new(data: Vec<u8>, l1_tx_index: RequesterL1Index) -> Self {
+        Self { data, l1_tx_index }
     }
 
     pub fn data(&self) -> &[u8] {
         &self.data
+    }
+
+    pub fn requester_index(&self) -> RequesterL1Index {
+        self.l1_tx_index
     }
 }
 
@@ -34,15 +41,22 @@ pub struct AuxPayload {
     /// This `Vec<u8>` must deserialize into one
     /// `<P as Subprotocol>::AuxInput` for the corresponding subprotocol P.
     pub data: Vec<u8>,
+
+    /// The L1 transaction index that this aux payload is associated with.
+    pub l1_tx_index: RequesterL1Index,
 }
 
 impl AuxPayload {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self { data }
+    pub fn new(data: Vec<u8>, l1_tx_index: RequesterL1Index) -> Self {
+        Self { data, l1_tx_index }
     }
 
     pub fn data(&self) -> &[u8] {
         &self.data
+    }
+
+    pub fn requester_index(&self) -> RequesterL1Index {
+        self.l1_tx_index
     }
 
     /// Tries to parse as a subprotocol's aux input.

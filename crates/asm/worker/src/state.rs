@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::Block;
+use strata_acct_types::CompactMmr64;
 use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
@@ -67,6 +68,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                             self.context.get_network()?,
                             genesis_l1_view,
                         ),
+                        history_mmr: CompactMmr64::default(),
                     },
                     sections: vec![],
                 };
@@ -102,18 +104,12 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                 acc
             });
 
-        // TODO(QQ): not sure if it's correct.
+        // TODO: iterate over subprotocol aux requests and use mmr_storage to fetch aux log entries
+        // and merkle proofs and construct AuxPayloads.
         let aux_input = pre_process
             .aux_requests
             .iter()
-            .map(|(k, v)| {
-                (
-                    *k,
-                    AuxPayload {
-                        data: v.data().to_vec(),
-                    },
-                )
-            })
+            .map(|((k, i), _)| ((*k, *i), AuxPayload::new(vec![], 0)))
             .collect();
 
         let stf_input = AsmStfInput {

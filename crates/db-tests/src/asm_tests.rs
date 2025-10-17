@@ -1,3 +1,4 @@
+use strata_acct_types::CompactMmr64;
 use strata_asm_common::{AnchorState, ChainViewState};
 use strata_asm_types::HeaderVerificationState;
 use strata_db::traits::AsmDatabase;
@@ -9,6 +10,7 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
         AnchorState {
             chain_view: ChainViewState {
                 pow_state: HeaderVerificationState::default(),
+                history_mmr: CompactMmr64::default(),
             },
             sections: vec![],
         },

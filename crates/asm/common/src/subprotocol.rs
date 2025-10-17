@@ -234,7 +234,10 @@ pub trait SubprotoHandler {
 /// requested
 pub trait AuxInputCollector: Any {
     /// Record that this exact `data` blob will be needed later as auxiliary input.
-    fn request_aux_input(&mut self, req: AuxRequest);
+    ///
+    /// Implementations may enforce invariants such as "at most one request per subprotocol per
+    /// L1 transaction" and are allowed to panic if they are violated.
+    fn create_aux_request(&mut self, req: AuxRequest);
 
     /// Gets this aux input collector as a `&dyn Any`.
     fn as_mut_any(&mut self) -> &mut dyn Any;
