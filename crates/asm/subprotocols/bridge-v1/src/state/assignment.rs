@@ -10,10 +10,10 @@ use rand_chacha::{
     ChaChaRng,
     rand_core::{RngCore, SeedableRng},
 };
+use strata_bridge_types::OperatorIdx;
 use strata_primitives::{
     buf::Buf32,
     l1::{BitcoinAmount, BitcoinBlockHeight, BitcoinTxid, L1BlockId},
-    operator::OperatorIdx,
     sorted_vec::SortedVec,
 };
 

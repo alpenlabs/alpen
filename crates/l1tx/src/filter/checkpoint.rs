@@ -58,7 +58,7 @@ mod test {
     use strata_csm_types::L1Payload;
     use strata_l1_txfmt::TagData;
     use strata_ol_chainstate_types::Chainstate;
-    use strata_primitives::params::Params;
+    use strata_params::Params;
     use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_l2::gen_params;
 

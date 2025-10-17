@@ -435,12 +435,12 @@ mod tests {
         deposit::DepositInfo,
         test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
     };
+    use strata_bridge_types::OperatorPubkeys;
     use strata_crypto::EvenSecretKey;
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
         buf::Buf32,
         l1::{BitcoinAmount, L1BlockCommitment},
-        operator::OperatorPubkeys,
     };
     use strata_test_utils::ArbitraryGenerator;
 

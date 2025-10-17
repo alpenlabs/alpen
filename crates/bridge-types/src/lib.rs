@@ -21,7 +21,7 @@ pub use bridge_state::{
     FulfilledState, OperatorEntry, OperatorTable, WithdrawOutput,
 };
 pub use constants::WITHDRAWAL_DENOMINATION;
-pub use operator::{OperatorKeyProvider, StubOpKeyProv};
+pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
 pub use relay::{
     verify_bridge_msg_sig, BridgeMessage, BridgeMsgId, MessageSigner, Scope, VerifyError,
 };

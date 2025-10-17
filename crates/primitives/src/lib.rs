@@ -34,9 +34,8 @@ pub mod ol {
 
 // Re-export crypto types
 pub mod crypto {
-    pub use strata_crypto::{schnorr::*, RollupVerifyingKey};
+    pub use strata_crypto::schnorr::*;
 }
-pub use strata_crypto::RollupVerifyingKey;
 
 pub mod block_credential;
 pub mod constants;
@@ -44,8 +43,6 @@ pub mod errors;
 pub mod indexed;
 pub mod keys;
 pub mod l1;
-pub mod operator;
-pub mod params;
 pub mod prelude;
 pub mod proof;
 pub mod roles;

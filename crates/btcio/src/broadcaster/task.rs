@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use bitcoin::{hashes::Hash, Txid};
 use bitcoind_async_client::traits::{Broadcaster, Wallet};
 use strata_db::types::{L1TxEntry, L1TxStatus};
-use strata_primitives::params::Params;
+use strata_params::Params;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
 use tokio::sync::mpsc::Receiver;
 use tracing::*;

@@ -15,9 +15,8 @@ use strata_asm_proto_checkpoint_txs::{
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
 };
-use strata_primitives::{
-    block_credential::CredRule, buf::Buf32, l1::BitcoinTxid, proof::RollupVerifyingKey,
-};
+use strata_predicate::PredicateKey;
+use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
@@ -128,8 +127,8 @@ impl Subprotocol for CheckpointV0Subproto {
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
                     apply_sequencer_update(state, *new_key);
                 }
-                CheckpointIncomingMsg::UpdateRollupVerifyingKey(new_vk) => {
-                    apply_rollup_vk_update(state, new_vk.clone());
+                CheckpointIncomingMsg::UpdateCheckpointPredicate(new_predicate) => {
+                    apply_rollup_vk_update(state, new_predicate);
                 }
             }
         }
@@ -215,28 +214,21 @@ fn apply_sequencer_update(state: &mut CheckpointV0VerifierState, new_key: Buf32)
     }
 }
 
-fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_vk: RollupVerifyingKey) {
-    let prev_kind = rollup_vk_kind(&state.rollup_verifying_key);
-    let next_kind = rollup_vk_kind(&new_vk);
+fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_predicate: &PredicateKey) {
+    let prev_kind = state.predicate.id();
+    let next_kind = new_predicate.id();
 
     if prev_kind == next_kind {
-        logging::info!(kind = next_kind, "Applying rollup verifying key update");
+        logging::info!(kind = %next_kind, "Applying rollup verifying key update");
     } else {
         logging::info!(
-            previous = prev_kind,
-            next = next_kind,
+            previous = %prev_kind,
+            next = %next_kind,
             "Switching rollup proving system"
         );
     }
 
-    state.update_rollup_verifying_key(new_vk);
-}
-
-fn rollup_vk_kind(vk: &RollupVerifyingKey) -> &'static str {
-    match vk {
-        RollupVerifyingKey::SP1VerifyingKey(_) => "sp1",
-        RollupVerifyingKey::NativeVerifyingKey => "native",
-    }
+    state.update_predicate(new_predicate.clone());
 }
 
 #[cfg(test)]
@@ -245,7 +237,6 @@ mod tests {
         block_credential::CredRule,
         buf::Buf32,
         l1::{L1BlockCommitment, L1BlockId},
-        proof::RollupVerifyingKey,
     };
 
     use super::*;
@@ -257,7 +248,7 @@ mod tests {
         let verification_params = CheckpointV0VerificationParams {
             genesis_l1_block: genesis_commitment,
             cred_rule: CredRule::Unchecked,
-            rollup_verifying_key: RollupVerifyingKey::NativeVerifyingKey,
+            predicate: PredicateKey::always_accept(),
         };
 
         CheckpointV0Params {

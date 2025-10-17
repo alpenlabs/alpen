@@ -11,7 +11,7 @@ use bitcoin::{
 use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult;
 use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
-use strata_bridge_types::{DepositState, PublickeyTable, WithdrawalIntent};
+use strata_bridge_types::{DepositState, OperatorIdx, PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
@@ -23,13 +23,12 @@ use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry,
 use strata_l1_txfmt::TagData;
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
+use strata_params::Params;
 use strata_primitives::{
     buf::Buf32,
     epoch::EpochCommitment,
     hash,
     l1::{L1BlockCommitment, L1BlockId},
-    operator::OperatorIdx,
-    params::Params,
 };
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,

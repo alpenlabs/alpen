@@ -4,13 +4,9 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_bridge_types::{OperatorIdx, OperatorPubkeys};
 use strata_crypto::multisig::aggregate_schnorr_keys;
-use strata_primitives::{
-    buf::Buf32,
-    l1::BitcoinXOnlyPublicKey,
-    operator::{OperatorIdx, OperatorPubkeys},
-    sorted_vec::SortedVec,
-};
+use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
 
 use super::bitmap::OperatorBitmap;
 
@@ -344,7 +340,7 @@ impl OperatorTable {
 #[cfg(test)]
 mod tests {
     use bitcoin::secp256k1::{SECP256K1, SecretKey};
-    use strata_primitives::operator::OperatorPubkeys;
+    use strata_bridge_types::OperatorPubkeys;
 
     use super::*;
 

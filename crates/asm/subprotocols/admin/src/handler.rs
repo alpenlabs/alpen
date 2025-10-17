@@ -5,8 +5,8 @@ use strata_asm_common::{
 use strata_asm_proto_checkpoint_v0::CheckpointIncomingMsg;
 use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction};
 use strata_crypto::multisig::SchnorrMultisigSignature;
-use strata_primitives::{buf::Buf32, proof::RollupVerifyingKey, roles::ProofType};
-use zkaleido::VerifyingKey;
+use strata_predicate::PredicateKey;
+use strata_primitives::{buf::Buf32, roles::ProofType};
 
 use crate::{
     config::AdministrationSubprotoParams, error::AdministrationError, queued_update::QueuedUpdate,
@@ -52,27 +52,18 @@ pub(crate) fn handle_pending_updates(
                 }
             }
             UpdateAction::VerifyingKey(update) => {
-                let (vk, kind) = update.into_inner();
+                let (key, kind) = update.into_inner();
                 match kind {
                     ProofType::Asm => {
                         // TODO: STR-1721 Emit ASM Log
                     }
-                    ProofType::OlStf => match deserialize_rollup_vk(&vk) {
-                        Ok(rollup_vk) => {
-                            relay_checkpoint_rollup_vk(relayer, rollup_vk);
-                            info!(
-                                update_id = update_id,
-                                "Forwarded rollup verifying key update to checkpoint subprotocol",
-                            );
-                        }
-                        Err(e) => {
-                            error!(
-                                update_id = update_id,
-                                error = %e,
-                                "Failed to decode rollup verifying key update for checkpoint",
-                            );
-                        }
-                    },
+                    ProofType::OlStf => {
+                        relay_checkpoint_predicate(relayer, key);
+                        info!(
+                            %update_id,
+                            "Forwarded rollup verifying key update to checkpoint subprotocol",
+                        );
+                    }
                 }
             }
             UpdateAction::OperatorSet(_update) => {
@@ -177,13 +168,9 @@ fn relay_checkpoint_sequencer_update(relayer: &mut impl MsgRelayer, new_key: Buf
     relayer.relay_msg(&msg);
 }
 
-fn relay_checkpoint_rollup_vk(relayer: &mut impl MsgRelayer, rollup_vk: RollupVerifyingKey) {
-    let msg = CheckpointIncomingMsg::UpdateRollupVerifyingKey(rollup_vk);
+fn relay_checkpoint_predicate(relayer: &mut impl MsgRelayer, key: PredicateKey) {
+    let msg = CheckpointIncomingMsg::UpdateCheckpointPredicate(key);
     relayer.relay_msg(&msg);
-}
-
-fn deserialize_rollup_vk(vk: &VerifyingKey) -> Result<RollupVerifyingKey, serde_json::Error> {
-    serde_json::from_slice(vk.as_bytes())
 }
 
 #[cfg(test)]
@@ -198,7 +185,7 @@ mod tests {
     use strata_asm_txs_admin::{
         actions::{
             CancelAction, MultisigAction, UpdateAction,
-            updates::{seq::SequencerUpdate, vk::VerifyingKeyUpdate},
+            updates::{predicate::PredicateUpdate, seq::SequencerUpdate},
         },
         test_utils::create_multisig_signature,
     };
@@ -208,13 +195,12 @@ mod tests {
             MultisigError, SchnorrMultisigConfig, SchnorrScheme, signature::AggregatedSignature,
         },
     };
+    use strata_predicate::PredicateKey;
     use strata_primitives::{
         buf::{Buf32, Buf64},
-        proof::RollupVerifyingKey,
         roles::{ProofType, Role},
     };
     use strata_test_utils::ArbitraryGenerator;
-    use zkaleido::VerifyingKey;
 
     use super::{handle_action, handle_pending_updates};
     use crate::{
@@ -511,11 +497,9 @@ mod tests {
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::<CheckpointIncomingMsg>::new();
 
-        let rollup_vk = RollupVerifyingKey::NativeVerifyingKey;
-        let vk_bytes = serde_json::to_vec(&rollup_vk).expect("serialize vk");
-        let verifying_key = VerifyingKey::new(vk_bytes);
+        let predicate = PredicateKey::always_accept();
 
-        let update = VerifyingKeyUpdate::new(verifying_key, ProofType::OlStf);
+        let update = PredicateUpdate::new(predicate.clone(), ProofType::OlStf);
         let update_id = state.next_update_id();
         let activation_height = 42;
         state.enqueue(QueuedUpdate::new(
@@ -533,12 +517,8 @@ mod tests {
             .first()
             .expect("checkpoint message expected")
         {
-            CheckpointIncomingMsg::UpdateRollupVerifyingKey(vk) => {
-                let serialized = serde_json::to_vec(vk).expect("serialize forwarded vk");
-                assert_eq!(
-                    serialized,
-                    serde_json::to_vec(&rollup_vk).expect("serialize")
-                );
+            CheckpointIncomingMsg::UpdateCheckpointPredicate(incoming_predicate) => {
+                assert_eq!(incoming_predicate, &predicate);
             }
             _ => panic!("expected rollup verifying key update to checkpoint"),
         }

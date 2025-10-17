@@ -10,7 +10,8 @@ use bitcoin::{
 };
 use secp256k1::Message;
 use strata_asm_types::DepositInfo;
-use strata_primitives::{buf::Buf32, l1::BitcoinOutPoint, prelude::DepositTxParams};
+use strata_params::DepositTxParams;
+use strata_primitives::{buf::Buf32, l1::BitcoinOutPoint};
 
 use crate::{
     deposit::error::DepositParseError,
@@ -223,10 +224,8 @@ mod tests {
         Network,
     };
     use strata_l1_txfmt::MagicBytes;
-    use strata_primitives::{
-        l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey},
-        params::DepositTxParams,
-    };
+    use strata_params::DepositTxParams;
+    use strata_primitives::l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey};
 
     use crate::deposit::{
         deposit_tx::{

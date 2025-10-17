@@ -1,15 +1,15 @@
 pub mod multisig;
 pub mod operator;
+pub mod predicate;
 pub mod seq;
-pub mod vk;
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::roles::Role;
 
 use crate::actions::updates::{
-    multisig::MultisigUpdate, operator::OperatorSetUpdate, seq::SequencerUpdate,
-    vk::VerifyingKeyUpdate,
+    multisig::MultisigUpdate, operator::OperatorSetUpdate, predicate::PredicateUpdate,
+    seq::SequencerUpdate,
 };
 
 /// An action that updates some part of the ASM.
@@ -18,7 +18,7 @@ pub enum UpdateAction {
     Multisig(MultisigUpdate),
     OperatorSet(OperatorSetUpdate),
     Sequencer(SequencerUpdate),
-    VerifyingKey(VerifyingKeyUpdate),
+    VerifyingKey(PredicateUpdate),
 }
 
 impl UpdateAction {
@@ -52,8 +52,8 @@ impl From<SequencerUpdate> for UpdateAction {
     }
 }
 
-impl From<VerifyingKeyUpdate> for UpdateAction {
-    fn from(update: VerifyingKeyUpdate) -> Self {
+impl From<PredicateUpdate> for UpdateAction {
+    fn from(update: PredicateUpdate) -> Self {
         UpdateAction::VerifyingKey(update)
     }
 }

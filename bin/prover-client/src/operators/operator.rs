@@ -3,7 +3,8 @@ use std::sync::Arc;
 use bitcoind_async_client::Client;
 use jsonrpsee::http_client::HttpClient;
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_primitives::{params::RollupParams, proof::ProofContext};
+use strata_params::RollupParams;
+use strata_primitives::proof::ProofContext;
 use strata_rpc_types::ProofKey;
 use strata_zkvm_hosts::{resolve_host, ZkVmHostInstance};
 

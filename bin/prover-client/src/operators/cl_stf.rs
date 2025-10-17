@@ -5,11 +5,11 @@ use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_ol_chain_types::{L2Block, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
+use strata_params::RollupParams;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
     l2::L2BlockCommitment,
-    params::RollupParams,
     proof::{ProofContext, ProofKey},
 };
 use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};

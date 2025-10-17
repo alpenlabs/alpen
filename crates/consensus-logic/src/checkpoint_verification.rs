@@ -3,9 +3,9 @@
 use strata_chaintsn::transition::verify_checkpoint_proof;
 use strata_checkpoint_types::{BatchTransition, Checkpoint};
 use strata_csm_types::L1Checkpoint;
-use strata_primitives::params::*;
+use strata_params::RollupParams;
 use tracing::*;
-use zkaleido::{ProofReceipt, ZkVmError, ZkVmResult};
+use zkaleido::ProofReceipt;
 
 use crate::errors::CheckpointError;
 
@@ -81,7 +81,7 @@ pub fn verify_proof(
     checkpoint: &Checkpoint,
     proof_receipt: &ProofReceipt,
     rollup_params: &RollupParams,
-) -> ZkVmResult<()> {
+) -> Result<(), CheckpointError> {
     let checkpoint_idx = checkpoint.batch_info().epoch();
     trace!(%checkpoint_idx, "verifying proof");
 
@@ -89,23 +89,24 @@ pub fn verify_proof(
     let expected_public_output = *checkpoint.batch_transition();
     let actual_public_output: BatchTransition =
         borsh::from_slice(proof_receipt.public_values().as_bytes())
-            .map_err(|e| ZkVmError::OutputExtractionError { source: e.into() })?;
+            .map_err(|_| CheckpointError::MalformedTransition)?;
 
     if expected_public_output != actual_public_output {
         dbg!(actual_public_output, expected_public_output);
-        return Err(ZkVmError::ProofVerificationError(
-            "Public output mismatch during proof verification".to_string(),
-        ));
+        return Err(CheckpointError::TransitionMismatch);
     }
 
-    verify_checkpoint_proof(checkpoint, rollup_params)
+    verify_checkpoint_proof(checkpoint, rollup_params)?;
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::{params::ProofPublishMode, proof::RollupVerifyingKey};
+    use strata_params::ProofPublishMode;
+    use strata_predicate::PredicateKey;
     use strata_test_utils_l2::{gen_params, get_test_signed_checkpoint};
-    use zkaleido::{Proof, ProofReceipt, PublicValues, ZkVmError};
+    use zkaleido::{Proof, ProofReceipt, PublicValues};
 
     use super::*;
 
@@ -128,10 +129,7 @@ mod tests {
         let result = verify_proof(&checkpoint, &empty_receipt, &rollup_params);
 
         // Check that the result is an Err containing the OutputExtractionError variant.
-        assert!(matches!(
-            result,
-            Err(ZkVmError::OutputExtractionError { .. })
-        ));
+        assert!(matches!(result, Err(CheckpointError::MalformedTransition)));
     }
 
     #[test]
@@ -139,7 +137,7 @@ mod tests {
         let (mut checkpoint, mut rollup_params) = get_test_input();
 
         // Ensure the mode is Strict for this test
-        rollup_params.rollup_vk = RollupVerifyingKey::NativeVerifyingKey;
+        rollup_params.checkpoint_predicate = PredicateKey::always_accept();
 
         let public_values = checkpoint.batch_transition();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();
@@ -163,10 +161,10 @@ mod tests {
         let (mut checkpoint, rollup_params) = get_test_input();
 
         // Ensure non native mode
-        assert!(!matches!(
-            rollup_params.rollup_vk,
-            RollupVerifyingKey::NativeVerifyingKey
-        ));
+        assert_ne!(
+            rollup_params.checkpoint_predicate,
+            PredicateKey::always_accept()
+        );
 
         let public_values = checkpoint.batch_transition();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();
@@ -181,24 +179,21 @@ mod tests {
 
         let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
 
-        assert!(matches!(
-            result,
-            Err(ZkVmError::ProofVerificationError { .. })
-        ));
+        assert!(matches!(result, Err(CheckpointError::Proof(_))));
     }
 
     #[test]
-    fn test_empty_proof_on_non_native_mode_with_timeout() {
+    fn test_empty_proof_on_non_always_accept_predicate_mode_with_timeout() {
         let (mut checkpoint, mut rollup_params) = get_test_input();
 
         // Ensure the mode is Timeout for this test
         rollup_params.proof_publish_mode = ProofPublishMode::Timeout(1_000);
 
         // Ensure non native mode
-        assert!(!matches!(
-            rollup_params.rollup_vk,
-            RollupVerifyingKey::NativeVerifyingKey
-        ));
+        assert_eq!(
+            rollup_params.checkpoint_predicate,
+            PredicateKey::never_accept()
+        );
 
         let public_values = checkpoint.batch_transition();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();

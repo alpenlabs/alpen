@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use strata_primitives::{
     buf::{Buf32, Buf64},
-    operator::OperatorIdx,
     prelude::BitcoinTxid,
 };
+
+use crate::operator::OperatorIdx;
 
 /// Message container used to direct payloads depending on the context between parties.
 ///
