@@ -97,7 +97,7 @@ fn main() {
                     // TODO: ...
 
                     let (_ol_tracker, ol_tracker_task) =
-                        OlTrackerHandle::create(ol_tracker_state, storage, ol_client);
+                        OlTrackerHandle::create(ol_tracker_state, storage, ol_client, None);
 
                     node.task_executor
                         .spawn_critical("ol_tracker_task", ol_tracker_task);
