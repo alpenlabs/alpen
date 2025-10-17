@@ -41,3 +41,17 @@ pub use strata_identifiers::{
 };
 pub use util::compute_codec_sha256;
 pub use varint_vec::{VARINT_MAX, VarVec};
+
+/// Enum representation of system accounts. Provides an `id` method that returns account id.
+#[derive(Clone, Debug)]
+pub enum SystemAccount {
+    Bridge,
+}
+
+impl SystemAccount {
+    pub fn id(&self) -> AccountId {
+        match self {
+            SystemAccount::Bridge => AccountId::new([1; 32]),
+        }
+    }
+}
