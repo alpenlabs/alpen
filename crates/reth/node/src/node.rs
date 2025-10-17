@@ -1,8 +1,4 @@
-use alloy_network::Ethereum;
-use alpen_reth_rpc::{
-    eth::{AlpenEthApiBuilder, AlpenRpcConvert},
-    AlpenEthApi, SequencerClient,
-};
+use alpen_reth_rpc::{eth::AlpenEthApiBuilder, SequencerClient};
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmFactory, EvmFactoryFor, NextBlockEnvAttributes};
 use reth_node_api::{FullNodeComponents, NodeAddOns};
@@ -10,8 +6,9 @@ use reth_node_builder::{
     components::{BasicPayloadServiceBuilder, ComponentsBuilder},
     node::{FullNodeTypes, NodeTypes},
     rpc::{
-        BasicEngineApiBuilder, EngineValidatorAddOn, EngineValidatorBuilder, EthApiBuilder,
-        RethRpcAddOns, RpcAddOns, RpcHandle,
+        BasicEngineApiBuilder, BasicEngineValidatorBuilder, EngineApiBuilder, EngineValidatorAddOn,
+        EngineValidatorBuilder, EthApiBuilder, Identity, PayloadValidatorBuilder, RethRpcAddOns,
+        RpcAddOns, RpcHandle,
     },
     Node, NodeAdapter, NodeComponentsBuilder,
 };
@@ -24,7 +21,6 @@ use revm::context::TxEnv;
 use crate::{
     args::AlpenNodeArgs, engine::AlpenEngineValidatorBuilder, evm::AlpenExecutorBuilder,
     payload_builder::AlpenPayloadBuilderBuilder, pool::AlpenEthereumPoolBuilder, AlpenEngineTypes,
-    AlpenEngineValidator,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -44,7 +40,6 @@ impl AlpenEthereumNode {
 impl NodeTypes for AlpenEthereumNode {
     type Primitives = EthPrimitives;
     type ChainSpec = ChainSpec;
-    type StateCommitment = reth_trie_db::MerklePatriciaTrie;
     type Storage = EthStorage;
     type Payload = AlpenEngineTypes;
 }
@@ -71,6 +66,8 @@ where
 
     type AddOns = AlpenRethNodeAddOns<
         NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
+        AlpenEthApiBuilder,
+        AlpenEngineValidatorBuilder,
     >;
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
@@ -108,7 +105,7 @@ impl AlpenRethAddOnsBuilder {
 
 impl AlpenRethAddOnsBuilder {
     /// Builds an instance of [`StrataAddOns`].
-    pub fn build<N>(self) -> AlpenRethNodeAddOns<N>
+    pub fn build<N>(self) -> AlpenRethNodeAddOns<N, AlpenEthApiBuilder, AlpenEngineValidatorBuilder>
     where
         N: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
         AlpenEthApiBuilder: EthApiBuilder<N>,
@@ -121,6 +118,7 @@ impl AlpenRethAddOnsBuilder {
                 AlpenEthApiBuilder::default().with_sequencer(sequencer_client_clone),
                 AlpenEngineValidatorBuilder::default(),
                 BasicEngineApiBuilder::default(),
+                BasicEngineValidatorBuilder::default(),
                 Default::default(),
             ),
         }
@@ -129,22 +127,20 @@ impl AlpenRethAddOnsBuilder {
 
 /// Add-ons for Strata.
 #[derive(Debug)]
-pub struct AlpenRethNodeAddOns<N>
-where
+pub struct AlpenRethNodeAddOns<
     N: FullNodeComponents,
-    AlpenEthApiBuilder: EthApiBuilder<N>,
-{
+    EthB: EthApiBuilder<N>,
+    PVB,
+    EB = BasicEngineApiBuilder<PVB>,
+    EVB = BasicEngineValidatorBuilder<PVB>,
+    RpcMiddleware = Identity,
+> {
     /// Rpc add-ons responsible for launching the RPC servers and instantiating the RPC handlers
     /// and eth-api.
-    pub rpc_add_ons: RpcAddOns<
-        N,
-        AlpenEthApiBuilder,
-        AlpenEngineValidatorBuilder,
-        BasicEngineApiBuilder<AlpenEngineValidatorBuilder>,
-    >,
+    pub rpc_add_ons: RpcAddOns<N, EthB, PVB, EB, EVB, RpcMiddleware>,
 }
 
-impl<N> Default for AlpenRethNodeAddOns<N>
+impl<N> Default for AlpenRethNodeAddOns<N, AlpenEthApiBuilder, AlpenEngineValidatorBuilder>
 where
     N: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
     AlpenEthApiBuilder: EthApiBuilder<N>,
@@ -154,7 +150,7 @@ where
     }
 }
 
-impl<N> AlpenRethNodeAddOns<N>
+impl<N> AlpenRethNodeAddOns<N, AlpenEthApiBuilder, AlpenEngineValidatorBuilder>
 where
     N: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
     AlpenEthApiBuilder: EthApiBuilder<N>,
@@ -165,7 +161,7 @@ where
     }
 }
 
-impl<N> NodeAddOns<N> for AlpenRethNodeAddOns<N>
+impl<N, EthB, PVB, EB, EVB> NodeAddOns<N> for AlpenRethNodeAddOns<N, EthB, PVB, EB, EVB>
 where
     N: FullNodeComponents<
         Types: NodeTypes<
@@ -176,22 +172,24 @@ where
         >,
         Evm: ConfigureEvm<NextBlockEnvCtx = NextBlockEnvAttributes>,
     >,
+    EthB: EthApiBuilder<N>,
+    PVB: PayloadValidatorBuilder<N>,
+    EB: EngineApiBuilder<N>,
+    EVB: EngineValidatorBuilder<N>,
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type Handle = RpcHandle<N, AlpenEthApi<N, AlpenRpcConvert<N, Ethereum>>>;
+    type Handle = RpcHandle<N, EthB::EthApi>;
 
     async fn launch_add_ons(
         self,
         ctx: reth_node_api::AddOnsContext<'_, N>,
     ) -> eyre::Result<Self::Handle> {
-        let Self { rpc_add_ons } = self;
-
-        rpc_add_ons.launch_add_ons_with(ctx, move |_| Ok(())).await
+        self.rpc_add_ons.launch_add_ons(ctx).await
     }
 }
 
-impl<N> RethRpcAddOns<N> for AlpenRethNodeAddOns<N>
+impl<N, EthB, PVB, EB, EVB> RethRpcAddOns<N> for AlpenRethNodeAddOns<N, EthB, PVB, EB, EVB>
 where
     N: FullNodeComponents<
         Types: NodeTypes<
@@ -202,17 +200,21 @@ where
         >,
         Evm: ConfigureEvm<NextBlockEnvCtx = NextBlockEnvAttributes>,
     >,
+    EthB: EthApiBuilder<N>,
+    PVB: PayloadValidatorBuilder<N>,
+    EB: EngineApiBuilder<N>,
+    EVB: EngineValidatorBuilder<N>,
     EthApiError: FromEvmError<N::Evm>,
     EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type EthApi = AlpenEthApi<N, AlpenRpcConvert<N, Ethereum>>;
+    type EthApi = EthB::EthApi;
 
     fn hooks_mut(&mut self) -> &mut reth_node_builder::rpc::RpcHooks<N, Self::EthApi> {
         self.rpc_add_ons.hooks_mut()
     }
 }
 
-impl<N> EngineValidatorAddOn<N> for AlpenRethNodeAddOns<N>
+impl<N, EthB, PVB, EB, EVB> EngineValidatorAddOn<N> for AlpenRethNodeAddOns<N, EthB, PVB, EB, EVB>
 where
     N: FullNodeComponents<
         Types: NodeTypes<
@@ -221,13 +223,16 @@ where
             Payload = AlpenEngineTypes,
         >,
     >,
-    AlpenEthApiBuilder: EthApiBuilder<N>,
+    EthB: EthApiBuilder<N>,
+    PVB: Send,
+    EB: EngineApiBuilder<N>,
+    EVB: EngineValidatorBuilder<N>,
+    EthApiError: FromEvmError<N::Evm>,
+    EvmFactoryFor<N::Evm>: EvmFactory<Tx = TxEnv>,
 {
-    type Validator = AlpenEngineValidator;
-    async fn engine_validator(
-        &self,
-        ctx: &reth_node_api::AddOnsContext<'_, N>,
-    ) -> eyre::Result<Self::Validator> {
-        AlpenEngineValidatorBuilder::default().build(ctx).await
+    type ValidatorBuilder = EVB;
+
+    fn engine_validator_builder(&self) -> Self::ValidatorBuilder {
+        self.rpc_add_ons.engine_validator_builder()
     }
 }
