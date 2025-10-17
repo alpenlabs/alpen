@@ -78,7 +78,7 @@ pub(crate) async fn track_ol_state(
     ol_client: &impl OlClient,
     max_blocks_fetch: u64,
 ) -> eyre::Result<TrackOlAction> {
-    let ol_status = ol_client.chain_status().await?;
+    let ol_status = ol_client.chain_status().await.map_err(|e| eyre::eyre!(e))?;
 
     let best_ol_block = &ol_status.latest;
 
@@ -114,7 +114,8 @@ pub(crate) async fn track_ol_state(
         state.ol_block.slot(),
         state.ol_block.slot() + fetch_blocks_count,
     )
-    .await?;
+    .await
+    .map_err(|e| eyre::eyre!(e))?;
 
     let (expected_local_block, new_blocks) = blocks
         .split_first()
@@ -131,7 +132,9 @@ pub(crate) async fn track_ol_state(
         .cloned()
         .collect();
 
-    let operations = get_update_operations_for_blocks_checked(ol_client, block_ids).await?;
+    let operations = get_update_operations_for_blocks_checked(ol_client, block_ids)
+        .await
+        .map_err(|e| eyre::eyre!(e))?;
 
     let res = new_blocks
         .iter()

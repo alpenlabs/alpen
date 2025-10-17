@@ -1,7 +1,8 @@
 use async_trait::async_trait;
-use eyre::eyre;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::UpdateOperationUnconditionalData;
+
+use super::error::OlClientError;
 
 #[derive(Debug)]
 pub(crate) struct OlChainStatus {
@@ -19,7 +20,7 @@ pub(crate) trait OlClient: Sized + Send + Sync {
     /// Returns the current status of the OL chain.
     ///
     /// Includes the latest, confirmed, and finalized block commitments.
-    async fn chain_status(&self) -> eyre::Result<OlChainStatus>;
+    async fn chain_status(&self) -> Result<OlChainStatus, OlClientError>;
 
     /// Retrieves block commitments for a range of slots.
     ///
@@ -35,7 +36,7 @@ pub(crate) trait OlClient: Sized + Send + Sync {
         &self,
         start_slot: u64,
         end_slot: u64,
-    ) -> eyre::Result<Vec<OLBlockCommitment>>;
+    ) -> Result<Vec<OLBlockCommitment>, OlClientError>;
 
     /// Retrieves update operations for the specified blocks.
     ///
@@ -50,7 +51,7 @@ pub(crate) trait OlClient: Sized + Send + Sync {
     async fn get_update_operations_for_blocks(
         &self,
         blocks: Vec<OLBlockId>,
-    ) -> eyre::Result<Vec<Vec<UpdateOperationUnconditionalData>>>;
+    ) -> Result<Vec<Vec<UpdateOperationUnconditionalData>>, OlClientError>;
 }
 
 /// Retrieves block commitments for a range of slots with validation.
@@ -62,22 +63,22 @@ pub(crate) async fn block_commitments_in_range_checked(
     client: &impl OlClient,
     start_slot: u64,
     end_slot: u64,
-) -> eyre::Result<Vec<OLBlockCommitment>> {
+) -> Result<Vec<OLBlockCommitment>, OlClientError> {
     if end_slot <= start_slot {
-        return Err(eyre!(
-            "block_commitments_in_range; invalid input: end_slot <= start_slot"
-        ));
+        return Err(OlClientError::InvalidSlotRange {
+            start_slot,
+            end_slot,
+        });
     }
     let blocks = client
         .block_commitments_in_range(start_slot, end_slot)
         .await?;
     let expected_result_len = end_slot - start_slot + 1;
     if blocks.len() != expected_result_len as usize {
-        return Err(eyre!(
-            "block_commitments_in_range; invalid response: expected_len = {}, got = {}",
-            expected_result_len,
-            blocks.len()
-        ));
+        return Err(OlClientError::UnexpectedBlockCount {
+            expected: expected_result_len as usize,
+            actual: blocks.len(),
+        });
     }
     Ok(blocks)
 }
@@ -89,15 +90,14 @@ pub(crate) async fn block_commitments_in_range_checked(
 pub(crate) async fn get_update_operations_for_blocks_checked(
     client: &impl OlClient,
     blocks: Vec<OLBlockId>,
-) -> eyre::Result<Vec<Vec<UpdateOperationUnconditionalData>>> {
+) -> Result<Vec<Vec<UpdateOperationUnconditionalData>>, OlClientError> {
     let expected_len = blocks.len();
     let res = client.get_update_operations_for_blocks(blocks).await?;
     if res.len() != expected_len {
-        return Err(eyre!(
-            "get_update_operations_for_blocks; invalid response: expected_len = {}, got = {}",
-            expected_len,
-            res.len()
-        ));
+        return Err(OlClientError::UnexpectedOperationCount {
+            expected: expected_len,
+            actual: res.len(),
+        });
     }
 
     Ok(res)
@@ -108,7 +108,7 @@ pub(crate) struct DummyOlClient {}
 
 #[async_trait]
 impl OlClient for DummyOlClient {
-    async fn chain_status(&self) -> eyre::Result<OlChainStatus> {
+    async fn chain_status(&self) -> Result<OlChainStatus, OlClientError> {
         Ok(OlChainStatus {
             latest: OLBlockCommitment::null(),
             confirmed: OLBlockCommitment::null(),
@@ -120,9 +120,12 @@ impl OlClient for DummyOlClient {
         &self,
         start_slot: u64,
         end_slot: u64,
-    ) -> eyre::Result<Vec<OLBlockCommitment>> {
+    ) -> Result<Vec<OLBlockCommitment>, OlClientError> {
         if end_slot < start_slot {
-            return Err(eyre!("invalid"));
+            return Err(OlClientError::InvalidSlotRange {
+                start_slot,
+                end_slot,
+            });
         }
 
         Ok((start_slot..=end_slot)
@@ -133,7 +136,7 @@ impl OlClient for DummyOlClient {
     async fn get_update_operations_for_blocks(
         &self,
         blocks: Vec<OLBlockId>,
-    ) -> eyre::Result<Vec<Vec<UpdateOperationUnconditionalData>>> {
+    ) -> Result<Vec<Vec<UpdateOperationUnconditionalData>>, OlClientError> {
         Ok((blocks.iter().map(|_| vec![])).collect())
     }
 }
