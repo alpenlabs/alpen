@@ -148,3 +148,263 @@ fn slot_to_block_commitment(slot: u64) -> OLBlockCommitment {
 fn u64_to_256(v: u64) -> [u8; 32] {
     unsafe { std::mem::transmute([0, 0, 0, v]) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a block commitment for testing
+    fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
+        let mut bytes = [0u8; 32];
+        bytes[0] = id;
+        OLBlockCommitment::new(slot, Buf32::new(bytes).into())
+    }
+
+    mod block_commitments_in_range_checked_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_validates_end_greater_than_start() {
+            let mut mock_client = MockOlClient::new();
+
+            // Should not call the underlying method if validation fails
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(0);
+
+            let result = block_commitments_in_range_checked(&mock_client, 100, 100).await;
+
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                OlClientError::InvalidSlotRange { .. }
+            ));
+        }
+
+        #[tokio::test]
+        async fn test_validates_end_less_than_start() {
+            let mut mock_client = MockOlClient::new();
+
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(0);
+
+            let result = block_commitments_in_range_checked(&mock_client, 100, 50).await;
+
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                OlClientError::InvalidSlotRange { .. }
+            ));
+        }
+
+        #[tokio::test]
+        async fn test_validates_result_length_matches_expected() {
+            let mut mock_client = MockOlClient::new();
+
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .withf(|start, end| *start == 100 && *end == 105)
+                .returning(|_, _| {
+                    // Return wrong number of blocks (3 instead of 6)
+                    Ok(vec![
+                        make_block_commitment(100, 1),
+                        make_block_commitment(101, 1),
+                        make_block_commitment(102, 1),
+                    ])
+                });
+
+            let result = block_commitments_in_range_checked(&mock_client, 100, 105).await;
+
+            assert!(result.is_err());
+            match result.unwrap_err() {
+                OlClientError::UnexpectedBlockCount { expected, actual } => {
+                    assert_eq!(expected, 6);
+                    assert_eq!(actual, 3);
+                }
+                _ => panic!("Expected UnexpectedBlockCount error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_success_with_single_block() {
+            let mut mock_client = MockOlClient::new();
+
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .withf(|start, end| *start == 100 && *end == 101)
+                .returning(|start, end| {
+                    Ok((start..=end)
+                        .map(|slot| make_block_commitment(slot, slot as u8))
+                        .collect())
+                });
+
+            let result = block_commitments_in_range_checked(&mock_client, 100, 101)
+                .await
+                .unwrap();
+
+            assert_eq!(result.len(), 2);
+            assert_eq!(result[0].slot(), 100);
+            assert_eq!(result[1].slot(), 101);
+        }
+
+        #[tokio::test]
+        async fn test_success_with_multiple_blocks() {
+            let mut mock_client = MockOlClient::new();
+
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .withf(|start, end| *start == 100 && *end == 110)
+                .returning(|start, end| {
+                    Ok((start..=end)
+                        .map(|slot| make_block_commitment(slot, slot as u8))
+                        .collect())
+                });
+
+            let result = block_commitments_in_range_checked(&mock_client, 100, 110)
+                .await
+                .unwrap();
+
+            assert_eq!(result.len(), 11);
+            assert_eq!(result[0].slot(), 100);
+            assert_eq!(result[10].slot(), 110);
+        }
+
+        #[tokio::test]
+        async fn test_propagates_client_error() {
+            let mut mock_client = MockOlClient::new();
+
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .returning(|_, _| Err(OlClientError::network("network error")));
+
+            let result = block_commitments_in_range_checked(&mock_client, 100, 105).await;
+
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), OlClientError::Network(_)));
+        }
+    }
+
+    mod get_update_operations_for_blocks_checked_tests {
+        use super::*;
+
+        fn make_block_id(id: u8) -> OLBlockId {
+            let mut bytes = [0u8; 32];
+            bytes[0] = id;
+            Buf32::new(bytes).into()
+        }
+
+        #[tokio::test]
+        async fn test_validates_result_length_matches_input() {
+            let mut mock_client = MockOlClient::new();
+
+            let block_ids = vec![make_block_id(1), make_block_id(2), make_block_id(3)];
+
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|_| {
+                    // Return wrong number of operation lists (2 instead of 3)
+                    Ok(vec![vec![], vec![]])
+                });
+
+            let result =
+                get_update_operations_for_blocks_checked(&mock_client, block_ids).await;
+
+            assert!(result.is_err());
+            match result.unwrap_err() {
+                OlClientError::UnexpectedOperationCount { expected, actual } => {
+                    assert_eq!(expected, 3);
+                    assert_eq!(actual, 2);
+                }
+                _ => panic!("Expected UnexpectedOperationCount error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_success_with_empty_blocks() {
+            let mut mock_client = MockOlClient::new();
+
+            let block_ids: Vec<OLBlockId> = vec![];
+
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|_| Ok(vec![]));
+
+            let result =
+                get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
+                    .await
+                    .unwrap();
+
+            assert_eq!(result.len(), 0);
+        }
+
+        #[tokio::test]
+        async fn test_success_with_single_block() {
+            let mut mock_client = MockOlClient::new();
+
+            let block_ids = vec![make_block_id(1)];
+
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+
+            let result =
+                get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
+                    .await
+                    .unwrap();
+
+            assert_eq!(result.len(), 1);
+            assert_eq!(result[0].len(), 0);
+        }
+
+        #[tokio::test]
+        async fn test_success_with_multiple_blocks() {
+            let mut mock_client = MockOlClient::new();
+
+            let block_ids = vec![
+                make_block_id(1),
+                make_block_id(2),
+                make_block_id(3),
+                make_block_id(4),
+                make_block_id(5),
+            ];
+
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+
+            let result =
+                get_update_operations_for_blocks_checked(&mock_client, block_ids.clone())
+                    .await
+                    .unwrap();
+
+            assert_eq!(result.len(), 5);
+        }
+
+        #[tokio::test]
+        async fn test_propagates_client_error() {
+            let mut mock_client = MockOlClient::new();
+
+            let block_ids = vec![make_block_id(1), make_block_id(2)];
+
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|_| Err(OlClientError::rpc("rpc error")));
+
+            let result =
+                get_update_operations_for_blocks_checked(&mock_client, block_ids).await;
+
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), OlClientError::Rpc(_)));
+        }
+    }
+}
