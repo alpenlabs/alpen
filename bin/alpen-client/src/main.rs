@@ -85,6 +85,8 @@ fn main() {
             let storage = Arc::new(DummyStorage::default());
             let ol_client = Arc::new(DummyOlClient::default());
 
+            // TODO: startup consistency check
+
             let ol_tracker_state = builder
                 .task_executor()
                 .handle()
@@ -94,13 +96,20 @@ fn main() {
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
                 .on_node_started(|node| {
-                    // TODO: ...
-
                     let (_ol_tracker, ol_tracker_task) =
                         OlTrackerHandle::create(ol_tracker_state, storage, ol_client, None, None);
 
                     node.task_executor
                         .spawn_critical("ol_tracker_task", ol_tracker_task);
+
+                    // TODO: reth engine control
+                    // TODO: p2p head block gossip
+
+                    // sequencer specific tasks
+                    // TODO: block assembly
+                    // TODO: batch assembly
+                    // TODO: proof generation
+                    // TODO: post update to OL
 
                     Ok(())
                 });
