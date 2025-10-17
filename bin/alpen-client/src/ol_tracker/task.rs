@@ -11,8 +11,7 @@ use crate::{
     ol_tracker::OlTrackerState,
     traits::{
         ol_client::{
-            block_commitments_in_range_checked, get_update_operations_for_blocks_checked,
-            OlClient,
+            block_commitments_in_range_checked, get_update_operations_for_blocks_checked, OlClient,
         },
         storage::Storage,
     },
@@ -168,10 +167,7 @@ pub(crate) fn update_tracker_state(
 }
 
 /// Notify watchers of state update.
-pub(crate) fn notify_state_update(
-    sender: &watch::Sender<EeAccountState>,
-    state: &EeAccountState,
-) {
+pub(crate) fn notify_state_update(sender: &watch::Sender<EeAccountState>, state: &EeAccountState) {
     let _ = sender.send(state.clone());
 }
 
@@ -332,16 +328,13 @@ mod tests {
             let state = make_test_state(100, 1);
             let mut mock_client = MockOlClient::new();
 
-            mock_client
-                .expect_chain_status()
-                .times(1)
-                .returning(|| {
-                    Ok(OlChainStatus {
-                        latest: make_block_commitment(50, 1), // OL chain is behind
-                        confirmed: make_block_commitment(50, 1),
-                        finalized: make_block_commitment(50, 1),
-                    })
-                });
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(50, 1), // OL chain is behind
+                    confirmed: make_block_commitment(50, 1),
+                    finalized: make_block_commitment(50, 1),
+                })
+            });
 
             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 

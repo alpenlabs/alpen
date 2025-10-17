@@ -2,7 +2,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum OlClientError {
-    #[error("invalid slot range: end_slot ({end_slot}) must be greater than start_slot ({start_slot})")]
+    #[error(
+        "invalid slot range: end_slot ({end_slot}) must be greater than start_slot ({start_slot})"
+    )]
     InvalidSlotRange { start_slot: u64, end_slot: u64 },
 
     #[error("unexpected block count: expected {expected} blocks, got {actual}")]
@@ -37,10 +39,7 @@ pub(crate) enum StorageError {
     StateNotFound(u64),
 
     #[error("missing slot: attempted to store slot {attempted_slot} but last stored slot is {last_slot}")]
-    MissingSlot {
-        attempted_slot: u64,
-        last_slot: u64,
-    },
+    MissingSlot { attempted_slot: u64, last_slot: u64 },
 
     #[error("database error: {0}")]
     Database(String),

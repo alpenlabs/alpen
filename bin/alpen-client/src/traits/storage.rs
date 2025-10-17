@@ -24,9 +24,7 @@ pub(crate) trait Storage {
         ol_slot: u64,
     ) -> Result<Option<OlBlockEeAccountState>, StorageError>;
     /// Get EE account internal state for the highest slot available.
-    async fn best_ee_account_state(
-        &self,
-    ) -> Result<Option<OlBlockEeAccountState>, StorageError>;
+    async fn best_ee_account_state(&self) -> Result<Option<OlBlockEeAccountState>, StorageError>;
     /// Store EE account internal state for next slot.
     async fn store_ee_account_state(
         &self,
@@ -56,9 +54,7 @@ impl Storage for DummyStorage {
             .find(|item| item.ol_block.slot() == ol_slot)
             .cloned())
     }
-    async fn best_ee_account_state(
-        &self,
-    ) -> Result<Option<OlBlockEeAccountState>, StorageError> {
+    async fn best_ee_account_state(&self) -> Result<Option<OlBlockEeAccountState>, StorageError> {
         Ok(self.items.read().await.last().cloned())
     }
     async fn store_ee_account_state(
