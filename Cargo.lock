@@ -13209,6 +13209,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-acct-types",
  "strata-asm-types",
  "strata-l1-txfmt",
  "strata-msg-fmt",
@@ -13433,6 +13434,7 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "serde",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-asm-spec",
  "strata-asm-stf",
@@ -13897,6 +13899,7 @@ name = "strata-db-tests"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
@@ -14106,6 +14109,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
  "digest 0.10.7",
+ "serde",
  "sha2 0.10.9",
  "thiserror 2.0.16",
 ]
