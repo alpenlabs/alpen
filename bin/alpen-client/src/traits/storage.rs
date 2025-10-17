@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use eyre::eyre;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use tokio::sync::RwLock;
+
+use super::error::StorageError;
 
 #[derive(Debug, Clone)]
 /// EE account internal state corresponding to ol Block
@@ -21,17 +22,19 @@ pub(crate) trait Storage {
     async fn ee_account_state_for_slot(
         &self,
         ol_slot: u64,
-    ) -> eyre::Result<Option<OlBlockEeAccountState>>;
+    ) -> Result<Option<OlBlockEeAccountState>, StorageError>;
     /// Get EE account internal state for the highest slot available.
-    async fn best_ee_account_state(&self) -> eyre::Result<Option<OlBlockEeAccountState>>;
+    async fn best_ee_account_state(
+        &self,
+    ) -> Result<Option<OlBlockEeAccountState>, StorageError>;
     /// Store EE account internal state for next slot.
     async fn store_ee_account_state(
         &self,
         ol_block: &OLBlockCommitment,
         ee_account_state: &EeAccountState,
-    ) -> eyre::Result<()>;
+    ) -> Result<(), StorageError>;
     /// Remove stored EE internal account state for slots > `to_slot`.
-    async fn rollback_ee_account_state(&self, to_slot: u64) -> eyre::Result<()>;
+    async fn rollback_ee_account_state(&self, to_slot: u64) -> Result<(), StorageError>;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -44,7 +47,7 @@ impl Storage for DummyStorage {
     async fn ee_account_state_for_slot(
         &self,
         ol_slot: u64,
-    ) -> eyre::Result<Option<OlBlockEeAccountState>> {
+    ) -> Result<Option<OlBlockEeAccountState>, StorageError> {
         Ok(self
             .items
             .read()
@@ -53,17 +56,22 @@ impl Storage for DummyStorage {
             .find(|item| item.ol_block.slot() == ol_slot)
             .cloned())
     }
-    async fn best_ee_account_state(&self) -> eyre::Result<Option<OlBlockEeAccountState>> {
+    async fn best_ee_account_state(
+        &self,
+    ) -> Result<Option<OlBlockEeAccountState>, StorageError> {
         Ok(self.items.read().await.last().cloned())
     }
     async fn store_ee_account_state(
         &self,
         ol_block: &OLBlockCommitment,
         ee_account_state: &EeAccountState,
-    ) -> eyre::Result<()> {
+    ) -> Result<(), StorageError> {
         if let Some(last_item) = self.items.read().await.last() {
             if last_item.ol_block.slot() + 1 != ol_block.slot() {
-                return Err(eyre!("missing slot"));
+                return Err(StorageError::MissingSlot {
+                    attempted_slot: ol_block.slot(),
+                    last_slot: last_item.ol_block.slot(),
+                });
             }
         }
         self.items.write().await.push(OlBlockEeAccountState {
@@ -72,7 +80,7 @@ impl Storage for DummyStorage {
         });
         Ok(())
     }
-    async fn rollback_ee_account_state(&self, to_slot: u64) -> eyre::Result<()> {
+    async fn rollback_ee_account_state(&self, to_slot: u64) -> Result<(), StorageError> {
         let mut items = self.items.write().await;
         let Some(base_idx) = items.first().map(|item| item.ol_block.slot()) else {
             return Ok(());
