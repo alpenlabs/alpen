@@ -50,3 +50,6 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 typed-sled = { workspace = true, optional = true }
+
+[dev-dependencies]
+mockall.workspace = true

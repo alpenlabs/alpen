@@ -13,6 +13,7 @@ pub(crate) struct OlBlockEeAccountState {
     pub state: EeAccountState,
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 /// Persistence for EE Nodes
 pub(crate) trait Storage {
