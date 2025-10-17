@@ -9,7 +9,13 @@ use tracing::{debug, error, warn};
 
 use crate::{
     ol_tracker::OlTrackerState,
-    traits::{ol_client::OlClient, storage::Storage},
+    traits::{
+        ol_client::{
+            block_commitments_in_range_checked, get_update_operations_for_blocks_checked,
+            OlClient,
+        },
+        storage::Storage,
+    },
 };
 
 /// Default number of Ol blocks to process in one cycle
@@ -103,12 +109,12 @@ pub(crate) async fn track_ol_state(
 
     // Fetch block commitments in from current local slot.
     // Also fetch height of last known local block to check for reorg.
-    let blocks = ol_client
-        .block_commitments_in_range_checked(
-            state.ol_block.slot(),
-            state.ol_block.slot() + fetch_blocks_count,
-        )
-        .await?;
+    let blocks = block_commitments_in_range_checked(
+        ol_client,
+        state.ol_block.slot(),
+        state.ol_block.slot() + fetch_blocks_count,
+    )
+    .await?;
 
     let (expected_local_block, new_blocks) = blocks
         .split_first()
@@ -125,9 +131,7 @@ pub(crate) async fn track_ol_state(
         .cloned()
         .collect();
 
-    let operations = ol_client
-        .get_update_operations_for_blocks_checked(block_ids)
-        .await?;
+    let operations = get_update_operations_for_blocks_checked(ol_client, block_ids).await?;
 
     let res = new_blocks
         .iter()
@@ -227,4 +231,320 @@ async fn handle_reorg<TStorage, TOlClient>(
 {
     warn!("handle reorg");
     todo!()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use strata_acct_types::BitcoinAmount;
+    use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
+    use strata_snark_acct_types::UpdateOperationUnconditionalData;
+    use tokio::sync::watch;
+
+    use super::*;
+    use crate::traits::{
+        ol_client::{MockOlClient, OlChainStatus},
+        storage::MockStorage,
+    };
+
+    /// Helper to create a block commitment for testing
+    fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
+        let mut bytes = [0u8; 32];
+        bytes[0] = id;
+        OLBlockCommitment::new(slot, Buf32::new(bytes).into())
+    }
+
+    /// Helper to create a test tracker state
+    fn make_test_state(slot: u64, id: u8) -> OlTrackerState {
+        OlTrackerState {
+            ee_state: EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]),
+            ol_block: make_block_commitment(slot, id),
+        }
+    }
+
+    mod update_tracker_state_tests {
+        use super::*;
+
+        #[test]
+        fn test_updates_both_fields() {
+            let mut state = make_test_state(10, 1);
+            let new_block = make_block_commitment(11, 2);
+            let new_ee_state =
+                EeAccountState::new([1u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+
+            update_tracker_state(&mut state, new_block, new_ee_state.clone());
+
+            assert_eq!(state.ol_block, new_block);
+            assert_eq!(state.ee_state, new_ee_state);
+        }
+    }
+
+    mod notify_state_update_tests {
+        use super::*;
+
+        #[test]
+        fn test_notification_sent() {
+            let initial_state =
+                EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+            let (tx, mut rx) = watch::channel(initial_state.clone());
+
+            let new_state = EeAccountState::new([1u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+
+            notify_state_update(&tx, &new_state);
+
+            // Verify notification was received
+            assert_eq!(*rx.borrow_and_update(), new_state);
+        }
+
+        #[test]
+        fn test_notification_with_no_receivers() {
+            let initial_state =
+                EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+            let (tx, rx) = watch::channel(initial_state);
+
+            // Drop the receiver
+            drop(rx);
+
+            let new_state = EeAccountState::new([1u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+
+            // Should not panic even with no receivers
+            notify_state_update(&tx, &new_state);
+        }
+    }
+
+    mod apply_block_operations_tests {
+        use super::*;
+
+        #[test]
+        fn test_apply_empty_operations() {
+            let mut state = EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+            let operations: Vec<UpdateOperationUnconditionalData> = vec![];
+
+            let result = apply_block_operations(&mut state, &operations);
+
+            assert!(result.is_ok());
+        }
+    }
+
+    mod track_ol_state_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_noop_when_local_ahead() {
+            let state = make_test_state(100, 1);
+            let mut mock_client = MockOlClient::new();
+
+            mock_client
+                .expect_chain_status()
+                .times(1)
+                .returning(|| {
+                    Ok(OlChainStatus {
+                        latest: make_block_commitment(50, 1), // OL chain is behind
+                        confirmed: make_block_commitment(50, 1),
+                        finalized: make_block_commitment(50, 1),
+                    })
+                });
+
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+
+            assert!(matches!(result, TrackOlAction::Noop));
+        }
+
+        #[tokio::test]
+        async fn test_noop_when_synced() {
+            let state = make_test_state(100, 1);
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(100, 1), // Same slot and ID
+                    confirmed: make_block_commitment(100, 1),
+                    finalized: make_block_commitment(100, 1),
+                })
+            });
+
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+
+            assert!(matches!(result, TrackOlAction::Noop));
+        }
+
+        #[tokio::test]
+        async fn test_reorg_when_same_slot_different_block_id() {
+            let state = make_test_state(100, 1);
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(100, 2), // Same slot, different ID
+                    confirmed: make_block_commitment(100, 2),
+                    finalized: make_block_commitment(100, 2),
+                })
+            });
+
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+
+            assert!(matches!(result, TrackOlAction::Reorg));
+        }
+
+        #[tokio::test]
+        async fn test_reorg_when_local_block_not_in_chain() {
+            let state = make_test_state(100, 1);
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(101, 2),
+                    confirmed: make_block_commitment(101, 2),
+                    finalized: make_block_commitment(101, 2),
+                })
+            });
+
+            // Note: block_commitments_in_range_checked calls block_commitments_in_range
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .withf(|start, end| *start == 100 && *end == 101)
+                .returning(|_, _| {
+                    Ok(vec![
+                        make_block_commitment(100, 99), // Different ID at slot 100
+                        make_block_commitment(101, 2),
+                    ])
+                });
+
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+
+            assert!(matches!(result, TrackOlAction::Reorg));
+        }
+
+        #[tokio::test]
+        async fn test_extend_with_one_new_block() {
+            let state = make_test_state(100, 100);
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(101, 101),
+                    confirmed: make_block_commitment(101, 101),
+                    finalized: make_block_commitment(101, 101),
+                })
+            });
+
+            // Mock for block_commitments_in_range_checked
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .withf(|start, end| *start == 100 && *end == 101)
+                .returning(|_, _| {
+                    Ok(vec![
+                        make_block_commitment(100, 100), // Local block
+                        make_block_commitment(101, 101), // New block
+                    ])
+                });
+
+            // Mock for get_update_operations_for_blocks_checked
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+
+            match result {
+                TrackOlAction::Extend(ops) => {
+                    assert_eq!(ops.len(), 1);
+                    assert_eq!(ops[0].block.slot(), 101);
+                }
+                _ => panic!("Expected Extend action"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_extend_with_multiple_blocks() {
+            let state = make_test_state(100, 100);
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(103, 103),
+                    confirmed: make_block_commitment(103, 103),
+                    finalized: make_block_commitment(103, 103),
+                })
+            });
+
+            // Mock for block_commitments_in_range_checked
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .withf(|start, end| *start == 100 && *end == 103)
+                .returning(|_, _| {
+                    Ok(vec![
+                        make_block_commitment(100, 100),
+                        make_block_commitment(101, 101),
+                        make_block_commitment(102, 102),
+                        make_block_commitment(103, 103),
+                    ])
+                });
+
+            // Mock for get_update_operations_for_blocks_checked
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+
+            match result {
+                TrackOlAction::Extend(ops) => {
+                    assert_eq!(ops.len(), 3);
+                    assert_eq!(ops[0].block.slot(), 101);
+                    assert_eq!(ops[1].block.slot(), 102);
+                    assert_eq!(ops[2].block.slot(), 103);
+                }
+                _ => panic!("Expected Extend action"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_extend_respects_max_blocks_fetch() {
+            let state = make_test_state(100, 100);
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(150, 150), // 50 blocks behind
+                    confirmed: make_block_commitment(150, 150),
+                    finalized: make_block_commitment(150, 150),
+                })
+            });
+
+            // Mock for block_commitments_in_range_checked - should cap at 5 blocks
+            mock_client
+                .expect_block_commitments_in_range()
+                .times(1)
+                .withf(|start, end| *start == 100 && *end == 105) // Should cap at 5
+                .returning(|start, end| {
+                    Ok((start..=end)
+                        .map(|slot| make_block_commitment(slot, slot as u8))
+                        .collect())
+                });
+
+            // Mock for get_update_operations_for_blocks_checked
+            mock_client
+                .expect_get_update_operations_for_blocks()
+                .times(1)
+                .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+
+            let result = track_ol_state(&state, &mock_client, 5).await.unwrap();
+
+            match result {
+                TrackOlAction::Extend(ops) => {
+                    assert_eq!(ops.len(), 5);
+                    assert_eq!(ops[0].block.slot(), 101);
+                    assert_eq!(ops[4].block.slot(), 105);
+                }
+                _ => panic!("Expected Extend action"),
+            }
+        }
+    }
 }
