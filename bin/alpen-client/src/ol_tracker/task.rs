@@ -98,7 +98,7 @@ async fn track_ol_state(
     // Fetch block commitments in from current local slot.
     // Also fetch height of last known local block to check for reorg.
     let blocks = ol_client
-        .block_commitments_in_range(
+        .block_commitments_in_range_checked(
             state.ol_block.slot(),
             state.ol_block.slot() + fetch_blocks_count,
         )
@@ -119,7 +119,7 @@ async fn track_ol_state(
         .collect();
 
     let operations = ol_client
-        .get_update_operations_for_blocks(block_ids)
+        .get_update_operations_for_blocks_checked(block_ids)
         .await?;
 
     let res = new_blocks

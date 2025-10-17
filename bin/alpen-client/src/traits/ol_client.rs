@@ -14,7 +14,7 @@ pub(crate) struct OlChainStatus {
 ///
 /// Provides methods to view OL Chain data required by an alpen EE fullnode.
 #[async_trait]
-pub(crate) trait OlClient: Sized {
+pub(crate) trait OlClient: Sized + Send + Sync {
     /// Returns the current status of the OL chain.
     ///
     /// Includes the latest, confirmed, and finalized block commitments.
