@@ -13445,7 +13445,6 @@ dependencies = [
  "bitcoin",
  "serde",
  "strata-acct-types",
- "strata-asm-aux",
  "strata-asm-common",
  "strata-asm-spec",
  "strata-asm-stf",

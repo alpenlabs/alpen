@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 strata-acct-types.workspace = true
-strata-asm-aux.workspace = true
 strata-asm-common.workspace = true
 strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
