@@ -1,3 +1,8 @@
+//! # ASM Typed Aux Framework
+//!
+//! This crate provides types and structures for defining auxiliary requests and responses
+//! within the Anchor State Machine (ASM) framework. It enables subprotocols to request and
+//! receive auxiliary data in a structured manner.
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_acct_types::MerkleProof;
 use strata_asm_logs::AuxLog;
@@ -47,8 +52,6 @@ pub enum AuxResponseSpec {
     Single(HistoricalAuxResponse),
     Range(HistoricalAuxRangeResponse),
 }
-
-
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct SerializableMerkleProof {

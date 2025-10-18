@@ -34,14 +34,9 @@ impl AuxRequest {
     }
 }
 
-/// A single subprotocol's auxiliary input payload, containing processed auxiliary data.
-///
-/// Each [`AuxRequest`] must resolve into a corresponding [`AuxPayload`] before the main
-/// processing phase can begin. The `data` field must deserialize into an instance of
-/// [`Subprotocol::AuxInput`] for the associated subprotocol.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AuxPayload {
-    /// Processed auxiliary data returned by the aux service.
+    /// Processed auxiliary data returned by the auxiliary storage.
     pub data: AuxResponseSpec,
 
     /// The L1 transaction index that this aux payload is associated with.
