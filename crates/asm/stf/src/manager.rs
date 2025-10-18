@@ -159,9 +159,12 @@ impl SubprotoManager {
             .expect("asm: unloaded subprotocol");
 
         // extract the subprotocol-specific aux input
-        let aux_input_data = aux_input_data.get(&S::ID).unwrap();
+        let aux_input_slice = aux_input_data
+            .get(&S::ID)
+            .map(|payloads| payloads.as_slice())
+            .unwrap_or(&[]);
 
-        h.process_txs(txs, self, anchor_pre, aux_input_data);
+        h.process_txs(txs, self, anchor_pre, aux_input_slice);
         self.insert_handler(h);
     }
 
