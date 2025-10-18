@@ -1,8 +1,8 @@
 // TODO: Move the logic with other libraries to do all the L1 transaction parsing logic.
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, convert::TryInto};
 
 use bitcoin::Transaction;
-use strata_asm_common::{SubprotocolId, TxInputRef};
+use strata_asm_common::{RequesterL1Index, SubprotocolId, TxInputRef};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 
 /// Groups only those Bitcoin `Transaction`s tagged with an SPS-50 header,
@@ -21,13 +21,16 @@ where
     let parser = ParseConfig::new(magic);
     let mut map: BTreeMap<SubprotocolId, Vec<TxInputRef<'t>>> = BTreeMap::new();
 
-    for tx in transactions {
+    for (index, tx) in transactions.into_iter().enumerate() {
         if let Ok(payload) = parser.try_parse_tx(tx) {
+            // We assume that blocks won't contain more than u16::MAX transactions.
+            let index: RequesterL1Index = index
+                .try_into()
+                .expect("asm: we can't support that many transactions in a block");
             map.entry(payload.subproto_id())
                 .or_default()
-                .push(TxInputRef::new(tx, payload));
+                .push(TxInputRef::new(tx, payload, index));
         }
     }
-
     map
 }

@@ -1,7 +1,8 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::Block;
-use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
+use strata_acct_types::CompactMmr64;
+use strata_asm_common::{AnchorState, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
@@ -67,6 +68,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                             self.context.get_network()?,
                             genesis_l1_view,
                         ),
+                        history_mmr: CompactMmr64::default(),
                     },
                     sections: vec![],
                 };
@@ -102,19 +104,9 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                 acc
             });
 
-        // TODO(QQ): not sure if it's correct.
-        let aux_input = pre_process
-            .aux_requests
-            .iter()
-            .map(|(k, v)| {
-                (
-                    *k,
-                    AuxPayload {
-                        data: v.data().to_vec(),
-                    },
-                )
-            })
-            .collect();
+        // TODO: iterate over subprotocol aux requests and use mmr_storage to fetch aux log entries
+        // and merkle proofs and construct AuxPayloads.
+        let aux_input = BTreeMap::new();
 
         let stf_input = AsmStfInput {
             protocol_txs,

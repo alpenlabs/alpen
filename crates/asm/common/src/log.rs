@@ -1,23 +1,10 @@
 // Re-export from the separate logs crate
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_asm_logs::AsmLog;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg, TypeId};
 
 use crate::{AsmError, AsmResult};
-
-/// Trait for ASM log types that can be serialized and stored.
-///
-/// This trait provides a consistent interface for log entries that need to be
-/// serialized, stored, and later deserialized from the ASM state. Each log type
-/// has a unique type identifier and must be serializable.
-// TODO migrate from borsh for this
-pub trait AsmLog: BorshSerialize + BorshDeserialize {
-    /// Unique type identifier for this log type.
-    ///
-    /// This constant is used to distinguish between different log types when
-    /// serializing and deserializing log entries.
-    const TY: TypeId;
-}
 
 /// A wrapper around raw bytes that provides typed access to ASM log entries.
 ///

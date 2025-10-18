@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE_ID};
 use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
@@ -19,7 +19,7 @@ pub(crate) fn process_log(
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
     match log.ty() {
-        Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
+        Some(CHECKPOINT_UPDATE_LOG_TYPE_ID) => {
             let ckpt_upd = log
                 .try_into_log()
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
@@ -189,7 +189,7 @@ mod tests {
     use bitcoin::absolute::Height;
     use borsh::to_vec;
     use strata_asm_common::AsmLogEntry;
-    use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+    use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE_ID};
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -354,7 +354,7 @@ mod tests {
         state.last_asm_block = Some(asm_block);
 
         // Create a log with checkpoint type but invalid data
-        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, vec![1, 2, 3])
+        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE_ID, vec![1, 2, 3])
             .expect("Failed to create log");
 
         // Should fail with deserialization error
@@ -435,7 +435,7 @@ mod tests {
                 to_vec(&checkpoint_update).expect("Failed to serialize checkpoint");
 
             // Create log entry
-            let log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, checkpoint_bytes)
+            let log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE_ID, checkpoint_bytes)
                 .expect("Failed to create log");
 
             // Process the log

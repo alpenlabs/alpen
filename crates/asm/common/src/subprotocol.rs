@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AuxRequest, SectionState, TxInputRef, log::AsmLogEntry,
+    AnchorState, AsmError, AuxPayload, AuxRequest, SectionState, TxInputRef, log::AsmLogEntry,
     msg::InterprotoMsg,
 };
 
@@ -70,14 +70,6 @@ pub trait Subprotocol: 'static {
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + InterprotoMsg + Any;
 
-    /// Type of auxiliary input required by the subprotocol.
-    ///
-    /// This associated type represents the exact data requested via `AuxInputCollector` (for
-    /// example, block headers or other off-chain metadata). It must be serializable, verifiable,
-    /// and correspond directly to the output of the collector. Implementations of
-    /// `process_txs` are responsible for validating this data before using it in any state updates.
-    type AuxInput: Default + Any + BorshSerialize + BorshDeserialize;
-
     /// Constructs a new state using the provided genesis configuration.
     ///
     /// # Arguments
@@ -135,7 +127,7 @@ pub trait Subprotocol: 'static {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_input: &Self::AuxInput,
+        aux_inputs: &[AuxPayload],
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );
@@ -197,7 +189,7 @@ pub trait SubprotoHandler {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_state: &AnchorState,
-        aux_input_data: &[u8],
+        aux_input_data: &[AuxPayload],
     );
 
     /// Accepts a message.  This is called while processing other subprotocols.
@@ -225,16 +217,13 @@ pub trait SubprotoHandler {
 ///
 /// # Parameters
 ///
-/// - `data`: an opaque byte slice whose meaning is defined entirely by the collector’s
-///   implementation.
-///
-/// # Panics
-///
-/// Implementations must understand the details of the subprotocol to understand the `data`
-/// requested
+/// - `req`: an `AuxRequest` instance describing the exact auxiliary input data needed with using
+///   `AuxRequestSchema`.
 pub trait AuxInputCollector: Any {
-    /// Record that this exact `data` blob will be needed later as auxiliary input.
-    fn request_aux_input(&mut self, req: AuxRequest);
+    /// Records a request for auxiliary input data.
+    /// Implementations may enforce invariants such as "at most one request per subprotocol per
+    /// L1 transaction" and are allowed to panic if they are violated.
+    fn create_aux_request(&mut self, req: AuxRequest);
 
     /// Gets this aux input collector as a `&dyn Any`.
     fn as_mut_any(&mut self) -> &mut dyn Any;

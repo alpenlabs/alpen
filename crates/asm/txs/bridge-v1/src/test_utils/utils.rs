@@ -20,9 +20,9 @@ pub fn mutate_op_return_output(tx: &mut Transaction, tagged_payload: Vec<u8>) {
         ScriptBuf::new_op_return(PushBytesBuf::try_from(tagged_payload).unwrap());
 }
 
-// Helper function to parse transaction
+// Helper function to parse transaction in tests
 pub fn parse_tx(tx: &Transaction) -> TxInputRef<'_> {
     let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
     let tag_data = parser.try_parse_tx(tx).expect("Should parse transaction");
-    TxInputRef::new(tx, tag_data)
+    TxInputRef::new_for_test(tx, tag_data)
 }
