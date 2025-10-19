@@ -4,7 +4,7 @@ use reth_primitives::{Receipt, TransactionSigned};
 use revm_primitives::U256;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
-use crate::constants::BRIDGEOUT_ADDRESS;
+use crate::constants::BRIDGEOUT_PRECOMPILE_ADDRESS;
 
 pub(crate) const fn u256_from(val: u128) -> U256 {
     U256::from_limbs([(val & ((1 << 64) - 1)) as u64, (val >> 64) as u64, 0, 0])
@@ -41,7 +41,7 @@ where
     tx_receipt_pairs.flat_map(|(tx, receipt)| {
         let txid = Buf32((*tx.hash()).into());
         receipt.logs.iter().filter_map(move |log| {
-            if log.address != BRIDGEOUT_ADDRESS {
+            if log.address != BRIDGEOUT_PRECOMPILE_ADDRESS {
                 return None;
             }
 
