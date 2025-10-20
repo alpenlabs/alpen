@@ -76,7 +76,7 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
         # Try to revert to a checkpointed block with -c flag - this should succeed
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-c")
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-f", "-c")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")
