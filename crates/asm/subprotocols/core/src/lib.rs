@@ -49,8 +49,8 @@ mod verification;
 use constants::CORE_SUBPROTOCOL_ID;
 pub use error::*;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInputCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
-    TxInputRef, logging,
+    AnchorState, AsmError, AuxInputCollector, AuxResolver, MsgRelayer, NullMsg, Subprotocol,
+    SubprotocolId, TxInputRef, logging,
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_primitives::{buf::Buf32, l2::L2BlockCommitment};
@@ -79,10 +79,6 @@ impl Subprotocol for OLCoreSubproto {
     // TODO: Define the message type for inter-subprotocol communication
     // type of msg that we receive from other subprotocols
     type Msg = NullMsg<CORE_SUBPROTOCOL_ID>;
-
-    // [PLACE_HOLDER]
-    // TODO: Define the auxiliary input type for the Core subprotocol
-    type AuxInput = ();
 
     fn init(params: &Self::Params) -> std::result::Result<Self::State, AsmError> {
         // Construct genesis EpochSummary from the complete L1 block information
@@ -123,14 +119,14 @@ impl Subprotocol for OLCoreSubproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_input: &Self::AuxInput,
+        aux_resolver: &dyn AuxResolver,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
         for tx in txs {
             let result = match tx.tag().tx_type() {
                 OL_STF_CHECKPOINT_TX_TYPE => {
-                    handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_input)
+                    handle_checkpoint_transaction(state, tx, relayer, anchor_pre, aux_resolver)
                 }
                 // [PLACE_HOLDER] Add other transaction types related to vk upgrade, etc.
                 _ => Err(CoreError::TxParsingError("unsupported tx type".to_string())),

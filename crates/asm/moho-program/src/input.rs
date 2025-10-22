@@ -10,7 +10,8 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
-use strata_asm_common::AuxPayload;
+use strata_asm_aux::AuxResponseEnvelope;
+use strata_asm_common::L1TxIndex;
 
 /// Private input to process the next state.
 ///
@@ -20,11 +21,14 @@ pub struct AsmStepInput {
     /// The full Bitcoin L1 block
     pub block: L1Block,
     /// Auxiliary input required to run the ASM STF
-    pub aux_inputs: BTreeMap<u8, AuxPayload>,
+    pub aux_inputs: BTreeMap<u8, BTreeMap<L1TxIndex, Vec<AuxResponseEnvelope>>>,
 }
 
 impl AsmStepInput {
-    pub fn new(block: L1Block, aux_inputs: BTreeMap<u8, AuxPayload>) -> Self {
+    pub fn new(
+        block: L1Block,
+        aux_inputs: BTreeMap<u8, BTreeMap<L1TxIndex, Vec<AuxResponseEnvelope>>>,
+    ) -> Self {
         AsmStepInput { block, aux_inputs }
     }
 

@@ -1,9 +1,10 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::Block;
-use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
+use strata_asm_aux::AuxResponseEnvelope;
+use strata_asm_common::{AnchorState, ChainViewState, L1TxIndex};
 use strata_asm_spec::StrataAsmSpec;
-use strata_asm_stf::{AsmStfInput, AsmStfOutput};
+use strata_asm_stf::{AsmPreProcessOutput, AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
 use strata_params::Params;
 use strata_primitives::l1::L1BlockCommitment;
@@ -68,6 +69,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                             self.context.get_network()?,
                             genesis_l1_view,
                         ),
+                        history_mmr: ChainViewState::empty_history_mmr(),
                     },
                     sections: vec![],
                 };
@@ -93,34 +95,27 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         let pre_process = strata_asm_stf::pre_process_asm(&self.asm_spec, cur_state.state(), block)
             .map_err(WorkerError::AsmError)?;
 
+        let AsmPreProcessOutput { txs, aux_requests } = pre_process;
+
         // Data transformation.
-        let protocol_txs = pre_process
-            .txs
-            .into_iter()
-            .map(|t| (t.tag().subproto_id(), t))
-            .fold(BTreeMap::new(), |mut acc, (k, v)| {
+        let protocol_txs = txs.into_iter().map(|t| (t.tag().subproto_id(), t)).fold(
+            BTreeMap::new(),
+            |mut acc, (k, v)| {
                 acc.entry(k).or_insert_with(Vec::new).push(v);
                 acc
-            });
+            },
+        );
 
-        // TODO(QQ): not sure if it's correct.
-        let aux_input = pre_process
-            .aux_requests
-            .iter()
-            .map(|(k, v)| {
-                (
-                    *k,
-                    AuxPayload {
-                        data: v.data().to_vec(),
-                    },
-                )
-            })
+        // TODO: populate responses once auxiliary data plumbing is implemented.
+        let aux_responses = aux_requests
+            .into_keys()
+            .map(|id| (id, BTreeMap::<L1TxIndex, Vec<AuxResponseEnvelope>>::new()))
             .collect();
 
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &block.header,
-            aux_input: &aux_input,
+            aux_responses: &aux_responses,
         };
 
         // Asm transition.

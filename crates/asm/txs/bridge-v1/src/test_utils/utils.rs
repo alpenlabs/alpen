@@ -24,5 +24,5 @@ pub fn mutate_op_return_output(tx: &mut Transaction, tagged_payload: Vec<u8>) {
 pub fn parse_tx(tx: &Transaction) -> TxInputRef<'_> {
     let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
     let tag_data = parser.try_parse_tx(tx).expect("Should parse transaction");
-    TxInputRef::new(tx, tag_data)
+    TxInputRef::new(tx, tag_data, 0)
 }

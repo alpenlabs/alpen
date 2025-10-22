@@ -9,6 +9,7 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
         AnchorState {
             chain_view: ChainViewState {
                 pow_state: HeaderVerificationState::default(),
+                history_mmr: ChainViewState::empty_history_mmr(),
             },
             sections: vec![],
         },

@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display};
 
 use strata_asm_types::L1VerificationError;
 use strata_l1_txfmt::SubprotocolId;
+use strata_mmr::error::MerkleError;
 use strata_msg_fmt::TypeId;
 use thiserror::Error;
 
@@ -63,6 +64,10 @@ pub enum AsmError {
     /// Missing genesis configuration for subprotocol
     #[error("missing genesis configuration for subprotocol {0}")]
     MissingGenesisConfig(SubprotocolId),
+
+    /// Failed to update or verify the header log MMR.
+    #[error("header MMR error: {0}")]
+    HeaderMmr(#[source] MerkleError),
 }
 
 /// Wrapper result type for database operations.

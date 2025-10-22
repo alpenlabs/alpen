@@ -15,4 +15,4 @@ mod types;
 pub use preprocess::pre_process_asm;
 pub use stf::compute_asm_transition;
 pub use tx_filter::group_txs_by_subprotocol;
-pub use types::{AsmStfInput, AsmStfOutput};
+pub use types::{AsmPreProcessOutput, AsmStfInput, AsmStfOutput};

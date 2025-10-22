@@ -3,7 +3,10 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, HistoryMmr, HistoryMmrState,
+    compute_log_leaf,
+};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -60,8 +63,12 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
-    let mut process_stage =
-        ProcessStage::new(&mut manager, pre_state, input.protocol_txs, input.aux_input);
+    let mut process_stage = ProcessStage::new(
+        &mut manager,
+        pre_state,
+        input.protocol_txs,
+        input.aux_responses,
+    );
     spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
@@ -75,7 +82,16 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // 5. Construct the final `AnchorState` and output.
     // Export the updated state sections and logs from all subprotocols to build the result.
     let (sections, logs) = manager.export_sections_and_logs();
-    let chain_view = ChainViewState { pow_state };
+
+    let mut history_mmr = HistoryMmr::from_compact(pre_state.chain_view.history_mmr.as_compact());
+    let block_hash = input.header.block_hash();
+    let leaf = compute_log_leaf(&block_hash, &logs);
+    history_mmr.add_leaf(leaf).map_err(AsmError::HeaderMmr)?;
+
+    let chain_view = ChainViewState {
+        pow_state,
+        history_mmr: HistoryMmrState::from_compact(history_mmr.to_compact()),
+    };
     let state = AnchorState {
         chain_view,
         sections,

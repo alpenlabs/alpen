@@ -2,9 +2,9 @@
 //!
 //! Handles checkpoint verification and state updates for the Core subprotocol.
 
-use strata_asm_common::{AnchorState, MsgRelayer, Subprotocol, TxInputRef};
+use strata_asm_common::{AnchorState, AuxResolver, MsgRelayer, TxInputRef};
 
-use crate::{CoreOLState, OLCoreSubproto, error::*, messages, parsing, types, verification};
+use crate::{CoreOLState, error::*, messages, parsing, types, verification};
 
 /// Handles OL STF checkpoint transactions according to the specification
 ///
@@ -38,7 +38,7 @@ pub(crate) fn handle_checkpoint_transaction(
     _relayer: &mut impl MsgRelayer,
     anchor_pre: &AnchorState,
     // TODO make this the actual type
-    aux_input: &<OLCoreSubproto as Subprotocol>::AuxInput,
+    aux_resolver: &dyn AuxResolver,
 ) -> Result<()> {
     // 1. Extract and validate signed checkpoint
     let signed_checkpoint = parsing::extract_signed_checkpoint(tx)?;
@@ -73,7 +73,7 @@ pub(crate) fn handle_checkpoint_transaction(
         new_l1_height,
         expected_commitment,
         anchor_pre,
-        aux_input,
+        aux_resolver,
     )?;
 
     // 9. Validate L2→L1 messages
