@@ -41,6 +41,7 @@ members = [
   "crates/db-tests",
   "crates/ee-acct-runtime",
   "crates/ee-acct-types",
+  "crates/ee-chain-ssz-types",
   "crates/ee-chain-types",
   "crates/eectl",
   "crates/evmexec",
@@ -175,6 +176,7 @@ strata-db-store-sled = { path = "crates/db-store-sled" }
 strata-db-tests = { path = "crates/db-tests" }
 strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
 strata-ee-acct-types = { path = "crates/ee-acct-types" }
+strata-ee-chain-ssz-types = { path = "crates/ee-chain-ssz-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
