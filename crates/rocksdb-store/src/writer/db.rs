@@ -132,10 +132,41 @@ impl L1WriterDatabase for RBL1WriterDb {
 
     fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
         let exists = self.db.get::<IntentSchema>(&id)?.is_some();
-        if exists {
-            self.db.delete::<IntentSchema>(&id)?;
+        if !exists {
+            return Ok(false);
         }
-        Ok(exists)
+
+        // Delete both the intent entry and its index mapping
+        self.db
+            .with_optimistic_txn(
+                rockbound::TransactionRetry::Count(self.ops.retry_count),
+                |txn| -> Result<(), anyhow::Error> {
+                    // Find ALL index entries pointing to this ID by scanning IntentIdxSchema
+                    // Note: IDs are not unique, multiple indices can point to the same ID
+                    let mut iterator = txn.iter::<IntentIdxSchema>()?;
+                    iterator.seek_to_first();
+
+                    let mut indices_to_delete = Vec::new();
+                    for item in iterator {
+                        let (idx, intent_id) = item?.into_tuple();
+                        if intent_id == id {
+                            indices_to_delete.push(idx);
+                        }
+                    }
+
+                    // Delete all index mappings found
+                    for idx in indices_to_delete {
+                        txn.delete::<IntentIdxSchema>(&idx)?;
+                    }
+
+                    // Delete the intent entry
+                    txn.delete::<IntentSchema>(&id)?;
+                    Ok(())
+                },
+            )
+            .map_err(|e| DbError::TransactionError(e.to_string()))?;
+
+        Ok(true)
     }
 
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {
@@ -408,6 +439,12 @@ mod tests {
             .expect("test: get")
             .is_some());
 
+        // Verify the index entry exists
+        assert!(writer_db
+            .get_intent_by_idx(0)
+            .expect("test: get by idx")
+            .is_some());
+
         // Delete it
         let deleted = writer_db.del_intent_entry(intent_id).expect("test: delete");
         assert!(deleted, "Should return true when deleting existing intent");
@@ -418,6 +455,12 @@ mod tests {
             .expect("test: get after delete")
             .is_none());
 
+        // Verify the index entry is also gone
+        assert!(writer_db
+            .get_intent_by_idx(0)
+            .expect("test: get by idx after delete")
+            .is_none());
+
         // Delete again should return false
         let deleted_again = writer_db
             .del_intent_entry(intent_id)
@@ -426,6 +469,76 @@ mod tests {
             !deleted_again,
             "Should return false when deleting non-existent intent"
         );
+    }
+
+    #[test]
+    fn test_del_intent_entry_with_multiple_indices() {
+        // This test verifies that del_intent_entry properly handles the case where
+        // multiple index entries point to the same intent ID (non-unique IDs).
+        // This can happen when the same checkpoint is reprocessed.
+        let (db, db_ops) = get_rocksdb_tmp_instance().unwrap();
+        let writer_db = RBL1WriterDb::new(db, db_ops);
+
+        let intent: IntentEntry = ArbitraryGenerator::new().generate();
+        let intent_id: Buf32 = [7; 32].into();
+
+        // Insert the same intent multiple times to create multiple index entries
+        writer_db
+            .put_intent_entry(intent_id, intent.clone())
+            .expect("test: insert 1");
+        writer_db
+            .put_intent_entry(intent_id, intent.clone())
+            .expect("test: insert 2");
+        writer_db
+            .put_intent_entry(intent_id, intent.clone())
+            .expect("test: insert 3");
+
+        // Verify all three indices exist and point to the same intent
+        assert!(writer_db
+            .get_intent_by_idx(0)
+            .expect("test: get idx 0")
+            .is_some());
+        assert!(writer_db
+            .get_intent_by_idx(1)
+            .expect("test: get idx 1")
+            .is_some());
+        assert!(writer_db
+            .get_intent_by_idx(2)
+            .expect("test: get idx 2")
+            .is_some());
+
+        // Verify the intent entry exists
+        assert!(writer_db
+            .get_intent_by_id(intent_id)
+            .expect("test: get by id")
+            .is_some());
+
+        // Delete the intent - this should delete ALL index entries pointing to it
+        let deleted = writer_db.del_intent_entry(intent_id).expect("test: delete");
+        assert!(
+            deleted,
+            "Should return true when deleting existing intent with multiple indices"
+        );
+
+        // Verify the intent entry is gone
+        assert!(writer_db
+            .get_intent_by_id(intent_id)
+            .expect("test: get by id after delete")
+            .is_none());
+
+        // Verify ALL index entries are gone
+        assert!(writer_db
+            .get_intent_by_idx(0)
+            .expect("test: get idx 0 after delete")
+            .is_none());
+        assert!(writer_db
+            .get_intent_by_idx(1)
+            .expect("test: get idx 1 after delete")
+            .is_none());
+        assert!(writer_db
+            .get_intent_by_idx(2)
+            .expect("test: get idx 2 after delete")
+            .is_none());
     }
 
     #[test]
