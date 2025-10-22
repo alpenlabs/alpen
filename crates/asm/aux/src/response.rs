@@ -57,13 +57,9 @@ impl BorshDeserialize for HistoricalLogSegment {
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum AuxResponseEnvelope {
     /// Historical ASM logs together with inclusion proofs for a set of blocks.
-    HistoricalLogs { segments: Vec<HistoricalLogSegment> },
+    HistoricalLogs { segments: HistoricalLogSegment },
     /// Historical ASM logs covering a range of L1 blocks (inclusive).
-    HistoricalLogsRange {
-        start_block: u64,
-        end_block: u64,
-        segments: Vec<HistoricalLogSegment>,
-    },
+    HistoricalLogsRange { segments: Vec<HistoricalLogSegment> },
     /// TODO: update this variant when implementing drt validation with aux.
     DepositRequestTx { raw_tx: Vec<u8> },
 }
