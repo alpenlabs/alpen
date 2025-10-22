@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AsmLogEntry, AuxResolveError, AuxResolveResult, AuxResolver, HistoryMmr, HistoryMmrState,
-    L1TxIndex, SubprotocolId, compute_log_leaf,
+    AsmLogEntry, AuxResolveError, AuxResolveResult, AuxResolver, AuxResponseKind, HistoryMmr,
+    HistoryMmrState, L1TxIndex, SubprotocolId, compute_log_leaf,
 };
 
 use crate::{AuxResponseEnvelope, HistoricalLogSegment};
@@ -38,16 +38,18 @@ impl<'a> SubprotocolAuxResolver<'a> {
 
     fn extract_logs_from_segments(
         &self,
+        tx_index: L1TxIndex,
         segments: &[HistoricalLogSegment],
     ) -> AuxResolveResult<Vec<AsmLogEntry>> {
         let mut logs = Vec::new();
         for segment in segments {
             let leaf = compute_log_leaf(&segment.block_hash, &segment.logs);
             if !self.history_mmr.verify(&segment.proof, &leaf) {
-                return Err(AuxResolveError::LogProof(format!(
-                    "invalid log proof for block {}",
-                    segment.block_hash
-                )));
+                return Err(AuxResolveError::InvalidLogProof {
+                    subprotocol: self.subprotocol,
+                    tx_index,
+                    block_hash: segment.block_hash,
+                });
             }
 
             logs.extend(segment.logs.iter().cloned());
@@ -67,14 +69,14 @@ impl AuxResolver for SubprotocolAuxResolver<'_> {
             match envelope {
                 AuxResponseEnvelope::HistoricalLogs { segments }
                 | AuxResponseEnvelope::HistoricalLogsRange { segments, .. } => {
-                    logs.extend(self.extract_logs_from_segments(segments)?);
+                    logs.extend(self.extract_logs_from_segments(tx_index, segments)?);
                 }
                 AuxResponseEnvelope::DepositRequestTx { .. } => {
-                    return Err(AuxResolveError::TypeMismatch {
+                    return Err(AuxResolveError::UnexpectedResponseVariant {
                         subprotocol: self.subprotocol,
                         tx_index,
-                        expected: "HistoricalLogs",
-                        found: "DepositRequestTx",
+                        expected: AuxResponseKind::HistoricalLogs,
+                        actual: AuxResponseKind::DepositRequestTx,
                     });
                 }
             }

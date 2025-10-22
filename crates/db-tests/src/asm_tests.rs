@@ -7,10 +7,10 @@ use strata_state::asm_state::AsmState;
 pub fn test_get_asm(db: &impl AsmDatabase) {
     let state = AsmState::new(
         AnchorState {
-            chain_view: ChainViewState {
-                pow_state: HeaderVerificationState::default(),
-                history_mmr: ChainViewState::empty_history_mmr(),
-            },
+            chain_view: ChainViewState::new(
+                HeaderVerificationState::default(),
+                ChainViewState::empty_history_mmr(),
+            ),
             sections: vec![],
         },
         vec![],

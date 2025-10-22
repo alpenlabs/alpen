@@ -14,6 +14,7 @@ pub mod hasher;
 use std::marker::PhantomData;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use error::MerkleError;
 use hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
 use sha2::Sha256;
@@ -27,6 +28,35 @@ pub struct CompactMmr<H: MerkleHash> {
     entries: u64,
     cap_log2: u8,
     roots: Vec<H>,
+}
+
+impl<H> Serialize for CompactMmr<H>
+where
+    H: MerkleHash + Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (&self.entries, &self.cap_log2, &self.roots).serialize(serializer)
+    }
+}
+
+impl<'de, H> Deserialize<'de> for CompactMmr<H>
+where
+    H: MerkleHash + Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (entries, cap_log2, roots) = <(u64, u8, Vec<H>)>::deserialize(deserializer)?;
+        Ok(Self {
+            entries,
+            cap_log2,
+            roots,
+        })
+    }
 }
 
 /// Merkle mountain range that can hold up to 2**64 elements.

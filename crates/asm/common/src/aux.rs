@@ -1,15 +1,15 @@
 use std::{any::Any, fmt};
 
+use bitcoin::BlockHash;
 use strata_l1_txfmt::SubprotocolId;
 use thiserror::Error;
 
 use crate::{AsmLogEntry, L1TxIndex};
 
-/// Trait implemented by auxiliary request payloads registered during preprocessing.
+/// Trait implemented by auxiliary request payloads requested during preprocessing.
 ///
-/// Payloads should carry any context needed by the outer orchestration layer to fulfil the
-/// request prior to transaction processing. Implementers must be `'static + Send + Sync` so they
-/// can safely cross thread boundaries and be downcast later.
+/// Payloads should carry any context needed by the outer asm worker to fulfil the
+/// request prior to transaction processing.
 pub trait AuxRequestPayload: Any + Send + Sync {
     /// Accessor for downcasting to the concrete payload type.
     fn as_any(&self) -> &dyn Any;
@@ -24,7 +24,7 @@ where
     }
 }
 
-/// Opaque wrapper representing a single auxiliary request issued by a subprotocol for a specific
+/// wrapper representing a single auxiliary request issued by a subprotocol for a specific
 /// L1 transaction.
 pub struct AuxRequest {
     tx_index: L1TxIndex,
@@ -70,44 +70,60 @@ pub trait AuxInputCollector: Any {
     fn as_mut_any(&mut self) -> &mut dyn Any;
 }
 
+/// Extension trait adding ergonomic helpers for [`AuxInputCollector`] implementors.
+pub trait AuxInputCollectorExt: AuxInputCollector {
+    /// Convenience helper that accepts concrete payload types without manual boxing.
+    fn request_aux<T>(&mut self, tx_index: L1TxIndex, payload: T)
+    where
+        T: AuxRequestPayload,
+    {
+        self.request_aux_input(tx_index, Box::new(payload));
+    }
+}
+
+impl<T: AuxInputCollector + ?Sized> AuxInputCollectorExt for T {}
+
 /// Errors that can occur while resolving auxiliary data.
 #[derive(Debug, Error)]
 pub enum AuxResolveError {
-    /// There are no aux responses registered for the requested subprotocol.
-    #[error("no auxiliary responses registered for subprotocol {subprotocol}")]
-    MissingSubprotocol {
-        /// The subprotocol whose aux data was requested.
-        subprotocol: SubprotocolId,
-    },
-    /// The requested transaction has no aux responses.
-    #[error("subprotocol {subprotocol} has no auxiliary data for L1 transaction index {tx_index}")]
-    MissingTx {
-        /// Subprotocol identifier.
-        subprotocol: SubprotocolId,
-        /// L1 transaction index within the block.
-        tx_index: L1TxIndex,
-    },
     /// The available aux data does not match the expected variant.
     #[error(
-        "unexpected auxiliary response type {found} for subprotocol {subprotocol}, tx index {tx_index} (expected {expected})"
+        "unexpected auxiliary response for subprotocol {subprotocol}, tx index {tx_index} (expected {expected:?}, provided {actual:?})"
     )]
-    TypeMismatch {
+    UnexpectedResponseVariant {
         /// Subprotocol identifier.
         subprotocol: SubprotocolId,
         /// L1 transaction index within the block.
         tx_index: L1TxIndex,
-        /// Expected variant name.
-        expected: &'static str,
-        /// Found variant name.
-        found: &'static str,
+        /// Expected variant.
+        expected: AuxResponseKind,
+        /// Response that was provided.
+        actual: AuxResponseKind,
     },
     /// Verification of the supplied MMR proof failed.
-    #[error("log MMR verification failed: {0}")]
-    LogProof(String),
+    #[error(
+        "log MMR verification failed for subprotocol {subprotocol}, tx index {tx_index}, block {block_hash}"
+    )]
+    InvalidLogProof {
+        /// Subprotocol identifier.
+        subprotocol: SubprotocolId,
+        /// L1 transaction index within the block.
+        tx_index: L1TxIndex,
+        /// Hash of the L1 block whose logs were being proven.
+        block_hash: BlockHash,
+    },
 }
 
 /// Result alias for aux resolution operations.
 pub type AuxResolveResult<T> = Result<T, AuxResolveError>;
+
+/// Enumerates the different auxiliary response variants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuxResponseKind {
+    HistoricalLogs,
+    HistoricalLogsRange,
+    DepositRequestTx,
+}
 
 /// Provides access to pre-fetched auxiliary responses during transaction execution.
 pub trait AuxResolver {

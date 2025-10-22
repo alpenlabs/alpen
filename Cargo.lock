@@ -14120,6 +14120,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
  "digest 0.10.7",
+ "serde",
  "sha2 0.10.9",
  "thiserror 2.0.16",
 ]
