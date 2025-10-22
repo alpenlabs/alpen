@@ -36,6 +36,23 @@ impl<'a> SubprotocolAuxResolver<'a> {
             .map(|entries| entries.as_slice())
     }
 
+    fn extract_logs_from_segment(
+        &self,
+        tx_index: L1TxIndex,
+        segment: &HistoricalLogSegment,
+    ) -> AuxResolveResult<Vec<AsmLogEntry>> {
+        let leaf = compute_log_leaf(&segment.block_hash, &segment.logs);
+        if !self.history_mmr.verify(&segment.proof, &leaf) {
+            return Err(AuxResolveError::InvalidLogProof {
+                subprotocol: self.subprotocol,
+                tx_index,
+                block_hash: segment.block_hash,
+            });
+        }
+
+        Ok(segment.logs.to_vec())
+    }
+
     fn extract_logs_from_segments(
         &self,
         tx_index: L1TxIndex,
@@ -43,16 +60,7 @@ impl<'a> SubprotocolAuxResolver<'a> {
     ) -> AuxResolveResult<Vec<AsmLogEntry>> {
         let mut logs = Vec::new();
         for segment in segments {
-            let leaf = compute_log_leaf(&segment.block_hash, &segment.logs);
-            if !self.history_mmr.verify(&segment.proof, &leaf) {
-                return Err(AuxResolveError::InvalidLogProof {
-                    subprotocol: self.subprotocol,
-                    tx_index,
-                    block_hash: segment.block_hash,
-                });
-            }
-
-            logs.extend(segment.logs.iter().cloned());
+            logs.extend(self.extract_logs_from_segment(tx_index, segment)?);
         }
         Ok(logs)
     }
@@ -67,9 +75,11 @@ impl AuxResolver for SubprotocolAuxResolver<'_> {
         let mut logs = Vec::new();
         for envelope in envelopes {
             match envelope {
-                AuxResponseEnvelope::HistoricalLogs { segments }
-                | AuxResponseEnvelope::HistoricalLogsRange { segments, .. } => {
-                    logs.extend(self.extract_logs_from_segments(tx_index, segments)?);
+                AuxResponseEnvelope::HistoricalLogs { segments: segment } => {
+                    logs.extend(self.extract_logs_from_segment(tx_index, segment)?);
+                }
+                AuxResponseEnvelope::HistoricalLogsRange { segments } => {
+                    logs.extend(self.extract_logs_from_segments(tx_index, segments.as_slice())?);
                 }
                 AuxResponseEnvelope::DepositRequestTx { .. } => {
                     return Err(AuxResolveError::UnexpectedResponseVariant {
