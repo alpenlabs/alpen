@@ -1,7 +1,5 @@
-use std::io::Cursor;
-
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use strata_asm_types::HeaderVerificationState;
 use strata_mmr::{CompactMmr, MerkleMr64, Sha256Hasher};
 
@@ -9,7 +7,7 @@ pub type HistoryMmrHash = [u8; 32];
 pub type HistoryMmr = MerkleMr64<Sha256Hasher>;
 pub type HistoryMmrCompact = CompactMmr<HistoryMmrHash>;
 
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct HistoryMmrState(HistoryMmrCompact);
 
 impl HistoryMmrState {
@@ -27,29 +25,6 @@ impl HistoryMmrState {
 
     pub fn to_compact(&self) -> HistoryMmrCompact {
         self.0.clone()
-    }
-}
-
-impl Serialize for HistoryMmrState {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let bytes = borsh::to_vec(&self.0).map_err(serde::ser::Error::custom)?;
-        serializer.serialize_bytes(&bytes)
-    }
-}
-
-impl<'de> Deserialize<'de> for HistoryMmrState {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
-        let mut cursor = Cursor::new(bytes);
-        let compact =
-            HistoryMmrCompact::deserialize_reader(&mut cursor).map_err(serde::de::Error::custom)?;
-        Ok(HistoryMmrState(compact))
     }
 }
 
@@ -93,11 +68,19 @@ pub struct ChainViewState {
 
 impl ChainViewState {
     /// Log2 of the number of peaks retained in the header log MMR.
-    pub const HEADER_MMR_CAP_LOG2: usize = 32;
+    pub const HEADER_MMR_CAP_LOG2: usize = 64;
 
     /// Creates an empty compact MMR ready to accept the first block leaf.
     pub fn empty_history_mmr() -> HistoryMmrState {
         HistoryMmrState::new_empty(Self::HEADER_MMR_CAP_LOG2)
+    }
+
+    /// Constructs a new `ChainViewState` from the supplied PoW verification state and history MMR.
+    pub fn new(pow_state: HeaderVerificationState, history_mmr: HistoryMmrState) -> Self {
+        Self {
+            pow_state,
+            history_mmr,
+        }
     }
 }
 

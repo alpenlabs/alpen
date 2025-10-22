@@ -63,14 +63,15 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             None => {
                 // Create genesis anchor state.
                 let genesis_l1_view = &self.params.rollup().genesis_l1_view;
+                let pow_state = HeaderVerificationState::new(
+                    self.context.get_network()?,
+                    genesis_l1_view,
+                );
                 let state = AnchorState {
-                    chain_view: ChainViewState {
-                        pow_state: HeaderVerificationState::new(
-                            self.context.get_network()?,
-                            genesis_l1_view,
-                        ),
-                        history_mmr: ChainViewState::empty_history_mmr(),
-                    },
+                    chain_view: ChainViewState::new(
+                        pow_state,
+                        ChainViewState::empty_history_mmr(),
+                    ),
                     sections: vec![],
                 };
 
