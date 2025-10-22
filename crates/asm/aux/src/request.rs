@@ -12,7 +12,7 @@ pub enum AuxRequestSpec {
 
 impl AuxRequestSpec {
     /// Creates a boxed trait object suitable for passing into
-    /// [`AuxInputCollector::request_aux_input`].
+    /// [`strata_asm_common::AuxInputCollector::request_aux_input`].
     pub fn boxed(self) -> Box<dyn AuxRequestPayload> {
         Box::new(self)
     }
