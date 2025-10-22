@@ -223,6 +223,13 @@ pub(crate) fn get_epoch_summary(
         .get_epoch_commitments_at(epoch_idx)
         .internal_error(format!("Failed to get epoch summary for epoch {epoch_idx}",))?;
 
+    if epoch_commitments.is_empty() {
+        return Err(DisplayedError::UserError(
+            "No epoch summary found for epoch".to_string(),
+            Box::new(epoch_idx),
+        ));
+    }
+
     let epoch_summary = chkpt_db
         .get_epoch_summary(epoch_commitments[0])
         .internal_error(format!("Failed to get epoch summary for epoch {epoch_idx}"))?
