@@ -1,6 +1,8 @@
 // Re-export from the separate logs crate
+use bitcoin::{BlockHash, hashes::Hash as HashTrait};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_identifiers::hash::{compute_borsh_hash, sha256d};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg, TypeId};
 
 use crate::{AsmError, AsmResult};
@@ -31,7 +33,7 @@ pub trait AsmLog: BorshSerialize + BorshDeserialize {
 /// [`AsmLogEntry::from_msg`], and retrieve typed data using [`AsmLogEntry::try_into_log`]
 /// or check if it's a valid SPS-52 message using [`AsmLogEntry::try_as_msg`].
 /// TODO(QQ): FIX borsh here.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct AsmLogEntry(pub Vec<u8>);
 
 impl AsmLogEntry {
@@ -105,4 +107,14 @@ impl AsmLogEntry {
     pub fn into_bytes(self) -> Vec<u8> {
         self.0
     }
+}
+
+/// Computes the log-leaf hash committed into the header MMR for a given block.
+pub fn compute_log_leaf(block_hash: &BlockHash, logs: &[AsmLogEntry]) -> [u8; 32] {
+    let logs_hash = compute_borsh_hash(&logs);
+    let mut payload = Vec::with_capacity(64);
+    payload.extend_from_slice(&block_hash.to_byte_array());
+    payload.extend_from_slice(logs_hash.as_ref());
+    let leaf: [u8; 32] = sha256d(&payload).into();
+    leaf
 }

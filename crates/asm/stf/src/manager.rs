@@ -2,10 +2,10 @@
 
 use std::{any::Any, collections::BTreeMap};
 
-use borsh::BorshDeserialize;
+use strata_asm_aux::AuxRequestCollector;
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, AuxRequest, InterprotoMsg, Loader,
-    MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, AuxInputCollector, AuxRequest, AuxResolver, InterprotoMsg,
+    Loader, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -65,23 +65,18 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxInputCollector> SubprotoHandler for Ha
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_pre: &AnchorState,
-        aux_input_data: &[u8],
+        aux_resolver: &dyn AuxResolver,
     ) {
         let relayer = relayer
             .as_mut_any()
             .downcast_mut::<R>()
             .expect("asm: handler");
 
-        // TODO better error handling
-        let parsed_aux = <S::AuxInput as BorshDeserialize>::try_from_slice(aux_input_data)
-            .map_err(|e| AsmError::Deserialization(S::ID, e))
-            .unwrap();
-
         S::process_txs(
             &mut self.state,
             txs,
             anchor_pre,
-            &parsed_aux,
+            aux_resolver,
             relayer,
             &self.params,
         );
@@ -106,7 +101,7 @@ pub(crate) struct SubprotoManager {
 impl SubprotoManager {
     /// Inserts a subproto by creating a handler for it, wrapping a tstate.
     pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, params: S::Params, state: S::State) {
-        let handler = HandlerImpl::<S, Self, BasicAuxCollector>::new(params, state, Vec::new());
+        let handler = HandlerImpl::<S, Self, AuxRequestCollector>::new(params, state, Vec::new());
         assert_eq!(
             handler.id(),
             S::ID,
@@ -124,7 +119,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-    ) -> Option<AuxRequest> {
+    ) -> Vec<AuxRequest> {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
         // borrow checker.
@@ -133,11 +128,11 @@ impl SubprotoManager {
             .expect("asm: unloaded subprotocol");
 
         // Invoke the preprocess function.
-        let mut acol = BasicAuxCollector::new();
+        let mut acol = AuxRequestCollector::new();
         h.pre_process_txs(txs, &mut acol, anchor_pre);
         self.insert_handler(h);
 
-        acol.into_request()
+        acol.into_requests()
     }
 
     /// Dispatches transaction processing to the appropriate handler.
@@ -149,7 +144,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_input_data: &[u8],
+        aux_resolver: &dyn AuxResolver,
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
@@ -157,7 +152,7 @@ impl SubprotoManager {
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_txs(txs, self, anchor_pre, aux_input_data);
+        h.process_txs(txs, self, anchor_pre, aux_resolver);
         self.insert_handler(h);
     }
 
@@ -253,31 +248,6 @@ impl MsgRelayer for SubprotoManager {
 
     fn emit_log(&mut self, log: AsmLogEntry) {
         self.logs.push(log);
-    }
-
-    fn as_mut_any(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
-/// Shim for just remembering the aux request given to us.
-pub(crate) struct BasicAuxCollector {
-    req: Option<AuxRequest>,
-}
-
-impl BasicAuxCollector {
-    pub(crate) fn new() -> Self {
-        Self { req: None }
-    }
-
-    pub(crate) fn into_request(self) -> Option<AuxRequest> {
-        self.req
-    }
-}
-
-impl AuxInputCollector for BasicAuxCollector {
-    fn request_aux_input(&mut self, req: AuxRequest) {
-        self.req = Some(req);
     }
 
     fn as_mut_any(&mut self) -> &mut dyn Any {

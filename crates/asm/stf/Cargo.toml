@@ -7,8 +7,8 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+strata-asm-aux.workspace = true
 strata-asm-common.workspace = true
 strata-l1-txfmt.workspace = true
 
 bitcoin.workspace = true
-borsh.workspace = true

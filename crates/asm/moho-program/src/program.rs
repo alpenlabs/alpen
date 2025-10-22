@@ -45,7 +45,7 @@ impl MohoProgram for AsmStfProgram {
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &input.block.0.header,
-            aux_input: &input.aux_inputs,
+            aux_responses: &input.aux_inputs,
         };
 
         // 3. Actually invoke the ASM state transition function.
