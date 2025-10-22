@@ -70,7 +70,7 @@ pub trait AuxInputCollector: Any {
     fn as_mut_any(&mut self) -> &mut dyn Any;
 }
 
-/// Extension trait adding ergonomic helpers for [`AuxInputCollector`] implementors.
+/// Extension trait adding ergonomic helpers for [`AuxInputCollector`] implementers.
 pub trait AuxInputCollectorExt: AuxInputCollector {
     /// Convenience helper that accepts concrete payload types without manual boxing.
     fn request_aux<T>(&mut self, tx_index: L1TxIndex, payload: T)

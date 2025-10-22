@@ -14,9 +14,9 @@ pub mod hasher;
 use std::marker::PhantomData;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use error::MerkleError;
 use hasher::{DigestMerkleHasher, MerkleHash, MerkleHasher};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::Sha256;
 
 /// Merkle hash impl for SHA-256 `Digest` impl.
