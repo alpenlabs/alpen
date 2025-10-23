@@ -6,7 +6,7 @@
 
 use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::{DepositEntry, DepositState, WithdrawalIntent};
+use strata_bridge_types::{DepositEntry, DepositState, OperatorIdx, WithdrawalIntent};
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
 use strata_db::types::{CheckpointConfStatus, CheckpointEntry};
@@ -17,7 +17,6 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{BitcoinAmount, BitcoinOutPoint, L1BlockCommitment},
     l2::L2BlockCommitment,
-    operator::OperatorIdx,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

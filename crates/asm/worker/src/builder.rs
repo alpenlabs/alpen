@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_primitives::params::Params;
+use strata_params::Params;
 use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 

@@ -2,7 +2,7 @@
 
 use strata_checkpoint_types::SignedCheckpoint;
 use strata_ol_chain_types::verify_sequencer_signature;
-use strata_primitives::params::Params;
+use strata_params::Params;
 
 /// Verify checkpoint has correct signature from sequencer.
 pub fn verify_checkpoint_sig(signed_checkpoint: &SignedCheckpoint, params: &Params) -> bool {

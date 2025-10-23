@@ -6,7 +6,8 @@ use strata_db::{
     types::{L1TxEntry, L1TxStatus},
     DbResult,
 };
-use strata_primitives::{buf::Buf32, params::Params};
+use strata_params::Params;
+use strata_primitives::buf::Buf32;
 use strata_storage::BroadcastDbOps;
 use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc;

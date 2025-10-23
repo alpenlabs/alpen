@@ -9,7 +9,8 @@ use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatu
 use strata_eectl::errors::EngineError;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, params::Params};
+use strata_params::Params;
+use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_status::*;
 use strata_storage::{L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;

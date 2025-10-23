@@ -193,6 +193,7 @@ mod tests {
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_params::{Params, RollupParams, SyncParams};
     use strata_primitives::{
         buf::Buf32,
         epoch::EpochCommitment,
@@ -249,7 +250,7 @@ mod tests {
             "target_l2_batch_size": 64,
             "max_address_length": 20,
             "deposit_amount": 1000000000,
-            "rollup_vk": "native",
+            "checkpoint_predicate": "AlwaysAccept",
             "dispatch_assignment_dur": 64,
             "proof_publish_mode": {
                 "timeout": 1

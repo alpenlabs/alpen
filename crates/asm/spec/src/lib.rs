@@ -10,10 +10,8 @@ use strata_asm_proto_checkpoint_v0::{
     CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
 use strata_l1_txfmt::MagicBytes;
-use strata_primitives::{
-    l1::BitcoinAmount,
-    params::{OperatorConfig, RollupParams},
-};
+use strata_params::{OperatorConfig, RollupParams};
+use strata_primitives::l1::BitcoinAmount;
 
 /// ASM specification for the Strata protocol.
 ///
@@ -67,7 +65,7 @@ impl StrataAsmSpec {
             verification_params: CheckpointV0VerificationParams {
                 genesis_l1_block: params.genesis_l1_view.blk,
                 cred_rule: params.cred_rule.clone(),
-                rollup_verifying_key: params.rollup_vk.clone(),
+                predicate: params.checkpoint_predicate.clone(),
             },
         };
 

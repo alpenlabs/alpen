@@ -28,7 +28,7 @@ use strata_config::btcio::FeePolicy;
 use strata_csm_types::L1Payload;
 use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
 use strata_l1_txfmt::{self, ParseConfig, TxFmtError};
-use strata_primitives::params::Params;
+use strata_params::Params;
 use thiserror::Error;
 
 use super::context::WriterContext;

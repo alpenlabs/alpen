@@ -7,9 +7,6 @@ use crate::{EvmEeBlockCommitment, L2BlockCommitment};
 
 pub type Epoch = u64;
 
-// Re-export from crypto crate
-pub use strata_crypto::RollupVerifyingKey;
-
 /// Represents a context for different types of proofs.
 ///
 /// This enum categorizes proofs by their associated context, including the type of proof and its

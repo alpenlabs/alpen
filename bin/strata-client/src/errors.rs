@@ -2,7 +2,7 @@ use std::io;
 
 use alloy_rpc_types::engine::JwtError;
 use format_serde_error::SerdeError;
-use strata_primitives::params::ParamsError;
+use strata_params::ParamsError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

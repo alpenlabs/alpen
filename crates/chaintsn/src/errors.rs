@@ -1,5 +1,6 @@
 use strata_asm_types::L1VerificationError;
-use strata_primitives::{l1::L1BlockId, operator::OperatorIdx};
+use strata_bridge_types::OperatorIdx;
+use strata_primitives::l1::L1BlockId;
 use strata_state::prelude::*;
 use thiserror::Error;
 
