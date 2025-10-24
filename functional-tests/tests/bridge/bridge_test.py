@@ -1,11 +1,11 @@
 import flexitest
-from strata_utils import (
+
+from envs import net_settings, testenv
+from factory.test_cli import (
     extract_p2tr_pubkey,
     get_address,
     xonlypk_to_descriptor,
 )
-
-from envs import net_settings, testenv
 from mixins import bridge_mixin
 from utils import *
 

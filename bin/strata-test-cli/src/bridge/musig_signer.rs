@@ -74,7 +74,7 @@ impl MusigSigner {
         let (mut first_rounds, pub_nonces): (Vec<_>, Vec<_>) = signers
             .iter()
             .enumerate()
-            .map(|(signer_index, signer)| {
+            .map(|(signer_index, signer)| -> Result<_, Error> {
                 let spices = SecNonceSpices::new()
                     .with_seckey(*signer.as_ref())
                     .with_message(sighash.as_byte_array());
@@ -89,7 +89,7 @@ impl MusigSigner {
 
                 Ok((first_round, pub_nonce))
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Result<Vec<_>, Error>>()?
             .into_iter()
             .unzip();
 

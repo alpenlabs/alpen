@@ -1181,7 +1181,6 @@ dependencies = [
     { name = "flexitest" },
     { name = "locust" },
     { name = "py-solc-x" },
-    { name = "strata-utils" },
     { name = "toml" },
     { name = "web3" },
     { name = "websockets" },
@@ -1201,7 +1200,6 @@ requires-dist = [
     { name = "flexitest", git = "https://codeberg.org/treyd/flexitest.git" },
     { name = "locust", specifier = ">=2.39.1,<3" },
     { name = "py-solc-x", specifier = ">=2.0.4,<3" },
-    { name = "strata-utils", editable = "../crates/util/python-utils" },
     { name = "toml", specifier = ">=0.10.2,<0.11" },
     { name = "web3", specifier = ">=7.13.0,<8" },
     { name = "websockets", specifier = "~=15.0" },
@@ -1213,11 +1211,6 @@ dev = [
     { name = "ruff", specifier = "==0.12.11" },
     { name = "ty", specifier = ">=0.0.1a20,<0.0.2" },
 ]
-
-[[package]]
-name = "strata-utils"
-version = "0.3.0a1"
-source = { editable = "../crates/util/python-utils" }
 
 [[package]]
 name = "toml"
