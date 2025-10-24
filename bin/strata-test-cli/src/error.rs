@@ -2,7 +2,7 @@ use thiserror::Error;
 
 /// Error types for test CLI operations
 #[derive(Debug, Clone, Error)]
-pub enum Error {
+pub(crate) enum Error {
     #[error("Could not create wallet")]
     Wallet,
 
@@ -11,9 +11,6 @@ pub enum Error {
 
     #[error("Invalid public key")]
     PublicKey,
-
-    #[error("Invalid outpoint")]
-    OutPoint,
 
     #[error("Not a P2TR address")]
     NotTaprootAddress,
@@ -50,9 +47,6 @@ pub enum Error {
 
     #[error("Invalid pubkeys JSON: {0}")]
     InvalidPubkeysJson(String),
-
-    #[error("Not a valid BOSD descriptor")]
-    InvalidBosd,
 }
 
 impl From<hex::FromHexError> for Error {

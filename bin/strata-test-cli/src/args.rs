@@ -6,14 +6,14 @@ use argh::FromArgs;
 
 #[derive(FromArgs)]
 /// CLI utilities for Strata functional tests
-pub struct Args {
+pub(crate) struct Args {
     #[argh(subcommand)]
     pub command: Command,
 }
 
 #[derive(FromArgs)]
 #[argh(subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     CreateDepositTx(CreateDepositTxArgs),
     CreateWithdrawalFulfillment(CreateWithdrawalFulfillmentArgs),
     GetAddress(GetAddressArgs),
@@ -27,7 +27,7 @@ pub enum Command {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "create-deposit-tx")]
 /// Create a deposit transaction from DRT
-pub struct CreateDepositTxArgs {
+pub(crate) struct CreateDepositTxArgs {
     #[argh(option)]
     /// raw DRT transaction in hex format
     pub drt_tx: String,
@@ -44,7 +44,7 @@ pub struct CreateDepositTxArgs {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "create-withdrawal-fulfillment")]
 /// Create a withdrawal fulfillment transaction
-pub struct CreateWithdrawalFulfillmentArgs {
+pub(crate) struct CreateWithdrawalFulfillmentArgs {
     #[argh(option)]
     /// destination Bitcoin address (BOSD format)
     pub destination: String,
@@ -81,7 +81,7 @@ pub struct CreateWithdrawalFulfillmentArgs {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "get-address")]
 /// Get a taproot address at a specific index
-pub struct GetAddressArgs {
+pub(crate) struct GetAddressArgs {
     #[argh(option)]
     /// address index
     pub index: u32,
@@ -90,7 +90,7 @@ pub struct GetAddressArgs {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "musig-aggregate-pks")]
 /// Aggregate public keys using MuSig2
-pub struct MusigAggregatePksArgs {
+pub(crate) struct MusigAggregatePksArgs {
     #[argh(option)]
     /// public keys in JSON array format (hex strings)
     pub pubkeys: String,
@@ -99,7 +99,7 @@ pub struct MusigAggregatePksArgs {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "extract-p2tr-pubkey")]
 /// Extract P2TR public key from a taproot address
-pub struct ExtractP2trPubkeyArgs {
+pub(crate) struct ExtractP2trPubkeyArgs {
     #[argh(option)]
     /// taproot address
     pub address: String,
@@ -108,7 +108,7 @@ pub struct ExtractP2trPubkeyArgs {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "convert-to-xonly-pk")]
 /// Convert a public key to X-only format
-pub struct ConvertToXonlyPkArgs {
+pub(crate) struct ConvertToXonlyPkArgs {
     #[argh(option)]
     /// public key in hex format
     pub pubkey: String,
@@ -117,7 +117,7 @@ pub struct ConvertToXonlyPkArgs {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "sign-schnorr-sig")]
 /// Sign a message using Schnorr signature
-pub struct SignSchnorrSigArgs {
+pub(crate) struct SignSchnorrSigArgs {
     #[argh(option)]
     /// message hash in hex format
     pub message: String,
@@ -130,7 +130,7 @@ pub struct SignSchnorrSigArgs {
 #[derive(FromArgs)]
 #[argh(subcommand, name = "xonlypk-to-descriptor")]
 /// Convert X-only public key to BOSD descriptor
-pub struct XonlypkToDescriptorArgs {
+pub(crate) struct XonlypkToDescriptorArgs {
     #[argh(option)]
     /// x-only public key in hex format
     pub xonly_pubkey: String,

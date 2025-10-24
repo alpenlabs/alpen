@@ -1,8 +1,8 @@
 import hashlib
 
-from factory.test_cli import sign_schnorr_sig
 from web3 import Web3
 
+from factory.test_cli import sign_schnorr_sig
 from utils import wait_until_with_value
 
 

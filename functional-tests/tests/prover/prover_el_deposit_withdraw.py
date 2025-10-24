@@ -2,9 +2,9 @@ import time
 
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
-from factory.test_cli import extract_p2tr_pubkey, xonlypk_to_descriptor
 
 from envs.rollup_params_cfg import RollupConfig
+from factory.test_cli import extract_p2tr_pubkey, xonlypk_to_descriptor
 from mixins import bridge_mixin
 from utils import (
     confirm_btc_withdrawal,

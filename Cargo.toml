@@ -110,6 +110,7 @@ default-members = [
   "bin/strata-dbtool",
   "bin/strata-sequencer-client",
   "bin/alpen-cli",
+  "bin/strata-test-cli",
 ]
 
 [workspace.lints]

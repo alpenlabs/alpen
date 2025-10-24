@@ -28,6 +28,8 @@ use taproot::{
 };
 use utils::xonlypk_to_descriptor_inner;
 
+use crate::bridge::types::BitcoinDConfig;
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("strata-test-cli: {}", e);
@@ -40,8 +42,8 @@ fn run() -> Result<(), Error> {
 
     match args.command {
         Command::CreateDepositTx(args) => {
-            let tx_bytes = hex::decode(&args.drt_tx)
-                .map_err(|e| Error::InvalidDrtHex(e.to_string()))?;
+            let tx_bytes =
+                hex::decode(&args.drt_tx).map_err(|e| Error::InvalidDrtHex(e.to_string()))?;
 
             let keys: Vec<String> = serde_json::from_str(&args.operator_keys)
                 .map_err(|e| Error::InvalidOperatorKeysJson(e.to_string()))?;
@@ -49,8 +51,7 @@ fn run() -> Result<(), Error> {
             let keys_bytes: Result<Vec<[u8; 78]>, Error> = keys
                 .iter()
                 .map(|k| {
-                    let bytes = hex::decode(k)
-                        .map_err(|e| Error::InvalidHex(e.to_string()))?;
+                    let bytes = hex::decode(k).map_err(|e| Error::InvalidHex(e.to_string()))?;
 
                     if bytes.len() != 78 {
                         return Err(Error::InvalidKeyLength(bytes.len()));
@@ -68,15 +69,19 @@ fn run() -> Result<(), Error> {
         }
 
         Command::CreateWithdrawalFulfillment(args) => {
+            let bitcoind_config = BitcoinDConfig {
+                bitcoind_url: args.btc_url,
+                bitcoind_user: args.btc_user,
+                bitcoind_password: args.btc_password,
+            };
+
             let result = withdrawal::create_withdrawal_fulfillment_cli(
                 args.destination,
                 args.amount,
                 args.operator_idx,
                 args.deposit_idx,
                 args.deposit_txid,
-                args.btc_url,
-                args.btc_user,
-                args.btc_password,
+                bitcoind_config,
             )?;
             println!("{}", hex::encode(result));
         }

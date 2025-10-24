@@ -36,7 +36,6 @@ impl ExtractP2trPubkey for Address {
     }
 }
 
-
 /// A simple Taproot-enable wallet.
 ///
 /// # Note
@@ -86,7 +85,6 @@ pub(crate) fn new_bitcoind_client(
     )
     .map_err(|_| Error::RpcClient)
 }
-
 
 /// Gets a (receiving/external) address from the [`taproot_wallet`] at the given `index`.
 pub(crate) fn get_address_inner(index: u32) -> Result<String, Error> {
@@ -164,7 +162,6 @@ pub(crate) fn extract_p2tr_pubkey_inner(address: String) -> Result<String, Error
     Ok(pk.to_string())
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -190,7 +187,6 @@ mod tests {
         assert_eq!(pk, expected);
     }
 
-
     #[test]
     fn taproot_wallet() {
         let mut wallet = super::taproot_wallet().unwrap();
@@ -210,13 +206,9 @@ mod tests {
 
     #[test]
     fn musig_aggregate_pks() {
-        let pks: [XOnlyPublicKey; 2] = [
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
-                .parse()
-                .unwrap(),
-            "3590a94e768f8e1815c2f24b4d80a8e3149316c3518ce7b7ad338368d038ca66"
-                .parse()
-                .unwrap(),
+        let pks = [
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9".to_string(),
+            "3590a94e768f8e1815c2f24b4d80a8e3149316c3518ce7b7ad338368d038ca66".to_string(),
         ];
         let aggregated_pk = musig_aggregate_pks_inner(pks.to_vec()).unwrap().to_string();
         let expected = "85eb6101982e142dba553cae437d08a82880fe9a22889c997f8e415a61b7a2d5";
@@ -225,12 +217,10 @@ mod tests {
 
     #[test]
     fn convert_to_xonly_pk_inner() {
-        let even_pk = "02f3b071c064f115ca762ed88c3efd1927ea657c7949698b77255ea25751331f0b"
-            .parse::<PublicKey>()
-            .unwrap();
-        let odd_pk = "03204ea8bc3425b2cbc9cb20617f67dc6b202467591d0b26d059e370b71ee392eb"
-            .parse::<PublicKey>()
-            .unwrap();
+        let even_pk =
+            "02f3b071c064f115ca762ed88c3efd1927ea657c7949698b77255ea25751331f0b".to_string();
+        let odd_pk =
+            "03204ea8bc3425b2cbc9cb20617f67dc6b202467591d0b26d059e370b71ee392eb".to_string();
         assert!(super::convert_to_xonly_pk_inner(even_pk).is_ok());
         assert!(super::convert_to_xonly_pk_inner(odd_pk).is_err());
     }

@@ -14,5 +14,3 @@ pub(crate) fn xonlypk_to_descriptor_inner(xonly: &str) -> Result<String, Error> 
     let descriptor: Descriptor = xonly.into();
     Ok(descriptor.to_string())
 }
-
-

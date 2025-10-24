@@ -4,11 +4,11 @@ import logging
 import time
 
 import flexitest
-from factory.test_cli import get_address
 
 from envs.rollup_params_cfg import RollupConfig
 from factory.alpen_client import AlpenCliBuilder
 from factory.config import BitcoindConfig, RethELConfig
+from factory.test_cli import get_address
 from load.cfg import LoadConfig, LoadConfigBuilder
 from utils import *
 from utils.constants import *

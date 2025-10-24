@@ -57,3 +57,11 @@ pub(crate) struct DepositTxMetadata {
     pub takeback_hash: TapNodeHash,
     pub input_amount: Amount,
 }
+
+/// Bitcoind configuration
+#[derive(Debug, Clone)]
+pub(crate) struct BitcoinDConfig {
+    pub bitcoind_url: String,
+    pub bitcoind_user: String,
+    pub bitcoind_password: String,
+}

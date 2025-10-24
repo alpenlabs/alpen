@@ -6,8 +6,8 @@ replacing the previous PyO3 FFI bindings with subprocess calls to the binary.
 """
 
 import json
-from utils.utils import run_tty
 
+from utils.utils import run_tty
 
 BINARY_PATH = "strata-test-cli"
 
@@ -52,9 +52,12 @@ def create_deposit_transaction(
 
     args = [
         "create-deposit-tx",
-        "--drt-tx", drt_tx_hex,
-        "--operator-keys", operator_keys_json,
-        "--index", str(index),
+        "--drt-tx",
+        drt_tx_hex,
+        "--operator-keys",
+        operator_keys_json,
+        "--index",
+        str(index),
     ]
 
     result_hex = _run_command(args)
@@ -89,14 +92,22 @@ def create_withdrawal_fulfillment(
     """
     args = [
         "create-withdrawal-fulfillment",
-        "--destination", destination,
-        "--amount", str(amount),
-        "--operator-idx", str(operator_idx),
-        "--deposit-idx", str(deposit_idx),
-        "--deposit-txid", deposit_txid,
-        "--btc-url", btc_url,
-        "--btc-user", btc_user,
-        "--btc-password", btc_password,
+        "--destination",
+        destination,
+        "--amount",
+        str(amount),
+        "--operator-idx",
+        str(operator_idx),
+        "--deposit-idx",
+        str(deposit_idx),
+        "--deposit-txid",
+        deposit_txid,
+        "--btc-url",
+        btc_url,
+        "--btc-user",
+        btc_user,
+        "--btc-password",
+        btc_password,
     ]
 
     result_hex = _run_command(args)
@@ -115,7 +126,8 @@ def get_address(index: int) -> str:
     """
     args = [
         "get-address",
-        "--index", str(index),
+        "--index",
+        str(index),
     ]
 
     return _run_command(args)
@@ -135,7 +147,8 @@ def musig_aggregate_pks(pubkeys: list[str]) -> str:
 
     args = [
         "musig-aggregate-pks",
-        "--pubkeys", pubkeys_json,
+        "--pubkeys",
+        pubkeys_json,
     ]
 
     return _run_command(args)
@@ -153,7 +166,8 @@ def extract_p2tr_pubkey(address: str) -> str:
     """
     args = [
         "extract-p2tr-pubkey",
-        "--address", address,
+        "--address",
+        address,
     ]
 
     return _run_command(args)
@@ -171,7 +185,8 @@ def convert_to_xonly_pk(pubkey: str) -> str:
     """
     args = [
         "convert-to-xonly-pk",
-        "--pubkey", pubkey,
+        "--pubkey",
+        pubkey,
     ]
 
     return _run_command(args)
@@ -190,8 +205,10 @@ def sign_schnorr_sig(message: str, secret_key: str) -> tuple[bytes, bytes]:
     """
     args = [
         "sign-schnorr-sig",
-        "--message", message,
-        "--secret-key", secret_key,
+        "--message",
+        message,
+        "--secret-key",
+        secret_key,
     ]
 
     result_json = _run_command(args)
@@ -215,7 +232,8 @@ def xonlypk_to_descriptor(xonly_pubkey: str) -> str:
     """
     args = [
         "xonlypk-to-descriptor",
-        "--xonly-pubkey", xonly_pubkey,
+        "--xonly-pubkey",
+        xonly_pubkey,
     ]
 
     return _run_command(args)

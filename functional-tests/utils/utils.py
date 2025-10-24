@@ -1,11 +1,10 @@
+import contextlib
 import logging
 import math
 import os
-import subprocess
-import time
-import contextlib
 import pty
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Thread
@@ -683,9 +682,8 @@ def get_priv_keys(ctx, env=None):
             priv_keys.append(decoded)
     return priv_keys
 
-def run_tty(
-    cmd, *, capture_output=False, stdout=None, env=None
-) -> subprocess.CompletedProcess:
+
+def run_tty(cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.CompletedProcess:
     """
     Runs `cmd` under a PTY (so indicatif used by Alpen-cli behaves).
     Returns a CompletedProcess; stdout is bytes when captured.
@@ -729,4 +727,3 @@ def run_tty(
         stdout=(b"".join(buf) if buf is not None else None),
         stderr=None,  # PTY merges stderr
     )
-

@@ -15,6 +15,7 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 
 use super::types::WithdrawalMetadata;
 use crate::{
+    bridge::types::BitcoinDConfig,
     constants::MAGIC_BYTES,
     error::Error,
     taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
@@ -28,19 +29,14 @@ use crate::{
 /// * `operator_idx` - Operator index
 /// * `deposit_idx` - Deposit index
 /// * `deposit_txid` - Deposit transaction ID as hex string
-/// * `bitcoind_url` - Bitcoind url
-/// * `bitcoind_user` - credentials
-/// * `bitcoind_password` - credentials
-#[allow(clippy::too_many_arguments)]
+/// * `bitcoind_config` - Bitcoind config
 pub(crate) fn create_withdrawal_fulfillment_cli(
     recipient_bosd: String,
     amount: u64,
     operator_idx: u32,
     deposit_idx: u32,
     deposit_txid: String,
-    bitcoind_url: String,
-    bitcoind_user: String,
-    bitcoind_password: String,
+    bitcoind_config: BitcoinDConfig,
 ) -> Result<Vec<u8>, Error> {
     let recipient_script = recipient_bosd
         .parse::<Descriptor>()
@@ -53,25 +49,20 @@ pub(crate) fn create_withdrawal_fulfillment_cli(
         operator_idx,
         deposit_idx,
         deposit_txid,
-        &bitcoind_url,
-        &bitcoind_user,
-        &bitcoind_password,
+        bitcoind_config,
     )?;
 
     Ok(serialize(&tx))
 }
 
 /// Internal implementation of withdrawal fulfillment creation
-#[allow(clippy::too_many_arguments)]
 fn create_withdrawal_fulfillment_inner(
     recipient_script: ScriptBuf,
     amount: u64,
     operator_idx: u32,
     deposit_idx: u32,
     deposit_txid: String,
-    bitcoind_url: &str,
-    bitcoind_user: &str,
-    bitcoind_password: &str,
+    bitcoind_config: BitcoinDConfig,
 ) -> Result<Transaction, Error> {
     // Parse inputs
     let amount = Amount::from_sat(amount);
@@ -81,14 +72,7 @@ fn create_withdrawal_fulfillment_inner(
     let metadata = WithdrawalMetadata::new(*MAGIC_BYTES, operator_idx, deposit_idx, deposit_txid);
 
     // Create withdrawal fulfillment transaction
-    create_withdrawal_transaction(
-        metadata,
-        recipient_script,
-        amount,
-        bitcoind_url,
-        bitcoind_user,
-        bitcoind_password,
-    )
+    create_withdrawal_transaction(metadata, recipient_script, amount, bitcoind_config)
 }
 
 /// Creates the raw withdrawal transaction
@@ -96,16 +80,14 @@ fn create_withdrawal_transaction(
     metadata: WithdrawalMetadata,
     recipient_script: ScriptBuf,
     amount: Amount,
-    bitcoind_url: &str,
-    bitcoind_user: &str,
-    bitcoind_password: &str,
+    bitcoind_config: BitcoinDConfig,
 ) -> Result<Transaction, Error> {
     let mut wallet = taproot_wallet()?;
     let client = new_bitcoind_client(
-        bitcoind_url,
+        &bitcoind_config.bitcoind_url,
         None,
-        Some(bitcoind_user),
-        Some(bitcoind_password),
+        Some(&bitcoind_config.bitcoind_user),
+        Some(&bitcoind_config.bitcoind_password),
     )?;
 
     sync_wallet(&mut wallet, &client)?;
@@ -168,15 +150,18 @@ mod tests {
 
     #[test]
     fn create_withdrawal_fulfillment_inner_rejects_invalid_txid() {
+        let bitcoind_config = BitcoinDConfig {
+            bitcoind_url: "http://127.0.0.1:18443".to_string(),
+            bitcoind_user: "user".to_string(),
+            bitcoind_password: "pass".to_string(),
+        };
         let result = create_withdrawal_fulfillment_inner(
             ScriptBuf::new(),
             1000,
             1,
             1,
             "bad_txid".to_string(),
-            "http://127.0.0.1:18443",
-            "user",
-            "pass",
+            bitcoind_config,
         );
         assert!(result.is_err());
     }
