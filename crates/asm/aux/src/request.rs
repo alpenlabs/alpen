@@ -1,37 +1,31 @@
-use bitcoin::Txid;
-use strata_asm_common::AuxRequestPayload;
+use std::collections::BTreeMap;
 
-/// Supported auxiliary queries that subprotocols can register during preprocessing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AuxRequestSpec {
-    /// Request logs emitted across a contiguous range of L1 blocks (inclusive).
-    HistoricalLogs { start_block: u64, end_block: u64 },
-    /// Request the full deposit request transaction referenced by the deposit.
-    DepositRequestTx { txid: Txid },
+use bitcoin::Txid;
+use strata_asm_common::{L1TxIndex, SubprotocolId};
+
+/// Table mapping subprotocol IDs to their corresponding auxiliary requests.
+pub type AuxRequestTable = BTreeMap<SubprotocolId, AuxRequestEnvelope>;
+#[derive(Debug)]
+pub struct AuxRequestEnvelope {
+    pub asm_log_queries: Vec<AuxLogQuery>,
+    pub drt_tx_queries: Vec<DrtTxQuery>,
 }
 
-impl AuxRequestSpec {
-    /// Creates a boxed trait object suitable for passing into
-    /// [`strata_asm_common::AuxInputCollector::request_aux_input`].
-    pub fn boxed(self) -> Box<dyn AuxRequestPayload> {
-        Box::new(self)
+impl AuxRequestEnvelope {
+    pub fn is_empty(&self) -> bool {
+        self.asm_log_queries.is_empty() && self.drt_tx_queries.is_empty()
     }
+}
 
-    pub fn historical_logs(block: u64) -> Self {
-        Self::HistoricalLogs {
-            start_block: block,
-            end_block: block,
-        }
-    }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuxLogQuery {
+    pub requester_tx_index: L1TxIndex,
+    pub start_block: u64,
+    pub end_block: u64,
+}
 
-    pub fn historical_logs_range(start_block: u64, end_block: u64) -> Self {
-        Self::HistoricalLogs {
-            start_block,
-            end_block,
-        }
-    }
-
-    pub fn deposit_request_tx(txid: Txid) -> Self {
-        Self::DepositRequestTx { txid }
-    }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DrtTxQuery {
+    pub requester_tx_index: L1TxIndex,
+    pub drt_txid: Txid,
 }

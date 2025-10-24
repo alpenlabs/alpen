@@ -1,17 +1,14 @@
 //! Helpers for requesting and consuming auxiliary data inside ASM subprotocols.
 //!
-//! The README in this crate contains a worked example that shows how to register
-//! an auxiliary request during `pre_process_txs` and consume the corresponding
-//! `AuxResponseEnvelope` via an [`AuxResolver`] in `process_txs`.
-//!
-//! [`AuxResolver`]: strata_asm_common::AuxResolver
+//! During `pre_process_txs`, subprotocols can use [`RequestCollector`] to record the auxiliary
+//! inputs they need for each L1 transaction. Before handing the responses to `process_txs`, call
+//! [`verify_aux_input`] to check the supplied proofs against the header MMR and obtain a verified
+//! [`AuxInput`](strata_asm_common::AuxInput).
 
 mod collector;
 mod request;
-mod resolver;
-mod response;
+mod utils;
 
-pub use collector::AuxRequestCollector;
-pub use request::AuxRequestSpec;
-pub use resolver::SubprotocolAuxResolver;
-pub use response::{AuxResponseEnvelope, HistoricalLogSegment, LogMmrProof};
+pub use collector::RequestCollector;
+pub use request::{AuxRequestEnvelope, AuxRequestTable};
+pub use utils::verify_aux_input;

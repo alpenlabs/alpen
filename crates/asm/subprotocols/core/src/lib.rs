@@ -49,7 +49,7 @@ mod verification;
 use constants::CORE_SUBPROTOCOL_ID;
 pub use error::*;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInputCollector, AuxResolver, MsgRelayer, NullMsg, Subprotocol,
+    AnchorState, AsmError, AuxInput, AuxRequestCollector, MsgRelayer, NullMsg, Subprotocol,
     SubprotocolId, TxInputRef, logging,
 };
 use strata_checkpoint_types::EpochSummary;
@@ -103,7 +103,7 @@ impl Subprotocol for OLCoreSubproto {
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
-        _collector: &mut impl AuxInputCollector,
+        _collector: &mut impl AuxRequestCollector,
         _anchor_pre: &AnchorState,
         _params: &Self::Params,
     ) {
@@ -119,7 +119,7 @@ impl Subprotocol for OLCoreSubproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_resolver: &dyn AuxResolver,
+        aux_resolver: &AuxInput,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

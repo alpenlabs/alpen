@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    io::{self, Read, Write},
-};
+use std::io::{self, Read, Write};
 
 use bitcoin::{
     Block,
@@ -10,8 +7,7 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
-use strata_asm_aux::AuxResponseEnvelope;
-use strata_asm_common::L1TxIndex;
+use strata_asm_common::AuxDataTable;
 
 /// Private input to process the next state.
 ///
@@ -21,14 +17,11 @@ pub struct AsmStepInput {
     /// The full Bitcoin L1 block
     pub block: L1Block,
     /// Auxiliary input required to run the ASM STF
-    pub aux_inputs: BTreeMap<u8, BTreeMap<L1TxIndex, Vec<AuxResponseEnvelope>>>,
+    pub aux_inputs: AuxDataTable,
 }
 
 impl AsmStepInput {
-    pub fn new(
-        block: L1Block,
-        aux_inputs: BTreeMap<u8, BTreeMap<L1TxIndex, Vec<AuxResponseEnvelope>>>,
-    ) -> Self {
+    pub fn new(block: L1Block, aux_inputs: AuxDataTable) -> Self {
         AsmStepInput { block, aux_inputs }
     }
 

@@ -13199,9 +13199,7 @@ name = "strata-asm-aux"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "borsh",
  "strata-asm-common",
- "strata-mmr",
 ]
 
 [[package]]
@@ -13248,7 +13246,6 @@ dependencies = [
  "bitcoin",
  "borsh",
  "moho-types",
- "strata-asm-aux",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-spec",
@@ -13446,7 +13443,6 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "serde",
- "strata-asm-aux",
  "strata-asm-common",
  "strata-asm-spec",
  "strata-asm-stf",
