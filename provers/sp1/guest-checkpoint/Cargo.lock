@@ -1170,15 +1170,8 @@ dependencies = [
 name = "strata-asm-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
- "bitcoin",
- "borsh",
- "digest",
- "serde",
- "sha2",
- "strata-checkpoint-types",
- "strata-primitives",
- "thiserror 2.0.16",
+ "strata-btc-types",
+ "strata-btc-verification",
 ]
 
 [[package]]
@@ -1193,6 +1186,40 @@ dependencies = [
  "serde",
  "sha2",
  "strata-primitives",
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-btc-types"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "bitcoin-bosd",
+ "borsh",
+ "digest",
+ "hex",
+ "num_enum",
+ "rand 0.8.5",
+ "secp256k1",
+ "serde",
+ "sha2",
+ "strata-checkpoint-types",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-btc-verification"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "borsh",
+ "serde",
+ "strata-btc-types",
+ "strata-identifiers",
  "thiserror 2.0.16",
 ]
 
@@ -1234,7 +1261,8 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
- "strata-primitives",
+ "strata-crypto",
+ "strata-identifiers",
  "zkaleido",
 ]
 
@@ -1243,13 +1271,46 @@ name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bitcoin",
+ "bincode",
  "bitvec",
  "borsh",
+ "k256 0.13.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "musig2",
- "strata-primitives",
+ "secp256k1",
+ "serde",
+ "strata-identifiers",
  "thiserror 2.0.16",
  "zkaleido",
+ "zkaleido-sp1-groth16-verifier",
+]
+
+[[package]]
+name = "strata-csm-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "const-hex",
+ "serde",
+ "strata-btc-types",
+ "strata-checkpoint-types",
+ "strata-identifiers",
+ "strata-primitives",
+]
+
+[[package]]
+name = "strata-identifiers"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "bitcoin",
+ "borsh",
+ "const-hex",
+ "digest",
+ "hex",
+ "serde",
+ "sha2",
+ "zeroize",
 ]
 
 [[package]]
@@ -1307,18 +1368,14 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
- "const-hex",
- "digest",
- "hex",
- "k256 0.13.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "num_enum",
  "secp256k1",
  "serde",
- "sha2",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-identifiers",
  "strata-l1-txfmt",
  "thiserror 2.0.16",
  "zeroize",
- "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -1358,7 +1415,7 @@ dependencies = [
  "strata-asm-stf",
  "strata-asm-types",
  "strata-bridge-types",
- "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-primitives",
 ]
 

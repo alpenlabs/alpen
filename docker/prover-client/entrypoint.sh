@@ -12,6 +12,9 @@ CONFIG_PATH=${CONFIG_PATH:-/app/prover-client.toml}
 if [ ! -f "$CONFIG_PATH" ]; then
     echo "Config file not found at $CONFIG_PATH, using sample config"
     CONFIG_PATH="/app/prover-client.sample.toml"
+    ls -la /app/
+    cat $CONFIG_PATH
+
 fi
 
 # Start the prover client with config file

@@ -9,7 +9,7 @@ db_retry_count = 5
 is_sequencer = true
 
 [bitcoind]
-rpc_url = "bitcoind:18443/wallet/default"
+rpc_url = "http://bitcoind:18443/wallet/default"
 rpc_user = "rpcuser"
 rpc_password = "rpcpassword"
 network = "regtest"

@@ -91,9 +91,9 @@ if [[ $VAL -eq 0 ]]; then
     echo "Generating 120 blocks..."
     bcli generatetoaddress 120 "$ADDRESS"
 
-    bcli generatetoaddress 101 "$BRIDGE_ADDRESS_1"
-    bcli generatetoaddress 101 "$BRIDGE_ADDRESS_2"
-    bcli generatetoaddress 101 "$BRIDGE_ADDRESS_3"
+    # bcli generatetoaddress 101 "$BRIDGE_ADDRESS_1"
+    # bcli generatetoaddress 101 "$BRIDGE_ADDRESS_2"
+    # bcli generatetoaddress 101 "$BRIDGE_ADDRESS_3"
 fi
 
 # generate single blocks
@@ -101,9 +101,9 @@ if [ -n "$GENERATE_BLOCKS" ];then
 while :
 do
     bcli generatetoaddress 1 "$ADDRESS"
-    bcli generatetoaddress 1 "$BRIDGE_ADDRESS_1"
-    bcli generatetoaddress 1 "$BRIDGE_ADDRESS_2"
-    bcli generatetoaddress 1 "$BRIDGE_ADDRESS_3"
+    # bcli generatetoaddress 1 "$BRIDGE_ADDRESS_1"
+    # bcli generatetoaddress 1 "$BRIDGE_ADDRESS_2"
+    # bcli generatetoaddress 1 "$BRIDGE_ADDRESS_3"
     sleep "$GENERATE_BLOCKS"
 done
 else

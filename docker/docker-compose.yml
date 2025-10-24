@@ -107,9 +107,9 @@ services:
       - ./configs/params.json:/app/params.json
       - ./.data/prover-client:/app/.data
       - ./prover-client/elfs:/app/elfs
+      - ./prover-client/prover-client.toml:/app/prover-client.toml
     env_file:
       - prover-client/prover-client.env
-
     command: [
       "--rollup-params", "params.json",
       "--datadir", ".data",
