@@ -8,6 +8,4 @@ workspace = true
 
 [dependencies]
 bitcoin.workspace = true
-borsh.workspace = true
 strata-asm-common.workspace = true
-strata-mmr.workspace = true

@@ -7,8 +7,8 @@
 //! envelope layout so we can reuse existing verification logic while moving toward SPS-62.
 
 use strata_asm_common::{
-    logging, AnchorState, AsmError, AsmLogEntry, AuxResolver, MsgRelayer, Subprotocol,
-    SubprotocolId, TxInputRef,
+    logging, AnchorState, AsmError, AsmLogEntry, AuxInput, MsgRelayer, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
 use strata_asm_logs::CheckpointUpdate;
 use strata_asm_proto_bridge_v1::{BridgeIncomingMsg, WithdrawOutput};
@@ -74,7 +74,7 @@ impl Subprotocol for CheckpointV0Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_resolver: &dyn AuxResolver,
+        _aux_resolver: &AuxInput,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

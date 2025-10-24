@@ -4,8 +4,7 @@
 // TODO rename this module to `transition`
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, HistoryMmr, HistoryMmrState,
-    compute_log_leaf,
+    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, HistoryMmr, compute_log_leaf,
 };
 
 use crate::{
@@ -83,14 +82,14 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // Export the updated state sections and logs from all subprotocols to build the result.
     let (sections, logs) = manager.export_sections_and_logs();
 
-    let mut history_mmr = HistoryMmr::from_compact(pre_state.chain_view.history_mmr.as_compact());
+    let mut history_mmr = HistoryMmr::from_compact(&pre_state.chain_view.history_mmr);
     let block_hash = input.header.block_hash();
     let leaf = compute_log_leaf(&block_hash, &logs);
     history_mmr.add_leaf(leaf).map_err(AsmError::HeaderMmr)?;
 
     let chain_view = ChainViewState {
         pow_state,
-        history_mmr: HistoryMmrState::from_compact(history_mmr.to_compact()),
+        history_mmr: history_mmr.to_compact(),
     };
     let state = AnchorState {
         chain_view,

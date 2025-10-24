@@ -11,7 +11,7 @@ pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
     AnchorState, AsmError, SectionState, TxInputRef,
-    aux::{AuxInputCollector, AuxResolver},
+    aux::{AuxInput, AuxRequestCollector},
     log::AsmLogEntry,
     msg::InterprotoMsg,
 };
@@ -87,7 +87,7 @@ pub trait Subprotocol: 'static {
     ///
     /// During this phase, the subprotocol declares *external* data it will need before actual
     /// processing. Any required L1 headers, block-metadata, or other off-chain inputs should be
-    /// requested via the `AuxInputCollector`.
+    /// requested via the `AuxRequestCollector`.
     /// (e.g., Merkle proof for logs emitted in a previous block from "history_mmr" in AnchorState)
     ///
     /// This method is called before transaction processing to allow subprotocols to specify
@@ -103,7 +103,7 @@ pub trait Subprotocol: 'static {
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
-        _collector: &mut impl AuxInputCollector,
+        _collector: &mut impl AuxRequestCollector,
         _anchor_pre: &AnchorState,
         _params: &Self::Params,
     ) {
@@ -115,21 +115,21 @@ pub trait Subprotocol: 'static {
     ///
     /// This is the core transaction processing method where subprotocols implement their
     /// specific business logic. The method receives auxiliary inputs (requested
-    /// during `pre_process_txs`) via an [`AuxResolver`] and can generate messages to other
+    /// during `pre_process_txs`) via an [`AuxInput`] and can generate messages to other
     /// subprotocols and emit logs.
     ///
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
     /// * `anchor_pre` - The previous anchor state for validation context
-    /// * `aux_resolver` - Interface for retrieving auxiliary data previously requested
+    /// * `aux_input` - Interface for retrieving auxiliary data previously requested
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
     /// * `params` - Subprotocol's current params
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_resolver: &dyn AuxResolver,
+        aux_input: &AuxInput,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );
@@ -173,12 +173,12 @@ pub trait SubprotoHandler {
     /// Pre-processes a batch of L1 transactions by delegating to the inner
     /// subprotocol's `pre_process_txs` implementation.
     ///
-    /// Any required off-chain inputs should be registered via the provided `AuxInputCollector` for
-    /// the subsequent processing phase.
+    /// Any required off-chain inputs should be registered via the provided `AuxRequestCollector`
+    /// for the subsequent processing phase.
     fn pre_process_txs(
         &mut self,
         txs: &[TxInputRef<'_>],
-        collector: &mut dyn AuxInputCollector,
+        collector: &mut dyn AuxRequestCollector,
         anchor_state: &AnchorState,
     );
 
@@ -191,7 +191,7 @@ pub trait SubprotoHandler {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_state: &AnchorState,
-        aux_resolver: &dyn AuxResolver,
+        aux_input: &AuxInput,
     );
 
     /// Accepts a message.  This is called while processing other subprotocols.

@@ -7,27 +7,6 @@ pub type HistoryMmrHash = [u8; 32];
 pub type HistoryMmr = MerkleMr64<Sha256Hasher>;
 pub type HistoryMmrCompact = CompactMmr<HistoryMmrHash>;
 
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-pub struct HistoryMmrState(HistoryMmrCompact);
-
-impl HistoryMmrState {
-    pub fn new_empty(cap_log2: usize) -> Self {
-        Self(HistoryMmr::new(cap_log2).to_compact())
-    }
-
-    pub fn from_compact(compact: HistoryMmrCompact) -> Self {
-        Self(compact)
-    }
-
-    pub fn as_compact(&self) -> &HistoryMmrCompact {
-        &self.0
-    }
-
-    pub fn to_compact(&self) -> HistoryMmrCompact {
-        self.0.clone()
-    }
-}
-
 use crate::{AsmError, Mismatched, Subprotocol, SubprotocolId};
 
 /// Anchor state for the Anchor State Machine (ASM), the core of the Strata protocol.
@@ -63,7 +42,7 @@ pub struct ChainViewState {
     /// accumulated work, and difficulty adjustments.
     pub pow_state: HeaderVerificationState,
     /// Compact Merkle Mountain Range committing to per-block ASM logs.
-    pub history_mmr: HistoryMmrState,
+    pub history_mmr: HistoryMmrCompact,
 }
 
 impl ChainViewState {
@@ -71,12 +50,12 @@ impl ChainViewState {
     pub const HEADER_MMR_CAP_LOG2: usize = 64;
 
     /// Creates an empty compact MMR ready to accept the first block leaf.
-    pub fn empty_history_mmr() -> HistoryMmrState {
-        HistoryMmrState::new_empty(Self::HEADER_MMR_CAP_LOG2)
+    pub fn empty_history_mmr() -> HistoryMmrCompact {
+        HistoryMmr::new(Self::HEADER_MMR_CAP_LOG2).to_compact()
     }
 
     /// Constructs a new `ChainViewState` from the supplied PoW verification state and history MMR.
-    pub fn new(pow_state: HeaderVerificationState, history_mmr: HistoryMmrState) -> Self {
+    pub fn new(pow_state: HeaderVerificationState, history_mmr: HistoryMmrCompact) -> Self {
         Self {
             pow_state,
             history_mmr,
