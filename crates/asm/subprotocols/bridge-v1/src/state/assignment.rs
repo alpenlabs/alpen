@@ -305,7 +305,7 @@ impl AssignmentEntry {
 /// - Creating new assignments with optimized insertion
 /// - Looking up assignments by deposit index
 /// - Filtering assignments by operator or expiration status
-/// - Removing completed or expired assignments
+/// - Removing completed assignments
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct AssignmentTable {
     /// Vector of assignment entries, sorted by deposit index.
