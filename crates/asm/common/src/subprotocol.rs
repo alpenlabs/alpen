@@ -9,10 +9,10 @@ use std::any::Any;
 use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
+#[cfg(feature = "preprocess")]
+use crate::aux::AuxRequestCollector;
 use crate::{
-    AnchorState, AsmError, SectionState, TxInputRef,
-    aux::{AuxInput, AuxRequestCollector},
-    log::AsmLogEntry,
+    AnchorState, AsmError, SectionState, TxInputRef, aux::AuxInput, log::AsmLogEntry,
     msg::InterprotoMsg,
 };
 
@@ -100,6 +100,7 @@ pub trait Subprotocol: 'static {
     /// * `collector` - Interface for registering auxiliary input requirements
     /// * `anchor_pre` - The previous anchor state for context
     /// * `params` - Subprotocol's current params
+    #[cfg(feature = "preprocess")]
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
@@ -175,6 +176,7 @@ pub trait SubprotoHandler {
     ///
     /// Any required off-chain inputs should be registered via the provided `AuxRequestCollector`
     /// for the subsequent processing phase.
+    #[cfg(feature = "preprocess")]
     fn pre_process_txs(
         &mut self,
         txs: &[TxInputRef<'_>],

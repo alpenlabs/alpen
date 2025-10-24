@@ -3,13 +3,16 @@
 
 use std::collections::BTreeMap;
 
-use strata_asm_aux::{AuxRequestTable, verify_aux_input};
+#[cfg(feature = "preprocess")]
+use strata_asm_aux::AuxRequestTable;
+use strata_asm_aux::verify_aux_input;
 use strata_asm_common::{
     AnchorState, AuxDataTable, AuxInput, Stage, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
 
+#[cfg(feature = "preprocess")]
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct PreProcessStage<'c> {
     manager: &'c mut SubprotoManager,
@@ -20,6 +23,7 @@ pub(crate) struct PreProcessStage<'c> {
     aux_requests: &'c mut AuxRequestTable,
 }
 
+#[cfg(feature = "preprocess")]
 impl<'c> PreProcessStage<'c> {
     pub(crate) fn new(
         manager: &'c mut SubprotoManager,
@@ -36,6 +40,7 @@ impl<'c> PreProcessStage<'c> {
     }
 }
 
+#[cfg(feature = "preprocess")]
 impl Stage for PreProcessStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
         let txs = self

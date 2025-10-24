@@ -22,4 +22,6 @@ thiserror.workspace = true
 zkaleido.workspace = true
 
 [features]
+default = ["preprocess"]
+preprocess = ["strata-asm-common/preprocess"]
 debug-utils = []

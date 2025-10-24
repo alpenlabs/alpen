@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::block::Header;
+#[cfg(feature = "preprocess")]
 use strata_asm_aux::AuxRequestTable;
 use strata_asm_common::{AnchorState, AsmLogEntry, AuxDataTable, TxInputRef};
 use strata_l1_txfmt::SubprotocolId;
@@ -14,6 +15,7 @@ pub struct AsmStfInput<'i> {
 }
 
 /// Output of ASM input preprocessing.
+#[cfg(feature = "preprocess")]
 #[derive(Debug)]
 pub struct AsmPreProcessOutput<'i> {
     pub txs: Vec<TxInputRef<'i>>,
