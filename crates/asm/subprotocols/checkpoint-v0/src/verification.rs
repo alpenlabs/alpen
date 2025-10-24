@@ -11,8 +11,6 @@ use strata_asm_common::logging;
 use strata_checkpoint_types::{
     verify_signed_checkpoint_sig, BatchTransition, Checkpoint, SignedCheckpoint,
 };
-use strata_crypto::groth16_verifier::verify_rollup_groth16_proof_receipt;
-use strata_primitives::proof::RollupVerifyingKey;
 
 use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
 
@@ -86,27 +84,10 @@ fn verify_checkpoint_proof(
         return Err(CheckpointV0Error::InvalidCheckpointProof);
     }
 
-    let is_empty_proof = proof_receipt.proof().is_empty();
-    let allow_empty = matches!(
-        state.rollup_verifying_key,
-        RollupVerifyingKey::NativeVerifyingKey
-    );
-
-    if is_empty_proof {
-        if allow_empty {
-            logging::warn!(
-                epoch = checkpoint.batch_info().epoch(),
-                "Accepting empty checkpoint proof"
-            );
-            return Ok(());
-        }
-
-        return Err(CheckpointV0Error::InvalidCheckpointProof);
-    }
-
-    if let Err(err) =
-        verify_rollup_groth16_proof_receipt(&proof_receipt, &state.rollup_verifying_key)
-    {
+    if let Err(err) = state.predicate.verify_claim_witness(
+        proof_receipt.public_values().as_bytes(),
+        proof_receipt.proof().as_bytes(),
+    ) {
         logging::warn!("Groth16 verification failed: {err:?}");
         return Err(CheckpointV0Error::InvalidCheckpointProof);
     }

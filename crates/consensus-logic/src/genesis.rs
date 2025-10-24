@@ -7,11 +7,11 @@ use strata_ol_chain_types::{
     L2Header, SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::{Chainstate, GenesisStateData, L1ViewState, WriteBatch};
+use strata_params::{OperatorConfig, Params};
 use strata_primitives::{
     buf::{Buf32, Buf64},
     constants::TIMESTAMPS_FOR_MEDIAN,
     evm_exec::create_evm_extra_payload,
-    params::{OperatorConfig, Params},
 };
 use strata_state::{
     exec_env::ExecEnvState,

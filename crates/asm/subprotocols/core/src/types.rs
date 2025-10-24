@@ -5,12 +5,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::L2ToL1Msg;
 use strata_checkpoint_types::{Checkpoint, EpochSummary};
+use strata_predicate::PredicateKey;
 use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
-    proof::RollupVerifyingKey,
 };
-use zkaleido::VerifyingKey;
 
 use crate::error::*;
 
@@ -19,7 +18,7 @@ use crate::error::*;
 pub struct CoreOLState {
     /// The rollup verifying key used to verify each new checkpoint proof
     /// that has been posted on Bitcoin.
-    pub checkpoint_vk: VerifyingKey,
+    pub checkpoint_predicate: PredicateKey,
 
     /// Summary of the last checkpoint that was successfully verified.
     /// New proofs are checked against this epoch summary.
@@ -34,15 +33,14 @@ pub struct CoreOLState {
 
 impl CoreOLState {
     /// Get the rollup verifying key by deserializing from stored bytes
-    pub fn checkpoint_vk(&self) -> Result<RollupVerifyingKey> {
-        serde_json::from_slice(self.checkpoint_vk.as_bytes())
-            .map_err(|e| CoreError::InvalidVerifyingKeyFormat(e.to_string()))
+    pub fn checkpoint_predicate(&self) -> &PredicateKey {
+        &self.checkpoint_predicate
     }
 
     /// Set the rollup verifying key by serializing to bytes
-    pub fn set_checkpoint_vk(&mut self, vk: &VerifyingKey) -> Result<()> {
+    pub fn set_checkpoint_predicate(&mut self, predicate: PredicateKey) -> Result<()> {
         // TODO: Add validation for the verifying key
-        self.checkpoint_vk = vk.clone();
+        self.checkpoint_predicate = predicate;
         Ok(())
     }
 }
@@ -70,10 +68,10 @@ pub(crate) fn apply_checkpoint_to_state(
 /// This configuration contains only the essential data that is known at genesis time.
 /// Other fields like the initial EpochSummary are constructed during initialization
 /// since most of their values are either zero or unknowable until genesis processing.
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Default)]
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct CoreGenesisConfig {
     /// The initial checkpoint verifying key for zk-SNARK proof verification
-    pub checkpoint_vk: VerifyingKey,
+    pub checkpoint_predicate: PredicateKey,
 
     /// The L1 block commitment where ASM genesis occurs
     /// This includes both the block ID and height, providing complete L1 block information
@@ -86,12 +84,12 @@ pub struct CoreGenesisConfig {
 impl CoreGenesisConfig {
     /// Create a new genesis config with the given rollup verifying key
     pub fn new(
-        checkpoint_vk: VerifyingKey,
+        checkpoint_predicate: PredicateKey,
         genesis_l1_block: L1BlockCommitment,
         sequencer_pubkey: Buf32,
     ) -> Result<Self> {
         Ok(Self {
-            checkpoint_vk,
+            checkpoint_predicate,
             genesis_l1_block,
             sequencer_pubkey,
         })

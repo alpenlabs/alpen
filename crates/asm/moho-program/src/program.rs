@@ -3,8 +3,8 @@ use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, compute_asm_transition, group_txs_by_subprotocol};
+use strata_predicate::PredicateKey;
 use strata_primitives::hash::compute_borsh_hash;
-use zkaleido::VerifyingKey;
 
 use crate::{input::AsmStepInput, traits::MohoProgram};
 
@@ -56,12 +56,12 @@ impl MohoProgram for AsmStfProgram {
         &output.state
     }
 
-    fn extract_next_vk(output: &Self::StepOutput) -> Option<VerifyingKey> {
+    fn extract_next_predicate(output: &Self::StepOutput) -> Option<PredicateKey> {
         // Iterate through each AsmLog; if we find an AsmStfUpdate, grab its vk and return it.
         output.logs.iter().find_map(|log| {
             log.try_into_log::<AsmStfUpdate>()
                 .ok()
-                .map(|update| update.new_vk.clone())
+                .map(|update| update.new_predicate.clone())
         })
     }
 

@@ -115,12 +115,41 @@ impl L1WriterDatabase for L1WriterDBSled {
     }
 
     fn del_intent_entry(&self, id: Buf32) -> DbResult<bool> {
-        let old_item = self.intent_tree.get(&id)?;
-        let exists = old_item.is_some();
-        if exists {
-            self.intent_tree.compare_and_swap(id, old_item, None)?;
+        let exists = self.intent_tree.contains_key(&id)?;
+        if !exists {
+            return Ok(false);
         }
-        Ok(exists)
+
+        // Get the last index to know the range to scan
+        let last_idx = self.intent_idx_tree.last()?.map(first);
+
+        // Delete both the intent entry and its index mapping
+        self.config
+            .with_retry((&self.intent_idx_tree, &self.intent_tree), |(iit, it)| {
+                // Find ALL index entries pointing to this ID by scanning IntentIdxSchema
+                // Note: IDs are not unique, multiple indices can point to the same ID
+                let mut indices_to_delete = Vec::new();
+                if let Some(last_idx) = last_idx {
+                    for idx in 0..=last_idx {
+                        if let Some(intent_id) = iit.get(&idx)?
+                            && intent_id == id
+                        {
+                            indices_to_delete.push(idx);
+                        }
+                    }
+                }
+
+                // Delete all index mappings found
+                for idx in indices_to_delete {
+                    iit.remove(&idx)?;
+                }
+
+                // Delete the intent entry
+                it.remove(&id)?;
+                Ok(())
+            })?;
+
+        Ok(true)
     }
 
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>> {

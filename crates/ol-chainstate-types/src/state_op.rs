@@ -9,13 +9,13 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
 use strata_bridge_types::{
     DepositEntry, DepositIntent, DepositState, DispatchCommand, DispatchedState, FulfilledState,
+    OperatorIdx, OperatorPubkeys,
 };
 use strata_primitives::{
     buf::Buf32,
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, BitcoinBlockHeight, OutputRef},
+    l1::{BitcoinAmount, BitcoinBlockHeight, BitcoinOutPoint},
     l2::{L2BlockCommitment, L2BlockId},
-    operator::{OperatorIdx, OperatorPubkeys},
 };
 use tracing::warn;
 
@@ -209,7 +209,7 @@ impl StateCache {
     pub fn insert_deposit_entry(
         &mut self,
         idx: u32,
-        tx_ref: OutputRef,
+        tx_ref: BitcoinOutPoint,
         amt: BitcoinAmount,
         operators: Vec<OperatorIdx>,
     ) -> bool {

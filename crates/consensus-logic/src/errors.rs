@@ -1,12 +1,12 @@
 use strata_chaintsn::errors::TsnError;
 use strata_eectl::errors::EngineError;
 use strata_ol_chain_types::L2BlockId;
+use strata_predicate::PredicateError;
 use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
     prelude::*,
 };
 use thiserror::Error;
-use zkaleido::ZkVmError;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -112,6 +112,12 @@ pub enum CheckpointError {
     #[error("signature is invalid")]
     InvalidSignature,
 
+    #[error("transition is malformed")]
+    MalformedTransition,
+
+    #[error("transition doesn't match the expected")]
+    TransitionMismatch,
+
     #[error("proof validation: {0}")]
-    Proof(#[from] ZkVmError),
+    Proof(#[from] PredicateError),
 }

@@ -39,25 +39,6 @@ class OperatorConfig(BaseModel):
         return [operator.wallet_pk for operator in self.static]
 
 
-class SP1Groth16Verifier(BaseModel):
-    model_config = {"extra": "allow"}  # Allow any additional fields
-
-
-class Risc0Groth16Verifier(BaseModel):
-    model_config = {"extra": "allow"}  # Allow any additional fields
-
-
-class Sp1RollupVk(BaseModel):
-    sp1: SP1Groth16Verifier
-
-
-class Risc0RollupVk(BaseModel):
-    risc0: Risc0Groth16Verifier
-
-
-RollupVk = Sp1RollupVk | Risc0RollupVk | Literal["native"]
-
-
 class ProofPublishModeTimeout(BaseModel):
     timeout: int
 
@@ -82,7 +63,7 @@ class RollupConfig(BaseModel):
     target_l2_batch_size: int
     max_address_length: int
     deposit_amount: int
-    rollup_vk: RollupVk
+    checkpoint_predicate: str
     dispatch_assignment_dur: int
     proof_publish_mode: ProofPublishMode
     max_deposits_in_block: int

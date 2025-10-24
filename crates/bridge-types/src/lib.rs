@@ -12,7 +12,7 @@ mod relay;
 
 // Re-export commonly used types
 pub use bridge::{
-    Musig2PartialSig, Musig2PubNonce, Musig2SecNonce, OperatorPartialSig, PublickeyTable,
+    Musig2PartialSignature, Musig2PubNonce, Musig2SecNonce, OperatorPartialSig, PublickeyTable,
     TxSigningData,
 };
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};
@@ -21,7 +21,7 @@ pub use bridge_state::{
     FulfilledState, OperatorEntry, OperatorTable, WithdrawOutput,
 };
 pub use constants::WITHDRAWAL_DENOMINATION;
-pub use operator::{OperatorKeyProvider, StubOpKeyProv};
+pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
 pub use relay::{
     verify_bridge_msg_sig, BridgeMessage, BridgeMsgId, MessageSigner, Scope, VerifyError,
 };

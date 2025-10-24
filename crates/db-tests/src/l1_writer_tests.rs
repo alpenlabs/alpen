@@ -193,15 +193,29 @@ pub fn test_del_intent_entry_single(db: &impl L1WriterDatabase) {
     // Verify it exists
     assert!(db.get_intent_by_id(intent_id).expect("test: get").is_some());
 
+    // Verify it exists by index (should be at index 0)
+    assert!(
+        db.get_intent_by_idx(0).expect("test: get by idx").is_some(),
+        "Intent should exist at index 0"
+    );
+
     // Delete it
     let deleted = db.del_intent_entry(intent_id).expect("test: delete");
     assert!(deleted, "Should return true when deleting existing intent");
 
-    // Verify it's gone
+    // Verify it's gone by ID
     assert!(db
         .get_intent_by_id(intent_id)
         .expect("test: get after delete")
         .is_none());
+
+    // Verify the index mapping is also deleted
+    assert!(
+        db.get_intent_by_idx(0)
+            .expect("test: get by idx after delete")
+            .is_none(),
+        "Intent index should also be deleted"
+    );
 
     // Delete again should return false
     let deleted_again = db.del_intent_entry(intent_id).expect("test: delete again");
@@ -282,6 +296,90 @@ pub fn test_del_intent_entries_empty_database(db: &impl L1WriterDatabase) {
     );
 }
 
+pub fn test_del_intent_entry_with_multiple_intents(db: &impl L1WriterDatabase) {
+    // This test simulates the checkpoint deletion scenario where we delete
+    // a specific intent by ID while other intents exist at different indices
+
+    let intent1: IntentEntry = ArbitraryGenerator::new().generate();
+    let intent2: IntentEntry = ArbitraryGenerator::new().generate();
+    let intent3: IntentEntry = ArbitraryGenerator::new().generate();
+
+    let intent_id1: Buf32 = [1; 32].into();
+    let intent_id2: Buf32 = [2; 32].into();
+    let intent_id3: Buf32 = [3; 32].into();
+
+    // Insert three intents (they will be at indices 0, 1, 2)
+    db.put_intent_entry(intent_id1, intent1.clone())
+        .expect("test: insert 1");
+    db.put_intent_entry(intent_id2, intent2.clone())
+        .expect("test: insert 2");
+    db.put_intent_entry(intent_id3, intent3.clone())
+        .expect("test: insert 3");
+
+    // Verify all exist by ID
+    assert!(db
+        .get_intent_by_id(intent_id1)
+        .expect("test: get 1")
+        .is_some());
+    assert!(db
+        .get_intent_by_id(intent_id2)
+        .expect("test: get 2")
+        .is_some());
+    assert!(db
+        .get_intent_by_id(intent_id3)
+        .expect("test: get 3")
+        .is_some());
+
+    // Verify all exist by index
+    assert!(db.get_intent_by_idx(0).expect("test: get idx 0").is_some());
+    assert!(db.get_intent_by_idx(1).expect("test: get idx 1").is_some());
+    assert!(db.get_intent_by_idx(2).expect("test: get idx 2").is_some());
+
+    // Delete the middle intent by ID (simulating checkpoint deletion)
+    let deleted = db
+        .del_intent_entry(intent_id2)
+        .expect("test: delete middle");
+    assert!(deleted, "Should return true when deleting existing intent");
+
+    // Verify the deleted intent is gone by ID
+    assert!(db
+        .get_intent_by_id(intent_id2)
+        .expect("test: get deleted by id")
+        .is_none());
+
+    // Verify the deleted intent's index mapping is also gone
+    assert!(
+        db.get_intent_by_idx(1)
+            .expect("test: get deleted by idx")
+            .is_none(),
+        "Deleted intent's index should also be removed"
+    );
+
+    // Verify the other intents still exist by ID
+    assert!(db
+        .get_intent_by_id(intent_id1)
+        .expect("test: get remaining 1")
+        .is_some());
+    assert!(db
+        .get_intent_by_id(intent_id3)
+        .expect("test: get remaining 3")
+        .is_some());
+
+    // Verify the other intents still exist by index
+    assert!(db
+        .get_intent_by_idx(0)
+        .expect("test: get remaining idx 0")
+        .is_some());
+    assert!(db
+        .get_intent_by_idx(2)
+        .expect("test: get remaining idx 2")
+        .is_some());
+
+    // Verify get_next_intent_idx still returns the correct next index
+    let next_idx = db.get_next_intent_idx().expect("test: get next idx");
+    assert_eq!(next_idx, 3, "Next index should be 3");
+}
+
 #[macro_export]
 macro_rules! l1_writer_db_tests {
     ($setup_expr:expr) => {
@@ -355,6 +453,12 @@ macro_rules! l1_writer_db_tests {
         fn test_del_intent_entries_empty_database() {
             let db = $setup_expr;
             $crate::l1_writer_tests::test_del_intent_entries_empty_database(&db);
+        }
+
+        #[test]
+        fn test_del_intent_entry_with_multiple_intents() {
+            let db = $setup_expr;
+            $crate::l1_writer_tests::test_del_intent_entry_with_multiple_intents(&db);
         }
     };
 }

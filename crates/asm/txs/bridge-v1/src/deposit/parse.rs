@@ -3,7 +3,7 @@ use bitcoin::{OutPoint, taproot::TAPROOT_CONTROL_NODE_SIZE};
 use strata_asm_common::TxInputRef;
 use strata_primitives::{
     buf::Buf32,
-    l1::{BitcoinAmount, OutputRef},
+    l1::{BitcoinAmount, BitcoinOutPoint},
 };
 
 use crate::{
@@ -32,7 +32,7 @@ pub struct DepositInfo {
     pub address: Vec<u8>,
 
     /// The outpoint of the deposit transaction.
-    pub outpoint: OutputRef,
+    pub outpoint: BitcoinOutPoint,
 
     /// The merkle root of the Script Tree from the Deposit Request Transaction (DRT) being spent.
     ///
@@ -103,7 +103,7 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
         .ok_or(DepositTxParseError::MissingDepositOutput)?;
 
     // Create outpoint reference for the deposit output
-    let deposit_outpoint = OutputRef::from(OutPoint {
+    let deposit_outpoint = BitcoinOutPoint::from(OutPoint {
         txid: tx_input.tx().compute_txid(),
         vout: DEPOSIT_OUTPUT_INDEX as u32,
     });
@@ -129,7 +129,7 @@ mod tests {
     use strata_l1_txfmt::ParseConfig;
     use strata_primitives::{
         buf::Buf32,
-        l1::{OutputRef, XOnlyPk},
+        l1::{BitcoinOutPoint, BitcoinXOnlyPublicKey},
     };
     use strata_test_utils::ArbitraryGenerator;
 
@@ -143,13 +143,13 @@ mod tests {
     };
 
     // Helper function to create a test operator keypair
-    fn create_test_operator_keypair() -> (XOnlyPk, EvenSecretKey) {
+    fn create_test_operator_keypair() -> (BitcoinXOnlyPublicKey, EvenSecretKey) {
         let secp = Secp256k1::new();
         let secret_key = EvenSecretKey::from(SecretKey::from_slice(&[1u8; 32]).unwrap());
         let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
         let (xonly_pk, _) = keypair.x_only_public_key();
         let operators_pubkey =
-            XOnlyPk::new(Buf32::new(xonly_pk.serialize())).expect("Valid public key");
+            BitcoinXOnlyPublicKey::new(Buf32::new(xonly_pk.serialize())).expect("Valid public key");
         (operators_pubkey, secret_key)
     }
 
@@ -184,7 +184,7 @@ mod tests {
         );
 
         // The outpoint should be from the created transaction with vout = 1 (DEPOSIT_OUTPUT_INDEX)
-        let expected_outpoint = OutputRef::from(OutPoint {
+        let expected_outpoint = BitcoinOutPoint::from(OutPoint {
             txid: tx.compute_txid(),
             vout: DEPOSIT_OUTPUT_INDEX as u32,
         });

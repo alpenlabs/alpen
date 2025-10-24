@@ -4,11 +4,11 @@ use bitcoin::block::Header;
 use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
 use strata_bridge_types::{
     DepositEntry, DepositIntent, DepositState, DispatchCommand, DispatchedState, FulfilledState,
+    OperatorIdx, OperatorPubkeys,
 };
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{
     l1::{BitcoinBlockHeight, *},
-    operator::{OperatorIdx, OperatorPubkeys},
     prelude::*,
 };
 
@@ -90,7 +90,7 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
     pub fn insert_deposit_entry(
         &mut self,
         idx: u32,
-        tx_ref: OutputRef,
+        tx_ref: BitcoinOutPoint,
         amt: BitcoinAmount,
         operators: Vec<OperatorIdx>,
     ) -> bool {

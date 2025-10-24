@@ -1,5 +1,5 @@
 use std::{
-    fmt::{self, Debug, Display},
+    fmt::{Debug, Display},
     io::{self, Read, Write},
     str,
 };
@@ -19,7 +19,6 @@ use bitcoin::{
 };
 use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
-use hex::encode_to_slice;
 use rand::rngs::OsRng;
 use secp256k1::SECP256K1;
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -31,15 +30,15 @@ const HASH_SIZE: usize = 32;
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct OutputRef(pub OutPoint);
+pub struct BitcoinOutPoint(pub OutPoint);
 
-impl From<OutPoint> for OutputRef {
+impl From<OutPoint> for BitcoinOutPoint {
     fn from(value: OutPoint) -> Self {
         Self(value)
     }
 }
 
-impl OutputRef {
+impl BitcoinOutPoint {
     pub fn new(txid: Txid, vout: u32) -> Self {
         Self(OutPoint::new(txid, vout))
     }
@@ -49,8 +48,8 @@ impl OutputRef {
     }
 }
 
-// Implement BorshSerialize for the OutputRef wrapper.
-impl BorshSerialize for OutputRef {
+// Implement BorshSerialize for the BitcoinOutPoint wrapper.
+impl BorshSerialize for BitcoinOutPoint {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
         // Serialize the transaction ID as bytes
         writer.write_all(&self.0.txid[..])?;
@@ -61,8 +60,8 @@ impl BorshSerialize for OutputRef {
     }
 }
 
-// Implement BorshDeserialize for the OutputRef wrapper.
-impl BorshDeserialize for OutputRef {
+// Implement BorshDeserialize for the BitcoinOutPoint wrapper.
+impl BorshDeserialize for BitcoinOutPoint {
     fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
         // Read 32 bytes for the transaction ID
         let mut txid_bytes = [0u8; HASH_SIZE];
@@ -74,12 +73,12 @@ impl BorshDeserialize for OutputRef {
         reader.read_exact(&mut vout_bytes)?;
         let vout = u32::from_le_bytes(vout_bytes);
 
-        Ok(OutputRef(OutPoint { txid, vout }))
+        Ok(BitcoinOutPoint(OutPoint { txid, vout }))
     }
 }
 
 // Implement Arbitrary for the wrapper
-impl<'a> Arbitrary<'a> for OutputRef {
+impl<'a> Arbitrary<'a> for BitcoinOutPoint {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         // Generate a random 32-byte array for the transaction ID (txid)
         let mut txid_bytes = [0u8; HASH_SIZE];
@@ -91,7 +90,7 @@ impl<'a> Arbitrary<'a> for OutputRef {
         // Generate a random 4-byte integer for the output index (vout)
         let vout = u.int_in_range(0..=u32::MAX)?;
 
-        Ok(OutputRef(OutPoint { txid, vout }))
+        Ok(BitcoinOutPoint(OutPoint { txid, vout }))
     }
 }
 /// A wrapper around the [`bitcoin::Address<NetworkChecked>`] type.
@@ -242,7 +241,9 @@ impl BorshDeserialize for BitcoinAddress {
     Deserialize,
     Eq,
     Hash,
+    Ord,
     PartialEq,
+    PartialOrd,
     Serialize,
 )]
 pub struct BitcoinAmount(u64);
@@ -262,6 +263,32 @@ impl From<Amount> for BitcoinAmount {
 impl From<BitcoinAmount> for Amount {
     fn from(value: BitcoinAmount) -> Self {
         Self::from_sat(value.to_sat())
+    }
+}
+
+impl From<u64> for BitcoinAmount {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<BitcoinAmount> for u64 {
+    fn from(value: BitcoinAmount) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for BitcoinAmount {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for BitcoinAmount {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -336,6 +363,24 @@ impl BitcoinAmount {
     /// Saturating addition. Computes `self + rhs`, saturating at the numeric bounds.
     pub fn saturating_add(self, rhs: Self) -> Self {
         Self::from_sat(self.to_sat().saturating_add(rhs.to_sat()))
+    }
+
+    /// Returns a zero amount.
+    pub const fn zero() -> Self {
+        Self::ZERO
+    }
+
+    /// Returns true if the amount is zero.
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
+    /// Sums an iterator of [`BitcoinAmount`] values.
+    pub fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::ZERO, |acc, amt| {
+            acc.checked_add(amt)
+                .expect("BitcoinAmount overflow during sum")
+        })
     }
 }
 
@@ -724,58 +769,14 @@ impl<'a> Arbitrary<'a> for TaprootSpendPath {
     }
 }
 
-/// Outpoint of a bitcoin tx
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, BorshSerialize, BorshDeserialize)]
-pub struct Outpoint {
-    pub txid: Buf32,
-    pub vout: u32,
-}
-
-// Custom debug implementation to print txid in little endian
-impl Debug for Outpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut txid_buf = [0u8; 64];
-        {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
-        }
-
-        f.debug_struct("Outpoint")
-            .field("txid", &unsafe { std::str::from_utf8_unchecked(&txid_buf) })
-            .field("vout", &self.vout)
-            .finish()
-    }
-}
-
-// Custom display implementation to print txid in little endian
-impl Display for Outpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut txid_buf = [0u8; 64];
-        {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
-        }
-
-        write!(
-            f,
-            "Outpoint {{ txid: {}, vout: {} }}",
-            // SAFETY: hex encoding always produces valid UTF-8
-            unsafe { str::from_utf8_unchecked(&txid_buf) },
-            self.vout
-        )
-    }
-}
-
 /// A wrapper around [`Buf32`] for XOnly Schnorr taproot pubkeys.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
 )]
-pub struct XOnlyPk(Buf32);
+pub struct BitcoinXOnlyPublicKey(Buf32);
 
-impl XOnlyPk {
-    /// Construct a new [`XOnlyPk`] directly from a [`Buf32`].
+impl BitcoinXOnlyPublicKey {
+    /// Construct a new [`BitcoinXOnlyPublicKey`] directly from a [`Buf32`].
     pub fn new(val: Buf32) -> Result<Self, ParseError> {
         if Self::is_valid_xonly_public_key(&val) {
             Ok(Self(val))
@@ -789,7 +790,7 @@ impl XOnlyPk {
         &self.0
     }
 
-    /// Convert a [`BitcoinAddress`] into a [`XOnlyPk`].
+    /// Convert a [`BitcoinAddress`] into a [`BitcoinXOnlyPublicKey`].
     pub fn from_address(checked_addr: &BitcoinAddress) -> Result<Self, ParseError> {
         let checked_addr = checked_addr.address();
 
@@ -806,12 +807,12 @@ impl XOnlyPk {
         }
     }
 
-    /// Convert the [`XOnlyPk`] to a `rust-bitcoin`'s [`XOnlyPublicKey`].
+    /// Convert the [`BitcoinXOnlyPublicKey`] to a `rust-bitcoin`'s [`XOnlyPublicKey`].
     pub fn to_xonly_public_key(&self) -> XOnlyPublicKey {
-        XOnlyPublicKey::from_slice(self.0.as_bytes()).expect("XOnlyPk is valid")
+        XOnlyPublicKey::from_slice(self.0.as_bytes()).expect("BitcoinXOnlyPublicKey is valid")
     }
 
-    /// Convert the [`XOnlyPk`] to an [`Address`].
+    /// Convert the [`BitcoinXOnlyPublicKey`] to an [`Address`].
     pub fn to_p2tr_address(&self, network: Network) -> Result<Address, ParseError> {
         let buf: [u8; 32] = self.0.0;
         let pubkey = XOnlyPublicKey::from_slice(&buf)?;
@@ -822,7 +823,7 @@ impl XOnlyPk {
         ))
     }
 
-    /// Converts [`XOnlyPk`] to [`Descriptor`].
+    /// Converts [`BitcoinXOnlyPublicKey`] to [`Descriptor`].
     pub fn to_descriptor(&self) -> Result<Descriptor, ParseError> {
         Descriptor::new_p2tr(&self.to_xonly_public_key().serialize())
             .map_err(|_| ParseError::InvalidPoint(self.0))
@@ -834,16 +835,16 @@ impl XOnlyPk {
     }
 }
 
-impl From<XOnlyPublicKey> for XOnlyPk {
+impl From<XOnlyPublicKey> for BitcoinXOnlyPublicKey {
     fn from(value: XOnlyPublicKey) -> Self {
         Self(Buf32(value.serialize()))
     }
 }
 
-impl TryFrom<XOnlyPk> for Descriptor {
+impl TryFrom<BitcoinXOnlyPublicKey> for Descriptor {
     type Error = ParseError;
 
-    fn try_from(value: XOnlyPk) -> Result<Self, Self::Error> {
+    fn try_from(value: BitcoinXOnlyPublicKey) -> Result<Self, Self::Error> {
         value.to_descriptor()
     }
 }
@@ -1010,7 +1011,7 @@ mod tests {
 
     use super::{
         BitcoinAddress, BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
-        BorshDeserialize, BorshSerialize, RawBitcoinTx, XOnlyPk,
+        BitcoinXOnlyPublicKey, BorshDeserialize, BorshSerialize, RawBitcoinTx,
     };
     use crate::{BitcoinPsbt, ParseError, TaprootSpendPath};
 
@@ -1172,7 +1173,7 @@ mod tests {
         let network = Network::Bitcoin;
         let (address, _) = get_taproot_address(network);
 
-        let taproot_pubkey = XOnlyPk::from_address(&address);
+        let taproot_pubkey = BitcoinXOnlyPublicKey::from_address(&address);
 
         assert!(
             taproot_pubkey.is_ok(),
@@ -1190,7 +1191,7 @@ mod tests {
         let bitcoin_address = bitcoin_address.unwrap();
         let address_str = bitcoin_address.to_string();
 
-        let new_taproot_pubkey = XOnlyPk::from_address(
+        let new_taproot_pubkey = BitcoinXOnlyPublicKey::from_address(
             &BitcoinAddress::parse(&address_str, network).expect("should be a valid address"),
         );
 
@@ -1452,7 +1453,7 @@ mod tests {
 
     #[test]
     fn test_xonly_pk_to_descriptor() {
-        let xonly_pk = XOnlyPk::new(Buf32::from([2u8; 32])).unwrap();
+        let xonly_pk = BitcoinXOnlyPublicKey::new(Buf32::from([2u8; 32])).unwrap();
         let descriptor = xonly_pk.to_descriptor().unwrap();
         assert_eq!(descriptor.type_tag(), DescriptorType::P2tr);
 

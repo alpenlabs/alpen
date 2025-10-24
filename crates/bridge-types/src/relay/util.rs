@@ -5,13 +5,11 @@ use bitcoin::secp256k1::{
 };
 use borsh::BorshSerialize;
 use rand::rngs::OsRng;
-use strata_primitives::{
-    buf::{Buf32, Buf64},
-    operator::OperatorKeyProvider,
-};
+use strata_primitives::buf::{Buf32, Buf64};
 use thiserror::Error;
 
 use super::message::{BridgeMessage, Scope};
+use crate::OperatorKeyProvider;
 
 /// Contains data needed to construct [`BridgeMessage`]s.
 #[derive(Debug, Clone)]
@@ -129,11 +127,11 @@ pub fn verify_bridge_msg_sig(
 #[cfg(test)]
 mod tests {
     use rand::rngs::OsRng;
-    use strata_primitives::{buf::Buf32, l1::BitcoinTxid, operator::StubOpKeyProv};
+    use strata_primitives::{buf::Buf32, l1::BitcoinTxid};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::bridge::Musig2PubNonce;
+    use crate::{bridge::Musig2PubNonce, StubOpKeyProv};
 
     #[test]
     fn test_sign_verify_raw() {

@@ -76,7 +76,7 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
         seq.stop()
         # revert chainstate to target blkid
         self.info(f"Reverting chainstate to {revert_target_blkid}")
-        return_code, stdout, stderr = self.revert_chainstate(revert_target_blkid, "-d")
+        return_code, stdout, stderr = self.revert_chainstate(revert_target_blkid, "-f", "-d")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")

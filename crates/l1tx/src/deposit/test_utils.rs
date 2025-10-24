@@ -1,7 +1,5 @@
-use strata_primitives::{
-    l1::{BitcoinAmount, XOnlyPk},
-    params::DepositTxParams,
-};
+use strata_params::DepositTxParams;
+use strata_primitives::l1::{BitcoinAmount, BitcoinXOnlyPublicKey};
 use strata_test_utils_btc::test_taproot_addr;
 
 pub fn get_deposit_tx_config() -> DepositTxParams {
@@ -10,6 +8,6 @@ pub fn get_deposit_tx_config() -> DepositTxParams {
         max_address_length: 20,
         deposit_amount: BitcoinAmount::from_sat(1_000_000_000),
         address: test_taproot_addr(),
-        operators_pubkey: XOnlyPk::from_address(&test_taproot_addr()).unwrap(),
+        operators_pubkey: BitcoinXOnlyPublicKey::from_address(&test_taproot_addr()).unwrap(),
     }
 }

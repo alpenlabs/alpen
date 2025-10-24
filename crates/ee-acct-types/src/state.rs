@@ -55,11 +55,10 @@ impl EeAccountState {
 
     /// Adds to the tracked balance, panicking on overflow.
     pub fn add_tracked_balance(&mut self, amt: BitcoinAmount) {
-        let new_bal_raw = self
+        self.tracked_balance = self
             .tracked_balance
-            .checked_add(*amt)
+            .checked_add(amt)
             .expect("snarkacct: overflowing balance");
-        self.tracked_balance = BitcoinAmount::from(new_bal_raw);
     }
 
     pub fn pending_inputs(&self) -> &[PendingInputEntry] {

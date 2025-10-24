@@ -8,7 +8,7 @@ use sha2::Sha256;
 use strata_checkpoint_types::SignedCheckpoint;
 use strata_identifiers::Buf32;
 
-use crate::{BitcoinAmount, OutputRef};
+use crate::{BitcoinAmount, BitcoinOutPoint};
 
 /// Commits to a DA blob.  This is just the hash of the DA blob.
 #[derive(
@@ -96,7 +96,7 @@ pub struct DepositInfo {
     pub amt: BitcoinAmount,
 
     /// Output for deposit funds at rest.
-    pub outpoint: OutputRef,
+    pub outpoint: BitcoinOutPoint,
 
     /// Destination address payload.
     pub address: Vec<u8>,

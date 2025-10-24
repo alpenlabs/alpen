@@ -21,7 +21,7 @@ strata-zkvm-hosts.workspace = true
 # sp1
 sp1-sdk.workspace = true
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16", optional = true }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17", optional = true }
 
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }

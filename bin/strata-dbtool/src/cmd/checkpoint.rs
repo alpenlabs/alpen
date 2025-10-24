@@ -235,7 +235,7 @@ pub(crate) fn get_epoch_summary(
 
     if epoch_commitments.is_empty() {
         return Err(DisplayedError::UserError(
-            format!("No epoch summary found for epoch {epoch_idx}"),
+            "No epoch summary found for epoch".to_string(),
             Box::new(epoch_idx),
         ));
     }

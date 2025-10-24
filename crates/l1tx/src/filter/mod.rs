@@ -1,6 +1,6 @@
 use bitcoin::Transaction;
 use strata_asm_types::{DepositInfo, DepositSpendInfo};
-use strata_primitives::l1::OutputRef;
+use strata_primitives::l1::BitcoinOutPoint;
 
 pub mod checkpoint;
 pub mod indexer;
@@ -37,7 +37,7 @@ fn find_deposit_spends<'tx>(
     filter_conf: &'tx TxFilterConfig,
 ) -> impl Iterator<Item = DepositSpendInfo> + 'tx {
     tx.input.iter().filter_map(|txin| {
-        let prevout = OutputRef::new(txin.previous_output.txid, txin.previous_output.vout);
+        let prevout = BitcoinOutPoint::new(txin.previous_output.txid, txin.previous_output.vout);
         filter_conf
             .expected_outpoints
             .get(&prevout)

@@ -36,21 +36,19 @@ pub(crate) struct GetL2SummaryArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-/// Get the latest L2 block from the database.
-///
-/// This finds the highest slot block in the database.
-pub(crate) fn get_latest_l2_block_id(
+/// Get the [`L2BlockId`] of the chain tip from the database.
+pub(crate) fn get_chain_tip_block_id(
     db: &impl DatabaseBackend,
 ) -> Result<L2BlockId, DisplayedError> {
     db.l2_db()
         .get_tip_block()
-        .internal_error("Failed to get latest L2 block")
+        .internal_error("Failed to get chain tip block")
 }
 
-/// Get the earliest L2 block id from the database.
+/// Get the [`L2BlockId`] of the earliest L2 block from the database.
 pub(crate) fn get_earliest_l2_block_id(
     db: &impl DatabaseBackend,
-) -> Result<strata_primitives::l2::L2BlockId, DisplayedError> {
+) -> Result<L2BlockId, DisplayedError> {
     // Get blocks at slot 0
     let blocks_at_slot_0 = db
         .l2_db()
@@ -68,29 +66,34 @@ pub(crate) fn get_earliest_l2_block_id(
     Ok(blocks_at_slot_0[0])
 }
 
-/// Get the slot for a specific L2 block.
-pub(crate) fn get_l2_block_slot(
+/// Get slot and epoch for a specific L2 block.
+pub(crate) fn get_l2_block_slot_and_epoch(
     db: &impl DatabaseBackend,
     block_id: L2BlockId,
-) -> Result<Option<u64>, DisplayedError> {
+) -> Result<Option<(u64, u64)>, DisplayedError> {
     let Some(block_data) = get_l2_block_data(db, block_id)? else {
         return Ok(None);
     };
 
-    Ok(Some(block_data.block().header().slot()))
+    let header = block_data.block().header();
+    Ok(Some((header.slot(), header.epoch())))
 }
 
 /// Get the highest L2 block slot from the database.
 ///
 /// This gets the slot of the highest slot block in the database.
-pub(crate) fn get_highest_l2_slot(db: &impl DatabaseBackend) -> Result<u64, DisplayedError> {
-    let block_id = get_latest_l2_block_id(db)?;
-    get_l2_block_slot(db, block_id)?.ok_or_else(|| {
-        DisplayedError::InternalError(
+pub(crate) fn get_chain_tip_slot(db: &impl DatabaseBackend) -> Result<u64, DisplayedError> {
+    let block_id = get_chain_tip_block_id(db)?;
+
+    // Get block data once and extract slot directly (more efficient than full slot_and_epoch)
+    let Some(block_data) = get_l2_block_data(db, block_id)? else {
+        return Err(DisplayedError::InternalError(
             "L2 block data not found in database".to_string(),
             Box::new(block_id),
-        )
-    })
+        ));
+    };
+
+    Ok(block_data.block().header().slot())
 }
 
 /// Get L2 block data by block ID.
@@ -151,7 +154,7 @@ pub(crate) fn get_l2_summary(
     args: GetL2SummaryArgs,
 ) -> Result<(), DisplayedError> {
     // Get the tip block (highest slot)
-    let tip_block_id = get_latest_l2_block_id(db)?;
+    let tip_block_id = get_chain_tip_block_id(db)?;
     let tip_block_data = get_l2_block_data(db, tip_block_id)?.ok_or_else(|| {
         DisplayedError::InternalError(
             "L2 block data not found in database".to_string(),

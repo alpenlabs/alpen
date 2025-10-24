@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use strata_primitives::{
     buf::{Buf32, Buf64},
-    operator::OperatorIdx,
     prelude::BitcoinTxid,
 };
+
+use crate::operator::OperatorIdx;
 
 /// Message container used to direct payloads depending on the context between parties.
 ///
@@ -261,7 +262,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::{BridgeMessage, Scope};
-    use crate::bridge::{Musig2PartialSig, Musig2PubNonce};
+    use crate::bridge::{Musig2PartialSignature, Musig2PubNonce};
 
     #[expect(unused, reason = "used for testing")]
     fn get_arb_bridge_msg() -> BridgeMessage {
@@ -326,7 +327,7 @@ mod tests {
     fn test_scoped_sig_bridge_msg_serde() {
         let txid: BitcoinTxid = ArbitraryGenerator::new().generate();
         let scope = Scope::V0PubNonce(txid);
-        let sig: Musig2PartialSig = ArbitraryGenerator::new().generate();
+        let sig: Musig2PartialSignature = ArbitraryGenerator::new().generate();
 
         let msg = make_sig_bridge_msg(&scope, &sig);
         let serialized_msg = borsh::to_vec(&msg).unwrap();
@@ -342,8 +343,9 @@ mod tests {
             "original and deserialized scopes must be the same"
         );
 
-        let deserialized_payload = borsh::from_slice::<Musig2PartialSig>(&deserialized_msg.payload)
-            .expect("should be able to deserialize Payload");
+        let deserialized_payload =
+            borsh::from_slice::<Musig2PartialSignature>(&deserialized_msg.payload)
+                .expect("should be able to deserialize Payload");
 
         assert_eq!(
             sig, deserialized_payload,
@@ -351,7 +353,7 @@ mod tests {
         );
     }
 
-    fn make_sig_bridge_msg(scope: &Scope, sig: &Musig2PartialSig) -> BridgeMessage {
+    fn make_sig_bridge_msg(scope: &Scope, sig: &Musig2PartialSignature) -> BridgeMessage {
         BridgeMessage {
             source_id: 1,
             sig: Buf64::zero(),

@@ -8,9 +8,8 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_checkpoint_types::Checkpoint;
-use strata_primitives::{
-    block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment, proof::RollupVerifyingKey,
-};
+use strata_predicate::PredicateKey;
+use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
 
 /// Checkpoint verifier state for checkpoint v0
 ///
@@ -30,8 +29,8 @@ pub struct CheckpointV0VerifierState {
     /// Credential rule governing signature verification
     pub cred_rule: CredRule,
 
-    /// Rollup verifying key used for proof verification
-    pub rollup_verifying_key: RollupVerifyingKey,
+    /// Predicate used to verify the validity of the checkpoint
+    pub predicate: PredicateKey,
 }
 
 /// Verification parameters for checkpoint v0
@@ -47,8 +46,8 @@ pub struct CheckpointV0VerificationParams {
     /// Credential rule governing signature verification
     pub cred_rule: CredRule,
 
-    /// Rollup verifying key for proof verification
-    pub rollup_verifying_key: RollupVerifyingKey,
+    /// Predicate used to verify the validity of the checkpoint
+    pub predicate: PredicateKey,
 }
 
 /// Compatibility functions for working with current checkpoint types
@@ -60,7 +59,7 @@ impl CheckpointV0VerifierState {
             last_checkpoint_l1_height: params.genesis_l1_block.height_u64(),
             current_verified_epoch: 0,
             cred_rule: params.cred_rule.clone(),
-            rollup_verifying_key: params.rollup_verifying_key.clone(),
+            predicate: params.predicate.clone(),
         }
     }
 
@@ -105,7 +104,7 @@ impl CheckpointV0VerifierState {
     }
 
     /// Update the rollup verifying key used for proof verification.
-    pub fn update_rollup_verifying_key(&mut self, new_vk: RollupVerifyingKey) {
-        self.rollup_verifying_key = new_vk;
+    pub fn update_predicate(&mut self, new_predicate: PredicateKey) {
+        self.predicate = new_predicate;
     }
 }

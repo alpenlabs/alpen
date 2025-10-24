@@ -1,5 +1,6 @@
 //! Error types for the OL Core subprotocol
 
+use strata_predicate::PredicateError;
 use thiserror::Error;
 
 /// Result type alias for the OL Core subprotocol
@@ -54,4 +55,8 @@ pub enum CoreError {
     /// Invalid verifying key format
     #[error("Invalid verifying key format: {0}")]
     InvalidVerifyingKeyFormat(String),
+
+    /// Invalid predicate/witness/claim
+    #[error("Invalid predicate/witness/claim: {0}")]
+    PredicateError(#[from] PredicateError),
 }

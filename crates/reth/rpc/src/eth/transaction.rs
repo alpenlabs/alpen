@@ -1,12 +1,16 @@
 //! Loads and formats Strata transaction RPC response.
 
+use std::time::Duration;
+
 use alloy_primitives::{Bytes, B256};
 use reth_rpc_eth_api::{
     helpers::{spec::SignersForRpc, EthTransactions, LoadTransaction},
     FromEthApiError, RpcConvert, RpcNodeCore,
 };
 use reth_rpc_eth_types::{utils::recover_raw_transaction, EthApiError};
-use reth_transaction_pool::{PoolTransaction, TransactionOrigin, TransactionPool};
+use reth_transaction_pool::{
+    AddedTransactionOutcome, PoolTransaction, TransactionOrigin, TransactionPool,
+};
 
 use crate::{AlpenEthApi, SequencerClient, StrataNodeCore};
 
@@ -17,6 +21,10 @@ where
 {
     fn signers(&self) -> &SignersForRpc<Self::Provider, Self::NetworkTypes> {
         self.inner.eth_api.signers()
+    }
+
+    fn send_raw_transaction_sync_timeout(&self) -> Duration {
+        self.inner.eth_api.send_raw_transaction_sync_timeout()
     }
 
     /// Decodes and recovers the transaction and submits it to the pool.
@@ -35,7 +43,7 @@ where
                 });
         }
         // submit the transaction to the pool with a `Local` origin
-        let hash = self
+        let AddedTransactionOutcome { hash, .. } = self
             .pool()
             .add_transaction(TransactionOrigin::Local, pool_transaction)
             .await
