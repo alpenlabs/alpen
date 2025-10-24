@@ -8,6 +8,7 @@
 mod block;
 
 pub use block::{
-    BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockNotpackage, OutputTransfer,
-    SubjectDepositData,
+    BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockNotpackage,
+    MAX_OUTPUT_MESSAGES_PER_BLOCK, MAX_OUTPUT_TRANSFERS_PER_BLOCK, MAX_SUBJECT_DEPOSITS_PER_BLOCK,
+    OutputTransfer, SubjectDepositData,
 };

@@ -1,21 +1,17 @@
+//! Account state types.
+
 use crate::{
-    amount::BitcoinAmount,
     errors::{AcctError, AcctResult},
-    id::{AccountSerial, AccountTypeId, RawAccountTypeId},
+    id::{AccountTypeId, RawAccountTypeId},
     mmr::Hash,
 };
 
 type Root = Hash;
 
-/// Account state.
-// TODO SSZ
-// TODO builder
-#[derive(Clone, Debug)]
-pub struct AccountState {
-    intrinsics: IntrinsicAccountState,
-    encoded_state: Vec<u8>,
-}
+// Include SSZ type definitions from acct-ssz-types
+include!("../../acct-ssz-types/src/state.rs");
 
+// Business logic for AccountState
 impl AccountState {
     pub fn raw_ty(&self) -> RawAccountTypeId {
         self.intrinsics.raw_ty()
@@ -34,7 +30,6 @@ impl AccountState {
         self.intrinsics.balance()
     }
 
-    // should this even be exposed?
     pub fn encoded_state_buf(&self) -> &[u8] {
         &self.encoded_state
     }
@@ -53,48 +48,28 @@ impl AccountState {
     }
 }
 
-/// SSZ summary *structure*, not equivalent encoding.  It's an SSZ thing.
-// TODO SSZ
-#[derive(Clone, Debug)]
-pub struct AcctStateSummary {
-    intrinsics: IntrinsicAccountState,
-    typed_state_root: Root,
-}
-
+// Business logic for AcctStateSummary
 impl AcctStateSummary {
     pub fn raw_ty(&self) -> RawAccountTypeId {
-        self.intrinsics.raw_ty()
+        AccountTypeId::try_from(self.serial.0 as u16)
+            .map(|ty| ty as RawAccountTypeId)
+            .unwrap_or(0)
     }
 
     pub fn serial(&self) -> AccountSerial {
-        self.intrinsics.serial()
+        self.serial
     }
 
     pub fn balance(&self) -> BitcoinAmount {
-        self.intrinsics.balance()
+        self.balance
     }
 
     pub fn typed_state_root(&self) -> &Root {
-        &self.typed_state_root
+        &self.state_root
     }
 }
 
-/// Intrinsic account fields.
-// TODO SSZ
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct IntrinsicAccountState {
-    // immutable fields, these MUST NOT change
-    /// Account type, which determines how we interact with it.
-    raw_ty: RawAccountTypeId,
-
-    /// Account serial number.
-    serial: AccountSerial,
-
-    // mutable fields, which MAY change
-    /// Native asset (satoshi) balance.
-    balance: BitcoinAmount,
-}
-
+// Business logic for IntrinsicAccountState
 impl IntrinsicAccountState {
     /// Constructs a new raw instance.
     fn new_unchecked(
@@ -151,4 +126,60 @@ pub trait AccountTypeState {
     const ID: AccountTypeId;
 
     // TODO decoding
+}
+
+#[cfg(test)]
+mod tests {
+    use ssz::{Decode, Encode};
+
+    use super::*;
+    use crate::BitcoinAmount;
+
+    #[test]
+    fn test_intrinsic_account_state_ssz_roundtrip() {
+        let state = IntrinsicAccountState::new(
+            AccountTypeId::Snark,
+            AccountSerial(10),
+            BitcoinAmount::from_sat(5000),
+        );
+        let encoded = state.as_ssz_bytes();
+        let decoded = IntrinsicAccountState::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(state, decoded);
+    }
+
+    #[test]
+    fn test_account_state_ssz_roundtrip() {
+        let state = AccountState {
+            intrinsics: IntrinsicAccountState::new(
+                AccountTypeId::Empty,
+                AccountSerial(1),
+                BitcoinAmount::from_sat(1000),
+            ),
+            encoded_state: vec![1, 2, 3, 4].into(),
+        };
+        let encoded = state.as_ssz_bytes();
+        let decoded = AccountState::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(state.intrinsics, decoded.intrinsics);
+        assert_eq!(state.encoded_state_buf(), decoded.encoded_state_buf());
+    }
+
+    #[test]
+    fn test_acct_state_summary_ssz_roundtrip() {
+        let summary = AcctStateSummary {
+            serial: AccountSerial(42),
+            balance: BitcoinAmount::from_sat(9999),
+            state_root: [0xAB; 32],
+        };
+        let encoded = summary.as_ssz_bytes();
+        let decoded = AcctStateSummary::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(summary, decoded);
+    }
+
+    #[test]
+    fn test_intrinsic_account_state_with_new_balance() {
+        let state = IntrinsicAccountState::new_empty(AccountSerial(5));
+        let new_state = state.with_new_balance(BitcoinAmount::from_sat(1234));
+        assert_eq!(new_state.balance(), BitcoinAmount::from_sat(1234));
+        assert_eq!(new_state.serial(), AccountSerial(5));
+    }
 }

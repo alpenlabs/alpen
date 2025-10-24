@@ -245,7 +245,10 @@ impl BorshDeserialize for BitcoinAddress {
     PartialEq,
     PartialOrd,
     Serialize,
+    ssz_derive::Encode,
+    ssz_derive::Decode,
 )]
+#[ssz(struct_behaviour = "transparent")]
 pub struct BitcoinAmount(u64);
 
 impl Display for BitcoinAmount {
@@ -289,6 +292,25 @@ impl std::ops::Deref for BitcoinAmount {
 impl std::ops::DerefMut for BitcoinAmount {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+// Manual TreeHash implementation for transparent wrapper
+impl tree_hash::TreeHash for BitcoinAmount {
+    fn tree_hash_type() -> tree_hash::TreeHashType {
+        <u64 as tree_hash::TreeHash>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
+        <u64 as tree_hash::TreeHash>::tree_hash_packed_encoding(&self.0)
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <u64 as tree_hash::TreeHash>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> tree_hash::Hash256 {
+        <u64 as tree_hash::TreeHash>::tree_hash_root(&self.0)
     }
 }
 
@@ -1500,5 +1522,36 @@ mod tests {
             scriptbuf.0, deserialized_scriptbuf.0,
             "original and deserialized scriptbuf must be the same"
         );
+    }
+
+    #[test]
+    fn test_bitcoin_amount_ssz_roundtrip() {
+        use ssz::{Decode, Encode};
+
+        let amount = BitcoinAmount::from_sat(12345);
+        let encoded = amount.as_ssz_bytes();
+        let decoded = BitcoinAmount::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(amount, decoded);
+    }
+
+    #[test]
+    fn test_bitcoin_amount_tree_hash() {
+        use tree_hash::TreeHash;
+
+        let amount = BitcoinAmount::from_sat(1000);
+        let hash = amount.tree_hash_root();
+        // Should produce same hash as underlying u64
+        assert_eq!(hash, <u64 as TreeHash>::tree_hash_root(&1000u64));
+    }
+
+    #[test]
+    fn test_bitcoin_amount_zero_ssz() {
+        use ssz::{Decode, Encode};
+
+        let zero = BitcoinAmount::zero();
+        let encoded = zero.as_ssz_bytes();
+        let decoded = BitcoinAmount::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(zero, decoded);
+        assert!(decoded.is_zero());
     }
 }

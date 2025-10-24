@@ -1,17 +1,10 @@
 //! Account message types.
 
-use crate::{amount::BitcoinAmount, id::AccountId};
+// Include SSZ type definitions from acct-ssz-types
+// This brings in: MsgPayload, MsgPayloadData, SentMessage, ReceivedMessage
+include!("../../acct-ssz-types/src/messages.rs");
 
-/// Describes a message we're getting ready to send.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SentMessage {
-    /// Destination orchestration layer account ID.
-    dest: AccountId,
-
-    /// Message payload.
-    payload: MsgPayload,
-}
-
+// Business logic for SentMessage
 impl SentMessage {
     pub fn new(dest: AccountId, payload: MsgPayload) -> Self {
         Self { dest, payload }
@@ -26,13 +19,7 @@ impl SentMessage {
     }
 }
 
-/// Describes a message being received by an account.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReceivedMessage {
-    source: AccountId,
-    payload: MsgPayload,
-}
-
+// Business logic for ReceivedMessage
 impl ReceivedMessage {
     pub fn new(source: AccountId, payload: MsgPayload) -> Self {
         Self { source, payload }
@@ -47,16 +34,13 @@ impl ReceivedMessage {
     }
 }
 
-/// Contents of a message, ie the data and sent value payload components.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MsgPayload {
-    value: BitcoinAmount,
-    data: Vec<u8>,
-}
-
+// Business logic for MsgPayload
 impl MsgPayload {
-    pub fn new(value: BitcoinAmount, data: Vec<u8>) -> Self {
-        Self { value, data }
+    pub fn new(value: BitcoinAmount, data: impl Into<MsgPayloadData>) -> Self {
+        Self {
+            value,
+            data: data.into(),
+        }
     }
 
     pub fn value(&self) -> BitcoinAmount {
@@ -65,5 +49,43 @@ impl MsgPayload {
 
     pub fn data(&self) -> &[u8] {
         &self.data
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ssz::{Decode, Encode};
+
+    use super::*;
+    use crate::BitcoinAmount;
+
+    #[test]
+    fn test_msg_payload_ssz_roundtrip() {
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(1000), vec![1, 2, 3]);
+        let encoded = payload.as_ssz_bytes();
+        let decoded = MsgPayload::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(payload, decoded);
+    }
+
+    #[test]
+    fn test_sent_message_ssz_roundtrip() {
+        let msg = SentMessage {
+            dest: AccountId([42u8; 32]),
+            payload: MsgPayload::new(BitcoinAmount::from_sat(500), vec![4, 5, 6]),
+        };
+        let encoded = msg.as_ssz_bytes();
+        let decoded = SentMessage::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_received_message_ssz_roundtrip() {
+        let msg = ReceivedMessage {
+            source: AccountId([99u8; 32]),
+            payload: MsgPayload::new(BitcoinAmount::from_sat(750), vec![7, 8, 9]),
+        };
+        let encoded = msg.as_ssz_bytes();
+        let decoded = ReceivedMessage::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(msg, decoded);
     }
 }

@@ -1,0 +1,46 @@
+# SSZ Schema for EE Chain Types
+# Types at the boundary between internal EE account state and execution env chain
+
+# External types
+# AccountId, SubjectId, BitcoinAmount, SentMessage are imported from strata-acct-types
+
+# Constants for list bounds
+MAX_SUBJECT_DEPOSITS_PER_BLOCK = 1 << 16  # 65536
+MAX_OUTPUT_TRANSFERS_PER_BLOCK = 1 << 16  # 65536
+MAX_OUTPUT_MESSAGES_PER_BLOCK = 1 << 16   # 65536
+
+# Commitment to an execution block
+class ExecBlockCommitment(Container):
+    """Commitment to a particular execution block in multiple ways"""
+    exec_blkid: Bytes32  # Block ID as interpreted by EE
+    raw_block_encoded_hash: Bytes32  # Hash of encoded block
+
+# Subject deposit data
+class SubjectDepositData(Container):
+    """Data for a deposit to a subject within an EE"""
+    dest: SubjectId
+    value: BitcoinAmount
+
+# Output transfer
+class OutputTransfer(Container):
+    """Transfer output from EE to OL"""
+    dest: AccountId
+    value: BitcoinAmount
+
+# Block inputs from OL to EE
+class BlockInputs(Container):
+    """Inputs from the OL to the EE processed in a single EE block"""
+    subject_deposits: List[SubjectDepositData, MAX_SUBJECT_DEPOSITS_PER_BLOCK]
+
+# Block outputs from EE to OL
+class BlockOutputs(Container):
+    """Outputs from an EE to the OL produced in a single EE block"""
+    output_transfers: List[OutputTransfer, MAX_OUTPUT_TRANSFERS_PER_BLOCK]
+    output_messages: List[SentMessage, MAX_OUTPUT_MESSAGES_PER_BLOCK]
+
+# Execution block with additional data
+class ExecBlockNotpackage(Container):
+    """Container for an execution block that signals additional data"""
+    commitment: ExecBlockCommitment
+    inputs: BlockInputs
+    outputs: BlockOutputs

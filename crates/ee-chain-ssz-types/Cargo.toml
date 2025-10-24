@@ -1,7 +1,10 @@
 [package]
-name = "strata-ee-chain-types"
+name = "strata-ee-chain-ssz-types"
 version = "0.1.0"
 edition = "2024"
+
+[lints]
+workspace = true
 
 [dependencies]
 strata-acct-types.workspace = true
@@ -12,5 +15,5 @@ ssz_types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
-[lints]
-workspace = true
+[build-dependencies]
+# TODO: Add ssz-gen codegen tool when available
