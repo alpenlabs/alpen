@@ -169,7 +169,7 @@ mod tests {
         let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("Should parse transaction");
-        let tx_input = TxInputRef::new(&tx, tag_data_ref);
+        let tx_input = TxInputRef::new(&tx, tag_data_ref, 0);
         let deposit_info =
             parse_deposit_tx(&tx_input).expect("Should successfully extract deposit info");
 

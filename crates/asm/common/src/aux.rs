@@ -1,56 +1,87 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use std::{any::Any, collections::BTreeMap};
 
-use crate::{AsmError, Subprotocol};
+use bitcoin::{BlockHash, Txid, hashes::Hash};
+use borsh::{
+    BorshDeserialize, BorshSerialize,
+    io::{Read, Write},
+};
+use strata_l1_txfmt::SubprotocolId;
+use strata_mmr::MerkleProof;
 
-/// A single auxiliary input request from a subprotocol during preprocessing.
-///
-/// The `data` field contains the raw bytes that will be processed to generate
-/// the corresponding auxiliary input data in the final [`AuxPayload`].
-#[derive(Debug)]
-pub struct AuxRequest {
-    /// Raw data for the auxiliary input request.
-    data: Vec<u8>,
+use crate::{AsmLogEntry, L1TxIndex};
+
+/// Table mapping subprotocol IDs to their corresponding auxiliary payloads.
+pub type AuxDataTable = BTreeMap<SubprotocolId, AuxInput>;
+
+/// Compact representation of an MMR proof for an ASM log leaf.
+pub type LogMmrProof = MerkleProof<[u8; 32]>;
+
+/// Supported auxiliary queries that subprotocols can register during preprocessing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuxRequestSpec {
+    /// Request logs emitted across a contiguous range of L1 blocks (inclusive).
+    AsmLogQueries { start_block: u64, end_block: u64 },
+    /// Request the full deposit request transaction referenced by the deposit.
+    DepositRequestTx { txid: Txid },
 }
 
-impl AuxRequest {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self { data }
-    }
+/// Responsible for recording auxiliary requests emitted during preprocessing.
+pub trait AuxRequestCollector: Any {
+    /// Records that the transaction at `tx_index` requires auxiliary data described by `request`.
+    fn request_aux_input(&mut self, tx_index: L1TxIndex, request: AuxRequestSpec);
 
-    pub fn data(&self) -> &[u8] {
-        &self.data
+    /// Exposes the collector as a `&mut dyn Any` for downcasting.
+    fn as_mut_any(&mut self) -> &mut dyn Any;
+}
+
+/// Per-block set of historical logs together with an MMR inclusion proof.
+#[derive(Debug, Clone)]
+pub struct BlockLogsOracleData {
+    pub block_hash: BlockHash,
+    pub logs: Vec<AsmLogEntry>,
+    pub proof: LogMmrProof,
+}
+
+impl BorshSerialize for BlockLogsOracleData {
+    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.block_hash.to_byte_array().serialize(writer)?;
+        self.logs.serialize(writer)?;
+        let cohashes: Vec<[u8; 32]> = self.proof.cohashes().to_vec();
+        cohashes.serialize(writer)?;
+        self.proof.index().serialize(writer)?;
+        Ok(())
     }
 }
 
-/// A single subprotocol's auxiliary input payload, containing processed auxiliary data.
-///
-/// Each [`AuxRequest`] must resolve into a corresponding [`AuxPayload`] before the main
-/// processing phase can begin. The `data` field must deserialize into an instance of
-/// [`Subprotocol::AuxInput`] for the associated subprotocol.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct AuxPayload {
-    /// Processed auxiliary input data as raw bytes.
-    ///
-    /// This `Vec<u8>` must deserialize into one
-    /// `<P as Subprotocol>::AuxInput` for the corresponding subprotocol P.
-    pub data: Vec<u8>,
+impl BorshDeserialize for BlockLogsOracleData {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, std::io::Error> {
+        let block_hash_bytes = <[u8; 32]>::deserialize_reader(reader)?;
+        let logs = Vec::<AsmLogEntry>::deserialize_reader(reader)?;
+        let cohashes = Vec::<[u8; 32]>::deserialize_reader(reader)?;
+        let index = u64::deserialize_reader(reader)?;
+        let proof = LogMmrProof::from_cohashes(cohashes, index);
+        Ok(Self {
+            block_hash: BlockHash::from_byte_array(block_hash_bytes),
+            logs,
+            proof,
+        })
+    }
 }
 
-impl AuxPayload {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self { data }
-    }
+/// DRT transaction auxiliary data response.
+// TODO: Update field type as needed.
+#[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
+pub struct DrtTxOracleData {
+    pub drt_tx: Vec<u8>,
+}
 
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
+#[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
+pub struct AuxData {
+    pub asm_log_oracles: Vec<BlockLogsOracleData>,
+    pub drt_tx_oracles: Vec<DrtTxOracleData>,
+}
 
-    /// Tries to parse as a subprotocol's aux input.
-    ///
-    /// This MUST NOT be called on a payload that does not correspond to the
-    /// subprotocol type, because this may lead to silent errors.
-    pub fn try_to_aux_input<S: Subprotocol>(&self) -> Result<S::AuxInput, AsmError> {
-        <S::AuxInput as BorshDeserialize>::try_from_slice(&self.data)
-            .map_err(|e| AsmError::Deserialization(S::ID, e))
-    }
+#[derive(Debug, Default, Clone, BorshDeserialize, BorshSerialize)]
+pub struct AuxInput {
+    pub data: BTreeMap<L1TxIndex, AuxData>,
 }

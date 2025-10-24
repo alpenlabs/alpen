@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::Block;
-use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
+use strata_asm_common::{AnchorState, AuxDataTable, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
@@ -62,13 +62,10 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             None => {
                 // Create genesis anchor state.
                 let genesis_l1_view = &self.params.rollup().genesis_l1_view;
+                let pow_state =
+                    HeaderVerificationState::new(self.context.get_network()?, genesis_l1_view);
                 let state = AnchorState {
-                    chain_view: ChainViewState {
-                        pow_state: HeaderVerificationState::new(
-                            self.context.get_network()?,
-                            genesis_l1_view,
-                        ),
-                    },
+                    chain_view: ChainViewState::new(pow_state, ChainViewState::empty_history_mmr()),
                     sections: vec![],
                 };
 
@@ -103,24 +100,13 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                 acc
             });
 
-        // TODO(QQ): not sure if it's correct.
-        let aux_input = pre_process
-            .aux_requests
-            .iter()
-            .map(|(k, v)| {
-                (
-                    *k,
-                    AuxPayload {
-                        data: v.data().to_vec(),
-                    },
-                )
-            })
-            .collect();
+        // TODO: populate responses once auxiliary data plumbing is implemented.
+        let aux_responses = AuxDataTable::new();
 
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &block.header,
-            aux_input: &aux_input,
+            aux_responses: &aux_responses,
         };
 
         // Asm transition.

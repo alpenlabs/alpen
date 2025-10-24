@@ -1,0 +1,11 @@
+[package]
+name = "strata-asm-aux"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+bitcoin.workspace = true
+strata-asm-common.workspace = true

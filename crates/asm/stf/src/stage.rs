@@ -3,12 +3,16 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(feature = "preprocess")]
+use strata_asm_aux::AuxRequestTable;
+use strata_asm_aux::verify_aux_input;
 use strata_asm_common::{
-    AnchorState, AuxPayload, AuxRequest, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AuxDataTable, AuxInput, Stage, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
 
+#[cfg(feature = "preprocess")]
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct PreProcessStage<'c> {
     manager: &'c mut SubprotoManager,
@@ -16,15 +20,16 @@ pub(crate) struct PreProcessStage<'c> {
     tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
 
     /// Aux requests table we write requests into.
-    aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequest>,
+    aux_requests: &'c mut AuxRequestTable,
 }
 
+#[cfg(feature = "preprocess")]
 impl<'c> PreProcessStage<'c> {
     pub(crate) fn new(
         manager: &'c mut SubprotoManager,
         anchor_state: &'c AnchorState,
         tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequest>,
+        aux_requests: &'c mut AuxRequestTable,
     ) -> Self {
         Self {
             manager,
@@ -35,6 +40,7 @@ impl<'c> PreProcessStage<'c> {
     }
 }
 
+#[cfg(feature = "preprocess")]
 impl Stage for PreProcessStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
         let txs = self
@@ -47,7 +53,7 @@ impl Stage for PreProcessStage<'_> {
             .manager
             .invoke_pre_process_txs::<S>(txs, self.anchor_state);
 
-        if let Some(req) = req {
+        if !req.is_empty() {
             self.aux_requests.insert(S::ID, req);
         }
     }
@@ -58,7 +64,7 @@ pub(crate) struct ProcessStage<'c> {
     manager: &'c mut SubprotoManager,
     anchor_state: &'c AnchorState,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-    aux_inputs: &'c BTreeMap<SubprotocolId, AuxPayload>,
+    aux_inputs: &'c AuxDataTable,
 }
 
 impl<'c> ProcessStage<'c> {
@@ -66,7 +72,7 @@ impl<'c> ProcessStage<'c> {
         manager: &'c mut SubprotoManager,
         anchor_state: &'c AnchorState,
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_inputs: &'c BTreeMap<SubprotocolId, AuxPayload>,
+        aux_inputs: &'c AuxDataTable,
     ) -> Self {
         Self {
             manager,
@@ -85,15 +91,19 @@ impl Stage for ProcessStage<'_> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        // Extract the auxiliary input for this subprotocol from the bundle
-        let aux_input_data = self
-            .aux_inputs
-            .get(&S::ID)
-            .map(|a| a.data())
-            .unwrap_or_default();
+        let default_aux_data = AuxInput::default();
+        let subprotocol_aux_data = self.aux_inputs.get(&S::ID).unwrap_or(&default_aux_data);
+
+        if let Err(err) = verify_aux_input(
+            subprotocol_aux_data,
+            &self.anchor_state.chain_view.history_mmr,
+            S::ID,
+        ) {
+            panic!("{err}");
+        }
 
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, aux_input_data);
+            .invoke_process_txs::<S>(txs, self.anchor_state, subprotocol_aux_data);
     }
 }
 

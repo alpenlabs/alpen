@@ -180,7 +180,7 @@ mod tests {
         // Parse the transaction using the SPS-50 parser
         let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
         let tag_data = parser.try_parse_tx(&tx).expect("Should parse transaction");
-        let tx_input_ref = TxInputRef::new(&tx, tag_data);
+        let tx_input_ref = TxInputRef::new(&tx, tag_data, 0);
 
         // Extract withdrawal info using the actual parser
         let extracted_info = parse_withdrawal_fulfillment_tx(&tx_input_ref)
@@ -222,7 +222,7 @@ mod tests {
         // Parse the transaction using the SPS-50 parser
         let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
         let tag_data = parser.try_parse_tx(&tx).expect("Should parse transaction");
-        let tx_input_ref = TxInputRef::new(&tx, tag_data);
+        let tx_input_ref = TxInputRef::new(&tx, tag_data, 0);
 
         // Extract withdrawal info using the actual parser
         let err = parse_withdrawal_fulfillment_tx(&tx_input_ref).unwrap_err();

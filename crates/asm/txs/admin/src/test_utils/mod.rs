@@ -252,7 +252,7 @@ mod tests {
         let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .unwrap();
-        let tx_input = TxInputRef::new(&tx, tag_data_ref);
+        let tx_input = TxInputRef::new(&tx, tag_data_ref, 0);
 
         let (p_action, sig) = parse_tx(&tx_input).unwrap();
         assert_eq!(action, p_action);
