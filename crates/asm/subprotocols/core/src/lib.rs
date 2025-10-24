@@ -48,9 +48,11 @@ mod verification;
 // Public re-exports
 use constants::CORE_SUBPROTOCOL_ID;
 pub use error::*;
+#[cfg(feature = "preprocess")]
+use strata_asm_common::AuxRequestCollector;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInput, AuxRequestCollector, MsgRelayer, NullMsg, Subprotocol,
-    SubprotocolId, TxInputRef, logging,
+    AnchorState, AsmError, AuxInput, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
+    logging,
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_primitives::{buf::Buf32, l2::L2BlockCommitment};
@@ -100,6 +102,7 @@ impl Subprotocol for OLCoreSubproto {
         })
     }
 
+    #[cfg(feature = "preprocess")]
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],

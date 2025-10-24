@@ -6,6 +6,10 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+default = ["preprocess"]
+preprocess = []
+
 [dependencies]
 bitcoin.workspace = true
 borsh.workspace = true

@@ -19,4 +19,6 @@ borsh.workspace = true
 thiserror.workspace = true
 
 [features]
+default = ["preprocess"]
+preprocess = ["strata-asm-common/preprocess"]
 debug-utils = []
