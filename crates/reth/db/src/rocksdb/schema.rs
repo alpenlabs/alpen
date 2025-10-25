@@ -1,5 +1,5 @@
 use revm_primitives::alloy_primitives::B256;
-use strata_rocksdb::{
+use strata_db_store_rocksdb::{
     define_table_with_seek_key_codec, define_table_without_codec, impl_borsh_value_codec,
 };
 
@@ -7,6 +7,11 @@ use strata_rocksdb::{
 define_table_with_seek_key_codec!(
     /// store of block witness data. Data stored as serialized bytes for directly serving in rpc
     (BlockWitnessSchema) B256 => Vec<u8>
+);
+
+define_table_with_seek_key_codec!(
+    /// store of block state diff data. Data stored as serialized bytes for directly serving in rpc
+    (BlockStateDiffSchema) B256 => Vec<u8>
 );
 
 define_table_with_seek_key_codec!(

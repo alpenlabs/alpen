@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use alloy_rpc_types::engine::{
-    payload::ExecutionData, ExecutionPayload, ExecutionPayloadEnvelopeV3, ExecutionPayloadV1,
+    payload::ExecutionData, ExecutionPayload, ExecutionPayloadEnvelopeV3,
+    ExecutionPayloadEnvelopeV5, ExecutionPayloadV1,
 };
 use reth_chainspec::ChainSpec;
 use reth_ethereum_payload_builder::EthereumExecutionPayloadValidator;
@@ -47,6 +48,7 @@ impl EngineTypes for AlpenEngineTypes {
     type ExecutionPayloadEnvelopeV2 = AlpenExecutionPayloadEnvelopeV2;
     type ExecutionPayloadEnvelopeV3 = ExecutionPayloadEnvelopeV3;
     type ExecutionPayloadEnvelopeV4 = AlpenExecutionPayloadEnvelopeV4;
+    type ExecutionPayloadEnvelopeV5 = ExecutionPayloadEnvelopeV5;
 }
 
 /// Strata engine validator
@@ -116,7 +118,7 @@ where
     fn validate_payload_attributes_against_header(
         &self,
         _attr: &<T as PayloadTypes>::PayloadAttributes,
-        _header: &<Self::Block as reth::api::Block>::Header,
+        _header: &<Self::Block as reth_node_api::Block>::Header,
     ) -> Result<(), InvalidPayloadAttributesError> {
         // skip default timestamp validation
         Ok(())

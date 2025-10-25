@@ -1,14 +1,14 @@
 use std::{default::Default, time::SystemTime};
 
 use alloy_eips::merge::EPOCH_SLOTS;
-use reth::transaction_pool::blobstore::DiskFileBlobStoreConfig;
 use reth_chainspec::{ChainSpec, EthChainSpec};
 use reth_node_api::{FullNodeTypes, NodeTypes};
 use reth_node_builder::{components::PoolBuilder, BuilderContext};
 use reth_primitives::EthPrimitives;
 use reth_provider::CanonStateSubscriptions;
 use reth_transaction_pool::{
-    blobstore::DiskFileBlobStore, EthTransactionPool, TransactionValidationTaskExecutor,
+    blobstore::{DiskFileBlobStore, DiskFileBlobStoreConfig},
+    EthTransactionPool, TransactionValidationTaskExecutor,
 };
 use tracing::{debug, info};
 /// A basic ethereum transaction pool.
