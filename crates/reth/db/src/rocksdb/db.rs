@@ -65,21 +65,12 @@ impl<DB: SchemaDBOperations> WitnessStore for WitnessDB<DB> {
 
 #[cfg(test)]
 mod tests {
-    use revm_primitives::{
-        alloy_primitives::{address, map::HashMap},
-        fixed_bytes, FixedBytes, HashSet,
-    };
     use rockbound::SchemaDBOperations;
     use serde::Deserialize;
     use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use tempfile::TempDir;
 
     use super::*;
-
-    const BLOCK_HASH_ONE: FixedBytes<32> =
-        fixed_bytes!("000000000000000000000000f529c70db0800449ebd81fbc6e4221523a989f05");
-    const BLOCK_HASH_TWO: FixedBytes<32> =
-        fixed_bytes!("0000000000000000000000000a743ba7304efcc9e384ece9be7631e2470e401e");
 
     fn get_rocksdb_tmp_instance() -> anyhow::Result<impl SchemaDBOperations> {
         let dbname = crate::rocksdb::ROCKSDB_NAME;

@@ -275,7 +275,7 @@ serde_json = "1.0.94"
 serde_with = "3.3.0"
 sha2 = "0.10"
 shrex = { version = "0.2.0", path = "crates/util/shrex", features = ["serde"] }
-tempfile = "3.10.1"
+tempfile = "3.20.0"
 terrors = "0.3.0"
 thiserror = "2.0.11"
 threadpool = "1.8"
