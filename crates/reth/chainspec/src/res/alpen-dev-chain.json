@@ -30,6 +30,8 @@
         "terminalTotalDifficulty": 0,
         "terminalTotalDifficultyPassed": true,
         "shanghaiTime": 0,
+        "cancunTime": 0,
+        "pragueTime": 0,
         "mergeNetsplitBlock": 0
     }
 }

@@ -1,245 +1,83 @@
 {
     "witness": {
-        "parent_header": {
-            "parent_hash": "0x12647fb41a23a74cf68b406e5f15bf6ac3f3a86232e48b2e39abccbc3ec95256",
-            "ommers_hash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
-            "beneficiary": "0x5400000000000000000000000000000000000011",
-            "state_root": "0x0da326b46ef1130f24abc84543e3a34bb4ba102710c09942c7bcf835055b2e0f",
-            "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-            "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-            "withdrawals_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-            "logs_bloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-            "difficulty": "0x0",
-            "number": 29,
-            "gas_limit": 30000000,
-            "gas_used": 0,
-            "timestamp": 1737066008,
-            "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "nonce": "0x0000000000000000",
-            "base_fee_per_gas": 20808157,
-            "blob_gas_used": null,
-            "excess_blob_gas": null,
-            "parent_beacon_block_root": null,
-            "requests_root": null,
-            "extra_data": "0x726574682f76312e312e302f6c696e7578"
-        },
-        "beneficiary": "0x5400000000000000000000000000000000000011",
-        "gas_limit": 30000000,
-        "timestamp": 1737066009,
-        "extra_data": "0x726574682f76312e312e302f6c696e7578",
-        "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "pre_state_trie": {
-            "data": {
-                "Branch": [
-                    null,
-                    null,
-                    null,
-                    {
-                        "data": {
-                            "Leaf": [
-                                [
-                                    51,
-                                    34,
-                                    243,
-                                    57,
-                                    70,
-                                    163,
-                                    197,
-                                    3,
-                                    201,
-                                    22,
-                                    200,
-                                    252,
-                                    41,
-                                    118,
-                                    138,
-                                    84,
-                                    127,
-                                    1,
-                                    250,
-                                    102,
-                                    94,
-                                    30,
-                                    178,
-                                    47,
-                                    159,
-                                    102,
-                                    207,
-                                    126,
-                                    90,
-                                    38,
-                                    32,
-                                    18
-                                ],
-                                [
-                                    248,
-                                    77,
-                                    128,
-                                    137,
-                                    1,
-                                    21,
-                                    142,
-                                    70,
-                                    9,
-                                    19,
-                                    208,
-                                    0,
-                                    0,
-                                    160,
-                                    86,
-                                    232,
-                                    31,
-                                    23,
-                                    27,
-                                    204,
-                                    85,
-                                    166,
-                                    255,
-                                    131,
-                                    69,
-                                    230,
-                                    146,
-                                    192,
-                                    248,
-                                    110,
-                                    91,
-                                    72,
-                                    224,
-                                    27,
-                                    153,
-                                    108,
-                                    173,
-                                    192,
-                                    1,
-                                    98,
-                                    47,
-                                    181,
-                                    227,
-                                    99,
-                                    180,
-                                    33,
-                                    160,
-                                    197,
-                                    210,
-                                    70,
-                                    1,
-                                    134,
-                                    247,
-                                    35,
-                                    60,
-                                    146,
-                                    126,
-                                    125,
-                                    178,
-                                    220,
-                                    199,
-                                    3,
-                                    192,
-                                    229,
-                                    0,
-                                    182,
-                                    83,
-                                    202,
-                                    130,
-                                    39,
-                                    59,
-                                    123,
-                                    250,
-                                    216,
-                                    4,
-                                    93,
-                                    133,
-                                    164,
-                                    112
-                                ]
-                            ]
-                        }
-                    },
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    {
-                        "data": {
-                            "Digest": "0x3d6d09b85dda4d757b85bd38a8d2ce1cf5eeb820daa79489bd28529bf07d1e85"
-                        }
-                    },
-                    null
-                ]
+        "current_block": {
+            "header": {
+                "parent_hash": "0xa61fffcb402e85aa55a3590b90423b0566ec7ca641ab38cbb97e82c7ed145f69",
+                "ommers_hash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+                "beneficiary": "0x5400000000000000000000000000000000000011",
+                "state_root": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
+                "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "withdrawals_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "logs_bloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                "difficulty": "0x0",
+                "number": 2,
+                "gas_limit": 30058619,
+                "gas_used": 0,
+                "timestamp": 1748432436,
+                "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "nonce": "0x0000000000000000",
+                "base_fee_per_gas": 765625000,
+                "blob_gas_used": null,
+                "excess_blob_gas": null,
+                "parent_beacon_block_root": null,
+                "requests_hash": null,
+                "extra_data": "0x"
+            },
+            "body": {
+                "transactions": [],
+                "ommers": [],
+                "withdrawals": []
             }
         },
-        "pre_state_storage": {
-            "0x5400000000000000000000000000000000000010": [
-                {
-                    "data": "Null"
-                },
-                []
-            ],
-            "0x5400000000000000000000000000000000000001": [
-                {
-                    "data": "Null"
-                },
-                []
-            ],
-            "0x5400000000000000000000000000000000000011": [
-                {
-                    "data": "Null"
-                },
-                []
-            ],
-            "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf": [
-                {
-                    "data": "Null"
-                },
-                []
-            ]
-        },
-        "contracts": [],
-        "ancestor_headers": [],
-        "transactions": [
+        "ancestor_headers": [
             {
-                "hash": "0xead5e5e095a140c0f330b4952191ebde361b8bdec3f91009ddfcbb4643f65af2",
-                "signature": {
-                    "r": "0x85125820ec9f60203ae46ffed78ed737e140bbb3dac3be86eb3eb0059b9e0bc5",
-                    "s": "0x70ff2fd4f9da432944e94a765508105e86ea5d644486eb95291a19fe8fa5faa",
-                    "yParity": "0x0"
-                },
-                "transaction": {
-                    "Eip1559": {
-                        "chain_id": 12345,
-                        "nonce": 0,
-                        "gas_limit": 21694,
-                        "max_fee_per_gas": 1041616314,
-                        "max_priority_fee_per_gas": 1000000000,
-                        "to": "0x5400000000000000000000000000000000000001",
-                        "value": "0x8ac7230489e80000",
-                        "access_list": [],
-                        "input": "0x04be27fa8b1f5278faf82cab8da23e8761f8f9bd5d5ebebbb37e0e12a70d92dd16"
-                    }
-                }
+                "parent_hash": "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba",
+                "ommers_hash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+                "beneficiary": "0x5400000000000000000000000000000000000011",
+                "state_root": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
+                "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "withdrawals_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+                "logs_bloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                "difficulty": "0x0",
+                "number": 1,
+                "gas_limit": 30029295,
+                "gas_used": 0,
+                "timestamp": 1748432435,
+                "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "nonce": "0x0000000000000000",
+                "base_fee_per_gas": 875000000,
+                "blob_gas_used": null,
+                "excess_blob_gas": null,
+                "parent_beacon_block_root": null,
+                "requests_hash": null,
+                "extra_data": "0x"
             }
         ],
-        "withdrawals": []
+        "parent_state": {
+            "state_trie": {
+                "data": {
+                    "Digest": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f"
+                }
+            },
+            "storage_tries": {}
+        },
+        "state_requests": {},
+        "bytecodes": [],
+        "genesis": {
+            "Custom": "{\"config\":{\"chainId\":2892,\"homesteadBlock\":0,\"daoForkSupport\":false,\"eip150Block\":0,\"eip155Block\":0,\"eip158Block\":0,\"byzantiumBlock\":0,\"constantinopleBlock\":0,\"petersburgBlock\":0,\"istanbulBlock\":0,\"berlinBlock\":0,\"londonBlock\":0,\"mergeNetsplitBlock\":0,\"shanghaiTime\":0,\"terminalTotalDifficulty\":\"0x0\",\"terminalTotalDifficultyPassed\":true,\"ethash\":{}},\"nonce\":\"0x42\",\"timestamp\":\"0x0\",\"extraData\":\"0x5343\",\"gasLimit\":\"0x1c9c380\",\"difficulty\":\"0x0\",\"mixHash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"coinbase\":\"0x0000000000000000000000000000000000000000\",\"alloc\":{\"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\":{\"balance\":\"0xd3c21bcecceda1000000\"}},\"number\":\"0x0\"}"
+        },
+        "custom_beneficiary": null,
+        "opcode_tracking": false
     },
     "params": {
-        "block_idx": 30,
-        "prev_blockhash": "0xa620e6f2a70fbe8280ac6e7e03a220aa033f24ae1711e5d828a5f144f608accf",
-        "new_blockhash": "0x4ab2e18eaa8673985ed7b702bb213c858a0f40d4916a81f33911ccbe7058ce40",
-        "new_state_root": "0xd380ad7076923f52b333551440c7066ec90af72d0beaf32aadb91cbef8da6c63",
-        "txn_root": "0x506405cf5492b34b27e6963e7d1f9d955341af9f6fd9c24449b171ab0d0038f0",
-        "withdrawal_intents": [
-            {
-                "amt": 1000000000,
-                "destination": "04be27fa8b1f5278faf82cab8da23e8761f8f9bd5d5ebebbb37e0e12a70d92dd16",
-                "withdrawal_txid": "0xead5e5e095a140c0f330b4952191ebde361b8bdec3f91009ddfcbb4643f65af2"
-            }
-        ],
+        "block_idx": 2,
+        "prev_blockhash": "0xa61fffcb402e85aa55a3590b90423b0566ec7ca641ab38cbb97e82c7ed145f69",
+        "new_blockhash": "0xcf34f334de19d6d50066c0b9707659592bb3df96dcaecb0d95ec13c8fd6e3b23",
+        "new_state_root": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
+        "txn_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "withdrawal_intents": [],
         "deposit_requests": []
     }
 }

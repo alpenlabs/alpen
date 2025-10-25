@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use revm_primitives::alloy_primitives::B256;
 use rockbound::{SchemaDBOperations, SchemaDBOperationsExt};
-use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
+use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 
 use super::schema::BlockWitnessSchema;
 use crate::{errors::DbError, DbResult, WitnessProvider, WitnessStore};
@@ -23,7 +23,7 @@ impl<DB> Clone for WitnessDB<DB> {
 }
 
 impl<DB> WitnessDB<DB> {
-    pub fn new(db: Arc<DB>) -> Self {
+    pub const fn new(db: Arc<DB>) -> Self {
         Self { db }
     }
 }
@@ -65,12 +65,21 @@ impl<DB: SchemaDBOperations> WitnessStore for WitnessDB<DB> {
 
 #[cfg(test)]
 mod tests {
+    use revm_primitives::{
+        alloy_primitives::{address, map::HashMap},
+        fixed_bytes, FixedBytes, HashSet,
+    };
     use rockbound::SchemaDBOperations;
     use serde::Deserialize;
-    use strata_proofimpl_evm_ee_stf::{EvmBlockStfInput, EvmBlockStfOutput};
+    use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use tempfile::TempDir;
 
     use super::*;
+
+    const BLOCK_HASH_ONE: FixedBytes<32> =
+        fixed_bytes!("000000000000000000000000f529c70db0800449ebd81fbc6e4221523a989f05");
+    const BLOCK_HASH_TWO: FixedBytes<32> =
+        fixed_bytes!("0000000000000000000000000a743ba7304efcc9e384ece9be7631e2470e401e");
 
     fn get_rocksdb_tmp_instance() -> anyhow::Result<impl SchemaDBOperations> {
         let dbname = crate::rocksdb::ROCKSDB_NAME;
@@ -82,7 +91,7 @@ mod tests {
         let temp_dir = TempDir::new().expect("failed to create temp dir");
 
         let rbdb = rockbound::DB::open(
-            temp_dir.into_path(),
+            temp_dir.keep(),
             dbname,
             cfs.iter().map(|s| s.to_string()),
             &opts,

@@ -1,7 +1,10 @@
 [package]
 edition = "2021"
 name = "alpen-reth-db"
-version = "0.2.0"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
 
 [dependencies]
 strata-db.workspace = true
@@ -13,7 +16,6 @@ bincode.workspace = true
 borsh.workspace = true
 revm-primitives.workspace = true
 rockbound.workspace = true
-tracing.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
