@@ -1,16 +1,16 @@
-#![cfg_attr(not(test), warn(unused_crate_dependencies))]
-
+//! Reth node implementation for the Alpen EE.
 mod engine;
 mod evm;
 mod node;
 mod payload;
 mod payload_builder;
+mod pool;
 
 pub mod args;
 pub use alpen_reth_primitives::WithdrawalIntent;
-pub use engine::{StrataEngineTypes, StrataEngineValidator, StrataPayloadTypes};
-pub use node::StrataEthereumNode;
+pub use engine::{AlpenEngineTypes, AlpenEngineValidator};
+pub use node::AlpenEthereumNode;
 pub use payload::{
-    ExecutionPayloadEnvelopeV2, ExecutionPayloadFieldV2, StrataExecutionPayloadEnvelopeV2,
-    StrataPayloadAttributes,
+    AlpenExecutionPayloadEnvelopeV2, AlpenExecutionPayloadEnvelopeV4, AlpenPayloadAttributes,
+    ExecutionPayloadEnvelopeV2, ExecutionPayloadFieldV2,
 };

@@ -13,6 +13,7 @@ use crate::{
     process_block_transaction_outer,
 };
 
+#[derive(Debug)]
 pub struct EvmEeProgram;
 
 impl ZkVmProgram for EvmEeProgram {

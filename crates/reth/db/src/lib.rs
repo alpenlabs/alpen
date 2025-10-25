@@ -1,3 +1,5 @@
+//! Database for Reth.
+
 pub mod rocksdb;
 use revm_primitives::alloy_primitives::B256;
 pub use strata_db::{errors, DbResult};

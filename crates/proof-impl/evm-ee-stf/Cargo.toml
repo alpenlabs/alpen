@@ -1,7 +1,10 @@
 [package]
 edition = "2021"
 name = "strata-proofimpl-evm-ee-stf"
-version = "0.2.0"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
 
 [dependencies]
 alpen-reth-evm.workspace = true
@@ -13,28 +16,19 @@ zkaleido-native-adapter.workspace = true
 
 alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-eips.workspace = true
-alloy-primitives.workspace = true
-alloy-rlp.workspace = true
-alloy-rlp-derive.workspace = true
-alloy-rpc-types.workspace = true
-alloy-rpc-types-eth.workspace = true
-alloy-trie.workspace = true
+reth-chainspec.workspace = true
+reth-evm-ethereum.workspace = true
+reth-primitives.workspace = true
 
-anyhow.workspace = true
-k256 = { version = "0.13.4", features = [
-  "std",
-  "ecdsa",
-], default-features = false }
-reth-primitives = { workspace = true, features = ["serde-bincode-compat"] }
+reth-evm.workspace = true
 reth-primitives-traits.workspace = true
+reth-trie.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
-rlp = "0.5.2"
+rsp-client-executor.workspace = true
 serde.workspace = true
-serde_with.workspace = true
-thiserror.workspace = true
+
 
 [dev-dependencies]
 bincode.workspace = true
-hex-literal = "0.4"
 serde_json.workspace = true

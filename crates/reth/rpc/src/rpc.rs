@@ -9,18 +9,18 @@ use crate::{BlockWitness, StrataRpcApiServer};
 
 /// rpc implementation
 #[derive(Debug, Clone)]
-pub struct StrataRPC<DB: Clone + Sized> {
+pub struct AlpenRPC<DB: Clone + Sized> {
     db: Arc<DB>,
 }
 
-impl<DB: Clone + Sized> StrataRPC<DB> {
+impl<DB: Clone + Sized> AlpenRPC<DB> {
     /// Create new instance
     pub fn new(db: Arc<DB>) -> Self {
         Self { db }
     }
 }
 
-impl<DB> StrataRpcApiServer for StrataRPC<DB>
+impl<DB> StrataRpcApiServer for AlpenRPC<DB>
 where
     DB: WitnessProvider + Send + Sync + Clone + 'static,
 {
