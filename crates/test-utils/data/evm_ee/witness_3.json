@@ -1,40 +1,72 @@
 {
-    "parent_header": {
-        "parent_hash": "0x14b2fbd209d6c9334b71596e6207ada9042ba9e738259e1e6a4b1ea5faa71794",
-        "ommers_hash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
-        "beneficiary": "0x5400000000000000000000000000000000000011",
-        "state_root": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
-        "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-        "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-        "withdrawals_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-        "logs_bloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-        "difficulty": "0x0",
-        "number": 2,
-        "gas_limit": 30000000,
-        "gas_used": 0,
-        "timestamp": 1728049634,
-        "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "nonce": "0x0000000000000000",
-        "base_fee_per_gas": 765625000,
-        "blob_gas_used": null,
-        "excess_blob_gas": null,
-        "parent_beacon_block_root": null,
-        "requests_root": null,
-        "extra_data": "0x726574682f76312e302e332f6d61636f73"
-    },
-    "beneficiary": "0x5400000000000000000000000000000000000011",
-    "gas_limit": 30000000,
-    "timestamp": 1728049635,
-    "extra_data": "0x726574682f76312e302e332f6d61636f73",
-    "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-    "pre_state_trie": {
-        "data": {
-            "Digest": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f"
+    "current_block": {
+        "header": {
+            "parent_hash": "0x4c689d6e1dc7fb39906affb716e7c03b555ec851f4f6df3e81c80a8ea5eabf25",
+            "ommers_hash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+            "beneficiary": "0x5400000000000000000000000000000000000011",
+            "state_root": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
+            "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "withdrawals_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "logs_bloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "difficulty": "0x0",
+            "number": 3,
+            "gas_limit": 30087972,
+            "gas_used": 0,
+            "timestamp": 1748434092,
+            "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "nonce": "0x0000000000000000",
+            "base_fee_per_gas": 669921875,
+            "blob_gas_used": null,
+            "excess_blob_gas": null,
+            "parent_beacon_block_root": null,
+            "requests_hash": null,
+            "extra_data": "0x"
+        },
+        "body": {
+            "transactions": [],
+            "ommers": [],
+            "withdrawals": []
         }
     },
-    "pre_state_storage": {},
-    "contracts": [],
-    "ancestor_headers": [],
-    "transactions": [],
-    "withdrawals": []
+    "ancestor_headers": [
+        {
+            "parent_hash": "0xb977ef9afae93d945be091cbf6111e958c62a5630f9b59e5529a682912c47b47",
+            "ommers_hash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+            "beneficiary": "0x5400000000000000000000000000000000000011",
+            "state_root": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
+            "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "withdrawals_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "logs_bloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "difficulty": "0x0",
+            "number": 2,
+            "gas_limit": 30058619,
+            "gas_used": 0,
+            "timestamp": 1748434091,
+            "mix_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "nonce": "0x0000000000000000",
+            "base_fee_per_gas": 765625000,
+            "blob_gas_used": null,
+            "excess_blob_gas": null,
+            "parent_beacon_block_root": null,
+            "requests_hash": null,
+            "extra_data": "0x"
+        }
+    ],
+    "parent_state": {
+        "state_trie": {
+            "data": {
+                "Digest": "0x351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f"
+            }
+        },
+        "storage_tries": {}
+    },
+    "state_requests": {},
+    "bytecodes": [],
+    "genesis": {
+        "Custom": "{\"config\":{\"chainId\":2892,\"homesteadBlock\":0,\"daoForkSupport\":false,\"eip150Block\":0,\"eip155Block\":0,\"eip158Block\":0,\"byzantiumBlock\":0,\"constantinopleBlock\":0,\"petersburgBlock\":0,\"istanbulBlock\":0,\"berlinBlock\":0,\"londonBlock\":0,\"mergeNetsplitBlock\":0,\"shanghaiTime\":0,\"terminalTotalDifficulty\":\"0x0\",\"terminalTotalDifficultyPassed\":true,\"ethash\":{}},\"nonce\":\"0x42\",\"timestamp\":\"0x0\",\"extraData\":\"0x5343\",\"gasLimit\":\"0x1c9c380\",\"difficulty\":\"0x0\",\"mixHash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"coinbase\":\"0x0000000000000000000000000000000000000000\",\"alloc\":{\"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\":{\"balance\":\"0xd3c21bcecceda1000000\"}},\"number\":\"0x0\"}"
+    },
+    "custom_beneficiary": null,
+    "opcode_tracking": false
 }

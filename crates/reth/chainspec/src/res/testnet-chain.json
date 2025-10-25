@@ -1,7 +1,7 @@
 {
     "nonce": "0x0",
     "timestamp": "0x0",
-    "extraData": "0x6465766E65742E737472617461627463",
+    "extraData": "0x746573746e65742e616c70656e6c616273",
     "gasLimit": "0x1c9c380",
     "difficulty": "0x0",
     "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -10,7 +10,7 @@
     "gasUsed": "0x0",
     "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "config": {
-        "chainId": 8091,
+        "chainId": 2892,
         "homesteadBlock": 0,
         "eip150Block": 0,
         "eip155Block": 0,
@@ -24,6 +24,8 @@
         "terminalTotalDifficulty": 0,
         "terminalTotalDifficultyPassed": true,
         "shanghaiTime": 0,
+        "cancunTime": 0,
+        "pragueTime": 0,
         "mergeNetsplitBlock": 0
     }
 }

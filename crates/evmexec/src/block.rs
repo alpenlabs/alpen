@@ -22,7 +22,7 @@ impl EVML2Block {
 
     /// Compute the hash of the extra payload, which would be the EVM exec
     /// payload.
-    pub fn block_hash(&self) -> B256 {
+    pub(crate) fn block_hash(&self) -> B256 {
         FixedBytes(*self.extra_payload.block_hash().as_ref())
     }
 }
@@ -39,7 +39,7 @@ pub(crate) fn evm_block_hash(bundle: &L2BlockBundle) -> Result<B256, ConversionE
 }
 
 #[derive(Debug, Error)]
-pub enum ConversionError {
+pub(crate) enum ConversionError {
     #[error("invalid EVM exec payload")]
     InvalidExecPayload,
 }
