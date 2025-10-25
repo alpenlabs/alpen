@@ -8,16 +8,16 @@ authors = []
 python = "^3.10"
 flexitest = { git = "https://codeberg.org/treyd/flexitest.git" }
 strata_utils = { path = "../crates/util/python-utils", develop = true }
-bitcoinlib = "^0.7.3"
+bitcoinlib = "^0.7.4"
 websockets = "^15.0"
-web3 = "^7.11.0"
-py-solc-x = "^2.0.3"
-locust = "^2.36.0"
+web3 = "^7.12.0"
+py-solc-x = "^2.0.4"
+locust = "^2.37.10"
 toml = "^0.10.2"
 
 [tool.poetry.group.dev.dependencies]
-ruff = "0.11.7"
-maturin = "1.8.3"
+ruff = "0.12.0"
+maturin = "1.8.7"
 
 [tool.ruff]
 line-length = 100
