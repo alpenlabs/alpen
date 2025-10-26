@@ -26,7 +26,7 @@ def block_number_available(web3, block_no):
 
 
 @flexitest.register
-class ElBatchGasLimitTest(testenv.StrataTestBase):
+class ElBatchGasLimitTest(testenv.StrataTester):
     def __init__(self, ctx: flexitest.InitContext):
         # FIXME: running in strict mode to not cross epoch boundaries while testing
         rollup_settings = RollupParamsSettings.new_default().strict_mode()

@@ -11,7 +11,7 @@ from utils.precompile import (
 
 
 @flexitest.register
-class SchnorrPrecompileTest(testenv.StrataTestBase):
+class SchnorrPrecompileTest(testenv.StrataTester):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 

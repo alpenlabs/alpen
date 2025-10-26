@@ -12,7 +12,7 @@ from utils.precompile import (
 
 
 @flexitest.register
-class ProverClientTest(testenv.StrataTestBase):
+class ProverClientTest(testenv.StrataTester):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("prover")
 

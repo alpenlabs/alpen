@@ -5,10 +5,8 @@ version = "0.2.0"
 
 [dependencies]
 strata-chaintsn.workspace = true
-strata-crypto.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-btc-blockspace.workspace = true
-strata-proofimpl-evm-ee-stf.workspace = true
 strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true

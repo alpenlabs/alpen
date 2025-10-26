@@ -12,8 +12,8 @@ bincode.workspace = true
 cargo_metadata = "0.19.1"
 cfg-if.workspace = true
 sha2.workspace = true
-sp1-helper = "5.0.0"
-sp1-sdk = "5.0.0"
+sp1-helper.workspace = true
+sp1-sdk.workspace = true
 
 [features]
 docker-build = []
