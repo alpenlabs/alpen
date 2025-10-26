@@ -115,7 +115,7 @@ services:
       "--datadir", ".data",
       "--sequencer-rpc", "http://sequencer:8432",
       "--reth-rpc", "http://reth:8545",
-      "--bitcoind-url", "bitcoind:18443",
+      "--bitcoind-url", "http://bitcoind:18443",
       "--bitcoind-user", "rpcuser",
       "--bitcoind-password","rpcpassword",
       "--enable-checkpoint-runner", "true"
