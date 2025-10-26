@@ -24,7 +24,7 @@ BLOB_CHUNK_SIZE = 32
 
 
 @flexitest.register
-class ElBalanceTransferTest(BaseMixin):
+class ElBlobTransactionTest(BaseMixin):
     """
     Test that Alpen EVM correctly rejects EIP-4844 blob transactions.
     """
@@ -32,9 +32,11 @@ class ElBalanceTransferTest(BaseMixin):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 
-    def main(self, _ctx: flexitest.RunContext):
+    def main(self, ctx: flexitest.RunContext):
         """Test blob transaction rejection on Alpen EVM"""
-        web3 = self.w3
+        reth = ctx.get_service("reth")
+        web3: Web3 = reth.create_web3()
+
         new_account = self._generate_random_account(web3)
         transaction = self._build_blob_transaction(web3, new_account.address)
         signed_tx = self._sign_with_blob_data(transaction, new_account)

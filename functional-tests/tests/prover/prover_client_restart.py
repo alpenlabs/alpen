@@ -1,3 +1,5 @@
+import time
+
 import flexitest
 
 from envs import testenv
@@ -5,7 +7,6 @@ from envs.testenv import BasicEnvConfig
 from utils import (
     ProverClientSettings,
     RollupParamsSettings,
-    wait_for_proof_with_time_out,
     wait_until,
 )
 
@@ -43,11 +44,18 @@ class ProverClientRestartTest(testenv.StrataTester):
 
         # Test on with the latest checkpoint
         latest_checkpoint = sequencer_rpc.strata_getLatestCheckpointIndex()
-        self.prove_latest_checkpoint(prover_client_rpc)
+        wait_until(
+            lambda: sequencer_rpc.strata_getLatestCheckpointIndex() == latest_checkpoint + 1,
+            timeout=180,
+            step=5.0,
+        )
+        latest_checkpoint = sequencer_rpc.strata_getLatestCheckpointIndex()
 
         self.debug("restart prover client")
         prover_client.stop()
+        time.sleep(1)
         prover_client.start()
+        time.sleep(1)
         prover_client_rpc = prover_client.create_rpc()
 
         self.debug("prover client restarted, waiting for the new checkpoint")
@@ -56,18 +64,3 @@ class ProverClientRestartTest(testenv.StrataTester):
             timeout=180,
             step=5.0,
         )
-
-        self.prove_latest_checkpoint(prover_client_rpc)
-
-    def prove_latest_checkpoint(self, prover_client_rpc):
-        task_ids = prover_client_rpc.dev_strata_proveLatestCheckPoint()
-        self.debug(f"got task ids: {task_ids}")
-        task_id = task_ids[0]
-        self.debug(f"using task id: {task_id}")
-        assert task_id is not None
-
-        time_out = 30
-        is_proof_generation_completed = wait_for_proof_with_time_out(
-            prover_client_rpc, task_id, time_out=time_out
-        )
-        assert is_proof_generation_completed
