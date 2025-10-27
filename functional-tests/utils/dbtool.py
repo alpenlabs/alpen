@@ -73,21 +73,33 @@ def extract_json_from_output(output: str) -> str:
 
 
 def setup_revert_chainstate_test(
-    test_instance, web3_attr="w3", epoch_to_finalize=1, initial_txs=10, additional_txs=5
+    test_instance,
+    web3_attr="w3",
+    epoch_to_finalize=1,
+    initial_txs=10,
+    additional_txs=5,
+    latest_checkpoint_index=2,
 ):
     """
     Standard setup for revert chainstate tests:
      - wait for genesis
      - create initial transactions
-     - finalize epoch
+     - wait for epoch finalization
      - create additional transactions
+     - wait for checkpoint to be created
+
+    This ensures we have a finalized epoch and a non-finalized checkpointed epoch.
+    For example, with defaults: epoch 1 is finalized, and checkpoint 2 is created but
+    not yet finalized. This allows testing reverting to checkpointed but non-finalized epochs.
 
     Args:
         test_instance: Test with dbtool mixin
         web3_attr: 'w3' for sequencer, 'web3' for fullnode
-        epoch_to_finalize: epoch to finalize, defaults is 1
-        initial_txs: number of initial transactions to generate, defaults is 10
-        additional_txs: number of additional transactions to generate, defaults is 5
+        epoch_to_finalize: epoch to wait for finalization, default is 1
+        initial_txs: number of initial transactions to generate, default is 10
+        additional_txs: number of additional transactions to generate, default is 5
+        latest_checkpoint_index: checkpoint index to wait for (must be > epoch_to_finalize),
+                                 default is 2 (set to None to skip waiting)
     """
     seq_waiter = test_instance.create_strata_waiter(test_instance.seqrpc)
     seq_waiter.wait_until_genesis()
@@ -104,6 +116,11 @@ def setup_revert_chainstate_test(
     # Generate additional transactions
     for _ in range(additional_txs):
         send_tx(web3)
+
+    # Wait for checkpoint to be created (needed for revert tests)
+    # We need a non-finalized checkpoint to test reverting to checkpointed epochs
+    if latest_checkpoint_index is not None:
+        seq_waiter.wait_until_latest_checkpoint_at(latest_checkpoint_index, timeout=60)
 
 
 def get_latest_checkpoint(test_instance):
