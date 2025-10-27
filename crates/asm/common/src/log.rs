@@ -112,13 +112,13 @@ impl AsmLogEntry {
 }
 
 /// Computes the log-leaf hash committed into the header MMR for a given block.
-/// AsmLogsHash = Hash(Vec<AsmLog>)
-/// MMRLeafHash = Hash(L1BlockHash, AsmLogsHash)
 pub fn compute_logs_leaf(block_hash: &L1BlockId, logs: &[AsmLogEntry]) -> [u8; 32] {
+    // AsmLogsHash = Hash(Vec<AsmLog>)
     let logs_hash = compute_borsh_hash(&logs);
     let mut payload = Vec::with_capacity(64);
     payload.extend_from_slice(block_hash.as_ref());
     payload.extend_from_slice(logs_hash.as_ref());
+    // MMRLeafHash = Hash(L1BlockHash, AsmLogsHash)
     let leaf: [u8; 32] = sha256(&payload).into();
     leaf
 }
