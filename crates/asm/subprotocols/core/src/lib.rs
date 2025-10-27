@@ -49,7 +49,7 @@ mod verification;
 use constants::CORE_SUBPROTOCOL_ID;
 pub use error::*;
 #[cfg(feature = "preprocess")]
-use strata_asm_common::AuxRequestCollector;
+use strata_asm_common::AuxRequests;
 use strata_asm_common::{
     AnchorState, AsmError, AuxInput, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
     logging,
@@ -106,7 +106,7 @@ impl Subprotocol for OLCoreSubproto {
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
-        _collector: &mut impl AuxRequestCollector,
+        _requests: &mut AuxRequests,
         _anchor_pre: &AnchorState,
         _params: &Self::Params,
     ) {

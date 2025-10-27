@@ -15,17 +15,13 @@ pub struct TxInputRef<'t> {
     tx: &'t Transaction,
     tag: TagDataRef<'t>,
     /// Index of the transaction within the containing L1 block.
-    l1_tx_index: L1TxIndex,
+    index: L1TxIndex,
 }
 
 impl<'t> TxInputRef<'t> {
     /// Create a new `TxInput` referencing the given `Transaction`.
-    pub fn new(tx: &'t Transaction, tag: TagDataRef<'t>, l1_tx_index: L1TxIndex) -> Self {
-        TxInputRef {
-            tx,
-            tag,
-            l1_tx_index,
-        }
+    pub fn new(tx: &'t Transaction, tag: TagDataRef<'t>, index: L1TxIndex) -> Self {
+        TxInputRef { tx, tag, index }
     }
 
     /// Gets the inner transaction.
@@ -40,7 +36,7 @@ impl<'t> TxInputRef<'t> {
     }
 
     /// Returns the position of this transaction within the L1 block.
-    pub fn l1_tx_index(&self) -> L1TxIndex {
-        self.l1_tx_index
+    pub fn index(&self) -> L1TxIndex {
+        self.index
     }
 }

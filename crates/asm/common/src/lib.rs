@@ -16,6 +16,8 @@ pub use log::*;
 pub use msg::*;
 pub use spec::*;
 pub use state::*;
+// Re-export MMR types from acct-types for convenience
+pub use strata_acct_types::{CompactMmr64, Mmr64};
 pub use subprotocol::*;
 use tracing as _;
 pub use tx::*;

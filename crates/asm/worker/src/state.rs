@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::Block;
-use strata_asm_common::{AnchorState, AuxDataTable, ChainViewState};
+use strata_asm_common::{AnchorState, AuxDataTable, ChainViewState, empty_history_mmr};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
@@ -64,8 +64,10 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                 let genesis_l1_view = &self.params.rollup().genesis_l1_view;
                 let pow_state =
                     HeaderVerificationState::new(self.context.get_network()?, genesis_l1_view);
+
+                let history_mmr = empty_history_mmr();
                 let state = AnchorState {
-                    chain_view: ChainViewState::new(pow_state, ChainViewState::empty_history_mmr()),
+                    chain_view: ChainViewState::new(pow_state, history_mmr),
                     sections: vec![],
                 };
 

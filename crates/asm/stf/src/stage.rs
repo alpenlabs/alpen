@@ -3,9 +3,9 @@
 
 use std::collections::BTreeMap;
 
-#[cfg(feature = "preprocess")]
-use strata_asm_aux::AuxRequestTable;
 use strata_asm_aux::verify_aux_input;
+#[cfg(feature = "preprocess")]
+use strata_asm_common::AuxRequestTable;
 use strata_asm_common::{
     AnchorState, AuxDataTable, AuxInput, Stage, Subprotocol, SubprotocolId, TxInputRef,
 };

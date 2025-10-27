@@ -1,8 +1,10 @@
 // Re-export from the separate logs crate
-use bitcoin::{BlockHash, hashes::Hash as HashTrait};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_identifiers::hash::{compute_borsh_hash, sha256d};
+use strata_identifiers::{
+    L1BlockId,
+    hash::{compute_borsh_hash, raw as sha256},
+};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg, TypeId};
 
 use crate::{AsmError, AsmResult};
@@ -110,11 +112,13 @@ impl AsmLogEntry {
 }
 
 /// Computes the log-leaf hash committed into the header MMR for a given block.
-pub fn compute_log_leaf(block_hash: &BlockHash, logs: &[AsmLogEntry]) -> [u8; 32] {
+/// AsmLogsHash = Hash(Vec<AsmLog>)
+/// MMRLeafHash = Hash(L1BlockHash, AsmLogsHash)
+pub fn compute_logs_leaf(block_hash: &L1BlockId, logs: &[AsmLogEntry]) -> [u8; 32] {
     let logs_hash = compute_borsh_hash(&logs);
     let mut payload = Vec::with_capacity(64);
-    payload.extend_from_slice(&block_hash.to_byte_array());
+    payload.extend_from_slice(block_hash.as_ref());
     payload.extend_from_slice(logs_hash.as_ref());
-    let leaf: [u8; 32] = sha256d(&payload).into();
+    let leaf: [u8; 32] = sha256(&payload).into();
     leaf
 }

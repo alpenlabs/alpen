@@ -13145,7 +13145,6 @@ dependencies = [
 name = "strata-asm-aux"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
  "strata-asm-common",
 ]
 
@@ -13164,7 +13163,9 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-acct-types",
  "strata-asm-types",
+ "strata-btc-types",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-mmr",

@@ -2,61 +2,33 @@
 
 use std::{any::Any, collections::BTreeMap};
 
-#[cfg(feature = "preprocess")]
-use strata_asm_aux::{AuxRequestEnvelope, RequestCollector};
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInput, AuxRequestCollector, InterprotoMsg, Loader,
-    MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, AuxInput, AuxRequests, InterprotoMsg, Loader, MsgRelayer,
+    SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
 };
-#[cfg(not(feature = "preprocess"))]
-use strata_asm_common::{AuxRequestSpec, L1TxIndex};
-
-#[cfg(not(feature = "preprocess"))]
-struct NoopRequestCollector;
-
-#[cfg(not(feature = "preprocess"))]
-impl AuxRequestCollector for NoopRequestCollector {
-    fn request_aux_input(&mut self, _tx_index: L1TxIndex, _request: AuxRequestSpec) {}
-
-    fn as_mut_any(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
-#[cfg(feature = "preprocess")]
-type RequestCollectorHandler = RequestCollector;
-
-#[cfg(not(feature = "preprocess"))]
-type RequestCollectorHandler = NoopRequestCollector;
 
 /// Wrapper around the common subprotocol interface that handles the common
 /// buffering logic for interproto messages.
-pub(crate) struct HandlerImpl<S: Subprotocol, R, C> {
+pub(crate) struct HandlerImpl<S: Subprotocol, R> {
     params: S::Params,
     state: S::State,
     interproto_msg_buf: Vec<S::Msg>,
 
     _r: std::marker::PhantomData<R>,
-    _c: std::marker::PhantomData<C>,
 }
 
-impl<S: Subprotocol + 'static, R: MsgRelayer + 'static, C: AuxRequestCollector + 'static>
-    HandlerImpl<S, R, C>
-{
+impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
     pub(crate) fn new(params: S::Params, state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
         Self {
             params,
             state,
             interproto_msg_buf,
             _r: std::marker::PhantomData,
-            _c: std::marker::PhantomData,
         }
     }
 }
 
-impl<S: Subprotocol, R: MsgRelayer, C: AuxRequestCollector> SubprotoHandler
-    for HandlerImpl<S, R, C>
-{
+impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
     fn id(&self) -> SubprotocolId {
         S::ID
     }
@@ -69,19 +41,14 @@ impl<S: Subprotocol, R: MsgRelayer, C: AuxRequestCollector> SubprotoHandler
         self.interproto_msg_buf.push(m.clone());
     }
 
-    // TODO make this just return the aux request
     #[cfg(feature = "preprocess")]
     fn pre_process_txs(
         &mut self,
         txs: &[TxInputRef<'_>],
-        collector: &mut dyn AuxRequestCollector,
+        requests: &mut AuxRequests,
         anchor_pre: &AnchorState,
     ) {
-        let collector = collector
-            .as_mut_any()
-            .downcast_mut::<C>()
-            .expect("asm: handler");
-        S::pre_process_txs(&self.state, txs, collector, anchor_pre, &self.params);
+        S::pre_process_txs(&self.state, txs, requests, anchor_pre, &self.params);
     }
 
     fn process_txs(
@@ -125,8 +92,7 @@ pub(crate) struct SubprotoManager {
 impl SubprotoManager {
     /// Inserts a subproto by creating a handler for it, wrapping a tstate.
     pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, params: S::Params, state: S::State) {
-        let handler =
-            HandlerImpl::<S, Self, RequestCollectorHandler>::new(params, state, Vec::new());
+        let handler = HandlerImpl::<S, Self>::new(params, state, Vec::new());
         assert_eq!(
             handler.id(),
             S::ID,
@@ -137,15 +103,15 @@ impl SubprotoManager {
 
     /// Dispatches pre-processing to the appropriate handler.
     ///
-    /// This method temporarily removes the handler from the map to satisfy Rust’s borrow rules,
-    /// invokes its `pre_process_txs` implementation with a fresh [`RequestCollector`] to gather
-    /// auxiliary requests, and then reinserts the handler.
+    /// This method temporarily removes the handler from the map to satisfy Rust's borrow rules,
+    /// invokes its `pre_process_txs` implementation with a fresh [`AuxRequests`] container to
+    /// gather auxiliary requests, and then reinserts the handler.
     #[cfg(feature = "preprocess")]
     pub(crate) fn invoke_pre_process_txs<S: Subprotocol>(
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-    ) -> AuxRequestEnvelope {
+    ) -> AuxRequests {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
         // borrow checker.
@@ -154,11 +120,11 @@ impl SubprotoManager {
             .expect("asm: unloaded subprotocol");
 
         // Invoke the preprocess function.
-        let mut acol = RequestCollector::new();
-        h.pre_process_txs(txs, &mut acol, anchor_pre);
+        let mut requests = AuxRequests::new();
+        h.pre_process_txs(txs, &mut requests, anchor_pre);
         self.insert_handler(h);
 
-        acol.into_requests()
+        requests
     }
 
     /// Dispatches transaction processing to the appropriate handler.

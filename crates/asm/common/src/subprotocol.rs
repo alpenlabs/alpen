@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 #[cfg(feature = "preprocess")]
-use crate::aux::AuxRequestCollector;
+use crate::aux::AuxRequests;
 use crate::{
     AnchorState, AsmError, SectionState, TxInputRef, aux::AuxInput, log::AsmLogEntry,
     msg::InterprotoMsg,
@@ -87,7 +87,7 @@ pub trait Subprotocol: 'static {
     ///
     /// During this phase, the subprotocol declares *external* data it will need before actual
     /// processing. Any required L1 headers, block-metadata, or other off-chain inputs should be
-    /// requested via the `AuxRequestCollector`.
+    /// requested via the `AuxRequests` container.
     /// (e.g., Merkle proof for logs emitted in a previous block from "history_mmr" in AnchorState)
     ///
     /// This method is called before transaction processing to allow subprotocols to specify
@@ -97,14 +97,14 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Current state of the subprotocol
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
-    /// * `collector` - Interface for registering auxiliary input requirements
+    /// * `requests` - Container for registering auxiliary input requirements
     /// * `anchor_pre` - The previous anchor state for context
     /// * `params` - Subprotocol's current params
     #[cfg(feature = "preprocess")]
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
-        _collector: &mut impl AuxRequestCollector,
+        _requests: &mut AuxRequests,
         _anchor_pre: &AnchorState,
         _params: &Self::Params,
     ) {
@@ -174,13 +174,13 @@ pub trait SubprotoHandler {
     /// Pre-processes a batch of L1 transactions by delegating to the inner
     /// subprotocol's `pre_process_txs` implementation.
     ///
-    /// Any required off-chain inputs should be registered via the provided `AuxRequestCollector`
-    /// for the subsequent processing phase.
+    /// Any required off-chain inputs should be registered via the provided `AuxRequests`
+    /// container for the subsequent processing phase.
     #[cfg(feature = "preprocess")]
     fn pre_process_txs(
         &mut self,
         txs: &[TxInputRef<'_>],
-        collector: &mut dyn AuxRequestCollector,
+        requests: &mut AuxRequests,
         anchor_state: &AnchorState,
     );
 
