@@ -341,10 +341,20 @@ pub(crate) fn revert_chainstate(
         target_epoch
     };
 
-    // Only perform cleanup if there are epochs to clean
-    let needs_cleanup = first_epoch_to_clean <= latest_checkpoint_epoch;
+    // Check if there are checkpoints to clean
+    let needs_checkpoint_cleanup = first_epoch_to_clean <= latest_checkpoint_epoch;
 
-    if needs_cleanup {
+    // Check if there are epoch summaries to clean (may exist beyond latest checkpoint)
+    let last_summarized_epoch = db
+        .checkpoint_db()
+        .get_last_summarized_epoch()
+        .internal_error("Failed to get last summarized epoch")?;
+
+    let needs_epoch_summary_cleanup = last_summarized_epoch
+        .map(|last_epoch| first_epoch_to_clean <= last_epoch)
+        .unwrap_or(false);
+
+    if needs_checkpoint_cleanup {
         // Process ClientState entries AFTER the target L1 safe block
         let next_l1_height = target_l1_safe_block.height_u64() + 1;
         let next_l1_block = L1BlockCommitment::from_height_u64(next_l1_height, Default::default())
@@ -394,22 +404,16 @@ pub(crate) fn revert_chainstate(
             checkpoints_to_delete.push(epoch);
         }
 
-        // Collect epoch summary statistics - same range as checkpoints
-        for epoch in first_epoch_to_clean..=latest_checkpoint_epoch {
-            epoch_summaries_to_delete.push(epoch);
-        }
+        // Note: We intentionally do NOT delete L1 related stuff ( writer entries such as
+        // intent/payload, broadcast entries or ASM related stuff). Reason is twofold:
+        // 1. These L1 entries don't affect L2 chain state correctness after a revert.
+        // 2. The L1 transactions may already be on Bitcoin, so keeping the records is appropriate.
 
-        // Execute deletion if not dry run
+        // Execute checkpoint deletion if not dry run
         if !dry_run {
             println!(
-                "Revert chainstate cleaning up checkpoints from epoch {first_epoch_to_clean} onwards"
+                "Revert chainstate cleaning up checkpoints from epoch {first_epoch_to_clean} to {latest_checkpoint_epoch}"
             );
-
-            // Note: We intentionally do NOT delete L1 related stuff ( writer entries such as
-            // intent/payload, broadcast entries or ASM related stuff). Reason is twofold:
-            // 1. These L1 entries don't affect L2 chain state correctness after a revert.
-            // 2. The L1 transactions may already be on Bitcoin, so keeping the records is
-            //    appropriate.
 
             // Use bulk deletion methods for efficiency
             let deleted_checkpoints = db
@@ -417,26 +421,45 @@ pub(crate) fn revert_chainstate(
                 .del_checkpoints_from_epoch(first_epoch_to_clean)
                 .internal_error("Failed to delete checkpoints")?;
 
+            println!("Deleted checkpoints at epochs: {:?}", deleted_checkpoints);
+        }
+    } else if !dry_run {
+        println!("No checkpoint cleanup needed - target slot preserves all checkpointed epochs");
+    }
+
+    // Handle epoch summary cleanup separately (may extend beyond checkpoints)
+    if needs_epoch_summary_cleanup {
+        let last_epoch = last_summarized_epoch.unwrap();
+
+        // Collect epoch summary statistics
+        for epoch in first_epoch_to_clean..=last_epoch {
+            epoch_summaries_to_delete.push(epoch);
+        }
+
+        // Execute epoch summary deletion if not dry run
+        if !dry_run {
+            println!(
+                "Revert chainstate cleaning up epoch summaries from epoch {first_epoch_to_clean} to {last_epoch}"
+            );
+
             let deleted_summaries = db
                 .checkpoint_db()
                 .del_epoch_summaries_from_epoch(first_epoch_to_clean)
                 .internal_error("Failed to delete epoch summaries")?;
 
-            println!("Deleted checkpoints at epochs: {:?}", deleted_checkpoints);
             println!("Deleted epoch summaries at epochs: {:?}", deleted_summaries);
         }
     } else if !dry_run {
-        println!("No cleanup needed - target slot preserves all checkpointed epochs");
+        println!("No epoch summary cleanup needed");
     }
 
     println!();
     if dry_run {
         // Check if no changes would be made
         let has_changes = !write_batches_to_delete.is_empty()
-            || (needs_cleanup
-                && (!client_state_entries_to_delete.is_empty()
-                    || !checkpoints_to_delete.is_empty()
-                    || !epoch_summaries_to_delete.is_empty()));
+            || (!client_state_entries_to_delete.is_empty()
+                || !checkpoints_to_delete.is_empty()
+                || !epoch_summaries_to_delete.is_empty());
 
         println!("========================================");
         println!("DRY RUN SUMMARY - No changes were made");
@@ -486,8 +509,8 @@ pub(crate) fn revert_chainstate(
                 println!();
             }
 
-            // ClientState entries (only if needs_cleanup)
-            if needs_cleanup && !client_state_entries_to_delete.is_empty() {
+            // ClientState entries (only if checkpoint cleanup is needed)
+            if needs_checkpoint_cleanup && !client_state_entries_to_delete.is_empty() {
                 let first_height = client_state_entries_to_delete
                     .first()
                     .map(|b| b.height_u64());

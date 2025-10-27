@@ -25,7 +25,7 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        # Setup: generate blocks and finalize epoch
+        # Setup: generate blocks, finalize epoch 1, and wait for checkpoint 2
         setup_revert_chainstate_test(self, web3_attr="web3")
 
         # Capture state before revert

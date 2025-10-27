@@ -27,7 +27,7 @@ class RevertCheckpointedBlockSeqTest(SequencerDbtoolMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        # Setup: generate blocks and finalize epoch
+        # Setup: generate blocks, finalize epoch 1, and wait for checkpoint 2
         setup_revert_chainstate_test(self)
 
         # Capture state before revert
