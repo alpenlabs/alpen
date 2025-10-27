@@ -1,6 +1,9 @@
 //! Fork choice manager. Used to talk to the EL and pick the new fork choice.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, RwLock},
+};
 
 use strata_chain_worker::{ChainWorkerHandle, WorkerResult};
 use strata_chainexec::{validation_util, TipState};
@@ -195,6 +198,16 @@ impl ForkChoiceManager {
         self.cur_chainstate.finalized_epoch()
     }
 
+    /// Gets the finalized epoch from the chain tracker.
+    pub fn get_chain_tracker_finalized_epoch(&self) -> &EpochCommitment {
+        self.chain_tracker.finalized_epoch()
+    }
+
+    /// Checks if a block has been seen by the chain tracker.
+    pub fn is_chain_tracker_block_seen(&self, block_id: &L2BlockId) -> bool {
+        self.chain_tracker.is_seen_block(block_id)
+    }
+
     /// Gets the most recently finalized epoch, even if it's one that we haven't
     /// accepted as a new base yet due to missing intermediary blocks.
     fn get_most_recently_finalized_epoch(&self) -> &EpochCommitment {
@@ -261,7 +274,7 @@ pub fn init_forkchoice_manager(
     csm_finalized_epoch: Option<EpochCommitment>,
     genesis_blkid: L2BlockId,
     chain_worker: Arc<ChainWorkerHandle>,
-) -> anyhow::Result<ForkChoiceManager> {
+) -> anyhow::Result<Arc<RwLock<ForkChoiceManager>>> {
     info!("initialized fcm test");
     // Load data about the last finalized block so we can use that to initialize
     // the finalized tracker.
@@ -335,6 +348,63 @@ pub fn init_forkchoice_manager(
         }
     }
 
+    Ok(Arc::new(RwLock::new(fcm)))
+}
+
+/// Waits for genesis block and initializes the ForkChoiceManager with initial status update.
+pub fn init_fcm_after_genesis(
+    handle: &Handle,
+    storage: &Arc<NodeStorage>,
+    params: &Arc<Params>,
+    chain_worker: Arc<ChainWorkerHandle>,
+    status_channel: &StatusChannel,
+) -> anyhow::Result<Arc<RwLock<ForkChoiceManager>>> {
+    // Wait for genesis block
+    info!("waiting for genesis before starting forkchoice logic");
+    let genesis_block_id = handle.block_on(async {
+        while storage
+            .l2()
+            .get_blocks_at_height_blocking(0)
+            .unwrap()
+            .is_empty()
+        {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        storage
+            .l2()
+            .get_blocks_at_height_blocking(0)
+            .unwrap()
+            .first()
+            .cloned()
+            .expect("genesis should be in")
+    });
+
+    let (_, init_state) = storage.client_state().fetch_most_recent_state()?.unwrap();
+    info!(?init_state, "starting forkchoice logic");
+
+    // Initialize the FCM (not yet wrapped)
+    let fcm = init_forkchoice_manager(
+        storage,
+        params,
+        init_state.get_declared_final_epoch(),
+        genesis_block_id,
+        chain_worker,
+    )?;
+
+    // Update initial status before returning
+    {
+        let fcm_guard = fcm.read().expect("fcm read lock poisoned");
+        let cur_chainstate = fcm_guard.cur_chainstate.clone();
+        let status = ChainSyncStatus {
+            tip: fcm_guard.cur_best_block(),
+            prev_epoch: *fcm_guard.cur_chainstate.prev_epoch(),
+            finalized_epoch: *fcm_guard.chain_tracker.finalized_epoch(),
+            safe_l1: fcm_guard.cur_chainstate.l1_view().get_safe_block(),
+        };
+        let update = ChainSyncStatusUpdate::new(status, cur_chainstate);
+        status_channel.update_chain_sync_status(update);
+    }
+
     Ok(fcm)
 }
 
@@ -378,68 +448,11 @@ pub fn tracker_task(
     handle: Handle,
     storage: Arc<NodeStorage>,
     fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
-    chain_worker: Arc<ChainWorkerHandle>,
-    params: Arc<Params>,
+    fcm: Arc<RwLock<ForkChoiceManager>>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
-    // TODO only print this if we *don't* have genesis yet, somehow
-    info!("waiting for genesis before starting forkchoice logic");
-
-    let genesis_block_id = handle.block_on(async {
-        while storage
-            .l2()
-            .get_blocks_at_height_blocking(0)
-            .unwrap()
-            .is_empty()
-        {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
-        storage
-            .l2()
-            .get_blocks_at_height_blocking(0)
-            .unwrap()
-            .first()
-            .cloned()
-            .expect("genesis should be in")
-    });
-
-    let (_, init_state) = storage.client_state().fetch_most_recent_state()?.unwrap();
-    info!(?init_state, "starting forkchoice logic");
-
-    // Now that we have the database state in order, we can actually init the
-    // FCM.
-    let mut fcm = match init_forkchoice_manager(
-        &storage,
-        &params,
-        init_state.get_declared_final_epoch(),
-        genesis_block_id,
-        chain_worker,
-    ) {
-        Ok(fcm) => fcm,
-        Err(e) => {
-            error!(err = %e, "failed to init forkchoice manager!");
-            return Err(e);
-        }
-    };
-
-    #[expect(unused, reason = "used for fork choice manager")]
-    let cur_tip = fcm.cur_best_block();
-    #[expect(unused, reason = "used for fork choice manager")]
-    let prev_epoch = *fcm.get_chainstate_prev_epoch();
-
-    // Update status.
-    // TODO: avoid repetition from process_fc_message
-    let status = ChainSyncStatus {
-        tip: fcm.cur_best_block,
-        prev_epoch: *fcm.get_chainstate_prev_epoch(),
-        finalized_epoch: *fcm.chain_tracker.finalized_epoch(),
-        // FIXME this is a bit convoluted, could this be simpler?
-        safe_l1: fcm.cur_chainstate.l1_view().get_safe_block(),
-    };
-    let update = ChainSyncStatusUpdate::new(status, fcm.cur_chainstate.clone());
-    status_channel.update_chain_sync_status(update);
-
-    handle_unprocessed_blocks(&mut fcm, &storage, &status_channel)?;
+    // FCM is already initialized at this point
+    handle_unprocessed_blocks(&fcm, &storage, &status_channel)?;
 
     if let Err(e) = forkchoice_manager_task_inner(&shutdown, handle, fcm, fcm_rx, status_channel) {
         error!(err = ?e, "tracker aborted");
@@ -452,14 +465,17 @@ pub fn tracker_task(
 /// Check if there are unprocessed L2 blocks in the database.
 /// If there are, pass them to fcm.
 pub fn handle_unprocessed_blocks(
-    fcm: &mut ForkChoiceManager,
+    fcm: &Arc<RwLock<ForkChoiceManager>>,
     storage: &NodeStorage,
     status_channel: &StatusChannel,
 ) -> anyhow::Result<()> {
     info!("checking for unprocessed L2 blocks");
 
     let l2_block_manager = storage.l2();
-    let mut slot = fcm.cur_best_block.slot() + 1;
+    let mut slot = {
+        let fcm_guard = fcm.read().expect("fcm read lock poisoned");
+        fcm_guard.cur_best_block.slot() + 1
+    };
     loop {
         let blkids = l2_block_manager.get_blocks_at_height_blocking(slot)?;
         if blkids.is_empty() {
@@ -473,7 +489,8 @@ pub fn handle_unprocessed_blocks(
                 continue;
             }
 
-            process_fc_message(ForkChoiceMessage::NewBlock(blockid), fcm, status_channel)?;
+            let mut fcm_guard = fcm.write().expect("fcm write lock poisoned");
+            process_fc_message(ForkChoiceMessage::NewBlock(blockid), &mut fcm_guard, status_channel)?;
         }
         slot += 1;
     }
@@ -493,7 +510,7 @@ enum FcmEvent {
 pub fn forkchoice_manager_task_inner(
     shutdown: &ShutdownGuard,
     handle: Handle,
-    mut fcm_state: ForkChoiceManager,
+    fcm_state: Arc<RwLock<ForkChoiceManager>>,
     mut fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
@@ -514,8 +531,14 @@ pub fn forkchoice_manager_task_inner(
         }
 
         match fcm_ev {
-            FcmEvent::NewFcmMsg(m) => process_fc_message(m, &mut fcm_state, &status_channel),
-            FcmEvent::NewStateUpdate(st) => handle_new_client_state(&mut fcm_state, st),
+            FcmEvent::NewFcmMsg(m) => {
+                let mut fcm_guard = fcm_state.write().expect("fcm write lock poisoned");
+                process_fc_message(m, &mut fcm_guard, &status_channel)
+            }
+            FcmEvent::NewStateUpdate(st) => {
+                let mut fcm_guard = fcm_state.write().expect("fcm write lock poisoned");
+                handle_new_client_state(&mut fcm_guard, st)
+            }
             FcmEvent::Abort => break,
         }?;
     }

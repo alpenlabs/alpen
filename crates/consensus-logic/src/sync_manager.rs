@@ -2,7 +2,7 @@
 //! status.  Exposes handles to interact with fork choice manager and CSM
 //! executor and other core sync pipeline tasks.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use bitcoin::absolute::Height;
 use bitcoind_async_client::Client;
@@ -22,7 +22,7 @@ use crate::{
     asm_worker_context::AsmWorkerCtx,
     chain_worker_context::ChainWorkerCtx,
     exec_worker_context::ExecWorkerCtx,
-    fork_choice_manager::{self},
+    fork_choice_manager::{self, ForkChoiceManager},
     message::ForkChoiceMessage,
 };
 
@@ -67,6 +67,7 @@ impl SyncManager {
 }
 
 /// Starts the sync tasks using provided settings.
+/// Returns both SyncManager and the ForkChoiceManager wrapped in Arc<RwLock<>>.
 pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     executor: &TaskExecutor,
     storage: &Arc<NodeStorage>,
@@ -74,7 +75,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     engine: Arc<E>,
     params: Arc<Params>,
     status_channel: StatusChannel,
-) -> anyhow::Result<SyncManager> {
+) -> anyhow::Result<(SyncManager, Arc<RwLock<ForkChoiceManager>>)> {
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
 
@@ -119,12 +120,24 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         csm_asm_monitor,
     )?;
 
-    // Start the fork choice manager thread.  If we haven't done genesis yet
-    // this will just wait until the CSM says we have.
+    // Initialize FCM before starting the fork choice manager thread.
+    // This waits for genesis if needed.
     let fcm_storage = storage.clone();
     let fcm_params = params.clone();
     let fcm_handle = executor.handle().clone();
+
+    let fcm = fork_choice_manager::init_fcm_after_genesis(
+        &fcm_handle,
+        &fcm_storage,
+        &fcm_params,
+        cw_handle,
+        &status_channel,
+    )?;
+
+    // Start the fork choice manager thread.  If we haven't done genesis yet
+    // this will just wait until the CSM says we have.
     let st_ch = status_channel.clone();
+    let fcm_clone = fcm.clone();
     executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
         // TODO this should be simplified into a builder or something
         fork_choice_manager::tracker_task(
@@ -132,18 +145,20 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
             fcm_handle,
             fcm_storage,
             fcm_rx,
-            cw_handle,
-            fcm_params,
+            fcm_clone,
             st_ch,
         )
     });
 
-    Ok(SyncManager {
-        params,
-        fc_manager_tx: fcm_tx,
-        asm_controller,
-        status_channel,
-    })
+    Ok((
+        SyncManager {
+            params,
+            fc_manager_tx: fcm_tx,
+            asm_controller,
+            status_channel,
+        },
+        fcm,
+    ))
 }
 
 fn spawn_csm_listener(
