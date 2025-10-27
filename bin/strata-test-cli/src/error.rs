@@ -35,18 +35,6 @@ pub(crate) enum Error {
 
     #[error("Invalid JSON: {0}")]
     InvalidJson(String),
-
-    #[error("Invalid operator key length: expected 78 bytes, got {0}")]
-    InvalidKeyLength(usize),
-
-    #[error("Invalid DRT transaction hex: {0}")]
-    InvalidDrtHex(String),
-
-    #[error("Invalid operator keys JSON: {0}")]
-    InvalidOperatorKeysJson(String),
-
-    #[error("Invalid pubkeys JSON: {0}")]
-    InvalidPubkeysJson(String),
 }
 
 impl From<hex::FromHexError> for Error {

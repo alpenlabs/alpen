@@ -14550,6 +14550,7 @@ dependencies = [
  "serde_json",
  "shrex",
  "shrex_macros",
+ "strata-cli-common",
  "strata-crypto",
  "strata-l1tx",
  "strata-params",
