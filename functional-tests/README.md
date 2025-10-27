@@ -142,14 +142,12 @@ The functional tests support multiple environment configurations, each designed 
   - Prover Client
 - **Settings**: 110 pre-generated blocks, fast batch mode
 - **Use case**: Standard rollup functionality tests
-- **Example**: `./run_test.sh -e basic`
 
 ### **"load_reth"**
 - **Purpose**: Load testing with state diff generation
 - **Components**: Same as basic + Load Generator service
 - **Settings**: State diff generation enabled, load jobs (30/sec rate)
 - **Use case**: Performance testing, benchmarking
-- **Example**: `./run_test.sh -e load_reth`
 
 ### **"hub1"**
 - **Purpose**: Multi-node network testing
@@ -159,14 +157,12 @@ The functional tests support multiple environment configurations, each designed 
   - **Full node follower** + separate Reth instance
   - Prover Client
 - **Use case**: Testing network synchronization, follower behavior
-- **Example**: `./run_test.sh -e hub1`
 
 ### **"prover"**
 - **Purpose**: Testing with strict proof validation
 - **Components**: Same as basic
 - **Settings**: **Strict mode** (no proof timeout), proving enabled
 - **Use case**: Zero-knowledge proof validation tests
-- **Example**: `./run_test.sh -e prover`
 
 ### **Other environments**:
 - **"operator_lag"**: Tests operator delays (10min message interval)
