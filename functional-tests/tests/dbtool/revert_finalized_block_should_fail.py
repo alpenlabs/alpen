@@ -1,18 +1,14 @@
 import flexitest
 
 from envs import net_settings, testenv
-from mixins.dbtool_mixin import DbtoolMixin
-from utils.dbtool import send_tx
-from utils.utils import (
-    ProverClientSettings,
-    wait_for_genesis,
-    wait_until_epoch_finalized,
-)
+from mixins.dbtool_mixin import SequencerDbtoolMixin
+from utils.dbtool import setup_revert_chainstate_test
+from utils.utils import ProverClientSettings
 
 
 @flexitest.register
-class RevertFinalizedBlockShouldFailTest(DbtoolMixin):
-    """Test that reverting to finalized blocks fails as expected"""
+class RevertFinalizedBlockShouldFailTest(SequencerDbtoolMixin):
+    """Test that reverting a finalized block fails as expected"""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -24,28 +20,8 @@ class RevertFinalizedBlockShouldFailTest(DbtoolMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        # Wait for genesis and generate some initial blocks
-        wait_for_genesis(self.seqrpc, timeout=20)
-
-        # Generate some transactions to create blocks
-        for _ in range(5):
-            send_tx(self.web3)
-
-        # Wait for epoch finalization to ensure we have some finalized blocks
-        wait_until_epoch_finalized(self.seqrpc, 1, timeout=30)
-
-        # Generate more blocks to have a longer chain beyond the finalized epoch
-        for _ in range(10):
-            send_tx(self.web3)
-
-        # Wait for both services to be in sync
-        ol_block_number = self.seqrpc.strata_syncStatus()["tip_height"]
-        el_block_number = int(self.rethrpc.eth_blockNumber(), base=16)
-        self.info(f"OL block number: {ol_block_number}, EL block number: {el_block_number}")
-
-        # Check if both services are at the same state before proceeding
-        if ol_block_number != el_block_number:
-            self.warning(f"OL and EL are not in sync: OL={ol_block_number}, EL={el_block_number}")
+        # Setup: generate blocks and finalize epoch
+        setup_revert_chainstate_test(self)
 
         # Stop services to use dbtool
         self.seq_signer.stop()
@@ -88,7 +64,7 @@ class RevertFinalizedBlockShouldFailTest(DbtoolMixin):
             f"Attempting to revert to slot: {target_slot}, "
             f"block id: {target_block_id} (should fail)"
         )
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id)
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-f")
 
         # The command should fail with an error
         if return_code == 0:

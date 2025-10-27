@@ -69,6 +69,19 @@ pub(crate) fn get_l2_block_slot(
     Ok(Some(block_data.block().header().slot()))
 }
 
+/// Get both the slot and epoch for a specific L2 block.
+pub(crate) fn get_l2_block_slot_and_epoch(
+    db: &impl Database,
+    block_id: L2BlockId,
+) -> Result<Option<(u64, u64)>, DisplayedError> {
+    let Some(block_data) = get_l2_block_data(db, block_id)? else {
+        return Ok(None);
+    };
+
+    let header = block_data.block().header();
+    Ok(Some((header.slot(), header.epoch())))
+}
+
 /// Get L2 block data by block ID.
 pub(crate) fn get_l2_block_data(
     db: &impl Database,

@@ -6,16 +6,16 @@ from utils.dbtool import (
     get_latest_checkpoint,
     restart_sequencer_after_revert,
     setup_revert_chainstate_test,
-    target_end_of_epoch,
-    verify_checkpoint_preserved,
+    target_start_of_epoch,
+    verify_checkpoint_deleted,
     verify_revert_success,
 )
 from utils.utils import ProverClientSettings
 
 
 @flexitest.register
-class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
-    """Test revert chainstate with -d flag on sequencer"""
+class RevertCheckpointedBlockSeqTest(SequencerDbtoolMixin):
+    """Test revert checkpointed block on sequencer"""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -27,7 +27,7 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
-        # Setup: generate blocks and finalize epoch
+        # Setup: generate blocks and finalize epoch 1
         setup_revert_chainstate_test(self)
 
         # Capture state before revert
@@ -53,35 +53,31 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
         if not checkpt:
             return False
 
-        target_block_id, target_slot = target_end_of_epoch(checkpt["l2_range"])
+        # Get epoch summary before revert
+        epoch_summary = self.get_epoch_summary(checkpt["idx"])
+        self.info(f"Epoch summary before revert: {epoch_summary}")
 
-        # Ensure we have blocks outside checkpointed range
-        sync_info = self.get_syncinfo()
-        tip_slot = sync_info.get("l2_tip_height")
-
-        if tip_slot and tip_slot <= target_slot:
-            self.info("No blocks outside checkpointed range - test cannot proceed")
-            return True
-
+        # Target the START of the epoch (first block in the checkpointed range)
+        target_block_id, target_slot = target_start_of_epoch(checkpt["l2_range"])
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
-        # Execute revert chainstate with -d and -f flags (to delete blocks)
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-d", "-f")
+        # Try to revert to a checkpointed block with -c and -f flags - this should succeed
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-c", "-f")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")
             self.error(f"Stderr: {stderr}")
             return False
 
-        self.info("Revert chainstate completed successfully")
+        self.info(f"revert-chainstate succeeded with return code {return_code}")
         self.info(f"Stdout: {stdout}")
 
         # Verify chainstate and checkpoint data
         if not verify_revert_success(self, target_block_id, target_slot):
             return False
 
-        # Even with -d flag, checkpoint data should be preserved when reverting to end of epoch
-        if not verify_checkpoint_preserved(self, checkpt["idx"]):
+        # When reverting to the BEGINNING of a checkpointed epoch, checkpoint should be deleted
+        if not verify_checkpoint_deleted(self, checkpt["idx"]):
             return False
 
         # Restart services and verify

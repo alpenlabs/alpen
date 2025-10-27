@@ -14,8 +14,8 @@ from utils.utils import ProverClientSettings
 
 
 @flexitest.register
-class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
-    """Test revert chainstate with -d flag on sequencer"""
+class RevertChainstateSeqTest(SequencerDbtoolMixin):
+    """Test revert chainstate on sequencer"""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -65,8 +65,8 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
 
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
-        # Execute revert chainstate with -d and -f flags (to delete blocks)
-        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-d", "-f")
+        # Execute revert chainstate
+        return_code, stdout, stderr = self.revert_chainstate(target_block_id, "-f")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")
@@ -80,7 +80,6 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
         if not verify_revert_success(self, target_block_id, target_slot):
             return False
 
-        # Even with -d flag, checkpoint data should be preserved when reverting to end of epoch
         if not verify_checkpoint_preserved(self, checkpt["idx"]):
             return False
 
@@ -110,5 +109,5 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
                 f"OL and EL are not in sync: OL={new_ol_block_number}, EL={new_el_block_number}"
             )
 
-        self.info("Successfully reverted chainstate and resumed sync")
+        self.info("Successfully reverted sequencer chainstate and verified resync")
         return True
