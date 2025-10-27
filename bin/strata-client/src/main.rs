@@ -11,7 +11,10 @@
 compile_error!(
     "multiple database backends configured: both 'sled' and 'rocksdb' features are enabled"
 );
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
@@ -30,6 +33,7 @@ use strata_common::{
 };
 use strata_config::Config;
 use strata_consensus_logic::{
+    fork_choice_manager::ForkChoiceManager,
     genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
 };
@@ -168,8 +172,12 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
         let rpc_client = sync_client(sync_endpoint);
         let sync_peer = RpcSyncPeer::new(rpc_client, 10);
-        let l2_sync_context =
-            L2SyncContext::new(sync_peer, ctx.storage.clone(), ctx.sync_manager.clone());
+        let l2_sync_context = L2SyncContext::new(
+            sync_peer,
+            ctx.storage.clone(),
+            ctx.sync_manager.clone(),
+            ctx.fcm.clone(),
+        );
 
         executor.spawn_critical_async("l2-sync-manager", async move {
             strata_sync::sync_worker(&l2_sync_context)
@@ -233,6 +241,7 @@ pub struct CoreContext {
     pub pool: threadpool::ThreadPool,
     pub params: Arc<Params>,
     pub sync_manager: Arc<SyncManager>,
+    pub fcm: Arc<RwLock<ForkChoiceManager>>,
     pub status_channel: StatusChannel,
     pub engine: Arc<RpcExecEngineCtl<EngineRpcClient>>,
     pub bitcoin_client: Arc<Client>,
@@ -332,15 +341,15 @@ fn start_core_tasks(
     )?;
 
     // Start the sync manager.
-    let sync_manager: Arc<_> = sync_manager::start_sync_tasks(
+    let (sync_manager, fcm) = sync_manager::start_sync_tasks(
         executor,
         &storage,
         bitcoin_client.clone(),
         engine.clone(),
         params.clone(),
         status_channel.clone(),
-    )?
-    .into();
+    )?;
+    let sync_manager: Arc<_> = sync_manager.into();
 
     // ASM processes L1 blocks from the bitcoin reader.
     // CSM listens to ASM logs (via the service framework listener pattern).
@@ -364,6 +373,7 @@ fn start_core_tasks(
         pool,
         params,
         sync_manager,
+        fcm,
         status_channel,
         engine,
         bitcoin_client,
