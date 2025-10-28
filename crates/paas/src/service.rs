@@ -2,7 +2,7 @@
 
 use strata_db::traits::ProofDatabase;
 use strata_service::{AsyncService, Response, Service};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{state::ProverServiceState, PaaSCommand, PaaSStatus};
 
@@ -81,6 +81,45 @@ impl<D: ProofDatabase> AsyncService for ProverService<D> {
             PaaSCommand::GetReport { completion } => {
                 let report = state.generate_report();
                 completion.send(Ok(report)).await;
+                Ok(Response::Continue)
+            }
+
+            PaaSCommand::ListTasks { status_filter, completion } => {
+                let result = state.list_tasks(*status_filter);
+                completion.send(result).await;
+                Ok(Response::Continue)
+            }
+
+            PaaSCommand::GetProofKey { task_id, completion } => {
+                let result = state.get_proof_key(*task_id);
+                completion.send(result).await;
+                Ok(Response::Continue)
+            }
+
+            PaaSCommand::MarkCompleted { task_id, completion } => {
+                let result = state.mark_completed(*task_id);
+                if result.is_ok() {
+                    info!(?task_id, "Task marked as completed");
+                }
+                completion.send(result).await;
+                Ok(Response::Continue)
+            }
+
+            PaaSCommand::MarkTransientFailure { task_id, error, completion } => {
+                let result = state.mark_transient_failure(*task_id, error);
+                if result.is_ok() {
+                    warn!(?task_id, ?error, "Task marked as transient failure");
+                }
+                completion.send(result).await;
+                Ok(Response::Continue)
+            }
+
+            PaaSCommand::MarkFailed { task_id, error, completion } => {
+                let result = state.mark_failed(*task_id, error);
+                if result.is_ok() {
+                    error!(?task_id, ?error, "Task marked as failed");
+                }
+                completion.send(result).await;
                 Ok(Response::Continue)
             }
         }

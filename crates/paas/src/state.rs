@@ -7,7 +7,7 @@ use strata_service::ServiceState;
 use tokio::sync::watch;
 
 use crate::{
-    commands::ProofData,
+    commands::{ProofData, TaskStatusFilter},
     manager::TaskTracker,
     PaaSConfig, PaaSError, PaaSReport, PaaSStatus, TaskId, TaskStatus,
 };
@@ -116,6 +116,50 @@ impl<D: ProofDatabase> ProverServiceState<D> {
         Ok(())
     }
 
+    /// Lists tasks with optional filter
+    pub fn list_tasks(&self, filter: Option<TaskStatusFilter>) -> Result<Vec<(TaskId, TaskStatus)>, PaaSError> {
+        let task_ids: Vec<TaskId> = match filter {
+            None => {
+                // Would need to iterate all - not supported by current API
+                // For now, combine pending + queued + proving
+                let mut all = self.task_tracker.list_pending();
+                all.extend(self.task_tracker.list_queued());
+                all.extend(self.task_tracker.list_proving());
+                all
+            },
+            Some(TaskStatusFilter::Pending) => self.task_tracker.list_pending(),
+            Some(TaskStatusFilter::Queued) => self.task_tracker.list_queued(),
+            Some(TaskStatusFilter::Proving) => self.task_tracker.list_proving(),
+            Some(TaskStatusFilter::Active) => {
+                let mut active = self.task_tracker.list_queued();
+                active.extend(self.task_tracker.list_proving());
+                active
+            },
+            Some(TaskStatusFilter::TransientFailure) => {
+                self.task_tracker.get_retriable_tasks().keys().copied().collect()
+            },
+            Some(TaskStatusFilter::Failed | TaskStatusFilter::Completed | TaskStatusFilter::Cancelled) => {
+                // These are removed from tracker when reached
+                vec![]
+            },
+        };
+
+        // Convert to (TaskId, TaskStatus) pairs
+        let mut tasks = Vec::new();
+        for task_id in task_ids {
+            if let Ok(status) = self.task_tracker.get_task_status(task_id) {
+                tasks.push((task_id, status));
+            }
+        }
+
+        Ok(tasks)
+    }
+
+    /// Gets proof key for a task
+    pub fn get_proof_key(&self, task_id: TaskId) -> Result<strata_primitives::proof::ProofKey, PaaSError> {
+        self.task_tracker.get_proof_key(task_id)
+    }
+
     /// Generates a service report
     pub fn generate_report(&self) -> PaaSReport {
         PaaSReport {
@@ -150,6 +194,48 @@ impl<D: ProofDatabase> ProverServiceState<D> {
         self.stats.failed_proofs += 1;
         self.update_status();
     }
+
+    /// Updates and broadcasts current status
+    pub fn update_status(&self) {
+        let status = self.get_status();
+        let _ = self.status_tx.send(status);
+    }
+
+    /// Marks a task as completed
+    pub fn mark_completed(&mut self, task_id: TaskId) -> Result<(), PaaSError> {
+        use crate::manager::task_tracker::InternalTaskStatus;
+        self.task_tracker.update_status(
+            task_id,
+            InternalTaskStatus::Completed,
+            self.config.retry.max_retries,
+        )?;
+        self.record_completion(task_id);
+        Ok(())
+    }
+
+    /// Marks a task as having a transient failure (will retry)
+    pub fn mark_transient_failure(&mut self, task_id: TaskId, _error: &str) -> Result<(), PaaSError> {
+        use crate::manager::task_tracker::InternalTaskStatus;
+        self.task_tracker.update_status(
+            task_id,
+            InternalTaskStatus::TransientFailure,
+            self.config.retry.max_retries,
+        )?;
+        self.update_status();
+        Ok(())
+    }
+
+    /// Marks a task as permanently failed
+    pub fn mark_failed(&mut self, task_id: TaskId, _error: &str) -> Result<(), PaaSError> {
+        use crate::manager::task_tracker::InternalTaskStatus;
+        self.task_tracker.update_status(
+            task_id,
+            InternalTaskStatus::Failed,
+            self.config.retry.max_retries,
+        )?;
+        self.record_failure(task_id);
+        Ok(())
+    }
 }
 
 impl<D: ProofDatabase> ServiceState for ProverServiceState<D> {
@@ -175,11 +261,5 @@ impl<D: ProofDatabase> ProverServiceState<D> {
             failed_tasks: self.stats.total_failed,
             worker_utilization: utilization,
         }
-    }
-
-    /// Updates and broadcasts current status
-    pub fn update_status(&self) {
-        let status = self.get_status();
-        let _ = self.status_tx.send(status);
     }
 }

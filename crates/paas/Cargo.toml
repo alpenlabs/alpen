@@ -28,6 +28,7 @@ chrono = { workspace = true, features = ["serde"] }
 strata-test-utils.workspace = true
 typed-sled.workspace = true
 strata-db-store-sled.workspace = true
+sled.workspace = true
 
 [features]
 default = []

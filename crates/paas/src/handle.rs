@@ -102,6 +102,90 @@ impl<D: ProofDatabase> ProverHandle<D> {
     pub fn status_rx(&self) -> watch::Receiver<PaaSStatus> {
         self.status_rx.clone()
     }
+
+    /// Lists all tasks with optional status filter
+    pub async fn list_tasks(
+        &self,
+        filter: Option<crate::commands::TaskStatusFilter>,
+    ) -> Result<Vec<(TaskId, TaskStatus)>, PaaSError> {
+        self.command_handle
+            .send_and_wait(|completion| PaaSCommand::ListTasks {
+                status_filter: filter,
+                completion,
+            })
+            .await
+            .map_err(convert_service_error)?
+    }
+
+    /// Gets the ProofKey for a task
+    pub async fn get_proof_key(
+        &self,
+        task_id: TaskId,
+    ) -> Result<strata_primitives::proof::ProofKey, PaaSError> {
+        self.command_handle
+            .send_and_wait(|completion| PaaSCommand::GetProofKey {
+                task_id,
+                completion,
+            })
+            .await
+            .map_err(convert_service_error)?
+    }
+
+    /// Lists pending tasks (ready to start)
+    pub async fn list_pending_tasks(&self) -> Result<Vec<TaskId>, PaaSError> {
+        use crate::commands::TaskStatusFilter;
+        let tasks = self.list_tasks(Some(TaskStatusFilter::Pending)).await?;
+        Ok(tasks.into_iter().map(|(id, _)| id).collect())
+    }
+
+    /// Lists retriable tasks (transient failures)
+    pub async fn list_retriable_tasks(&self) -> Result<Vec<TaskId>, PaaSError> {
+        use crate::commands::TaskStatusFilter;
+        let tasks = self.list_tasks(Some(TaskStatusFilter::TransientFailure)).await?;
+        Ok(tasks.into_iter().map(|(id, _)| id).collect())
+    }
+
+    /// Lists active tasks (queued or proving)
+    pub async fn list_active_tasks(&self) -> Result<Vec<TaskId>, PaaSError> {
+        use crate::commands::TaskStatusFilter;
+        let tasks = self.list_tasks(Some(TaskStatusFilter::Active)).await?;
+        Ok(tasks.into_iter().map(|(id, _)| id).collect())
+    }
+
+    /// Marks a task as completed
+    pub async fn mark_completed(&self, task_id: TaskId) -> Result<(), PaaSError> {
+        self.command_handle
+            .send_and_wait(|completion| PaaSCommand::MarkCompleted {
+                task_id,
+                completion,
+            })
+            .await
+            .map_err(convert_service_error)?
+    }
+
+    /// Marks a task as having a transient failure (will retry)
+    pub async fn mark_transient_failure(&self, task_id: TaskId, error: String) -> Result<(), PaaSError> {
+        self.command_handle
+            .send_and_wait(|completion| PaaSCommand::MarkTransientFailure {
+                task_id,
+                error: error.clone(),
+                completion,
+            })
+            .await
+            .map_err(convert_service_error)?
+    }
+
+    /// Marks a task as permanently failed
+    pub async fn mark_failed(&self, task_id: TaskId, error: String) -> Result<(), PaaSError> {
+        self.command_handle
+            .send_and_wait(|completion| PaaSCommand::MarkFailed {
+                task_id,
+                error: error.clone(),
+                completion,
+            })
+            .await
+            .map_err(convert_service_error)?
+    }
 }
 
 /// Helper to convert ServiceError to PaaSError

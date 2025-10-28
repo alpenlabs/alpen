@@ -2,7 +2,6 @@
 
 use strata_service::ServiceError;
 use thiserror::Error;
-use uuid::Uuid;
 
 use crate::TaskId;
 

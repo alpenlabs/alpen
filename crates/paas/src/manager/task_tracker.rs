@@ -41,7 +41,7 @@ struct TaskInfo {
 
 /// Internal task status (simpler than public TaskStatus)
 #[derive(Debug, Clone, PartialEq)]
-enum InternalTaskStatus {
+pub(crate) enum InternalTaskStatus {
     WaitingForDependencies,
     Pending,
     Queued,
@@ -405,6 +405,70 @@ impl TaskTracker {
             .copied()
             .ok_or(PaaSError::TaskNotFound(task_id))
     }
+
+    /// Lists all tasks optionally filtered by status
+    pub fn list_tasks(&self, status_filter: Option<InternalTaskStatus>) -> Vec<(TaskId, &TaskInfo)> {
+        self.tasks
+            .iter()
+            .filter(|(_, info)| {
+                if let Some(ref filter) = status_filter {
+                    &info.status == filter
+                } else {
+                    true
+                }
+            })
+            .map(|(id, info)| (*id, info))
+            .collect()
+    }
+
+    /// Gets all pending tasks
+    pub fn list_pending(&self) -> Vec<TaskId> {
+        self.tasks
+            .iter()
+            .filter_map(|(id, info)| {
+                if info.status == InternalTaskStatus::Pending {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Gets all queued tasks
+    pub fn list_queued(&self) -> Vec<TaskId> {
+        self.tasks
+            .iter()
+            .filter_map(|(id, info)| {
+                if info.status == InternalTaskStatus::Queued {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Gets all proving tasks
+    pub fn list_proving(&self) -> Vec<TaskId> {
+        self.tasks
+            .iter()
+            .filter_map(|(id, info)| {
+                if info.status == InternalTaskStatus::Proving {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Gets task context and dependencies
+    pub fn get_task_info(&self, task_id: TaskId) -> Result<(ProofContext, Vec<ProofContext>), PaaSError> {
+        let info = self.tasks.get(&task_id)
+            .ok_or(PaaSError::TaskNotFound(task_id))?;
+        Ok((info.context, info.deps.clone()))
+    }
 }
 
 /// Task statistics
@@ -423,7 +487,7 @@ mod tests {
     use super::*;
     use strata_db_store_sled::prover::ProofDBSled;
     use strata_db_store_sled::SledDbConfig;
-    use strata_primitives::l2::L2BlockCommitment;
+    use strata_primitives::evm_exec::EvmEeBlockCommitment;
     use strata_test_utils::ArbitraryGenerator;
     use std::sync::Arc;
     use typed_sled::SledDb;
@@ -441,8 +505,8 @@ mod tests {
         let db = setup_db();
 
         let mut generator = ArbitraryGenerator::new();
-        let start: L2BlockCommitment = generator.generate();
-        let end: L2BlockCommitment = generator.generate();
+        let start: EvmEeBlockCommitment = generator.generate();
+        let end: EvmEeBlockCommitment = generator.generate();
         let context = ProofContext::EvmEeStf(start, end);
 
         let task_id = tracker.create_task(context, vec![], &db).unwrap();
