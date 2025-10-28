@@ -1,0 +1,34 @@
+[package]
+name = "strata-paas"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Strata crates
+strata-db.workspace = true
+strata-primitives.workspace = true
+strata-service.workspace = true
+strata-tasks.workspace = true
+
+# Async runtime
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+anyhow.workspace = true
+thiserror.workspace = true
+serde = { workspace = true, features = ["derive"] }
+tracing.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+strata-test-utils.workspace = true
+typed-sled.workspace = true
+strata-db-store-sled.workspace = true
+
+[features]
+default = []
+sp1 = []

@@ -14288,6 +14288,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-paas"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "strata-db",
+ "strata-db-store-sled",
+ "strata-primitives",
+ "strata-service",
+ "strata-tasks",
+ "strata-test-utils",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+ "typed-sled",
+ "uuid",
+]
+
+[[package]]
 name = "strata-params"
 version = "0.1.0"
 dependencies = [
@@ -15938,6 +15958,7 @@ checksum = "2f87b8aa10b915a06587d0dec516c282ff295b475d94abf425d62b57710070a2"
 dependencies = [
  "getrandom 0.3.3",
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 
