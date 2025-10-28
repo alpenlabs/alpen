@@ -1,21 +1,11 @@
-//! Types relating to EE block related structures.
+//! Types relating to EE block related structures with SSZ support.
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, SentMessage, SubjectId};
 
-/// Container for an execution block that signals additional data with it.
-// TODO better name, using an intentionally bad one for now
-// TODO SSZ
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExecBlockPackage {
-    /// Commitment to the block itself.
-    commitment: ExecBlockCommitment,
-
-    /// Inputs processed in the block.
-    inputs: BlockInputs,
-
-    /// Outputs produced in the block.
-    outputs: BlockOutputs,
-}
+use crate::{
+    BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage, OutputTransfer,
+    SubjectDepositData,
+};
 
 impl ExecBlockPackage {
     pub fn new(
@@ -51,58 +41,32 @@ impl ExecBlockPackage {
     }
 }
 
-/// Commitment to a particular execution block, in multiple ways.
-// should this contain parent and index information?
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ExecBlockCommitment {
-    /// Block ID as interpreted by the execution environment, probably a hash of
-    /// a block header.
-    ///
-    /// This is so that the proofs are able to cheaply reason about the chain,
-    /// using its native concepts.
-    ///
-    /// We can't *just* use `raw_block_encoded_hash`, because we would have to
-    /// include the full block in the proof, and that doesn't even give us
-    /// parent linkages.
-    exec_blkid: Hash,
-
-    /// Hash of the encoded block.
-    ///
-    /// This is so that we can know if we have the right block without knowing
-    /// how to parse it.
-    ///
-    /// We can't *just* use `exec_blkid`, because we might not be in a context
-    /// where we know how to parse a block in order to hash it.
-    raw_block_encoded_hash: Hash,
-}
-
 impl ExecBlockCommitment {
     pub fn new(exec_blkid: Hash, raw_block_encoded_hash: Hash) -> Self {
         Self {
-            exec_blkid,
-            raw_block_encoded_hash,
+            exec_blkid: exec_blkid.to_vec().into(),
+            raw_block_encoded_hash: raw_block_encoded_hash.to_vec().into(),
         }
     }
 
     pub fn exec_blkid(&self) -> [u8; 32] {
-        self.exec_blkid
+        let mut result = [0u8; 32];
+        result.copy_from_slice(self.exec_blkid.as_ref());
+        result
     }
 
     pub fn raw_block_encoded_hash(&self) -> [u8; 32] {
-        self.raw_block_encoded_hash
+        let mut result = [0u8; 32];
+        result.copy_from_slice(self.raw_block_encoded_hash.as_ref());
+        result
     }
-}
-
-/// Inputs from the OL to the EE processed in a single EE block.
-// TODO SSZ
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BlockInputs {
-    subject_deposits: Vec<SubjectDepositData>,
 }
 
 impl BlockInputs {
     fn new(subject_deposits: Vec<SubjectDepositData>) -> Self {
-        Self { subject_deposits }
+        Self {
+            subject_deposits: subject_deposits.into(),
+        }
     }
 
     /// Creates a new empty instance.
@@ -111,29 +75,19 @@ impl BlockInputs {
     }
 
     pub fn subject_deposits(&self) -> &[SubjectDepositData] {
-        &self.subject_deposits
+        self.subject_deposits.as_ref()
     }
 
     pub fn add_subject_deposit(&mut self, d: SubjectDepositData) {
-        self.subject_deposits.push(d);
+        self.subject_deposits
+            .push(d)
+            .expect("subject_deposits list at capacity");
     }
 
     /// Returns the total number of inputs across all types.
     pub fn total_inputs(&self) -> usize {
         self.subject_deposits.len()
     }
-}
-
-/// Describes data for a simple deposit to a subject within an EE.
-///
-/// This is used for deposits from L1, but can encompass any "blind" transfer to
-/// a subject (which doesn't allow it to autonomously respond to the deposit or
-/// know where the sender was).
-// TODO SSZ
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubjectDepositData {
-    dest: SubjectId,
-    value: BitcoinAmount,
 }
 
 impl SubjectDepositData {
@@ -150,19 +104,11 @@ impl SubjectDepositData {
     }
 }
 
-/// Outputs from an EE to the OL produced in a single EE block.
-// TODO SSZ
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BlockOutputs {
-    output_transfers: Vec<OutputTransfer>,
-    output_messages: Vec<SentMessage>,
-}
-
 impl BlockOutputs {
     fn new(output_transfers: Vec<OutputTransfer>, output_messages: Vec<SentMessage>) -> Self {
         Self {
-            output_transfers,
-            output_messages,
+            output_transfers: output_transfers.into(),
+            output_messages: output_messages.into(),
         }
     }
 
@@ -172,32 +118,26 @@ impl BlockOutputs {
     }
 
     pub fn output_transfers(&self) -> &[OutputTransfer] {
-        &self.output_transfers
+        self.output_transfers.as_ref()
     }
 
     /// Adds a transfer output.
     pub fn add_transfer(&mut self, t: OutputTransfer) {
-        self.output_transfers.push(t);
+        self.output_transfers
+            .push(t)
+            .expect("output_transfers list at capacity");
     }
 
     pub fn output_messages(&self) -> &[SentMessage] {
-        &self.output_messages
+        self.output_messages.as_ref()
     }
 
     /// Adds a message output.
     pub fn add_message(&mut self, m: SentMessage) {
-        self.output_messages.push(m);
+        self.output_messages
+            .push(m)
+            .expect("output_messages list at capacity");
     }
-}
-
-// TODO SSZ?
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OutputTransfer {
-    /// Destination orchestration layer account ID.
-    dest: AccountId,
-
-    /// Native asset value sent (satoshis).
-    value: BitcoinAmount,
 }
 
 impl OutputTransfer {
@@ -211,5 +151,187 @@ impl OutputTransfer {
 
     pub fn value(&self) -> BitcoinAmount {
         self.value
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+
+    mod exec_block_commitment {
+        use super::*;
+
+        ssz_proptest!(
+            ExecBlockCommitment,
+            (any::<[u8; 32]>(), any::<[u8; 32]>()).prop_map(|(blkid, hash)| {
+                ExecBlockCommitment {
+                    exec_blkid: blkid.to_vec().into(),
+                    raw_block_encoded_hash: hash.to_vec().into(),
+                }
+            })
+        );
+
+        #[test]
+        fn test_new() {
+            let blkid = [0xaa; 32];
+            let hash = [0xbb; 32];
+            let commitment = ExecBlockCommitment::new(blkid, hash);
+
+            assert_eq!(commitment.exec_blkid(), blkid);
+            assert_eq!(commitment.raw_block_encoded_hash(), hash);
+        }
+    }
+
+    mod subject_deposit_data {
+        use super::*;
+
+        ssz_proptest!(
+            SubjectDepositData,
+            (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+                SubjectDepositData {
+                    dest: SubjectId::new(dest),
+                    value: BitcoinAmount::from_sat(sats),
+                }
+            })
+        );
+
+        #[test]
+        fn test_new() {
+            let dest = SubjectId::new([0xcc; 32]);
+            let value = BitcoinAmount::from_sat(1000);
+            let deposit = SubjectDepositData::new(dest, value);
+
+            assert_eq!(deposit.dest(), dest);
+            assert_eq!(deposit.value(), value);
+        }
+    }
+
+    mod block_inputs {
+        use super::*;
+
+        ssz_proptest!(
+            BlockInputs,
+            prop::collection::vec(
+                (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+                    SubjectDepositData {
+                        dest: SubjectId::new(dest),
+                        value: BitcoinAmount::from_sat(sats),
+                    }
+                }),
+                0..10
+            )
+            .prop_map(|deposits| BlockInputs {
+                subject_deposits: deposits.into()
+            })
+        );
+
+        #[test]
+        fn test_new_empty() {
+            let inputs = BlockInputs::new_empty();
+            assert_eq!(inputs.total_inputs(), 0);
+        }
+
+        #[test]
+        fn test_add_subject_deposit() {
+            let mut inputs = BlockInputs::new_empty();
+            let deposit =
+                SubjectDepositData::new(SubjectId::new([0xdd; 32]), BitcoinAmount::from_sat(500));
+
+            inputs.add_subject_deposit(deposit);
+            assert_eq!(inputs.total_inputs(), 1);
+        }
+    }
+
+    mod output_transfer {
+        use super::*;
+
+        ssz_proptest!(
+            OutputTransfer,
+            (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+                OutputTransfer {
+                    dest: AccountId::new(dest),
+                    value: BitcoinAmount::from_sat(sats),
+                }
+            })
+        );
+
+        #[test]
+        fn test_new() {
+            let dest = AccountId::new([0xee; 32]);
+            let value = BitcoinAmount::from_sat(2000);
+            let transfer = OutputTransfer::new(dest, value);
+
+            assert_eq!(transfer.dest(), dest);
+            assert_eq!(transfer.value(), value);
+        }
+    }
+
+    mod block_outputs {
+        use super::*;
+
+        ssz_proptest!(
+            BlockOutputs,
+            (
+                prop::collection::vec(
+                    (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+                        OutputTransfer {
+                            dest: AccountId::new(dest),
+                            value: BitcoinAmount::from_sat(sats),
+                        }
+                    }),
+                    0..10
+                ),
+                prop::collection::vec(
+                    (
+                        any::<[u8; 32]>(),
+                        any::<u64>(),
+                        prop::collection::vec(any::<u8>(), 0..50)
+                    )
+                        .prop_map(|(dest, sats, data)| {
+                            SentMessage::new(
+                                AccountId::new(dest),
+                                strata_acct_types::MsgPayload::new(
+                                    BitcoinAmount::from_sat(sats),
+                                    data,
+                                ),
+                            )
+                        }),
+                    0..10
+                )
+            )
+                .prop_map(|(transfers, messages)| {
+                    BlockOutputs {
+                        output_transfers: transfers.into(),
+                        output_messages: messages.into(),
+                    }
+                })
+        );
+
+        #[test]
+        fn test_new_empty() {
+            let outputs = BlockOutputs::new_empty();
+            assert_eq!(outputs.output_transfers().len(), 0);
+            assert_eq!(outputs.output_messages().len(), 0);
+        }
+    }
+
+    mod exec_block_not_package {
+        use super::*;
+
+        #[test]
+        fn test_new() {
+            let commitment = ExecBlockCommitment::new([0xff; 32], [0x11; 32]);
+            let inputs = BlockInputs::new_empty();
+            let outputs = BlockOutputs::new_empty();
+
+            let block = ExecBlockPackage::new(commitment, inputs, outputs);
+
+            assert_eq!(block.exec_blkid(), [0xff; 32]);
+            assert_eq!(block.raw_block_encoded_hash(), [0x11; 32]);
+            assert_eq!(block.inputs().total_inputs(), 0);
+        }
     }
 }

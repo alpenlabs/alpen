@@ -14027,7 +14027,15 @@ dependencies = [
 name = "strata-ee-chain-types"
 version = "0.1.0"
 dependencies = [
+ "proptest",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_types",
  "strata-acct-types",
+ "strata-test-utils-ssz",
+ "tree_hash 0.6.0",
+ "tree_hash_derive 0.6.0",
 ]
 
 [[package]]

@@ -5,9 +5,20 @@
 //! orchestration layer protocol.
 // @jose: fineeeee
 
-mod block;
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
 
-pub use block::{
+// Publicly re-export only the SSZ items this crate's API intends to expose
+pub use ssz_generated::ssz::block::{
     BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage, OutputTransfer,
     SubjectDepositData,
 };
+
+mod block;
