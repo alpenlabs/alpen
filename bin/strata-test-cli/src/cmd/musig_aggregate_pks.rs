@@ -9,9 +9,9 @@ use crate::taproot::musig_aggregate_pks_inner;
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "musig-aggregate-pks")]
 pub struct MusigAggregatePksArgs {
-    #[argh(option)]
-    /// public keys in JSON array format (33-byte compressed hex strings)
+    /// public keys in JSON array format (33-byte compressed hex-encoded strings)
     /// Example: --pubkeys='["foo", "bar"]'
+    #[argh(option)]
     pub pubkeys: String,
 }
 

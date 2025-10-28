@@ -100,27 +100,18 @@ pub(crate) fn get_address_inner(index: u32) -> Result<String, Error> {
 ///
 /// # Note
 ///
-/// These should all be X-only public keys.
+/// These should all be X-only public keys, assuming they are even
 pub(crate) fn musig_aggregate_pks_inner(pks: Vec<String>) -> Result<String, Error> {
     let pks = pks
         .into_iter()
         .map(|pk| parse_xonly_pk(&pk).map_err(|_| Error::XOnlyPublicKey))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let result = musig_aggregate_pks_core(pks)?.to_string();
-
-    Ok(result)
-}
-
-/// MuSig2 aggregates XOnlyPublicKeys into a single public key (core implementation).
-///
-/// # Note
-///
-/// These should all be X-only public keys, assuming that all are [`Parity::Even`].
-fn musig_aggregate_pks_core(pks: Vec<XOnlyPublicKey>) -> Result<XOnlyPublicKey, Error> {
     let pks: Vec<(XOnlyPublicKey, Parity)> = pks.into_iter().map(|pk| (pk, Parity::Even)).collect();
     let key_agg_ctx = KeyAggContext::new(pks).map_err(|_| Error::XOnlyPublicKey)?;
-    Ok(key_agg_ctx.aggregated_pubkey())
+    let result = key_agg_ctx.aggregated_pubkey::<XOnlyPublicKey>();
+
+    Ok(result.to_string())
 }
 
 /// Converts a [`PublicKey`] string to an [`XOnlyPublicKey`] string.

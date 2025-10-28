@@ -9,8 +9,8 @@ use crate::taproot::get_address_inner;
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-address")]
 pub struct GetAddressArgs {
-    #[argh(option)]
     /// address index
+    #[argh(option)]
     pub index: u32,
 }
 

@@ -9,17 +9,17 @@ use crate::bridge::dt;
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "create-deposit-tx")]
 pub struct CreateDepositTxArgs {
-    #[argh(option)]
     /// raw DRT transaction in hex-encoded string
+    #[argh(option)]
     pub drt_tx: String,
 
-    #[argh(option)]
     /// operator private keys in JSON array format (each key is 78 bytes hex)
     /// Example: --operator-keys='["foo", "bar"]'
+    #[argh(option)]
     pub operator_keys: String,
 
-    #[argh(option)]
     /// deposit transaction index
+    #[argh(option)]
     pub index: u32,
 }
 

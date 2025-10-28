@@ -9,36 +9,36 @@ use crate::bridge::{types::BitcoinDConfig, withdrawal};
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "create-withdrawal-fulfillment")]
 pub struct CreateWithdrawalFulfillmentArgs {
-    #[argh(option)]
     /// destination Bitcoin address (BOSD format)
+    #[argh(option)]
     pub destination: String,
 
-    #[argh(option)]
     /// amount in satoshis
+    #[argh(option)]
     pub amount: u64,
 
-    #[argh(option)]
     /// operator index
+    #[argh(option)]
     pub operator_idx: u32,
 
-    #[argh(option)]
     /// deposit index
+    #[argh(option)]
     pub deposit_idx: u32,
 
-    #[argh(option)]
     /// deposit transaction ID (hex)
+    #[argh(option)]
     pub deposit_txid: String,
 
-    #[argh(option)]
     /// bitcoin RPC URL
+    #[argh(option)]
     pub btc_url: String,
 
-    #[argh(option)]
     /// bitcoin RPC username
+    #[argh(option)]
     pub btc_user: String,
 
-    #[argh(option)]
     /// bitcoin RPC password
+    #[argh(option)]
     pub btc_password: String,
 }
 

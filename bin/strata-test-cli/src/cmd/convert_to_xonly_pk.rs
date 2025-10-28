@@ -16,8 +16,8 @@ use crate::taproot::convert_to_xonly_pk_inner;
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "convert-to-xonly-pk")]
 pub struct ConvertToXonlyPkArgs {
-    #[argh(option)]
     /// public key in hex-encoded string
+    #[argh(option)]
     pub pubkey: String,
 }
 

@@ -9,8 +9,8 @@ use crate::taproot::extract_p2tr_pubkey_inner;
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "extract-p2tr-pubkey")]
 pub struct ExtractP2trPubkeyArgs {
-    #[argh(option)]
     /// taproot address
+    #[argh(option)]
     pub address: String,
 }
 

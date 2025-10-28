@@ -9,12 +9,12 @@ use crate::schnorr::sign_schnorr_inner;
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "sign-schnorr-sig")]
 pub struct SignSchnorrSigArgs {
-    #[argh(option)]
     /// message hash in hex-encoded string (32 bytes)
+    #[argh(option)]
     pub message: String,
 
-    #[argh(option)]
     /// secret key in hex-encoded string (32 bytes)
+    #[argh(option)]
     pub secret_key: String,
 }
 
