@@ -6,11 +6,18 @@ use crate::taproot::convert_to_xonly_pk_inner;
 /// Arguments for converting a public key to X-only format.
 ///
 /// Strips the parity byte from a public key to produce an X-only public key (32 bytes).
+///
+/// # Warning
+///
+/// This should only be done for even public keys, i.e. the parity byte is `02`
+/// and the public key starts with `02...`.
+/// The caller is responsible for only using this function on even public keys,
+/// since it is implied in Taproot that all X-only public keys are even.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "convert-to-xonly-pk")]
 pub struct ConvertToXonlyPkArgs {
     #[argh(option)]
-    /// public key in hex format
+    /// public key in hex-encoded string
     pub pubkey: String,
 }
 

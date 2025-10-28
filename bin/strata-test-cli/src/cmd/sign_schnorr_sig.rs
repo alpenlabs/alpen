@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
-use crate::schnorr::sign_schnorr_sig_inner;
+use crate::schnorr::sign_schnorr_inner;
 
 /// Arguments for signing a message with a Schnorr signature.
 ///
@@ -10,16 +10,16 @@ use crate::schnorr::sign_schnorr_sig_inner;
 #[argh(subcommand, name = "sign-schnorr-sig")]
 pub struct SignSchnorrSigArgs {
     #[argh(option)]
-    /// message hash in hex format (32 bytes)
+    /// message hash in hex-encoded string (32 bytes)
     pub message: String,
 
     #[argh(option)]
-    /// secret key in hex format (32 bytes)
+    /// secret key in hex-encoded string (32 bytes)
     pub secret_key: String,
 }
 
 pub(crate) fn sign_schnorr_sig(args: SignSchnorrSigArgs) -> Result<(), DisplayedError> {
-    let (sig, pk) = sign_schnorr_sig_inner(&args.message, &args.secret_key)
+    let (sig, pk) = sign_schnorr_inner(&args.message, &args.secret_key)
         .user_error("Invalid message or secret key")?;
     let output = serde_json::json!({
         "signature": hex::encode(sig),

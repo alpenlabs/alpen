@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use secp256k1::{Keypair, SecretKey, SECP256K1};
-use strata_crypto::sign_schnorr_sig as sign_schnorr_sig_crypto;
+use strata_crypto::sign_schnorr_sig as sign_schnorr_crypto;
 use strata_primitives::buf::Buf32;
 
 use crate::error::Error;
@@ -18,7 +18,7 @@ use crate::error::Error;
 /// # Returns
 /// * The Schnorr signature (64 bytes)
 /// * The public key (32 bytes)
-pub(crate) fn sign_schnorr_sig_inner(
+pub(crate) fn sign_schnorr_inner(
     message: &str,
     secret_key: &str,
 ) -> Result<(Vec<u8>, Vec<u8>), Error> {
@@ -27,7 +27,7 @@ pub(crate) fn sign_schnorr_sig_inner(
     let sk = Buf32::from_str(secret_key)
         .map_err(|_| Error::TxBuilder("invalid secret key".to_string()))?;
 
-    let sig = sign_schnorr_sig_crypto(&message, &sk);
+    let sig = sign_schnorr_crypto(&message, &sk);
 
     // get the public key
     let sk = SecretKey::from_str(secret_key)

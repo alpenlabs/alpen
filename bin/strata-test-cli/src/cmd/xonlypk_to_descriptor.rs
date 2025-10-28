@@ -10,7 +10,7 @@ use crate::utils::xonlypk_to_descriptor_inner;
 #[argh(subcommand, name = "xonlypk-to-descriptor")]
 pub struct XonlypkToDescriptorArgs {
     #[argh(option)]
-    /// x-only public key in hex format (32 bytes)
+    /// x-only public key in hex-encoded string (32 bytes)
     pub xonly_pubkey: String,
 }
 

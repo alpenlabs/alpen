@@ -3,7 +3,7 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::bridge::{types::BitcoinDConfig, withdrawal};
 
-/// Arguments for creating a withdrawal fulfillment transaction.
+/// Arguments for creating a withdrawal fulfillment transaction (WFT).
 ///
 /// Creates a Bitcoin transaction that fulfills a withdrawal request from the bridge.
 #[derive(FromArgs, PartialEq, Debug)]

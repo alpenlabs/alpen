@@ -178,7 +178,7 @@ def convert_to_xonly_pk(pubkey: str) -> str:
     Convert a public key to X-only format.
 
     Args:
-        pubkey: Public key in hex format
+        pubkey: Public key in hex-encoded string
 
     Returns:
         X-only public key as hex string
@@ -197,8 +197,8 @@ def sign_schnorr_sig(message: str, secret_key: str) -> tuple[bytes, bytes]:
     Sign a message using Schnorr signature.
 
     Args:
-        message: Message hash in hex format
-        secret_key: Secret key in hex format
+        message: Message hash in hex-encoded string
+        secret_key: Secret key in hex-encoded string
 
     Returns:
         Tuple of (signature bytes, public key bytes)
@@ -225,7 +225,7 @@ def xonlypk_to_descriptor(xonly_pubkey: str) -> str:
     Convert X-only public key to BOSD descriptor.
 
     Args:
-        xonly_pubkey: X-only public key in hex format
+        xonly_pubkey: X-only public key in hex-encoded string
 
     Returns:
         BOSD descriptor as string
