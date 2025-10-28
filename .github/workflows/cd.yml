@@ -39,7 +39,7 @@ jobs:
         # The directories `bin` and `docker` must contain the subdirectories in the
         # matrix below.
         program:
-          [strata-client, strata-sequencer-client, alpen-reth, prover-client]
+          [strata-client, strata-sequencer-client, alpen-reth]
     outputs:
       program: ${{ matrix.program }}
       sp1_value: ${{ steps.extract-sp1-value.outputs.sp1_value }}
