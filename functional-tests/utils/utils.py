@@ -693,33 +693,63 @@ def run_tty(cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.C
 
     buf = [] if capture_output else None
 
-    def reader(fd):
-        data = os.read(fd, 4096)
-        if data:
-            if buf is not None:
-                buf.append(data)
-            elif stdout is None:
-                os.write(1, data)  # parent stdout
-            else:
-                # file-like or text stream
-                if hasattr(stdout, "buffer"):
-                    stdout.buffer.write(data)
-                    stdout.flush()
-                else:
-                    stdout.write(data.decode("utf-8", "replace"))
-                    if hasattr(stdout, "flush"):
-                        stdout.flush()
-        return data
+    # Create a pseudo-terminal pair
+    master_fd, slave_fd = pty.openpty()
 
-    old_env = os.environ.copy()
     try:
+        # Prepare environment - inherit current env and merge with custom env
+        proc_env = os.environ.copy()
         if env:
-            os.environ.update(env)
-        rc = pty.spawn(cmd, reader)
+            proc_env.update(env)
+
+        # Start subprocess with the slave side of the PTY
+        proc = subprocess.Popen(
+            cmd,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=proc_env,
+            close_fds=True,
+        )
+
+        # Close slave_fd in parent process (child has its own copy)
+        os.close(slave_fd)
+        slave_fd = -1  # Mark as closed
+
+        # Read from master_fd until process completes
+        while True:
+            try:
+                data = os.read(master_fd, 4096)
+                if not data:
+                    break
+
+                if buf is not None:
+                    buf.append(data)
+                elif stdout is None:
+                    os.write(1, data)  # parent stdout
+                else:
+                    # file-like or text stream
+                    if hasattr(stdout, "buffer"):
+                        stdout.buffer.write(data)
+                        stdout.flush()
+                    else:
+                        stdout.write(data.decode("utf-8", "replace"))
+                        if hasattr(stdout, "flush"):
+                            stdout.flush()
+            except OSError:
+                # PTY closed, process likely finished
+                break
+
+        # Wait for process to complete
+        rc = proc.wait()
+
     finally:
-        with contextlib.suppress(Exception):
-            os.environ.clear()
-            os.environ.update(old_env)
+        # Clean up file descriptors
+        if slave_fd != -1:
+            with contextlib.suppress(OSError):
+                os.close(slave_fd)
+        with contextlib.suppress(OSError):
+            os.close(master_fd)
 
     return subprocess.CompletedProcess(
         args=cmd,

@@ -50,15 +50,14 @@ def create_deposit_transaction(
     drt_tx_hex = drt_tx.hex()
     operator_keys_json = json.dumps([key.hex() for key in operator_keys])
 
+    # fmt: off
     args = [
         "create-deposit-tx",
-        "--drt-tx",
-        drt_tx_hex,
-        "--operator-keys",
-        operator_keys_json,
-        "--index",
-        str(index),
+        "--drt-tx", drt_tx_hex,
+        "--operator-keys", operator_keys_json,
+        "--index", str(index),
     ]
+    # fmt: on
 
     result_hex = _run_command(args)
     return bytes.fromhex(result_hex)
@@ -90,25 +89,19 @@ def create_withdrawal_fulfillment(
     Returns:
         Withdrawal fulfillment transaction as bytes
     """
+    # fmt: off
     args = [
         "create-withdrawal-fulfillment",
-        "--destination",
-        destination,
-        "--amount",
-        str(amount),
-        "--operator-idx",
-        str(operator_idx),
-        "--deposit-idx",
-        str(deposit_idx),
-        "--deposit-txid",
-        deposit_txid,
-        "--btc-url",
-        btc_url,
-        "--btc-user",
-        btc_user,
-        "--btc-password",
-        btc_password,
+        "--destination", destination,
+        "--amount", str(amount),
+        "--operator-idx", str(operator_idx),
+        "--deposit-idx", str(deposit_idx),
+        "--deposit-txid", deposit_txid,
+        "--btc-url", btc_url,
+        "--btc-user", btc_user,
+        "--btc-password", btc_password,
     ]
+    # fmt: on
 
     result_hex = _run_command(args)
     return bytes.fromhex(result_hex)
@@ -124,11 +117,12 @@ def get_address(index: int) -> str:
     Returns:
         Taproot address as string
     """
+    # fmt: off
     args = [
         "get-address",
-        "--index",
-        str(index),
+        "--index", str(index),
     ]
+    # fmt: on
 
     return _run_command(args)
 
@@ -145,11 +139,12 @@ def musig_aggregate_pks(pubkeys: list[str]) -> str:
     """
     pubkeys_json = json.dumps(pubkeys)
 
+    # fmt: off
     args = [
         "musig-aggregate-pks",
-        "--pubkeys",
-        pubkeys_json,
+        "--pubkeys", pubkeys_json,
     ]
+    # fmt: on
 
     return _run_command(args)
 
@@ -164,11 +159,12 @@ def extract_p2tr_pubkey(address: str) -> str:
     Returns:
         X-only public key as hex string
     """
+    # fmt: off
     args = [
         "extract-p2tr-pubkey",
-        "--address",
-        address,
+        "--address", address,
     ]
+    # fmt: on
 
     return _run_command(args)
 
@@ -183,11 +179,12 @@ def convert_to_xonly_pk(pubkey: str) -> str:
     Returns:
         X-only public key as hex string
     """
+    # fmt: off
     args = [
         "convert-to-xonly-pk",
-        "--pubkey",
-        pubkey,
+        "--pubkey", pubkey,
     ]
+    # fmt: on
 
     return _run_command(args)
 
@@ -203,13 +200,13 @@ def sign_schnorr_sig(message: str, secret_key: str) -> tuple[bytes, bytes]:
     Returns:
         Tuple of (signature bytes, public key bytes)
     """
+    # fmt: off
     args = [
         "sign-schnorr-sig",
-        "--message",
-        message,
-        "--secret-key",
-        secret_key,
+        "--message", message,
+        "--secret-key", secret_key,
     ]
+    # fmt: on
 
     result_json = _run_command(args)
     result = json.loads(result_json)
@@ -230,10 +227,11 @@ def xonlypk_to_descriptor(xonly_pubkey: str) -> str:
     Returns:
         BOSD descriptor as string
     """
+    # fmt: off
     args = [
         "xonlypk-to-descriptor",
-        "--xonly-pubkey",
-        xonly_pubkey,
+        "--xonly-pubkey", xonly_pubkey,
     ]
+    # fmt: on
 
     return _run_command(args)
