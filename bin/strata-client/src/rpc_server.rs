@@ -396,6 +396,7 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_current_deposits(&self) -> RpcResult<Vec<u32>> {
+        // FIXME: figure out how to get the current deposits
         let deps = self
             .status_channel
             .cur_tip_deposits_table()
@@ -405,6 +406,7 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_current_deposit_by_id(&self, deposit_id: u32) -> RpcResult<RpcDepositEntry> {
+        // FIXME: figure out how to get the current deposits
         let deps = self
             .status_channel
             .cur_tip_deposits_table()
@@ -416,6 +418,7 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_cur_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
+        // FIXME: figure out how to get the current withdrawals
         let deps = self
             .status_channel
             .get_cur_tip_chainstate()
@@ -526,6 +529,7 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_active_operator_chain_pubkey_set(&self) -> RpcResult<PublickeyTable> {
+        // FIXME: figure out how to get the current operator table
         let operator_table = self
             .status_channel
             .cur_tip_operator_table()

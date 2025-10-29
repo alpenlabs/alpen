@@ -1,10 +1,7 @@
 //! L1 check-in logic.
 
 use bitcoin::{block::Header, consensus};
-use strata_asm_types::{
-    DepositInfo, DepositSpendInfo, L1BlockManifest, ProtocolOperation, WithdrawalFulfillmentInfo,
-};
-use strata_bridge_types::DepositIntent;
+use strata_asm_types::{L1BlockManifest, ProtocolOperation};
 use strata_checkpoint_types::{verify_signed_checkpoint_sig, SignedCheckpoint};
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
@@ -142,25 +139,8 @@ fn process_proto_op<'s, S: StateAccessor>(
     op: &ProtocolOperation,
     params: &RollupParams,
 ) -> Result<(), OpError> {
-    match &op {
-        ProtocolOperation::Checkpoint(ckpt) => {
-            process_l1_checkpoint(state, block_mf, ckpt, params)?;
-        }
-
-        ProtocolOperation::Deposit(info) => {
-            process_l1_deposit(state, block_mf, info)?;
-        }
-
-        ProtocolOperation::WithdrawalFulfillment(info) => {
-            process_withdrawal_fulfillment(state, info)?;
-        }
-
-        ProtocolOperation::DepositSpent(info) => {
-            process_deposit_spent(state, info)?;
-        }
-
-        // Other operations we don't do anything with for now.
-        _ => {}
+    if let ProtocolOperation::Checkpoint(ckpt) = &op {
+        process_l1_checkpoint(state, block_mf, ckpt, params)?;
     }
 
     Ok(())
@@ -222,54 +202,5 @@ fn process_l1_checkpoint<'s, S: StateAccessor>(
     state.inner_mut().set_finalized_epoch(new_fin_epoch);
     trace!(?new_fin_epoch, "observed finalized checkpoint");
 
-    Ok(())
-}
-
-fn process_l1_deposit<'s, S: StateAccessor>(
-    state: &mut FauxStateCache<'s, S>,
-    _src_block_mf: &L1BlockManifest,
-    info: &DepositInfo,
-) -> Result<(), OpError> {
-    let requested_idx = info.deposit_idx;
-    let outpoint = info.outpoint;
-
-    // Create the deposit entry to track it on the bridge side.
-    //
-    // Right now all operators sign all deposits, take them all.
-    let all_operators = state.state().operator_table().indices().collect::<_>();
-    let ok = state.insert_deposit_entry(requested_idx, outpoint, info.amt, all_operators);
-
-    // If we inserted it successfully, create the intent.
-    if ok {
-        // Insert an intent to credit the destination with it.
-        let deposit_intent = DepositIntent::new(info.amt, info.address.clone());
-        state.insert_deposit_intent(0, deposit_intent);
-
-        // Logging so we know if it got there.
-        trace!(?outpoint, "handled deposit");
-    } else {
-        warn!(?outpoint, %requested_idx, "ignoring deposit that would have overwritten entry");
-    }
-
-    Ok(())
-}
-
-/// Withdrawal Fulfillment with correct metadata is seen.
-/// Mark the withthdrawal as being executed and prevent reassignment to another operator.
-fn process_withdrawal_fulfillment<'s, S: StateAccessor>(
-    state: &mut FauxStateCache<'s, S>,
-    info: &WithdrawalFulfillmentInfo,
-) -> Result<(), OpError> {
-    state.mark_deposit_fulfilled(info);
-    Ok(())
-}
-
-/// Locked deposit on L1 has been spent.
-fn process_deposit_spent<'s, S: StateAccessor>(
-    state: &mut FauxStateCache<'s, S>,
-    info: &DepositSpendInfo,
-) -> Result<(), OpError> {
-    // Currently, we are not tracking how this was spent, only that it was.
-    state.mark_deposit_reimbursed(info.deposit_idx);
     Ok(())
 }

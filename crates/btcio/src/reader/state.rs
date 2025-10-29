@@ -63,6 +63,7 @@ impl ReaderState {
         &self.filter_config
     }
 
+    #[expect(unused, reason = "not used but will be used in the future")]
     pub(crate) fn filter_config_mut(&mut self) -> &mut TxFilterConfig {
         &mut self.filter_config
     }

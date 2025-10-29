@@ -26,11 +26,8 @@ use tracing::*;
 use super::event::L1Event;
 use crate::{
     reader::{
-        event::BlockData,
-        handler::handle_bitcoin_event,
-        state::ReaderState,
+        event::BlockData, handler::handle_bitcoin_event, state::ReaderState,
         tx_indexer::ReaderTxVisitorImpl,
-        utils::{find_checkpoint_in_event, find_last_checkpoint_chainstate},
     },
     status::{apply_status_updates, L1StatusUpdate},
 };
@@ -183,13 +180,8 @@ async fn init_reader_state<R: Reader>(
     }
 
     let params = ctx.params.clone();
-    let mut filter_config = TxFilterConfig::derive_from(params.rollup())?;
+    let filter_config = TxFilterConfig::derive_from(params.rollup())?;
     let epoch = ctx.status_channel.get_cur_chain_epoch().unwrap_or(0);
-
-    // update filterconfig based on chainstate of last seen checkpoint
-    if let Some(chainstate) = find_last_checkpoint_chainstate(&ctx.storage).await? {
-        filter_config.update_from_chainstate(&chainstate);
-    }
 
     let state = ReaderState::new(
         real_cur_height + 1,
@@ -247,15 +239,6 @@ async fn poll_for_new_blocks<R: Reader>(
     for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, ev)) => {
-                if let Some(checkpt) = find_checkpoint_in_event(&ev) {
-                    // if we have a checkpoint in this block, update filterconfig based on this
-                    let chainstate = borsh::from_slice(checkpt.checkpoint().sidecar().chainstate())
-                        .expect("deserialize chainstate");
-
-                    state
-                        .filter_config_mut()
-                        .update_from_chainstate(&chainstate);
-                }
                 events.push(ev);
 
                 info!(%fetch_height, %blkid, "accepted new block");
