@@ -38,6 +38,6 @@ class L1ReadReorgTest(testenv.StrataTestBase):
         block_from_invalidated_height = seq_waiter.wait_until_l1_height_at(invalidate_height + 1)
         self.info(f"now have block {block_from_invalidated_height}")
 
-        assert to_be_invalid_block_hash != block_from_invalidated_height['cur_tip_blkid'], (
+        assert to_be_invalid_block_hash != block_from_invalidated_height["cur_tip_blkid"], (
             f"Expected reorg from block {invalidate_height}"
         )

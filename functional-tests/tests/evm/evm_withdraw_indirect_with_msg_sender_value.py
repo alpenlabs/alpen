@@ -1,3 +1,5 @@
+import logging
+
 import flexitest
 
 from envs import net_settings, testenv
