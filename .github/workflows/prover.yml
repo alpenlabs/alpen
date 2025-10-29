@@ -12,7 +12,7 @@ jobs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           persist-credentials: false
 
@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           persist-credentials: false
 
@@ -41,7 +41,7 @@ jobs:
           toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
 
       - name: Use Cargo cache
-        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2
         with:
           cache-on-failure: true
 
@@ -49,7 +49,7 @@ jobs:
       # Under the hood, the following action symlinks mold binary onto lld,
       # so everything is linked faster (hopefully).
       - name: Install mold linker
-        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
+        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
       - name: Set up Clang
         uses: egor-tensin/setup-clang@ef434b41eb33a70396fb336b1bae39c76d740c3d # v1
@@ -64,7 +64,7 @@ jobs:
           cargo prove --version
 
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           persist-credentials: false
 
