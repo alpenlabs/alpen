@@ -344,15 +344,9 @@ bench-results:
 
 # Run all database benchmarks
 [group('benches')]
-bench-db: bench-db-sled bench-db-rocksdb
+bench-db: bench-db-sled
 
 # Run database benchmarks with `sled` backend only
 [group('benches')]
 bench-db-sled:
     cargo bench --package alpen-benchmarks --no-default-features --features=db,sled
-
-# Run database benchmarks with `rocksdb` backend only
-[group('benches')]
-bench-db-rocksdb:
-    cargo bench --package alpen-benchmarks --no-default-features --features=db,rocksdb
-

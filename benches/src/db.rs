@@ -8,8 +8,8 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 // Compile-time check to ensure at least one database backend is enabled
-#[cfg(all(feature = "db", not(any(feature = "sled", feature = "rocksdb"))))]
-compile_error!("Database benchmarks require at least one backend feature: 'sled' or 'rocksdb'");
+#[cfg(all(feature = "db", not(feature = "sled")))]
+compile_error!("Database benchmarks require at least one backend feature: 'sled'");
 
 /// `Sled` backend support.
 #[cfg(feature = "sled")]
@@ -33,29 +33,6 @@ pub mod sled {
     }
 }
 
-/// `RocksDB` backend support.
-#[cfg(feature = "rocksdb")]
-pub mod rocksdb {
-    use strata_db_store_rocksdb::{open_rocksdb_database, DbOpsConfig};
-
-    use super::*;
-
-    /// Creates a temporary `RocksDB` instance for benchmarking.
-    pub fn create_temp_rocksdb() -> (Arc<rockbound::OptimisticTransactionDB>, TempDir) {
-        let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let db =
-            open_rocksdb_database(temp_dir.path(), "benchmark_db").expect("Failed to open RocksDB");
-        (db, temp_dir)
-    }
-
-    /// Default database operations configuration for `RocksDB` benchmarks.
-    pub fn default_rocksdb_ops_config() -> DbOpsConfig {
-        DbOpsConfig::new(10)
-    }
-}
-
-#[cfg(feature = "rocksdb")]
-pub use rocksdb::*;
 #[cfg(feature = "sled")]
 pub use sled::*;
 
@@ -65,10 +42,6 @@ pub enum DatabaseBackend {
     /// `Sled` database backend.
     #[cfg(feature = "sled")]
     Sled,
-
-    /// `RocksDB` database backend.
-    #[cfg(feature = "rocksdb")]
-    RocksDb,
 }
 
 impl DatabaseBackend {
@@ -81,8 +54,6 @@ impl DatabaseBackend {
         let mut backends = Vec::new();
         #[cfg(feature = "sled")]
         backends.push(DatabaseBackend::Sled);
-        #[cfg(feature = "rocksdb")]
-        backends.push(DatabaseBackend::RocksDb);
         backends
     }
 
@@ -91,8 +62,6 @@ impl DatabaseBackend {
         match self {
             #[cfg(feature = "sled")]
             DatabaseBackend::Sled => "sled",
-            #[cfg(feature = "rocksdb")]
-            DatabaseBackend::RocksDb => "rocksdb",
         }
     }
 }
@@ -108,5 +77,3 @@ macro_rules! bench_all_backends {
         }
     };
 }
-
-pub use bench_all_backends;

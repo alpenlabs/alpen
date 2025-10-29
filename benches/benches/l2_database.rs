@@ -36,12 +36,6 @@ use strata_primitives as _;
 )]
 use strata_state::prelude::*;
 use tempfile::TempDir;
-#[cfg(feature = "rocksdb")]
-use {
-    alpen_benchmarks::db::rocksdb::{create_temp_rocksdb, default_rocksdb_ops_config},
-    rockbound as _,
-    strata_db_store_rocksdb::l2::db::L2Db as L2DbRocks,
-};
 // Feature-gated imports
 #[cfg(feature = "sled")]
 use {
@@ -66,26 +60,6 @@ impl L2BenchSetupSled {
         let (sled_db, temp_dir) = create_temp_sled();
         let ops_config = default_sled_ops_config();
         let db = L2DBSled::new(sled_db, ops_config).expect("Failed to create L2DBSled");
-        Self {
-            db,
-            _temp_dir: temp_dir,
-        }
-    }
-}
-
-/// Benchmark setup for RocksDB L2 database.
-#[cfg(feature = "rocksdb")]
-struct L2BenchSetupRocks {
-    db: L2DbRocks,
-    _temp_dir: TempDir,
-}
-
-#[cfg(feature = "rocksdb")]
-impl L2BenchSetupRocks {
-    fn new() -> Self {
-        let (rocksdb, temp_dir) = create_temp_rocksdb();
-        let ops_config = default_rocksdb_ops_config();
-        let db = L2DbRocks::new(rocksdb, ops_config);
         Self {
             db,
             _temp_dir: temp_dir,
@@ -118,20 +92,6 @@ fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                         |(setup, bundle)| black_box(setup.db.put_block_data(bundle)).unwrap(),
                     );
                 }
-                #[cfg(feature = "rocksdb")]
-                DatabaseBackend::RocksDb => {
-                    b.iter_with_setup(
-                        || {
-                            let setup = L2BenchSetupRocks::new();
-                            let seed_data = vec![payload_ops as u8; 1024];
-                            let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L2BlockBundle");
-                            (setup, bundle)
-                        },
-                        |(setup, bundle)| black_box(setup.db.put_block_data(bundle)).unwrap(),
-                    );
-                }
             },
         );
     }
@@ -155,22 +115,6 @@ fn bench_get_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                     b.iter_with_setup(
                         || {
                             let setup = L2BenchSetupSled::new();
-                            let seed_data = vec![(payload_ops + 1) as u8; 1024];
-                            let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L2BlockBundle");
-                            let block_id = bundle.block().header().get_blockid();
-                            setup.db.put_block_data(bundle).unwrap();
-                            (setup, block_id)
-                        },
-                        |(setup, block_id)| black_box(setup.db.get_block_data(block_id)).unwrap(),
-                    );
-                }
-                #[cfg(feature = "rocksdb")]
-                DatabaseBackend::RocksDb => {
-                    b.iter_with_setup(
-                        || {
-                            let setup = L2BenchSetupRocks::new();
                             let seed_data = vec![(payload_ops + 1) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
                             let bundle = L2BlockBundle::arbitrary(&mut unstructured)
@@ -219,25 +163,6 @@ fn bench_set_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
                         },
                     );
                 }
-                #[cfg(feature = "rocksdb")]
-                DatabaseBackend::RocksDb => {
-                    b.iter_with_setup(
-                        || {
-                            let setup = L2BenchSetupRocks::new();
-                            let seed_data = vec![(payload_ops + 2) as u8; 1024];
-                            let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L2BlockBundle");
-                            let block_id = bundle.block().header().get_blockid();
-                            setup.db.put_block_data(bundle).unwrap();
-                            (setup, block_id)
-                        },
-                        |(setup, block_id)| {
-                            black_box(setup.db.set_block_status(block_id, BlockStatus::Valid))
-                                .unwrap()
-                        },
-                    );
-                }
             },
         );
     }
@@ -261,26 +186,6 @@ fn bench_get_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
                     b.iter_with_setup(
                         || {
                             let setup = L2BenchSetupSled::new();
-                            let seed_data = vec![(payload_ops + 3) as u8; 1024];
-                            let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let bundle = L2BlockBundle::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L2BlockBundle");
-                            let block_id = bundle.block().header().get_blockid();
-                            setup.db.put_block_data(bundle).unwrap();
-                            setup
-                                .db
-                                .set_block_status(block_id, BlockStatus::Valid)
-                                .unwrap();
-                            (setup, block_id)
-                        },
-                        |(setup, block_id)| black_box(setup.db.get_block_status(block_id)).unwrap(),
-                    );
-                }
-                #[cfg(feature = "rocksdb")]
-                DatabaseBackend::RocksDb => {
-                    b.iter_with_setup(
-                        || {
-                            let setup = L2BenchSetupRocks::new();
                             let seed_data = vec![(payload_ops + 3) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
                             let bundle = L2BlockBundle::arbitrary(&mut unstructured)
