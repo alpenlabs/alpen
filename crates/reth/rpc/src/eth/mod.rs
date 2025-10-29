@@ -27,7 +27,7 @@ use reth_rpc::{
 use reth_rpc_eth_api::{
     helpers::{
         pending_block::BuildPendingEnv, spec::SignersForApi, AddDevSigners, EthApiSpec, EthFees,
-        EthState, LoadFee, LoadState, SpawnBlocking, Trace,
+        EthState, LoadFee, LoadPendingBlock, LoadState, SpawnBlocking, Trace,
     },
     EthApiTypes, FromEvmError, FullEthApiServer, RpcConvert, RpcConverter, RpcNodeCore,
     RpcNodeCoreExt, SignableTxRequest,
@@ -207,6 +207,7 @@ impl<N, Rpc> LoadState for AlpenEthApi<N, Rpc>
 where
     N: RpcNodeCore,
     Rpc: RpcConvert<Primitives = N::Primitives>,
+    Self: LoadPendingBlock,
 {
 }
 
@@ -214,6 +215,7 @@ impl<N, Rpc> EthState for AlpenEthApi<N, Rpc>
 where
     N: RpcNodeCore,
     Rpc: RpcConvert<Primitives = N::Primitives>,
+    Self: LoadPendingBlock,
 {
     #[inline]
     fn max_proof_window(&self) -> u64 {
@@ -256,7 +258,11 @@ impl<N: RpcNodeCore, Rpc: RpcConvert> fmt::Debug for AlpenEthApi<N, Rpc> {
 }
 
 /// Container type for [`AlpenEthApi`]
-#[allow(missing_debug_implementations)]
+#[allow(
+    missing_debug_implementations,
+    clippy::allow_attributes,
+    reason = "Some inner types don't have Debug implementation"
+)]
 struct AlpenEthApiInner<N: RpcNodeCore, Rpc: RpcConvert> {
     /// Gateway to node's core components.
     eth_api: EthApiNodeBackend<N, Rpc>,
@@ -283,7 +289,10 @@ impl<N: RpcNodeCore, Rpc: RpcConvert> AlpenEthApiInner<N, Rpc> {
     }
 }
 
-#[allow(missing_debug_implementations)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
 pub struct AlpenEthApiBuilder<NetworkT = Ethereum> {
     /// Sequencer client, configured to forward submitted transactions to sequencer of given OP
     /// network.

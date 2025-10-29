@@ -12,7 +12,7 @@ strata-cli-common.workspace = true
 strata-primitives.workspace = true
 
 aes-gcm-siv = "0.11.1"
-alloy = { version = "1.0.23", features = [
+alloy = { version = "1.0.37", features = [
   "std",
   "rpc-client-ws",
   "network",

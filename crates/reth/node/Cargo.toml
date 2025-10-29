@@ -13,7 +13,6 @@ alpen-reth-rpc.workspace = true
 
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
-alloy-network.workspace = true
 alloy-rpc-types.workspace = true
 eyre.workspace = true
 reth-basic-payload-builder.workspace = true
@@ -34,7 +33,6 @@ reth-provider.workspace = true
 reth-revm.workspace = true
 reth-rpc-eth-types.workspace = true
 reth-transaction-pool.workspace = true
-reth-trie-db.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
 serde.workspace = true
