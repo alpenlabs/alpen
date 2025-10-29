@@ -239,6 +239,7 @@ async fn handle_new_block<T: SyncClient>(
 
     // send ForkChoiceMessage::NewBlock for all pending blocks in correct order
     // The FCM will handle updating the chain_tracker
+    let mut last_block_id = None;
     while let Some(block) = fetched_blocks.pop() {
         context
             .storage
@@ -246,13 +247,38 @@ async fn handle_new_block<T: SyncClient>(
             .put_block_data_async(block.clone())
             .await?;
         let block_idx = block.header().slot();
+        let block_id = block.header().get_blockid();
+        last_block_id = Some(block_id);
         debug!(%block_idx, "l2 sync: sending chain tip msg");
         context
             .sync_manager
-            .submit_chain_tip_msg_async(ForkChoiceMessage::NewBlock(block.header().get_blockid()))
+            .submit_chain_tip_msg_async(ForkChoiceMessage::NewBlock(block_id))
             .await;
         debug!(%block_idx, "l2 sync: sending chain tip sent");
     }
+
+    // Wait for FCM to process the messages by checking if the chain tracker has the block
+    // This prevents a race condition where we query state before FCM processes our messages
+    if let Some(expected_block_id) = last_block_id {
+        let mut attempts = 0;
+        const MAX_ATTEMPTS: u32 = 100; // 10 seconds max wait
+        while attempts < MAX_ATTEMPTS {
+            if state.has_block(&expected_block_id) {
+                debug!(?expected_block_id, "fcm has processed blocks");
+                break;
+            }
+            // Short delay to give FCM time to process
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            attempts += 1;
+        }
+        if attempts >= MAX_ATTEMPTS {
+            warn!(
+                ?expected_block_id,
+                "fcm did not process block after max attempts"
+            );
+        }
+    }
+
     Ok(())
 }
 
