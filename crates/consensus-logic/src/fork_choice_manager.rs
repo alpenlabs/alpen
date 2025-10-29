@@ -361,25 +361,28 @@ pub fn init_fcm_after_genesis(
 ) -> anyhow::Result<Arc<RwLock<ForkChoiceManager>>> {
     // Wait for genesis block
     info!("waiting for genesis before starting forkchoice logic");
-    let genesis_block_id = handle.block_on(async {
-        while storage
-            .l2()
-            .get_blocks_at_height_blocking(0)
-            .unwrap()
-            .is_empty()
-        {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    let genesis_block_id: L2BlockId = handle.block_on(async {
+        loop {
+            match storage.l2().get_blocks_at_height_blocking(0) {
+                Ok(blocks) if !blocks.is_empty() => {
+                    return Ok::<L2BlockId, DbError>(blocks[0]);
+                }
+                Ok(_) => {
+                    debug!("genesis not yet available, waiting...");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                }
+                Err(e) => {
+                    warn!(err = %e, "error checking for genesis, retrying...");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                }
+            }
         }
-        storage
-            .l2()
-            .get_blocks_at_height_blocking(0)
-            .unwrap()
-            .first()
-            .cloned()
-            .expect("genesis should be in")
-    });
+    })?;
 
-    let (_, init_state) = storage.client_state().fetch_most_recent_state()?.unwrap();
+    let (_, init_state) = storage
+        .client_state()
+        .fetch_most_recent_state()?
+        .ok_or_else(|| anyhow::anyhow!("missing client state after genesis"))?;
     info!(?init_state, "starting forkchoice logic");
 
     // Initialize the FCM (not yet wrapped)
@@ -490,7 +493,11 @@ pub fn handle_unprocessed_blocks(
             }
 
             let mut fcm_guard = fcm.write().expect("fcm write lock poisoned");
-            process_fc_message(ForkChoiceMessage::NewBlock(blockid), &mut fcm_guard, status_channel)?;
+            process_fc_message(
+                ForkChoiceMessage::NewBlock(blockid),
+                &mut fcm_guard,
+                status_channel,
+            )?;
         }
         slot += 1;
     }

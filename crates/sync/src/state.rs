@@ -4,7 +4,6 @@ use strata_consensus_logic::fork_choice_manager::ForkChoiceManager;
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::epoch::EpochCommitment;
 
-#[derive(Clone)]
 pub(crate) struct L2SyncState {
     /// Reference to the fork choice manager to access the chain tracker
     fcm: Arc<RwLock<ForkChoiceManager>>,
