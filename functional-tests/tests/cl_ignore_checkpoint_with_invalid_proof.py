@@ -174,14 +174,14 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
             seq_strict_waiter.wait_until_epoch_finalized(4)
             # If the above line didn't raise an exception,
             # it means epoch 4 was finalized incorrectly
-            logging.warn("Strict sequencer incorrectly finalized epoch 4 with invalid proof")
+            logging.warning("Strict sequencer incorrectly finalized epoch 4 with invalid proof")
             return False
         except Exception:
             logging.info("Strict sequencer correctly ignored invalid proof for epoch 4.")
 
         try:
             fn_waiter.wait_until_epoch_finalized(4)
-            logging.warn("Full node incorrectly finalized epoch 4 with invalid proof")
+            logging.warning("Full node incorrectly finalized epoch 4 with invalid proof")
             return False
         except Exception:
             logging.info("Full node correctly ignored invalid proof for epoch 4.")
@@ -207,6 +207,6 @@ class IgnoreCheckpointWithInvalidProofTest(testenv.StrataTestBase):
         try:
             fn_waiter.wait_until_epoch_finalized(6)
         except Exception:
-            logging.warn("Sequencer Failed after resubmitting the invalid proof for epoch 4")
+            logging.warning("Sequencer Failed after resubmitting the invalid proof for epoch 4")
             return False
         return True

@@ -33,12 +33,11 @@ class L1ReadReorgTest(testenv.StrataTestBase):
         self.info(f"invalidating block {block_to_invalidate_from}")
         btc_rpc.proxy.invalidateblock(block_to_invalidate_from)
 
-        to_be_invalid_block = seq_rpc.strata_getL1blockHash(invalidate_height)
+        to_be_invalid_block_hash = seq_rpc.strata_getL1blockHash(invalidate_height)
         # Wait for at least 1 block to be added after invalidating `REORG_DEPTH` blocks.
         block_from_invalidated_height = seq_waiter.wait_until_l1_height_at(invalidate_height + 1)
-
         self.info(f"now have block {block_from_invalidated_height}")
 
-        assert to_be_invalid_block != block_from_invalidated_height, (
+        assert to_be_invalid_block_hash != block_from_invalidated_height["cur_tip_blkid"], (
             f"Expected reorg from block {invalidate_height}"
         )

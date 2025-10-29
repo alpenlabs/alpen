@@ -13,7 +13,7 @@ class BridgeMsgTest(testenv.StrataTestBase):
         ctx.set_env("basic")
 
     def main(self, ctx: flexitest.RunContext):
-        logging.warn("test temporarily disabled")
+        logging.warning("test temporarily disabled")
         return
 
         seq = ctx.get_service("sequencer")

@@ -36,7 +36,7 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
         self.info(state_diff_data)
 
 
-def get_contract():
+def get_contract() -> tuple[list, str]:
     compiled_sol = compile_source(
         """
         pragma solidity ^0.8.0;
@@ -44,7 +44,7 @@ def get_contract():
         contract Greeter {
             string public greeting;
 
-            constructor() public {
+            constructor() {
                 greeting = 'Hello';
             }
         }
