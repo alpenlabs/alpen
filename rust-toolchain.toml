@@ -9,5 +9,5 @@ components = [
   "rust-docs",
   "rust-src",
   "rust-std",
-  # "miri" # currently, does not support DB FFIs (results in false positives for `rockbound`)
+  "miri",
 ]
