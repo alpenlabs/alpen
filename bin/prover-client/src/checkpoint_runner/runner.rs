@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 use crate::{
     checkpoint_runner::fetch::fetch_next_unproven_checkpoint_index,
     operators::{checkpoint::CheckpointOperator, ProvingOp},
-    task_tracker::TaskTracker,
+    task_tracker_adapter::TaskTrackerAdapter,
 };
 
 /// Holds the current checkpoint index for the runner to track progress.
@@ -24,7 +24,7 @@ struct CheckpointRunnerState {
 pub(crate) async fn checkpoint_proof_runner(
     operator: CheckpointOperator,
     poll_interval_s: u64,
-    task_tracker: Arc<Mutex<TaskTracker>>,
+    task_tracker: Arc<Mutex<TaskTrackerAdapter>>,
     db: Arc<ProofDBSled>,
 ) {
     info!(%poll_interval_s, "Checkpoint runner started");
@@ -42,7 +42,7 @@ pub(crate) async fn checkpoint_proof_runner(
 
 async fn process_checkpoint(
     operator: &CheckpointOperator,
-    task_tracker: &Arc<Mutex<TaskTracker>>,
+    task_tracker: &Arc<Mutex<TaskTrackerAdapter>>,
     db: &Arc<ProofDBSled>,
     runner_state: &mut CheckpointRunnerState,
 ) -> anyhow::Result<()> {

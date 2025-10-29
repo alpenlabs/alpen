@@ -15,12 +15,11 @@ use strata_zkvm_hosts::get_verification_key;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use super::{cl_stf::ClStfOperator, ProvingOp};
+use super::{cl_stf::ClStfOperator, ProvingOp, TaskTrackerLike};
 use crate::{
     checkpoint_runner::{errors::CheckpointResult, submit::submit_checkpoint_proof},
     errors::ProvingTaskError,
     operators::cl_stf::ClStfParams,
-    task_tracker::TaskTracker,
 };
 
 /// A struct that implements the [`ProvingOp`] for Checkpoint Proof.
@@ -60,11 +59,11 @@ impl CheckpointOperator {
     /// # Returns
     ///
     /// A [`Vec`] containing the [`ProofKey`] for the dependent proving operations.
-    async fn create_deps_tasks_inner(
+    async fn create_deps_tasks_inner<T: TaskTrackerLike>(
         &self,
         checkpoint_info: RpcCheckpointInfo,
         db: &ProofDBSled,
-        task_tracker: Arc<Mutex<TaskTracker>>,
+        task_tracker: Arc<Mutex<T>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let ckp_idx = checkpoint_info.idx;
         let l2_blocks_len = checkpoint_info.l2_range.1.slot() - checkpoint_info.l2_range.0.slot();
@@ -105,12 +104,12 @@ impl CheckpointOperator {
     /// # Returns
     ///
     /// A vector of [`ProofKey`] corresponding to the checkpoint proving operation.
-    pub(crate) async fn create_task_raw(
+    pub(crate) async fn create_task_raw<T: TaskTrackerLike>(
         &self,
         checkpoint_idx: u64,
         l1_range: (L1BlockCommitment, L1BlockCommitment),
         l2_range: (L2BlockCommitment, L2BlockCommitment),
-        task_tracker: Arc<Mutex<TaskTracker>>,
+        task_tracker: Arc<Mutex<T>>,
         db: &ProofDBSled,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let checkpoint_info = RpcCheckpointInfo {
@@ -146,7 +145,7 @@ impl CheckpointOperator {
         };
 
         let mut task_tracker = task_tracker.lock().await;
-        task_tracker.create_tasks(proof_ctx, deps_ctx, db)
+        task_tracker.create_tasks(proof_ctx, deps_ctx, db).await
     }
 
     async fn fetch_ckp_info(&self, ckp_idx: u64) -> Result<RpcCheckpointInfo, ProvingTaskError> {
@@ -222,11 +221,11 @@ impl ProvingOp for CheckpointOperator {
         })
     }
 
-    async fn create_deps_tasks(
+    async fn create_deps_tasks<T: TaskTrackerLike>(
         &self,
         ckp_idx: Self::Params,
         db: &ProofDBSled,
-        task_tracker: Arc<Mutex<TaskTracker>>,
+        task_tracker: Arc<Mutex<T>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let checkpoint_info = self.fetch_ckp_info(ckp_idx).await?;
         self.create_deps_tasks_inner(checkpoint_info, db, task_tracker)

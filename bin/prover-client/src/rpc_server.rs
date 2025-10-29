@@ -21,7 +21,7 @@ use zkaleido::ProofReceipt;
 use crate::{
     operators::{cl_stf::ClStfParams, ProofOperator, ProvingOp},
     status::ProvingTaskStatus,
-    task_tracker::TaskTracker,
+    task_tracker_adapter::TaskTrackerAdapter,
 };
 
 pub(crate) async fn start<T>(
@@ -65,14 +65,14 @@ where
 /// Contains fields corresponding the global context for the RPC.
 #[derive(Clone)]
 pub(crate) struct ProverClientRpc {
-    task_tracker: Arc<Mutex<TaskTracker>>,
+    task_tracker: Arc<Mutex<TaskTrackerAdapter>>,
     operator: Arc<ProofOperator>,
     db: Arc<ProofDBSled>,
 }
 
 impl ProverClientRpc {
     pub(crate) fn new(
-        task_tracker: Arc<Mutex<TaskTracker>>,
+        task_tracker: Arc<Mutex<TaskTrackerAdapter>>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDBSled>,
     ) -> Self {
@@ -201,7 +201,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
                     .lock()
                     .await
                     .get_task(key)
-                    .cloned()
+                    .await
                     .map_err(to_jsonrpsee_error("invalid task"))?;
                 Ok(format!("{status:?}"))
             }
@@ -219,6 +219,6 @@ impl StrataProverClientApiServer for ProverClientRpc {
 
     async fn get_report(&self) -> RpcResult<HashMap<String, usize>> {
         let task_tracker = self.task_tracker.lock().await;
-        Ok(task_tracker.generate_report())
+        Ok(task_tracker.generate_report().await)
     }
 }

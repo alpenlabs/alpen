@@ -8,8 +8,8 @@ use strata_tasks::TaskExecutor;
 use tokio::sync::watch;
 
 use crate::{
-    handle::ProverHandle, service::ProverService, state::ProverServiceState, PaaSConfig, PaaSError,
-    PaaSStatus,
+    PaaSConfig, PaaSError, PaaSStatus, handle::ProverHandle, service::ProverService,
+    state::ProverServiceState,
 };
 
 /// Builder for constructing and launching the prover service
@@ -29,6 +29,7 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct ProverBuilder<D: ProofDatabase> {
     config: Option<PaaSConfig>,
     database: Option<Arc<D>>,
@@ -89,8 +90,7 @@ impl<D: ProofDatabase> ProverBuilder<D> {
         let state = ProverServiceState::new(config, database, status_tx);
 
         // Build service using ServiceBuilder
-        let mut service_builder =
-            ServiceBuilder::<ProverService<D>, _>::new().with_state(state);
+        let mut service_builder = ServiceBuilder::<ProverService<D>, _>::new().with_state(state);
 
         // Create command handle (64 is channel buffer size)
         let command_handle = service_builder.create_command_handle(64);

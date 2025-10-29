@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use strata_paas::{ProverBuilder, PaaSConfig};
+//! use strata_paas::{PaaSConfig, ProverBuilder};
 //! use strata_primitives::proof::ProofContext;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -28,10 +28,12 @@
 //!     .launch(&executor)?;
 //!
 //! // Submit proof request
-//! let task_id = handle.create_task(
-//!     ProofContext::Checkpoint { index: 42 },
-//!     vec![], // no dependencies
-//! ).await?;
+//! let task_id = handle
+//!     .create_task(
+//!         ProofContext::Checkpoint { index: 42 },
+//!         vec![], // no dependencies
+//!     )
+//!     .await?;
 //!
 //! // Poll for completion
 //! let status = handle.get_task_status(task_id).await?;
@@ -62,4 +64,6 @@ mod status;
 pub mod manager;
 
 // Re-export key manager types
-pub use manager::TaskTracker;
+// Re-export config types
+pub use config::{FeatureConfig, RetryConfig, WorkerConfig};
+pub use manager::{ProofOperatorTrait, TaskTracker, WorkerPool};

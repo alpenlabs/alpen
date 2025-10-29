@@ -10,7 +10,7 @@ use strata_primitives::proof::ProofZkVm;
 use tokio::{spawn, time::sleep};
 use tracing::{debug, error, info};
 
-use crate::{PaaSConfig, ProverHandle, TaskId};
+use crate::{PaaSConfig, ProverHandle};
 
 /// Proof operator trait that workers use to generate proofs
 ///
@@ -28,6 +28,7 @@ pub trait ProofOperatorTrait<D: ProofDatabase>: Send + Sync + 'static {
 }
 
 /// Worker pool service that processes proof tasks
+#[derive(Debug)]
 pub struct WorkerPool<D: ProofDatabase, O: ProofOperatorTrait<D>> {
     /// Handle to ProverService
     prover_handle: Arc<ProverHandle<D>>,
@@ -68,7 +69,10 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                 Ok(tasks) => tasks,
                 Err(e) => {
                     error!(?e, "Failed to list pending tasks");
-                    sleep(Duration::from_millis(self.config.workers.polling_interval_ms)).await;
+                    sleep(Duration::from_millis(
+                        self.config.workers.polling_interval_ms,
+                    ))
+                    .await;
                     continue;
                 }
             };
@@ -78,7 +82,10 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                 Ok(tasks) => tasks,
                 Err(e) => {
                     error!(?e, "Failed to list retriable tasks");
-                    sleep(Duration::from_millis(self.config.workers.polling_interval_ms)).await;
+                    sleep(Duration::from_millis(
+                        self.config.workers.polling_interval_ms,
+                    ))
+                    .await;
                     continue;
                 }
             };
@@ -137,7 +144,10 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                             error!(?task_id, ?error_msg, "Proof generation failed");
                             // For now, treat all errors as transient failures
                             // TODO: Distinguish between transient and permanent failures
-                            if let Err(e) = prover_handle.mark_transient_failure(task_id, error_msg).await {
+                            if let Err(e) = prover_handle
+                                .mark_transient_failure(task_id, error_msg)
+                                .await
+                            {
                                 error!(?task_id, ?e, "Failed to mark task as failed");
                             }
                         }
@@ -146,7 +156,10 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
             }
 
             // Sleep before next iteration
-            sleep(Duration::from_millis(self.config.workers.polling_interval_ms)).await;
+            sleep(Duration::from_millis(
+                self.config.workers.polling_interval_ms,
+            ))
+            .await;
         }
     }
 }

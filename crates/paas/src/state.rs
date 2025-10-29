@@ -7,12 +7,13 @@ use strata_service::ServiceState;
 use tokio::sync::watch;
 
 use crate::{
+    PaaSConfig, PaaSError, PaaSReport, PaaSStatus, TaskId, TaskStatus,
     commands::{ProofData, TaskStatusFilter},
     manager::TaskTracker,
-    PaaSConfig, PaaSError, PaaSReport, PaaSStatus, TaskId, TaskStatus,
 };
 
 /// Internal state for ProverService
+#[derive(Debug)]
 pub struct ProverServiceState<D: ProofDatabase> {
     /// Configuration
     config: PaaSConfig,
@@ -117,7 +118,10 @@ impl<D: ProofDatabase> ProverServiceState<D> {
     }
 
     /// Lists tasks with optional filter
-    pub fn list_tasks(&self, filter: Option<TaskStatusFilter>) -> Result<Vec<(TaskId, TaskStatus)>, PaaSError> {
+    pub fn list_tasks(
+        &self,
+        filter: Option<TaskStatusFilter>,
+    ) -> Result<Vec<(TaskId, TaskStatus)>, PaaSError> {
         let task_ids: Vec<TaskId> = match filter {
             None => {
                 // Would need to iterate all - not supported by current API
@@ -126,7 +130,7 @@ impl<D: ProofDatabase> ProverServiceState<D> {
                 all.extend(self.task_tracker.list_queued());
                 all.extend(self.task_tracker.list_proving());
                 all
-            },
+            }
             Some(TaskStatusFilter::Pending) => self.task_tracker.list_pending(),
             Some(TaskStatusFilter::Queued) => self.task_tracker.list_queued(),
             Some(TaskStatusFilter::Proving) => self.task_tracker.list_proving(),
@@ -134,14 +138,21 @@ impl<D: ProofDatabase> ProverServiceState<D> {
                 let mut active = self.task_tracker.list_queued();
                 active.extend(self.task_tracker.list_proving());
                 active
-            },
-            Some(TaskStatusFilter::TransientFailure) => {
-                self.task_tracker.get_retriable_tasks().keys().copied().collect()
-            },
-            Some(TaskStatusFilter::Failed | TaskStatusFilter::Completed | TaskStatusFilter::Cancelled) => {
+            }
+            Some(TaskStatusFilter::TransientFailure) => self
+                .task_tracker
+                .get_retriable_tasks()
+                .keys()
+                .copied()
+                .collect(),
+            Some(
+                TaskStatusFilter::Failed
+                | TaskStatusFilter::Completed
+                | TaskStatusFilter::Cancelled,
+            ) => {
                 // These are removed from tracker when reached
                 vec![]
-            },
+            }
         };
 
         // Convert to (TaskId, TaskStatus) pairs
@@ -156,7 +167,10 @@ impl<D: ProofDatabase> ProverServiceState<D> {
     }
 
     /// Gets proof key for a task
-    pub fn get_proof_key(&self, task_id: TaskId) -> Result<strata_primitives::proof::ProofKey, PaaSError> {
+    pub fn get_proof_key(
+        &self,
+        task_id: TaskId,
+    ) -> Result<strata_primitives::proof::ProofKey, PaaSError> {
         self.task_tracker.get_proof_key(task_id)
     }
 
@@ -214,7 +228,11 @@ impl<D: ProofDatabase> ProverServiceState<D> {
     }
 
     /// Marks a task as having a transient failure (will retry)
-    pub fn mark_transient_failure(&mut self, task_id: TaskId, _error: &str) -> Result<(), PaaSError> {
+    pub fn mark_transient_failure(
+        &mut self,
+        task_id: TaskId,
+        _error: &str,
+    ) -> Result<(), PaaSError> {
         use crate::manager::task_tracker::InternalTaskStatus;
         self.task_tracker.update_status(
             task_id,

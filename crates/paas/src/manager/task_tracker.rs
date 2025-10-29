@@ -3,7 +3,7 @@
 //! This module manages the lifecycle of proof tasks, including dependency
 //! resolution, retry logic, and state transitions.
 
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use strata_db::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
@@ -49,35 +49,20 @@ pub(crate) enum InternalTaskStatus {
     Completed,
     TransientFailure,
     Failed,
-    Cancelled,
 }
 
 impl InternalTaskStatus {
-    /// Checks if status is terminal
-    fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            InternalTaskStatus::Completed
-                | InternalTaskStatus::Failed
-                | InternalTaskStatus::Cancelled
-        )
-    }
-
     /// Attempts to transition to new status
     fn transition(&mut self, target: InternalTaskStatus) -> Result<(), PaaSError> {
         let is_valid = match (self.clone(), &target) {
-            // Always allow transitioning to Failed or Cancelled
+            // Always allow transitioning to Failed
             (_, InternalTaskStatus::Failed) => true,
-            (_, InternalTaskStatus::Cancelled) => true,
 
             // Normal flow
             (InternalTaskStatus::Pending, InternalTaskStatus::Queued) => true,
             (InternalTaskStatus::Queued, InternalTaskStatus::Proving) => true,
             (InternalTaskStatus::Proving, InternalTaskStatus::Completed) => true,
-            (
-                InternalTaskStatus::WaitingForDependencies,
-                InternalTaskStatus::Pending,
-            ) => true,
+            (InternalTaskStatus::WaitingForDependencies, InternalTaskStatus::Pending) => true,
 
             // Transient failure flow
             (InternalTaskStatus::Proving, InternalTaskStatus::TransientFailure) => true,
@@ -95,6 +80,12 @@ impl InternalTaskStatus {
                 self, target
             )))
         }
+    }
+}
+
+impl Default for TaskTracker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -232,9 +223,6 @@ impl TaskTracker {
                 retry_count: *self.transient_failed_tasks.get(&task_id).unwrap_or(&0),
                 next_retry_at: chrono::Utc::now(),
             },
-            InternalTaskStatus::Cancelled => TaskStatus::Cancelled {
-                cancelled_at: chrono::Utc::now(),
-            },
             InternalTaskStatus::WaitingForDependencies => TaskStatus::Pending,
         };
 
@@ -242,7 +230,7 @@ impl TaskTracker {
     }
 
     /// Updates the status of a task
-    pub fn update_status(
+    pub(crate) fn update_status(
         &mut self,
         task_id: TaskId,
         new_status: InternalTaskStatus,
@@ -328,10 +316,10 @@ impl TaskTracker {
 
                 // Mark dependent tasks as failed
                 for (dependent_task, deps) in self.pending_dependencies.iter_mut() {
-                    if deps.remove(&task_id) {
-                        if let Some(task_info) = self.tasks.get_mut(dependent_task) {
-                            let _ = task_info.status.transition(InternalTaskStatus::Failed);
-                        }
+                    if deps.remove(&task_id)
+                        && let Some(task_info) = self.tasks.get_mut(dependent_task)
+                    {
+                        let _ = task_info.status.transition(InternalTaskStatus::Failed);
                     }
                 }
             }
@@ -406,21 +394,6 @@ impl TaskTracker {
             .ok_or(PaaSError::TaskNotFound(task_id))
     }
 
-    /// Lists all tasks optionally filtered by status
-    pub fn list_tasks(&self, status_filter: Option<InternalTaskStatus>) -> Vec<(TaskId, &TaskInfo)> {
-        self.tasks
-            .iter()
-            .filter(|(_, info)| {
-                if let Some(ref filter) = status_filter {
-                    &info.status == filter
-                } else {
-                    true
-                }
-            })
-            .map(|(id, info)| (*id, info))
-            .collect()
-    }
-
     /// Gets all pending tasks
     pub fn list_pending(&self) -> Vec<TaskId> {
         self.tasks
@@ -464,8 +437,13 @@ impl TaskTracker {
     }
 
     /// Gets task context and dependencies
-    pub fn get_task_info(&self, task_id: TaskId) -> Result<(ProofContext, Vec<ProofContext>), PaaSError> {
-        let info = self.tasks.get(&task_id)
+    pub fn get_task_info(
+        &self,
+        task_id: TaskId,
+    ) -> Result<(ProofContext, Vec<ProofContext>), PaaSError> {
+        let info = self
+            .tasks
+            .get(&task_id)
             .ok_or(PaaSError::TaskNotFound(task_id))?;
         Ok((info.context, info.deps.clone()))
     }
@@ -484,13 +462,13 @@ pub struct TaskStats {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use strata_db_store_sled::prover::ProofDBSled;
-    use strata_db_store_sled::SledDbConfig;
-    use strata_primitives::evm_exec::EvmEeBlockCommitment;
-    use strata_test_utils::ArbitraryGenerator;
     use std::sync::Arc;
+
+    use strata_db_store_sled::{SledDbConfig, prover::ProofDBSled};
+    use strata_primitives::{buf::Buf32, evm_exec::EvmEeBlockCommitment};
     use typed_sled::SledDb;
+
+    use super::*;
 
     fn setup_db() -> ProofDBSled {
         let db = sled::Config::new().temporary(true).open().unwrap();
@@ -504,9 +482,8 @@ mod tests {
         let mut tracker = TaskTracker::new();
         let db = setup_db();
 
-        let mut generator = ArbitraryGenerator::new();
-        let start: EvmEeBlockCommitment = generator.generate();
-        let end: EvmEeBlockCommitment = generator.generate();
+        let start = EvmEeBlockCommitment::new(1, Buf32::default());
+        let end = EvmEeBlockCommitment::new(2, Buf32::default());
         let context = ProofContext::EvmEeStf(start, end);
 
         let task_id = tracker.create_task(context, vec![], &db).unwrap();

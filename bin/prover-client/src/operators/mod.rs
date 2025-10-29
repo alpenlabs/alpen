@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info, instrument};
 use zkaleido::{ZkVmHost, ZkVmProgram};
 
-use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
+use crate::errors::ProvingTaskError;
 
 pub(crate) mod checkpoint;
 pub(crate) mod cl_stf;
@@ -31,6 +31,16 @@ pub(crate) mod evm_ee;
 pub(crate) mod operator;
 
 pub(crate) use operator::ProofOperator;
+
+/// Trait for task trackers (implemented by both TaskTracker and TaskTrackerAdapter)
+pub(crate) trait TaskTrackerLike: Send + Sync {
+    async fn create_tasks(
+        &mut self,
+        proof_id: strata_primitives::proof::ProofContext,
+        deps: Vec<strata_primitives::proof::ProofContext>,
+        db: &ProofDBSled,
+    ) -> Result<Vec<ProofKey>, ProvingTaskError>;
+}
 
 /// A trait defining the operations required for proof generation.
 ///
@@ -60,10 +70,10 @@ pub(crate) trait ProvingOp {
     /// # Returns
     ///
     /// A vector of [`ProofKey`] corresponding to a given proving operation.
-    async fn create_task(
+    async fn create_task<T: TaskTrackerLike>(
         &self,
         params: Self::Params,
-        task_tracker: Arc<Mutex<TaskTracker>>,
+        task_tracker: Arc<Mutex<T>>,
         db: &ProofDBSled,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let proof_ctx = self.construct_proof_ctx(&params)?;
@@ -89,7 +99,7 @@ pub(crate) trait ProvingOp {
         };
 
         let mut task_tracker = task_tracker.lock().await;
-        task_tracker.create_tasks(proof_ctx, deps_ctx, db)
+        task_tracker.create_tasks(proof_ctx, deps_ctx, db).await
     }
 
     /// Construct [`ProofContext`] from the proving operation parameters.
@@ -112,11 +122,11 @@ pub(crate) trait ProvingOp {
     ///
     /// A [`Vec`] containing the [`ProofKey`] for the dependent proving operations.
     #[expect(unused_variables, reason = "used for overriding default impl")]
-    async fn create_deps_tasks(
+    async fn create_deps_tasks<T: TaskTrackerLike>(
         &self,
         params: Self::Params,
         db: &ProofDBSled,
-        task_tracker: Arc<Mutex<TaskTracker>>,
+        task_tracker: Arc<Mutex<T>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         Ok(vec![])
     }
@@ -195,7 +205,7 @@ mod tests {
     use typed_sled::SledDb;
     use zkaleido::ZkVmProgram;
 
-    use super::ProvingOp;
+    use super::{ProvingOp, TaskTrackerLike};
     use crate::{errors::ProvingTaskError, status::ProvingTaskStatus, task_tracker::TaskTracker};
 
     // Test stub of zkaleido::ZkVmProver.
@@ -258,11 +268,11 @@ mod tests {
             todo!()
         }
 
-        async fn create_deps_tasks(
+        async fn create_deps_tasks<T: TaskTrackerLike>(
             &self,
             params: Self::Params,
             db: &ProofDBSled,
-            task_tracker: Arc<Mutex<TaskTracker>>,
+            task_tracker: Arc<Mutex<T>>,
         ) -> Result<Vec<ProofKey>, ProvingTaskError> {
             let child = ParentOps;
             child.create_task(params, task_tracker, db).await
@@ -299,11 +309,11 @@ mod tests {
             todo!()
         }
 
-        async fn create_deps_tasks(
+        async fn create_deps_tasks<T: TaskTrackerLike>(
             &self,
             params: Self::Params,
             db: &ProofDBSled,
-            task_tracker: Arc<Mutex<TaskTracker>>,
+            task_tracker: Arc<Mutex<T>>,
         ) -> Result<Vec<ProofKey>, ProvingTaskError> {
             let child = ChildOps;
             child.create_task(params, task_tracker, db).await

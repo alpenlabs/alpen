@@ -19,8 +19,8 @@ use strata_zkvm_hosts::get_verification_key;
 use tokio::sync::Mutex;
 use tracing::error;
 
-use super::{evm_ee::EvmEeOperator, ProvingOp};
-use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
+use super::{evm_ee::EvmEeOperator, ProvingOp, TaskTrackerLike};
+use crate::errors::ProvingTaskError;
 
 /// A struct that implements the [`ProvingOp`] trait for Consensus Layer (CL) State Transition
 /// Function (STF) proof generation.
@@ -207,11 +207,11 @@ impl ProvingOp for ClStfOperator {
         })
     }
 
-    async fn create_deps_tasks(
+    async fn create_deps_tasks<T: TaskTrackerLike>(
         &self,
         params: Self::Params,
         db: &ProofDBSled,
-        task_tracker: Arc<Mutex<TaskTracker>>,
+        task_tracker: Arc<Mutex<T>>,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
         let ClStfParams { l2_range } = params;
 

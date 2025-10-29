@@ -1,31 +1,24 @@
 //! Configuration types for PaaS
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 use strata_primitives::proof::ProofZkVm;
 
 /// Configuration for PaaS service
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PaaSConfig {
     /// Worker configuration for different proving backends
+    #[serde(default)]
     pub workers: WorkerConfig,
 
     /// Retry policy configuration
+    #[serde(default)]
     pub retry: RetryConfig,
 
     /// Optional features
     #[serde(default)]
     pub features: FeatureConfig,
-}
-
-impl Default for PaaSConfig {
-    fn default() -> Self {
-        Self {
-            workers: WorkerConfig::default(),
-            retry: RetryConfig::default(),
-            features: FeatureConfig::default(),
-        }
-    }
 }
 
 /// Worker pool configuration

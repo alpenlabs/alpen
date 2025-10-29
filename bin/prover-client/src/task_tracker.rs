@@ -5,7 +5,7 @@ use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use tracing::{info, warn};
 
-use crate::{errors::ProvingTaskError, status::ProvingTaskStatus};
+use crate::{errors::ProvingTaskError, operators::TaskTrackerLike, status::ProvingTaskStatus};
 
 /// Manages tasks and their states for proving operations.
 #[derive(Debug, Clone)]
@@ -278,6 +278,18 @@ impl TaskTracker {
         self.tasks.clear();
         self.in_progress_tasks.clear();
         self.pending_dependencies.clear();
+    }
+}
+
+/// Implement TaskTrackerLike trait for TaskTracker
+impl TaskTrackerLike for TaskTracker {
+    async fn create_tasks(
+        &mut self,
+        proof_id: ProofContext,
+        deps: Vec<ProofContext>,
+        db: &ProofDBSled,
+    ) -> Result<Vec<ProofKey>, ProvingTaskError> {
+        self.create_tasks(proof_id, deps, db)
     }
 }
 

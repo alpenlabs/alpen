@@ -68,10 +68,9 @@ impl From<ServiceError> for PaaSError {
             ServiceError::BlockingThreadPanic(msg) => {
                 PaaSError::Unexpected(format!("blocking thread panicked: {}", msg))
             }
-            ServiceError::UnknownInputErr => PaaSError::Unexpected("unknown input error".to_string()),
+            ServiceError::UnknownInputErr => {
+                PaaSError::Unexpected("unknown input error".to_string())
+            }
         }
     }
 }
-
-/// Result type for PaaS operations
-pub type PaaSResult<T> = Result<T, PaaSError>;

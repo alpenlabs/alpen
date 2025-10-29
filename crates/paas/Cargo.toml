@@ -25,7 +25,6 @@ tracing.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-strata-test-utils.workspace = true
 typed-sled.workspace = true
 strata-db-store-sled.workspace = true
 sled.workspace = true

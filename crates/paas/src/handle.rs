@@ -6,13 +6,14 @@ use strata_service::CommandHandle;
 use tokio::sync::watch;
 
 use crate::{
-    commands::ProofData, PaaSCommand, PaaSError, PaaSReport, PaaSStatus, TaskId, TaskStatus,
+    PaaSCommand, PaaSError, PaaSReport, PaaSStatus, TaskId, TaskStatus, commands::ProofData,
 };
 
 /// Handle for interacting with the prover service
 ///
 /// Provides async methods for submitting proof tasks and querying their status.
 /// This handle wraps the command channel and provides a type-safe API.
+#[derive(Debug)]
 pub struct ProverHandle<D: ProofDatabase> {
     command_handle: CommandHandle<PaaSCommand>,
     status_rx: watch::Receiver<PaaSStatus>,
@@ -141,7 +142,9 @@ impl<D: ProofDatabase> ProverHandle<D> {
     /// Lists retriable tasks (transient failures)
     pub async fn list_retriable_tasks(&self) -> Result<Vec<TaskId>, PaaSError> {
         use crate::commands::TaskStatusFilter;
-        let tasks = self.list_tasks(Some(TaskStatusFilter::TransientFailure)).await?;
+        let tasks = self
+            .list_tasks(Some(TaskStatusFilter::TransientFailure))
+            .await?;
         Ok(tasks.into_iter().map(|(id, _)| id).collect())
     }
 
@@ -164,7 +167,11 @@ impl<D: ProofDatabase> ProverHandle<D> {
     }
 
     /// Marks a task as having a transient failure (will retry)
-    pub async fn mark_transient_failure(&self, task_id: TaskId, error: String) -> Result<(), PaaSError> {
+    pub async fn mark_transient_failure(
+        &self,
+        task_id: TaskId,
+        error: String,
+    ) -> Result<(), PaaSError> {
         self.command_handle
             .send_and_wait(|completion| PaaSCommand::MarkTransientFailure {
                 task_id,

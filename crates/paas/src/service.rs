@@ -4,9 +4,10 @@ use strata_db::traits::ProofDatabase;
 use strata_service::{AsyncService, Response, Service};
 use tracing::{debug, error, info, warn};
 
-use crate::{state::ProverServiceState, PaaSCommand, PaaSStatus};
+use crate::{PaaSCommand, PaaSStatus, state::ProverServiceState};
 
 /// Prover service implementation following AsyncService pattern
+#[derive(Debug)]
 pub struct ProverService<D: ProofDatabase> {
     _phantom: std::marker::PhantomData<D>,
 }
@@ -84,19 +85,28 @@ impl<D: ProofDatabase> AsyncService for ProverService<D> {
                 Ok(Response::Continue)
             }
 
-            PaaSCommand::ListTasks { status_filter, completion } => {
+            PaaSCommand::ListTasks {
+                status_filter,
+                completion,
+            } => {
                 let result = state.list_tasks(*status_filter);
                 completion.send(result).await;
                 Ok(Response::Continue)
             }
 
-            PaaSCommand::GetProofKey { task_id, completion } => {
+            PaaSCommand::GetProofKey {
+                task_id,
+                completion,
+            } => {
                 let result = state.get_proof_key(*task_id);
                 completion.send(result).await;
                 Ok(Response::Continue)
             }
 
-            PaaSCommand::MarkCompleted { task_id, completion } => {
+            PaaSCommand::MarkCompleted {
+                task_id,
+                completion,
+            } => {
                 let result = state.mark_completed(*task_id);
                 if result.is_ok() {
                     info!(?task_id, "Task marked as completed");
@@ -105,7 +115,11 @@ impl<D: ProofDatabase> AsyncService for ProverService<D> {
                 Ok(Response::Continue)
             }
 
-            PaaSCommand::MarkTransientFailure { task_id, error, completion } => {
+            PaaSCommand::MarkTransientFailure {
+                task_id,
+                error,
+                completion,
+            } => {
                 let result = state.mark_transient_failure(*task_id, error);
                 if result.is_ok() {
                     warn!(?task_id, ?error, "Task marked as transient failure");
@@ -114,7 +128,11 @@ impl<D: ProofDatabase> AsyncService for ProverService<D> {
                 Ok(Response::Continue)
             }
 
-            PaaSCommand::MarkFailed { task_id, error, completion } => {
+            PaaSCommand::MarkFailed {
+                task_id,
+                error,
+                completion,
+            } => {
                 let result = state.mark_failed(*task_id, error);
                 if result.is_ok() {
                     error!(?task_id, ?error, "Task marked as failed");
