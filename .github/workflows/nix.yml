@@ -30,6 +30,8 @@ jobs:
         with:
           fail-mode: true
           ignore-missing-flake-lock: false
+          check-outdated: false
+          send-statistics: false
 
   build-packages:
     name: "${{ matrix.os-name }} - Build ${{ matrix.package }}"
