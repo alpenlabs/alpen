@@ -13454,7 +13454,6 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "corepc-node",
  "hex",
  "musig2",
@@ -13469,7 +13468,6 @@ dependencies = [
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-l1tx",
- "strata-ol-chainstate-types",
  "strata-params",
  "strata-primitives",
  "strata-state",
@@ -13536,8 +13534,6 @@ dependencies = [
  "strata-predicate",
  "strata-primitives",
  "strata-state",
- "strata-test-utils",
- "strata-test-utils-l2",
  "thiserror 2.0.16",
  "tracing",
 ]
@@ -14127,7 +14123,6 @@ dependencies = [
  "strata-bridge-types",
  "strata-primitives",
  "strata-state",
- "tracing",
 ]
 
 [[package]]
@@ -14472,7 +14467,6 @@ dependencies = [
 name = "strata-status"
 version = "0.3.0-alpha.1"
 dependencies = [
- "strata-bridge-types",
  "strata-csm-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
