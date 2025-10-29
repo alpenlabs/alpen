@@ -34,8 +34,8 @@ class ElBatchGasLimitTest(testenv.StrataTestBase):
 
     def main(self, ctx: flexitest.RunContext):
         # TODO: Fix @mdteach @sapinb
-        logging.warn("test temporarily disabled")
-        return
+        logging.warning("test temporarily disabled")
+        # return
         seq_signer = ctx.get_service("sequencer_signer")
         seq_signer.stop()
         # FIXME: process is NOT terminated immediately so need to wait
