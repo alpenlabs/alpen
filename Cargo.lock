@@ -970,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-chainspec"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-genesis",
  "eyre",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alpen-chainspec",
  "alpen-reth-db",
@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-db"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1058,7 +1058,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-evm"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-sol-types",
  "alpen-reth-primitives",
@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-exex"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-node"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-primitives"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-sol-types",
  "serde",
@@ -1145,7 +1145,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-reth-rpc"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-eips",
  "alloy-network",
@@ -13709,7 +13709,7 @@ dependencies = [
 
 [[package]]
 name = "strata-evmexec"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-eips",
  "alloy-rpc-types",
@@ -13868,7 +13868,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-evm-ee-stf"
-version = "0.3.0-alpha.1"
+version = "0.2.0"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
