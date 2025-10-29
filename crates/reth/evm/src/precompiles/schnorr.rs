@@ -1,7 +1,14 @@
-use revm::precompile::{utilities::right_pad, PrecompileOutput, PrecompileResult};
+use revm::precompile::{
+    utilities::right_pad, PrecompileOutput, PrecompileResult, PrecompileWithAddress,
+};
 use revm_primitives::Bytes;
 use strata_crypto::verify_schnorr_sig;
 use strata_primitives::buf::{Buf32, Buf64};
+
+use crate::constants::SCHNORR_ADDRESS;
+
+pub(crate) const SCHNORR_SIGNATURE_VALIDATION: PrecompileWithAddress =
+    PrecompileWithAddress(SCHNORR_ADDRESS, verify_schnorr_precompile);
 
 /// Internal representation of parsed Schnorr input bytes.
 struct SchnorrInput {
@@ -13,7 +20,7 @@ struct SchnorrInput {
     signature: Buf64,
 }
 
-fn parse_schnorr_input(input: &Bytes) -> SchnorrInput {
+fn parse_schnorr_input(input: &[u8]) -> SchnorrInput {
     let input = right_pad::<128>(input);
 
     SchnorrInput {
@@ -23,7 +30,7 @@ fn parse_schnorr_input(input: &Bytes) -> SchnorrInput {
     }
 }
 
-pub(crate) fn verify_schnorr_precompile(input: &Bytes, _gas_limit: u64) -> PrecompileResult {
+fn verify_schnorr_precompile(input: &[u8], _gas_limit: u64) -> PrecompileResult {
     let schnorr_input = parse_schnorr_input(input);
 
     let result = verify_schnorr_sig(

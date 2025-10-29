@@ -3,25 +3,20 @@ use std::sync::Arc;
 use alloy_eips::eip7685::RequestsOrHash;
 use alloy_rpc_types::{
     engine::{ExecutionPayloadV3, ForkchoiceState, ForkchoiceUpdated, JwtSecret, PayloadId},
-    eth::{Block as RpcBlock, Header, Transaction},
+    eth::{Block as RpcBlock, Header, Transaction, TransactionRequest},
 };
 use alpen_reth_node::{AlpenEngineTypes, AlpenExecutionPayloadEnvelopeV4, AlpenPayloadAttributes};
-use jsonrpsee::http_client::{transport::HttpBackend, HttpClient, HttpClientBuilder};
+use jsonrpsee::{
+    core::middleware::layer::RpcLogger,
+    http_client::{transport::HttpBackend, HttpClient, HttpClientBuilder},
+};
+use jsonrpsee_http_client::RpcService;
 #[cfg(test)]
 use mockall::automock;
 use reth_primitives::Receipt;
 use reth_rpc_api::{EngineApiClient, EthApiClient};
 use reth_rpc_layer::{AuthClientLayer, AuthClientService};
 use revm_primitives::alloy_primitives::{BlockHash, B256};
-
-fn http_client(http_url: &str, secret: JwtSecret) -> HttpClient<AuthClientService<HttpBackend>> {
-    let middleware = tower::ServiceBuilder::new().layer(AuthClientLayer::new(secret));
-
-    HttpClientBuilder::default()
-        .set_http_middleware(middleware)
-        .build(http_url)
-        .expect("Failed to create http client")
-}
 
 type RpcResult<T> = Result<T, jsonrpsee::core::ClientError>;
 
@@ -52,18 +47,17 @@ pub trait EngineRpc {
 
 #[derive(Debug, Clone)]
 pub struct EngineRpcClient {
-    client: Arc<HttpClient<AuthClientService<HttpBackend>>>,
+    client: Arc<EngineHttpClient>,
 }
+
+pub(crate) type EngineHttpClient =
+    HttpClient<RpcLogger<RpcService<AuthClientService<HttpBackend>>>>;
 
 impl EngineRpcClient {
     pub fn from_url_secret(http_url: &str, secret: JwtSecret) -> Self {
         EngineRpcClient {
             client: Arc::new(http_client(http_url, secret)),
         }
-    }
-
-    pub fn inner(&self) -> &HttpClient<AuthClientService<HttpBackend>> {
-        &self.client
     }
 }
 
@@ -73,14 +67,23 @@ impl EngineRpc for EngineRpcClient {
         fork_choice_state: ForkchoiceState,
         payload_attributes: Option<AlpenPayloadAttributes>,
     ) -> RpcResult<ForkchoiceUpdated> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::fork_choice_updated_v3(&self.client, fork_choice_state, payload_attributes).await
+        <EngineHttpClient as EngineApiClient<AlpenEngineTypes>>::fork_choice_updated_v3(
+            &self.client,
+            fork_choice_state,
+            payload_attributes,
+        )
+        .await
     }
 
     async fn get_payload_v4(
         &self,
         payload_id: PayloadId,
     ) -> RpcResult<AlpenExecutionPayloadEnvelopeV4> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<AlpenEngineTypes>>::get_payload_v4(&self.client, payload_id).await
+        <EngineHttpClient as EngineApiClient<AlpenEngineTypes>>::get_payload_v4(
+            &self.client,
+            payload_id,
+        )
+        .await
     }
 
     async fn new_payload_v4(
@@ -90,9 +93,7 @@ impl EngineRpc for EngineRpcClient {
         parent_beacon_block_root: B256,
         execution_requests: RequestsOrHash,
     ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<
-            AlpenEngineTypes,
-        >>::new_payload_v4(
+        <EngineHttpClient as EngineApiClient<AlpenEngineTypes>>::new_payload_v4(
             &self.client,
             payload,
             versioned_hashes,
@@ -103,7 +104,8 @@ impl EngineRpc for EngineRpcClient {
     }
 
     async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<RpcBlock>> {
-        <HttpClient<AuthClientService<HttpBackend>> as EthApiClient<
+        <EngineHttpClient as EthApiClient<
+            TransactionRequest,
             Transaction,
             RpcBlock<alloy_rpc_types::Transaction>,
             Receipt,
@@ -111,4 +113,13 @@ impl EngineRpc for EngineRpcClient {
         >>::block_by_hash(&self.client, block_hash, false)
         .await
     }
+}
+
+fn http_client(http_url: &str, secret: JwtSecret) -> EngineHttpClient {
+    let middleware = tower::ServiceBuilder::new().layer(AuthClientLayer::new(secret));
+
+    HttpClientBuilder::default()
+        .set_http_middleware(middleware)
+        .build(http_url)
+        .expect("Failed to create http client")
 }

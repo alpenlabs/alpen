@@ -9,11 +9,13 @@ workspace = true
 [dependencies]
 alpen-reth-evm.workspace = true
 alpen-reth-node.workspace = true
+jsonrpsee-http-client.workspace = true
 strata-db.workspace = true
 strata-eectl.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-storage.workspace = true
+
 
 alloy-eips.workspace = true
 alloy-rpc-types.workspace = true

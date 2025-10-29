@@ -18,7 +18,6 @@ use reth::{
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::node::NodeCommand;
 use tracing::info;
-
 fn main() {
     reth_cli_util::sigsegv_handler::install();
 
@@ -35,42 +34,50 @@ fn main() {
     command.network.discovery.disable_discovery = true;
     // enable engine api v4
     command.engine.accept_execution_requests_hash = true;
+    // allow chain fork blocks to be created
+    command
+        .engine
+        .always_process_payload_attributes_on_canonical_head = true;
 
-    if let Err(err) = run(command, |builder, ext| async move {
-        let datadir = builder.config().datadir().data_dir().to_path_buf();
+    if let Err(err) = run(
+        command,
+        |builder: WithLaunchContext<NodeBuilder<Arc<reth_db::DatabaseEnv>, ChainSpec>>,
+         ext: AdditionalConfig| async move {
+            let datadir = builder.config().datadir().data_dir().to_path_buf();
 
-        let node_args = AlpenNodeArgs {
-            sequencer_http: ext.sequencer_http.clone(),
-        };
+            let node_args = AlpenNodeArgs {
+                sequencer_http: ext.sequencer_http.clone(),
+            };
 
-        let mut node_builder = builder.node(AlpenEthereumNode::new(node_args));
+            let mut node_builder = builder.node(AlpenEthereumNode::new(node_args));
 
-        let mut extend_rpc = None;
+            let mut extend_rpc = None;
 
-        if ext.enable_witness_gen {
-            let rbdb = db::open_rocksdb_database(datadir.clone()).expect("open rocksdb");
-            let db = Arc::new(WitnessDB::new(rbdb));
-            // Add RPC for querying block witness and state diffs.
-            extend_rpc.replace(AlpenRPC::new(db.clone()));
+            if ext.enable_witness_gen {
+                let rbdb = db::open_rocksdb_database(datadir.clone()).expect("open rocksdb");
+                let db = Arc::new(WitnessDB::new(rbdb));
+                // Add RPC for querying block witness and state diffs.
+                extend_rpc.replace(AlpenRPC::new(db.clone()));
 
-            let witness_db = db.clone();
-            node_builder = node_builder.install_exex("prover_input", |ctx| async {
-                Ok(ProverWitnessGenerator::new(ctx, witness_db).start())
-            });
-        }
-
-        // Note: can only add single hook
-        node_builder = node_builder.extend_rpc_modules(|ctx| {
-            if let Some(rpc) = extend_rpc {
-                ctx.modules.merge_configured(rpc.into_rpc())?;
+                let witness_db = db.clone();
+                node_builder = node_builder.install_exex("prover_input", |ctx| async {
+                    Ok(ProverWitnessGenerator::new(ctx, witness_db).start())
+                });
             }
 
-            Ok(())
-        });
+            // Note: can only add single hook
+            node_builder = node_builder.extend_rpc_modules(|ctx| {
+                if let Some(rpc) = extend_rpc {
+                    ctx.modules.merge_configured(rpc.into_rpc())?;
+                }
 
-        let handle = node_builder.launch().await?;
-        handle.node_exit_future.await
-    }) {
+                Ok(())
+            });
+
+            let handle = node_builder.launch().await?;
+            handle.node_exit_future.await
+        },
+    ) {
         eprintln!("Error: {err:?}");
         std::process::exit(1);
     }
@@ -108,16 +115,15 @@ pub struct AdditionalConfig {
 
 /// Run node with logging
 /// based on reth::cli::Cli::run
-fn run<L, Fut>(
+fn run<L>(
     mut command: NodeCommand<AlpenChainSpecParser, AdditionalConfig>,
     launcher: L,
 ) -> eyre::Result<()>
 where
-    L: FnOnce(
+    L: std::ops::AsyncFnOnce(
         WithLaunchContext<NodeBuilder<Arc<reth_db::DatabaseEnv>, ChainSpec>>,
         AdditionalConfig,
-    ) -> Fut,
-    Fut: Future<Output = eyre::Result<()>>,
+    ) -> eyre::Result<()>,
 {
     command.ext.logs.log_file_directory = command
         .ext
@@ -129,7 +135,12 @@ where
     info!(target: "reth::cli", cmd = %command.ext.logs.log_file_directory, "Initialized tracing, debug log directory");
 
     let runner = CliRunner::try_default_runtime()?;
-    runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))?;
+    runner.run_command_until_exit(|ctx| {
+        command.execute(
+            ctx,
+            FnLauncher::new::<AlpenChainSpecParser, AdditionalConfig>(launcher),
+        )
+    })?;
 
     Ok(())
 }
