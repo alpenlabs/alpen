@@ -14,7 +14,6 @@ db = [
   "dep:tempfile",
 ]
 sled = ["db", "dep:strata-db-store-sled", "dep:typed-sled"]
-rocksdb = ["db", "dep:strata-db-store-rocksdb", "dep:rockbound"]
 
 [[bench]]
 name = "l1_database"
@@ -37,11 +36,9 @@ tempfile = { workspace = true, optional = true }
 
 strata-asm-types = { workspace = true, optional = true }
 strata-db = { workspace = true, optional = true }
-strata-db-store-rocksdb = { workspace = true, optional = true }
 strata-db-store-sled = { workspace = true, optional = true }
 strata-ol-chain-types = { workspace = true, optional = true }
 strata-primitives = { workspace = true, optional = true }
 strata-state = { workspace = true, optional = true }
 
-rockbound = { workspace = true, optional = true }
 typed-sled = { workspace = true, optional = true }

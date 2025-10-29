@@ -20,7 +20,6 @@ strata-config.workspace = true
 strata-consensus-logic = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
 strata-db.workspace = true
-strata-db-store-rocksdb = { workspace = true, optional = true }
 strata-db-store-sled = { workspace = true, optional = true }
 strata-eectl.workspace = true
 strata-evmexec.workspace = true
@@ -62,7 +61,6 @@ tracing.workspace = true
 [features]
 default = ["sled"]
 sled = ["dep:strata-db-store-sled"]
-rocksdb = ["dep:strata-db-store-rocksdb"]
 debug-utils = [
   "strata-common/debug-utils",
   "strata-consensus-logic/debug-utils",

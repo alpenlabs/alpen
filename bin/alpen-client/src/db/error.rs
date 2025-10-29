@@ -41,11 +41,6 @@ pub(crate) enum DbError {
     #[error("sled txn: {0}")]
     SledTxn(String),
 
-    #[cfg(all(feature = "rocksdb", not(feature = "sled")))]
-    /// RocksDB transaction error.
-    #[error("rocksdb txn: {0}")]
-    RocksDBTxn(String),
-
     /// Other unspecified database error.
     #[error("{0}")]
     #[allow(dead_code, clippy::allow_attributes, reason = "feature gated")]
@@ -75,23 +70,6 @@ impl From<sled::transaction::TransactionError<typed_sled::error::Error>> for DbE
             sled::transaction::TransactionError::Abort(tsled_err) => tsled_err.into(),
             err => DbError::SledTxn(err.to_string()),
         }
-    }
-}
-
-#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
-impl From<rockbound::TransactionError<DbError>> for DbError {
-    fn from(value: rockbound::TransactionError<DbError>) -> Self {
-        match value {
-            rockbound::TransactionError::Rollback(dberr) => dberr,
-            err => DbError::RocksDBTxn(err.to_string()),
-        }
-    }
-}
-
-#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
-impl From<anyhow::Error> for DbError {
-    fn from(value: anyhow::Error) -> Self {
-        Self::Other(value.to_string())
     }
 }
 

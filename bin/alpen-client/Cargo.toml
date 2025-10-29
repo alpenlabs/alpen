@@ -9,12 +9,6 @@ workspace = true
 [features]
 default = ["sled"]
 sled = ["dep:sled", "dep:typed-sled", "dep:strata-db-store-sled"]
-rocksdb = [
-  "dep:rockbound",
-  "dep:strata-db-store-rocksdb",
-  "dep:bincode",
-  "dep:anyhow",
-]
 
 [[bin]]
 name = "alpen-client"
@@ -24,7 +18,6 @@ path = "src/main.rs"
 alpen-chainspec.workspace = true
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
-strata-db-store-rocksdb = { workspace = true, optional = true }
 strata-db-store-sled = { workspace = true, optional = true }
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
@@ -49,7 +42,6 @@ reth-db.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
 reth-provider.workspace = true
-rockbound = { workspace = true, optional = true }
 sled = { workspace = true, optional = true }
 thiserror.workspace = true
 threadpool.workspace = true
