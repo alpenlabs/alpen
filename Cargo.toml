@@ -96,7 +96,7 @@ members = [
 
   # integration tests
   "tests",
-  "crates/util/python-utils",
+  "bin/strata-test-cli",
 
   # benchmarks
   "benches",
@@ -110,7 +110,7 @@ default-members = [
   "bin/strata-dbtool",
   "bin/strata-sequencer-client",
   "bin/alpen-cli",
-  "crates/util/python-utils",
+  "bin/strata-test-cli",
 ]
 
 [workspace.lints]

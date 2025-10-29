@@ -1,0 +1,35 @@
+[package]
+name = "strata-test-cli"
+version = "0.3.0-alpha.1"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "strata-test-cli"
+path = "src/main.rs"
+
+[dependencies]
+shrex.workspace = true
+strata-cli-common.workspace = true
+strata-crypto.workspace = true
+strata-l1tx.workspace = true
+strata-params.workspace = true
+strata-primitives.workspace = true
+
+bdk_bitcoind_rpc.workspace = true
+bdk_wallet.workspace = true
+make_buf.workspace = true
+musig2.workspace = true
+rand.workspace = true
+secp256k1.workspace = true
+
+# CLI dependencies
+argh.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+shrex_macros.workspace = true

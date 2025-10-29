@@ -6,7 +6,6 @@ authors = []
 requires-python = "~=3.10.0"
 dependencies = [
   "flexitest",
-  "strata_utils",
   "bitcoinlib>=0.7.5,<0.8",
   "websockets~=15.0",
   "web3>=7.13.0,<8",
@@ -23,7 +22,6 @@ dev = ["ruff==0.12.11", "maturin==1.9.4", "ty>=0.0.1a20,<0.0.2"]
 
 [tool.uv.sources]
 flexitest = { git = "https://codeberg.org/treyd/flexitest.git" }
-strata_utils = { path = "../crates/util/python-utils", editable = true }
 
 [build-system]
 requires = ["hatchling"]

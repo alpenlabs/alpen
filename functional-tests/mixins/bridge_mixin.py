@@ -1,10 +1,10 @@
 from typing import Any
 
 import flexitest
-from strata_utils import create_deposit_transaction, create_withdrawal_fulfillment
 from web3.middleware.signing import SignAndSendRawMiddlewareBuilder
 
 from envs.rollup_params_cfg import RollupConfig
+from factory.test_cli import create_deposit_transaction, create_withdrawal_fulfillment
 from utils.utils import SATS_TO_WEI, wait_until, wait_until_with_value
 from utils.wait import StrataWaiter
 

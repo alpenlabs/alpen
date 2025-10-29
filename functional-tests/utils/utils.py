@@ -1,6 +1,8 @@
+import contextlib
 import logging
 import math
 import os
+import pty
 import subprocess
 import time
 from collections.abc import Callable
@@ -10,7 +12,6 @@ from typing import Any, TypeVar
 
 import base58
 from bitcoinlib.services.bitcoind import BitcoindClient
-from strata_utils import convert_to_xonly_pk, musig_aggregate_pks
 
 from factory.config import BitcoindConfig
 from factory.seqrpc import JsonrpcClient
@@ -446,6 +447,8 @@ def get_bridge_pubkey(seqrpc) -> str:
     """
     Get the bridge pubkey from the sequencer.
     """
+    from factory.test_cli import convert_to_xonly_pk, musig_aggregate_pks
+
     # Wait until genesis
     wait_until(
         lambda: seqrpc.strata_syncStatus() is not None,
@@ -467,6 +470,8 @@ def get_bridge_pubkey_from_cfg(cfg_params) -> str:
     """
     Get the bridge pubkey from the config.
     """
+    from factory.test_cli import convert_to_xonly_pk, musig_aggregate_pks
+
     # Slight hack to convert to appropriate operator pubkey from cfg values.
     op_pks = ["02" + pk for pk in cfg_params.operator_config.get_operators_pubkeys()]
     op_x_only_pks = [convert_to_xonly_pk(pk) for pk in op_pks]
@@ -676,3 +681,79 @@ def get_priv_keys(ctx, env=None):
             decoded = base58.b58decode(content)[:-4]  # remove checksum
             priv_keys.append(decoded)
     return priv_keys
+
+
+def run_tty(cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.CompletedProcess:
+    """
+    Runs `cmd` under a PTY (so indicatif used by Alpen-cli behaves).
+    Returns a CompletedProcess; stdout is bytes when captured.
+    """
+    if stdout is subprocess.PIPE:
+        capture_output, stdout = True, None
+
+    buf = [] if capture_output else None
+
+    # Create a pseudo-terminal pair
+    master_fd, slave_fd = pty.openpty()
+
+    try:
+        # Prepare environment - inherit current env and merge with custom env
+        proc_env = os.environ.copy()
+        if env:
+            proc_env.update(env)
+
+        # Start subprocess with the slave side of the PTY
+        proc = subprocess.Popen(
+            cmd,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=proc_env,
+            close_fds=True,
+        )
+
+        # Close slave_fd in parent process (child has its own copy)
+        os.close(slave_fd)
+        slave_fd = -1  # Mark as closed
+
+        # Read from master_fd until process completes
+        while True:
+            try:
+                data = os.read(master_fd, 4096)
+                if not data:
+                    break
+
+                if buf is not None:
+                    buf.append(data)
+                elif stdout is None:
+                    os.write(1, data)  # parent stdout
+                else:
+                    # file-like or text stream
+                    if hasattr(stdout, "buffer"):
+                        stdout.buffer.write(data)
+                        stdout.flush()
+                    else:
+                        stdout.write(data.decode("utf-8", "replace"))
+                        if hasattr(stdout, "flush"):
+                            stdout.flush()
+            except OSError:
+                # PTY closed, process likely finished
+                break
+
+        # Wait for process to complete
+        rc = proc.wait()
+
+    finally:
+        # Clean up file descriptors
+        if slave_fd != -1:
+            with contextlib.suppress(OSError):
+                os.close(slave_fd)
+        with contextlib.suppress(OSError):
+            os.close(master_fd)
+
+    return subprocess.CompletedProcess(
+        args=cmd,
+        returncode=rc,
+        stdout=(b"".join(buf) if buf is not None else None),
+        stderr=None,  # PTY merges stderr
+    )
