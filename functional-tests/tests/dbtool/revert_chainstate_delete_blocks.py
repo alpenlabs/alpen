@@ -27,6 +27,7 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
         )
 
     def main(self, ctx: flexitest.RunContext):
+        # return False
         # Setup: generate blocks and finalize epoch
         setup_revert_chainstate_test(self)
 

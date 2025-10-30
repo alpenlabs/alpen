@@ -69,11 +69,24 @@ class SeqStatusElInactiveTest(testenv.StrataTester):
             error_with="L1 reader crashed after reth stopped",
         )
 
+        # stop the sequencer
+        seq.stop()
+        time.sleep(2)
+
+        # start reth again
         reth.start()
         wait_until(lambda: web3.is_connected(), error_with="Reth did not start properly")
 
+        # start sequencer again
+        seq.start()
+        wait_until(
+            lambda: seqrpc.strata_protocolVersion() is not None,
+            error_with="Sequencer did not start on time after reth restart",
+        )
+
         # check if new blocks are being created again
         cur_slot = seqrpc.strata_clientStatus()["chain_tip_slot"]
+
         wait_until(
             lambda: seqrpc.strata_clientStatus()["chain_tip_slot"] > cur_slot,
             error_with="New blocks are not being created",

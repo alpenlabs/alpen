@@ -3,6 +3,9 @@ edition = "2021"
 name = "alpen-reth-primitives"
 version = "0.2.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 alloy-sol-types.workspace = true
 serde.workspace = true

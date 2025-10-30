@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use revm_primitives::alloy_primitives::B256;
 use rockbound::{SchemaDBOperations, SchemaDBOperationsExt};
-use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
+use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 
 use super::schema::BlockWitnessSchema;
 use crate::{errors::DbError, DbResult, WitnessProvider, WitnessStore};
@@ -23,7 +23,7 @@ impl<DB> Clone for WitnessDB<DB> {
 }
 
 impl<DB> WitnessDB<DB> {
-    pub fn new(db: Arc<DB>) -> Self {
+    pub const fn new(db: Arc<DB>) -> Self {
         Self { db }
     }
 }
@@ -67,7 +67,7 @@ impl<DB: SchemaDBOperations> WitnessStore for WitnessDB<DB> {
 mod tests {
     use rockbound::SchemaDBOperations;
     use serde::Deserialize;
-    use strata_proofimpl_evm_ee_stf::{EvmBlockStfInput, EvmBlockStfOutput};
+    use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use tempfile::TempDir;
 
     use super::*;
@@ -82,7 +82,7 @@ mod tests {
         let temp_dir = TempDir::new().expect("failed to create temp dir");
 
         let rbdb = rockbound::DB::open(
-            temp_dir.into_path(),
+            temp_dir.keep(),
             dbname,
             cfs.iter().map(|s| s.to_string()),
             &opts,

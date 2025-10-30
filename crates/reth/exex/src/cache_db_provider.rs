@@ -1,50 +1,61 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-};
+use std::{cell::RefCell, collections::HashSet, fmt};
 
+use alloy_primitives::map::foldhash::HashMap;
 use reth_provider::{errors::db::DatabaseError, AccountReader, ProviderError, StateProvider};
-use reth_revm::DatabaseRef;
-use revm_primitives::{
-    alloy_primitives::{ruint::Uint, Address, Bytes, B256, U256},
-    AccountInfo, Bytecode,
+use reth_revm::{
+    state::{AccountInfo, Bytecode},
+    DatabaseRef,
 };
+use revm_primitives::alloy_primitives::{ruint::Uint, Address, B256, U256};
 
 /// `CacheDBProvider` implements a provider for the revm `CacheDB`.
 /// In addition it holds accessed account info, storage values, and bytecodes during
 /// transaction execution, supporting state retrieval for storage proof construction
 /// in EL proof witness generation.
-pub struct CacheDBProvider {
+pub(crate) struct CacheDBProvider {
     provider: Box<dyn StateProvider>,
     accounts: RefCell<HashMap<Address, AccountInfo>>,
     storage: RefCell<HashMap<Address, HashMap<U256, U256>>>,
-    bytecodes: RefCell<HashSet<Bytes>>,
+    bytecodes: RefCell<HashSet<Bytecode>>,
     accessed_blkd_ids: RefCell<HashSet<u64>>,
 }
 
+impl fmt::Debug for CacheDBProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CacheDBProvider")
+            .field("accounts_cached", &self.accounts.borrow().len())
+            .field("storage_addresses", &self.storage.borrow().len())
+            .field("bytecodes_cached", &self.bytecodes.borrow().len())
+            .field(
+                "accessed_block_ids_count",
+                &self.accessed_blkd_ids.borrow().len(),
+            )
+            .finish_non_exhaustive()
+    }
+}
 #[derive(Debug)]
-pub struct AccessedState {
+pub(crate) struct AccessedState {
     accessed_accounts: HashMap<Address, Vec<Uint<256, 4>>>,
-    accessed_contracts: Vec<Bytes>,
+    accessed_contracts: Vec<Bytecode>,
     accessed_block_idxs: HashSet<u64>,
 }
 
 impl AccessedState {
-    pub fn accessed_block_idxs(&self) -> &HashSet<u64> {
+    pub(crate) fn accessed_block_idxs(&self) -> &HashSet<u64> {
         &self.accessed_block_idxs
     }
 
-    pub fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
+    pub(crate) fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
         &self.accessed_accounts
     }
 
-    pub fn accessed_contracts(&self) -> &Vec<Bytes> {
+    pub(crate) fn accessed_contracts(&self) -> &Vec<Bytecode> {
         &self.accessed_contracts
     }
 }
 
 impl CacheDBProvider {
-    pub fn new(provider: Box<dyn StateProvider>) -> Self {
+    pub(crate) fn new(provider: Box<dyn StateProvider>) -> Self {
         Self {
             provider,
             accounts: Default::default(),
@@ -54,7 +65,7 @@ impl CacheDBProvider {
         }
     }
 
-    pub fn get_accessed_state(&self) -> AccessedState {
+    pub(crate) fn get_accessed_state(&self) -> AccessedState {
         let accessed_accounts = self.get_accessed_accounts();
         let accessed_contracts = self.get_accessed_contracts();
 
@@ -84,7 +95,7 @@ impl CacheDBProvider {
             .collect()
     }
 
-    fn get_accessed_contracts(&self) -> Vec<Bytes> {
+    fn get_accessed_contracts(&self) -> Vec<Bytecode> {
         self.bytecodes.borrow().iter().cloned().collect()
     }
 }
@@ -121,9 +132,7 @@ impl DatabaseRef for CacheDBProvider {
             })?;
 
         // Record the storage value to the state
-        self.bytecodes
-            .borrow_mut()
-            .insert(bytecode.original_bytes().clone());
+        self.bytecodes.borrow_mut().insert(bytecode.clone());
 
         Ok(bytecode)
     }

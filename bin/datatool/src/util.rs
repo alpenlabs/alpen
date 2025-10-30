@@ -48,7 +48,8 @@ const OPKEY_ENVVAR: &str = "STRATA_OP_KEY";
 const DEFAULT_NETWORK: Network = Network::Signet;
 
 /// The default evm chainspec to use in params.
-const DEFAULT_CHAIN_SPEC: &str = include_str!("../../alpen-reth/res/alpen-dev-chain.json");
+const DEFAULT_CHAIN_SPEC: &str =
+    include_str!("../../../crates/reth/chainspec/src/res/alpen-dev-chain.json");
 
 /// Resolves a [`Network`] from a string.
 pub(super) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
