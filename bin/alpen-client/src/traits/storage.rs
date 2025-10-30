@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use tokio::sync::RwLock;
 
 use super::error::StorageError;
@@ -14,14 +15,54 @@ pub(crate) struct OlBlockEeAccountState {
     pub state: EeAccountState,
 }
 
+impl OlBlockEeAccountState {
+    pub(crate) fn new(ol_block: OLBlockCommitment, state: EeAccountState) -> Self {
+        Self { ol_block, state }
+    }
+
+    pub(crate) fn ol_block(&self) -> &OLBlockCommitment {
+        &self.ol_block
+    }
+    pub(crate) fn ee_state(&self) -> &EeAccountState {
+        &self.state
+    }
+
+    pub(crate) fn ol_slot(&self) -> u64 {
+        self.ol_block.slot()
+    }
+    pub(crate) fn ol_blockid(&self) -> &OLBlockId {
+        self.ol_block.blkid()
+    }
+    pub(crate) fn last_exec_blkid(&self) -> Hash {
+        self.state.last_exec_blkid()
+    }
+}
+
+pub(crate) enum OLBlockOrSlot<'a> {
+    Block(&'a OLBlockId),
+    Slot(u64),
+}
+
+impl<'a> From<&'a OLBlockId> for OLBlockOrSlot<'a> {
+    fn from(value: &'a OLBlockId) -> Self {
+        Self::Block(value)
+    }
+}
+
+impl From<u64> for OLBlockOrSlot<'_> {
+    fn from(value: u64) -> Self {
+        OLBlockOrSlot::Slot(value)
+    }
+}
+
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 /// Persistence for EE Nodes
 pub(crate) trait Storage {
     /// Get EE account internal state corresponding to a given OL slot.
-    async fn ee_account_state_for_slot(
+    async fn ee_account_state<'a>(
         &self,
-        ol_slot: u64,
+        block_or_slot: OLBlockOrSlot<'a>,
     ) -> Result<Option<OlBlockEeAccountState>, StorageError>;
     /// Get EE account internal state for the highest slot available.
     async fn best_ee_account_state(&self) -> Result<Option<OlBlockEeAccountState>, StorageError>;
@@ -42,16 +83,19 @@ pub(crate) struct DummyStorage {
 
 #[async_trait]
 impl Storage for DummyStorage {
-    async fn ee_account_state_for_slot(
+    async fn ee_account_state<'a>(
         &self,
-        ol_slot: u64,
+        block_or_slot: OLBlockOrSlot<'a>,
     ) -> Result<Option<OlBlockEeAccountState>, StorageError> {
         Ok(self
             .items
             .read()
             .await
             .iter()
-            .find(|item| item.ol_block.slot() == ol_slot)
+            .find(|item| match block_or_slot {
+                OLBlockOrSlot::Block(blockid) => item.ol_block.blkid() == blockid,
+                OLBlockOrSlot::Slot(slot) => item.ol_block.slot() == slot,
+            })
             .cloned())
     }
     async fn best_ee_account_state(&self) -> Result<Option<OlBlockEeAccountState>, StorageError> {

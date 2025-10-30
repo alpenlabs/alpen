@@ -5,6 +5,7 @@ use tokio::sync::watch;
 
 use crate::{
     ol_tracker::{
+        state::ConsensusHeads,
         task::{ol_tracker_task, OlTrackerCtx, DEFAULT_MAX_BLOCKS_FETCH, DEFAULT_POLL_WAIT_MS},
         OlTrackerState,
     },
@@ -13,6 +14,7 @@ use crate::{
 
 pub(crate) struct OlTrackerHandle {
     ee_state_rx: watch::Receiver<EeAccountState>,
+    consensus_rx: watch::Receiver<ConsensusHeads>,
 }
 
 impl OlTrackerHandle {
@@ -27,12 +29,17 @@ impl OlTrackerHandle {
         TStorage: Storage,
         TOlClient: OlClient,
     {
-        let (ee_state_tx, ee_state_rx) = watch::channel(state.ee_state.clone());
-        let handle = Self { ee_state_rx };
+        let (ee_state_tx, ee_state_rx) = watch::channel(state.best_ee_state().clone());
+        let (consensus_tx, consensus_rx) = watch::channel(state.get_consensus_heads());
+        let handle = Self {
+            ee_state_rx,
+            consensus_rx,
+        };
         let ctx = OlTrackerCtx {
             storage,
             ol_client,
             ee_state_tx,
+            consensus_tx,
             max_blocks_fetch: max_block_fetch.unwrap_or(DEFAULT_MAX_BLOCKS_FETCH),
             poll_wait_ms: poll_wait_ms.unwrap_or(DEFAULT_POLL_WAIT_MS),
         };
@@ -42,5 +49,9 @@ impl OlTrackerHandle {
 
     pub(crate) fn ee_state_watcher(&self) -> watch::Receiver<EeAccountState> {
         self.ee_state_rx.clone()
+    }
+
+    pub fn consensus_watcher(&self) -> watch::Receiver<ConsensusHeads> {
+        self.consensus_rx.clone()
     }
 }

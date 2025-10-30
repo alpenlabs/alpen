@@ -8,12 +8,16 @@ use tokio::sync::watch;
 use tracing::{debug, error, warn};
 
 use crate::{
-    ol_tracker::OlTrackerState,
+    ol_tracker::{
+        state::{build_tracker_state, ConsensusHeads},
+        OlTrackerState,
+    },
     traits::{
         ol_client::{
-            block_commitments_in_range_checked, get_update_operations_for_blocks_checked, OlClient,
+            block_commitments_in_range_checked, chain_status_checked,
+            get_update_operations_for_blocks_checked, OlChainStatus, OlClient,
         },
-        storage::Storage,
+        storage::{OlBlockEeAccountState, Storage},
     },
 };
 
@@ -26,6 +30,7 @@ pub(crate) struct OlTrackerCtx<TStorage, TOlClient> {
     pub(crate) storage: Arc<TStorage>,
     pub(crate) ol_client: Arc<TOlClient>,
     pub(crate) ee_state_tx: watch::Sender<EeAccountState>,
+    pub(crate) consensus_tx: watch::Sender<ConsensusHeads>,
     pub(crate) max_blocks_fetch: u64,
     pub(crate) poll_wait_ms: u64,
 }
@@ -41,9 +46,9 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
         tokio::time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
 
         match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_blocks_fetch).await {
-            Ok(TrackOlAction::Extend(block_operations)) => {
+            Ok(TrackOlAction::Extend(block_operations, chain_status)) => {
                 if let Err(error) =
-                    handle_extend_ee_state(&block_operations, &mut state, &ctx).await
+                    handle_extend_ee_state(&block_operations, &chain_status, &mut state, &ctx).await
                 {
                     error!(%error, "failed to extend ee state");
                 }
@@ -69,7 +74,7 @@ pub(crate) struct OlBlockOperations {
 pub(crate) enum TrackOlAction {
     /// Extend local view of the OL chain with new blocks.
     /// TODO: stream
-    Extend(Vec<OlBlockOperations>),
+    Extend(Vec<OlBlockOperations>, OlChainStatus),
     /// Local tip not present in OL chain, need to resolve local view.
     Reorg,
     /// Local tip is synced with OL chain, nothing to do.
@@ -81,25 +86,29 @@ pub(crate) async fn track_ol_state(
     ol_client: &impl OlClient,
     max_blocks_fetch: u64,
 ) -> eyre::Result<TrackOlAction> {
-    let ol_status = ol_client.chain_status().await.map_err(|e| eyre::eyre!(e))?;
+    // can be changed to subscribe to ol changes, with timeout
+    let ol_status = chain_status_checked(ol_client)
+        .await
+        .map_err(|e| eyre::eyre!(e))?;
 
     let best_ol_block = &ol_status.latest;
 
     debug!(
-        local_slot = state.ol_block.slot(),
+        local_slot = state.best_ol_block().slot(),
         ol_slot = best_ol_block.slot(),
         "check best ol block"
     );
 
-    if best_ol_block.slot() < state.ol_block.slot() {
+    if best_ol_block.slot() < state.best_ol_block().slot() {
         // local view of chain is ahead of Ol, should not typically happen
         return Ok(TrackOlAction::Noop);
     }
-    if best_ol_block.slot() == state.ol_block.slot() {
-        return if best_ol_block.blkid() != state.ol_block.blkid() {
-            warn!(slot = best_ol_block.slot(), ol = %best_ol_block.blkid(), local = %state.ol_block.blkid(), "detect chain mismatch; trigger reorg");
+    if best_ol_block.slot() == state.best_ol_block().slot() {
+        return if best_ol_block.blkid() != state.best_ol_block().blkid() {
+            warn!(slot = best_ol_block.slot(), ol = %best_ol_block.blkid(), local = %state.best_ol_block().blkid(), "detect chain mismatch; trigger reorg");
             Ok(TrackOlAction::Reorg)
         } else {
+            // local view is in sync with OL, nothing to do
             Ok(TrackOlAction::Noop)
         };
     }
@@ -107,15 +116,15 @@ pub(crate) async fn track_ol_state(
     // local chain is behind ol's view, we can fetch next blocks and extend local view.
     let fetch_blocks_count = best_ol_block
         .slot()
-        .saturating_sub(state.ol_block.slot())
+        .saturating_sub(state.best_ol_block().slot())
         .min(max_blocks_fetch);
 
-    // Fetch block commitments in from current local slot.
-    // Also fetch height of last known local block to check for reorg.
+    // Fetch block commitments in ol from current local slot.
+    // Also fetch at height of last known local block to check for reorg.
     let blocks = block_commitments_in_range_checked(
         ol_client,
-        state.ol_block.slot(),
-        state.ol_block.slot() + fetch_blocks_count,
+        state.best_ol_block().slot(),
+        state.best_ol_block().slot() + fetch_blocks_count,
     )
     .await
     .map_err(|e| eyre::eyre!(e))?;
@@ -125,7 +134,7 @@ pub(crate) async fn track_ol_state(
         .ok_or_else(|| eyre::eyre!("empty block commitments returned from ol_client"))?;
 
     // If last block isnt as expected, trigger reorg
-    if expected_local_block != &state.ol_block {
+    if expected_local_block != state.best_ol_block() {
         return Ok(TrackOlAction::Reorg);
     }
 
@@ -139,14 +148,15 @@ pub(crate) async fn track_ol_state(
         .await
         .map_err(|e| eyre::eyre!(e))?;
 
-    let res = new_blocks
+    let block_operations = new_blocks
         .iter()
         .cloned()
         .zip(operations)
         .map(|(block, operations)| OlBlockOperations { block, operations })
         .collect();
 
-    Ok(TrackOlAction::Extend(res))
+    // maybe stream all missing blocks ?
+    Ok(TrackOlAction::Extend(block_operations, ol_status))
 }
 
 pub(crate) fn apply_block_operations(
@@ -160,23 +170,9 @@ pub(crate) fn apply_block_operations(
     Ok(())
 }
 
-/// Pure function to update tracker state with new block and ee state.
-pub(crate) fn update_tracker_state(
-    state: &mut OlTrackerState,
-    ol_block: OLBlockCommitment,
-    ee_state: EeAccountState,
-) {
-    state.ol_block = ol_block;
-    state.ee_state = ee_state;
-}
-
-/// Notify watchers of state update.
-pub(crate) fn notify_state_update(sender: &watch::Sender<EeAccountState>, state: &EeAccountState) {
-    let _ = sender.send(state.clone());
-}
-
 async fn handle_extend_ee_state<TStorage, TOlClient>(
     block_operations: &[OlBlockOperations],
+    chain_status: &OlChainStatus,
     state: &mut OlTrackerState,
     ctx: &OlTrackerCtx<TStorage, TOlClient>,
 ) -> eyre::Result<()>
@@ -190,7 +186,7 @@ where
             operations,
         } = block_op;
 
-        let mut ee_state = state.ee_state.clone();
+        let mut ee_state = state.best_ee_state().clone();
 
         // 1. Apply all operations in the block to update local ee account state.
         apply_block_operations(&mut ee_state, &operations).map_err(|error| {
@@ -215,14 +211,35 @@ where
                 eyre::eyre!(error)
             })?;
 
+        // 3. get next tracker state
+        let next_state = build_tracker_state(
+            OlBlockEeAccountState::new(*ol_block, ee_state),
+            chain_status,
+            ctx.storage.as_ref(),
+        )
+        .await?;
+
         // 3. update local state
-        update_tracker_state(state, *ol_block, ee_state.clone());
+        *state = next_state;
 
         // 4. notify watchers
-        notify_state_update(&ctx.ee_state_tx, &ee_state);
+        notify_state_update(&ctx.ee_state_tx, state.best_ee_state());
+        notify_consensus_update(&ctx.consensus_tx, state.get_consensus_heads());
     }
 
     Ok(())
+}
+
+/// Notify watchers of state update.
+pub(crate) fn notify_state_update(sender: &watch::Sender<EeAccountState>, state: &EeAccountState) {
+    let _ = sender.send(state.clone());
+}
+
+pub(crate) fn notify_consensus_update(
+    sender: &watch::Sender<ConsensusHeads>,
+    update: ConsensusHeads,
+) {
+    let _ = sender.send(update);
 }
 
 async fn handle_reorg<TStorage, TOlClient>(
@@ -243,7 +260,10 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
-    use crate::traits::ol_client::{MockOlClient, OlChainStatus};
+    use crate::traits::{
+        ol_client::{MockOlClient, OlChainStatus},
+        storage::OlBlockEeAccountState,
+    };
 
     /// Helper to create a block commitment for testing
     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
@@ -254,26 +274,14 @@ mod tests {
 
     /// Helper to create a test tracker state
     fn make_test_state(slot: u64, id: u8) -> OlTrackerState {
+        let block_state = OlBlockEeAccountState::new(
+            make_block_commitment(slot, id),
+            EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]),
+        );
         OlTrackerState {
-            ee_state: EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]),
-            ol_block: make_block_commitment(slot, id),
-        }
-    }
-
-    mod update_tracker_state_tests {
-        use super::*;
-
-        #[test]
-        fn test_updates_both_fields() {
-            let mut state = make_test_state(10, 1);
-            let new_block = make_block_commitment(11, 2);
-            let new_ee_state =
-                EeAccountState::new([1u8; 32], BitcoinAmount::zero(), vec![], vec![]);
-
-            update_tracker_state(&mut state, new_block, new_ee_state.clone());
-
-            assert_eq!(state.ol_block, new_block);
-            assert_eq!(state.ee_state, new_ee_state);
+            best: block_state.clone(),
+            confirmed: block_state.clone(),
+            finalized: block_state,
         }
     }
 
@@ -445,7 +453,7 @@ mod tests {
             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 
             match result {
-                TrackOlAction::Extend(ops) => {
+                TrackOlAction::Extend(ops, _status) => {
                     assert_eq!(ops.len(), 1);
                     assert_eq!(ops[0].block.slot(), 101);
                 }
@@ -489,7 +497,7 @@ mod tests {
             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 
             match result {
-                TrackOlAction::Extend(ops) => {
+                TrackOlAction::Extend(ops, _status) => {
                     assert_eq!(ops.len(), 3);
                     assert_eq!(ops[0].block.slot(), 101);
                     assert_eq!(ops[1].block.slot(), 102);
@@ -532,7 +540,7 @@ mod tests {
             let result = track_ol_state(&state, &mock_client, 5).await.unwrap();
 
             match result {
-                TrackOlAction::Extend(ops) => {
+                TrackOlAction::Extend(ops, _status) => {
                     assert_eq!(ops.len(), 5);
                     assert_eq!(ops[0].block.slot(), 101);
                     assert_eq!(ops[4].block.slot(), 105);

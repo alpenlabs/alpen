@@ -13,6 +13,13 @@ pub(crate) enum OlClientError {
     #[error("unexpected operation count: expected {expected} operation lists, got {actual}")]
     UnexpectedOperationCount { expected: usize, actual: usize },
 
+    #[error("unexpected chain status slot order: {latest} >= {confirmed} >= {finalized}")]
+    InvalidChainStatusSlotOrder {
+        latest: u64,
+        confirmed: u64,
+        finalized: u64,
+    },
+
     #[error("network error: {0}")]
     Network(String),
 

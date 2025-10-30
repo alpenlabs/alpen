@@ -6,9 +6,21 @@ use super::error::OlClientError;
 
 #[derive(Debug)]
 pub(crate) struct OlChainStatus {
-    pub latest: OLBlockCommitment,
-    pub confirmed: OLBlockCommitment,
-    pub finalized: OLBlockCommitment,
+    pub(crate) latest: OLBlockCommitment,
+    pub(crate) confirmed: OLBlockCommitment,
+    pub(crate) finalized: OLBlockCommitment,
+}
+
+impl OlChainStatus {
+    pub(crate) fn latest(&self) -> &OLBlockCommitment {
+        &self.latest
+    }
+    pub(crate) fn confirmed(&self) -> &OLBlockCommitment {
+        &self.confirmed
+    }
+    pub(crate) fn finalized(&self) -> &OLBlockCommitment {
+        &self.finalized
+    }
 }
 
 /// Client interface for interacting with the OL chain.
@@ -54,9 +66,29 @@ pub(crate) trait OlClient: Sized + Send + Sync {
     ) -> Result<Vec<Vec<UpdateOperationUnconditionalData>>, OlClientError>;
 }
 
+/// Returns the current status of the OL chain.
+///
+/// This is a checked version of [`OlClient::chain_status`] that validates
+/// the slot numbers of latest >= confirmed >= finalized
+pub(crate) async fn chain_status_checked(
+    client: &impl OlClient,
+) -> Result<OlChainStatus, OlClientError> {
+    let status = client.chain_status().await?;
+    if status.finalized.slot() > status.confirmed.slot()
+        || status.confirmed.slot() > status.latest.slot()
+    {
+        return Err(OlClientError::InvalidChainStatusSlotOrder {
+            latest: status.latest.slot(),
+            confirmed: status.confirmed.slot(),
+            finalized: status.finalized.slot(),
+        });
+    }
+    Ok(status)
+}
+
 /// Retrieves block commitments for a range of slots with validation.
 ///
-/// This is a checked version of `block_commitments_in_range` that validates:
+/// This is a checked version of [`OlClient::block_commitments_in_range`] that validates:
 /// - The end slot is greater than the start slot
 /// - The number of returned blocks matches the expected count
 pub(crate) async fn block_commitments_in_range_checked(
@@ -85,7 +117,7 @@ pub(crate) async fn block_commitments_in_range_checked(
 
 /// Retrieves update operations for the specified blocks with validation.
 ///
-/// This is a checked version of `get_update_operations_for_blocks` that validates
+/// This is a checked version of [`OlClient::get_update_operations_for_blocks`] that validates
 /// the number of returned operation vectors matches the number of input blocks.
 pub(crate) async fn get_update_operations_for_blocks_checked(
     client: &impl OlClient,

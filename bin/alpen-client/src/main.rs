@@ -35,7 +35,10 @@ use crate::{
     config::{AlpenEeConfig, AlpenEeParams},
     genesis::ee_genesis_block_info,
     ol_tracker::{init_ol_tracker_state, OlTrackerHandle},
-    traits::{ol_client::DummyOlClient, storage::DummyStorage},
+    traits::{
+        ol_client::{chain_status_checked, DummyOlClient},
+        storage::DummyStorage,
+    },
 };
 
 fn main() {
@@ -86,11 +89,20 @@ fn main() {
             let ol_client = Arc::new(DummyOlClient::default());
 
             // TODO: startup consistency check
+            let ol_chain_status = builder
+                .task_executor()
+                .handle()
+                .block_on(chain_status_checked(ol_client.as_ref()))
+                .expect("cannot fetch OL chain status");
 
             let ol_tracker_state = builder
                 .task_executor()
                 .handle()
-                .block_on(init_ol_tracker_state(config.clone(), storage.clone()))
+                .block_on(init_ol_tracker_state(
+                    config.clone(),
+                    ol_chain_status,
+                    storage.clone(),
+                ))
                 .expect("ol tracker state initialization should not fail");
 
             let node_builder = builder
