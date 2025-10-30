@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, AccountSerial, AcctResult};
+use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount};
 
 use crate::{
     account::{AccountTypeState, IAccountState},
@@ -19,7 +19,7 @@ pub trait StateAccessor {
     type L1ViewState: IL1ViewState;
 
     /// Type representing a ledger account's state.
-    type AccountState: IAccountState;
+    type AccountState: IAccountState + Clone;
 
     /// Gets a ref to the global state.
     fn global(&self) -> &Self::GlobalState;
@@ -31,7 +31,7 @@ pub trait StateAccessor {
     fn l1_view(&self) -> &Self::L1ViewState;
 
     /// Gets a mut ref to the L1 view state.
-    fn l1_view_mut(&mut self) -> &mut Self::L1ViewState;
+    fn set_l1_view(&mut self, l1v: Self::L1ViewState);
 
     /// Checks if an account exists.
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;
@@ -63,3 +63,60 @@ pub trait StateAccessor {
         state: AccountTypeState<Self::AccountState>,
     ) -> AcctResult<AccountSerial>;
 }
+
+/*
+/// Type for interacting with the rest of the ledger.  There is implicit context
+/// here that binds the interface to be operating from the perspective of the
+/// current account (ie. attaching senders).
+pub trait LedgerInterface {
+    type LedgerError: Display;
+
+    /// Current slot.
+    fn cur_slot(&self) -> u64;
+
+    /// Current epoch.
+    fn cur_epoch(&self) -> u64;
+
+    /// Account's balance.
+    fn acct_balance(&self) -> BitcoinAmount;
+
+    /// Checks if an account with given id exists.
+    fn check_acct_exists(&self, acct_id: AccountId) -> bool;
+
+    /// Send transfer to account.
+    fn send_transfer(
+        &self,
+        acct_id: AccountId,
+        amt: BitcoinAmount,
+    ) -> Result<(), Self::LedgerError>;
+
+    /// Send message to account.
+    fn send_message(
+        &self,
+        acct_id: AccountId,
+        msg: &[u8],
+        amt: BitcoinAmount,
+    ) -> Result<(), Self::LedgerError>;
+}
+
+/// Implementation of `LedgerInterface`
+pub struct Ledger<S: StateAccessor> {
+    state_accessor: S,
+    account_state: AccountState,
+}
+
+impl<S: StateAccessor> Ledger<S> {
+    pub fn new(state_accessor: S, account_state: AccountState) -> Self {
+        Self {
+            state_accessor,
+            account_state,
+        }
+    }
+}
+
+impl LedgerInterface for Ledger {
+    fn cur_slot(&self) -> u64 {
+        self.state_accessor
+    }
+}
+*/

@@ -1,7 +1,7 @@
 use strata_acct_types::{
     AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64, RawAccountTypeId,
 };
-use strata_snark_acct_types::MessageEntry;
+use strata_snark_acct_types::{MessageEntry, MessageEntryProof};
 
 use crate::coin::Coin;
 
@@ -37,7 +37,7 @@ pub trait IAccountState: Sized {
     fn get_type_state_mut(&mut self) -> AcctResult<&mut AccountTypeState<Self>>;
 
     /// Sets the account type state.
-    fn set_type_state(&self, state: AccountTypeState<Self>) -> AcctResult<()>;
+    fn set_type_state(&mut self, state: AccountTypeState<Self>) -> AcctResult<()>;
 }
 
 /// Account type state enum.
@@ -56,6 +56,9 @@ pub trait ISnarkAccountState: Sized {
 
     /// Gets the update seqno.
     fn seqno(&self) -> Seqno;
+
+    /// Gets the next inbox index.
+    fn next_inbox_idx(&self) -> u64;
 
     /// Gets the inner state root hash.
     fn inner_state_root(&self) -> Hash;
@@ -76,9 +79,16 @@ pub trait ISnarkAccountState: Sized {
 
     // Inbox accessors
 
-    /// Gets current the inbox MMR state, which we can use to check proofs
+    /// Gets the current inbox MMR state, which we can use to check proofs
     /// against the state.
     fn inbox_mmr(&self) -> &Mmr64;
+
+    /// Gets the proof of the given `MessageEntry` if exists.
+    fn get_message_proof(
+        &self,
+        msg: &MessageEntry,
+        msg_idx: u64,
+    ) -> AcctResult<Option<MessageEntryProof>>;
 
     /// Inserts message data into the inbox.  Performs no other operations.
     ///

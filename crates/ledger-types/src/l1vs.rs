@@ -31,8 +31,7 @@ pub trait IL1ViewState {
 
     /// Gets the field for the epoch that the ASM considers to be valid.
     ///
-    /// This is our perspective of the perspective of the last block's ASM
-    /// manifest we've accepted.
+    /// This is our perspective of the last block's ASM manifest we've accepted.
     fn asm_recorded_epoch(&self) -> &EpochCommitment;
 
     /// Sets the field for the epoch that the ASM considers to be finalized.
