@@ -14375,7 +14375,6 @@ dependencies = [
  "strata-ledger-types",
  "strata-mmr",
  "strata-ol-chain-types-new",
- "strata-ol-state-types",
  "strata-primitives",
  "strata-snark-acct-types",
 ]

@@ -1,6 +1,6 @@
 use strata_crypto::verify_schnorr_sig;
+use strata_ledger_types::{IGlobalState, StateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, compute_logs_root};
-use strata_ol_state_types::OLState;
 use strata_primitives::{CredRule, params::RollupParams};
 
 use crate::error::BlockValidationError;
@@ -83,14 +83,14 @@ fn validate_block_signature(
 }
 
 /// Block validation after block execution like state root and logs root checks.
-pub fn post_exec_validation(
+pub fn post_exec_validation<S: StateAccessor>(
     block: &OLBlock,
-    new_state: &OLState,
+    new_state: &S::GlobalState,
     stf_logs: &[OLLog],
 ) -> Result<(), BlockValidationError> {
     // Check state root matches.
     let expected = block.header().state_root();
-    let got = new_state.compute_root();
+    let got = new_state.compute_state_root();
     if expected != got {
         return Err(BlockValidationError::StateRootMismatch { expected, got });
     }
