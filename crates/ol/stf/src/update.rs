@@ -4,11 +4,10 @@ use strata_acct_types::{
     AccountId, BitcoinAmount, MerkleProof, MsgPayload, StrataHasher, SystemAccount,
 };
 use strata_ledger_types::{
-    AccountTypeState, Coin, IAccountState, ISnarkAccountState, StateAccessor,
+    AccountTypeState, Coin, IAccountState, IGlobalState, ISnarkAccountState, StateAccessor,
 };
 use strata_mmr::hasher::MerkleHasher;
 use strata_ol_chain_types_new::OLLog;
-use strata_ol_state_types::OLState;
 use strata_snark_acct_types::{
     LedgerRefs, MessageEntry, SnarkAccountUpdate, UpdateOperationData, UpdateOutputs,
 };
@@ -20,7 +19,7 @@ use crate::{
 
 /// Verifies an account update is correct with respect to the current state of
 /// snark account, including checking account balances.
-pub(crate) fn verify_update_correctness<'a, S: StateAccessor<GlobalState = OLState>>(
+pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     state_accessor: &S,
     sender: AccountId,
     acct_state: &S::AccountState,
@@ -31,7 +30,7 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor<GlobalState = OLSta
     let outputs = operation.outputs();
     let state = match type_state {
         AccountTypeState::Empty => {
-            return Ok(VerifiedUpdate { outputs, operation });
+            return Ok(VerifiedUpdate { operation });
         }
         AccountTypeState::Snark(s) => s,
     };
@@ -67,10 +66,10 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor<GlobalState = OLSta
     // 5. Verify the witness check
     verify_update_witness(acct_state, update, state_accessor)?;
 
-    Ok(VerifiedUpdate { outputs, operation })
+    Ok(VerifiedUpdate { operation })
 }
 
-fn get_message_proofs<S: StateAccessor<GlobalState = OLState>>(
+fn get_message_proofs<S: StateAccessor>(
     update: &SnarkAccountUpdate,
     state: &<S::AccountState as IAccountState>::SnarkAccountState,
 ) -> StfResult<Vec<(MessageEntry, MerkleProof)>> {
@@ -89,7 +88,7 @@ fn get_message_proofs<S: StateAccessor<GlobalState = OLState>>(
     Ok(proofs)
 }
 
-fn verify_input_mmr_proofs<S: StateAccessor<GlobalState = OLState>>(
+fn verify_input_mmr_proofs<S: StateAccessor>(
     state: &<S::AccountState as IAccountState>::SnarkAccountState,
     msg_proofs: &[(MessageEntry, MerkleProof)],
 ) -> StfResult<()> {
@@ -103,7 +102,7 @@ fn verify_input_mmr_proofs<S: StateAccessor<GlobalState = OLState>>(
     Ok(())
 }
 
-fn verify_update_witness<S: StateAccessor<GlobalState = OLState>>(
+fn verify_update_witness<S: StateAccessor>(
     acct_state: &<S as StateAccessor>::AccountState,
     update: &SnarkAccountUpdate,
     _state_accessor: &S,
@@ -125,7 +124,7 @@ fn verify_update_witness<S: StateAccessor<GlobalState = OLState>>(
     Ok(())
 }
 
-fn compute_update_claim<S: StateAccessor<GlobalState = OLState>>(
+fn compute_update_claim<S: StateAccessor>(
     _acct_state: &<S as StateAccessor>::AccountState,
     _operation: &UpdateOperationData,
 ) -> Vec<u8> {
@@ -133,7 +132,7 @@ fn compute_update_claim<S: StateAccessor<GlobalState = OLState>>(
     todo!()
 }
 
-fn verify_update_outputs_safe<S: StateAccessor<GlobalState = OLState>>(
+fn verify_update_outputs_safe<S: StateAccessor>(
     outputs: &UpdateOutputs,
     sender: AccountId,
     acct_state: &S::AccountState,
@@ -172,7 +171,7 @@ fn verify_update_outputs_safe<S: StateAccessor<GlobalState = OLState>>(
     Ok(())
 }
 
-fn verify_ledger_refs<S: StateAccessor<GlobalState = OLState>>(
+fn verify_ledger_refs<S: StateAccessor>(
     _ledger_refs: &LedgerRefs,
     _state_accessor: &S,
 ) -> StfResult<()> {
@@ -180,13 +179,13 @@ fn verify_ledger_refs<S: StateAccessor<GlobalState = OLState>>(
     Ok(())
 }
 
-pub(crate) fn apply_update_outputs<'a, S: StateAccessor<GlobalState = OLState>>(
+pub(crate) fn apply_update_outputs<'a, S: StateAccessor>(
     state_accessor: &mut S,
     sender: AccountId,
     sender_state: &mut S::AccountState,
     verified_update: VerifiedUpdate<'a>,
 ) -> StfResult<Vec<OLLog>> {
-    let outputs = verified_update.outputs();
+    let outputs = verified_update.operation().outputs();
     let transfers = outputs.transfers();
     let messages = outputs.messages();
 
@@ -227,7 +226,7 @@ pub(crate) fn apply_update_outputs<'a, S: StateAccessor<GlobalState = OLState>>(
     Ok(Vec::new()) // TODO: add logs, especially withdrawals
 }
 
-fn send_message<S: StateAccessor<GlobalState = OLState>>(
+pub(crate) fn send_message<S: StateAccessor>(
     state_accessor: &mut S,
     from: AccountId,
     to: AccountId,
@@ -257,7 +256,7 @@ fn send_message<S: StateAccessor<GlobalState = OLState>>(
     }
 }
 
-fn send_transfer<S: StateAccessor<GlobalState = OLState>>(
+pub(crate) fn send_transfer<S: StateAccessor>(
     state_accessor: &mut S,
     from: AccountId,
     to: AccountId,
@@ -289,9 +288,7 @@ fn send_transfer<S: StateAccessor<GlobalState = OLState>>(
 
 type MsgHandler<S> = fn(&mut S, AccountId, &MsgPayload) -> StfResult<()>;
 
-fn get_system_msg_handler<S: StateAccessor<GlobalState = OLState>>(
-    acct_id: AccountId,
-) -> Option<MsgHandler<S>> {
+fn get_system_msg_handler<S: StateAccessor>(acct_id: AccountId) -> Option<MsgHandler<S>> {
     if acct_id == SystemAccount::Bridge.id() {
         Some(handle_bridge_gateway_msg)
     } else {
@@ -301,42 +298,20 @@ fn get_system_msg_handler<S: StateAccessor<GlobalState = OLState>>(
 
 type TransferHandler<S> = fn(&mut S, AccountId, BitcoinAmount) -> StfResult<()>;
 
-fn get_system_transfer_handler<S: StateAccessor<GlobalState = OLState>>(
-    acct_id: AccountId,
-) -> Option<TransferHandler<S>> {
+fn get_system_transfer_handler<S: StateAccessor>(acct_id: AccountId) -> Option<TransferHandler<S>> {
     if acct_id == SystemAccount::Bridge.id() {
-        panic!("We don't handle system transfers yet");
+        panic!("System transfers are not supported yet");
     } else {
         None
     }
 }
 
-/// Verified outputs. Just a wrapper that can be constructed only by the `verify_update_output`
-/// function.
-#[derive(Clone, Debug)]
-pub(crate) struct VerifiedOutputs<'a> {
-    inner: &'a UpdateOutputs,
-    // TODO: Add total_sent as a computed value so that we don't have to compute it later while
-    // applying
-}
-
-impl<'a> VerifiedOutputs<'a> {
-    pub(crate) fn inner(self) -> &'a UpdateOutputs {
-        self.inner
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct VerifiedUpdate<'a> {
-    outputs: &'a UpdateOutputs,
     operation: &'a UpdateOperationData,
 }
 
 impl<'a> VerifiedUpdate<'a> {
-    pub(crate) fn outputs(&self) -> &'a UpdateOutputs {
-        self.outputs
-    }
-
     pub(crate) fn operation(&self) -> &'a UpdateOperationData {
         self.operation
     }

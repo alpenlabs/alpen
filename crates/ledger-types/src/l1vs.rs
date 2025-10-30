@@ -22,8 +22,14 @@ pub trait IL1ViewState {
     /// Last L1 block ID.
     fn last_l1_blkid(&self) -> &L1BlockId;
 
+    /// Sets Last L1 block ID.
+    fn set_last_l1_blkid(&self, blkid: L1BlockId);
+
     /// Last L1 block height.
     fn last_l1_height(&self) -> L1Height;
+
+    /// Sets Last L1 block height
+    fn set_last_l1_height(&self, height: L1Height);
 
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
     /// block height and other fields.
@@ -43,6 +49,9 @@ pub trait IL1ViewState {
     /// Gets the total OL ledger balance.
     fn total_ledger_balance(&self) -> BitcoinAmount;
 
-    /// Sets the total OL ledger balance.
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) -> BitcoinAmount;
+    /// Increments the total OL ledger balance.
+    fn increment_total_ledger_balance(&mut self, amt: BitcoinAmount) -> BitcoinAmount;
+
+    /// Decrements the total OL ledger balance.
+    fn decrement_total_ledger_balance(&mut self, amt: BitcoinAmount) -> BitcoinAmount;
 }

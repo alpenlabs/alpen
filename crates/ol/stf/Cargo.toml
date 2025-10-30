@@ -11,7 +11,6 @@ strata-crypto.workspace = true
 strata-ledger-types.workspace = true
 strata-mmr.workspace = true
 strata-ol-chain-types-new.workspace = true
-strata-ol-state-types.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 

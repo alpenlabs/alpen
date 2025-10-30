@@ -1,8 +1,7 @@
-use strata_ledger_types::StateAccessor;
+use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::{
-    L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload, TxTypeId,
+    L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload,
 };
-use strata_ol_state_types::OLState;
 use strata_primitives::{Buf32, params::RollupParams};
 
 use crate::{
@@ -13,9 +12,9 @@ use crate::{
 };
 
 /// Processes an OL block. Also performs epoch sealing if the block is terminal.
-pub fn execute_block(
+pub fn execute_block<S: StateAccessor>(
     params: RollupParams,
-    state_accessor: &mut impl StateAccessor<GlobalState = OLState>,
+    state_accessor: &mut S,
     prev_header: OLBlockHeader,
     block: OLBlock,
 ) -> StfResult<ExecOutput> {
@@ -30,7 +29,7 @@ pub fn execute_block(
         stf_logs.extend_from_slice(&logs);
     }
 
-    let _pre_seal_root = state_accessor.global().compute_root();
+    let _pre_seal_root = state_accessor.global().compute_state_root();
 
     // Check if needs to seal epoch
     if let Some(l1update) = block.body().l1_update() {
@@ -45,38 +44,38 @@ pub fn execute_block(
     let new_state = state_accessor.global().to_owned();
 
     // Post execution block validation. Checks state root and logs root.
-    post_exec_validation(&block, &new_state, &stf_logs).map_err(StfError::BlockValidation)?;
+    post_exec_validation::<S>(&block, new_state, &stf_logs).map_err(StfError::BlockValidation)?;
 
-    let new_root = new_state.compute_root();
+    let new_root = new_state.compute_state_root();
     Ok(ExecOutput::new(new_root, stf_logs))
 }
 
 fn seal_epoch(
-    state_accessor: &mut impl StateAccessor<GlobalState = OLState>,
+    state_accessor: &mut impl StateAccessor,
     l1update: &L1Update,
 ) -> StfResult<Vec<OLLog>> {
     let mut logs = Vec::new();
-    let state = state_accessor.global();
-    let mut cur_height = state.l1_view().block_height();
-    let mut cur_blkid = state.l1_view().block_id();
+    let l1_view = state_accessor.l1_view();
+    let mut cur_height = l1_view.last_l1_height();
+    let mut cur_blkid = (*l1_view.last_l1_blkid()).into();
 
     for manifest in &l1update.manifests {
         for log in manifest.logs() {
             logs.extend_from_slice(&process_asm_log(state_accessor, log)?);
         }
         // TODO: Insert into witness mmr
-        cur_height = manifest.l1_blkheight();
+        cur_height = manifest.l1_blkheight() as u32;
         cur_blkid = manifest.l1_blkid();
     }
 
-    let l1view = state_accessor.global_mut().l1_view_mut();
-    l1view.set_block_id(cur_blkid);
-    l1view.set_block_height(cur_height);
+    let l1view = state_accessor.get_l1_view_mut();
+    l1view.set_last_l1_blkid(cur_blkid.into());
+    l1view.set_last_l1_height(cur_height);
 
     Ok(logs)
 }
 
-fn execute_transaction<S: StateAccessor<GlobalState = OLState>>(
+fn execute_transaction<S: StateAccessor>(
     state_accessor: &mut S,
     tx: &OLTransaction,
 ) -> StfResult<Vec<OLLog>> {
