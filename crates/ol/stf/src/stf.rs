@@ -86,10 +86,10 @@ fn execute_transaction<S: StateAccessor<GlobalState = OLState>>(
                 return Err(StfError::NonExistentAccount(*target));
             };
 
-            let verified_outs =
+            let verified_udpate =
                 verify_update_correctness(state_accessor, *target, &acct_state, update)?;
             let logs =
-                apply_update_outputs(state_accessor, *target, &mut acct_state, verified_outs)?;
+                apply_update_outputs(state_accessor, *target, &mut acct_state, verified_udpate)?;
 
             state_accessor.update_account_state(*target, acct_state)?;
 

@@ -1,6 +1,7 @@
 use strata_acct_types::{
     AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64, RawAccountTypeId,
 };
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, MessageEntryProof};
 
 use crate::coin::Coin;
@@ -52,6 +53,8 @@ pub enum AccountTypeState<T: IAccountState> {
 
 /// Abstract snark account state.
 pub trait ISnarkAccountState: Sized {
+    fn verifer_key(&self) -> &PredicateKey;
+
     // Proof state accessors
 
     /// Gets the update seqno.
@@ -64,7 +67,7 @@ pub trait ISnarkAccountState: Sized {
     fn inner_state_root(&self) -> Hash;
 
     /// Sets the inner state root unconditionally.
-    fn set_proof_state_directly(&mut self, state: Hash, seqno: Seqno);
+    fn set_proof_state_directly(&mut self, state: Hash, next_inbox_idx: u64, seqno: Seqno);
 
     /// Sets an account's inner state, but also taking the update extra data arg
     /// (which is not used directly, but is useful for DA reasons).

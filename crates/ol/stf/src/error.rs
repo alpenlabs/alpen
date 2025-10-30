@@ -43,8 +43,9 @@ pub enum StfError {
     InvalidUpdateSequence,
     InvalidMsgIndex,
     InsufficientBalance,
-    NonExistentMessage(MessageEntry), /* FIXME: this is perhaps too big of a variant
-                                       * TODO: might also need acct id/serial */
+    NonExistentMessage(MessageEntry),
+    InvalidUpdateProof, /* FIXME: this is perhaps too big of a variant
+                         * TODO: might also need acct id/serial */
 }
 
 impl From<AcctError> for StfError {
