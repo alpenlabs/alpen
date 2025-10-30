@@ -1,18 +1,16 @@
 // TODO: this should probably exist in some of the account crates. Here for faster iteration.
 
-use std::any::Any;
-
 use strata_acct_types::{
-    AccountId, AccountTypeId, BitcoinAmount, MerkleProof, MsgPayload, StrataHasher, SystemAccount,
+    AccountId, BitcoinAmount, MerkleProof, MsgPayload, StrataHasher, SystemAccount,
 };
 use strata_ledger_types::{
     AccountTypeState, Coin, IAccountState, ISnarkAccountState, StateAccessor,
 };
-use strata_mmr::{Sha256Hasher, hasher::MerkleHasher};
+use strata_mmr::hasher::MerkleHasher;
 use strata_ol_chain_types_new::OLLog;
 use strata_ol_state_types::OLState;
 use strata_snark_acct_types::{
-    LedgerRefs, MessageEntry, MessageEntryProof, SnarkAccountUpdate, UpdateOutputs,
+    LedgerRefs, MessageEntry, SnarkAccountUpdate, UpdateOperationData, UpdateOutputs,
 };
 
 use crate::{
@@ -27,13 +25,13 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor<GlobalState = OLSta
     sender: AccountId,
     acct_state: &S::AccountState,
     update: &'a SnarkAccountUpdate,
-) -> StfResult<VerifiedOutputs<'a>> {
+) -> StfResult<VerifiedUpdate<'a>> {
     let type_state = acct_state.get_type_state().unwrap();
     let operation = update.operation();
     let outputs = operation.outputs();
     let state = match type_state {
         AccountTypeState::Empty => {
-            return Ok(VerifiedOutputs { inner: outputs });
+            return Ok(VerifiedUpdate { outputs, operation });
         }
         AccountTypeState::Snark(s) => s,
     };
@@ -69,7 +67,7 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor<GlobalState = OLSta
     // 5. Verify the witness check
     verify_update_witness(acct_state, update, state_accessor)?;
 
-    Ok(VerifiedOutputs { inner: outputs })
+    Ok(VerifiedUpdate { outputs, operation })
 }
 
 fn get_message_proofs<S: StateAccessor<GlobalState = OLState>>(
@@ -106,10 +104,32 @@ fn verify_input_mmr_proofs<S: StateAccessor<GlobalState = OLState>>(
 }
 
 fn verify_update_witness<S: StateAccessor<GlobalState = OLState>>(
-    _acct_state: &<S as StateAccessor>::AccountState,
-    _update: &SnarkAccountUpdate,
+    acct_state: &<S as StateAccessor>::AccountState,
+    update: &SnarkAccountUpdate,
     _state_accessor: &S,
 ) -> StfResult<()> {
+    let snark_state = match acct_state.get_type_state()? {
+        AccountTypeState::Empty => return Ok(()),
+        AccountTypeState::Snark(state) => state,
+    };
+    let vk = snark_state.verifer_key();
+    let claim: Vec<u8> = compute_update_claim::<S>(acct_state, update.operation());
+    let is_valid = vk
+        .verify_claim_witness(&claim, update.update_proof())
+        .is_ok();
+
+    if !is_valid {
+        return Err(StfError::InvalidUpdateProof);
+    }
+
+    Ok(())
+}
+
+fn compute_update_claim<S: StateAccessor<GlobalState = OLState>>(
+    _acct_state: &<S as StateAccessor>::AccountState,
+    _operation: &UpdateOperationData,
+) -> Vec<u8> {
+    // Use new state, processed messages, old state, refs and outputs to compute claim
     todo!()
 }
 
@@ -164,9 +184,9 @@ pub(crate) fn apply_update_outputs<'a, S: StateAccessor<GlobalState = OLState>>(
     state_accessor: &mut S,
     sender: AccountId,
     sender_state: &mut S::AccountState,
-    verified_outs: VerifiedOutputs<'a>,
+    verified_update: VerifiedUpdate<'a>,
 ) -> StfResult<Vec<OLLog>> {
-    let outputs = verified_outs.inner();
+    let outputs = verified_update.outputs();
     let transfers = outputs.transfers();
     let messages = outputs.messages();
 
@@ -189,7 +209,22 @@ pub(crate) fn apply_update_outputs<'a, S: StateAccessor<GlobalState = OLState>>(
     let _coins = sender_state.take_balance(total_sent);
     // TODO: do something with coins
 
-    Ok(Vec::new()) // TODO: add logs
+    // Update account type state
+    // TODO: think about where it makes sense to keep this logic.
+    match sender_state.get_type_state_mut()? {
+        AccountTypeState::Empty => {}
+        AccountTypeState::Snark(st) => {
+            let operation = verified_update.operation();
+            let new_state = operation.new_state();
+            st.set_proof_state_directly(
+                new_state.inner_state(),
+                new_state.next_inbox_msg_idx(),
+                operation.seq_no(),
+            );
+        }
+    };
+
+    Ok(Vec::new()) // TODO: add logs, especially withdrawals
 }
 
 fn send_message<S: StateAccessor<GlobalState = OLState>>(
@@ -288,5 +323,21 @@ pub(crate) struct VerifiedOutputs<'a> {
 impl<'a> VerifiedOutputs<'a> {
     pub(crate) fn inner(self) -> &'a UpdateOutputs {
         self.inner
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct VerifiedUpdate<'a> {
+    outputs: &'a UpdateOutputs,
+    operation: &'a UpdateOperationData,
+}
+
+impl<'a> VerifiedUpdate<'a> {
+    pub(crate) fn outputs(&self) -> &'a UpdateOutputs {
+        self.outputs
+    }
+
+    pub(crate) fn operation(&self) -> &'a UpdateOperationData {
+        self.operation
     }
 }
