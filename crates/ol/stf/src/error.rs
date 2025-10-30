@@ -1,6 +1,7 @@
 use strata_acct_types::AcctError;
 use strata_ol_chain_types_new::{Epoch, Slot};
 use strata_primitives::Buf32;
+use strata_snark_acct_types::MessageEntry;
 
 // TODO: use thiserror
 /// Errors related to block validation.
@@ -38,6 +39,12 @@ pub enum StfError {
     InvalidAsmLog,
     NonExistentAccount(strata_acct_types::AccountId),
     AccountError(AcctError),
+    UnsupportedTransaction,
+    InvalidUpdateSequence,
+    InvalidMsgIndex,
+    InsufficientBalance,
+    NonExistentMessage(MessageEntry), /* FIXME: this is perhaps too big of a variant
+                                       * TODO: might also need acct id/serial */
 }
 
 impl From<AcctError> for StfError {

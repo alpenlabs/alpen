@@ -1,5 +1,7 @@
 use strata_ledger_types::StateAccessor;
-use strata_ol_chain_types_new::{L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction};
+use strata_ol_chain_types_new::{
+    L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload, TxTypeId,
+};
 use strata_ol_state_types::OLState;
 use strata_primitives::{Buf32, params::RollupParams};
 
@@ -7,6 +9,7 @@ use crate::{
     asm::process_asm_log,
     error::{StfError, StfResult},
     post_exec_validation, pre_exec_block_validate,
+    update::{apply_update_outputs, verify_update_correctness},
 };
 
 /// Processes an OL block. Also performs epoch sealing if the block is terminal.
@@ -23,9 +26,11 @@ pub fn execute_block(
 
     // Execute transactions.
     for tx in block.body().txs() {
-        let res: ExecOutput = execute_transaction(state_accessor, tx)?;
-        stf_logs.extend_from_slice(res.logs());
+        let logs = execute_transaction(state_accessor, tx)?;
+        stf_logs.extend_from_slice(&logs);
     }
+
+    let _pre_seal_root = state_accessor.global().compute_root();
 
     // Check if needs to seal epoch
     if let Some(l1update) = block.body().l1_update() {
@@ -71,11 +76,27 @@ fn seal_epoch(
     Ok(logs)
 }
 
-fn execute_transaction(
-    state_accessor: &mut impl StateAccessor<GlobalState = OLState>,
+fn execute_transaction<S: StateAccessor<GlobalState = OLState>>(
+    state_accessor: &mut S,
     tx: &OLTransaction,
-) -> StfResult<ExecOutput> {
-    todo!()
+) -> StfResult<Vec<OLLog>> {
+    match tx.payload() {
+        TransactionPayload::SnarkAccountUpdate { target, update } => {
+            let Some(mut acct_state) = state_accessor.get_account_state(*target)?.cloned() else {
+                return Err(StfError::NonExistentAccount(*target));
+            };
+
+            let verified_outs =
+                verify_update_correctness(state_accessor, *target, &acct_state, update)?;
+            let logs =
+                apply_update_outputs(state_accessor, *target, &mut acct_state, verified_outs)?;
+
+            state_accessor.update_account_state(*target, acct_state)?;
+
+            Ok(logs)
+        }
+        TransactionPayload::GenericAccountMessage { .. } => Err(StfError::UnsupportedTransaction),
+    }
 }
 
 /// Output of a block execution.
@@ -86,6 +107,7 @@ pub struct ExecOutput {
 
     /// The resulting OL logs.
     logs: Vec<OLLog>,
+    // TODO: write batch
 }
 
 impl ExecOutput {

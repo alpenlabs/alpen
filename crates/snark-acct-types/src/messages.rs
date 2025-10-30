@@ -45,6 +45,11 @@ impl MessageEntry {
     pub fn payload_value(&self) -> BitcoinAmount {
         self.payload().value()
     }
+
+    // FIXME: just a placeholder until ssz
+    pub fn as_ssz_bytes(&self) -> Vec<u8> {
+        todo!()
+    }
 }
 
 /// Proof for a message in an inbox MMR.

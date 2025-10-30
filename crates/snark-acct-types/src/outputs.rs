@@ -36,6 +36,20 @@ impl UpdateOutputs {
     pub fn messages_mut(&mut self) -> &mut Vec<OutputMessage> {
         &mut self.messages
     }
+
+    pub fn total_output_value(&self) -> Option<BitcoinAmount> {
+        let mut total_sent = Some(BitcoinAmount::zero());
+
+        for t in self.transfers() {
+            total_sent = total_sent.and_then(|s| s.checked_add(t.value()));
+        }
+
+        for m in self.messages() {
+            total_sent = total_sent.and_then(|s| s.checked_add(m.payload().value()));
+        }
+
+        total_sent
+    }
 }
 
 /// Transfer from one account to another.
