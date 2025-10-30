@@ -100,7 +100,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         .expect("init: build rt");
     let task_manager = TaskManager::new(runtime.handle().clone());
     //strata_tasks::set_panic_hook(); // only if necessary for troubleshooting
-    let executor = task_manager.executor();
+    let executor = task_manager.create_executor();
 
     init_logging(executor.handle());
 
@@ -183,7 +183,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         "main-rpc",
         start_rpc(
             ctx,
-            task_manager.shutdown_signal(),
+            task_manager.get_shutdown_signal(),
             config,
             checkpoint_handle,
             methods,

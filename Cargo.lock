@@ -3158,7 +3158,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -5517,7 +5517,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -8311,7 +8311,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.31",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "thiserror 2.0.16",
  "tokio",
  "tracing",
@@ -8348,7 +8348,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -11691,7 +11691,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11805,7 +11805,7 @@ dependencies = [
  "security-framework 3.4.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13610,7 +13610,7 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#c192120e24b92a873f414c1d6372361c5b203550"
+source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
 dependencies = [
  "thiserror 2.0.16",
 ]
@@ -14004,7 +14004,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#c192120e24b92a873f414c1d6372361c5b203550"
+source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14013,7 +14013,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#c192120e24b92a873f414c1d6372361c5b203550"
+source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14083,7 +14083,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#c192120e24b92a873f414c1d6372361c5b203550"
+source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
 dependencies = [
  "thiserror 2.0.16",
 ]
@@ -14149,7 +14149,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#c192120e24b92a873f414c1d6372361c5b203550"
+source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -14408,6 +14408,7 @@ dependencies = [
 [[package]]
 name = "strata-service"
 version = "0.3.0-alpha.1"
+source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
 dependencies = [
  "anyhow",
  "futures",
@@ -14527,6 +14528,7 @@ dependencies = [
 [[package]]
 name = "strata-tasks"
 version = "0.3.0-alpha.1"
+source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
 dependencies = [
  "anyhow",
  "futures-util",

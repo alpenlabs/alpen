@@ -68,14 +68,12 @@ members = [
   "crates/rpc/types",
   "crates/rpc/utils",
   "crates/sequencer",
-  "crates/service",
   "crates/simple-ee",
   "crates/snark-acct-types",
   "crates/state",
   "crates/status",
   "crates/storage",
   "crates/sync",
-  "crates/tasks",
   "crates/test-utils/btc",
   "crates/test-utils/evm-ee",
   "crates/test-utils/l2",
@@ -196,14 +194,12 @@ strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
-strata-service = { path = "crates/service" }
 strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-types = { path = "crates/snark-acct-types" }
 strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
 strata-sync = { path = "crates/sync" }
-strata-tasks = { path = "crates/tasks" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
 strata-test-utils-btc = { path = "crates/test-utils/btc" }
 strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
@@ -218,6 +214,8 @@ strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common" }
+strata-service = { git = "https://github.com/alpenlabs/strata-common" }
+strata-tasks = { git = "https://github.com/alpenlabs/strata-common" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }

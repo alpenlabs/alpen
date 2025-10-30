@@ -55,7 +55,7 @@ fn main_inner(args: Args) -> Result<()> {
     let idata = load_seqkey(&config.sequencer_key)?;
 
     let task_manager = TaskManager::new(handle.clone());
-    let executor = task_manager.executor();
+    let executor = task_manager.create_executor();
 
     let ws_url = config.ws_url();
     info!("connecting to strata client at {}", ws_url);
