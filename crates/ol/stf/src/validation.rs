@@ -1,7 +1,8 @@
 use strata_crypto::verify_schnorr_sig;
 use strata_ledger_types::{IGlobalState, StateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, compute_logs_root};
-use strata_primitives::{CredRule, params::RollupParams};
+use strata_params::RollupParams;
+use strata_primitives::CredRule;
 
 use crate::error::BlockValidationError;
 

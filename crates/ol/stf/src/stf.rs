@@ -2,16 +2,19 @@ use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::{
     L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload,
 };
-use strata_primitives::{Buf32, params::RollupParams};
+use strata_params::RollupParams;
+use strata_primitives::Buf32;
 
 use crate::{
     asm::process_asm_log,
     error::{StfError, StfResult},
     post_exec_block_validate, pre_exec_block_validate,
-    update::{apply_update_outputs, verify_update_correctness},
+    update::apply_update_outputs,
+    verification::verify_update_correctness,
 };
 
 /// Processes an OL block. Also performs epoch sealing if the block is terminal.
+// todo: split this into execution without block validation for block assembly
 pub fn execute_block<S: StateAccessor>(
     params: RollupParams,
     state_accessor: &mut S,
@@ -110,7 +113,7 @@ pub struct ExecOutput {
 
     /// The resulting OL logs.
     logs: Vec<OLLog>,
-    // TODO: write batch
+    // TODO: write batch, but it will probably be handled by StateAccessor impl
 }
 
 impl ExecOutput {
