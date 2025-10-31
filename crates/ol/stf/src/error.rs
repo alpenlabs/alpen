@@ -1,52 +1,93 @@
-use strata_acct_types::AcctError;
+use strata_acct_types::{AccountId, AcctError};
 use strata_ol_chain_types_new::{Epoch, Slot};
 use strata_primitives::Buf32;
 use strata_snark_acct_types::MessageEntry;
+use thiserror::Error;
 
-// TODO: use thiserror
 /// Errors related to block validation.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum BlockValidationError {
+    #[error("Slot mismatch: expected {expected}, got {got}")]
     SlotMismatch { expected: Slot, got: Slot },
+
+    #[error("Block ID mismatch: expected {expected}, got {got}")]
     BlockIdMismatch { expected: Buf32, got: Buf32 },
+
+    #[error("Invalid epoch: {0}")]
     InvalidEpoch(Epoch),
+
+    #[error("Invalid timestamp: {0}")]
     InvalidTimestamp(u64),
+
+    #[error("Mismatched body root: expected {expected}, got {got}")]
     MismatchedBodyRoot { expected: Buf32, got: Buf32 },
+
+    #[error("Invalid signature")]
     InvalidSignature,
+
+    #[error("State root mismatch: expected {expected}, got {got}")]
     StateRootMismatch { expected: Buf32, got: Buf32 },
+
+    #[error("Logs root mismatch: expected {expected}, got {got}")]
     LogsRootMismatch { expected: Buf32, got: Buf32 },
 }
 
 /// All errors related to stf.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum StfError {
-    BlockValidation(BlockValidationError),
+    #[error("Block validation failed: {0}")]
+    BlockValidation(#[from] BlockValidationError),
+
+    #[error("Invalid ASM log")]
     InvalidAsmLog,
-    NonExistentAccount(strata_acct_types::AccountId),
-    AccountError(AcctError),
+
+    #[error("Account {0} does not exist")]
+    NonExistentAccount(AccountId),
+
+    #[error("Account error: {0}")]
+    AccountError(#[from] AcctError),
+
+    #[error("Unsupported transaction type")]
     UnsupportedTransaction,
-    InvalidUpdateSequence,
-    InvalidMsgIndex,
+
+    #[error(
+        "Invalid update sequence for account {account_id}: expected seqno {expected}, got {got}"
+    )]
+    InvalidUpdateSequence {
+        account_id: AccountId,
+        expected: u64,
+        got: u64,
+    },
+
+    #[error(
+        "Invalid message index for account {account_id}: expected new index {expected}, got index {got}"
+    )]
+    InvalidMsgIndex {
+        account_id: AccountId,
+        expected: u64,
+        got: u64,
+    },
+
+    #[error("Insufficient balance")]
     InsufficientBalance,
+
+    #[error("Message does not exist: {0:?}")]
     NonExistentMessage(MessageEntry),
-    InvalidUpdateProof,
+
+    #[error("Invalid update proof for account {account_id}")]
+    InvalidUpdateProof { account_id: AccountId },
+
+    #[error("{0}")]
     Other(String),
-    MsgIndexOverflow,
+
+    #[error("Message index overflow for account {account_id}")]
+    MsgIndexOverflow { account_id: AccountId },
+
+    #[error("Bitcoin amount overflow")]
     BitcoinAmountOverflow,
-    EpochOverflow, /* FIXME: this is perhaps too big of a variant
-                    * TODO: might also need acct id/serial */
-}
 
-impl StfError {
-    pub fn other(msg: &str) -> Self {
-        Self::Other(msg.to_string())
-    }
-}
-
-impl From<AcctError> for StfError {
-    fn from(value: AcctError) -> Self {
-        StfError::AccountError(value)
-    }
+    #[error("Epoch overflow: current epoch {cur_epoch}")]
+    EpochOverflow { cur_epoch: u64 },
 }
 
 pub type StfResult<T> = Result<T, StfError>;
