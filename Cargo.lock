@@ -7209,14 +7209,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ol-state-types"
-version = "0.1.0"
-dependencies = [
- "strata-ol-chain-types-new",
- "strata-primitives",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14136,6 +14128,14 @@ version = "0.1.0"
 dependencies = [
  "strata-identifiers",
  "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-ol-state-types"
+version = "0.1.0"
+dependencies = [
+ "strata-ol-chain-types-new",
+ "strata-primitives",
 ]
 
 [[package]]
