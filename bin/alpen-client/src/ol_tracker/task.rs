@@ -17,7 +17,7 @@ use crate::{
             block_commitments_in_range_checked, chain_status_checked,
             get_update_operations_for_blocks_checked, OlChainStatus, OlClient,
         },
-        storage::{OlBlockEeAccountState, Storage},
+        storage::{EeAccountStateAtBlock, Storage},
     },
 };
 
@@ -213,7 +213,7 @@ where
 
         // 3. get next tracker state
         let next_state = build_tracker_state(
-            OlBlockEeAccountState::new(*ol_block, ee_state),
+            EeAccountStateAtBlock::new(*ol_block, ee_state),
             chain_status,
             ctx.storage.as_ref(),
         )
@@ -262,7 +262,7 @@ mod tests {
     use super::*;
     use crate::traits::{
         ol_client::{MockOlClient, OlChainStatus},
-        storage::OlBlockEeAccountState,
+        storage::EeAccountStateAtBlock,
     };
 
     /// Helper to create a block commitment for testing
@@ -274,7 +274,7 @@ mod tests {
 
     /// Helper to create a test tracker state
     fn make_test_state(slot: u64, id: u8) -> OlTrackerState {
-        let block_state = OlBlockEeAccountState::new(
+        let block_state = EeAccountStateAtBlock::new(
             make_block_commitment(slot, id),
             EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]),
         );

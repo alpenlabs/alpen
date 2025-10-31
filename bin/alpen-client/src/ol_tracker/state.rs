@@ -9,7 +9,7 @@ use crate::{
     config::AlpenEeConfig,
     traits::{
         ol_client::OlChainStatus,
-        storage::{OlBlockEeAccountState, Storage},
+        storage::{EeAccountStateAtBlock, Storage},
     },
 };
 
@@ -31,9 +31,9 @@ impl ConsensusHeads {
 
 #[derive(Debug)]
 pub(crate) struct OlTrackerState {
-    pub(crate) best: OlBlockEeAccountState,
-    pub(crate) confirmed: OlBlockEeAccountState,
-    pub(crate) finalized: OlBlockEeAccountState,
+    pub(crate) best: EeAccountStateAtBlock,
+    pub(crate) confirmed: EeAccountStateAtBlock,
+    pub(crate) finalized: EeAccountStateAtBlock,
 }
 
 impl OlTrackerState {
@@ -82,7 +82,7 @@ where
             .await
             .map_err(|e| eyre::eyre!(e))?;
 
-        let block_account_state = OlBlockEeAccountState {
+        let block_account_state = EeAccountStateAtBlock {
             ol_block: genesis_ol_block,
             state: genesis_state,
         };
@@ -98,7 +98,7 @@ where
 }
 
 pub(crate) async fn build_tracker_state(
-    best_state: OlBlockEeAccountState,
+    best_state: EeAccountStateAtBlock,
     ol_chain_status: &OlChainStatus,
     storage: &impl Storage,
 ) -> eyre::Result<OlTrackerState> {
@@ -122,7 +122,7 @@ pub(crate) async fn effective_account_state(
     local: &OLBlockCommitment,
     ol: &OLBlockCommitment,
     storage: &impl Storage,
-) -> eyre::Result<OlBlockEeAccountState> {
+) -> eyre::Result<EeAccountStateAtBlock> {
     let min_blockid = if local.slot() < ol.slot() {
         local.blkid()
     } else {

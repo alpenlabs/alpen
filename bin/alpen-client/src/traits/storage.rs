@@ -10,12 +10,12 @@ use super::error::StorageError;
 
 #[derive(Debug, Clone)]
 /// EE account internal state corresponding to ol Block
-pub(crate) struct OlBlockEeAccountState {
+pub(crate) struct EeAccountStateAtBlock {
     pub ol_block: OLBlockCommitment,
     pub state: EeAccountState,
 }
 
-impl OlBlockEeAccountState {
+impl EeAccountStateAtBlock {
     pub(crate) fn new(ol_block: OLBlockCommitment, state: EeAccountState) -> Self {
         Self { ol_block, state }
     }
@@ -63,9 +63,9 @@ pub(crate) trait Storage {
     async fn ee_account_state<'a>(
         &self,
         block_or_slot: OLBlockOrSlot<'a>,
-    ) -> Result<Option<OlBlockEeAccountState>, StorageError>;
+    ) -> Result<Option<EeAccountStateAtBlock>, StorageError>;
     /// Get EE account internal state for the highest slot available.
-    async fn best_ee_account_state(&self) -> Result<Option<OlBlockEeAccountState>, StorageError>;
+    async fn best_ee_account_state(&self) -> Result<Option<EeAccountStateAtBlock>, StorageError>;
     /// Store EE account internal state for next slot.
     async fn store_ee_account_state(
         &self,
@@ -78,7 +78,7 @@ pub(crate) trait Storage {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DummyStorage {
-    items: Arc<RwLock<Vec<OlBlockEeAccountState>>>,
+    items: Arc<RwLock<Vec<EeAccountStateAtBlock>>>,
 }
 
 #[async_trait]
@@ -86,7 +86,7 @@ impl Storage for DummyStorage {
     async fn ee_account_state<'a>(
         &self,
         block_or_slot: OLBlockOrSlot<'a>,
-    ) -> Result<Option<OlBlockEeAccountState>, StorageError> {
+    ) -> Result<Option<EeAccountStateAtBlock>, StorageError> {
         Ok(self
             .items
             .read()
@@ -98,7 +98,7 @@ impl Storage for DummyStorage {
             })
             .cloned())
     }
-    async fn best_ee_account_state(&self) -> Result<Option<OlBlockEeAccountState>, StorageError> {
+    async fn best_ee_account_state(&self) -> Result<Option<EeAccountStateAtBlock>, StorageError> {
         Ok(self.items.read().await.last().cloned())
     }
     async fn store_ee_account_state(
@@ -114,7 +114,7 @@ impl Storage for DummyStorage {
                 });
             }
         }
-        self.items.write().await.push(OlBlockEeAccountState {
+        self.items.write().await.push(EeAccountStateAtBlock {
             ol_block: *ol_block,
             state: ee_account_state.clone(),
         });
