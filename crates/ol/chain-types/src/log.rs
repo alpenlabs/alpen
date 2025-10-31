@@ -1,12 +1,12 @@
-use strata_acct_types::AccountSerial;
+use strata_acct_types::{AccountId, AccountSerial};
 use strata_primitives::Buf32;
 
 /// Log emitted during OL block execution.
 #[derive(Clone, Debug)]
 pub struct OLLog {
     /// Account this log is related to.
-    // TODO: Determine if this should be here or inside payload
-    account_serial: AccountSerial,
+    // TODO: maybe use account serial,
+    account_id: AccountId,
 
     /// Opaque log payload.
     payload: Vec<u8>,
@@ -14,15 +14,15 @@ pub struct OLLog {
 }
 
 impl OLLog {
-    pub fn new(account_serial: AccountSerial, payload: Vec<u8>) -> Self {
+    pub fn new(account_id: AccountId, payload: Vec<u8>) -> Self {
         Self {
-            account_serial,
+            account_id,
             payload,
         }
     }
 
-    pub fn account_serial(&self) -> AccountSerial {
-        self.account_serial
+    pub fn account_id(&self) -> AccountId {
+        self.account_id
     }
 
     pub fn payload(&self) -> &[u8] {

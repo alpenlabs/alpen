@@ -48,6 +48,11 @@ impl MsgPayload {
     pub fn data(&self) -> &[u8] {
         &self.data
     }
+
+    // todo: until ssz
+    pub fn as_ssz_bytes(&self) -> Vec<u8> {
+        todo!()
+    }
 }
 
 #[cfg(test)]

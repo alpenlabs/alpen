@@ -38,17 +38,17 @@ impl UpdateOutputs {
     }
 
     pub fn total_output_value(&self) -> Option<BitcoinAmount> {
-        let mut total_sent = Some(BitcoinAmount::zero());
+        let mut total_sent = BitcoinAmount::zero();
 
         for t in self.transfers() {
-            total_sent = total_sent.and_then(|s| s.checked_add(t.value()));
+            total_sent = total_sent.checked_add(t.value())?;
         }
 
         for m in self.messages() {
-            total_sent = total_sent.and_then(|s| s.checked_add(m.payload().value()));
+            total_sent = total_sent.checked_add(m.payload().value())?;
         }
 
-        total_sent
+        Some(total_sent)
     }
 }
 

@@ -71,8 +71,11 @@ pub enum StfError {
     #[error("Insufficient balance")]
     InsufficientBalance,
 
-    #[error("Message does not exist: {0:?}")]
-    NonExistentMessage(MessageEntry),
+    #[error("Message does not exist for account: {account_id}: {message:?}")]
+    InvalidMessageProof {
+        account_id: AccountId,
+        message: MessageEntry,
+    },
 
     #[error("Invalid update proof for account {account_id}")]
     InvalidUpdateProof { account_id: AccountId },

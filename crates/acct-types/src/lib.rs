@@ -51,7 +51,7 @@ pub enum SystemAccount {
 impl SystemAccount {
     pub fn id(&self) -> AccountId {
         match self {
-            SystemAccount::Bridge => AccountId::new([1; 32]),
+            SystemAccount::Bridge => AccountId::new([1; 32]), // TODO: figure out id
         }
     }
 }

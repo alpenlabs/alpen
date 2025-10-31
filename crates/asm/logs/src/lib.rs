@@ -20,7 +20,10 @@ use strata_asm_common::AsmLogEntry;
 use crate::constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID};
 
 #[derive(Clone, Debug)]
-#[expect(clippy::large_enum_variant, reason = "..")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "exists ephemerally, so should not be an issue"
+)]
 pub enum ParsedAsmLog {
     Checkpoint(CheckpointUpdate),
     Deposit(DepositLog),
