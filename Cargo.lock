@@ -14081,6 +14081,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-block-assembly"
+version = "0.1.0"
+dependencies = [
+ "strata-asm-common",
+ "strata-db",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-ol-mempool",
+ "strata-primitives",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-ol-chain-types"
 version = "0.3.0-alpha.1"
 dependencies = [

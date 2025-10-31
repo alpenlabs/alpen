@@ -48,6 +48,7 @@ members = [
   "crates/l1tx",
   "crates/ledger-types",
   "crates/mpt",
+  "crates/ol/block-assembly",
   "crates/ol/chain-types",
   "crates/ol/mempool",
   "crates/ol/state-types",
@@ -183,6 +184,7 @@ strata-l1tx = { path = "crates/l1tx" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
+strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
