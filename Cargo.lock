@@ -633,7 +633,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tree_hash 0.10.0",
  "tree_hash_derive 0.10.0",
 ]
@@ -1101,7 +1101,7 @@ dependencies = [
  "strata-snark-acct-types",
  "strata-storage-common",
  "tempfile",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "threadpool",
  "tokio",
  "tracing",
@@ -12629,7 +12629,7 @@ name = "sizzle-parser"
 version = "0.6.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
 dependencies = [
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -13276,7 +13276,7 @@ dependencies = [
  "ssz",
  "ssz_derive",
  "ssz_types",
- "syn 2.0.106",
+ "syn 2.0.108",
  "toml 0.8.23",
  "tree_hash 0.6.0",
  "tree_hash_derive 0.6.0",
@@ -13289,7 +13289,7 @@ source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63
 dependencies = [
  "darling 0.20.11",
  "quote",
- "syn 2.0.106",
+ "syn 2.0.108",
 ]
 
 [[package]]
@@ -13340,10 +13340,9 @@ dependencies = [
  "strata-identifiers",
  "strata-merkle",
  "strata-test-utils-ssz",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "tree_hash 0.6.0",
  "tree_hash_derive 0.6.0",
- "strata-mmr",
 ]
 
 [[package]]
@@ -13620,7 +13619,7 @@ dependencies = [
  "bitcoin-bosd",
  "borsh",
  "digest 0.10.7",
- "num_enum 0.7.4",
+ "num_enum 0.7.5",
  "proptest",
  "rand 0.8.5",
  "secp256k1 0.29.1",
@@ -13635,8 +13634,8 @@ dependencies = [
  "strata-test-utils",
  "strata-test-utils-btc",
  "strata-test-utils-ssz",
- "tree_hash 0.6.0",
  "thiserror 2.0.17",
+ "tree_hash 0.6.0",
 ]
 
 [[package]]
@@ -13953,7 +13952,6 @@ dependencies = [
  "sha2 0.10.9",
  "strata-codec",
  "strata-merkle",
- "strata-mmr",
  "thiserror 2.0.17",
 ]
 
@@ -14046,7 +14044,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-storage-common",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "typed-sled",
  "zkaleido",
 ]
@@ -14303,7 +14301,7 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
  "strata-primitives",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -14353,14 +14351,13 @@ name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
  "strata-identifiers",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
- "strata-ol-chain-types-new",
  "strata-primitives",
 ]
 
@@ -14373,7 +14370,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-crypto",
  "strata-ledger-types",
- "strata-mmr",
+ "strata-merkle",
  "strata-ol-chain-types-new",
  "strata-primitives",
  "strata-snark-acct-types",
@@ -14759,7 +14756,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "lru 0.12.5",
  "paste",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
  "threadpool",
  "tokio",
  "tracing",
@@ -15817,7 +15814,7 @@ source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63
 dependencies = [
  "darling 0.20.11",
  "quote",
- "syn 2.0.106",
+ "syn 2.0.108",
 ]
 
 [[package]]

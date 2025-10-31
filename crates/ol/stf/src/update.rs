@@ -14,7 +14,10 @@ use strata_snark_acct_types::{
 
 use crate::{
     error::{StfError, StfResult},
-    msg_handlers::{handle_bridge_gateway_msg, handle_snark_msg, handle_snark_transfer},
+    msg_handlers::{
+        handle_bridge_gateway_msg, handle_bridge_gateway_transfer, handle_snark_msg,
+        handle_snark_transfer,
+    },
 };
 
 /// Verifies an account update is correct with respect to the current state of
@@ -25,7 +28,7 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     acct_state: &S::AccountState,
     update: &'a SnarkAccountUpdate,
 ) -> StfResult<VerifiedUpdate<'a>> {
-    let type_state = acct_state.get_type_state().unwrap();
+    let type_state = acct_state.get_type_state()?;
     let operation = update.operation();
     let outputs = operation.outputs();
     let state = match type_state {
@@ -46,7 +49,8 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     let processed_len = operation.processed_messages().len() as u64;
 
     if cur_idx
-        .checked_add(processed_len).expect("Msg index overflow") // TODO: expect
+        .checked_add(processed_len)
+        .ok_or(StfError::MsgIndexOverflow)?
         != new_idx
     {
         return Err(StfError::InvalidMsgIndex);
@@ -83,7 +87,7 @@ fn get_message_proofs<S: StateAccessor>(
 
         let mproof = MerkleProof::from_cohashes(proof.raw_proof().cohashes().to_vec(), cur_idx);
         proofs.push((msg.clone(), mproof));
-        cur_idx += 1;
+        cur_idx = cur_idx.checked_add(1).ok_or(StfError::MsgIndexOverflow)?;
     }
     Ok(proofs)
 }
@@ -111,7 +115,7 @@ fn verify_update_witness<S: StateAccessor>(
         AccountTypeState::Empty => return Ok(()),
         AccountTypeState::Snark(state) => state,
     };
-    let vk = snark_state.verifer_key();
+    let vk = snark_state.verifier_key();
     let claim: Vec<u8> = compute_update_claim::<S>(acct_state, update.operation());
     let is_valid = vk
         .verify_claim_witness(&claim, update.update_proof())
@@ -162,7 +166,7 @@ fn verify_update_outputs_safe<S: StateAccessor>(
 
     let total_sent = outputs
         .total_output_value()
-        .expect("BitcoinAmount overflow");
+        .ok_or(StfError::BitcoinAmountOverflow)?;
 
     // Check if there is sufficient balance.
     if total_sent > original_balance {
@@ -203,7 +207,7 @@ pub(crate) fn apply_update_outputs<'a, S: StateAccessor>(
     // Update balance
     let total_sent = outputs
         .total_output_value()
-        .expect("BitcoinAmount overflow");
+        .ok_or(StfError::BitcoinAmountOverflow)?;
 
     let _coins = sender_state.take_balance(total_sent);
     // TODO: do something with coins
@@ -232,7 +236,7 @@ pub(crate) fn send_message<S: StateAccessor>(
     to: AccountId,
     msg_payload: &MsgPayload,
 ) -> StfResult<()> {
-    let cur_epoch = state_accessor.global().cur_epoch() as u32;
+    let cur_epoch = state_accessor.global().cur_epoch();
     let Some(target_acct) = state_accessor.get_account_state_mut(to)? else {
         return Err(StfError::NonExistentAccount(to));
     };
@@ -262,7 +266,7 @@ pub(crate) fn send_transfer<S: StateAccessor>(
     to: AccountId,
     amt: BitcoinAmount,
 ) -> StfResult<()> {
-    let cur_epoch = state_accessor.global().cur_epoch() as u32;
+    let cur_epoch = state_accessor.global().cur_epoch();
     let Some(target_acct) = state_accessor.get_account_state_mut(to)? else {
         return Err(StfError::NonExistentAccount(to));
     };
@@ -300,7 +304,7 @@ type TransferHandler<S> = fn(&mut S, AccountId, BitcoinAmount) -> StfResult<()>;
 
 fn get_system_transfer_handler<S: StateAccessor>(acct_id: AccountId) -> Option<TransferHandler<S>> {
     if acct_id == SystemAccount::Bridge.id() {
-        panic!("System transfers are not supported yet");
+        Some(handle_bridge_gateway_transfer)
     } else {
         None
     }

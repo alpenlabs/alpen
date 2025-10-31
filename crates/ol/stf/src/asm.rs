@@ -25,8 +25,8 @@ fn process_deposit(
     state_accessor: &mut impl StateAccessor,
     dep: &DepositLog,
 ) -> StfResult<Vec<OLLog>> {
-    let serial = dep.ee_id as u32;
-    let acct_id = state_accessor.get_account_id_from_serial(AccountSerial::new(serial))?;
+    let serial = AccountSerial::new(dep.ee_id);
+    let acct_id = state_accessor.get_account_id_from_serial(serial)?;
 
     let Some(acct_id) = acct_id else {
         return Ok(Vec::new());

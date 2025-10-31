@@ -7,7 +7,7 @@ use strata_primitives::{Buf32, params::RollupParams};
 use crate::{
     asm::process_asm_log,
     error::{StfError, StfResult},
-    post_exec_validation, pre_exec_block_validate,
+    post_exec_block_validate, pre_exec_block_validate,
     update::{apply_update_outputs, verify_update_correctness},
 };
 
@@ -38,13 +38,15 @@ pub fn execute_block<S: StateAccessor>(
 
         // Increment the current epoch now that we've processed the terminal block.
         let cur_epoch = state_accessor.global().cur_epoch();
-        state_accessor.global_mut().set_cur_epoch(cur_epoch + 1);
+        let new_epoch = cur_epoch.checked_add(1).ok_or(StfError::EpochOverflow)?;
+        state_accessor.global_mut().set_cur_epoch(new_epoch);
     }
 
     let new_state = state_accessor.global().to_owned();
 
     // Post execution block validation. Checks state root and logs root.
-    post_exec_validation::<S>(&block, new_state, &stf_logs).map_err(StfError::BlockValidation)?;
+    post_exec_block_validate::<S>(&block, new_state, &stf_logs)
+        .map_err(StfError::BlockValidation)?;
 
     let new_root = new_state.compute_state_root();
     Ok(ExecOutput::new(new_root, stf_logs))
@@ -64,7 +66,7 @@ fn seal_epoch(
             logs.extend_from_slice(&process_asm_log(state_accessor, log)?);
         }
         // TODO: Insert into witness mmr
-        cur_height = manifest.l1_blkheight() as u32;
+        cur_height = manifest.l1_blkheight();
         cur_blkid = manifest.l1_blkid();
     }
 
@@ -85,10 +87,10 @@ fn execute_transaction<S: StateAccessor>(
                 return Err(StfError::NonExistentAccount(*target));
             };
 
-            let verified_udpate =
+            let verified_update =
                 verify_update_correctness(state_accessor, *target, &acct_state, update)?;
             let logs =
-                apply_update_outputs(state_accessor, *target, &mut acct_state, verified_udpate)?;
+                apply_update_outputs(state_accessor, *target, &mut acct_state, verified_update)?;
 
             state_accessor.update_account_state(*target, acct_state)?;
 
