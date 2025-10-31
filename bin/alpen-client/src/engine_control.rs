@@ -4,8 +4,7 @@ use alloy_primitives::B256;
 use alloy_rpc_types_engine::ForkchoiceState;
 use alpen_reth_node::{AlpenBuiltPayload, AlpenEngineTypes};
 use reth_node_builder::{
-    BeaconConsensusEngineHandle, BuiltPayload, EngineApiMessageVersion, NodeTypesWithDB,
-    PayloadTypes,
+    BuiltPayload, ConsensusEngineHandle, EngineApiMessageVersion, NodeTypesWithDB, PayloadTypes,
 };
 use reth_provider::{
     providers::{BlockchainProvider, ProviderNodeTypes},
@@ -25,11 +24,11 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub(crate) struct AlpenRethExecEngine {
-    beacon_engine_handle: BeaconConsensusEngineHandle<AlpenEngineTypes>,
+    beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>,
 }
 
 impl AlpenRethExecEngine {
-    pub(crate) fn new(beacon_engine_handle: BeaconConsensusEngineHandle<AlpenEngineTypes>) -> Self {
+    pub(crate) fn new(beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>) -> Self {
         Self {
             beacon_engine_handle,
         }
