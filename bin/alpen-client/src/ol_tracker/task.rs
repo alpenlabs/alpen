@@ -189,7 +189,7 @@ where
         let mut ee_state = state.best_ee_state().clone();
 
         // 1. Apply all operations in the block to update local ee account state.
-        apply_block_operations(&mut ee_state, &operations).map_err(|error| {
+        apply_block_operations(&mut ee_state, operations).map_err(|error| {
             error!(
                 slot = ol_block.slot(),
                 %error,

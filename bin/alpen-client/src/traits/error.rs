@@ -31,10 +31,12 @@ pub(crate) enum OlClientError {
 }
 
 impl OlClientError {
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn network(msg: impl Into<String>) -> Self {
         Self::Network(msg.into())
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn rpc(msg: impl Into<String>) -> Self {
         Self::Rpc(msg.into())
     }
@@ -43,6 +45,7 @@ impl OlClientError {
 #[derive(Debug, Error)]
 pub(crate) enum StorageError {
     #[error("state not found for slot {0}")]
+    #[expect(dead_code, reason = "wip")]
     StateNotFound(u64),
 
     #[error("missing slot: attempted to store slot {attempted_slot} but last stored slot is {last_slot}")]
@@ -62,14 +65,17 @@ pub(crate) enum StorageError {
 }
 
 impl StorageError {
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn database(msg: impl Into<String>) -> Self {
         Self::Database(msg.into())
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn serialization(msg: impl Into<String>) -> Self {
         Self::Serialization(msg.into())
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn deserialization(msg: impl Into<String>) -> Self {
         Self::Deserialization(msg.into())
     }
@@ -104,6 +110,7 @@ pub(crate) enum ExecutionEngineError {
 }
 
 impl ExecutionEngineError {
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn payload_submission(msg: impl Into<String>) -> Self {
         Self::PayloadSubmission(msg.into())
     }
@@ -112,18 +119,22 @@ impl ExecutionEngineError {
         Self::ForkChoiceUpdate(msg.into())
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn invalid_payload(msg: impl Into<String>) -> Self {
         Self::InvalidPayload(msg.into())
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn engine_syncing(msg: impl Into<String>) -> Self {
         Self::EngineSyncing(msg.into())
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn communication(msg: impl Into<String>) -> Self {
         Self::Communication(msg.into())
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn other(msg: impl Into<String>) -> Self {
         Self::Other(msg.into())
     }

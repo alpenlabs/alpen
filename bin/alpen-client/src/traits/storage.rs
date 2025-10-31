@@ -11,8 +11,8 @@ use super::error::StorageError;
 #[derive(Debug, Clone)]
 /// EE account internal state corresponding to ol Block
 pub(crate) struct EeAccountStateAtBlock {
-    pub ol_block: OLBlockCommitment,
-    pub state: EeAccountState,
+    ol_block: OLBlockCommitment,
+    state: EeAccountState,
 }
 
 impl EeAccountStateAtBlock {
@@ -27,9 +27,11 @@ impl EeAccountStateAtBlock {
         &self.state
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn ol_slot(&self) -> u64 {
         self.ol_block.slot()
     }
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn ol_blockid(&self) -> &OLBlockId {
         self.ol_block.blkid()
     }
@@ -64,15 +66,19 @@ pub(crate) trait Storage {
         &self,
         block_or_slot: OLBlockOrSlot<'a>,
     ) -> Result<Option<EeAccountStateAtBlock>, StorageError>;
+
     /// Get EE account internal state for the highest slot available.
     async fn best_ee_account_state(&self) -> Result<Option<EeAccountStateAtBlock>, StorageError>;
+
     /// Store EE account internal state for next slot.
     async fn store_ee_account_state(
         &self,
         ol_block: &OLBlockCommitment,
         ee_account_state: &EeAccountState,
     ) -> Result<(), StorageError>;
+
     /// Remove stored EE internal account state for slots > `to_slot`.
+    #[expect(dead_code, reason = "will be used in reorg handling")]
     async fn rollback_ee_account_state(&self, to_slot: u64) -> Result<(), StorageError>;
 }
 

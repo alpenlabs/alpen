@@ -20,11 +20,11 @@ pub(crate) struct ConsensusHeads {
 }
 
 impl ConsensusHeads {
-    pub fn confirmed(&self) -> &Hash {
+    pub(crate) fn confirmed(&self) -> &Hash {
         &self.confirmed
     }
 
-    pub fn finalized(&self) -> &Hash {
+    pub(crate) fn finalized(&self) -> &Hash {
         &self.finalized
     }
 }
@@ -37,12 +37,12 @@ pub(crate) struct OlTrackerState {
 }
 
 impl OlTrackerState {
-    pub fn best_ee_state(&self) -> &EeAccountState {
-        &self.best.state
+    pub(crate) fn best_ee_state(&self) -> &EeAccountState {
+        self.best.ee_state()
     }
 
-    pub fn best_ol_block(&self) -> &OLBlockCommitment {
-        &self.best.ol_block
+    pub(crate) fn best_ol_block(&self) -> &OLBlockCommitment {
+        self.best.ol_block()
     }
 
     pub(crate) fn get_consensus_heads(&self) -> ConsensusHeads {
@@ -82,10 +82,7 @@ where
             .await
             .map_err(|e| eyre::eyre!(e))?;
 
-        let block_account_state = EeAccountStateAtBlock {
-            ol_block: genesis_ol_block,
-            state: genesis_state,
-        };
+        let block_account_state = EeAccountStateAtBlock::new(genesis_ol_block, genesis_state);
 
         return Ok(OlTrackerState {
             best: block_account_state.clone(),

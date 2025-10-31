@@ -47,11 +47,12 @@ impl OlTrackerHandle {
         (handle, task)
     }
 
+    #[expect(dead_code, reason = "wip")]
     pub(crate) fn ee_state_watcher(&self) -> watch::Receiver<EeAccountState> {
         self.ee_state_rx.clone()
     }
 
-    pub fn consensus_watcher(&self) -> watch::Receiver<ConsensusHeads> {
+    pub(crate) fn consensus_watcher(&self) -> watch::Receiver<ConsensusHeads> {
         self.consensus_rx.clone()
     }
 }

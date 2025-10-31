@@ -7,12 +7,14 @@ use strata_identifiers::{CredRule, OLBlockId};
 #[derive(Debug, Clone)]
 pub(crate) struct AlpenEeParams {
     /// Account id of current EE in OL
+    #[expect(dead_code, reason = "wip")]
     pub account_id: AccountId,
 
     /// Genesis blockhash of execution chain
     pub genesis_blockhash: B256,
 
     /// Genesis stateroot of execution chain
+    #[expect(dead_code, reason = "wip")]
     pub genesis_stateroot: B256,
 
     /// OL slot of Alpen ee account genesis
@@ -29,11 +31,14 @@ pub(crate) struct AlpenEeConfig {
     pub params: AlpenEeParams,
 
     /// To verify preconfirmed updates from sequencer.
+    #[expect(dead_code, reason = "wip")]
     pub sequencer_credrule: CredRule,
 
     /// Connection OL RPC client.
+    #[expect(dead_code, reason = "wip")]
     pub ol_client_http: String,
 
     /// Connection EE sequencer client.
+    #[expect(dead_code, reason = "wip")]
     pub ee_sequencer_http: Option<String>,
 }
