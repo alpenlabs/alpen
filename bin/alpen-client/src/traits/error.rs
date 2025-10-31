@@ -74,3 +74,57 @@ impl StorageError {
         Self::Deserialization(msg.into())
     }
 }
+
+/// Errors that can occur when interacting with an execution engine.
+#[derive(Debug, Error)]
+pub(crate) enum ExecutionEngineError {
+    /// Failed to submit a payload to the engine (newPayload).
+    #[error("payload submission failed: {0}")]
+    PayloadSubmission(String),
+
+    /// Failed to update fork choice state (forkchoiceUpdated).
+    #[error("fork choice update failed: {0}")]
+    ForkChoiceUpdate(String),
+
+    /// The engine rejected the payload as invalid.
+    #[error("invalid payload: {0}")]
+    InvalidPayload(String),
+
+    /// The engine is not synchronized or in a bad state.
+    #[error("engine syncing or unavailable: {0}")]
+    EngineSyncing(String),
+
+    /// Communication error with the engine (e.g., channel closed, timeout).
+    #[error("engine communication error: {0}")]
+    Communication(String),
+
+    /// Unknown or unspecified error from the engine.
+    #[error("engine error: {0}")]
+    Other(String),
+}
+
+impl ExecutionEngineError {
+    pub(crate) fn payload_submission(msg: impl Into<String>) -> Self {
+        Self::PayloadSubmission(msg.into())
+    }
+
+    pub(crate) fn fork_choice_update(msg: impl Into<String>) -> Self {
+        Self::ForkChoiceUpdate(msg.into())
+    }
+
+    pub(crate) fn invalid_payload(msg: impl Into<String>) -> Self {
+        Self::InvalidPayload(msg.into())
+    }
+
+    pub(crate) fn engine_syncing(msg: impl Into<String>) -> Self {
+        Self::EngineSyncing(msg.into())
+    }
+
+    pub(crate) fn communication(msg: impl Into<String>) -> Self {
+        Self::Communication(msg.into())
+    }
+
+    pub(crate) fn other(msg: impl Into<String>) -> Self {
+        Self::Other(msg.into())
+    }
+}

@@ -1061,6 +1061,8 @@ dependencies = [
  "reth-db",
  "reth-node-builder",
  "reth-node-core",
+ "reth-payload-builder",
+ "reth-provider",
  "rockbound",
  "sled",
  "strata-acct-types",

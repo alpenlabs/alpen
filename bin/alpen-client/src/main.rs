@@ -13,6 +13,7 @@ compile_error!(
 
 // mod init_db;
 mod config;
+mod engine_control;
 mod genesis;
 mod ol_tracker;
 mod traits;
@@ -29,10 +30,12 @@ use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use strata_acct_types::AccountId;
 use strata_identifiers::{CredRule, OLBlockId};
+use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::{
     config::{AlpenEeConfig, AlpenEeParams},
+    engine_control::{create_engine_control_task, AlpenRethExecEngine},
     genesis::ee_genesis_block_info,
     ol_tracker::{init_ol_tracker_state, OlTrackerHandle},
     traits::{
@@ -108,14 +111,23 @@ fn main() {
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
                 .on_node_started(|node| {
-                    let (_ol_tracker, ol_tracker_task) =
+                    let (ol_tracker, ol_tracker_task) =
                         OlTrackerHandle::create(ol_tracker_state, storage, ol_client, None, None);
+
+                    // TODO: p2p head block gossip
+                    let (_preconf_tx, preconf_rx) = broadcast::channel(1);
+
+                    let engine_control_task = create_engine_control_task(
+                        preconf_rx,
+                        ol_tracker.consensus_watcher(),
+                        node.provider.clone(),
+                        AlpenRethExecEngine::new(node.beacon_engine_handle.clone()),
+                    );
 
                     node.task_executor
                         .spawn_critical("ol_tracker_task", ol_tracker_task);
-
-                    // TODO: reth engine control
-                    // TODO: p2p head block gossip
+                    node.task_executor
+                        .spawn_critical("engine_control", engine_control_task);
 
                     // sequencer specific tasks
                     // TODO: block assembly
