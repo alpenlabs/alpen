@@ -106,7 +106,7 @@ impl OLBlockHeader {
         self.slot
     }
 
-    pub fn epoch(&self) -> u32 {
+    pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
@@ -190,7 +190,7 @@ pub struct L1Update {
     pub preseal_state_root: Buf32,
 
     /// L1 height the manifests are read upto.
-    pub new_l1_blk_height: u64,
+    pub new_l1_blk_height: u32,
 
     /// L1 block hash the manifests are read upto.
     pub new_l1_blkid: Buf32,
@@ -202,7 +202,7 @@ pub struct L1Update {
 impl L1Update {
     pub fn new(
         preseal_state_root: Buf32,
-        new_l1_blk_height: u64,
+        new_l1_blk_height: u32,
         new_l1_blkid: Buf32,
         manifests: Vec<AsmManifest>,
     ) -> Self {
@@ -218,7 +218,7 @@ impl L1Update {
         self.preseal_state_root
     }
 
-    pub fn new_l1_blk_height(&self) -> u64 {
+    pub fn new_l1_blk_height(&self) -> u32 {
         self.new_l1_blk_height
     }
 
@@ -231,7 +231,7 @@ impl L1Update {
 #[derive(Debug, Clone)]
 pub struct AsmManifest {
     /// L1 block id.
-    l1_blkheight: u64,
+    l1_blkheight: u32,
 
     /// L1 block id.
     l1_blkid: Buf32,
@@ -241,7 +241,7 @@ pub struct AsmManifest {
 }
 
 impl AsmManifest {
-    pub fn new(l1_blkheight: u64, l1_blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
+    pub fn new(l1_blkheight: u32, l1_blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
         Self {
             l1_blkheight,
             l1_blkid,
@@ -249,7 +249,7 @@ impl AsmManifest {
         }
     }
 
-    pub fn l1_blkheight(&self) -> u64 {
+    pub fn l1_blkheight(&self) -> u32 {
         self.l1_blkheight
     }
 

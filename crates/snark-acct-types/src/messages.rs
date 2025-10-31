@@ -9,14 +9,14 @@ pub struct MessageEntry {
     source: AccountId,
 
     /// The epoch that the message was included.
-    incl_epoch: u32,
+    incl_epoch: u64,
 
     /// The message payload.
     payload: MsgPayload,
 }
 
 impl MessageEntry {
-    pub fn new(source: AccountId, incl_epoch: u32, payload: MsgPayload) -> Self {
+    pub fn new(source: AccountId, incl_epoch: u64, payload: MsgPayload) -> Self {
         Self {
             source,
             incl_epoch,
@@ -28,7 +28,7 @@ impl MessageEntry {
         self.source
     }
 
-    pub fn incl_epoch(&self) -> u32 {
+    pub fn incl_epoch(&self) -> u64 {
         self.incl_epoch
     }
 

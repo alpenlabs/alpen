@@ -64,7 +64,7 @@ pub(crate) struct MsgMeta {
     #[expect(dead_code, reason = "for future use")]
     pub(crate) source: AccountId,
     #[expect(dead_code, reason = "for future use")]
-    pub(crate) incl_epoch: u32,
+    pub(crate) incl_epoch: u64,
     pub(crate) value: BitcoinAmount,
 }
 

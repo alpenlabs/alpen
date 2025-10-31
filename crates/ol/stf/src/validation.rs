@@ -83,7 +83,7 @@ fn validate_block_signature(
 }
 
 /// Block validation after block execution like state root and logs root checks.
-pub fn post_exec_validation<S: StateAccessor>(
+pub fn post_exec_block_validate<S: StateAccessor>(
     block: &OLBlock,
     new_state: &S::GlobalState,
     stf_logs: &[OLLog],
