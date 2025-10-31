@@ -38,7 +38,9 @@ pub fn execute_block<S: StateAccessor>(
 
         // Increment the current epoch now that we've processed the terminal block.
         let cur_epoch = state_accessor.global().cur_epoch();
-        let new_epoch = cur_epoch.checked_add(1).ok_or(StfError::EpochOverflow)?;
+        let new_epoch = cur_epoch
+            .checked_add(1)
+            .ok_or(StfError::EpochOverflow { cur_epoch })?;
         state_accessor.global_mut().set_cur_epoch(new_epoch);
     }
 

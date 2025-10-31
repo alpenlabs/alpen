@@ -18,8 +18,8 @@ pub(crate) fn handle_bridge_gateway_transfer<S: StateAccessor>(
     _from: AccountId,
     _amt: BitcoinAmount,
 ) -> StfResult<()> {
-    Err(StfError::other(
-        "transfer not supported for system accounts",
+    Err(StfError::Other(
+        "transfer not supported for system accounts".to_string(),
     ))
 }
 

@@ -40,7 +40,11 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
 
     // 1. Check seq_no matches
     if state.seqno() != operation.seq_no() {
-        return Err(StfError::InvalidUpdateSequence);
+        return Err(StfError::InvalidUpdateSequence {
+            account_id: sender,
+            expected: state.seqno(),
+            got: operation.seq_no(),
+        });
     }
 
     // 2. Check message counts / proof indices line up
@@ -48,19 +52,22 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     let new_idx = operation.new_state().next_inbox_msg_idx();
     let processed_len = operation.processed_messages().len() as u64;
 
-    if cur_idx
+    let expected_idx = cur_idx
         .checked_add(processed_len)
-        .ok_or(StfError::MsgIndexOverflow)?
-        != new_idx
-    {
-        return Err(StfError::InvalidMsgIndex);
+        .ok_or(StfError::MsgIndexOverflow { account_id: sender })?;
+    if expected_idx != new_idx {
+        return Err(StfError::InvalidMsgIndex {
+            account_id: sender,
+            expected: expected_idx,
+            got: new_idx,
+        });
     }
 
     // 3. Verify ledger references using the provided state accessor
     verify_ledger_refs(operation.ledger_refs(), state_accessor)?;
 
     // Create message proofs
-    let message_proofs = get_message_proofs::<S>(update, &state)?;
+    let message_proofs = get_message_proofs::<S>(sender, update, &state)?;
     // 4. Verify input mmr proofs
     verify_input_mmr_proofs::<S>(&state, &message_proofs)?;
 
@@ -68,12 +75,13 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     verify_update_outputs_safe(outputs, sender, acct_state, state_accessor)?;
 
     // 5. Verify the witness check
-    verify_update_witness(acct_state, update, state_accessor)?;
+    verify_update_witness(sender, acct_state, update, state_accessor)?;
 
     Ok(VerifiedUpdate { operation })
 }
 
 fn get_message_proofs<S: StateAccessor>(
+    sender: AccountId,
     update: &SnarkAccountUpdate,
     state: &<S::AccountState as IAccountState>::SnarkAccountState,
 ) -> StfResult<Vec<(MessageEntry, MerkleProof)>> {
@@ -87,7 +95,9 @@ fn get_message_proofs<S: StateAccessor>(
 
         let mproof = MerkleProof::from_cohashes(proof.raw_proof().cohashes().to_vec(), cur_idx);
         proofs.push((msg.clone(), mproof));
-        cur_idx = cur_idx.checked_add(1).ok_or(StfError::MsgIndexOverflow)?;
+        cur_idx = cur_idx
+            .checked_add(1)
+            .ok_or(StfError::MsgIndexOverflow { account_id: sender })?;
     }
     Ok(proofs)
 }
@@ -107,6 +117,7 @@ fn verify_input_mmr_proofs<S: StateAccessor>(
 }
 
 fn verify_update_witness<S: StateAccessor>(
+    sender: AccountId,
     acct_state: &<S as StateAccessor>::AccountState,
     update: &SnarkAccountUpdate,
     _state_accessor: &S,
@@ -122,7 +133,7 @@ fn verify_update_witness<S: StateAccessor>(
         .is_ok();
 
     if !is_valid {
-        return Err(StfError::InvalidUpdateProof);
+        return Err(StfError::InvalidUpdateProof { account_id: sender });
     }
 
     Ok(())
