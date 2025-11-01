@@ -13138,7 +13138,6 @@ dependencies = [
  "strata-btc-types",
  "strata-codec",
  "strata-merkle",
- "strata-mmr",
  "thiserror 2.0.16",
 ]
 
