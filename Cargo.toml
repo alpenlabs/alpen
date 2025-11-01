@@ -79,7 +79,6 @@ members = [
   "crates/test-utils/l2",
   "crates/test-utils/test-utils",
   "crates/test-utils/tx-indexer",
-  "crates/util/mmr",
   "provers/sp1",
 
   # binaries listed separately
@@ -211,7 +210,7 @@ strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
-strata-merkle = { git = "https://github.com/alpenlabs/strata-common", branch = "fix/strata-merkle-mmr-api" }
+strata-merkle = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common" }
 strata-service = { git = "https://github.com/alpenlabs/strata-common" }
