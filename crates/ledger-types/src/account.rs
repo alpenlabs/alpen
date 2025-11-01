@@ -91,8 +91,6 @@ pub trait ISnarkAccountStateExt: ISnarkAccountState {
 
 impl<A: ISnarkAccountState> ISnarkAccountStateExt for A {
     fn get_next_inbox_msg_idx(&self) -> u64 {
-        0
-        // FIXME:
-        // self.inbox_mmr().num_entries()
+        self.inbox_mmr().num_entries()
     }
 }

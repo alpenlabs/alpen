@@ -13136,7 +13136,7 @@ dependencies = [
  "int-enum",
  "sha2 0.10.9",
  "strata-btc-types",
- "strata-codec",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-merkle",
  "thiserror 2.0.16",
 ]
@@ -13610,6 +13610,14 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?branch=fix%2Fstrata-merkle-mmr-api#02f1a1a2aa141ae90e01ce36a1e6d52634b11e3e"
+dependencies = [
+ "thiserror 2.0.16",
+]
+
+[[package]]
+name = "strata-codec"
+version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "thiserror 2.0.16",
@@ -13743,7 +13751,7 @@ name = "strata-da-framework"
 version = "0.1.0"
 dependencies = [
  "sha2 0.10.9",
- "strata-codec",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-merkle",
  "strata-mmr",
  "thiserror 2.0.16",
@@ -13894,7 +13902,7 @@ dependencies = [
  "digest 0.10.7",
  "sha2 0.10.9",
  "strata-acct-types",
- "strata-codec",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-msg-fmt",
@@ -13908,7 +13916,7 @@ name = "strata-ee-acct-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-codec",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-ee-chain-types",
  "strata-msg-fmt",
  "thiserror 2.0.16",
@@ -14059,13 +14067,13 @@ dependencies = [
 [[package]]
 name = "strata-merkle"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
+source = "git+https://github.com/alpenlabs/strata-common?branch=fix%2Fstrata-merkle-mmr-api#02f1a1a2aa141ae90e01ce36a1e6d52634b11e3e"
 dependencies = [
  "borsh",
  "digest 0.10.7",
  "serde",
  "sha2 0.10.9",
- "strata-codec",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?branch=fix%2Fstrata-merkle-mmr-api)",
  "thiserror 2.0.16",
 ]
 
@@ -14441,7 +14449,7 @@ dependencies = [
  "digest 0.10.7",
  "sha2 0.10.9",
  "strata-acct-types",
- "strata-codec",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
 ]

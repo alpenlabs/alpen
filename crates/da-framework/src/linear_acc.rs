@@ -177,7 +177,7 @@ impl<A: LinearAccumulator> DaBuilder<A> for DaLinaccBuilder<A> {
 #[cfg(test)]
 mod tests {
     use strata_codec::BufDecoder;
-    use strata_mmr::{MerkleMr64, Sha256Hasher, hasher::MerkleHasher};
+    use strata_merkle::{MerkleMr64, Sha256Hasher, hasher::MerkleHasher};
 
     use super::*;
     use crate::{CompoundMember, DaWrite};
