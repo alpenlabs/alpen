@@ -13753,7 +13753,6 @@ dependencies = [
  "sha2 0.10.9",
  "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
  "strata-merkle",
- "strata-mmr",
  "thiserror 2.0.16",
 ]
 

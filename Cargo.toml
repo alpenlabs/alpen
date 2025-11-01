@@ -178,7 +178,6 @@ strata-identifiers = { path = "crates/identifiers", default-features = false }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-l1tx = { path = "crates/l1tx" }
 strata-ledger-types = { path = "crates/ledger-types" }
-strata-mmr = { path = "crates/util/mmr" }
 strata-mpt = { path = "crates/mpt" }
 strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chain-types-new = { path = "crates/ol/chain-types" }

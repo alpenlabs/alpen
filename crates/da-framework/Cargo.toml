@@ -9,6 +9,5 @@ strata-codec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-strata-mmr.workspace = true
 strata-merkle.workspace = true
 sha2.workspace = true
