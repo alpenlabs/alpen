@@ -12029,7 +12029,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.14.0",
+ "bitcoin_hashes 0.13.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -13137,6 +13137,7 @@ dependencies = [
  "sha2 0.10.9",
  "strata-btc-types",
  "strata-codec",
+ "strata-merkle",
  "strata-mmr",
  "thiserror 2.0.16",
 ]
@@ -13610,7 +13611,7 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "thiserror 2.0.16",
 ]
@@ -13744,6 +13745,7 @@ version = "0.1.0"
 dependencies = [
  "sha2 0.10.9",
  "strata-codec",
+ "strata-merkle",
  "strata-mmr",
  "thiserror 2.0.16",
 ]
@@ -14004,7 +14006,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14013,7 +14015,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.16",
@@ -14056,6 +14058,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-merkle"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
+dependencies = [
+ "borsh",
+ "digest 0.10.7",
+ "serde",
+ "sha2 0.10.9",
+ "strata-codec",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-mmr"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14083,7 +14098,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "thiserror 2.0.16",
 ]
@@ -14149,7 +14164,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -14408,7 +14423,7 @@ dependencies = [
 [[package]]
 name = "strata-service"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "anyhow",
  "futures",
@@ -14528,7 +14543,7 @@ dependencies = [
 [[package]]
 name = "strata-tasks"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common#6ab2bef58d3208ab6c44e17d8d392ad0ff4ac238"
+source = "git+https://github.com/alpenlabs/strata-common#179ef131588662a28555db73fd7c18bb93e81678"
 dependencies = [
  "anyhow",
  "futures-util",

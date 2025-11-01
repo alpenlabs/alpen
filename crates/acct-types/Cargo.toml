@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 strata-btc-types.workspace = true
 strata-codec.workspace = true
+strata-merkle.workspace = true
 strata-mmr.workspace = true
 
 digest.workspace = true
