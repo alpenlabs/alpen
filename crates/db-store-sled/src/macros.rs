@@ -109,6 +109,54 @@ macro_rules! define_table_with_seek_key_codec {
     };
 }
 
+/// Variation of [`define_table_with_default_codec`].
+///
+/// It shall be used when your key type should be serialized lexicographically.
+///
+/// Borsh serializes integers as little-endian, but RocksDB uses lexicographic
+/// ordering which is only compatible with big-endian, so we use [`bincode`]
+/// with the big-endian option here.
+#[macro_export]
+macro_rules! impl_bincode_key_codec {
+    ($table_name:ident, $key:ty) => {
+        impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
+            fn encode_key(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                use ::bincode::Options as _;
+
+                let bincode_options = ::bincode::options()
+                    .with_fixint_encoding()
+                    .with_big_endian();
+
+                bincode_options.serialize(self).map_err(|err| {
+                    ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    }
+                })
+            }
+
+            fn decode_key(
+                data: &[u8],
+            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
+                use ::bincode::Options as _;
+
+                let bincode_options = ::bincode::options()
+                    .with_fixint_encoding()
+                    .with_big_endian();
+
+                bincode_options
+                    .deserialize_from(&mut &data[..])
+                    .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    })
+            }
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! impl_borsh_value_codec {
     ($table_name:ident, $value:ty) => {

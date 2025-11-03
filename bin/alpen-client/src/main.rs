@@ -2,6 +2,7 @@
 
 // mod init_db;
 mod config;
+mod db;
 mod engine_control;
 mod genesis;
 mod ol_tracker;

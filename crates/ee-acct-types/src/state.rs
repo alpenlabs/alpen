@@ -41,6 +41,22 @@ impl EeAccountState {
         }
     }
 
+    pub fn into_parts(
+        self,
+    ) -> (
+        Hash,
+        BitcoinAmount,
+        Vec<PendingInputEntry>,
+        Vec<PendingFinclEntry>,
+    ) {
+        (
+            self.last_exec_blkid,
+            self.tracked_balance,
+            self.pending_inputs,
+            self.pending_fincls,
+        )
+    }
+
     pub fn last_exec_blkid(&self) -> Hash {
         self.last_exec_blkid
     }
@@ -125,4 +141,22 @@ pub enum PendingInputType {
 pub struct PendingFinclEntry {
     epoch: u32,
     raw_tx_hash: Hash,
+}
+
+impl PendingFinclEntry {
+    pub fn new(epoch: u32, raw_tx_hash: Hash) -> Self {
+        Self { epoch, raw_tx_hash }
+    }
+
+    pub fn into_parts(self) -> (u32, Hash) {
+        (self.epoch, self.raw_tx_hash)
+    }
+
+    pub fn epoch(&self) -> u32 {
+        self.epoch
+    }
+
+    pub fn raw_tx_hash(&self) -> &Hash {
+        &self.raw_tx_hash
+    }
 }
