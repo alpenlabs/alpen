@@ -1,6 +1,6 @@
 //! Concrete orchestration layer MMR types.
 
-use strata_mmr::Sha256Hasher;
+use strata_merkle::{MerkleMr64, Sha256Hasher};
 
 /// The basic hasher we use for all the MMR stuff.
 ///
@@ -12,13 +12,13 @@ pub type StrataHasher = Sha256Hasher;
 pub type Hash = [u8; 32];
 
 /// Compact 64 bit merkle mountain range.
-pub type CompactMmr64 = strata_mmr::CompactMmr<StrataHasher>;
+pub type CompactMmr64 = strata_merkle::CompactMmr64<StrataHasher>;
 
 /// 64 bit merkle mountain range.
-pub type Mmr64 = strata_mmr::MerkleMr64<StrataHasher>;
+pub type Mmr64 = MerkleMr64<StrataHasher>;
 
 /// Universal MMR merkle proof.
-pub type MerkleProof = strata_mmr::MerkleProof<Hash>;
+pub type MerkleProof = strata_merkle::MerkleProof<Hash>;
 
 /// Raw MMR merkle proof that doesn't have an embedded index.
-pub type RawMerkleProof = strata_mmr::RawMerkleProof<Hash>;
+pub type RawMerkleProof = strata_merkle::RawMerkleProof<Hash>;
