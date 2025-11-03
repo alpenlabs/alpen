@@ -92,8 +92,8 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + std::error::Error + Clo
         cache.pop(k);
     }
 
-    /// Removes all entries for which the predicate fails.  Returns the number
-    /// of entries removed.
+    /// Removes all entries for which the predicate returns `true`.
+    /// Returns the number of entries removed.
     ///
     /// This unfortunately has to clone as many keys from the cache as pass the
     /// predicate, which means it's capped at the maximum size of the cache, so
@@ -114,8 +114,8 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + std::error::Error + Clo
         });
         keys_to_remove.len()
     }
-    /// Removes all entries for which the predicate fails.  Returns the number
-    /// of entries removed.
+    /// Removes all entries for which the predicate returns `true`.
+    /// Returns the number of entries removed.
     ///
     /// This unfortunately has to clone as many keys from the cache as pass the
     /// predicate, which means it's capped at the maximum size of the cache, so
