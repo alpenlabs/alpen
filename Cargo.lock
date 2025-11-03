@@ -14131,6 +14131,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-mempool"
+version = "0.1.0"
+dependencies = [
+ "strata-identifiers",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-params"
 version = "0.1.0"
 dependencies = [

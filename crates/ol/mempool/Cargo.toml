@@ -1,0 +1,12 @@
+[package]
+name = "strata-ol-mempool"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-identifiers.workspace = true
+
+thiserror.workspace = true
