@@ -83,6 +83,7 @@ pub(crate) trait Storage {
 }
 
 #[derive(Debug, Clone, Default)]
+#[expect(dead_code, reason = "for testing")]
 pub(crate) struct DummyStorage {
     items: Arc<RwLock<Vec<EeAccountStateAtBlock>>>,
 }

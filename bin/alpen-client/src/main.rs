@@ -24,14 +24,12 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::{
-    config::{AlpenEeConfig, AlpenEeParams},
+    config::{defaults, AlpenEeConfig, AlpenEeParams},
+    db::init_db_storage,
     engine_control::{create_engine_control_task, AlpenRethExecEngine},
     genesis::ee_genesis_block_info,
     ol_tracker::{init_ol_tracker_state, OlTrackerHandle},
-    traits::{
-        ol_client::{chain_status_checked, DummyOlClient},
-        storage::DummyStorage,
-    },
+    traits::ol_client::{chain_status_checked, DummyOlClient},
 };
 
 fn main() {
@@ -59,7 +57,7 @@ fn main() {
         command,
         |builder: WithLaunchContext<NodeBuilder<Arc<reth_db::DatabaseEnv>, ChainSpec>>,
          ext: AdditionalConfig| async move {
-            // let datadir = builder.config().datadir().data_dir().to_path_buf();
+            let datadir = builder.config().datadir().data_dir().to_path_buf();
 
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
@@ -76,9 +74,14 @@ fn main() {
                 sequencer_credrule: CredRule::Unchecked,
                 ee_sequencer_http: ext.sequencer_http,
                 ol_client_http: ext.ol_client_http,
+                db_retry_count: ext.db_retry_count.unwrap_or(defaults::DB_RETRY_COUNT),
             });
 
-            let storage = Arc::new(DummyStorage::default());
+            let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count)
+                .expect("failed to load alpen database")
+                .into();
+
+            // TODO: real ol client
             let ol_client = Arc::new(DummyOlClient::default());
 
             // TODO: startup consistency check
@@ -163,6 +166,9 @@ pub struct AdditionalConfig {
     /// Rpc of OL node.
     #[arg(long, required = true)]
     pub ol_client_http: String,
+
+    #[arg(long, required = false)]
+    pub db_retry_count: Option<u16>,
 }
 
 /// Run node with logging

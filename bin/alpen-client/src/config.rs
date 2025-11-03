@@ -41,4 +41,11 @@ pub(crate) struct AlpenEeConfig {
     /// Connection EE sequencer client.
     #[expect(dead_code, reason = "wip")]
     pub ee_sequencer_http: Option<String>,
+
+    /// Number of retries for db connections
+    pub db_retry_count: u16,
+}
+
+pub(crate) mod defaults {
+    pub(crate) const DB_RETRY_COUNT: u16 = 5;
 }

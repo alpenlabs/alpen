@@ -12,15 +12,18 @@ pub(crate) enum DbError {
     #[error("OL entries must be persisted sequentially; next: {expected}; got: {got}")]
     SkippedOlSlot { expected: u64, got: u64 },
 
-    #[error("OL slot {0} already filled")]
-    FilledOlSlotTxn(u64),
+    #[error("Txn conflict: OL slot {0} already filled")]
+    TxnFilledOlSlot(u64),
+
+    #[error("Txn conflict: OL slot {0} should be empty")]
+    #[expect(dead_code, reason = "wip")]
+    TxnExpectEmptyOlSlot(u64),
 
     #[error("Account state expected to be present; block_id = {0}")]
     MissingAccountState(OLBlockId),
 
-    #[error("Account state expected to be present; slot = {0}")]
-    MissingAccountStateSlot(u64),
-
+    // #[error("Account state expected to be present; slot = {0}")]
+    // MissingAccountStateSlot(u64),
     #[error("Database: {0}")]
     DbOpsError(#[from] OpsError),
 
@@ -60,14 +63,12 @@ impl From<sled::transaction::TransactionError<typed_sled::error::Error>> for DbE
 impl From<DbError> for StorageError {
     fn from(err: DbError) -> Self {
         match err {
-            DbError::MissingAccountStateSlot(slot) => StorageError::StateNotFound(slot),
+            // DbError::MissingAccountStateSlot(slot) => StorageError::StateNotFound(slot),
+            DbError::SkippedOlSlot { expected, got } => StorageError::MissingSlot {
+                attempted_slot: got,
+                last_slot: expected,
+            },
             e => StorageError::database(e.to_string()),
         }
     }
 }
-
-// impl From<OpsError> for DbError {
-//     fn from(value: OpsError) -> Self {
-//         DbError::Other(Arc::new(value))
-//     }
-// }

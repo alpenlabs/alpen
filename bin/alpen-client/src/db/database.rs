@@ -14,6 +14,7 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
         ee_account_state: EeAccountState,
     ) -> DbResult<()>;
 
+    #[expect(dead_code, reason = "wip")]
     fn rollback_ee_account_state(&self, to_slot: u64) -> DbResult<()>;
 
     fn get_ol_blockid(&self, slot: u64) -> DbResult<Option<OLBlockId>>;

@@ -1,5 +1,6 @@
-mod db;
+mod database;
 mod error;
+mod init;
 mod serialization_types;
 mod storage;
 
@@ -9,6 +10,7 @@ mod rocksdb;
 mod sled;
 
 pub(crate) use error::DbError;
+pub(crate) use init::init_db_storage;
 
 pub(crate) type DbResult<T> = Result<T, DbError>;
 

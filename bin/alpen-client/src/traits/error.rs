@@ -45,7 +45,6 @@ impl OlClientError {
 #[derive(Debug, Error)]
 pub(crate) enum StorageError {
     #[error("state not found for slot {0}")]
-    #[expect(dead_code, reason = "wip")]
     StateNotFound(u64),
 
     #[error("missing slot: attempted to store slot {attempted_slot} but last stored slot is {last_slot}")]
@@ -65,7 +64,6 @@ pub(crate) enum StorageError {
 }
 
 impl StorageError {
-    #[expect(dead_code, reason = "wip")]
     pub(crate) fn database(msg: impl Into<String>) -> Self {
         Self::Database(msg.into())
     }

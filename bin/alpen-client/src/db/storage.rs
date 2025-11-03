@@ -8,7 +8,7 @@ use threadpool::ThreadPool;
 
 use crate::{
     db::{
-        db::{ops, EeNodeDb},
+        database::{ops, EeNodeDb},
         DbError,
     },
     traits::{
