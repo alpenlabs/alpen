@@ -1,7 +1,5 @@
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-use strata_ledger_types::{
-    AccountTypeState, Coin, IAccountState, IGlobalState, ISnarkAccountState, StateAccessor,
-};
+use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IGlobalState, StateAccessor};
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
@@ -16,7 +14,6 @@ use crate::{
 pub(crate) fn apply_update_outputs<'a, S: StateAccessor>(
     state_accessor: &mut S,
     sender: AccountId,
-    sender_state: &mut S::AccountState,
     verified_update: VerifiedUpdate<'a>,
 ) -> StfResult<Vec<OLLog>> {
     let outputs = verified_update.operation().outputs();
@@ -36,29 +33,6 @@ pub(crate) fn apply_update_outputs<'a, S: StateAccessor>(
         let msg_logs = send_message(state_accessor, sender, msg.dest(), payload)?;
         logs.extend(msg_logs);
     }
-
-    // Update balance
-    let total_sent = outputs
-        .total_output_value()
-        .ok_or(StfError::BitcoinAmountOverflow)?;
-
-    let _coins = sender_state.take_balance(total_sent);
-    // TODO: do something with coins
-
-    // Update account type state
-    // TODO: think about where it makes sense to keep this logic.
-    match sender_state.get_type_state_mut()? {
-        AccountTypeState::Empty => {}
-        AccountTypeState::Snark(st) => {
-            let operation = verified_update.operation();
-            let new_state = operation.new_state();
-            st.set_proof_state_directly(
-                new_state.inner_state(),
-                new_state.next_inbox_msg_idx(),
-                operation.seq_no(),
-            );
-        }
-    };
 
     Ok(logs)
 }

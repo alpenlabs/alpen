@@ -37,7 +37,7 @@ impl UpdateOutputs {
         &mut self.messages
     }
 
-    pub fn total_output_value(&self) -> Option<BitcoinAmount> {
+    pub fn compute_total_value(&self) -> Option<BitcoinAmount> {
         let mut total_sent = BitcoinAmount::zero();
 
         for t in self.transfers() {

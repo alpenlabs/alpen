@@ -1,7 +1,7 @@
 use strata_identifiers::Buf32;
 
 /// Abstract global chainstate.
-pub trait IGlobalState {
+pub trait IGlobalState: Clone {
     /// Gets the current epoch.
     fn cur_epoch(&self) -> u64;
 
