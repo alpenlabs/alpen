@@ -10,25 +10,14 @@ use crate::{
 /// Description of the operation of what we're updating.
 #[derive(Clone, Debug)]
 pub struct UpdateOperationData {
-    /// Sequence number to prevent replays, since we can't just rely on message
-    /// index.
-    seq_no: u64,
-
-    /// The new state we're claiming.
-    new_state: ProofState,
-
-    /// Messages we processed in the inbox.
-    processed_messages: Vec<MessageEntry>,
+    /// Subset of data that is sufficient for unconditional (trusted) updates.
+    unconditional: UpdateOperationUnconditionalData,
 
     /// Ledger references we're making.
     ledger_refs: LedgerRefs,
 
     /// Outputs we're emitting to update the ledger.
     outputs: UpdateOutputs,
-
-    /// Arbitrary data we persist in DA.  This is formatted according to the
-    /// needs of the snark account's application.
-    extra_data: Vec<u8>,
 }
 
 impl UpdateOperationData {
@@ -41,25 +30,27 @@ impl UpdateOperationData {
         extra_data: Vec<u8>,
     ) -> Self {
         Self {
-            seq_no,
-            new_state,
-            processed_messages,
+            unconditional: UpdateOperationUnconditionalData {
+                seq_no,
+                new_state,
+                processed_messages,
+                extra_data,
+            },
             ledger_refs,
             outputs,
-            extra_data,
         }
     }
 
     pub fn seq_no(&self) -> u64 {
-        self.seq_no
+        self.unconditional.seq_no
     }
 
     pub fn new_state(&self) -> ProofState {
-        self.new_state
+        self.unconditional.new_state
     }
 
     pub fn processed_messages(&self) -> &[MessageEntry] {
-        &self.processed_messages
+        &self.unconditional.processed_messages
     }
 
     pub fn ledger_refs(&self) -> &LedgerRefs {
@@ -71,7 +62,11 @@ impl UpdateOperationData {
     }
 
     pub fn extra_data(&self) -> &[u8] {
-        &self.extra_data
+        &self.unconditional.extra_data
+    }
+
+    pub fn as_unconditional(&self) -> &UpdateOperationUnconditionalData {
+        &self.unconditional
     }
 }
 
@@ -129,12 +124,7 @@ impl UpdateOperationUnconditionalData {
 
 impl From<UpdateOperationData> for UpdateOperationUnconditionalData {
     fn from(value: UpdateOperationData) -> Self {
-        Self {
-            seq_no: value.seq_no,
-            new_state: value.new_state,
-            processed_messages: value.processed_messages,
-            extra_data: value.extra_data,
-        }
+        value.unconditional
     }
 }
 

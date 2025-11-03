@@ -42,7 +42,7 @@ pub fn assert_update_paths_match(
     let mut unconditional_state = initial_state.clone();
     strata_ee_acct_runtime::apply_update_operation_unconditionally(
         &mut unconditional_state,
-        &operation.clone().into(),
+        operation.as_unconditional(),
     )
     .expect("apply_unconditionally should succeed");
 
