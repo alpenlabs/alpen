@@ -133,7 +133,7 @@ pub(crate) async fn track_ol_state(
         .split_first()
         .ok_or_else(|| eyre::eyre!("empty block commitments returned from ol_client"))?;
 
-    // If last block isnt as expected, trigger reorg
+    // If last block isn't as expected, trigger reorg
     if expected_local_block != state.best_ol_block() {
         return Ok(TrackOlAction::Reorg);
     }
