@@ -149,6 +149,18 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + std::error::Error + Clo
         len
     }
 
+    /// Removes all entries from the cache.  Returns the number of entries
+    /// removed.
+    ///
+    /// This might remove slots that are in the process of being filled.  Those
+    /// operations will complete, but we won't retain those values.
+    pub async fn async_clear(&self) -> usize {
+        let mut cache = self.cache.lock().await;
+        let len = cache.len();
+        cache.clear();
+        len
+    }
+
     /// Inserts an entry into the table, dropping the previous value.
     pub async fn insert_async(&self, k: K, v: V) {
         let slot = Arc::new(RwLock::new(SlotState::Ready(v)));
