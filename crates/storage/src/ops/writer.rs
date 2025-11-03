@@ -1,11 +1,8 @@
 //! Operations for reading/writing envelope related data from/to Database
 
-use std::sync::Arc;
-
 use strata_db::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry},
-    DbResult,
 };
 use strata_primitives::buf::Buf32;
 

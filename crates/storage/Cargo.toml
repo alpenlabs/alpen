@@ -15,12 +15,11 @@ strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
+strata-storage-common.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
 futures.workspace = true
-lru.workspace = true
-paste.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true

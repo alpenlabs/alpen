@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "strata-storage-common"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+lru.workspace = true
+paste.workspace = true
+thiserror.workspace = true
+threadpool.workspace = true
+tokio.workspace = true
+tracing.workspace = true

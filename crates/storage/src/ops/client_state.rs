@@ -1,7 +1,5 @@
 //! Client data database operations interface..
 
-use std::sync::Arc;
-
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db::traits::*;
 use strata_primitives::l1::L1BlockCommitment;

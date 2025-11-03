@@ -1,7 +1,5 @@
 //! L1 data operation interface.
 
-use std::sync::Arc;
-
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_db::traits::*;
 use strata_primitives::l1::L1BlockId;

@@ -1,5 +1,6 @@
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
+use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 
 use crate::chainstate::WriteBatchId;
@@ -125,5 +126,13 @@ impl From<anyhow::Error> for DbError {
 impl From<typed_sled::error::Error> for DbError {
     fn from(value: typed_sled::error::Error) -> Self {
         Self::Other(format!("sled error: {value:?}"))
+    }
+}
+
+impl From<OpsError> for DbError {
+    fn from(value: OpsError) -> Self {
+        match value {
+            OpsError::WorkerFailedStrangely => DbError::WorkerFailedStrangely,
+        }
     }
 }
