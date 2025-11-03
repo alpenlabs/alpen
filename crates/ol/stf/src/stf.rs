@@ -1,11 +1,14 @@
-use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
+use strata_acct_types::BitcoinAmount;
+use strata_ledger_types::{
+    AccountTypeState, IAccountState, IGlobalState, IL1ViewState, ISnarkAccountState, StateAccessor,
+};
 use strata_ol_chain_types_new::{
     L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload,
 };
 use strata_params::RollupParams;
-use strata_primitives::Buf32;
 
 use crate::{
+    ExecOutput,
     asm::process_asm_log,
     error::{StfError, StfResult},
     post_exec_block_validate, pre_exec_block_validate,
@@ -14,7 +17,6 @@ use crate::{
 };
 
 /// Processes an OL block. Also performs epoch sealing if the block is terminal.
-// todo: split this into execution without block validation for block assembly
 pub fn execute_block<S: StateAccessor>(
     params: RollupParams,
     state_accessor: &mut S,
@@ -24,8 +26,21 @@ pub fn execute_block<S: StateAccessor>(
     // Do some pre execution validation
     pre_exec_block_validate(&block, &prev_header, &params).map_err(StfError::BlockValidation)?;
 
-    let mut stf_logs = Vec::new();
+    let (exec_output, new_state) = execute_block_inner(state_accessor, &block)?;
 
+    // Post execution block validation. Checks state root and logs root.
+    post_exec_block_validate::<S>(&block, &new_state, exec_output.logs())
+        .map_err(StfError::BlockValidation)?;
+
+    Ok(exec_output)
+}
+
+/// Block execution without validation. Used by block assembly.
+pub fn execute_block_inner<S: StateAccessor>(
+    state_accessor: &mut S,
+    block: &OLBlock,
+) -> StfResult<(ExecOutput, S::GlobalState)> {
+    let mut stf_logs = Vec::new();
     // Execute transactions.
     for tx in block.body().txs() {
         let logs = execute_transaction(state_accessor, tx)?;
@@ -47,14 +62,10 @@ pub fn execute_block<S: StateAccessor>(
         state_accessor.global_mut().set_cur_epoch(new_epoch);
     }
 
-    let new_state = state_accessor.global().to_owned();
-
-    // Post execution block validation. Checks state root and logs root.
-    post_exec_block_validate::<S>(&block, new_state, &stf_logs)
-        .map_err(StfError::BlockValidation)?;
-
+    let new_state = state_accessor.global().clone();
     let new_root = new_state.compute_state_root();
-    Ok(ExecOutput::new(new_root, stf_logs))
+    let out = ExecOutput::new(new_root, stf_logs);
+    Ok((out, new_state))
 }
 
 fn seal_epoch(
@@ -75,7 +86,7 @@ fn seal_epoch(
         cur_blkid = manifest.l1_blkid();
     }
 
-    let l1view = state_accessor.get_l1_view_mut();
+    let l1view = state_accessor.l1_view_mut();
     l1view.set_last_l1_blkid(cur_blkid.into());
     l1view.set_last_l1_height(cur_height);
 
@@ -86,46 +97,64 @@ fn execute_transaction<S: StateAccessor>(
     state_accessor: &mut S,
     tx: &OLTransaction,
 ) -> StfResult<Vec<OLLog>> {
-    match tx.payload() {
+    let Some(target) = tx.payload().target() else {
+        // TODO: should we do anything?
+        return Ok(Vec::new());
+    };
+    let Some(mut acct_state) = state_accessor.get_account_state(target)?.cloned() else {
+        return Err(StfError::NonExistentAccount(target));
+    };
+
+    let (logs, output_value) = match tx.payload() {
         TransactionPayload::SnarkAccountUpdate { target, update } => {
-            let Some(mut acct_state) = state_accessor.get_account_state(*target)?.cloned() else {
-                return Err(StfError::NonExistentAccount(*target));
-            };
-
-            let verified_update =
-                verify_update_correctness(state_accessor, *target, &acct_state, update)?;
-            let logs =
-                apply_update_outputs(state_accessor, *target, &mut acct_state, verified_update)?;
-
-            state_accessor.update_account_state(*target, acct_state)?;
-
-            Ok(logs)
+            let type_state = acct_state.get_type_state()?;
+            let cur_balance = acct_state.balance();
+            if let AccountTypeState::Snark(mut snark_state) = type_state {
+                let logs = process_snark_update(
+                    state_accessor,
+                    *target,
+                    &mut snark_state,
+                    update,
+                    cur_balance,
+                )?;
+                (logs, update.operation().outputs().compute_total_value())
+            } else {
+                (Vec::new(), Some(BitcoinAmount::zero()))
+            }
         }
-        TransactionPayload::GenericAccountMessage { .. } => Err(StfError::UnsupportedTransaction),
-    }
+        TransactionPayload::GenericAccountMessage { .. } => {
+            return Err(StfError::UnsupportedTransaction);
+        }
+    };
+    // Update balance
+    let total_sent = output_value.ok_or(StfError::BitcoinAmountOverflow)?;
+
+    let _coins = acct_state.take_balance(total_sent);
+    // TODO: do something with coins
+
+    Ok(logs)
 }
 
-/// Output of a block execution.
-#[derive(Clone, Debug)]
-pub struct ExecOutput {
-    /// The resulting OL state root.
-    state_root: Buf32,
+fn process_snark_update<S: StateAccessor>(
+    state_accessor: &mut S,
+    target: strata_acct_types::AccountId,
+    snark_state: &mut <<S as StateAccessor>::AccountState as IAccountState>::SnarkAccountState,
+    update: &strata_snark_acct_types::SnarkAccountUpdate,
+    cur_balance: strata_primitives::prelude::BitcoinAmount,
+) -> StfResult<Vec<OLLog>> {
+    let verified_update =
+        verify_update_correctness(state_accessor, target, snark_state, update, cur_balance)?;
+    let new_state = verified_update.operation().new_state();
+    let seq_no = verified_update.operation().seq_no();
 
-    /// The resulting OL logs.
-    logs: Vec<OLLog>,
-    // TODO: write batch, but it will probably be handled by StateAccessor impl
-}
+    // Apply update outputs.
+    let logs = apply_update_outputs(state_accessor, target, verified_update)?;
 
-impl ExecOutput {
-    pub fn new(state_root: Buf32, logs: Vec<OLLog>) -> Self {
-        Self { state_root, logs }
-    }
-
-    pub fn state_root(&self) -> Buf32 {
-        self.state_root
-    }
-
-    pub fn logs(&self) -> &[OLLog] {
-        &self.logs
-    }
+    // After applying updates, update the proof state.
+    snark_state.set_proof_state_directly(
+        new_state.inner_state(),
+        new_state.next_inbox_msg_idx(),
+        seq_no,
+    );
+    Ok(logs)
 }

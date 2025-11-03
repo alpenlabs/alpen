@@ -19,7 +19,7 @@ pub trait StateAccessor {
     type L1ViewState: IL1ViewState;
 
     /// Type representing a ledger account's state.
-    type AccountState: IAccountState + Clone;
+    type AccountState: IAccountState;
 
     /// Gets a ref to the global state.
     fn global(&self) -> &Self::GlobalState;
@@ -31,7 +31,7 @@ pub trait StateAccessor {
     fn l1_view(&self) -> &Self::L1ViewState;
 
     /// Gets a mut ref to the L1 view state.
-    fn get_l1_view_mut(&mut self) -> &mut Self::L1ViewState;
+    fn l1_view_mut(&mut self) -> &mut Self::L1ViewState;
 
     /// Checks if an account exists.
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;

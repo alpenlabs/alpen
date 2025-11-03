@@ -1,5 +1,5 @@
-use strata_acct_types::{AccountId, MerkleProof, StrataHasher};
-use strata_ledger_types::{AccountTypeState, IAccountState, ISnarkAccountState, StateAccessor};
+use strata_acct_types::{AccountId, BitcoinAmount, MerkleProof, StrataHasher};
+use strata_ledger_types::{IAccountState, ISnarkAccountState, StateAccessor};
 use strata_mmr::hasher::MerkleHasher;
 use strata_snark_acct_types::{
     LedgerRefs, MessageEntry, SnarkAccountUpdate, UpdateOperationData, UpdateOutputs,
@@ -12,30 +12,24 @@ use crate::error::{StfError, StfResult};
 pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     state_accessor: &S,
     sender: AccountId,
-    acct_state: &S::AccountState,
+    snark_state: &<S::AccountState as IAccountState>::SnarkAccountState,
     update: &'a SnarkAccountUpdate,
+    cur_balance: BitcoinAmount,
 ) -> StfResult<VerifiedUpdate<'a>> {
-    let type_state = acct_state.get_type_state()?;
     let operation = update.operation();
     let outputs = operation.outputs();
-    let state = match type_state {
-        AccountTypeState::Empty => {
-            return Ok(VerifiedUpdate { operation });
-        }
-        AccountTypeState::Snark(s) => s,
-    };
 
     // 1. Check seq_no matches
-    if state.seqno() != operation.seq_no() {
+    if snark_state.seqno() != operation.seq_no() {
         return Err(StfError::InvalidUpdateSequence {
             account_id: sender,
-            expected: state.seqno(),
+            expected: snark_state.seqno(),
             got: operation.seq_no(),
         });
     }
 
     // 2. Check message counts / proof indices line up
-    let cur_idx = state.next_inbox_idx();
+    let cur_idx = snark_state.next_inbox_idx();
     let new_idx = operation.new_state().next_inbox_msg_idx();
     let processed_len = operation.processed_messages().len() as u64;
 
@@ -54,15 +48,15 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     verify_ledger_refs(operation.ledger_refs(), state_accessor)?;
 
     // Create message proofs
-    let message_proofs = get_message_proofs::<S>(sender, update, &state)?;
+    let message_proofs = get_message_proofs::<S>(sender, update, snark_state)?;
     // 4. Verify input mmr proofs
-    verify_input_mmr_proofs::<S>(sender, &state, &message_proofs)?;
+    verify_input_mmr_proofs::<S>(sender, snark_state, &message_proofs)?;
 
     // 4. Verify outputs can be applied safely
-    verify_update_outputs_safe(outputs, sender, acct_state, state_accessor)?;
+    verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
     // 5. Verify the witness check
-    verify_update_witness(sender, acct_state, update, state_accessor)?;
+    verify_update_witness(sender, snark_state, update, state_accessor)?;
 
     Ok(VerifiedUpdate { operation })
 }
@@ -113,16 +107,12 @@ pub(crate) fn verify_input_mmr_proofs<S: StateAccessor>(
 
 pub(crate) fn verify_update_witness<S: StateAccessor>(
     sender: AccountId,
-    acct_state: &<S as StateAccessor>::AccountState,
+    snark_state: &<S::AccountState as IAccountState>::SnarkAccountState,
     update: &SnarkAccountUpdate,
     _state_accessor: &S,
 ) -> StfResult<()> {
-    let snark_state = match acct_state.get_type_state()? {
-        AccountTypeState::Empty => return Ok(()),
-        AccountTypeState::Snark(state) => state,
-    };
     let vk = snark_state.verifier_key();
-    let claim: Vec<u8> = compute_update_claim::<S>(acct_state, update.operation());
+    let claim: Vec<u8> = compute_update_claim::<S>(snark_state, update.operation());
     let is_valid = vk
         .verify_claim_witness(&claim, update.update_proof())
         .is_ok();
@@ -135,7 +125,7 @@ pub(crate) fn verify_update_witness<S: StateAccessor>(
 }
 
 fn compute_update_claim<S: StateAccessor>(
-    _acct_state: &<S as StateAccessor>::AccountState,
+    _snark_state: &<S::AccountState as IAccountState>::SnarkAccountState,
     _operation: &UpdateOperationData,
 ) -> Vec<u8> {
     // Use new state, processed messages, old state, refs and outputs to compute claim
@@ -144,18 +134,11 @@ fn compute_update_claim<S: StateAccessor>(
 
 pub(crate) fn verify_update_outputs_safe<S: StateAccessor>(
     outputs: &UpdateOutputs,
-    sender: AccountId,
-    acct_state: &S::AccountState,
     state_accessor: &S,
+    cur_balance: BitcoinAmount,
 ) -> StfResult<()> {
-    let original_balance = acct_state.balance();
     let transfers = outputs.transfers();
     let messages = outputs.messages();
-
-    // Check if sender exists
-    if !state_accessor.check_account_exists(sender)? {
-        return Err(StfError::NonExistentAccount(sender));
-    }
 
     // Check if receivers exist
     for t in transfers {
@@ -171,11 +154,11 @@ pub(crate) fn verify_update_outputs_safe<S: StateAccessor>(
     }
 
     let total_sent = outputs
-        .total_output_value()
+        .compute_total_value()
         .ok_or(StfError::BitcoinAmountOverflow)?;
 
     // Check if there is sufficient balance.
-    if total_sent > original_balance {
+    if total_sent > cur_balance {
         return Err(StfError::InsufficientBalance);
     }
     Ok(())

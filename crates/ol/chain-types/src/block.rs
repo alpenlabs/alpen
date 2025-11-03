@@ -189,27 +189,14 @@ pub struct L1Update {
     /// The state root before applying updates from L1.
     pub preseal_state_root: Buf32,
 
-    /// L1 height the manifests are read upto.
-    pub new_l1_blk_height: u32,
-
-    /// L1 block hash the manifests are read upto.
-    pub new_l1_blkid: Buf32,
-
     /// Manifests from last l1 height to the new l1 height.
     pub manifests: Vec<AsmManifest>,
 }
 
 impl L1Update {
-    pub fn new(
-        preseal_state_root: Buf32,
-        new_l1_blk_height: u32,
-        new_l1_blkid: Buf32,
-        manifests: Vec<AsmManifest>,
-    ) -> Self {
+    pub fn new(preseal_state_root: Buf32, manifests: Vec<AsmManifest>) -> Self {
         Self {
             preseal_state_root,
-            new_l1_blk_height,
-            new_l1_blkid,
             manifests,
         }
     }
@@ -218,19 +205,15 @@ impl L1Update {
         self.preseal_state_root
     }
 
-    pub fn new_l1_blk_height(&self) -> u32 {
-        self.new_l1_blk_height
-    }
-
-    pub fn new_l1_blkid(&self) -> Buf32 {
-        self.new_l1_blkid
+    pub fn manifests(&self) -> &[AsmManifest] {
+        &self.manifests
     }
 }
 
 /// A manifest containing ASM data corresponding to a L1 block.
 #[derive(Debug, Clone)]
 pub struct AsmManifest {
-    /// L1 block id.
+    /// L1 block height.
     l1_blkheight: u32,
 
     /// L1 block id.

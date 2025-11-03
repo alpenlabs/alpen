@@ -9,7 +9,7 @@ use crate::coin::Coin;
 type Seqno = u64;
 
 /// Abstract account state.
-pub trait IAccountState: Sized {
+pub trait IAccountState: Sized + Clone {
     /// Type representing snark account state.
     type SnarkAccountState: ISnarkAccountState;
 
@@ -53,6 +53,7 @@ pub enum AccountTypeState<T: IAccountState> {
 
 /// Abstract snark account state.
 pub trait ISnarkAccountState: Sized {
+    /// Verifier key to verify the updates.
     fn verifier_key(&self) -> &PredicateKey;
 
     // Proof state accessors

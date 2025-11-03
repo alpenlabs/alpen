@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, AccountSerial};
+use strata_acct_types::AccountId;
 use strata_primitives::Buf32;
 
 /// Log emitted during OL block execution.
