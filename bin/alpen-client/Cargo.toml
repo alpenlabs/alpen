@@ -6,25 +6,13 @@ version = "0.3.0-alpha.1"
 [lints]
 workspace = true
 
-[features]
-default = ["sled"]
-sled = ["dep:sled", "dep:typed-sled", "alpen-reth-db/sled"]
-rocksdb = [
-  "alpen-reth-db/rocksdb",
-  "dep:rockbound",
-  "dep:strata-db-store-rocksdb",
-]
-
 [[bin]]
 name = "alpen-client"
 path = "src/main.rs"
 
 [dependencies]
 alpen-chainspec.workspace = true
-alpen-reth-db.workspace = true
-alpen-reth-exex.workspace = true
 alpen-reth-node.workspace = true
-alpen-reth-rpc.workspace = true
 strata-acct-types.workspace = true
 strata-db-store-rocksdb = { workspace = true, optional = true }
 strata-ee-acct-runtime.workspace = true
@@ -44,14 +32,11 @@ reth-cli-util.workspace = true
 reth-db.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
-reth-payload-builder.workspace = true
 reth-provider.workspace = true
 rockbound = { workspace = true, optional = true }
-sled = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-typed-sled = { workspace = true, optional = true }
 
 [dev-dependencies]
 mockall.workspace = true

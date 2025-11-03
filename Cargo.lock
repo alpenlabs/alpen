@@ -1046,10 +1046,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-engine",
  "alpen-chainspec",
- "alpen-reth-db",
- "alpen-reth-exex",
  "alpen-reth-node",
- "alpen-reth-rpc",
  "async-trait",
  "clap",
  "eyre",
@@ -1061,10 +1058,8 @@ dependencies = [
  "reth-db",
  "reth-node-builder",
  "reth-node-core",
- "reth-payload-builder",
  "reth-provider",
  "rockbound",
- "sled",
  "strata-acct-types",
  "strata-db-store-rocksdb",
  "strata-ee-acct-runtime",
@@ -1074,7 +1069,6 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tracing",
- "typed-sled",
 ]
 
 [[package]]
