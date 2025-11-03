@@ -250,7 +250,7 @@ impl<K: Clone + Eq + Hash, V: Clone, E: From<OpsError> + std::error::Error + Clo
                 trace!("re-acquired cache lock");
                 safely_remove_cache_slot(&mut cache_guard, k, &slot);
 
-                Err(error.into())
+                Err(error)
             }
         }
     }
