@@ -955,7 +955,7 @@ pub fn mpt_from_proof(proof_nodes: &[MptNode]) -> Result<MptNode> {
                 if let Some(child) = children.iter_mut().flatten().find(
                     |child| matches!(child.as_data(), MptNodeData::Digest(d) if d == child_ref),
                 ) {
-                    *child = Box::new(replacement);
+                    **child = replacement;
                 } else {
                     panic!("node {i} does not reference the successor");
                 }

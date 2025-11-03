@@ -284,8 +284,6 @@ mod tests {
             params: &Self::Params,
         ) -> Result<strata_primitives::proof::ProofContext, crate::errors::ProvingTaskError>
         {
-            let mut batch = Buf32::default();
-            batch.0[0] = *params as u8;
             Ok(strata_primitives::proof::ProofContext::EvmEeStf(
                 EvmEeBlockCommitment::new(*params, Buf32::default()),
                 EvmEeBlockCommitment::new(*params, Buf32::default()),
