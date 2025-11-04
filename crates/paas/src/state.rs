@@ -98,22 +98,29 @@ impl<D: ProofDatabase> ProverServiceState<D> {
             .map_err(|e| PaaSError::Storage(e.to_string()))?;
 
         // Convert zkaleido ProofReceiptWithMetadata to our ProofData
-        Ok(proof_receipt.map(|_receipt| {
-            // TODO: Properly serialize ProofReceiptWithMetadata
-            // For now, return placeholder data
+        Ok(proof_receipt.map(|receipt| {
+            // Serialize the entire ProofReceiptWithMetadata using borsh
+            let receipt_bytes = borsh::to_vec(&receipt)
+                .expect("ProofReceiptWithMetadata should serialize successfully");
+
             ProofData {
-                receipt: vec![],
-                public_values: None,
-                verification_key: None,
+                receipt: receipt_bytes,
+                public_values: None,    // TODO: Extract if needed by clients
+                verification_key: None, // TODO: Extract if needed by clients
             }
         }))
     }
 
     /// Cancels a task
+    ///
+    /// Note: Currently only validates task existence. Full cancellation requires:
+    /// - Worker pool coordination to stop in-flight proofs
+    /// - Graceful cleanup of resources
+    /// - State transition to Cancelled status
     pub fn cancel_task(&mut self, task_id: TaskId) -> Result<(), PaaSError> {
-        // For now, just verify task exists
+        // Verify task exists
         let _ = self.task_tracker.get_task_status(task_id)?;
-        // TODO: Implement actual cancellation logic
+        // TODO: Implement actual cancellation logic (requires worker pool coordination)
         Ok(())
     }
 
@@ -180,7 +187,9 @@ impl<D: ProofDatabase> ProverServiceState<D> {
             total_proofs: self.stats.total_proofs,
             completed_proofs: self.stats.completed_proofs,
             failed_proofs: self.stats.failed_proofs,
-            average_duration_ms: 0, // TODO: Track durations
+            // TODO: Track task durations (requires storing start_time in TaskTracker
+            // and calculating elapsed time on completion)
+            average_duration_ms: 0,
             worker_stats: crate::status::WorkerStats {
                 total_workers: self.config.workers.worker_count.values().sum(),
                 busy_workers: self.task_tracker.get_stats().proving,

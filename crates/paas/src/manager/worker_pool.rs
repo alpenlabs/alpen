@@ -153,8 +153,13 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                         Err(e) => {
                             let error_msg = e.to_string();
                             error!(?task_id, ?error_msg, "Proof generation failed");
-                            // For now, treat all errors as transient failures
-                            // TODO: Distinguish between transient and permanent failures
+
+                            // TODO: Classify errors into transient vs permanent failures:
+                            // - Transient: Network timeouts, temporary resource exhaustion, DB
+                            //   locks
+                            // - Permanent: Invalid proof context, unsupported VM type, malformed
+                            //   data
+                            // For now, conservatively treat all errors as transient (will retry)
                             if let Err(e) = prover_handle
                                 .mark_transient_failure(task_id, error_msg)
                                 .await

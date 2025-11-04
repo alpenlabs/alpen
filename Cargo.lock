@@ -14292,6 +14292,7 @@ name = "strata-paas"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "borsh",
  "chrono",
  "serde",
  "sled",
