@@ -226,7 +226,6 @@ where
 mod tests {
     use strata_acct_types::BitcoinAmount;
     use strata_identifiers::{Buf32, OLBlockCommitment};
-    use tokio::sync::watch;
 
     use super::*;
     use crate::traits::{

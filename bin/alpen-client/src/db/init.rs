@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use threadpool::ThreadPool;
 
-#[cfg(feature = "rocksdb")]
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 use crate::db::rocksdb::EeNodeRocksDb;
 #[cfg(feature = "sled")]
 use crate::db::sled::EeNodeDBSled;

@@ -41,7 +41,7 @@ pub(crate) enum DbError {
     #[error("sled txn: {0}")]
     SledTxn(String),
 
-    #[cfg(feature = "rocksdb")]
+    #[cfg(all(feature = "rocksdb", not(feature = "sled")))]
     /// RocksDB transaction error.
     #[error("rocksdb txn: {0}")]
     RocksDBTxn(String),
@@ -78,7 +78,7 @@ impl From<sled::transaction::TransactionError<typed_sled::error::Error>> for DbE
     }
 }
 
-#[cfg(feature = "rocksdb")]
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 impl From<rockbound::TransactionError<DbError>> for DbError {
     fn from(value: rockbound::TransactionError<DbError>) -> Self {
         match value {
@@ -88,7 +88,7 @@ impl From<rockbound::TransactionError<DbError>> for DbError {
     }
 }
 
-#[cfg(feature = "rocksdb")]
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 impl From<anyhow::Error> for DbError {
     fn from(value: anyhow::Error) -> Self {
         Self::Other(value.to_string())

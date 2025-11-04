@@ -38,15 +38,14 @@ pub(crate) enum OlClientError {
     Other(#[from] eyre::Error),
 }
 
+#[allow(dead_code, clippy::allow_attributes, reason = "used in tests")]
 impl OlClientError {
     /// Creates a network error.
-    #[expect(dead_code, reason = "wip")]
     pub(crate) fn network(msg: impl Into<String>) -> Self {
         Self::Network(msg.into())
     }
 
     /// Creates an RPC error.
-    #[expect(dead_code, reason = "wip")]
     pub(crate) fn rpc(msg: impl Into<String>) -> Self {
         Self::Rpc(msg.into())
     }
