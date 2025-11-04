@@ -14,7 +14,6 @@ rocksdb = [
   "dep:strata-db-store-rocksdb",
   "dep:bincode",
   "dep:anyhow",
-  "dep:tempfile",
 ]
 
 [[bin]]
@@ -52,7 +51,6 @@ reth-node-core.workspace = true
 reth-provider.workspace = true
 rockbound = { workspace = true, optional = true }
 sled = { workspace = true, optional = true }
-tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
@@ -62,3 +60,4 @@ typed-sled = { workspace = true, optional = true }
 [dev-dependencies]
 mockall.workspace = true
 strata-primitives.workspace = true
+tempfile.workspace = true
