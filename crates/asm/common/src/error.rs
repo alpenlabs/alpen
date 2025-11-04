@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use strata_asm_types::L1VerificationError;
 use strata_l1_txfmt::SubprotocolId;
-use strata_mmr::error::MerkleError;
+use strata_merkle::error::MerkleError;
 use strata_msg_fmt::TypeId;
 use thiserror::Error;
 

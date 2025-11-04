@@ -13172,7 +13172,7 @@ dependencies = [
  "strata-asm-types",
  "strata-identifiers",
  "strata-l1-txfmt",
- "strata-mmr",
+ "strata-merkle",
  "strata-msg-fmt",
  "thiserror 2.0.16",
  "tracing",

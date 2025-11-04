@@ -100,14 +100,14 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     let manifest = AsmManifest::new(block_root, wtx_root, manifest_logs);
     let manifest_hash: [u8; 32] = manifest.compute_hash();
 
-    let mut history_mmr = Mmr64::from_compact(&pre_state.chain_view.history_mmr);
+    let mut history_mmr = Mmr64::from(pre_state.chain_view.history_mmr.clone());
     history_mmr
         .add_leaf(manifest_hash)
         .map_err(AsmError::HeaderMmr)?;
 
     let chain_view = ChainViewState {
         pow_state,
-        history_mmr: history_mmr.to_compact(),
+        history_mmr: history_mmr.into(),
     };
     let state = AnchorState {
         chain_view,

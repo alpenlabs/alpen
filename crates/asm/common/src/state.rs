@@ -10,7 +10,7 @@ pub const HEADER_MMR_CAP_LOG2: usize = 64;
 
 /// Creates an empty compact MMR ready to accept the first block leaf.
 pub fn empty_history_mmr() -> CompactMmr64 {
-    Mmr64::new(HEADER_MMR_CAP_LOG2).to_compact()
+    Mmr64::new(HEADER_MMR_CAP_LOG2).into()
 }
 
 /// Anchor state for the Anchor State Machine (ASM), the core of the Strata protocol.

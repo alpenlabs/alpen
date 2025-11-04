@@ -5,7 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_chain_types::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId};
 use strata_l1_txfmt::SubprotocolId;
-use strata_mmr::MerkleProof;
+use strata_merkle::MerkleProof;
 
 use crate::{AsmLogEntry, L1TxIndex};
 

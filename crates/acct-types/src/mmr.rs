@@ -12,7 +12,7 @@ pub type StrataHasher = Sha256Hasher;
 pub type Hash = [u8; 32];
 
 /// Compact 64 bit merkle mountain range.
-pub type CompactMmr64 = strata_merkle::CompactMmr64<StrataHasher>;
+pub type CompactMmr64 = strata_merkle::CompactMmr64<Hash>;
 
 /// 64 bit merkle mountain range.
 pub type Mmr64 = MerkleMr64<StrataHasher>;

@@ -17,7 +17,7 @@ pub fn verify_aux_input(
         return Ok(VerifiedAuxInput::default());
     }
 
-    let mmr = Mmr64::from_compact(mmr_state);
+    let mmr = Mmr64::from(mmr_state.clone());
     let mut verified = VerifiedAuxInput::default();
     for (tx_index, batch) in &responses.data {
         let mut verified_batch = VerifiedAuxData::default();
@@ -226,7 +226,7 @@ mod tests {
             .add_leaf_updating_proof_list(manifest_hash, proof_list.as_mut_slice())
             .expect("proof generation succeeds");
 
-        let compact_mmr = mmr.to_compact();
+        let compact_mmr = mmr.into();
         let tx_index = 5;
 
         let mut responses = AuxResponses::default();
