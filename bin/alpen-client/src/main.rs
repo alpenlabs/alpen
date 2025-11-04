@@ -63,8 +63,8 @@ fn main() {
 
             let params = AlpenEeParams::new(
                 AccountId::new([0; 32]),
-                genesis_info.blockhash,
-                genesis_info.stateroot,
+                genesis_info.blockhash(),
+                genesis_info.stateroot(),
                 0,
                 OLBlockId::null(), // TODO
             );

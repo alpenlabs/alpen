@@ -2,8 +2,17 @@ use alloy_primitives::B256;
 use reth_chainspec::ChainSpec;
 
 pub(crate) struct BlockInfo {
-    pub blockhash: B256,
-    pub stateroot: B256,
+    blockhash: B256,
+    stateroot: B256,
+}
+
+impl BlockInfo {
+    pub(crate) fn blockhash(&self) -> B256 {
+        self.blockhash
+    }
+    pub(crate) fn stateroot(&self) -> B256 {
+        self.stateroot
+    }
 }
 
 pub(crate) fn ee_genesis_block_info(chain_spec: &ChainSpec) -> BlockInfo {
