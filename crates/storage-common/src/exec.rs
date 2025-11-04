@@ -9,8 +9,8 @@
 //! ## Architecture
 //!
 //! - `inst_ops!` - Low-level macro that accepts a custom error type parameter
-//! - `inst_ops_generic!` - High-level macro that generates a complete ops interface with
-//!   custom error types
+//! - `inst_ops_generic!` - High-level macro that generates a complete ops interface with custom
+//!   error types
 //! - `inst_ops_ctx_shim_generic!` - Helper macro for generating context shim functions
 //!
 //! These macros are designed to be error-type agnostic, allowing different crates to use
@@ -41,8 +41,8 @@ pub enum OpsError {
 ///
 /// ### Usage
 ///
-/// The macro defines an operations trait for a specified context, error type, and a list of methods.
-/// Each method in the generated interface will have both `async` and `sync` variants.
+/// The macro defines an operations trait for a specified context, error type, and a list of
+/// methods. Each method in the generated interface will have both `async` and `sync` variants.
 ///
 /// ```ignore
 /// inst_ops! {
@@ -70,8 +70,8 @@ pub enum OpsError {
 /// - **`Context<D: SequencerDatabase>`**: The context type that the operations will act upon. This
 ///   usually wraps the database or related dependencies.
 /// - **`MyError`**: The error type for operations. Must implement `From<OpsError>`.
-/// - **Method definitions**: Specify the function name, input parameters, and return type. The macro
-///   will automatically generate both async and sync variants of these methods.
+/// - **Method definitions**: Specify the function name, input parameters, and return type. The
+///   macro will automatically generate both async and sync variants of these methods.
 ///
 /// This macro simplifies the definition and usage of database operations by reducing boilerplate
 /// code and ensuring uniformity in async/sync APIs and by allowing to avoid the generic `<D>`
