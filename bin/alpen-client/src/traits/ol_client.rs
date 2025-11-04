@@ -35,7 +35,7 @@ pub(crate) trait OlClient: Sized + Send + Sync {
     /// Includes the latest, confirmed, and finalized block commitments.
     async fn chain_status(&self) -> Result<OlChainStatus, OlClientError>;
 
-    /// Retrieves block commitments for a range of slots.
+    /// Retrieves block commitments for a range of slots (inclusive).
     ///
     /// # Arguments
     ///

@@ -1,39 +1,23 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use strata_ee_acct_runtime::apply_update_operation_unconditionally;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use strata_snark_acct_types::UpdateOperationUnconditionalData;
-use tokio::sync::watch;
 use tracing::{debug, error, warn};
 
-use crate::{
-    ol_tracker::{
-        state::{build_tracker_state, ConsensusHeads},
-        OlTrackerState,
-    },
-    traits::{
-        ol_client::{
-            block_commitments_in_range_checked, chain_status_checked,
-            get_update_operations_for_blocks_checked, OlChainStatus, OlClient,
-        },
-        storage::{EeAccountStateAtBlock, Storage},
-    },
+use super::{
+    ctx::OlTrackerCtx,
+    reorg::handle_reorg,
+    state::{build_tracker_state, OlTrackerState},
 };
-
-/// Default number of Ol blocks to process in one cycle
-pub(crate) const DEFAULT_MAX_BLOCKS_FETCH: u64 = 10;
-/// Default ms to wait between ol polls
-pub(crate) const DEFAULT_POLL_WAIT_MS: u64 = 100;
-
-pub(crate) struct OlTrackerCtx<TStorage, TOlClient> {
-    pub(crate) storage: Arc<TStorage>,
-    pub(crate) ol_client: Arc<TOlClient>,
-    pub(crate) ee_state_tx: watch::Sender<EeAccountState>,
-    pub(crate) consensus_tx: watch::Sender<ConsensusHeads>,
-    pub(crate) max_blocks_fetch: u64,
-    pub(crate) poll_wait_ms: u64,
-}
+use crate::traits::{
+    ol_client::{
+        block_commitments_in_range_checked, chain_status_checked,
+        get_update_operations_for_blocks_checked, OlChainStatus, OlClient,
+    },
+    storage::{EeAccountStateAtBlock, Storage},
+};
 
 pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
     mut state: OlTrackerState,
@@ -54,7 +38,9 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
                 }
             }
             Ok(TrackOlAction::Reorg) => {
-                handle_reorg(&mut state, &ctx).await;
+                if let Err(error) = handle_reorg(&mut state, &ctx).await {
+                    error!(%error, "failed to handle reorg");
+                }
             }
             Ok(TrackOlAction::Noop) => {}
             Err(error) => {
@@ -229,34 +215,11 @@ where
         *state = next_state;
 
         // 4. notify watchers
-        notify_state_update(&ctx.ee_state_tx, state.best_ee_state());
-        notify_consensus_update(&ctx.consensus_tx, state.get_consensus_heads());
+        ctx.notify_state_update(state.best_ee_state());
+        ctx.notify_consensus_update(state.get_consensus_heads());
     }
 
     Ok(())
-}
-
-/// Notify watchers of state update.
-pub(crate) fn notify_state_update(sender: &watch::Sender<EeAccountState>, state: &EeAccountState) {
-    let _ = sender.send(state.clone());
-}
-
-pub(crate) fn notify_consensus_update(
-    sender: &watch::Sender<ConsensusHeads>,
-    update: ConsensusHeads,
-) {
-    let _ = sender.send(update);
-}
-
-async fn handle_reorg<TStorage, TOlClient>(
-    _state: &mut OlTrackerState,
-    _ctx: &OlTrackerCtx<TStorage, TOlClient>,
-) where
-    TStorage: Storage,
-    TOlClient: OlClient,
-{
-    warn!("handle reorg");
-    todo!()
 }
 
 #[cfg(test)]
@@ -288,39 +251,6 @@ mod tests {
             best: block_state.clone(),
             confirmed: block_state.clone(),
             finalized: block_state,
-        }
-    }
-
-    mod notify_state_update_tests {
-        use super::*;
-
-        #[test]
-        fn test_notification_sent() {
-            let initial_state =
-                EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
-            let (tx, mut rx) = watch::channel(initial_state.clone());
-
-            let new_state = EeAccountState::new([1u8; 32], BitcoinAmount::zero(), vec![], vec![]);
-
-            notify_state_update(&tx, &new_state);
-
-            // Verify notification was received
-            assert_eq!(*rx.borrow_and_update(), new_state);
-        }
-
-        #[test]
-        fn test_notification_with_no_receivers() {
-            let initial_state =
-                EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
-            let (tx, rx) = watch::channel(initial_state);
-
-            // Drop the receiver
-            drop(rx);
-
-            let new_state = EeAccountState::new([1u8; 32], BitcoinAmount::zero(), vec![], vec![]);
-
-            // Should not panic even with no receivers
-            notify_state_update(&tx, &new_state);
         }
     }
 

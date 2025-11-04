@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy_primitives::B256;
 use strata_acct_types::AccountId;
 use strata_identifiers::{CredRule, OLBlockId};
@@ -66,7 +68,7 @@ impl AlpenEeParams {
 #[derive(Debug, Clone)]
 pub(crate) struct AlpenEeConfig {
     /// Chain specific config.
-    params: AlpenEeParams,
+    params: Arc<AlpenEeParams>,
 
     /// To verify preconfirmed updates from sequencer.
     sequencer_credrule: CredRule,
@@ -90,7 +92,7 @@ impl AlpenEeConfig {
         db_retry_count: u16,
     ) -> Self {
         Self {
-            params,
+            params: Arc::new(params),
             sequencer_credrule,
             ol_client_http,
             ee_sequencer_http,
@@ -98,7 +100,7 @@ impl AlpenEeConfig {
         }
     }
 
-    pub(crate) fn params(&self) -> &AlpenEeParams {
+    pub(crate) fn params(&self) -> &Arc<AlpenEeParams> {
         &self.params
     }
 

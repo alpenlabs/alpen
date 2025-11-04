@@ -28,7 +28,7 @@ use crate::{
     db::init_db_storage,
     engine_control::{create_engine_control_task, AlpenRethExecEngine},
     genesis::ee_genesis_block_info,
-    ol_tracker::{init_ol_tracker_state, OlTrackerHandle},
+    ol_tracker::{init_ol_tracker_state, OlTrackerBuilder},
     traits::ol_client::{chain_status_checked, DummyOlClient},
 };
 
@@ -103,9 +103,14 @@ fn main() {
 
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
-                .on_node_started(|node| {
-                    let (ol_tracker, ol_tracker_task) =
-                        OlTrackerHandle::create(ol_tracker_state, storage, ol_client, None, None);
+                .on_node_started(move |node| {
+                    let (ol_tracker, ol_tracker_task) = OlTrackerBuilder::new(
+                        ol_tracker_state,
+                        config.params().clone(),
+                        storage,
+                        ol_client,
+                    )
+                    .build();
 
                     // TODO: p2p head block gossip
                     let (_preconf_tx, preconf_rx) = broadcast::channel(1);
