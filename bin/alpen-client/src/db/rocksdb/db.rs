@@ -169,3 +169,41 @@ impl EeNodeDb for EeNodeRocksDb {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rockbound::rocksdb;
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::ee_node_db_tests;
+
+    fn setup_db() -> EeNodeRocksDb {
+        // Set up RocksDB options
+        let mut opts = rocksdb::Options::default();
+        opts.create_missing_column_families(true);
+        opts.create_if_missing(true);
+
+        // Create temporary directory
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+
+        // Define column families for EE node schemas
+        let column_families = vec![
+            "OlBlockAtSlotSchema".to_string(),
+            "AccountStateAtOlBlockSchema".to_string(),
+        ];
+
+        // Open database
+        let db = rockbound::OptimisticTransactionDB::open(
+            temp_dir.keep(),
+            "test_ee_node_db",
+            column_families,
+            &opts,
+        )
+        .unwrap();
+
+        EeNodeRocksDb::new(Arc::new(db), 3)
+    }
+
+    ee_node_db_tests!(setup_db());
+}
