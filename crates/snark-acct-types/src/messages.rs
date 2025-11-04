@@ -47,7 +47,7 @@ impl MessageEntry {
     }
 
     // FIXME: just a placeholder until ssz
-    pub fn as_ssz_bytes(&self) -> Vec<u8> {
+    pub fn to_ssz_bytes(&self) -> Vec<u8> {
         todo!()
     }
 }

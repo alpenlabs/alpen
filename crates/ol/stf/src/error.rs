@@ -25,8 +25,11 @@ pub enum BlockValidationError {
     #[error("Invalid signature")]
     InvalidSignature,
 
-    #[error("State root mismatch: expected {expected}, got {got}")]
-    StateRootMismatch { expected: Buf32, got: Buf32 },
+    #[error("Pre-state root mismatch: expected {expected}, got {got}")]
+    PreStateRootMismatch { expected: Buf32, got: Buf32 },
+
+    #[error("Post-state root mismatch: expected {expected}, got {got}")]
+    PostStateRootMismatch { expected: Buf32, got: Buf32 },
 
     #[error("Logs root mismatch: expected {expected}, got {got}")]
     LogsRootMismatch { expected: Buf32, got: Buf32 },

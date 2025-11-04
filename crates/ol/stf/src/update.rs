@@ -62,7 +62,7 @@ pub(crate) fn send_message<S: StateAccessor>(
             Ok(Vec::new())
         }
         AccountTypeState::Snark(snark_state) => {
-            handle_snark_msg::<S>(cur_epoch, snark_state, from, msg_payload)
+            handle_snark_msg(cur_epoch, snark_state, from, msg_payload)
         }
     }
 }
@@ -92,7 +92,7 @@ pub(crate) fn send_transfer<S: StateAccessor>(
             Ok(Vec::new())
         }
         AccountTypeState::Snark(snark_state) => {
-            handle_snark_transfer::<S>(cur_epoch, snark_state, from, amt)
+            handle_snark_transfer(cur_epoch, snark_state, from, amt)
         }
     }
 }

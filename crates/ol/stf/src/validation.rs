@@ -8,6 +8,7 @@ use crate::error::BlockValidationError;
 
 /// Block validation before execution. Checks continuity, signature etc.
 pub fn pre_exec_block_validate(
+    state_accessor: &impl StateAccessor,
     block: &OLBlock,
     prev_header: &OLBlockHeader,
     params: &RollupParams,
@@ -17,8 +18,17 @@ pub fn pre_exec_block_validate(
 
     let cur_header = block.signed_header().header();
 
+    // Check pre-state roots match
+    let expected_pre_root = state_accessor.compute_state_root();
+    let got_pre_root = prev_header.state_root();
+    if expected_pre_root != got_pre_root {
+        return Err(BlockValidationError::PreStateRootMismatch {
+            expected: expected_pre_root,
+            got: got_pre_root,
+        });
+    }
+
     // Check slot continuity
-    // TODO: What to do with genesis block? I don't want to have Option<> lingering around.
     if cur_header.slot() > 0 {
         if cur_header.slot() != prev_header.slot() + 1 {
             return Err(BlockValidationError::SlotMismatch {
@@ -93,7 +103,7 @@ pub fn post_exec_block_validate<S: StateAccessor>(
     let expected = block.header().state_root();
     let got = new_state_root;
     if expected != got {
-        return Err(BlockValidationError::StateRootMismatch { expected, got });
+        return Err(BlockValidationError::PostStateRootMismatch { expected, got });
     }
 
     // Check logs root
