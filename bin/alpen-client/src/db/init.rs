@@ -2,10 +2,16 @@ use std::{path::Path, sync::Arc};
 
 use threadpool::ThreadPool;
 
-use crate::db::{sled::EeNodeDBSled, storage::EeNodeStorage};
+#[cfg(feature = "rocksdb")]
+use crate::db::rocksdb::EeNodeRocksDb;
+#[cfg(feature = "sled")]
+use crate::db::sled::EeNodeDBSled;
+use crate::db::storage::EeNodeStorage;
 
 #[cfg(feature = "sled")]
 type DatabaseImpl = EeNodeDBSled;
+#[cfg(feature = "rocksdb")]
+type DatabaseImpl = EeNodeRocksDb;
 
 fn init_db(datadir: &Path, db_retry_count: u16) -> eyre::Result<Arc<DatabaseImpl>> {
     #[cfg(feature = "sled")]
@@ -14,7 +20,7 @@ fn init_db(datadir: &Path, db_retry_count: u16) -> eyre::Result<Arc<DatabaseImpl
     }
     #[cfg(feature = "rocksdb")]
     {
-        todo!()
+        super::rocksdb::init_db(datadir, db_retry_count)
     }
 }
 

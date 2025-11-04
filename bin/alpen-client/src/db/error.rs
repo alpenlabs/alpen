@@ -34,6 +34,14 @@ pub(crate) enum DbError {
     #[cfg(feature = "sled")]
     #[error("sled txn: {0}")]
     SledTxn(String),
+
+    #[cfg(feature = "rocksdb")]
+    #[error("rocksdb txn: {0}")]
+    RocksDBTxn(String),
+
+    #[error("{0}")]
+    #[allow(dead_code, reason = "feature gated")]
+    Other(String),
 }
 
 impl DbError {
@@ -42,6 +50,7 @@ impl DbError {
     }
 }
 
+#[cfg(feature = "sled")]
 impl From<typed_sled::error::Error> for DbError {
     fn from(maybe_dberr: typed_sled::error::Error) -> Self {
         match maybe_dberr.downcast_abort::<DbError>() {
@@ -51,12 +60,30 @@ impl From<typed_sled::error::Error> for DbError {
     }
 }
 
+#[cfg(feature = "sled")]
 impl From<sled::transaction::TransactionError<typed_sled::error::Error>> for DbError {
     fn from(value: sled::transaction::TransactionError<typed_sled::error::Error>) -> Self {
         match value {
             sled::transaction::TransactionError::Abort(tsled_err) => tsled_err.into(),
             err => DbError::SledTxn(err.to_string()),
         }
+    }
+}
+
+#[cfg(feature = "rocksdb")]
+impl From<rockbound::TransactionError<DbError>> for DbError {
+    fn from(value: rockbound::TransactionError<DbError>) -> Self {
+        match value {
+            rockbound::TransactionError::Rollback(dberr) => dberr,
+            err => DbError::RocksDBTxn(err.to_string()),
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb")]
+impl From<anyhow::Error> for DbError {
+    fn from(value: anyhow::Error) -> Self {
+        Self::Other(value.to_string())
     }
 }
 

@@ -4,7 +4,7 @@ use strata_ee_acct_types::{EeAccountState, PendingFinclEntry, PendingInputEntry}
 use strata_ee_chain_types::SubjectDepositData;
 use strata_identifiers::{Buf32, OLBlockId};
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBOLBlockId(Buf32);
 
 impl From<OLBlockId> for DBOLBlockId {
@@ -19,7 +19,7 @@ impl From<DBOLBlockId> for OLBlockId {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBAccountStateAtSlot {
     slot: u64,
     account_state: DBEeAccountState,
@@ -38,7 +38,7 @@ impl DBAccountStateAtSlot {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBEeAccountState {
     last_exec_blkid: Hash,
     tracked_balance: DBBitcoinAmount,
@@ -69,7 +69,7 @@ impl From<DBEeAccountState> for EeAccountState {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 struct DBBitcoinAmount(u64);
 
 impl From<DBBitcoinAmount> for BitcoinAmount {
@@ -84,7 +84,7 @@ impl From<BitcoinAmount> for DBBitcoinAmount {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 struct DBPendingFinclEntry {
     epoch: u32,
     raw_tx_hash: Hash,
@@ -104,7 +104,7 @@ impl From<DBPendingFinclEntry> for PendingFinclEntry {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 enum DBPendingInputEntry {
     Deposit(DBSubjectDepositData),
 }
@@ -125,7 +125,7 @@ impl From<PendingInputEntry> for DBPendingInputEntry {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 struct DBSubjectDepositData {
     dest: DBSubjectId,
     value: DBBitcoinAmount,
@@ -146,7 +146,7 @@ impl From<SubjectDepositData> for DBSubjectDepositData {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 struct DBSubjectId([u8; 32]);
 
 impl From<DBSubjectId> for SubjectId {
