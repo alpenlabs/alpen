@@ -7,8 +7,10 @@ mod storage;
 #[cfg(feature = "rocksdb")]
 mod rocksdb;
 #[cfg(feature = "sled")]
-mod sled;
+mod sleddb;
 
+// NOTE: `sled` is gitignored
+use sleddb as sled;
 pub(crate) use error::DbError;
 pub(crate) use init::init_db_storage;
 
