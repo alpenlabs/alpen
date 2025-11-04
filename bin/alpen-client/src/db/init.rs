@@ -10,7 +10,7 @@ use crate::db::storage::EeNodeStorage;
 
 #[cfg(feature = "sled")]
 type DatabaseImpl = EeNodeDBSled;
-#[cfg(feature = "rocksdb")]
+#[cfg(all(feature = "rocksdb", not(feature = "sled")))]
 type DatabaseImpl = EeNodeRocksDb;
 
 fn init_db(datadir: &Path, db_retry_count: u16) -> eyre::Result<Arc<DatabaseImpl>> {
@@ -18,7 +18,7 @@ fn init_db(datadir: &Path, db_retry_count: u16) -> eyre::Result<Arc<DatabaseImpl
     {
         super::sled::init_db(datadir, db_retry_count)
     }
-    #[cfg(feature = "rocksdb")]
+    #[cfg(all(feature = "rocksdb", not(feature = "sled")))]
     {
         super::rocksdb::init_db(datadir, db_retry_count)
     }
