@@ -2,8 +2,8 @@
 //!
 //! Before handing auxiliary responses to `process_txs`, call [`verify_aux_input`]
 //! to check the supplied proofs against the header MMR and obtain a verified
-//! [`AuxInput`](strata_asm_common::AuxInput).
+//! [`VerifiedAuxInput`](strata_asm_common::VerifiedAuxInput).
 
 mod verification;
 
-pub use verification::verify_aux_input;
+pub use verification::{AuxVerificationError, verify_aux_input};

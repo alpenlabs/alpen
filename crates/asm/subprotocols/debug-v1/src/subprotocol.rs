@@ -4,8 +4,8 @@
 //! with the Strata Anchor State Machine (ASM).
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInput, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
-    TxInputRef, logging,
+    AnchorState, AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
+    TxInputRef, VerifiedAuxInput, logging,
 };
 use strata_asm_proto_bridge_v1::BridgeIncomingMsg;
 
@@ -37,7 +37,7 @@ impl Subprotocol for DebugSubproto {
         _state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         _anchor_pre: &AnchorState,
-        _aux_resolver: &AuxInput,
+        _aux_resolver: &VerifiedAuxInput,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

@@ -12,7 +12,9 @@ preprocess = ["strata-asm-common/preprocess"]
 
 [dependencies]
 strata-asm-aux.workspace = true
+strata-asm-chain-types.workspace = true
 strata-asm-common.workspace = true
+strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 
 bitcoin.workspace = true

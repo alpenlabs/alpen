@@ -1,3 +1,4 @@
+use bitcoin::hashes::Hash;
 use moho_types::{ExportState, InnerStateCommitment, StateReference};
 use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
@@ -42,10 +43,21 @@ impl MohoProgram for AsmStfProgram {
 
         // 2. Restructure the raw input to be formatted according to what we want.
         let protocol_txs = group_txs_by_subprotocol(spec.magic_bytes(), &input.block.0.txdata);
+
+        // Calculate witness merkle root; valid blocks always commit to one.
+        let wtx_root = input
+            .block
+            .0
+            .witness_root()
+            .expect("non-empty blocks always have a witness merkle root")
+            .to_byte_array()
+            .into();
+
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &input.block.0.header,
             aux_responses: &input.aux_inputs,
+            wtx_root,
         };
 
         // 3. Actually invoke the ASM state transition function.

@@ -12,7 +12,7 @@ pub use strata_l1_txfmt::SubprotocolId;
 #[cfg(feature = "preprocess")]
 use crate::aux::AuxRequests;
 use crate::{
-    AnchorState, AsmError, SectionState, TxInputRef, aux::AuxInput, log::AsmLogEntry,
+    AnchorState, AsmError, SectionState, TxInputRef, aux::VerifiedAuxInput, log::AsmLogEntry,
     msg::InterprotoMsg,
 };
 
@@ -116,7 +116,7 @@ pub trait Subprotocol: 'static {
     ///
     /// This is the core transaction processing method where subprotocols implement their
     /// specific business logic. The method receives auxiliary inputs (requested
-    /// during `pre_process_txs`) via an [`AuxInput`] and can generate messages to other
+    /// during `pre_process_txs`) via a [`VerifiedAuxInput`] and can generate messages to other
     /// subprotocols and emit logs.
     ///
     /// # Arguments
@@ -130,7 +130,7 @@ pub trait Subprotocol: 'static {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_input: &AuxInput,
+        aux_input: &VerifiedAuxInput,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );
@@ -193,7 +193,7 @@ pub trait SubprotoHandler {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_state: &AnchorState,
-        aux_input: &AuxInput,
+        aux_input: &VerifiedAuxInput,
     );
 
     /// Accepts a message.  This is called while processing other subprotocols.

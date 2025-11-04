@@ -4,10 +4,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_aux::verify_aux_input;
-#[cfg(feature = "preprocess")]
-use strata_asm_common::AuxRequestTable;
 use strata_asm_common::{
-    AnchorState, AuxDataTable, AuxInput, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AuxDataTable, AuxRequestTable, Stage, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
@@ -91,19 +89,16 @@ impl Stage for ProcessStage<'_> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        let default_aux_data = AuxInput::default();
-        let subprotocol_aux_data = self.aux_inputs.get(&S::ID).unwrap_or(&default_aux_data);
-
-        if let Err(err) = verify_aux_input(
-            subprotocol_aux_data,
-            &self.anchor_state.chain_view.history_mmr,
-            S::ID,
-        ) {
-            panic!("{err}");
-        }
+        let raw_aux = self.aux_inputs.get(&S::ID);
+        let verified_aux = raw_aux
+            .map(|raw| {
+                verify_aux_input(raw, &self.anchor_state.chain_view.history_mmr, S::ID)
+                    .unwrap_or_else(|err| panic!("failed to verify aux input: {err:?}"))
+            })
+            .unwrap_or_default();
 
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, subprotocol_aux_data);
+            .invoke_process_txs::<S>(txs, self.anchor_state, &verified_aux);
     }
 }
 

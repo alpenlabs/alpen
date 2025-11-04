@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_identifiers::{Buf32, hash::compute_borsh_hash};
 
 /// ASM execution manifest containing encoded logs and header data.
 ///
@@ -8,35 +9,69 @@ use serde::{Deserialize, Serialize};
 /// contexts that cannot depend on the bitcoin crate (e.g., ledger-types).
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct AsmManifest {
-    /// Encoded ASM logs as raw bytes
-    pub encoded_logs: Vec<u8>,
+    /// Bitcoin block hash (32-byte double SHA256 of the block header).
+    pub block_root: Buf32,
 
-    /// Encoded header as raw bytes (not decoded bitcoin::Header)
-    pub encoded_header: Vec<u8>,
+    /// Merkle root of the block's witness transaction IDs.
+    pub wtx_root: Buf32,
 
-    /// Additional encoded data from ASM execution
-    pub encoded_data: Vec<u8>,
-    // TODO: Add other fields as needed based on actual ASM execution output
+    /// Logs emitted by the ASM STF.
+    pub logs: Vec<AsmLog>,
+}
+
+/// Encoded ASM log entry.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct AsmLog(Vec<u8>);
+
+impl AsmLog {
+    /// Create an AsmLog from raw bytes.
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    /// Get a reference to the raw log bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Consume the log and return the raw bytes.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+impl From<Vec<u8>> for AsmLog {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::new(bytes)
+    }
 }
 
 impl AsmManifest {
-    pub fn new(encoded_logs: Vec<u8>, encoded_header: Vec<u8>, encoded_data: Vec<u8>) -> Self {
+    pub fn new(block_root: Buf32, wtx_root: Buf32, logs: Vec<AsmLog>) -> Self {
         Self {
-            encoded_logs,
-            encoded_header,
-            encoded_data,
+            block_root,
+            wtx_root,
+            logs,
         }
     }
 
-    pub fn encoded_logs(&self) -> &[u8] {
-        &self.encoded_logs
+    pub fn block_root(&self) -> &Buf32 {
+        &self.block_root
     }
 
-    pub fn encoded_header(&self) -> &[u8] {
-        &self.encoded_header
+    pub fn wtx_root(&self) -> &Buf32 {
+        &self.wtx_root
     }
 
-    pub fn encoded_data(&self) -> &[u8] {
-        &self.encoded_data
+    pub fn logs(&self) -> &[AsmLog] {
+        &self.logs
+    }
+
+    /// Computes the flat SHA-256 hash of the Borsh-encoded manifest.
+    ///
+    /// This serves as a temporary stand-in for the SSZ hash tree root that will
+    /// ultimately back the header MMR leaf.
+    pub fn compute_hash(&self) -> [u8; 32] {
+        compute_borsh_hash(self).into()
     }
 }

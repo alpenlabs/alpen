@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use bitcoin::Block;
+use bitcoin::{Block, hashes::Hash};
 use strata_asm_common::{AnchorState, AuxDataTable, ChainViewState, empty_history_mmr};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
@@ -105,10 +105,17 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         // TODO: populate responses once auxiliary data plumbing is implemented.
         let aux_responses = AuxDataTable::new();
 
+        let wtx_root = block
+            .witness_root()
+            .expect("non-empty blocks always have a witness merkle root")
+            .to_byte_array()
+            .into();
+
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &block.header,
             aux_responses: &aux_responses,
+            wtx_root,
         };
 
         // Asm transition.

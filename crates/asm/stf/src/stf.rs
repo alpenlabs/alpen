@@ -3,9 +3,10 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use strata_asm_common::{
-    AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, Mmr64, compute_logs_leaf,
-};
+use bitcoin::hashes::Hash;
+use strata_asm_chain_types::{AsmLog, AsmManifest};
+use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, Mmr64};
+use strata_identifiers::Buf32;
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -47,27 +48,31 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     pre_state: &AnchorState,
     input: AsmStfInput<'i>,
 ) -> AsmResult<AsmStfOutput> {
+    let AsmStfInput {
+        header,
+        protocol_txs,
+        aux_responses,
+        wtx_root,
+    } = input;
+
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
     let mut pow_state = pre_state.chain_view.pow_state.clone();
     pow_state
-        .check_and_update(input.header)
+        .check_and_update(header)
         .map_err(AsmError::InvalidL1Header)?;
 
     let mut manager = SubprotoManager::new();
 
     // 2. LOAD: Initialize each subprotocol in the subproto manager with aux input data.
+    // todo: find proper place for aux data verification maybe in loader or here before process
+    // stage
     let mut loader = AnchorStateLoader::new(pre_state, &mut manager);
     spec.load_subprotocols(&mut loader);
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
-    let mut process_stage = ProcessStage::new(
-        &mut manager,
-        pre_state,
-        input.protocol_txs,
-        input.aux_responses,
-    );
+    let mut process_stage = ProcessStage::new(&mut manager, pre_state, protocol_txs, aux_responses);
     spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
@@ -82,10 +87,23 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // Export the updated state sections and logs from all subprotocols to build the result.
     let (sections, logs) = manager.export_sections_and_logs();
 
+    // Convert AsmLogEntry to AsmLog for the manifest
+    let manifest_logs: Vec<AsmLog> = logs
+        .iter()
+        .map(|entry| AsmLog::from(entry.as_bytes().to_vec()))
+        .collect();
+
+    // Compute the block hash from the header
+    let block_hash = header.block_hash();
+    let block_root = Buf32::from(*block_hash.as_byte_array());
+
+    let manifest = AsmManifest::new(block_root, wtx_root, manifest_logs);
+    let manifest_hash: [u8; 32] = manifest.compute_hash();
+
     let mut history_mmr = Mmr64::from_compact(&pre_state.chain_view.history_mmr);
-    let block_hash = input.header.block_hash().into();
-    let leaf = compute_logs_leaf(&block_hash, &logs);
-    history_mmr.add_leaf(leaf).map_err(AsmError::HeaderMmr)?;
+    history_mmr
+        .add_leaf(manifest_hash)
+        .map_err(AsmError::HeaderMmr)?;
 
     let chain_view = ChainViewState {
         pow_state,

@@ -13145,7 +13145,10 @@ dependencies = [
 name = "strata-asm-aux"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
+ "strata-asm-chain-types",
  "strata-asm-common",
+ "strata-identifiers",
 ]
 
 [[package]]
@@ -13154,6 +13157,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "serde",
+ "strata-identifiers",
 ]
 
 [[package]]
@@ -13164,8 +13168,8 @@ dependencies = [
  "borsh",
  "serde",
  "strata-acct-types",
+ "strata-asm-chain-types",
  "strata-asm-types",
- "strata-btc-types",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-mmr",
@@ -13334,7 +13338,9 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "strata-asm-aux",
+ "strata-asm-chain-types",
  "strata-asm-common",
+ "strata-identifiers",
  "strata-l1-txfmt",
 ]
 

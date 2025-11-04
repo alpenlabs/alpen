@@ -3,8 +3,8 @@
 use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxInput, AuxRequests, InterprotoMsg, Loader, MsgRelayer,
-    SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, AuxRequests, InterprotoMsg, Loader, MsgRelayer,
+    SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxInput,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -56,7 +56,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_pre: &AnchorState,
-        aux_input: &AuxInput,
+        aux_input: &VerifiedAuxInput,
     ) {
         let relayer = relayer
             .as_mut_any()
@@ -136,7 +136,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_input: &AuxInput,
+        aux_input: &VerifiedAuxInput,
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the

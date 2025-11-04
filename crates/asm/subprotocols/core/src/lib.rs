@@ -51,8 +51,8 @@ pub use error::*;
 #[cfg(feature = "preprocess")]
 use strata_asm_common::AuxRequests;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxInput, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
-    logging,
+    AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxInput, logging,
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_primitives::{buf::Buf32, l2::L2BlockCommitment};
@@ -122,7 +122,7 @@ impl Subprotocol for OLCoreSubproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_resolver: &AuxInput,
+        aux_resolver: &VerifiedAuxInput,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
