@@ -155,6 +155,28 @@ impl<D: ProofDatabase> ProverHandle<D> {
         Ok(tasks.into_iter().map(|(id, _)| id).collect())
     }
 
+    /// Marks a task as queued (ready to prove)
+    pub async fn mark_queued(&self, task_id: TaskId) -> Result<(), PaaSError> {
+        self.command_handle
+            .send_and_wait(|completion| PaaSCommand::MarkQueued {
+                task_id,
+                completion,
+            })
+            .await
+            .map_err(convert_service_error)?
+    }
+
+    /// Marks a task as proving/in-progress
+    pub async fn mark_proving(&self, task_id: TaskId) -> Result<(), PaaSError> {
+        self.command_handle
+            .send_and_wait(|completion| PaaSCommand::MarkProving {
+                task_id,
+                completion,
+            })
+            .await
+            .map_err(convert_service_error)?
+    }
+
     /// Marks a task as completed
     pub async fn mark_completed(&self, task_id: TaskId) -> Result<(), PaaSError> {
         self.command_handle

@@ -149,7 +149,7 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // Create task manager for service lifecycle
     let task_manager = TaskManager::new(Handle::current());
-    let executor = task_manager.executor();
+    let executor = task_manager.create_executor();
 
     // Launch ProverService using builder and get handle
     let prover_handle = ProverBuilder::new()

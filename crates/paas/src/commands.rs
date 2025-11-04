@@ -68,6 +68,22 @@ pub enum PaaSCommand {
         completion: CommandCompletionSender<Result<strata_primitives::proof::ProofKey, PaaSError>>,
     },
 
+    /// Mark task as queued (used by worker pool)
+    MarkQueued {
+        /// Task identifier
+        task_id: TaskId,
+        /// Completion channel for response
+        completion: CommandCompletionSender<Result<(), PaaSError>>,
+    },
+
+    /// Mark task as proving/in-progress (used by worker pool)
+    MarkProving {
+        /// Task identifier
+        task_id: TaskId,
+        /// Completion channel for response
+        completion: CommandCompletionSender<Result<(), PaaSError>>,
+    },
+
     /// Mark task as completed (used by worker pool)
     MarkCompleted {
         /// Task identifier

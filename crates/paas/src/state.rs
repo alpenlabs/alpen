@@ -215,6 +215,30 @@ impl<D: ProofDatabase> ProverServiceState<D> {
         let _ = self.status_tx.send(status);
     }
 
+    /// Marks a task as queued (ready to prove)
+    pub fn mark_queued(&mut self, task_id: TaskId) -> Result<(), PaaSError> {
+        use crate::manager::task_tracker::InternalTaskStatus;
+        self.task_tracker.update_status(
+            task_id,
+            InternalTaskStatus::Queued,
+            self.config.retry.max_retries,
+        )?;
+        self.update_status();
+        Ok(())
+    }
+
+    /// Marks a task as proving/in-progress
+    pub fn mark_proving(&mut self, task_id: TaskId) -> Result<(), PaaSError> {
+        use crate::manager::task_tracker::InternalTaskStatus;
+        self.task_tracker.update_status(
+            task_id,
+            InternalTaskStatus::Proving,
+            self.config.retry.max_retries,
+        )?;
+        self.update_status();
+        Ok(())
+    }
+
     /// Marks a task as completed
     pub fn mark_completed(&mut self, task_id: TaskId) -> Result<(), PaaSError> {
         use crate::manager::task_tracker::InternalTaskStatus;

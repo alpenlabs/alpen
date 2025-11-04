@@ -130,6 +130,17 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                 spawn(async move {
                     info!(?task_id, ?proof_key, "Starting proof generation");
 
+                    // Transition: Pending → Queued → Proving
+                    if let Err(e) = prover_handle.mark_queued(task_id).await {
+                        error!(?task_id, ?e, "Failed to mark task as queued");
+                        return;
+                    }
+
+                    if let Err(e) = prover_handle.mark_proving(task_id).await {
+                        error!(?task_id, ?e, "Failed to mark task as proving");
+                        return;
+                    }
+
                     let result = operator.process_proof(proof_key, database.as_ref()).await;
 
                     match result {

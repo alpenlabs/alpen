@@ -103,6 +103,30 @@ impl<D: ProofDatabase> AsyncService for ProverService<D> {
                 Ok(Response::Continue)
             }
 
+            PaaSCommand::MarkQueued {
+                task_id,
+                completion,
+            } => {
+                let result = state.mark_queued(*task_id);
+                if result.is_ok() {
+                    info!(?task_id, "Task marked as queued");
+                }
+                completion.send(result).await;
+                Ok(Response::Continue)
+            }
+
+            PaaSCommand::MarkProving {
+                task_id,
+                completion,
+            } => {
+                let result = state.mark_proving(*task_id);
+                if result.is_ok() {
+                    info!(?task_id, "Task marked as proving");
+                }
+                completion.send(result).await;
+                Ok(Response::Continue)
+            }
+
             PaaSCommand::MarkCompleted {
                 task_id,
                 completion,
