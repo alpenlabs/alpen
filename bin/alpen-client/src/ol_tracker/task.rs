@@ -92,18 +92,20 @@ pub(crate) async fn track_ol_state(
         .map_err(|e| eyre::eyre!(e))?;
 
     let best_ol_block = &ol_status.latest;
+    let best_ol_slot = best_ol_block.slot();
+    let best_local_slot = state.best_ol_block().slot();
 
-    debug!(
-        local_slot = state.best_ol_block().slot(),
-        ol_slot = best_ol_block.slot(),
-        "check best ol block"
-    );
+    debug!(best_local_slot, best_ol_slot, "check best ol block");
 
-    if best_ol_block.slot() < state.best_ol_block().slot() {
-        // local view of chain is ahead of Ol, should not typically happen
+    if best_ol_slot < best_local_slot {
+        warn!(
+            "local view of chain is ahead of Ol, should not typically happen; local: {}; ol: {}",
+            best_local_slot, best_ol_block
+        );
         return Ok(TrackOlAction::Noop);
     }
-    if best_ol_block.slot() == state.best_ol_block().slot() {
+
+    if best_ol_slot == best_local_slot {
         return if best_ol_block.blkid() != state.best_ol_block().blkid() {
             warn!(slot = best_ol_block.slot(), ol = %best_ol_block.blkid(), local = %state.best_ol_block().blkid(), "detect chain mismatch; trigger reorg");
             Ok(TrackOlAction::Reorg)
@@ -113,50 +115,54 @@ pub(crate) async fn track_ol_state(
         };
     }
 
-    // local chain is behind ol's view, we can fetch next blocks and extend local view.
-    let fetch_blocks_count = best_ol_block
-        .slot()
-        .saturating_sub(state.best_ol_block().slot())
-        .min(max_blocks_fetch);
+    if best_ol_slot > best_local_slot {
+        // local chain is behind ol's view, we can fetch next blocks and extend local view.
+        let fetch_blocks_count = best_ol_block
+            .slot()
+            .saturating_sub(best_local_slot)
+            .min(max_blocks_fetch);
 
-    // Fetch block commitments in ol from current local slot.
-    // Also fetch at height of last known local block to check for reorg.
-    let blocks = block_commitments_in_range_checked(
-        ol_client,
-        state.best_ol_block().slot(),
-        state.best_ol_block().slot() + fetch_blocks_count,
-    )
-    .await
-    .map_err(|e| eyre::eyre!(e))?;
-
-    let (expected_local_block, new_blocks) = blocks
-        .split_first()
-        .ok_or_else(|| eyre::eyre!("empty block commitments returned from ol_client"))?;
-
-    // If last block isn't as expected, trigger reorg
-    if expected_local_block != state.best_ol_block() {
-        return Ok(TrackOlAction::Reorg);
-    }
-
-    let block_ids = new_blocks
-        .iter()
-        .map(|commitment| commitment.blkid())
-        .cloned()
-        .collect();
-
-    let operations = get_update_operations_for_blocks_checked(ol_client, block_ids)
+        // Fetch block commitments in ol from current local slot.
+        // Also fetch at height of last known local block to check for reorg.
+        let blocks = block_commitments_in_range_checked(
+            ol_client,
+            best_local_slot,
+            best_local_slot + fetch_blocks_count,
+        )
         .await
         .map_err(|e| eyre::eyre!(e))?;
 
-    let block_operations = new_blocks
-        .iter()
-        .cloned()
-        .zip(operations)
-        .map(|(block, operations)| OlBlockOperations { block, operations })
-        .collect();
+        let (expected_local_block, new_blocks) = blocks
+            .split_first()
+            .ok_or_else(|| eyre::eyre!("empty block commitments returned from ol_client"))?;
 
-    // maybe stream all missing blocks ?
-    Ok(TrackOlAction::Extend(block_operations, ol_status))
+        // If last block isn't as expected, trigger reorg
+        if expected_local_block != state.best_ol_block() {
+            return Ok(TrackOlAction::Reorg);
+        }
+
+        let block_ids = new_blocks
+            .iter()
+            .map(|commitment| commitment.blkid())
+            .cloned()
+            .collect();
+
+        let operations = get_update_operations_for_blocks_checked(ol_client, block_ids)
+            .await
+            .map_err(|e| eyre::eyre!(e))?;
+
+        let block_operations = new_blocks
+            .iter()
+            .cloned()
+            .zip(operations)
+            .map(|(block, operations)| OlBlockOperations { block, operations })
+            .collect();
+
+        // maybe stream all missing blocks ?
+        return Ok(TrackOlAction::Extend(block_operations, ol_status));
+    }
+
+    unreachable!("There should not be a valid case that is not covered above")
 }
 
 pub(crate) fn apply_block_operations(
