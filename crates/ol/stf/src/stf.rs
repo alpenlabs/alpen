@@ -26,10 +26,10 @@ pub fn execute_block<S: StateAccessor>(
     // Do some pre execution validation
     pre_exec_block_validate(&block, &prev_header, &params).map_err(StfError::BlockValidation)?;
 
-    let (exec_output, new_state) = execute_block_inner(state_accessor, &block)?;
+    let exec_output = execute_block_inner(state_accessor, &block)?;
 
     // Post execution block validation. Checks state root and logs root.
-    post_exec_block_validate::<S>(&block, &new_state, exec_output.logs())
+    post_exec_block_validate::<S>(&block, exec_output.state_root(), exec_output.logs())
         .map_err(StfError::BlockValidation)?;
 
     Ok(exec_output)
@@ -39,7 +39,7 @@ pub fn execute_block<S: StateAccessor>(
 pub fn execute_block_inner<S: StateAccessor>(
     state_accessor: &mut S,
     block: &OLBlock,
-) -> StfResult<(ExecOutput, S::GlobalState)> {
+) -> StfResult<ExecOutput> {
     let mut stf_logs = Vec::new();
     // Execute transactions.
     for tx in block.body().txs() {
@@ -47,7 +47,7 @@ pub fn execute_block_inner<S: StateAccessor>(
         stf_logs.extend_from_slice(&logs);
     }
 
-    let _pre_seal_root = state_accessor.global().compute_state_root();
+    let _pre_seal_root = state_accessor.compute_state_root();
 
     // Check if needs to seal epoch
     if let Some(l1update) = block.body().l1_update() {
@@ -62,10 +62,9 @@ pub fn execute_block_inner<S: StateAccessor>(
         state_accessor.global_mut().set_cur_epoch(new_epoch);
     }
 
-    let new_state = state_accessor.global().clone();
-    let new_root = new_state.compute_state_root();
+    let new_root = state_accessor.compute_state_root();
     let out = ExecOutput::new(new_root, stf_logs);
-    Ok((out, new_state))
+    Ok(out)
 }
 
 fn seal_epoch(
@@ -131,6 +130,8 @@ fn execute_transaction<S: StateAccessor>(
 
     let _coins = acct_state.take_balance(total_sent);
     // TODO: do something with coins
+
+    state_accessor.update_account_state(target, acct_state)?;
 
     Ok(logs)
 }

@@ -48,10 +48,33 @@ impl MsgPayload {
     pub fn data(&self) -> &[u8] {
         &self.data
     }
+}
 
-    // todo: until ssz
-    pub fn as_ssz_bytes(&self) -> Vec<u8> {
-        todo!()
+impl Codec for MsgPayload {
+    fn encode(&self, encoder: &mut impl Encoder) -> Result<(), CodecError> {
+        encoder.write_buf(&self.value.to_be_bytes())?;
+
+        // encode data length
+        let len = self.data.len() as u64;
+        encoder.write_buf(&len.to_be_bytes())?;
+
+        // encode data
+        encoder.write_buf(&self.data)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let amt_raw: [u8; 8] = dec.read_arr()?;
+        let amt = BitcoinAmount::from_sat(u64::from_be_bytes(amt_raw));
+
+        // decode data length
+        let len = u64::from_be_bytes(dec.read_arr::<8>()?);
+
+        // decode data
+        let mut data = Vec::with_capacity(len as usize);
+        dec.read_buf(&mut data)?;
+
+        Ok(Self { value: amt, data })
     }
 }
 
