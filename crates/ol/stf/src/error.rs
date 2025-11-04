@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, AcctError};
+use strata_acct_types::{AccountId, AcctError, strata_codec::CodecError};
 use strata_ol_chain_types_new::{Epoch, Slot};
 use strata_primitives::Buf32;
 use strata_snark_acct_types::MessageEntry;
@@ -81,7 +81,7 @@ pub enum StfError {
     InvalidUpdateProof { account_id: AccountId },
 
     #[error("{0}")]
-    Other(String),
+    UnsupportedTransfer(String),
 
     #[error("Message index overflow for account {account_id}")]
     MsgIndexOverflow { account_id: AccountId },
@@ -91,6 +91,12 @@ pub enum StfError {
 
     #[error("Epoch overflow: current epoch {cur_epoch}")]
     EpochOverflow { cur_epoch: u64 },
+
+    #[error("Unsupported transfer to {0}")]
+    UnsupportedTransferTo(AccountId),
+
+    #[error("codec error: {0}")]
+    CodecError(#[from] CodecError),
 }
 
 pub type StfResult<T> = Result<T, StfError>;

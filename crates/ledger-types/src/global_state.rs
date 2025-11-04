@@ -1,5 +1,3 @@
-use strata_identifiers::Buf32;
-
 /// Abstract global chainstate.
 pub trait IGlobalState: Clone {
     /// Gets the current epoch.
@@ -13,7 +11,4 @@ pub trait IGlobalState: Clone {
 
     /// Sets the current slot.
     fn set_cur_slot(&mut self, slot: u64);
-
-    /// Computes the state root.
-    fn compute_state_root(&self) -> Buf32;
 }

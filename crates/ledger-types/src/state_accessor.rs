@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountId, AccountSerial, AcctResult};
+use strata_identifiers::Buf32;
 
 use crate::{
     account::{AccountTypeState, IAccountState},
@@ -62,4 +63,7 @@ pub trait StateAccessor {
         id: AccountId,
         state: AccountTypeState<Self::AccountState>,
     ) -> AcctResult<AccountSerial>;
+
+    /// Computes the state root.
+    fn compute_state_root(&self) -> Buf32;
 }
