@@ -1,6 +1,6 @@
 use rockbound::{Schema, TransactionCtx, TransactionDBMarker};
 
-use crate::{define_table_with_default_codec, define_table_without_codec, impl_borsh_value_codec};
+use crate::define_table_with_default_codec;
 
 define_table_with_default_codec!(
     /// A table to hold sequence numbers

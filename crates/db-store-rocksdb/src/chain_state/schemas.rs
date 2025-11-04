@@ -2,7 +2,7 @@ use strata_db::chainstate::*;
 use strata_ol_chainstate_types::WriteBatch;
 
 use super::types::StateInstanceEntry;
-use crate::{define_table_with_seek_key_codec, define_table_without_codec, impl_borsh_value_codec};
+use crate::define_table_with_seek_key_codec;
 
 define_table_with_seek_key_codec!(
     /// Table to store write batches.
