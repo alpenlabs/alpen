@@ -4,41 +4,50 @@ use thiserror::Error;
 
 use crate::traits::error::StorageError;
 
+/// Database-specific errors.
 #[derive(Debug, Clone, Error)]
 pub(crate) enum DbError {
+    /// Attempted to persist a null OL block.
     #[error("null Ol block should not be persisted")]
     NullOlBlock,
 
+    /// OL slot was skipped in sequential persistence.
     #[error("OL entries must be persisted sequentially; next: {expected}; got: {got}")]
     SkippedOlSlot { expected: u64, got: u64 },
 
+    /// Transaction conflict: slot is already filled.
     #[error("Txn conflict: OL slot {0} already filled")]
     TxnFilledOlSlot(u64),
 
+    /// Transaction conflict: expected slot to be empty.
     #[error("Txn conflict: OL slot {0} should be empty")]
     #[expect(dead_code, reason = "wip")]
     TxnExpectEmptyOlSlot(u64),
 
+    /// Account state is missing for the given block.
     #[error("Account state expected to be present; block_id = {0}")]
     MissingAccountState(OLBlockId),
 
-    // #[error("Account state expected to be present; slot = {0}")]
-    // MissingAccountStateSlot(u64),
+    /// Database operation error.
     #[error("Database: {0}")]
     DbOpsError(#[from] OpsError),
 
     #[cfg(feature = "sled")]
+    /// Sled database error.
     #[error("sled: {0}")]
     Sled(String),
 
     #[cfg(feature = "sled")]
+    /// Sled transaction error.
     #[error("sled txn: {0}")]
     SledTxn(String),
 
     #[cfg(feature = "rocksdb")]
+    /// RocksDB transaction error.
     #[error("rocksdb txn: {0}")]
     RocksDBTxn(String),
 
+    /// Other unspecified database error.
     #[error("{0}")]
     #[allow(dead_code, reason = "feature gated")]
     Other(String),
@@ -90,7 +99,6 @@ impl From<anyhow::Error> for DbError {
 impl From<DbError> for StorageError {
     fn from(err: DbError) -> Self {
         match err {
-            // DbError::MissingAccountStateSlot(slot) => StorageError::StateNotFound(slot),
             DbError::SkippedOlSlot { expected, got } => StorageError::MissingSlot {
                 attempted_slot: got,
                 last_slot: expected,
