@@ -24,7 +24,8 @@ pub fn execute_block<S: StateAccessor>(
     block: OLBlock,
 ) -> StfResult<ExecOutput> {
     // Do some pre execution validation
-    pre_exec_block_validate(&block, &prev_header, &params).map_err(StfError::BlockValidation)?;
+    pre_exec_block_validate(state_accessor, &block, &prev_header, &params)
+        .map_err(StfError::BlockValidation)?;
 
     let exec_output = execute_block_inner(state_accessor, &block)?;
 

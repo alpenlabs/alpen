@@ -93,7 +93,7 @@ pub(crate) fn verify_input_mmr_proofs<S: StateAccessor>(
     msg_proofs: &[(MessageEntry, MerkleProof)],
 ) -> StfResult<()> {
     for (msg, proof) in msg_proofs {
-        let msg_bytes: Vec<u8> = msg.as_ssz_bytes();
+        let msg_bytes: Vec<u8> = msg.to_ssz_bytes();
         let hash = StrataHasher::hash_leaf(&msg_bytes);
         if !state.inbox_mmr().verify(proof, &hash) {
             return Err(StfError::InvalidMessageProof {

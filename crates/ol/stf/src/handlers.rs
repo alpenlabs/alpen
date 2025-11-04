@@ -1,7 +1,7 @@
 // TODO: some of the methods should probably exist in account crates.
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SystemAccount, strata_codec::Codec};
-use strata_ledger_types::{IAccountState, ISnarkAccountState, StateAccessor};
+use strata_ledger_types::{ISnarkAccountState, StateAccessor};
 use strata_ol_chain_types_new::{Epoch, OLLog};
 use strata_snark_acct_types::MessageEntry;
 
@@ -55,9 +55,9 @@ pub(crate) fn handle_bridge_gateway_transfer<S: StateAccessor>(
     Err(StfError::UnsupportedTransferTo(SystemAccount::Bridge.id()))
 }
 
-pub(crate) fn handle_snark_msg<S: StateAccessor>(
+pub(crate) fn handle_snark_msg(
     cur_epoch: Epoch,
-    snark_state: &mut <S::AccountState as IAccountState>::SnarkAccountState,
+    snark_state: &mut impl ISnarkAccountState,
     from: AccountId,
     payload: &MsgPayload,
 ) -> StfResult<Vec<OLLog>> {
@@ -66,9 +66,9 @@ pub(crate) fn handle_snark_msg<S: StateAccessor>(
     Ok(Vec::new())
 }
 
-pub(crate) fn handle_snark_transfer<S: StateAccessor>(
+pub(crate) fn handle_snark_transfer(
     _cur_epoch: Epoch,
-    _snark_state: &mut <S::AccountState as IAccountState>::SnarkAccountState,
+    _snark_state: &mut impl ISnarkAccountState,
     _from: AccountId,
     _amt: BitcoinAmount,
 ) -> StfResult<Vec<OLLog>> {
