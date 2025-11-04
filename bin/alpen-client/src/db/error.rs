@@ -21,7 +21,6 @@ pub(crate) enum DbError {
 
     /// Transaction conflict: expected slot to be empty.
     #[error("Txn conflict: OL slot {0} should be empty")]
-    #[expect(dead_code, reason = "wip")]
     TxnExpectEmptyOlSlot(u64),
 
     /// Account state is missing for the given block.
@@ -49,7 +48,7 @@ pub(crate) enum DbError {
 
     /// Other unspecified database error.
     #[error("{0}")]
-    #[allow(dead_code, reason = "feature gated")]
+    #[allow(dead_code, clippy::allow_attributes, reason = "feature gated")]
     Other(String),
 }
 

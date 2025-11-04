@@ -17,7 +17,6 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     ) -> DbResult<()>;
 
     /// Rolls back EE account state to a specific slot.
-    #[expect(dead_code, reason = "wip")]
     fn rollback_ee_account_state(&self, to_slot: u64) -> DbResult<()>;
 
     /// Retrieves the OL block ID for a given slot number.

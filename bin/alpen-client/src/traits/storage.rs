@@ -24,7 +24,6 @@ impl EeAccountStateAtBlock {
         &self.state
     }
 
-    #[expect(dead_code, reason = "wip")]
     pub(crate) fn ol_slot(&self) -> u64 {
         self.ol_block.slot()
     }
@@ -75,6 +74,5 @@ pub(crate) trait Storage {
     ) -> Result<(), StorageError>;
 
     /// Remove stored EE internal account state for slots > `to_slot`.
-    #[expect(dead_code, reason = "will be used in reorg handling")]
     async fn rollback_ee_account_state(&self, to_slot: u64) -> Result<(), StorageError>;
 }

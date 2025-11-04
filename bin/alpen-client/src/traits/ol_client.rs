@@ -12,7 +12,6 @@ pub(crate) struct OlChainStatus {
 }
 
 impl OlChainStatus {
-    #[expect(dead_code, reason = "wip")]
     pub(crate) fn latest(&self) -> &OLBlockCommitment {
         &self.latest
     }
