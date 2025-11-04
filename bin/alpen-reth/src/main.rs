@@ -126,7 +126,7 @@ pub struct AdditionalConfig {
     #[arg(long, default_value_t = false)]
     pub enable_state_diff_gen: bool,
 
-    /// Rpc of sequener's reth node to forward transactions to.
+    /// Rpc of sequencer's reth node to forward transactions to.
     #[arg(long, required = false)]
     pub sequencer_http: Option<String>,
 }

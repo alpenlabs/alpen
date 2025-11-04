@@ -159,7 +159,7 @@ pub struct AdditionalConfig {
     )]
     pub custom_chain: Arc<ChainSpec>,
 
-    /// Rpc of sequener's reth node to forward transactions to.
+    /// Rpc of sequencer's reth node to forward transactions to.
     #[arg(long, required = false)]
     pub sequencer_http: Option<String>,
 
