@@ -67,14 +67,14 @@ where
 
         warn!("ee state not found; create using genesis config");
         let genesis_state = EeAccountState::new(
-            *config.params.genesis_blockhash.as_ref(),
+            *config.params().genesis_blockhash().as_ref(),
             BitcoinAmount::zero(),
             vec![],
             vec![],
         );
         let genesis_ol_block = OLBlockCommitment::new(
-            config.params.genesis_ol_slot,
-            config.params.genesis_ol_blockid,
+            config.params().genesis_ol_slot(),
+            config.params().genesis_ol_blockid(),
         );
         // persist genesis state
         storage

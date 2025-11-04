@@ -7,43 +7,119 @@ use strata_identifiers::{CredRule, OLBlockId};
 #[derive(Debug, Clone)]
 pub(crate) struct AlpenEeParams {
     /// Account id of current EE in OL
-    #[expect(dead_code, reason = "wip")]
-    pub account_id: AccountId,
+    account_id: AccountId,
 
     /// Genesis blockhash of execution chain
-    pub genesis_blockhash: B256,
+    genesis_blockhash: B256,
 
     /// Genesis stateroot of execution chain
-    #[expect(dead_code, reason = "wip")]
-    pub genesis_stateroot: B256,
+    genesis_stateroot: B256,
 
     /// OL slot of Alpen ee account genesis
-    pub genesis_ol_slot: u64,
+    genesis_ol_slot: u64,
 
     /// Ol block of Alpen ee account genesis
-    pub genesis_ol_blockid: OLBlockId,
+    genesis_ol_blockid: OLBlockId,
+}
+
+impl AlpenEeParams {
+    pub(crate) fn new(
+        account_id: AccountId,
+        genesis_blockhash: B256,
+        genesis_stateroot: B256,
+        genesis_ol_slot: u64,
+        genesis_ol_blockid: OLBlockId,
+    ) -> Self {
+        Self {
+            account_id,
+            genesis_blockhash,
+            genesis_stateroot,
+            genesis_ol_slot,
+            genesis_ol_blockid,
+        }
+    }
+
+    #[expect(dead_code, reason = "wip")]
+    pub(crate) fn account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    pub(crate) fn genesis_blockhash(&self) -> B256 {
+        self.genesis_blockhash
+    }
+
+    #[expect(dead_code, reason = "wip")]
+    pub(crate) fn genesis_stateroot(&self) -> B256 {
+        self.genesis_stateroot
+    }
+
+    pub(crate) fn genesis_ol_slot(&self) -> u64 {
+        self.genesis_ol_slot
+    }
+
+    pub(crate) fn genesis_ol_blockid(&self) -> OLBlockId {
+        self.genesis_ol_blockid
+    }
 }
 
 /// Local config that may differ between nodes + params.
 #[derive(Debug, Clone)]
 pub(crate) struct AlpenEeConfig {
     /// Chain specific config.
-    pub params: AlpenEeParams,
+    params: AlpenEeParams,
 
     /// To verify preconfirmed updates from sequencer.
-    #[expect(dead_code, reason = "wip")]
-    pub sequencer_credrule: CredRule,
+    sequencer_credrule: CredRule,
 
     /// Connection OL RPC client.
-    #[expect(dead_code, reason = "wip")]
-    pub ol_client_http: String,
+    ol_client_http: String,
 
     /// Connection EE sequencer client.
-    #[expect(dead_code, reason = "wip")]
-    pub ee_sequencer_http: Option<String>,
+    ee_sequencer_http: Option<String>,
 
     /// Number of retries for db connections
-    pub db_retry_count: u16,
+    db_retry_count: u16,
+}
+
+impl AlpenEeConfig {
+    pub(crate) fn new(
+        params: AlpenEeParams,
+        sequencer_credrule: CredRule,
+        ol_client_http: String,
+        ee_sequencer_http: Option<String>,
+        db_retry_count: u16,
+    ) -> Self {
+        Self {
+            params,
+            sequencer_credrule,
+            ol_client_http,
+            ee_sequencer_http,
+            db_retry_count,
+        }
+    }
+
+    pub(crate) fn params(&self) -> &AlpenEeParams {
+        &self.params
+    }
+
+    #[expect(dead_code, reason = "wip")]
+    pub(crate) fn sequencer_credrule(&self) -> &CredRule {
+        &self.sequencer_credrule
+    }
+
+    #[expect(dead_code, reason = "wip")]
+    pub(crate) fn ol_client_http(&self) -> &str {
+        &self.ol_client_http
+    }
+
+    #[expect(dead_code, reason = "wip")]
+    pub(crate) fn ee_sequencer_http(&self) -> Option<&str> {
+        self.ee_sequencer_http.as_deref()
+    }
+
+    pub(crate) fn db_retry_count(&self) -> u16 {
+        self.db_retry_count
+    }
 }
 
 pub(crate) mod defaults {

@@ -61,23 +61,23 @@ fn main() {
 
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
-            let params = AlpenEeParams {
-                account_id: AccountId::new([0; 32]),
-                genesis_blockhash: genesis_info.blockhash,
-                genesis_stateroot: genesis_info.stateroot,
-                genesis_ol_blockid: OLBlockId::null(), // TODO
-                genesis_ol_slot: 0,
-            };
+            let params = AlpenEeParams::new(
+                AccountId::new([0; 32]),
+                genesis_info.blockhash,
+                genesis_info.stateroot,
+                0,
+                OLBlockId::null(), // TODO
+            );
 
-            let config = Arc::new(AlpenEeConfig {
+            let config = Arc::new(AlpenEeConfig::new(
                 params,
-                sequencer_credrule: CredRule::Unchecked,
-                ee_sequencer_http: ext.sequencer_http,
-                ol_client_http: ext.ol_client_http,
-                db_retry_count: ext.db_retry_count.unwrap_or(defaults::DB_RETRY_COUNT),
-            });
+                CredRule::Unchecked,
+                ext.ol_client_http,
+                ext.sequencer_http,
+                ext.db_retry_count.unwrap_or(defaults::DB_RETRY_COUNT),
+            ));
 
-            let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count)
+            let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())
                 .expect("failed to load alpen database")
                 .into();
 
