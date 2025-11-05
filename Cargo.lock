@@ -14049,11 +14049,16 @@ dependencies = [
  "digest 0.10.7",
  "hex",
  "int-enum",
+ "proptest",
  "rand 0.8.5",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "ssz",
+ "ssz_derive",
  "strata-codec",
+ "strata-test-utils-ssz",
+ "tree_hash 0.6.0",
  "zeroize",
 ]
 
