@@ -13317,6 +13317,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "strata-asm-common",
+ "strata-identifiers",
  "strata-l1-txfmt",
 ]
 

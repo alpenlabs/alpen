@@ -1,12 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use bitcoin::Block;
+use bitcoin::{Block, hashes::Hash};
 use strata_asm_common::{AnchorState, AuxPayload, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
 use strata_params::Params;
-use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::{Buf32, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
 
@@ -117,9 +117,18 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             })
             .collect();
 
+        // For blocks without witness data (pre-SegWit or legacy-only transactions),
+        // the witness merkle root equals the transaction merkle root per Bitcoin protocol.
+        let wtxids_root: Buf32 = block
+            .witness_root()
+            .map(|root| root.as_raw_hash().to_byte_array())
+            .unwrap_or_else(|| block.header.merkle_root.as_raw_hash().to_byte_array())
+            .into();
+
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &block.header,
+            wtxids_root,
             aux_input: &aux_input,
         };
 

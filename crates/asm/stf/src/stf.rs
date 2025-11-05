@@ -3,7 +3,7 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
+use strata_asm_common::{AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -75,11 +75,18 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // 5. Construct the final `AnchorState` and output.
     // Export the updated state sections and logs from all subprotocols to build the result.
     let (sections, logs) = manager.export_sections_and_logs();
+    let manifest = AsmManifest::new(
+        *pow_state.last_verified_block.blkid(),
+        input.wtxids_root,
+        logs,
+    );
+    let _manifest_root = manifest.compute_root();
+
     let chain_view = ChainViewState { pow_state };
     let state = AnchorState {
         chain_view,
         sections,
     };
-    let output = AsmStfOutput { state, logs };
+    let output = AsmStfOutput { state, manifest };
     Ok(output)
 }
