@@ -4,19 +4,20 @@
 
 use std::collections::BTreeMap;
 
-use strata_asm_common::{AsmManifestCompactMmr, AsmManifestMmr};
+use strata_asm_common::AsmManifestMmr;
 
 use crate::{
     AuxError, AuxRequestSpec, AuxResponseEnvelope, AuxResult, BitcoinTxRequest, L1TxIndex,
-    ManifestLeaf, ManifestLeavesRequest,
+    ManifestLeaves, ManifestLeavesRequest,
 };
 
 /// Provides verified auxiliary data to subprotocols during transaction processing.
 ///
 /// The resolver takes auxiliary responses provided by workers and verifies
-/// their MMR proofs before handing them to subprotocols. This ensures that
-/// all auxiliary data is cryptographically verified against the manifest MMR
-/// stored in the chain view state.
+/// their MMR proofs before handing them to subprotocols. For manifest leaves,
+/// the required compact manifest MMR is supplied via each `ManifestLeavesRequest`
+/// and expanded locally for verification. This ensures that all auxiliary data
+/// is cryptographically verified against the manifest MMR committed in state.
 ///
 /// # Example
 ///
@@ -31,12 +32,13 @@ use crate::{
 /// ) {
 ///     for (idx, tx) in txs.iter().enumerate() {
 ///         // Get manifest leaves (automatically verified)
-///         let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
-///         let leaves = aux_resolver.get_manifest_leaves(idx, &req)?;
+///         // Include the manifest MMR snapshot for verification
+///         let mmr_compact = /* obtain from state */ todo!("compact MMR");
+///         let req = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact };
+///         let data = aux_resolver.get_manifest_leaves(idx, &req)?;
 ///
 ///         // Use the verified data
-///         for leaf in &leaves {
-///             let hash = leaf.hash();
+///         for hash in &data.leaves {
 ///             // ... process hash
 ///         }
 ///     }
@@ -46,8 +48,6 @@ use crate::{
 pub struct AuxResolver<'a> {
     /// Map from transaction index to its single auxiliary response
     responses: &'a BTreeMap<L1TxIndex, AuxResponseEnvelope>,
-    /// Full MMR for verifying proofs
-    manifest_mmr: AsmManifestMmr,
 }
 
 impl<'a> AuxResolver<'a> {
@@ -56,17 +56,11 @@ impl<'a> AuxResolver<'a> {
     /// # Arguments
     ///
     /// * `responses` - Map from transaction indices to their auxiliary response
-    /// * `manifest_mmr_compact` - Compact MMR from the chain view state
     ///
-    /// The compact MMR is expanded into a full MMR for verification purposes.
-    pub fn new(
-        responses: &'a BTreeMap<L1TxIndex, AuxResponseEnvelope>,
-        manifest_mmr_compact: &AsmManifestCompactMmr,
-    ) -> Self {
-        Self {
-            responses,
-            manifest_mmr: AsmManifestMmr::from(manifest_mmr_compact.clone()),
-        }
+    /// Note: MMR context for verification is provided per-request via
+    /// `ManifestLeavesRequest.manifest_mmr`.
+    pub fn new(responses: &'a BTreeMap<L1TxIndex, AuxResponseEnvelope>) -> Self {
+        Self { responses }
     }
 
     /// Gets the single response envelope for a transaction, validating via typed getters.
@@ -107,65 +101,45 @@ impl<'a> AuxResolver<'a> {
     ///
     /// # Returns
     ///
-    /// Returns an empty vector if no auxiliary data was requested for this transaction.
+    /// Returns empty leaves/proofs if no auxiliary data was requested for this transaction.
     pub fn get_manifest_leaves(
         &self,
         tx_index: L1TxIndex,
         req: &ManifestLeavesRequest,
-    ) -> AuxResult<Vec<ManifestLeaf>> {
+    ) -> AuxResult<ManifestLeaves> {
         let Some(envelope) = self.responses.get(&tx_index) else {
-            return Ok(Vec::new());
+            return Ok(ManifestLeaves {
+                leaves: Vec::new(),
+                proofs: Vec::new(),
+            });
         };
 
-        // Ensure response is manifest leaves and matches requested range
+        // Ensure response is manifest leaves and matches requested length
         match envelope {
-            AuxResponseEnvelope::ManifestLeaves {
-                start_height: rs,
-                end_height: re,
-                leaves,
-            } => {
-                if *rs != req.start_height || *re != req.end_height {
-                    return Err(AuxError::SpecMismatch {
-                        tx_index,
-                        details: format!(
-                            "range mismatch: expected [{}, {}], found [{}, {}]",
-                            req.start_height, req.end_height, rs, re
-                        ),
-                    });
-                }
-
+            AuxResponseEnvelope::ManifestLeaves(data) => {
                 let expected_len = (req.end_height - req.start_height + 1) as usize;
-                if leaves.len() != expected_len {
+                if data.leaves.len() != expected_len || data.proofs.len() != expected_len {
                     return Err(AuxError::SpecMismatch {
                         tx_index,
-                        details: format!(
-                            "leaf count mismatch: expected {}, found {}",
-                            expected_len,
-                            leaves.len()
-                        ),
+                        details: format!("leaf/proof count mismatch: expected {}", expected_len),
                     });
                 }
 
-                for (i, leaf) in leaves.iter().enumerate() {
-                    let expected_h = req.start_height + i as u64;
-                    if leaf.height != expected_h {
-                        return Err(AuxError::SpecMismatch {
-                            tx_index,
-                            details: format!(
-                                "leaf height mismatch at index {}: expected {}, found {}",
-                                i, expected_h, leaf.height
-                            ),
-                        });
+                // Expand compact MMR from request for verification
+                let mmr_full = AsmManifestMmr::from(req.manifest_mmr.clone());
+
+                for i in 0..expected_len {
+                    let height = req.start_height + i as u64;
+                    let hash = data.leaves[i];
+                    let proof = &data.proofs[i];
+                    if !mmr_full.verify(proof, &hash) {
+                        return Err(AuxError::InvalidMmrProof { height, hash });
                     }
                 }
-
-                let mut verified = Vec::with_capacity(leaves.len());
-                for leaf in leaves {
-                    // Verify MMR proof: manifest_hash must be in the MMR
-                    self.verify_manifest_leaf(leaf)?;
-                    verified.push(leaf.clone());
-                }
-                Ok(verified)
+                Ok(ManifestLeaves {
+                    leaves: data.leaves.clone(),
+                    proofs: data.proofs.clone(),
+                })
             }
             other => Err(AuxError::TypeMismatch {
                 tx_index,
@@ -196,18 +170,7 @@ impl<'a> AuxResolver<'a> {
         };
 
         match envelope {
-            AuxResponseEnvelope::BitcoinTx {
-                txid: resp_txid,
-                raw_tx,
-            } => {
-                if *resp_txid != req.txid {
-                    return Err(AuxError::SpecMismatch {
-                        tx_index,
-                        details: "txid mismatch between request and response".to_string(),
-                    });
-                }
-                Ok(Some(raw_tx.clone()))
-            }
+            AuxResponseEnvelope::BitcoinTx(raw_tx) => Ok(Some(raw_tx.clone())),
             other => Err(AuxError::TypeMismatch {
                 tx_index,
                 expected: "BitcoinTx",
@@ -215,42 +178,30 @@ impl<'a> AuxResolver<'a> {
             }),
         }
     }
-
-    /// Verifies a manifest leaf's MMR proof.
-    ///
-    /// Checks that the `manifest_hash` is committed in the manifest MMR
-    /// using the provided proof.
-    fn verify_manifest_leaf(&self, leaf: &ManifestLeaf) -> AuxResult<()> {
-        if !self
-            .manifest_mmr
-            .verify(&leaf.mmr_proof, &leaf.manifest_hash)
-        {
-            return Err(AuxError::InvalidMmrProof {
-                height: leaf.height,
-                hash: leaf.manifest_hash,
-            });
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use strata_asm_common::AsmManifestCompactMmr;
+
     use super::*;
 
     #[test]
     fn test_resolver_empty_responses() {
         let responses = BTreeMap::new();
         let mmr = AsmManifestMmr::new(16);
-        let compact: AsmManifestCompactMmr = mmr.into();
+        let compact = mmr.into();
 
-        let resolver = AuxResolver::new(&responses, &compact);
+        let resolver = AuxResolver::new(&responses);
 
-        // Should return empty vec for non-existent tx
-        let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
-        let leaves = resolver.get_manifest_leaves(0, &req).unwrap();
-        assert!(leaves.is_empty());
+        // Should return empty data for non-existent tx
+        let req = ManifestLeavesRequest {
+            start_height: 100,
+            end_height: 200,
+            manifest_mmr: compact,
+        };
+        let data = resolver.get_manifest_leaves(0, &req).unwrap();
+        assert!(data.leaves.is_empty());
 
         let btc_req = BitcoinTxRequest { txid: [0u8; 32] };
         let btc_tx = resolver.get_bitcoin_tx(0, &btc_req).unwrap();
@@ -260,15 +211,19 @@ mod tests {
     #[test]
     fn test_resolver_type_mismatch() {
         let mut responses = BTreeMap::new();
-        responses.insert(0, AuxResponseEnvelope::bitcoin_tx([0u8; 32], vec![]));
+        responses.insert(0, AuxResponseEnvelope::BitcoinTx(vec![]));
 
         let mmr = AsmManifestMmr::new(16);
-        let compact: AsmManifestCompactMmr = mmr.into();
+        let compact = mmr.into();
 
-        let resolver = AuxResolver::new(&responses, &compact);
+        let resolver = AuxResolver::new(&responses);
 
         // Requesting manifest leaves but got bitcoin tx
-        let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
+        let req = ManifestLeavesRequest {
+            start_height: 100,
+            end_height: 200,
+            manifest_mmr: compact,
+        };
         let result = resolver.get_manifest_leaves(0, &req);
         assert!(matches!(result, Err(AuxError::TypeMismatch { .. })));
     }
@@ -279,12 +234,12 @@ mod tests {
         let raw_tx = vec![0x01, 0x02, 0x03];
 
         let mut responses = BTreeMap::new();
-        responses.insert(0, AuxResponseEnvelope::bitcoin_tx(txid, raw_tx.clone()));
+        responses.insert(0, AuxResponseEnvelope::BitcoinTx(raw_tx.clone()));
 
         let mmr = AsmManifestMmr::new(16);
-        let compact: AsmManifestCompactMmr = mmr.into();
+        let _compact: AsmManifestCompactMmr = mmr.into();
 
-        let resolver = AuxResolver::new(&responses, &compact);
+        let resolver = AuxResolver::new(&responses);
 
         // Should successfully return the bitcoin tx
         let req = BitcoinTxRequest { txid };

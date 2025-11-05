@@ -60,9 +60,11 @@
 //! ) {
 //!     for (idx, tx) in txs.iter().enumerate() {
 //!         // Request manifest leaves for L1 blocks 100-200
+//!         // Include the manifest MMR snapshot for verification
+//!         let mmr_compact = /* obtain from state */ todo!("compact MMR");
 //!         collector.request(
 //!             idx,
-//!             AuxRequestSpec::manifest_leaves(100, 200),
+//!             AuxRequestSpec::manifest_leaves(100, 200, mmr_compact),
 //!         );
 //!     }
 //! }
@@ -78,12 +80,13 @@
 //! ) {
 //!     for (idx, tx) in txs.iter().enumerate() {
 //!         // Get verified manifest leaves for a known range
-//!         let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
-//!         let leaves = aux_resolver.get_manifest_leaves(idx, &req)?;
+//!         let mmr_compact = /* obtain from state */ todo!("compact MMR");
+//!         let req = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact };
+//!         let data = aux_resolver.get_manifest_leaves(idx, &req)?;
 //!
-//!         for leaf in &leaves {
+//!         for hash in &data.leaves {
 //!             // Use the verified manifest hash
-//!             let hash = leaf.hash();
+//!             let _ = hash;
 //!             // ... process
 //!         }
 //!     }
@@ -105,5 +108,5 @@ pub use collector::AuxRequestCollector;
 pub use error::{AuxError, AuxResult};
 pub use request::{AuxRequestSpec, BitcoinTxRequest, ManifestLeavesRequest};
 pub use resolver::AuxResolver;
-pub use response::{AuxResponseEnvelope, ManifestLeaf};
+pub use response::{AuxResponseEnvelope, ManifestLeaves};
 pub use types::{L1TxIndex, ManifestMmrProof};

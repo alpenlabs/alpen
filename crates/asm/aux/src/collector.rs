@@ -24,9 +24,10 @@ use crate::{AuxRequestSpec, L1TxIndex};
 /// ) {
 ///     for (idx, tx) in txs.iter().enumerate() {
 ///         // Request manifest leaves for blocks 100-200
+///         let mmr_compact = /* obtain from state */ todo!("compact MMR");
 ///         collector.request(
 ///             idx,
-///             AuxRequestSpec::manifest_leaves(100, 200),
+///             AuxRequestSpec::manifest_leaves(100, 200, mmr_compact),
 ///         );
 ///     }
 /// }
@@ -89,6 +90,8 @@ impl AuxRequestCollector {
 
 #[cfg(test)]
 mod tests {
+    use strata_asm_common::AsmManifestCompactMmr;
+
     use super::*;
 
     #[test]
@@ -97,11 +100,16 @@ mod tests {
         assert!(collector.is_empty());
         assert_eq!(collector.len(), 0);
 
-        collector.request(0, AuxRequestSpec::manifest_leaves(100, 200));
+        let mmr = strata_asm_common::AsmManifestMmr::new(16);
+        let mmr_compact: AsmManifestCompactMmr = mmr.into();
+        collector.request(
+            0,
+            AuxRequestSpec::manifest_leaves(100, 200, mmr_compact.clone()),
+        );
         assert_eq!(collector.len(), 1);
         assert!(!collector.is_empty());
 
-        collector.request(1, AuxRequestSpec::manifest_leaves(201, 300));
+        collector.request(1, AuxRequestSpec::manifest_leaves(201, 300, mmr_compact));
         assert_eq!(collector.len(), 2);
 
         let requests = collector.into_requests();
@@ -114,8 +122,13 @@ mod tests {
     #[should_panic(expected = "duplicate auxiliary request")]
     fn test_collector_duplicate_panics() {
         let mut collector = AuxRequestCollector::new();
-        collector.request(0, AuxRequestSpec::manifest_leaves(100, 200));
+        let mmr = strata_asm_common::AsmManifestMmr::new(16);
+        let mmr_compact: AsmManifestCompactMmr = mmr.into();
+        collector.request(
+            0,
+            AuxRequestSpec::manifest_leaves(100, 200, mmr_compact.clone()),
+        );
         // This should panic
-        collector.request(0, AuxRequestSpec::manifest_leaves(201, 300));
+        collector.request(0, AuxRequestSpec::manifest_leaves(201, 300, mmr_compact));
     }
 }
