@@ -11,7 +11,7 @@ use crate::types::ManifestMmrProof;
 
 /// Request for manifest leaves over an inclusive range.
 ///
-/// Carries the compact manifest MMR snapshot so the resolver can
+/// Carries the compact manifest MMR snapshot so the provider can
 /// expand it and verify the included MMR proofs for each leaf.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ManifestLeavesRequest {
@@ -32,7 +32,7 @@ pub struct BitcoinTxRequest {
 
 /// Response containing manifest leaves for a contiguous block range.
 ///
-/// This is returned to subprotocols by the `AuxResolver` after MMR proof
+/// This is returned to subprotocols by the `AuxDataProvider` after MMR proof
 /// verification has succeeded. Only the leaves are included in this response.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ManifestLeavesResponse {
@@ -42,7 +42,7 @@ pub struct ManifestLeavesResponse {
 
 /// Manifest leaves with their proofs for a contiguous block range.
 ///
-/// This structure is provided to the `AuxResolver` by external workers and
+/// This structure is provided to the `AuxDataProvider` by external workers and
 /// is used solely for verification. It contains both the leaves and their
 /// corresponding proofs, but inclusion here does not imply prior verification.
 ///

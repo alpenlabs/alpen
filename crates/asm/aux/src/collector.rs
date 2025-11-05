@@ -27,7 +27,7 @@ impl AuxRequestCollector {
     /// Requests manifest leaves (hash + proof) for a block height range.
     ///
     /// Stores a request keyed by `tx_index` containing the range and the
-    /// compact manifest MMR snapshot used for verification by the resolver.
+    /// compact manifest MMR snapshot used for verification by the provider.
     pub fn request_manifest_leaves(&mut self, tx_index: L1TxIndex, req: ManifestLeavesRequest) {
         // Use the common insertion logic to enforce one-request-per-tx
         if self.manifest_leaves.insert(tx_index, req).is_some() {
@@ -63,11 +63,19 @@ mod tests {
 
         let mmr = strata_asm_common::AsmManifestMmr::new(16);
         let mmr_compact: AsmManifestCompactMmr = mmr.into();
-        let req0 = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact.clone() };
+        let req0 = ManifestLeavesRequest {
+            start_height: 100,
+            end_height: 200,
+            manifest_mmr: mmr_compact.clone(),
+        };
         collector.request_manifest_leaves(0, req0);
         assert_eq!(collector.manifest_leaves.len(), 1);
 
-        let req1 = ManifestLeavesRequest { start_height: 201, end_height: 300, manifest_mmr: mmr_compact };
+        let req1 = ManifestLeavesRequest {
+            start_height: 201,
+            end_height: 300,
+            manifest_mmr: mmr_compact,
+        };
         collector.request_manifest_leaves(1, req1);
         assert_eq!(collector.manifest_leaves.len(), 2);
 
@@ -81,10 +89,18 @@ mod tests {
         let mut collector = AuxRequestCollector::new();
         let mmr = strata_asm_common::AsmManifestMmr::new(16);
         let mmr_compact: AsmManifestCompactMmr = mmr.into();
-        let req0 = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact.clone() };
+        let req0 = ManifestLeavesRequest {
+            start_height: 100,
+            end_height: 200,
+            manifest_mmr: mmr_compact.clone(),
+        };
         collector.request_manifest_leaves(0, req0);
         // This should panic
-        let req1 = ManifestLeavesRequest { start_height: 201, end_height: 300, manifest_mmr: mmr_compact };
+        let req1 = ManifestLeavesRequest {
+            start_height: 201,
+            end_height: 300,
+            manifest_mmr: mmr_compact,
+        };
         collector.request_manifest_leaves(0, req1);
     }
 }

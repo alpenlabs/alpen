@@ -1,4 +1,4 @@
-//! Auxiliary data resolver.
+//! Auxiliary data provider.
 //!
 //! Provides verified auxiliary data to subprotocols during the processing phase.
 
@@ -17,21 +17,20 @@ use crate::{
 
 /// Provides verified auxiliary data to subprotocols during transaction processing.
 ///
-/// The resolver takes auxiliary responses provided by workers and verifies
-/// their MMR proofs before handing them to subprotocols. For manifest leaves,
-/// the required compact manifest MMR is supplied via each `ManifestLeavesRequest`
-/// and expanded locally for verification. This ensures that all auxiliary data
-/// is cryptographically verified against the manifest MMR committed in state.
+/// The provider is initialized with auxiliary responses from workers and verifies
+/// them based on information contained in each request before serving them to
+/// subprotocols. Verification methods vary by request type (e.g., MMR proofs for
+/// manifest leaves, txid validation for Bitcoin transactions).
 #[derive(Debug)]
-pub struct AuxResolver<'a> {
+pub struct AuxDataProvider<'a> {
     /// Map from transaction index to manifest leaves with proofs (unverified)
     manifest_leaves: &'a BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
     /// Map from transaction index to Bitcoin transaction data
     bitcoin_txs: &'a BTreeMap<L1TxIndex, RawBitcoinTx>,
 }
 
-impl<'a> AuxResolver<'a> {
-    /// Creates a new resolver from separate response maps.
+impl<'a> AuxDataProvider<'a> {
+    /// Creates a new provider from separate response maps.
     pub fn new(
         manifest_leaves: &'a BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
         bitcoin_txs: &'a BTreeMap<L1TxIndex, RawBitcoinTx>,
@@ -91,15 +90,7 @@ impl<'a> AuxResolver<'a> {
     ///
     /// The decoded `bitcoin::Transaction`.
     ///
-    /// # Errors
-    ///
-    /// - `AuxError::MissingResponse` if no response exists for this transaction.
-    /// - `AuxError::InvalidBitcoinTx` if decoding the raw transaction fails.
-    /// - `AuxError::TxidMismatch` if the decoded transaction's wtxid does not
-    ///   match the requested `txid`.
-    ///
     /// Note: This does not perform SPV verification for the transaction.
-    /// Future versions may add Bitcoin SPV proof verification.
     pub fn get_bitcoin_tx(
         &self,
         tx_index: L1TxIndex,
@@ -112,10 +103,14 @@ impl<'a> AuxResolver<'a> {
         let tx: Transaction = raw_tx
             .try_into()
             .map_err(|source| AuxError::InvalidBitcoinTx { tx_index, source })?;
-        let wtxid = tx.compute_wtxid();
+        let wtxid = tx.compute_txid();
         let found = wtxid.as_raw_hash().to_byte_array();
         if found != req.txid {
-            return Err(AuxError::TxidMismatch { tx_index, expected: req.txid, found });
+            return Err(AuxError::TxidMismatch {
+                tx_index,
+                expected: req.txid,
+                found,
+            });
         }
         Ok(tx)
     }
@@ -129,13 +124,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resolver_empty_responses() {
+    fn test_provider_empty_responses() {
         let manifest_leaves = BTreeMap::new();
         let bitcoin_txs = BTreeMap::new();
         let mmr = AsmManifestMmr::new(16);
         let compact = mmr.into();
 
-        let resolver = AuxResolver::new(&manifest_leaves, &bitcoin_txs);
+        let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
 
         // Should return error for non-existent tx
         let req = ManifestLeavesRequest {
@@ -143,16 +138,16 @@ mod tests {
             end_height: 200,
             manifest_mmr: compact,
         };
-        let result = resolver.get_manifest_leaves(0, &req);
+        let result = provider.get_manifest_leaves(0, &req);
         assert!(matches!(result, Err(AuxError::MissingResponse { .. })));
 
         let btc_req = BitcoinTxRequest { txid: [0u8; 32] };
-        let result = resolver.get_bitcoin_tx(0, &btc_req);
+        let result = provider.get_bitcoin_tx(0, &btc_req);
         assert!(matches!(result, Err(AuxError::MissingResponse { .. })));
     }
 
     #[test]
-    fn test_resolver_missing_response() {
+    fn test_provider_missing_response() {
         let manifest_leaves = BTreeMap::new();
         let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
         let mut bitcoin_txs = BTreeMap::new();
@@ -161,7 +156,7 @@ mod tests {
         let mmr = AsmManifestMmr::new(16);
         let compact = mmr.into();
 
-        let resolver = AuxResolver::new(&manifest_leaves, &bitcoin_txs);
+        let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
 
         // Requesting manifest leaves but only bitcoin tx exists
         let req = ManifestLeavesRequest {
@@ -169,12 +164,12 @@ mod tests {
             end_height: 200,
             manifest_mmr: compact,
         };
-        let result = resolver.get_manifest_leaves(0, &req);
+        let result = provider.get_manifest_leaves(0, &req);
         assert!(matches!(result, Err(AuxError::MissingResponse { .. })));
     }
 
     #[test]
-    fn test_resolver_bitcoin_tx() {
+    fn test_provider_bitcoin_tx() {
         let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
         let tx: Transaction = raw_tx.clone().try_into().unwrap();
         let txid = tx.compute_wtxid().as_raw_hash().to_byte_array();
@@ -186,11 +181,11 @@ mod tests {
         let mmr = AsmManifestMmr::new(16);
         let _compact: AsmManifestCompactMmr = mmr.into();
 
-        let resolver = AuxResolver::new(&manifest_leaves, &bitcoin_txs);
+        let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
 
         // Should successfully return the bitcoin tx
         let req = BitcoinTxRequest { txid };
-        let result = resolver.get_bitcoin_tx(0, &req).unwrap();
+        let result = provider.get_bitcoin_tx(0, &req).unwrap();
         assert_eq!(result, tx);
     }
 }
