@@ -190,7 +190,15 @@ where
             error
         })?;
 
-        // 2. Persist corresponding ee state for every ol block
+        // 2. build next tracker state
+        let next_state = build_tracker_state(
+            EeAccountStateAtBlock::new(*ol_block, ee_state.clone()),
+            chain_status,
+            ctx.storage.as_ref(),
+        )
+        .await?;
+
+        // 3. Atomically persist corresponding ee state for this ol block.
         ctx.storage
             .store_ee_account_state(ol_block, &ee_state)
             .await
@@ -203,18 +211,10 @@ where
                 eyre::eyre!(error)
             })?;
 
-        // 3. get next tracker state
-        let next_state = build_tracker_state(
-            EeAccountStateAtBlock::new(*ol_block, ee_state),
-            chain_status,
-            ctx.storage.as_ref(),
-        )
-        .await?;
-
-        // 3. update local state
+        // 4. update local state
         *state = next_state;
 
-        // 4. notify watchers
+        // 5. notify watchers
         ctx.notify_state_update(state.best_ee_state());
         ctx.notify_consensus_update(state.get_consensus_heads());
     }
