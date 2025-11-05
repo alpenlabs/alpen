@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_types::HeaderVerificationState;
 
-use crate::{AsmError, CompactMmr64, Mismatched, Subprotocol, SubprotocolId};
+use crate::{AsmError, AsmManifestCompactMmr, Mismatched, Subprotocol, SubprotocolId};
 
 /// Anchor state for the Anchor State Machine (ASM), the core of the Strata protocol.
 ///
@@ -41,12 +41,12 @@ pub struct ChainViewState {
     ///
     /// Each leaf represents the root hash of an [`AsmManifest`](crate::AsmManifest) for the
     /// corresponding block, enabling efficient historical proofs of ASM state transitions.
-    pub manifest_mmr: CompactMmr64,
+    pub manifest_mmr: AsmManifestCompactMmr,
 }
 
 impl ChainViewState {
     /// Destructures the chain view into its constituent parts.
-    pub fn into_parts(self) -> (HeaderVerificationState, CompactMmr64) {
+    pub fn into_parts(self) -> (HeaderVerificationState, AsmManifestCompactMmr) {
         (self.pow_state, self.manifest_mmr)
     }
 }

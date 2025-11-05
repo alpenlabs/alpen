@@ -1,27 +1,29 @@
-//! Concrete orchestration layer MMR types.
-// REVIEW: This is duplication of what is used in `strata-acct-types`. Not sure if ASM should use
-// that as crate or redefine it again. Putting hasher in strata-crypto might be more natural place
-// though.
+//! MMR types for ASM manifests.
 
 use strata_merkle::{MerkleMr64, Sha256Hasher};
 
-/// The basic hasher we use for all the MMR stuff.
+/// Capacity of the ASM manifest MMR as a power of 2.
 ///
-/// This is SHA-256 with the full 32 byte hash.
-// TODO should this be blake3 and be only 20 bytes or something?
-pub type StrataHasher = Sha256Hasher;
+/// With a value of 64, the MMR supports up to 2^64 leaves, providing
+/// effectively unlimited capacity for manifest history.
+pub const ASM_MANIFEST_MMR_CAP_LOG2: usize = 64;
 
-/// Universal orchestration layer type.
-pub type Hash = [u8; 32];
+/// The hasher used for ASM manifest MMR operations.
+///
+/// Uses SHA-256 with full 32-byte hash output.
+pub type AsmManifestHasher = Sha256Hasher;
 
-/// Compact 64 bit merkle mountain range.
-pub type CompactMmr64 = strata_merkle::CompactMmr64<Hash>;
+/// Hash type for ASM manifest MMR nodes.
+pub type AsmManifestHash = [u8; 32];
 
-/// 64 bit merkle mountain range.
-pub type Mmr64 = MerkleMr64<StrataHasher>;
+/// Compact representation of the ASM manifest MMR using 64-bit indexing.
+///
+/// This compact form stores only the peak hashes and is used for efficient
+/// serialization and storage in the chain view state.
+pub type AsmManifestCompactMmr = strata_merkle::CompactMmr64<AsmManifestHash>;
 
-/// Universal MMR merkle proof.
-pub type MerkleProof = strata_merkle::MerkleProof<Hash>;
-
-/// Raw MMR merkle proof that doesn't have an embedded index.
-pub type RawMerkleProof = strata_merkle::RawMerkleProof<Hash>;
+/// Full ASM manifest MMR with 64-bit indexing.
+///
+/// This is the working form of the MMR that supports append operations
+/// and can be compacted for storage.
+pub type AsmManifestMmr = MerkleMr64<AsmManifestHasher>;

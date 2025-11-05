@@ -4,7 +4,7 @@
 // TODO rename this module to `transition`
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState, Mmr64,
+    AnchorState, AsmError, AsmManifest, AsmManifestMmr, AsmResult, AsmSpec, ChainViewState,
 };
 
 use crate::{
@@ -74,21 +74,20 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     let mut finish_stage = FinishStage::new(&mut manager);
     spec.call_subprotocols(&mut finish_stage);
 
-    // 5. Construct the final `AnchorState` and output.
-    // Export the updated state sections and logs from all subprotocols to build the result.
+    // 5. Construct the manifest with the logs.
     let (sections, logs) = manager.export_sections_and_logs();
     let manifest = AsmManifest::new(
         *pow_state.last_verified_block.blkid(),
         input.wtxids_root,
         logs,
     );
-    let manifest_root = manifest.compute_root();
 
-    // 6. Append the manifest root to the MMR and convert back to compact form.
-    let mut mmr: Mmr64 = mmr.into();
-    mmr.add_leaf(manifest_root.0)?;
+    // 6. Append the manifest root to the MMR
+    let mut mmr: AsmManifestMmr = mmr.into();
+    mmr.add_leaf(manifest.compute_hash())?;
     let manifest_mmr = mmr.into();
 
+    // 7. Construct the final `AnchorState` and output.
     let chain_view = ChainViewState {
         pow_state,
         manifest_mmr,
