@@ -2,8 +2,6 @@ use std::fmt;
 
 use int_enum::IntEnum;
 
-use crate::impl_opaque_thin_wrapper;
-
 type RawAccountId = [u8; 32];
 
 /// Universal account identifier.

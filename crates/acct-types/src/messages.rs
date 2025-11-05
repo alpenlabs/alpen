@@ -1,6 +1,6 @@
 //! Account message types.
 
-use crate::{amount::BitcoinAmount, id::AccountId};
+use crate::{AccountId, BitcoinAmount};
 
 /// Describes a message we're getting ready to send.
 #[derive(Clone, Debug, Eq, PartialEq)]

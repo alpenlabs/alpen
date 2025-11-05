@@ -7,12 +7,15 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+strata-codec.workspace = true
+
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
 borsh.workspace = true
 const-hex = "1.14"
 digest.workspace = true
 hex.workspace = true
+int-enum.workspace = true
 serde.workspace = true
 sha2.workspace = true
 zeroize.workspace = true

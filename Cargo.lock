@@ -13197,10 +13197,10 @@ name = "strata-acct-types"
 version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
- "int-enum",
  "sha2 0.10.9",
  "strata-btc-types",
  "strata-codec",
+ "strata-identifiers",
  "strata-merkle",
  "thiserror 2.0.16",
 ]
@@ -14048,10 +14048,12 @@ dependencies = [
  "const-hex",
  "digest 0.10.7",
  "hex",
+ "int-enum",
  "rand 0.8.5",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "strata-codec",
  "zeroize",
 ]
 
