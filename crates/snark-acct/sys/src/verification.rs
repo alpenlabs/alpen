@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, BitcoinAmount, MerkleProof, Mmr64, StrataHasher};
+use strata_acct_types::{AcctError, AcctResult, AccountId, BitcoinAmount, MerkleProof, Mmr64, StrataHasher};
 use strata_ledger_types::{IL1ViewState, ISnarkAccountState, StateAccessor};
 use strata_mmr::hasher::MerkleHasher;
 use strata_snark_acct_types::{
@@ -6,23 +6,21 @@ use strata_snark_acct_types::{
     UpdateOperationData, UpdateOutputs,
 };
 
-use crate::error::{StfError, StfResult};
-
 /// Verifies an account update is correct with respect to the current state of
 /// snark account, including checking account balances.
-pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
+pub fn verify_update_correctness<'a, S: StateAccessor>(
     state_accessor: &S,
     sender: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &'a SnarkAccountUpdateWithMmrProofs,
     cur_balance: BitcoinAmount,
-) -> StfResult<VerifiedUpdate<'a>> {
+) -> AcctResult<VerifiedUpdate<'a>> {
     let operation = update.update().operation();
     let outputs = operation.outputs();
 
     // 1. Check seq_no matches
     if snark_state.seqno() != operation.seq_no() {
-        return Err(StfError::InvalidUpdateSequence {
+        return Err(AcctError::InvalidUpdateSequence {
             account_id: sender,
             expected: snark_state.seqno(),
             got: operation.seq_no(),
@@ -36,9 +34,9 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
 
     let expected_idx = cur_idx
         .checked_add(processed_len)
-        .ok_or(StfError::MsgIndexOverflow { account_id: sender })?;
+        .ok_or(AcctError::MsgIndexOverflow { account_id: sender })?;
     if expected_idx != new_idx {
-        return Err(StfError::InvalidMsgIndex {
+        return Err(AcctError::InvalidMsgIndex {
             account_id: sender,
             expected: expected_idx,
             got: new_idx,
@@ -68,11 +66,11 @@ fn verify_ledger_refs(
     account: AccountId,
     mmr: &Mmr64,
     ledger_ref_proofs: &LedgerRefProofs,
-) -> StfResult<()> {
+) -> AcctResult<()> {
     for proof in ledger_ref_proofs.l1_headers_proofs() {
         let hash = proof.entry_hash();
         if !mmr.verify(proof.proof(), hash) {
-            return Err(StfError::InvalidLedgerReference {
+            return Err(AcctError::InvalidLedgerReference {
                 account_id: account,
                 ref_idx: proof.entry_idx(),
             });
@@ -81,11 +79,11 @@ fn verify_ledger_refs(
     Ok(())
 }
 
-pub(crate) fn verify_input_mmr_proofs(
+pub fn verify_input_mmr_proofs(
     account_id: AccountId,
     state: &impl ISnarkAccountState,
     msg_proofs: &[MessageEntryProof],
-) -> StfResult<()> {
+) -> AcctResult<()> {
     let mut cur_index = state.next_inbox_idx();
     for msg_proof in msg_proofs {
         let msg_bytes: Vec<u8> = msg_proof.entry().to_ssz_bytes();
@@ -95,7 +93,7 @@ pub(crate) fn verify_input_mmr_proofs(
         let proof = MerkleProof::from_cohashes(cohashes.to_vec(), cur_index);
 
         if !state.inbox_mmr().verify(&proof, &hash) {
-            return Err(StfError::InvalidMessageProof {
+            return Err(AcctError::InvalidMessageProof {
                 account_id,
                 msg_idx: cur_index,
             });
@@ -106,12 +104,12 @@ pub(crate) fn verify_input_mmr_proofs(
     Ok(())
 }
 
-pub(crate) fn verify_update_witness<S: StateAccessor>(
+pub fn verify_update_witness<S: StateAccessor>(
     sender: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdate,
     _state_accessor: &S,
-) -> StfResult<()> {
+) -> AcctResult<()> {
     let vk = snark_state.verifier_key();
     let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
     let is_valid = vk
@@ -119,7 +117,7 @@ pub(crate) fn verify_update_witness<S: StateAccessor>(
         .is_ok();
 
     if !is_valid {
-        return Err(StfError::InvalidUpdateProof { account_id: sender });
+        return Err(AcctError::InvalidUpdateProof { account_id: sender });
     }
 
     Ok(())
@@ -133,46 +131,46 @@ fn compute_update_claim(
     todo!()
 }
 
-pub(crate) fn verify_update_outputs_safe<S: StateAccessor>(
+pub fn verify_update_outputs_safe<S: StateAccessor>(
     outputs: &UpdateOutputs,
     state_accessor: &S,
     cur_balance: BitcoinAmount,
-) -> StfResult<()> {
+) -> AcctResult<()> {
     let transfers = outputs.transfers();
     let messages = outputs.messages();
 
     // Check if receivers exist
     for t in transfers {
         if !state_accessor.check_account_exists(t.dest())? {
-            return Err(StfError::NonExistentAccount(t.dest()));
+            return Err(AcctError::NonExistentAccount(t.dest()));
         }
     }
 
     for m in messages {
         if !state_accessor.check_account_exists(m.dest())? {
-            return Err(StfError::NonExistentAccount(m.dest()));
+            return Err(AcctError::NonExistentAccount(m.dest()));
         }
     }
 
     let total_sent = outputs
         .compute_total_value()
-        .ok_or(StfError::BitcoinAmountOverflow)?;
+        .ok_or(AcctError::BitcoinAmountOverflow)?;
 
     // Check if there is sufficient balance.
     if total_sent > cur_balance {
-        return Err(StfError::InsufficientBalance);
+        return Err(AcctError::InsufficientBalance);
     }
     Ok(())
 }
 
 /// Type safe update that indicates it has been verified.
 #[derive(Clone, Debug)]
-pub(crate) struct VerifiedUpdate<'a> {
+pub struct VerifiedUpdate<'a> {
     operation: &'a UpdateOperationData,
 }
 
 impl<'a> VerifiedUpdate<'a> {
-    pub(crate) fn operation(&self) -> &'a UpdateOperationData {
+    pub fn operation(&self) -> &'a UpdateOperationData {
         self.operation
     }
 }

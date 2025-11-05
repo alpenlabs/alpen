@@ -1,14 +1,11 @@
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
 use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::OLLog;
+use strata_snark_acct_sys::{VerifiedUpdate, handle_snark_msg, handle_snark_transfer};
 
 use crate::{
-    error::{StfError, StfResult},
-    handlers::{
-        get_system_msg_handler, get_system_transfer_handler, handle_snark_msg,
-        handle_snark_transfer,
-    },
-    verification::VerifiedUpdate,
+    error::StfResult,
+    system_handlers::{get_system_msg_handler, get_system_transfer_handler},
 };
 
 pub(crate) fn apply_update_outputs<'a, S: StateAccessor>(
@@ -45,7 +42,7 @@ pub(crate) fn send_message<S: StateAccessor>(
 ) -> StfResult<Vec<OLLog>> {
     let cur_epoch = state_accessor.l1_view().cur_epoch();
     let Some(target_acct) = state_accessor.get_account_state_mut(to)? else {
-        return Err(StfError::NonExistentAccount(to));
+        return Err(AcctError::NonExistentAccount(to).into());
     };
 
     // First update the balance
@@ -62,7 +59,7 @@ pub(crate) fn send_message<S: StateAccessor>(
             Ok(Vec::new())
         }
         AccountTypeState::Snark(snark_state) => {
-            handle_snark_msg(cur_epoch, snark_state, from, msg_payload)
+            Ok(handle_snark_msg(cur_epoch, snark_state, from, msg_payload)?)
         }
     }
 }
@@ -75,7 +72,7 @@ pub(crate) fn send_transfer<S: StateAccessor>(
 ) -> StfResult<Vec<OLLog>> {
     let cur_epoch = state_accessor.l1_view().cur_epoch();
     let Some(target_acct) = state_accessor.get_account_state_mut(to)? else {
-        return Err(StfError::NonExistentAccount(to));
+        return Err(AcctError::NonExistentAccount(to).into());
     };
 
     // First update the balance
@@ -92,7 +89,7 @@ pub(crate) fn send_transfer<S: StateAccessor>(
             Ok(Vec::new())
         }
         AccountTypeState::Snark(snark_state) => {
-            handle_snark_transfer(cur_epoch, snark_state, from, amt)
+            Ok(handle_snark_transfer(cur_epoch, snark_state, from, amt)?)
         }
     }
 }

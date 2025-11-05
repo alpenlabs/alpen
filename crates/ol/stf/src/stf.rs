@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::{AcctError, AccountId, BitcoinAmount};
 use strata_ledger_types::{
     AccountTypeState, IAccountState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
@@ -6,6 +6,7 @@ use strata_ol_chain_types_new::{
     L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload,
 };
 use strata_params::RollupParams;
+use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::SnarkAccountUpdateWithMmrProofs;
 
 use crate::{
@@ -14,7 +15,6 @@ use crate::{
     error::{StfError, StfResult},
     post_exec_block_validate, pre_exec_block_validate,
     update::apply_update_outputs,
-    verification::verify_update_correctness,
 };
 
 /// Processes an OL block. Also performs epoch sealing if the block is terminal.
@@ -103,7 +103,7 @@ fn execute_transaction<S: StateAccessor>(
         return Ok(Vec::new());
     };
     let Some(mut acct_state) = state_accessor.get_account_state(target)?.cloned() else {
-        return Err(StfError::NonExistentAccount(target));
+        return Err(AcctError::NonExistentAccount(target).into());
     };
 
     let (logs, output_value) = match tx.payload() {
@@ -131,7 +131,7 @@ fn execute_transaction<S: StateAccessor>(
         }
     };
     // Update balance
-    let total_sent = output_value.ok_or(StfError::BitcoinAmountOverflow)?;
+    let total_sent = output_value.ok_or(AcctError::BitcoinAmountOverflow)?;
 
     let _coins = acct_state.take_balance(total_sent);
     // TODO: do something with coins
@@ -148,8 +148,13 @@ fn process_snark_update<S: StateAccessor>(
     update: &SnarkAccountUpdateWithMmrProofs,
     cur_balance: BitcoinAmount,
 ) -> StfResult<Vec<OLLog>> {
-    let verified_update =
-        verify_update_correctness(state_accessor, target, snark_state, update, cur_balance)?;
+    let verified_update = snark_sys::verify_update_correctness(
+        state_accessor,
+        target,
+        snark_state,
+        update,
+        cur_balance,
+    )?;
     let new_state = verified_update.operation().new_state();
     let seq_no = verified_update.operation().seq_no();
 

@@ -1,22 +1,16 @@
 [package]
-name = "strata-ol-stf"
+name = "strata-snark-acct-sys"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-thiserror.workspace = true
-
 strata-acct-types.workspace = true
-strata-asm-common.workspace = true
-strata-asm-logs.workspace = true
-strata-crypto.workspace = true
 strata-ledger-types.workspace = true
-strata-merkle.workspace = true
+strata-mmr.workspace = true
 strata-ol-chain-types-new.workspace = true
-strata-params.workspace = true
 strata-primitives.workspace = true
-strata-snark-acct-sys.workspace = true
 strata-snark-acct-types.workspace = true
+
 
 [lints]
 workspace = true
