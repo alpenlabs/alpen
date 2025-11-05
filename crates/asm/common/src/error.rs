@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display};
 
 use strata_asm_types::L1VerificationError;
 use strata_l1_txfmt::SubprotocolId;
+use strata_merkle::error::MerkleError;
 use strata_msg_fmt::TypeId;
 use thiserror::Error;
 
@@ -63,6 +64,10 @@ pub enum AsmError {
     /// Missing genesis configuration for subprotocol
     #[error("missing genesis configuration for subprotocol {0}")]
     MissingGenesisConfig(SubprotocolId),
+
+    /// Error related to Merkle tree operations
+    #[error("merkle tree error: {0}")]
+    MerkleError(#[from] MerkleError),
 }
 
 /// Wrapper result type for database operations.

@@ -13,6 +13,7 @@ serde.workspace = true
 strata-asm-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
+strata-merkle.workspace = true
 strata-msg-fmt.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
