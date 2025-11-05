@@ -45,10 +45,9 @@ impl<'a> AuxResolver<'a> {
     /// Gets and verifies manifest leaves for a transaction.
     ///
     /// This method:
-    /// 1. Retrieves the `ManifestLeaves` response and proofs for the transaction
-    /// 2. Verifies the response matches the requested range
-    /// 3. Verifies each leaf's MMR proof against the manifest MMR
-    /// 4. Returns all verified leaves with their proofs
+    /// 1. Retrieves the manifest leaves and proofs for the transaction
+    /// 2. Verifies each leaf's MMR proof against the manifest MMR
+    /// 3. Returns the verified leaves
     ///
     /// # Errors
     ///

@@ -21,32 +21,6 @@ pub enum AuxError {
         hash: AsmManifestHash,
     },
 
-    /// Response content does not match the provided request spec.
-    ///
-    /// For example, the response range or txid differs from what was
-    /// requested via `AuxRequestSpec`.
-    #[error("response mismatch for tx {tx_index}: {details}")]
-    SpecMismatch {
-        /// The transaction index with the mismatch
-        tx_index: L1TxIndex,
-        /// Human-readable description of the mismatch
-        details: String,
-    },
-
-    /// Type mismatch between requested and provided auxiliary data.
-    ///
-    /// This occurs when a subprotocol requests one type of auxiliary data
-    /// (e.g., `ManifestLeaves`) but receives a different type (e.g., `BitcoinTx`).
-    #[error("type mismatch for tx {tx_index}: expected {expected}, found {found}")]
-    TypeMismatch {
-        /// The transaction index with the mismatch
-        tx_index: L1TxIndex,
-        /// The expected response type
-        expected: &'static str,
-        /// The actual response type received
-        found: &'static str,
-    },
-
     /// No auxiliary responses found for the requested transaction.
     ///
     /// This is typically not an error condition - it just means no auxiliary

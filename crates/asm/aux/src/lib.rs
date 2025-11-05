@@ -7,7 +7,7 @@
 //!   what auxiliary data they need, keyed by transaction index.
 //!
 //! - **Fulfillment Phase**: External workers (orchestration layer) fetch the requested data and
-//!   package it into [`AuxResponseEnvelope`] instances.
+//!   produce responses for each request type (e.g., manifest leaves with proofs, raw Bitcoin txs).
 //!
 //! - **Resolution Phase** ([`process_txs`]): Subprotocols use [`AuxResolver`] to access the
 //!   fulfilled auxiliary data. The resolver automatically verifies MMR proofs.
@@ -29,13 +29,14 @@
 //! ## Request Granularity
 //!
 //! Requests are keyed by **transaction index** (`L1TxIndex`) within an L1 block.
-//! Each transaction can request at most one auxiliary data item. Not all transactions
+//! Each transaction can request at most one item per request type (e.g., one
+//! manifest-leaves request and one bitcoin-tx request). Not all transactions
 //! need to request auxiliary data.
 //!
-//! **IMPORTANT**: For each request (L1 transaction index), there can only be a single
-//! response. If your use case requires multiple auxiliary data items for a single
-//! transaction type, you must update the [`AuxRequestSpec`] enum to create a new
-//! request type that bundles the required data together.
+//! **IMPORTANT**: For a given transaction index and request type, there must be
+//! at most one response. If your use case requires multiple pieces of auxiliary
+//! data for a single transaction, define a request type that bundles the needed
+//! data together.
 //!
 //! ## Supported Request Types
 //!
@@ -62,7 +63,8 @@
 //!         // Request manifest leaves for L1 blocks 100-200
 //!         // Include the manifest MMR snapshot for verification
 //!         let mmr_compact = /* obtain from state */ todo!("compact MMR");
-//!         collector.request_manifest_leaves(idx, 100, 200, mmr_compact);
+//!         let req = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact };
+//!         collector.request_manifest_leaves(idx, req);
 //!     }
 //! }
 //!

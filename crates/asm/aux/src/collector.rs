@@ -10,7 +10,8 @@ use crate::{BitcoinTxRequest, L1TxIndex, ManifestLeavesRequest};
 ///
 /// During `pre_process_txs`, subprotocols use this collector to register
 /// their auxiliary data requirements. Each transaction can request at most
-/// one auxiliary data item (identified by its index within the L1 block).
+/// one item per request type (e.g., one `ManifestLeavesRequest` and one
+/// `BitcoinTxRequest`).
 #[derive(Debug, Default)]
 pub struct AuxRequestCollector {
     manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesRequest>,
