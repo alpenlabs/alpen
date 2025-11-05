@@ -187,7 +187,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
     ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
         // Complete the header using execution outputs
         // The exec_payload contains header intrinsics (non-commitment fields)
-        // The output.write_batch contains computed commitments (state_root, logs_bloom)
 
         use crate::types::EvmHeader;
 
@@ -233,7 +232,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         outputs: &ExecBlockOutput<Self>,
     ) -> EnvResult<()> {
         // Verify that the outputs match what's committed in the header
-        //
 
         // Check state root matches
         let computed_state_root = outputs.write_batch().state_root();
@@ -256,7 +254,8 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         wb: &Self::WriteBatch,
     ) -> EnvResult<()> {
         // Merge the HashedPostState into the EthereumState
-        // This follows the pattern from the reference:
+        // This follows the pattern from the reference process_block function from
+        // proofimpl-evm-ee-stf:
         // input.parent_state.update(&hashed_post_state)
         state.ethereum_state_mut().update(wb.hashed_post_state());
         Ok(())
@@ -265,9 +264,10 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
 #[cfg(test)]
 mod tests {
+    use strata_ee_acct_types::ExecBlock;
+
     use super::*;
     use crate::types::{EvmBlock, EvmBlockBody, EvmHeader};
-    use strata_ee_acct_types::ExecBlock;
     /// Test with real witness data from the reference implementation.
     /// This is an integration test that validates the full execution flow with real block data.
     #[test]
