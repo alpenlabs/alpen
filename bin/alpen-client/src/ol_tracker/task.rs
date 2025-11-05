@@ -63,7 +63,7 @@ fn handle_tracker_error(error: impl Into<super::error::OlTrackerError>, context:
     if error.is_fatal() {
         panic!("{}", error.panic_message());
     } else {
-        error!(%error, context, "recoverable error in ol tracker");
+        error!(%error, %context, "recoverable error in ol tracker");
     }
 }
 
@@ -96,7 +96,7 @@ pub(crate) async fn track_ol_state(
     let best_ol_slot = best_ol_block.slot();
     let best_local_slot = state.best_ol_block().slot();
 
-    debug!(best_local_slot, best_ol_slot, "check best ol block");
+    debug!(%best_local_slot, %best_ol_slot, "check best ol block");
 
     if best_ol_slot < best_local_slot {
         warn!(
@@ -108,7 +108,7 @@ pub(crate) async fn track_ol_state(
 
     if best_ol_slot == best_local_slot {
         return if best_ol_block.blkid() != state.best_ol_block().blkid() {
-            warn!(slot = best_ol_block.slot(), ol = %best_ol_block.blkid(), local = %state.best_ol_block().blkid(), "detect chain mismatch; trigger reorg");
+            warn!(slot = %best_ol_slot, ol = %best_ol_block.blkid(), local = %state.best_ol_block().blkid(), "detect chain mismatch; trigger reorg");
             Ok(TrackOlAction::Reorg)
         } else {
             // local view is in sync with OL, nothing to do
@@ -198,7 +198,7 @@ where
         // 1. Apply all operations in the block to update local ee account state.
         apply_block_operations(&mut ee_state, operations).map_err(|error| {
             error!(
-                slot = ol_block.slot(),
+                slot = %ol_block.slot(),
                 %error,
                 "failed to apply ol block operation"
             );
@@ -219,7 +219,7 @@ where
             .await
             .map_err(|error| {
                 error!(
-                    slot = ol_block.slot(),
+                    slot = %ol_block.slot(),
                     %error,
                     "failed to store ee account state"
                 );

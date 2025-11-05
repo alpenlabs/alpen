@@ -29,13 +29,13 @@ where
     while max_slot >= genesis_slot {
         let min_slot = max_slot.saturating_sub(fetch_size).max(genesis_slot);
 
-        debug!(min_slot, max_slot, "checking slot range for fork point");
+        debug!(%min_slot, %max_slot, "checking slot range for fork point");
 
         let blocks = block_commitments_in_range_checked(ol_client, min_slot, max_slot).await?;
 
         for block in blocks.iter().rev() {
             if let Some(state) = storage.ee_account_state(block.blkid().into()).await? {
-                info!(slot = state.ol_slot(), "found fork point");
+                info!(slot = %state.ol_slot(), "found fork point");
                 return Ok(Some(state));
             }
         }
@@ -61,7 +61,7 @@ where
 {
     let slot = fork_state.ol_slot();
 
-    info!(slot, "rolling back to fork point");
+    info!(%slot, "rolling back to fork point");
 
     // Build next state first. If this fails, db rollback will not occur and this operation can be
     // re-triggered in the next cycle.
@@ -100,14 +100,14 @@ where
     .await?
     .ok_or_else(|| {
         error!(
-            genesis_slot,
+            %genesis_slot,
             "reorg: could not find ol fork block till ol genesis slot"
         );
         OlTrackerError::NoForkPointFound { genesis_slot }
     })?;
 
     warn!(
-        slot = fork_state.ol_slot(),
+        slot = %fork_state.ol_slot(),
         "reorg: found fork point; starting db rollback"
     );
 
