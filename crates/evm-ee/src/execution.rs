@@ -263,3 +263,86 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{EvmBlock, EvmBlockBody, EvmHeader};
+    use strata_ee_acct_types::ExecBlock;
+    /// Test with real witness data from the reference implementation.
+    /// This is an integration test that validates the full execution flow with real block data.
+    #[test]
+    fn test_with_witness_params() {
+        use rsp_client_executor::io::EthClientExecutorInput;
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct TestData {
+            witness: EthClientExecutorInput,
+        }
+
+        // Load test data from reference implementation
+        let test_data_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("proof-impl/evm-ee-stf/test_data/witness_params.json");
+
+        let json_content = std::fs::read_to_string(&test_data_path)
+            .expect("Failed to read witness_params.json - make sure reference crate exists");
+
+        let test_data: TestData =
+            serde_json::from_str(&json_content).expect("Failed to parse test data");
+
+        // Create execution environment
+        let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
+        let env = EvmExecutionEnvironment::new(chain_spec);
+
+        // Use the pre-state directly from witness data (it already has all the proofs!)
+        let pre_state = crate::types::EvmPartialState::new(
+            test_data.witness.parent_state,
+            test_data.witness.bytecodes,
+            test_data.witness.ancestor_headers,
+        );
+
+        // Create block from witness
+        let header = test_data.witness.current_block.header().clone();
+        let evm_header = EvmHeader::new(header.clone());
+
+        // Get transactions from the block
+        use reth_primitives_traits::Block as RethBlockTrait;
+        let block_body = test_data.witness.current_block.body().clone();
+        let evm_body = EvmBlockBody::from_alloy_body(block_body);
+
+        let block = EvmBlock::new(evm_header, evm_body);
+
+        // Create exec payload and inputs
+        let exec_payload = ExecPayload::new(&header, block.get_body());
+        let inputs = BlockInputs::new_empty();
+
+        // Execute the block
+        // Note: This will execute real block data through our implementation
+        let result = env.execute_block_body(&pre_state, &exec_payload, &inputs);
+
+        // For now, we just verify it doesn't panic
+        // In the future, we can compare outputs with the reference implementation
+        assert!(
+            result.is_ok(),
+            "Block execution should succeed with witness data: {:?}",
+            result.err()
+        );
+
+        if let Ok(output) = result {
+            // Test that we can complete the header
+            let completed_header = env.complete_header(&exec_payload, &output);
+            assert!(completed_header.is_ok(), "Header completion should succeed");
+
+            // Test that verification works
+            if let Ok(header) = completed_header {
+                let verify_result = env.verify_outputs_against_header(&header, &output);
+                assert!(
+                    verify_result.is_ok(),
+                    "Verification should succeed with real data"
+                );
+            }
+        }
+    }
+}
