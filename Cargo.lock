@@ -14024,6 +14024,7 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-msg-fmt",
+ "strata-primitives",
  "strata-simple-ee",
  "strata-snark-acct-types",
  "thiserror 2.0.16",
@@ -14195,6 +14196,7 @@ dependencies = [
  "strata-asm-common",
  "strata-identifiers",
  "strata-predicate",
+ "strata-primitives",
  "strata-snark-acct-types",
 ]
 
@@ -14628,6 +14630,7 @@ name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
+ "strata-primitives",
 ]
 
 [[package]]

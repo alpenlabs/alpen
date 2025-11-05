@@ -1,5 +1,5 @@
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IGlobalState, StateAccessor};
+use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
@@ -43,7 +43,7 @@ pub(crate) fn send_message<S: StateAccessor>(
     to: AccountId,
     msg_payload: &MsgPayload,
 ) -> StfResult<Vec<OLLog>> {
-    let cur_epoch = state_accessor.global().cur_epoch();
+    let cur_epoch = state_accessor.l1_view().cur_epoch();
     let Some(target_acct) = state_accessor.get_account_state_mut(to)? else {
         return Err(StfError::NonExistentAccount(to));
     };
@@ -73,7 +73,7 @@ pub(crate) fn send_transfer<S: StateAccessor>(
     to: AccountId,
     amt: BitcoinAmount,
 ) -> StfResult<Vec<OLLog>> {
-    let cur_epoch = state_accessor.global().cur_epoch();
+    let cur_epoch = state_accessor.l1_view().cur_epoch();
     let Some(target_acct) = state_accessor.get_account_state_mut(to)? else {
         return Err(StfError::NonExistentAccount(to));
     };

@@ -2,9 +2,8 @@ use std::fmt;
 
 use int_enum::IntEnum;
 use strata_acct_types::AccountId;
+use strata_primitives::Slot;
 use strata_snark_acct_types::SnarkAccountUpdateWithMmrProofs;
-
-use crate::Slot;
 
 /// Represents a single transaction within a block.
 #[derive(Clone, Debug)]

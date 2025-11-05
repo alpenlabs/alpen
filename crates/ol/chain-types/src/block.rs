@@ -1,7 +1,10 @@
 use strata_asm_common::AsmLogEntry;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_primitives::{
+    Epoch, Slot,
+    buf::{Buf32, Buf64},
+};
 
-use crate::{Epoch, OLBlockId, OLTransaction, Slot};
+use crate::{OLBlockId, OLTransaction};
 
 /// The Orchestration Layer(OL) block.
 #[derive(Clone, Debug)]
@@ -106,7 +109,7 @@ impl OLBlockHeader {
         self.slot
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 

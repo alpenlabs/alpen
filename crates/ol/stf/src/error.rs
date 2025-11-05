@@ -1,6 +1,5 @@
 use strata_acct_types::{AccountId, AcctError, strata_codec::CodecError};
-use strata_ol_chain_types_new::{Epoch, Slot};
-use strata_primitives::Buf32;
+use strata_primitives::{Buf32, Epoch, Slot};
 use thiserror::Error;
 
 /// Errors related to block validation.
@@ -92,7 +91,7 @@ pub enum StfError {
     BitcoinAmountOverflow,
 
     #[error("Epoch overflow: current epoch {cur_epoch}")]
-    EpochOverflow { cur_epoch: u64 },
+    EpochOverflow { cur_epoch: Epoch },
 
     #[error("Unsupported transfer to {0}")]
     UnsupportedTransferTo(AccountId),

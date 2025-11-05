@@ -17,6 +17,7 @@ use strata_ee_acct_types::{
     MessageDecodeResult, PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::SubjectDepositData;
+use strata_primitives::Epoch;
 use strata_snark_acct_types::{
     LedgerRefs, MessageEntry, UpdateInputData, UpdateOperationData, UpdateOutputs,
 };
@@ -64,7 +65,7 @@ pub(crate) struct MsgMeta {
     #[expect(dead_code, reason = "for future use")]
     pub(crate) source: AccountId,
     #[expect(dead_code, reason = "for future use")]
-    pub(crate) incl_epoch: u64,
+    pub(crate) incl_epoch: Epoch,
     pub(crate) value: BitcoinAmount,
 }
 
