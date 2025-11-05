@@ -1,0 +1,265 @@
+//! EVM block execution logic.
+//!
+//! This module provides the core ExecutionEnvironment implementation for EVM blocks,
+//! using RSP's sparse state and Reth's EVM execution engine.
+
+use std::sync::Arc;
+
+use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
+use reth_chainspec::ChainSpec;
+use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome, Executor};
+use reth_evm_ethereum::EthEvmConfig;
+use reth_primitives::EthPrimitives;
+use reth_trie::KeccakKeyHasher;
+use revm::database::WrapDatabaseRef;
+use rsp_client_executor::{BlockValidator, io::TrieDB};
+use strata_ee_acct_types::{
+    EnvError, EnvResult, ExecBlockOutput, ExecHeader, ExecPayload, ExecutionEnvironment,
+};
+use strata_ee_chain_types::{BlockInputs, BlockOutputs};
+
+use crate::types::{EvmBlock, EvmPartialState, EvmWriteBatch};
+
+/// EVM Execution Environment for Alpen.
+///
+/// This struct implements the ExecutionEnvironment trait and handles execution
+/// of EVM blocks against sparse state using RSP and Reth.
+#[derive(Debug, Clone)]
+pub struct EvmExecutionEnvironment {
+    /// The chain specification (genesis, fork configuration, etc.)
+    chain_spec: Arc<ChainSpec>,
+}
+
+impl EvmExecutionEnvironment {
+    /// Creates a new EvmExecutionEnvironment with the given chain specification.
+    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
+        Self { chain_spec }
+    }
+}
+
+impl ExecutionEnvironment for EvmExecutionEnvironment {
+    type PartialState = EvmPartialState;
+    type WriteBatch = EvmWriteBatch;
+    type Block = EvmBlock;
+
+    fn execute_block_body(
+        &self,
+        pre_state: &Self::PartialState,
+        exec_payload: &ExecPayload<'_, Self::Block>,
+        // TODO: get feedbacks from Trey if this field can be unused in Eth context
+        _inputs: &BlockInputs,
+    ) -> EnvResult<ExecBlockOutput<Self>> {
+        // Step 1: Create EVM config with AlpenEvmFactory (matches process_block:31-33)
+        let evm_config =
+            EthEvmConfig::new_with_evm_factory(self.chain_spec.clone(), AlpenEvmFactory::default());
+
+        // Step 2: Prepare data for witness DB (matches process_block:35-41)
+        // Build block_hashes map from ancestor headers (for BLOCKHASH opcode)
+        // Build bytecode_by_hash map from bytecodes (for contract execution)
+        use reth_primitives_traits::SealedHeader;
+        use revm_primitives::{B256, map::HashMap};
+
+        // First, seal the current block header and ancestor headers
+        let current_sealed = SealedHeader::seal_slow(exec_payload.header_intrinsics().clone());
+        let sealed_headers: Vec<SealedHeader> = std::iter::once(current_sealed)
+            .chain(
+                pre_state
+                    .ancestor_headers()
+                    .iter()
+                    .map(|h| SealedHeader::seal_slow(h.clone())),
+            )
+            .collect();
+
+        // Build block_hashes from sealed headers (follows witness_db() pattern at io.rs:219-237)
+        let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
+        for i in 0..sealed_headers.len().saturating_sub(1) {
+            let child_header = &sealed_headers[i];
+            let parent_header = &sealed_headers[i + 1];
+            block_hashes.insert(parent_header.number, child_header.parent_hash);
+        }
+
+        // Build bytecode_by_hash from bytecodes (follows witness_db() pattern at io.rs:215-216)
+        let bytecode_by_hash: HashMap<B256, &revm::state::Bytecode> = pre_state
+            .bytecodes()
+            .iter()
+            .map(|code| (code.hash_slow(), code))
+            .collect();
+
+        // Step 3: Initialize witness database from EthereumState
+        let db = {
+            let trie_db = TrieDB::new(pre_state.ethereum_state(), block_hashes, bytecode_by_hash);
+            WrapDatabaseRef(trie_db)
+        };
+
+        // Step 4: Create block executor (matches process_block:43)
+        let block_executor = BasicBlockExecutor::new(evm_config, db);
+
+        // Step 5: Build block from exec_payload and recover senders (matches process_block:44-48)
+        let header = exec_payload.header_intrinsics().clone();
+        let body = exec_payload.body().body().clone();
+
+        // Build block using alloy_consensus types
+        use alloy_consensus::Block as AlloyBlock;
+        let alloy_block = AlloyBlock {
+            header: header.clone(),
+            body,
+        };
+
+        // Recover transaction senders from signatures
+        // Note: from_input_block() is just an identity function in RSP, so we skip it
+        use reth_primitives_traits::Block as RethBlockTrait;
+        let block = alloy_block
+            .try_into_recovered()
+            .map_err(|_| EnvError::InvalidBlock)?;
+
+        // Step 6: Validate header (matches process_block:51-53)
+        EthPrimitives::validate_header(
+            block.sealed_block().sealed_header(),
+            self.chain_spec.clone(),
+        )
+        .map_err(|_| EnvError::InvalidBlock)?;
+
+        // Step 7: Execute the block (matches process_block:55)
+        let execution_output = block_executor
+            .execute(&block)
+            .map_err(|_| EnvError::InvalidBlock)?;
+
+        // Step 8: Validate block post-execution (matches process_block:58-60)
+        EthPrimitives::validate_block_post_execution(
+            &block,
+            self.chain_spec.clone(),
+            &execution_output,
+        )
+        .map_err(|_| EnvError::InvalidBlock)?;
+
+        // Step 9: Accumulate logs bloom (matches process_block:63-69)
+        use alloy_consensus::TxReceipt;
+        use revm_primitives::alloy_primitives::Bloom;
+        let mut logs_bloom = Bloom::default();
+        execution_output.result.receipts.iter().for_each(|r| {
+            logs_bloom.accrue_bloom(&r.bloom());
+        });
+
+        // Step 10: Collect withdrawal intents (matches process_block:72-79)
+        let transactions = block.into_transactions();
+        let executed_txns = transactions.iter();
+        let receipts_vec = execution_output.receipts.clone();
+        let receipts = receipts_vec.iter();
+        let tx_receipt_pairs = executed_txns.zip(receipts);
+        let _withdrawal_intents = collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>();
+
+        // Step 11: Convert execution outcome to HashedPostState (matches process_block:82-87)
+        let block_number = header.number;
+        let executor_outcome = ExecutionOutcome::new(
+            execution_output.state,
+            vec![execution_output.result.receipts],
+            block_number,
+            vec![execution_output.result.requests],
+        );
+        let hashed_post_state = executor_outcome.hash_state_slow::<KeccakKeyHasher>();
+
+        // Step 12: Compute state root (matches process_block:90-95)
+        // Clone the pre-state, merge the hashed post state, and compute the new state root
+        let mut updated_state = pre_state.ethereum_state().clone();
+        updated_state.update(&hashed_post_state);
+        let state_root = updated_state.state_root();
+
+        // Step 13: Create WriteBatch with computed metadata
+        let write_batch = EvmWriteBatch::new(hashed_post_state, state_root.into(), logs_bloom);
+
+        // Step 14: Create BlockOutputs
+        // TODO: Convert withdrawal_intents to OutputTransfer
+        // WithdrawalIntent has Descriptor destination, OutputTransfer needs AccountId
+        // This conversion requires business logic to map Bitcoin descriptors to AccountIds
+        let outputs = BlockOutputs::new_empty();
+        // for intent in withdrawal_intents {
+        //     let account_id = convert_descriptor_to_account_id(&intent.destination)?;
+        //     outputs.add_transfer(OutputTransfer::new(account_id, intent.amt));
+        // }
+
+        Ok(ExecBlockOutput::new(write_batch, outputs))
+    }
+
+    fn complete_header(
+        &self,
+        exec_payload: &ExecPayload<'_, Self::Block>,
+        output: &ExecBlockOutput<Self>,
+    ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
+        // Complete the header using execution outputs (matches process_block:103-125)
+        // The exec_payload contains header intrinsics (non-commitment fields)
+        // The output.write_batch contains computed commitments (state_root, logs_bloom)
+
+        use crate::types::EvmHeader;
+
+        // Get the intrinsics from the payload
+        let intrinsics = exec_payload.header_intrinsics();
+
+        // Get computed commitments from the write batch
+        let state_root = output.write_batch().state_root();
+        let logs_bloom = output.write_batch().logs_bloom();
+
+        // Build the complete header with both intrinsics and computed commitments
+        use alloy_consensus::Header;
+        let header = Header {
+            parent_hash: intrinsics.parent_hash,
+            ommers_hash: intrinsics.ommers_hash,
+            beneficiary: intrinsics.beneficiary,
+            state_root: state_root.into(),
+            transactions_root: intrinsics.transactions_root,
+            receipts_root: intrinsics.receipts_root,
+            logs_bloom,
+            difficulty: intrinsics.difficulty,
+            number: intrinsics.number,
+            gas_limit: intrinsics.gas_limit,
+            gas_used: intrinsics.gas_used,
+            timestamp: intrinsics.timestamp,
+            extra_data: intrinsics.extra_data.clone(),
+            mix_hash: intrinsics.mix_hash,
+            nonce: intrinsics.nonce,
+            base_fee_per_gas: intrinsics.base_fee_per_gas,
+            withdrawals_root: intrinsics.withdrawals_root,
+            blob_gas_used: intrinsics.blob_gas_used,
+            excess_blob_gas: intrinsics.excess_blob_gas,
+            parent_beacon_block_root: intrinsics.parent_beacon_block_root,
+            requests_hash: intrinsics.requests_hash,
+        };
+
+        Ok(EvmHeader::new(header))
+    }
+
+    fn verify_outputs_against_header(
+        &self,
+        header: &<Self::Block as strata_ee_acct_types::ExecBlock>::Header,
+        outputs: &ExecBlockOutput<Self>,
+    ) -> EnvResult<()> {
+        // Verify that the outputs match what's committed in the header
+        // (matches process_block:97-99 state root verification)
+
+        // Check state root matches
+        let computed_state_root = outputs.write_batch().state_root();
+        let header_state_root = header.get_state_root();
+
+        if computed_state_root != header_state_root {
+            //FIXME: is it correct enum to represent this error?
+            return Err(EnvError::MismatchedCurStateData);
+        }
+
+        // Note: transactions_root and receipts_root are verified during execution
+        // by validate_block_post_execution() in execute_block_body()
+
+        Ok(())
+    }
+
+    fn merge_write_into_state(
+        &self,
+        state: &mut Self::PartialState,
+        wb: &Self::WriteBatch,
+    ) -> EnvResult<()> {
+        // Merge the HashedPostState into the EthereumState
+        // This follows the pattern from the reference:
+        // input.parent_state.update(&hashed_post_state)
+        state.ethereum_state_mut().update(wb.hashed_post_state());
+        Ok(())
+    }
+}
+
