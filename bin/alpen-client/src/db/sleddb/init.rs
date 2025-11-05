@@ -20,7 +20,7 @@ pub(crate) fn init_db(datadir: &Path, db_retry_count: u16) -> Result<Arc<EeNodeD
 
     let retry_delay_ms = 200u64;
     let db_config = SledDbConfig::new_with_constant_backoff(db_retry_count, retry_delay_ms);
-    let witness_db = EeNodeDBSled::new(Arc::new(typed_sled), db_config)
-        .map_err(|e| eyre!("Failed to create witness db: {}", e))?;
-    Ok(Arc::new(witness_db))
+    let node_db = EeNodeDBSled::new(Arc::new(typed_sled), db_config)
+        .map_err(|e| eyre!("Failed to create node db: {}", e))?;
+    Ok(Arc::new(node_db))
 }
