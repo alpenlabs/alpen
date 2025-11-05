@@ -13149,6 +13149,7 @@ dependencies = [
  "borsh",
  "serde",
  "strata-asm-types",
+ "strata-identifiers",
  "strata-l1-txfmt",
  "strata-msg-fmt",
  "thiserror 2.0.16",
