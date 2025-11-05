@@ -77,8 +77,8 @@
 //!     params: &Self::Params,
 //! ) {
 //!     for (idx, tx) in txs.iter().enumerate() {
-//!         // Get verified manifest leaves
-//!         let leaves = aux_resolver.get_manifest_leaves(idx)?;
+//!         // Get verified manifest leaves for a known range
+//!         let leaves = aux_resolver.get_manifest_leaves(idx, 100, 200)?;
 //!
 //!         for leaf in &leaves {
 //!             // Use the verified manifest hash

@@ -21,6 +21,18 @@ pub enum AuxError {
         hash: AsmManifestHash,
     },
 
+    /// Response content does not match the provided request spec.
+    ///
+    /// For example, the response range or txid differs from what was
+    /// requested via `AuxRequestSpec`.
+    #[error("response mismatch for tx {tx_index}: {details}")]
+    SpecMismatch {
+        /// The transaction index with the mismatch
+        tx_index: L1TxIndex,
+        /// Human-readable description of the mismatch
+        details: String,
+    },
+
     /// Type mismatch between requested and provided auxiliary data.
     ///
     /// This occurs when a subprotocol requests one type of auxiliary data
