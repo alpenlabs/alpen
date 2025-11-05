@@ -127,10 +127,12 @@ impl TaskTrackerAdapter {
             .ok_or(ProvingTaskError::TaskNotFound(key))?;
 
         // Map status updates to PaaS operations
+        use strata_paas::TaskStatusUpdate;
+
         match new_status {
             ProvingTaskStatus::Completed => {
                 self.prover_handle
-                    .mark_completed(*task_id)
+                    .set_task_status(*task_id, TaskStatusUpdate::Completed)
                     .await
                     .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
 
@@ -140,16 +142,23 @@ impl TaskTrackerAdapter {
             }
             ProvingTaskStatus::TransientFailure => {
                 self.prover_handle
-                    .mark_transient_failure(
+                    .set_task_status(
                         *task_id,
-                        "Worker reported transient failure".to_string(),
+                        TaskStatusUpdate::TransientFailure {
+                            error: "Worker reported transient failure".to_string(),
+                        },
                     )
                     .await
                     .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
             }
             ProvingTaskStatus::Failed => {
                 self.prover_handle
-                    .mark_failed(*task_id, "Worker reported permanent failure".to_string())
+                    .set_task_status(
+                        *task_id,
+                        TaskStatusUpdate::Failed {
+                            error: "Worker reported permanent failure".to_string(),
+                        },
+                    )
                     .await
                     .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
             }

@@ -32,11 +32,8 @@ mod db;
 mod errors;
 mod operators;
 mod paas_adapter;
-mod prover_manager;
-mod retry_policy;
 mod rpc_server;
 mod status;
-mod task_tracker;
 mod task_tracker_adapter;
 
 #[tokio::main]

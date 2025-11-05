@@ -68,49 +68,35 @@ pub enum PaaSCommand {
         completion: CommandCompletionSender<Result<strata_primitives::proof::ProofKey, PaaSError>>,
     },
 
-    /// Mark task as queued (used by worker pool)
-    MarkQueued {
+    /// Update task status (for advanced use cases)
+    ///
+    /// This is an advanced command that allows external systems to update task status.
+    /// Most users should rely on the automatic status management by the worker pool.
+    ///
+    /// Note: Some transitions may be rejected if they violate the state machine invariants.
+    SetTaskStatus {
         /// Task identifier
         task_id: TaskId,
+        /// New status to set
+        new_status: TaskStatusUpdate,
         /// Completion channel for response
         completion: CommandCompletionSender<Result<(), PaaSError>>,
     },
+}
 
-    /// Mark task as proving/in-progress (used by worker pool)
-    MarkProving {
-        /// Task identifier
-        task_id: TaskId,
-        /// Completion channel for response
-        completion: CommandCompletionSender<Result<(), PaaSError>>,
-    },
-
-    /// Mark task as completed (used by worker pool)
-    MarkCompleted {
-        /// Task identifier
-        task_id: TaskId,
-        /// Completion channel for response
-        completion: CommandCompletionSender<Result<(), PaaSError>>,
-    },
-
-    /// Mark task as failed with transient error (used by worker pool)
-    MarkTransientFailure {
-        /// Task identifier
-        task_id: TaskId,
-        /// Error message
-        error: String,
-        /// Completion channel for response
-        completion: CommandCompletionSender<Result<(), PaaSError>>,
-    },
-
-    /// Mark task as permanently failed (used by worker pool)
-    MarkFailed {
-        /// Task identifier
-        task_id: TaskId,
-        /// Error message
-        error: String,
-        /// Completion channel for response
-        completion: CommandCompletionSender<Result<(), PaaSError>>,
-    },
+/// Status update for SetTaskStatus command
+#[derive(Debug, Clone)]
+pub enum TaskStatusUpdate {
+    /// Mark task as queued (ready to prove)
+    Queued,
+    /// Mark task as proving/in-progress
+    Proving,
+    /// Mark task as completed
+    Completed,
+    /// Mark task as having a transient failure (will retry)
+    TransientFailure { error: String },
+    /// Mark task as permanently failed
+    Failed { error: String },
 }
 
 /// Filter for querying tasks

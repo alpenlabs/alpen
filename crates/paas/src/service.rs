@@ -103,64 +103,51 @@ impl<D: ProofDatabase> AsyncService for ProverService<D> {
                 Ok(Response::Continue)
             }
 
-            PaaSCommand::MarkQueued {
+            PaaSCommand::SetTaskStatus {
                 task_id,
+                new_status,
                 completion,
             } => {
-                let result = state.mark_queued(*task_id);
-                if result.is_ok() {
-                    info!(?task_id, "Task marked as queued");
-                }
-                completion.send(result).await;
-                Ok(Response::Continue)
-            }
+                use crate::TaskStatusUpdate;
 
-            PaaSCommand::MarkProving {
-                task_id,
-                completion,
-            } => {
-                let result = state.mark_proving(*task_id);
-                if result.is_ok() {
-                    info!(?task_id, "Task marked as proving");
-                }
-                completion.send(result).await;
-                Ok(Response::Continue)
-            }
+                let result = match new_status {
+                    TaskStatusUpdate::Queued => {
+                        let res = state.mark_queued(*task_id);
+                        if res.is_ok() {
+                            info!(?task_id, "Task marked as queued");
+                        }
+                        res
+                    }
+                    TaskStatusUpdate::Proving => {
+                        let res = state.mark_proving(*task_id);
+                        if res.is_ok() {
+                            info!(?task_id, "Task marked as proving");
+                        }
+                        res
+                    }
+                    TaskStatusUpdate::Completed => {
+                        let res = state.mark_completed(*task_id);
+                        if res.is_ok() {
+                            info!(?task_id, "Task marked as completed");
+                        }
+                        res
+                    }
+                    TaskStatusUpdate::TransientFailure { error } => {
+                        let res = state.mark_transient_failure(*task_id, error);
+                        if res.is_ok() {
+                            warn!(?task_id, ?error, "Task marked as transient failure");
+                        }
+                        res
+                    }
+                    TaskStatusUpdate::Failed { error } => {
+                        let res = state.mark_failed(*task_id, error);
+                        if res.is_ok() {
+                            error!(?task_id, ?error, "Task marked as failed");
+                        }
+                        res
+                    }
+                };
 
-            PaaSCommand::MarkCompleted {
-                task_id,
-                completion,
-            } => {
-                let result = state.mark_completed(*task_id);
-                if result.is_ok() {
-                    info!(?task_id, "Task marked as completed");
-                }
-                completion.send(result).await;
-                Ok(Response::Continue)
-            }
-
-            PaaSCommand::MarkTransientFailure {
-                task_id,
-                error,
-                completion,
-            } => {
-                let result = state.mark_transient_failure(*task_id, error);
-                if result.is_ok() {
-                    warn!(?task_id, ?error, "Task marked as transient failure");
-                }
-                completion.send(result).await;
-                Ok(Response::Continue)
-            }
-
-            PaaSCommand::MarkFailed {
-                task_id,
-                error,
-                completion,
-            } => {
-                let result = state.mark_failed(*task_id, error);
-                if result.is_ok() {
-                    error!(?task_id, ?error, "Task marked as failed");
-                }
                 completion.send(result).await;
                 Ok(Response::Continue)
             }

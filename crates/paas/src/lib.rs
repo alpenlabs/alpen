@@ -43,7 +43,7 @@
 
 // Public API exports
 pub use builder::ProverBuilder;
-pub use commands::{PaaSCommand, TaskId};
+pub use commands::{PaaSCommand, ProofData, TaskId, TaskStatusFilter, TaskStatusUpdate};
 pub use config::PaaSConfig;
 pub use errors::PaaSError;
 pub use handle::ProverHandle;

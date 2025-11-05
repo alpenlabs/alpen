@@ -155,65 +155,76 @@ impl<D: ProofDatabase> ProverHandle<D> {
         Ok(tasks.into_iter().map(|(id, _)| id).collect())
     }
 
-    /// Marks a task as queued (ready to prove)
-    pub async fn mark_queued(&self, task_id: TaskId) -> Result<(), PaaSError> {
+    /// Updates task status (for advanced use cases)
+    ///
+    /// Most users should rely on automatic status management by the worker pool.
+    /// This method is provided for advanced scenarios where external systems need
+    /// to update task status.
+    pub async fn set_task_status(
+        &self,
+        task_id: TaskId,
+        new_status: crate::TaskStatusUpdate,
+    ) -> Result<(), PaaSError> {
         self.command_handle
-            .send_and_wait(|completion| PaaSCommand::MarkQueued {
+            .send_and_wait(|completion| PaaSCommand::SetTaskStatus {
                 task_id,
+                new_status: new_status.clone(),
                 completion,
             })
             .await
             .map_err(convert_service_error)?
+    }
+
+    // Internal methods used by WorkerPool
+    // These are not part of the public API and should only be used by the worker pool
+
+    /// Marks a task as queued (ready to prove)
+    ///
+    /// Internal method used by WorkerPool. Not part of public API.
+    pub(crate) async fn mark_queued(&self, task_id: TaskId) -> Result<(), PaaSError> {
+        use crate::TaskStatusUpdate;
+        self.set_task_status(task_id, TaskStatusUpdate::Queued)
+            .await
     }
 
     /// Marks a task as proving/in-progress
-    pub async fn mark_proving(&self, task_id: TaskId) -> Result<(), PaaSError> {
-        self.command_handle
-            .send_and_wait(|completion| PaaSCommand::MarkProving {
-                task_id,
-                completion,
-            })
+    ///
+    /// Internal method used by WorkerPool. Not part of public API.
+    pub(crate) async fn mark_proving(&self, task_id: TaskId) -> Result<(), PaaSError> {
+        use crate::TaskStatusUpdate;
+        self.set_task_status(task_id, TaskStatusUpdate::Proving)
             .await
-            .map_err(convert_service_error)?
     }
 
     /// Marks a task as completed
-    pub async fn mark_completed(&self, task_id: TaskId) -> Result<(), PaaSError> {
-        self.command_handle
-            .send_and_wait(|completion| PaaSCommand::MarkCompleted {
-                task_id,
-                completion,
-            })
+    ///
+    /// Internal method used by WorkerPool. Not part of public API.
+    pub(crate) async fn mark_completed(&self, task_id: TaskId) -> Result<(), PaaSError> {
+        use crate::TaskStatusUpdate;
+        self.set_task_status(task_id, TaskStatusUpdate::Completed)
             .await
-            .map_err(convert_service_error)?
     }
 
     /// Marks a task as having a transient failure (will retry)
-    pub async fn mark_transient_failure(
+    ///
+    /// Internal method used by WorkerPool. Not part of public API.
+    pub(crate) async fn mark_transient_failure(
         &self,
         task_id: TaskId,
         error: String,
     ) -> Result<(), PaaSError> {
-        self.command_handle
-            .send_and_wait(|completion| PaaSCommand::MarkTransientFailure {
-                task_id,
-                error: error.clone(),
-                completion,
-            })
+        use crate::TaskStatusUpdate;
+        self.set_task_status(task_id, TaskStatusUpdate::TransientFailure { error })
             .await
-            .map_err(convert_service_error)?
     }
 
     /// Marks a task as permanently failed
-    pub async fn mark_failed(&self, task_id: TaskId, error: String) -> Result<(), PaaSError> {
-        self.command_handle
-            .send_and_wait(|completion| PaaSCommand::MarkFailed {
-                task_id,
-                error: error.clone(),
-                completion,
-            })
+    ///
+    /// Internal method used by WorkerPool. Not part of public API.
+    pub(crate) async fn mark_failed(&self, task_id: TaskId, error: String) -> Result<(), PaaSError> {
+        use crate::TaskStatusUpdate;
+        self.set_task_status(task_id, TaskStatusUpdate::Failed { error })
             .await
-            .map_err(convert_service_error)?
     }
 }
 
