@@ -1,4 +1,4 @@
-use strata_acct_types::BitcoinAmount;
+use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_ledger_types::{
     AccountTypeState, IAccountState, IGlobalState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
@@ -6,6 +6,7 @@ use strata_ol_chain_types_new::{
     L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload,
 };
 use strata_params::RollupParams;
+use strata_snark_acct_types::SnarkAccountUpdateWithMmrProofs;
 
 use crate::{
     ExecOutput,
@@ -82,7 +83,7 @@ fn seal_epoch(
             logs.extend_from_slice(&process_asm_log(state_accessor, log)?);
         }
         // TODO: Insert into witness mmr
-        cur_height = manifest.l1_blkheight();
+        cur_height += 1;
         cur_blkid = manifest.l1_blkid();
     }
 
@@ -117,7 +118,10 @@ fn execute_transaction<S: StateAccessor>(
                     update,
                     cur_balance,
                 )?;
-                (logs, update.operation().outputs().compute_total_value())
+                (
+                    logs,
+                    update.update().operation().outputs().compute_total_value(),
+                )
             } else {
                 (Vec::new(), Some(BitcoinAmount::zero()))
             }
@@ -139,10 +143,10 @@ fn execute_transaction<S: StateAccessor>(
 
 fn process_snark_update<S: StateAccessor>(
     state_accessor: &mut S,
-    target: strata_acct_types::AccountId,
-    snark_state: &mut <<S as StateAccessor>::AccountState as IAccountState>::SnarkAccountState,
-    update: &strata_snark_acct_types::SnarkAccountUpdate,
-    cur_balance: strata_primitives::prelude::BitcoinAmount,
+    target: AccountId,
+    snark_state: &mut impl ISnarkAccountState,
+    update: &SnarkAccountUpdateWithMmrProofs,
+    cur_balance: BitcoinAmount,
 ) -> StfResult<Vec<OLLog>> {
     let verified_update =
         verify_update_correctness(state_accessor, target, snark_state, update, cur_balance)?;

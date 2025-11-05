@@ -1,7 +1,6 @@
 use strata_acct_types::{AccountId, AcctError, strata_codec::CodecError};
 use strata_ol_chain_types_new::{Epoch, Slot};
 use strata_primitives::Buf32;
-use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 
 /// Errors related to block validation.
@@ -74,11 +73,11 @@ pub enum StfError {
     #[error("Insufficient balance")]
     InsufficientBalance,
 
-    #[error("Message does not exist for account: {account_id}: {message:?}")]
-    InvalidMessageProof {
-        account_id: AccountId,
-        message: MessageEntry,
-    },
+    #[error("Message does not exist for account {account_id} at message index {msg_idx}")]
+    InvalidMessageProof { account_id: AccountId, msg_idx: u64 },
+
+    #[error("Invalid message reference by account {account_id} at ref index {ref_idx}")]
+    InvalidLedgerReference { account_id: AccountId, ref_idx: u64 },
 
     #[error("Invalid update proof for account {account_id}")]
     InvalidUpdateProof { account_id: AccountId },

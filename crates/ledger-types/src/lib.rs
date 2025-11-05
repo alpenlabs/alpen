@@ -14,7 +14,7 @@
 //! to these abstract data structures.  This is because the "ordinary" struct
 //! versions of these data structure we use on the wire are the "real" versions
 //! we want to think of them as being, but these traits are standins for those.
-//! Making up new names for these items would crate too much confusion.
+//! Making up new names for these items would create too much confusion.
 //!
 //! As for structure, this design is based around a "toplevel" state that is not
 //! ever actually directly accessed.  Below it, there are two parts:

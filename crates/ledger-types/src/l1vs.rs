@@ -3,7 +3,7 @@
 // more than just L1 state like this current epoch (which we include here since
 // it's only updated at the epoch boundaries anyways)
 
-use strata_acct_types::BitcoinAmount;
+use strata_acct_types::{BitcoinAmount, Mmr64};
 pub use strata_asm_common::AsmManifest;
 pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
 
@@ -45,6 +45,11 @@ pub trait IL1ViewState {
     /// This is our perspective of the perspective of the last block's ASM
     /// manifest we've accepted.
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment);
+
+    /// Gets the l1 references MMR.
+    ///
+    /// This is for the accounts to make references about L1 blocks.
+    fn l1_references(&self) -> &Mmr64;
 
     /// Gets the total OL ledger balance.
     fn total_ledger_balance(&self) -> BitcoinAmount;

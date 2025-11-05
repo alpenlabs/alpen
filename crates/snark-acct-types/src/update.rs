@@ -220,6 +220,18 @@ impl SnarkAccountUpdate {
         }
     }
 
+    pub fn with_proofs(
+        self,
+        message_proofs: Vec<MessageEntryProof>,
+        ledger_ref_proofs: LedgerRefProofs,
+    ) -> SnarkAccountUpdateWithMmrProofs {
+        SnarkAccountUpdateWithMmrProofs {
+            update: self,
+            message_proofs,
+            ledger_ref_proofs,
+        }
+    }
+
     pub fn operation(&self) -> &UpdateOperationData {
         &self.operation
     }
@@ -238,6 +250,35 @@ impl SnarkAccountUpdate {
             base_update: self,
             accumulator_proofs: proofs,
         }
+    }
+}
+
+/// SnarkAccountUpdate with mmr proofs of messages and ledger refs.
+///
+/// The sequencer is supposed to add the updated and valid mmr proofs to all message and ledger
+/// references in a `SnarkAccountUpdate` to construct `SnarkAccountUpdateWithMmrProofs`.
+#[derive(Clone, Debug)]
+pub struct SnarkAccountUpdateWithMmrProofs {
+    update: SnarkAccountUpdate,
+    message_proofs: Vec<MessageEntryProof>,
+    ledger_ref_proofs: LedgerRefProofs,
+}
+
+impl SnarkAccountUpdateWithMmrProofs {
+    pub fn update(&self) -> &SnarkAccountUpdate {
+        &self.update
+    }
+
+    pub fn message_proofs(&self) -> &[MessageEntryProof] {
+        &self.message_proofs
+    }
+
+    pub fn ledger_ref_proofs(&self) -> &LedgerRefProofs {
+        &self.ledger_ref_proofs
+    }
+
+    pub fn into_update(self) -> SnarkAccountUpdate {
+        self.update
     }
 }
 
