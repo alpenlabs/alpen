@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+use strata_asm_logs::{CheckpointUpdate, constants::LogTypeId};
 use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
@@ -18,8 +18,13 @@ pub(crate) fn process_log(
     log: &AsmLogEntry,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
-    match log.ty() {
-        Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
+    let Some(type_id_raw) = log.ty() else {
+        warn!("logs without a type ID?");
+        return Ok(());
+    };
+    let type_id = LogTypeId::from_type_id_raw(type_id_raw);
+    match type_id {
+        Some(LogTypeId::CheckpointUpdate) => {
             let ckpt_upd = log
                 .try_into_log()
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
@@ -27,10 +32,10 @@ pub(crate) fn process_log(
             return process_checkpoint_log(state, &ckpt_upd, asm_block);
         }
         Some(log_type) => {
-            debug!(log_type, "log type not processed by CSM");
+            debug!(?log_type, "log type not processed by CSM");
         }
         None => {
-            warn!("logs without a type ID?");
+            debug!(type_id_raw, "invalid log type");
         }
     }
     Ok(())
@@ -189,7 +194,7 @@ mod tests {
     use bitcoin::absolute::Height;
     use borsh::to_vec;
     use strata_asm_common::AsmLogEntry;
-    use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+    use strata_asm_logs::{CheckpointUpdate, constants::LogTypeId};
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -355,7 +360,7 @@ mod tests {
         state.last_asm_block = Some(asm_block);
 
         // Create a log with checkpoint type but invalid data
-        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, vec![1, 2, 3])
+        let invalid_log = AsmLogEntry::from_msg(LogTypeId::CheckpointUpdate as u16, vec![1, 2, 3])
             .expect("Failed to create log");
 
         // Should fail with deserialization error
@@ -436,7 +441,7 @@ mod tests {
                 to_vec(&checkpoint_update).expect("Failed to serialize checkpoint");
 
             // Create log entry
-            let log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, checkpoint_bytes)
+            let log = AsmLogEntry::from_msg(LogTypeId::CheckpointUpdate as u16, checkpoint_bytes)
                 .expect("Failed to create log");
 
             // Process the log
