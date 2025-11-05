@@ -48,12 +48,13 @@ where
     Ok(None)
 }
 
-/// Rolls back storage to fork point and builds new tracker state.
+/// Rolls back storage to fork point and updates internal tracker state.
 pub(super) async fn rollback_to_fork_point<TStorage>(
+    state: &mut OlTrackerState,
     storage: &TStorage,
     fork_state: &EeAccountStateAtBlock,
     ol_status: &OlChainStatus,
-) -> eyre::Result<OlTrackerState>
+) -> eyre::Result<()>
 where
     TStorage: Storage,
 {
@@ -61,15 +62,18 @@ where
 
     info!(slot, "rolling back to fork point");
 
-    // build next state first. If this fails, db rollback will not occur and this operation can be
+    // Build next state first. If this fails, db rollback will not occur and this operation can be
     // re-triggered in the next cycle.
     let next_state = build_tracker_state(fork_state.clone(), ol_status, storage).await?;
+    debug!(?next_state, "reorg: next tracker state");
 
-    // atomic rollbacks from the db.
-    // IMPORTANT: This MUST be the last operation during reorg that can fail.
+    // Atomically rollback the db.
+    // CRITICAL: This MUST be the last fallible operation during reorg handling before state
+    // mutation.
     storage.rollback_ee_account_state(slot).await?;
+    *state = next_state;
 
-    Ok(next_state)
+    Ok(())
 }
 
 /// Handles chain reorganization by finding fork point and rolling back state.
@@ -106,10 +110,7 @@ where
         "reorg: found fork point; starting db rollback"
     );
 
-    let next_state = rollback_to_fork_point(ctx.storage.as_ref(), &fork_state, &ol_status).await?;
-
-    debug!(?next_state, "reorg: next tracker state");
-    *state = next_state;
+    rollback_to_fork_point(state, ctx.storage.as_ref(), &fork_state, &ol_status).await?;
 
     ctx.notify_state_update(state.best_ee_state());
     ctx.notify_consensus_update(state.get_consensus_heads());
@@ -382,11 +383,16 @@ mod tests {
                     }
                 });
 
-            let result = rollback_to_fork_point(&mock_storage, &fork_state, &ol_status).await;
+            let mut state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
+            let result =
+                rollback_to_fork_point(&mut state, &mock_storage, &fork_state, &ol_status).await;
 
             assert!(result.is_ok());
-            let tracker_state = result.unwrap();
-            assert_eq!(tracker_state.best_ee_state(), fork_state.ee_state());
+            assert_eq!(state.best_ee_state(), fork_state.ee_state());
         }
 
         #[tokio::test]
@@ -422,7 +428,14 @@ mod tests {
                     ))
                 });
 
-            let result = rollback_to_fork_point(&mock_storage, &fork_state, &ol_status).await;
+            let mut state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
+
+            let result =
+                rollback_to_fork_point(&mut state, &mock_storage, &fork_state, &ol_status).await;
 
             assert!(result.is_err());
         }
