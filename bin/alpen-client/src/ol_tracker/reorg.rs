@@ -2,6 +2,7 @@ use tracing::{debug, error, info, warn};
 
 use super::{
     ctx::OlTrackerCtx,
+    error::{OlTrackerError, Result},
     state::{build_tracker_state, OlTrackerState},
 };
 use crate::traits::{
@@ -18,7 +19,7 @@ pub(super) async fn find_fork_point<TStorage, TOlClient>(
     genesis_slot: u64,
     latest_slot: u64,
     fetch_size: u64,
-) -> eyre::Result<Option<EeAccountStateAtBlock>>
+) -> Result<Option<EeAccountStateAtBlock>>
 where
     TStorage: Storage,
     TOlClient: OlClient,
@@ -54,7 +55,7 @@ pub(super) async fn rollback_to_fork_point<TStorage>(
     storage: &TStorage,
     fork_state: &EeAccountStateAtBlock,
     ol_status: &OlChainStatus,
-) -> eyre::Result<()>
+) -> Result<()>
 where
     TStorage: Storage,
 {
@@ -80,7 +81,7 @@ where
 pub(super) async fn handle_reorg<TStorage, TOlClient>(
     state: &mut OlTrackerState,
     ctx: &OlTrackerCtx<TStorage, TOlClient>,
-) -> eyre::Result<()>
+) -> Result<()>
 where
     TStorage: Storage,
     TOlClient: OlClient,
@@ -102,7 +103,7 @@ where
             genesis_slot,
             "reorg: could not find ol fork block till ol genesis slot"
         );
-        eyre::eyre!("reorg: could not find ol fork block")
+        OlTrackerError::NoForkPointFound { genesis_slot }
     })?;
 
     warn!(
@@ -583,10 +584,12 @@ mod tests {
             let result = handle_reorg(&mut state, &ctx).await;
 
             assert!(result.is_err());
-            assert!(result
-                .unwrap_err()
-                .to_string()
-                .contains("could not find ol fork block"));
+            let error = result.unwrap_err();
+            // Check that it's specifically the NoForkPointFound error
+            assert!(matches!(error, OlTrackerError::NoForkPointFound { .. }));
+            // Verify the error message contains key info
+            assert!(error.to_string().contains("no fork point found"));
+            assert!(error.to_string().contains("100")); // genesis slot
         }
 
         #[tokio::test]

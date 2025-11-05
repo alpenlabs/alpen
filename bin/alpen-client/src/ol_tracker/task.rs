@@ -8,6 +8,7 @@ use tracing::{debug, error, warn};
 
 use super::{
     ctx::OlTrackerCtx,
+    error::Result,
     reorg::handle_reorg,
     state::{build_tracker_state, OlTrackerState},
 };
@@ -34,19 +35,35 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
                 if let Err(error) =
                     handle_extend_ee_state(&block_operations, &chain_status, &mut state, &ctx).await
                 {
-                    error!(%error, "failed to extend ee state");
+                    handle_tracker_error(error, "extend ee state");
                 }
             }
             Ok(TrackOlAction::Reorg) => {
                 if let Err(error) = handle_reorg(&mut state, &ctx).await {
-                    error!(%error, "failed to handle reorg");
+                    handle_tracker_error(error, "reorg");
                 }
             }
             Ok(TrackOlAction::Noop) => {}
             Err(error) => {
-                error!(%error, "failed to track ol state");
+                handle_tracker_error(error, "track ol state");
             }
         }
+    }
+}
+
+/// Handles OL tracker errors, panicking on non-recoverable errors.
+/// Note: reth task manager expects critical tasks to panic, not return an Err.
+/// Critical task panics will trigger app shutdown.
+///
+/// Recoverable errors (network issues, transient DB failures) are logged and allow retry.
+/// Non-recoverable errors (no fork point found) cause immediate panic with detailed message.
+fn handle_tracker_error(error: impl Into<super::error::OlTrackerError>, context: &str) {
+    let error = error.into();
+
+    if error.is_fatal() {
+        panic!("{}", error.panic_message());
+    } else {
+        error!(%error, context, "recoverable error in ol tracker");
     }
 }
 
@@ -71,11 +88,9 @@ pub(crate) async fn track_ol_state(
     state: &OlTrackerState,
     ol_client: &impl OlClient,
     max_blocks_fetch: u64,
-) -> eyre::Result<TrackOlAction> {
+) -> Result<TrackOlAction> {
     // can be changed to subscribe to ol changes, with timeout
-    let ol_status = chain_status_checked(ol_client)
-        .await
-        .map_err(|e| eyre::eyre!(e))?;
+    let ol_status = chain_status_checked(ol_client).await?;
 
     let best_ol_block = &ol_status.latest;
     let best_ol_slot = best_ol_block.slot();
@@ -115,12 +130,13 @@ pub(crate) async fn track_ol_state(
             best_local_slot,
             best_local_slot + fetch_blocks_count,
         )
-        .await
-        .map_err(|e| eyre::eyre!(e))?;
+        .await?;
 
-        let (expected_local_block, new_blocks) = blocks
-            .split_first()
-            .ok_or_else(|| eyre::eyre!("empty block commitments returned from ol_client"))?;
+        let (expected_local_block, new_blocks) = blocks.split_first().ok_or_else(|| {
+            super::error::OlTrackerError::Other(
+                "empty block commitments returned from ol_client".to_string(),
+            )
+        })?;
 
         // If last block isn't as expected, trigger reorg
         if expected_local_block != state.best_ol_block() {
@@ -133,9 +149,7 @@ pub(crate) async fn track_ol_state(
             .cloned()
             .collect();
 
-        let operations = get_update_operations_for_blocks_checked(ol_client, block_ids)
-            .await
-            .map_err(|e| eyre::eyre!(e))?;
+        let operations = get_update_operations_for_blocks_checked(ol_client, block_ids).await?;
 
         let block_operations = new_blocks
             .iter()
@@ -154,9 +168,10 @@ pub(crate) async fn track_ol_state(
 pub(crate) fn apply_block_operations(
     state: &mut EeAccountState,
     block_operations: &[UpdateInputData],
-) -> eyre::Result<()> {
+) -> Result<()> {
     for op in block_operations {
-        apply_update_operation_unconditionally(state, op)?;
+        apply_update_operation_unconditionally(state, op)
+            .map_err(|e| super::error::OlTrackerError::Other(e.to_string()))?;
     }
 
     Ok(())
@@ -167,7 +182,7 @@ async fn handle_extend_ee_state<TStorage, TOlClient>(
     chain_status: &OlChainStatus,
     state: &mut OlTrackerState,
     ctx: &OlTrackerCtx<TStorage, TOlClient>,
-) -> eyre::Result<()>
+) -> Result<()>
 where
     TStorage: Storage,
     TOlClient: OlClient,
@@ -208,7 +223,7 @@ where
                     %error,
                     "failed to store ee account state"
                 );
-                eyre::eyre!(error)
+                error
             })?;
 
         // 4. update local state

@@ -5,6 +5,7 @@ use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use tracing::warn;
 
+use super::error::{OlTrackerError, Result};
 use crate::{
     config::AlpenEeConfig,
     traits::{
@@ -73,7 +74,7 @@ pub(crate) async fn init_ol_tracker_state<TStorage>(
     config: Arc<AlpenEeConfig>,
     ol_chain_status: OlChainStatus,
     storage: Arc<TStorage>,
-) -> eyre::Result<OlTrackerState>
+) -> Result<OlTrackerState>
 where
     TStorage: Storage,
 {
@@ -94,8 +95,7 @@ where
         // persist genesis state
         storage
             .store_ee_account_state(&genesis_ol_block, &genesis_state)
-            .await
-            .map_err(|e| eyre::eyre!(e))?;
+            .await?;
 
         let block_account_state = EeAccountStateAtBlock::new(genesis_ol_block, genesis_state);
 
@@ -113,15 +113,17 @@ pub(crate) async fn build_tracker_state(
     best_state: EeAccountStateAtBlock,
     ol_chain_status: &OlChainStatus,
     storage: &impl Storage,
-) -> eyre::Result<OlTrackerState> {
+) -> Result<OlTrackerState> {
     // determine confirmed, finalized states
     let confirmed_state =
         effective_account_state(best_state.ol_block(), ol_chain_status.confirmed(), storage)
-            .await?;
+            .await
+            .map_err(|e| OlTrackerError::BuildStateFailed(format!("confirmed state: {}", e)))?;
 
     let finalized_state =
         effective_account_state(best_state.ol_block(), ol_chain_status.finalized(), storage)
-            .await?;
+            .await
+            .map_err(|e| OlTrackerError::BuildStateFailed(format!("finalized state: {}", e)))?;
 
     Ok(OlTrackerState {
         best: best_state,
@@ -134,7 +136,7 @@ pub(crate) async fn effective_account_state(
     local: &OLBlockCommitment,
     ol: &OLBlockCommitment,
     storage: &impl Storage,
-) -> eyre::Result<EeAccountStateAtBlock> {
+) -> Result<EeAccountStateAtBlock> {
     let min_blockid = if local.slot() < ol.slot() {
         local.blkid()
     } else {
@@ -144,5 +146,7 @@ pub(crate) async fn effective_account_state(
     storage
         .ee_account_state(min_blockid.into())
         .await?
-        .ok_or_else(|| eyre::eyre!("missing expected block: {}", min_blockid))
+        .ok_or_else(|| OlTrackerError::MissingBlock {
+            block_id: min_blockid.to_string(),
+        })
 }

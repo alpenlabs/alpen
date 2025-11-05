@@ -1,4 +1,5 @@
 mod ctx;
+mod error;
 mod handle;
 mod reorg;
 mod state;
