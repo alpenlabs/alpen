@@ -3,7 +3,7 @@ use std::time::Duration;
 use strata_ee_acct_runtime::apply_update_operation_unconditionally;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
-use strata_snark_acct_types::UpdateOperationUnconditionalData;
+use strata_snark_acct_types::UpdateInputData;
 use tracing::{debug, error, warn};
 
 use super::{
@@ -53,7 +53,7 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
 #[derive(Debug)]
 pub(crate) struct OlBlockOperations {
     pub(crate) block: OLBlockCommitment,
-    pub(crate) operations: Vec<UpdateOperationUnconditionalData>,
+    pub(crate) operations: Vec<UpdateInputData>,
 }
 
 #[derive(Debug)]
@@ -153,7 +153,7 @@ pub(crate) async fn track_ol_state(
 
 pub(crate) fn apply_block_operations(
     state: &mut EeAccountState,
-    block_operations: &[UpdateOperationUnconditionalData],
+    block_operations: &[UpdateInputData],
 ) -> eyre::Result<()> {
     for op in block_operations {
         apply_update_operation_unconditionally(state, op)?;
@@ -259,7 +259,7 @@ mod tests {
         #[test]
         fn test_apply_empty_operations() {
             let mut state = EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
-            let operations: Vec<UpdateOperationUnconditionalData> = vec![];
+            let operations: Vec<UpdateInputData> = vec![];
 
             let result = apply_block_operations(&mut state, &operations);
 

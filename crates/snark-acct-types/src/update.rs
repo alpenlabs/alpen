@@ -7,11 +7,77 @@ use crate::{
     state::ProofState,
 };
 
+/// Represents the state update that will eventually go into DA on OL.
+#[derive(Clone, Debug)]
+pub struct UpdateStateData {
+    /// The new state we're claiming.
+    proof_state: ProofState,
+
+    /// Arbitrary data we persist in DA.  This is formatted according to the
+    /// needs of the snark account's application.
+    extra_data: Vec<u8>,
+}
+
+impl UpdateStateData {
+    pub fn new(proof_state: ProofState, extra_data: Vec<u8>) -> Self {
+        Self {
+            proof_state,
+            extra_data,
+        }
+    }
+
+    pub fn proof_state(&self) -> ProofState {
+        self.proof_state
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+}
+
+/// Represents the input sufficient to perform a state update.
+#[derive(Clone, Debug)]
+pub struct UpdateInputData {
+    /// Sequence number to prevent replays, since we can't just rely on message
+    /// index.
+    seq_no: u64,
+    /// Messages we processed from the inbox.
+    messages: Vec<MessageEntry>,
+    /// State update.
+    update_state: UpdateStateData,
+}
+
+impl UpdateInputData {
+    pub fn new(seq_no: u64, messages: Vec<MessageEntry>, update_state: UpdateStateData) -> Self {
+        Self {
+            seq_no,
+            messages,
+            update_state,
+        }
+    }
+
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    pub fn new_state(&self) -> ProofState {
+        self.update_state.proof_state()
+    }
+
+    pub fn processed_messages(&self) -> &[MessageEntry] {
+        &self.messages
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        self.update_state.extra_data()
+    }
+}
+
 /// Description of the operation of what we're updating.
 #[derive(Clone, Debug)]
 pub struct UpdateOperationData {
-    /// Subset of data that is sufficient for unconditional (trusted) updates.
-    unconditional: UpdateOperationUnconditionalData,
+    /// State update inputs.
+    input: UpdateInputData,
 
     /// Ledger references we're making.
     ledger_refs: LedgerRefs,
@@ -23,18 +89,20 @@ pub struct UpdateOperationData {
 impl UpdateOperationData {
     pub fn new(
         seq_no: u64,
-        new_state: ProofState,
-        processed_messages: Vec<MessageEntry>,
+        proof_state: ProofState,
+        messages: Vec<MessageEntry>,
         ledger_refs: LedgerRefs,
         outputs: UpdateOutputs,
         extra_data: Vec<u8>,
     ) -> Self {
         Self {
-            unconditional: UpdateOperationUnconditionalData {
+            input: UpdateInputData {
                 seq_no,
-                new_state,
-                processed_messages,
-                extra_data,
+                messages,
+                update_state: UpdateStateData {
+                    proof_state,
+                    extra_data,
+                },
             },
             ledger_refs,
             outputs,
@@ -42,15 +110,15 @@ impl UpdateOperationData {
     }
 
     pub fn seq_no(&self) -> u64 {
-        self.unconditional.seq_no
+        self.input.seq_no()
     }
 
     pub fn new_state(&self) -> ProofState {
-        self.unconditional.new_state
+        self.input.new_state()
     }
 
     pub fn processed_messages(&self) -> &[MessageEntry] {
-        &self.unconditional.processed_messages
+        self.input.processed_messages()
     }
 
     pub fn ledger_refs(&self) -> &LedgerRefs {
@@ -62,69 +130,17 @@ impl UpdateOperationData {
     }
 
     pub fn extra_data(&self) -> &[u8] {
-        &self.unconditional.extra_data
+        self.input.extra_data()
     }
 
-    pub fn as_unconditional(&self) -> &UpdateOperationUnconditionalData {
-        &self.unconditional
-    }
-}
-
-/// Subset of UpdateOperationData fields needed for unconditional update.
-/// This represents all the data of an update operation that is available to a DA-only synced OL
-/// fullnode.
-#[derive(Clone, Debug)]
-pub struct UpdateOperationUnconditionalData {
-    /// Sequence number to prevent replays, since we can't just rely on message
-    /// index.
-    seq_no: u64,
-
-    /// The new state we're claiming.
-    new_state: ProofState,
-
-    /// Messages we processed in the inbox.
-    processed_messages: Vec<MessageEntry>,
-
-    /// Arbitrary data we persist in DA.  This is formatted according to the
-    /// needs of the snark account's application.
-    extra_data: Vec<u8>,
-}
-
-impl UpdateOperationUnconditionalData {
-    pub fn new(
-        seq_no: u64,
-        new_state: ProofState,
-        processed_messages: Vec<MessageEntry>,
-        extra_data: Vec<u8>,
-    ) -> Self {
-        Self {
-            seq_no,
-            new_state,
-            processed_messages,
-            extra_data,
-        }
-    }
-
-    pub fn seq_no(&self) -> u64 {
-        self.seq_no
-    }
-
-    pub fn new_state(&self) -> ProofState {
-        self.new_state
-    }
-
-    pub fn processed_messages(&self) -> &[MessageEntry] {
-        &self.processed_messages
-    }
-
-    pub fn extra_data(&self) -> &[u8] {
-        &self.extra_data
+    pub fn as_input_data(&self) -> &UpdateInputData {
+        &self.input
     }
 }
 
-impl From<UpdateOperationData> for UpdateOperationUnconditionalData {
+impl From<UpdateOperationData> for UpdateInputData {
     fn from(value: UpdateOperationData) -> Self {
-        value.unconditional
+        value.input
     }
 }
 

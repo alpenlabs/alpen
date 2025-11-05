@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-use strata_snark_acct_types::UpdateOperationUnconditionalData;
+use strata_snark_acct_types::UpdateInputData;
 
 use super::error::OlClientError;
 
@@ -63,7 +63,7 @@ pub(crate) trait OlClient: Sized + Send + Sync {
     async fn get_update_operations_for_blocks(
         &self,
         blocks: Vec<OLBlockId>,
-    ) -> Result<Vec<Vec<UpdateOperationUnconditionalData>>, OlClientError>;
+    ) -> Result<Vec<Vec<UpdateInputData>>, OlClientError>;
 }
 
 /// Returns the current status of the OL chain.
@@ -122,7 +122,7 @@ pub(crate) async fn block_commitments_in_range_checked(
 pub(crate) async fn get_update_operations_for_blocks_checked(
     client: &impl OlClient,
     blocks: Vec<OLBlockId>,
-) -> Result<Vec<Vec<UpdateOperationUnconditionalData>>, OlClientError> {
+) -> Result<Vec<Vec<UpdateInputData>>, OlClientError> {
     let expected_len = blocks.len();
     let res = client.get_update_operations_for_blocks(blocks).await?;
     if res.len() != expected_len {
@@ -168,7 +168,7 @@ impl OlClient for DummyOlClient {
     async fn get_update_operations_for_blocks(
         &self,
         blocks: Vec<OLBlockId>,
-    ) -> Result<Vec<Vec<UpdateOperationUnconditionalData>>, OlClientError> {
+    ) -> Result<Vec<Vec<UpdateInputData>>, OlClientError> {
         Ok((blocks.iter().map(|_| vec![])).collect())
     }
 }
