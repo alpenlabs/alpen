@@ -18,4 +18,4 @@ pub use exec::{
     EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, create_evm_extra_payload,
 };
 pub use l1::{BitcoinBlockHeight, L1BlockCommitment, L1BlockId, L1Height};
-pub use ol::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId};
+pub use ol::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId};

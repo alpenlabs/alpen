@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::buf::Buf32;
 
-/// ID of an OL (Optimistic Ledger) block, usually the hash of its root header.
+/// ID of an OL (Orchestration Layer) block, usually the hash of its root header.
 #[derive(
     Copy,
     Clone,
@@ -121,3 +121,23 @@ impl fmt::Debug for OLBlockCommitment {
 
 /// Alias for backward compatibility
 pub type L2BlockCommitment = OLBlockCommitment;
+
+/// ID of an OL (Orchestration Layer) transaction.
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    Default,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Arbitrary,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+)]
+pub struct OLTxId(Buf32);
+
+impl_buf_wrapper!(OLTxId, Buf32, 32);
