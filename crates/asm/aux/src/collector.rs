@@ -4,34 +4,13 @@
 
 use std::collections::BTreeMap;
 
-use crate::{AuxRequestSpec, L1TxIndex};
+use crate::{L1TxIndex, data::AuxRequestSpec};
 
 /// Collects auxiliary data requests keyed by transaction index.
 ///
 /// During `pre_process_txs`, subprotocols use this collector to register
 /// their auxiliary data requirements. Each transaction can request at most
 /// one auxiliary data item (identified by its index within the L1 block).
-///
-/// # Example
-///
-/// ```ignore
-/// fn pre_process_txs(
-///     state: &Self::State,
-///     txs: &[TxInputRef],
-///     collector: &mut AuxRequestCollector,
-///     anchor_pre: &AnchorState,
-///     params: &Self::Params,
-/// ) {
-///     for (idx, tx) in txs.iter().enumerate() {
-///         // Request manifest leaves for blocks 100-200
-///         let mmr_compact = /* obtain from state */ todo!("compact MMR");
-///         collector.request(
-///             idx,
-///             AuxRequestSpec::manifest_leaves(100, 200, mmr_compact),
-///         );
-///     }
-/// }
-/// ```
 #[derive(Debug, Default)]
 pub struct AuxRequestCollector {
     /// Map from transaction index to its auxiliary request

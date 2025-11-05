@@ -3,14 +3,14 @@
 //! This crate provides infrastructure for subprotocols to request and receive
 //! auxiliary data during ASM state transitions. The framework consists of:
 //!
-//! - **Request Phase** ([`pre_process_txs`]): Subprotocols use [`AuxRequestCollector`]
-//!   to declare what auxiliary data they need, keyed by transaction index.
+//! - **Request Phase** ([`pre_process_txs`]): Subprotocols use [`AuxRequestCollector`] to declare
+//!   what auxiliary data they need, keyed by transaction index.
 //!
-//! - **Fulfillment Phase**: External workers (orchestration layer) fetch the requested
-//!   data and package it into [`AuxResponseEnvelope`] instances.
+//! - **Fulfillment Phase**: External workers (orchestration layer) fetch the requested data and
+//!   package it into [`AuxResponseEnvelope`] instances.
 //!
-//! - **Resolution Phase** ([`process_txs`]): Subprotocols use [`AuxResolver`] to access
-//!   the fulfilled auxiliary data. The resolver automatically verifies MMR proofs.
+//! - **Resolution Phase** ([`process_txs`]): Subprotocols use [`AuxResolver`] to access the
+//!   fulfilled auxiliary data. The resolver automatically verifies MMR proofs.
 //!
 //! # Design
 //!
@@ -42,8 +42,8 @@
 //! - **Manifest Leaves**: Fetch manifest hashes and MMR proofs for a range of L1 blocks
 //!   (lightweight - doesn't include full manifest data)
 //!
-//! - **Bitcoin Transactions**: Fetch raw Bitcoin transaction data by txid
-//!   (for bridge subprotocol validation)
+//! - **Bitcoin Transactions**: Fetch raw Bitcoin transaction data by txid (for bridge subprotocol
+//!   validation)
 //!
 //! # Example Usage
 //!
@@ -97,16 +97,17 @@
 //! [`process_txs`]: strata_asm_common::Subprotocol::process_txs
 
 mod collector;
+mod data;
 mod error;
-mod request;
 mod resolver;
-mod response;
 mod types;
 
 // Re-export main types
 pub use collector::AuxRequestCollector;
+pub use data::{
+    AuxRequestSpec, AuxResponseEnvelope, BitcoinTxRequest, ManifestLeavesRequest,
+    ManifestLeavesResponse,
+};
 pub use error::{AuxError, AuxResult};
-pub use request::{AuxRequestSpec, BitcoinTxRequest, ManifestLeavesRequest};
 pub use resolver::AuxResolver;
-pub use response::{AuxResponseEnvelope, ManifestLeaves};
 pub use types::{L1TxIndex, ManifestMmrProof};

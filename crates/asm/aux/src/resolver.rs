@@ -7,8 +7,10 @@ use std::collections::BTreeMap;
 use strata_asm_common::AsmManifestMmr;
 
 use crate::{
-    AuxError, AuxRequestSpec, AuxResponseEnvelope, AuxResult, BitcoinTxRequest, L1TxIndex,
-    ManifestLeaves, ManifestLeavesRequest,
+    AuxError, AuxResult, L1TxIndex,
+    data::{
+        BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, VerifiedManifestLeaves,
+    },
 };
 
 /// Provides verified auxiliary data to subprotocols during transaction processing.
@@ -18,165 +20,87 @@ use crate::{
 /// the required compact manifest MMR is supplied via each `ManifestLeavesRequest`
 /// and expanded locally for verification. This ensures that all auxiliary data
 /// is cryptographically verified against the manifest MMR committed in state.
-///
-/// # Example
-///
-/// ```ignore
-/// fn process_txs(
-///     state: &mut Self::State,
-///     txs: &[TxInputRef],
-///     anchor_pre: &AnchorState,
-///     aux_resolver: &AuxResolver,
-///     relayer: &mut impl MsgRelayer,
-///     params: &Self::Params,
-/// ) {
-///     for (idx, tx) in txs.iter().enumerate() {
-///         // Get manifest leaves (automatically verified)
-///         // Include the manifest MMR snapshot for verification
-///         let mmr_compact = /* obtain from state */ todo!("compact MMR");
-///         let req = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact };
-///         let data = aux_resolver.get_manifest_leaves(idx, &req)?;
-///
-///         // Use the verified data
-///         for hash in &data.leaves {
-///             // ... process hash
-///         }
-///     }
-/// }
-/// ```
 #[derive(Debug)]
 pub struct AuxResolver<'a> {
-    /// Map from transaction index to its single auxiliary response
-    responses: &'a BTreeMap<L1TxIndex, AuxResponseEnvelope>,
+    /// Map from transaction index to manifest leaves response (just the leaves)
+    manifest_leaves: &'a BTreeMap<L1TxIndex, VerifiedManifestLeaves>,
+    /// Map from transaction index to Bitcoin transaction data
+    bitcoin_txs: &'a BTreeMap<L1TxIndex, Vec<u8>>,
 }
 
 impl<'a> AuxResolver<'a> {
-    /// Creates a new resolver.
-    ///
-    /// # Arguments
-    ///
-    /// * `responses` - Map from transaction indices to their auxiliary response
-    ///
-    /// Note: MMR context for verification is provided per-request via
-    /// `ManifestLeavesRequest.manifest_mmr`.
-    pub fn new(responses: &'a BTreeMap<L1TxIndex, AuxResponseEnvelope>) -> Self {
-        Self { responses }
-    }
-
-    /// Gets the single response envelope for a transaction, validating via typed getters.
-    ///
-    /// Returns `Ok(None)` if no response was provided for this transaction.
-    pub fn get_response(
-        &self,
-        tx_index: L1TxIndex,
-        spec: &AuxRequestSpec,
-    ) -> AuxResult<Option<&AuxResponseEnvelope>> {
-        let Some(envelope) = self.responses.get(&tx_index) else {
-            return Ok(None);
-        };
-
-        match spec {
-            AuxRequestSpec::ManifestLeaves(req) => {
-                let _ = self.get_manifest_leaves(tx_index, req)?;
-            }
-            AuxRequestSpec::BitcoinTx(req) => {
-                let _ = self.get_bitcoin_tx(tx_index, req)?;
-            }
+    /// Creates a new resolver from separate response maps.
+    pub fn new(
+        manifest_leaves: &'a BTreeMap<L1TxIndex, VerifiedManifestLeaves>,
+        bitcoin_txs: &'a BTreeMap<L1TxIndex, Vec<u8>>,
+    ) -> Self {
+        Self {
+            manifest_leaves,
+            bitcoin_txs,
         }
-        Ok(Some(envelope))
     }
 
     /// Gets and verifies manifest leaves for a transaction.
     ///
     /// This method:
-    /// 1. Retrieves the `ManifestLeaves` response for the transaction
+    /// 1. Retrieves the `ManifestLeaves` response and proofs for the transaction
     /// 2. Verifies the response matches the requested range
     /// 3. Verifies each leaf's MMR proof against the manifest MMR
-    /// 4. Returns all verified leaves
+    /// 4. Returns all verified leaves with their proofs
     ///
     /// # Errors
     ///
     /// Returns `AuxError::InvalidMmrProof` if any leaf's proof fails verification.
-    /// Returns `AuxError::TypeMismatch` if the response contains non-leaf data.
-    ///
-    /// # Returns
-    ///
-    /// Returns empty leaves/proofs if no auxiliary data was requested for this transaction.
+    /// Returns `AuxError::MissingResponse` if no response exists for this transaction.
     pub fn get_manifest_leaves(
         &self,
         tx_index: L1TxIndex,
         req: &ManifestLeavesRequest,
-    ) -> AuxResult<ManifestLeaves> {
-        let Some(envelope) = self.responses.get(&tx_index) else {
-            return Ok(ManifestLeaves {
-                leaves: Vec::new(),
-                proofs: Vec::new(),
-            });
+    ) -> AuxResult<ManifestLeavesResponse> {
+        let Some(response) = self.manifest_leaves.get(&tx_index) else {
+            return Err(AuxError::MissingResponse { tx_index });
         };
 
-        // Ensure response is manifest leaves and matches requested length
-        match envelope {
-            AuxResponseEnvelope::ManifestLeaves(data) => {
-                let expected_len = (req.end_height - req.start_height + 1) as usize;
-                if data.leaves.len() != expected_len || data.proofs.len() != expected_len {
-                    return Err(AuxError::SpecMismatch {
-                        tx_index,
-                        details: format!("leaf/proof count mismatch: expected {}", expected_len),
-                    });
-                }
+        // Verify response matches requested length
+        let expected_len = (req.end_height - req.start_height + 1) as usize;
+        // Expand compact MMR from request for verification
+        let mmr_full = AsmManifestMmr::from(req.manifest_mmr.clone());
 
-                // Expand compact MMR from request for verification
-                let mmr_full = AsmManifestMmr::from(req.manifest_mmr.clone());
-
-                for i in 0..expected_len {
-                    let height = req.start_height + i as u64;
-                    let hash = data.leaves[i];
-                    let proof = &data.proofs[i];
-                    if !mmr_full.verify(proof, &hash) {
-                        return Err(AuxError::InvalidMmrProof { height, hash });
-                    }
-                }
-                Ok(ManifestLeaves {
-                    leaves: data.leaves.clone(),
-                    proofs: data.proofs.clone(),
-                })
+        for i in 0..expected_len {
+            let height = req.start_height + i as u64;
+            let hash = response.leaves[i];
+            let proof = &response.proofs[i];
+            if !mmr_full.verify(proof, &hash) {
+                return Err(AuxError::InvalidMmrProof { height, hash });
             }
-            other => Err(AuxError::TypeMismatch {
-                tx_index,
-                expected: "ManifestLeaves",
-                found: other.variant_name(),
-            }),
         }
+
+        Ok(ManifestLeavesResponse {
+            leaves: response.leaves.clone(),
+        })
     }
 
     /// Gets Bitcoin transaction data for a transaction.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Some(raw_tx))` if a Bitcoin transaction response exists.
-    /// Returns `Ok(None)` if no Bitcoin transaction was requested.
+    /// Returns the raw Bitcoin transaction bytes.
     ///
     /// # Errors
+    ///
+    /// Returns `AuxError::MissingResponse` if no response exists for this transaction.
     ///
     /// Currently doesn't perform verification on Bitcoin transactions.
     /// Future versions may add Bitcoin SPV proof verification.
     pub fn get_bitcoin_tx(
         &self,
         tx_index: L1TxIndex,
-        req: &BitcoinTxRequest,
-    ) -> AuxResult<Option<Vec<u8>>> {
-        let Some(envelope) = self.responses.get(&tx_index) else {
-            return Ok(None);
-        };
-
-        match envelope {
-            AuxResponseEnvelope::BitcoinTx(raw_tx) => Ok(Some(raw_tx.clone())),
-            other => Err(AuxError::TypeMismatch {
-                tx_index,
-                expected: "BitcoinTx",
-                found: other.variant_name(),
-            }),
-        }
+        _req: &BitcoinTxRequest,
+    ) -> AuxResult<Vec<u8>> {
+        self.bitcoin_txs
+            .get(&tx_index)
+            .cloned()
+            .ok_or(AuxError::MissingResponse { tx_index })
     }
 }
 
@@ -188,44 +112,46 @@ mod tests {
 
     #[test]
     fn test_resolver_empty_responses() {
-        let responses = BTreeMap::new();
+        let manifest_leaves = BTreeMap::new();
+        let bitcoin_txs = BTreeMap::new();
         let mmr = AsmManifestMmr::new(16);
         let compact = mmr.into();
 
-        let resolver = AuxResolver::new(&responses);
+        let resolver = AuxResolver::new(&manifest_leaves, &bitcoin_txs);
 
-        // Should return empty data for non-existent tx
-        let req = ManifestLeavesRequest {
-            start_height: 100,
-            end_height: 200,
-            manifest_mmr: compact,
-        };
-        let data = resolver.get_manifest_leaves(0, &req).unwrap();
-        assert!(data.leaves.is_empty());
-
-        let btc_req = BitcoinTxRequest { txid: [0u8; 32] };
-        let btc_tx = resolver.get_bitcoin_tx(0, &btc_req).unwrap();
-        assert!(btc_tx.is_none());
-    }
-
-    #[test]
-    fn test_resolver_type_mismatch() {
-        let mut responses = BTreeMap::new();
-        responses.insert(0, AuxResponseEnvelope::BitcoinTx(vec![]));
-
-        let mmr = AsmManifestMmr::new(16);
-        let compact = mmr.into();
-
-        let resolver = AuxResolver::new(&responses);
-
-        // Requesting manifest leaves but got bitcoin tx
+        // Should return error for non-existent tx
         let req = ManifestLeavesRequest {
             start_height: 100,
             end_height: 200,
             manifest_mmr: compact,
         };
         let result = resolver.get_manifest_leaves(0, &req);
-        assert!(matches!(result, Err(AuxError::TypeMismatch { .. })));
+        assert!(matches!(result, Err(AuxError::MissingResponse { .. })));
+
+        let btc_req = BitcoinTxRequest { txid: [0u8; 32] };
+        let result = resolver.get_bitcoin_tx(0, &btc_req);
+        assert!(matches!(result, Err(AuxError::MissingResponse { .. })));
+    }
+
+    #[test]
+    fn test_resolver_missing_response() {
+        let manifest_leaves = BTreeMap::new();
+        let mut bitcoin_txs = BTreeMap::new();
+        bitcoin_txs.insert(0, vec![]);
+
+        let mmr = AsmManifestMmr::new(16);
+        let compact = mmr.into();
+
+        let resolver = AuxResolver::new(&manifest_leaves, &bitcoin_txs);
+
+        // Requesting manifest leaves but only bitcoin tx exists
+        let req = ManifestLeavesRequest {
+            start_height: 100,
+            end_height: 200,
+            manifest_mmr: compact,
+        };
+        let result = resolver.get_manifest_leaves(0, &req);
+        assert!(matches!(result, Err(AuxError::MissingResponse { .. })));
     }
 
     #[test]
@@ -233,18 +159,19 @@ mod tests {
         let txid = [1u8; 32];
         let raw_tx = vec![0x01, 0x02, 0x03];
 
-        let mut responses = BTreeMap::new();
-        responses.insert(0, AuxResponseEnvelope::BitcoinTx(raw_tx.clone()));
+        let manifest_leaves = BTreeMap::new();
+        let mut bitcoin_txs = BTreeMap::new();
+        bitcoin_txs.insert(0, raw_tx.clone());
 
         let mmr = AsmManifestMmr::new(16);
         let _compact: AsmManifestCompactMmr = mmr.into();
 
-        let resolver = AuxResolver::new(&responses);
+        let resolver = AuxResolver::new(&manifest_leaves, &bitcoin_txs);
 
         // Should successfully return the bitcoin tx
         let req = BitcoinTxRequest { txid };
         let result = resolver.get_bitcoin_tx(0, &req).unwrap();
-        assert_eq!(result, Some(raw_tx));
+        assert_eq!(result, raw_tx);
     }
 
     // Note: Testing MMR proof verification requires creating valid proofs,
