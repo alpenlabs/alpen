@@ -9,25 +9,6 @@ use strata_asm_common::{AsmManifestCompactMmr, AsmManifestHash};
 
 use crate::types::ManifestMmrProof;
 
-/// Specification for auxiliary data needed by a transaction.
-///
-/// During `pre_process_txs`, subprotocols can register auxiliary data requirements
-/// by creating `AuxRequestSpec` instances. The orchestration layer will then fulfill
-/// these requests before the main processing phase begins.
-///
-/// For manifest leaf requests, the compact MMR snapshot is carried in the request
-/// so the resolver can verify MMR proofs without separate context.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub enum AuxRequestSpec {
-    /// Request manifest leaves from a range of L1 blocks (inclusive).
-    ///
-    /// A manifest leaf consists of the manifest hash and an MMR proof.
-    ManifestLeaves(ManifestLeavesRequest),
-
-    /// Request a specific Bitcoin transaction by its transaction ID.
-    BitcoinTx(BitcoinTxRequest),
-}
-
 /// Request for manifest leaves over an inclusive range.
 ///
 /// Carries the compact manifest MMR snapshot so the resolver can
@@ -49,64 +30,6 @@ pub struct BitcoinTxRequest {
     pub txid: [u8; 32],
 }
 
-impl AuxRequestSpec {
-    /// Creates a request for manifest leaves over a block range.
-    ///
-    /// # Arguments
-    /// * `start_height` - Starting L1 block height (inclusive)
-    /// * `end_height` - Ending L1 block height (inclusive)
-    /// * `manifest_mmr` - Compact manifest MMR snapshot for verification
-    pub fn manifest_leaves(
-        start_height: u64,
-        end_height: u64,
-        manifest_mmr: AsmManifestCompactMmr,
-    ) -> Self {
-        Self::ManifestLeaves(ManifestLeavesRequest {
-            start_height,
-            end_height,
-            manifest_mmr,
-        })
-    }
-
-    /// Creates a request for a specific Bitcoin transaction.
-    ///
-    /// # Arguments
-    /// * `txid` - The Bitcoin transaction ID to fetch (32 bytes)
-    pub fn bitcoin_tx(txid: [u8; 32]) -> Self {
-        Self::BitcoinTx(BitcoinTxRequest { txid })
-    }
-}
-
-/// Auxiliary data response fulfilling a specific request.
-///
-/// Workers create these envelopes to provide the data requested by
-/// subprotocols during pre-processing. Each envelope corresponds to
-/// one `AuxRequestSpec`.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub enum AuxResponseEnvelope {
-    /// Manifest leaves (hash + proof) for a requested block range.
-    ///
-    /// This is the response to `AuxRequestSpec::ManifestLeaves`.
-    /// Contains the manifest hashes and proofs for each block in the range.
-    ManifestLeaves(ManifestLeavesResponse),
-
-    /// Raw Bitcoin transaction bytes.
-    ///
-    /// This is the response to `AuxRequestSpec::BitcoinTx`.
-    /// Contains the full serialized transaction data.
-    BitcoinTx(Vec<u8>),
-}
-
-impl AuxResponseEnvelope {
-    /// Returns the variant name as a string (for error messages).
-    pub fn variant_name(&self) -> &'static str {
-        match self {
-            Self::ManifestLeaves(_) => "ManifestLeaves",
-            Self::BitcoinTx(_) => "BitcoinTx",
-        }
-    }
-}
-
 /// Response containing manifest leaves for a contiguous block range.
 ///
 /// This is the data format sent over the wire. Only the leaves are included
@@ -117,16 +40,17 @@ pub struct ManifestLeavesResponse {
     pub leaves: Vec<AsmManifestHash>,
 }
 
-/// Verified manifest leaves with proofs for a contiguous block range.
+/// Manifest leaves with their proofs for a contiguous block range.
 ///
-/// This is used internally by the resolver after verifying MMR proofs.
-/// Contains both the leaves and their corresponding proofs.
+/// This is used by the resolver to perform MMR verification.
+/// It contains both the leaves and their corresponding proofs, but
+/// does not imply prior verification.
 ///
 /// Note: For now we include a separate Merkle proof for each leaf. Since the
 /// leaves are contiguous within the range, this could be optimized to use a
 /// single proof (or a more compact multi-proof) covering all leaves.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VerifiedManifestLeaves {
+pub struct ManifestLeavesWithProofs {
     /// One manifest hash per block in range, ordered by height
     pub leaves: Vec<AsmManifestHash>,
     /// Per-leaf MMR proofs (same order as `leaves`)

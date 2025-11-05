@@ -56,6 +56,34 @@ pub enum AuxError {
         /// The transaction index with no responses
         tx_index: L1TxIndex,
     },
+
+    /// Failed to decode raw Bitcoin transaction bytes.
+    ///
+    /// Occurs when the provided raw transaction cannot be deserialized
+    /// into a valid `bitcoin::Transaction`.
+    #[error("invalid Bitcoin transaction for tx index {tx_index}: {source}")]
+    InvalidBitcoinTx {
+        /// The transaction index being resolved
+        tx_index: L1TxIndex,
+        /// Underlying decode error
+        #[source]
+        source: bitcoin::consensus::encode::Error,
+    },
+
+    /// The resolved Bitcoin transaction ID does not match the requested one.
+    ///
+    /// Note: we compare against the transaction's witness txid (wtxid).
+    #[error(
+        "Bitcoin txid mismatch for tx index {tx_index}: expected {expected:?}, found {found:?}"
+    )]
+    TxidMismatch {
+        /// The transaction index being resolved
+        tx_index: L1TxIndex,
+        /// The requested txid
+        expected: [u8; 32],
+        /// The txid computed from provided bytes
+        found: [u8; 32],
+    },
 }
 
 /// Result type alias for auxiliary operations.

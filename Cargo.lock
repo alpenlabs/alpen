@@ -13263,9 +13263,12 @@ dependencies = [
 name = "strata-asm-aux"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "borsh",
  "strata-asm-common",
+ "strata-btc-types",
  "strata-merkle",
+ "strata-test-utils",
  "thiserror 2.0.16",
 ]
 

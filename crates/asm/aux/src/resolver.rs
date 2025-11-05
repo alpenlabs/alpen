@@ -4,12 +4,14 @@
 
 use std::collections::BTreeMap;
 
+use bitcoin::{Transaction, hashes::Hash};
 use strata_asm_common::AsmManifestMmr;
+use strata_btc_types::RawBitcoinTx;
 
 use crate::{
     AuxError, AuxResult, L1TxIndex,
     data::{
-        BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, VerifiedManifestLeaves,
+        BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
     },
 };
 
@@ -22,17 +24,17 @@ use crate::{
 /// is cryptographically verified against the manifest MMR committed in state.
 #[derive(Debug)]
 pub struct AuxResolver<'a> {
-    /// Map from transaction index to manifest leaves response (just the leaves)
-    manifest_leaves: &'a BTreeMap<L1TxIndex, VerifiedManifestLeaves>,
+    /// Map from transaction index to manifest leaves with proofs (unverified)
+    manifest_leaves: &'a BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
     /// Map from transaction index to Bitcoin transaction data
-    bitcoin_txs: &'a BTreeMap<L1TxIndex, Vec<u8>>,
+    bitcoin_txs: &'a BTreeMap<L1TxIndex, RawBitcoinTx>,
 }
 
 impl<'a> AuxResolver<'a> {
     /// Creates a new resolver from separate response maps.
     pub fn new(
-        manifest_leaves: &'a BTreeMap<L1TxIndex, VerifiedManifestLeaves>,
-        bitcoin_txs: &'a BTreeMap<L1TxIndex, Vec<u8>>,
+        manifest_leaves: &'a BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
+        bitcoin_txs: &'a BTreeMap<L1TxIndex, RawBitcoinTx>,
     ) -> Self {
         Self {
             manifest_leaves,
@@ -82,31 +84,48 @@ impl<'a> AuxResolver<'a> {
 
     /// Gets Bitcoin transaction data for a transaction.
     ///
+    /// This decodes the provided raw transaction bytes, recomputes the
+    /// transaction's witness txid (wtxid), and ensures it matches the
+    /// requested `txid`.
+    ///
     /// # Returns
     ///
-    /// Returns the raw Bitcoin transaction bytes.
+    /// The decoded `bitcoin::Transaction`.
     ///
     /// # Errors
     ///
-    /// Returns `AuxError::MissingResponse` if no response exists for this transaction.
+    /// - `AuxError::MissingResponse` if no response exists for this transaction.
+    /// - `AuxError::InvalidBitcoinTx` if decoding the raw transaction fails.
+    /// - `AuxError::TxidMismatch` if the decoded transaction's wtxid does not
+    ///   match the requested `txid`.
     ///
-    /// Currently doesn't perform verification on Bitcoin transactions.
+    /// Note: This does not perform SPV verification for the transaction.
     /// Future versions may add Bitcoin SPV proof verification.
     pub fn get_bitcoin_tx(
         &self,
         tx_index: L1TxIndex,
-        _req: &BitcoinTxRequest,
-    ) -> AuxResult<Vec<u8>> {
-        self.bitcoin_txs
+        req: &BitcoinTxRequest,
+    ) -> AuxResult<Transaction> {
+        let raw_tx = self
+            .bitcoin_txs
             .get(&tx_index)
-            .cloned()
-            .ok_or(AuxError::MissingResponse { tx_index })
+            .ok_or(AuxError::MissingResponse { tx_index })?;
+        let tx: Transaction = raw_tx
+            .try_into()
+            .map_err(|source| AuxError::InvalidBitcoinTx { tx_index, source })?;
+        let wtxid = tx.compute_wtxid();
+        let found = wtxid.as_raw_hash().to_byte_array();
+        if found != req.txid {
+            return Err(AuxError::TxidMismatch { tx_index, expected: req.txid, found });
+        }
+        Ok(tx)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use strata_asm_common::AsmManifestCompactMmr;
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
 
@@ -136,8 +155,9 @@ mod tests {
     #[test]
     fn test_resolver_missing_response() {
         let manifest_leaves = BTreeMap::new();
+        let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
         let mut bitcoin_txs = BTreeMap::new();
-        bitcoin_txs.insert(0, vec![]);
+        bitcoin_txs.insert(0, raw_tx);
 
         let mmr = AsmManifestMmr::new(16);
         let compact = mmr.into();
@@ -156,12 +176,13 @@ mod tests {
 
     #[test]
     fn test_resolver_bitcoin_tx() {
-        let txid = [1u8; 32];
-        let raw_tx = vec![0x01, 0x02, 0x03];
+        let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
+        let tx: Transaction = raw_tx.clone().try_into().unwrap();
+        let txid = tx.compute_wtxid().as_raw_hash().to_byte_array();
 
         let manifest_leaves = BTreeMap::new();
         let mut bitcoin_txs = BTreeMap::new();
-        bitcoin_txs.insert(0, raw_tx.clone());
+        bitcoin_txs.insert(0, raw_tx);
 
         let mmr = AsmManifestMmr::new(16);
         let _compact: AsmManifestCompactMmr = mmr.into();
@@ -171,11 +192,6 @@ mod tests {
         // Should successfully return the bitcoin tx
         let req = BitcoinTxRequest { txid };
         let result = resolver.get_bitcoin_tx(0, &req).unwrap();
-        assert_eq!(result, raw_tx);
+        assert_eq!(result, tx);
     }
-
-    // Note: Testing MMR proof verification requires creating valid proofs,
-    // which needs access to internal MMR state during leaf addition.
-    // This would be better tested in integration tests where we have
-    // full control over the MMR lifecycle.
 }

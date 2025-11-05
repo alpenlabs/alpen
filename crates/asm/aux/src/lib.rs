@@ -48,7 +48,7 @@
 //! # Example Usage
 //!
 //! ```ignore
-//! use strata_asm_aux::{AuxRequestCollector, AuxRequestSpec, AuxResolver};
+//! use strata_asm_aux::{AuxRequestCollector, AuxResolver};
 //!
 //! // During pre_process_txs:
 //! fn pre_process_txs(
@@ -62,10 +62,7 @@
 //!         // Request manifest leaves for L1 blocks 100-200
 //!         // Include the manifest MMR snapshot for verification
 //!         let mmr_compact = /* obtain from state */ todo!("compact MMR");
-//!         collector.request(
-//!             idx,
-//!             AuxRequestSpec::manifest_leaves(100, 200, mmr_compact),
-//!         );
+//!         collector.request_manifest_leaves(idx, 100, 200, mmr_compact);
 //!     }
 //! }
 //!
@@ -105,8 +102,7 @@ mod types;
 // Re-export main types
 pub use collector::AuxRequestCollector;
 pub use data::{
-    AuxRequestSpec, AuxResponseEnvelope, BitcoinTxRequest, ManifestLeavesRequest,
-    ManifestLeavesResponse,
+    BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
 };
 pub use error::{AuxError, AuxResult};
 pub use resolver::AuxResolver;

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{L1TxIndex, data::AuxRequestSpec};
+use crate::{BitcoinTxRequest, L1TxIndex, ManifestLeavesRequest};
 
 /// Collects auxiliary data requests keyed by transaction index.
 ///
@@ -13,8 +13,8 @@ use crate::{L1TxIndex, data::AuxRequestSpec};
 /// one auxiliary data item (identified by its index within the L1 block).
 #[derive(Debug, Default)]
 pub struct AuxRequestCollector {
-    /// Map from transaction index to its auxiliary request
-    requests: BTreeMap<L1TxIndex, AuxRequestSpec>,
+    manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesRequest>,
+    bitcoin_txs: BTreeMap<L1TxIndex, BitcoinTxRequest>,
 }
 
 impl AuxRequestCollector {
@@ -23,19 +23,13 @@ impl AuxRequestCollector {
         Self::default()
     }
 
-    /// Registers an auxiliary data request for a specific transaction.
+    /// Requests manifest leaves (hash + proof) for a block height range.
     ///
-    /// # Arguments
-    ///
-    /// * `tx_index` - Index of the transaction within the L1 block (0-based)
-    /// * `spec` - Specification of what auxiliary data is needed
-    ///
-    /// # Panics
-    ///
-    /// Panics if a request was already registered for this transaction index.
-    /// Each transaction can only request one auxiliary data item.
-    pub fn request(&mut self, tx_index: L1TxIndex, spec: AuxRequestSpec) {
-        if self.requests.insert(tx_index, spec).is_some() {
+    /// Stores a request keyed by `tx_index` containing the range and the
+    /// compact manifest MMR snapshot used for verification by the resolver.
+    pub fn request_manifest_leaves(&mut self, tx_index: L1TxIndex, req: ManifestLeavesRequest) {
+        // Use the common insertion logic to enforce one-request-per-tx
+        if self.manifest_leaves.insert(tx_index, req).is_some() {
             panic!(
                 "duplicate auxiliary request for transaction index {}",
                 tx_index
@@ -43,27 +37,14 @@ impl AuxRequestCollector {
         }
     }
 
-    /// Consumes the collector and returns all collected requests.
-    ///
-    /// This is typically called by the orchestration layer after all
-    /// subprotocols have completed their pre-processing phase.
-    pub fn into_requests(self) -> BTreeMap<L1TxIndex, AuxRequestSpec> {
-        self.requests
-    }
-
-    /// Returns the number of pending auxiliary requests.
-    pub fn len(&self) -> usize {
-        self.requests.len()
-    }
-
-    /// Returns true if no auxiliary requests have been collected.
-    pub fn is_empty(&self) -> bool {
-        self.requests.is_empty()
-    }
-
-    /// Returns a reference to the requests map.
-    pub fn requests(&self) -> &BTreeMap<L1TxIndex, AuxRequestSpec> {
-        &self.requests
+    /// Requests a raw Bitcoin transaction by its txid.
+    pub fn request_bitcoin_tx(&mut self, tx_index: L1TxIndex, req: BitcoinTxRequest) {
+        if self.bitcoin_txs.insert(tx_index, req).is_some() {
+            panic!(
+                "duplicate auxiliary request for transaction index {}",
+                tx_index
+            );
+        }
     }
 }
 
@@ -76,25 +57,21 @@ mod tests {
     #[test]
     fn test_collector_basic() {
         let mut collector = AuxRequestCollector::new();
-        assert!(collector.is_empty());
-        assert_eq!(collector.len(), 0);
+        assert!(collector.manifest_leaves.is_empty());
+        assert!(collector.bitcoin_txs.is_empty());
 
         let mmr = strata_asm_common::AsmManifestMmr::new(16);
         let mmr_compact: AsmManifestCompactMmr = mmr.into();
-        collector.request(
-            0,
-            AuxRequestSpec::manifest_leaves(100, 200, mmr_compact.clone()),
-        );
-        assert_eq!(collector.len(), 1);
-        assert!(!collector.is_empty());
+        let req0 = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact.clone() };
+        collector.request_manifest_leaves(0, req0);
+        assert_eq!(collector.manifest_leaves.len(), 1);
 
-        collector.request(1, AuxRequestSpec::manifest_leaves(201, 300, mmr_compact));
-        assert_eq!(collector.len(), 2);
+        let req1 = ManifestLeavesRequest { start_height: 201, end_height: 300, manifest_mmr: mmr_compact };
+        collector.request_manifest_leaves(1, req1);
+        assert_eq!(collector.manifest_leaves.len(), 2);
 
-        let requests = collector.into_requests();
-        assert_eq!(requests.len(), 2);
-        assert!(requests.contains_key(&0));
-        assert!(requests.contains_key(&1));
+        assert!(collector.manifest_leaves.contains_key(&0));
+        assert!(collector.manifest_leaves.contains_key(&1));
     }
 
     #[test]
@@ -103,11 +80,10 @@ mod tests {
         let mut collector = AuxRequestCollector::new();
         let mmr = strata_asm_common::AsmManifestMmr::new(16);
         let mmr_compact: AsmManifestCompactMmr = mmr.into();
-        collector.request(
-            0,
-            AuxRequestSpec::manifest_leaves(100, 200, mmr_compact.clone()),
-        );
+        let req0 = ManifestLeavesRequest { start_height: 100, end_height: 200, manifest_mmr: mmr_compact.clone() };
+        collector.request_manifest_leaves(0, req0);
         // This should panic
-        collector.request(0, AuxRequestSpec::manifest_leaves(201, 300, mmr_compact));
+        let req1 = ManifestLeavesRequest { start_height: 201, end_height: 300, manifest_mmr: mmr_compact };
+        collector.request_manifest_leaves(0, req1);
     }
 }

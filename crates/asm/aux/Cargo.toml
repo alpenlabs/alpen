@@ -7,7 +7,12 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+bitcoin.workspace = true
 borsh.workspace = true
 strata-asm-common.workspace = true
+strata-btc-types.workspace = true
 strata-merkle.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+strata-test-utils.workspace = true
