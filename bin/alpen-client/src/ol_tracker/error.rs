@@ -5,7 +5,8 @@ use crate::traits::error::{OlClientError, StorageError};
 /// Error type for OL tracker operations.
 ///
 /// Errors are categorized into:
-/// - **Recoverable**: Transient failures that can be retried (network issues, temporary DB failures)
+/// - **Recoverable**: Transient failures that can be retried (network issues, temporary DB
+///   failures)
 /// - **NonRecoverable**: Fatal errors requiring intervention (no fork point found, data corruption)
 #[derive(Debug, Error)]
 pub(crate) enum OlTrackerError {

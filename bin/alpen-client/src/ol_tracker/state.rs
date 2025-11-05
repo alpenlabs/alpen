@@ -460,11 +460,7 @@ mod tests {
             mock_storage
                 .expect_ee_account_state()
                 .times(1)
-                .returning(|_| {
-                    Err(crate::traits::error::StorageError::database(
-                        "disk error",
-                    ))
-                });
+                .returning(|_| Err(crate::traits::error::StorageError::database("disk error")));
 
             let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
 
