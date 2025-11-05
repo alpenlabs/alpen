@@ -42,53 +42,14 @@ pub enum StfError {
     #[error("Invalid ASM log")]
     InvalidAsmLog,
 
-    #[error("Account {0} does not exist")]
-    NonExistentAccount(AccountId),
-
     #[error("Account error: {0}")]
     AccountError(#[from] AcctError),
 
     #[error("Unsupported transaction type")]
     UnsupportedTransaction,
 
-    #[error(
-        "Invalid update sequence for account {account_id}: expected seqno {expected}, got {got}"
-    )]
-    InvalidUpdateSequence {
-        account_id: AccountId,
-        expected: u64,
-        got: u64,
-    },
-
-    #[error(
-        "Invalid message index for account {account_id}: expected new index {expected}, got index {got}"
-    )]
-    InvalidMsgIndex {
-        account_id: AccountId,
-        expected: u64,
-        got: u64,
-    },
-
-    #[error("Insufficient balance")]
-    InsufficientBalance,
-
-    #[error("Message does not exist for account {account_id} at message index {msg_idx}")]
-    InvalidMessageProof { account_id: AccountId, msg_idx: u64 },
-
-    #[error("Invalid message reference by account {account_id} at ref index {ref_idx}")]
-    InvalidLedgerReference { account_id: AccountId, ref_idx: u64 },
-
-    #[error("Invalid update proof for account {account_id}")]
-    InvalidUpdateProof { account_id: AccountId },
-
     #[error("{0}")]
     UnsupportedTransfer(String),
-
-    #[error("Message index overflow for account {account_id}")]
-    MsgIndexOverflow { account_id: AccountId },
-
-    #[error("Bitcoin amount overflow")]
-    BitcoinAmountOverflow,
 
     #[error("Epoch overflow: current epoch {cur_epoch}")]
     EpochOverflow { cur_epoch: Epoch },
