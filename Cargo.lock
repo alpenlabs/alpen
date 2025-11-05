@@ -13315,6 +13315,7 @@ name = "strata-asm-logs"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "int-enum",
  "moho-types",
  "strata-asm-common",
  "strata-checkpoint-types",

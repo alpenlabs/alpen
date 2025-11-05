@@ -4,7 +4,7 @@ use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
 use strata_msg_fmt::TypeId;
 use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
 
-use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE;
+use crate::constants::LogTypeId;
 
 /// Details for a checkpoint update event.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -51,5 +51,5 @@ impl CheckpointUpdate {
 }
 
 impl AsmLog for CheckpointUpdate {
-    const TY: TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
+    const TY: TypeId = LogTypeId::CheckpointUpdate as u16;
 }

@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
 
-use crate::constants::DEPOSIT_LOG_TYPE_ID;
+use crate::constants::LogTypeId;
 
 /// Details for a deposit operation.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -32,5 +32,5 @@ impl DepositLog {
 }
 
 impl AsmLog for DepositLog {
-    const TY: TypeId = DEPOSIT_LOG_TYPE_ID;
+    const TY: TypeId = LogTypeId::Deposit as u16;
 }
