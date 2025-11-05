@@ -31,9 +31,24 @@ impl ConsensusHeads {
 
 #[derive(Debug)]
 pub(crate) struct OlTrackerState {
-    pub(crate) best: EeAccountStateAtBlock,
-    pub(crate) confirmed: EeAccountStateAtBlock,
-    pub(crate) finalized: EeAccountStateAtBlock,
+    best: EeAccountStateAtBlock,
+    confirmed: EeAccountStateAtBlock,
+    finalized: EeAccountStateAtBlock,
+}
+
+#[cfg(test)]
+impl OlTrackerState {
+    pub(crate) fn new(
+        best: EeAccountStateAtBlock,
+        confirmed: EeAccountStateAtBlock,
+        finalized: EeAccountStateAtBlock,
+    ) -> Self {
+        Self {
+            best,
+            confirmed,
+            finalized,
+        }
+    }
 }
 
 impl OlTrackerState {

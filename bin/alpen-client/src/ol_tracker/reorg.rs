@@ -501,11 +501,11 @@ mod tests {
                 .returning(|_| Ok(()));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let mut state = OlTrackerState {
-                best: make_state_at_block(110, 2, 2),
-                confirmed: make_state_at_block(105, 3, 3),
-                finalized: make_state_at_block(100, 1, 1),
-            };
+            let mut state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
 
             let result = handle_reorg(&mut state, &ctx).await;
 
@@ -544,11 +544,11 @@ mod tests {
                 .returning(|_| Ok(None));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let mut state = OlTrackerState {
-                best: make_state_at_block(110, 2, 2),
-                confirmed: make_state_at_block(105, 3, 3),
-                finalized: make_state_at_block(100, 1, 1),
-            };
+            let mut state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
 
             let result = handle_reorg(&mut state, &ctx).await;
 
@@ -571,11 +571,11 @@ mod tests {
             });
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let mut state = OlTrackerState {
-                best: make_state_at_block(110, 2, 2),
-                confirmed: make_state_at_block(105, 3, 3),
-                finalized: make_state_at_block(100, 1, 1),
-            };
+            let mut state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
 
             let result = handle_reorg(&mut state, &ctx).await;
 
@@ -625,11 +625,11 @@ mod tests {
                 .returning(|_| Ok(()));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 5);
-            let mut state = OlTrackerState {
-                best: make_state_at_block(110, 2, 2),
-                confirmed: make_state_at_block(105, 3, 3),
-                finalized: make_state_at_block(100, 1, 1),
-            };
+            let mut state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
 
             let result = handle_reorg(&mut state, &ctx).await;
 

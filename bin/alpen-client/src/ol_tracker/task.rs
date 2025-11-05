@@ -246,11 +246,7 @@ mod tests {
             make_block_commitment(slot, id),
             EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]),
         );
-        OlTrackerState {
-            best: block_state.clone(),
-            confirmed: block_state.clone(),
-            finalized: block_state,
-        }
+        OlTrackerState::new(block_state.clone(), block_state.clone(), block_state)
     }
 
     mod apply_block_operations_tests {
