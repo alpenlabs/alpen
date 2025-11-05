@@ -1,8 +1,9 @@
-use strata_acct_types::{AccountId, BitcoinAmount, MerkleProof, StrataHasher};
-use strata_ledger_types::{IAccountState, ISnarkAccountState, StateAccessor};
+use strata_acct_types::{AccountId, BitcoinAmount, MerkleProof, Mmr64, StrataHasher};
+use strata_ledger_types::{IL1ViewState, ISnarkAccountState, StateAccessor};
 use strata_mmr::hasher::MerkleHasher;
 use strata_snark_acct_types::{
-    LedgerRefs, MessageEntry, SnarkAccountUpdate, UpdateOperationData, UpdateOutputs,
+    LedgerRefProofs, MessageEntryProof, SnarkAccountUpdate, SnarkAccountUpdateWithMmrProofs,
+    UpdateOperationData, UpdateOutputs,
 };
 
 use crate::error::{StfError, StfResult};
@@ -12,11 +13,11 @@ use crate::error::{StfError, StfResult};
 pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     state_accessor: &S,
     sender: AccountId,
-    snark_state: &<S::AccountState as IAccountState>::SnarkAccountState,
-    update: &'a SnarkAccountUpdate,
+    snark_state: &impl ISnarkAccountState,
+    update: &'a SnarkAccountUpdateWithMmrProofs,
     cur_balance: BitcoinAmount,
 ) -> StfResult<VerifiedUpdate<'a>> {
-    let operation = update.operation();
+    let operation = update.update().operation();
     let outputs = operation.outputs();
 
     // 1. Check seq_no matches
@@ -45,74 +46,74 @@ pub(crate) fn verify_update_correctness<'a, S: StateAccessor>(
     }
 
     // 3. Verify ledger references using the provided state accessor
-    verify_ledger_refs(operation.ledger_refs(), state_accessor)?;
+    verify_ledger_refs(
+        sender,
+        state_accessor.l1_view().l1_references(),
+        update.ledger_ref_proofs(),
+    )?;
 
-    // Create message proofs
-    let message_proofs = get_message_proofs::<S>(sender, update, snark_state)?;
     // 4. Verify input mmr proofs
-    verify_input_mmr_proofs::<S>(sender, snark_state, &message_proofs)?;
+    verify_input_mmr_proofs(sender, snark_state, update.message_proofs())?;
 
     // 4. Verify outputs can be applied safely
     verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
     // 5. Verify the witness check
-    verify_update_witness(sender, snark_state, update, state_accessor)?;
+    verify_update_witness(sender, snark_state, update.update(), state_accessor)?;
 
     Ok(VerifiedUpdate { operation })
 }
 
-fn get_message_proofs<S: StateAccessor>(
-    sender: AccountId,
-    update: &SnarkAccountUpdate,
-    state: &<S::AccountState as IAccountState>::SnarkAccountState,
-) -> StfResult<Vec<(MessageEntry, MerkleProof)>> {
-    let mut cur_idx = state.next_inbox_idx();
-    let mut proofs = Vec::new();
-
-    for msg in update.operation().processed_messages() {
-        let proof =
-            state
-                .get_message_proof(msg, cur_idx)?
-                .ok_or(StfError::InvalidMessageProof {
-                    account_id: sender,
-                    message: msg.clone(),
-                })?;
-
-        let mproof = MerkleProof::from_cohashes(proof.raw_proof().cohashes().to_vec(), cur_idx);
-        proofs.push((msg.clone(), mproof));
-        cur_idx = cur_idx
-            .checked_add(1)
-            .ok_or(StfError::MsgIndexOverflow { account_id: sender })?;
-    }
-    Ok(proofs)
-}
-
-pub(crate) fn verify_input_mmr_proofs<S: StateAccessor>(
-    account_id: AccountId,
-    state: &<S::AccountState as IAccountState>::SnarkAccountState,
-    msg_proofs: &[(MessageEntry, MerkleProof)],
+fn verify_ledger_refs(
+    account: AccountId,
+    mmr: &Mmr64,
+    ledger_ref_proofs: &LedgerRefProofs,
 ) -> StfResult<()> {
-    for (msg, proof) in msg_proofs {
-        let msg_bytes: Vec<u8> = msg.to_ssz_bytes();
-        let hash = StrataHasher::hash_leaf(&msg_bytes);
-        if !state.inbox_mmr().verify(proof, &hash) {
-            return Err(StfError::InvalidMessageProof {
-                account_id,
-                message: msg.clone(),
+    for proof in ledger_ref_proofs.l1_headers_proofs() {
+        let hash = proof.entry_hash();
+        if !mmr.verify(proof.proof(), hash) {
+            return Err(StfError::InvalidLedgerReference {
+                account_id: account,
+                ref_idx: proof.entry_idx(),
             });
         }
     }
     Ok(())
 }
 
+pub(crate) fn verify_input_mmr_proofs(
+    account_id: AccountId,
+    state: &impl ISnarkAccountState,
+    msg_proofs: &[MessageEntryProof],
+) -> StfResult<()> {
+    let mut cur_index = state.next_inbox_idx();
+    for msg_proof in msg_proofs {
+        let msg_bytes: Vec<u8> = msg_proof.entry().to_ssz_bytes();
+        let hash = StrataHasher::hash_leaf(&msg_bytes);
+
+        let cohashes = msg_proof.raw_proof().cohashes();
+        let proof = MerkleProof::from_cohashes(cohashes.to_vec(), cur_index);
+
+        if !state.inbox_mmr().verify(&proof, &hash) {
+            return Err(StfError::InvalidMessageProof {
+                account_id,
+                msg_idx: cur_index,
+            });
+        }
+
+        cur_index += 1;
+    }
+    Ok(())
+}
+
 pub(crate) fn verify_update_witness<S: StateAccessor>(
     sender: AccountId,
-    snark_state: &<S::AccountState as IAccountState>::SnarkAccountState,
+    snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdate,
     _state_accessor: &S,
 ) -> StfResult<()> {
     let vk = snark_state.verifier_key();
-    let claim: Vec<u8> = compute_update_claim::<S>(snark_state, update.operation());
+    let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
     let is_valid = vk
         .verify_claim_witness(&claim, update.update_proof())
         .is_ok();
@@ -124,8 +125,8 @@ pub(crate) fn verify_update_witness<S: StateAccessor>(
     Ok(())
 }
 
-fn compute_update_claim<S: StateAccessor>(
-    _snark_state: &<S::AccountState as IAccountState>::SnarkAccountState,
+fn compute_update_claim(
+    _snark_state: &impl ISnarkAccountState,
     _operation: &UpdateOperationData,
 ) -> Vec<u8> {
     // Use new state, processed messages, old state, refs and outputs to compute claim
@@ -161,14 +162,6 @@ pub(crate) fn verify_update_outputs_safe<S: StateAccessor>(
     if total_sent > cur_balance {
         return Err(StfError::InsufficientBalance);
     }
-    Ok(())
-}
-
-pub(crate) fn verify_ledger_refs<S: StateAccessor>(
-    _ledger_refs: &LedgerRefs,
-    _state_accessor: &S,
-) -> StfResult<()> {
-    // TODO: implement this
     Ok(())
 }
 

@@ -213,9 +213,6 @@ impl L1Update {
 /// A manifest containing ASM data corresponding to a L1 block.
 #[derive(Debug, Clone)]
 pub struct AsmManifest {
-    /// L1 block height.
-    l1_blkheight: u32,
-
     /// L1 block id.
     l1_blkid: Buf32,
 
@@ -224,16 +221,8 @@ pub struct AsmManifest {
 }
 
 impl AsmManifest {
-    pub fn new(l1_blkheight: u32, l1_blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
-        Self {
-            l1_blkheight,
-            l1_blkid,
-            logs,
-        }
-    }
-
-    pub fn l1_blkheight(&self) -> u32 {
-        self.l1_blkheight
+    pub fn new(l1_blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
+        Self { l1_blkid, logs }
     }
 
     pub fn l1_blkid(&self) -> Buf32 {
