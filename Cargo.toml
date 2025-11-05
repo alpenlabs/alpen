@@ -8,6 +8,7 @@ members = [
   "crates/alpen-ee/database",
   "crates/alpen-ee/engine",
   "crates/alpen-ee/ol_tracker",
+  "crates/asm/aux",
   "crates/asm/common",
   "crates/asm/logs",
   "crates/asm/stf",
