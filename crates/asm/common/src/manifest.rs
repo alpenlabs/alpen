@@ -18,25 +18,3 @@ pub struct AsmManifest {
     pub encoded_data: Vec<u8>,
     // TODO: Add other fields as needed based on actual ASM execution output
 }
-
-impl AsmManifest {
-    pub fn new(encoded_logs: Vec<u8>, encoded_header: Vec<u8>, encoded_data: Vec<u8>) -> Self {
-        Self {
-            encoded_logs,
-            encoded_header,
-            encoded_data,
-        }
-    }
-
-    pub fn encoded_logs(&self) -> &[u8] {
-        &self.encoded_logs
-    }
-
-    pub fn encoded_header(&self) -> &[u8] {
-        &self.encoded_header
-    }
-
-    pub fn encoded_data(&self) -> &[u8] {
-        &self.encoded_data
-    }
-}

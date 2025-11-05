@@ -4,6 +4,7 @@
 mod aux;
 mod error;
 mod log;
+mod manifest;
 mod msg;
 mod spec;
 mod state;
@@ -13,6 +14,7 @@ mod tx;
 pub use aux::*;
 pub use error::*;
 pub use log::*;
+pub use manifest::*;
 pub use msg::*;
 pub use spec::*;
 pub use state::*;

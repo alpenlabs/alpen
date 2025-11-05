@@ -13142,14 +13142,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-chain-types"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "serde",
-]
-
-[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
@@ -14050,7 +14042,7 @@ name = "strata-ledger-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-asm-chain-types",
+ "strata-asm-common",
  "strata-identifiers",
  "strata-snark-acct-types",
 ]
