@@ -14164,6 +14164,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-evm-ee"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alpen-reth-evm",
+ "reth-chainspec",
+ "reth-evm",
+ "reth-evm-ethereum",
+ "reth-primitives",
+ "reth-primitives-traits",
+ "reth-trie",
+ "revm",
+ "revm-primitives",
+ "rsp-client-executor",
+ "rsp-mpt",
+ "serde",
+ "serde_json",
+ "strata-codec",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+]
+
+[[package]]
 name = "strata-evmexec"
 version = "0.3.0-alpha.1"
 dependencies = [

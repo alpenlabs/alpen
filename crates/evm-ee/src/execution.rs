@@ -49,11 +49,11 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // TODO: get feedbacks from Trey if this field can be unused in Eth context
         _inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
-        // Step 1: Create EVM config with AlpenEvmFactory (matches process_block:31-33)
+        // Step 1: Create EVM config with AlpenEvmFactory
         let evm_config =
             EthEvmConfig::new_with_evm_factory(self.chain_spec.clone(), AlpenEvmFactory::default());
 
-        // Step 2: Prepare data for witness DB (matches process_block:35-41)
+        // Step 2: Prepare data for witness DB
         // Build block_hashes map from ancestor headers (for BLOCKHASH opcode)
         // Build bytecode_by_hash map from bytecodes (for contract execution)
         use reth_primitives_traits::SealedHeader;
@@ -70,7 +70,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             )
             .collect();
 
-        // Build block_hashes from sealed headers (follows witness_db() pattern at io.rs:219-237)
+        // Build block_hashes from sealed headers
         let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
         for i in 0..sealed_headers.len().saturating_sub(1) {
             let child_header = &sealed_headers[i];
@@ -78,7 +78,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             block_hashes.insert(parent_header.number, child_header.parent_hash);
         }
 
-        // Build bytecode_by_hash from bytecodes (follows witness_db() pattern at io.rs:215-216)
+        // Build bytecode_by_hash from bytecodes
         let bytecode_by_hash: HashMap<B256, &revm::state::Bytecode> = pre_state
             .bytecodes()
             .iter()
@@ -91,10 +91,10 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             WrapDatabaseRef(trie_db)
         };
 
-        // Step 4: Create block executor (matches process_block:43)
+        // Step 4: Create block executor
         let block_executor = BasicBlockExecutor::new(evm_config, db);
 
-        // Step 5: Build block from exec_payload and recover senders (matches process_block:44-48)
+        // Step 5: Build block from exec_payload and recover senders
         let header = exec_payload.header_intrinsics().clone();
         let body = exec_payload.body().body().clone();
 
@@ -112,19 +112,19 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             .try_into_recovered()
             .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 6: Validate header (matches process_block:51-53)
+        // Step 6: Validate header
         EthPrimitives::validate_header(
             block.sealed_block().sealed_header(),
             self.chain_spec.clone(),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 7: Execute the block (matches process_block:55)
+        // Step 7: Execute the block
         let execution_output = block_executor
             .execute(&block)
             .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 8: Validate block post-execution (matches process_block:58-60)
+        // Step 8: Validate block post-execution
         EthPrimitives::validate_block_post_execution(
             &block,
             self.chain_spec.clone(),
@@ -132,7 +132,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 9: Accumulate logs bloom (matches process_block:63-69)
+        // Step 9: Accumulate logs bloom
         use alloy_consensus::TxReceipt;
         use revm_primitives::alloy_primitives::Bloom;
         let mut logs_bloom = Bloom::default();
@@ -140,7 +140,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             logs_bloom.accrue_bloom(&r.bloom());
         });
 
-        // Step 10: Collect withdrawal intents (matches process_block:72-79)
+        // Step 10: Collect withdrawal intents
         let transactions = block.into_transactions();
         let executed_txns = transactions.iter();
         let receipts_vec = execution_output.receipts.clone();
@@ -148,7 +148,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         let tx_receipt_pairs = executed_txns.zip(receipts);
         let _withdrawal_intents = collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>();
 
-        // Step 11: Convert execution outcome to HashedPostState (matches process_block:82-87)
+        // Step 11: Convert execution outcome to HashedPostState
         let block_number = header.number;
         let executor_outcome = ExecutionOutcome::new(
             execution_output.state,
@@ -158,7 +158,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         );
         let hashed_post_state = executor_outcome.hash_state_slow::<KeccakKeyHasher>();
 
-        // Step 12: Compute state root (matches process_block:90-95)
+        // Step 12: Compute state root
         // Clone the pre-state, merge the hashed post state, and compute the new state root
         let mut updated_state = pre_state.ethereum_state().clone();
         updated_state.update(&hashed_post_state);
@@ -185,7 +185,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         exec_payload: &ExecPayload<'_, Self::Block>,
         output: &ExecBlockOutput<Self>,
     ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
-        // Complete the header using execution outputs (matches process_block:103-125)
+        // Complete the header using execution outputs
         // The exec_payload contains header intrinsics (non-commitment fields)
         // The output.write_batch contains computed commitments (state_root, logs_bloom)
 
@@ -233,7 +233,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         outputs: &ExecBlockOutput<Self>,
     ) -> EnvResult<()> {
         // Verify that the outputs match what's committed in the header
-        // (matches process_block:97-99 state root verification)
+        //
 
         // Check state root matches
         let computed_state_root = outputs.write_batch().state_root();

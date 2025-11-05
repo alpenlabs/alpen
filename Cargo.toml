@@ -48,6 +48,7 @@ members = [
   "crates/ee-acct-types",
   "crates/ee-chain-types",
   "crates/eectl",
+  "crates/evm-ee",
   "crates/evmexec",
   "crates/identifiers",
   "crates/key-derivation",
