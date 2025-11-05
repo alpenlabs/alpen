@@ -1,6 +1,7 @@
 //! Snark account types.
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, RawMerkleProof};
+use strata_primitives::Epoch;
 
 /// Message entry in an account inbox.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9,14 +10,14 @@ pub struct MessageEntry {
     source: AccountId,
 
     /// The epoch that the message was included.
-    incl_epoch: u64,
+    incl_epoch: Epoch,
 
     /// The message payload.
     payload: MsgPayload,
 }
 
 impl MessageEntry {
-    pub fn new(source: AccountId, incl_epoch: u64, payload: MsgPayload) -> Self {
+    pub fn new(source: AccountId, incl_epoch: Epoch, payload: MsgPayload) -> Self {
         Self {
             source,
             incl_epoch,
@@ -28,7 +29,7 @@ impl MessageEntry {
         self.source
     }
 
-    pub fn incl_epoch(&self) -> u64 {
+    pub fn incl_epoch(&self) -> Epoch {
         self.incl_epoch
     }
 

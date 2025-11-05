@@ -8,6 +8,7 @@ strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-identifiers.workspace = true
 strata-predicate.workspace = true
+strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
 [lints]

@@ -1,8 +1,6 @@
-use strata_primitives::buf::Buf32;
+use strata_primitives::{Slot, buf::Buf32};
 
 /// Type aliases for clarity
-pub type Slot = u64;
-pub type Epoch = u64;
 pub type OLBlockId = Buf32;
 pub type L1BlockId = Buf32;
 

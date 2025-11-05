@@ -6,6 +6,7 @@
 use strata_acct_types::{BitcoinAmount, Mmr64};
 pub use strata_asm_common::AsmManifest;
 pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
+use strata_primitives::Epoch;
 
 /// State relating to the L1 view.
 ///
@@ -14,10 +15,10 @@ pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
 /// have a similar data path without DA footprint.
 pub trait IL1ViewState {
     /// Gets the current epoch.
-    fn cur_epoch(&self) -> u32;
+    fn cur_epoch(&self) -> Epoch;
 
     /// Sets the current epoch.
-    fn set_cur_epoch(&mut self, epoch: u32);
+    fn set_cur_epoch(&mut self, epoch: Epoch);
 
     /// Last L1 block ID.
     fn last_l1_blkid(&self) -> &L1BlockId;

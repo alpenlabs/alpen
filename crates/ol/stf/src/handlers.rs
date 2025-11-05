@@ -2,7 +2,8 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SystemAccount, strata_codec::Codec};
 use strata_ledger_types::{ISnarkAccountState, StateAccessor};
-use strata_ol_chain_types_new::{Epoch, OLLog};
+use strata_ol_chain_types_new::OLLog;
+use strata_primitives::Epoch;
 use strata_snark_acct_types::MessageEntry;
 
 use crate::error::{StfError, StfResult};

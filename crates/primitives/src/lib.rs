@@ -51,3 +51,6 @@ pub mod sorted_vec;
 pub mod utils;
 
 pub use bitcoin_bosd;
+
+pub type Epoch = u32;
+pub type Slot = u64;
