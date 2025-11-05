@@ -9,8 +9,6 @@ workspace = true
 [dependencies]
 bitcoin.workspace = true
 strata-asm-common.workspace = true
-strata-identifiers.workspace = true
 
 [dev-dependencies]
-strata-asm-chain-types.workspace = true
 strata-identifiers.workspace = true

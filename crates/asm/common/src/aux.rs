@@ -2,12 +2,11 @@ use std::collections::BTreeMap;
 
 use bitcoin::Txid;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_chain_types::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId};
 use strata_l1_txfmt::SubprotocolId;
 use strata_merkle::MerkleProof;
 
-use crate::{AsmLogEntry, L1TxIndex};
+use crate::{AsmLogEntry, AsmManifest, L1TxIndex};
 
 /// Table mapping subprotocol IDs to their corresponding auxiliary payloads.
 pub type AuxDataTable = BTreeMap<SubprotocolId, AuxResponses>;

@@ -4,7 +4,7 @@
 // it's only updated at the epoch boundaries anyways)
 
 use strata_acct_types::BitcoinAmount;
-pub use strata_asm_chain_types::AsmManifest;
+pub use strata_asm_common::AsmManifest;
 pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
 
 /// State relating to the L1 view.

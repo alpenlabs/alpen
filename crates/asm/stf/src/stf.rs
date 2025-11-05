@@ -3,10 +3,9 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use bitcoin::hashes::Hash;
-use strata_asm_chain_types::{AsmLog, AsmManifest};
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState, Mmr64};
-use strata_identifiers::Buf32;
+use strata_asm_common::{
+    AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState, Mmr64,
+};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -87,17 +86,8 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // Export the updated state sections and logs from all subprotocols to build the result.
     let (sections, logs) = manager.export_sections_and_logs();
 
-    // Convert AsmLogEntry to AsmLog for the manifest
-    let manifest_logs: Vec<AsmLog> = logs
-        .iter()
-        .map(|entry| AsmLog::from(entry.as_bytes().to_vec()))
-        .collect();
-
     // Compute the block hash from the header
-    let block_hash = header.block_hash();
-    let block_root = Buf32::from(*block_hash.as_byte_array());
-
-    let manifest = AsmManifest::new(block_root, wtx_root, manifest_logs);
+    let manifest = AsmManifest::new(header.block_hash().into(), wtx_root, logs);
     let manifest_hash: [u8; 32] = manifest.compute_hash();
 
     let mut history_mmr = Mmr64::from(pre_state.chain_view.history_mmr.clone());
@@ -113,6 +103,9 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
         chain_view,
         sections,
     };
-    let output = AsmStfOutput { state, logs };
+    let output = AsmStfOutput {
+        state,
+        logs: manifest.logs().to_vec(),
+    }; // FIXME: PG avoid clone
     Ok(output)
 }

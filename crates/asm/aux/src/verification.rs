@@ -3,7 +3,6 @@ use strata_asm_common::{
     AsmLogClaim, AsmLogEntry, AsmLogOracle, AuxResponses, CompactMmr64, L1TxClaim, L1TxIndex,
     L1TxOracle, L1TxProofBundle, Mmr64, SubprotocolId, VerifiedAuxData, VerifiedAuxInput,
 };
-use strata_identifiers::L1BlockId;
 
 /// Verifies a set of auxiliary responses against the global history MMR and returns the verified
 /// claims. Subprotocols consume the resulting [`VerifiedAuxInput`], avoiding duplicated proof
@@ -60,7 +59,7 @@ fn verify_asm_log_oracle(
     }
 
     Ok(AsmLogOracle {
-        block_hash: L1BlockId::from(*oracle.claim.block_root()),
+        block_hash: *oracle.claim.block_root(),
         logs: oracle
             .claim
             .logs()
@@ -133,10 +132,10 @@ mod tests {
         transaction::Version,
     };
     use strata_asm_common::{
-        AsmLogClaim, AuxResponseBatch, AuxResponses, HEADER_MMR_CAP_LOG2, L1TxClaim, LogMmrProof,
-        Mmr64, empty_history_mmr,
+        AsmLogClaim, AsmManifest, AuxResponseBatch, AuxResponses, HEADER_MMR_CAP_LOG2, L1TxClaim,
+        LogMmrProof, Mmr64, empty_history_mmr,
     };
-    use strata_identifiers::{Buf32, L1BlockId};
+    use strata_identifiers::Buf32;
 
     use super::*;
 
@@ -210,12 +209,10 @@ mod tests {
 
     #[test]
     fn verify_aux_input_accepts_valid_asm_log_proof() {
-        use strata_asm_chain_types::{AsmLog, AsmManifest};
-
         let mut mmr = Mmr64::new(HEADER_MMR_CAP_LOG2);
-        let block_root = Buf32::from([0xAB; 32]);
+        let block_root = Buf32::from([0xAB; 32]).into();
         let wtx_root = Buf32::from([0xCD; 32]);
-        let logs = vec![AsmLog::from(vec![0x01, 0x02, 0x03])];
+        let logs = vec![AsmLogEntry::from_raw(vec![0x01, 0x02, 0x03])];
 
         // Create the manifest and compute its hash (this is what goes in the MMR)
         let manifest = AsmManifest::new(block_root, wtx_root, logs.clone());
@@ -248,7 +245,7 @@ mod tests {
             .expect("verified batch for tx index");
 
         assert_eq!(batch.asm_logs.len(), 1);
-        assert_eq!(batch.asm_logs[0].block_hash, L1BlockId::from(block_root));
+        assert_eq!(batch.asm_logs[0].block_hash, block_root);
         assert_eq!(batch.asm_logs[0].logs.len(), 1);
         assert_eq!(batch.asm_logs[0].logs[0].as_bytes(), &[0x01, 0x02, 0x03]);
     }
