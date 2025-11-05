@@ -40,8 +40,8 @@ use crate::{AuxError, AuxResponseEnvelope, AuxResult, L1TxIndex, ManifestLeaf};
 /// ```
 #[derive(Debug)]
 pub struct AuxResolver<'a> {
-    /// Map from transaction index to auxiliary responses
-    responses: &'a BTreeMap<L1TxIndex, Vec<AuxResponseEnvelope>>,
+    /// Map from transaction index to its single auxiliary response
+    responses: &'a BTreeMap<L1TxIndex, AuxResponseEnvelope>,
     /// Full MMR for verifying proofs
     manifest_mmr: AsmManifestMmr,
 }
@@ -51,12 +51,12 @@ impl<'a> AuxResolver<'a> {
     ///
     /// # Arguments
     ///
-    /// * `responses` - Map from transaction indices to their auxiliary responses
+    /// * `responses` - Map from transaction indices to their auxiliary response
     /// * `manifest_mmr_compact` - Compact MMR from the chain view state
     ///
     /// The compact MMR is expanded into a full MMR for verification purposes.
     pub fn new(
-        responses: &'a BTreeMap<L1TxIndex, Vec<AuxResponseEnvelope>>,
+        responses: &'a BTreeMap<L1TxIndex, AuxResponseEnvelope>,
         manifest_mmr_compact: &AsmManifestCompactMmr,
     ) -> Self {
         Self {
@@ -65,11 +65,11 @@ impl<'a> AuxResolver<'a> {
         }
     }
 
-    /// Gets all response envelopes for a transaction.
+    /// Gets the single response envelope for a transaction.
     ///
     /// Returns `None` if no auxiliary data was requested for this transaction.
-    pub fn get_responses(&self, tx_index: L1TxIndex) -> Option<&[AuxResponseEnvelope]> {
-        self.responses.get(&tx_index).map(|v| v.as_slice())
+    pub fn get_response(&self, tx_index: L1TxIndex) -> Option<&AuxResponseEnvelope> {
+        self.responses.get(&tx_index)
     }
 
     /// Gets and verifies manifest leaves for a transaction.
@@ -88,32 +88,26 @@ impl<'a> AuxResolver<'a> {
     ///
     /// Returns an empty vector if no auxiliary data was requested for this transaction.
     pub fn get_manifest_leaves(&self, tx_index: L1TxIndex) -> AuxResult<Vec<ManifestLeaf>> {
-        let Some(envelopes) = self.responses.get(&tx_index) else {
+        let Some(envelope) = self.responses.get(&tx_index) else {
             return Ok(Vec::new());
         };
 
-        let mut all_leaves = Vec::new();
-
-        for envelope in envelopes {
-            match envelope {
-                AuxResponseEnvelope::ManifestLeaves { leaves, .. } => {
-                    for leaf in leaves {
-                        // Verify MMR proof: manifest_hash must be in the MMR
-                        self.verify_manifest_leaf(leaf)?;
-                        all_leaves.push(leaf.clone());
-                    }
+        match envelope {
+            AuxResponseEnvelope::ManifestLeaves { leaves, .. } => {
+                let mut verified = Vec::with_capacity(leaves.len());
+                for leaf in leaves {
+                    // Verify MMR proof: manifest_hash must be in the MMR
+                    self.verify_manifest_leaf(leaf)?;
+                    verified.push(leaf.clone());
                 }
-                _ => {
-                    return Err(AuxError::TypeMismatch {
-                        tx_index,
-                        expected: "ManifestLeaves",
-                        found: envelope.variant_name(),
-                    });
-                }
+                Ok(verified)
             }
+            other => Err(AuxError::TypeMismatch {
+                tx_index,
+                expected: "ManifestLeaves",
+                found: other.variant_name(),
+            }),
         }
-
-        Ok(all_leaves)
     }
 
     /// Gets Bitcoin transaction data for a transaction.
@@ -128,14 +122,12 @@ impl<'a> AuxResolver<'a> {
     /// Currently doesn't perform verification on Bitcoin transactions.
     /// Future versions may add Bitcoin SPV proof verification.
     pub fn get_bitcoin_tx(&self, tx_index: L1TxIndex) -> AuxResult<Option<Vec<u8>>> {
-        let Some(envelopes) = self.responses.get(&tx_index) else {
+        let Some(envelope) = self.responses.get(&tx_index) else {
             return Ok(None);
         };
 
-        for envelope in envelopes {
-            if let AuxResponseEnvelope::BitcoinTx { raw_tx, .. } = envelope {
-                return Ok(Some(raw_tx.clone()));
-            }
+        if let AuxResponseEnvelope::BitcoinTx { raw_tx, .. } = envelope {
+            return Ok(Some(raw_tx.clone()));
         }
 
         Ok(None)
@@ -183,10 +175,7 @@ mod tests {
     #[test]
     fn test_resolver_type_mismatch() {
         let mut responses = BTreeMap::new();
-        responses.insert(
-            0,
-            vec![AuxResponseEnvelope::bitcoin_tx([0u8; 32], vec![])],
-        );
+        responses.insert(0, AuxResponseEnvelope::bitcoin_tx([0u8; 32], vec![]));
 
         let mmr = AsmManifestMmr::new(16);
         let compact: AsmManifestCompactMmr = mmr.into();
@@ -204,10 +193,7 @@ mod tests {
         let raw_tx = vec![0x01, 0x02, 0x03];
 
         let mut responses = BTreeMap::new();
-        responses.insert(
-            0,
-            vec![AuxResponseEnvelope::bitcoin_tx(txid, raw_tx.clone())],
-        );
+        responses.insert(0, AuxResponseEnvelope::bitcoin_tx(txid, raw_tx.clone()));
 
         let mmr = AsmManifestMmr::new(16);
         let compact: AsmManifestCompactMmr = mmr.into();

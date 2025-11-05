@@ -32,6 +32,11 @@
 //! Each transaction can request at most one auxiliary data item. Not all transactions
 //! need to request auxiliary data.
 //!
+//! **IMPORTANT**: For each request (L1 transaction index), there can only be a single
+//! response. If your use case requires multiple auxiliary data items for a single
+//! transaction type, you must update the [`AuxRequestSpec`] enum to create a new
+//! request type that bundles the required data together.
+//!
 //! ## Supported Request Types
 //!
 //! - **Manifest Leaves**: Fetch manifest hashes and MMR proofs for a range of L1 blocks

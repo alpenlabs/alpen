@@ -100,11 +100,7 @@ impl AuxResponseEnvelope {
     }
 
     /// Creates a manifest leaves response.
-    pub fn manifest_leaves(
-        start_height: u64,
-        end_height: u64,
-        leaves: Vec<ManifestLeaf>,
-    ) -> Self {
+    pub fn manifest_leaves(start_height: u64, end_height: u64, leaves: Vec<ManifestLeaf>) -> Self {
         Self::ManifestLeaves {
             start_height,
             end_height,
