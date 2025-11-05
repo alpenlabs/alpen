@@ -85,13 +85,13 @@ macro_rules! inst_ops {
     } => {
         #[expect(missing_debug_implementations, reason = "Some inner types don't have Debug implementation")]
         pub struct $base {
-            pool: $crate::threadpool::ThreadPool,
+            pool: $crate::_threadpool::ThreadPool,
             inner: ::std::sync::Arc<dyn ShimTrait>,
         }
 
-        $crate::paste::paste! {
+        $crate::_paste::paste! {
             impl $base {
-                pub fn new $(<$($tparam: $tpconstr + Sync + Send + 'static),+>)? (pool: $crate::threadpool::ThreadPool, ctx: ::std::sync::Arc<$ctx $(<$($tparam),+>)?>) -> Self {
+                pub fn new $(<$($tparam: $tpconstr + Sync + Send + 'static),+>)? (pool: $crate::_threadpool::ThreadPool, ctx: ::std::sync::Arc<$ctx $(<$($tparam),+>)?>) -> Self {
                     Self {
                         pool,
                         inner: ::std::sync::Arc::new(Inner { ctx }),
@@ -121,7 +121,7 @@ macro_rules! inst_ops {
             trait ShimTrait: Sync + Send + 'static {
                 $(
                     fn [<$iname _blocking>] (&self, $($aname: $aty),*) -> Result<$ret, $error>;
-                    fn [<$iname _chan>] (&self, pool: &$crate::threadpool::ThreadPool, $($aname: $aty),*) -> $crate::exec::GenericRecv<$ret, $error>;
+                    fn [<$iname _chan>] (&self, pool: &$crate::_threadpool::ThreadPool, $($aname: $aty),*) -> $crate::exec::GenericRecv<$ret, $error>;
                 )*
             }
 
@@ -136,7 +136,7 @@ macro_rules! inst_ops {
                         $iname(&self.ctx, $($aname),*)
                     }
 
-                    fn [<$iname _chan>] (&self, pool: &$crate::threadpool::ThreadPool, $($aname: $aty),*) -> $crate::exec::GenericRecv<$ret, $error> {
+                    fn [<$iname _chan>] (&self, pool: &$crate::_threadpool::ThreadPool, $($aname: $aty),*) -> $crate::exec::GenericRecv<$ret, $error> {
                         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
                         let ctx = self.ctx.clone();
 
@@ -212,7 +212,7 @@ macro_rules! inst_ops_generic {
                 Self { db }
             }
 
-            pub fn into_ops(self, pool: $crate::threadpool::ThreadPool) -> $base {
+            pub fn into_ops(self, pool: $crate::_threadpool::ThreadPool) -> $base {
                 $base::new(pool, ::std::sync::Arc::new(self))
             }
         }
