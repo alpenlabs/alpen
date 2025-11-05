@@ -6,7 +6,10 @@ use std::collections::BTreeMap;
 
 use strata_asm_common::{AsmManifestCompactMmr, AsmManifestMmr};
 
-use crate::{AuxError, AuxRequestSpec, AuxResponseEnvelope, AuxResult, L1TxIndex, ManifestLeaf};
+use crate::{
+    AuxError, AuxRequestSpec, AuxResponseEnvelope, AuxResult, BitcoinTxRequest, L1TxIndex,
+    ManifestLeaf, ManifestLeavesRequest,
+};
 
 /// Provides verified auxiliary data to subprotocols during transaction processing.
 ///
@@ -28,7 +31,8 @@ use crate::{AuxError, AuxRequestSpec, AuxResponseEnvelope, AuxResult, L1TxIndex,
 /// ) {
 ///     for (idx, tx) in txs.iter().enumerate() {
 ///         // Get manifest leaves (automatically verified)
-///         let leaves = aux_resolver.get_manifest_leaves(idx, 100, 200)?;
+///         let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
+///         let leaves = aux_resolver.get_manifest_leaves(idx, &req)?;
 ///
 ///         // Use the verified data
 ///         for leaf in &leaves {
@@ -78,11 +82,11 @@ impl<'a> AuxResolver<'a> {
         };
 
         match spec {
-            AuxRequestSpec::ManifestLeaves { start_height, end_height } => {
-                let _ = self.get_manifest_leaves(tx_index, *start_height, *end_height)?;
+            AuxRequestSpec::ManifestLeaves(req) => {
+                let _ = self.get_manifest_leaves(tx_index, req)?;
             }
-            AuxRequestSpec::BitcoinTx { txid } => {
-                let _ = self.get_bitcoin_tx(tx_index, *txid)?;
+            AuxRequestSpec::BitcoinTx(req) => {
+                let _ = self.get_bitcoin_tx(tx_index, req)?;
             }
         }
         Ok(Some(envelope))
@@ -107,8 +111,7 @@ impl<'a> AuxResolver<'a> {
     pub fn get_manifest_leaves(
         &self,
         tx_index: L1TxIndex,
-        start_height: u64,
-        end_height: u64,
+        req: &ManifestLeavesRequest,
     ) -> AuxResult<Vec<ManifestLeaf>> {
         let Some(envelope) = self.responses.get(&tx_index) else {
             return Ok(Vec::new());
@@ -116,30 +119,35 @@ impl<'a> AuxResolver<'a> {
 
         // Ensure response is manifest leaves and matches requested range
         match envelope {
-            AuxResponseEnvelope::ManifestLeaves { start_height: rs, end_height: re, leaves } => {
-                if *rs != start_height || *re != end_height {
+            AuxResponseEnvelope::ManifestLeaves {
+                start_height: rs,
+                end_height: re,
+                leaves,
+            } => {
+                if *rs != req.start_height || *re != req.end_height {
                     return Err(AuxError::SpecMismatch {
                         tx_index,
                         details: format!(
                             "range mismatch: expected [{}, {}], found [{}, {}]",
-                            start_height, end_height, rs, re
+                            req.start_height, req.end_height, rs, re
                         ),
                     });
                 }
 
-                let expected_len = (end_height - start_height + 1) as usize;
+                let expected_len = (req.end_height - req.start_height + 1) as usize;
                 if leaves.len() != expected_len {
                     return Err(AuxError::SpecMismatch {
                         tx_index,
                         details: format!(
                             "leaf count mismatch: expected {}, found {}",
-                            expected_len, leaves.len()
+                            expected_len,
+                            leaves.len()
                         ),
                     });
                 }
 
                 for (i, leaf) in leaves.iter().enumerate() {
-                    let expected_h = start_height + i as u64;
+                    let expected_h = req.start_height + i as u64;
                     if leaf.height != expected_h {
                         return Err(AuxError::SpecMismatch {
                             tx_index,
@@ -181,15 +189,18 @@ impl<'a> AuxResolver<'a> {
     pub fn get_bitcoin_tx(
         &self,
         tx_index: L1TxIndex,
-        txid: [u8; 32],
+        req: &BitcoinTxRequest,
     ) -> AuxResult<Option<Vec<u8>>> {
         let Some(envelope) = self.responses.get(&tx_index) else {
             return Ok(None);
         };
 
         match envelope {
-            AuxResponseEnvelope::BitcoinTx { txid: resp_txid, raw_tx } => {
-                if *resp_txid != txid {
+            AuxResponseEnvelope::BitcoinTx {
+                txid: resp_txid,
+                raw_tx,
+            } => {
+                if *resp_txid != req.txid {
                     return Err(AuxError::SpecMismatch {
                         tx_index,
                         details: "txid mismatch between request and response".to_string(),
@@ -237,10 +248,12 @@ mod tests {
         let resolver = AuxResolver::new(&responses, &compact);
 
         // Should return empty vec for non-existent tx
-        let leaves = resolver.get_manifest_leaves(0, 100, 200).unwrap();
+        let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
+        let leaves = resolver.get_manifest_leaves(0, &req).unwrap();
         assert!(leaves.is_empty());
 
-        let btc_tx = resolver.get_bitcoin_tx(0, [0u8; 32]).unwrap();
+        let btc_req = BitcoinTxRequest { txid: [0u8; 32] };
+        let btc_tx = resolver.get_bitcoin_tx(0, &btc_req).unwrap();
         assert!(btc_tx.is_none());
     }
 
@@ -255,7 +268,8 @@ mod tests {
         let resolver = AuxResolver::new(&responses, &compact);
 
         // Requesting manifest leaves but got bitcoin tx
-        let result = resolver.get_manifest_leaves(0, 100, 200);
+        let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
+        let result = resolver.get_manifest_leaves(0, &req);
         assert!(matches!(result, Err(AuxError::TypeMismatch { .. })));
     }
 
@@ -273,7 +287,8 @@ mod tests {
         let resolver = AuxResolver::new(&responses, &compact);
 
         // Should successfully return the bitcoin tx
-        let result = resolver.get_bitcoin_tx(0, txid).unwrap();
+        let req = BitcoinTxRequest { txid };
+        let result = resolver.get_bitcoin_tx(0, &req).unwrap();
         assert_eq!(result, Some(raw_tx));
     }
 

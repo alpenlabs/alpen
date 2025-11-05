@@ -78,7 +78,8 @@
 //! ) {
 //!     for (idx, tx) in txs.iter().enumerate() {
 //!         // Get verified manifest leaves for a known range
-//!         let leaves = aux_resolver.get_manifest_leaves(idx, 100, 200)?;
+//!         let req = ManifestLeavesRequest { start_height: 100, end_height: 200 };
+//!         let leaves = aux_resolver.get_manifest_leaves(idx, &req)?;
 //!
 //!         for leaf in &leaves {
 //!             // Use the verified manifest hash
@@ -102,7 +103,7 @@ mod types;
 // Re-export main types
 pub use collector::AuxRequestCollector;
 pub use error::{AuxError, AuxResult};
-pub use request::AuxRequestSpec;
+pub use request::{AuxRequestSpec, BitcoinTxRequest, ManifestLeavesRequest};
 pub use resolver::AuxResolver;
 pub use response::{AuxResponseEnvelope, ManifestLeaf};
 pub use types::{L1TxIndex, ManifestMmrProof};
