@@ -1,7 +1,6 @@
 use crate::{
-    amount::BitcoinAmount,
+    AccountSerial, AccountTypeId, BitcoinAmount, RawAccountTypeId,
     errors::{AcctError, AcctResult},
-    id::{AccountSerial, AccountTypeId, RawAccountTypeId},
     mmr::Hash,
 };
 

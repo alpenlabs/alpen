@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::id::{AccountTypeId, RawAccountTypeId};
+use crate::{AccountTypeId, RawAccountTypeId};
 
 pub type AcctResult<T> = Result<T, AcctError>;
 
