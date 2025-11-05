@@ -29,7 +29,7 @@ impl ConsensusHeads {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct OlTrackerState {
     best: EeAccountStateAtBlock,
     confirmed: EeAccountStateAtBlock,

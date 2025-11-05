@@ -61,9 +61,13 @@ where
 
     info!(slot, "rolling back to fork point");
 
-    storage.rollback_ee_account_state(slot).await?;
-
+    // build next state first. If this fails, db rollback will not occur and this operation can be
+    // re-triggered in the next cycle.
     let next_state = build_tracker_state(fork_state.clone(), ol_status, storage).await?;
+
+    // atomic rollbacks from the db.
+    // IMPORTANT: This MUST be the last operation during reorg that can fail.
+    storage.rollback_ee_account_state(slot).await?;
 
     Ok(next_state)
 }
@@ -397,6 +401,19 @@ mod tests {
             };
 
             mock_storage
+                .expect_ee_account_state()
+                .times(2)
+                .returning(|block_or_slot| match block_or_slot {
+                    OLBlockOrSlot::Block(block_id) => {
+                        let slot = block_id.as_ref()[0] as u64;
+                        Ok(Some(make_state_at_block(slot, slot as u8, slot as u8)))
+                    }
+                    OLBlockOrSlot::Slot(slot) => {
+                        Ok(Some(make_state_at_block(slot, slot as u8, slot as u8)))
+                    }
+                });
+
+            mock_storage
                 .expect_rollback_ee_account_state()
                 .times(1)
                 .returning(|_| {
@@ -634,6 +651,194 @@ mod tests {
             let result = handle_reorg(&mut state, &ctx).await;
 
             assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_state_unchanged_when_build_tracker_state_fails() {
+            let mut mock_storage = MockStorage::new();
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(110, 2),
+                    confirmed: make_block_commitment(105, 3),
+                    finalized: make_block_commitment(100, 1),
+                })
+            });
+
+            mock_client
+                .expect_block_commitments_in_range()
+                .returning(|start, end| {
+                    Ok((start..=end)
+                        .map(|slot| make_block_commitment(slot, slot as u8))
+                        .collect())
+                });
+
+            // Fork point found at slot 107
+            // But build_tracker_state will fail when querying for confirmed/finalized blocks
+            mock_storage
+                .expect_ee_account_state()
+                .times(..)
+                .returning(|block_or_slot| match block_or_slot {
+                    OLBlockOrSlot::Block(block_id) => {
+                        let id_byte = block_id.as_ref()[0];
+                        if id_byte >= 108 {
+                            return Ok(None);
+                        }
+                        // Simulate failure when reading finalized block (which has id=1, slot=100)
+                        if id_byte == 1 {
+                            return Err(crate::traits::error::StorageError::database(
+                                "simulated storage read failure for finalized block",
+                            ));
+                        }
+                        let slot = id_byte as u64;
+                        Ok(Some(make_state_at_block(slot, id_byte, id_byte)))
+                    }
+                    OLBlockOrSlot::Slot(slot) => {
+                        Ok(Some(make_state_at_block(slot, slot as u8, slot as u8)))
+                    }
+                });
+
+            // DB rollback should NOT be called because build_tracker_state fails first
+            mock_storage.expect_rollback_ee_account_state().times(0);
+
+            let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
+            let initial_state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
+            let mut state = initial_state.clone();
+
+            let result = handle_reorg(&mut state, &ctx).await;
+
+            // Reorg should fail
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("simulated storage read failure"));
+
+            // State should remain unchanged
+            assert_eq!(state.best_ol_block().slot(), 110);
+            assert_eq!(state.best_ol_block().blkid().as_ref()[0], 2);
+        }
+
+        #[tokio::test]
+        async fn test_state_unchanged_when_rollback_fails() {
+            let mut mock_storage = MockStorage::new();
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(110, 2),
+                    confirmed: make_block_commitment(105, 3),
+                    finalized: make_block_commitment(100, 1),
+                })
+            });
+
+            mock_client
+                .expect_block_commitments_in_range()
+                .returning(|start, end| {
+                    Ok((start..=end)
+                        .map(|slot| make_block_commitment(slot, slot as u8))
+                        .collect())
+                });
+
+            // Fork point found at slot 107, and build_tracker_state succeeds
+            mock_storage
+                .expect_ee_account_state()
+                .returning(|block_or_slot| match block_or_slot {
+                    OLBlockOrSlot::Block(block_id) => {
+                        let slot = block_id.as_ref()[0] as u64;
+                        if slot >= 108 {
+                            return Ok(None);
+                        }
+                        Ok(Some(make_state_at_block(slot, slot as u8, slot as u8)))
+                    }
+                    OLBlockOrSlot::Slot(slot) => {
+                        Ok(Some(make_state_at_block(slot, slot as u8, slot as u8)))
+                    }
+                });
+
+            // DB rollback fails
+            mock_storage
+                .expect_rollback_ee_account_state()
+                .times(1)
+                .withf(|slot| *slot == 107)
+                .returning(|_| {
+                    Err(crate::traits::error::StorageError::database(
+                        "simulated rollback failure",
+                    ))
+                });
+
+            let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
+            let initial_state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
+            let mut state = initial_state.clone();
+
+            let result = handle_reorg(&mut state, &ctx).await;
+
+            // Reorg should fail
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("simulated rollback failure"));
+
+            // State should remain unchanged - this is the critical atomicity guarantee
+            assert_eq!(state.best_ol_block().slot(), 110);
+            assert_eq!(state.best_ol_block().blkid().as_ref()[0], 2);
+        }
+
+        #[tokio::test]
+        async fn test_state_not_mutated_when_find_fork_fails() {
+            let mut mock_storage = MockStorage::new();
+            let mut mock_client = MockOlClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OlChainStatus {
+                    latest: make_block_commitment(110, 2),
+                    confirmed: make_block_commitment(105, 3),
+                    finalized: make_block_commitment(100, 1),
+                })
+            });
+
+            // No fork point found - all blocks return None
+            mock_client
+                .expect_block_commitments_in_range()
+                .returning(|start, end| {
+                    Ok((start..=end)
+                        .map(|slot| make_block_commitment(slot, slot as u8))
+                        .collect())
+                });
+
+            mock_storage
+                .expect_ee_account_state()
+                .returning(|_| Ok(None));
+
+            // DB rollback should NOT be called
+            mock_storage.expect_rollback_ee_account_state().times(0);
+
+            let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
+            let initial_state = OlTrackerState::new(
+                make_state_at_block(110, 2, 2),
+                make_state_at_block(105, 3, 3),
+                make_state_at_block(100, 1, 1),
+            );
+            let mut state = initial_state.clone();
+
+            let result = handle_reorg(&mut state, &ctx).await;
+
+            // Reorg should fail
+            assert!(result.is_err());
+
+            // State should remain unchanged
+            assert_eq!(state.best_ol_block().slot(), 110);
+            assert_eq!(state.best_ol_block().blkid().as_ref()[0], 2);
         }
     }
 }
