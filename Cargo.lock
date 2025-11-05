@@ -13260,21 +13260,16 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
-=======
 name = "strata-asm-aux"
-version = "0.1.0"
-
-[[package]]
-name = "strata-asm-chain-types"
 version = "0.1.0"
 dependencies = [
  "borsh",
- "serde",
+ "strata-asm-common",
+ "strata-merkle",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
->>>>>>> f473d7a9 (feat: init new crate)
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
