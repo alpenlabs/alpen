@@ -39,8 +39,8 @@ pub struct ChainViewState {
 
     /// MMR of manifest roots, one per processed L1 block.
     ///
-    /// Each leaf represents the root hash of an [`AsmManifest`] for the corresponding block,
-    /// enabling efficient historical proofs of ASM state transitions.
+    /// Each leaf represents the root hash of an [`AsmManifest`](crate::AsmManifest) for the
+    /// corresponding block, enabling efficient historical proofs of ASM state transitions.
     pub manifest_mmr: CompactMmr64,
 }
 
