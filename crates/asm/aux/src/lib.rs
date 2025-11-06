@@ -41,7 +41,7 @@
 //! data together.
 mod collector;
 mod data;
-mod error;
+mod errors;
 mod provider;
 mod types;
 
@@ -50,6 +50,6 @@ pub use collector::AuxRequestCollector;
 pub use data::{
     BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
 };
-pub use error::{AuxError, AuxResult};
+pub use errors::{AuxError, AuxResult, BitcoinTxError, ManifestLeavesError};
 pub use provider::AuxDataProvider;
 pub use types::{L1TxIndex, ManifestMmrProof};

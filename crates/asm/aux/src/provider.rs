@@ -9,7 +9,7 @@ use strata_asm_common::AsmManifestMmr;
 use strata_btc_types::RawBitcoinTx;
 
 use crate::{
-    AuxError, AuxResult, L1TxIndex,
+    AuxError, AuxResult, BitcoinTxError, L1TxIndex, ManifestLeavesError,
     data::{
         BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
     },
@@ -50,8 +50,10 @@ impl<'a> AuxDataProvider<'a> {
     ///
     /// # Errors
     ///
-    /// Returns `AuxError::InvalidMmrProof` if any leaf's proof fails verification.
     /// Returns `AuxError::MissingResponse` if no response exists for this transaction.
+    /// Returns `ManifestLeavesError::LengthMismatch` if the response length doesn't match the
+    /// requested range. Returns `ManifestLeavesError::InvalidMmrProof` if any leaf's proof
+    /// fails verification.
     pub fn get_manifest_leaves(
         &self,
         tx_index: L1TxIndex,
@@ -63,6 +65,15 @@ impl<'a> AuxDataProvider<'a> {
 
         // Verify response matches requested length
         let expected_len = (req.end_height - req.start_height + 1) as usize;
+        if response.leaves.len() != expected_len {
+            return Err(ManifestLeavesError::LengthMismatch {
+                tx_index,
+                expected: expected_len,
+                found: response.leaves.len(),
+            }
+            .into());
+        }
+
         // Expand compact MMR from request for verification
         let mmr_full = AsmManifestMmr::from(req.manifest_mmr.clone());
 
@@ -71,7 +82,7 @@ impl<'a> AuxDataProvider<'a> {
             let hash = response.leaves[i];
             let proof = &response.proofs[i];
             if !mmr_full.verify(proof, &hash) {
-                return Err(AuxError::InvalidMmrProof { height, hash });
+                return Err(ManifestLeavesError::InvalidMmrProof { height, hash }.into());
             }
         }
 
@@ -83,12 +94,17 @@ impl<'a> AuxDataProvider<'a> {
     /// Gets Bitcoin transaction data for a transaction.
     ///
     /// This decodes the provided raw transaction bytes, recomputes the
-    /// transaction's witness txid (wtxid), and ensures it matches the
-    /// requested `txid`.
+    /// transaction's txid (txid), and ensures it matches the requested `txid`.
     ///
     /// # Returns
     ///
     /// The decoded `bitcoin::Transaction`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuxError::MissingResponse` if no response exists for this transaction.
+    /// Returns `BitcoinTxError::InvalidTx` if the transaction cannot be decoded.
+    /// Returns `BitcoinTxError::TxidMismatch` if the computed txid doesn't match the requested one.
     ///
     /// Note: This does not perform SPV verification for the transaction.
     pub fn get_bitcoin_tx(
@@ -100,17 +116,19 @@ impl<'a> AuxDataProvider<'a> {
             .bitcoin_txs
             .get(&tx_index)
             .ok_or(AuxError::MissingResponse { tx_index })?;
+
         let tx: Transaction = raw_tx
             .try_into()
-            .map_err(|source| AuxError::InvalidBitcoinTx { tx_index, source })?;
-        let wtxid = tx.compute_txid();
-        let found = wtxid.as_raw_hash().to_byte_array();
+            .map_err(|source| BitcoinTxError::InvalidTx { tx_index, source })?;
+
+        let txid = tx.compute_txid();
+        let found = txid.as_raw_hash().to_byte_array();
         if found != req.txid {
-            return Err(AuxError::TxidMismatch {
-                tx_index,
+            return Err(BitcoinTxError::TxidMismatch {
                 expected: req.txid,
                 found,
-            });
+            }
+            .into());
         }
         Ok(tx)
     }
