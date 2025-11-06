@@ -130,6 +130,7 @@ impl OLBlockHeader {
     }
 
     pub fn compute_root(&self) -> Buf32 {
+        // use ssz
         todo!()
     }
 }

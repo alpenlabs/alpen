@@ -1,4 +1,4 @@
-use strata_acct_types::{AcctResult, AccountId, BitcoinAmount, MsgPayload};
+use strata_acct_types::{AccountId, AcctResult, BitcoinAmount, MsgPayload};
 use strata_ledger_types::ISnarkAccountState;
 use strata_ol_chain_types_new::OLLog;
 use strata_primitives::Epoch;
@@ -21,6 +21,6 @@ pub fn handle_snark_transfer(
     _from: AccountId,
     _amt: BitcoinAmount,
 ) -> AcctResult<Vec<OLLog>> {
-    // Nothing to do yet, the balance is already updated.
+    // Nothing to do yet, the balance should be already updated.
     Ok(Vec::new())
 }
