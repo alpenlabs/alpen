@@ -6,16 +6,11 @@ use crate::{
 
 type Root = Hash;
 
-/// Account state.
-// TODO SSZ
-// TODO builder
-#[derive(Clone, Debug)]
-pub struct AccountState {
-    intrinsics: IntrinsicAccountState,
-    encoded_state: Vec<u8>,
-}
+use crate::ssz_generated::ssz::state::{
+    AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState,
+};
 
-impl AccountState {
+impl EncodedAccountInnerState {
     pub fn raw_ty(&self) -> RawAccountTypeId {
         self.intrinsics.raw_ty()
     }
@@ -52,14 +47,6 @@ impl AccountState {
     }
 }
 
-/// SSZ summary *structure*, not equivalent encoding.  It's an SSZ thing.
-// TODO SSZ
-#[derive(Clone, Debug)]
-pub struct AcctStateSummary {
-    intrinsics: IntrinsicAccountState,
-    typed_state_root: Root,
-}
-
 impl AcctStateSummary {
     pub fn raw_ty(&self) -> RawAccountTypeId {
         self.intrinsics.raw_ty()
@@ -74,27 +61,13 @@ impl AcctStateSummary {
     }
 
     pub fn typed_state_root(&self) -> &Root {
-        &self.typed_state_root
+        // typed_state_root is FixedVector<u8, 32>, convert to &[u8; 32]
+        // SAFETY: FixedVector<u8, 32> has the same layout as [u8; 32]
+        unsafe { &*(self.typed_state_root.as_ref().as_ptr() as *const [u8; 32]) }
     }
 }
 
-/// Intrinsic account fields.
-// TODO SSZ
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct IntrinsicAccountState {
-    // immutable fields, these MUST NOT change
-    /// Account type, which determines how we interact with it.
-    raw_ty: RawAccountTypeId,
-
-    /// Account serial number.
-    serial: AccountSerial,
-
-    // mutable fields, which MAY change
-    /// Native asset (satoshi) balance.
-    balance: BitcoinAmount,
-}
-
-impl IntrinsicAccountState {
+impl AccountIntrinsicState {
     /// Constructs a new raw instance.
     fn new_unchecked(
         raw_ty: RawAccountTypeId,
@@ -150,4 +123,110 @@ pub trait AccountTypeState {
     const ID: AccountTypeId;
 
     // TODO decoding
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+
+    mod account_intrinsic_state {
+        use super::*;
+
+        ssz_proptest!(
+            AccountIntrinsicState,
+            (any::<u16>(), any::<u32>(), any::<u64>()).prop_map(|(raw_ty, serial, sats)| {
+                AccountIntrinsicState {
+                    raw_ty,
+                    serial: AccountSerial::new(serial),
+                    balance: BitcoinAmount::from_sat(sats),
+                }
+            })
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let state = AccountIntrinsicState::new_empty(AccountSerial::new(0));
+            let encoded = state.as_ssz_bytes();
+            let decoded = AccountIntrinsicState::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(state.raw_ty(), decoded.raw_ty());
+            assert_eq!(state.serial(), decoded.serial());
+            assert_eq!(state.balance(), decoded.balance());
+        }
+    }
+
+    mod encoded_account_inner_state {
+        use super::*;
+
+        ssz_proptest!(
+            EncodedAccountInnerState,
+            (
+                any::<u16>(),
+                any::<u32>(),
+                any::<u64>(),
+                prop::collection::vec(any::<u8>(), 0..100)
+            )
+                .prop_map(|(raw_ty, serial, sats, encoded)| {
+                    EncodedAccountInnerState {
+                        intrinsics: AccountIntrinsicState {
+                            raw_ty,
+                            serial: AccountSerial::new(serial),
+                            balance: BitcoinAmount::from_sat(sats),
+                        },
+                        encoded_state: encoded.into(),
+                    }
+                })
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let state = EncodedAccountInnerState {
+                intrinsics: AccountIntrinsicState::new_empty(AccountSerial::new(0)),
+                encoded_state: vec![].into(),
+            };
+            let encoded = state.as_ssz_bytes();
+            let decoded = EncodedAccountInnerState::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(state.raw_ty(), decoded.raw_ty());
+            assert_eq!(state.serial(), decoded.serial());
+            assert_eq!(state.balance(), decoded.balance());
+            assert_eq!(state.encoded_state_buf(), decoded.encoded_state_buf());
+        }
+    }
+
+    mod acct_state_summary {
+        use super::*;
+
+        ssz_proptest!(
+            AcctStateSummary,
+            (any::<u16>(), any::<u32>(), any::<u64>(), any::<[u8; 32]>()).prop_map(
+                |(raw_ty, serial, sats, root)| {
+                    AcctStateSummary {
+                        intrinsics: AccountIntrinsicState {
+                            raw_ty,
+                            serial: AccountSerial::new(serial),
+                            balance: BitcoinAmount::from_sat(sats),
+                        },
+                        typed_state_root: root.to_vec().into(),
+                    }
+                }
+            )
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let state = AcctStateSummary {
+                intrinsics: AccountIntrinsicState::new_empty(AccountSerial::new(0)),
+                typed_state_root: [0u8; 32].to_vec().into(),
+            };
+            let encoded = state.as_ssz_bytes();
+            let decoded = AcctStateSummary::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(state.raw_ty(), decoded.raw_ty());
+            assert_eq!(state.serial(), decoded.serial());
+            assert_eq!(state.balance(), decoded.balance());
+            assert_eq!(state.typed_state_root(), decoded.typed_state_root());
+        }
+    }
 }

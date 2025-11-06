@@ -635,7 +635,7 @@ dependencies = [
  "serde_with",
  "thiserror 2.0.16",
  "tree_hash 0.10.0",
- "tree_hash_derive",
+ "tree_hash_derive 0.10.0",
 ]
 
 [[package]]
@@ -12529,6 +12529,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fed904c7fb2856d868b92464fc8fa597fce366edea1a9cbfaa8cb5fe080bd6d"
 
 [[package]]
+name = "sizzle-parser"
+version = "0.6.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
+dependencies = [
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "skeptic"
 version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13161,6 +13169,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_codegen"
+version = "0.6.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "sizzle-parser",
+ "ssz",
+ "ssz_derive",
+ "ssz_types",
+ "syn 2.0.106",
+ "toml 0.8.23",
+ "tree_hash 0.6.0",
+ "tree_hash_derive 0.6.0",
+]
+
+[[package]]
 name = "ssz_derive"
 version = "0.6.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
@@ -13181,6 +13208,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_types"
+version = "0.6.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
+dependencies = [
+ "ssz",
+ "ssz_primitives",
+ "tree_hash 0.6.0",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13197,12 +13234,20 @@ name = "strata-acct-types"
 version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
+ "proptest",
  "sha2 0.10.9",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_types",
  "strata-btc-types",
  "strata-codec",
  "strata-identifiers",
  "strata-merkle",
+ "strata-test-utils-ssz",
  "thiserror 2.0.16",
+ "tree_hash 0.6.0",
+ "tree_hash_derive 0.6.0",
 ]
 
 [[package]]
@@ -15634,6 +15679,16 @@ dependencies = [
  "ethereum_ssz",
  "smallvec",
  "typenum",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.6.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
