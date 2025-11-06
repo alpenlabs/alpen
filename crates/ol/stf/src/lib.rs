@@ -1,4 +1,5 @@
 pub(crate) mod asm;
+pub mod context;
 pub mod error;
 mod exec_output;
 mod stf;

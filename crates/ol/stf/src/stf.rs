@@ -2,16 +2,14 @@ use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
 use strata_ledger_types::{
     AccountTypeState, IAccountState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
-use strata_ol_chain_types_new::{
-    L1Update, OLBlock, OLBlockHeader, OLLog, OLTransaction, TransactionPayload,
-};
-use strata_params::RollupParams;
+use strata_ol_chain_types_new::{L1Update, OLBlock, OLLog, OLTransaction, TransactionPayload};
 use strata_snark_acct_sys as snark_sys;
-use strata_snark_acct_types::SnarkAccountUpdateWithMmrProofs;
+use strata_snark_acct_types::{SnarkAccountUpdateWithMmrProofs, UpdateOperationData};
 
 use crate::{
     ExecOutput,
     asm::process_asm_log,
+    context::BlockExecContext,
     error::{StfError, StfResult},
     post_exec_block_validate, pre_exec_block_validate,
     update::apply_update_outputs,
@@ -19,16 +17,15 @@ use crate::{
 
 /// Processes an OL block. Also performs epoch sealing if the block is terminal.
 pub fn execute_block<S: StateAccessor>(
-    params: RollupParams,
+    ctx: BlockExecContext,
     state_accessor: &mut S,
-    prev_header: OLBlockHeader,
     block: OLBlock,
 ) -> StfResult<ExecOutput> {
     // Do some pre execution validation
-    pre_exec_block_validate(state_accessor, &block, &prev_header, &params)
+    pre_exec_block_validate(state_accessor, &block, ctx.prev_header(), ctx.params())
         .map_err(StfError::BlockValidation)?;
 
-    let exec_output = execute_block_inner(state_accessor, &block)?;
+    let exec_output = execute_block_inner(ctx, state_accessor, &block)?;
 
     // Post execution block validation. Checks state root and logs root.
     post_exec_block_validate::<S>(&block, exec_output.state_root(), exec_output.logs())
@@ -39,22 +36,20 @@ pub fn execute_block<S: StateAccessor>(
 
 /// Block execution without validation. Used by block assembly.
 pub fn execute_block_inner<S: StateAccessor>(
+    ctx: BlockExecContext,
     state_accessor: &mut S,
     block: &OLBlock,
 ) -> StfResult<ExecOutput> {
-    let mut stf_logs = Vec::new();
     // Execute transactions.
     for tx in block.body().txs() {
-        let logs = execute_transaction(state_accessor, tx)?;
-        stf_logs.extend_from_slice(&logs);
+        execute_transaction(&ctx, state_accessor, tx)?;
     }
 
     let _pre_seal_root = state_accessor.compute_state_root();
 
     // Check if needs to seal epoch, i.e is a terminal block.
     if let Some(l1update) = block.body().l1_update() {
-        let seal_logs = seal_epoch(state_accessor, l1update)?;
-        stf_logs.extend_from_slice(&seal_logs);
+        seal_epoch(&ctx, state_accessor, l1update)?;
 
         // Increment the current epoch now that we've processed the terminal block.
         let cur_epoch = state_accessor.l1_view().cur_epoch();
@@ -65,22 +60,22 @@ pub fn execute_block_inner<S: StateAccessor>(
     }
 
     let new_root = state_accessor.compute_state_root();
-    let out = ExecOutput::new(new_root, stf_logs);
+    let out = ExecOutput::new(new_root, ctx.into_logs());
     Ok(out)
 }
 
 fn seal_epoch(
+    ctx: &BlockExecContext,
     state_accessor: &mut impl StateAccessor,
     l1update: &L1Update,
-) -> StfResult<Vec<OLLog>> {
-    let mut logs = Vec::new();
+) -> StfResult<()> {
     let l1_view = state_accessor.l1_view();
     let mut cur_height = l1_view.last_l1_height();
     let mut cur_blkid = (*l1_view.last_l1_blkid()).into();
 
     for manifest in &l1update.manifests {
         for log in manifest.logs() {
-            logs.extend_from_slice(&process_asm_log(state_accessor, log)?);
+            process_asm_log(ctx, state_accessor, log)?;
         }
         // TODO: Insert into witness mmr
         cur_height += 1;
@@ -91,39 +86,38 @@ fn seal_epoch(
     l1view.set_last_l1_blkid(cur_blkid.into());
     l1view.set_last_l1_height(cur_height);
 
-    Ok(logs)
+    Ok(())
 }
 
 fn execute_transaction<S: StateAccessor>(
+    ctx: &BlockExecContext,
     state_accessor: &mut S,
     tx: &OLTransaction,
-) -> StfResult<Vec<OLLog>> {
+) -> StfResult<()> {
     let Some(target) = tx.payload().target() else {
         // TODO: should we do anything?
-        return Ok(Vec::new());
+        return Ok(());
     };
     let Some(mut acct_state) = state_accessor.get_account_state(target)?.cloned() else {
         return Err(AcctError::NonExistentAccount(target).into());
     };
 
-    let (logs, output_value) = match tx.payload() {
+    let output_value = match tx.payload() {
         TransactionPayload::SnarkAccountUpdate { target, update } => {
             let type_state = acct_state.get_type_state()?;
             let cur_balance = acct_state.balance();
             if let AccountTypeState::Snark(mut snark_state) = type_state {
-                let logs = process_snark_update(
+                process_snark_update(
+                    ctx,
                     state_accessor,
                     *target,
                     &mut snark_state,
                     update,
                     cur_balance,
                 )?;
-                (
-                    logs,
-                    update.update().operation().outputs().compute_total_value(),
-                )
+                update.update().operation().outputs().compute_total_value()
             } else {
-                (Vec::new(), Some(BitcoinAmount::zero()))
+                Some(BitcoinAmount::zero())
             }
         }
         TransactionPayload::GenericAccountMessage { .. } => {
@@ -138,16 +132,17 @@ fn execute_transaction<S: StateAccessor>(
 
     state_accessor.update_account_state(target, acct_state)?;
 
-    Ok(logs)
+    Ok(())
 }
 
 fn process_snark_update<S: StateAccessor>(
+    ctx: &BlockExecContext,
     state_accessor: &mut S,
     target: AccountId,
     snark_state: &mut impl ISnarkAccountState,
     update: &SnarkAccountUpdateWithMmrProofs,
     cur_balance: BitcoinAmount,
-) -> StfResult<Vec<OLLog>> {
+) -> StfResult<()> {
     let verified_update = snark_sys::verify_update_correctness(
         state_accessor,
         target,
@@ -160,7 +155,7 @@ fn process_snark_update<S: StateAccessor>(
     let operation = verified_update.operation().clone();
 
     // Apply update outputs.
-    let mut logs = apply_update_outputs(state_accessor, target, verified_update)?;
+    apply_update_outputs(ctx, state_accessor, target, verified_update)?;
 
     // After applying updates, update the proof state.
     snark_state.set_proof_state_directly(
@@ -169,17 +164,23 @@ fn process_snark_update<S: StateAccessor>(
         seq_no,
     );
 
-    // Construct SnarkUpdate Log.
+    // Construct and emit SnarkUpdate Log.
+    let log = construct_update_log(target, operation);
+    ctx.emit_log(log);
+
+    Ok(())
+}
+
+fn construct_update_log(target: AccountId, operation: UpdateOperationData) -> OLLog {
     let log_extra = vec![];
-    let msg_to = operation.new_state().next_inbox_msg_idx() - 1;
-    let msg_from = msg_to - operation.processed_messages().len() as u64 + 1;
-    let log = OLLog::snark_account_update(
+    let to_idx = operation.new_state().next_inbox_msg_idx() - 1;
+    let from_idx = to_idx - operation.processed_messages().len() as u64 + 1;
+
+    OLLog::snark_account_update(
         target,
-        msg_from,
-        msg_to,
+        from_idx,
+        to_idx,
         operation.new_state().inner_state().into(),
         log_extra,
-    );
-    logs.push(log);
-    Ok(logs)
+    )
 }
