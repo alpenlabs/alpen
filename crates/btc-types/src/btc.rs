@@ -22,6 +22,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use rand::rngs::OsRng;
 use secp256k1::SECP256K1;
 use serde::{Deserialize, Deserializer, Serialize, de};
+use ssz_derive::{Decode, Encode};
 use strata_identifiers::Buf32;
 
 use crate::ParseError;
@@ -245,7 +246,10 @@ impl BorshDeserialize for BitcoinAddress {
     PartialEq,
     PartialOrd,
     Serialize,
+    Encode,
+    Decode,
 )]
+#[ssz(struct_behaviour = "transparent")]
 pub struct BitcoinAmount(u64);
 
 impl Display for BitcoinAmount {
@@ -289,6 +293,33 @@ impl std::ops::Deref for BitcoinAmount {
 impl std::ops::DerefMut for BitcoinAmount {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+// Manual TreeHash implementation for transparent wrapper
+impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for BitcoinAmount {
+    fn tree_hash_type() -> tree_hash::TreeHashType {
+        <u64 as tree_hash::TreeHash<H>>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
+        <u64 as tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <u64 as tree_hash::TreeHash<H>>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> H::Output {
+        <u64 as tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
+    }
+}
+
+// Manual DecodeView implementation for transparent wrapper
+impl<'a> ssz::view::DecodeView<'a> for BitcoinAmount {
+    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
+        let inner = <u64 as ssz::view::DecodeView<'a>>::from_ssz_bytes(bytes)?;
+        Ok(Self(inner))
     }
 }
 
@@ -1005,9 +1036,12 @@ mod tests {
         taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootMerkleBranch},
     };
     use bitcoin_bosd::DescriptorType;
+    use proptest::prelude::*;
     use rand::{Rng, rngs::OsRng};
+    use ssz::{Decode, Encode};
     use strata_identifiers::Buf32;
     use strata_test_utils::ArbitraryGenerator;
+    use strata_test_utils_ssz::ssz_proptest;
 
     use super::{
         BitcoinAddress, BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
@@ -1500,5 +1534,21 @@ mod tests {
             scriptbuf.0, deserialized_scriptbuf.0,
             "original and deserialized scriptbuf must be the same"
         );
+    }
+
+    // Property-based tests for BitcoinAmount SSZ serialization
+    ssz_proptest!(
+        BitcoinAmount,
+        any::<u64>(),
+        transparent_wrapper_of(u64, from_sat)
+    );
+
+    #[test]
+    fn test_bitcoin_amount_zero_ssz() {
+        let zero = BitcoinAmount::zero();
+        let encoded = zero.as_ssz_bytes();
+        let decoded = BitcoinAmount::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(zero, decoded);
+        assert!(decoded.is_zero());
     }
 }
