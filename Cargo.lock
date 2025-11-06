@@ -4426,7 +4426,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11725,7 +11725,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11738,7 +11738,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11839,7 +11839,7 @@ dependencies = [
  "security-framework 3.4.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -13161,6 +13161,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_derive"
+version = "0.6.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "ssz_primitives"
 version = "0.6.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.6.1#14be3e5316ff8e4d63e1dc8f14b4c485c5cf5cfe"
@@ -13468,17 +13478,22 @@ dependencies = [
  "borsh",
  "digest 0.10.7",
  "num_enum 0.7.4",
+ "proptest",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "ssz",
+ "ssz_derive",
  "strata-checkpoint-types",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-test-utils",
  "strata-test-utils-btc",
+ "strata-test-utils-ssz",
  "thiserror 2.0.16",
+ "tree_hash 0.6.0",
 ]
 
 [[package]]
@@ -14986,7 +15001,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -405,6 +405,8 @@ shrex = { version = "1", features = ["serde"] }
 shrex_macros = "1"
 sled = "0.34.7"
 ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.6.1" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.6.1" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.6.1" }
 tempfile = "3.10.1"
 terrors = "0.3.0"
 thiserror = "2.0.11"
@@ -416,6 +418,7 @@ tracing = "0.1"
 tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.6.1" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.6.1" }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
