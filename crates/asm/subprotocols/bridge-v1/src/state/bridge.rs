@@ -293,6 +293,7 @@ impl BridgeV1State {
         self.assignments.reassign_expired_assignments(
             self.operator_fee,
             current_block_height,
+            self.deadline_duration,
             self.operators.current_multisig(),
             *l1_block_id,
         )
