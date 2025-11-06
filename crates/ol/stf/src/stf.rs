@@ -11,8 +11,8 @@ use crate::{
     asm::process_asm_log,
     context::BlockExecContext,
     error::{StfError, StfResult},
+    ledger::LedgerRef,
     post_exec_block_validate, pre_exec_block_validate,
-    update::apply_update_outputs,
 };
 
 /// Processes an OL block. Also performs epoch sealing if the block is terminal.
@@ -156,8 +156,11 @@ fn process_snark_update<S: StateAccessor>(
     let seq_no = verified_update.operation().seq_no();
     let operation = verified_update.operation().clone();
 
+    // Create ledger ref
+    let mut ledger_ref = LedgerRef::new(target, state_accessor, ctx);
+
     // Apply update outputs.
-    apply_update_outputs(ctx, state_accessor, target, verified_update)?;
+    snark_sys::apply_update_outputs(&mut ledger_ref, verified_update)?;
 
     // After applying updates, update the proof state.
     snark_state.set_proof_state_directly(
