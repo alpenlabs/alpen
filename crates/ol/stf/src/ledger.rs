@@ -1,0 +1,39 @@
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+use strata_ledger_types::{LedgerInterface, StateAccessor};
+
+use crate::{
+    context::BlockExecContext,
+    error::StfError,
+    update::{send_message, send_transfer},
+};
+
+#[derive(Debug)]
+pub(crate) struct LedgerRef<'a, S: StateAccessor> {
+    acct_id: AccountId,
+    state_accessor: &'a mut S,
+    ctx: &'a BlockExecContext,
+}
+
+impl<'a, S: StateAccessor> LedgerRef<'a, S> {
+    pub(crate) fn new(
+        acct_id: AccountId,
+        state_accessor: &'a mut S,
+        ctx: &'a BlockExecContext,
+    ) -> Self {
+        Self {
+            acct_id,
+            state_accessor,
+            ctx,
+        }
+    }
+}
+
+impl<'a, S: StateAccessor> LedgerInterface<StfError> for LedgerRef<'a, S> {
+    fn send_message(&mut self, dest: AccountId, payload: MsgPayload) -> Result<(), StfError> {
+        send_message(self.ctx, self.state_accessor, self.acct_id, dest, &payload)
+    }
+
+    fn send_transfer(&mut self, dest: AccountId, value: BitcoinAmount) -> Result<(), StfError> {
+        send_transfer(self.ctx, self.state_accessor, self.acct_id, dest, value)
+    }
+}

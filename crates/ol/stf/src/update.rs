@@ -1,42 +1,12 @@
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
 use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IL1ViewState, StateAccessor};
-use strata_snark_acct_sys::{VerifiedUpdate, handle_snark_msg, handle_snark_transfer};
+use strata_snark_acct_sys::{handle_snark_msg, handle_snark_transfer};
 
 use crate::{
     context::BlockExecContext,
     error::StfResult,
     system_handlers::{get_system_msg_handler, get_system_transfer_handler},
 };
-
-pub(crate) fn apply_update_outputs<'a, S: StateAccessor>(
-    ctx: &BlockExecContext,
-    state_accessor: &mut S,
-    sender: AccountId,
-    verified_update: VerifiedUpdate<'a>,
-) -> StfResult<()> {
-    let outputs = verified_update.operation().outputs();
-    let transfers = outputs.transfers();
-    let messages = outputs.messages();
-
-    // Process transfers
-    for transfer in transfers {
-        send_transfer(
-            ctx,
-            state_accessor,
-            sender,
-            transfer.dest(),
-            transfer.value(),
-        )?;
-    }
-
-    // Process messages
-    for msg in messages {
-        let payload = msg.payload();
-        send_message(ctx, state_accessor, sender, msg.dest(), payload)?;
-    }
-
-    Ok(())
-}
 
 pub(crate) fn send_message<S: StateAccessor>(
     ctx: &BlockExecContext,
