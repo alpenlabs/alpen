@@ -3,7 +3,9 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmError, AsmManifest, AsmMmr, AsmResult, AsmSpec, ChainViewState,
+};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -47,7 +49,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
 ) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
-    let mut pow_state = pre_state.chain_view.pow_state.clone();
+    let (mut pow_state, mmr) = pre_state.chain_view.clone().into_parts();
     pow_state
         .check_and_update(input.header)
         .map_err(AsmError::InvalidL1Header)?;
@@ -72,14 +74,28 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     let mut finish_stage = FinishStage::new(&mut manager);
     spec.call_subprotocols(&mut finish_stage);
 
-    // 5. Construct the final `AnchorState` and output.
-    // Export the updated state sections and logs from all subprotocols to build the result.
+    // 5. Construct the manifest with the logs.
     let (sections, logs) = manager.export_sections_and_logs();
-    let chain_view = ChainViewState { pow_state };
+    let manifest = AsmManifest::new(
+        *pow_state.last_verified_block.blkid(),
+        input.wtxids_root,
+        logs,
+    );
+
+    // 6. Append the manifest root to the MMR
+    let mut mmr: AsmMmr = mmr.into();
+    mmr.add_leaf(manifest.compute_hash())?;
+    let manifest_mmr = mmr.into();
+
+    // 7. Construct the final `AnchorState` and output.
+    let chain_view = ChainViewState {
+        pow_state,
+        manifest_mmr,
+    };
     let state = AnchorState {
         chain_view,
         sections,
     };
-    let output = AsmStfOutput { state, logs };
+    let output = AsmStfOutput { state, manifest };
     Ok(output)
 }

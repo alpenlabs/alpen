@@ -1,10 +1,11 @@
+use bitcoin::hashes::Hash;
 use moho_types::{ExportState, InnerStateCommitment, StateReference};
 use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, compute_asm_transition, group_txs_by_subprotocol};
 use strata_predicate::PredicateKey;
-use strata_primitives::hash::compute_borsh_hash;
+use strata_primitives::{Buf32, hash::compute_borsh_hash};
 
 use crate::{input::AsmStepInput, traits::MohoProgram};
 
@@ -40,12 +41,31 @@ impl MohoProgram for AsmStfProgram {
         // 1. Validate the input
         assert!(input.validate_block());
 
+        // For blocks without witness data (pre-SegWit or legacy-only transactions),
+        // the witness merkle root equals the transaction merkle root per Bitcoin protocol.
+        let wtxids_root: Buf32 = input
+            .block
+            .0
+            .witness_root()
+            .map(|root| root.as_raw_hash().to_byte_array())
+            .unwrap_or_else(|| {
+                input
+                    .block
+                    .0
+                    .header
+                    .merkle_root
+                    .as_raw_hash()
+                    .to_byte_array()
+            })
+            .into();
+
         // 2. Restructure the raw input to be formatted according to what we want.
         let protocol_txs = group_txs_by_subprotocol(spec.magic_bytes(), &input.block.0.txdata);
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &input.block.0.header,
             aux_input: &input.aux_inputs,
+            wtxids_root,
         };
 
         // 3. Actually invoke the ASM state transition function.
@@ -58,7 +78,7 @@ impl MohoProgram for AsmStfProgram {
 
     fn extract_next_predicate(output: &Self::StepOutput) -> Option<PredicateKey> {
         // Iterate through each AsmLog; if we find an AsmStfUpdate, grab its vk and return it.
-        output.logs.iter().find_map(|log| {
+        output.manifest.logs.iter().find_map(|log| {
             log.try_into_log::<AsmStfUpdate>()
                 .ok()
                 .map(|update| update.new_predicate.clone())
@@ -68,7 +88,7 @@ impl MohoProgram for AsmStfProgram {
     fn compute_export_state(export_state: ExportState, output: &Self::StepOutput) -> ExportState {
         // Iterate through each AsmLog; if we find an NewExportEntry, add it to ExportState
         let mut new_export_state = export_state;
-        for log in &output.logs {
+        for log in &output.manifest.logs {
             if let Ok(export) = log.try_into_log::<NewExportEntry>() {
                 new_export_state.add_entry(export.container_id, export.entry_data.clone());
             }

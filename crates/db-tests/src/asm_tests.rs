@@ -1,4 +1,4 @@
-use strata_asm_common::{AnchorState, ChainViewState};
+use strata_asm_common::{AnchorState, AsmMmr, ChainViewState, ASM_MMR_CAP_LOG2};
 use strata_asm_types::HeaderVerificationState;
 use strata_db::traits::AsmDatabase;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
@@ -9,6 +9,7 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
         AnchorState {
             chain_view: ChainViewState {
                 pow_state: HeaderVerificationState::default(),
+                manifest_mmr: AsmMmr::new(ASM_MMR_CAP_LOG2).into(),
             },
             sections: vec![],
         },
