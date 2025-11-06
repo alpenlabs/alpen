@@ -1,6 +1,5 @@
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
 use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IL1ViewState, StateAccessor};
-use strata_ol_chain_types_new::OLLog;
 use strata_snark_acct_sys::{VerifiedUpdate, handle_snark_msg, handle_snark_transfer};
 
 use crate::{
@@ -53,7 +52,7 @@ pub(crate) fn send_message<S: StateAccessor>(
 
     // First update the balance
     let coin = Coin::new_unchecked(msg_payload.value());
-    target_acct.add_balance(coin);
+    target_acct.add_balance(coin); // NOTE: the add_balance method should consume the coin
 
     if let Some(sys_handler) = get_system_msg_handler::<S>(to) {
         return sys_handler(ctx, state_accessor, from, msg_payload);
@@ -86,7 +85,7 @@ pub(crate) fn send_transfer<S: StateAccessor>(
 
     // First update the balance
     let coin = Coin::new_unchecked(amt);
-    target_acct.add_balance(coin);
+    target_acct.add_balance(coin); // NOTE: the add_balance method should consume the coin
 
     if let Some(sys_handler) = get_system_transfer_handler::<S>(to) {
         return sys_handler(ctx, state_accessor, from, amt);
