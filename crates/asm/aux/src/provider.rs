@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::{Transaction, hashes::Hash};
-use strata_asm_common::AsmManifestMmr;
+use strata_asm_common::AsmMmr;
 use strata_btc_types::RawBitcoinTx;
 
 use crate::{
@@ -75,7 +75,7 @@ impl<'a> AuxDataProvider<'a> {
         }
 
         // Expand compact MMR from request for verification
-        let mmr_full = AsmManifestMmr::from(req.manifest_mmr.clone());
+        let mmr_full = AsmMmr::from(req.manifest_mmr.clone());
 
         for i in 0..expected_len {
             let height = req.start_height + i as u64;
@@ -136,7 +136,7 @@ impl<'a> AuxDataProvider<'a> {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_common::AsmManifestCompactMmr;
+    use strata_asm_common::AsmCompactMmr;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -145,7 +145,7 @@ mod tests {
     fn test_provider_empty_responses() {
         let manifest_leaves = BTreeMap::new();
         let bitcoin_txs = BTreeMap::new();
-        let mmr = AsmManifestMmr::new(16);
+        let mmr = AsmMmr::new(16);
         let compact = mmr.into();
 
         let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
@@ -171,7 +171,7 @@ mod tests {
         let mut bitcoin_txs = BTreeMap::new();
         bitcoin_txs.insert(0, raw_tx);
 
-        let mmr = AsmManifestMmr::new(16);
+        let mmr = AsmMmr::new(16);
         let compact = mmr.into();
 
         let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
@@ -196,8 +196,8 @@ mod tests {
         let mut bitcoin_txs = BTreeMap::new();
         bitcoin_txs.insert(0, raw_tx);
 
-        let mmr = AsmManifestMmr::new(16);
-        let _compact: AsmManifestCompactMmr = mmr.into();
+        let mmr = AsmMmr::new(16);
+        let _compact: AsmCompactMmr = mmr.into();
 
         let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
 

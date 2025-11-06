@@ -1,6 +1,6 @@
 //! Common types used throughout the auxiliary framework.
 
-use strata_asm_common::AsmManifestHash;
+use strata_asm_common::Hash;
 
 /// Index of a transaction within an L1 block (0-based).
 ///
@@ -12,4 +12,4 @@ pub type L1TxIndex = usize;
 ///
 /// Proves that a specific `AsmManifestHash` is committed in the MMR
 /// at a particular position.
-pub type ManifestMmrProof = strata_merkle::MerkleProof<AsmManifestHash>;
+pub type ManifestMmrProof = strata_merkle::MerkleProof<Hash>;

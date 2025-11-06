@@ -51,7 +51,7 @@ impl AuxRequestCollector {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_common::AsmManifestCompactMmr;
+    use strata_asm_common::{AsmCompactMmr, AsmMmr};
 
     use super::*;
 
@@ -61,8 +61,8 @@ mod tests {
         assert!(collector.manifest_leaves.is_empty());
         assert!(collector.bitcoin_txs.is_empty());
 
-        let mmr = strata_asm_common::AsmManifestMmr::new(16);
-        let mmr_compact: AsmManifestCompactMmr = mmr.into();
+        let mmr = AsmMmr::new(16);
+        let mmr_compact: AsmCompactMmr = mmr.into();
         let req0 = ManifestLeavesRequest {
             start_height: 100,
             end_height: 200,
@@ -87,8 +87,8 @@ mod tests {
     #[should_panic(expected = "duplicate auxiliary request")]
     fn test_collector_duplicate_panics() {
         let mut collector = AuxRequestCollector::new();
-        let mmr = strata_asm_common::AsmManifestMmr::new(16);
-        let mmr_compact: AsmManifestCompactMmr = mmr.into();
+        let mmr = strata_asm_common::AsmMmr::new(16);
+        let mmr_compact: AsmCompactMmr = mmr.into();
         let req0 = ManifestLeavesRequest {
             start_height: 100,
             end_height: 200,

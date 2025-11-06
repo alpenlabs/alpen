@@ -1,6 +1,6 @@
 //! Error types for the auxiliary framework.
 
-use strata_asm_common::AsmManifestHash;
+use strata_asm_common::Hash;
 use thiserror::Error;
 
 use crate::types::L1TxIndex;
@@ -59,7 +59,7 @@ pub enum ManifestLeavesError {
         /// The L1 block height where verification failed
         height: u64,
         /// The manifest hash that failed verification
-        hash: AsmManifestHash,
+        hash: Hash,
     },
 }
 

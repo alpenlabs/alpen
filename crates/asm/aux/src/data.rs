@@ -5,7 +5,7 @@
 //! to subprotocols after verification.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_common::{AsmManifestCompactMmr, AsmManifestHash};
+use strata_asm_common::{AsmCompactMmr, Hash};
 
 use crate::types::ManifestMmrProof;
 
@@ -20,7 +20,7 @@ pub struct ManifestLeavesRequest {
     /// Ending L1 block height (inclusive)
     pub end_height: u64,
     /// Compact manifest MMR snapshot used for proof verification
-    pub manifest_mmr: AsmManifestCompactMmr,
+    pub manifest_mmr: AsmCompactMmr,
 }
 
 /// Request for a single Bitcoin transaction by txid.
@@ -37,7 +37,7 @@ pub struct BitcoinTxRequest {
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ManifestLeavesResponse {
     /// One manifest hash per block in range, ordered by height
-    pub leaves: Vec<AsmManifestHash>,
+    pub leaves: Vec<Hash>,
 }
 
 /// Manifest leaves with their proofs for a contiguous block range.
@@ -52,7 +52,7 @@ pub struct ManifestLeavesResponse {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ManifestLeavesWithProofs {
     /// One manifest hash per block in range, ordered by height
-    pub leaves: Vec<AsmManifestHash>,
+    pub leaves: Vec<Hash>,
     /// Per-leaf MMR proofs (same order as `leaves`)
     pub proofs: Vec<ManifestMmrProof>,
 }
