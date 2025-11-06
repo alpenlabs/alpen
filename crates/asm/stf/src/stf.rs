@@ -4,7 +4,7 @@
 // TODO rename this module to `transition`
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmManifest, AsmManifestMmr, AsmResult, AsmSpec, ChainViewState,
+    AnchorState, AsmError, AsmManifest, AsmMmr, AsmResult, AsmSpec, ChainViewState,
 };
 
 use crate::{
@@ -83,7 +83,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     );
 
     // 6. Append the manifest root to the MMR
-    let mut mmr: AsmManifestMmr = mmr.into();
+    let mut mmr: AsmMmr = mmr.into();
     mmr.add_leaf(manifest.compute_hash())?;
     let manifest_mmr = mmr.into();
 

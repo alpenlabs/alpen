@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{Buf32, L1BlockId, hash::compute_borsh_hash};
 
-use crate::{AsmLogEntry, AsmManifestHash};
+use crate::{AsmLogEntry, Hash};
 
 /// The manifest output produced after processing an L1 block.
 ///
@@ -53,7 +53,7 @@ impl AsmManifest {
     /// **TODO: PG**: This should use SSZ to compute the root of the `AsmManifest` container. SSZ
     /// would enable creating Merkle inclusion proofs for individual fields (logs,
     /// `wtxids_root`, etc.) when needed. Currently uses Borsh serialization.
-    pub fn compute_hash(&self) -> AsmManifestHash {
+    pub fn compute_hash(&self) -> Hash {
         compute_borsh_hash(&self).into()
     }
 }
