@@ -290,10 +290,14 @@ impl BridgeV1State {
         let current_block_height = current_block.height_u64();
         let l1_block_id = current_block.blkid();
 
+        // Reassign with new deadline
+        let new_deadline =
+            current_block.height().to_consensus_u32() as u64 + self.deadline_duration();
+
         self.assignments.reassign_expired_assignments(
             self.operator_fee,
             current_block_height,
-            self.deadline_duration,
+            new_deadline,
             self.operators.current_multisig(),
             *l1_block_id,
         )

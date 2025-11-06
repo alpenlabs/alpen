@@ -227,8 +227,10 @@ impl AssignmentEntry {
     ///
     /// # Parameters
     ///
+    /// - `new_operator_fee` - The new operator fee for the withdrawal
+    /// - `new_deadline` - The new absolute Bitcoin block height deadline for execution
     /// - `seed` - L1 block ID used as seed for deterministic random selection
-    /// - `current_active_operators` - Slice of currently active operator indices
+    /// - `current_active_operators` - Bitmap of currently active operator indices
     ///
     /// # Returns
     ///
@@ -401,36 +403,44 @@ impl AssignmentTable {
     ///
     /// # Parameters
     ///
+    /// - `operator_fee` - The new operator fee for reassigned withdrawals
     /// - `current_height` - The current Bitcoin block height for expiration comparison
+    /// - `new_deadline` - The new absolute Bitcoin block height deadline for execution
     /// - `current_active_operators` - Bitmap of currently active operator indices
     /// - `seed` - L1 block ID used as seed for deterministic random selection
     ///
     /// # Returns
     ///
-    /// - `Ok(())` - If all expired assignments were successfully reassigned
+    /// - `Ok(Vec<u32>)` - Vector of deposit indices that were successfully reassigned
     /// - `Err(WithdrawalCommandError)` - If any reassignment failed due to lack of eligible
     ///   operators
     ///
     /// # Example
     ///
     /// ```rust,ignore
+    /// let operator_fee = BitcoinAmount::from_sat(10_000);
     /// let current_height = BitcoinBlockHeight::from(1000);
+    /// let new_deadline = BitcoinBlockHeight::from(1144);
     /// let active_operators = OperatorBitmap::new_with_size(3, true);
     /// let seed = L1BlockId::from([0u8; 32]);
     ///
-    /// table.reassign_expired_assignments(current_height, &active_operators, seed)?;
+    /// let reassigned = table.reassign_expired_assignments(
+    ///     operator_fee,
+    ///     current_height,
+    ///     new_deadline,
+    ///     &active_operators,
+    ///     seed
+    /// )?;
     /// ```
     pub fn reassign_expired_assignments(
         &mut self,
         operator_fee: BitcoinAmount,
         current_height: BitcoinBlockHeight,
-        deadline_duration: BitcoinBlockHeight,
+        new_deadline: u64,
         current_active_operators: &OperatorBitmap,
         seed: L1BlockId,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
         let mut reassigned_withdrawals = Vec::new();
-
-        let new_deadline = current_height + deadline_duration;
 
         // Using iter_mut since we're only modifying non-sorting fields
         for assignment in self
@@ -701,17 +711,27 @@ mod tests {
         let seed: L1BlockId = arb.generate();
         let new_operator_fee: BitcoinAmount = arb.generate();
 
+        // Create a unified operator bitmap for both deposits
+        let current_active_operators = OperatorBitmap::new_with_size(5, true);
+
         // Create expired assignment (deadline < current_height)
-        let deposit_entry1: DepositEntry = arb.generate();
+        let mut deposit_entry1: DepositEntry = arb.generate();
+        deposit_entry1 = DepositEntry::new(
+            deposit_entry1.idx(),
+            *deposit_entry1.output(),
+            current_active_operators.clone(),
+            deposit_entry1.amt(),
+        )
+        .unwrap();
+
         let withdrawal_cmd1: WithdrawalCommand = arb.generate();
         let expired_deadline: BitcoinBlockHeight = 100; // Less than current_height
-        let current_active_operators1 = deposit_entry1.notary_operators().clone();
 
         let expired_assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry1.clone(),
             withdrawal_cmd1,
             expired_deadline,
-            &current_active_operators1,
+            &current_active_operators,
             seed,
         )
         .unwrap();
@@ -721,16 +741,23 @@ mod tests {
         table.insert(expired_assignment);
 
         // Create non-expired assignment (deadline > current_height)
-        let deposit_entry2: DepositEntry = arb.generate();
+        let mut deposit_entry2: DepositEntry = arb.generate();
+        deposit_entry2 = DepositEntry::new(
+            deposit_entry2.idx(),
+            *deposit_entry2.output(),
+            current_active_operators.clone(),
+            deposit_entry2.amt(),
+        )
+        .unwrap();
+
         let withdrawal_cmd2: WithdrawalCommand = arb.generate();
         let future_deadline: BitcoinBlockHeight = 200; // Greater than current_height
-        let current_active_operators2 = deposit_entry2.notary_operators().clone();
 
         let future_assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry2.clone(),
             withdrawal_cmd2,
             future_deadline,
-            &current_active_operators2,
+            &current_active_operators,
             seed,
         )
         .unwrap();
@@ -740,12 +767,12 @@ mod tests {
         table.insert(future_assignment);
 
         // Reassign expired assignments
-        let deadline_duration: BitcoinBlockHeight = 144;
+        let new_deadline: BitcoinBlockHeight = current_height + 144; // New absolute deadline
         let result = table.reassign_expired_assignments(
             new_operator_fee,
             current_height,
-            deadline_duration,
-            &current_active_operators1,
+            new_deadline,
+            &current_active_operators,
             seed,
         );
 
@@ -762,12 +789,11 @@ mod tests {
                 .previous_assignees
                 .is_active(original_assignee)
         );
-        // Verify the deadline was increased
-        let expected_new_deadline = current_height + deadline_duration;
+        // Verify the deadline was set to the new deadline
         assert_eq!(
             expired_assignment_after.exec_deadline(),
-            expected_new_deadline,
-            "Exec deadline should be increased after reassignment"
+            new_deadline,
+            "Exec deadline should be set to the new deadline after reassignment"
         );
 
         // Check that non-expired assignment was not reassigned
