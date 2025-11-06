@@ -1,0 +1,39 @@
+import strata_acct_types
+import accumulators
+import messages
+import outputs
+import state
+
+MAX_PROCESSED_MESSAGES = 2 << 15
+MAX_LEDGER_REFS = 2 << 15
+### 2 MB limit for update proof
+MAX_UPDATE_PROOF_BYTES = 2 << 20
+### Max extra data bytes
+MAX_EXTRA_DATA_BYTES = 2 << 20
+
+### References to L1 headers in the ledger MMR
+class LedgerRefs(Container):
+    l1_header_refs: List[accumulators.AccumulatorClaim, MAX_LEDGER_REFS]
+
+### Proofs for ledger references
+class LedgerRefProofs(Container):
+    l1_headers_proofs: List[accumulators.MmrEntryProof, MAX_LEDGER_REFS]
+
+### Core data for an update operation
+class UpdateOperationData(Container):
+    seq_no: uint64
+    new_state: state.ProofState
+    processed_messages: List[messages.MessageEntry, MAX_PROCESSED_MESSAGES]
+    ledger_refs: LedgerRefs
+    outputs: outputs.UpdateOutputs
+    extra_data: List[uint8, MAX_EXTRA_DATA_BYTES]
+
+### Snark account update with proof
+class SnarkAccountUpdate(Container):
+    operation: UpdateOperationData
+    update_proof: List[uint8, MAX_UPDATE_PROOF_BYTES]
+
+### Merkle proofs for update accumulators
+class UpdateAccumulatorProofs(Container):
+    inbox_proofs: List[messages.MessageEntryProof, MAX_PROCESSED_MESSAGES]
+    ledger_ref_proofs: LedgerRefProofs
