@@ -31,7 +31,7 @@ pub use errors::{AcctError, AcctResult};
 pub use mmr::{CompactMmr64, Hash, MerkleProof, Mmr64, RawMerkleProof, StrataHasher};
 pub use ssz_generated::ssz::{
     self as ssz,
-    messages::{MsgPayload, ReceivedMessage, SentMessage, SentMessageRef},
+    messages::{MsgPayload, MsgPayloadRef, ReceivedMessage, SentMessage, SentMessageRef},
     state::{AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState},
 };
 pub use state::AccountTypeState;
