@@ -587,7 +587,12 @@ mod tests {
 
         // First reassignment should work (clears previous assignees and reassigns to same operator)
         let new_deadline: BitcoinBlockHeight = 200;
-        let result = assignment.reassign(new_operator_fee, new_deadline, seed2, &current_active_operators);
+        let result = assignment.reassign(
+            new_operator_fee,
+            new_deadline,
+            seed2,
+            &current_active_operators,
+        );
         assert!(result.is_ok());
 
         // Should have cleared previous assignees and reassigned to the same operator
