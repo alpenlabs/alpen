@@ -15,7 +15,12 @@ use crate::{
     post_exec_block_validate, pre_exec_block_validate,
 };
 
-/// Processes an OL block. Also performs epoch sealing if the block is terminal.
+/// Executes an OL block with full validation.
+///
+/// Performs pre-execution validation (header checks), executes transactions,
+/// handles epoch sealing for terminal blocks, and validates post-state root.
+///
+/// Returns execution output containing the new state root and accumulated logs.
 pub fn execute_block<S: StateAccessor>(
     ctx: BlockExecContext,
     state_accessor: &mut S,
@@ -34,7 +39,10 @@ pub fn execute_block<S: StateAccessor>(
     Ok(exec_output)
 }
 
-/// Block execution without validation. Used by block assembly.
+/// Block execution without validation.
+///
+/// Used by block assembly where validation isn't needed. Executes all transactions
+/// and handles epoch sealing but skips header and state root validation.
 pub fn execute_block_inner<S: StateAccessor>(
     ctx: BlockExecContext,
     state_accessor: &mut S,
@@ -137,6 +145,10 @@ fn execute_transaction<S: StateAccessor>(
     Ok(())
 }
 
+/// Processes a snark account update: verification → output application → state update.
+///
+/// Creates a [`LedgerRef`] to apply outputs, which delegates to `send_message`/`send_transfer`
+/// for handling transfers to other accounts.
 fn process_snark_update<S: StateAccessor>(
     ctx: &BlockExecContext,
     state_accessor: &mut S,

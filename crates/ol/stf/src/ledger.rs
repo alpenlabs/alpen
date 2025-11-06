@@ -7,6 +7,12 @@ use crate::{
     update::{send_message, send_transfer},
 };
 
+/// Adapts the STF's send_message/send_transfer functions to the [`LedgerInterface`] trait.
+///
+/// This allows snark-acct-sys to apply update outputs without depending on ol/stf directly.
+/// Represents an account's view of the ledger for sending funds.
+///
+/// Note: Not `Clone` because it contains `&mut S`.
 #[derive(Debug)]
 pub(crate) struct LedgerRef<'a, S: StateAccessor> {
     acct_id: AccountId,

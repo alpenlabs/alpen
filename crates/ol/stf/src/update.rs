@@ -8,6 +8,14 @@ use crate::{
     system_handlers::{get_system_msg_handler, get_system_transfer_handler},
 };
 
+/// Sends a message with attached value from one account to another.
+///
+/// Creates a [`Coin`] for the message value and adds it to the recipient's balance.
+/// Routes to system handlers for system accounts, or to account-type-specific handlers.
+///
+/// # Safety
+/// Creates a coin with `new_unchecked` - caller must ensure sender has sufficient balance.
+/// The recipient's `add_balance` implementation must call `safely_consume_unchecked` on the coin.
 pub(crate) fn send_message<S: StateAccessor>(
     ctx: &BlockExecContext,
     state_accessor: &mut S,
@@ -41,6 +49,14 @@ pub(crate) fn send_message<S: StateAccessor>(
     }
 }
 
+/// Sends a value transfer from one account to another (no message payload).
+///
+/// Similar to [`send_message`] but without message data. Creates a [`Coin`] for the amount
+/// and routes through system/account-type handlers.
+///
+/// # Safety
+/// Creates a coin with `new_unchecked` - caller must ensure sender has sufficient balance.
+/// The recipient's `add_balance` implementation must call `safely_consume_unchecked` on the coin.
 pub(crate) fn send_transfer<S: StateAccessor>(
     ctx: &BlockExecContext,
     state_accessor: &mut S,
