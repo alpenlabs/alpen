@@ -1040,6 +1040,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-client"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types-engine",
+ "alpen-chainspec",
+ "alpen-reth-node",
+ "anyhow",
+ "async-trait",
+ "bincode",
+ "borsh",
+ "clap",
+ "eyre",
+ "mockall",
+ "reth-chainspec",
+ "reth-cli-commands",
+ "reth-cli-runner",
+ "reth-cli-util",
+ "reth-db",
+ "reth-node-builder",
+ "reth-node-core",
+ "reth-provider",
+ "rockbound",
+ "sled",
+ "strata-acct-types",
+ "strata-db-store-rocksdb",
+ "strata-db-store-sled",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-identifiers",
+ "strata-primitives",
+ "strata-snark-acct-types",
+ "strata-storage-common",
+ "tempfile",
+ "thiserror 2.0.16",
+ "threadpool",
+ "tokio",
+ "tracing",
+ "typed-sled",
+]
+
+[[package]]
 name = "alpen-reth"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -13782,6 +13825,7 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-primitives",
  "strata-state",
+ "strata-storage-common",
  "thiserror 2.0.16",
  "typed-sled",
  "zkaleido",
@@ -14509,8 +14553,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
- "lru 0.12.5",
- "paste",
  "strata-asm-types",
  "strata-checkpoint-types",
  "strata-csm-types",
@@ -14519,6 +14561,19 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-primitives",
  "strata-state",
+ "strata-storage-common",
+ "threadpool",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "strata-storage-common"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "lru 0.12.5",
+ "paste",
+ "thiserror 2.0.16",
  "threadpool",
  "tokio",
  "tracing",
@@ -15586,8 +15641,8 @@ dependencies = [
 
 [[package]]
 name = "typed-sled"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/typed-sled#04e4207b1a0d62235b602effb11da7f1d1c35a99"
+version = "0.1.1"
+source = "git+https://github.com/alpenlabs/typed-sled#a63a4158bae304404fabe10b288a1ac2f0ad7276"
 dependencies = [
  "dashmap 6.1.0",
  "sled",

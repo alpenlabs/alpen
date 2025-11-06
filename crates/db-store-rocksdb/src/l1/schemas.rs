@@ -1,10 +1,7 @@
 use strata_asm_types::{L1BlockManifest, L1Tx};
 use strata_primitives::l1::L1BlockId;
 
-use crate::{
-    define_table_with_default_codec, define_table_with_seek_key_codec, define_table_without_codec,
-    impl_borsh_value_codec,
-};
+use crate::{define_table_with_default_codec, define_table_with_seek_key_codec};
 
 // L1 Block Schema and corresponding codecs implementation
 define_table_with_default_codec!(

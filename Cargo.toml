@@ -75,6 +75,7 @@ members = [
   "crates/state",
   "crates/status",
   "crates/storage",
+  "crates/storage-common",
   "crates/sync",
   "crates/test-utils/btc",
   "crates/test-utils/evm-ee",
@@ -88,6 +89,7 @@ members = [
   "bin/alpen-cli",
   "bin/strata-client",
   "bin/strata-dbtool",
+  "bin/alpen-client",
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
   "bin/prover-client",
@@ -105,6 +107,7 @@ default-members = [
   "bin/datatool",
   "bin/prover-client",
   "bin/alpen-reth",
+  "bin/alpen-client",
   "bin/strata-client",
   "bin/strata-dbtool",
   "bin/strata-sequencer-client",
@@ -200,6 +203,7 @@ strata-snark-acct-types = { path = "crates/snark-acct-types" }
 strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
+strata-storage-common = { path = "crates/storage-common" }
 strata-sync = { path = "crates/sync" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
 strata-test-utils-btc = { path = "crates/test-utils/btc" }

@@ -1,0 +1,63 @@
+[package]
+edition = "2021"
+name = "alpen-client"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[features]
+default = ["sled"]
+sled = ["dep:sled", "dep:typed-sled", "dep:strata-db-store-sled"]
+rocksdb = [
+  "dep:rockbound",
+  "dep:strata-db-store-rocksdb",
+  "dep:bincode",
+  "dep:anyhow",
+]
+
+[[bin]]
+name = "alpen-client"
+path = "src/main.rs"
+
+[dependencies]
+alpen-chainspec.workspace = true
+alpen-reth-node.workspace = true
+strata-acct-types.workspace = true
+strata-db-store-rocksdb = { workspace = true, optional = true }
+strata-db-store-sled = { workspace = true, optional = true }
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-identifiers.workspace = true
+strata-snark-acct-types.workspace = true
+strata-storage-common.workspace = true
+
+alloy-primitives.workspace = true
+alloy-rpc-types-engine.workspace = true
+anyhow = { workspace = true, optional = true }
+async-trait.workspace = true
+bincode = { workspace = true, optional = true }
+borsh.workspace = true
+clap.workspace = true
+eyre.workspace = true
+reth-chainspec.workspace = true
+reth-cli-commands.workspace = true
+reth-cli-runner.workspace = true
+reth-cli-util.workspace = true
+reth-db.workspace = true
+reth-node-builder.workspace = true
+reth-node-core.workspace = true
+reth-provider.workspace = true
+rockbound = { workspace = true, optional = true }
+sled = { workspace = true, optional = true }
+thiserror.workspace = true
+threadpool.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+typed-sled = { workspace = true, optional = true }
+
+[dev-dependencies]
+mockall.workspace = true
+strata-primitives.workspace = true
+tempfile.workspace = true

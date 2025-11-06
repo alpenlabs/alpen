@@ -1,7 +1,5 @@
 //! L2 block data operation interface.
 
-use std::sync::Arc;
-
 use strata_db::traits::*;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 

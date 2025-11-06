@@ -17,7 +17,9 @@ use strata_ee_acct_types::{
     MessageDecodeResult, PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::SubjectDepositData;
-use strata_snark_acct_types::{LedgerRefs, MessageEntry, UpdateOperationData, UpdateOutputs};
+use strata_snark_acct_types::{
+    LedgerRefs, MessageEntry, UpdateInputData, UpdateOperationData, UpdateOutputs,
+};
 
 use crate::{
     exec_processing::process_segments,
@@ -222,7 +224,7 @@ fn verify_accumulated_state(
 /// the actual state proven by the proof.
 pub fn apply_update_operation_unconditionally(
     astate: &mut EeAccountState,
-    operation: &UpdateOperationData,
+    operation: &UpdateInputData,
 ) -> EnvResult<()> {
     let extra =
         decode_buf_exact(operation.extra_data()).map_err(|_| EnvError::MalformedExtraData)?;
