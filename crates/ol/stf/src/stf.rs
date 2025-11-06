@@ -127,8 +127,10 @@ fn execute_transaction<S: StateAccessor>(
     // Update balance
     let total_sent = output_value.ok_or(AcctError::BitcoinAmountOverflow)?;
 
-    let _coins = acct_state.take_balance(total_sent);
-    // TODO: do something with coins
+    let coins = acct_state.take_balance(total_sent)?;
+
+    coins.safely_consume_unchecked(); // not sure of the benefits of doing this here. It would be
+    // nice to have some kind of compile-time safety
 
     state_accessor.update_account_state(target, acct_state)?;
 
