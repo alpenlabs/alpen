@@ -30,10 +30,11 @@ fn process_deposit(
     let acct_id = state_accessor.get_account_id_from_serial(serial)?;
 
     let Some(acct_id) = acct_id else {
+        // If there's no associated account id, nothing to do. But what do we do with the fund?
         return Ok(Vec::new());
     };
 
-    // Add balance to account.
+    // Construct message payload.
     let amt = BitcoinAmount::from_sat(dep.amount);
     let msg_payload = MsgPayload::new(amt, dep.as_raw_msg_bytes());
 
@@ -45,11 +46,14 @@ fn process_deposit(
         &msg_payload,
     )?;
 
+    let log = OLLog::deposit_ack(acct_id, dep.addr.clone(), dep.amount.into());
+
     // Increment bridged btc.
     let l1_view = state_accessor.l1_view_mut();
+    // TODO: coin abstraction.
     let _ = l1_view.increment_total_ledger_balance(amt);
-    // No logs
-    Ok(Vec::new())
+
+    Ok(vec![log])
 }
 
 fn process_checkpoint(
@@ -60,8 +64,10 @@ fn process_checkpoint(
     let l1_view = state_accessor.l1_view_mut();
     l1_view.set_asm_recorded_epoch(ckpt.epoch_commitment);
 
-    // No logs for now
-    Ok(Vec::new())
+    // Using system account zero address here since checkpoint is not associated with any account
+    // and we have account id in OLLog. I don't want to make it optional.
+    let log = OLLog::checkpoint_ack(SystemAccount::Zero.id(), ckpt.epoch_commitment);
+    Ok(vec![log])
 }
 
 #[derive(Clone, Debug)]

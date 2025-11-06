@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SystemAccount, strata_codec::Codec};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SystemAccount};
 use strata_ledger_types::StateAccessor;
 use strata_ol_chain_types_new::OLLog;
 
@@ -12,10 +12,9 @@ pub(crate) fn handle_bridge_gateway_msg<S: StateAccessor>(
     // Since the sender account's balance will be deduced later and there's no point in adding
     // balance to a bridge gateway system account, we can just emit OLLog from here.
 
-    // encode the log
-    let mut buf = Vec::new();
-    payload.encode(&mut buf).map_err(StfError::CodecError)?;
-    let log = OLLog::new(sender, buf);
+    // Create WithdrawalIntent log
+    let log = OLLog::withdrawal_intent(sender, payload.value(), payload.data().to_vec());
+
     Ok(vec![log])
 }
 
