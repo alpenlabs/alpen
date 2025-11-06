@@ -1,6 +1,8 @@
-use strata_acct_types::{AcctError, AcctResult, AccountId, BitcoinAmount, MerkleProof, Mmr64, StrataHasher};
+use strata_acct_types::{
+    AccountId, AcctError, AcctResult, BitcoinAmount, MerkleProof, Mmr64, StrataHasher,
+};
 use strata_ledger_types::{IL1ViewState, ISnarkAccountState, StateAccessor};
-use strata_mmr::hasher::MerkleHasher;
+use strata_merkle::hasher::MerkleHasher;
 use strata_snark_acct_types::{
     LedgerRefProofs, MessageEntryProof, SnarkAccountUpdate, SnarkAccountUpdateWithMmrProofs,
     UpdateOperationData, UpdateOutputs,

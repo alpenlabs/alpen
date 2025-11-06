@@ -13901,6 +13901,7 @@ dependencies = [
  "strata-codec",
  "strata-merkle",
  "strata-merkle",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -14637,7 +14638,7 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-ledger-types",
- "strata-mmr",
+ "strata-merkle",
  "strata-ol-chain-types-new",
  "strata-primitives",
  "strata-snark-acct-types",

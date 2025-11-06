@@ -24,6 +24,13 @@ pub(crate) fn process_asm_log(
     }
 }
 
+/// Processes a deposit from L1 bridge during epoch sealing.
+///
+/// Sends deposited funds to the account associated with the EE ID in the deposit log.
+///
+/// # Warning
+/// If no account exists for the serial, funds are currently dropped silently (line 35-38).
+/// This needs to be handled - either error, send to treasury, or prominently log.
 fn process_deposit(
     ctx: &BlockExecContext,
     state_accessor: &mut impl StateAccessor,
@@ -33,7 +40,7 @@ fn process_deposit(
     let acct_id = state_accessor.get_account_id_from_serial(serial)?;
 
     let Some(acct_id) = acct_id else {
-        // If there's no associated account id, nothing to do. But what do we do with the fund?
+        // FIXME: Funds are being dropped! Should either error, send to treasury, or log prominently
         return Ok(());
     };
 
