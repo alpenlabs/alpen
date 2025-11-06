@@ -3,6 +3,7 @@
 #[macro_use]
 mod macros;
 
+mod acct;
 mod buf;
 mod cred_rule;
 mod epoch;
@@ -11,6 +12,7 @@ pub mod hash;
 mod l1;
 mod ol;
 
+pub use acct::{AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SubjectId};
 pub use buf::{Buf20, Buf32, Buf64};
 pub use cred_rule::CredRule;
 pub use epoch::EpochCommitment;
@@ -19,3 +21,6 @@ pub use exec::{
 };
 pub use l1::{BitcoinBlockHeight, L1BlockCommitment, L1BlockId, L1Height};
 pub use ol::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId};
+// Re-export for macro use
+#[doc(hidden)]
+pub use strata_codec;
