@@ -895,4 +895,53 @@ mod tests {
             assert_eq!(deposit_idx, withdrawal_info.deposit_idx);
         }
     }
+
+    /// Test that reassigning an expired assignment increases the exec_deadline.
+    ///
+    /// This test verifies that when a deposit assignment expires and is reassigned,
+    /// the new exec_deadline is set to current_height + deadline_duration.
+    #[test]
+    fn test_reassign_expired_assignments_increases_deadline() {
+        let (mut bridge_state, privkeys) = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+
+        // Add a single deposit and create assignment
+        add_deposits_and_assignments(&mut bridge_state, 1, &privkeys);
+
+        // Get the assignment
+        let assignment = bridge_state
+            .assignments()
+            .assignments()
+            .first()
+            .unwrap()
+            .clone();
+        let deposit_idx = assignment.deposit_idx();
+        let original_deadline = assignment.exec_deadline();
+
+        // Set current height to after the original deadline to make it expired
+        let current_height = original_deadline + 50;
+        let current_block_id: Buf32 = arb.generate();
+        let current_block =
+            L1BlockCommitment::from_height_u64(current_height, current_block_id.into()).unwrap();
+
+        // Verify the assignment was reassigned
+        let reassigned_indices = bridge_state
+            .reassign_expired_assignments(&current_block)
+            .unwrap();
+        assert_eq!(reassigned_indices.len(), 1);
+        assert!(reassigned_indices.contains(&deposit_idx));
+
+        // Verify the new deadline = current_height + deadline_duration
+        let assignment_after = bridge_state
+            .assignments()
+            .get_assignment(deposit_idx)
+            .expect("Assignment should still exist");
+
+        let expected_new_deadline = current_height + bridge_state.deadline_duration();
+        assert_eq!(
+            assignment_after.exec_deadline(),
+            expected_new_deadline,
+            "New deadline should be current_height + deadline_duration"
+        );
+    }
 }
