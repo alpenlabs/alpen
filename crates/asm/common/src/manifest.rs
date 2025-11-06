@@ -49,10 +49,9 @@ impl AsmManifest {
     }
 
     /// Computes the hash of the manifest.
-    ///
-    /// **TODO: PG**: This should use SSZ to compute the root of the `AsmManifest` container. SSZ
-    /// would enable creating Merkle inclusion proofs for individual fields (logs,
-    /// `wtxids_root`, etc.) when needed. Currently uses Borsh serialization.
+    // **TODO: PG**: This should use SSZ to compute the root of the `AsmManifest` container. SSZ
+    // would enable creating Merkle inclusion proofs for individual fields (logs,
+    // `wtxids_root`, etc.) when needed. Currently uses Borsh serialization.
     pub fn compute_hash(&self) -> Hash {
         compute_borsh_hash(&self).into()
     }
