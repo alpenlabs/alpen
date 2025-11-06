@@ -1,4 +1,4 @@
-use strata_acct_types::{AcctError, AccountId, BitcoinAmount};
+use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
 use strata_ledger_types::{
     AccountTypeState, IAccountState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
@@ -51,7 +51,7 @@ pub fn execute_block_inner<S: StateAccessor>(
 
     let _pre_seal_root = state_accessor.compute_state_root();
 
-    // Check if needs to seal epoch
+    // Check if needs to seal epoch, i.e is a terminal block.
     if let Some(l1update) = block.body().l1_update() {
         let seal_logs = seal_epoch(state_accessor, l1update)?;
         stf_logs.extend_from_slice(&seal_logs);
@@ -157,9 +157,10 @@ fn process_snark_update<S: StateAccessor>(
     )?;
     let new_state = verified_update.operation().new_state();
     let seq_no = verified_update.operation().seq_no();
+    let operation = verified_update.operation().clone();
 
     // Apply update outputs.
-    let logs = apply_update_outputs(state_accessor, target, verified_update)?;
+    let mut logs = apply_update_outputs(state_accessor, target, verified_update)?;
 
     // After applying updates, update the proof state.
     snark_state.set_proof_state_directly(
@@ -167,5 +168,18 @@ fn process_snark_update<S: StateAccessor>(
         new_state.next_inbox_msg_idx(),
         seq_no,
     );
+
+    // Construct SnarkUpdate Log.
+    let log_extra = vec![];
+    let msg_to = operation.new_state().next_inbox_msg_idx() - 1;
+    let msg_from = msg_to - operation.processed_messages().len() as u64 + 1;
+    let log = OLLog::snark_account_update(
+        target,
+        msg_from,
+        msg_to,
+        operation.new_state().inner_state().into(),
+        log_extra,
+    );
+    logs.push(log);
     Ok(logs)
 }
