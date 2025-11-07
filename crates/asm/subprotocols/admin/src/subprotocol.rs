@@ -4,7 +4,8 @@
 //! with the Strata Anchor State Machine (ASM) for managing protocol governance and updates.
 
 use strata_asm_common::{
-    AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AuxDataProvider, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
 use strata_asm_txs_admin::{constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx};
 
@@ -31,8 +32,6 @@ impl Subprotocol for AdministrationSubprotocol {
 
     type Msg = NullMsg<ADMINISTRATION_SUBPROTOCOL_ID>;
 
-    type AuxInput = ();
-
     fn init(params: &Self::Params) -> Result<AdministrationSubprotoState, AsmError> {
         Ok(AdministrationSubprotoState::new(params))
     }
@@ -54,7 +53,7 @@ impl Subprotocol for AdministrationSubprotocol {
         state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_input: &Self::AuxInput,
+        _aux_input: &AuxDataProvider,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     ) {

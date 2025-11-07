@@ -5,7 +5,7 @@
 
 use bitcoin::absolute;
 use strata_asm_common::{
-    AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, AuxDataProvider, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     logging::{error, info},
 };
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
@@ -37,8 +37,6 @@ impl Subprotocol for BridgeV1Subproto {
     type Params = BridgeV1Config;
 
     type Msg = BridgeIncomingMsg;
-
-    type AuxInput = ();
 
     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
         Ok(BridgeV1State::new(params))
@@ -88,7 +86,7 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_inputs: &Self::AuxInput,
+        _aux_provider: &AuxDataProvider,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

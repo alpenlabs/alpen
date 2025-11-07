@@ -11,7 +11,7 @@ use strata_btc_types::RawBitcoinTx;
 
 use crate::{AsmCompactMmr, AsmMerkleProof, Hash, L1TxIndex};
 
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxRequests {
     pub manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesRequest>,
     pub bitcoin_txs: BTreeMap<L1TxIndex, BitcoinTxRequest>,
@@ -23,7 +23,7 @@ pub struct AuxRequests {
 /// them based on information contained in each request before serving them to
 /// subprotocols. Verification methods vary by request type (e.g., MMR proofs for
 /// manifest leaves, txid validation for Bitcoin transactions).
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Map from transaction index to manifest leaves with proofs (unverified)
     pub manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
