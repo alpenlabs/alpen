@@ -1,6 +1,6 @@
 //! MMR types for ASM manifests.
 
-use strata_merkle::{MerkleMr64, Sha256Hasher};
+use strata_merkle::{MerkleMr64, MerkleProof, Sha256Hasher};
 
 /// Capacity of the ASM MMR as a power of 2.
 ///
@@ -26,3 +26,5 @@ pub type AsmCompactMmr = strata_merkle::CompactMmr64<Hash>;
 /// This is the working form of the MMR that supports append operations
 /// and can be compacted for storage.
 pub type AsmMmr = MerkleMr64<AsmHasher>;
+
+pub type AsmMerkleProof = MerkleProof<Hash>;

@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AuxRequest, SectionState, TxInputRef, log::AsmLogEntry,
+    AnchorState, AsmError, SectionState, TxInputRef, aux::old::AuxRequest, log::AsmLogEntry,
     msg::InterprotoMsg,
 };
 

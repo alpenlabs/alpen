@@ -1,56 +1,54 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+//! Auxiliary input framework for the Anchor State Machine (ASM).
+//!
+//! This crate provides infrastructure for subprotocols to request and receive
+//! auxiliary data during ASM state transitions. The framework consists of:
+//!
+//! - **Request Phase** ([`pre_process_txs`]): Subprotocols use [`AuxRequestCollector`] to declare
+//!   what auxiliary data they need, keyed by transaction index.
+//!
+//! - **Fulfillment Phase**: External workers fetch the requested data and produce responses for
+//!   each request type (e.g., manifest leaves with proofs, raw Bitcoin txs).
+//!
+//! - **Processing Phase** ([`process_txs`]): Subprotocols use [`AuxDataProvider`] to access the
+//!   fulfilled auxiliary data. The provider verifies data based on each request.
+//!
+//! ## Supported Request Types
+//!
+//! - **Manifest Leaves**: Fetch manifest hashes and MMR proofs for a range of L1 blocks
+//!   (lightweight - doesn't include full manifest data). The request must include the
+//!   `AsmManifestCompactMmr` snapshot for verifying the MMR proofs in the response.
+//!
+//! - **Bitcoin Transactions**: Fetch raw Bitcoin transaction data by txid (for bridge subprotocol
+//!   validation). The request must include the expected txid to verify against the response.
+//!
+//! ## Request Granularity
+//!
+//! Requests are keyed by **transaction index** (`L1TxIndex`) within an L1 block.
+//! Each transaction can request at most one item per request type (e.g., one
+//! manifest-leaves request and one bitcoin-tx request). Not all transactions
+//! need to request auxiliary data.
+//!
+//! ## Verification
+//!
+//! Each request type must include all necessary information to verify its response.
+//! The [`AuxDataProvider`] validates responses using request-provided verification data
+//! before returning them to subprotocols, ensuring all auxiliary data is cryptographically
+//! sound.
+//!
+//! **IMPORTANT**: For a given transaction index and request type, there must be
+//! at most one response. If your use case requires multiple pieces of auxiliary
+//! data for a single transaction, define a request type that bundles the needed
+//! data together.
+mod collector;
+mod data;
+mod errors;
+pub mod old;
+mod provider;
 
-use crate::{AsmError, Subprotocol};
-
-/// A single auxiliary input request from a subprotocol during preprocessing.
-///
-/// The `data` field contains the raw bytes that will be processed to generate
-/// the corresponding auxiliary input data in the final [`AuxPayload`].
-#[derive(Debug)]
-pub struct AuxRequest {
-    /// Raw data for the auxiliary input request.
-    data: Vec<u8>,
-}
-
-impl AuxRequest {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self { data }
-    }
-
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
-}
-
-/// A single subprotocol's auxiliary input payload, containing processed auxiliary data.
-///
-/// Each [`AuxRequest`] must resolve into a corresponding [`AuxPayload`] before the main
-/// processing phase can begin. The `data` field must deserialize into an instance of
-/// [`Subprotocol::AuxInput`] for the associated subprotocol.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct AuxPayload {
-    /// Processed auxiliary input data as raw bytes.
-    ///
-    /// This `Vec<u8>` must deserialize into one
-    /// `<P as Subprotocol>::AuxInput` for the corresponding subprotocol P.
-    pub data: Vec<u8>,
-}
-
-impl AuxPayload {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self { data }
-    }
-
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
-
-    /// Tries to parse as a subprotocol's aux input.
-    ///
-    /// This MUST NOT be called on a payload that does not correspond to the
-    /// subprotocol type, because this may lead to silent errors.
-    pub fn try_to_aux_input<S: Subprotocol>(&self) -> Result<S::AuxInput, AsmError> {
-        <S::AuxInput as BorshDeserialize>::try_from_slice(&self.data)
-            .map_err(|e| AsmError::Deserialization(S::ID, e))
-    }
-}
+// Re-export main types
+pub use collector::AuxRequestCollector;
+pub use data::{
+    BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
+};
+pub use errors::{AuxError, AuxResult, BitcoinTxError, ManifestLeavesError};
+pub use provider::AuxDataProvider;
