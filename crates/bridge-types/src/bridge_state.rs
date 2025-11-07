@@ -459,24 +459,24 @@ pub struct DispatchedState {
     /// and who will be reimbursed by the bridge notaries.
     assignee: OperatorIdx,
 
-    /// L1 block height before which we expect the dispatch command to be
-    /// executed and after which this assignment command is no longer valid.
+    /// Bitcoin block height deadline by which the assignment must be fulfilled.
     ///
-    /// If a checkpoint is processed for this L1 height and the withdrawal still
-    /// goes out it won't be honored.
-    exec_deadline: BitcoinBlockHeight,
+    /// The operator must complete the withdrawal transaction before this height.
+    /// If a checkpoint is processed at or after this height and the withdrawal
+    /// has not been fulfilled, the assignment is considered expired and will be reassigned.
+    fulfillment_deadline: BitcoinBlockHeight,
 }
 
 impl DispatchedState {
     pub fn new(
         cmd: DispatchCommand,
         assignee: OperatorIdx,
-        exec_deadline: BitcoinBlockHeight,
+        fulfillment_deadline: BitcoinBlockHeight,
     ) -> Self {
         Self {
             cmd,
             assignee,
-            exec_deadline,
+            fulfillment_deadline,
         }
     }
 
@@ -488,16 +488,16 @@ impl DispatchedState {
         self.assignee
     }
 
-    pub fn exec_deadline(&self) -> BitcoinBlockHeight {
-        self.exec_deadline
+    pub fn fulfillment_deadline(&self) -> BitcoinBlockHeight {
+        self.fulfillment_deadline
     }
 
     pub fn set_assignee(&mut self, assignee_op_idx: OperatorIdx) {
         self.assignee = assignee_op_idx;
     }
 
-    pub fn set_exec_deadline(&mut self, exec_deadline: BitcoinBlockHeight) {
-        self.exec_deadline = exec_deadline;
+    pub fn set_fulfillment_deadline(&mut self, fulfillment_deadline: BitcoinBlockHeight) {
+        self.fulfillment_deadline = fulfillment_deadline;
     }
 }
 

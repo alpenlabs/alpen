@@ -134,7 +134,7 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
 
         if let DepositState::Dispatched(dstate) = deposit_ent.deposit_state_mut() {
             dstate.set_assignee(operator_idx);
-            dstate.set_exec_deadline(new_exec_height);
+            dstate.set_fulfillment_deadline(new_exec_height);
         } else {
             panic!("stateop: unexpected deposit state");
         };

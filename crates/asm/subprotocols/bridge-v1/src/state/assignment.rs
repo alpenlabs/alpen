@@ -100,7 +100,7 @@ pub struct AssignmentEntry {
     /// Index of the operator currently assigned to execute this withdrawal.
     ///
     /// If they successfully front the withdrawal based on `withdrawal_cmd`
-    /// within the `exec_deadline`, they are able to unlock their claim.
+    /// within the `fulfillment_deadline`, they are able to unlock their claim.
     current_assignee: OperatorIdx,
 
     /// Bitmap of operators who were previously assigned to this withdrawal.
@@ -114,7 +114,7 @@ pub struct AssignmentEntry {
     ///
     /// The withdrawal fulfillment transaction must be executed before this block height for the
     /// operator to be eligible for [`ClaimUnlock`](super::withdrawal::OperatorClaimUnlock).
-    exec_deadline: BitcoinBlockHeight,
+    fulfillment_deadline: BitcoinBlockHeight,
 }
 
 impl PartialOrd for AssignmentEntry {
@@ -140,7 +140,7 @@ impl AssignmentEntry {
     ///
     /// - `deposit_entry` - The deposit entry to be processed
     /// - `withdrawal_cmd` - Withdrawal command with output specifications
-    /// - `exec_deadline` - Bitcoin block height deadline for execution
+    /// - `fulfillment_deadline` - Bitcoin block height deadline for assignment fulfillment
     /// - `current_active_operators` - Bitmap of currently active operator indices
     /// - `seed` - L1 block ID used as seed for deterministic random selection
     ///
@@ -152,7 +152,7 @@ impl AssignmentEntry {
     pub fn create_with_random_assignment(
         deposit_entry: DepositEntry,
         withdrawal_cmd: WithdrawalCommand,
-        exec_deadline: BitcoinBlockHeight,
+        fulfillment_deadline: BitcoinBlockHeight,
         current_active_operators: &OperatorBitmap,
         seed: L1BlockId,
     ) -> Result<Self, WithdrawalAssignmentError> {
@@ -189,7 +189,7 @@ impl AssignmentEntry {
             withdrawal_cmd,
             current_assignee,
             previous_assignees,
-            exec_deadline,
+            fulfillment_deadline,
         })
     }
 
@@ -213,9 +213,9 @@ impl AssignmentEntry {
         self.current_assignee
     }
 
-    /// Returns the execution deadline for this assignment.
-    pub fn exec_deadline(&self) -> BitcoinBlockHeight {
-        self.exec_deadline
+    /// Returns the fulfillment deadline for this assignment.
+    pub fn fulfillment_deadline(&self) -> BitcoinBlockHeight {
+        self.fulfillment_deadline
     }
 
     /// Reassigns the withdrawal to a new randomly selected operator.
@@ -287,7 +287,7 @@ impl AssignmentEntry {
 
         self.current_assignee = new_assignee;
         self.withdrawal_cmd.update_fee(new_operator_fee);
-        self.exec_deadline = new_deadline;
+        self.fulfillment_deadline = new_deadline;
         Ok(())
     }
 }
@@ -393,7 +393,7 @@ impl AssignmentTable {
     /// Reassigns all expired assignments to new randomly selected operators.
     ///
     /// Iterates through all assignments and reassigns those whose execution deadlines
-    /// have passed (current height >= exec_deadline). Each expired assignment is
+    /// have passed (current height >= fulfillment_deadline). Each expired assignment is
     /// reassigned using the provided seed for deterministic random operator selection.
     ///
     /// This method handles bulk reassignment of expired assignments, ensuring that
@@ -446,7 +446,7 @@ impl AssignmentTable {
         for assignment in self
             .assignments
             .iter_mut()
-            .filter(|e| e.exec_deadline <= current_height)
+            .filter(|e| e.fulfillment_deadline <= current_height)
         {
             assignment.reassign(operator_fee, new_deadline, seed, current_active_operators)?;
             reassigned_withdrawals.push(assignment.deposit_idx());
@@ -468,7 +468,7 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let deposit_entry: DepositEntry = arb.generate();
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
-        let exec_deadline: BitcoinBlockHeight = 100;
+        let fulfillment_deadline: BitcoinBlockHeight = 100;
         let seed: L1BlockId = arb.generate();
 
         // Use the deposit's notary operators as active operators
@@ -477,7 +477,7 @@ mod tests {
         let result = AssignmentEntry::create_with_random_assignment(
             deposit_entry.clone(),
             withdrawal_cmd.clone(),
-            exec_deadline,
+            fulfillment_deadline,
             &current_active_operators,
             seed,
         );
@@ -488,7 +488,7 @@ mod tests {
         // Verify assignment properties
         assert_eq!(assignment.deposit_idx(), deposit_entry.idx());
         assert_eq!(assignment.withdrawal_command(), &withdrawal_cmd);
-        assert_eq!(assignment.exec_deadline(), exec_deadline);
+        assert_eq!(assignment.fulfillment_deadline(), fulfillment_deadline);
         assert!(current_active_operators.is_active(assignment.current_assignee()));
         assert_eq!(assignment.previous_assignees.active_count(), 0);
     }
@@ -498,7 +498,7 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let deposit_entry: DepositEntry = arb.generate();
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
-        let exec_deadline: BitcoinBlockHeight = 100;
+        let fulfillment_deadline: BitcoinBlockHeight = 100;
         let seed: L1BlockId = arb.generate();
 
         // Empty active operators list
@@ -507,7 +507,7 @@ mod tests {
         let err = AssignmentEntry::create_with_random_assignment(
             deposit_entry.clone(),
             withdrawal_cmd,
-            exec_deadline,
+            fulfillment_deadline,
             &current_active_operators,
             seed,
         )
@@ -532,7 +532,7 @@ mod tests {
         };
 
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
-        let exec_deadline: BitcoinBlockHeight = 100;
+        let fulfillment_deadline: BitcoinBlockHeight = 100;
         let seed1: L1BlockId = arb.generate();
         let seed2: L1BlockId = arb.generate();
 
@@ -543,7 +543,7 @@ mod tests {
         let mut assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry,
             withdrawal_cmd,
-            exec_deadline,
+            fulfillment_deadline,
             &current_active_operators,
             seed1,
         )
@@ -580,7 +580,7 @@ mod tests {
 
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
         let new_operator_fee: BitcoinAmount = arb.generate();
-        let exec_deadline: BitcoinBlockHeight = 100;
+        let fulfillment_deadline: BitcoinBlockHeight = 100;
         let seed1: L1BlockId = arb.generate();
         let seed2: L1BlockId = arb.generate();
 
@@ -589,7 +589,7 @@ mod tests {
         let mut assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry,
             withdrawal_cmd,
-            exec_deadline,
+            fulfillment_deadline,
             &current_active_operators,
             seed1,
         )
@@ -640,7 +640,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(assignment.exec_deadline(), initial_deadline);
+        assert_eq!(assignment.fulfillment_deadline(), initial_deadline);
 
         // Reassign with a new deadline
         let new_deadline: BitcoinBlockHeight = 250;
@@ -649,12 +649,12 @@ mod tests {
 
         // Verify the deadline was updated
         assert_eq!(
-            assignment.exec_deadline(),
+            assignment.fulfillment_deadline(),
             new_deadline,
             "Exec deadline should be updated to the new deadline after reassignment"
         );
         assert_ne!(
-            assignment.exec_deadline(),
+            assignment.fulfillment_deadline(),
             initial_deadline,
             "Exec deadline should have changed from initial value"
         );
@@ -669,14 +669,14 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let deposit_entry: DepositEntry = arb.generate();
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
-        let exec_deadline: BitcoinBlockHeight = 100;
+        let fulfillment_deadline: BitcoinBlockHeight = 100;
         let seed: L1BlockId = arb.generate();
         let current_active_operators = deposit_entry.notary_operators().clone();
 
         let assignment = AssignmentEntry::create_with_random_assignment(
             deposit_entry.clone(),
             withdrawal_cmd,
-            exec_deadline,
+            fulfillment_deadline,
             &current_active_operators,
             seed,
         )
@@ -791,7 +791,7 @@ mod tests {
         );
         // Verify the deadline was set to the new deadline
         assert_eq!(
-            expired_assignment_after.exec_deadline(),
+            expired_assignment_after.fulfillment_deadline(),
             new_deadline,
             "Exec deadline should be set to the new deadline after reassignment"
         );

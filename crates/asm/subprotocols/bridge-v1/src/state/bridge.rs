@@ -49,8 +49,8 @@ pub struct BridgeV1State {
     /// The amount of bitcoin expected to be locked in the N/N multisig.
     denomination: BitcoinAmount,
 
-    /// The duration (in blocks) for assignment execution deadlines.
-    deadline_duration: u64,
+    /// The duration (in blocks) to fulfill assignment.
+    fulfillment_duration: u64,
 
     /// Amount the operator can take as fees for processing withdrawal.
     operator_fee: BitcoinAmount,
@@ -78,7 +78,7 @@ impl BridgeV1State {
             deposits: DepositsTable::new_empty(),
             assignments: AssignmentTable::new_empty(),
             denomination: config.denomination,
-            deadline_duration: config.deadline_duration,
+            fulfillment_duration: config.deadline_duration,
             operator_fee: config.operator_fee,
         }
     }
@@ -98,9 +98,9 @@ impl BridgeV1State {
         &self.assignments
     }
 
-    /// Returns the deadline duration for assignment execution.
-    pub fn deadline_duration(&self) -> u64 {
-        self.deadline_duration
+    /// Returns the duration for assignment fulfillment.
+    pub fn fulfillment_duration(&self) -> u64 {
+        self.fulfillment_duration
     }
 
     /// Validates a deposit transaction and info against bridge state requirements.
@@ -238,7 +238,8 @@ impl BridgeV1State {
             .ok_or(WithdrawalCommandError::NoUnassignedDeposits)?;
 
         // Create assignment with deadline calculated from current block height + deadline duration
-        let exec_deadline = l1_block.height().to_consensus_u32() as u64 + self.deadline_duration();
+        let fulfillment_deadline =
+            l1_block.height().to_consensus_u32() as u64 + self.fulfillment_duration();
 
         if deposit.amt() != withdrawal_output.amt() {
             return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch(
@@ -253,7 +254,7 @@ impl BridgeV1State {
         let entry = AssignmentEntry::create_with_random_assignment(
             deposit,
             withdrawal_cmd,
-            exec_deadline,
+            fulfillment_deadline,
             self.operators().current_multisig(),
             *l1_block.blkid(),
         )?;
@@ -292,7 +293,7 @@ impl BridgeV1State {
 
         // Reassign with new deadline
         let new_deadline =
-            current_block.height().to_consensus_u32() as u64 + self.deadline_duration();
+            current_block.height().to_consensus_u32() as u64 + self.fulfillment_duration();
 
         self.assignments.reassign_expired_assignments(
             self.operator_fee,
@@ -900,10 +901,10 @@ mod tests {
         }
     }
 
-    /// Test that reassigning an expired assignment increases the exec_deadline.
+    /// Test that reassigning an expired assignment increases the fulfillment_deadline.
     ///
     /// This test verifies that when a deposit assignment expires and is reassigned,
-    /// the new exec_deadline is set to current_height + deadline_duration.
+    /// the new fulfillment_deadline is set to current_height + deadline_duration.
     #[test]
     fn test_reassign_expired_assignments_increases_deadline() {
         let (mut bridge_state, privkeys) = create_test_state();
@@ -920,7 +921,7 @@ mod tests {
             .unwrap()
             .clone();
         let deposit_idx = assignment.deposit_idx();
-        let original_deadline = assignment.exec_deadline();
+        let original_deadline = assignment.fulfillment_deadline();
 
         // Set current height to after the original deadline to make it expired
         let current_height = original_deadline + 50;
@@ -941,9 +942,9 @@ mod tests {
             .get_assignment(deposit_idx)
             .expect("Assignment should still exist");
 
-        let expected_new_deadline = current_height + bridge_state.deadline_duration();
+        let expected_new_deadline = current_height + bridge_state.fulfillment_duration();
         assert_eq!(
-            assignment_after.exec_deadline(),
+            assignment_after.fulfillment_deadline(),
             expected_new_deadline,
             "New deadline should be current_height + deadline_duration"
         );
