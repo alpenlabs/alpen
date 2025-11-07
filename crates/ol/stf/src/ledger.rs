@@ -1,5 +1,6 @@
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-use strata_ledger_types::{LedgerInterface, StateAccessor};
+use strata_ledger_types::StateAccessor;
+use strata_snark_acct_types::LedgerInterface;
 
 use crate::{
     context::BlockExecContext,
@@ -13,6 +14,7 @@ use crate::{
 /// Represents an account's view of the ledger for sending funds.
 ///
 /// Note: Not `Clone` because it contains `&mut S`.
+// FIXME: a better name.
 #[derive(Debug)]
 pub(crate) struct LedgerRef<'a, S: StateAccessor> {
     acct_id: AccountId,

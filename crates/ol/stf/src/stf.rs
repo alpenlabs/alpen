@@ -2,7 +2,9 @@ use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
 use strata_ledger_types::{
     AccountTypeState, IAccountState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
-use strata_ol_chain_types_new::{L1Update, OLBlock, OLLog, OLTransaction, TransactionPayload};
+use strata_ol_chain_types_new::{
+    L1Update, OLBlock, OLBlockBody, OLLog, OLTransaction, TransactionPayload,
+};
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::{SnarkAccountUpdateWithMmrProofs, UpdateOperationData};
 
@@ -30,7 +32,7 @@ pub fn execute_block<S: StateAccessor>(
     pre_exec_block_validate(state_accessor, &block, ctx.prev_header(), ctx.params())
         .map_err(StfError::BlockValidation)?;
 
-    let exec_output = execute_block_inner(ctx, state_accessor, &block)?;
+    let exec_output = execute_block_body(ctx, state_accessor, block.body())?;
 
     // Post execution block validation. Checks state root and logs root.
     post_exec_block_validate::<S>(&block, exec_output.state_root(), exec_output.logs())
@@ -39,24 +41,24 @@ pub fn execute_block<S: StateAccessor>(
     Ok(exec_output)
 }
 
-/// Block execution without validation.
+/// Executes block body without any block level validation.
 ///
 /// Used by block assembly where validation isn't needed. Executes all transactions
 /// and handles epoch sealing but skips header and state root validation.
-pub fn execute_block_inner<S: StateAccessor>(
+pub fn execute_block_body<S: StateAccessor>(
     ctx: BlockExecContext,
     state_accessor: &mut S,
-    block: &OLBlock,
+    block_body: &OLBlockBody,
 ) -> StfResult<ExecOutput> {
     // Execute transactions.
-    for tx in block.body().txs() {
+    for tx in block_body.txs() {
         execute_transaction(&ctx, state_accessor, tx)?;
     }
 
     let _pre_seal_root = state_accessor.compute_state_root();
 
     // Check if needs to seal epoch, i.e is a terminal block.
-    if let Some(l1update) = block.body().l1_update() {
+    if let Some(l1update) = block_body.l1_update() {
         seal_epoch(&ctx, state_accessor, l1update)?;
 
         // Increment the current epoch now that we've processed the terminal block.

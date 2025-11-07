@@ -48,7 +48,7 @@ pub fn verify_update_correctness<'a, S: StateAccessor>(
     // 3. Verify ledger references using the provided state accessor
     verify_ledger_refs(
         sender,
-        state_accessor.l1_view().l1_references(),
+        state_accessor.l1_view().asm_manifests_mmr(),
         update.ledger_ref_proofs(),
     )?;
 

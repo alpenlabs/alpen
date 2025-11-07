@@ -36,6 +36,11 @@ pub trait IL1ViewState {
     /// block height and other fields.
     fn append_manifest(&mut self, mf: AsmManifest);
 
+    /// Gets the MMR for asm manifests.
+    ///
+    /// This is for the accounts to make references about L1 blocks.
+    fn asm_manifests_mmr(&self) -> &Mmr64;
+
     /// Gets the field for the epoch that the ASM considers to be valid.
     ///
     /// This is our perspective of the last block's ASM manifest we've accepted.
@@ -43,14 +48,8 @@ pub trait IL1ViewState {
 
     /// Sets the field for the epoch that the ASM considers to be finalized.
     ///
-    /// This is our perspective of the perspective of the last block's ASM
-    /// manifest we've accepted.
+    /// This is our perspective of the last block's ASM manifest we've accepted.
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment);
-
-    /// Gets the l1 references MMR.
-    ///
-    /// This is for the accounts to make references about L1 blocks.
-    fn l1_references(&self) -> &Mmr64;
 
     /// Gets the total OL ledger balance.
     fn total_ledger_balance(&self) -> BitcoinAmount;

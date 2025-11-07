@@ -3,6 +3,7 @@
 #![expect(unused, reason = "in development")] // in-development
 
 mod accumulators;
+mod ledger;
 mod messages;
 mod outputs;
 mod proof_interface;
@@ -10,6 +11,7 @@ mod state;
 mod update;
 
 pub use accumulators::*;
+pub use ledger::LedgerInterface;
 pub use messages::*;
 pub use outputs::*;
 pub use proof_interface::UpdateProofPubParams;

@@ -30,14 +30,12 @@ mod account;
 mod coin;
 mod global_state;
 mod l1vs;
-mod ledger;
 mod state_accessor;
 
 pub use account::{AccountTypeState, IAccountState, ISnarkAccountState, ISnarkAccountStateExt};
 pub use coin::Coin;
 pub use global_state::IGlobalState;
 pub use l1vs::IL1ViewState;
-pub use ledger::LedgerInterface;
 pub use state_accessor::StateAccessor;
 
 // transitional crap

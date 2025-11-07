@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use strata_ledger_types::LedgerInterface;
+use strata_snark_acct_types::LedgerInterface;
 
 use crate::VerifiedUpdate;
 
