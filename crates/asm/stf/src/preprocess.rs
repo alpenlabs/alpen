@@ -82,14 +82,10 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     );
     spec.call_subprotocols(&mut pre_process_stage);
 
-    // 5. Flatten the grouped transactions back into a single collection.
-    // The grouping was needed for per-subprotocol processing, but the output needs a flat list.
-    let relevant_txs: Vec<_> = grouped_relevant_txs.into_values().flatten().collect();
-
-    // 6. Export auxiliary requests collected during pre-processing.
+    // 5. Export auxiliary requests collected during pre-processing.
     // These requests will be fulfilled before running the main ASM state transition.
     let output = AsmPreProcessOutput {
-        txs: relevant_txs,
+        txs: grouped_relevant_txs,
         aux_requests: aux_req_dest,
     };
 

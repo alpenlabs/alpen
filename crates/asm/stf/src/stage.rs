@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AuxPayload, AuxRequest, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AuxData, AuxRequests, Stage, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
@@ -16,7 +16,7 @@ pub(crate) struct PreProcessStage<'c> {
     tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
 
     /// Aux requests table we write requests into.
-    aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequest>,
+    aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequests>,
 }
 
 impl<'c> PreProcessStage<'c> {
@@ -24,7 +24,7 @@ impl<'c> PreProcessStage<'c> {
         manager: &'c mut SubprotoManager,
         anchor_state: &'c AnchorState,
         tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequest>,
+        aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequests>,
     ) -> Self {
         Self {
             manager,
@@ -47,9 +47,7 @@ impl Stage for PreProcessStage<'_> {
             .manager
             .invoke_pre_process_txs::<S>(txs, self.anchor_state);
 
-        if let Some(req) = req {
-            self.aux_requests.insert(S::ID, req);
-        }
+        self.aux_requests.insert(S::ID, req);
     }
 }
 
@@ -58,7 +56,7 @@ pub(crate) struct ProcessStage<'c> {
     manager: &'c mut SubprotoManager,
     anchor_state: &'c AnchorState,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-    aux_inputs: &'c BTreeMap<SubprotocolId, AuxPayload>,
+    aux_inputs: &'c BTreeMap<SubprotocolId, AuxData>,
 }
 
 impl<'c> ProcessStage<'c> {
@@ -66,7 +64,7 @@ impl<'c> ProcessStage<'c> {
         manager: &'c mut SubprotoManager,
         anchor_state: &'c AnchorState,
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_inputs: &'c BTreeMap<SubprotocolId, AuxPayload>,
+        aux_inputs: &'c BTreeMap<SubprotocolId, AuxData>,
     ) -> Self {
         Self {
             manager,
@@ -89,11 +87,10 @@ impl Stage for ProcessStage<'_> {
         let aux_input_data = self
             .aux_inputs
             .get(&S::ID)
-            .map(|a| a.data())
-            .unwrap_or_default();
+            .expect("provide empty data if necessary");
 
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, aux_input_data);
+            .invoke_process_txs::<S>(txs, self.anchor_state, aux_input_data.clone());
     }
 }
 
