@@ -10,7 +10,7 @@ use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use crate::{
     errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
-        assignment::{AssignmentEntry, AssignmentTable},
+        assignment::AssignmentTable,
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
@@ -49,9 +49,6 @@ pub struct BridgeV1State {
     /// The amount of bitcoin expected to be locked in the N/N multisig.
     denomination: BitcoinAmount,
 
-    /// The duration (in blocks) to fulfill assignment.
-    fulfillment_duration: u64,
-
     /// Amount the operator can take as fees for processing withdrawal.
     operator_fee: BitcoinAmount,
 }
@@ -76,9 +73,8 @@ impl BridgeV1State {
         Self {
             operators,
             deposits: DepositsTable::new_empty(),
-            assignments: AssignmentTable::new_empty(),
+            assignments: AssignmentTable::new(config.deadline_duration),
             denomination: config.denomination,
-            fulfillment_duration: config.deadline_duration,
             operator_fee: config.operator_fee,
         }
     }
@@ -96,11 +92,6 @@ impl BridgeV1State {
     /// Returns a reference to the assignments table.
     pub fn assignments(&self) -> &AssignmentTable {
         &self.assignments
-    }
-
-    /// Returns the duration for assignment fulfillment.
-    pub fn fulfillment_duration(&self) -> u64 {
-        self.fulfillment_duration
     }
 
     /// Validates a deposit transaction and info against bridge state requirements.
@@ -199,33 +190,23 @@ impl BridgeV1State {
         Ok(())
     }
 
-    /// Creates a withdrawal assignment by selecting an unassigned deposit UTXO and assigning it to
-    /// an operator.
+    /// Adds a new withdrawal assignment to the assignments table.
     ///
-    /// This function handles incoming withdrawal commands by:
-    /// 1. Finding a deposit UTXO that has not been assigned yet
-    /// 2. Randomly selecting an operator from the current multisig set that is also a notary
-    ///    operator for that deposit UTXO
-    /// 3. Creating an assignment linking the deposit UTXO to the selected operator with a deadline
-    ///    calculated from the current block height plus the configured deadline duration
+    /// This retrieves the oldest unassigned deposit UTXO, validates that its amount matches
+    /// the withdrawal amount, and creates a withdrawal command with the configured operator fee.
+    /// The assignment is then added to the table with operators randomly selected from the
+    /// current multisig set.
     ///
     /// # Parameters
     ///
-    /// - `withdrawal_cmd` - The withdrawal command specifying outputs and amounts
-    /// - `l1_block_id` - The L1 block ID used as seed for random operator selection
-    /// - `current_block_height` - The current Bitcoin block height for deadline calculation
+    /// - `withdrawal_output` - The withdrawal output specifying destination and amount
+    /// - `l1_block` - The L1 block commitment used for operator selection and deadline calculation
     ///
     /// # Returns
     ///
-    /// - `Ok(())` - If the withdrawal assignment was successfully created
-    /// - `Err(WithdrawalCommandError)` - If no suitable deposit/operator combination could be found
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - No unassigned deposit UTXOs are available
-    /// - No current multisig operators are notary operators for any unassigned deposit
-    /// - The deposit UTXO for the unassigned index is not found
+    /// - `Ok(())` - If the withdrawal assignment was successfully added
+    /// - `Err(WithdrawalCommandError)` - If no unassigned deposits, amounts mismatch, or adding new
+    ///   assignment fails
     pub fn create_withdrawal_assignment(
         &mut self,
         withdrawal_output: &WithdrawOutput,
@@ -237,10 +218,6 @@ impl BridgeV1State {
             .remove_oldest_deposit()
             .ok_or(WithdrawalCommandError::NoUnassignedDeposits)?;
 
-        // Create assignment with deadline calculated from current block height + deadline duration
-        let fulfillment_deadline =
-            l1_block.height().to_consensus_u32() as u64 + self.fulfillment_duration();
-
         if deposit.amt() != withdrawal_output.amt() {
             return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch(
                 Mismatch {
@@ -251,17 +228,13 @@ impl BridgeV1State {
         }
 
         let withdrawal_cmd = WithdrawalCommand::new(withdrawal_output.clone(), self.operator_fee);
-        let entry = AssignmentEntry::create_with_random_assignment(
+
+        self.assignments.add_new_assignment(
             deposit,
             withdrawal_cmd,
-            fulfillment_deadline,
-            self.operators().current_multisig(),
-            *l1_block.blkid(),
-        )?;
-
-        self.assignments.insert(entry);
-
-        Ok(())
+            self.operators.current_multisig(),
+            l1_block,
+        )
     }
 
     /// Processes all expired assignments by reassigning them to new operators.
@@ -288,19 +261,10 @@ impl BridgeV1State {
         &mut self,
         current_block: &L1BlockCommitment,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
-        let current_block_height = current_block.height_u64();
-        let l1_block_id = current_block.blkid();
-
-        // Reassign with new deadline
-        let new_deadline =
-            current_block.height().to_consensus_u32() as u64 + self.fulfillment_duration();
-
         self.assignments.reassign_expired_assignments(
             self.operator_fee,
-            current_block_height,
-            new_deadline,
             self.operators.current_multisig(),
-            *l1_block_id,
+            current_block,
         )
     }
 
@@ -451,7 +415,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::state::{config::BridgeV1Config, withdrawal::WithdrawOutput};
+    use crate::state::{
+        assignment::AssignmentEntry, config::BridgeV1Config, withdrawal::WithdrawOutput,
+    };
 
     /// Helper function to create test operator keys
     ///
@@ -899,54 +865,5 @@ mod tests {
         if let WithdrawalValidationError::NoAssignmentFound { deposit_idx } = err {
             assert_eq!(deposit_idx, withdrawal_info.deposit_idx);
         }
-    }
-
-    /// Test that reassigning an expired assignment increases the fulfillment_deadline.
-    ///
-    /// This test verifies that when a deposit assignment expires and is reassigned,
-    /// the new fulfillment_deadline is set to current_height + deadline_duration.
-    #[test]
-    fn test_reassign_expired_assignments_increases_deadline() {
-        let (mut bridge_state, privkeys) = create_test_state();
-        let mut arb = ArbitraryGenerator::new();
-
-        // Add a single deposit and create assignment
-        add_deposits_and_assignments(&mut bridge_state, 1, &privkeys);
-
-        // Get the assignment
-        let assignment = bridge_state
-            .assignments()
-            .assignments()
-            .first()
-            .unwrap()
-            .clone();
-        let deposit_idx = assignment.deposit_idx();
-        let original_deadline = assignment.fulfillment_deadline();
-
-        // Set current height to after the original deadline to make it expired
-        let current_height = original_deadline + 50;
-        let current_block_id: Buf32 = arb.generate();
-        let current_block =
-            L1BlockCommitment::from_height_u64(current_height, current_block_id.into()).unwrap();
-
-        // Verify the assignment was reassigned
-        let reassigned_indices = bridge_state
-            .reassign_expired_assignments(&current_block)
-            .unwrap();
-        assert_eq!(reassigned_indices.len(), 1);
-        assert!(reassigned_indices.contains(&deposit_idx));
-
-        // Verify the new deadline = current_height + deadline_duration
-        let assignment_after = bridge_state
-            .assignments()
-            .get_assignment(deposit_idx)
-            .expect("Assignment should still exist");
-
-        let expected_new_deadline = current_height + bridge_state.fulfillment_duration();
-        assert_eq!(
-            assignment_after.fulfillment_deadline(),
-            expected_new_deadline,
-            "New deadline should be current_height + deadline_duration"
-        );
     }
 }

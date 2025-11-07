@@ -12,6 +12,7 @@ use rand_chacha::{
 };
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::{
+    L1BlockCommitment,
     buf::Buf32,
     l1::{BitcoinAmount, BitcoinBlockHeight, BitcoinTxid, L1BlockId},
     sorted_vec::SortedVec,
@@ -316,13 +317,17 @@ pub struct AssignmentTable {
     ///
     /// **Invariant**: MUST be sorted by `AssignmentEntry::deposit_idx` field.
     assignments: SortedVec<AssignmentEntry>,
+
+    /// The duration (in blocks) to fulfill assignment.
+    fulfillment_duration: u64,
 }
 
 impl AssignmentTable {
     /// Creates a new empty assignment table with no assignments
-    pub fn new_empty() -> Self {
+    pub fn new(fulfillment_duration: u64) -> Self {
         Self {
             assignments: SortedVec::new_empty(),
+            fulfillment_duration,
         }
     }
 
@@ -414,33 +419,17 @@ impl AssignmentTable {
     /// - `Ok(Vec<u32>)` - Vector of deposit indices that were successfully reassigned
     /// - `Err(WithdrawalCommandError)` - If any reassignment failed due to lack of eligible
     ///   operators
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let operator_fee = BitcoinAmount::from_sat(10_000);
-    /// let current_height = BitcoinBlockHeight::from(1000);
-    /// let new_deadline = BitcoinBlockHeight::from(1144);
-    /// let active_operators = OperatorBitmap::new_with_size(3, true);
-    /// let seed = L1BlockId::from([0u8; 32]);
-    ///
-    /// let reassigned = table.reassign_expired_assignments(
-    ///     operator_fee,
-    ///     current_height,
-    ///     new_deadline,
-    ///     &active_operators,
-    ///     seed
-    /// )?;
-    /// ```
     pub fn reassign_expired_assignments(
         &mut self,
         operator_fee: BitcoinAmount,
-        current_height: BitcoinBlockHeight,
-        new_deadline: u64,
         current_active_operators: &OperatorBitmap,
-        seed: L1BlockId,
+        l1_block: &L1BlockCommitment,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
         let mut reassigned_withdrawals = Vec::new();
+
+        let current_height = l1_block.height_u64();
+        let seed = *l1_block.blkid();
+        let new_deadline = self.fulfillment_duration + current_height;
 
         // Using iter_mut since we're only modifying non-sorting fields
         for assignment in self
@@ -453,6 +442,46 @@ impl AssignmentTable {
         }
 
         Ok(reassigned_withdrawals)
+    }
+
+    /// Creates and adds a new withdrawal assignment.
+    ///
+    /// This creates a new assignment by randomly selecting operators from the current active set
+    /// and calculating the fulfillment deadline based on the current L1 block height.
+    ///
+    /// # Arguments
+    ///
+    /// * `deposit_entry` - The deposit that will be used to fulfill this withdrawal
+    /// * `withdrawal_cmd` - The withdrawal command to be assigned
+    /// * `current_active_operators` - Bitmap of currently active operators eligible for assignment
+    /// * `l1_block` - The L1 block commitment used to anchor the assignment and calculate the
+    ///   deadline
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the assignment was created and added successfully, or an error if
+    /// the assignment creation failed (e.g., no operators available).
+    pub fn add_new_assignment(
+        &mut self,
+        deposit_entry: DepositEntry,
+        withdrawal_cmd: WithdrawalCommand,
+        current_active_operators: &OperatorBitmap,
+        l1_block: &L1BlockCommitment,
+    ) -> Result<(), WithdrawalCommandError> {
+        // Create assignment with deadline calculated from current block height + deadline duration
+        let fulfillment_deadline =
+            l1_block.height().to_consensus_u32() as u64 + self.fulfillment_duration;
+
+        let entry = AssignmentEntry::create_with_random_assignment(
+            deposit_entry,
+            withdrawal_cmd,
+            fulfillment_deadline,
+            current_active_operators,
+            *l1_block.blkid(),
+        )?;
+
+        self.assignments.insert(entry);
+        Ok(())
     }
 }
 
@@ -662,7 +691,7 @@ mod tests {
 
     #[test]
     fn test_assignment_table_basic_operations() {
-        let mut table = AssignmentTable::new_empty();
+        let mut table = AssignmentTable::new(100);
         assert!(table.is_empty());
         assert_eq!(table.len(), 0);
 
@@ -703,10 +732,11 @@ mod tests {
 
     #[test]
     fn test_reassign_expired_assignments() {
-        let mut table = AssignmentTable::new_empty();
+        let mut table = AssignmentTable::new(100);
         let mut arb = ArbitraryGenerator::new();
 
         // Create test data
+        let l1_block: L1BlockCommitment = arb.generate();
         let current_height: BitcoinBlockHeight = 150;
         let seed: L1BlockId = arb.generate();
         let new_operator_fee: BitcoinAmount = arb.generate();
@@ -770,10 +800,8 @@ mod tests {
         let new_deadline: BitcoinBlockHeight = current_height + 144; // New absolute deadline
         let result = table.reassign_expired_assignments(
             new_operator_fee,
-            current_height,
-            new_deadline,
             &current_active_operators,
-            seed,
+            &l1_block,
         );
 
         assert!(result.is_ok(), "Reassignment should succeed");
