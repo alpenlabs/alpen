@@ -121,6 +121,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         genesis::init_client_state(&params, &storage)?;
     }
 
+    info!("resolved params: {:?}", params);
     info!("init finished, starting main tasks");
 
     let ctx = start_core_tasks(

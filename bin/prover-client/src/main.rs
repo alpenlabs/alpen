@@ -17,7 +17,7 @@ use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
 use strata_sp1_guest_builder as _;
 use task_tracker::TaskTracker;
 use tokio::{spawn, sync::Mutex};
-use tracing::debug;
+use tracing::{debug, info};
 #[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
 
@@ -60,6 +60,8 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     let rollup_params = args
         .resolve_and_validate_rollup_params()
         .context("Failed to resolve and validate rollup parameters")?;
+
+    info!("Resolved rollup params: {:?}", rollup_params);
 
     let el_client = HttpClientBuilder::default()
         .build(config.get_reth_rpc_url())
