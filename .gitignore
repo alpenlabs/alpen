@@ -273,3 +273,6 @@ provers/sp1/proofs/
 
 # Docker env
 docker/prover-client/prover-client.env
+
+# AI Agent's context files local to developers
+CONTEXT_*.md
