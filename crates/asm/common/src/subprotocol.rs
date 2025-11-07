@@ -127,7 +127,7 @@ pub trait Subprotocol: 'static {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_provider: &AuxDataProvider,
+        aux_provider: &AuxDataProvider<'_>,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );
@@ -189,7 +189,7 @@ pub trait SubprotoHandler {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_state: &AnchorState,
-        aux_input_data: AuxData,
+        aux_input_data: &AuxData,
     );
 
     /// Accepts a message.  This is called while processing other subprotocols.

@@ -16,13 +16,13 @@ use crate::{
 /// subprotocols. Verification methods vary by request type (e.g., MMR proofs for
 /// manifest leaves, txid validation for Bitcoin transactions).
 #[derive(Debug)]
-pub struct AuxDataProvider {
-    data: AuxData,
+pub struct AuxDataProvider<'a> {
+    data: &'a AuxData,
 }
 
-impl AuxDataProvider {
+impl<'a> AuxDataProvider<'a> {
     /// Creates a new provider from separate response maps.
-    pub fn new(data: AuxData) -> Self {
+    pub fn new(data: &'a AuxData) -> Self {
         Self { data }
     }
 
@@ -141,7 +141,7 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let compact = mmr.into();
 
-        let provider = AuxDataProvider::new(aux_data);
+        let provider = AuxDataProvider::new(&aux_data);
 
         // Should return error for non-existent tx
         let req = ManifestLeavesRequest {
@@ -171,7 +171,7 @@ mod tests {
             manifest_leaves,
             bitcoin_txs,
         };
-        let provider = AuxDataProvider::new(data);
+        let provider = AuxDataProvider::new(&data);
 
         // Requesting manifest leaves but only bitcoin tx exists
         let req = ManifestLeavesRequest {
@@ -200,7 +200,7 @@ mod tests {
             manifest_leaves,
             bitcoin_txs,
         };
-        let provider = AuxDataProvider::new(data);
+        let provider = AuxDataProvider::new(&data);
 
         // Should successfully return the bitcoin tx
         let req = BitcoinTxRequest { txid };

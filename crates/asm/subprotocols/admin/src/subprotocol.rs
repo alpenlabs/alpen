@@ -53,7 +53,7 @@ impl Subprotocol for AdministrationSubprotocol {
         state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_input: &AuxDataProvider,
+        _aux_input: &AuxDataProvider<'_>,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     ) {

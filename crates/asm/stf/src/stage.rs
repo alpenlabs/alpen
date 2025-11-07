@@ -84,13 +84,13 @@ impl Stage for ProcessStage<'_> {
             .unwrap_or(&[]);
 
         // Extract the auxiliary input for this subprotocol from the bundle
-        let aux_input_data = self
+        let aux_data = self
             .aux_inputs
             .get(&S::ID)
             .expect("provide empty data if necessary");
 
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, aux_input_data.clone());
+            .invoke_process_txs::<S>(txs, self.anchor_state, aux_data);
     }
 }
 

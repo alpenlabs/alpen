@@ -57,7 +57,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_pre: &AnchorState,
-        aux_data: AuxData,
+        aux_data: &AuxData,
     ) {
         let relayer = relayer
             .as_mut_any()
@@ -138,7 +138,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_data: AuxData,
+        aux_data: &AuxData,
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
