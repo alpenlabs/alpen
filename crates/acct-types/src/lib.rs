@@ -3,11 +3,11 @@
 // Re-export for macro use
 #[doc(hidden)]
 pub use strata_codec;
+#[doc(hidden)]
+pub use tree_hash;
 
-mod amount;
 mod constants;
 mod errors;
-mod id;
 mod macros;
 mod messages;
 mod mmr;
@@ -15,12 +15,29 @@ mod state;
 mod util;
 mod varint_vec;
 
-pub use amount::BitcoinAmount;
+// Include generated SSZ types from build.rs output
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
 pub use constants::SYSTEM_RESERVED_ACCTS;
 pub use errors::{AcctError, AcctResult};
-pub use id::{AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SubjectId};
-pub use messages::{MsgPayload, ReceivedMessage, SentMessage};
 pub use mmr::{CompactMmr64, Hash, MerkleProof, Mmr64, RawMerkleProof, StrataHasher};
-pub use state::{AccountState, AccountTypeState, AcctStateSummary, IntrinsicAccountState};
+pub use ssz_generated::ssz::{
+    self as ssz,
+    messages::{MsgPayload, ReceivedMessage, SentMessage, SentMessageRef},
+    state::{AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState},
+};
+pub use state::AccountTypeState;
+pub use strata_btc_types::BitcoinAmount;
+pub use strata_identifiers::{
+    AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SubjectId,
+};
 pub use util::compute_codec_sha256;
 pub use varint_vec::{VARINT_MAX, VarVec};

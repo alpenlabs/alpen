@@ -1,0 +1,21 @@
+import strata_btc_types
+import strata_identifiers
+
+MAX_MSG_PAYLOAD_DATA_BYTES = 1 << 20
+
+### Contents of a message, i.e. the data and sent value payload components.
+class MsgPayload(Container):
+    value: strata_btc_types.BitcoinAmount
+    data: List[uint8, MAX_MSG_PAYLOAD_DATA_BYTES]
+
+### Describes a message we're getting ready to send.
+class SentMessage(Container):
+    ### Destination orchestration layer account ID.
+    dest: strata_identifiers.AccountId
+    ### Message payload.
+    payload: MsgPayload
+
+### Describes a message being received by an account.
+class ReceivedMessage(Container):
+    source: strata_identifiers.AccountId
+    payload: MsgPayload

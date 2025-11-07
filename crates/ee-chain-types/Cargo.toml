@@ -6,5 +6,18 @@ edition = "2024"
 [dependencies]
 strata-acct-types.workspace = true
 
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_types.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+strata-test-utils-ssz.workspace = true
+
 [lints]
 workspace = true

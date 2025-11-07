@@ -1,0 +1,12 @@
+[package]
+name = "strata-test-utils-ssz"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+proptest.workspace = true
+ssz.workspace = true
+tree_hash.workspace = true
