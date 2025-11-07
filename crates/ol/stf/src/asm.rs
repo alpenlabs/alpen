@@ -46,7 +46,7 @@ fn process_deposit(
 
     // Construct message payload.
     let amt = BitcoinAmount::from_sat(dep.amount);
-    let msg_payload = MsgPayload::new(amt, dep.as_raw_msg_bytes());
+    let msg_payload = MsgPayload::new(amt, dep.to_raw_bytes());
 
     // Send deposit message from bridge
     send_message(

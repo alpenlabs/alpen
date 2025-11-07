@@ -23,7 +23,7 @@ impl BlockExecContext {
         }
     }
 
-    pub fn new_with_capacity(
+    pub fn new_with_logs_capacity(
         prev_header: OLBlockHeader,
         params: RollupParams,
         capacity: usize,
@@ -43,23 +43,18 @@ impl BlockExecContext {
         &self.params
     }
 
+    /// Consumes the context, returning the collected logs.
     pub fn into_logs(self) -> Vec<OLLog> {
         self.logs.into_inner()
     }
 
     /// Emits a log entry.
-    ///
-    /// # Panics
-    /// Panics if logs are already borrowed mutably (should not occur in normal execution).
     pub fn emit_log(&self, log: OLLog) {
         self.logs.borrow_mut().push(log)
     }
 
     /// Emits multiple log entries.
-    ///
-    /// # Panics
-    /// Panics if logs are already borrowed mutably (should not occur in normal execution).
-    pub fn emit_logs(&self, logs: Vec<OLLog>) {
+    pub fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
         self.logs.borrow_mut().extend(logs)
     }
 }

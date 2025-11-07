@@ -87,7 +87,7 @@ pub trait ISnarkAccountState: Sized {
     /// against the state.
     fn inbox_mmr(&self) -> &Mmr64;
 
-    /// Gets the proof of the given `MessageEntry` if exists.
+    /// Gets the proof of the given [`MessageEntry`] if exists.
     fn get_message_proof(
         &self,
         msg: &MessageEntry,

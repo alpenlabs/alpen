@@ -19,7 +19,7 @@ pub(crate) fn process_log(
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
     let Some(type_id_raw) = log.ty() else {
-        warn!("logs without a type ID?");
+        debug!("logs without a type ID?");
         return Ok(());
     };
     let type_id = LogTypeId::from_type_id_raw(type_id_raw);

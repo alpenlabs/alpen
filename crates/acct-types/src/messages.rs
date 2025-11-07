@@ -52,11 +52,11 @@ impl MsgPayload {
 
 impl Codec for MsgPayload {
     fn encode(&self, encoder: &mut impl Encoder) -> Result<(), CodecError> {
-        encoder.write_buf(&self.value.to_be_bytes())?;
+        self.value.encode(encoder)?;
 
         // encode data length
         let len = self.data.len() as u64;
-        encoder.write_buf(&len.to_be_bytes())?;
+        len.encode(encoder)?;
 
         // encode data
         encoder.write_buf(&self.data)?;
@@ -64,14 +64,14 @@ impl Codec for MsgPayload {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let amt_raw: [u8; 8] = dec.read_arr()?;
-        let amt = BitcoinAmount::from_sat(u64::from_be_bytes(amt_raw));
+        let amt_raw = u64::decode(dec)?;
+        let amt = BitcoinAmount::from_sat(amt_raw);
 
         // decode data length
-        let len = u64::from_be_bytes(dec.read_arr::<8>()?);
+        let len = u64::decode(dec)?;
 
         // decode data
-        let mut data = Vec::with_capacity(len as usize);
+        let mut data = vec![0u8; len as usize];
         dec.read_buf(&mut data)?;
 
         Ok(Self { value: amt, data })
