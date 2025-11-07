@@ -248,11 +248,8 @@ impl BridgeV1State {
         &mut self,
         current_block: &L1BlockCommitment,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
-        self.assignments.reassign_expired_assignments(
-            self.operator_fee,
-            self.operators.current_multisig(),
-            current_block,
-        )
+        self.assignments
+            .reassign_expired_assignments(self.operators.current_multisig(), current_block)
     }
 
     /// Validates the parsed withdrawal fulfillment information against assignment information.
