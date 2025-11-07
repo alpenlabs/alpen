@@ -350,7 +350,9 @@ reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth", tag = "v1
 reth-storage-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", default-features = false }
 reth-tasks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
-reth-trie = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", features = ["serde"] }
+reth-trie = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", features = [
+  "serde",
+] }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", default-features = false }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 
