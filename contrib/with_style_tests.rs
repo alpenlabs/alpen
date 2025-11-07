@@ -4,7 +4,9 @@
 
 // Basic struct/type/enum declarations with "With" connector
 struct FoodWithDrink {}
+
 type DataWithMetadata = (String, i32);
+
 enum OptionWithDefault {
     Some(String),
     None,
@@ -12,10 +14,12 @@ enum OptionWithDefault {
 
 // Generic type declarations
 type FooWithBar<F, B> = (F, B);
+
 struct DataWithMeta<T> {
     data: T,
     meta: String,
 }
+
 enum ResultWithError<T, E> {
     Ok(T),
     Err(E),
@@ -23,9 +27,13 @@ enum ResultWithError<T, E> {
 
 // Various visibility specifiers
 pub struct PublicWithData {}
+
 pub(crate) type CrateWithInfo = String;
+
 pub(super) enum SuperWithOption { A, B }
+
 pub(in crate::module) struct ModuleWithVisibility {}
+
 pub(self) type SelfWithOther = i32;
 
 // Edge cases that should be caught
