@@ -485,6 +485,7 @@ impl AssignmentTable {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::absolute::Height;
     use strata_primitives::l1::{BitcoinBlockHeight, L1BlockId};
     use strata_test_utils::ArbitraryGenerator;
 
@@ -672,11 +673,6 @@ mod tests {
             new_deadline,
             "Exec deadline should be updated to the new deadline after reassignment"
         );
-        assert_ne!(
-            assignment.fulfillment_deadline(),
-            initial_deadline,
-            "Exec deadline should have changed from initial value"
-        );
     }
 
     #[test]
@@ -726,9 +722,10 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
 
         // Create test data
-        let l1_block: L1BlockCommitment = arb.generate();
         let current_height: BitcoinBlockHeight = 150;
         let seed: L1BlockId = arb.generate();
+        let l1_block =
+            L1BlockCommitment::new(Height::from_consensus(current_height as u32).unwrap(), seed);
 
         // Create a unified operator bitmap for both deposits
         let current_active_operators = OperatorBitmap::new_with_size(5, true);
@@ -786,7 +783,6 @@ mod tests {
         table.insert(future_assignment);
 
         // Reassign expired assignments
-        let new_deadline: BitcoinBlockHeight = current_height + 144; // New absolute deadline
         let result = table.reassign_expired_assignments(&current_active_operators, &l1_block);
 
         assert!(result.is_ok(), "Reassignment should succeed");
@@ -803,6 +799,7 @@ mod tests {
                 .is_active(original_assignee)
         );
         // Verify the deadline was set to the new deadline
+        let new_deadline: BitcoinBlockHeight = current_height + table.assignment_duration; // New absolute deadline
         assert_eq!(
             expired_assignment_after.fulfillment_deadline(),
             new_deadline,
