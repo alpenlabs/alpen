@@ -54,7 +54,7 @@ pub enum StfError {
     #[error("Epoch overflow: current epoch {cur_epoch}")]
     EpochOverflow { cur_epoch: Epoch },
 
-    #[error("Unsupported transfer to {0}")]
+    #[error("Unsupported transfer to {0:?}")]
     UnsupportedTransferTo(AccountId),
 
     #[error("codec error: {0}")]
