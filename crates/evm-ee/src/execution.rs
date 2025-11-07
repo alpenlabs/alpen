@@ -5,20 +5,26 @@
 
 use std::sync::Arc;
 
-use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
+use alpen_reth_evm::evm::AlpenEvmFactory;
 use reth_chainspec::ChainSpec;
-use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome, Executor};
+use reth_evm::execute::{BasicBlockExecutor, Executor};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
-use reth_trie::KeccakKeyHasher;
 use revm::database::WrapDatabaseRef;
-use rsp_client_executor::{BlockValidator, io::TrieDB};
+use rsp_client_executor::BlockValidator;
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlockOutput, ExecHeader, ExecPayload, ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
-use crate::types::{EvmBlock, EvmPartialState, EvmWriteBatch};
+use crate::{
+    types::{EvmBlock, EvmPartialState, EvmWriteBatch},
+    utils::{
+        accumulate_logs_bloom, build_and_recover_block, collect_withdrawal_intents_from_execution,
+        compute_hashed_post_state,
+    },
+};
 
 /// EVM Execution Environment for Alpen.
 ///
@@ -26,14 +32,43 @@ use crate::types::{EvmBlock, EvmPartialState, EvmWriteBatch};
 /// of EVM blocks against sparse state using RSP and Reth.
 #[derive(Debug, Clone)]
 pub struct EvmExecutionEnvironment {
-    /// The chain specification (genesis, fork configuration, etc.)
-    chain_spec: Arc<ChainSpec>,
+    /// EVM configuration with AlpenEvmFactory (contains chain spec)
+    evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
 }
 
 impl EvmExecutionEnvironment {
     /// Creates a new EvmExecutionEnvironment with the given chain specification.
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        Self { chain_spec }
+        let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default());
+        Self { evm_config }
+    }
+
+    /// Converts withdrawal intents to messages sent to the bridge gateway account.
+    ///
+    /// Each withdrawal intent is encoded as a message containing:
+    /// - The withdrawal amount (as message value)
+    /// - The descriptor bytes + transaction ID (as message data)
+    fn convert_withdrawal_intents_to_messages(
+        withdrawal_intents: Vec<alpen_reth_primitives::WithdrawalIntent>,
+        outputs: &mut BlockOutputs,
+    ) {
+        for intent in withdrawal_intents {
+            // Encode withdrawal intent data: descriptor bytes + txid
+            let mut msg_data = Vec::new();
+            msg_data.extend_from_slice(&intent.destination.to_bytes());
+            msg_data.extend_from_slice(&intent.withdrawal_txid.0);
+
+            // FIXME: does this come from params.json???
+            // TODO: Define the actual bridge gateway account ID
+            // This should be a well-known account ID for the bridge gateway
+            // that handles withdrawal intents from the EVM to L1
+            let bridge_gateway_account = AccountId::from([0u8; 32]);
+
+            // Create message to bridge gateway with withdrawal amount and intent data
+            let payload = MsgPayload::new(BitcoinAmount::from_sat(intent.amt), msg_data);
+            let message = SentMessage::new(bridge_gateway_account, payload);
+            outputs.add_message(message);
+        }
     }
 }
 
@@ -49,133 +84,59 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // TODO: get feedbacks from Trey if this field can be unused in Eth context
         _inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
-        // Step 1: Create EVM config with AlpenEvmFactory
-        let evm_config =
-            EthEvmConfig::new_with_evm_factory(self.chain_spec.clone(), AlpenEvmFactory::default());
-
-        // Step 2: Prepare data for witness DB
-        // Build block_hashes map from ancestor headers (for BLOCKHASH opcode)
-        // Build bytecode_by_hash map from bytecodes (for contract execution)
-        use reth_primitives_traits::SealedHeader;
-        use revm_primitives::{B256, map::HashMap};
-
-        // First, seal the current block header and ancestor headers
-        let current_sealed = SealedHeader::seal_slow(exec_payload.header_intrinsics().clone());
-        let sealed_headers: Vec<SealedHeader> = std::iter::once(current_sealed)
-            .chain(
-                pre_state
-                    .ancestor_headers()
-                    .iter()
-                    .map(|h| SealedHeader::seal_slow(h.clone())),
-            )
-            .collect();
-
-        // Build block_hashes from sealed headers
-        let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
-        for i in 0..sealed_headers.len().saturating_sub(1) {
-            let child_header = &sealed_headers[i];
-            let parent_header = &sealed_headers[i + 1];
-            block_hashes.insert(parent_header.number, child_header.parent_hash);
-        }
-
-        // Build bytecode_by_hash from bytecodes
-        let bytecode_by_hash: HashMap<B256, &revm::state::Bytecode> = pre_state
-            .bytecodes()
-            .iter()
-            .map(|code| (code.hash_slow(), code))
-            .collect();
-
-        // Step 3: Initialize witness database from EthereumState
+        // Step 1: Prepare witness database from partial state
         let db = {
-            let trie_db = TrieDB::new(pre_state.ethereum_state(), block_hashes, bytecode_by_hash);
+            let trie_db = pre_state.prepare_witness_db(exec_payload.header_intrinsics());
             WrapDatabaseRef(trie_db)
         };
 
-        // Step 4: Create block executor
-        let block_executor = BasicBlockExecutor::new(evm_config, db);
+        // Step 2: Create block executor
+        let block_executor = BasicBlockExecutor::new(self.evm_config.clone(), db);
 
-        // Step 5: Build block from exec_payload and recover senders
-        let header = exec_payload.header_intrinsics().clone();
-        let body = exec_payload.body().body().clone();
+        // Step 3: Build block from exec_payload and recover senders
+        let block = build_and_recover_block(exec_payload)?;
 
-        // Build block using alloy_consensus types
-        use alloy_consensus::Block as AlloyBlock;
-        let alloy_block = AlloyBlock {
-            header: header.clone(),
-            body,
-        };
-
-        // Recover transaction senders from signatures
-        // Note: from_input_block() is just an identity function in RSP, so we skip it
-        use reth_primitives_traits::Block as RethBlockTrait;
-        let block = alloy_block
-            .try_into_recovered()
-            .map_err(|_| EnvError::InvalidBlock)?;
-
-        // Step 6: Validate header
+        // Step 4: Validate header
         EthPrimitives::validate_header(
             block.sealed_block().sealed_header(),
-            self.chain_spec.clone(),
+            (*self.evm_config.chain_spec()).clone(),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 7: Execute the block
+        // Step 6: Execute the block
         let execution_output = block_executor
             .execute(&block)
             .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 8: Validate block post-execution
+        // Step 7: Validate block post-execution
         EthPrimitives::validate_block_post_execution(
             &block,
-            self.chain_spec.clone(),
+            (*self.evm_config.chain_spec()).clone(),
             &execution_output,
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 9: Accumulate logs bloom
-        use alloy_consensus::TxReceipt;
-        use revm_primitives::alloy_primitives::Bloom;
-        let mut logs_bloom = Bloom::default();
-        execution_output.result.receipts.iter().for_each(|r| {
-            logs_bloom.accrue_bloom(&r.bloom());
-        });
+        // Step 8: Accumulate logs bloom
+        let logs_bloom = accumulate_logs_bloom(&execution_output.result.receipts);
 
-        // Step 10: Collect withdrawal intents
+        // Step 9: Collect withdrawal intents
         let transactions = block.into_transactions();
-        let executed_txns = transactions.iter();
-        let receipts_vec = execution_output.receipts.clone();
-        let receipts = receipts_vec.iter();
-        let tx_receipt_pairs = executed_txns.zip(receipts);
-        let _withdrawal_intents = collect_withdrawal_intents(tx_receipt_pairs).collect::<Vec<_>>();
+        let withdrawal_intents =
+            collect_withdrawal_intents_from_execution(transactions, &execution_output.receipts);
 
-        // Step 11: Convert execution outcome to HashedPostState
-        let block_number = header.number;
-        let executor_outcome = ExecutionOutcome::new(
-            execution_output.state,
-            vec![execution_output.result.receipts],
-            block_number,
-            vec![execution_output.result.requests],
-        );
-        let hashed_post_state = executor_outcome.hash_state_slow::<KeccakKeyHasher>();
+        // Step 10: Convert execution outcome to HashedPostState
+        let block_number = exec_payload.header_intrinsics().number;
+        let hashed_post_state = compute_hashed_post_state(&execution_output, block_number);
 
-        // Step 12: Compute state root
-        // Clone the pre-state, merge the hashed post state, and compute the new state root
-        let mut updated_state = pre_state.ethereum_state().clone();
-        updated_state.update(&hashed_post_state);
-        let state_root = updated_state.state_root();
+        // Step 11: Compute state root
+        let state_root = pre_state.compute_state_root_with_changes(&hashed_post_state);
 
-        // Step 13: Create WriteBatch with computed metadata
+        // Step 12: Create WriteBatch with computed metadata
         let write_batch = EvmWriteBatch::new(hashed_post_state, state_root.into(), logs_bloom);
 
-        // Step 14: Create BlockOutputs
-        // TODO: Convert withdrawal_intents to OutputTransfer
-        // WithdrawalIntent has Descriptor destination, OutputTransfer needs AccountId
-        // This conversion requires business logic to map Bitcoin descriptors to AccountIds
-        let outputs = BlockOutputs::new_empty();
-        // for intent in withdrawal_intents {
-        //     let account_id = convert_descriptor_to_account_id(&intent.destination)?;
-        //     outputs.add_transfer(OutputTransfer::new(account_id, intent.amt));
-        // }
+        // Step 13: Create BlockOutputs with withdrawal intent messages
+        let mut outputs = BlockOutputs::new_empty();
+        Self::convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
         Ok(ExecBlockOutput::new(write_batch, outputs))
     }
@@ -254,10 +215,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         wb: &Self::WriteBatch,
     ) -> EnvResult<()> {
         // Merge the HashedPostState into the EthereumState
-        // This follows the pattern from the reference process_block function from
-        // proofimpl-evm-ee-stf:
-        // input.parent_state.update(&hashed_post_state)
-        state.ethereum_state_mut().update(wb.hashed_post_state());
+        state.merge_write_batch(wb);
         Ok(())
     }
 }
