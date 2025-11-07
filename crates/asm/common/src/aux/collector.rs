@@ -2,9 +2,7 @@
 //!
 //! Collects auxiliary data requests from subprotocols during the pre-processing phase.
 
-use std::collections::BTreeMap;
-
-use crate::{BitcoinTxRequest, L1TxIndex, ManifestLeavesRequest};
+use crate::{BitcoinTxRequest, L1TxIndex, ManifestLeavesRequest, aux::data::AuxRequests};
 
 /// Collects auxiliary data requests keyed by transaction index.
 ///
@@ -14,8 +12,7 @@ use crate::{BitcoinTxRequest, L1TxIndex, ManifestLeavesRequest};
 /// `BitcoinTxRequest`).
 #[derive(Debug, Default)]
 pub struct AuxRequestCollector {
-    manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesRequest>,
-    bitcoin_txs: BTreeMap<L1TxIndex, BitcoinTxRequest>,
+    requests: AuxRequests,
 }
 
 impl AuxRequestCollector {
@@ -30,7 +27,12 @@ impl AuxRequestCollector {
     /// compact manifest MMR snapshot used for verification by the provider.
     pub fn request_manifest_leaves(&mut self, tx_index: L1TxIndex, req: ManifestLeavesRequest) {
         // Use the common insertion logic to enforce one-request-per-tx
-        if self.manifest_leaves.insert(tx_index, req).is_some() {
+        if self
+            .requests
+            .manifest_leaves
+            .insert(tx_index, req)
+            .is_some()
+        {
             panic!(
                 "duplicate auxiliary request for transaction index {}",
                 tx_index
@@ -40,12 +42,16 @@ impl AuxRequestCollector {
 
     /// Requests a raw Bitcoin transaction by its txid.
     pub fn request_bitcoin_tx(&mut self, tx_index: L1TxIndex, req: BitcoinTxRequest) {
-        if self.bitcoin_txs.insert(tx_index, req).is_some() {
+        if self.requests.bitcoin_txs.insert(tx_index, req).is_some() {
             panic!(
                 "duplicate auxiliary request for transaction index {}",
                 tx_index
             );
         }
+    }
+
+    pub fn into_requests(self) -> AuxRequests {
+        self.requests
     }
 }
 
@@ -57,8 +63,8 @@ mod tests {
     #[test]
     fn test_collector_basic() {
         let mut collector = AuxRequestCollector::new();
-        assert!(collector.manifest_leaves.is_empty());
-        assert!(collector.bitcoin_txs.is_empty());
+        assert!(collector.requests.manifest_leaves.is_empty());
+        assert!(collector.requests.bitcoin_txs.is_empty());
 
         let mmr = AsmMmr::new(16);
         let mmr_compact: AsmCompactMmr = mmr.into();
@@ -68,7 +74,7 @@ mod tests {
             manifest_mmr: mmr_compact.clone(),
         };
         collector.request_manifest_leaves(0, req0);
-        assert_eq!(collector.manifest_leaves.len(), 1);
+        assert_eq!(collector.requests.manifest_leaves.len(), 1);
 
         let req1 = ManifestLeavesRequest {
             start_height: 201,
@@ -76,10 +82,10 @@ mod tests {
             manifest_mmr: mmr_compact,
         };
         collector.request_manifest_leaves(1, req1);
-        assert_eq!(collector.manifest_leaves.len(), 2);
+        assert_eq!(collector.requests.manifest_leaves.len(), 2);
 
-        assert!(collector.manifest_leaves.contains_key(&0));
-        assert!(collector.manifest_leaves.contains_key(&1));
+        assert!(collector.requests.manifest_leaves.contains_key(&0));
+        assert!(collector.requests.manifest_leaves.contains_key(&1));
     }
 
     #[test]

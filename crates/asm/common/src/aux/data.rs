@@ -4,9 +4,17 @@
 //! the pre-processing phase, along with the response structures returned
 //! to subprotocols after verification.
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{AsmCompactMmr, AsmMerkleProof, Hash};
+use crate::{AsmCompactMmr, AsmMerkleProof, Hash, L1TxIndex};
+
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+pub struct AuxRequests {
+    pub manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesRequest>,
+    pub bitcoin_txs: BTreeMap<L1TxIndex, BitcoinTxRequest>,
+}
 
 /// Request for manifest leaves over an inclusive range.
 ///

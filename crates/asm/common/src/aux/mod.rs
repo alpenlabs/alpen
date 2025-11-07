@@ -48,7 +48,8 @@ mod provider;
 // Re-export main types
 pub use collector::AuxRequestCollector;
 pub use data::{
-    BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
+    AuxRequests, BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse,
+    ManifestLeavesWithProofs,
 };
 pub use errors::{AuxError, AuxResult, BitcoinTxError, ManifestLeavesError};
 pub use provider::AuxDataProvider;
