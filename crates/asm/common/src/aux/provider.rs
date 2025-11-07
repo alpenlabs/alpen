@@ -2,14 +2,11 @@
 //!
 //! Provides verified auxiliary data to subprotocols during the processing phase.
 
-use std::collections::BTreeMap;
-
 use bitcoin::{Transaction, hashes::Hash};
-use strata_btc_types::RawBitcoinTx;
 
 use crate::{
     AsmMmr, AuxError, AuxResult, BitcoinTxError, BitcoinTxRequest, L1TxIndex, ManifestLeavesError,
-    ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
+    ManifestLeavesRequest, ManifestLeavesResponse, aux::data::AuxData,
 };
 
 /// Provides verified auxiliary data to subprotocols during transaction processing.
@@ -20,22 +17,13 @@ use crate::{
 /// manifest leaves, txid validation for Bitcoin transactions).
 #[derive(Debug)]
 pub struct AuxDataProvider {
-    /// Map from transaction index to manifest leaves with proofs (unverified)
-    manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
-    /// Map from transaction index to Bitcoin transaction data
-    bitcoin_txs: BTreeMap<L1TxIndex, RawBitcoinTx>,
+    data: AuxData,
 }
 
 impl AuxDataProvider {
     /// Creates a new provider from separate response maps.
-    pub fn new(
-        manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
-        bitcoin_txs: BTreeMap<L1TxIndex, RawBitcoinTx>,
-    ) -> Self {
-        Self {
-            manifest_leaves,
-            bitcoin_txs,
-        }
+    pub fn new(data: AuxData) -> Self {
+        Self { data }
     }
 
     /// Gets and verifies manifest leaves for a transaction.
@@ -56,7 +44,7 @@ impl AuxDataProvider {
         tx_index: L1TxIndex,
         req: &ManifestLeavesRequest,
     ) -> AuxResult<ManifestLeavesResponse> {
-        let Some(response) = self.manifest_leaves.get(&tx_index) else {
+        let Some(response) = self.data.manifest_leaves.get(&tx_index) else {
             return Err(AuxError::MissingResponse { tx_index });
         };
 
@@ -110,6 +98,7 @@ impl AuxDataProvider {
         req: &BitcoinTxRequest,
     ) -> AuxResult<Transaction> {
         let raw_tx = self
+            .data
             .bitcoin_txs
             .get(&tx_index)
             .ok_or(AuxError::MissingResponse { tx_index })?;
@@ -133,6 +122,9 @@ impl AuxDataProvider {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use strata_btc_types::RawBitcoinTx;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -142,10 +134,14 @@ mod tests {
     fn test_provider_empty_responses() {
         let manifest_leaves = BTreeMap::new();
         let bitcoin_txs = BTreeMap::new();
+        let aux_data = AuxData {
+            manifest_leaves,
+            bitcoin_txs,
+        };
         let mmr = AsmMmr::new(16);
         let compact = mmr.into();
 
-        let provider = AuxDataProvider::new(manifest_leaves, bitcoin_txs);
+        let provider = AuxDataProvider::new(aux_data);
 
         // Should return error for non-existent tx
         let req = ManifestLeavesRequest {
@@ -171,7 +167,11 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let compact = mmr.into();
 
-        let provider = AuxDataProvider::new(manifest_leaves, bitcoin_txs);
+        let data = AuxData {
+            manifest_leaves,
+            bitcoin_txs,
+        };
+        let provider = AuxDataProvider::new(data);
 
         // Requesting manifest leaves but only bitcoin tx exists
         let req = ManifestLeavesRequest {
@@ -196,7 +196,11 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let _compact: AsmCompactMmr = mmr.into();
 
-        let provider = AuxDataProvider::new(manifest_leaves, bitcoin_txs);
+        let data = AuxData {
+            manifest_leaves,
+            bitcoin_txs,
+        };
+        let provider = AuxDataProvider::new(data);
 
         // Should successfully return the bitcoin tx
         let req = BitcoinTxRequest { txid };

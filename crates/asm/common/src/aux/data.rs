@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_btc_types::RawBitcoinTx;
 
 use crate::{AsmCompactMmr, AsmMerkleProof, Hash, L1TxIndex};
 
@@ -14,6 +15,20 @@ use crate::{AsmCompactMmr, AsmMerkleProof, Hash, L1TxIndex};
 pub struct AuxRequests {
     pub manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesRequest>,
     pub bitcoin_txs: BTreeMap<L1TxIndex, BitcoinTxRequest>,
+}
+
+/// Provides verified auxiliary data to subprotocols during transaction processing.
+///
+/// The provider is initialized with auxiliary responses from workers and verifies
+/// them based on information contained in each request before serving them to
+/// subprotocols. Verification methods vary by request type (e.g., MMR proofs for
+/// manifest leaves, txid validation for Bitcoin transactions).
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct AuxData {
+    /// Map from transaction index to manifest leaves with proofs (unverified)
+    pub manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
+    /// Map from transaction index to Bitcoin transaction data
+    pub bitcoin_txs: BTreeMap<L1TxIndex, RawBitcoinTx>,
 }
 
 /// Request for manifest leaves over an inclusive range.
@@ -56,7 +71,7 @@ pub struct ManifestLeavesResponse {
 /// Note: For now we include a separate Merkle proof for each leaf. Since the
 /// leaves are contiguous within the range, this could be optimized to use a
 /// single proof (or a more compact multi-proof) covering all leaves.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ManifestLeavesWithProofs {
     /// One manifest hash per block in range, ordered by height
     pub leaves: Vec<Hash>,
