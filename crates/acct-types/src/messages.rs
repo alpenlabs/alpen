@@ -1,5 +1,7 @@
 //! Account message types.
 
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
+
 use crate::{
     AccountId, BitcoinAmount,
     ssz_generated::ssz::messages::{MsgPayload, ReceivedMessage, SentMessage},
@@ -74,7 +76,10 @@ impl Codec for MsgPayload {
         let mut data = vec![0u8; len as usize];
         dec.read_buf(&mut data)?;
 
-        Ok(Self { value: amt, data })
+        Ok(Self {
+            value: amt,
+            data: data.into(),
+        })
     }
 }
 
@@ -82,9 +87,11 @@ impl Codec for MsgPayload {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
+    use strata_codec::{BufDecoder, Codec};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
+    use crate::MsgPayload;
 
     mod msg_payload {
         use super::*;
@@ -172,6 +179,23 @@ mod tests {
             let encoded = msg.as_ssz_bytes();
             let decoded = ReceivedMessage::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(msg.source(), decoded.source());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_msg_payload_codec_roundtrip(
+            value in 0u64..u64::MAX,
+            data in prop::collection::vec(any::<u8>(), 0..1000)
+        ) {
+            let msg = MsgPayload::new(value.into(), data);
+            let mut buf = vec![];
+
+            msg.encode(&mut buf).unwrap();
+
+            let mut dec = BufDecoder::new(buf);
+            let decoded = MsgPayload::decode(&mut dec).unwrap();
+            assert_eq!(msg, decoded);
         }
     }
 }

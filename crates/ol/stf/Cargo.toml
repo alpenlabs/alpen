@@ -11,7 +11,6 @@ strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-crypto.workspace = true
 strata-ledger-types.workspace = true
-strata-merkle.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true

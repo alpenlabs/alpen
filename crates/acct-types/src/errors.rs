@@ -1,6 +1,5 @@
+use strata_identifiers::{AccountId, AccountTypeId, RawAccountTypeId};
 use thiserror::Error;
-
-use crate::id::{AccountId, AccountTypeId, RawAccountTypeId};
 
 pub type AcctResult<T> = Result<T, AcctError>;
 
@@ -23,7 +22,7 @@ pub enum AcctError {
 
     // Snark account operational errors
     #[error(
-        "Invalid update sequence for account {account_id}: expected seqno {expected}, got {got}"
+        "Invalid update sequence for account {account_id:?}: expected seqno {expected}, got {got}"
     )]
     InvalidUpdateSequence {
         account_id: AccountId,
@@ -32,7 +31,7 @@ pub enum AcctError {
     },
 
     #[error(
-        "Invalid message index for account {account_id}: expected new index {expected}, got index {got}"
+        "Invalid message index for account {account_id:?}: expected new index {expected}, got index {got}"
     )]
     InvalidMsgIndex {
         account_id: AccountId,
@@ -43,21 +42,21 @@ pub enum AcctError {
     #[error("Insufficient balance in account")]
     InsufficientBalance,
 
-    #[error("Message proof invalid for account {account_id} at message index {msg_idx}")]
+    #[error("Message proof invalid for account {account_id:?} at message index {msg_idx}")]
     InvalidMessageProof { account_id: AccountId, msg_idx: u64 },
 
-    #[error("Invalid ledger reference by account {account_id} at ref index {ref_idx}")]
+    #[error("Invalid ledger reference by account {account_id:?} at ref index {ref_idx}")]
     InvalidLedgerReference { account_id: AccountId, ref_idx: u64 },
 
-    #[error("Invalid update proof for account {account_id}")]
+    #[error("Invalid update proof for account {account_id:?}")]
     InvalidUpdateProof { account_id: AccountId },
 
-    #[error("Message index overflow for account {account_id}")]
+    #[error("Message index overflow for account {account_id:?}")]
     MsgIndexOverflow { account_id: AccountId },
 
     #[error("Bitcoin amount overflow")]
     BitcoinAmountOverflow,
 
-    #[error("Account {0} does not exist")]
+    #[error("Account {0:?} does not exist")]
     NonExistentAccount(AccountId),
 }
