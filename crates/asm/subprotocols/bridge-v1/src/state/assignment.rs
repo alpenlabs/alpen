@@ -228,7 +228,7 @@ impl AssignmentEntry {
     ///
     /// # Parameters
     ///
-    /// - `new_deadline` - The new absolute Bitcoin block height deadline for execution
+    /// - `new_deadline` - The new absolute Bitcoin block height deadline for fulfillment
     /// - `seed` - L1 block ID used as seed for deterministic random selection
     /// - `current_active_operators` - Bitmap of currently active operator indices
     ///
@@ -396,7 +396,7 @@ impl AssignmentTable {
 
     /// Reassigns all expired assignments to new randomly selected operators.
     ///
-    /// Iterates through all assignments and reassigns those whose execution deadlines
+    /// Iterates through all assignments and reassigns those whose fulfillment deadlines
     /// have passed (current height >= fulfillment_deadline). Each expired assignment is
     /// reassigned using the provided seed for deterministic random operator selection.
     ///
@@ -407,11 +407,9 @@ impl AssignmentTable {
     ///
     /// # Parameters
     ///
-    /// - `operator_fee` - The new operator fee for reassigned withdrawals
-    /// - `current_height` - The current Bitcoin block height for expiration comparison
-    /// - `new_deadline` - The new absolute Bitcoin block height deadline for execution
     /// - `current_active_operators` - Bitmap of currently active operator indices
-    /// - `seed` - L1 block ID used as seed for deterministic random selection
+    /// - `l1_block` - The L1 block commitment used to derive the current height, seed, and new
+    ///   fulfillment deadline
     ///
     /// # Returns
     ///
