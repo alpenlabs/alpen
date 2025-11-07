@@ -318,16 +318,18 @@ pub struct AssignmentTable {
     /// **Invariant**: MUST be sorted by `AssignmentEntry::deposit_idx` field.
     assignments: SortedVec<AssignmentEntry>,
 
-    /// The duration (in blocks) to fulfill assignment.
-    fulfillment_duration: u64,
+    /// The duration (in blocks) for which the operator is assigned to fulfill the withdrawal.
+    /// If the operator fails to complete the withdrawal within this period, the assignment
+    /// will be reassigned to another operator.
+    assignment_duration: u64,
 }
 
 impl AssignmentTable {
     /// Creates a new empty assignment table with no assignments
-    pub fn new(fulfillment_duration: u64) -> Self {
+    pub fn new(assignment_duration: u64) -> Self {
         Self {
             assignments: SortedVec::new_empty(),
-            fulfillment_duration,
+            assignment_duration,
         }
     }
 
@@ -429,7 +431,7 @@ impl AssignmentTable {
 
         let current_height = l1_block.height_u64();
         let seed = *l1_block.blkid();
-        let new_deadline = self.fulfillment_duration + current_height;
+        let new_deadline = self.assignment_duration + current_height;
 
         // Using iter_mut since we're only modifying non-sorting fields
         for assignment in self
@@ -468,9 +470,9 @@ impl AssignmentTable {
         current_active_operators: &OperatorBitmap,
         l1_block: &L1BlockCommitment,
     ) -> Result<(), WithdrawalCommandError> {
-        // Create assignment with deadline calculated from current block height + deadline duration
-        let fulfillment_deadline =
-            l1_block.height().to_consensus_u32() as u64 + self.fulfillment_duration;
+        // Create assignment with deadline calculated from current block height + assignment
+        // duration
+        let fulfillment_deadline = l1_block.height_u64() + self.assignment_duration;
 
         let entry = AssignmentEntry::create_with_random_assignment(
             deposit_entry,

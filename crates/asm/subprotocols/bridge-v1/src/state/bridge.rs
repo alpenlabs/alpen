@@ -22,19 +22,6 @@ use crate::{
 ///
 /// This structure holds all the persistent state for the bridge, including
 /// operator registrations, deposit tracking, and assignment management.
-///
-/// # Fields
-///
-/// - `operators` - Table of registered bridge operators with their public keys
-/// - `deposits` - Table of Bitcoin deposits with UTXO references and amounts
-/// - `assignments` - Table linking deposits to operators with execution deadlines
-/// - `denomination` - The amount of bitcoin expected to be locked in the N/N multisig
-/// - `deadline_duration` - The duration (in blocks) for assignment execution deadlines
-///
-/// # Serialization
-///
-/// The state is serializable using Borsh for efficient storage and transmission
-/// within the Anchor State Machine.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct BridgeV1State {
     /// Table of registered bridge operators.
@@ -73,7 +60,7 @@ impl BridgeV1State {
         Self {
             operators,
             deposits: DepositsTable::new_empty(),
-            assignments: AssignmentTable::new(config.deadline_duration),
+            assignments: AssignmentTable::new(config.assignment_duration),
             denomination: config.denomination,
             operator_fee: config.operator_fee,
         }
@@ -459,7 +446,7 @@ mod tests {
         let config = BridgeV1Config {
             denomination,
             operators,
-            deadline_duration: 144, // ~24 hours
+            assignment_duration: 144, // ~24 hours
             operator_fee: BitcoinAmount::from_sat(100_000),
         };
         let bridge_state = BridgeV1State::new(&config);
