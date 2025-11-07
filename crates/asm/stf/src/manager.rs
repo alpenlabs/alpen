@@ -107,8 +107,8 @@ impl SubprotoManager {
     /// Dispatches pre-processing to the appropriate handler.
     ///
     /// This method temporarily removes the handler from the internal map to satisfy
-    /// Rust’s borrow rules, invokes its `pre_process_txs` implementation with
-    /// `self` acting as the `AuxInputCollector`, and then reinserts the handler.
+    /// Rust's borrow rules, invokes its `pre_process_txs` implementation with
+    /// an `AuxRequestCollector`, and then reinserts the handler.
     pub(crate) fn invoke_pre_process_txs<S: Subprotocol>(
         &mut self,
         txs: &[TxInputRef<'_>],

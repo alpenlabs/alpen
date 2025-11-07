@@ -59,6 +59,16 @@ impl<'a> AuxDataProvider<'a> {
             .into());
         }
 
+        // Verify proofs count matches leaves count
+        if response.proofs.len() != response.leaves.len() {
+            return Err(ManifestLeavesError::ProofsCountMismatch {
+                tx_index,
+                expected: response.leaves.len(),
+                found: response.proofs.len(),
+            }
+            .into());
+        }
+
         // Expand compact MMR from request for verification
         let mmr_full = AsmMmr::from(req.manifest_mmr.clone());
 
@@ -79,7 +89,7 @@ impl<'a> AuxDataProvider<'a> {
     /// Gets Bitcoin transaction data for a transaction.
     ///
     /// This decodes the provided raw transaction bytes, recomputes the
-    /// transaction's txid (txid), and ensures it matches the requested `txid`.
+    /// transaction's txid, and ensures it matches the requested txid.
     ///
     /// # Returns
     ///
@@ -97,13 +107,13 @@ impl<'a> AuxDataProvider<'a> {
         tx_index: L1TxIndex,
         req: &BitcoinTxRequest,
     ) -> AuxResult<Transaction> {
-        let raw_tx = self
+        let raw_btc_tx = self
             .data
             .bitcoin_txs
             .get(&tx_index)
             .ok_or(AuxError::MissingResponse { tx_index })?;
 
-        let tx: Transaction = raw_tx
+        let tx: Transaction = raw_btc_tx
             .try_into()
             .map_err(|source| BitcoinTxError::InvalidTx { tx_index, source })?;
 
@@ -187,14 +197,11 @@ mod tests {
     fn test_provider_bitcoin_tx() {
         let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
         let tx: Transaction = raw_tx.clone().try_into().unwrap();
-        let txid = tx.compute_wtxid().as_raw_hash().to_byte_array();
+        let txid = tx.compute_txid().as_raw_hash().to_byte_array();
 
         let manifest_leaves = BTreeMap::new();
         let mut bitcoin_txs = BTreeMap::new();
         bitcoin_txs.insert(0, raw_tx);
-
-        let mmr = AsmMmr::new(16);
-        let _compact: AsmCompactMmr = mmr.into();
 
         let data = AuxData {
             manifest_leaves,
@@ -206,5 +213,105 @@ mod tests {
         let req = BitcoinTxRequest { txid };
         let result = provider.get_bitcoin_tx(0, &req).unwrap();
         assert_eq!(result, tx);
+    }
+
+    #[test]
+    fn test_provider_bitcoin_txid_mismatch() {
+        let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
+        let wrong_txid = [0u8; 32]; // Wrong txid
+
+        let manifest_leaves = BTreeMap::new();
+        let mut bitcoin_txs = BTreeMap::new();
+        bitcoin_txs.insert(0, raw_tx);
+
+        let data = AuxData {
+            manifest_leaves,
+            bitcoin_txs,
+        };
+        let provider = AuxDataProvider::new(&data);
+
+        let req = BitcoinTxRequest { txid: wrong_txid };
+        let result = provider.get_bitcoin_tx(0, &req);
+        assert!(matches!(
+            result,
+            Err(AuxError::BitcoinTx(BitcoinTxError::TxidMismatch { .. }))
+        ));
+    }
+
+    #[test]
+    fn test_provider_manifest_leaves_length_mismatch() {
+        use crate::ManifestLeavesWithProofs;
+
+        let mmr = AsmMmr::new(16);
+        let compact: AsmCompactMmr = mmr.into();
+
+        // Request expects 101 leaves (100 to 200 inclusive)
+        let req = ManifestLeavesRequest {
+            start_height: 100,
+            end_height: 200,
+            manifest_mmr: compact,
+        };
+
+        // But provide only 50 leaves
+        let mut manifest_leaves = BTreeMap::new();
+        manifest_leaves.insert(
+            0,
+            ManifestLeavesWithProofs {
+                leaves: vec![[0u8; 32]; 50],
+                proofs: vec![],
+            },
+        );
+
+        let data = AuxData {
+            manifest_leaves,
+            bitcoin_txs: BTreeMap::new(),
+        };
+        let provider = AuxDataProvider::new(&data);
+
+        let result = provider.get_manifest_leaves(0, &req);
+        assert!(matches!(
+            result,
+            Err(AuxError::ManifestLeaves(
+                ManifestLeavesError::LengthMismatch { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_provider_manifest_proofs_count_mismatch() {
+        use crate::ManifestLeavesWithProofs;
+
+        let mmr = AsmMmr::new(16);
+        let compact: AsmCompactMmr = mmr.into();
+
+        let req = ManifestLeavesRequest {
+            start_height: 100,
+            end_height: 100, // Single block
+            manifest_mmr: compact,
+        };
+
+        // Provide 1 leaf but 0 proofs
+        let mut manifest_leaves = BTreeMap::new();
+        manifest_leaves.insert(
+            0,
+            ManifestLeavesWithProofs {
+                leaves: vec![[0u8; 32]; 1],
+                proofs: vec![], // Mismatch: 0 proofs vs 1 leaf
+            },
+        );
+
+        let data = AuxData {
+            manifest_leaves,
+            bitcoin_txs: BTreeMap::new(),
+        };
+        let provider = AuxDataProvider::new(&data);
+
+        let result = provider.get_manifest_leaves(0, &req);
+        assert!(matches!(
+            result,
+            Err(AuxError::ManifestLeaves(
+                ManifestLeavesError::ProofsCountMismatch { .. }
+            ))
+        ));
     }
 }

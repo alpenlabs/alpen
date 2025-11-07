@@ -11,18 +11,23 @@ use strata_btc_types::RawBitcoinTx;
 
 use crate::{AsmCompactMmr, AsmMerkleProof, Hash, L1TxIndex};
 
+/// Collection of auxiliary data requests from subprotocols, organized by transaction index.
+///
+/// During pre-processing, subprotocols declare what auxiliary data they need for
+/// each transaction. This structure aggregates all requests by type (manifest leaves,
+/// Bitcoin transactions, etc.) to be fulfilled by external workers before the main
+/// processing phase.
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxRequests {
     pub manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesRequest>,
     pub bitcoin_txs: BTreeMap<L1TxIndex, BitcoinTxRequest>,
 }
 
-/// Provides verified auxiliary data to subprotocols during transaction processing.
+/// Raw auxiliary data responses from workers, organized by transaction index.
 ///
-/// The provider is initialized with auxiliary responses from workers and verifies
-/// them based on information contained in each request before serving them to
-/// subprotocols. Verification methods vary by request type (e.g., MMR proofs for
-/// manifest leaves, txid validation for Bitcoin transactions).
+/// This structure holds unverified auxiliary data (manifest leaves with proofs,
+/// Bitcoin transactions) that will be verified by `AuxDataProvider` before being
+/// served to subprotocols during transaction processing.
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Map from transaction index to manifest leaves with proofs (unverified)

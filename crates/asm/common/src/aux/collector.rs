@@ -25,8 +25,11 @@ impl AuxRequestCollector {
     ///
     /// Stores a request keyed by `tx_index` containing the range and the
     /// compact manifest MMR snapshot used for verification by the provider.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a manifest leaves request already exists for this transaction index.
     pub fn request_manifest_leaves(&mut self, tx_index: L1TxIndex, req: ManifestLeavesRequest) {
-        // Use the common insertion logic to enforce one-request-per-tx
         if self
             .requests
             .manifest_leaves
@@ -41,6 +44,10 @@ impl AuxRequestCollector {
     }
 
     /// Requests a raw Bitcoin transaction by its txid.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a Bitcoin transaction request already exists for this transaction index.
     pub fn request_bitcoin_tx(&mut self, tx_index: L1TxIndex, req: BitcoinTxRequest) {
         if self.requests.bitcoin_txs.insert(tx_index, req).is_some() {
             panic!(
@@ -50,6 +57,7 @@ impl AuxRequestCollector {
         }
     }
 
+    /// Consumes the collector and returns the collected auxiliary requests.
     pub fn into_requests(self) -> AuxRequests {
         self.requests
     }

@@ -48,6 +48,22 @@ pub enum ManifestLeavesError {
         found: usize,
     },
 
+    /// The number of proofs doesn't match the number of leaves.
+    ///
+    /// Occurs when the proofs vector length doesn't equal the leaves vector length,
+    /// indicating malformed or incomplete auxiliary data.
+    #[error(
+        "manifest proofs count mismatch for tx index {tx_index}: expected {expected}, found {found}"
+    )]
+    ProofsCountMismatch {
+        /// The transaction index being resolved
+        tx_index: L1TxIndex,
+        /// Expected number of proofs (same as leaves count)
+        expected: usize,
+        /// Actual number of proofs received
+        found: usize,
+    },
+
     /// Invalid MMR proof for a manifest leaf.
     ///
     /// This occurs when the provided MMR proof doesn't verify against

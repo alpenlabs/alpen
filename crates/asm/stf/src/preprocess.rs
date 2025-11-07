@@ -73,12 +73,12 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
-    let mut aux_req_dest = BTreeMap::new();
+    let mut aux_requests_by_subprotocol = BTreeMap::new();
     let mut pre_process_stage = PreProcessStage::new(
         &mut manager,
         pre_state,
         &grouped_relevant_txs,
-        &mut aux_req_dest,
+        &mut aux_requests_by_subprotocol,
     );
     spec.call_subprotocols(&mut pre_process_stage);
 
@@ -86,7 +86,7 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
     // These requests will be fulfilled before running the main ASM state transition.
     let output = AsmPreProcessOutput {
         txs: grouped_relevant_txs,
-        aux_requests: aux_req_dest,
+        aux_requests: aux_requests_by_subprotocol,
     };
 
     Ok(output)

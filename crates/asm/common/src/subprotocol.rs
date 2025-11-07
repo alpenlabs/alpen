@@ -35,23 +35,35 @@ use crate::{
 /// impl Subprotocol for MySubprotocol {
 ///     const ID: SubprotocolId = 42;
 ///     type State = MyState;
-///     type GenesisConfig = MyConfig;
+///     type Params = MyParams;
 ///     type Msg = MyMessage;
-///     type AuxInput = MyAuxData;
 ///
-///     fn init(genesis_config: Self::GenesisConfig) -> Result<Self::State, AsmError> {
+///     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
 ///        // init logic
 ///     }
 ///
-///     fn pre_process_txs(state: &Self::State, txs: &[TxInputRef], ...) {
-///         // Pre-process transactions
+///     fn pre_process_txs(
+///         state: &Self::State,
+///         txs: &[TxInputRef],
+///         collector: &mut AuxRequestCollector,
+///         anchor_pre: &AnchorState,
+///         params: &Self::Params,
+///     ) {
+///         // Pre-process transactions and request auxiliary data
 ///     }
 ///
-///     fn process_txs(state: &mut Self::State, txs: &[TxInputRef], ...) {
+///     fn process_txs(
+///         state: &mut Self::State,
+///         txs: &[TxInputRef],
+///         anchor_pre: &AnchorState,
+///         aux_provider: &AuxDataProvider,
+///         relayer: &mut impl MsgRelayer,
+///         params: &Self::Params,
+///     ) {
 ///         // Process transactions
 ///     }
 ///
-///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg]) {
+///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], params: &Self::Params) {
 ///         // Process messages
 ///     }
 /// }
@@ -82,11 +94,11 @@ pub trait Subprotocol: 'static {
     // FIXME why would this ever error?  this would be panic-worthy
     fn init(params: &Self::Params) -> Result<Self::State, AsmError>;
 
-    /// Pre-processes a batch of L1 transactions by registering any required off-chain inputs.
+    /// Pre-processes a batch of L1 transactions by registering any required auxiliary data.
     ///
     /// During this phase, the subprotocol declares *external* data it will need before actual
-    /// processing. Any required L1 headers, block-metadata, or other off-chain inputs should be
-    /// requested via the `AuxInputCollector`.
+    /// processing. Any required L1 headers, block-metadata, or other off-chain data should be
+    /// requested via the `AuxRequestCollector`.
     /// (e.g., Merkle proof for logs emitted in a previous block from "history_mmr" in AnchorState)
     ///
     /// This method is called before transaction processing to allow subprotocols to specify
@@ -113,14 +125,14 @@ pub trait Subprotocol: 'static {
     /// subprotocol.
     ///
     /// This is the core transaction processing method where subprotocols implement their
-    /// specific business logic. The method receives auxiliary inputs (requested
+    /// specific business logic. The method receives auxiliary data (requested
     /// during `pre_process_txs`) and can generate messages to other subprotocols and emit logs.
     ///
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
     /// * `anchor_pre` - The previous anchor state for validation context
-    /// * `aux_inputs` - Auxiliary data previously requested and validated
+    /// * `aux_provider` - Provider for accessing auxiliary data previously requested and validated
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
     /// * `params` - Subprotocol's current params
     fn process_txs(
@@ -171,7 +183,7 @@ pub trait SubprotoHandler {
     /// Pre-processes a batch of L1 transactions by delegating to the inner
     /// subprotocol's `pre_process_txs` implementation.
     ///
-    /// Any required off-chain inputs should be registered via the provided `AuxInputCollector` for
+    /// Any required auxiliary data should be registered via the provided `AuxRequestCollector` for
     /// the subsequent processing phase.
     fn pre_process_txs(
         &mut self,

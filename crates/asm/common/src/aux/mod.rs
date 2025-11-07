@@ -16,7 +16,7 @@
 //!
 //! - **Manifest Leaves**: Fetch manifest hashes and MMR proofs for a range of L1 blocks
 //!   (lightweight - doesn't include full manifest data). The request must include the
-//!   `AsmManifestCompactMmr` snapshot for verifying the MMR proofs in the response.
+//!   `AsmCompactMmr` snapshot for verifying the MMR proofs in the response.
 //!
 //! - **Bitcoin Transactions**: Fetch raw Bitcoin transaction data by txid (for bridge subprotocol
 //!   validation). The request must include the expected txid to verify against the response.
