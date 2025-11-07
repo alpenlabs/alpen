@@ -13319,6 +13319,7 @@ dependencies = [
  "moho-types",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-codec",
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
