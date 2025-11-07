@@ -14168,7 +14168,10 @@ name = "strata-evm-ee"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "alloy-rlp",
  "alpen-reth-evm",
+ "alpen-reth-primitives",
+ "bincode",
  "reth-chainspec",
  "reth-evm",
  "reth-evm-ethereum",
@@ -14181,6 +14184,7 @@ dependencies = [
  "rsp-mpt",
  "serde",
  "serde_json",
+ "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
