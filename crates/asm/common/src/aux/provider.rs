@@ -19,18 +19,18 @@ use crate::{
 /// subprotocols. Verification methods vary by request type (e.g., MMR proofs for
 /// manifest leaves, txid validation for Bitcoin transactions).
 #[derive(Debug)]
-pub struct AuxDataProvider<'a> {
+pub struct AuxDataProvider {
     /// Map from transaction index to manifest leaves with proofs (unverified)
-    manifest_leaves: &'a BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
+    manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
     /// Map from transaction index to Bitcoin transaction data
-    bitcoin_txs: &'a BTreeMap<L1TxIndex, RawBitcoinTx>,
+    bitcoin_txs: BTreeMap<L1TxIndex, RawBitcoinTx>,
 }
 
-impl<'a> AuxDataProvider<'a> {
+impl AuxDataProvider {
     /// Creates a new provider from separate response maps.
     pub fn new(
-        manifest_leaves: &'a BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
-        bitcoin_txs: &'a BTreeMap<L1TxIndex, RawBitcoinTx>,
+        manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
+        bitcoin_txs: BTreeMap<L1TxIndex, RawBitcoinTx>,
     ) -> Self {
         Self {
             manifest_leaves,
@@ -145,7 +145,7 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let compact = mmr.into();
 
-        let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
+        let provider = AuxDataProvider::new(manifest_leaves, bitcoin_txs);
 
         // Should return error for non-existent tx
         let req = ManifestLeavesRequest {
@@ -171,7 +171,7 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let compact = mmr.into();
 
-        let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
+        let provider = AuxDataProvider::new(manifest_leaves, bitcoin_txs);
 
         // Requesting manifest leaves but only bitcoin tx exists
         let req = ManifestLeavesRequest {
@@ -196,7 +196,7 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let _compact: AsmCompactMmr = mmr.into();
 
-        let provider = AuxDataProvider::new(&manifest_leaves, &bitcoin_txs);
+        let provider = AuxDataProvider::new(manifest_leaves, bitcoin_txs);
 
         // Should successfully return the bitcoin tx
         let req = BitcoinTxRequest { txid };

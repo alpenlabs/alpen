@@ -42,7 +42,6 @@
 mod collector;
 mod data;
 mod errors;
-pub mod old;
 mod provider;
 
 // Re-export main types

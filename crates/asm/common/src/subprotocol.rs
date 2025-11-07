@@ -10,8 +10,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, SectionState, TxInputRef, aux::old::AuxRequest, log::AsmLogEntry,
-    msg::InterprotoMsg,
+    AnchorState, AsmError, AuxDataProvider, AuxRequestCollector, SectionState, TxInputRef,
+    log::AsmLogEntry, msg::InterprotoMsg,
 };
 
 /// Trait for defining subprotocol behavior within the ASM framework.
@@ -70,14 +70,6 @@ pub trait Subprotocol: 'static {
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + InterprotoMsg + Any;
 
-    /// Type of auxiliary input required by the subprotocol.
-    ///
-    /// This associated type represents the exact data requested via `AuxInputCollector` (for
-    /// example, block headers or other off-chain metadata). It must be serializable, verifiable,
-    /// and correspond directly to the output of the collector. Implementations of
-    /// `process_txs` are responsible for validating this data before using it in any state updates.
-    type AuxInput: Default + Any + BorshSerialize + BorshDeserialize;
-
     /// Constructs a new state using the provided genesis configuration.
     ///
     /// # Arguments
@@ -110,7 +102,7 @@ pub trait Subprotocol: 'static {
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
-        _collector: &mut impl AuxInputCollector,
+        _collector: &mut AuxRequestCollector,
         _anchor_pre: &AnchorState,
         _params: &Self::Params,
     ) {
@@ -135,7 +127,7 @@ pub trait Subprotocol: 'static {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_input: &Self::AuxInput,
+        aux_provider: &AuxDataProvider,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );
@@ -184,7 +176,7 @@ pub trait SubprotoHandler {
     fn pre_process_txs(
         &mut self,
         txs: &[TxInputRef<'_>],
-        collector: &mut dyn AuxInputCollector,
+        collector: &mut AuxRequestCollector,
         anchor_state: &AnchorState,
     );
 
@@ -216,26 +208,4 @@ pub trait SubprotoHandler {
 
     /// Repacks the state into a [`SectionState`] instance.
     fn to_section(&self) -> SectionState;
-}
-
-/// Responsible for recording a request for auxiliary input data.
-///
-/// The caller provides an opaque byte slice; the collector must interpret
-/// those bytes out-of-band according to its own conventions
-///
-/// # Parameters
-///
-/// - `data`: an opaque byte slice whose meaning is defined entirely by the collector’s
-///   implementation.
-///
-/// # Panics
-///
-/// Implementations must understand the details of the subprotocol to understand the `data`
-/// requested
-pub trait AuxInputCollector: Any {
-    /// Record that this exact `data` blob will be needed later as auxiliary input.
-    fn request_aux_input(&mut self, req: AuxRequest);
-
-    /// Gets this aux input collector as a `&dyn Any`.
-    fn as_mut_any(&mut self) -> &mut dyn Any;
 }
