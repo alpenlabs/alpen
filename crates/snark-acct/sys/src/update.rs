@@ -11,10 +11,10 @@ use crate::VerifiedUpdate;
 /// of STF implementation details.
 ///
 /// Called after verification succeeds and before updating the snark account's proof state.
-pub fn apply_update_outputs<'a, E: Error, L: LedgerInterface<E>>(
+pub fn apply_update_outputs<'a, L: LedgerInterface>(
     ledger_ref: &mut L,
     verified_update: VerifiedUpdate<'a>,
-) -> Result<(), E> {
+) -> Result<(), L::Error> {
     let outputs = verified_update.operation().outputs();
     let transfers = outputs.transfers();
     let messages = outputs.messages();

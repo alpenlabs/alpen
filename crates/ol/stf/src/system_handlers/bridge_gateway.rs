@@ -1,6 +1,6 @@
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SystemAccount};
 use strata_ledger_types::StateAccessor;
-use strata_ol_chain_types_new::OLLog;
+use strata_ol_chain_types_new::{LogEmitter, OLLog};
 
 use crate::{
     context::BlockExecContext,
@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub(crate) fn handle_bridge_gateway_msg<S: StateAccessor>(
-    ctx: &BlockExecContext,
+    ctx: &impl LogEmitter,
     _state_accessor: &mut S,
     sender: AccountId,
     payload: &MsgPayload,

@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use strata_ol_chain_types_new::{OLBlockHeader, OLLog};
+use strata_ol_chain_types_new::{LogEmitter, OLBlockHeader, OLLog};
 use strata_params::RollupParams;
 
 /// Context carried throughout block execution for accumulating logs.
@@ -47,14 +47,14 @@ impl BlockExecContext {
     pub fn into_logs(self) -> Vec<OLLog> {
         self.logs.into_inner()
     }
+}
 
-    /// Emits a log entry.
-    pub fn emit_log(&self, log: OLLog) {
+impl LogEmitter for BlockExecContext {
+    fn emit_log(&self, log: OLLog) {
         self.logs.borrow_mut().push(log)
     }
 
-    /// Emits multiple log entries.
-    pub fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
+    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
         self.logs.borrow_mut().extend(logs)
     }
 }

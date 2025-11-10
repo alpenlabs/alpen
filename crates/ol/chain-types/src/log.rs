@@ -205,3 +205,12 @@ impl CheckpointAckLog {
         self.epoch
     }
 }
+
+/// OL log emitter.
+pub trait LogEmitter {
+    /// Emits a single log.
+    fn emit_log(&self, log: OLLog);
+
+    /// Emits multiple logs.
+    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>);
+}

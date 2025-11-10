@@ -4,8 +4,8 @@ use strata_acct_types::{
 use strata_ledger_types::{IL1ViewState, ISnarkAccountState, StateAccessor};
 use strata_merkle::hasher::MerkleHasher;
 use strata_snark_acct_types::{
-    LedgerRefProofs, MessageEntryProof, SnarkAccountUpdate, SnarkAccountUpdateWithMmrProofs,
-    UpdateOperationData, UpdateOutputs,
+    LedgerRefProofs, MessageEntryProof, ProofState, SnarkAccountUpdate,
+    SnarkAccountUpdateContainer, UpdateOperationData, UpdateOutputs, UpdateProofPubParams,
 };
 
 /// Verifies an account update is correct with respect to the current state of
@@ -14,10 +14,10 @@ pub fn verify_update_correctness<'a, S: StateAccessor>(
     state_accessor: &S,
     sender: AccountId,
     snark_state: &impl ISnarkAccountState,
-    update: &'a SnarkAccountUpdateWithMmrProofs,
+    update: &'a SnarkAccountUpdateContainer,
     cur_balance: BitcoinAmount,
 ) -> AcctResult<VerifiedUpdate<'a>> {
-    let operation = update.update().operation();
+    let operation = update.base_update().operation();
     let outputs = operation.outputs();
 
     // 1. Check seq_no matches
@@ -45,21 +45,22 @@ pub fn verify_update_correctness<'a, S: StateAccessor>(
         });
     }
 
+    let accum_proofs = update.accumulator_proofs();
     // 3. Verify ledger references using the provided state accessor
     verify_ledger_refs(
         sender,
         state_accessor.l1_view().asm_manifests_mmr(),
-        update.ledger_ref_proofs(),
+        accum_proofs.ledger_ref_proofs(),
     )?;
 
     // 4. Verify input mmr proofs
-    verify_input_mmr_proofs(sender, snark_state, update.message_proofs())?;
+    verify_input_mmr_proofs(sender, snark_state, accum_proofs.inbox_proofs())?;
 
     // 4. Verify outputs can be applied safely
     verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
     // 5. Verify the witness check
-    verify_update_witness(sender, snark_state, update.update(), state_accessor)?;
+    verify_update_witness(sender, snark_state, update.base_update(), state_accessor)?;
 
     Ok(VerifiedUpdate { operation })
 }
@@ -126,11 +127,20 @@ pub fn verify_update_witness<S: StateAccessor>(
 }
 
 fn compute_update_claim(
-    _snark_state: &impl ISnarkAccountState,
-    _operation: &UpdateOperationData,
+    snark_state: &impl ISnarkAccountState,
+    operation: &UpdateOperationData,
 ) -> Vec<u8> {
     // Use new state, processed messages, old state, refs and outputs to compute claim
-    todo!()
+    let cur_state = ProofState::new(snark_state.inner_state_root(), snark_state.next_inbox_idx());
+    let pub_params = UpdateProofPubParams::new(
+        cur_state,
+        operation.new_state(),
+        operation.processed_messages().to_vec(),
+        operation.ledger_refs().clone(),
+        operation.outputs().clone(),
+        operation.extra_data().to_vec(),
+    );
+    pub_params.to_ssz_bytes()
 }
 
 pub fn verify_update_outputs_safe<S: StateAccessor>(
