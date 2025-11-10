@@ -3,7 +3,11 @@
 //! This module monitors ProverService for pending/retriable tasks and
 //! dispatches them to workers for actual proof generation.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use strata_db::traits::ProofDatabase;
 use strata_primitives::proof::ProofZkVm;
@@ -38,8 +42,8 @@ pub struct WorkerPool<D: ProofDatabase, O: ProofOperatorTrait<D>> {
     database: Arc<D>,
     /// Configuration
     config: PaaSConfig,
-    /// Track in-progress tasks per backend
-    in_progress_tasks: HashMap<ProofZkVm, usize>,
+    /// Track in-progress tasks per backend (shared with spawned tasks)
+    in_progress_tasks: Arc<Mutex<HashMap<ProofZkVm, usize>>>,
 }
 
 impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
@@ -55,12 +59,12 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
             operator,
             database,
             config,
-            in_progress_tasks: HashMap::new(),
+            in_progress_tasks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Main processing loop
-    pub async fn run(mut self) {
+    pub async fn run(self) {
         info!("Worker pool started");
 
         loop {
@@ -103,7 +107,7 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
 
                 let vm = proof_key.host();
 
-                // Check worker limits
+                // Check worker limits and increment counter atomically
                 let total_workers = self
                     .config
                     .workers
@@ -111,24 +115,38 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                     .get(vm)
                     .copied()
                     .unwrap_or(0);
-                let in_progress = self.in_progress_tasks.get(vm).copied().unwrap_or(0);
 
-                if in_progress >= total_workers {
+                let should_skip = {
+                    let mut tasks = self.in_progress_tasks.lock().unwrap();
+                    let in_progress = tasks.get(vm).copied().unwrap_or(0);
+
+                    if in_progress >= total_workers {
+                        true
+                    } else {
+                        // Increment in-progress counter
+                        *tasks.entry(*vm).or_insert(0) += 1;
+                        false
+                    }
+                };
+
+                if should_skip {
                     debug!(?proof_key, "Worker limit reached, skipping task");
                     continue;
                 }
-
-                // Increment in-progress counter
-                *self.in_progress_tasks.entry(*vm).or_insert(0) += 1;
 
                 // Clone resources for async task
                 let operator = self.operator.clone();
                 let database = self.database.clone();
                 let prover_handle = self.prover_handle.clone();
+                let in_progress_tasks = self.in_progress_tasks.clone();
+                let vm_for_task = *vm;
 
                 // Spawn proof generation task
                 spawn(async move {
                     info!(?task_id, ?proof_key, "Starting proof generation");
+
+                    // Ensure counter is decremented when task completes (success or failure)
+                    let _guard = TaskCompletionGuard::new(in_progress_tasks.clone(), vm_for_task);
 
                     // Transition: Pending → Queued → Proving
                     if let Err(e) = prover_handle.mark_queued(task_id).await {
@@ -168,6 +186,7 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                             }
                         }
                     }
+                    // _guard drops here, decrementing the counter
                 });
             }
 
@@ -176,6 +195,34 @@ impl<D: ProofDatabase, O: ProofOperatorTrait<D>> WorkerPool<D, O> {
                 self.config.workers.polling_interval_ms,
             ))
             .await;
+        }
+    }
+}
+
+/// RAII guard that automatically decrements the in-progress task counter when dropped
+///
+/// This ensures the counter is decremented regardless of how the task completes
+/// (success, error, or panic).
+struct TaskCompletionGuard {
+    in_progress_tasks: Arc<Mutex<HashMap<ProofZkVm, usize>>>,
+    vm: ProofZkVm,
+}
+
+impl TaskCompletionGuard {
+    fn new(in_progress_tasks: Arc<Mutex<HashMap<ProofZkVm, usize>>>, vm: ProofZkVm) -> Self {
+        Self {
+            in_progress_tasks,
+            vm,
+        }
+    }
+}
+
+impl Drop for TaskCompletionGuard {
+    fn drop(&mut self) {
+        let mut tasks = self.in_progress_tasks.lock().unwrap();
+        if let Some(count) = tasks.get_mut(&self.vm) {
+            *count = count.saturating_sub(1);
+            debug!(vm = ?self.vm, new_count = *count, "Task completed, decremented worker counter");
         }
     }
 }
