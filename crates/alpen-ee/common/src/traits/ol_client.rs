@@ -153,7 +153,6 @@ pub enum OlClientError {
     Other(#[from] eyre::Error),
 }
 
-#[allow(dead_code, clippy::allow_attributes, reason = "used in tests")]
 impl OlClientError {
     /// Creates a network error.
     pub fn network(msg: impl Into<String>) -> Self {

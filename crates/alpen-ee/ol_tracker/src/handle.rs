@@ -45,11 +45,6 @@ pub struct OlTrackerBuilder<TStorage, TOlClient> {
     reorg_fetch_size: Option<u64>,
 }
 
-#[allow(
-    dead_code,
-    clippy::allow_attributes,
-    reason = "optional builder methods"
-)]
 impl<TStorage, TOlClient> OlTrackerBuilder<TStorage, TOlClient> {
     /// Creates a new OL tracker builder with all required fields.
     pub fn new(

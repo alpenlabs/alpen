@@ -44,7 +44,6 @@ pub enum DbError {
 
     /// Other unspecified database error.
     #[error("{0}")]
-    #[allow(dead_code, clippy::allow_attributes, reason = "feature gated")]
     Other(String),
 }
 
