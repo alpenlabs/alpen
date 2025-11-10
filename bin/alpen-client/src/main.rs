@@ -5,8 +5,6 @@
 )]
 //! Reth node for the Alpen codebase.
 
-// mod init_db;
-mod db;
 mod genesis;
 mod ol_client;
 
@@ -15,6 +13,7 @@ use std::sync::Arc;
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::traits::ol_client::chain_status_checked;
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
+use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OlTrackerBuilder};
 use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
@@ -30,7 +29,7 @@ use strata_identifiers::{CredRule, OLBlockId};
 use tokio::sync::broadcast;
 use tracing::info;
 
-use crate::{db::init_db_storage, genesis::ee_genesis_block_info};
+use crate::genesis::ee_genesis_block_info;
 
 fn main() {
     reth_cli_util::sigsegv_handler::install();

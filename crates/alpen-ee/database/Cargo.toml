@@ -1,0 +1,30 @@
+[package]
+edition = "2021"
+name = "alpen-ee-database"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-common.workspace = true
+strata-acct-types.workspace = true
+strata-db-store-sled.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-identifiers.workspace = true
+strata-storage-common.workspace = true
+
+async-trait.workspace = true
+borsh.workspace = true
+eyre.workspace = true
+sled.workspace = true
+thiserror.workspace = true
+threadpool.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+typed-sled.workspace = true
+
+[dev-dependencies]
+strata-primitives.workspace = true
+alpen-ee-common = { workspace = true, features = ["test-utils"] }

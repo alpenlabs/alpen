@@ -14,6 +14,7 @@ path = "src/main.rs"
 alpen-chainspec.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-config.workspace = true
+alpen-ee-database.workspace = true
 alpen-ee-engine.workspace = true
 alpen-ee-ol-tracker.workspace = true
 alpen-reth-node.workspace = true

@@ -3,7 +3,7 @@ use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_generic};
 
-use crate::db::{error::DbError, DbResult};
+use crate::{error::DbError, DbResult};
 
 /// Database interface for EE node account state management.
 pub(crate) trait EeNodeDb: Send + Sync + 'static {
@@ -43,52 +43,54 @@ pub(crate) mod ops {
 
 /// Macro to instantiate all EeNodeDb tests for a given database setup.
 #[cfg(test)]
-#[macro_export]
 macro_rules! ee_node_db_tests {
     ($setup_expr:expr) => {
         #[test]
         fn test_store_and_get_ee_account_state() {
             let db = $setup_expr;
-            $crate::db::database::tests::test_store_and_get_ee_account_state(&db);
+            $crate::database::tests::test_store_and_get_ee_account_state(&db);
         }
 
         #[test]
         fn test_sequential_slots() {
             let db = $setup_expr;
-            $crate::db::database::tests::test_sequential_slots(&db);
+            $crate::database::tests::test_sequential_slots(&db);
         }
 
         #[test]
         fn test_null_block_rejected() {
             let db = $setup_expr;
-            $crate::db::database::tests::test_null_block_rejected(&db);
+            $crate::database::tests::test_null_block_rejected(&db);
         }
 
         #[test]
         fn test_rollback_ee_account_state() {
             let db = $setup_expr;
-            $crate::db::database::tests::test_rollback_ee_account_state(&db);
+            $crate::database::tests::test_rollback_ee_account_state(&db);
         }
 
         #[test]
         fn test_empty_database() {
             let db = $setup_expr;
-            $crate::db::database::tests::test_empty_database(&db);
+            $crate::database::tests::test_empty_database(&db);
         }
 
         #[test]
         fn test_rollback_empty_database() {
             let db = $setup_expr;
-            $crate::db::database::tests::test_rollback_empty_database(&db);
+            $crate::database::tests::test_rollback_empty_database(&db);
         }
 
         #[test]
         fn test_sequential_writes_and_retrieval() {
             let db = $setup_expr;
-            $crate::db::database::tests::test_sequential_writes_and_retrieval(&db);
+            $crate::database::tests::test_sequential_writes_and_retrieval(&db);
         }
     };
 }
+
+#[cfg(test)]
+pub(crate) use ee_node_db_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {

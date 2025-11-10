@@ -1046,6 +1046,7 @@ dependencies = [
  "alpen-chainspec",
  "alpen-ee-common",
  "alpen-ee-config",
+ "alpen-ee-database",
  "alpen-ee-engine",
  "alpen-ee-ol-tracker",
  "alpen-reth-node",
@@ -1133,6 +1134,29 @@ dependencies = [
  "alloy-primitives",
  "strata-acct-types",
  "strata-identifiers",
+]
+
+[[package]]
+name = "alpen-ee-database"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-common",
+ "async-trait",
+ "borsh",
+ "eyre",
+ "sled",
+ "strata-acct-types",
+ "strata-db-store-sled",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-identifiers",
+ "strata-primitives",
+ "strata-storage-common",
+ "thiserror 2.0.16",
+ "threadpool",
+ "tokio",
+ "tracing",
+ "typed-sled",
 ]
 
 [[package]]

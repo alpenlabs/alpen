@@ -4,7 +4,7 @@ use eyre::{eyre, Context, Result};
 use strata_db_store_sled::SledDbConfig;
 use typed_sled::SledDb;
 
-use crate::db::sled::EeNodeDBSled;
+use crate::sled::EeNodeDBSled;
 
 /// Initialize database based on configured features
 pub(crate) fn init_db(datadir: &Path, db_retry_count: u16) -> Result<Arc<EeNodeDBSled>> {

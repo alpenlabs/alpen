@@ -7,12 +7,16 @@ use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_storage_common::cache::CacheTable;
 use threadpool::ThreadPool;
 
-use crate::db::{
+use crate::{
     database::{ops, EeNodeDb},
     DbError,
 };
 
-pub(crate) struct EeNodeStorage {
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug implementation"
+)]
+pub struct EeNodeStorage {
     ops: ops::EeNodeOps,
     blockid_cache: CacheTable<u64, Option<OLBlockId>, DbError>,
     account_state_cache: CacheTable<OLBlockId, Option<EeAccountStateAtBlock>, DbError>,

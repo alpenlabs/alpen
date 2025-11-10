@@ -8,7 +8,7 @@ use tracing::{error, warn};
 use typed_sled::{error::Error as TSledError, transaction::SledTransactional, SledDb, SledTree};
 
 use super::{AccountStateAtOlBlockSchema, OlBlockAtSlotSchema};
-use crate::db::{database::EeNodeDb, serialization_types::DBAccountStateAtSlot, DbError, DbResult};
+use crate::{database::EeNodeDb, serialization_types::DBAccountStateAtSlot, DbError, DbResult};
 
 fn abort<T>(reason: impl std::error::Error + Send + Sync + 'static) -> Result<T, TSledError> {
     Err(TSledError::abort(reason))
@@ -165,7 +165,7 @@ impl EeNodeDb for EeNodeDBSled {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ee_node_db_tests;
+    use crate::database::ee_node_db_tests;
 
     fn setup_db() -> EeNodeDBSled {
         // Create a temporary sled database

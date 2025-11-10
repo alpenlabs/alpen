@@ -3,7 +3,7 @@ use strata_db_store_sled::{
     impl_borsh_value_codec,
 };
 
-use crate::db::serialization_types::{DBAccountStateAtSlot, DBOLBlockId};
+use crate::serialization_types::{DBAccountStateAtSlot, DBOLBlockId};
 
 define_table_without_codec!(
     /// store canonical OL block id at OL slot

@@ -5,9 +5,11 @@ use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 use typed_sled::error::Error as SledError;
 
+pub type DbResult<T> = Result<T, DbError>;
+
 /// Database-specific errors.
 #[derive(Debug, Clone, Error)]
-pub(crate) enum DbError {
+pub enum DbError {
     /// Attempted to persist a null OL block.
     #[error("null Ol block should not be persisted")]
     NullOlBlock,
