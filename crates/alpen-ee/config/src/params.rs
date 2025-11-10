@@ -23,6 +23,7 @@ pub struct AlpenEeParams {
 }
 
 impl AlpenEeParams {
+    /// Creates new chain parameters.
     pub fn new(
         account_id: AccountId,
         genesis_blockhash: B256,
@@ -39,22 +40,27 @@ impl AlpenEeParams {
         }
     }
 
+    /// Returns the EE account ID in the OL chain.
     pub fn account_id(&self) -> AccountId {
         self.account_id
     }
 
+    /// Returns the genesis block hash of the execution chain.
     pub fn genesis_blockhash(&self) -> B256 {
         self.genesis_blockhash
     }
 
+    /// Returns the genesis state root of the execution chain.
     pub fn genesis_stateroot(&self) -> B256 {
         self.genesis_stateroot
     }
 
+    /// Returns the OL slot number at genesis.
     pub fn genesis_ol_slot(&self) -> u64 {
         self.genesis_ol_slot
     }
 
+    /// Returns the OL block ID at genesis.
     pub fn genesis_ol_blockid(&self) -> OLBlockId {
         self.genesis_ol_blockid
     }

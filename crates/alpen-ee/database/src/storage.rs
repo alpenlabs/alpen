@@ -12,6 +12,7 @@ use crate::{
     DbError,
 };
 
+/// Storage implementation for EE node with caching.
 #[expect(
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"

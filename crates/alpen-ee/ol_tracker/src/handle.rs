@@ -14,6 +14,7 @@ const DEFAULT_POLL_WAIT_MS: u64 = 100;
 /// Default number of Ol blocks to process in each cycle during reorg
 const DEFAULT_REORG_FETCH_SIZE: u64 = 10;
 
+/// Handle for accessing OL tracker state updates.
 #[derive(Debug)]
 pub struct OlTrackerHandle {
     ee_state_rx: watch::Receiver<EeAccountState>,
@@ -21,15 +22,18 @@ pub struct OlTrackerHandle {
 }
 
 impl OlTrackerHandle {
+    /// Returns a watcher for EE account state updates.
     pub fn ee_state_watcher(&self) -> watch::Receiver<EeAccountState> {
         self.ee_state_rx.clone()
     }
 
+    /// Returns a watcher for consensus head updates.
     pub fn consensus_watcher(&self) -> watch::Receiver<ConsensusHeads> {
         self.consensus_rx.clone()
     }
 }
 
+/// Builder for creating an OL tracker with custom configuration.
 #[derive(Debug)]
 pub struct OlTrackerBuilder<TStorage, TOlClient> {
     state: OlTrackerState,
@@ -47,6 +51,7 @@ pub struct OlTrackerBuilder<TStorage, TOlClient> {
     reason = "optional builder methods"
 )]
 impl<TStorage, TOlClient> OlTrackerBuilder<TStorage, TOlClient> {
+    /// Creates a new OL tracker builder with all required fields.
     pub fn new(
         state: OlTrackerState,
         params: Arc<AlpenEeParams>,
@@ -64,21 +69,25 @@ impl<TStorage, TOlClient> OlTrackerBuilder<TStorage, TOlClient> {
         }
     }
 
+    /// Sets the maximum number of blocks to fetch per cycle.
     pub fn with_max_block_fetch(mut self, v: u64) -> Self {
         self.max_block_fetch = Some(v);
         self
     }
 
+    /// Sets the polling wait time in milliseconds.
     pub fn with_poll_wait_ms(mut self, v: u64) -> Self {
         self.poll_wait_ms = Some(v);
         self
     }
 
+    /// Sets the reorg fetch size for handling reorganizations.
     pub fn with_reorg_fetch_size(mut self, v: u64) -> Self {
         self.reorg_fetch_size = Some(v);
         self
     }
 
+    /// Builds and returns the tracker handle and task.
     pub fn build(self) -> (OlTrackerHandle, impl Future<Output = ()>)
     where
         TStorage: Storage,

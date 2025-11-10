@@ -24,6 +24,7 @@ pub struct AlpenEeConfig {
 }
 
 impl AlpenEeConfig {
+    /// Creates a new Alpen EE configuration.
     pub fn new(
         params: AlpenEeParams,
         sequencer_credrule: CredRule,
@@ -40,22 +41,27 @@ impl AlpenEeConfig {
         }
     }
 
+    /// Returns the chain parameters.
     pub fn params(&self) -> &Arc<AlpenEeParams> {
         &self.params
     }
 
+    /// Returns the sequencer credential rule for signature verification.
     pub fn sequencer_credrule(&self) -> &CredRule {
         &self.sequencer_credrule
     }
 
+    /// Returns the OL client HTTP connection string.
     pub fn ol_client_http(&self) -> &str {
         &self.ol_client_http
     }
 
+    /// Returns the EE sequencer HTTP connection string if configured.
     pub fn ee_sequencer_http(&self) -> Option<&str> {
         self.ee_sequencer_http.as_deref()
     }
 
+    /// Returns the number of database retries attempted for any transaction.
     pub fn db_retry_count(&self) -> u16 {
         self.db_retry_count
     }

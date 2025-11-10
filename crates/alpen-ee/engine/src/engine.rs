@@ -6,12 +6,14 @@ use reth_node_builder::{
     BuiltPayload, ConsensusEngineHandle, EngineApiMessageVersion, PayloadTypes,
 };
 
+/// Execution engine implementation using Reth for Alpen EE.
 #[derive(Debug, Clone)]
 pub struct AlpenRethExecEngine {
     beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>,
 }
 
 impl AlpenRethExecEngine {
+    /// Creates a new Alpen Reth execution engine.
     pub fn new(beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>) -> Self {
         Self {
             beacon_engine_handle,

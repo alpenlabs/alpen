@@ -9,6 +9,7 @@ use tracing::warn;
 
 use crate::error::{OlTrackerError, Result};
 
+/// Internal State of the OL tracker.
 #[derive(Debug, Clone)]
 pub struct OlTrackerState {
     best: EeAccountStateAtBlock,
@@ -32,14 +33,17 @@ impl OlTrackerState {
 }
 
 impl OlTrackerState {
+    /// Returns the best EE account state.
     pub fn best_ee_state(&self) -> &EeAccountState {
         self.best.ee_state()
     }
 
+    /// Returns the best OL block commitment.
     pub fn best_ol_block(&self) -> &OLBlockCommitment {
         self.best.ol_block()
     }
 
+    /// Returns the consensus heads derived from confirmed and finalized states.
     pub fn get_consensus_heads(&self) -> ConsensusHeads {
         ConsensusHeads {
             confirmed: self.confirmed.last_exec_blkid(),

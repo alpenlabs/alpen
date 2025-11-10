@@ -10,6 +10,7 @@ fn init_db(datadir: &Path, db_retry_count: u16) -> eyre::Result<Arc<DatabaseImpl
     super::sleddb::init_db(datadir, db_retry_count)
 }
 
+/// Initializes database storage for Alpen EE.
 pub fn init_db_storage(datadir: &Path, db_retry_count: u16) -> eyre::Result<EeNodeStorage> {
     let db = init_db(datadir, db_retry_count)?;
 

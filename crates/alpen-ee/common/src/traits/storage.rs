@@ -5,9 +5,12 @@ use thiserror::Error;
 
 use crate::EeAccountStateAtBlock;
 
+/// Identifies an OL block either by block ID or slot number.
 #[derive(Debug)]
 pub enum OLBlockOrSlot<'a> {
+    /// Identifies by block ID.
     Block(&'a OLBlockId),
+    /// Identifies by slot number.
     Slot(u64),
 }
 

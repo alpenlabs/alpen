@@ -125,6 +125,7 @@ async fn engine_control_task_inner<
     }
 }
 
+/// Creates an engine control task that processes chain updates from OL and sequencer.
 pub fn create_engine_control_task<
     N: NodeTypesWithDB + ProviderNodeTypes,
     E: ExecutionEngine<P>,
