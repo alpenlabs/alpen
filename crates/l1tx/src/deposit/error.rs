@@ -12,6 +12,12 @@ pub enum DepositParseError {
     #[error("no data")]
     NoData,
 
+    #[error("wrong subprotocol")]
+    WrongSubprotocol,
+
+    #[error("wrong tx type")]
+    WrongTxType,
+
     /// We don't accept nonstandard deposit things.
     #[error("tag too large")]
     TagOversized,

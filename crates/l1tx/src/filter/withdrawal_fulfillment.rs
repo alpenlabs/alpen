@@ -1,9 +1,10 @@
 use bitcoin::{ScriptBuf, Transaction};
+use strata_asm_txs_bridge_v1::{constants::WITHDRAWAL_TX_TYPE, BRIDGE_V1_SUBPROTOCOL_ID};
 use strata_asm_types::WithdrawalFulfillmentInfo;
 use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 use tracing::{debug, error};
 
-use crate::filter::types::TxFilterConfig;
+use crate::{filter::types::TxFilterConfig, BRIDGE_V1_SUBPROTOCOL_ID_LEN, TX_TYPE_LEN};
 
 /// Parse transaction and search for a Withdrawal Fulfillment transaction to an expected address.
 pub(crate) fn try_parse_tx_as_withdrawal_fulfillment(
@@ -11,8 +12,8 @@ pub(crate) fn try_parse_tx_as_withdrawal_fulfillment(
     filter_conf: &TxFilterConfig,
 ) -> Option<WithdrawalFulfillmentInfo> {
     // 1. Check this is of correct structure
-    let frontpayment_txout = tx.output.first()?;
-    let metadata_txout = tx.output.get(1)?;
+    let metadata_txout = tx.output.first()?;
+    let frontpayment_txout = tx.output.get(1)?;
     let txid: Buf32 = tx.compute_txid().into();
 
     metadata_txout.script_pubkey.is_op_return().then_some(())?;
@@ -84,8 +85,9 @@ fn parse_opreturn_metadata(
     // FIXME this needs to ensure that it's actually an OP_RETURN
     let data = extract_op_return_data(script_buf)?;
 
-    // 4 bytes magic + 4 bytes op idx + 4 bytes dep idx + 32 bytes txid
-    if data.len() != 44 {
+    // 4 bytes magic + 4 bytes op idx + 4 bytes dep idx + 32 bytes txid + bridge subprotocol len +
+    //   tx type len
+    if data.len() != 44 + BRIDGE_V1_SUBPROTOCOL_ID_LEN + TX_TYPE_LEN {
         return None;
     }
 
@@ -96,16 +98,27 @@ fn parse_opreturn_metadata(
         return None;
     }
 
+    let subprotocol_id = data[4];
+    let tx_type = data[5];
+
+    if subprotocol_id != BRIDGE_V1_SUBPROTOCOL_ID {
+        return None;
+    }
+
+    if tx_type != WITHDRAWAL_TX_TYPE {
+        return None;
+    }
+
     // Then parse out each of the indexes we're referring to.
     let mut idx_bytes = [0u8; 4];
 
-    idx_bytes.copy_from_slice(&data[4..8]);
+    idx_bytes.copy_from_slice(&data[6..10]);
     let opidx: u32 = u32::from_be_bytes(idx_bytes);
 
-    idx_bytes.copy_from_slice(&data[8..12]);
+    idx_bytes.copy_from_slice(&data[10..14]);
     let depidx: u32 = u32::from_be_bytes(idx_bytes);
 
-    let deposit_txid_bytes = data[12..].try_into().unwrap();
+    let deposit_txid_bytes = data[14..].try_into().unwrap();
 
     Some((opidx, depidx, deposit_txid_bytes))
 }
@@ -190,15 +203,15 @@ mod test {
             lock_time: LockTime::from_height(0).unwrap(),
             input: vec![], // dont care
             output: vec![
-                // front payment
-                TxOut {
-                    script_pubkey: addresses[0].to_script(),
-                    value: withdraw_amt_after_fees(),
-                },
                 // metadata with operator index
                 TxOut {
                     script_pubkey: create_opreturn_metadata(MAGIC, 1, 2, &txids[0]),
                     value: Amount::from_sat(0),
+                },
+                // front payment
+                TxOut {
+                    script_pubkey: addresses[0].to_script(),
+                    value: withdraw_amt_after_fees(),
                 },
                 // change
                 TxOut {

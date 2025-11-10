@@ -279,12 +279,14 @@ pub fn create_opreturn_metadata(
     deposit_idx: u32,
     deposit_txid: &[u8; 32],
 ) -> ScriptBuf {
-    let mut metadata = [0u8; 44];
+    let mut metadata = [0u8; 46];
     metadata[..4].copy_from_slice(&magic);
+    metadata[5] = 2;
+    metadata[6] = 2;
     // first 4 bytes = operator idx
-    metadata[4..8].copy_from_slice(&operator_idx.to_be_bytes());
+    metadata[6..10].copy_from_slice(&operator_idx.to_be_bytes());
     // next 4 bytes = deposit idx
-    metadata[8..12].copy_from_slice(&deposit_idx.to_be_bytes());
-    metadata[12..44].copy_from_slice(deposit_txid);
+    metadata[10..14].copy_from_slice(&deposit_idx.to_be_bytes());
+    metadata[14..46].copy_from_slice(deposit_txid);
     Descriptor::new_op_return(&metadata).unwrap().to_script()
 }

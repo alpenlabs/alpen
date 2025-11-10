@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-txs-bridge-v1.workspace = true
 strata-asm-types.workspace = true
 strata-bridge-types.workspace = true
 strata-checkpoint-types.workspace = true
