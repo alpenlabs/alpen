@@ -1,3 +1,6 @@
+# Set shell to bash for better compatibility
+set shell := ["bash", "-c"]
+
 # Variables
 git_tag := `git describe --tags --abbrev=0 2>/dev/null || echo "no-tag"`
 build_path := "target"
@@ -278,6 +281,12 @@ lint-check-shell: ensure-shellcheck
     @echo "Linting shell scripts..."
     @find . -type f \( -name '*.sh' -o -name '*.bash' \) -not -path "./target/*" -not -path "./.git/*" -not -path "./.ropeproject/*" -not -path "./functional-tests/.venv/*" -execdir shellcheck -x {} +
 
+# Check for struct naming style issues
+[group('code-quality')]
+lint-check-style:
+    ./contrib/find_with_structs.sh crates/
+    ./contrib/find_with_structs.sh bin/
+
 # Lints the functional tests and applies fixes where possible
 [group('code-quality')]
 lint-fix-func-tests: ensure-uv activate-uv
@@ -285,7 +294,7 @@ lint-fix-func-tests: ensure-uv activate-uv
 
 # Runs all lints and checks for issues without trying to fix them
 [group('code-quality')]
-lint: fmt-check-ws fmt-check-func-tests fmt-check-toml lint-check-ws lint-check-func-tests lint-check-codespell lint-check-shell
+lint: fmt-check-ws fmt-check-func-tests fmt-check-toml lint-check-ws lint-check-func-tests lint-check-codespell lint-check-shell lint-check-style
     @echo "\n\033[36m======== OK: Lints and Formatting ========\033[0m\n"
 
 # Runs all lints and applies fixes where possible

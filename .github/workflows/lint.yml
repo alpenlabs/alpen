@@ -139,6 +139,23 @@ jobs:
         run: |
           taplo fmt --check
 
+  extra-style:
+    name: Extra style checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          persist-credentials: false
+
+      - name: Setup just
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
+
+      - name: Run just lint-check-style
+        run: |
+            just lint-check-style
+
   lint-success:
     name: Check that lints passed
     runs-on: ubuntu-latest
@@ -149,6 +166,7 @@ jobs:
       - fmt
       - codespell
       - taplo
+      - extra-style
     timeout-minutes: 30
     steps:
       - name: Decide whether the needed jobs succeeded or failed
