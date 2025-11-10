@@ -57,6 +57,7 @@ members = [
   "crates/ol/mempool",
   "crates/ol/state-types",
   "crates/ol-chainstate-types",
+  "crates/paas",
   "crates/params",
   "crates/primitives",
   "crates/proof-impl/checkpoint",

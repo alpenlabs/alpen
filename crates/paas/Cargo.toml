@@ -1,0 +1,25 @@
+[package]
+name = "strata-paas"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+
+# Service framework
+strata-service = { path = "../service" }
+strata-tasks = { path = "../tasks" }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
