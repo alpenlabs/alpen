@@ -12,7 +12,6 @@ mod engine_control;
 mod genesis;
 mod ol_client;
 mod ol_tracker;
-mod traits;
 
 use std::sync::Arc;
 

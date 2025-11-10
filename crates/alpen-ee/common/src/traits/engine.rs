@@ -1,8 +1,24 @@
+use alloy_rpc_types_engine::ForkchoiceState;
+use async_trait::async_trait;
 use thiserror::Error;
+
+/// Interface for interacting with an execution engine that processes payloads
+/// and tracks consensus state. Typically wraps an Engine API-compliant client.
+#[async_trait]
+pub trait ExecutionEngine<TEnginePayload> {
+    /// Submits an execution payload to the engine for processing.
+    async fn submit_payload(&self, payload: TEnginePayload) -> Result<(), ExecutionEngineError>;
+
+    /// Updates the engine's fork choice state (head, safe, and finalized blocks).
+    async fn update_consenesus_state(
+        &self,
+        state: ForkchoiceState,
+    ) -> Result<(), ExecutionEngineError>;
+}
 
 /// Errors that can occur when interacting with an execution engine.
 #[derive(Debug, Error)]
-pub(crate) enum ExecutionEngineError {
+pub enum ExecutionEngineError {
     /// Failed to submit a payload to the engine via `newPayload`.
     #[error("payload submission failed: {0}")]
     PayloadSubmission(String),
@@ -30,37 +46,32 @@ pub(crate) enum ExecutionEngineError {
 
 impl ExecutionEngineError {
     /// Creates a payload submission error.
-    #[expect(dead_code, reason = "wip")]
-    pub(crate) fn payload_submission(msg: impl Into<String>) -> Self {
+    pub fn payload_submission(msg: impl Into<String>) -> Self {
         Self::PayloadSubmission(msg.into())
     }
 
     /// Creates a fork choice update error.
-    pub(crate) fn fork_choice_update(msg: impl Into<String>) -> Self {
+    pub fn fork_choice_update(msg: impl Into<String>) -> Self {
         Self::ForkChoiceUpdate(msg.into())
     }
 
     /// Creates an invalid payload error.
-    #[expect(dead_code, reason = "wip")]
-    pub(crate) fn invalid_payload(msg: impl Into<String>) -> Self {
+    pub fn invalid_payload(msg: impl Into<String>) -> Self {
         Self::InvalidPayload(msg.into())
     }
 
     /// Creates an engine syncing error.
-    #[expect(dead_code, reason = "wip")]
-    pub(crate) fn engine_syncing(msg: impl Into<String>) -> Self {
+    pub fn engine_syncing(msg: impl Into<String>) -> Self {
         Self::EngineSyncing(msg.into())
     }
 
     /// Creates a communication error.
-    #[expect(dead_code, reason = "wip")]
-    pub(crate) fn communication(msg: impl Into<String>) -> Self {
+    pub fn communication(msg: impl Into<String>) -> Self {
         Self::Communication(msg.into())
     }
 
     /// Creates a generic engine error.
-    #[expect(dead_code, reason = "wip")]
-    pub(crate) fn other(msg: impl Into<String>) -> Self {
+    pub fn other(msg: impl Into<String>) -> Self {
         Self::Other(msg.into())
     }
 }

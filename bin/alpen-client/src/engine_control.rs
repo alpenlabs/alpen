@@ -2,7 +2,9 @@ use std::future::Future;
 
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::ForkchoiceState;
+use alpen_ee_common::{ExecutionEngine, ExecutionEngineError};
 use alpen_reth_node::{AlpenBuiltPayload, AlpenEngineTypes};
+use async_trait::async_trait;
 use reth_node_builder::{
     BuiltPayload, ConsensusEngineHandle, EngineApiMessageVersion, NodeTypesWithDB, PayloadTypes,
 };
@@ -17,10 +19,7 @@ use tokio::{
 };
 use tracing::{error, warn};
 
-use crate::{
-    ol_tracker::ConsensusHeads,
-    traits::{engine::ExecutionEngine, error::ExecutionEngineError},
-};
+use crate::ol_tracker::ConsensusHeads;
 
 #[derive(Debug, Clone)]
 pub(crate) struct AlpenRethExecEngine {
@@ -35,6 +34,7 @@ impl AlpenRethExecEngine {
     }
 }
 
+#[async_trait]
 impl ExecutionEngine<AlpenBuiltPayload> for AlpenRethExecEngine {
     async fn submit_payload(&self, payload: AlpenBuiltPayload) -> Result<(), ExecutionEngineError> {
         self.beacon_engine_handle

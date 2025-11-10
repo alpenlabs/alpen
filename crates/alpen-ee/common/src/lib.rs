@@ -3,6 +3,7 @@ pub mod traits;
 pub mod types;
 
 pub use traits::{
+    engine::{ExecutionEngine, ExecutionEngineError},
     ol_client::{OlClient, OlClientError},
     storage::{OLBlockOrSlot, Storage, StorageError},
 };
