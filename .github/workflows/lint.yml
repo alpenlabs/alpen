@@ -139,6 +139,15 @@ jobs:
         run: |
           taplo fmt --check
 
+  extra-style:
+    name: Extra style checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Run just lint-check-style
+        run: |
+          just lint-check-style
+
   lint-success:
     name: Check that lints passed
     runs-on: ubuntu-latest
@@ -149,6 +158,7 @@ jobs:
       - fmt
       - codespell
       - taplo
+      - extra-style
     timeout-minutes: 30
     steps:
       - name: Decide whether the needed jobs succeeded or failed

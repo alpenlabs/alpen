@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Search for Rust type declarations (struct, type, enum) that use "With" as a connector between two concepts
 # Prints matches and returns exit code 1 if any matches are found, 0 if none found
