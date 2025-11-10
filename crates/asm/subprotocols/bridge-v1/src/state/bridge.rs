@@ -10,7 +10,7 @@ use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use crate::{
     errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
-        assignment::{AssignmentEntry, AssignmentTable},
+        assignment::AssignmentTable,
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
@@ -22,19 +22,6 @@ use crate::{
 ///
 /// This structure holds all the persistent state for the bridge, including
 /// operator registrations, deposit tracking, and assignment management.
-///
-/// # Fields
-///
-/// - `operators` - Table of registered bridge operators with their public keys
-/// - `deposits` - Table of Bitcoin deposits with UTXO references and amounts
-/// - `assignments` - Table linking deposits to operators with execution deadlines
-/// - `denomination` - The amount of bitcoin expected to be locked in the N/N multisig
-/// - `deadline_duration` - The duration (in blocks) for assignment execution deadlines
-///
-/// # Serialization
-///
-/// The state is serializable using Borsh for efficient storage and transmission
-/// within the Anchor State Machine.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct BridgeV1State {
     /// Table of registered bridge operators.
@@ -48,9 +35,6 @@ pub struct BridgeV1State {
 
     /// The amount of bitcoin expected to be locked in the N/N multisig.
     denomination: BitcoinAmount,
-
-    /// The duration (in blocks) for assignment execution deadlines.
-    deadline_duration: u64,
 
     /// Amount the operator can take as fees for processing withdrawal.
     operator_fee: BitcoinAmount,
@@ -76,9 +60,8 @@ impl BridgeV1State {
         Self {
             operators,
             deposits: DepositsTable::new_empty(),
-            assignments: AssignmentTable::new_empty(),
+            assignments: AssignmentTable::new(config.assignment_duration),
             denomination: config.denomination,
-            deadline_duration: config.deadline_duration,
             operator_fee: config.operator_fee,
         }
     }
@@ -96,11 +79,6 @@ impl BridgeV1State {
     /// Returns a reference to the assignments table.
     pub fn assignments(&self) -> &AssignmentTable {
         &self.assignments
-    }
-
-    /// Returns the deadline duration for assignment execution.
-    pub fn deadline_duration(&self) -> u64 {
-        self.deadline_duration
     }
 
     /// Validates a deposit transaction and info against bridge state requirements.
@@ -199,33 +177,23 @@ impl BridgeV1State {
         Ok(())
     }
 
-    /// Creates a withdrawal assignment by selecting an unassigned deposit UTXO and assigning it to
-    /// an operator.
+    /// Adds a new withdrawal assignment to the assignments table.
     ///
-    /// This function handles incoming withdrawal commands by:
-    /// 1. Finding a deposit UTXO that has not been assigned yet
-    /// 2. Randomly selecting an operator from the current multisig set that is also a notary
-    ///    operator for that deposit UTXO
-    /// 3. Creating an assignment linking the deposit UTXO to the selected operator with a deadline
-    ///    calculated from the current block height plus the configured deadline duration
+    /// This retrieves the oldest unassigned deposit UTXO, validates that its amount matches
+    /// the withdrawal amount, and creates a withdrawal command with the configured operator fee.
+    /// The assignment is then added to the table with operators randomly selected from the
+    /// current multisig set.
     ///
     /// # Parameters
     ///
-    /// - `withdrawal_cmd` - The withdrawal command specifying outputs and amounts
-    /// - `l1_block_id` - The L1 block ID used as seed for random operator selection
-    /// - `current_block_height` - The current Bitcoin block height for deadline calculation
+    /// - `withdrawal_output` - The withdrawal output specifying destination and amount
+    /// - `l1_block` - The L1 block commitment used for operator selection and deadline calculation
     ///
     /// # Returns
     ///
-    /// - `Ok(())` - If the withdrawal assignment was successfully created
-    /// - `Err(WithdrawalCommandError)` - If no suitable deposit/operator combination could be found
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - No unassigned deposit UTXOs are available
-    /// - No current multisig operators are notary operators for any unassigned deposit
-    /// - The deposit UTXO for the unassigned index is not found
+    /// - `Ok(())` - If the withdrawal assignment was successfully added
+    /// - `Err(WithdrawalCommandError)` - If no unassigned deposits, amounts mismatch, or adding new
+    ///   assignment fails
     pub fn create_withdrawal_assignment(
         &mut self,
         withdrawal_output: &WithdrawOutput,
@@ -237,9 +205,6 @@ impl BridgeV1State {
             .remove_oldest_deposit()
             .ok_or(WithdrawalCommandError::NoUnassignedDeposits)?;
 
-        // Create assignment with deadline calculated from current block height + deadline duration
-        let exec_deadline = l1_block.height().to_consensus_u32() as u64 + self.deadline_duration();
-
         if deposit.amt() != withdrawal_output.amt() {
             return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch(
                 Mismatch {
@@ -250,17 +215,13 @@ impl BridgeV1State {
         }
 
         let withdrawal_cmd = WithdrawalCommand::new(withdrawal_output.clone(), self.operator_fee);
-        let entry = AssignmentEntry::create_with_random_assignment(
+
+        self.assignments.add_new_assignment(
             deposit,
             withdrawal_cmd,
-            exec_deadline,
-            self.operators().current_multisig(),
-            *l1_block.blkid(),
-        )?;
-
-        self.assignments.insert(entry);
-
-        Ok(())
+            self.operators.current_multisig(),
+            l1_block,
+        )
     }
 
     /// Processes all expired assignments by reassigning them to new operators.
@@ -287,15 +248,8 @@ impl BridgeV1State {
         &mut self,
         current_block: &L1BlockCommitment,
     ) -> Result<Vec<u32>, WithdrawalCommandError> {
-        let current_block_height = current_block.height_u64();
-        let l1_block_id = current_block.blkid();
-
-        self.assignments.reassign_expired_assignments(
-            self.operator_fee,
-            current_block_height,
-            self.operators.current_multisig(),
-            *l1_block_id,
-        )
+        self.assignments
+            .reassign_expired_assignments(self.operators.current_multisig(), current_block)
     }
 
     /// Validates the parsed withdrawal fulfillment information against assignment information.
@@ -445,7 +399,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::state::{config::BridgeV1Config, withdrawal::WithdrawOutput};
+    use crate::state::{
+        assignment::AssignmentEntry, config::BridgeV1Config, withdrawal::WithdrawOutput,
+    };
 
     /// Helper function to create test operator keys
     ///
@@ -487,7 +443,7 @@ mod tests {
         let config = BridgeV1Config {
             denomination,
             operators,
-            deadline_duration: 144, // ~24 hours
+            assignment_duration: 144, // ~24 hours
             operator_fee: BitcoinAmount::from_sat(100_000),
         };
         let bridge_state = BridgeV1State::new(&config);

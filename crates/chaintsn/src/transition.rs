@@ -464,7 +464,7 @@ fn process_deposit_updates<'s, S: StateAccessor>(
 
             DepositState::Dispatched(dstate) => {
                 // Check if the deposit is past the threshold.
-                if cur_block_height >= dstate.exec_deadline() {
+                if cur_block_height >= dstate.fulfillment_deadline() {
                     // Pick the next assignee, if there are any.
                     let new_op_pos = if num_operators > 1 {
                         // Compute a random offset from 1 to (num_operators - 1),
