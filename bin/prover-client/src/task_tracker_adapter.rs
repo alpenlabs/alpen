@@ -41,13 +41,21 @@ impl TaskTrackerAdapter {
 
     /// Creates tasks for the given proof context and dependencies
     /// Returns ProofKeys for compatibility with existing operators
+    ///
+    /// Note: This adapter now handles dependencies by waiting for them to complete
+    /// before creating the main task. This ensures PaaS remains dependency-agnostic.
     pub(crate) async fn create_tasks(
         &mut self,
         proof_id: ProofContext,
         deps: Vec<ProofContext>,
-        _db: &ProofDBSled,
+        db: &ProofDBSled,
     ) -> Result<Vec<ProofKey>, ProvingTaskError> {
-        tracing::info!(?proof_id, "Creating task for");
+        tracing::info!(?proof_id, ?deps, "Creating task with dependencies");
+
+        // Wait for all dependencies to complete first
+        if !deps.is_empty() {
+            self.wait_for_dependencies(&deps, db).await?;
+        }
 
         let mut tasks = Vec::with_capacity(self.vms.len());
         let mut key_to_id = self.key_to_id.lock().await;
@@ -61,10 +69,10 @@ impl TaskTrackerAdapter {
                 return Err(ProvingTaskError::TaskAlreadyFound(proof_key));
             }
 
-            // Create task using ProverHandle
+            // Create task using ProverHandle (no deps passed to PaaS)
             let task_id = self
                 .prover_handle
-                .create_task(proof_id, deps.clone())
+                .create_task(proof_id)
                 .await
                 .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
 
@@ -74,6 +82,65 @@ impl TaskTrackerAdapter {
         }
 
         Ok(tasks)
+    }
+
+    /// Waits for all dependencies to complete
+    ///
+    /// This method ensures that all dependencies are completed before creating
+    /// the main task, effectively handling dependency management at the caller level.
+    async fn wait_for_dependencies(
+        &self,
+        deps: &[ProofContext],
+        db: &ProofDBSled,
+    ) -> Result<(), ProvingTaskError> {
+        use strata_db::traits::ProofDatabase;
+        use tokio::time::{Duration, sleep};
+
+        tracing::info!(?deps, "Waiting for dependencies to complete");
+
+        // Check if all dependencies have completed proofs in the database
+        let mut pending_deps: Vec<_> = deps.to_vec();
+
+        // Retry loop with timeout
+        let max_wait = Duration::from_secs(3600); // 1 hour max
+        let poll_interval = Duration::from_millis(500);
+        let start = std::time::Instant::now();
+
+        while !pending_deps.is_empty() {
+            if start.elapsed() > max_wait {
+                return Err(ProvingTaskError::DependencyTimeout(format!(
+                    "Timeout waiting for dependencies: {:?}",
+                    pending_deps
+                )));
+            }
+
+            // Check each pending dependency
+            pending_deps.retain(|dep_context| {
+                let vm = self.vms[0]; // Use primary VM
+                let dep_key = ProofKey::new(*dep_context, vm);
+
+                match db.get_proof(&dep_key) {
+                    Ok(Some(_)) => {
+                        tracing::info!(?dep_context, "Dependency completed");
+                        false // Remove from pending
+                    }
+                    Ok(None) => {
+                        true // Still pending
+                    }
+                    Err(e) => {
+                        tracing::warn!(?e, ?dep_context, "Error checking dependency");
+                        true // Treat errors as still pending
+                    }
+                }
+            });
+
+            if !pending_deps.is_empty() {
+                sleep(poll_interval).await;
+            }
+        }
+
+        tracing::info!("All dependencies completed");
+        Ok(())
     }
 
     /// Gets the status of a task by ProofKey

@@ -80,4 +80,8 @@ pub(crate) enum ProvingTaskError {
     // Once the sequencer can return the latest unproven checkpoint, this error can be removed.
     #[error("{0}")]
     IdempotentCompletion(String),
+
+    /// Occurs when waiting for dependencies to complete times out
+    #[error("Dependency timeout: {0}")]
+    DependencyTimeout(String),
 }

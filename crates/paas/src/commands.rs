@@ -13,11 +13,11 @@ pub type TaskId = Uuid;
 #[derive(Debug)]
 pub enum PaaSCommand {
     /// Create a new proof task
+    ///
+    /// Note: Caller must ensure all dependencies are completed before creating this task
     CreateTask {
         /// Proof context to generate
         context: ProofContext,
-        /// Dependencies that must complete first
-        deps: Vec<ProofContext>,
         /// Completion channel for response
         completion: CommandCompletionSender<Result<TaskId, PaaSError>>,
     },

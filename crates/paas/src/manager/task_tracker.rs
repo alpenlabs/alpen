@@ -3,7 +3,7 @@
 //! This module manages the lifecycle of proof tasks, including dependency
 //! resolution, retry logic, and state transitions.
 
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use std::collections::{HashMap, hash_map::Entry};
 
 use strata_db::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
@@ -23,8 +23,6 @@ pub struct TaskTracker {
     tasks: HashMap<TaskId, TaskInfo>,
     /// Map of TaskIds that have failed transiently to their retry counter
     transient_failed_tasks: HashMap<TaskId, u32>,
-    /// Map of TaskIds to their dependencies that have not yet been proven
-    pending_dependencies: HashMap<TaskId, HashSet<TaskId>>,
     /// Count of the tasks that are in progress per backend
     in_progress_tasks: HashMap<ProofZkVm, usize>,
     /// List of ZkVm backends configured
@@ -36,13 +34,11 @@ pub struct TaskTracker {
 struct TaskInfo {
     status: InternalTaskStatus,
     context: ProofContext,
-    deps: Vec<ProofContext>,
 }
 
 /// Internal task status (simpler than public TaskStatus)
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum InternalTaskStatus {
-    WaitingForDependencies,
     Pending,
     Queued,
     Proving,
@@ -62,7 +58,6 @@ impl InternalTaskStatus {
             (InternalTaskStatus::Pending, InternalTaskStatus::Queued) => true,
             (InternalTaskStatus::Queued, InternalTaskStatus::Proving) => true,
             (InternalTaskStatus::Proving, InternalTaskStatus::Completed) => true,
-            (InternalTaskStatus::WaitingForDependencies, InternalTaskStatus::Pending) => true,
 
             // Transient failure flow
             (InternalTaskStatus::Proving, InternalTaskStatus::TransientFailure) => true,
@@ -109,17 +104,17 @@ impl TaskTracker {
             key_to_task_id: HashMap::new(),
             tasks: HashMap::new(),
             transient_failed_tasks: HashMap::new(),
-            pending_dependencies: HashMap::new(),
             in_progress_tasks: HashMap::new(),
             vms,
         }
     }
 
-    /// Creates a new task with dependencies
+    /// Creates a new task without dependencies
+    ///
+    /// Caller is responsible for ensuring dependencies are completed before creating this task
     pub fn create_task<D: ProofDatabase>(
         &mut self,
         context: ProofContext,
-        deps: Vec<ProofContext>,
         db: &D,
     ) -> Result<TaskId, PaaSError> {
         info!(?context, "Creating task for proof context");
@@ -142,51 +137,12 @@ impl TaskTracker {
         self.task_id_to_key.insert(task_id, proof_key);
         self.key_to_task_id.insert(proof_key, task_id);
 
-        // Process dependencies
-        let mut pending_deps = Vec::new();
-        let mut dep_task_ids = Vec::new();
-
-        for dep_context in &deps {
-            let dep_key = ProofKey::new(*dep_context, vm);
-
-            // Check if dependency proof exists
-            let proof = db
-                .get_proof(&dep_key)
-                .map_err(|e| PaaSError::Storage(e.to_string()))?;
-
-            if proof.is_none() {
-                // Dependency not completed, need to track it
-                pending_deps.push(dep_key);
-
-                // Try to find existing task for this dependency
-                if let Some(&dep_task_id) = self.key_to_task_id.get(&dep_key) {
-                    dep_task_ids.push(dep_task_id);
-                } else {
-                    // Dependency doesn't exist as a task - this is an error
-                    return Err(PaaSError::InvalidContext(format!(
-                        "dependency {:?} does not exist as a task",
-                        dep_context
-                    )));
-                }
-            }
-        }
-
-        // Determine initial status
-        let status = if dep_task_ids.is_empty() {
-            InternalTaskStatus::Pending
-        } else {
-            self.pending_dependencies
-                .insert(task_id, HashSet::from_iter(dep_task_ids));
-            InternalTaskStatus::WaitingForDependencies
-        };
-
-        // Store task info
+        // Store task info - always starts as Pending
         self.tasks.insert(
             task_id,
             TaskInfo {
-                status,
+                status: InternalTaskStatus::Pending,
                 context,
-                deps,
             },
         );
 
@@ -223,7 +179,6 @@ impl TaskTracker {
                 retry_count: *self.transient_failed_tasks.get(&task_id).unwrap_or(&0),
                 next_retry_at: chrono::Utc::now(),
             },
-            InternalTaskStatus::WaitingForDependencies => TaskStatus::Pending,
         };
 
         Ok(status)
@@ -262,21 +217,6 @@ impl TaskTracker {
                     *count = count.saturating_sub(1);
                 }
 
-                // Resolve dependencies for other tasks
-                let mut tasks_to_update = vec![];
-                for (dependent_task, deps) in self.pending_dependencies.iter_mut() {
-                    if deps.remove(&task_id) && deps.is_empty() {
-                        tasks_to_update.push(*dependent_task);
-                    }
-                }
-
-                for dep_task in tasks_to_update {
-                    self.pending_dependencies.remove(&dep_task);
-                    if let Some(task_info) = self.tasks.get_mut(&dep_task) {
-                        let _ = task_info.status.transition(InternalTaskStatus::Pending);
-                    }
-                }
-
                 // Clean up completed task
                 self.tasks.remove(&task_id);
                 self.transient_failed_tasks.remove(&task_id);
@@ -313,15 +253,7 @@ impl TaskTracker {
             InternalTaskStatus::Failed => {
                 // Clean up retry counter
                 self.transient_failed_tasks.remove(&task_id);
-
-                // Mark dependent tasks as failed
-                for (dependent_task, deps) in self.pending_dependencies.iter_mut() {
-                    if deps.remove(&task_id)
-                        && let Some(task_info) = self.tasks.get_mut(dependent_task)
-                    {
-                        let _ = task_info.status.transition(InternalTaskStatus::Failed);
-                    }
-                }
+                // Note: Dependency management is caller's responsibility
             }
             _ => {}
         }
@@ -368,7 +300,6 @@ impl TaskTracker {
             proving: 0,
             completed: 0,
             failed: 0,
-            waiting_deps: 0,
         };
 
         for info in self.tasks.values() {
@@ -378,7 +309,6 @@ impl TaskTracker {
                 InternalTaskStatus::Proving => stats.proving += 1,
                 InternalTaskStatus::Completed => stats.completed += 1,
                 InternalTaskStatus::Failed => stats.failed += 1,
-                InternalTaskStatus::WaitingForDependencies => stats.waiting_deps += 1,
                 _ => {}
             }
         }
@@ -436,16 +366,13 @@ impl TaskTracker {
             .collect()
     }
 
-    /// Gets task context and dependencies
-    pub fn get_task_info(
-        &self,
-        task_id: TaskId,
-    ) -> Result<(ProofContext, Vec<ProofContext>), PaaSError> {
+    /// Gets task context
+    pub fn get_task_context(&self, task_id: TaskId) -> Result<ProofContext, PaaSError> {
         let info = self
             .tasks
             .get(&task_id)
             .ok_or(PaaSError::TaskNotFound(task_id))?;
-        Ok((info.context, info.deps.clone()))
+        Ok(info.context)
     }
 }
 
@@ -457,7 +384,6 @@ pub struct TaskStats {
     pub proving: usize,
     pub completed: usize,
     pub failed: usize,
-    pub waiting_deps: usize,
 }
 
 #[cfg(test)]
@@ -478,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_task_no_dependencies() {
+    fn test_create_task() {
         let mut tracker = TaskTracker::new();
         let db = setup_db();
 
@@ -486,7 +412,7 @@ mod tests {
         let end = EvmEeBlockCommitment::new(2, Buf32::default());
         let context = ProofContext::EvmEeStf(start, end);
 
-        let task_id = tracker.create_task(context, vec![], &db).unwrap();
+        let task_id = tracker.create_task(context, &db).unwrap();
         let status = tracker.get_task_status(task_id).unwrap();
 
         assert_eq!(status, TaskStatus::Pending);

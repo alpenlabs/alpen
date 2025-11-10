@@ -35,16 +35,14 @@ impl<D: ProofDatabase> ProverHandle<D> {
 
     /// Creates a new proof task
     ///
+    /// Note: Caller must ensure all dependencies are completed before creating this task.
+    /// PaaS does not manage dependencies - tasks are created independently.
+    ///
     /// Returns a TaskId that can be used to query status or retrieve the proof.
-    pub async fn create_task(
-        &self,
-        context: ProofContext,
-        deps: Vec<ProofContext>,
-    ) -> Result<TaskId, PaaSError> {
+    pub async fn create_task(&self, context: ProofContext) -> Result<TaskId, PaaSError> {
         self.command_handle
             .send_and_wait(|completion| PaaSCommand::CreateTask {
                 context,
-                deps: deps.clone(),
                 completion,
             })
             .await

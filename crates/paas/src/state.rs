@@ -70,15 +70,17 @@ impl<D: ProofDatabase> ProverServiceState<D> {
     }
 
     /// Creates a new proof task
+    ///
+    /// Note: Caller is responsible for managing dependencies.
+    /// Dependent tasks should only be created after their dependencies are completed.
     pub fn create_task(
         &mut self,
         context: strata_primitives::proof::ProofContext,
-        deps: Vec<strata_primitives::proof::ProofContext>,
     ) -> Result<TaskId, PaaSError> {
         self.stats.total_proofs += 1;
         let task_id = self
             .task_tracker
-            .create_task(context, deps, self.database.as_ref())?;
+            .create_task(context, self.database.as_ref())?;
         self.update_status();
         Ok(task_id)
     }

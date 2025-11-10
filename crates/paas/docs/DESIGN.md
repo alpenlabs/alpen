@@ -72,13 +72,7 @@ PaaS follows Strata's command worker pattern, providing an embeddable proof gene
 
 ```
 ┌──────────────────┐
-│ WaitingForDeps   │
-│  (has deps)      │
-└────────┬─────────┘
-         │ dependencies resolved
-         ▼
-┌──────────────────┐
-│    Pending       │ ◄─── Initial state (no deps)
+│    Pending       │ ◄─── Initial state (always)
 └────────┬─────────┘
          │ worker picks up task
          ▼
@@ -110,19 +104,42 @@ PaaS follows Strata's command worker pattern, providing an embeddable proof gene
             └──────────────────┘
 ```
 
+**Note:** PaaS does not manage task dependencies. All tasks are created in `Pending` state,
+and the caller is responsible for ensuring dependencies are completed before creating tasks.
+
 ### Valid State Transitions
 
 Enforced by `TaskTracker::update_status()`:
 
 | From State          | To State          | Trigger                    |
 |---------------------|-------------------|----------------------------|
-| WaitingForDeps      | Pending           | Dependencies resolved      |
 | Pending             | Queued            | Worker pool picks up task  |
 | Queued              | Proving           | Worker starts proof gen    |
 | Proving             | Completed         | Proof generation succeeds  |
 | Proving             | TransientFailure  | Recoverable error occurs   |
 | TransientFailure    | Queued            | Retry triggered            |
 | Any                 | Failed            | Permanent failure/max retries |
+
+### Architecture Changes (2025-11-10)
+
+**Dependency Management Moved to Caller:**
+
+PaaS has been refactored to be completely dependency-agnostic:
+- Removed `WaitingForDependencies` state
+- Removed `deps` parameter from `create_task()` API
+- Removed dependency resolution logic from `TaskTracker`
+- All tasks start in `Pending` state immediately
+
+**Rationale:** This separation of concerns makes PaaS a cleaner, more focused library
+that only handles proof task lifecycle. Dependency orchestration is now the caller's
+responsibility (e.g., prover-client waits for dependencies to complete before creating tasks).
+
+**Files Modified:**
+- `task_tracker.rs`: Removed dependency tracking fields and logic
+- `state.rs`: Updated `create_task()` to remove deps parameter
+- `commands.rs`: Removed deps from CreateTask command
+- `handle.rs`: Updated public API
+- `bin/prover-client/task_tracker_adapter.rs`: Added `wait_for_dependencies()` method
 
 ### Critical Bug Fixed (2025-11-04)
 
@@ -134,13 +151,6 @@ Enforced by `TaskTracker::update_status()`:
 - `Pending → Queued → Proving → Completed` ✅
 
 **Impact:** Test pass rate improved from 12.5% to 81% (14/16 tests fixed)
-
-**Files Modified:**
-- `commands.rs`: Added `MarkQueued`, `MarkProving` commands
-- `handle.rs`: Added `mark_queued()`, `mark_proving()` methods
-- `service.rs`: Added command handlers
-- `state.rs`: Added state transition methods
-- `worker_pool.rs`: Fixed to call transitions in correct order
 
 ---
 

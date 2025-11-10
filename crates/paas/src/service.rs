@@ -35,10 +35,9 @@ impl<D: ProofDatabase> AsyncService for ProverService<D> {
         match input {
             PaaSCommand::CreateTask {
                 context,
-                deps,
                 completion,
             } => {
-                let result = state.create_task(*context, deps.to_vec());
+                let result = state.create_task(*context);
                 if let Ok(task_id) = &result {
                     info!(?task_id, "Created proof task");
                 }

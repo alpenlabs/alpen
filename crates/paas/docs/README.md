@@ -31,10 +31,9 @@ let handle = ProverBuilder::new()
     .with_database(database)
     .launch(&executor)?;
 
-// Submit a proof task
+// Submit a proof task (caller must ensure dependencies are completed first)
 let task_id = handle.create_task(
     ProofContext::Checkpoint { index: 42 },
-    vec![], // no dependencies
 ).await?;
 
 // Check status
@@ -49,7 +48,7 @@ let proof = handle.get_proof(task_id).await?;
 - **State Machine Correctness** - Enforces proper task transitions: `Pending → Queued → Proving → Completed`
 - **Retry Logic** - Automatic retry with exponential backoff for transient failures
 - **Worker Pool Management** - Configurable worker pools per proving backend (Native/SP1)
-- **Dependency Resolution** - Supports proof tasks with dependencies on other proofs
+- **Dependency-Agnostic** - PaaS does not manage dependencies; caller handles dependency orchestration
 - **Command Pattern** - Clean async API via ProverHandle
 - **Status Monitoring** - Real-time status updates via watch channels
 
@@ -61,6 +60,7 @@ let proof = handle.get_proof(task_id).await?;
 
 ## Recent Updates
 
+- **2025-11-10**: Refactored to remove dependency logic - PaaS is now fully dependency-agnostic
 - **2025-11-04**: Fixed critical state machine bug, improved from 12.5% to 81% test pass rate
 - **2025-11-04**: Resolved TODOs, improved documentation, zero clippy warnings
 - **2025-10-30**: Completed Phase 2 migration from standalone binary to embeddable library
