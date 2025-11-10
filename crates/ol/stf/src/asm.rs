@@ -2,7 +2,7 @@ use strata_acct_types::{AccountSerial, MsgPayload, SystemAccount};
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointUpdate, DepositLog, constants::LogTypeId};
 use strata_ledger_types::{IL1ViewState, StateAccessor};
-use strata_ol_chain_types_new::OLLog;
+use strata_ol_chain_types_new::{LogEmitter, OLLog};
 use strata_primitives::l1::BitcoinAmount;
 use thiserror::Error;
 
@@ -29,7 +29,7 @@ pub(crate) fn process_asm_log(
 /// Sends deposited funds to the account associated with the EE ID in the deposit log.
 ///
 /// # Warning
-/// If no account exists for the serial, funds are currently dropped silently (line 35-38).
+/// If no account exists for the serial, funds are currently dropped silently.
 /// This needs to be handled - either error, send to treasury, or prominently log.
 fn process_deposit(
     ctx: &BlockExecContext,
@@ -58,7 +58,7 @@ fn process_deposit(
     )?;
 
     let log = OLLog::deposit_ack(acct_id, dep.addr.clone(), dep.amount.into());
-    ctx.emit_log(log);
+    LogEmitter::emit_log(ctx, log);
 
     // Increment bridged btc.
     let l1_view = state_accessor.l1_view_mut();

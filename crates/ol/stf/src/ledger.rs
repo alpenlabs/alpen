@@ -14,15 +14,14 @@ use crate::{
 /// Represents an account's view of the ledger for sending funds.
 ///
 /// Note: Not `Clone` because it contains `&mut S`.
-// FIXME: a better name.
 #[derive(Debug)]
-pub(crate) struct LedgerRef<'a, S: StateAccessor> {
+pub(crate) struct LedgerInterfaceImpl<'a, S: StateAccessor> {
     acct_id: AccountId,
     state_accessor: &'a mut S,
     ctx: &'a BlockExecContext,
 }
 
-impl<'a, S: StateAccessor> LedgerRef<'a, S> {
+impl<'a, S: StateAccessor> LedgerInterfaceImpl<'a, S> {
     pub(crate) fn new(
         acct_id: AccountId,
         state_accessor: &'a mut S,
@@ -36,7 +35,9 @@ impl<'a, S: StateAccessor> LedgerRef<'a, S> {
     }
 }
 
-impl<'a, S: StateAccessor> LedgerInterface<StfError> for LedgerRef<'a, S> {
+impl<'a, S: StateAccessor> LedgerInterface for LedgerInterfaceImpl<'a, S> {
+    type Error = StfError;
+
     fn send_message(&mut self, dest: AccountId, payload: MsgPayload) -> Result<(), StfError> {
         send_message(self.ctx, self.state_accessor, self.acct_id, dest, &payload)
     }

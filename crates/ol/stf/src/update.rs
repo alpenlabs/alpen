@@ -1,5 +1,6 @@
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
 use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IL1ViewState, StateAccessor};
+use strata_ol_chain_types_new::LogEmitter;
 use strata_snark_acct_sys::{handle_snark_msg, handle_snark_transfer};
 
 use crate::{
@@ -42,8 +43,7 @@ pub(crate) fn send_message<S: StateAccessor>(
             Ok(())
         }
         AccountTypeState::Snark(snark_state) => {
-            let logs = handle_snark_msg(cur_epoch, snark_state, from, msg_payload)?;
-            ctx.emit_logs(logs);
+            let logs = handle_snark_msg(ctx, cur_epoch, snark_state, from, msg_payload)?;
             Ok(())
         }
     }
@@ -83,8 +83,7 @@ pub(crate) fn send_transfer<S: StateAccessor>(
             Ok(())
         }
         AccountTypeState::Snark(snark_state) => {
-            let logs = handle_snark_transfer(cur_epoch, snark_state, from, amt)?;
-            ctx.emit_logs(logs);
+            handle_snark_transfer(ctx, cur_epoch, snark_state, from, amt)?;
             Ok(())
         }
     }

@@ -3,17 +3,17 @@ use strata_ledger_types::{
     AccountTypeState, IAccountState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
 use strata_ol_chain_types_new::{
-    L1Update, OLBlock, OLBlockBody, OLLog, OLTransaction, TransactionPayload,
+    L1Update, LogEmitter, OLBlock, OLBlockBody, OLLog, OLTransaction, TransactionPayload,
 };
 use strata_snark_acct_sys as snark_sys;
-use strata_snark_acct_types::{SnarkAccountUpdateWithMmrProofs, UpdateOperationData};
+use strata_snark_acct_types::{SnarkAccountUpdateContainer, UpdateOperationData};
 
 use crate::{
     ExecOutput,
     asm::process_asm_log,
     context::BlockExecContext,
     error::{StfError, StfResult},
-    ledger::LedgerRef,
+    ledger::LedgerInterfaceImpl,
     post_exec_block_validate, pre_exec_block_validate,
 };
 
@@ -125,7 +125,11 @@ fn execute_transaction<S: StateAccessor>(
                     update,
                     cur_balance,
                 )?;
-                update.update().operation().outputs().compute_total_value()
+                update
+                    .base_update()
+                    .operation()
+                    .outputs()
+                    .compute_total_value()
             } else {
                 Some(BitcoinAmount::zero())
             }
@@ -156,7 +160,7 @@ fn process_snark_update<S: StateAccessor>(
     state_accessor: &mut S,
     target: AccountId,
     snark_state: &mut impl ISnarkAccountState,
-    update: &SnarkAccountUpdateWithMmrProofs,
+    update: &SnarkAccountUpdateContainer,
     cur_balance: BitcoinAmount,
 ) -> StfResult<()> {
     let verified_update = snark_sys::verify_update_correctness(
@@ -171,7 +175,7 @@ fn process_snark_update<S: StateAccessor>(
     let operation = verified_update.operation().clone();
 
     // Create ledger ref
-    let mut ledger_ref = LedgerRef::new(target, state_accessor, ctx);
+    let mut ledger_ref = LedgerInterfaceImpl::new(target, state_accessor, ctx);
 
     // Apply update outputs.
     snark_sys::apply_update_outputs(&mut ledger_ref, verified_update)?;
@@ -185,7 +189,7 @@ fn process_snark_update<S: StateAccessor>(
 
     // Construct and emit SnarkUpdate Log.
     let log = construct_update_log(target, operation);
-    ctx.emit_log(log);
+    LogEmitter::emit_log(ctx, log);
 
     Ok(())
 }

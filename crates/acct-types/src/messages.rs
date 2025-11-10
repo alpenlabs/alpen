@@ -1,6 +1,6 @@
 //! Account message types.
 
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 
 use crate::{
     AccountId, BitcoinAmount,
@@ -57,7 +57,7 @@ impl Codec for MsgPayload {
         self.value.encode(encoder)?;
 
         // encode data length
-        let len = self.data.len() as u64;
+        let len = Varint::new_usize(self.data.len()).ok_or(CodecError::OobInteger)?;
         len.encode(encoder)?;
 
         // encode data
@@ -70,7 +70,7 @@ impl Codec for MsgPayload {
         let amt = BitcoinAmount::from_sat(amt_raw);
 
         // decode data length
-        let len = u64::decode(dec)?;
+        let len = Varint::decode(dec)?.inner();
 
         // decode data
         let mut data = vec![0u8; len as usize];

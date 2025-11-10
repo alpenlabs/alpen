@@ -30,6 +30,24 @@ pub struct UpdateProofPubParams {
 }
 
 impl UpdateProofPubParams {
+    pub fn new(
+        cur_state: ProofState,
+        new_state: ProofState,
+        message_inputs: Vec<MessageEntry>,
+        ledger_refs: LedgerRefs,
+        outputs: UpdateOutputs,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            cur_state,
+            new_state,
+            message_inputs,
+            ledger_refs,
+            outputs,
+            extra_data,
+        }
+    }
+
     pub fn cur_state(&self) -> ProofState {
         self.cur_state
     }
@@ -52,5 +70,10 @@ impl UpdateProofPubParams {
 
     pub fn extra_data(&self) -> &[u8] {
         &self.extra_data
+    }
+
+    pub fn to_ssz_bytes(&self) -> Vec<u8> {
+        // todo: use ssz
+        todo!()
     }
 }
