@@ -1,0 +1,22 @@
+[package]
+edition = "2021"
+name = "alpen-ee-engine"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-common.workspace = true
+alpen-reth-node.workspace = true
+strata-acct-types.workspace = true
+
+alloy-primitives.workspace = true
+alloy-rpc-types-engine.workspace = true
+async-trait.workspace = true
+reth-node-builder.workspace = true
+reth-provider.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]

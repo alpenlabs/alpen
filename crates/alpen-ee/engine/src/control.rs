@@ -2,12 +2,8 @@ use std::future::Future;
 
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::ForkchoiceState;
-use alpen_ee_common::{ConsensusHeads, ExecutionEngine, ExecutionEngineError};
-use alpen_reth_node::{AlpenBuiltPayload, AlpenEngineTypes};
-use async_trait::async_trait;
-use reth_node_builder::{
-    BuiltPayload, ConsensusEngineHandle, EngineApiMessageVersion, NodeTypesWithDB, PayloadTypes,
-};
+use alpen_ee_common::{ConsensusHeads, ExecutionEngine};
+use reth_node_builder::NodeTypesWithDB;
 use reth_provider::{
     providers::{BlockchainProvider, ProviderNodeTypes},
     BlockHashReader, BlockNumReader, ProviderResult,
@@ -18,43 +14,6 @@ use tokio::{
     sync::{broadcast, watch},
 };
 use tracing::{error, warn};
-
-#[derive(Debug, Clone)]
-pub(crate) struct AlpenRethExecEngine {
-    beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>,
-}
-
-impl AlpenRethExecEngine {
-    pub(crate) fn new(beacon_engine_handle: ConsensusEngineHandle<AlpenEngineTypes>) -> Self {
-        Self {
-            beacon_engine_handle,
-        }
-    }
-}
-
-#[async_trait]
-impl ExecutionEngine<AlpenBuiltPayload> for AlpenRethExecEngine {
-    async fn submit_payload(&self, payload: AlpenBuiltPayload) -> Result<(), ExecutionEngineError> {
-        self.beacon_engine_handle
-            .new_payload(AlpenEngineTypes::block_to_payload(
-                payload.block().to_owned(),
-            ))
-            .await
-            .map(|_| ())
-            .map_err(|e| ExecutionEngineError::payload_submission(e.to_string()))
-    }
-
-    async fn update_consenesus_state(
-        &self,
-        state: ForkchoiceState,
-    ) -> Result<(), ExecutionEngineError> {
-        self.beacon_engine_handle
-            .fork_choice_updated(state, None, EngineApiMessageVersion::V4)
-            .await
-            .map(|_| ())
-            .map_err(|e| ExecutionEngineError::fork_choice_update(e.to_string()))
-    }
-}
 
 /// Check if `blockhash` is in canonical chain provided by [`BlockchainProvider`].
 fn is_in_canonical_chain<N: NodeTypesWithDB + ProviderNodeTypes>(
@@ -166,7 +125,7 @@ async fn engine_control_task_inner<
     }
 }
 
-pub(crate) fn create_engine_control_task<
+pub fn create_engine_control_task<
     N: NodeTypesWithDB + ProviderNodeTypes,
     E: ExecutionEngine<P>,
     P: Send,
