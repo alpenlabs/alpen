@@ -1,3 +1,4 @@
+use alpen_ee_common::{EeAccountStateAtBlock, Storage};
 use tracing::{debug, error, info, warn};
 
 use super::{
@@ -5,11 +6,8 @@ use super::{
     error::{OlTrackerError, Result},
     state::{build_tracker_state, OlTrackerState},
 };
-use crate::traits::{
-    ol_client::{
-        block_commitments_in_range_checked, chain_status_checked, OlChainStatus, OlClient,
-    },
-    storage::{EeAccountStateAtBlock, Storage},
+use crate::traits::ol_client::{
+    block_commitments_in_range_checked, chain_status_checked, OlChainStatus, OlClient,
 };
 
 /// Finds the last common block state between local storage and remote chain.
@@ -123,15 +121,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alpen_ee_common::{traits::storage::MockStorage, OLBlockOrSlot, StorageError};
     use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
     use strata_identifiers::{Buf32, OLBlockCommitment};
 
     use super::*;
-    use crate::traits::{
-        ol_client::MockOlClient,
-        storage::{MockStorage, OLBlockOrSlot},
-    };
+    use crate::traits::ol_client::MockOlClient;
 
     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
         let mut bytes = [0u8; 32];
@@ -152,6 +148,7 @@ mod tests {
     }
 
     mod find_fork_point_tests {
+
         use super::*;
 
         #[tokio::test]
@@ -343,7 +340,7 @@ mod tests {
             mock_storage
                 .expect_ee_account_state()
                 .times(1)
-                .returning(|_| Err(crate::traits::error::StorageError::database("test error")));
+                .returning(|_| Err(StorageError::database("test error")));
 
             let result = find_fork_point(&mock_storage, &mock_client, 100, 110, 50).await;
 
@@ -423,11 +420,7 @@ mod tests {
             mock_storage
                 .expect_rollback_ee_account_state()
                 .times(1)
-                .returning(|_| {
-                    Err(crate::traits::error::StorageError::database(
-                        "rollback failed",
-                    ))
-                });
+                .returning(|_| Err(StorageError::database("rollback failed")));
 
             let mut state = OlTrackerState::new(
                 make_state_at_block(110, 2, 2),
@@ -703,7 +696,7 @@ mod tests {
                         }
                         // Simulate failure when reading finalized block (which has id=1, slot=100)
                         if id_byte == 1 {
-                            return Err(crate::traits::error::StorageError::database(
+                            return Err(StorageError::database(
                                 "simulated storage read failure for finalized block",
                             ));
                         }
@@ -782,11 +775,7 @@ mod tests {
                 .expect_rollback_ee_account_state()
                 .times(1)
                 .withf(|slot| *slot == 107)
-                .returning(|_| {
-                    Err(crate::traits::error::StorageError::database(
-                        "simulated rollback failure",
-                    ))
-                });
+                .returning(|_| Err(StorageError::database("simulated rollback failure")));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
             let initial_state = OlTrackerState::new(

@@ -1,18 +1,13 @@
 use std::sync::Arc;
 
+use alpen_ee_common::{EeAccountStateAtBlock, Storage};
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use tracing::warn;
 
 use super::error::{OlTrackerError, Result};
-use crate::{
-    config::AlpenEeConfig,
-    traits::{
-        ol_client::OlChainStatus,
-        storage::{EeAccountStateAtBlock, Storage},
-    },
-};
+use crate::{config::AlpenEeConfig, traits::ol_client::OlChainStatus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConsensusHeads {
@@ -153,13 +148,11 @@ pub(crate) async fn effective_account_state(
 
 #[cfg(test)]
 mod tests {
+    use alpen_ee_common::traits::storage::{MockStorage, OLBlockOrSlot, StorageError};
     use strata_identifiers::Buf32;
 
     use super::*;
-    use crate::traits::{
-        ol_client::OlChainStatus,
-        storage::{MockStorage, OLBlockOrSlot},
-    };
+    use crate::traits::ol_client::OlChainStatus;
 
     /// Helper to create a block commitment for testing
     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
@@ -290,11 +283,7 @@ mod tests {
             mock_storage
                 .expect_ee_account_state()
                 .times(1)
-                .returning(|_| {
-                    Err(crate::traits::error::StorageError::database(
-                        "database connection failed",
-                    ))
-                });
+                .returning(|_| Err(StorageError::database("database connection failed")));
 
             let result = effective_account_state(&local, &ol, &mock_storage).await;
 
@@ -460,7 +449,7 @@ mod tests {
             mock_storage
                 .expect_ee_account_state()
                 .times(1)
-                .returning(|_| Err(crate::traits::error::StorageError::database("disk error")));
+                .returning(|_| Err(StorageError::database("disk error")));
 
             let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
 

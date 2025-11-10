@@ -1,20 +1,15 @@
 use std::sync::Arc;
 
+use alpen_ee_common::{EeAccountStateAtBlock, OLBlockOrSlot, Storage, StorageError};
 use async_trait::async_trait;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_storage_common::cache::CacheTable;
 use threadpool::ThreadPool;
 
-use crate::{
-    db::{
-        database::{ops, EeNodeDb},
-        DbError,
-    },
-    traits::{
-        error::StorageError,
-        storage::{EeAccountStateAtBlock, OLBlockOrSlot, Storage},
-    },
+use crate::db::{
+    database::{ops, EeNodeDb},
+    DbError,
 };
 
 pub(crate) struct EeNodeStorage {

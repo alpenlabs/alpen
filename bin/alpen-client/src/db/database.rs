@@ -1,11 +1,9 @@
+use alpen_ee_common::EeAccountStateAtBlock;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_generic};
 
-use crate::{
-    db::{error::DbError, DbResult},
-    traits::storage::EeAccountStateAtBlock,
-};
+use crate::db::{error::DbError, DbResult};
 
 /// Database interface for EE node account state management.
 pub(crate) trait EeNodeDb: Send + Sync + 'static {

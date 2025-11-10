@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use alpen_ee_common::EeAccountStateAtBlock;
 use strata_db_store_sled::SledDbConfig;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
@@ -7,10 +8,7 @@ use tracing::{error, warn};
 use typed_sled::{error::Error as TSledError, transaction::SledTransactional, SledDb, SledTree};
 
 use super::{AccountStateAtOlBlockSchema, OlBlockAtSlotSchema};
-use crate::{
-    db::{database::EeNodeDb, serialization_types::DBAccountStateAtSlot, DbError, DbResult},
-    traits::storage::EeAccountStateAtBlock,
-};
+use crate::db::{database::EeNodeDb, serialization_types::DBAccountStateAtSlot, DbError, DbResult};
 
 fn abort<T>(reason: impl std::error::Error + Send + Sync + 'static) -> Result<T, TSledError> {
     Err(TSledError::abort(reason))

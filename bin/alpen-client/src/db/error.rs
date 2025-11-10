@@ -1,10 +1,9 @@
+use alpen_ee_common::StorageError;
 use sled::transaction::TransactionError;
 use strata_identifiers::OLBlockId;
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 use typed_sled::error::Error as SledError;
-
-use crate::traits::error::StorageError;
 
 /// Database-specific errors.
 #[derive(Debug, Clone, Error)]

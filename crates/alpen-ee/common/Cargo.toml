@@ -1,18 +1,18 @@
 [package]
 edition = "2021"
-name = "alpen-client"
+name = "alpen-ee-common"
 version = "0.3.0-alpha.1"
 
 [lints]
 workspace = true
 
-[[bin]]
-name = "alpen-client"
-path = "src/main.rs"
+[features]
+default = []
+test-utils = ["dep:mockall"]
 
 [dependencies]
 alpen-chainspec.workspace = true
-alpen-ee-common.workspace = true
+alpen-reth-evm.workspace = true
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
 strata-db-store-sled.workspace = true
@@ -23,14 +23,16 @@ strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 strata-storage-common.workspace = true
 
+alloy-eips.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types-engine.workspace = true
-anyhow.workspace = true
+anyhow = { workspace = true, optional = true }
 async-trait.workspace = true
-bincode.workspace = true
+bincode = { workspace = true, optional = true }
 borsh.workspace = true
 clap.workspace = true
 eyre.workspace = true
+mockall = { workspace = true, optional = true }
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true
 reth-cli-runner.workspace = true
@@ -38,6 +40,7 @@ reth-cli-util.workspace = true
 reth-db.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
+reth-payload-builder.workspace = true
 reth-provider.workspace = true
 sled.workspace = true
 thiserror.workspace = true
@@ -50,4 +53,3 @@ typed-sled.workspace = true
 mockall.workspace = true
 strata-primitives.workspace = true
 tempfile.workspace = true
-alpen-ee-common = { workspace = true, features = ["test-utils"] }
