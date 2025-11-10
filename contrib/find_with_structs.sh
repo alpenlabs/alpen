@@ -14,7 +14,7 @@ fi
 
 matches=$(grep -r \
     --include="*.rs" \
-    -E '(struct|type|enum)\s+[A-Z][a-z]+[A-Za-z0-9_]*With[A-Z][A-Za-z0-9_]*(<[^>]*>)?' \
+    -E "(struct|type|enum)\s+[A-Z][a-z]+[A-Za-z0-9_]*With[A-Z][A-Za-z0-9_]*(<[^>]*>)?" \
     $root_dir 2>/dev/null)
 
 if [ -n "$matches" ]; then
