@@ -4,6 +4,7 @@ resolver = "2"
 members = [
   "crates/acct-types",
   "crates/alpen-ee/common",
+  "crates/alpen-ee/config",
   "crates/asm/common",
   "crates/asm/logs",
   "crates/asm/stf",
@@ -130,6 +131,7 @@ rustdoc.all = "warn"
 [workspace.dependencies]
 alpen-chainspec = { path = "crates/reth/chainspec" }
 alpen-ee-common = { path = "crates/alpen-ee/common" }
+alpen-ee-config = { path = "crates/alpen-ee/config" }
 alpen-reth-db = { path = "crates/reth/db" }
 alpen-reth-evm = { path = "crates/reth/evm" }
 alpen-reth-exex = { path = "crates/reth/exex" }

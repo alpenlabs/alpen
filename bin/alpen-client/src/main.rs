@@ -6,7 +6,6 @@
 //! Reth node for the Alpen codebase.
 
 // mod init_db;
-mod config;
 mod db;
 mod engine_control;
 mod genesis;
@@ -17,6 +16,7 @@ use std::sync::Arc;
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::traits::ol_client::chain_status_checked;
+use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
 use clap::Parser;
 use ol_client::DummyOlClient;
@@ -31,7 +31,6 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::{
-    config::{defaults, AlpenEeConfig, AlpenEeParams},
     db::init_db_storage,
     engine_control::{create_engine_control_task, AlpenRethExecEngine},
     genesis::ee_genesis_block_info,
@@ -80,7 +79,7 @@ fn main() {
                 CredRule::Unchecked,
                 ext.ol_client_http,
                 ext.sequencer_http,
-                ext.db_retry_count.unwrap_or(defaults::DB_RETRY_COUNT),
+                ext.db_retry_count,
             ));
 
             let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())

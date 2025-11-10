@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 alpen-chainspec.workspace = true
 alpen-ee-common.workspace = true
+alpen-ee-config.workspace = true
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
 strata-db-store-sled.workspace = true

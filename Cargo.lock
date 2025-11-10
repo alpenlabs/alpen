@@ -1045,6 +1045,7 @@ dependencies = [
  "alloy-rpc-types-engine",
  "alpen-chainspec",
  "alpen-ee-common",
+ "alpen-ee-config",
  "alpen-reth-node",
  "anyhow",
  "async-trait",
@@ -1121,6 +1122,15 @@ dependencies = [
  "tokio",
  "tracing",
  "typed-sled",
+]
+
+[[package]]
+name = "alpen-ee-config"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "strata-acct-types",
+ "strata-identifiers",
 ]
 
 [[package]]

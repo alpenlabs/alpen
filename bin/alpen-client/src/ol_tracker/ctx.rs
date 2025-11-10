@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use alpen_ee_config::AlpenEeParams;
 use strata_ee_acct_types::EeAccountState;
 use tokio::sync::watch;
 
-use crate::{config::AlpenEeParams, ol_tracker::ConsensusHeads};
+use crate::ol_tracker::ConsensusHeads;
 
 pub(crate) struct OlTrackerCtx<TStorage, TOlClient> {
     pub(crate) storage: Arc<TStorage>,

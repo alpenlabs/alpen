@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "alpen-ee-config"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-acct-types.workspace = true
+strata-identifiers.workspace = true
+
+alloy-primitives.workspace = true
+
+[dev-dependencies]

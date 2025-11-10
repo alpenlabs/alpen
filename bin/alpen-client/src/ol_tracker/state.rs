@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{EeAccountStateAtBlock, OlChainStatus, Storage};
+use alpen_ee_config::AlpenEeConfig;
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use tracing::warn;
 
 use super::error::{OlTrackerError, Result};
-use crate::config::AlpenEeConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConsensusHeads {

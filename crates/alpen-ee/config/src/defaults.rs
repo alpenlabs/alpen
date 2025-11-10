@@ -1,0 +1,1 @@
+pub const DEFAULT_DB_RETRY_COUNT: u16 = 5;

@@ -441,12 +441,13 @@ mod tests {
         use std::sync::Arc;
 
         use alloy_primitives::B256;
+        use alpen_ee_config::AlpenEeParams;
         use strata_acct_types::AccountId;
         use strata_identifiers::Buf32;
         use tokio::sync::watch;
 
         use super::*;
-        use crate::{config::AlpenEeParams, ol_tracker::ConsensusHeads};
+        use crate::ol_tracker::ConsensusHeads;
 
         fn make_test_params(genesis_slot: u64) -> AlpenEeParams {
             AlpenEeParams::new(
