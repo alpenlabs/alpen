@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use alloy_consensus::Header;
 use alpen_reth_evm::evm::AlpenEvmFactory;
 use reth_chainspec::ChainSpec;
 use reth_evm::execute::{BasicBlockExecutor, Executor};
@@ -19,7 +20,7 @@ use strata_ee_acct_types::{
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
 use crate::{
-    types::{EvmBlock, EvmPartialState, EvmWriteBatch},
+    types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
     utils::{
         accumulate_logs_bloom, build_and_recover_block, collect_withdrawal_intents_from_execution,
         compute_hashed_post_state,
@@ -103,12 +104,12 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 6: Execute the block
+        // Step 5: Execute the block
         let execution_output = block_executor
             .execute(&block)
             .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 7: Validate block post-execution
+        // Step 6: Validate block post-execution
         EthPrimitives::validate_block_post_execution(
             &block,
             (*self.evm_config.chain_spec()).clone(),
@@ -116,25 +117,25 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 8: Accumulate logs bloom
+        // Step 7: Accumulate logs bloom
         let logs_bloom = accumulate_logs_bloom(&execution_output.result.receipts);
 
-        // Step 9: Collect withdrawal intents
+        // Step 8: Collect withdrawal intents
         let transactions = block.into_transactions();
         let withdrawal_intents =
             collect_withdrawal_intents_from_execution(transactions, &execution_output.receipts);
 
-        // Step 10: Convert execution outcome to HashedPostState
+        // Step 9: Convert execution outcome to HashedPostState
         let block_number = exec_payload.header_intrinsics().number;
         let hashed_post_state = compute_hashed_post_state(&execution_output, block_number);
 
-        // Step 11: Compute state root
+        // Step 10: Compute state root
         let state_root = pre_state.compute_state_root_with_changes(&hashed_post_state);
 
-        // Step 12: Create WriteBatch with computed metadata
+        // Step 11: Create WriteBatch with computed metadata
         let write_batch = EvmWriteBatch::new(hashed_post_state, state_root.into(), logs_bloom);
 
-        // Step 13: Create BlockOutputs with withdrawal intent messages
+        // Step 12: Create BlockOutputs with withdrawal intent messages
         let mut outputs = BlockOutputs::new_empty();
         Self::convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
@@ -149,8 +150,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // Complete the header using execution outputs
         // The exec_payload contains header intrinsics (non-commitment fields)
 
-        use crate::types::EvmHeader;
-
         // Get the intrinsics from the payload
         let intrinsics = exec_payload.header_intrinsics();
 
@@ -159,7 +158,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         let logs_bloom = output.write_batch().logs_bloom();
 
         // Build the complete header with both intrinsics and computed commitments
-        use alloy_consensus::Header;
         let header = Header {
             parent_hash: intrinsics.parent_hash,
             ommers_hash: intrinsics.ommers_hash,
