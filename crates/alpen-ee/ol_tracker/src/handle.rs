@@ -1,15 +1,11 @@
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{OlClient, Storage};
+use alpen_ee_common::{ConsensusHeads, OlClient, Storage};
 use alpen_ee_config::AlpenEeParams;
 use strata_ee_acct_types::EeAccountState;
 use tokio::sync::watch;
 
-use super::{
-    ctx::OlTrackerCtx,
-    state::{ConsensusHeads, OlTrackerState},
-    task::ol_tracker_task,
-};
+use crate::{ctx::OlTrackerCtx, state::OlTrackerState, task::ol_tracker_task};
 
 /// Default number of Ol blocks to process in each cycle
 const DEFAULT_MAX_BLOCKS_FETCH: u64 = 10;
@@ -18,23 +14,24 @@ const DEFAULT_POLL_WAIT_MS: u64 = 100;
 /// Default number of Ol blocks to process in each cycle during reorg
 const DEFAULT_REORG_FETCH_SIZE: u64 = 10;
 
-pub(crate) struct OlTrackerHandle {
+#[derive(Debug)]
+pub struct OlTrackerHandle {
     ee_state_rx: watch::Receiver<EeAccountState>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
 }
 
 impl OlTrackerHandle {
-    #[expect(dead_code, reason = "wip")]
-    pub(crate) fn ee_state_watcher(&self) -> watch::Receiver<EeAccountState> {
+    pub fn ee_state_watcher(&self) -> watch::Receiver<EeAccountState> {
         self.ee_state_rx.clone()
     }
 
-    pub(crate) fn consensus_watcher(&self) -> watch::Receiver<ConsensusHeads> {
+    pub fn consensus_watcher(&self) -> watch::Receiver<ConsensusHeads> {
         self.consensus_rx.clone()
     }
 }
 
-pub(crate) struct OlTrackerBuilder<TStorage, TOlClient> {
+#[derive(Debug)]
+pub struct OlTrackerBuilder<TStorage, TOlClient> {
     state: OlTrackerState,
     params: Arc<AlpenEeParams>,
     storage: Arc<TStorage>,
@@ -50,7 +47,7 @@ pub(crate) struct OlTrackerBuilder<TStorage, TOlClient> {
     reason = "optional builder methods"
 )]
 impl<TStorage, TOlClient> OlTrackerBuilder<TStorage, TOlClient> {
-    pub(crate) fn new(
+    pub fn new(
         state: OlTrackerState,
         params: Arc<AlpenEeParams>,
         storage: Arc<TStorage>,
@@ -67,22 +64,22 @@ impl<TStorage, TOlClient> OlTrackerBuilder<TStorage, TOlClient> {
         }
     }
 
-    pub(crate) fn with_max_block_fetch(mut self, v: u64) -> Self {
+    pub fn with_max_block_fetch(mut self, v: u64) -> Self {
         self.max_block_fetch = Some(v);
         self
     }
 
-    pub(crate) fn with_poll_wait_ms(mut self, v: u64) -> Self {
+    pub fn with_poll_wait_ms(mut self, v: u64) -> Self {
         self.poll_wait_ms = Some(v);
         self
     }
 
-    pub(crate) fn with_reorg_fetch_size(mut self, v: u64) -> Self {
+    pub fn with_reorg_fetch_size(mut self, v: u64) -> Self {
         self.reorg_fetch_size = Some(v);
         self
     }
 
-    pub(crate) fn build(self) -> (OlTrackerHandle, impl Future<Output = ()>)
+    pub fn build(self) -> (OlTrackerHandle, impl Future<Output = ()>)
     where
         TStorage: Storage,
         TOlClient: OlClient,

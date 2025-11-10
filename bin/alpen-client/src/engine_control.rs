@@ -2,7 +2,7 @@ use std::future::Future;
 
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::ForkchoiceState;
-use alpen_ee_common::{ExecutionEngine, ExecutionEngineError};
+use alpen_ee_common::{ConsensusHeads, ExecutionEngine, ExecutionEngineError};
 use alpen_reth_node::{AlpenBuiltPayload, AlpenEngineTypes};
 use async_trait::async_trait;
 use reth_node_builder::{
@@ -18,8 +18,6 @@ use tokio::{
     sync::{broadcast, watch},
 };
 use tracing::{error, warn};
-
-use crate::ol_tracker::ConsensusHeads;
 
 #[derive(Debug, Clone)]
 pub(crate) struct AlpenRethExecEngine {

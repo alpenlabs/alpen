@@ -1,20 +1,19 @@
 use std::sync::Arc;
 
+use alpen_ee_common::ConsensusHeads;
 use alpen_ee_config::AlpenEeParams;
 use strata_ee_acct_types::EeAccountState;
 use tokio::sync::watch;
 
-use crate::ol_tracker::ConsensusHeads;
-
 pub(crate) struct OlTrackerCtx<TStorage, TOlClient> {
-    pub(crate) storage: Arc<TStorage>,
-    pub(crate) ol_client: Arc<TOlClient>,
-    pub(crate) params: Arc<AlpenEeParams>,
-    pub(crate) ee_state_tx: watch::Sender<EeAccountState>,
-    pub(crate) consensus_tx: watch::Sender<ConsensusHeads>,
-    pub(crate) max_blocks_fetch: u64,
-    pub(crate) poll_wait_ms: u64,
-    pub(crate) reorg_fetch_size: u64,
+    pub storage: Arc<TStorage>,
+    pub ol_client: Arc<TOlClient>,
+    pub params: Arc<AlpenEeParams>,
+    pub ee_state_tx: watch::Sender<EeAccountState>,
+    pub consensus_tx: watch::Sender<ConsensusHeads>,
+    pub max_blocks_fetch: u64,
+    pub poll_wait_ms: u64,
+    pub reorg_fetch_size: u64,
 }
 
 impl<TStorage, TOlClient> OlTrackerCtx<TStorage, TOlClient> {

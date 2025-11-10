@@ -7,4 +7,7 @@ pub use traits::{
     ol_client::{OlClient, OlClientError},
     storage::{OLBlockOrSlot, Storage, StorageError},
 };
-pub use types::{ee_account_state::EeAccountStateAtBlock, ol_chain_status::OlChainStatus};
+pub use types::{
+    consensus_heads::ConsensusHeads, ee_account_state::EeAccountStateAtBlock,
+    ol_chain_status::OlChainStatus,
+};

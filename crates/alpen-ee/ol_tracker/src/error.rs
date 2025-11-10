@@ -8,7 +8,7 @@ use thiserror::Error;
 ///   failures)
 /// - **NonRecoverable**: Fatal errors requiring intervention (no fork point found, data corruption)
 #[derive(Debug, Error)]
-pub(crate) enum OlTrackerError {
+pub enum OlTrackerError {
     /// Storage operation failed (recoverable - may be transient DB issue)
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
@@ -38,7 +38,7 @@ pub(crate) enum OlTrackerError {
 
 impl OlTrackerError {
     /// Returns true if this error is recoverable and the operation can be retried.
-    pub(crate) fn is_recoverable(&self) -> bool {
+    pub fn is_recoverable(&self) -> bool {
         match self {
             // Non-recoverable: requires manual intervention
             OlTrackerError::NoForkPointFound { .. } => false,
@@ -53,12 +53,12 @@ impl OlTrackerError {
     }
 
     /// Returns true if this is a fatal error that should cause the task to panic.
-    pub(crate) fn is_fatal(&self) -> bool {
+    pub fn is_fatal(&self) -> bool {
         !self.is_recoverable()
     }
 
     /// Creates a detailed panic message for non-recoverable errors.
-    pub(crate) fn panic_message(&self) -> String {
+    pub fn panic_message(&self) -> String {
         match self {
             OlTrackerError::NoForkPointFound { genesis_slot } => {
                 format!(

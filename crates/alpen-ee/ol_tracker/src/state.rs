@@ -1,32 +1,16 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{EeAccountStateAtBlock, OlChainStatus, Storage};
+use alpen_ee_common::{ConsensusHeads, EeAccountStateAtBlock, OlChainStatus, Storage};
 use alpen_ee_config::AlpenEeConfig;
-use strata_acct_types::{BitcoinAmount, Hash};
+use strata_acct_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use tracing::warn;
 
-use super::error::{OlTrackerError, Result};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ConsensusHeads {
-    pub(crate) confirmed: Hash,
-    pub(crate) finalized: Hash,
-}
-
-impl ConsensusHeads {
-    pub(crate) fn confirmed(&self) -> &Hash {
-        &self.confirmed
-    }
-
-    pub(crate) fn finalized(&self) -> &Hash {
-        &self.finalized
-    }
-}
+use crate::error::{OlTrackerError, Result};
 
 #[derive(Debug, Clone)]
-pub(crate) struct OlTrackerState {
+pub struct OlTrackerState {
     best: EeAccountStateAtBlock,
     confirmed: EeAccountStateAtBlock,
     finalized: EeAccountStateAtBlock,
@@ -34,7 +18,7 @@ pub(crate) struct OlTrackerState {
 
 #[cfg(test)]
 impl OlTrackerState {
-    pub(crate) fn new(
+    pub fn new(
         best: EeAccountStateAtBlock,
         confirmed: EeAccountStateAtBlock,
         finalized: EeAccountStateAtBlock,
@@ -48,15 +32,15 @@ impl OlTrackerState {
 }
 
 impl OlTrackerState {
-    pub(crate) fn best_ee_state(&self) -> &EeAccountState {
+    pub fn best_ee_state(&self) -> &EeAccountState {
         self.best.ee_state()
     }
 
-    pub(crate) fn best_ol_block(&self) -> &OLBlockCommitment {
+    pub fn best_ol_block(&self) -> &OLBlockCommitment {
         self.best.ol_block()
     }
 
-    pub(crate) fn get_consensus_heads(&self) -> ConsensusHeads {
+    pub fn get_consensus_heads(&self) -> ConsensusHeads {
         ConsensusHeads {
             confirmed: self.confirmed.last_exec_blkid(),
             finalized: self.finalized.last_exec_blkid(),
@@ -65,7 +49,7 @@ impl OlTrackerState {
 }
 
 /// Initialized [`OlTrackerState`] from storage
-pub(crate) async fn init_ol_tracker_state<TStorage>(
+pub async fn init_ol_tracker_state<TStorage>(
     config: Arc<AlpenEeConfig>,
     ol_chain_status: OlChainStatus,
     storage: Arc<TStorage>,
@@ -127,7 +111,7 @@ pub(crate) async fn build_tracker_state(
     })
 }
 
-pub(crate) async fn effective_account_state(
+async fn effective_account_state(
     local: &OLBlockCommitment,
     ol: &OLBlockCommitment,
     storage: &impl Storage,
@@ -151,6 +135,7 @@ mod tests {
     use alpen_ee_common::{
         traits::storage::MockStorage, OLBlockOrSlot, OlChainStatus, StorageError,
     };
+    use strata_acct_types::Hash;
     use strata_identifiers::Buf32;
 
     use super::*;

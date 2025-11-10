@@ -4,14 +4,14 @@ use alpen_ee_common::{
 };
 use tracing::{debug, error, info, warn};
 
-use super::{
+use crate::{
     ctx::OlTrackerCtx,
     error::{OlTrackerError, Result},
     state::{build_tracker_state, OlTrackerState},
 };
 
 /// Finds the last common block state between local storage and remote chain.
-pub(super) async fn find_fork_point<TStorage, TOlClient>(
+pub(crate) async fn find_fork_point<TStorage, TOlClient>(
     storage: &TStorage,
     ol_client: &TOlClient,
     genesis_slot: u64,
@@ -48,7 +48,7 @@ where
 }
 
 /// Rolls back storage to fork point and updates internal tracker state.
-pub(super) async fn rollback_to_fork_point<TStorage>(
+pub(crate) async fn rollback_to_fork_point<TStorage>(
     state: &mut OlTrackerState,
     storage: &TStorage,
     fork_state: &EeAccountStateAtBlock,
@@ -76,7 +76,7 @@ where
 }
 
 /// Handles chain reorganization by finding fork point and rolling back state.
-pub(super) async fn handle_reorg<TStorage, TOlClient>(
+pub(crate) async fn handle_reorg<TStorage, TOlClient>(
     state: &mut OlTrackerState,
     ctx: &OlTrackerCtx<TStorage, TOlClient>,
 ) -> Result<()>
@@ -441,13 +441,13 @@ mod tests {
         use std::sync::Arc;
 
         use alloy_primitives::B256;
+        use alpen_ee_common::ConsensusHeads;
         use alpen_ee_config::AlpenEeParams;
         use strata_acct_types::AccountId;
         use strata_identifiers::Buf32;
         use tokio::sync::watch;
 
         use super::*;
-        use crate::ol_tracker::ConsensusHeads;
 
         fn make_test_params(genesis_slot: u64) -> AlpenEeParams {
             AlpenEeParams::new(

@@ -13,9 +13,9 @@ use strata_identifiers::OLBlockCommitment;
 use strata_snark_acct_types::UpdateInputData;
 use tracing::{debug, error, warn};
 
-use super::{
+use crate::{
     ctx::OlTrackerCtx,
-    error::Result,
+    error::{OlTrackerError, Result},
     reorg::handle_reorg,
     state::{build_tracker_state, OlTrackerState},
 };
@@ -57,7 +57,7 @@ pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
 ///
 /// Recoverable errors (network issues, transient DB failures) are logged and allow retry.
 /// Non-recoverable errors (no fork point found) cause immediate panic with detailed message.
-fn handle_tracker_error(error: impl Into<super::error::OlTrackerError>, context: &str) {
+fn handle_tracker_error(error: impl Into<OlTrackerError>, context: &str) {
     let error = error.into();
 
     if error.is_fatal() {
@@ -69,8 +69,8 @@ fn handle_tracker_error(error: impl Into<super::error::OlTrackerError>, context:
 
 #[derive(Debug)]
 pub(crate) struct OlBlockOperations {
-    pub(crate) block: OLBlockCommitment,
-    pub(crate) operations: Vec<UpdateInputData>,
+    pub block: OLBlockCommitment,
+    pub operations: Vec<UpdateInputData>,
 }
 
 #[derive(Debug)]
@@ -133,9 +133,7 @@ pub(crate) async fn track_ol_state(
         .await?;
 
         let (expected_local_block, new_blocks) = blocks.split_first().ok_or_else(|| {
-            super::error::OlTrackerError::Other(
-                "empty block commitments returned from ol_client".to_string(),
-            )
+            OlTrackerError::Other("empty block commitments returned from ol_client".to_string())
         })?;
 
         // If last block isn't as expected, trigger reorg
@@ -171,7 +169,7 @@ pub(crate) fn apply_block_operations(
 ) -> Result<()> {
     for op in block_operations {
         apply_update_operation_unconditionally(state, op)
-            .map_err(|e| super::error::OlTrackerError::Other(e.to_string()))?;
+            .map_err(|e| OlTrackerError::Other(e.to_string()))?;
     }
 
     Ok(())

@@ -1046,6 +1046,7 @@ dependencies = [
  "alpen-chainspec",
  "alpen-ee-common",
  "alpen-ee-config",
+ "alpen-ee-ol-tracker",
  "alpen-reth-node",
  "anyhow",
  "async-trait",
@@ -1131,6 +1132,24 @@ dependencies = [
  "alloy-primitives",
  "strata-acct-types",
  "strata-identifiers",
+]
+
+[[package]]
+name = "alpen-ee-ol-tracker"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-common",
+ "alpen-ee-config",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
