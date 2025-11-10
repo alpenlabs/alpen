@@ -1,34 +1,16 @@
 use async_trait::async_trait;
-use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::UpdateInputData;
+use thiserror::Error;
 
-use super::error::OlClientError;
-
-#[derive(Debug)]
-pub(crate) struct OlChainStatus {
-    pub(crate) latest: OLBlockCommitment,
-    pub(crate) confirmed: OLBlockCommitment,
-    pub(crate) finalized: OLBlockCommitment,
-}
-
-impl OlChainStatus {
-    pub(crate) fn latest(&self) -> &OLBlockCommitment {
-        &self.latest
-    }
-    pub(crate) fn confirmed(&self) -> &OLBlockCommitment {
-        &self.confirmed
-    }
-    pub(crate) fn finalized(&self) -> &OLBlockCommitment {
-        &self.finalized
-    }
-}
+use crate::OlChainStatus;
 
 /// Client interface for interacting with the OL chain.
 ///
 /// Provides methods to view OL Chain data required by an alpen EE fullnode.
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
-pub(crate) trait OlClient: Sized + Send + Sync {
+pub trait OlClient: Sized + Send + Sync {
     /// Returns the current status of the OL chain.
     ///
     /// Includes the latest, confirmed, and finalized block commitments.
@@ -70,9 +52,7 @@ pub(crate) trait OlClient: Sized + Send + Sync {
 ///
 /// This is a checked version of [`OlClient::chain_status`] that validates
 /// the slot numbers of latest >= confirmed >= finalized
-pub(crate) async fn chain_status_checked(
-    client: &impl OlClient,
-) -> Result<OlChainStatus, OlClientError> {
+pub async fn chain_status_checked(client: &impl OlClient) -> Result<OlChainStatus, OlClientError> {
     let status = client.chain_status().await?;
     if status.finalized.slot() > status.confirmed.slot()
         || status.confirmed.slot() > status.latest.slot()
@@ -91,7 +71,7 @@ pub(crate) async fn chain_status_checked(
 /// This is a checked version of [`OlClient::block_commitments_in_range`] that validates:
 /// - The end slot is greater than the start slot
 /// - The number of returned blocks matches the expected count
-pub(crate) async fn block_commitments_in_range_checked(
+pub async fn block_commitments_in_range_checked(
     client: &impl OlClient,
     start_slot: u64,
     end_slot: u64,
@@ -119,7 +99,7 @@ pub(crate) async fn block_commitments_in_range_checked(
 ///
 /// This is a checked version of [`OlClient::get_update_operations_for_blocks`] that validates
 /// the number of returned operation vectors matches the number of input blocks.
-pub(crate) async fn get_update_operations_for_blocks_checked(
+pub async fn get_update_operations_for_blocks_checked(
     client: &impl OlClient,
     blocks: Vec<OLBlockId>,
 ) -> Result<Vec<Vec<UpdateInputData>>, OlClientError> {
@@ -135,54 +115,61 @@ pub(crate) async fn get_update_operations_for_blocks_checked(
     Ok(res)
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct DummyOlClient {}
+/// Errors that can occur when interacting with the OL client.
+#[derive(Debug, Error)]
+pub enum OlClientError {
+    /// End slot is less than or equal to start slot.
+    #[error(
+        "invalid slot range: end_slot ({end_slot}) must be greater than start_slot ({start_slot})"
+    )]
+    InvalidSlotRange { start_slot: u64, end_slot: u64 },
 
-#[async_trait]
-impl OlClient for DummyOlClient {
-    async fn chain_status(&self) -> Result<OlChainStatus, OlClientError> {
-        Ok(OlChainStatus {
-            latest: OLBlockCommitment::null(),
-            confirmed: OLBlockCommitment::null(),
-            finalized: OLBlockCommitment::null(),
-        })
-    }
+    /// Received a different number of blocks than expected.
+    #[error("unexpected block count: expected {expected} blocks, got {actual}")]
+    UnexpectedBlockCount { expected: usize, actual: usize },
 
-    async fn block_commitments_in_range(
-        &self,
-        start_slot: u64,
-        end_slot: u64,
-    ) -> Result<Vec<OLBlockCommitment>, OlClientError> {
-        if end_slot < start_slot {
-            return Err(OlClientError::InvalidSlotRange {
-                start_slot,
-                end_slot,
-            });
-        }
+    /// Received a different number of operation lists than expected.
+    #[error("unexpected operation count: expected {expected} operation lists, got {actual}")]
+    UnexpectedOperationCount { expected: usize, actual: usize },
 
-        Ok((start_slot..=end_slot)
-            .map(slot_to_block_commitment)
-            .collect())
-    }
+    /// Chain status slots are not in the correct order (latest >= confirmed >= finalized).
+    #[error("unexpected chain status slot order: {latest} >= {confirmed} >= {finalized}")]
+    InvalidChainStatusSlotOrder {
+        latest: u64,
+        confirmed: u64,
+        finalized: u64,
+    },
 
-    async fn get_update_operations_for_blocks(
-        &self,
-        blocks: Vec<OLBlockId>,
-    ) -> Result<Vec<Vec<UpdateInputData>>, OlClientError> {
-        Ok((blocks.iter().map(|_| vec![])).collect())
-    }
+    /// Network-related error occurred.
+    #[error("network error: {0}")]
+    Network(String),
+
+    /// RPC call failed.
+    #[error("rpc error: {0}")]
+    Rpc(String),
+
+    /// Other unspecified error.
+    #[error(transparent)]
+    Other(#[from] eyre::Error),
 }
 
-fn slot_to_block_commitment(slot: u64) -> OLBlockCommitment {
-    OLBlockCommitment::new(slot, Buf32::new(u64_to_256(slot)).into())
-}
+#[allow(dead_code, clippy::allow_attributes, reason = "used in tests")]
+impl OlClientError {
+    /// Creates a network error.
+    pub fn network(msg: impl Into<String>) -> Self {
+        Self::Network(msg.into())
+    }
 
-fn u64_to_256(v: u64) -> [u8; 32] {
-    unsafe { std::mem::transmute([0, 0, 0, v]) }
+    /// Creates an RPC error.
+    pub fn rpc(msg: impl Into<String>) -> Self {
+        Self::Rpc(msg.into())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use strata_primitives::Buf32;
+
     use super::*;
 
     /// Helper to create a block commitment for testing

@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::Storage;
+use alpen_ee_common::{OlClient, Storage};
 use strata_ee_acct_types::EeAccountState;
 use tokio::sync::watch;
 
@@ -9,7 +9,7 @@ use super::{
     state::{ConsensusHeads, OlTrackerState},
     task::ol_tracker_task,
 };
-use crate::{config::AlpenEeParams, traits::ol_client::OlClient};
+use crate::config::AlpenEeParams;
 
 /// Default number of Ol blocks to process in each cycle
 const DEFAULT_MAX_BLOCKS_FETCH: u64 = 10;

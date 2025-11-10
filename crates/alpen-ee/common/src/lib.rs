@@ -2,5 +2,8 @@
 pub mod traits;
 pub mod types;
 
-pub use traits::storage::{OLBlockOrSlot, Storage, StorageError};
-pub use types::ee_account_state::EeAccountStateAtBlock;
+pub use traits::{
+    ol_client::{OlClient, OlClientError},
+    storage::{OLBlockOrSlot, Storage, StorageError},
+};
+pub use types::{ee_account_state::EeAccountStateAtBlock, ol_chain_status::OlChainStatus};

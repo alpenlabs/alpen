@@ -1,6 +1,12 @@
 use std::time::Duration;
 
-use alpen_ee_common::{EeAccountStateAtBlock, Storage};
+use alpen_ee_common::{
+    traits::ol_client::{
+        block_commitments_in_range_checked, chain_status_checked,
+        get_update_operations_for_blocks_checked,
+    },
+    EeAccountStateAtBlock, OlChainStatus, OlClient, Storage,
+};
 use strata_ee_acct_runtime::apply_update_operation_unconditionally;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
@@ -12,10 +18,6 @@ use super::{
     error::Result,
     reorg::handle_reorg,
     state::{build_tracker_state, OlTrackerState},
-};
-use crate::traits::ol_client::{
-    block_commitments_in_range_checked, chain_status_checked,
-    get_update_operations_for_blocks_checked, OlChainStatus, OlClient,
 };
 
 pub(crate) async fn ol_tracker_task<TStorage, TOlClient>(
@@ -237,11 +239,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alpen_ee_common::{traits::ol_client::MockOlClient, OlChainStatus};
     use strata_acct_types::BitcoinAmount;
     use strata_identifiers::{Buf32, OLBlockCommitment};
 
     use super::*;
-    use crate::traits::ol_client::{MockOlClient, OlChainStatus};
 
     /// Helper to create a block commitment for testing
     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {

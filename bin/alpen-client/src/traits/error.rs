@@ -1,56 +1,5 @@
 use thiserror::Error;
 
-/// Errors that can occur when interacting with the OL client.
-#[derive(Debug, Error)]
-pub(crate) enum OlClientError {
-    /// End slot is less than or equal to start slot.
-    #[error(
-        "invalid slot range: end_slot ({end_slot}) must be greater than start_slot ({start_slot})"
-    )]
-    InvalidSlotRange { start_slot: u64, end_slot: u64 },
-
-    /// Received a different number of blocks than expected.
-    #[error("unexpected block count: expected {expected} blocks, got {actual}")]
-    UnexpectedBlockCount { expected: usize, actual: usize },
-
-    /// Received a different number of operation lists than expected.
-    #[error("unexpected operation count: expected {expected} operation lists, got {actual}")]
-    UnexpectedOperationCount { expected: usize, actual: usize },
-
-    /// Chain status slots are not in the correct order (latest >= confirmed >= finalized).
-    #[error("unexpected chain status slot order: {latest} >= {confirmed} >= {finalized}")]
-    InvalidChainStatusSlotOrder {
-        latest: u64,
-        confirmed: u64,
-        finalized: u64,
-    },
-
-    /// Network-related error occurred.
-    #[error("network error: {0}")]
-    Network(String),
-
-    /// RPC call failed.
-    #[error("rpc error: {0}")]
-    Rpc(String),
-
-    /// Other unspecified error.
-    #[error(transparent)]
-    Other(#[from] eyre::Error),
-}
-
-#[allow(dead_code, clippy::allow_attributes, reason = "used in tests")]
-impl OlClientError {
-    /// Creates a network error.
-    pub(crate) fn network(msg: impl Into<String>) -> Self {
-        Self::Network(msg.into())
-    }
-
-    /// Creates an RPC error.
-    pub(crate) fn rpc(msg: impl Into<String>) -> Self {
-        Self::Rpc(msg.into())
-    }
-}
-
 /// Errors that can occur when interacting with an execution engine.
 #[derive(Debug, Error)]
 pub(crate) enum ExecutionEngineError {

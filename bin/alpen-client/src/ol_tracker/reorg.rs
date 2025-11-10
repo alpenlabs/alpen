@@ -1,13 +1,13 @@
-use alpen_ee_common::{EeAccountStateAtBlock, Storage};
+use alpen_ee_common::{
+    traits::ol_client::{block_commitments_in_range_checked, chain_status_checked},
+    EeAccountStateAtBlock, OlChainStatus, OlClient, Storage,
+};
 use tracing::{debug, error, info, warn};
 
 use super::{
     ctx::OlTrackerCtx,
     error::{OlTrackerError, Result},
     state::{build_tracker_state, OlTrackerState},
-};
-use crate::traits::ol_client::{
-    block_commitments_in_range_checked, chain_status_checked, OlChainStatus, OlClient,
 };
 
 /// Finds the last common block state between local storage and remote chain.
@@ -121,13 +121,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{traits::storage::MockStorage, OLBlockOrSlot, StorageError};
+    use alpen_ee_common::{
+        traits::{ol_client::MockOlClient, storage::MockStorage},
+        OLBlockOrSlot, OlClientError, StorageError,
+    };
     use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
     use strata_identifiers::{Buf32, OLBlockCommitment};
 
     use super::*;
-    use crate::traits::ol_client::MockOlClient;
 
     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
         let mut bytes = [0u8; 32];
@@ -317,7 +319,7 @@ mod tests {
             mock_client
                 .expect_block_commitments_in_range()
                 .times(1)
-                .returning(|_, _| Err(crate::traits::error::OlClientError::network("test error")));
+                .returning(|_, _| Err(OlClientError::network("test error")));
 
             let result = find_fork_point(&mock_storage, &mock_client, 100, 110, 50).await;
 
@@ -590,11 +592,10 @@ mod tests {
             let mock_storage = MockStorage::new();
             let mut mock_client = MockOlClient::new();
 
-            mock_client.expect_chain_status().times(1).returning(|| {
-                Err(crate::traits::error::OlClientError::network(
-                    "network error",
-                ))
-            });
+            mock_client
+                .expect_chain_status()
+                .times(1)
+                .returning(|| Err(OlClientError::network("network error")));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
             let mut state = OlTrackerState::new(

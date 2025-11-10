@@ -10,14 +10,17 @@ mod config;
 mod db;
 mod engine_control;
 mod genesis;
+mod ol_client;
 mod ol_tracker;
 mod traits;
 
 use std::sync::Arc;
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
+use alpen_ee_common::traits::ol_client::chain_status_checked;
 use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
 use clap::Parser;
+use ol_client::DummyOlClient;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
@@ -34,7 +37,6 @@ use crate::{
     engine_control::{create_engine_control_task, AlpenRethExecEngine},
     genesis::ee_genesis_block_info,
     ol_tracker::{init_ol_tracker_state, OlTrackerBuilder},
-    traits::ol_client::{chain_status_checked, DummyOlClient},
 };
 
 fn main() {

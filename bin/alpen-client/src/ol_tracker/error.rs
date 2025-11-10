@@ -1,7 +1,5 @@
-use alpen_ee_common::StorageError;
+use alpen_ee_common::{OlClientError, StorageError};
 use thiserror::Error;
-
-use crate::traits::error::OlClientError;
 
 /// Error type for OL tracker operations.
 ///

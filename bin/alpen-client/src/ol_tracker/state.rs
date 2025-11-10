@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{EeAccountStateAtBlock, Storage};
+use alpen_ee_common::{EeAccountStateAtBlock, OlChainStatus, Storage};
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use tracing::warn;
 
 use super::error::{OlTrackerError, Result};
-use crate::{config::AlpenEeConfig, traits::ol_client::OlChainStatus};
+use crate::config::AlpenEeConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConsensusHeads {
@@ -148,11 +148,12 @@ pub(crate) async fn effective_account_state(
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::traits::storage::{MockStorage, OLBlockOrSlot, StorageError};
+    use alpen_ee_common::{
+        traits::storage::MockStorage, OLBlockOrSlot, OlChainStatus, StorageError,
+    };
     use strata_identifiers::Buf32;
 
     use super::*;
-    use crate::traits::ol_client::OlChainStatus;
 
     /// Helper to create a block commitment for testing
     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
