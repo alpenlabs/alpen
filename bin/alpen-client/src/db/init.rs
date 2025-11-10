@@ -2,18 +2,12 @@ use std::{path::Path, sync::Arc};
 
 use threadpool::ThreadPool;
 
-#[cfg(feature = "sled")]
-use crate::db::sled::EeNodeDBSled;
-use crate::db::storage::EeNodeStorage;
+use crate::db::{sled::EeNodeDBSled, storage::EeNodeStorage};
 
-#[cfg(feature = "sled")]
 type DatabaseImpl = EeNodeDBSled;
 
 fn init_db(datadir: &Path, db_retry_count: u16) -> eyre::Result<Arc<DatabaseImpl>> {
-    #[cfg(feature = "sled")]
-    {
-        super::sled::init_db(datadir, db_retry_count)
-    }
+    super::sled::init_db(datadir, db_retry_count)
 }
 
 pub(crate) fn init_db_storage(datadir: &Path, db_retry_count: u16) -> eyre::Result<EeNodeStorage> {

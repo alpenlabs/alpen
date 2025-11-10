@@ -23,11 +23,7 @@ strata-cli-common.workspace = true
 strata-consensus-logic.workspace = true
 strata-csm-types.workspace = true
 strata-db.workspace = true
-strata-db-store-sled = { workspace = true, optional = true }
+strata-db-store-sled.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
-
-[features]
-default = ["sled"]
-sled = ["dep:strata-db-store-sled"]

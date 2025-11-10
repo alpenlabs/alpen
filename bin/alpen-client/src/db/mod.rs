@@ -2,10 +2,8 @@ mod database;
 mod error;
 mod init;
 mod serialization_types;
-mod storage;
-
-#[cfg(feature = "sled")]
 mod sleddb;
+mod storage;
 
 // NOTE: `sled` is gitignored
 pub(crate) use error::DbError;

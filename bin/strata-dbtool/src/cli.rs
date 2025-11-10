@@ -21,10 +21,6 @@ pub(crate) struct Cli {
     #[argh(option, short = 'd', default = "PathBuf::from(\"data\")")]
     pub(crate) datadir: PathBuf,
 
-    /// back‑end DB implementation (sled).
-    #[argh(option, short = 't', default = "String::from(\"sled\")")]
-    pub(crate) db_type: String,
-
     #[argh(subcommand)]
     pub(crate) cmd: Command,
 }

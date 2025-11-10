@@ -7,8 +7,6 @@ mod db;
 mod output;
 mod utils;
 
-use std::str::FromStr;
-
 use strata_db::traits::DatabaseBackend;
 
 use crate::{
@@ -23,7 +21,7 @@ use crate::{
         syncinfo::get_syncinfo,
         writer::{get_writer_payload, get_writer_summary},
     },
-    db::{open_database, DbType},
+    db::open_database,
 };
 
 fn main() {
@@ -31,12 +29,7 @@ fn main() {
 
     let cli: Cli = argh::from_env();
 
-    let db_type = DbType::from_str(&cli.db_type).unwrap_or_else(|e| {
-        eprintln!("{e}");
-        std::process::exit(1);
-    });
-
-    let db = open_database(&cli.datadir, db_type).unwrap_or_else(|e| {
+    let db = open_database(&cli.datadir).unwrap_or_else(|e| {
         eprintln!("{e}");
         std::process::exit(1);
     });

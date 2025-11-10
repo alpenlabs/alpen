@@ -6,10 +6,6 @@ version = "0.3.0-alpha.1"
 [lints]
 workspace = true
 
-[features]
-default = ["sled"]
-sled = ["dep:sled", "dep:typed-sled", "dep:strata-db-store-sled"]
-
 [[bin]]
 name = "alpen-client"
 path = "src/main.rs"
@@ -18,7 +14,7 @@ path = "src/main.rs"
 alpen-chainspec.workspace = true
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
-strata-db-store-sled = { workspace = true, optional = true }
+strata-db-store-sled.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
@@ -28,9 +24,9 @@ strata-storage-common.workspace = true
 
 alloy-primitives.workspace = true
 alloy-rpc-types-engine.workspace = true
-anyhow = { workspace = true, optional = true }
+anyhow.workspace = true
 async-trait.workspace = true
-bincode = { workspace = true, optional = true }
+bincode.workspace = true
 borsh.workspace = true
 clap.workspace = true
 eyre.workspace = true
@@ -42,12 +38,12 @@ reth-db.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
 reth-provider.workspace = true
-sled = { workspace = true, optional = true }
+sled.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-typed-sled = { workspace = true, optional = true }
+typed-sled.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true

@@ -9,17 +9,13 @@ workspace = true
 [dependencies]
 alpen-reth-statediff.workspace = true
 strata-db.workspace = true
-strata-db-store-sled = { workspace = true, optional = true }
+strata-db-store-sled.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
 bincode.workspace = true
 revm-primitives.workspace = true
-sled = { workspace = true, optional = true }
-typed-sled = { workspace = true, optional = true }
-
-[features]
-default = ["sled"]
-sled = ["dep:strata-db-store-sled", "dep:sled", "dep:typed-sled"]
+sled.workspace = true
+typed-sled.workspace = true
 
 [dev-dependencies]
 serde.workspace = true

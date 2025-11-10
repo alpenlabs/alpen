@@ -1,13 +1,11 @@
 //! Database for Reth.
 
-#[cfg(feature = "sled")]
 pub mod sled;
 
-#[cfg(feature = "sled")]
 #[allow(
     unused_extern_crates,
     clippy::allow_attributes,
-    reason = "feature-gated"
+    reason = "consuming dep"
 )]
 extern crate sled as _;
 

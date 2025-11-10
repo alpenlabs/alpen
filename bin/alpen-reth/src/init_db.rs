@@ -1,16 +1,11 @@
 use std::{fs, path::Path, sync::Arc};
 
+use alpen_reth_db::sled::WitnessDB as SledWitnessDB;
 use eyre::{eyre, Context, Result};
-#[cfg(feature = "sled")]
-use {alpen_reth_db::sled::WitnessDB as SledWitnessDB, typed_sled::SledDb};
-
-// Type aliases for witness database
-#[cfg(feature = "sled")]
-pub(crate) type WitnessDB = SledWitnessDB;
+use typed_sled::SledDb;
 
 /// Initialize witness database based on configured features
-#[cfg(feature = "sled")]
-pub(crate) fn init_witness_db(datadir: &Path) -> Result<Arc<WitnessDB>> {
+pub(crate) fn init_witness_db(datadir: &Path) -> Result<Arc<SledWitnessDB>> {
     let database_dir = datadir.join("sled");
 
     fs::create_dir_all(&database_dir)
@@ -21,7 +16,7 @@ pub(crate) fn init_witness_db(datadir: &Path) -> Result<Arc<WitnessDB>> {
     let typed_sled =
         SledDb::new(sled_db).map_err(|e| eyre!("Failed to create typed sled db: {}", e))?;
 
-    let witness_db = WitnessDB::new(Arc::new(typed_sled))
+    let witness_db = SledWitnessDB::new(Arc::new(typed_sled))
         .map_err(|e| eyre!("Failed to create witness db: {}", e))?;
     Ok(Arc::new(witness_db))
 }

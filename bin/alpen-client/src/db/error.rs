@@ -1,6 +1,8 @@
+use sled::transaction::TransactionError;
 use strata_identifiers::OLBlockId;
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
+use typed_sled::error::Error as SledError;
 
 use crate::traits::error::StorageError;
 
@@ -31,12 +33,10 @@ pub(crate) enum DbError {
     #[error("Database: {0}")]
     DbOpsError(#[from] OpsError),
 
-    #[cfg(feature = "sled")]
     /// Sled database error.
     #[error("sled: {0}")]
     Sled(String),
 
-    #[cfg(feature = "sled")]
     /// Sled transaction error.
     #[error("sled txn: {0}")]
     SledTxn(String),
@@ -53,9 +53,8 @@ impl DbError {
     }
 }
 
-#[cfg(feature = "sled")]
-impl From<typed_sled::error::Error> for DbError {
-    fn from(maybe_dberr: typed_sled::error::Error) -> Self {
+impl From<SledError> for DbError {
+    fn from(maybe_dberr: SledError) -> Self {
         match maybe_dberr.downcast_abort::<DbError>() {
             Ok(dberr) => dberr,
             Err(other) => DbError::Sled(other.to_string()),
@@ -63,11 +62,10 @@ impl From<typed_sled::error::Error> for DbError {
     }
 }
 
-#[cfg(feature = "sled")]
-impl From<sled::transaction::TransactionError<typed_sled::error::Error>> for DbError {
-    fn from(value: sled::transaction::TransactionError<typed_sled::error::Error>) -> Self {
+impl From<TransactionError<SledError>> for DbError {
+    fn from(value: TransactionError<SledError>) -> Self {
         match value {
-            sled::transaction::TransactionError::Abort(tsled_err) => tsled_err.into(),
+            TransactionError::Abort(tsled_err) => tsled_err.into(),
             err => DbError::SledTxn(err.to_string()),
         }
     }
