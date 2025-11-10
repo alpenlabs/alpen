@@ -144,9 +144,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Run just lint-check-style
+      - name: Run on crates and bins
         run: |
-          just lint-check-style
+            ./contrib/find_with_structs.sh crates/ && ./contrib/find_with_structs.sh bin/
 
   lint-success:
     name: Check that lints passed
