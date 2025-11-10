@@ -21,6 +21,7 @@ use bdk_wallet::{
 };
 use make_buf::make_buf;
 use secp256k1::{All, Secp256k1, SECP256K1};
+use strata_asm_txs_bridge_v1::{constants::DEPOSIT_TX_TYPE, BRIDGE_V1_SUBPROTOCOL_ID};
 use strata_crypto::EvenSecretKey;
 use strata_l1tx::utils::generate_taproot_address;
 use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY, l1::DepositRequestInfo};
@@ -159,15 +160,14 @@ fn build_deposit_tx(
 
     let key =
         XOnlyPublicKey::from_slice(&drt_data.take_back_leaf_hash).expect("Valid XOnlyPublicKey");
-
     let takeback_script = build_timelock_miniscript(key)?;
     let takeback_script_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
 
     let deposit_metadata = DepositTxMetadata {
         stake_index: dt_index,
         ee_address: drt_data.address.to_vec(),
+        // takeback_hash: TapNodeHash::from_byte_array(drt_data.take_back_leaf_hash),
         takeback_hash: takeback_script_hash,
-        input_amount: Amount::from_sat(drt_data.amt),
     };
 
     let metadata_script = create_metadata_script_direct(&deposit_metadata)?;
@@ -178,12 +178,12 @@ fn build_deposit_tx(
 
     let tx_outs = vec![
         BitcoinTxOut {
-            script_pubkey: bridge_in_script_pubkey,
-            value: BRIDGE_OUT_AMOUNT,
-        },
-        BitcoinTxOut {
             script_pubkey: metadata_script,
             value: metadata_amount,
+        },
+        BitcoinTxOut {
+            script_pubkey: bridge_in_script_pubkey,
+            value: BRIDGE_OUT_AMOUNT,
         },
     ];
 
@@ -220,10 +220,11 @@ fn build_timelock_miniscript(recovery_xonly_pubkey: XOnlyPublicKey) -> Result<Sc
 fn create_metadata_script_direct(metadata: &DepositTxMetadata) -> Result<ScriptBuf, Error> {
     let buf = make_buf! {
         (MAGIC_BYTES, 4),
+        (&[BRIDGE_V1_SUBPROTOCOL_ID], 1),
+        (&[DEPOSIT_TX_TYPE], 1),
         (&metadata.stake_index.to_be_bytes(), 4),
-        (&metadata.ee_address, 20),
         (&metadata.takeback_hash.as_ref(), 32),
-        (&metadata.input_amount.to_sat().to_be_bytes(), 8)
+        (&metadata.ee_address, 20),
     };
 
     let push_data = PushBytesBuf::from(buf);

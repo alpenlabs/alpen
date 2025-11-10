@@ -98,8 +98,8 @@ fn create_withdrawal_transaction(
         let mut builder = wallet.build_tx();
 
         builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(recipient_script, amount);
         builder.add_data(&PushBytesBuf::from(&metadata.op_return_data()));
+        builder.add_recipient(recipient_script, amount);
 
         builder.fee_rate(fee_rate);
         builder

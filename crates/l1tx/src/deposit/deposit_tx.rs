@@ -9,6 +9,7 @@ use bitcoin::{
     Amount, OutPoint, ScriptBuf, TapNodeHash, Transaction, TxOut, XOnlyPublicKey,
 };
 use secp256k1::Message;
+use strata_asm_txs_bridge_v1::{constants::DEPOSIT_TX_TYPE, BRIDGE_V1_SUBPROTOCOL_ID};
 use strata_asm_types::DepositInfo;
 use strata_params::DepositTxParams;
 use strata_primitives::{buf::Buf32, l1::BitcoinOutPoint};
@@ -16,11 +17,12 @@ use strata_primitives::{buf::Buf32, l1::BitcoinOutPoint};
 use crate::{
     deposit::error::DepositParseError,
     utils::{next_bytes, next_op},
+    BRIDGE_V1_SUBPROTOCOL_ID_LEN, TX_TYPE_LEN,
 };
 
 const TAKEBACK_HASH_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
-const SATS_AMOUNT_LEN: usize = size_of::<u64>();
 const DEPOSIT_IDX_LEN: usize = size_of::<u32>();
+const DEFAULT_BRIDGE_IN_AMOUNT: Amount = Amount::from_sat(1_000_001_000);
 
 /// Extracts [`DepositInfo`] from a [`Transaction`].
 ///
@@ -32,13 +34,14 @@ const DEPOSIT_IDX_LEN: usize = size_of::<u32>();
 /// outpoint of the deposit transaction.
 pub fn extract_deposit_info(tx: &Transaction, config: &DepositTxParams) -> Option<DepositInfo> {
     // Get the first output (index 0)
-    let send_addr_out = tx.output.first()?;
+    let op_return_out = tx.output.first()?;
 
     // Get the second output (index 1)
-    let op_return_out = tx.output.get(1)?;
+    let send_addr_out = tx.output.get(1)?;
+    let amt = send_addr_out.value.to_sat();
 
     // Check if it is exact deposit denomination amount
-    if send_addr_out.value.to_sat() != config.deposit_amount.to_sat() {
+    if amt != config.deposit_amount.to_sat() {
         return None;
     }
 
@@ -48,7 +51,9 @@ pub fn extract_deposit_info(tx: &Transaction, config: &DepositTxParams) -> Optio
     }
 
     // Parse the tag from the OP_RETURN output.
-    let tag_data = parse_tag_script(&op_return_out.script_pubkey, config).ok()?;
+    let tg = parse_tag_script(&op_return_out.script_pubkey, config);
+    println!("ASHlegacy: {:?}", tg);
+    let tag_data = tg.ok()?;
 
     // Get the first input of the transaction
     let deposit_outpoint = BitcoinOutPoint::from(OutPoint {
@@ -59,6 +64,7 @@ pub fn extract_deposit_info(tx: &Transaction, config: &DepositTxParams) -> Optio
     // Check if it was signed off by the operators and hence verify that this is just not someone
     // else sending bitcoin to N-of-N address.
     validate_deposit_signature(tx, &tag_data, config)?;
+    println!("signature is validated");
 
     // Construct and return the DepositInfo
     Some(DepositInfo {
@@ -127,6 +133,7 @@ fn validate_deposit_signature(
         .ok()
 }
 
+#[derive(Debug)]
 struct DepositTag<'buf> {
     deposit_idx: u32,
     dest_buf: &'buf [u8],
@@ -172,43 +179,52 @@ fn parse_tag<'b>(
     let magic_len = magic_bytes.len();
 
     if buf.len()
-        != magic_len + DEPOSIT_IDX_LEN + SATS_AMOUNT_LEN + TAKEBACK_HASH_LEN + addr_len as usize
+        != magic_len
+            + BRIDGE_V1_SUBPROTOCOL_ID_LEN
+            + TX_TYPE_LEN
+            + DEPOSIT_IDX_LEN
+            + TAKEBACK_HASH_LEN
+            + addr_len as usize
     {
         return Err(DepositParseError::InvalidData);
     }
 
-    let (magic_slice, idx_ee_takeback_amt) = buf.split_at(magic_len);
+    let (magic_slice, rest) = buf.split_at(magic_len);
     if magic_slice != magic_bytes {
         return Err(DepositParseError::InvalidMagic);
     }
 
+    let (subprotocol_id, rest) = rest.split_at(BRIDGE_V1_SUBPROTOCOL_ID_LEN);
+    let (tx_type, rest) = rest.split_at(TX_TYPE_LEN);
+
+    if *subprotocol_id
+        .first()
+        .ok_or(DepositParseError::InvalidData)?
+        != BRIDGE_V1_SUBPROTOCOL_ID
+    {
+        return Err(DepositParseError::WrongSubprotocol);
+    }
+
+    if *tx_type.first().ok_or(DepositParseError::InvalidData)? != DEPOSIT_TX_TYPE {
+        return Err(DepositParseError::WrongTxType);
+    }
+
     // Extract the deposit idx. Can use expect because of the above length check
-    let (didx_buf, ee_takeback_amt) = idx_ee_takeback_amt.split_at(DEPOSIT_IDX_LEN);
+    let (didx_buf, rest) = rest.split_at(DEPOSIT_IDX_LEN);
     let deposit_idx =
         u32::from_be_bytes(didx_buf.try_into().expect("Expect dep idx to be 4 bytes"));
 
-    let (dest_buf, takeback_and_amt) = ee_takeback_amt.split_at(addr_len as usize);
+    let (takeback_hash, dest_buf) = rest.split_at(TAKEBACK_HASH_LEN);
 
     // Check dest_buf len
     if dest_buf.len() != addr_len as usize {
         return Err(DepositParseError::InvalidDestLen(dest_buf.len() as u8));
     }
 
-    // Extract takeback and amt
-    let (takeback_hash, amt) = takeback_and_amt.split_at(TAKEBACK_HASH_LEN);
-
-    // Extract sats, can use expect here because by the initial check on the buf len, we can ensure
-    // this.
-    let amt_bytes: [u8; 8] = amt
-        .try_into()
-        .expect("Expected to have 8 bytes as sats amount");
-
-    let sats_amt = u64::from_be_bytes(amt_bytes);
-
     Ok(DepositTag {
         deposit_idx,
         dest_buf,
-        amount: sats_amt,
+        amount: DEFAULT_BRIDGE_IN_AMOUNT.to_sat(),
         tapscript_root: takeback_hash
             .try_into()
             .expect("expected takeback hash length to match"),
@@ -223,14 +239,13 @@ mod tests {
         script::{Builder, PushBytesBuf},
         Network,
     };
+    use strata_asm_txs_bridge_v1::{constants::DEPOSIT_TX_TYPE, BRIDGE_V1_SUBPROTOCOL_ID};
     use strata_l1_txfmt::MagicBytes;
     use strata_params::DepositTxParams;
     use strata_primitives::l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey};
 
     use crate::deposit::{
-        deposit_tx::{
-            parse_tag, parse_tag_script, DEPOSIT_IDX_LEN, SATS_AMOUNT_LEN, TAKEBACK_HASH_LEN,
-        },
+        deposit_tx::{parse_tag, parse_tag_script, DEPOSIT_IDX_LEN, TAKEBACK_HASH_LEN},
         error::DepositParseError,
     };
 
@@ -258,20 +273,19 @@ mod tests {
         let deposit_idx: u32 = 42;
         let dest_buf = vec![0xAB; ADDR_LEN];
         let takeback_hash = vec![0xCD; 32];
-        let sats_amt: u64 = 1_000_000;
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&magic);
+        buf.push(BRIDGE_V1_SUBPROTOCOL_ID);
+        buf.push(DEPOSIT_TX_TYPE);
         buf.extend_from_slice(&deposit_idx.to_be_bytes());
-        buf.extend_from_slice(&dest_buf);
         buf.extend_from_slice(&takeback_hash);
-        buf.extend_from_slice(&sats_amt.to_be_bytes());
+        buf.extend_from_slice(&dest_buf);
 
         let result = parse_tag(&buf, &magic, ADDR_LEN as u8).expect("should parse successfully");
 
         assert_eq!(result.deposit_idx, 42);
         assert_eq!(result.dest_buf, dest_buf.as_slice());
-        assert_eq!(result.amount, sats_amt);
         assert_eq!(
             result.tapscript_root,
             takeback_hash
@@ -287,12 +301,11 @@ mod tests {
         const ADDR_LEN: usize = 20;
 
         let mut bad_buf = Vec::from(b"badmg"); // wrong magic, but correct length
-        bad_buf
-            .extend_from_slice(&[0u8; DEPOSIT_IDX_LEN + 20 + TAKEBACK_HASH_LEN + SATS_AMOUNT_LEN]);
+        bad_buf.extend_from_slice(&[0u8; DEPOSIT_IDX_LEN + 20 + TAKEBACK_HASH_LEN]);
 
         let result = parse_tag(&bad_buf, &magic, ADDR_LEN as u8);
 
-        assert!(matches!(result, Err(DepositParseError::InvalidMagic)));
+        assert!(matches!(result, Err(DepositParseError::InvalidData)));
     }
 
     #[test]
@@ -314,14 +327,14 @@ mod tests {
         let deposit_idx: u32 = 10;
         let wrong_dest_buf = vec![0xFF; ADDR_LEN - 1]; // wrong address size
         let takeback_hash = vec![0xCD; 32];
-        let sats_amt: u64 = 42;
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&magic);
+        buf.push(BRIDGE_V1_SUBPROTOCOL_ID);
+        buf.push(DEPOSIT_TX_TYPE);
         buf.extend_from_slice(&deposit_idx.to_be_bytes());
         buf.extend_from_slice(&wrong_dest_buf);
         buf.extend_from_slice(&takeback_hash);
-        buf.extend_from_slice(&sats_amt.to_be_bytes());
 
         let result = parse_tag(&buf, &magic, ADDR_LEN as u8);
 
