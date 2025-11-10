@@ -135,7 +135,7 @@ rustdoc.all = "warn"
 alpen-chainspec = { path = "crates/reth/chainspec" }
 alpen-ee-common = { path = "crates/alpen-ee/common" }
 alpen-ee-config = { path = "crates/alpen-ee/config" }
-alpen-ee-database = { path = "crates/alpen-ee/database" }
+alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }
 alpen-ee-engine = { path = "crates/alpen-ee/engine" }
 alpen-ee-ol-tracker = { path = "crates/alpen-ee/ol_tracker" }
 alpen-reth-db = { path = "crates/reth/db" }

@@ -1,8 +1,3 @@
-#![allow(
-    unused_crate_dependencies,
-    clippy::allow_attributes,
-    reason = "tempfile use is feature gated; remove after db consolidation"
-)]
 //! Reth node for the Alpen codebase.
 
 mod genesis;

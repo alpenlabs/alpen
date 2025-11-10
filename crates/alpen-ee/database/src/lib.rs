@@ -8,4 +8,3 @@ mod storage;
 // NOTE: `sled` is gitignored
 pub use error::{DbError, DbResult};
 pub use init::init_db_storage;
-use sleddb as sled;
