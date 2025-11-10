@@ -150,7 +150,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup just
-        uses: uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
+        uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
 
       - name: Run just lint-check-style
         run: |
