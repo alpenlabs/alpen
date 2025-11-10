@@ -1,3 +1,5 @@
+//! Common traits and types for Alpen execution environment components.
+
 #![expect(unused_crate_dependencies, reason = "wip")]
 pub mod traits;
 pub mod types;

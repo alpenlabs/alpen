@@ -1,3 +1,5 @@
+//! Execution engine control for Alpen execution environment.
+
 pub mod control;
 pub mod engine;
 

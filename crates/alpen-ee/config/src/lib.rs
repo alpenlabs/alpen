@@ -1,3 +1,5 @@
+//! Configuration parameters for Alpen execution environment.
+
 mod config;
 pub mod defaults;
 mod params;

@@ -1,3 +1,5 @@
+//! Tracks and manages the ol chain state for Alpen execution environment.
+
 mod ctx;
 mod error;
 mod handle;
