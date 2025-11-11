@@ -36,6 +36,19 @@ pub struct AuxData {
     pub bitcoin_txs: BTreeMap<L1TxIndex, RawBitcoinTx>,
 }
 
+/// Raw auxiliary data responses from workers, organized by transaction index.
+///
+/// This structure holds unverified auxiliary data (manifest leaves with proofs,
+/// Bitcoin transactions) that will be verified by `AuxDataProvider` before being
+/// served to subprotocols during transaction processing.
+#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+pub struct AuxData2 {
+    /// Map from transaction index to manifest leaves with proofs (unverified)
+    pub manifest_leaves: Vec<(Hash, AsmMerkleProof)>,
+    /// Map from transaction index to Bitcoin transaction data
+    pub bitcoin_txs: Vec<RawBitcoinTx>,
+}
+
 /// Request for manifest leaves over an inclusive range.
 ///
 /// Carries the compact manifest MMR snapshot so the provider can

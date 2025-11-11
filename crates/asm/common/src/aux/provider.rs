@@ -2,11 +2,16 @@
 //!
 //! Provides verified auxiliary data to subprotocols during the processing phase.
 
-use bitcoin::{Transaction, hashes::Hash};
+use std::collections::HashMap;
+
+use bitcoin::{Transaction, consensus, hashes::Hash};
+use strata_identifiers::Buf32;
+use strata_merkle::CompactMmr64;
 
 use crate::{
     AsmMmr, AuxError, AuxResult, BitcoinTxError, BitcoinTxRequest, L1TxIndex, ManifestLeavesError,
-    ManifestLeavesRequest, ManifestLeavesResponse, aux::data::AuxData,
+    ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
+    aux::data::{AuxData, AuxData2},
 };
 
 /// Provides verified auxiliary data to subprotocols during transaction processing.
@@ -127,6 +132,33 @@ impl<'a> AuxDataProvider<'a> {
             .into());
         }
         Ok(tx)
+    }
+}
+
+type ManifestLeafHash = [u8; 32];
+
+#[derive(Debug, Clone)]
+pub struct AuxDataProvider2 {
+    txs: HashMap<Buf32, Transaction>,
+    manifest_leaves: HashMap<usize, ManifestLeafHash>,
+}
+
+impl AuxDataProvider2 {
+    pub fn new(data: &AuxData2, compact_mmr: &CompactMmr64<[u8; 32]>) -> Self {
+        let mut txs = HashMap::with_capacity(data.bitcoin_txs.len());
+        let mut manifest_leaves = HashMap::with_capacity(data.bitcoin_txs.len());
+        for tx in &data.bitcoin_txs {
+            let tx: Transaction = tx.try_into().expect("invalid raw tx");
+            let txid = tx.compute_txid().into();
+            txs.insert(txid, tx);
+        }
+
+        for (leaf, proof) in &data.manifest_leaves {}
+
+        Self {
+            txs,
+            manifest_leaves,
+        }
     }
 }
 
