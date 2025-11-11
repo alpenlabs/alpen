@@ -19,8 +19,8 @@ strata-common = { workspace = true, default-features = true }
 strata-config.workspace = true
 strata-consensus-logic = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
-strata-db.workspace = true
 strata-db-store-sled.workspace = true
+strata-db-types.workspace = true
 strata-eectl.workspace = true
 strata-evmexec.workspace = true
 strata-l1-txfmt.workspace = true

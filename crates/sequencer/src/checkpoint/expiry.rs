@@ -2,7 +2,7 @@
 
 use std::{cmp::Reverse, collections::BinaryHeap, sync::Arc};
 
-use strata_db::types::CheckpointProvingStatus;
+use strata_db_types::types::CheckpointProvingStatus;
 use tokio::{
     select,
     time::{self, Duration, Instant},

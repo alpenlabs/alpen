@@ -17,7 +17,7 @@ strata-checkpoint-types.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
 strata-csm-worker.workspace = true
-strata-db.workspace = true
+strata-db-types.workspace = true
 strata-eectl.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
@@ -40,7 +40,7 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-strata-db = { workspace = true, features = ["stubs"] }
+strata-db-types = { workspace = true, features = ["stubs"] }
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-test-utils-l2.workspace = true
 

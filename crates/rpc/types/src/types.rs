@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use strata_bridge_types::{DepositEntry, DepositState, OperatorIdx, WithdrawalIntent};
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
-use strata_db::types::{CheckpointConfStatus, CheckpointEntry};
+use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{
     bitcoin_bosd::Descriptor,

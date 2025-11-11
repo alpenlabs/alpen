@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
-use strata_db::DbError;
+use strata_db_types::DbError;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{AsmStateManager, L1BlockManager};

@@ -1,5 +1,5 @@
 use strata_chaintsn::errors::TsnError;
-use strata_db::DbError;
+use strata_db_types::DbError;
 use strata_eectl::errors::EngineError;
 use strata_ol_chain_types::L2BlockId;
 use thiserror::Error;
@@ -63,5 +63,5 @@ pub enum BlockAssemblyError {
     Engine(#[from] EngineError),
 
     #[error("db: {0}")]
-    Db(#[from] strata_db::errors::DbError),
+    Db(#[from] strata_db_types::errors::DbError),
 }

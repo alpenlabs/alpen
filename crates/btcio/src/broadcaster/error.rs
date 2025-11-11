@@ -1,4 +1,4 @@
-use strata_db::errors::DbError;
+use strata_db_types::errors::DbError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

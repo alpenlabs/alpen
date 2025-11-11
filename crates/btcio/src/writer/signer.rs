@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bitcoin::{consensus, Transaction};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
-use strata_db::types::{BundledPayloadEntry, L1TxEntry};
+use strata_db_types::types::{BundledPayloadEntry, L1TxEntry};
 use strata_primitives::buf::Buf32;
 use tracing::*;
 
@@ -59,7 +59,7 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
 #[cfg(test)]
 mod test {
     use strata_csm_types::L1Payload;
-    use strata_db::types::{BundledPayloadEntry, L1BundleStatus};
+    use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus};
     use strata_l1_txfmt::TagData;
 
     use super::*;

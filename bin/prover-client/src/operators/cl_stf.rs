@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use jsonrpsee::http_client::HttpClient;
-use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_db_types::traits::ProofDatabase;
 use strata_ol_chain_types::{L2Block, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::RollupParams;

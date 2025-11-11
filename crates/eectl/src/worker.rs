@@ -5,7 +5,7 @@ use std::sync::Arc;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_db::DbError;
+use strata_db_types::DbError;
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_status::StatusChannel;

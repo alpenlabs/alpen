@@ -1,4 +1,4 @@
-use strata_db::{traits::*, types::L1TxEntry};
+use strata_db_types::{traits::*, types::L1TxEntry};
 use strata_primitives::buf::Buf32;
 
 use crate::exec::*;

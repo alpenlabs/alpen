@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bitcoin::Txid;
-use strata_db::types::L1TxEntry;
+use strata_db_types::types::L1TxEntry;
 use strata_primitives::indexed::Indexed;
 use strata_storage::BroadcastDbOps;
 use tracing::*;
@@ -97,8 +97,8 @@ async fn filter_unfinalized_from_db(
 #[cfg(test)]
 mod test {
     use bitcoin::{consensus, Transaction};
-    use strata_db::{traits::DatabaseBackend, types::L1TxStatus};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;

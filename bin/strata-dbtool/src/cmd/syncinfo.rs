@@ -1,6 +1,6 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
+use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
 
 use super::{
     chainstate::get_latest_l2_write_batch,

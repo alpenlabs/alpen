@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use bitcoin::{hashes::Hash, Txid};
 use bitcoind_async_client::traits::{Broadcaster, Wallet};
-use strata_db::types::{L1TxEntry, L1TxStatus};
+use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_params::Params;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
 use tokio::sync::mpsc::Receiver;
@@ -183,8 +183,8 @@ async fn publish_tx(
 #[cfg(test)]
 mod test {
     use bitcoin::{consensus, Transaction};
-    use strata_db::traits::DatabaseBackend;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::traits::DatabaseBackend;
     use strata_storage::ops::l1tx_broadcast::Context;
     use strata_test_utils_l2::gen_params;
 

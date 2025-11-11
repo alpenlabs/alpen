@@ -5,7 +5,7 @@ use strata_bridge_types::PublickeyTable;
 use strata_checkpoint_types::EpochSummary;
 use strata_common::{Action, WorkerType};
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db::types::{L1TxEntry, L1TxStatus};
+use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_ol_chain_types::{L2Block, L2BlockId};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
 use strata_rpc_types::{

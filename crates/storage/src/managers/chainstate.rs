@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use futures::TryFutureExt;
-use strata_db::{
+use strata_db_types::{
     chainstate::{ChainstateDatabase, StateInstanceId, WriteBatchId},
     DbResult,
 };

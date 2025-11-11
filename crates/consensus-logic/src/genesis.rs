@@ -1,7 +1,7 @@
 use strata_asm_types::HeaderVerificationState;
 use strata_bridge_types::OperatorTable;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db::errors::DbError;
+use strata_db_types::errors::DbError;
 use strata_ol_chain_types::{
     ExecSegment, L1Segment, L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader,
     L2Header, SignedL2BlockHeader,
@@ -65,7 +65,7 @@ pub fn init_genesis_chainstate(
     storage.l2().put_block_data_blocking(gblock)?;
     storage
         .l2()
-        .set_block_status_blocking(&gid, strata_db::traits::BlockStatus::Valid)?;
+        .set_block_status_blocking(&gid, strata_db_types::traits::BlockStatus::Valid)?;
     // TODO: Status channel should probably be updated.
 
     // TODO make ^this be atomic so we can't accidentally not write both, or

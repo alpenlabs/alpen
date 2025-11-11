@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use strata_db::{types::CheckpointEntry, DbResult};
+use strata_db_types::{types::CheckpointEntry, DbResult};
 use strata_storage::CheckpointDbManager;
 use tokio::sync::broadcast;
 use tracing::*;

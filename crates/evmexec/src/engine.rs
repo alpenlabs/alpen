@@ -12,7 +12,7 @@ use alpen_reth_evm::constants::COINBASE_ADDRESS;
 use alpen_reth_node::AlpenPayloadAttributes;
 use revm_primitives::{Address, B256};
 use strata_bridge_types::WithdrawalIntent;
-use strata_db::DbError;
+use strata_db_types::DbError;
 use strata_eectl::{
     engine::{BlockStatus, ExecEngineCtl, L2BlockRef, PayloadStatus},
     errors::{EngineError, EngineResult},

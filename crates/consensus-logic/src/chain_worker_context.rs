@@ -5,7 +5,7 @@ use std::sync::Arc;
 use strata_chain_worker::*;
 use strata_chainexec::{BlockExecutionOutput, CheckinExecutionOutput};
 use strata_checkpoint_types::EpochSummary;
-use strata_db::{
+use strata_db_types::{
     chainstate::{StateInstanceId, WriteBatchId},
     DbError,
 };

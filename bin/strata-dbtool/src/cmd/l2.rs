@@ -1,6 +1,6 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
+use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_primitives::{l1::L1BlockId, l2::L2BlockId};
 

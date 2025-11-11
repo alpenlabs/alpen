@@ -13,7 +13,7 @@ strata-asm-worker.workspace = true
 strata-checkpoint-types.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
-strata-db.workspace = true
+strata-db-types.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true

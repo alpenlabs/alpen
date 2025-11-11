@@ -1,7 +1,7 @@
 //! L1 data operation interface.
 
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
-use strata_db::traits::*;
+use strata_db_types::traits::*;
 use strata_primitives::l1::L1BlockId;
 
 use crate::exec::*;

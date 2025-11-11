@@ -1,6 +1,6 @@
 //! L2 block data operation interface.
 
-use strata_db::traits::*;
+use strata_db_types::traits::*;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 
 use crate::exec::*;

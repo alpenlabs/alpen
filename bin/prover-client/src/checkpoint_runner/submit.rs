@@ -1,6 +1,6 @@
 use jsonrpsee::http_client::HttpClient;
-use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_db_types::traits::ProofDatabase;
 use strata_rpc_api::StrataSequencerApiClient;
 use strata_rpc_types::ProofKey;
 use tracing::info;

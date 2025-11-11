@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use strata_config::btcio::WriterConfig;
-use strata_db::{
+use strata_db_types::{
     types::{BundledPayloadEntry, IntentEntry, IntentStatus},
     DbResult,
 };

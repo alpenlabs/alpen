@@ -13,7 +13,7 @@ pub use managers::{
     client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
-use strata_db::traits::DatabaseBackend;
+use strata_db_types::traits::DatabaseBackend;
 
 /// A consolidation of database managers.
 // TODO move this to its own module

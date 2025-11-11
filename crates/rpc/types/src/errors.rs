@@ -35,7 +35,7 @@ pub enum RpcServerError {
     MissingChainstate(L2BlockId),
 
     #[error("db: {0}")]
-    Db(#[from] strata_db::errors::DbError),
+    Db(#[from] strata_db_types::errors::DbError),
 
     #[error("blocking task '{0}' failed for unknown reason")]
     BlockingAbort(String),

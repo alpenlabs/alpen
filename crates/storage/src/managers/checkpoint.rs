@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
-use strata_db::{traits::CheckpointDatabase, types::CheckpointEntry, DbResult};
+use strata_db_types::{traits::CheckpointDatabase, types::CheckpointEntry, DbResult};
 use strata_primitives::epoch::EpochCommitment;
 use threadpool::ThreadPool;
 

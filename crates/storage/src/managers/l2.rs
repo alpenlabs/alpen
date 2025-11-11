@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_db::{
+use strata_db_types::{
     traits::{BlockStatus, L2BlockDatabase},
     DbResult,
 };

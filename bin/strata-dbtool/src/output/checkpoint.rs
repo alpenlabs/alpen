@@ -4,7 +4,7 @@ use strata_checkpoint_types::{
     BatchInfo, BatchTransition, Checkpoint, EpochSummary, SignedCheckpoint,
 };
 use strata_csm_types::CheckpointL1Ref;
-use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus};
+use strata_db_types::types::{CheckpointConfStatus, CheckpointProvingStatus};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 

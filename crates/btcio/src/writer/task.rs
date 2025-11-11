@@ -7,7 +7,7 @@ use bitcoind_async_client::{
 };
 use strata_config::btcio::WriterConfig;
 use strata_csm_types::{PayloadDest, PayloadIntent};
-use strata_db::{
+use strata_db_types::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry, L1BundleStatus, L1TxStatus},
 };

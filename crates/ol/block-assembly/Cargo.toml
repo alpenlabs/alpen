@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-db.workspace = true
+strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true
