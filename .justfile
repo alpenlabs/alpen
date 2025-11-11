@@ -43,11 +43,6 @@ cov-unit: ensure-cargo-llvm-cov ensure-cargo-nextest
 cov-report-html: ensure-cargo-llvm-cov ensure-cargo-nextest
     cargo llvm-cov --open --workspace --locked nextest
 
-# Run integration tests
-[group('test')]
-test-int: ensure-cargo-nextest
-    cargo nextest run -p "integration-tests" --status-level=fail --no-capture
-
 # Runs `nextest` under `cargo-mutants`. Caution: This can take *really* long to run
 [group('test')]
 mutants-test: ensure-cargo-mutants
@@ -325,7 +320,16 @@ test: test-unit test-doc
 
 # Runs lints (without fixing), audit, docs, and tests (run this before creating a PR)
 [group('code-quality')]
-pr: lint rustdocs test-doc test-unit test-int test-functional
+pr: lint rustdocs test-doc test-unit test-functional
+    @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
+    @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
+    @echo "All good to create a PR!"
+
+# Runs lints (without fixing), audit, docs, and tests(except functional tests)
+# NOTE: This is a command to check everything else except the functional tests pass
+# because sometimes running functional tests might be redundant.
+[group('code-quality')]
+pr-lite: lint rustdocs test-doc test-unit
     @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
     @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
