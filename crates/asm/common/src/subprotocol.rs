@@ -139,7 +139,7 @@ pub trait Subprotocol: 'static {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_provider: &AuxDataProvider<'_>,
+        aux_provider: &AuxDataProvider,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );

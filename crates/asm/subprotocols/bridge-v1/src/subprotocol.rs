@@ -86,7 +86,7 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_provider: &AuxDataProvider<'_>,
+        _aux_provider: &AuxDataProvider,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

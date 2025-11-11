@@ -74,7 +74,7 @@ impl Subprotocol for CheckpointV0Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_input: &AuxDataProvider<'_>,
+        _aux_input: &AuxDataProvider,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

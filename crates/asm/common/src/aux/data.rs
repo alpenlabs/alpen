@@ -23,30 +23,21 @@ pub struct AuxRequests {
     pub bitcoin_txs: BTreeMap<L1TxIndex, BitcoinTxRequest>,
 }
 
-/// Raw auxiliary data responses from workers, organized by transaction index.
+/// Batch auxiliary data containing unverified Bitcoin transactions and manifest leaves.
 ///
-/// This structure holds unverified auxiliary data (manifest leaves with proofs,
-/// Bitcoin transactions) that will be verified by `AuxDataProvider` before being
-/// served to subprotocols during transaction processing.
-#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+/// This structure holds auxiliary data in vector form for efficient batch processing.
+/// The data is unverified and must be validated before use, typically by passing it
+/// to [`AuxDataProvider::new`] which verifies all proofs and decodes transactions.
+///
+/// [`AuxDataProvider::new`]: crate::aux::provider::AuxDataProvider::new
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
-    /// Map from transaction index to manifest leaves with proofs (unverified)
-    pub manifest_leaves: BTreeMap<L1TxIndex, ManifestLeavesWithProofs>,
-    /// Map from transaction index to Bitcoin transaction data
-    pub bitcoin_txs: BTreeMap<L1TxIndex, RawBitcoinTx>,
-}
-
-/// Raw auxiliary data responses from workers, organized by transaction index.
-///
-/// This structure holds unverified auxiliary data (manifest leaves with proofs,
-/// Bitcoin transactions) that will be verified by `AuxDataProvider` before being
-/// served to subprotocols during transaction processing.
-#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
-pub struct AuxData2 {
-    /// Map from transaction index to manifest leaves with proofs (unverified)
+    /// Manifest leaves with their MMR proofs (unverified)
     pub manifest_leaves: Vec<(Hash32, AsmMerkleProof)>,
-    /// Map from transaction index to Bitcoin transaction data
+    /// Raw Bitcoin transaction data (unverified)
     pub bitcoin_txs: Vec<RawBitcoinTx>,
+    /// Compact MMR used to verify manifest leaf proofs
+    pub manifest_mmr: AsmCompactMmr,
 }
 
 /// Request for manifest leaves over an inclusive range.

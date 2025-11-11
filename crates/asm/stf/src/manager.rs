@@ -64,7 +64,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
             .downcast_mut::<R>()
             .expect("asm: handler");
 
-        let aux_provider = AuxDataProvider::new(aux_data);
+        let aux_provider = AuxDataProvider::new(aux_data).expect("asm: failed to create aux provider");
 
         S::process_txs(
             &mut self.state,
