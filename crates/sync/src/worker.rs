@@ -1,11 +1,13 @@
 // TODO much of this should be converted over to just listening for FCM state updates
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use futures::StreamExt;
 #[cfg(feature = "debug-utils")]
 use strata_common::{check_and_pause_debug_async, WorkerType};
-use strata_consensus_logic::{message::ForkChoiceMessage, sync_manager::SyncManager};
+use strata_consensus_logic::{
+    fork_choice_manager::ForkChoiceManager, message::ForkChoiceMessage, sync_manager::SyncManager,
+};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::ChainSyncStatusUpdate;
@@ -26,14 +28,21 @@ pub struct L2SyncContext<T: SyncClient> {
     client: T,
     storage: Arc<NodeStorage>,
     sync_manager: Arc<SyncManager>,
+    fcm: Arc<RwLock<ForkChoiceManager>>,
 }
 
 impl<T: SyncClient> L2SyncContext<T> {
-    pub fn new(client: T, storage: Arc<NodeStorage>, sync_manager: Arc<SyncManager>) -> Self {
+    pub fn new(
+        client: T,
+        storage: Arc<NodeStorage>,
+        sync_manager: Arc<SyncManager>,
+        fcm: Arc<RwLock<ForkChoiceManager>>,
+    ) -> Self {
         Self {
             client,
             storage,
             sync_manager,
+            fcm,
         }
     }
 }
@@ -43,9 +52,9 @@ async fn wait_until_ready_and_init_sync_state<T: SyncClient>(
     context: &L2SyncContext<T>,
 ) -> Result<L2SyncState, L2SyncError> {
     let mut chainsync_rx = context.sync_manager.status_channel().subscribe_chain_sync();
-    let finalized_epoch = wait_for_finalized_epoch(&mut chainsync_rx).await?;
+    let _finalized_epoch = wait_for_finalized_epoch(&mut chainsync_rx).await?;
 
-    state::initialize_from_db(finalized_epoch, context.storage.as_ref()).await
+    Ok(state::new(context.fcm.clone()))
 }
 
 async fn wait_for_chainstate_finalized_epoch_inner(
@@ -87,7 +96,7 @@ async fn wait_for_finalized_epoch_changed(
 }
 
 pub async fn sync_worker<T: SyncClient>(context: &L2SyncContext<T>) -> Result<(), L2SyncError> {
-    let mut state = wait_until_ready_and_init_sync_state(context).await?;
+    let state = wait_until_ready_and_init_sync_state(context).await?;
 
     let mut chainsync_rx = context.sync_manager.status_channel().subscribe_chain_sync();
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
@@ -95,7 +104,7 @@ pub async fn sync_worker<T: SyncClient>(context: &L2SyncContext<T>) -> Result<()
 
     loop {
         tokio::select! {
-            finalized_epoch = wait_for_finalized_epoch_changed(&mut chainsync_rx, *state.finalized_epoch()) => {
+            finalized_epoch = wait_for_finalized_epoch_changed(&mut chainsync_rx, state.finalized_epoch()) => {
                 let finalized_epoch = match finalized_epoch {
                     Ok(epoch) => epoch,
                     Err(err) => {
@@ -103,11 +112,11 @@ pub async fn sync_worker<T: SyncClient>(context: &L2SyncContext<T>) -> Result<()
                         continue;
                     }
                 };
-                handle_finalized_epoch(finalized_epoch, &mut state, context).await;
+                handle_finalized_epoch(finalized_epoch, &state, context).await;
             }
 
             _ = interval.tick() => {
-                do_tick(&mut state, context).await?;
+                do_tick(&state, context).await?;
             }
             // maybe subscribe to new blocks on client instead of polling?
         }
@@ -116,7 +125,7 @@ pub async fn sync_worker<T: SyncClient>(context: &L2SyncContext<T>) -> Result<()
 
 async fn handle_finalized_epoch<T: SyncClient>(
     fin_epoch: EpochCommitment,
-    state: &mut L2SyncState,
+    state: &L2SyncState,
     _context: &L2SyncContext<T>,
 ) {
     if let Err(e) = handle_block_finalized(state, fin_epoch).await {
@@ -125,7 +134,7 @@ async fn handle_finalized_epoch<T: SyncClient>(
 }
 
 async fn do_tick<T: SyncClient>(
-    state: &mut L2SyncState,
+    state: &L2SyncState,
     context: &L2SyncContext<T>,
 ) -> Result<(), L2SyncError> {
     // every fixed interval, try to sync with latest state of client
@@ -158,7 +167,7 @@ async fn do_tick<T: SyncClient>(
 async fn sync_blocks_by_range<T: SyncClient>(
     start_height: u64,
     end_height: u64,
-    state: &mut L2SyncState,
+    state: &L2SyncState,
     context: &L2SyncContext<T>,
 ) -> Result<(), L2SyncError> {
     debug!("syncing blocks by range");
@@ -185,7 +194,7 @@ async fn sync_blocks_by_range<T: SyncClient>(
 /// If the parent block is missing, it will be fetched recursively
 /// until we reach a known block in our unfinalized chain.
 async fn handle_new_block<T: SyncClient>(
-    state: &mut L2SyncState,
+    state: &L2SyncState,
     context: &L2SyncContext<T>,
     block: L2BlockBundle,
 ) -> Result<(), L2SyncError> {
@@ -229,39 +238,71 @@ async fn handle_new_block<T: SyncClient>(
     }
 
     // send ForkChoiceMessage::NewBlock for all pending blocks in correct order
+    // The FCM will handle updating the chain_tracker
+    let mut last_block_id = None;
     while let Some(block) = fetched_blocks.pop() {
-        state.attach_block(block.header())?;
         context
             .storage
             .l2()
             .put_block_data_async(block.clone())
             .await?;
         let block_idx = block.header().slot();
+        let block_id = block.header().get_blockid();
+        last_block_id = Some(block_id);
         debug!(%block_idx, "l2 sync: sending chain tip msg");
         context
             .sync_manager
-            .submit_chain_tip_msg_async(ForkChoiceMessage::NewBlock(block.header().get_blockid()))
+            .submit_chain_tip_msg_async(ForkChoiceMessage::NewBlock(block_id))
             .await;
         debug!(%block_idx, "l2 sync: sending chain tip sent");
     }
+
+    // Wait for FCM to process the messages by checking if the chain tracker has the block
+    // This prevents a race condition where we query state before FCM processes our messages
+    if let Some(expected_block_id) = last_block_id {
+        let mut attempts = 0;
+        const MAX_ATTEMPTS: u32 = 100; // 10 seconds max wait
+        while attempts < MAX_ATTEMPTS {
+            if state.has_block(&expected_block_id) {
+                debug!(?expected_block_id, "fcm has processed blocks");
+                break;
+            }
+            // Short delay to give FCM time to process
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            attempts += 1;
+        }
+        if attempts >= MAX_ATTEMPTS {
+            warn!(
+                ?expected_block_id,
+                "fcm did not process block after max attempts"
+            );
+        }
+    }
+
     Ok(())
 }
 
+/// Validates that the sync worker has the newly finalized block.
+///
+/// Note: This function only performs validation. The actual finalization of epochs
+/// is handled by the ForkChoiceManager through checkpoint messages from the CSM.
+/// The sync worker just needs to ensure it has synced the finalized block.
 async fn handle_block_finalized(
-    state: &mut L2SyncState,
+    state: &L2SyncState,
     new_finalized_epoch: EpochCommitment,
 ) -> Result<(), L2SyncError> {
-    if state.finalized_blockid() == new_finalized_epoch.last_blkid() {
+    // Check if this finalization event is already reflected in FCM
+    if state.finalized_blockid() == *new_finalized_epoch.last_blkid() {
         return Ok(());
     }
 
+    // Validate that we have synced the finalized block
+    // If not, the sync worker needs to catch up
     if !state.has_block(new_finalized_epoch.last_blkid()) {
         return Err(L2SyncError::MissingFinalized(
             *new_finalized_epoch.last_blkid(),
         ));
     };
-
-    state.update_finalized_tip(new_finalized_epoch)?;
 
     Ok(())
 }
