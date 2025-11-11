@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strata_service::ServiceState;
 
 use crate::config::PaaSConfig;
@@ -14,26 +14,25 @@ use crate::Prover;
 
 /// Task metadata tracked by the service
 #[derive(Debug, Clone)]
-struct TaskInfo<T: TaskId> {
-    task_id: T,
-    status: TaskStatus,
-    created_at: Instant,
-    updated_at: Instant,
+pub(crate) struct TaskInfo<T: TaskId> {
+    pub(crate) task_id: T,
+    pub(crate) status: TaskStatus,
+    pub(crate) updated_at: Instant,
 }
 
 /// Service state for ProverService
 pub struct ProverServiceState<P: Prover> {
     /// The prover implementation
-    prover: Arc<P>,
+    pub(crate) prover: Arc<P>,
 
     /// Configuration
-    config: PaaSConfig<P::Backend>,
+    pub(crate) config: PaaSConfig<P::Backend>,
 
     /// Task tracker (thread-safe)
-    tasks: Arc<Mutex<HashMap<P::TaskId, TaskInfo<P::TaskId>>>>,
+    pub(crate) tasks: Arc<Mutex<HashMap<P::TaskId, TaskInfo<P::TaskId>>>>,
 
     /// In-progress tasks per backend (for worker limits)
-    in_progress: Arc<Mutex<HashMap<P::Backend, usize>>>,
+    pub(crate) in_progress: Arc<Mutex<HashMap<P::Backend, usize>>>,
 }
 
 impl<P: Prover> ProverServiceState<P> {
@@ -55,14 +54,12 @@ impl<P: Prover> ProverServiceState<P> {
             return Err(PaaSError::Config("Task already exists".into()));
         }
 
-        let now = Instant::now();
         tasks.insert(
             task_id.clone(),
             TaskInfo {
                 task_id,
                 status: TaskStatus::Pending,
-                created_at: now,
-                updated_at: now,
+                updated_at: Instant::now(),
             },
         );
 
@@ -125,7 +122,7 @@ impl<P: Prover> ProverServiceState<P> {
     }
 
     /// Get in-progress counter
-    pub fn in_progress_counter(&self) -> &Arc<Mutex<HashMap<P::Backend, usize>>> {
+    pub(crate) fn in_progress_counter(&self) -> &Arc<Mutex<HashMap<P::Backend, usize>>> {
         &self.in_progress
     }
 
@@ -165,7 +162,7 @@ impl<P: Prover> ServiceState for ProverServiceState<P> {
 }
 
 /// Status summary for monitoring
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusSummary {
     pub total: usize,
     pub pending: usize,

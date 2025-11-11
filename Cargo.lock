@@ -13650,9 +13650,9 @@ dependencies = [
  "strata-asm-types",
  "strata-params",
  "strata-primitives",
- "strata-service 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-service",
  "strata-state",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tracing",
 ]
@@ -13744,7 +13744,7 @@ dependencies = [
  "strata-state",
  "strata-status",
  "strata-storage",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "strata-test-utils",
  "strata-test-utils-l2",
  "strata-test-utils-tx-indexer",
@@ -13768,10 +13768,10 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-params",
  "strata-primitives",
- "strata-service 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-service",
  "strata-status",
  "strata-storage",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -13866,7 +13866,7 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "strata-sync",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "thiserror 2.0.17",
  "threadpool",
  "tokio",
@@ -13935,11 +13935,11 @@ dependencies = [
  "strata-params",
  "strata-predicate",
  "strata-primitives",
- "strata-service 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-service",
  "strata-state",
  "strata-status",
  "strata-storage",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "strata-test-utils-l2",
  "thiserror 2.0.17",
  "threadpool",
@@ -14000,7 +14000,7 @@ dependencies = [
  "strata-db-types",
  "strata-params",
  "strata-primitives",
- "strata-service 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-service",
  "strata-status",
  "strata-storage",
  "strata-test-utils",
@@ -14186,7 +14186,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-status",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -14430,12 +14430,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
- "strata-service 0.3.0-alpha.1",
- "strata-tasks 0.3.0-alpha.1",
+ "serde_json",
+ "strata-service",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tokio",
  "tokio-test",
  "tracing",
+ "zkaleido",
 ]
 
 [[package]]
@@ -14681,7 +14683,7 @@ dependencies = [
  "strata-state",
  "strata-status",
  "strata-storage",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -14706,25 +14708,11 @@ dependencies = [
  "strata-rpc-api",
  "strata-rpc-types",
  "strata-sequencer",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
  "zeroize",
-]
-
-[[package]]
-name = "strata-service"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "futures",
- "serde",
- "serde_json",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -14736,7 +14724,7 @@ dependencies = [
  "futures",
  "serde",
  "serde_json",
- "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -14853,17 +14841,6 @@ dependencies = [
  "strata-rpc-api",
  "strata-status",
  "strata-storage",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "strata-tasks"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "futures-util",
  "thiserror 2.0.17",
  "tokio",
  "tracing",

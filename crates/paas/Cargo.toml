@@ -8,8 +8,8 @@ edition = "2021"
 tokio = { workspace = true, features = ["sync", "time", "macros"] }
 
 # Service framework
-strata-service = { path = "../service" }
-strata-tasks = { path = "../tasks" }
+strata-service = { workspace = true }
+strata-tasks = { workspace = true }
 
 # Error handling
 anyhow = { workspace = true }
@@ -21,5 +21,9 @@ serde = { workspace = true, features = ["derive"] }
 # Logging
 tracing = { workspace = true }
 
+# ZkVm support (required)
+zkaleido = { workspace = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
+serde_json = { workspace = true }
