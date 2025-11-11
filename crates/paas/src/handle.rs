@@ -25,7 +25,7 @@ pub struct ProverHandle<P: ProgramId> {
 
 impl<P: ProgramId> ProverHandle<P> {
     /// Create a new handle
-    pub(crate) fn new(
+    pub fn new(
         command_handle: CommandHandle<ProverCommand<ZkVmTaskId<P>>>,
         monitor: ServiceMonitor<ProverServiceStatus>,
     ) -> Self {

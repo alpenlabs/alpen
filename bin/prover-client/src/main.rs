@@ -1,5 +1,6 @@
 //! Prover client.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -9,14 +10,16 @@ use checkpoint_runner::runner::checkpoint_proof_runner;
 use db::open_sled_database;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::ProofOperator;
-use prover_manager::{ProverManager, ProverManagerConfig};
+use paas_integration::{DynamicHostProver, ProverInputFetcher, ProverProofStore};
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
+use strata_paas::{PaaSConfig, ProverService, ProverServiceState, ZkVmBackend};
+use strata_service::ServiceBuilder;
+use strata_tasks::TaskManager;
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder as _;
-use task_tracker::TaskTracker;
-use tokio::{spawn, sync::Mutex};
+use tokio::spawn;
 use tracing::debug;
 #[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
@@ -86,7 +89,6 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         rollup_params,
         config.enable_checkpoint_runner,
     ));
-    let task_tracker = Arc::new(Mutex::new(TaskTracker::new()));
 
     let sled_db =
         open_sled_database(&config.datadir).context("Failed to open the Sled database")?;
@@ -95,34 +97,59 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
     let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
-    let prover_config = ProverManagerConfig::new(
-        config.get_workers(),
-        config.polling_interval,
-        config.max_retry_counter,
-    );
-    let manager = ProverManager::new(
-        task_tracker.clone(),
-        operator.clone(),
+    // Create PaaS components
+    let input_fetcher = Arc::new(ProverInputFetcher::new(
+        operator.evm_ee_operator().clone(),
+        operator.cl_stf_operator().clone(),
+        operator.checkpoint_operator().clone(),
         db.clone(),
-        prover_config,
-    );
-    debug!("Initialized Prover Manager");
+    ));
+    let proof_store = Arc::new(ProverProofStore::new(db.clone()));
+    let dynamic_prover = Arc::new(DynamicHostProver::new(input_fetcher, proof_store));
 
-    // Run prover manager in background
-    spawn(async move { manager.process_pending_tasks().await });
-    debug!("Spawn process pending tasks");
+    // Create PaaS configuration
+    let mut worker_counts = HashMap::new();
+    let workers = config.get_workers();
+
+    // Configure workers for each backend
+    #[cfg(feature = "sp1")]
+    {
+        worker_counts.insert(ZkVmBackend::SP1, *workers.get(&strata_primitives::proof::ProofZkVm::SP1).unwrap_or(&0));
+    }
+    worker_counts.insert(ZkVmBackend::Native, *workers.get(&strata_primitives::proof::ProofZkVm::Native).unwrap_or(&1));
+
+    let paas_config = PaaSConfig::new(worker_counts);
+
+    // Create task manager and executor
+    let task_manager = TaskManager::new(tokio::runtime::Handle::current());
+    let executor = task_manager.create_executor();
+
+    // Create and launch PaaS service
+    let service_state = ProverServiceState::new(dynamic_prover, paas_config);
+    let mut service_builder = ServiceBuilder::<ProverService<DynamicHostProver>, _>::new()
+        .with_state(service_state);
+
+    let prover_handle = service_builder.create_command_handle(100);
+    let prover_monitor = service_builder
+        .launch_async("prover", &executor)
+        .await
+        .context("Failed to launch prover service")?;
+
+    let paas_handle = strata_paas::ProverHandle::<strata_primitives::proof::ProofContext>::new(prover_handle, prover_monitor);
+
+    debug!("Initialized PaaS prover service");
 
     // run the checkpoint runner
     if config.enable_checkpoint_runner {
         let checkpoint_operator = operator.checkpoint_operator().clone();
-        let checkpoint_task_tracker = task_tracker.clone();
+        let checkpoint_handle = paas_handle.clone();
         let checkpoint_poll_interval = config.checkpoint_poll_interval;
         let checkpoint_db = db.clone();
         spawn(async move {
             checkpoint_proof_runner(
                 checkpoint_operator,
                 checkpoint_poll_interval,
-                checkpoint_task_tracker,
+                checkpoint_handle,
                 checkpoint_db,
             )
             .await;
@@ -130,7 +157,7 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         debug!("Spawned checkpoint proof runner");
     }
 
-    let rpc_server = ProverClientRpc::new(task_tracker.clone(), operator, db);
+    let rpc_server = ProverClientRpc::new(paas_handle.clone(), operator, db);
     rpc_server
         .start_server(config.get_dev_rpc_url(), config.enable_dev_rpcs)
         .await
