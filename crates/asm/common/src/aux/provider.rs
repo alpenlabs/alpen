@@ -4,13 +4,13 @@
 
 use std::collections::HashMap;
 
-use bitcoin::Transaction;
+use bitcoin::{Transaction, hashes::Hash};
 use strata_identifiers::Buf32;
 use strata_merkle::CompactMmr64;
 
 use crate::{
     AsmHasher, AsmMmr, AuxError, AuxResult, BitcoinTxError, BitcoinTxRequest, Hash32, L1TxIndex,
-    ManifestLeavesError, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
+    ManifestLeavesError, ManifestLeavesRequest, ManifestLeavesResponse,
     aux::data::{AuxData, AuxData2},
 };
 
@@ -135,31 +135,59 @@ impl<'a> AuxDataProvider<'a> {
     }
 }
 
+/// Provides auxiliary data to subprotocols during transaction processing.
+///
+/// The provider verifies all auxiliary data upfront during construction and stores
+/// it in efficient lookup structures. Bitcoin transactions are validated and indexed
+/// by txid, while manifest leaves have their MMR proofs verified and are indexed by
+/// their MMR position.
 #[derive(Debug, Clone)]
 pub struct AuxDataProvider2 {
+    /// Verified Bitcoin transactions indexed by txid
     txs: HashMap<Buf32, Transaction>,
+    /// Verified manifest leaves indexed by MMR index
     manifest_leaves: HashMap<u64, Hash32>,
 }
 
 impl AuxDataProvider2 {
-    pub fn new(data: &AuxData2, compact_mmr: &CompactMmr64<[u8; 32]>) -> Self {
+    /// Creates a new provider by verifying and indexing all auxiliary data.
+    ///
+    /// This method performs the following validation:
+    /// 1. Decodes all Bitcoin transactions and indexes them by txid
+    /// 2. Verifies all manifest leaf MMR proofs against the compact MMR
+    /// 3. Indexes verified leaves by their MMR position
+    ///
+    /// # Errors
+    ///
+    /// Returns `BitcoinTxError::InvalidTxAtIndex` if any transaction fails to decode.
+    /// Returns `ManifestLeavesError::InvalidMmrProofAtIndex` if any MMR proof fails verification.
+    pub fn new(data: &AuxData2, compact_mmr: &CompactMmr64<[u8; 32]>) -> AuxResult<Self> {
         let mut txs = HashMap::with_capacity(data.bitcoin_txs.len());
         let mut manifest_leaves = HashMap::with_capacity(data.manifest_leaves.len());
-        for tx in &data.bitcoin_txs {
-            let tx: Transaction = tx.try_into().expect("invalid raw tx");
+
+        // Decode and index all Bitcoin transactions
+        for (index, tx) in data.bitcoin_txs.iter().enumerate() {
+            let tx: Transaction = tx
+                .try_into()
+                .map_err(|source| BitcoinTxError::InvalidTxAtIndex { index, source })?;
             let txid = tx.compute_txid().into();
             txs.insert(txid, tx);
         }
 
-        for (leaf, proof) in &data.manifest_leaves {
-            assert!(compact_mmr.verify::<AsmHasher>(proof, leaf));
+        // Verify and index all manifest leaves
+        for (index, (leaf, proof)) in data.manifest_leaves.iter().enumerate() {
+            if !compact_mmr.verify::<AsmHasher>(proof, leaf) {
+                return Err(
+                    ManifestLeavesError::InvalidMmrProofAtIndex { index, hash: *leaf }.into(),
+                );
+            }
             manifest_leaves.insert(proof.index(), *leaf);
         }
 
-        Self {
+        Ok(Self {
             txs,
             manifest_leaves,
-        }
+        })
     }
 }
 

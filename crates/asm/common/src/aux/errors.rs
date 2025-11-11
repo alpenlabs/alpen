@@ -76,6 +76,19 @@ pub enum ManifestLeavesError {
         /// The manifest hash that failed verification
         hash: Hash32,
     },
+
+    /// Invalid MMR proof during batch initialization.
+    ///
+    /// This occurs during provider initialization when a provided MMR proof
+    /// doesn't verify against the manifest hash. This is different from
+    /// `InvalidMmrProof` in that it happens during construction, not per-request.
+    #[error("invalid MMR proof at index {index}, hash {hash:?}")]
+    InvalidMmrProofAtIndex {
+        /// The index in the batch where verification failed
+        index: usize,
+        /// The manifest hash that failed verification
+        hash: Hash32,
+    },
 }
 
 /// Errors that can occur when requesting Bitcoin transactions.
@@ -89,6 +102,20 @@ pub enum BitcoinTxError {
     InvalidTx {
         /// The transaction index being resolved
         tx_index: L1TxIndex,
+        /// Underlying decode error
+        #[source]
+        source: bitcoin::consensus::encode::Error,
+    },
+
+    /// Failed to decode raw Bitcoin transaction during batch initialization.
+    ///
+    /// This occurs during provider initialization when a raw transaction
+    /// cannot be deserialized. This is different from `InvalidTx` in that
+    /// it happens during construction, not per-request.
+    #[error("invalid Bitcoin transaction at index {index}: {source}")]
+    InvalidTxAtIndex {
+        /// The index in the batch where decoding failed
+        index: usize,
         /// Underlying decode error
         #[source]
         source: bitcoin::consensus::encode::Error,
