@@ -9,8 +9,8 @@ use strata_identifiers::Buf32;
 use strata_merkle::CompactMmr64;
 
 use crate::{
-    AsmMmr, AuxError, AuxResult, BitcoinTxError, BitcoinTxRequest, L1TxIndex, ManifestLeavesError,
-    ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
+    AsmHasher, AsmMmr, AuxError, AuxResult, BitcoinTxError, BitcoinTxRequest, L1TxIndex,
+    ManifestLeavesError, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
     aux::data::{AuxData, AuxData2},
 };
 
@@ -140,20 +140,23 @@ type ManifestLeafHash = [u8; 32];
 #[derive(Debug, Clone)]
 pub struct AuxDataProvider2 {
     txs: HashMap<Buf32, Transaction>,
-    manifest_leaves: HashMap<usize, ManifestLeafHash>,
+    manifest_leaves: HashMap<u64, ManifestLeafHash>,
 }
 
 impl AuxDataProvider2 {
     pub fn new(data: &AuxData2, compact_mmr: &CompactMmr64<[u8; 32]>) -> Self {
         let mut txs = HashMap::with_capacity(data.bitcoin_txs.len());
-        let mut manifest_leaves = HashMap::with_capacity(data.bitcoin_txs.len());
+        let mut manifest_leaves = HashMap::with_capacity(data.manifest_leaves.len());
         for tx in &data.bitcoin_txs {
             let tx: Transaction = tx.try_into().expect("invalid raw tx");
             let txid = tx.compute_txid().into();
             txs.insert(txid, tx);
         }
 
-        for (leaf, proof) in &data.manifest_leaves {}
+        for (leaf, proof) in &data.manifest_leaves {
+            assert!(compact_mmr.verify::<AsmHasher>(proof, leaf));
+            manifest_leaves.insert(proof.index(), *leaf);
+        }
 
         Self {
             txs,
