@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use crate::{Hash, L1TxIndex};
+use crate::{Hash32, L1TxIndex};
 
 /// Result type alias for auxiliary operations.
 pub type AuxResult<T> = Result<T, AuxError>;
@@ -74,7 +74,7 @@ pub enum ManifestLeavesError {
         /// The L1 block height where verification failed
         height: u64,
         /// The manifest hash that failed verification
-        hash: Hash,
+        hash: Hash32,
     },
 }
 

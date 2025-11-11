@@ -4,12 +4,12 @@
 
 use std::collections::HashMap;
 
-use bitcoin::{Transaction, consensus, hashes::Hash};
+use bitcoin::Transaction;
 use strata_identifiers::Buf32;
 use strata_merkle::CompactMmr64;
 
 use crate::{
-    AsmHasher, AsmMmr, AuxError, AuxResult, BitcoinTxError, BitcoinTxRequest, L1TxIndex,
+    AsmHasher, AsmMmr, AuxError, AuxResult, BitcoinTxError, BitcoinTxRequest, Hash32, L1TxIndex,
     ManifestLeavesError, ManifestLeavesRequest, ManifestLeavesResponse, ManifestLeavesWithProofs,
     aux::data::{AuxData, AuxData2},
 };
@@ -135,12 +135,10 @@ impl<'a> AuxDataProvider<'a> {
     }
 }
 
-type ManifestLeafHash = [u8; 32];
-
 #[derive(Debug, Clone)]
 pub struct AuxDataProvider2 {
     txs: HashMap<Buf32, Transaction>,
-    manifest_leaves: HashMap<u64, ManifestLeafHash>,
+    manifest_leaves: HashMap<u64, Hash32>,
 }
 
 impl AuxDataProvider2 {

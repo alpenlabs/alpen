@@ -13,13 +13,13 @@ pub const ASM_MMR_CAP_LOG2: usize = 64;
 pub type AsmHasher = Sha256Hasher;
 
 /// A 32-byte cryptographic hash.
-pub type Hash = [u8; 32];
+pub type Hash32 = [u8; 32];
 
 /// Compact representation of the ASM manifest MMR using 64-bit indexing.
 ///
 /// This compact form stores only the peak hashes and is used for efficient
 /// serialization and storage in the chain view state.
-pub type AsmCompactMmr = strata_merkle::CompactMmr64<Hash>;
+pub type AsmCompactMmr = strata_merkle::CompactMmr64<Hash32>;
 
 /// Full ASM manifest MMR with 64-bit indexing.
 ///
@@ -27,4 +27,4 @@ pub type AsmCompactMmr = strata_merkle::CompactMmr64<Hash>;
 /// and can be compacted for storage.
 pub type AsmMmr = MerkleMr64<AsmHasher>;
 
-pub type AsmMerkleProof = MerkleProof<Hash>;
+pub type AsmMerkleProof = MerkleProof<Hash32>;

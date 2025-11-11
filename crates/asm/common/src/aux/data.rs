@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_btc_types::RawBitcoinTx;
 
-use crate::{AsmCompactMmr, AsmMerkleProof, Hash, L1TxIndex};
+use crate::{AsmCompactMmr, AsmMerkleProof, Hash32, L1TxIndex};
 
 /// Collection of auxiliary data requests from subprotocols, organized by transaction index.
 ///
@@ -44,7 +44,7 @@ pub struct AuxData {
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData2 {
     /// Map from transaction index to manifest leaves with proofs (unverified)
-    pub manifest_leaves: Vec<(Hash, AsmMerkleProof)>,
+    pub manifest_leaves: Vec<(Hash32, AsmMerkleProof)>,
     /// Map from transaction index to Bitcoin transaction data
     pub bitcoin_txs: Vec<RawBitcoinTx>,
 }
@@ -77,7 +77,7 @@ pub struct BitcoinTxRequest {
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ManifestLeavesResponse {
     /// One manifest hash per block in range, ordered by height
-    pub leaves: Vec<Hash>,
+    pub leaves: Vec<Hash32>,
 }
 
 /// Manifest leaves with their proofs for a contiguous block range.
@@ -92,7 +92,7 @@ pub struct ManifestLeavesResponse {
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ManifestLeavesWithProofs {
     /// One manifest hash per block in range, ordered by height
-    pub leaves: Vec<Hash>,
+    pub leaves: Vec<Hash32>,
     /// Per-leaf MMR proofs (same order as `leaves`)
     pub proofs: Vec<AsmMerkleProof>,
 }
