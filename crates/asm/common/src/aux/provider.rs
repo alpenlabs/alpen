@@ -6,10 +6,9 @@ use std::collections::HashMap;
 
 use bitcoin::Transaction;
 use strata_identifiers::Buf32;
+use strata_merkle::CompactMmr64;
 
-use crate::{
-    AsmHasher, AuxResult, BitcoinTxError, Hash32, ManifestLeavesError, aux::data::AuxData,
-};
+use crate::{AsmHasher, AuxError, AuxResult, Hash32, aux::data::AuxData};
 
 /// Provides auxiliary data to subprotocols during transaction processing.
 ///
@@ -30,14 +29,14 @@ impl AuxDataProvider {
     ///
     /// This method performs the following validation:
     /// 1. Decodes all Bitcoin transactions and indexes them by txid
-    /// 2. Verifies all manifest leaf MMR proofs against the compact MMR from the data
+    /// 2. Verifies all manifest leaf MMR proofs against the provided compact MMR
     /// 3. Indexes verified leaves by their MMR position
     ///
     /// # Errors
     ///
-    /// Returns `BitcoinTxError::InvalidTxAtIndex` if any transaction fails to decode.
-    /// Returns `ManifestLeavesError::InvalidMmrProofAtIndex` if any MMR proof fails verification.
-    pub fn new(data: &AuxData) -> AuxResult<Self> {
+    /// Returns `AuxError::InvalidBitcoinTx` if any transaction fails to decode.
+    /// Returns `AuxError::InvalidMmrProof` if any MMR proof fails verification.
+    pub fn new(data: &AuxData, compact_mmr: &CompactMmr64<[u8; 32]>) -> AuxResult<Self> {
         let mut txs = HashMap::with_capacity(data.bitcoin_txs.len());
         let mut manifest_leaves = HashMap::with_capacity(data.manifest_leaves.len());
 
@@ -45,19 +44,15 @@ impl AuxDataProvider {
         for (index, tx) in data.bitcoin_txs.iter().enumerate() {
             let tx: Transaction = tx
                 .try_into()
-                .map_err(|source| BitcoinTxError::InvalidTxAtIndex { index, source })?;
+                .map_err(|source| AuxError::InvalidBitcoinTx { index, source })?;
             let txid = tx.compute_txid().into();
             txs.insert(txid, tx);
         }
 
         // Verify and index all manifest leaves
-        for (leaf, proof) in &data.manifest_leaves {
-            if !data.manifest_mmr.verify::<AsmHasher>(proof, leaf) {
-                return Err(ManifestLeavesError::InvalidMmrProofAtIndex {
-                    index: proof.index(),
-                    hash: *leaf,
-                }
-                .into());
+        for (index, (leaf, proof)) in data.manifest_leaves.iter().enumerate() {
+            if !compact_mmr.verify::<AsmHasher>(proof, leaf) {
+                return Err(AuxError::InvalidMmrProof { index, hash: *leaf });
             }
             manifest_leaves.insert(proof.index(), *leaf);
         }
@@ -74,16 +69,12 @@ impl AuxDataProvider {
     ///
     /// # Errors
     ///
-    /// Returns `BitcoinTxError::TxidMismatch` if the requested txid is not found.
+    /// Returns `AuxError::BitcoinTxNotFound` if the requested txid is not found.
     pub fn get_bitcoin_tx(&self, txid: &[u8; 32]) -> AuxResult<&Transaction> {
         let txid_buf: Buf32 = (*txid).into();
-        self.txs.get(&txid_buf).ok_or_else(|| {
-            BitcoinTxError::TxidMismatch {
-                expected: *txid,
-                found: [0u8; 32],
-            }
-            .into()
-        })
+        self.txs
+            .get(&txid_buf)
+            .ok_or(AuxError::BitcoinTxNotFound { txid: *txid })
     }
 
     /// Gets a verified manifest leaf by MMR index.
@@ -92,15 +83,12 @@ impl AuxDataProvider {
     ///
     /// # Errors
     ///
-    /// Returns `ManifestLeavesError::InvalidMmrProof` if the leaf is not found at the given index.
+    /// Returns `AuxError::ManifestLeafNotFound` if the leaf is not found at the given index.
     pub fn get_manifest_leaf(&self, index: u64) -> AuxResult<Hash32> {
-        self.manifest_leaves.get(&index).copied().ok_or_else(|| {
-            ManifestLeavesError::InvalidMmrProof {
-                height: index,
-                hash: [0u8; 32],
-            }
-            .into()
-        })
+        self.manifest_leaves
+            .get(&index)
+            .copied()
+            .ok_or(AuxError::ManifestLeafNotFound { index })
     }
 
     /// Gets a range of verified manifest leaves by their MMR indices.
@@ -119,11 +107,12 @@ impl AuxDataProvider {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::hashes::Hash;
     use strata_btc_types::RawBitcoinTx;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{AsmCompactMmr, AsmMmr};
+    use crate::{AsmCompactMmr, AsmMmr, AuxError};
 
     #[test]
     fn test_provider_empty_data() {
@@ -133,10 +122,9 @@ mod tests {
         let aux_data = AuxData {
             manifest_leaves: vec![],
             bitcoin_txs: vec![],
-            manifest_mmr: compact,
         };
 
-        let provider = AuxDataProvider::new(&aux_data).unwrap();
+        let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
         let result = provider.get_bitcoin_tx(&[0u8; 32]);
@@ -159,10 +147,9 @@ mod tests {
         let aux_data = AuxData {
             manifest_leaves: vec![],
             bitcoin_txs: vec![raw_tx],
-            manifest_mmr: compact,
         };
 
-        let provider = AuxDataProvider::new(&aux_data).unwrap();
+        let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
 
         // Should successfully return the bitcoin tx
         let result = provider.get_bitcoin_tx(&txid).unwrap();
@@ -177,16 +164,12 @@ mod tests {
         let aux_data = AuxData {
             manifest_leaves: vec![],
             bitcoin_txs: vec![],
-            manifest_mmr: compact,
         };
 
-        let provider = AuxDataProvider::new(&aux_data).unwrap();
+        let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
         let result = provider.get_bitcoin_tx(&[0xFF; 32]);
-        assert!(matches!(
-            result,
-            Err(AuxError::BitcoinTx(BitcoinTxError::TxidMismatch { .. }))
-        ));
+        assert!(matches!(result, Err(AuxError::BitcoinTxNotFound { .. })));
     }
 }

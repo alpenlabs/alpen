@@ -30,14 +30,12 @@ pub struct AuxRequests {
 /// to [`AuxDataProvider::new`] which verifies all proofs and decodes transactions.
 ///
 /// [`AuxDataProvider::new`]: crate::aux::provider::AuxDataProvider::new
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Manifest leaves with their MMR proofs (unverified)
     pub manifest_leaves: Vec<(Hash32, AsmMerkleProof)>,
     /// Raw Bitcoin transaction data (unverified)
     pub bitcoin_txs: Vec<RawBitcoinTx>,
-    /// Compact MMR used to verify manifest leaf proofs
-    pub manifest_mmr: AsmCompactMmr,
 }
 
 /// Request for manifest leaves over an inclusive range.

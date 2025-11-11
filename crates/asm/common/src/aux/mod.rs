@@ -50,5 +50,5 @@ pub use data::{
     AuxData, AuxRequests, BitcoinTxRequest, ManifestLeavesRequest, ManifestLeavesResponse,
     ManifestLeavesWithProofs,
 };
-pub use errors::{AuxError, AuxResult, BitcoinTxError, ManifestLeavesError};
+pub use errors::{AuxError, AuxResult};
 pub use provider::AuxDataProvider;
