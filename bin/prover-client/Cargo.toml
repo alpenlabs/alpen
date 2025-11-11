@@ -26,6 +26,8 @@ strata-prover-client-rpc-api.workspace = true
 strata-rpc-api = { workspace = true, features = ["client"] }
 strata-rpc-types.workspace = true
 strata-rpc-utils.workspace = true
+strata-service.workspace = true
+strata-tasks.workspace = true
 strata-zkvm-hosts.workspace = true
 typed-sled.workspace = true
 zkaleido.workspace = true

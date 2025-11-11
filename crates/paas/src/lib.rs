@@ -37,7 +37,7 @@ pub use builder::ProverServiceBuilder;
 pub use config::{PaaSConfig, RetryConfig, WorkerConfig};
 pub use error::{PaaSError, PaaSResult};
 pub use handle::ProverHandle;
-pub use service::ProverService;
+pub use service::{ProverService, ProverServiceStatus};
 pub use state::{ProverServiceState, StatusSummary};
 pub use task::TaskStatus;
 
