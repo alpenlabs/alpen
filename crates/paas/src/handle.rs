@@ -1,41 +1,73 @@
 //! Prover service handle for API access
 
-use crate::error::PaaSResult;
+use std::sync::Arc;
+
+use strata_service::{CommandHandle, ServiceMonitor};
+
+use crate::commands::ProverCommand;
+use crate::error::{PaaSError, PaaSResult};
+use crate::service::ProverServiceStatus;
 use crate::state::StatusSummary;
-use crate::task::{TaskId, TaskStatus};
+use crate::task::TaskStatus;
+use crate::zkvm::{ProgramId, ZkVmTaskId};
 
 /// Handle for interacting with the prover service
 ///
-/// This handle provides a high-level API for submitting tasks and querying status.
-/// It will be implemented using the command handle pattern in the future.
+/// This handle provides a high-level API for submitting zkaleido tasks and querying status.
+/// Uses the command handle pattern for async communication with the service.
+///
+/// Generic over `P: ProgramId` - your program identifier type.
 #[derive(Clone)]
-pub struct ProverHandle<T: TaskId> {
-    _phantom: std::marker::PhantomData<T>,
+pub struct ProverHandle<P: ProgramId> {
+    command_handle: Arc<CommandHandle<ProverCommand<ZkVmTaskId<P>>>>,
+    monitor: ServiceMonitor<ProverServiceStatus>,
 }
 
-impl<T: TaskId> ProverHandle<T> {
-    /// Create a new handle (placeholder)
-    pub fn new() -> Self {
+impl<P: ProgramId> ProverHandle<P> {
+    /// Create a new handle
+    pub(crate) fn new(
+        command_handle: CommandHandle<ProverCommand<ZkVmTaskId<P>>>,
+        monitor: ServiceMonitor<ProverServiceStatus>,
+    ) -> Self {
         Self {
-            _phantom: std::marker::PhantomData,
+            command_handle: Arc::new(command_handle),
+            monitor,
         }
     }
 
     /// Submit a task for proving
-    pub async fn submit_task(&self, _task_id: T) -> PaaSResult<()> {
-        // TODO: Implement via command handle
-        todo!("Implement via command handle pattern")
+    pub async fn submit_task(&self, task_id: ZkVmTaskId<P>) -> PaaSResult<()> {
+        let task_id_clone = task_id.clone();
+        self.command_handle
+            .send_and_wait(|completion| ProverCommand::SubmitTask {
+                task_id: task_id_clone.clone(),
+                completion
+            })
+            .await
+            .map_err(|e| PaaSError::Internal(e.into()))
     }
 
     /// Get task status
-    pub async fn get_status(&self, _task_id: &T) -> PaaSResult<TaskStatus> {
-        // TODO: Implement via command handle
-        todo!("Implement via command handle pattern")
+    pub async fn get_status(&self, task_id: &ZkVmTaskId<P>) -> PaaSResult<TaskStatus> {
+        self.command_handle
+            .send_and_wait(|completion| ProverCommand::GetStatus {
+                task_id: task_id.clone(),
+                completion,
+            })
+            .await
+            .map_err(|e| PaaSError::Internal(e.into()))
     }
 
     /// Get status summary
     pub async fn get_summary(&self) -> PaaSResult<StatusSummary> {
-        // TODO: Implement via command handle
-        todo!("Implement via command handle pattern")
+        self.command_handle
+            .send_and_wait(|completion| ProverCommand::GetSummary { completion })
+            .await
+            .map_err(|e| PaaSError::Internal(e.into()))
+    }
+
+    /// Get the current service status summary
+    pub fn get_current_status(&self) -> StatusSummary {
+        self.monitor.get_current().summary
     }
 }

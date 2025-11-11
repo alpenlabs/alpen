@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Main PaaS configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PaaSConfig<B> {
+#[derive(Debug, Clone)]
+pub struct PaaSConfig<B: Clone + Eq + std::hash::Hash> {
     /// Worker configuration
     pub workers: WorkerConfig<B>,
 
@@ -27,9 +27,8 @@ impl<B: Clone + Eq + std::hash::Hash> PaaSConfig<B> {
 }
 
 /// Worker pool configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(bound = "B: Serialize + for<'de> Deserialize<'de> + Eq + std::hash::Hash")]
-pub struct WorkerConfig<B: Eq + std::hash::Hash> {
+#[derive(Debug, Clone)]
+pub struct WorkerConfig<B: Clone + Eq + std::hash::Hash> {
     /// Number of workers per backend
     pub worker_count: HashMap<B, usize>,
 
