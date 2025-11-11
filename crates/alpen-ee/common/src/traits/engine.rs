@@ -10,7 +10,7 @@ pub trait ExecutionEngine<TEnginePayload> {
     async fn submit_payload(&self, payload: TEnginePayload) -> Result<(), ExecutionEngineError>;
 
     /// Updates the engine's fork choice state (head, safe, and finalized blocks).
-    async fn update_consenesus_state(
+    async fn update_consensus_state(
         &self,
         state: ForkchoiceState,
     ) -> Result<(), ExecutionEngineError>;

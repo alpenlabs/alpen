@@ -33,7 +33,7 @@ impl ExecutionEngine<AlpenBuiltPayload> for AlpenRethExecEngine {
             .map_err(|e| ExecutionEngineError::payload_submission(e.to_string()))
     }
 
-    async fn update_consenesus_state(
+    async fn update_consensus_state(
         &self,
         state: ForkchoiceState,
     ) -> Result<(), ExecutionEngineError> {

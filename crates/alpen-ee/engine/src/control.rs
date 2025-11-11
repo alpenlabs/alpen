@@ -89,7 +89,7 @@ async fn engine_control_task_inner<
                     }
                 };
 
-                if let Err(err) = engine.update_consenesus_state(update).await {
+                if let Err(err) = engine.update_consensus_state(update).await {
                     warn!("forkchoice_update failed: {}", err);
                     continue;
                 }
@@ -115,7 +115,7 @@ async fn engine_control_task_inner<
                     safe_block_hash: B256::ZERO,
                     finalized_block_hash: B256::ZERO,
                 };
-                if let Err(err) = engine.update_consenesus_state(update).await {
+                if let Err(err) = engine.update_consensus_state(update).await {
                     warn!("forkchoice_update failed: {}", err);
                     continue;
                 }
