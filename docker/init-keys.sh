@@ -80,9 +80,6 @@ fi
 
 # Add Bitcoin RPC credentials to genparams command
 "$DATATOOL_PATH" -b "$BITCOIN_NETWORK" \
-    --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
-    --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
-    --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
     genparams \
     -s "$seqpubkey" \
     -b "$op1xpriv" \
