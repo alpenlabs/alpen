@@ -24,6 +24,9 @@ tracing = { workspace = true }
 # ZkVm support (required)
 zkaleido = { workspace = true }
 
+# Strata primitives (for ProofContext integration)
+strata-primitives = { workspace = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
 serde_json = { workspace = true }

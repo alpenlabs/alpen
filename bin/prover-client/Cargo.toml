@@ -16,6 +16,7 @@ strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-paas = { path = "../../crates/paas" }
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint.workspace = true
