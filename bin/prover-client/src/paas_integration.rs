@@ -272,27 +272,75 @@ impl ProofStore<ProofContext> for ProverProofStore {
     }
 }
 
-/// Host wrapper that uses ZkVmHostInstance
+/// Custom Prover implementation that resolves hosts dynamically per task
 ///
-/// This is a simple wrapper that delegates to the appropriate host type.
-/// Note: ZkVmHost trait doesn't have a host_type() method, so we can't implement
-/// it directly. Instead, this wrapper just forwards method calls to the inner host.
-pub(crate) struct ProverZkVmHost {
-    host: ZkVmHostInstance,
+/// This is necessary because we need to support multiple ZkVM backends (Native, SP1)
+/// and resolve the appropriate host based on the task's backend.
+pub(crate) struct DynamicHostProver {
+    input_fetcher: Arc<ProverInputFetcher>,
+    proof_store: Arc<ProverProofStore>,
 }
 
-impl ProverZkVmHost {
-    pub(crate) fn new(host: ZkVmHostInstance) -> Self {
-        Self { host }
+impl DynamicHostProver {
+    pub(crate) fn new(
+        input_fetcher: Arc<ProverInputFetcher>,
+        proof_store: Arc<ProverProofStore>,
+    ) -> Self {
+        Self {
+            input_fetcher,
+            proof_store,
+        }
     }
 
-    /// Get a reference to the inner host for passing to prove methods
-    pub(crate) fn inner(&self) -> &ZkVmHostInstance {
-        &self.host
+    /// Resolve the host for a given task
+    fn resolve_host(backend: &strata_paas::ZkVmBackend) -> ZkVmHostInstance {
+        // Create a dummy proof key to resolve the host
+        // We just need any proof context since the host is determined by the backend
+        let zkvm = backend_to_zkvm(backend.clone());
+        let proof_key = ProofKey::new(ProofContext::Checkpoint(0), zkvm);
+        strata_zkvm_hosts::resolve_host(&proof_key)
+    }
+
+    /// Prove using the resolved host
+    async fn prove_with_host(
+        &self,
+        task_id: strata_paas::ZkVmTaskId<ProofContext>,
+    ) -> PaaSResult<()> {
+        // Fetch input
+        let input = self
+            .input_fetcher
+            .fetch_input(&task_id.program)
+            .await?;
+
+        // Resolve host based on backend
+        let host = Self::resolve_host(&task_id.backend);
+
+        // Prove using the host
+        let proof = match host {
+            ZkVmHostInstance::Native(ref h) => ProverProgram::prove(&input, h),
+            #[cfg(feature = "sp1")]
+            ZkVmHostInstance::SP1(h) => ProverProgram::prove(&input, h),
+            #[cfg(not(feature = "sp1"))]
+            _ => panic!("Unsupported host variant"),
+        }
+        .map_err(|e| PaaSError::PermanentFailure(format!("Proving failed: {}", e)))?;
+
+        // Store the proof
+        self.proof_store.store_proof(&task_id, proof).await?;
+
+        Ok(())
     }
 }
 
-// Note: We don't implement ZkVmHost for ProverZkVmHost because:
-// 1. ZkVmHost trait doesn't require a host_type() method
-// 2. The actual proving is done by calling Program::prove() which accepts any impl ZkVmHost
-// 3. ZkVmHostInstance already implements ZkVmHost for each variant
+impl strata_paas::Prover for DynamicHostProver {
+    type TaskId = strata_paas::ZkVmTaskId<ProofContext>;
+    type Backend = strata_paas::ZkVmBackend;
+
+    fn backend(&self, task_id: &Self::TaskId) -> Self::Backend {
+        task_id.backend.clone()
+    }
+
+    async fn prove(&self, task_id: Self::TaskId) -> PaaSResult<()> {
+        self.prove_with_host(task_id).await
+    }
+}

@@ -12,8 +12,8 @@ use crate::state::{ProverServiceState, StatusSummary};
 use crate::worker::WorkerPool;
 use crate::Prover;
 
-/// Prover service that manages proof generation tasks (internal)
-pub(crate) struct ProverService<P: Prover> {
+/// Prover service that manages proof generation tasks
+pub struct ProverService<P: Prover> {
     _phantom: std::marker::PhantomData<P>,
 }
 
@@ -89,7 +89,7 @@ impl<P: Prover> AsyncService for ProverService<P> {
 
 /// Service status for monitoring (internal)
 #[derive(Clone, Debug, serde::Serialize)]
-pub(crate) struct ProverServiceStatus {
+pub struct ProverServiceStatus {
     pub(crate) summary: StatusSummary,
 }
 
