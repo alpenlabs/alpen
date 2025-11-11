@@ -2,7 +2,7 @@
 //!
 //! Collects auxiliary data requests from subprotocols during the pre-processing phase.
 
-use strata_identifiers::Buf32;
+use bitcoin::Txid;
 
 use crate::aux::data::AuxRequests;
 
@@ -33,11 +33,8 @@ impl AuxRequestCollector {
     }
 
     /// Requests a raw Bitcoin transaction by its txid.
-    ///
-    /// # Arguments
-    /// * `txid` - The Bitcoin transaction ID (32 bytes)
-    pub fn request_bitcoin_tx(&mut self, txid: Buf32) {
-        self.requests.bitcoin_txs.push(txid);
+    pub fn request_bitcoin_tx(&mut self, txid: Txid) {
+        self.requests.bitcoin_txs.push(txid.into());
     }
 
     /// Consumes the collector and returns the collected auxiliary requests.
@@ -48,6 +45,8 @@ impl AuxRequestCollector {
 
 #[cfg(test)]
 mod tests {
+    use strata_identifiers::Buf32;
+
     use super::*;
 
     #[test]
@@ -72,8 +71,10 @@ mod tests {
     fn test_collector_bitcoin_tx() {
         let mut collector = AuxRequestCollector::new();
 
-        collector.request_bitcoin_tx([1u8; 32].into());
-        collector.request_bitcoin_tx([2u8; 32].into());
+        let txid1: Buf32 = [1u8; 32].into();
+        let txid2: Buf32 = [2u8; 32].into();
+        collector.request_bitcoin_tx(txid1.into());
+        collector.request_bitcoin_tx(txid2.into());
 
         assert_eq!(collector.requests.bitcoin_txs.len(), 2);
 

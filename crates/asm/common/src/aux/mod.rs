@@ -14,8 +14,8 @@
 //!
 //! ## Supported Auxiliary Data Types
 //!
-//! - **Manifest Leaves**: Manifest hashes with MMR proofs for ranges of L1 blocks.
-//!   The provider verifies MMR proofs against the compact MMR snapshot.
+//! - **Manifest Leaves**: Manifest hashes with MMR proofs for ranges of L1 blocks. The provider
+//!   verifies MMR proofs against the compact MMR snapshot.
 //!
 //! - **Bitcoin Transactions**: Raw Bitcoin transaction data by txid (for bridge subprotocol
 //!   validation). The provider decodes and indexes transactions by their txid.

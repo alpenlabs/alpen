@@ -1,4 +1,4 @@
-//! Auxiliary data request and response types.
+//! Auxiliary request and response data.
 //!
 //! Defines the types of auxiliary data that subprotocols can request during
 //! the pre-processing phase, along with the response structures returned
@@ -28,7 +28,7 @@ pub struct AuxRequests {
 ///
 /// This structure holds auxiliary data in vector form for efficient batch processing.
 /// The data is unverified and must be validated before use, typically by passing it
-/// to [`AuxDataProvider::new`] which verifies all proofs and decodes transactions.
+/// to [`AuxDataProvider::try_new`] which verifies all proofs and decodes transactions.
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Manifest leaves with their MMR proofs

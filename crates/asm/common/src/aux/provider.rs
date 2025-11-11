@@ -9,12 +9,17 @@ use strata_merkle::CompactMmr64;
 
 use crate::{AsmHasher, AuxError, AuxResult, Hash32, aux::data::AuxData};
 
-/// Provides auxiliary data to subprotocols during transaction processing.
+/// Provides verified auxiliary data to subprotocols during transaction processing.
 ///
 /// The provider verifies all auxiliary data upfront during construction and stores
-/// it in efficient lookup structures. Bitcoin transactions are validated and indexed
-/// by txid, while manifest leaves have their MMR proofs verified and are indexed by
-/// their MMR position.
+/// it in efficient lookup structures for O(1) access:
+///
+/// - **Bitcoin transactions**: Decoded and indexed by txid in a hashmap
+/// - **Manifest leaves**: MMR proofs verified and indexed by MMR position
+///
+/// All verification happens during construction via [`try_new`](Self::try_new), so
+/// subsequent getter method calls return already-verified data without additional
+/// validation overhead.
 #[derive(Debug, Clone)]
 pub struct AuxDataProvider {
     /// Verified Bitcoin transactions indexed by txid
@@ -24,18 +29,21 @@ pub struct AuxDataProvider {
 }
 
 impl AuxDataProvider {
-    /// Creates a new provider by verifying and indexing all auxiliary data.
+    /// Attempts to create a new provider by verifying and indexing all auxiliary data.
     ///
-    /// This method performs the following validation:
-    /// 1. Decodes all Bitcoin transactions and indexes them by txid
-    /// 2. Verifies all manifest leaf MMR proofs against the provided compact MMR
-    /// 3. Indexes verified leaves by their MMR position
+    /// Decodes and verifies all Bitcoin transactions and manifest leaves from the provided
+    /// unverified data. If any verification fails, returns an error and no provider is created.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Unverified auxiliary data containing Bitcoin transactions and manifest leaves
+    /// * `compact_mmr` - Compact MMR snapshot used to verify manifest leaf proofs
     ///
     /// # Errors
     ///
-    /// Returns `AuxError::InvalidBitcoinTx` if any transaction fails to decode.
-    /// Returns `AuxError::InvalidMmrProof` if any MMR proof fails verification.
-    pub fn new(data: &AuxData, compact_mmr: &CompactMmr64<[u8; 32]>) -> AuxResult<Self> {
+    /// Returns `AuxError::InvalidBitcoinTx` if any transaction fails to decode or is malformed.
+    /// Returns `AuxError::InvalidMmrProof` if any manifest leaf's MMR proof fails verification.
+    pub fn try_new(data: &AuxData, compact_mmr: &CompactMmr64<[u8; 32]>) -> AuxResult<Self> {
         let mut txs = HashMap::with_capacity(data.bitcoin_txs.len());
         let mut manifest_leaves = HashMap::with_capacity(data.manifest_leaves.len());
 
@@ -123,7 +131,7 @@ mod tests {
             bitcoin_txs: vec![],
         };
 
-        let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
+        let provider = AuxDataProvider::try_new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0u8; 32].into();
@@ -149,7 +157,7 @@ mod tests {
             bitcoin_txs: vec![raw_tx],
         };
 
-        let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
+        let provider = AuxDataProvider::try_new(&aux_data, &compact).unwrap();
 
         // Should successfully return the bitcoin tx
         let txid_buf: Buf32 = txid.into();
@@ -167,7 +175,7 @@ mod tests {
             bitcoin_txs: vec![],
         };
 
-        let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
+        let provider = AuxDataProvider::try_new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0xFF; 32].into();

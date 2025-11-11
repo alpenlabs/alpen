@@ -68,8 +68,9 @@ impl<'c> ProcessStage<'c> {
         aux_data: &'c AuxData,
     ) -> Self {
         // Create a single aux provider for all subprotocols
-        let aux_provider = AuxDataProvider::new(aux_data, &anchor_state.chain_view.manifest_mmr)
-            .expect("asm: failed to create aux provider");
+        let aux_provider =
+            AuxDataProvider::try_new(aux_data, &anchor_state.chain_view.manifest_mmr)
+                .expect("asm: failed to create aux provider");
 
         Self {
             manager,
