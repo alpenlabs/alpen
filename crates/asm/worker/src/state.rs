@@ -1,9 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use bitcoin::{Block, hashes::Hash};
-use strata_asm_common::{
-    ASM_MMR_CAP_LOG2, AnchorState, AsmMmr, AuxData, ChainViewState, SubprotocolId,
-};
+use strata_asm_common::{ASM_MMR_CAP_LOG2, AnchorState, AsmMmr, AuxData, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;

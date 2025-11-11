@@ -4,8 +4,7 @@
 
 use std::collections::HashMap;
 
-use bitcoin::Transaction;
-use strata_identifiers::Buf32;
+use bitcoin::{Transaction, Txid};
 use strata_merkle::CompactMmr64;
 
 use crate::{AsmHasher, AuxError, AuxResult, Hash32, aux::data::AuxData};
@@ -19,7 +18,7 @@ use crate::{AsmHasher, AuxError, AuxResult, Hash32, aux::data::AuxData};
 #[derive(Debug, Clone)]
 pub struct AuxDataProvider {
     /// Verified Bitcoin transactions indexed by txid
-    txs: HashMap<Buf32, Transaction>,
+    txs: HashMap<Txid, Transaction>,
     /// Verified manifest leaves indexed by MMR index
     manifest_leaves: HashMap<u64, Hash32>,
 }
@@ -45,7 +44,7 @@ impl AuxDataProvider {
             let tx: Transaction = tx
                 .try_into()
                 .map_err(|source| AuxError::InvalidBitcoinTx { index, source })?;
-            let txid = tx.compute_txid().into();
+            let txid = tx.compute_txid();
             txs.insert(txid, tx);
         }
 
@@ -70,11 +69,10 @@ impl AuxDataProvider {
     /// # Errors
     ///
     /// Returns `AuxError::BitcoinTxNotFound` if the requested txid is not found.
-    pub fn get_bitcoin_tx(&self, txid: &[u8; 32]) -> AuxResult<&Transaction> {
-        let txid_buf: Buf32 = (*txid).into();
+    pub fn get_bitcoin_tx(&self, txid: Txid) -> AuxResult<&Transaction> {
         self.txs
-            .get(&txid_buf)
-            .ok_or(AuxError::BitcoinTxNotFound { txid: *txid })
+            .get(&txid)
+            .ok_or(AuxError::BitcoinTxNotFound { txid })
     }
 
     /// Gets a verified manifest leaf by MMR index.
@@ -109,6 +107,7 @@ impl AuxDataProvider {
 mod tests {
     use bitcoin::hashes::Hash;
     use strata_btc_types::RawBitcoinTx;
+    use strata_identifiers::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -127,7 +126,8 @@ mod tests {
         let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
-        let result = provider.get_bitcoin_tx(&[0u8; 32]);
+        let txid: Buf32 = [0u8; 32].into();
+        let result = provider.get_bitcoin_tx(Txid::from(txid));
         assert!(result.is_err());
 
         // Should return error for non-existent manifest leaf
@@ -152,7 +152,8 @@ mod tests {
         let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
 
         // Should successfully return the bitcoin tx
-        let result = provider.get_bitcoin_tx(&txid).unwrap();
+        let txid_buf: Buf32 = txid.into();
+        let result = provider.get_bitcoin_tx(Txid::from(txid_buf)).unwrap();
         assert_eq!(result.compute_txid().as_raw_hash().to_byte_array(), txid);
     }
 
@@ -169,7 +170,8 @@ mod tests {
         let provider = AuxDataProvider::new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
-        let result = provider.get_bitcoin_tx(&[0xFF; 32]);
+        let txid: Buf32 = [0xFF; 32].into();
+        let result = provider.get_bitcoin_tx(Txid::from(txid));
         assert!(matches!(result, Err(AuxError::BitcoinTxNotFound { .. })));
     }
 }

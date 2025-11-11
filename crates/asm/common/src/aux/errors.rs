@@ -1,5 +1,6 @@
 //! Error types for the auxiliary framework.
 
+use bitcoin::Txid;
 use thiserror::Error;
 
 use crate::Hash32;
@@ -39,7 +40,7 @@ pub enum AuxError {
     #[error("Bitcoin transaction not found: {txid:?}")]
     BitcoinTxNotFound {
         /// The requested txid
-        txid: [u8; 32],
+        txid: Txid,
     },
 
     /// Manifest leaf not found at the given MMR index.

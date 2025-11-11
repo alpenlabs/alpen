@@ -2,14 +2,14 @@
 //!
 //! Collects auxiliary data requests from subprotocols during the pre-processing phase.
 
-use crate::{BitcoinTxRequest, L1TxIndex, ManifestLeavesRequest, aux::data::AuxRequests};
+use strata_identifiers::Buf32;
 
-/// Collects auxiliary data requests keyed by transaction index.
+use crate::aux::data::AuxRequests;
+
+/// Collects auxiliary data requests from subprotocols.
 ///
 /// During `pre_process_txs`, subprotocols use this collector to register
-/// their auxiliary data requirements. Each transaction can request at most
-/// one item per request type (e.g., one `ManifestLeavesRequest` and one
-/// `BitcoinTxRequest`).
+/// their auxiliary data requirements (manifest leaves and Bitcoin transactions).
 #[derive(Debug, Default)]
 pub struct AuxRequestCollector {
     requests: AuxRequests,
@@ -21,40 +21,23 @@ impl AuxRequestCollector {
         Self::default()
     }
 
-    /// Requests manifest leaves (hash + proof) for a block height range.
+    /// Requests manifest leaves for a block height range.
     ///
-    /// Stores a request keyed by `tx_index` containing the range and the
-    /// compact manifest MMR snapshot used for verification by the provider.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a manifest leaves request already exists for this transaction index.
-    pub fn request_manifest_leaves(&mut self, tx_index: L1TxIndex, req: ManifestLeavesRequest) {
-        if self
-            .requests
+    /// # Arguments
+    /// * `start_height` - Starting L1 block height (inclusive)
+    /// * `end_height` - Ending L1 block height (inclusive)
+    pub fn request_manifest_leaves(&mut self, start_height: u64, end_height: u64) {
+        self.requests
             .manifest_leaves
-            .insert(tx_index, req)
-            .is_some()
-        {
-            panic!(
-                "duplicate auxiliary request for transaction index {}",
-                tx_index
-            );
-        }
+            .push((start_height, end_height));
     }
 
     /// Requests a raw Bitcoin transaction by its txid.
     ///
-    /// # Panics
-    ///
-    /// Panics if a Bitcoin transaction request already exists for this transaction index.
-    pub fn request_bitcoin_tx(&mut self, tx_index: L1TxIndex, req: BitcoinTxRequest) {
-        if self.requests.bitcoin_txs.insert(tx_index, req).is_some() {
-            panic!(
-                "duplicate auxiliary request for transaction index {}",
-                tx_index
-            );
-        }
+    /// # Arguments
+    /// * `txid` - The Bitcoin transaction ID (32 bytes)
+    pub fn request_bitcoin_tx(&mut self, txid: Buf32) {
+        self.requests.bitcoin_txs.push(txid);
     }
 
     /// Consumes the collector and returns the collected auxiliary requests.
@@ -66,7 +49,6 @@ impl AuxRequestCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AsmCompactMmr, AsmMmr};
 
     #[test]
     fn test_collector_basic() {
@@ -74,46 +56,29 @@ mod tests {
         assert!(collector.requests.manifest_leaves.is_empty());
         assert!(collector.requests.bitcoin_txs.is_empty());
 
-        let mmr = AsmMmr::new(16);
-        let mmr_compact: AsmCompactMmr = mmr.into();
-        let req0 = ManifestLeavesRequest {
-            start_height: 100,
-            end_height: 200,
-            manifest_mmr: mmr_compact.clone(),
-        };
-        collector.request_manifest_leaves(0, req0);
+        collector.request_manifest_leaves(100, 200);
         assert_eq!(collector.requests.manifest_leaves.len(), 1);
 
-        let req1 = ManifestLeavesRequest {
-            start_height: 201,
-            end_height: 300,
-            manifest_mmr: mmr_compact,
-        };
-        collector.request_manifest_leaves(1, req1);
+        collector.request_manifest_leaves(201, 300);
         assert_eq!(collector.requests.manifest_leaves.len(), 2);
 
-        assert!(collector.requests.manifest_leaves.contains_key(&0));
-        assert!(collector.requests.manifest_leaves.contains_key(&1));
+        let requests = collector.into_requests();
+        assert_eq!(requests.manifest_leaves.len(), 2);
+        assert_eq!(requests.manifest_leaves[0], (100, 200));
+        assert_eq!(requests.manifest_leaves[1], (201, 300));
     }
 
     #[test]
-    #[should_panic(expected = "duplicate auxiliary request")]
-    fn test_collector_duplicate_panics() {
+    fn test_collector_bitcoin_tx() {
         let mut collector = AuxRequestCollector::new();
-        let mmr = AsmMmr::new(16);
-        let mmr_compact: AsmCompactMmr = mmr.into();
-        let req0 = ManifestLeavesRequest {
-            start_height: 100,
-            end_height: 200,
-            manifest_mmr: mmr_compact.clone(),
-        };
-        collector.request_manifest_leaves(0, req0);
-        // This should panic
-        let req1 = ManifestLeavesRequest {
-            start_height: 201,
-            end_height: 300,
-            manifest_mmr: mmr_compact,
-        };
-        collector.request_manifest_leaves(0, req1);
+
+        collector.request_bitcoin_tx([1u8; 32].into());
+        collector.request_bitcoin_tx([2u8; 32].into());
+
+        assert_eq!(collector.requests.bitcoin_txs.len(), 2);
+
+        let requests = collector.into_requests();
+        assert_eq!(requests.bitcoin_txs[0], [1u8; 32].into());
+        assert_eq!(requests.bitcoin_txs[1], [2u8; 32].into());
     }
 }
