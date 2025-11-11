@@ -124,7 +124,7 @@ mod tests {
     use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils_btc::{
         build_no_op_deposit_request_script, build_test_deposit_request_script,
-        create_test_deposit_tx, test_taproot_addr,
+        create_test_deposit_request_tx, test_taproot_addr,
     };
     use strata_test_utils_l2::gen_params;
 
@@ -155,7 +155,7 @@ mod tests {
             evm_addr.to_vec(),
         );
 
-        let test_transaction = create_test_deposit_tx(
+        let test_transaction = create_test_deposit_request_tx(
             Amount::from_sat(config.deposit_amount.to_sat() + extra_amount),
             &test_taproot_addr.address().script_pubkey(),
             &deposit_request_script,

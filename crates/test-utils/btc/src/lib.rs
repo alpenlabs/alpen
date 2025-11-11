@@ -14,6 +14,11 @@ use bitcoin::{
     Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
     Transaction, TxIn, TxOut, Witness,
 };
+
+/// Default bridge-in amount used for DRT UTXO value in signature validation.
+/// This must match the constant in `strata-l1tx/src/deposit/deposit_tx.rs`.
+const DEFAULT_BRIDGE_IN_AMOUNT: Amount = Amount::from_sat(1_000_001_000);
+use strata_asm_txs_bridge_v1::{constants::DEPOSIT_TX_TYPE, BRIDGE_V1_SUBPROTOCOL_ID};
 use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
@@ -61,9 +66,9 @@ pub fn get_btc_mainnet_block() -> Block {
 /// Creates a signed test Taproot deposit transaction.
 ///
 /// Generates a dummy input referencing a random previous output, and constructs a
-/// transaction with two outputs:
-/// - A payment to `out_script_pubkey` with the specified amount.
-/// - An OP_RETURN output using `opreturn_script` with zero value.
+/// transaction with two outputs in SPS-50 format:
+/// - Output[0]: An OP_RETURN output using `opreturn_script` with zero value (metadata).
+/// - Output[1]: A payment to `out_script_pubkey` with the specified amount (deposit).
 ///
 /// The input is signed using Taproot key spend with `SIGHASH_DEFAULT`, and the address
 /// is derived from the provided `keypair` and `tapnode_hash`.
@@ -78,6 +83,10 @@ pub fn get_btc_mainnet_block() -> Block {
 ///
 /// # Returns
 /// A signed [`Transaction`] ready for testing or simulation.
+///
+/// # Note
+/// For Deposit **Request** Transactions (DRT), use `create_test_deposit_request_tx` instead,
+/// which uses the legacy output ordering (payment first, OP_RETURN second).
 pub fn create_test_deposit_tx(
     amt: Amount,
     out_script_pubkey: &ScriptBuf,
@@ -98,6 +107,100 @@ pub fn create_test_deposit_tx(
         Some(TapNodeHash::from_byte_array(*tapnode_hash)),
     );
 
+    // IMPORTANT: Use DEFAULT_BRIDGE_IN_AMOUNT for signature validation.
+    // The validation logic in deposit_tx.rs doesn't have access to the actual DRT UTXO amount,
+    // so it uses this constant for sighash computation. We must match it here.
+    let prev_txout = TxOut {
+        value: DEFAULT_BRIDGE_IN_AMOUNT,
+        script_pubkey: sbuf,
+    };
+
+    let inputs = vec![TxIn {
+        previous_output: *previous_output.outpoint(),
+        script_sig: Default::default(),
+        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        witness: Witness::new(),
+    }];
+
+    // Construct the outputs
+    // Note: OP_RETURN metadata must be at output[0], deposit payment at output[1]
+    let outputs = vec![
+        TxOut {
+            value: Amount::ZERO, // Amount is zero for OP_RETURN
+            script_pubkey: opreturn_script.clone(),
+        },
+        TxOut {
+            value: amt,
+            script_pubkey: out_script_pubkey.clone(),
+        },
+    ];
+
+    // Create the transaction
+    let mut tx = Transaction {
+        version: bitcoin::transaction::Version(2),
+        lock_time: LockTime::ZERO,
+        input: inputs,
+        output: outputs,
+    };
+
+    let prevtxout = [prev_txout];
+    let prevouts = Prevouts::All(&prevtxout);
+    let sighash = SighashCache::new(&mut tx)
+        .taproot_key_spend_signature_hash(0, &prevouts, TapSighashType::Default)
+        .unwrap();
+
+    let msg = Message::from_digest(*sighash.as_ref());
+
+    let tweaked_pair = keypair.tap_tweak(&secp, Some(tapscript_root));
+
+    // Sign the sighash
+    let sig = secp.sign_schnorr(&msg, &tweaked_pair.to_keypair());
+
+    tx.input[0].witness.push(sig.as_ref());
+
+    tx
+}
+
+/// Creates a signed test Taproot deposit **request** transaction (DRT).
+///
+/// Generates a dummy input referencing a random previous output, and constructs a
+/// transaction with two outputs in the legacy format:
+/// - Output[0]: A payment to `out_script_pubkey` with the specified amount (deposit).
+/// - Output[1]: An OP_RETURN output using `opreturn_script` with zero value (metadata).
+///
+/// The input is signed using Taproot key spend with `SIGHASH_DEFAULT`, and the address
+/// is derived from the provided `keypair` and `tapnode_hash`.
+///
+/// # Arguments
+/// - `amt`: Amount to deposit.
+/// - `out_script_pubkey`: Script to spend to.
+/// - `opreturn_script`: Script for the OP_RETURN output. This contains the metadata for the
+///   deposit request.
+/// - `keypair`: Keypair(untweaked) used to sign the transaction.
+/// - `tapnode_hash`: Optional Taproot node hash for script path commitment.
+///
+/// # Returns
+/// A signed [`Transaction`] ready for testing or simulation.
+pub fn create_test_deposit_request_tx(
+    amt: Amount,
+    out_script_pubkey: &ScriptBuf,
+    opreturn_script: &ScriptBuf,
+    keypair: &Keypair,
+    tapnode_hash: &[u8; 32],
+) -> Transaction {
+    let mut previous_output: BitcoinOutPoint = ArbitraryGenerator::new().generate();
+    previous_output.0.vout = 0;
+
+    let secp = Secp256k1::new();
+    let (xpk, _) = keypair.x_only_public_key();
+    let tapscript_root = TapNodeHash::from_byte_array(*tapnode_hash);
+    let sbuf = ScriptBuf::new_p2tr(
+        &secp,
+        xpk,
+        Some(TapNodeHash::from_byte_array(*tapnode_hash)),
+    );
+
+    // For deposit requests, the amount can vary (not fixed to DEFAULT_BRIDGE_IN_AMOUNT)
     let prev_txout = TxOut {
         value: amt,
         script_pubkey: sbuf,
@@ -110,7 +213,8 @@ pub fn create_test_deposit_tx(
         witness: Witness::new(),
     }];
 
-    // Construct the outputs
+    // Construct the outputs in LEGACY format for deposit requests
+    // Note: Payment is at output[0], OP_RETURN metadata at output[1]
     let outputs = vec![
         TxOut {
             value: amt,
@@ -183,10 +287,11 @@ pub fn build_test_deposit_script(
     tapnode_hash: &[u8; 32],
 ) -> ScriptBuf {
     let mut data = dep_config.magic_bytes.clone().to_vec();
+    data.push(BRIDGE_V1_SUBPROTOCOL_ID);
+    data.push(DEPOSIT_TX_TYPE);
     data.extend(&idx.to_be_bytes()[..]);
-    data.extend(dest_addr);
     data.extend(tapnode_hash);
-    data.extend(&dep_config.deposit_amount.to_sat().to_be_bytes());
+    data.extend(dest_addr);
 
     let builder = script::Builder::new()
         .push_opcode(OP_RETURN)
@@ -230,7 +335,7 @@ pub fn generate_withdrawal_fulfillment_data(
          withdrawal_request_txid: Option<Buf32>| {
             DepositEntry::new(
                 deposit_idx,
-                create_outputref(deposit_txid, 0),
+                create_outputref(deposit_txid, 1), // Deposit is now at output index 1
                 vec![0, 1, 2],
                 deposit_amt,
                 withdrawal_request_txid,
@@ -253,7 +358,7 @@ pub fn generate_withdrawal_fulfillment_data(
         // deposits without withdrawal assignments
         DepositEntry::new(
             5,
-            create_outputref(&txids[3], 0),
+            create_outputref(&txids[3], 1), // Deposit is now at output index 1
             vec![0, 1, 2],
             deposit_amt,
             None,
@@ -261,7 +366,7 @@ pub fn generate_withdrawal_fulfillment_data(
         .with_state(DepositState::Accepted),
         DepositEntry::new(
             6,
-            create_outputref(&txids[4], 0),
+            create_outputref(&txids[4], 1), // Deposit is now at output index 1
             vec![0, 1, 2],
             deposit_amt,
             None,
@@ -272,7 +377,9 @@ pub fn generate_withdrawal_fulfillment_data(
     (addresses, txids, deposits)
 }
 
-/// Creates an OP_RETURN metadata script.
+/// Creates an OP_RETURN metadata script for withdrawal fulfillment transactions.
+///
+/// Format: [MAGIC(4)][SUBPROTOCOL_ID(1)][TX_TYPE(1)][OPERATOR_IDX(4)][DEPOSIT_IDX(4)][DEPOSIT_TXID(32)]
 pub fn create_opreturn_metadata(
     magic: [u8; 4],
     operator_idx: u32,
@@ -280,13 +387,17 @@ pub fn create_opreturn_metadata(
     deposit_txid: &[u8; 32],
 ) -> ScriptBuf {
     let mut metadata = [0u8; 46];
+    // Magic bytes (4 bytes)
     metadata[..4].copy_from_slice(&magic);
-    metadata[5] = 2;
-    metadata[6] = 2;
-    // first 4 bytes = operator idx
+    // Subprotocol ID (1 byte) - Bridge V1
+    metadata[4] = 2; // BRIDGE_V1_SUBPROTOCOL_ID
+    // TX type (1 byte) - Withdrawal
+    metadata[5] = 2; // WITHDRAWAL_TX_TYPE
+    // Operator index (4 bytes)
     metadata[6..10].copy_from_slice(&operator_idx.to_be_bytes());
-    // next 4 bytes = deposit idx
+    // Deposit index (4 bytes)
     metadata[10..14].copy_from_slice(&deposit_idx.to_be_bytes());
+    // Deposit TXID (32 bytes)
     metadata[14..46].copy_from_slice(deposit_txid);
     Descriptor::new_op_return(&metadata).unwrap().to_script()
 }
