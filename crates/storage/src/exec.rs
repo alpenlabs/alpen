@@ -5,7 +5,7 @@
 //!
 //! For custom error types, use `inst_ops_generic!` directly from `strata-storage-common`.
 
-pub(crate) use strata_db::errors::DbError;
+pub(crate) use strata_db_types::errors::DbError;
 pub(crate) use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_generic};
 
 /// Automatically generates an `Ops` interface with shim functions for database operations within a

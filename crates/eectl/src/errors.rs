@@ -1,4 +1,4 @@
-use strata_db::DbError;
+use strata_db_types::DbError;
 use strata_primitives::l2::L2BlockCommitment;
 use thiserror::Error;
 

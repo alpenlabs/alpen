@@ -16,7 +16,7 @@ use revm_primitives::alloy_primitives::B256;
 use serde as _;
 #[cfg(test)]
 use serde_json as _;
-pub use strata_db::{errors, DbResult};
+pub use strata_db_types::{errors, DbResult};
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
 
 pub trait WitnessStore {

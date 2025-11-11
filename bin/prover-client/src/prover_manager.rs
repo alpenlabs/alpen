@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_db_types::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use tokio::{spawn, sync::Mutex, time::sleep};
 use tracing::{debug, error, info, warn};

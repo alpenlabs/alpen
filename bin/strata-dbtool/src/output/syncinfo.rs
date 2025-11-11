@@ -1,6 +1,6 @@
 //! Sync information formatting implementations
 
-use strata_db::traits::BlockStatus;
+use strata_db_types::traits::BlockStatus;
 use strata_primitives::{
     l1::L1BlockId,
     l2::L2BlockId,
@@ -114,7 +114,7 @@ impl<'a> Formattable for SyncInfo<'a> {
 mod tests {
     use std::io::Cursor;
 
-    use strata_db::traits::BlockStatus;
+    use strata_db_types::traits::BlockStatus;
     use strata_primitives::{
         buf::Buf32,
         l1::L1BlockId,

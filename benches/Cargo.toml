@@ -7,7 +7,7 @@ edition = "2021"
 default = []
 db = [
   "dep:strata-asm-types",
-  "dep:strata-db",
+  "dep:strata-db-types",
   "dep:strata-primitives",
   "dep:strata-state",
   "dep:strata-ol-chain-types",
@@ -35,8 +35,8 @@ criterion = { workspace = true }
 tempfile = { workspace = true, optional = true }
 
 strata-asm-types = { workspace = true, optional = true }
-strata-db = { workspace = true, optional = true }
 strata-db-store-sled = { workspace = true, optional = true }
+strata-db-types = { workspace = true, optional = true }
 strata-ol-chain-types = { workspace = true, optional = true }
 strata-primitives = { workspace = true, optional = true }
 strata-state = { workspace = true, optional = true }

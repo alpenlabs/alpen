@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_asm_types::ProtocolOperation;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::{
+use strata_db_types::{
     traits::{CheckpointDatabase, DatabaseBackend},
     types::CheckpointEntry,
 };

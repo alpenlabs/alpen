@@ -1,7 +1,7 @@
 //! Checkpoint Proof data operation interface.
 
 use strata_checkpoint_types::EpochSummary;
-use strata_db::{traits::*, types::CheckpointEntry};
+use strata_db_types::{traits::*, types::CheckpointEntry};
 use strata_primitives::epoch::EpochCommitment;
 
 use crate::exec::*;

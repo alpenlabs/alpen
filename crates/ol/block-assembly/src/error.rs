@@ -1,6 +1,6 @@
 //! Error types for block assembly operations.
 
-use strata_db::errors::DbError;
+use strata_db_types::errors::DbError;
 use strata_ol_mempool::MempoolError;
 
 /// Errors that can occur during block assembly operations.

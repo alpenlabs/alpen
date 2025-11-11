@@ -2,7 +2,7 @@
 
 use std::collections::*;
 
-use strata_db::traits::BlockStatus;
+use strata_db_types::traits::BlockStatus;
 use strata_ol_chain_types::{L2Header, SignedL2BlockHeader};
 use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_state::prelude::*;
@@ -408,8 +408,8 @@ impl FinalizeReport {
 mod tests {
     use std::collections::HashSet;
 
-    use strata_db::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
     use strata_ol_chain_types::L2Header;
     use strata_primitives::{epoch::EpochCommitment, l2::L2BlockId};
     use strata_storage::L2BlockManager;

@@ -16,8 +16,8 @@
 
 use std::sync::Arc;
 
-use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_db_types::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey};
 use tokio::sync::Mutex;
 use tracing::{error, info, instrument};

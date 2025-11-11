@@ -1,7 +1,7 @@
 //! Client data database operations interface..
 
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db::traits::*;
+use strata_db_types::traits::*;
 use strata_primitives::l1::L1BlockCommitment;
 
 use crate::exec::*;

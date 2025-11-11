@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_db::DbError;
+use strata_db_types::DbError;
 use strata_eectl::{
     errors::EngineResult,
     messages::ExecPayloadData,

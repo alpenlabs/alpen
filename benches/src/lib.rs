@@ -33,7 +33,7 @@ use strata_asm_types as _;
     clippy::allow_attributes,
     reason = "used for benchmarking"
 )]
-use strata_db as _;
+use strata_db_types as _;
 #[cfg(feature = "db")]
 #[allow(
     unused_imports,

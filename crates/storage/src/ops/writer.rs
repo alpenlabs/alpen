@@ -1,6 +1,6 @@
 //! Operations for reading/writing envelope related data from/to Database
 
-use strata_db::{
+use strata_db_types::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry},
 };

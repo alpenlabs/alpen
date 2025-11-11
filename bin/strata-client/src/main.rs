@@ -24,11 +24,11 @@ use strata_consensus_logic::{
     genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
 };
-use strata_db::{
+use strata_db_store_sled::SledBackend;
+use strata_db_types::{
     traits::{DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
     DbError,
 };
-use strata_db_store_sled::SledBackend;
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
 use strata_params::{Params, ProofPublishMode};

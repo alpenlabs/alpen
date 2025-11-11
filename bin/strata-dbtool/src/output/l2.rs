@@ -1,6 +1,6 @@
 //! L2 block formatting implementations
 
-use strata_db::traits::BlockStatus;
+use strata_db_types::traits::BlockStatus;
 use strata_ol_chain_types::{L2Header, SignedL2BlockHeader};
 use strata_primitives::{l1::L1BlockId, l2::L2BlockId};
 

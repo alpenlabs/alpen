@@ -1,4 +1,4 @@
-use strata_db::chainstate::*;
+use strata_db_types::chainstate::*;
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::buf::Buf32;
 

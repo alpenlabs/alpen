@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_consensus_logic::chain_worker_context::conv_blkid_to_slot_wb_id;
-use strata_db::{
+use strata_db_types::{
     chainstate::ChainstateDatabase,
     traits::{
         BlockStatus, CheckpointDatabase, ClientStateDatabase, DatabaseBackend, L2BlockDatabase,

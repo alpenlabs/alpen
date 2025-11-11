@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use strata_db::{traits::DatabaseBackend, types::L1TxEntry};
 use strata_db_store_sled::{
     test_utils::{get_test_sled_backend, get_test_sled_config, get_test_sled_db},
     SledBackend,
 };
+use strata_db_types::{traits::DatabaseBackend, types::L1TxEntry};
 use strata_storage::ops::{
     l1tx_broadcast::Context as BContext,
     writer::{Context, EnvelopeDataOps},

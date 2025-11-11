@@ -34,9 +34,9 @@ members = [
   "crates/crypto",
   "crates/csm-types",
   "crates/da-framework",
-  "crates/db",
-  "crates/db-store-sled",
-  "crates/db-tests",
+  "crates/db/types",
+  "crates/db/store-sled",
+  "crates/db/tests",
   "crates/ee-acct-runtime",
   "crates/ee-acct-types",
   "crates/ee-chain-types",
@@ -168,9 +168,9 @@ strata-crypto = { path = "crates/crypto", default-features = false }
 strata-csm-types = { path = "crates/csm-types" }
 strata-csm-worker = { path = "crates/csm-worker" }
 strata-da-framework = { path = "crates/da-framework" }
-strata-db = { path = "crates/db" }
-strata-db-store-sled = { path = "crates/db-store-sled" }
-strata-db-tests = { path = "crates/db-tests" }
+strata-db-store-sled = { path = "crates/db/store-sled" }
+strata-db-tests = { path = "crates/db/tests" }
+strata-db-types = { path = "crates/db/types" }
 strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
 strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }

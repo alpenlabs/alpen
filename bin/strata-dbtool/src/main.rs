@@ -7,7 +7,7 @@ mod db;
 mod output;
 mod utils;
 
-use strata_db::traits::DatabaseBackend;
+use strata_db_types::traits::DatabaseBackend;
 
 use crate::{
     cli::{Cli, Command},

@@ -16,5 +16,5 @@ pub enum Error {
 
     /// Other db error.
     #[error("db: {0}")]
-    Db(#[from] strata_db::errors::DbError),
+    Db(#[from] strata_db_types::errors::DbError),
 }

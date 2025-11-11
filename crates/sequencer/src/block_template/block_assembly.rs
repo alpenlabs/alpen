@@ -8,7 +8,7 @@ use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
 use strata_consensus_logic::checkpoint_verification;
-use strata_db::DbError;
+use strata_db_types::DbError;
 use strata_eectl::{
     engine::{ExecEngineCtl, PayloadStatus},
     errors::EngineError,

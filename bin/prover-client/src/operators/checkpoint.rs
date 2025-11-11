@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use jsonrpsee::http_client::HttpClient;
-use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_db_types::traits::ProofDatabase;
 use strata_primitives::{
     l1::L1BlockCommitment,
     l2::L2BlockCommitment,

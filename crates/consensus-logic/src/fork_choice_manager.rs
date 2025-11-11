@@ -5,7 +5,7 @@ use std::{collections::VecDeque, sync::Arc};
 use strata_chain_worker::{ChainWorkerHandle, WorkerResult};
 use strata_chainexec::{validation_util, TipState};
 use strata_csm_types::{CheckpointState, ClientState};
-use strata_db::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
+use strata_db_types::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::errors::EngineError;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;

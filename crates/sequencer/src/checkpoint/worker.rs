@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use strata_asm_types::L1BlockManifest;
 use strata_checkpoint_types::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
-use strata_db::{types::CheckpointEntry, DbError};
+use strata_db_types::{types::CheckpointEntry, DbError};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{Params, RollupParams};

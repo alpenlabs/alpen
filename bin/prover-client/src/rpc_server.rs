@@ -5,8 +5,8 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::Context;
 use async_trait::async_trait;
 use jsonrpsee::{core::RpcResult, RpcModule};
-use strata_db::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_db_types::traits::ProofDatabase;
 use strata_primitives::{
     evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment,
 };

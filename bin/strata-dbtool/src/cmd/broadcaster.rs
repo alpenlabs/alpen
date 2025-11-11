@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db::{traits::L1BroadcastDatabase, types::L1TxStatus};
+use strata_db_types::{traits::L1BroadcastDatabase, types::L1TxStatus};
 
 use crate::{
     cli::OutputFormat,

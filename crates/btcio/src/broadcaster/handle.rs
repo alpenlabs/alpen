@@ -2,7 +2,7 @@ use std::{str, sync::Arc};
 
 use bitcoind_async_client::traits::{Broadcaster, Reader, Signer, Wallet};
 use hex::encode_to_slice;
-use strata_db::{
+use strata_db_types::{
     types::{L1TxEntry, L1TxStatus},
     DbResult,
 };

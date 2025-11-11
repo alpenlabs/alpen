@@ -19,7 +19,9 @@ use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
 use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Payload, PayloadDest, PayloadIntent};
-use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus};
+use strata_db_types::types::{
+    CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus,
+};
 use strata_l1_txfmt::TagData;
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
