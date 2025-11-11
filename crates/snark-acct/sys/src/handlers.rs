@@ -1,6 +1,6 @@
 use strata_acct_types::{AccountId, AcctResult, BitcoinAmount, MsgPayload};
 use strata_ledger_types::ISnarkAccountState;
-use strata_ol_chain_types_new::{LogEmitter, OLLog};
+use strata_ol_chain_types_new::LogEmitter;
 use strata_primitives::Epoch;
 use strata_snark_acct_types::MessageEntry;
 

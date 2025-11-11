@@ -1,9 +1,11 @@
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
+use strata_asm_common::AsmManifest;
 use strata_ledger_types::{
     AccountTypeState, IAccountState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
 use strata_ol_chain_types_new::{
-    L1Update, LogEmitter, OLBlock, OLBlockBody, OLLog, OLTransaction, TransactionPayload,
+    L1BlockCommitment, L1Update, LogEmitter, OLBlock, OLBlockBody, OLLog, OLTransaction,
+    TransactionPayload,
 };
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::{SnarkAccountUpdateContainer, UpdateOperationData};
@@ -51,14 +53,19 @@ pub fn execute_block_body<S: StateAccessor>(
     block_body: &OLBlockBody,
 ) -> StfResult<ExecOutput> {
     // Execute transactions.
-    for tx in block_body.txs() {
-        execute_transaction(&ctx, state_accessor, tx)?;
-    }
-
-    let _pre_seal_root = state_accessor.compute_state_root();
+    execute_transactions(&ctx, state_accessor, block_body.txs())?;
 
     // Check if needs to seal epoch, i.e is a terminal block.
     if let Some(l1update) = block_body.l1_update() {
+        let preseal_root = state_accessor.compute_state_root();
+
+        // Check pre_seal_root matches with l1update preseal_root.
+        if l1update.preseal_state_root() != preseal_root {
+            return Err(StfError::PresealRootMismatch {
+                expected: l1update.preseal_state_root(),
+                got: preseal_root,
+            });
+        }
         seal_epoch(&ctx, state_accessor, l1update)?;
 
         // Increment the current epoch now that we've processed the terminal block.
@@ -74,29 +81,59 @@ pub fn execute_block_body<S: StateAccessor>(
     Ok(out)
 }
 
-fn seal_epoch(
+/// Executes the OL transactions and updates the state accordingly.
+pub fn execute_transactions(
+    ctx: &BlockExecContext,
+    state_accessor: &mut impl StateAccessor,
+    txs: &[OLTransaction],
+) -> StfResult<()> {
+    for tx in txs {
+        execute_transaction(ctx, state_accessor, tx)?;
+    }
+    Ok(())
+}
+
+pub fn seal_epoch(
     ctx: &BlockExecContext,
     state_accessor: &mut impl StateAccessor,
     l1update: &L1Update,
 ) -> StfResult<()> {
+    let l1blk_commt: L1BlockCommitment =
+        process_asm_manifests(ctx, state_accessor, l1update.manifests())?;
+
+    let l1view = state_accessor.l1_view_mut();
+    let blkid = *(l1blk_commt.blkid());
+    l1view.set_last_l1_blkid(blkid);
+    l1view.set_last_l1_height(l1blk_commt.height());
+
+    Ok(())
+}
+
+/// Processes the ASM Manifests and returns the latest l1 commitment in the manifests updating the
+/// state accordingly.
+pub fn process_asm_manifests(
+    ctx: &BlockExecContext,
+    state_accessor: &mut impl StateAccessor,
+    manifests: &[AsmManifest],
+) -> StfResult<L1BlockCommitment> {
     let l1_view = state_accessor.l1_view();
     let mut cur_height = l1_view.last_l1_height();
-    let mut cur_blkid = (*l1_view.last_l1_blkid()).into();
+    let mut cur_blkid = *l1_view.last_l1_blkid();
 
-    for manifest in &l1update.manifests {
+    for manifest in manifests {
         for log in manifest.logs() {
             process_asm_log(ctx, state_accessor, log)?;
         }
-        // TODO: Insert into witness mmr
+
+        // Append manifest
+        let l1_view_mut = state_accessor.l1_view_mut();
+        l1_view_mut.append_manifest(manifest.clone());
+
         cur_height += 1;
-        cur_blkid = manifest.l1_blkid();
+        cur_blkid = *manifest.blkid();
     }
 
-    let l1view = state_accessor.l1_view_mut();
-    l1view.set_last_l1_blkid(cur_blkid.into());
-    l1view.set_last_l1_height(cur_height);
-
-    Ok(())
+    Ok(L1BlockCommitment::new(cur_height, cur_blkid))
 }
 
 fn execute_transaction<S: StateAccessor>(

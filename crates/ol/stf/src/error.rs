@@ -59,6 +59,9 @@ pub enum StfError {
 
     #[error("codec error: {0}")]
     CodecError(#[from] CodecError),
+
+    #[error("Preseal root mismatch. Expected {expected}, got {got}")]
+    PresealRootMismatch { expected: Buf32, got: Buf32 },
 }
 
 pub type StfResult<T> = Result<T, StfError>;

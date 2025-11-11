@@ -1,8 +1,7 @@
-use strata_primitives::{Slot, buf::Buf32};
+use strata_primitives::{L1BlockId, Slot, buf::Buf32};
 
 /// Type aliases for clarity
 pub type OLBlockId = Buf32;
-pub type L1BlockId = Buf32;
 
 /// Commitment to a block by ID at a particular slot.
 #[derive(Clone, Debug)]
