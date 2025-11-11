@@ -36,12 +36,6 @@ use strata_primitives as _;
 )]
 use strata_state as _;
 use tempfile::TempDir;
-#[cfg(feature = "rocksdb")]
-use {
-    alpen_benchmarks::db::rocksdb::{create_temp_rocksdb, default_rocksdb_ops_config},
-    rockbound as _,
-    strata_db_store_rocksdb::l1::db::L1Db as L1DbRocks,
-};
 // Feature-gated imports
 #[cfg(feature = "sled")]
 use {
@@ -76,26 +70,6 @@ impl L1BenchSetupSled {
     }
 }
 
-/// Benchmark setup for RocksDB L1 database.
-#[cfg(feature = "rocksdb")]
-struct L1BenchSetupRocks {
-    db: L1DbRocks,
-    _temp_dir: TempDir,
-}
-
-#[cfg(feature = "rocksdb")]
-impl L1BenchSetupRocks {
-    fn new() -> Self {
-        let (rocksdb, temp_dir) = create_temp_rocksdb();
-        let ops_config = default_rocksdb_ops_config();
-        let db = L1DbRocks::new(rocksdb, ops_config);
-        Self {
-            db,
-            _temp_dir: temp_dir,
-        }
-    }
-}
-
 /// Generic benchmark implementation for [`L1Database::put_block_data`].
 fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
     let mut group = c.benchmark_group(format!("l1_put_block_data_{}", backend.name()));
@@ -112,20 +86,6 @@ fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                     b.iter_with_setup(
                         || {
                             let setup = L1BenchSetupSled::new();
-                            let seed_data = vec![tx_count as u8; 1024];
-                            let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let manifest = L1BlockManifest::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L1BlockManifest");
-                            (setup, manifest)
-                        },
-                        |(setup, manifest)| black_box(setup.db.put_block_data(manifest)).unwrap(),
-                    );
-                }
-                #[cfg(feature = "rocksdb")]
-                DatabaseBackend::RocksDb => {
-                    b.iter_with_setup(
-                        || {
-                            let setup = L1BenchSetupRocks::new();
                             let seed_data = vec![tx_count as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
                             let manifest = L1BlockManifest::arbitrary(&mut unstructured)
@@ -169,22 +129,6 @@ fn bench_get_block_manifest_impl(backend: DatabaseBackend, c: &mut Criterion) {
                         |(setup, blockid)| black_box(setup.db.get_block_manifest(blockid)).unwrap(),
                     );
                 }
-                #[cfg(feature = "rocksdb")]
-                DatabaseBackend::RocksDb => {
-                    b.iter_with_setup(
-                        || {
-                            let setup = L1BenchSetupRocks::new();
-                            let seed_data = vec![(tx_count + 1) as u8; 1024];
-                            let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let manifest = L1BlockManifest::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L1BlockManifest");
-                            let blockid = *manifest.blkid();
-                            setup.db.put_block_data(manifest).unwrap();
-                            (setup, blockid)
-                        },
-                        |(setup, blockid)| black_box(setup.db.get_block_manifest(blockid)).unwrap(),
-                    );
-                }
             },
         );
     }
@@ -211,34 +155,6 @@ fn bench_get_canonical_blockid_at_height_impl(backend: DatabaseBackend, c: &mut 
                     b.iter_with_setup(
                         || {
                             let setup = L1BenchSetupSled::new();
-                            let mut blocks = Vec::new();
-                            for i in 0..block_count {
-                                let seed_data = vec![(i % 256) as u8; 1024];
-                                let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                                let manifest = L1BlockManifest::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L1BlockManifest");
-                                blocks.push(manifest);
-                            }
-                            for (i, block) in blocks.iter().enumerate() {
-                                setup.db.put_block_data(block.clone()).unwrap();
-                                setup
-                                    .db
-                                    .set_canonical_chain_entry(i as u64, *block.blkid())
-                                    .unwrap();
-                            }
-                            let target_height = (block_count / 2) as u64;
-                            (setup, target_height)
-                        },
-                        |(setup, height)| {
-                            black_box(setup.db.get_canonical_blockid_at_height(height)).unwrap()
-                        },
-                    );
-                }
-                #[cfg(feature = "rocksdb")]
-                DatabaseBackend::RocksDb => {
-                    b.iter_with_setup(
-                        || {
-                            let setup = L1BenchSetupRocks::new();
                             let mut blocks = Vec::new();
                             for i in 0..block_count {
                                 let seed_data = vec![(i % 256) as u8; 1024];

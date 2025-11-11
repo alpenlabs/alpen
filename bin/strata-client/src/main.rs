@@ -2,15 +2,6 @@
 
 #![feature(slice_pattern)]
 
-// Ensure only one database backend is configured at a time
-#[cfg(all(
-    feature = "sled",
-    feature = "rocksdb",
-    not(any(test, debug_assertions))
-))]
-compile_error!(
-    "multiple database backends configured: both 'sled' and 'rocksdb' features are enabled"
-);
 use std::{sync::Arc, time::Duration};
 
 use anyhow::anyhow;
@@ -37,6 +28,7 @@ use strata_db::{
     traits::{DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
     DbError,
 };
+use strata_db_store_sled::SledBackend;
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
 use strata_params::{Params, ProofPublishMode};
@@ -228,7 +220,7 @@ fn init_logging(rt: &Handle) {
 )]
 pub struct CoreContext {
     pub runtime: Handle,
-    pub database: Arc<init_db::DatabaseImpl>,
+    pub database: Arc<SledBackend>,
     pub storage: Arc<NodeStorage>,
     pub pool: threadpool::ThreadPool,
     pub params: Arc<Params>,
@@ -310,7 +302,7 @@ fn start_core_tasks(
     pool: threadpool::ThreadPool,
     config: &Config,
     params: Arc<Params>,
-    database: Arc<init_db::DatabaseImpl>,
+    database: Arc<SledBackend>,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<CoreContext> {

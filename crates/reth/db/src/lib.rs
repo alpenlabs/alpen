@@ -1,22 +1,11 @@
 //! Database for Reth.
 
-#[cfg(feature = "rocksdb")]
-pub mod rocksdb;
-#[cfg(feature = "sled")]
 pub mod sled;
 
-#[cfg(feature = "rocksdb")]
 #[allow(
     unused_extern_crates,
     clippy::allow_attributes,
-    reason = "feature-gated"
-)]
-extern crate rockbound as _;
-#[cfg(feature = "sled")]
-#[allow(
-    unused_extern_crates,
-    clippy::allow_attributes,
-    reason = "feature-gated"
+    reason = "consuming dep"
 )]
 extern crate sled as _;
 

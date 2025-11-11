@@ -29,13 +29,8 @@ elif [ -n "$CI_COVERAGE" ]; then
   export PATH=$COV_TARGET_DIR/debug:$PATH
 else
   echo "Building and running strata client"
-  if [ "$DB_BACKEND" = "rocksdb" ]; then
-    cargo build -F debug-utils -F test-mode -F rocksdb
-    echo built with rocksdb
-  else
-    cargo build -F debug-utils -F test-mode
-    echo built with default sled
-  fi
+  cargo build -F debug-utils -F test-mode
+  echo "built with default sled"
 fi
 
 uv run python entry.py "$@"

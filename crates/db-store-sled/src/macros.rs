@@ -63,9 +63,10 @@ macro_rules! define_table_with_integer_key {
 ///
 /// It shall be used when your key type should be serialized lexicographically.
 ///
-/// Borsh serializes integers as little-endian, but RocksDB uses lexicographic
-/// ordering which is only compatible with big-endian, so we use [`bincode`]
-/// with the big-endian option here.
+/// Borsh serializes integers as little-endian, but lexicographic
+/// ordering requires big-endian for proper sorting, so we use [`bincode`]
+/// with the big-endian option here. This ensures consistent key ordering
+/// for range queries and seeks.
 #[macro_export]
 macro_rules! define_table_with_seek_key_codec {
     ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
