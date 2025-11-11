@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use strata_snark_acct_types::LedgerInterface;
 
 use crate::VerifiedUpdate;

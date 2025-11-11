@@ -1,4 +1,4 @@
-use strata_asm_common::AsmLogEntry;
+use strata_asm_common::AsmManifest;
 use strata_primitives::{
     Epoch, Slot,
     buf::{Buf32, Buf64},
@@ -211,29 +211,5 @@ impl L1Update {
 
     pub fn manifests(&self) -> &[AsmManifest] {
         &self.manifests
-    }
-}
-
-/// A manifest containing ASM data corresponding to a L1 block.
-#[derive(Debug, Clone)]
-pub struct AsmManifest {
-    /// L1 block id.
-    l1_blkid: Buf32,
-
-    /// Logs from ASM STF.
-    logs: Vec<AsmLogEntry>,
-}
-
-impl AsmManifest {
-    pub fn new(l1_blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
-        Self { l1_blkid, logs }
-    }
-
-    pub fn l1_blkid(&self) -> Buf32 {
-        self.l1_blkid
-    }
-
-    pub fn logs(&self) -> &[AsmLogEntry] {
-        &self.logs
     }
 }
