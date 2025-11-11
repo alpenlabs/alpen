@@ -12,22 +12,18 @@ path = "src/main.rs"
 
 [dependencies]
 alpen-chainspec.workspace = true
+alpen-ee-common.workspace = true
+alpen-ee-config.workspace = true
+alpen-ee-database.workspace = true
+alpen-ee-engine.workspace = true
+alpen-ee-ol-tracker.workspace = true
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
-strata-db-store-sled.workspace = true
-strata-ee-acct-runtime.workspace = true
-strata-ee-acct-types.workspace = true
-strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
-strata-storage-common.workspace = true
 
 alloy-primitives.workspace = true
-alloy-rpc-types-engine.workspace = true
-anyhow.workspace = true
 async-trait.workspace = true
-bincode.workspace = true
-borsh.workspace = true
 clap.workspace = true
 eyre.workspace = true
 reth-chainspec.workspace = true
@@ -37,15 +33,7 @@ reth-cli-util.workspace = true
 reth-db.workspace = true
 reth-node-builder.workspace = true
 reth-node-core.workspace = true
-reth-provider.workspace = true
-sled.workspace = true
-thiserror.workspace = true
-threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-typed-sled.workspace = true
 
 [dev-dependencies]
-mockall.workspace = true
-strata-primitives.workspace = true
-tempfile.workspace = true

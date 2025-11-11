@@ -1,23 +1,19 @@
-#![allow(
-    unused_crate_dependencies,
-    clippy::allow_attributes,
-    reason = "tempfile use is feature gated; remove after db consolidation"
-)]
 //! Reth node for the Alpen codebase.
 
-// mod init_db;
-mod config;
-mod db;
-mod engine_control;
 mod genesis;
-mod ol_tracker;
-mod traits;
+mod ol_client;
 
 use std::sync::Arc;
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
+use alpen_ee_common::traits::ol_client::chain_status_checked;
+use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
+use alpen_ee_database::init_db_storage;
+use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
+use alpen_ee_ol_tracker::{init_ol_tracker_state, OlTrackerBuilder};
 use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
 use clap::Parser;
+use ol_client::DummyOlClient;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
@@ -28,14 +24,7 @@ use strata_identifiers::{CredRule, OLBlockId};
 use tokio::sync::broadcast;
 use tracing::info;
 
-use crate::{
-    config::{defaults, AlpenEeConfig, AlpenEeParams},
-    db::init_db_storage,
-    engine_control::{create_engine_control_task, AlpenRethExecEngine},
-    genesis::ee_genesis_block_info,
-    ol_tracker::{init_ol_tracker_state, OlTrackerBuilder},
-    traits::ol_client::{chain_status_checked, DummyOlClient},
-};
+use crate::genesis::ee_genesis_block_info;
 
 fn main() {
     reth_cli_util::sigsegv_handler::install();
@@ -79,7 +68,7 @@ fn main() {
                 CredRule::Unchecked,
                 ext.ol_client_http,
                 ext.sequencer_http,
-                ext.db_retry_count.unwrap_or(defaults::DB_RETRY_COUNT),
+                ext.db_retry_count,
             ));
 
             let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())

@@ -1042,8 +1042,39 @@ name = "alpen-client"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
+ "alpen-chainspec",
+ "alpen-ee-common",
+ "alpen-ee-config",
+ "alpen-ee-database",
+ "alpen-ee-engine",
+ "alpen-ee-ol-tracker",
+ "alpen-reth-node",
+ "async-trait",
+ "clap",
+ "eyre",
+ "reth-chainspec",
+ "reth-cli-commands",
+ "reth-cli-runner",
+ "reth-cli-util",
+ "reth-db",
+ "reth-node-builder",
+ "reth-node-core",
+ "strata-acct-types",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "alpen-ee-common"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-eips",
+ "alloy-primitives",
  "alloy-rpc-types-engine",
  "alpen-chainspec",
+ "alpen-reth-evm",
  "alpen-reth-node",
  "anyhow",
  "async-trait",
@@ -1059,6 +1090,7 @@ dependencies = [
  "reth-db",
  "reth-node-builder",
  "reth-node-core",
+ "reth-payload-builder",
  "reth-provider",
  "sled",
  "strata-acct-types",
@@ -1076,6 +1108,72 @@ dependencies = [
  "tokio",
  "tracing",
  "typed-sled",
+]
+
+[[package]]
+name = "alpen-ee-config"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "strata-acct-types",
+ "strata-identifiers",
+]
+
+[[package]]
+name = "alpen-ee-database"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-common",
+ "async-trait",
+ "borsh",
+ "eyre",
+ "sled",
+ "strata-acct-types",
+ "strata-db-store-sled",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-identifiers",
+ "strata-primitives",
+ "strata-storage-common",
+ "thiserror 2.0.16",
+ "threadpool",
+ "tokio",
+ "tracing",
+ "typed-sled",
+]
+
+[[package]]
+name = "alpen-ee-engine"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types-engine",
+ "alpen-ee-common",
+ "alpen-reth-node",
+ "async-trait",
+ "reth-node-builder",
+ "reth-provider",
+ "strata-acct-types",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "alpen-ee-ol-tracker"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-common",
+ "alpen-ee-config",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
