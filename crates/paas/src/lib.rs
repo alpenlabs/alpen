@@ -22,6 +22,7 @@ mod commands;
 mod config;
 mod error;
 mod handle;
+pub mod primitives;
 mod service;
 mod state;
 mod task;

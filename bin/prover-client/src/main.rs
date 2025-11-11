@@ -27,6 +27,7 @@ mod config;
 mod db;
 mod errors;
 mod operators;
+mod paas_integration;
 mod prover_manager;
 mod retry_policy;
 mod rpc_server;
