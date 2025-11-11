@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use strata_db::traits::ProofDatabase;
+use strata_db_types::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_paas::{InputFetcher, PaaSError, PaaSResult, ProofStore, ZkVmBackend};
 use strata_primitives::proof::{ProofContext, ProofKey};
@@ -320,6 +320,8 @@ impl DynamicHostProver {
             ZkVmHostInstance::Native(ref h) => ProverProgram::prove(&input, h),
             #[cfg(feature = "sp1")]
             ZkVmHostInstance::SP1(h) => ProverProgram::prove(&input, h),
+            #[cfg(feature = "sp1")]
+            _ => panic!("Unsupported host variant"),
             #[cfg(not(feature = "sp1"))]
             _ => panic!("Unsupported host variant"),
         }
