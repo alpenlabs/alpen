@@ -7,20 +7,26 @@ use crate::EeAccountStateAtBlock;
 
 /// Identifies an OL block either by block ID or slot number.
 #[derive(Debug)]
-pub enum OLBlockOrSlot<'a> {
+pub enum OLBlockOrSlot {
     /// Identifies by block ID.
-    Block(&'a OLBlockId),
+    Block(OLBlockId),
     /// Identifies by slot number.
     Slot(u64),
 }
 
-impl<'a> From<&'a OLBlockId> for OLBlockOrSlot<'a> {
-    fn from(value: &'a OLBlockId) -> Self {
+impl From<OLBlockId> for OLBlockOrSlot {
+    fn from(value: OLBlockId) -> Self {
         Self::Block(value)
     }
 }
 
-impl From<u64> for OLBlockOrSlot<'_> {
+impl From<&OLBlockId> for OLBlockOrSlot {
+    fn from(value: &OLBlockId) -> Self {
+        Self::Block(*value)
+    }
+}
+
+impl From<u64> for OLBlockOrSlot {
     fn from(value: u64) -> Self {
         OLBlockOrSlot::Slot(value)
     }
@@ -31,9 +37,9 @@ impl From<u64> for OLBlockOrSlot<'_> {
 /// Persistence for EE Nodes
 pub trait Storage {
     /// Get EE account internal state corresponding to a given OL slot.
-    async fn ee_account_state<'a>(
+    async fn ee_account_state(
         &self,
-        block_or_slot: OLBlockOrSlot<'a>,
+        block_or_slot: OLBlockOrSlot,
     ) -> Result<Option<EeAccountStateAtBlock>, StorageError>;
 
     /// Get EE account internal state for the highest slot available.

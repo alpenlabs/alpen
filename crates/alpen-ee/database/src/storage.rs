@@ -40,12 +40,12 @@ impl EeNodeStorage {
 #[async_trait]
 impl Storage for EeNodeStorage {
     /// Get EE account internal state corresponding to a given OL slot.
-    async fn ee_account_state<'a>(
+    async fn ee_account_state(
         &self,
-        block_or_slot: OLBlockOrSlot<'a>,
+        block_or_slot: OLBlockOrSlot,
     ) -> Result<Option<EeAccountStateAtBlock>, StorageError> {
         let block_id = match block_or_slot {
-            OLBlockOrSlot::Block(block_id) => *block_id,
+            OLBlockOrSlot::Block(block_id) => block_id,
             OLBlockOrSlot::Slot(slot) => self
                 .blockid_cache
                 .get_or_fetch(&slot, || self.ops.get_ol_blockid_chan(slot))
