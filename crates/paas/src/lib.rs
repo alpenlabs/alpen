@@ -37,11 +37,15 @@ pub use builder::ProverServiceBuilder;
 pub use config::{PaaSConfig, RetryConfig, WorkerConfig};
 pub use error::{PaaSError, PaaSResult};
 pub use handle::ProverHandle;
-pub use state::StatusSummary;
+pub use service::ProverService;
+pub use state::{ProverServiceState, StatusSummary};
 pub use task::TaskStatus;
 
-// Internal trait for the service framework (not part of public API)
-pub(crate) trait Prover: Send + Sync + 'static {
+// Prover trait for custom implementations
+//
+// Users can implement this trait for custom proving strategies that need
+// to dynamically resolve hosts or handle multiple backends.
+pub trait Prover: Send + Sync + 'static {
     type TaskId: task::TaskId;
     type Backend: Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static;
 
