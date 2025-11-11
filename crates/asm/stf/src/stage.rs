@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AuxData, AuxRequests, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AuxData, AuxDataProvider, AuxRequests, Stage, Subprotocol, SubprotocolId,
+    TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
@@ -56,7 +57,7 @@ pub(crate) struct ProcessStage<'c> {
     manager: &'c mut SubprotoManager,
     anchor_state: &'c AnchorState,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-    aux_inputs: &'c BTreeMap<SubprotocolId, AuxData>,
+    aux_provider: AuxDataProvider,
 }
 
 impl<'c> ProcessStage<'c> {
@@ -64,13 +65,17 @@ impl<'c> ProcessStage<'c> {
         manager: &'c mut SubprotoManager,
         anchor_state: &'c AnchorState,
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_inputs: &'c BTreeMap<SubprotocolId, AuxData>,
+        aux_data: &'c AuxData,
     ) -> Self {
+        // Create a single aux provider for all subprotocols
+        let aux_provider = AuxDataProvider::new(aux_data, &anchor_state.chain_view.manifest_mmr)
+            .expect("asm: failed to create aux provider");
+
         Self {
             manager,
             anchor_state,
             tx_bufs,
-            aux_inputs,
+            aux_provider,
         }
     }
 }
@@ -83,14 +88,8 @@ impl Stage for ProcessStage<'_> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        // Extract the auxiliary input for this subprotocol from the bundle
-        let aux_data = self
-            .aux_inputs
-            .get(&S::ID)
-            .expect("provide empty data if necessary");
-
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, aux_data);
+            .invoke_process_txs::<S>(txs, self.anchor_state, &self.aux_provider);
     }
 }
 

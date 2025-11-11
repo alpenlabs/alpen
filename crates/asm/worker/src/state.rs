@@ -97,11 +97,8 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         let pre_process = strata_asm_stf::pre_process_asm(&self.asm_spec, cur_state.state(), block)
             .map_err(WorkerError::AsmError)?;
 
-        let aux_data: BTreeMap<SubprotocolId, AuxData> = pre_process
-            .aux_requests
-            .into_keys()
-            .map(|k| (k, AuxData::default()))
-            .collect();
+        // Create empty aux data for now (to be populated by external workers)
+        let aux_data = AuxData::default();
 
         // For blocks without witness data (pre-SegWit or legacy-only transactions),
         // the witness merkle root equals the transaction merkle root per Bitcoin protocol.

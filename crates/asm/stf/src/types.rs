@@ -10,8 +10,8 @@ use strata_l1_txfmt::SubprotocolId;
 pub struct AsmStfInput<'i> {
     pub header: &'i Header,
     pub wtxids_root: Buf32,
+    pub aux_data: AuxData,
     pub protocol_txs: BTreeMap<SubprotocolId, Vec<TxInputRef<'i>>>,
-    pub aux_data: BTreeMap<SubprotocolId, AuxData>,
 }
 
 /// Output of ASM input preprocessing.

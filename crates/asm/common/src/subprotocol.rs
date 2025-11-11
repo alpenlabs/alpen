@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AuxData, AuxDataProvider, AuxRequestCollector, SectionState, TxInputRef,
+    AnchorState, AsmError, AuxDataProvider, AuxRequestCollector, SectionState, TxInputRef,
     log::AsmLogEntry, msg::InterprotoMsg,
 };
 
@@ -201,7 +201,7 @@ pub trait SubprotoHandler {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_state: &AnchorState,
-        aux_input_data: &AuxData,
+        aux_provider: &AuxDataProvider,
     );
 
     /// Accepts a message.  This is called while processing other subprotocols.

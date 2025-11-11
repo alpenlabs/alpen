@@ -3,7 +3,7 @@
 use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxData, AuxDataProvider, AuxRequestCollector, AuxRequests,
+    AnchorState, AsmError, AsmLogEntry, AuxDataProvider, AuxRequestCollector, AuxRequests,
     InterprotoMsg, Loader, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId,
     TxInputRef,
 };
@@ -57,21 +57,18 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_pre: &AnchorState,
-        aux_data: &AuxData,
+        aux_provider: &AuxDataProvider,
     ) {
         let relayer = relayer
             .as_mut_any()
             .downcast_mut::<R>()
             .expect("asm: handler");
 
-        let aux_provider = AuxDataProvider::new(aux_data, &anchor_pre.chain_view.manifest_mmr)
-            .expect("asm: failed to create aux provider");
-
         S::process_txs(
             &mut self.state,
             txs,
             anchor_pre,
-            &aux_provider,
+            aux_provider,
             relayer,
             &self.params,
         );
@@ -139,7 +136,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_data: &AuxData,
+        aux_provider: &AuxDataProvider,
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
@@ -147,7 +144,7 @@ impl SubprotoManager {
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_txs(txs, self, anchor_pre, aux_data);
+        h.process_txs(txs, self, anchor_pre, aux_provider);
         self.insert_handler(h);
     }
 
