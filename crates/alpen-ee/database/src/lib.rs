@@ -1,3 +1,5 @@
+//! Database implementation for Alpen execution environment.
+
 pub mod database;
 pub mod error;
 mod init;
