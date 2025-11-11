@@ -261,15 +261,15 @@ where
         lock_time: LockTime::from_height(0).unwrap(),
         input: vec![], // dont care
         output: vec![
-            // front payment
-            TxOut {
-                script_pubkey: addresses[0].to_script(),
-                value: amt - OPERATOR_FEE,
-            },
-            // metadata with operator index
+            // metadata with operator index (must be at output[0])
             TxOut {
                 script_pubkey: create_opreturn_metadata(*b"ALPN", 1, 2, &txids[0]),
                 value: Amount::from_sat(0),
+            },
+            // front payment (must be at output[1])
+            TxOut {
+                script_pubkey: addresses[0].to_script(),
+                value: amt - OPERATOR_FEE,
             },
             // change
             TxOut {

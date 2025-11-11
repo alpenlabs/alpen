@@ -51,14 +51,12 @@ pub fn extract_deposit_info(tx: &Transaction, config: &DepositTxParams) -> Optio
     }
 
     // Parse the tag from the OP_RETURN output.
-    let tg = parse_tag_script(&op_return_out.script_pubkey, config);
-    println!("ASHlegacy: {:?}", tg);
-    let tag_data = tg.ok()?;
+    let tag_data = parse_tag_script(&op_return_out.script_pubkey, config).ok()?;
 
     // Get the first input of the transaction
     let deposit_outpoint = BitcoinOutPoint::from(OutPoint {
         txid: tx.compute_txid(),
-        vout: 0, // deposit must always exist in the first output
+        vout: 1, // deposit must always exist in the second output
     });
 
     // Check if it was signed off by the operators and hence verify that this is just not someone
@@ -114,7 +112,8 @@ fn validate_deposit_signature(
     let script_pubkey = ScriptBuf::new_p2tr(secp, int_key, Some(merkle_root));
 
     let utxos = [TxOut {
-        value: Amount::from_sat(tag_data.amount),
+        // we don't have the mechanism to get the exact DRT utxo amount from DT.
+        value: DEFAULT_BRIDGE_IN_AMOUNT,
         script_pubkey,
     }];
 
@@ -127,7 +126,6 @@ fn validate_deposit_signature(
 
     // Prepare the message for signature verification
     let msg = Message::from_digest(*sighash.as_byte_array());
-
     // Verify the Schnorr signature
     secp.verify_schnorr(&schnorr_sig, &msg, &tweaked_key.to_x_only_public_key())
         .ok()
@@ -137,8 +135,6 @@ fn validate_deposit_signature(
 struct DepositTag<'buf> {
     deposit_idx: u32,
     dest_buf: &'buf [u8],
-    // TODO: better naming
-    amount: u64,
     tapscript_root: Buf32,
 }
 
@@ -168,8 +164,8 @@ fn parse_tag_script<'a>(
 }
 
 /// Parses the script buffer which has the following structure:
-/// [magic_bytes(n bytes), stake_idx(4 bytes), ee_address(m bytes), takeback_hash(32 bytes),
-/// sats_amt(8 bytes)]
+/// [magic_bytes(n bytes), subprotocol_id(1 byte), tx_type(1 byte), stake_idx(4 bytes),
+/// takeback_hash(32 bytes), ee_address(m bytes)]
 fn parse_tag<'b>(
     buf: &'b [u8],
     magic_bytes: &[u8],
@@ -224,7 +220,6 @@ fn parse_tag<'b>(
     Ok(DepositTag {
         deposit_idx,
         dest_buf,
-        amount: DEFAULT_BRIDGE_IN_AMOUNT.to_sat(),
         tapscript_root: takeback_hash
             .try_into()
             .expect("expected takeback hash length to match"),

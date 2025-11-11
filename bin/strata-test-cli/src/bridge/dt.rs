@@ -328,16 +328,16 @@ mod tests {
         assert_eq!(psbt.unsigned_tx.output.len(), 2);
         assert_eq!(psbt.unsigned_tx.lock_time, LockTime::ZERO);
 
-        // Output[0] is bridge-out amount
-        assert_eq!(psbt.unsigned_tx.output[0].value, BRIDGE_OUT_AMOUNT);
-
-        // Output[1] should be OP_RETURN with metadata that contains MAGIC_BYTES
-        let meta_spk = &psbt.unsigned_tx.output[1].script_pubkey;
+        // Output[0] should be OP_RETURN with metadata that contains MAGIC_BYTES
+        let meta_spk = &psbt.unsigned_tx.output[0].script_pubkey;
         let meta_bytes = meta_spk.as_bytes();
         assert_eq!(meta_bytes[0], OP_RETURN.to_u8());
         assert!(meta_bytes
             .windows(MAGIC_BYTES.len())
             .any(|w| w == MAGIC_BYTES));
+
+        // Output[1] is bridge-out amount
+        assert_eq!(psbt.unsigned_tx.output[1].value, BRIDGE_OUT_AMOUNT);
 
         // Prevouts
         assert_eq!(prevouts.len(), 1);
