@@ -83,7 +83,6 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         el_client,
         cl_client,
         rollup_params,
-        config.enable_checkpoint_runner,
     ));
 
     let sled_db =
