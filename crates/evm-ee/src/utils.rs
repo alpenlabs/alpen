@@ -25,10 +25,7 @@ pub(crate) fn build_and_recover_block(
     let body = exec_payload.body().body().clone();
 
     // Build block using alloy_consensus types
-    let alloy_block = AlloyBlock {
-        header: header.clone(),
-        body,
-    };
+    let alloy_block = AlloyBlock { header, body };
 
     // Recover transaction senders from signatures
     alloy_block
@@ -58,14 +55,14 @@ pub(crate) fn collect_withdrawal_intents_from_execution(
 
 /// Converts execution output to HashedPostState for state updates.
 pub(crate) fn compute_hashed_post_state(
-    execution_output: &BlockExecutionOutput<EthereumReceipt>,
+    execution_output: BlockExecutionOutput<EthereumReceipt>,
     block_number: u64,
 ) -> HashedPostState {
     let executor_outcome = ExecutionOutcome::new(
-        execution_output.state.clone(),
-        vec![execution_output.result.receipts.clone()],
+        execution_output.state,
+        vec![execution_output.result.receipts],
         block_number,
-        vec![execution_output.result.requests.clone()],
+        vec![execution_output.result.requests],
     );
     executor_outcome.hash_state_slow::<KeccakKeyHasher>()
 }
