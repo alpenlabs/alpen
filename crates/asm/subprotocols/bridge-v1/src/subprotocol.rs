@@ -59,7 +59,7 @@ impl Subprotocol for BridgeV1Subproto {
     /// - `state` - Mutable reference to the bridge state
     /// - `txs` - Array of transaction input references to process
     /// - `anchor_pre` - Current anchor state containing chain view and block information
-    /// - `_aux_inputs` - Auxiliary inputs (unused in Bridge V1)
+    /// - `_aux_provider` - Auxiliary data provider (unused in Bridge V1)
     /// - `relayer` - Message relayer for emitting logs and events
     ///
     /// # Transaction Types Processed

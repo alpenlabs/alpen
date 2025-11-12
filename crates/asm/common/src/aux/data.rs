@@ -24,11 +24,10 @@ pub struct AuxRequests {
     pub bitcoin_txs: Vec<Buf32>,
 }
 
-/// Auxiliary data containing unverified Bitcoin transactions and manifest leaves.
+/// Collection of auxiliary data responses for subprotocols.
 ///
-/// This structure holds auxiliary data in vector form for efficient batch processing.
-/// The data is unverified and must be validated before use, typically by passing it
-/// to [`AuxDataProvider::try_new`] which verifies all proofs and decodes transactions.
+/// Contains unverified Bitcoin transactions and manifest leaves returned by external workers.
+/// This data must be validated before use during the main processing phase.
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Manifest leaves with their MMR proofs

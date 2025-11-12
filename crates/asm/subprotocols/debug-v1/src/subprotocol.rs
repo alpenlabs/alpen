@@ -37,7 +37,7 @@ impl Subprotocol for DebugSubproto {
         _state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         _anchor_pre: &AnchorState,
-        _aux_inputs: &AuxDataProvider,
+        _aux_provider: &AuxDataProvider,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
