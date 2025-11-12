@@ -4,7 +4,8 @@ use bitcoin::{
 };
 
 use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE},
+    constants::{BRIDGE_V1_SUBPROTOCOL_ID, COOPERATIVE_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    cooperative::CooperativeInfo,
     test_utils::TEST_MAGIC_BYTES,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
@@ -65,6 +66,58 @@ pub fn create_test_withdrawal_fulfillment_tx(
             TxOut {
                 value: Amount::from_sat(withdrawal_info.withdrawal_amount.to_sat()),
                 script_pubkey: withdrawal_info.withdrawal_destination.clone(),
+            },
+        ],
+    }
+}
+
+/// Creates a cooperative transaction for testing purposes.
+///
+/// This function constructs a Bitcoin transaction that follows the full SPS-50 specification
+/// for cooperative transactions. The transaction contains:
+/// - Input: A dummy input spending from a previous output
+/// - Output 0: OP_RETURN with full SPS-50 format: MAGIC + SUBPROTOCOL_ID + TX_TYPE + AUX_DATA
+/// - Output 1: The actual withdrawal payment to the recipient address
+///
+/// The transaction is fully compatible with the SPS-50 parser and can be parsed by `ParseConfig`.
+///
+/// # Returns
+///
+/// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
+pub fn create_test_cooperative_tx(cooperative_info: &CooperativeInfo) -> Transaction {
+    // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+    let mut tagged_payload = Vec::new();
+    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
+    tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID
+    tagged_payload.push(COOPERATIVE_TX_TYPE); // 1 byte transaction type
+
+    // Auxiliary data: [DEPOSIT_IDX]
+    tagged_payload.extend_from_slice(&cooperative_info.deposit_idx.to_be_bytes()); // 4 bytes
+
+    // Create OP_RETURN script with the tagged payload
+    let op_return_script = ScriptBuf::new_op_return(
+        PushBytesBuf::try_from(tagged_payload).expect("Tagged payload should fit in push bytes"),
+    );
+
+    Transaction {
+        version: Version(2),
+        lock_time: LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: cooperative_info.deposit_utxo.0,
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::from_slice(&[vec![0u8; 64]]), // Dummy witness
+        }],
+        output: vec![
+            // OP_RETURN output with SPS-50 tagged payload
+            TxOut {
+                value: Amount::from_sat(0),
+                script_pubkey: op_return_script,
+            },
+            // Withdrawal fulfillment output
+            TxOut {
+                value: Amount::from_sat(0),
+                script_pubkey: cooperative_info.withdrawal_destination.clone(),
             },
         ],
     }

@@ -14,7 +14,7 @@ use strata_bridge_types::OperatorIdx;
 use strata_primitives::{
     L1BlockCommitment,
     buf::Buf32,
-    l1::{BitcoinBlockHeight, BitcoinTxid, L1BlockId},
+    l1::{BitcoinBlockHeight, BitcoinOutPoint, BitcoinTxid, L1BlockId},
     sorted_vec::SortedVec,
 };
 
@@ -202,6 +202,11 @@ impl AssignmentEntry {
     /// Returns the deposit txid associated with this assignment.
     pub fn deposit_txid(&self) -> BitcoinTxid {
         self.deposit_entry.output().outpoint().txid.into()
+    }
+
+    /// Returns the deposit utxo associated with this assignment.
+    pub fn deposit_utxo(&self) -> BitcoinOutPoint {
+        (*self.deposit_entry.output().outpoint()).into()
     }
 
     /// Returns a reference to the withdrawal command.

@@ -5,7 +5,7 @@ use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, BitcoinTxid};
 
 use crate::{
-    constants::WITHDRAWAL_TX_TYPE, errors::WithdrawalParseError,
+    constants::WITHDRAWAL_TX_TYPE, errors::CooperativeParseError,
     withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
 };
 
@@ -89,15 +89,15 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// - Any of the metadata fields cannot be parsed correctly
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
-) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
+) -> Result<WithdrawalFulfillmentInfo, CooperativeParseError> {
     if tx.tag().tx_type() != WITHDRAWAL_TX_TYPE {
-        return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
+        return Err(CooperativeParseError::InvalidTxType(tx.tag().tx_type()));
     }
 
     let withdrawal_auxdata = tx.tag().aux_data();
 
     if withdrawal_auxdata.len() != WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN {
-        return Err(WithdrawalParseError::InvalidAuxiliaryData(
+        return Err(CooperativeParseError::InvalidAuxiliaryData(
             withdrawal_auxdata.len(),
         ));
     }
@@ -106,7 +106,7 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
         .tx()
         .output
         .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
-        .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
+        .ok_or(CooperativeParseError::MissingWithdrawalOutput)?;
     let mut operator_idx_bytes = [0u8; OPERATOR_IDX_SIZE];
     operator_idx_bytes.copy_from_slice(
         &withdrawal_auxdata[OPERATOR_IDX_OFFSET..OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE],
@@ -203,8 +203,8 @@ mod tests {
 
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, WithdrawalParseError::InvalidTxType { .. }));
-        if let WithdrawalParseError::InvalidTxType(tx_type) = err {
+        assert!(matches!(err, CooperativeParseError::InvalidTxType { .. }));
+        if let CooperativeParseError::InvalidTxType(tx_type) = err {
             assert_eq!(tx_type, tx_input.tag().tx_type());
         }
     }
@@ -228,7 +228,7 @@ mod tests {
         let err = parse_withdrawal_fulfillment_tx(&tx_input_ref).unwrap_err();
         assert!(matches!(
             err,
-            WithdrawalParseError::MissingUserFulfillmentOutput
+            CooperativeParseError::MissingWithdrawalOutput
         ))
     }
 
@@ -250,9 +250,9 @@ mod tests {
 
         assert!(matches!(
             err,
-            WithdrawalParseError::InvalidAuxiliaryData { .. }
+            CooperativeParseError::InvalidAuxiliaryData { .. }
         ));
-        if let WithdrawalParseError::InvalidAuxiliaryData(len) = err {
+        if let CooperativeParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1);
         }
 
@@ -266,9 +266,9 @@ mod tests {
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
         assert!(matches!(
             err,
-            WithdrawalParseError::InvalidAuxiliaryData { .. }
+            CooperativeParseError::InvalidAuxiliaryData { .. }
         ));
-        if let WithdrawalParseError::InvalidAuxiliaryData(len) = err {
+        if let CooperativeParseError::InvalidAuxiliaryData(len) = err {
             assert_eq!(len, WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1);
         }
     }

@@ -4,7 +4,8 @@ use strata_l1_txfmt::TxType;
 use thiserror::Error;
 
 use crate::{
-    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    constants::{COOPERATIVE_TX_TYPE, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    cooperative::COOPERATIVE_TX_AUX_DATA_LEN,
     deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
     withdrawal_fulfillment::WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN,
 };
@@ -94,4 +95,26 @@ pub enum WithdrawalParseError {
 
     #[error("Transaction is missing output that fulfilled user withdrawal request")]
     MissingUserFulfillmentOutput,
+}
+
+/// Errors that can occur when parsing cooperative transactions.
+///
+/// When these parsing errors occur, they are logged and the transaction is skipped.
+/// No further processing is performed on transactions that fail to parse.
+#[derive(Debug, Error)]
+pub enum CooperativeParseError {
+    /// The auxiliary data in the withdrawal fulfillment transaction doesn't have correct length.
+    #[error("Invalid auxiliary data: expected {COOPERATIVE_TX_AUX_DATA_LEN} bytes, got {0} bytes")]
+    InvalidAuxiliaryData(usize),
+
+    /// The transaction type byte in the tag does not match the expected withdrawal fulfillment
+    /// transaction type.
+    #[error("Invalid transaction type: expected type to be {COOPERATIVE_TX_TYPE}, got {0}")]
+    InvalidTxType(TxType),
+
+    #[error("Transaction is missing bridge input")]
+    MissingBridgeInput,
+
+    #[error("Transaction is missing output that fulfilled user withdrawal request")]
+    MissingWithdrawalOutput,
 }

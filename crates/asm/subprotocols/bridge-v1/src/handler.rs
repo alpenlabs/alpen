@@ -44,5 +44,9 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
+        ParsedTx::Cooperative(info) => {
+            state.process_cooperative_tx(&info)?;
+            Ok(())
+        }
     }
 }

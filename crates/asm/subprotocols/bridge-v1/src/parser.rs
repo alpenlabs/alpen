@@ -1,7 +1,8 @@
 use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
 use strata_asm_txs_bridge_v1::{
-    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    constants::{COOPERATIVE_TX_TYPE, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    cooperative::{CooperativeInfo, parse_cooperative_tx},
     deposit::{DepositInfo, parse_deposit_tx},
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, parse_withdrawal_fulfillment_tx},
 };
@@ -30,6 +31,8 @@ pub(crate) enum ParsedTx<'t> {
     Deposit(ParsedDepositTx<'t>),
     /// A withdrawal fulfillment transaction that releases Bitcoin funds from the bridge
     WithdrawalFulfillment(ParsedWithdrawalFulfillmentTx<'t>),
+    /// A cooperative transaction where operators jointly fulfill a withdrawal request.
+    Cooperative(CooperativeInfo),
 }
 
 /// Parses a transaction into a structured format based on its type.
@@ -64,6 +67,10 @@ pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, Bridg
             let info = parse_withdrawal_fulfillment_tx(tx)?;
             let parsed_tx = ParsedWithdrawalFulfillmentTx { tx: tx.tx(), info };
             Ok(ParsedTx::WithdrawalFulfillment(parsed_tx))
+        }
+        COOPERATIVE_TX_TYPE => {
+            let info = parse_cooperative_tx(tx)?;
+            Ok(ParsedTx::Cooperative(info))
         }
         unsupported_type => Err(BridgeSubprotocolError::UnsupportedTxType(unsupported_type)),
     }

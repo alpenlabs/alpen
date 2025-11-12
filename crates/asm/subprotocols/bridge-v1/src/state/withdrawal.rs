@@ -140,7 +140,7 @@ pub struct OperatorClaimUnlock {
 
 impl OperatorClaimUnlock {
     pub fn to_export_entry(&self) -> ExportEntry {
-        let payload = borsh::to_vec(&self).expect("Failed to serialize WithdrawalProcessedInfo");
+        let payload = borsh::to_vec(&self).expect("Failed to serialize OperatorClaimUnlock");
         ExportEntry::new(self.deposit_idx, payload)
     }
 }

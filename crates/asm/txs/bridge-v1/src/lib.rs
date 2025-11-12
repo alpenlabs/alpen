@@ -7,6 +7,7 @@
 //! Other components must be compatible with the transaction definitions defined here.
 
 pub mod constants;
+pub mod cooperative;
 pub mod deposit;
 pub mod errors;
 pub mod withdrawal_fulfillment;

@@ -2,11 +2,12 @@ use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
+    CooperativeParseError, DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch,
+    WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
-use strata_primitives::l1::{BitcoinAmount, BitcoinTxid};
+use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint, BitcoinTxid};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -22,6 +23,12 @@ pub enum BridgeSubprotocolError {
 
     #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxProcess(#[from] WithdrawalValidationError),
+
+    #[error("failed to parse cooperative withdrawal tx")]
+    CooperativeTxParse(#[from] CooperativeParseError),
+
+    #[error("failed to process cooperative withdrawal tx")]
+    CooperativeTxProcess(#[from] CooperativeValidationError),
 
     #[error("unsupported tx type {0}")]
     UnsupportedTxType(TxType),
@@ -77,6 +84,25 @@ pub enum WithdrawalValidationError {
     /// Withdrawal amount doesn't match assignment amount
     #[error("Withdrawal amount mismatch {0}")]
     AmountMismatch(Mismatch<BitcoinAmount>),
+
+    /// Withdrawal destination doesn't match assignment destination
+    #[error("Withdrawal destination mismatch {0}")]
+    DestinationMismatch(Mismatch<ScriptBuf>),
+}
+
+/// Errors that can occur when validating withdrawal fulfillment transactions.
+///
+/// When these validation errors occur, they are logged and the transaction is skipped.
+/// No further processing is performed on transactions that fail to validate.
+#[derive(Debug, Error)]
+pub enum CooperativeValidationError {
+    /// No assignment found for the deposit
+    #[error("No assignment found for deposit index {deposit_idx}")]
+    NoAssignmentFound { deposit_idx: u32 },
+
+    /// Deposit utxo in withdrawal doesn't match the actual deposit
+    #[error("Deposit utxo mismatch {0}")]
+    DepositUtxoMismatch(Mismatch<BitcoinOutPoint>),
 
     /// Withdrawal destination doesn't match assignment destination
     #[error("Withdrawal destination mismatch {0}")]

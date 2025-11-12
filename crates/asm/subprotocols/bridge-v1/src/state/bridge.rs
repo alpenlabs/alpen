@@ -1,6 +1,7 @@
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_bridge_v1::{
+    cooperative::CooperativeInfo,
     deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
     errors::Mismatch,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
@@ -8,6 +9,7 @@ use strata_asm_txs_bridge_v1::{
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
+    CooperativeValidationError,
     errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::AssignmentTable,
@@ -331,6 +333,63 @@ impl BridgeV1State {
         Ok(())
     }
 
+    /// Validates the parsed cooperative withdrawal information against assignment information.
+    ///
+    /// This function takes already parsed cooperative withdrawal information and validates it
+    /// against the corresponding assignment entry. It checks that:
+    /// - An assignment exists for the withdrawal's deposit
+    /// - The deposit UTXO being spent matches the assigned deposit UTXO
+    /// - The withdrawal destination matches the assignment specifications
+    ///
+    /// # Parameters
+    ///
+    /// - `cooperative_info` - Parsed cooperative withdrawal information
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` - If the withdrawal is valid according to assignment information
+    /// - `Err(CooperativeValidationError)` - If validation fails for any reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - No assignment exists for the referenced deposit
+    /// - The withdrawal specifications don't match the assignment
+    fn validate_cooperative(
+        &self,
+        cooperative_info: &CooperativeInfo,
+    ) -> Result<(), CooperativeValidationError> {
+        let deposit_idx = cooperative_info.deposit_idx;
+
+        // Check if an assignment exists for this deposit
+        let assignment = self
+            .assignments
+            .get_assignment(deposit_idx)
+            .ok_or(CooperativeValidationError::NoAssignmentFound { deposit_idx })?;
+
+        // Validate that the deposit utxo matches the assignment
+        let expected_utxo = assignment.deposit_utxo();
+        let actual_utxo = cooperative_info.deposit_utxo;
+        if expected_utxo != actual_utxo {
+            return Err(CooperativeValidationError::DepositUtxoMismatch(Mismatch {
+                expected: expected_utxo,
+                got: actual_utxo,
+            }));
+        }
+
+        // Validate withdrawal destination against assignment command
+        let expected_destination = assignment.withdrawal_command().destination().to_script();
+        let actual_destination = cooperative_info.withdrawal_destination.clone();
+        if expected_destination != actual_destination {
+            return Err(CooperativeValidationError::DestinationMismatch(Mismatch {
+                expected: expected_destination,
+                got: actual_destination,
+            }));
+        }
+
+        Ok(())
+    }
+
     /// Processes a withdrawal fulfillment transaction by validating it, and removing the
     /// assignment from AssignmentTable.
     ///
@@ -378,6 +437,45 @@ impl BridgeV1State {
             deposit_idx: removed_assignment.deposit_idx(),
             operator_idx: withdrawal_info.operator_idx,
         })
+    }
+
+    /// Processes a cooperative withdrawal transaction by validating it, and removing the
+    /// assignment from AssignmentTable.
+    ///
+    /// This function takes already parsed cooperative withdrawal transaction information, validates
+    /// it against the current state using the assignment table, removes the assignment entry to
+    /// mark the withdrawal as fulfilled.
+    ///
+    /// # Parameters
+    ///
+    /// - `tx` - The cooperative withdrawal transaction
+    /// - `cooperative_info` - Parsed cooperative withdrawal information
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` - The processed cooperative withdrawal information if transaction passes
+    ///   validation
+    /// - `Err(CooperativeValidationError)` - If validation fails for any reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - No assignment exists for the referenced deposit
+    /// - The withdrawal specifications don't match the assignment
+    /// - The deposit referenced in the withdrawal doesn't exist
+    pub fn process_cooperative_tx(
+        &mut self,
+        cooperative_info: &CooperativeInfo,
+    ) -> Result<(), CooperativeValidationError> {
+        self.validate_cooperative(cooperative_info)?;
+
+        // Remove the assignment from the table to mark withdrawal as fulfilled
+        // Safe to unwrap since validate_withdrawal ensures the assignment exists
+        self.assignments
+            .remove_assignment(cooperative_info.deposit_idx)
+            .expect("Assignment must exist after successful validation");
+
+        Ok(())
     }
 }
 
@@ -526,6 +624,27 @@ mod tests {
             deposit_txid: assignment.deposit_txid(),
             withdrawal_destination: assignment.withdrawal_command().destination().to_script(),
             withdrawal_amount: assignment.withdrawal_command().net_amount(),
+        }
+    }
+
+    /// Helper function to create cooperative info that matches an existing assignment.
+    ///
+    /// Extracts all the necessary information from an assignment entry to create
+    /// a [`CooperativeInfo`] struct that would pass validation. This is used in tests
+    /// to create valid withdrawal fulfillment transactions.
+    ///
+    /// # Parameters
+    ///
+    /// - `assignment` - The assignment entry to extract information from
+    ///
+    /// # Returns
+    ///
+    /// A [`CooperativeInfo`] struct with matching operator, deposit, and withdrawal details
+    fn create_cooperative_info_from_assignment(assignment: &AssignmentEntry) -> CooperativeInfo {
+        CooperativeInfo {
+            deposit_idx: assignment.deposit_idx(),
+            deposit_utxo: assignment.deposit_utxo(),
+            withdrawal_destination: assignment.withdrawal_command().destination().to_script(),
         }
     }
 
@@ -848,6 +967,110 @@ mod tests {
         ));
         if let WithdrawalValidationError::NoAssignmentFound { deposit_idx } = err {
             assert_eq!(deposit_idx, withdrawal_info.deposit_idx);
+        }
+    }
+
+    /// Test successful cooperative withdrawal transaction processing.
+    ///
+    /// Verifies that valid cooperative withdrawal transactions that match their
+    /// corresponding assignments are processed successfully and result in assignment removal.
+    #[test]
+    fn test_process_cooperative_tx_success() {
+        let (mut bridge_state, privkeys) = create_test_state();
+
+        let count = 3;
+        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+
+        for _ in 0..count {
+            let assignment = bridge_state.assignments().assignments().first().unwrap();
+            let info = create_cooperative_info_from_assignment(assignment);
+            let res = bridge_state.process_cooperative_tx(&info);
+            assert!(res.is_ok());
+        }
+    }
+
+    /// Test cooperative withdrawal rejection due to deposit utxo mismatch.
+    ///
+    /// Verifies that cooperative withdrawal transactions are rejected when the
+    /// referenced deposit UTXO doesn't match the assignment.
+    #[test]
+    fn test_process_cooperative_tx_deposit_utxo_mismatch() {
+        let (mut bridge_state, privkeys) = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+
+        let count = 3;
+        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+
+        let assignment = bridge_state.assignments().assignments().first().unwrap();
+        let mut info = create_cooperative_info_from_assignment(assignment);
+
+        let correct_deposit_utxo = info.deposit_utxo;
+        info.deposit_utxo = arb.generate();
+        let err = bridge_state.process_cooperative_tx(&info).unwrap_err();
+
+        assert!(matches!(
+            err,
+            CooperativeValidationError::DepositUtxoMismatch(_)
+        ));
+        if let CooperativeValidationError::DepositUtxoMismatch(mismatch) = err {
+            assert_eq!(mismatch.expected, correct_deposit_utxo);
+            assert_eq!(mismatch.got, info.deposit_utxo);
+        }
+    }
+
+    /// Test cooperative withdrawal rejection due to destination mismatch.
+    ///
+    /// Verifies that withdrawal fulfillment transactions are rejected when the
+    /// withdrawal destination doesn't match the destination in the assignment.
+    #[test]
+    fn test_process_cooperative_tx_destination_mismatch() {
+        let (mut bridge_state, privkeys) = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+
+        let count = 3;
+        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+
+        let assignment = bridge_state.assignments().assignments().first().unwrap();
+        let mut info = create_cooperative_info_from_assignment(assignment);
+
+        let correct_withdrawal_destination = info.withdrawal_destination.clone();
+        info.withdrawal_destination = arb.generate::<Descriptor>().to_script();
+        let err = bridge_state.process_cooperative_tx(&info).unwrap_err();
+
+        assert!(matches!(
+            err,
+            CooperativeValidationError::DestinationMismatch(_)
+        ));
+        if let CooperativeValidationError::DestinationMismatch(mismatch) = err {
+            assert_eq!(mismatch.expected, correct_withdrawal_destination);
+            assert_eq!(mismatch.got, info.withdrawal_destination);
+        }
+    }
+
+    /// Test cooperative withdrawal rejection when no assignment exists.
+    ///
+    /// Verifies that cooperative withdrawal transactions are rejected when
+    /// referencing a deposit index that doesn't have a corresponding assignment.
+    #[test]
+    fn test_process_cooperative_tx_no_assignment_found() {
+        let (mut bridge_state, privkeys) = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+
+        let count = 3;
+        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+
+        let assignment = bridge_state.assignments().assignments().first().unwrap();
+        let mut info = create_cooperative_info_from_assignment(assignment);
+        info.deposit_idx = arb.generate();
+
+        let err = bridge_state.process_cooperative_tx(&info).unwrap_err();
+
+        assert!(matches!(
+            err,
+            CooperativeValidationError::NoAssignmentFound { .. }
+        ));
+        if let CooperativeValidationError::NoAssignmentFound { deposit_idx } = err {
+            assert_eq!(deposit_idx, info.deposit_idx);
         }
     }
 }
