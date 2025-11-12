@@ -85,31 +85,36 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // TODO: get feedbacks from Trey if this field can be unused in Eth context
         _inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
-        // Step 1: Prepare witness database from partial state
-        let db = {
-            let trie_db = pre_state.prepare_witness_db(exec_payload.header_intrinsics());
-            WrapDatabaseRef(trie_db)
-        };
-
-        // Step 2: Create block executor
-        let block_executor = BasicBlockExecutor::new(self.evm_config.clone(), db);
-
-        // Step 3: Build block from exec_payload and recover senders
+        // Step 1: Build block from exec_payload and recover senders
         let block = build_and_recover_block(exec_payload)?;
 
-        // Step 4: Validate header
+        // Step 2: Validate header early (cheap structural consistency check)
+        // This validates header fields follow consensus rules (difficulty, nonce, gas limits, etc.)
+        // Cheaper checks should go before more expensive ones if they're independent
         EthPrimitives::validate_header(
             block.sealed_block().sealed_header(),
             (*self.evm_config.chain_spec()).clone(),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 5: Execute the block
+        // Step 3: Prepare witness database from partial state (expensive operation)
+        let db = {
+            let trie_db = pre_state.prepare_witness_db(exec_payload.header_intrinsics());
+            WrapDatabaseRef(trie_db)
+        };
+
+        // Step 4: Create block executor
+        let block_executor = BasicBlockExecutor::new(self.evm_config.clone(), db);
+
+        // Step 5: Execute the block (expensive operation)
         let execution_output = block_executor
             .execute(&block)
             .map_err(|_| EnvError::InvalidBlock)?;
 
         // Step 6: Validate block post-execution
+        // Note: This validates execution-dependent fields (receipts root, gas used, requests)
+        // and cannot be moved to verify_outputs_against_header as it requires the full block
+        // and execution_output which are not available in that context
         EthPrimitives::validate_block_post_execution(
             &block,
             (*self.evm_config.chain_spec()).clone(),
