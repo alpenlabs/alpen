@@ -112,9 +112,11 @@ pub enum CooperativeParseError {
     #[error("Invalid transaction type: expected type to be {COOPERATIVE_TX_TYPE}, got {0}")]
     InvalidTxType(TxType),
 
+    /// The transaction is missing bridge input.
     #[error("Transaction is missing bridge input")]
     MissingBridgeInput,
 
+    /// The transaction is missing cooperative output that fulfills the user withdrawal request.
     #[error("Transaction is missing output that fulfilled user withdrawal request")]
     MissingWithdrawalOutput,
 }
