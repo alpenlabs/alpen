@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_primitives::{Buf32, EpochCommitment};
 
@@ -75,11 +76,20 @@ impl OLLog {
             LogType::CheckpointAck(CheckpointAckLog::new(epoch)),
         )
     }
+
+    pub fn compute_root(&self) -> [u8; 32] {
+        // TODO: figure out and implement this correctly
+        [0; 32]
+    }
 }
 
-pub fn compute_logs_root(_logs: &[OLLog]) -> Buf32 {
-    // TODO:
-    todo!()
+pub fn compute_logs_root(logs: &[OLLog]) -> Buf32 {
+    let mut hasher = Sha256::new();
+    for log in logs {
+        hasher.update(log.compute_root());
+    }
+    let res: [u8; 32] = hasher.finalize().into();
+    res.into()
 }
 
 /// Structured representation of the type of log.

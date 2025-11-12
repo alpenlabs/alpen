@@ -67,13 +67,6 @@ pub fn execute_block_body<S: StateAccessor>(
             });
         }
         seal_epoch(&ctx, state_accessor, l1update)?;
-
-        // Increment the current epoch now that we've processed the terminal block.
-        let cur_epoch = state_accessor.l1_view().cur_epoch();
-        let new_epoch = cur_epoch
-            .checked_add(1)
-            .ok_or(StfError::EpochOverflow { cur_epoch })?;
-        state_accessor.l1_view_mut().set_cur_epoch(new_epoch);
     }
 
     let new_root = state_accessor.compute_state_root();
@@ -105,6 +98,13 @@ pub fn seal_epoch(
     let blkid = *(l1blk_commt.blkid());
     l1view.set_last_l1_blkid(blkid);
     l1view.set_last_l1_height(l1blk_commt.height());
+
+    // Increment the current epoch now that we've sealed the epoch
+    let cur_epoch = state_accessor.l1_view().cur_epoch();
+    let new_epoch = cur_epoch
+        .checked_add(1)
+        .ok_or(StfError::EpochOverflow { cur_epoch })?;
+    state_accessor.l1_view_mut().set_cur_epoch(new_epoch);
 
     Ok(())
 }

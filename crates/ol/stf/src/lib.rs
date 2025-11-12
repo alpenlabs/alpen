@@ -25,6 +25,9 @@ pub(crate) mod system_handlers;
 pub(crate) mod update;
 mod validation;
 
+#[cfg(test)]
+mod tests;
+
 pub use context::BlockExecContext;
 pub use error::{StfError, StfResult};
 pub use exec_output::ExecOutput;

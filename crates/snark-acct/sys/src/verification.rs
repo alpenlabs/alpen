@@ -170,7 +170,10 @@ pub fn verify_update_outputs_safe<S: StateAccessor>(
 
     // Check if there is sufficient balance.
     if total_sent > cur_balance {
-        return Err(AcctError::InsufficientBalance);
+        return Err(AcctError::InsufficientBalance {
+            requested: total_sent,
+            available: cur_balance,
+        });
     }
     Ok(())
 }

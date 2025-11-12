@@ -24,13 +24,13 @@ pub trait IL1ViewState {
     fn last_l1_blkid(&self) -> &L1BlockId;
 
     /// Sets Last L1 block ID.
-    fn set_last_l1_blkid(&self, blkid: L1BlockId);
+    fn set_last_l1_blkid(&mut self, blkid: L1BlockId);
 
     /// Last L1 block height.
     fn last_l1_height(&self) -> L1Height;
 
     /// Sets Last L1 block height
-    fn set_last_l1_height(&self, height: L1Height);
+    fn set_last_l1_height(&mut self, height: L1Height);
 
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
     /// block height and other fields.

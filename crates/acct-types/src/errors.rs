@@ -1,3 +1,4 @@
+use strata_btc_types::BitcoinAmount;
 use strata_identifiers::{AccountId, AccountTypeId, RawAccountTypeId};
 use thiserror::Error;
 
@@ -39,8 +40,11 @@ pub enum AcctError {
         got: u64,
     },
 
-    #[error("Insufficient balance in account")]
-    InsufficientBalance,
+    #[error("Insufficient balance in account. Requested {requested}, available {available} ")]
+    InsufficientBalance {
+        requested: BitcoinAmount,
+        available: BitcoinAmount,
+    },
 
     #[error("Message proof invalid for account {account_id:?} at message index {msg_idx}")]
     InvalidMessageProof { account_id: AccountId, msg_idx: u64 },
