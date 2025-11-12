@@ -17,7 +17,7 @@ use zkaleido::{ProofReceiptWithMetadata, ProofType, PublicValues, ZkVmHost, ZkVm
 
 use crate::{
     errors::ProvingTaskError,
-    operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator, ProvingOp},
+    operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator},
 };
 
 // Note: ProgramId implementation for ProofContext is in strata-paas/src/primitives.rs

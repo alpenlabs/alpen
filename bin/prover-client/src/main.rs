@@ -31,11 +31,7 @@ mod db;
 mod errors;
 mod operators;
 mod paas_integration;
-mod prover_manager;
-mod retry_policy;
 mod rpc_server;
-mod status;
-mod task_tracker;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

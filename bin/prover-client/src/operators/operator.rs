@@ -2,23 +2,14 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use jsonrpsee::http_client::HttpClient;
-use strata_db_store_sled::prover::ProofDBSled;
 use strata_params::RollupParams;
-use strata_primitives::proof::ProofContext;
-use strata_rpc_types::ProofKey;
-use strata_zkvm_hosts::{resolve_host, ZkVmHostInstance};
 
-use super::{
-    checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator, ProvingOp,
-};
-use crate::errors::ProvingTaskError;
+use super::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator};
 
 /// A struct that manages various proof operators, each corresponding to a distinct proof type.
 ///
-/// The `ProofOperator` provides initialization, accessors, and methods for orchestrating
-/// proof generation and processing. It is designed to encapsulate multiple operators
-/// implementing the `ProvingOp` trait while handling the trait's lack of object safety
-/// by organizing operations through this struct.
+/// The `ProofOperator` provides initialization and accessors for the underlying proof operators.
+/// Actual proof generation is now handled by the PaaS (Prover-as-a-Service) framework.
 #[derive(Debug, Clone)]
 pub(crate) struct ProofOperator {
     evm_ee_operator: EvmEeOperator,
@@ -64,44 +55,6 @@ impl ProofOperator {
         );
 
         ProofOperator::new(evm_ee_operator, cl_stf_operator, checkpoint_operator)
-    }
-
-    /// Asynchronously generates a proof using the specified operator and host environment.
-    pub(crate) async fn prove(
-        operator: &impl ProvingOp,
-        proof_key: &ProofKey,
-        db: &ProofDBSled,
-        host: ZkVmHostInstance,
-    ) -> Result<(), ProvingTaskError> {
-        match host {
-            ZkVmHostInstance::Native(host) => operator.prove(proof_key, db, &host).await,
-
-            #[cfg(feature = "sp1")]
-            ZkVmHostInstance::SP1(host) => operator.prove(proof_key, db, host).await,
-
-            _ => unreachable!("Unexpected host variant"),
-        }
-    }
-
-    /// Processes a proof generation task by delegating to the appropriate proof operator.
-    pub(crate) async fn process_proof(
-        &self,
-        proof_key: &ProofKey,
-        db: &ProofDBSled,
-    ) -> Result<(), ProvingTaskError> {
-        let host = resolve_host(proof_key);
-
-        match proof_key.context() {
-            ProofContext::EvmEeStf(..) => {
-                Self::prove(&self.evm_ee_operator, proof_key, db, host).await
-            }
-            ProofContext::ClStf(..) => {
-                Self::prove(&self.cl_stf_operator, proof_key, db, host).await
-            }
-            ProofContext::Checkpoint(..) => {
-                Self::prove(&self.checkpoint_operator, proof_key, db, host).await
-            }
-        }
     }
 
     /// Returns a reference to the [`EvmEeOperator`].
