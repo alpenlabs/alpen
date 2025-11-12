@@ -131,7 +131,7 @@ impl OLBlockHeader {
 
     pub fn compute_root(&self) -> Buf32 {
         // TODO: use ssz
-        todo!()
+        Buf32::zero()
     }
 }
 
@@ -166,7 +166,8 @@ impl OLBlockBody {
     }
 
     pub fn compute_root(&self) -> Buf32 {
-        todo!()
+        // TODO: compute
+        Buf32::zero()
     }
 }
 

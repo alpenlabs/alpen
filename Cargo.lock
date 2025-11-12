@@ -14245,6 +14245,7 @@ name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
  "int-enum",
+ "sha2 0.10.9",
  "strata-acct-types",
  "strata-asm-common",
  "strata-primitives",
@@ -14284,13 +14285,16 @@ dependencies = [
 name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-btc-types",
  "strata-crypto",
  "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-snark-acct-sys",
  "strata-snark-acct-types",

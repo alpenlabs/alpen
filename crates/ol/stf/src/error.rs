@@ -43,7 +43,7 @@ pub enum StfError {
     InvalidAsmLog,
 
     #[error("Account error: {0}")]
-    AccountError(#[from] AcctError),
+    Account(#[from] AcctError),
 
     #[error("Unsupported transaction type")]
     UnsupportedTransaction,
@@ -58,7 +58,7 @@ pub enum StfError {
     UnsupportedTransferTo(AccountId),
 
     #[error("codec error: {0}")]
-    CodecError(#[from] CodecError),
+    Codec(#[from] CodecError),
 
     #[error("Preseal root mismatch. Expected {expected}, got {got}")]
     PresealRootMismatch { expected: Buf32, got: Buf32 },

@@ -2,7 +2,7 @@ use strata_acct_types::{
     AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64, RawAccountTypeId,
 };
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{MessageEntry, MessageEntryProof};
+use strata_snark_acct_types::MessageEntry;
 
 use crate::coin::Coin;
 
@@ -86,13 +86,6 @@ pub trait ISnarkAccountState: Sized {
     /// Gets the current inbox MMR state, which we can use to check proofs
     /// against the state.
     fn inbox_mmr(&self) -> &Mmr64;
-
-    /// Gets the proof of the given [`MessageEntry`] if exists.
-    fn get_message_proof(
-        &self,
-        msg: &MessageEntry,
-        msg_idx: u64,
-    ) -> AcctResult<Option<MessageEntryProof>>;
 
     /// Inserts message data into the inbox.  Performs no other operations.
     ///
