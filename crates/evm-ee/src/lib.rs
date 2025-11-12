@@ -4,9 +4,8 @@
 //! for Ethereum Virtual Machine (EVM) block execution, enabling EVM blocks
 //! to be executed and proven within the Alpen rollup system.
 
-pub mod execution;
-pub mod types;
-
+mod execution;
+mod types;
 mod utils;
 
 pub use execution::EvmExecutionEnvironment;

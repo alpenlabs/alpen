@@ -3,8 +3,10 @@
 //! This module defines the types needed for EVM block execution within the
 //! ExecutionEnvironment trait framework.
 
-use alloy_consensus::Header;
-use alloy_rlp;
+use std::collections::BTreeMap;
+
+use alloy_consensus::{BlockHeader, Header};
+use itertools::Itertools;
 use reth_primitives::TransactionSigned;
 use reth_primitives_traits::SealedHeader;
 use reth_trie::HashedPostState;
@@ -78,20 +80,35 @@ fn decode_bytes_with_length(dec: &mut impl strata_codec::Decoder) -> Result<Vec<
 pub struct EvmPartialState {
     /// The sparse Merkle Patricia Trie state from RSP
     ethereum_state: EthereumState,
-    /// Contract bytecodes needed for execution
-    /// FIXME: ensure bytecodes and ancestor_header are right to be placed in this struct
-    bytecodes: Vec<Bytecode>,
-    /// Ancestor block headers for BLOCKHASH opcode support
-    ancestor_headers: Vec<Header>,
+    /// Contract bytecodes indexed by their hash for direct lookup during execution.
+    /// BTreeMap is used (instead of HashMap) to ensure deterministic serialization order in Codec.
+    bytecodes: BTreeMap<B256, Bytecode>,
+    /// Ancestor block headers indexed by block number for BLOCKHASH opcode support
+    ancestor_headers: BTreeMap<u64, Header>,
 }
 
 impl EvmPartialState {
     /// Creates a new EvmPartialState from an EthereumState with witness data.
+    ///
+    /// The bytecodes and ancestor_headers are converted from vectors to BTrees
+    /// for efficient lookup during block execution.
     pub fn new(
         ethereum_state: EthereumState,
         bytecodes: Vec<Bytecode>,
         ancestor_headers: Vec<Header>,
     ) -> Self {
+        // Index bytecodes by their hash for O(log n) lookup
+        let bytecodes = bytecodes
+            .into_iter()
+            .map(|code| (code.hash_slow(), code))
+            .collect();
+
+        // Index ancestor headers by block number for O(log n) lookup by BLOCKHASH opcode
+        let ancestor_headers = ancestor_headers
+            .into_iter()
+            .map(|header| (header.number, header))
+            .collect();
+
         Self {
             ethereum_state,
             bytecodes,
@@ -109,13 +126,13 @@ impl EvmPartialState {
         &mut self.ethereum_state
     }
 
-    /// Gets a reference to the bytecodes.
-    pub fn bytecodes(&self) -> &[Bytecode] {
+    /// Gets a reference to the bytecodes map.
+    pub fn bytecodes(&self) -> &BTreeMap<B256, Bytecode> {
         &self.bytecodes
     }
 
-    /// Gets a reference to the ancestor headers.
-    pub fn ancestor_headers(&self) -> &[Header] {
+    /// Gets a reference to the ancestor headers map.
+    pub fn ancestor_headers(&self) -> &BTreeMap<u64, Header> {
         &self.ancestor_headers
     }
 
@@ -123,6 +140,9 @@ impl EvmPartialState {
     ///
     /// This builds the necessary maps (block_hashes, bytecode_by_hash) from the witness data
     /// and creates a TrieDB ready for EVM execution.
+    ///
+    /// # Panics
+    /// Panics if the header chain is invalid (block numbers or parent hashes don't match).
     pub fn prepare_witness_db<'a>(
         &'a self,
         current_header: &Header,
@@ -132,24 +152,44 @@ impl EvmPartialState {
         let sealed_headers: Vec<SealedHeader> = std::iter::once(current_sealed)
             .chain(
                 self.ancestor_headers
-                    .iter()
+                    .values()
                     .map(|h| SealedHeader::seal_slow(h.clone())),
             )
             .collect();
 
-        // Build block_hashes from sealed headers for BLOCKHASH opcode support
+        // Verify and build block_hashes from sealed headers for BLOCKHASH opcode support
+        // This validates the header chain integrity by checking that each parent's computed hash
+        // matches the child's parent_hash field
         let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
-        for i in 0..sealed_headers.len().saturating_sub(1) {
-            let child_header = &sealed_headers[i];
-            let parent_header = &sealed_headers[i + 1];
-            block_hashes.insert(parent_header.number, child_header.parent_hash);
+        for (child_header, parent_header) in sealed_headers.iter().tuple_windows() {
+            // Validate block number continuity
+            assert_eq!(
+                parent_header.number() + 1,
+                child_header.number(),
+                "Invalid header block number: expected {}, got {}",
+                parent_header.number() + 1,
+                child_header.number()
+            );
+
+            // Validate parent hash matches
+            let parent_header_hash = parent_header.hash();
+            assert_eq!(
+                parent_header_hash,
+                child_header.parent_hash(),
+                "Invalid header parent hash: expected {}, got {}",
+                parent_header_hash,
+                child_header.parent_hash()
+            );
+
+            block_hashes.insert(parent_header.number(), child_header.parent_hash());
         }
 
         // Build bytecode_by_hash from bytecodes for contract execution
+        // Since bytecodes are already indexed by hash in the BTreeMap, we can iterate directly
         let bytecode_by_hash: HashMap<B256, &revm::state::Bytecode> = self
             .bytecodes
             .iter()
-            .map(|code| (code.hash_slow(), code))
+            .map(|(hash, code)| (*hash, code))
             .collect();
 
         // Create and return TrieDB
@@ -193,15 +233,15 @@ impl Codec for EvmPartialState {
 
         // Encode bytecodes count
         (self.bytecodes.len() as u32).encode(enc)?;
-        // Encode each bytecode as raw bytes
-        for bytecode in &self.bytecodes {
+        // Encode each bytecode as raw bytes (iterate over BTreeMap values)
+        for bytecode in self.bytecodes.values() {
             encode_bytes_with_length(&bytecode.original_bytes(), enc)?;
         }
 
         // Encode ancestor headers count
         (self.ancestor_headers.len() as u32).encode(enc)?;
-        // Encode each header using RLP helper (consistent with EvmHeader)
-        for header in &self.ancestor_headers {
+        // Encode each header using RLP helper (iterate over BTreeMap values)
+        for header in self.ancestor_headers.values() {
             encode_rlp_with_length(header, enc)?;
         }
 
@@ -231,11 +271,8 @@ impl Codec for EvmPartialState {
             ancestor_headers.push(decode_rlp_with_length(dec)?);
         }
 
-        Ok(Self {
-            ethereum_state,
-            bytecodes,
-            ancestor_headers,
-        })
+        // Use the constructor which will convert Vecs to BTrees
+        Ok(Self::new(ethereum_state, bytecodes, ancestor_headers))
     }
 }
 

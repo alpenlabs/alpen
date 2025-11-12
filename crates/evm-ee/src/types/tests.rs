@@ -201,10 +201,14 @@ fn test_evm_partial_state_codec_roundtrip() {
     // Verify bytecode hashes match
     let original_hashes: Vec<_> = partial_state
         .bytecodes()
-        .iter()
+        .values()
         .map(|b| b.hash_slow())
         .collect();
-    let decoded_hashes: Vec<_> = decoded.bytecodes().iter().map(|b| b.hash_slow()).collect();
+    let decoded_hashes: Vec<_> = decoded
+        .bytecodes()
+        .values()
+        .map(|b| b.hash_slow())
+        .collect();
     assert_eq!(decoded_hashes, original_hashes);
 
     // Verify ancestor headers match

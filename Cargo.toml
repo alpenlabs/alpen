@@ -396,6 +396,7 @@ hex = { version = "0.4", features = ["serde"] }
 http = "1.0.0"
 hyper = "0.14.25"
 int-enum = "1.2"
+itertools = "0.14"
 jsonrpsee = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
 jsonrpsee-types = { version = "0.26.0" }
