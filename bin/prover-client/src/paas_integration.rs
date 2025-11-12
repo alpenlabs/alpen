@@ -47,6 +47,8 @@ pub(crate) enum ProverInput {
         input: CheckpointProverInput,
         proof_key: ProofKey,
         db: Arc<ProofDBSled>,
+        checkpoint_idx: u64,
+        checkpoint_operator: Arc<CheckpointOperator>,
     },
     ClStf {
         input: ClStfInput,
@@ -101,7 +103,7 @@ impl ZkVmProgram for ProverProgram {
     {
         // Dispatch to the appropriate program's prove method
         match input {
-            ProverInput::Checkpoint { input, proof_key, db } => {
+            ProverInput::Checkpoint { input, proof_key, db, .. } => {
                 let proof = CheckpointProgram::prove(input, host)?;
                 db.put_proof(*proof_key, proof.clone())
                     .map_err(|e| {
@@ -184,14 +186,16 @@ impl InputFetcher<ProofContext> for ProverInputFetcher {
         let proof_key = ProofKey::new(*program, host);
 
         match program {
-            ProofContext::Checkpoint(..) => {
+            ProofContext::Checkpoint(checkpoint_idx) => {
                 let input = self
                     .checkpoint_operator
                     .fetch_input(&proof_key, &self.db)
                     .await
                     .map_err(|e| match e {
                         ProvingTaskError::RpcError(_)
-                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_)) => {
+                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_))
+                        | ProvingTaskError::ProofNotFound(_)
+                        | ProvingTaskError::DependencyNotFound(_) => {
                             PaaSError::TransientFailure(e.to_string())
                         }
                         _ => PaaSError::PermanentFailure(e.to_string()),
@@ -201,6 +205,8 @@ impl InputFetcher<ProofContext> for ProverInputFetcher {
                     input,
                     proof_key,
                     db: self.db.clone(),
+                    checkpoint_idx: *checkpoint_idx,
+                    checkpoint_operator: self.checkpoint_operator.clone(),
                 })
             }
             ProofContext::ClStf(..) => {
@@ -210,7 +216,9 @@ impl InputFetcher<ProofContext> for ProverInputFetcher {
                     .await
                     .map_err(|e| match e {
                         ProvingTaskError::RpcError(_)
-                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_)) => {
+                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_))
+                        | ProvingTaskError::ProofNotFound(_)
+                        | ProvingTaskError::DependencyNotFound(_) => {
                             PaaSError::TransientFailure(e.to_string())
                         }
                         _ => PaaSError::PermanentFailure(e.to_string()),
@@ -229,7 +237,9 @@ impl InputFetcher<ProofContext> for ProverInputFetcher {
                     .await
                     .map_err(|e| match e {
                         ProvingTaskError::RpcError(_)
-                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_)) => {
+                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_))
+                        | ProvingTaskError::ProofNotFound(_)
+                        | ProvingTaskError::DependencyNotFound(_) => {
                             PaaSError::TransientFailure(e.to_string())
                         }
                         _ => PaaSError::PermanentFailure(e.to_string()),
@@ -293,11 +303,9 @@ impl DynamicHostProver {
     }
 
     /// Resolve the host for a given task
-    fn resolve_host(backend: &strata_paas::ZkVmBackend) -> ZkVmHostInstance {
-        // Create a dummy proof key to resolve the host
-        // We just need any proof context since the host is determined by the backend
+    fn resolve_host(program: &ProofContext, backend: &strata_paas::ZkVmBackend) -> ZkVmHostInstance {
         let zkvm = backend_to_zkvm(backend.clone());
-        let proof_key = ProofKey::new(ProofContext::Checkpoint(0), zkvm);
+        let proof_key = ProofKey::new(*program, zkvm);
         strata_zkvm_hosts::resolve_host(&proof_key)
     }
 
@@ -312,11 +320,23 @@ impl DynamicHostProver {
             .fetch_input(&task_id.program)
             .await?;
 
-        // Resolve host based on backend
-        let host = Self::resolve_host(&task_id.backend);
+        // Extract checkpoint info if this is a checkpoint proof
+        let checkpoint_info = if let ProverInput::Checkpoint {
+            checkpoint_idx,
+            checkpoint_operator,
+            ..
+        } = &input
+        {
+            Some((*checkpoint_idx, checkpoint_operator.clone()))
+        } else {
+            None
+        };
 
-        // Prove using the host
-        let proof = match host {
+        // Resolve host based on backend and program
+        let host = Self::resolve_host(&task_id.program, &task_id.backend);
+
+        // Prove using the host (proof is stored internally by ProverProgram::prove)
+        match host {
             ZkVmHostInstance::Native(ref h) => ProverProgram::prove(&input, h),
             #[cfg(feature = "sp1")]
             ZkVmHostInstance::SP1(h) => ProverProgram::prove(&input, h),
@@ -327,8 +347,21 @@ impl DynamicHostProver {
         }
         .map_err(|e| PaaSError::PermanentFailure(format!("Proving failed: {}", e)))?;
 
-        // Store the proof
-        self.proof_store.store_proof(&task_id, proof).await?;
+        // Submit checkpoint proof to CL client if this is a checkpoint
+        if let Some((checkpoint_idx, checkpoint_operator)) = checkpoint_info {
+            let proof_key = ProofKey::new(task_id.program, backend_to_zkvm(task_id.backend));
+            checkpoint_operator
+                .submit_checkpoint_proof(checkpoint_idx, &proof_key, &self.proof_store.db)
+                .await
+                .map_err(|e| {
+                    // Log the error but don't fail the task - the proof is already stored
+                    tracing::warn!(%checkpoint_idx, "Failed to submit checkpoint proof: {}", e);
+                    PaaSError::TransientFailure(format!(
+                        "Checkpoint proof generated but submission failed: {}",
+                        e
+                    ))
+                })?;
+        }
 
         Ok(())
     }

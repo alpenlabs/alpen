@@ -9,13 +9,14 @@ use strata_params::RollupParams;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
-    proof::ProofKey,
+    l2::L2BlockCommitment,
+    proof::{ProofContext, ProofKey},
 };
 use strata_proofimpl_cl_stf::program::ClStfInput;
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::RpcBlockHeader;
 use strata_zkvm_hosts::get_verification_key;
-use tracing::error;
+use tracing::{error, info};
 
 use super::evm_ee::EvmEeOperator;
 use crate::errors::ProvingTaskError;
@@ -42,6 +43,42 @@ impl ClStfOperator {
             evm_ee_operator,
             rollup_params,
         }
+    }
+
+    /// Creates and stores the EvmEeStf proof dependencies for a ClStf proof.
+    ///
+    /// This fetches the L2 blocks in the range to get their exec commitments and creates
+    /// EvmEeStf proof contexts. Returns the EvmEeStf contexts that need to be submitted.
+    pub(crate) async fn create_cl_stf_deps(
+        &self,
+        start_block: L2BlockCommitment,
+        end_block: L2BlockCommitment,
+        db: &ProofDBSled,
+    ) -> Result<Vec<ProofContext>, ProvingTaskError> {
+        info!(?start_block, ?end_block, "Creating EvmEeStf dependencies for ClStf");
+
+        // Check if dependencies already exist
+        let cl_stf_ctx = ProofContext::ClStf(start_block, end_block);
+        if let Some(existing_deps) = db
+            .get_proof_deps(cl_stf_ctx)
+            .map_err(ProvingTaskError::DatabaseError)?
+        {
+            info!("ClStf dependencies already exist, skipping creation");
+            return Ok(existing_deps);
+        }
+
+        // Get exec commitments from the L2 blocks
+        let start_exec = self.get_exec_commitment(*start_block.blkid()).await?;
+        let end_exec = self.get_exec_commitment(*end_block.blkid()).await?;
+
+        // Create EvmEeStf proof context
+        let evm_ee_ctx = ProofContext::EvmEeStf(start_exec, end_exec);
+
+        // Store ClStf dependencies (EvmEeStf)
+        db.put_proof_deps(cl_stf_ctx, vec![evm_ee_ctx])
+            .map_err(ProvingTaskError::DatabaseError)?;
+
+        Ok(vec![evm_ee_ctx])
     }
 
     /// Fetches L2 block header by block ID.
