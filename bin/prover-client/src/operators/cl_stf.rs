@@ -9,30 +9,20 @@ use strata_params::RollupParams;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
-    l2::L2BlockCommitment,
-    proof::{ProofContext, ProofKey},
+    proof::ProofKey,
 };
-use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
+use strata_proofimpl_cl_stf::program::ClStfInput;
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::RpcBlockHeader;
 use strata_zkvm_hosts::get_verification_key;
-use tokio::sync::Mutex;
 use tracing::error;
 
-use super::{evm_ee::EvmEeOperator, ProvingOp};
-use crate::{errors::ProvingTaskError, task_tracker::TaskTracker};
+use super::evm_ee::EvmEeOperator;
+use crate::errors::ProvingTaskError;
 
-/// A struct that implements the [`ProvingOp`] trait for Consensus Layer (CL) State Transition
-/// Function (STF) proof generation.
+/// Operator for Consensus Layer (CL) State Transition Function (STF) proof generation.
 ///
-/// It is responsible for managing the data and tasks required to generate proofs for CL state
-/// transitions. It fetches the necessary inputs for the [`ClStfProgram`] by:
-///
-/// - Utilizing the [`EvmEeOperator`] to create and manage proving tasks for EVM Execution
-///   Environment (EE) STF proofs. The resulting EVM EE STF proof is incorporated as part of the
-///   input for the CL STF proof.
-/// - Interfacing with the CL Client to fetch additional required information for CL state
-///   transition proofs.
+/// Provides access to CL client and methods for fetching data needed for CL STF proofs.
 #[derive(Debug, Clone)]
 pub(crate) struct ClStfOperator {
     pub cl_client: HttpClient,
@@ -41,7 +31,7 @@ pub(crate) struct ClStfOperator {
 }
 
 impl ClStfOperator {
-    /// Creates a new CL operations instance.
+    /// Creates a new CL STF operator.
     pub(crate) fn new(
         cl_client: HttpClient,
         evm_ee_operator: Arc<EvmEeOperator>,
@@ -54,6 +44,7 @@ impl ClStfOperator {
         }
     }
 
+    /// Fetches L2 block header by block ID.
     async fn get_l2_block_header(
         &self,
         blkid: L2BlockId,
@@ -72,7 +63,7 @@ impl ClStfOperator {
         Ok(header)
     }
 
-    /// Retrieves the evm_ee block commitment corresponding to the given L2 block ID
+    /// Retrieves the EVM EE block commitment corresponding to the given L2 block ID.
     pub(crate) async fn get_exec_commitment(
         &self,
         cl_block_id: L2BlockId,
@@ -89,7 +80,7 @@ impl ClStfOperator {
         ))
     }
 
-    /// Retrieves the [`Chainstate`] before the given blocks is applied
+    /// Retrieves the chainstate before the given block is applied.
     pub(crate) async fn get_chainstate_before(
         &self,
         blkid: L2BlockId,
@@ -104,7 +95,7 @@ impl ClStfOperator {
         Ok(chainstate)
     }
 
-    /// Retrieves the [`L2Block`] for the given id
+    /// Retrieves the L2 block for the given block ID.
     pub(crate) async fn get_block(&self, blkid: &L2BlockId) -> Result<L2Block, ProvingTaskError> {
         let raw_witness: Vec<u8> = self
             .cl_client
@@ -115,39 +106,17 @@ impl ClStfOperator {
             borsh::from_slice(&raw_witness).expect("invalid witness");
         Ok(blk)
     }
-}
 
-#[derive(Debug)]
-pub(crate) struct ClStfParams {
-    pub l2_range: (L2BlockCommitment, L2BlockCommitment),
-}
-
-impl ProvingOp for ClStfOperator {
-    type Program = ClStfProgram;
-    type Params = ClStfParams;
-
-    fn construct_proof_ctx(&self, range: &Self::Params) -> Result<ProofContext, ProvingTaskError> {
-        let ClStfParams { l2_range, .. } = range;
-
-        let (start, end) = l2_range;
-        // Do some sanity checks
-        assert!(
-            start.slot() <= end.slot(),
-            "failed to construct CL STF proof context. start_slot: {} > end_slot {}",
-            start.slot(),
-            end.slot()
-        );
-
-        Ok(ProofContext::ClStf(*start, *end))
-    }
-
-    async fn fetch_input(
+    /// Fetches the input required for CL STF proof generation.
+    ///
+    /// This is used by the PaaS integration layer to fetch inputs for proving tasks.
+    pub(crate) async fn fetch_input(
         &self,
         task_id: &ProofKey,
         db: &ProofDBSled,
     ) -> Result<ClStfInput, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
-            ProofContext::ClStf(start, end) => (*start, *end),
+            strata_primitives::proof::ProofContext::ClStf(start, end) => (*start, *end),
             _ => return Err(ProvingTaskError::InvalidInput("CL_STF".to_string())),
         };
 
@@ -205,24 +174,5 @@ impl ProvingOp for ClStfOperator {
             l2_blocks,
             evm_ee_proof_with_vk,
         })
-    }
-
-    async fn create_deps_tasks(
-        &self,
-        params: Self::Params,
-        db: &ProofDBSled,
-        task_tracker: Arc<Mutex<TaskTracker>>,
-    ) -> Result<Vec<ProofKey>, ProvingTaskError> {
-        let ClStfParams { l2_range } = params;
-
-        let el_start_block = self.get_exec_commitment(*l2_range.0.blkid()).await?;
-        let el_end_block = self.get_exec_commitment(*l2_range.1.blkid()).await?;
-
-        let tasks = self
-            .evm_ee_operator
-            .create_task((el_start_block, el_end_block), task_tracker.clone(), db)
-            .await?;
-
-        Ok(tasks)
     }
 }

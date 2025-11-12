@@ -1,36 +1,27 @@
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::{core::client::ClientT, http_client::HttpClient, rpc_params};
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_primitives::{
-    buf::Buf32,
-    evm_exec::EvmEeBlockCommitment,
-    proof::{ProofContext, ProofKey},
-};
-use strata_proofimpl_evm_ee_stf::{
-    primitives::EvmEeProofInput, program::EvmEeProgram, EvmBlockStfInput,
-};
+use strata_primitives::{buf::Buf32, proof::ProofKey};
+use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, EvmBlockStfInput};
 use tracing::error;
 
-use super::ProvingOp;
 use crate::errors::ProvingTaskError;
 
-/// A struct that implements the [`ProvingOp`] trait for EVM Execution Environment (EE) State
-/// Transition Function (STF) proofs.
+/// Operator for EVM Execution Environment (EE) State Transition Function (STF) proof generation.
 ///
-/// It is responsible for interfacing with the `Reth` client and fetching necessary data required by
-/// the [`EvmEeProgram`] for the proof generation.
+/// Provides access to EL client for fetching data needed for EVM EE STF proofs.
 #[derive(Debug, Clone)]
 pub(crate) struct EvmEeOperator {
     el_client: HttpClient,
 }
 
 impl EvmEeOperator {
-    /// Creates a new EL operations instance.
+    /// Creates a new EVM EE operator.
     pub(crate) fn new(el_client: HttpClient) -> Self {
         Self { el_client }
     }
 
-    /// Retrieves the EVM EE [`Header`] for a given block number.
+    /// Fetches EVM EE block header by block hash.
     async fn get_block_header(&self, blkid: Buf32) -> Result<Header, ProvingTaskError> {
         let block: Block = self
             .el_client
@@ -41,7 +32,7 @@ impl EvmEeOperator {
         Ok(block.header)
     }
 
-    /// Retrieves the EVM EE [`Header`] for a given block number.
+    /// Fetches EVM EE block header by block height.
     pub(crate) async fn get_block_header_by_height(
         &self,
         block_num: u64,
@@ -57,27 +48,17 @@ impl EvmEeOperator {
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
         Ok(block.header)
     }
-}
 
-impl ProvingOp for EvmEeOperator {
-    type Program = EvmEeProgram;
-    type Params = (EvmEeBlockCommitment, EvmEeBlockCommitment);
-
-    fn construct_proof_ctx(
-        &self,
-        block_range: &Self::Params,
-    ) -> Result<ProofContext, ProvingTaskError> {
-        let (start_blk, end_blk) = *block_range;
-        Ok(ProofContext::EvmEeStf(start_blk, end_blk))
-    }
-
-    async fn fetch_input(
+    /// Fetches the input required for EVM EE STF proof generation.
+    ///
+    /// This is used by the PaaS integration layer to fetch inputs for proving tasks.
+    pub(crate) async fn fetch_input(
         &self,
         task_id: &ProofKey,
         _db: &ProofDBSled,
     ) -> Result<EvmEeProofInput, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
-            ProofContext::EvmEeStf(start, end) => (*start, *end),
+            strata_primitives::proof::ProofContext::EvmEeStf(start, end) => (*start, *end),
             _ => return Err(ProvingTaskError::InvalidInput("EvmEe".to_string())),
         };
 

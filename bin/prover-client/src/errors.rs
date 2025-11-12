@@ -3,8 +3,6 @@ use strata_primitives::proof::ProofKey;
 use thiserror::Error;
 use zkaleido::ZkVmError;
 
-use crate::status::ProvingTaskStatus;
-
 /// Represents errors that can occur while performing proving tasks.
 ///
 /// This error type encapsulates various issues that may arise during
@@ -37,10 +35,6 @@ pub(crate) enum ProvingTaskError {
     /// Occurs when a requested proof is not found in the database.
     #[error("Proof with ID {0:?} does not exist in DB.")]
     ProofNotFound(ProofKey),
-
-    /// Occurs when a state transition is invalid based on the task's current status.
-    #[error("Invalid status transition: {0:?} -> {1:?}")]
-    InvalidStatusTransition(ProvingTaskStatus, ProvingTaskStatus),
 
     /// Occurs when input to a task is deemed invalid.
     #[error("Invalid input: Expected {0:?}")]
