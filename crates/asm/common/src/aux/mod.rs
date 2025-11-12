@@ -19,16 +19,6 @@
 //!
 //! - **Bitcoin Transactions**: Raw Bitcoin transaction data by txid (for bridge subprotocol
 //!   validation). The provider decodes and indexes transactions by their txid.
-//!
-//! ## Verification
-//!
-//! The [`AuxDataProvider`] performs all verification during construction:
-//! - Decodes all Bitcoin transactions and verifies they match their txids
-//! - Verifies all MMR proofs for manifest leaves
-//! - Indexes verified data for efficient lookup during transaction processing
-//!
-//! This upfront verification ensures all auxiliary data is cryptographically sound
-//! before any subprotocol accesses it.
 mod collector;
 mod data;
 mod errors;

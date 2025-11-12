@@ -16,8 +16,8 @@ use crate::{AsmMerkleProof, Hash32};
 /// External workers fulfill that before the main processing phase.
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxRequests {
-    /// Requested manifest leaf height ranges as (start_height, end_height) inclusive.
-    pub manifest_leaves: Vec<(u64, u64)>,
+    /// Requested manifest leaf height ranges.
+    pub manifest_leaves: Vec<ManifestLeafRange>,
 
     /// [Txid](bitcoin::Txid) of the requested transactions.
     // NOTE: Using Buf32 here instead of Txid because of borsh serialization requirement
@@ -31,7 +31,25 @@ pub struct AuxRequests {
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Manifest leaves with their MMR proofs
-    pub manifest_leaves: Vec<(Hash32, AsmMerkleProof)>,
+    pub manifest_leaves: Vec<ManifestLeafWithProof>,
     /// Raw Bitcoin transaction data (unverified)
     pub bitcoin_txs: Vec<RawBitcoinTx>,
+}
+
+/// Manifest leaf height range (inclusive).
+#[derive(Debug, Clone, Copy, BorshSerialize, BorshDeserialize)]
+pub struct ManifestLeafRange {
+    /// Start height (inclusive)
+    pub start_height: u64,
+    /// End height (inclusive)
+    pub end_height: u64,
+}
+
+/// Manifest leaf with its MMR proof.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct ManifestLeafWithProof {
+    /// The manifest leaf hash
+    pub leaf: Hash32,
+    /// The MMR proof for this leaf
+    pub proof: AsmMerkleProof,
 }

@@ -57,11 +57,14 @@ impl AuxDataProvider {
         }
 
         // Verify and index all manifest leaves
-        for (index, (leaf, proof)) in data.manifest_leaves.iter().enumerate() {
-            if !compact_mmr.verify::<AsmHasher>(proof, leaf) {
-                return Err(AuxError::InvalidMmrProof { index, hash: *leaf });
+        for item in &data.manifest_leaves {
+            if !compact_mmr.verify::<AsmHasher>(&item.proof, &item.leaf) {
+                return Err(AuxError::InvalidMmrProof {
+                    index: item.proof.index(),
+                    hash: item.leaf,
+                });
             }
-            manifest_leaves.insert(proof.index(), *leaf);
+            manifest_leaves.insert(item.proof.index(), item.leaf);
         }
 
         Ok(Self {

@@ -18,7 +18,7 @@ pub enum AuxError {
     #[error("invalid MMR proof at index {index}, hash {hash:?}")]
     InvalidMmrProof {
         /// The index in the batch where verification failed
-        index: usize,
+        index: u64,
         /// The manifest hash that failed verification
         hash: Hash32,
     },
