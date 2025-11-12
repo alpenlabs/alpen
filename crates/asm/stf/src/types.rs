@@ -18,7 +18,7 @@ pub struct AsmStfInput<'i> {
 #[derive(Debug)]
 pub struct AsmPreProcessOutput<'i> {
     pub txs: BTreeMap<SubprotocolId, Vec<TxInputRef<'i>>>,
-    pub aux_requests: BTreeMap<SubprotocolId, AuxRequests>,
+    pub aux_requests: AuxRequests,
 }
 
 /// Overall output of applying ASM STF.

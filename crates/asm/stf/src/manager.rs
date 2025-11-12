@@ -3,9 +3,8 @@
 use std::{any::Any, collections::BTreeMap};
 
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, AuxDataProvider, AuxRequestCollector, AuxRequests,
-    InterprotoMsg, Loader, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId,
-    TxInputRef,
+    AnchorState, AsmError, AsmLogEntry, AuxDataProvider, AuxRequestCollector, InterprotoMsg,
+    Loader, MsgRelayer, SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -111,7 +110,7 @@ impl SubprotoManager {
         &mut self,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-    ) -> AuxRequests {
+    ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
         // borrow checker.
@@ -123,8 +122,6 @@ impl SubprotoManager {
         let mut acol = AuxRequestCollector::new();
         h.pre_process_txs(txs, &mut acol, anchor_pre);
         self.insert_handler(h);
-
-        acol.into_requests()
     }
 
     /// Dispatches transaction processing to the appropriate handler.

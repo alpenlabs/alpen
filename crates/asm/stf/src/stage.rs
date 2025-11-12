@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AuxData, AuxDataProvider, AuxRequests, Stage, Subprotocol, SubprotocolId,
-    TxInputRef,
+    AnchorState, AuxData, AuxDataProvider, AuxRequestCollector, AuxRequests, Stage, Subprotocol,
+    SubprotocolId, TxInputRef,
 };
 
 use crate::manager::SubprotoManager;
@@ -15,9 +15,7 @@ pub(crate) struct PreProcessStage<'c> {
     manager: &'c mut SubprotoManager,
     anchor_state: &'c AnchorState,
     tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-
-    /// Aux requests table we write requests into.
-    aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequests>,
+    aux_collector: AuxRequestCollector,
 }
 
 impl<'c> PreProcessStage<'c> {
@@ -25,14 +23,18 @@ impl<'c> PreProcessStage<'c> {
         manager: &'c mut SubprotoManager,
         anchor_state: &'c AnchorState,
         tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_requests: &'c mut BTreeMap<SubprotocolId, AuxRequests>,
     ) -> Self {
+        let aux_collector = AuxRequestCollector::new();
         Self {
             manager,
             anchor_state,
             tx_bufs,
-            aux_requests,
+            aux_collector,
         }
+    }
+
+    pub(crate) fn into_aux_requests(self) -> AuxRequests {
+        self.aux_collector.into_requests()
     }
 }
 
@@ -44,11 +46,8 @@ impl Stage for PreProcessStage<'_> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        let req = self
-            .manager
+        self.manager
             .invoke_pre_process_txs::<S>(txs, self.anchor_state);
-
-        self.aux_requests.insert(S::ID, req);
     }
 }
 

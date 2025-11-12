@@ -2,8 +2,6 @@
 //! glues together block‐level validation, a set of pluggable subprotocols, and the global chain
 //! view into a single deterministic state transition.
 
-use std::collections::BTreeMap;
-
 use bitcoin::block::Block;
 use strata_asm_common::{AnchorState, AsmError, AsmResult, AsmSpec};
 
@@ -73,20 +71,16 @@ pub fn pre_process_asm<'b, S: AsmSpec>(
 
     // 4. PROCESS: Feed each subprotocol its filtered transactions for pre-processing.
     // This stage extracts auxiliary requests that will be needed for the main STF execution.
-    let mut aux_requests_by_subprotocol = BTreeMap::new();
-    let mut pre_process_stage = PreProcessStage::new(
-        &mut manager,
-        pre_state,
-        &grouped_relevant_txs,
-        &mut aux_requests_by_subprotocol,
-    );
+    let mut pre_process_stage =
+        PreProcessStage::new(&mut manager, pre_state, &grouped_relevant_txs);
     spec.call_subprotocols(&mut pre_process_stage);
 
     // 5. Export auxiliary requests collected during pre-processing.
     // These requests will be fulfilled before running the main ASM state transition.
+    let aux_requests = pre_process_stage.into_aux_requests();
     let output = AsmPreProcessOutput {
         txs: grouped_relevant_txs,
-        aux_requests: aux_requests_by_subprotocol,
+        aux_requests,
     };
 
     Ok(output)
