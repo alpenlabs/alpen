@@ -37,7 +37,6 @@ impl ProofOperator {
         evm_ee_client: HttpClient,
         cl_client: HttpClient,
         rollup_params: RollupParams,
-        enable_checkpoint_runner: bool,
     ) -> Self {
         let _btc_client = Arc::new(btc_client);
         let rollup_params = Arc::new(rollup_params);
@@ -51,7 +50,6 @@ impl ProofOperator {
         let checkpoint_operator = CheckpointOperator::new(
             cl_client.clone(),
             Arc::new(cl_stf_operator.clone()),
-            enable_checkpoint_runner,
         );
 
         ProofOperator::new(evm_ee_operator, cl_stf_operator, checkpoint_operator)

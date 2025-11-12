@@ -23,15 +23,6 @@ use crate::{
 // Note: ProgramId implementation for ProofContext is in strata-paas/src/primitives.rs
 // to avoid orphan rule violations.
 
-/// Convert ProofZkVm to ZkVmBackend
-pub(crate) fn zkvm_to_backend(vm: strata_primitives::proof::ProofZkVm) -> ZkVmBackend {
-    match vm {
-        strata_primitives::proof::ProofZkVm::SP1 => ZkVmBackend::SP1,
-        strata_primitives::proof::ProofZkVm::Native => ZkVmBackend::Native,
-        _ => panic!("Unsupported ZkVm backend: {:?}", vm),
-    }
-}
-
 /// Convert ZkVmBackend to ProofZkVm
 pub(crate) fn backend_to_zkvm(backend: ZkVmBackend) -> strata_primitives::proof::ProofZkVm {
     match backend {
@@ -193,7 +184,6 @@ impl InputFetcher<ProofContext> for ProverInputFetcher {
                     .await
                     .map_err(|e| match e {
                         ProvingTaskError::RpcError(_)
-                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_))
                         | ProvingTaskError::ProofNotFound(_)
                         | ProvingTaskError::DependencyNotFound(_) => {
                             PaaSError::TransientFailure(e.to_string())
@@ -216,7 +206,6 @@ impl InputFetcher<ProofContext> for ProverInputFetcher {
                     .await
                     .map_err(|e| match e {
                         ProvingTaskError::RpcError(_)
-                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_))
                         | ProvingTaskError::ProofNotFound(_)
                         | ProvingTaskError::DependencyNotFound(_) => {
                             PaaSError::TransientFailure(e.to_string())
@@ -237,7 +226,6 @@ impl InputFetcher<ProofContext> for ProverInputFetcher {
                     .await
                     .map_err(|e| match e {
                         ProvingTaskError::RpcError(_)
-                        | ProvingTaskError::ZkVmError(zkaleido::ZkVmError::NetworkRetryableError(_))
                         | ProvingTaskError::ProofNotFound(_)
                         | ProvingTaskError::DependencyNotFound(_) => {
                             PaaSError::TransientFailure(e.to_string())

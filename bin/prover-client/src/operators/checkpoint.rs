@@ -23,7 +23,6 @@ use crate::{
 pub(crate) struct CheckpointOperator {
     cl_client: HttpClient,
     cl_stf_operator: Arc<ClStfOperator>,
-    enable_checkpoint_runner: bool,
 }
 
 impl CheckpointOperator {
@@ -31,12 +30,10 @@ impl CheckpointOperator {
     pub(crate) fn new(
         cl_client: HttpClient,
         cl_stf_operator: Arc<ClStfOperator>,
-        enable_checkpoint_runner: bool,
     ) -> Self {
         Self {
             cl_client,
             cl_stf_operator,
-            enable_checkpoint_runner,
         }
     }
 
