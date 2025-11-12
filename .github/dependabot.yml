@@ -8,7 +8,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     # Group all updates into a single PR
     groups:
       all-dependencies:
@@ -31,7 +31,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     # Group non-security updates
     groups:
       rust-dependencies:
@@ -68,7 +68,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       risc0-guest-programs:
         patterns:
@@ -88,7 +88,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       risc0-guest-programs:
         patterns:
@@ -108,7 +108,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       risc0-guest-programs:
         patterns:
@@ -128,7 +128,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       risc0-guest-programs:
         patterns:
@@ -149,7 +149,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       sp1-guest-programs:
         patterns:
@@ -169,7 +169,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       sp1-guest-programs:
         patterns:
@@ -189,7 +189,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       sp1-guest-programs:
         patterns:
@@ -209,7 +209,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     groups:
       sp1-guest-programs:
         patterns:
@@ -230,7 +230,7 @@ updates:
       time: "00:00"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 14
     # Group all updates into a single PR
     groups:
       python-dependencies:
