@@ -65,7 +65,7 @@ async fn process_checkpoint(
     }
 
     // Submit checkpoint task using PaaS
-    submit_checkpoint_task(fetched_ckpt, prover_handle, db).await?;
+    submit_checkpoint_task(fetched_ckpt, operator, prover_handle, db).await?;
     runner_state.current_checkpoint_idx = Some(fetched_ckpt);
 
     Ok(())
@@ -74,6 +74,7 @@ async fn process_checkpoint(
 /// Submit a checkpoint task to PaaS, handling dependencies
 async fn submit_checkpoint_task(
     checkpoint_idx: u64,
+    operator: &CheckpointOperator,
     prover_handle: &ProverHandle<ProofContext>,
     db: &Arc<ProofDBSled>,
 ) -> anyhow::Result<()> {
@@ -98,34 +99,25 @@ async fn submit_checkpoint_task(
         return Ok(());
     }
 
-    // Get or create proof dependencies
-    let proof_deps = db
-        .get_proof_deps(proof_ctx)
-        .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
-        .unwrap_or_default();
+    // Create checkpoint dependencies (ClStf)
+    let cl_stf_deps = operator
+        .create_checkpoint_deps(checkpoint_idx, db)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create checkpoint dependencies: {}", e))?;
 
-    // Submit dependency tasks first
-    for dep_ctx in &proof_deps {
-        let dep_proof_key = ProofKey::new(*dep_ctx, zkvm);
+    // For each ClStf dependency, create EvmEeStf dependencies and submit recursively
+    for dep_ctx in &cl_stf_deps {
+        if let ProofContext::ClStf(start, end) = dep_ctx {
+            // Create EvmEeStf dependencies for this ClStf
+            operator
+                .cl_stf_operator()
+                .create_cl_stf_deps(*start, *end, db)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to create cl stf dependencies: {}", e))?;
 
-        // Check if dependency proof already exists
-        if db.get_proof(&dep_proof_key)
-            .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
-            .is_some()
-        {
-            continue;
+            // Submit ClStf and its EvmEeStf dependencies recursively
+            submit_proof_context_recursive(*dep_ctx, prover_handle, db).await?;
         }
-
-        // Submit dependency task to PaaS
-        let dep_task_id = ZkVmTaskId {
-            program: *dep_ctx,
-            backend: backend.clone(),
-        };
-
-        prover_handle
-            .submit_task(dep_task_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to submit dependency task: {}", e))?;
     }
 
     // Submit main checkpoint task
@@ -141,6 +133,56 @@ async fn submit_checkpoint_task(
 
     info!(%checkpoint_idx, "Submitted checkpoint proof task");
     Ok(())
+}
+
+/// Recursively submit a proof context and all its dependencies
+fn submit_proof_context_recursive<'a>(
+    proof_ctx: ProofContext,
+    prover_handle: &'a ProverHandle<ProofContext>,
+    db: &'a Arc<ProofDBSled>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + 'a + Send>> {
+    Box::pin(async move {
+        let backend = get_backend();
+        let zkvm = match backend {
+            ZkVmBackend::SP1 => strata_primitives::proof::ProofZkVm::SP1,
+            ZkVmBackend::Native => strata_primitives::proof::ProofZkVm::Native,
+            ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
+        };
+
+        let proof_key = ProofKey::new(proof_ctx, zkvm);
+
+        // Check if proof already exists
+        if db.get_proof(&proof_key)
+            .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        // Get dependencies from database
+        let proof_deps = db
+            .get_proof_deps(proof_ctx)
+            .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
+            .unwrap_or_default();
+
+        // Submit dependency tasks recursively
+        for dep_ctx in &proof_deps {
+            submit_proof_context_recursive(*dep_ctx, prover_handle, db).await?;
+        }
+
+        // Submit main task to PaaS
+        let task_id = ZkVmTaskId {
+            program: proof_ctx,
+            backend,
+        };
+
+        prover_handle
+            .submit_task(task_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to submit task: {}", e))?;
+
+        Ok(())
+    })
 }
 
 /// Helper to determine backend based on features

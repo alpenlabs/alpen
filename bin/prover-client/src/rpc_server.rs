@@ -102,33 +102,50 @@ impl ProverClientRpc {
     }
 
     /// Helper to submit a proof context as a task
-    async fn submit_proof_context(&self, proof_ctx: ProofContext) -> Result<ProofKey, anyhow::Error> {
-        let backend = Self::get_backend();
-        let zkvm = match backend {
-            ZkVmBackend::SP1 => strata_primitives::proof::ProofZkVm::SP1,
-            ZkVmBackend::Native => strata_primitives::proof::ProofZkVm::Native,
-            ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
-        };
+    fn submit_proof_context<'a>(
+        &'a self,
+        proof_ctx: ProofContext,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProofKey, anyhow::Error>> + 'a + Send>> {
+        Box::pin(async move {
+            let backend = Self::get_backend();
+            let zkvm = match backend {
+                ZkVmBackend::SP1 => strata_primitives::proof::ProofZkVm::SP1,
+                ZkVmBackend::Native => strata_primitives::proof::ProofZkVm::Native,
+                ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
+            };
 
-        let proof_key = ProofKey::new(proof_ctx, zkvm);
+            let proof_key = ProofKey::new(proof_ctx, zkvm);
 
-        // Check if proof already exists
-        if self.db.get_proof(&proof_key).map_err(|e| anyhow::anyhow!("DB error: {}", e))?.is_some() {
-            return Ok(proof_key);
-        }
+            // Check if proof already exists
+            if self.db.get_proof(&proof_key).map_err(|e| anyhow::anyhow!("DB error: {}", e))?.is_some() {
+                return Ok(proof_key);
+            }
 
-        // Submit task to PaaS
-        let task_id = ZkVmTaskId {
-            program: proof_ctx,
-            backend,
-        };
+            // Get and submit dependencies first (recursive)
+            let proof_deps = self.db
+                .get_proof_deps(proof_ctx)
+                .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
+                .unwrap_or_default();
 
-        self.prover_handle
-            .submit_task(task_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to submit task: {}", e))?;
+            for dep_ctx in &proof_deps {
+                self.submit_proof_context(*dep_ctx).await?;
+            }
 
-        Ok(proof_key)
+            // Submit task to PaaS (ignore if already exists)
+            let task_id = ZkVmTaskId {
+                program: proof_ctx,
+                backend,
+            };
+
+            if let Err(e) = self.prover_handle.submit_task(task_id).await {
+                // Ignore "Task already exists" error - it's okay if already submitted
+                if !e.to_string().contains("Task already exists") {
+                    return Err(anyhow::anyhow!("Failed to submit task: {}", e));
+                }
+            }
+
+            Ok(proof_key)
+        })
     }
 
     /// Helper to create tasks from proof context (handles dependencies)
@@ -168,6 +185,13 @@ impl StrataProverClientApiServer for ProverClientRpc {
         &self,
         cl_block_range: (L2BlockCommitment, L2BlockCommitment),
     ) -> RpcResult<Vec<RpcProofKey>> {
+        // Create ClStf dependencies first
+        self.operator
+            .cl_stf_operator()
+            .create_cl_stf_deps(cl_block_range.0, cl_block_range.1, &self.db)
+            .await
+            .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
+
         let proof_ctx = ProofContext::ClStf(cl_block_range.0, cl_block_range.1);
 
         self.create_tasks_from_context(proof_ctx)
@@ -176,6 +200,24 @@ impl StrataProverClientApiServer for ProverClientRpc {
     }
 
     async fn prove_checkpoint(&self, ckp_idx: u64) -> RpcResult<Vec<RpcProofKey>> {
+        // Create checkpoint dependencies (ClStf)
+        let cl_stf_deps = self.operator
+            .checkpoint_operator()
+            .create_checkpoint_deps(ckp_idx, &self.db)
+            .await
+            .map_err(to_jsonrpsee_error("failed to create checkpoint dependencies"))?;
+
+        // Create ClStf dependencies (EvmEeStf) for each ClStf
+        for dep_ctx in &cl_stf_deps {
+            if let ProofContext::ClStf(start, end) = dep_ctx {
+                self.operator
+                    .cl_stf_operator()
+                    .create_cl_stf_deps(*start, *end, &self.db)
+                    .await
+                    .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
+            }
+        }
+
         let proof_ctx = ProofContext::Checkpoint(ckp_idx);
 
         self.create_tasks_from_context(proof_ctx)
@@ -207,6 +249,24 @@ impl StrataProverClientApiServer for ProverClientRpc {
             }
         };
 
+        // Create checkpoint dependencies (ClStf)
+        let cl_stf_deps = self.operator
+            .checkpoint_operator()
+            .create_checkpoint_deps(checkpoint_idx, &self.db)
+            .await
+            .map_err(to_jsonrpsee_error("failed to create checkpoint dependencies"))?;
+
+        // Create ClStf dependencies (EvmEeStf) for each ClStf
+        for dep_ctx in &cl_stf_deps {
+            if let ProofContext::ClStf(start, end) = dep_ctx {
+                self.operator
+                    .cl_stf_operator()
+                    .create_cl_stf_deps(*start, *end, &self.db)
+                    .await
+                    .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
+            }
+        }
+
         let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
 
         self.create_tasks_from_context(proof_ctx)
@@ -220,10 +280,27 @@ impl StrataProverClientApiServer for ProverClientRpc {
         &self,
         checkpoint_idx: u64,
         _l1_range: (L1BlockCommitment, L1BlockCommitment),
-        _l2_range: (L2BlockCommitment, L2BlockCommitment),
+        l2_range: (L2BlockCommitment, L2BlockCommitment),
     ) -> RpcResult<Vec<RpcProofKey>> {
-        // For raw checkpoint, we just create the checkpoint proof context
-        // The dependencies are handled by the operators when fetching input
+        // Use the provided l2_range to create ClStf dependency
+        let cl_stf_ctx = ProofContext::ClStf(l2_range.0, l2_range.1);
+
+        // Store checkpoint dependencies using the provided range (ignore if already exists)
+        let checkpoint_ctx = ProofContext::Checkpoint(checkpoint_idx);
+        if let Err(e) = self.db.put_proof_deps(checkpoint_ctx, vec![cl_stf_ctx]) {
+            // Ignore "already exists" error - dependency might already be set
+            if !e.to_string().contains("EntryAlreadyExists") {
+                return Err(to_jsonrpsee_error("failed to store checkpoint dependencies")(e));
+            }
+        }
+
+        // Create ClStf dependencies (EvmEeStf)
+        self.operator
+            .cl_stf_operator()
+            .create_cl_stf_deps(l2_range.0, l2_range.1, &self.db)
+            .await
+            .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
+
         let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
 
         self.create_tasks_from_context(proof_ctx)

@@ -3,12 +3,12 @@ use std::sync::Arc;
 use jsonrpsee::http_client::HttpClient;
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_primitives::proof::ProofKey;
+use strata_primitives::proof::{ProofContext, ProofKey};
 use strata_proofimpl_checkpoint::program::CheckpointProverInput;
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::RpcCheckpointInfo;
 use strata_zkvm_hosts::get_verification_key;
-use tracing::error;
+use tracing::{error, info};
 
 use super::cl_stf::ClStfOperator;
 use crate::{
@@ -73,6 +73,11 @@ impl CheckpointOperator {
 
         let mut cl_stf_proofs = Vec::with_capacity(deps.len());
         for dep in deps {
+            // Validate that all dependencies are ClStf proofs
+            match dep {
+                strata_primitives::proof::ProofContext::ClStf(..) => {}
+                _ => panic!("Checkpoint dependencies must be ClStf proofs, got: {:?}", dep),
+            };
             let cl_stf_key = ProofKey::new(dep, *task_id.host());
             let proof = db
                 .get_proof(&cl_stf_key)
@@ -92,6 +97,48 @@ impl CheckpointOperator {
         &self.cl_client
     }
 
+    /// Returns a reference to the ClStf operator.
+    pub(crate) fn cl_stf_operator(&self) -> &Arc<ClStfOperator> {
+        &self.cl_stf_operator
+    }
+
+    /// Creates and stores the ClStf proof dependencies for a checkpoint.
+    ///
+    /// This fetches the checkpoint info from the CL client and creates a ClStf proof context
+    /// for the L2 block range covered by the checkpoint.
+    pub(crate) async fn create_checkpoint_deps(
+        &self,
+        ckp_idx: u64,
+        db: &ProofDBSled,
+    ) -> Result<Vec<ProofContext>, ProvingTaskError> {
+        // Check if dependencies already exist
+        let checkpoint_ctx = ProofContext::Checkpoint(ckp_idx);
+        if let Some(existing_deps) = db
+            .get_proof_deps(checkpoint_ctx)
+            .map_err(ProvingTaskError::DatabaseError)?
+        {
+            info!(%ckp_idx, "Checkpoint dependencies already exist, skipping creation");
+            return Ok(existing_deps);
+        }
+
+        // Fetch checkpoint info to get L2 range
+        let ckp_info = self.fetch_ckp_info(ckp_idx).await?;
+
+        info!(%ckp_idx, "Creating ClStf dependency for checkpoint");
+
+        // Create ClStf proof context from the checkpoint's L2 range
+        let cl_stf_ctx = ProofContext::ClStf(
+            ckp_info.l2_range.0,
+            ckp_info.l2_range.1,
+        );
+
+        // Store Checkpoint dependencies (ClStf)
+        db.put_proof_deps(checkpoint_ctx, vec![cl_stf_ctx])
+            .map_err(ProvingTaskError::DatabaseError)?;
+
+        Ok(vec![cl_stf_ctx])
+    }
+
     /// Submits a checkpoint proof to the CL client.
     pub(crate) async fn submit_checkpoint_proof(
         &self,
@@ -99,9 +146,6 @@ impl CheckpointOperator {
         proof_key: &ProofKey,
         proof_db: &ProofDBSled,
     ) -> CheckpointResult<()> {
-        if !self.enable_checkpoint_runner {
-            return Ok(());
-        }
         submit_checkpoint_proof(checkpoint_index, self.cl_client(), proof_key, proof_db).await
     }
 }

@@ -53,7 +53,11 @@ impl<P: Prover> AsyncService for ProverService<P> {
                     Ok(()) => completion.send(()).await,
                     Err(e) => {
                         debug!(?task_id, ?e, "Failed to submit task");
-                        // Task submission errors are logged but don't stop the service
+                        // If task already exists, treat as success (idempotent operation)
+                        if e.to_string().contains("Task already exists") {
+                            completion.send(()).await;
+                        }
+                        // Other errors are logged but don't stop the service
                     }
                 }
             }
