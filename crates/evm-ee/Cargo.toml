@@ -35,6 +35,9 @@ alloy-rlp.workspace = true
 # Serialization
 bincode.workspace = true
 
+# Utilities
+itertools.workspace = true
+
 [dev-dependencies]
 serde.workspace = true
 serde_json.workspace = true
