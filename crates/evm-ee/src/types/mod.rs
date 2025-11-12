@@ -5,10 +5,9 @@
 
 use std::collections::BTreeMap;
 
-use alloy_consensus::{BlockHeader, Header};
+use alloy_consensus::{BlockHeader, Header, Sealable};
 use itertools::Itertools;
 use reth_primitives::TransactionSigned;
-use reth_primitives_traits::SealedHeader;
 use reth_trie::HashedPostState;
 use revm::state::Bytecode;
 use revm_primitives::{B256, map::HashMap};
@@ -147,15 +146,11 @@ impl EvmPartialState {
         &'a self,
         current_header: &Header,
     ) -> rsp_client_executor::io::TrieDB<'a> {
-        // Seal the current block header and ancestor headers
-        let current_sealed = SealedHeader::seal_slow(current_header.clone());
-        let sealed_headers: Vec<SealedHeader> = std::iter::once(current_sealed)
-            .chain(
-                self.ancestor_headers
-                    .values()
-                    .map(|h| SealedHeader::seal_slow(h.clone())),
-            )
-            .collect();
+        // Seal the current block header and ancestor headers by reference (no clones)
+        let current_sealed = current_header.seal_ref_slow();
+        let sealed_headers = std::iter::once(current_sealed)
+            .chain(self.ancestor_headers.values().map(|h| h.seal_ref_slow()))
+            .collect::<Vec<_>>();
 
         // Verify and build block_hashes from sealed headers for BLOCKHASH opcode support
         // This validates the header chain integrity by checking that each parent's computed hash

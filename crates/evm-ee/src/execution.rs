@@ -93,7 +93,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // Cheaper checks should go before more expensive ones if they're independent
         EthPrimitives::validate_header(
             block.sealed_block().sealed_header(),
-            (*self.evm_config.chain_spec()).clone(),
+            Arc::clone(self.evm_config.chain_spec()),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
@@ -104,7 +104,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         };
 
         // Step 4: Create block executor
-        let block_executor = BasicBlockExecutor::new(self.evm_config.clone(), db);
+        let block_executor = BasicBlockExecutor::new(&self.evm_config, db);
 
         // Step 5: Execute the block (expensive operation)
         let execution_output = block_executor
@@ -117,7 +117,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // and execution_output which are not available in that context
         EthPrimitives::validate_block_post_execution(
             &block,
-            (*self.evm_config.chain_spec()).clone(),
+            Arc::clone(self.evm_config.chain_spec()),
             &execution_output,
         )
         .map_err(|_| EnvError::InvalidBlock)?;
@@ -132,7 +132,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 9: Convert execution outcome to HashedPostState
         let block_number = exec_payload.header_intrinsics().number;
-        let hashed_post_state = compute_hashed_post_state(&execution_output, block_number);
+        let hashed_post_state = compute_hashed_post_state(execution_output, block_number);
 
         // Step 10: Compute state root
         let state_root = pre_state.compute_state_root_with_changes(&hashed_post_state);
