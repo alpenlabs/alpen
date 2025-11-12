@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff==0.12.11", "maturin==1.9.4", "ty>=0.0.1a20,<0.0.2"]
+dev = ["ruff==0.14.2", "maturin==1.9.6", "ty>=0.0.1a20,<0.0.2"]
 
 [tool.uv]
 
