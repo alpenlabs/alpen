@@ -603,6 +603,113 @@ let status = prover_handle.get_status(&task_id).await?;
 - Verify ProofKey matches (context + zkvm)
 - Check logs for storage errors
 
+## Migration Cleanup
+
+### Obsolete Code Removed
+
+As part of the PaaS migration, the following legacy components were removed from prover-client:
+
+#### Deleted Files (4 files, ~1,200 lines)
+
+1. **`prover_manager.rs`** - Old worker pool manager
+   - Manually spawned tokio tasks for each proof
+   - No worker limits (risk of resource exhaustion)
+   - Replaced by: PaaS worker pools with configurable limits
+
+2. **`retry_policy.rs`** - Old retry logic
+   - Ad-hoc retry implementation with constant backoff
+   - Retry state tracked alongside task state
+   - Replaced by: PaaS `RetryConfig` with exponential backoff
+
+3. **`status.rs`** - Old task status types
+   - `ProvingTaskStatus` enum (Pending, ProvingInProgress, Completed, etc.)
+   - Manually tracked state transitions
+   - Replaced by: PaaS `TaskStatus` with automatic lifecycle management
+
+4. **`task_tracker.rs`** - Old task state machine
+   - Wrapped in `Arc<Mutex<...>>` requiring locks for all operations
+   - Manual dependency resolution
+   - No graceful shutdown mechanism
+   - Replaced by: PaaS `TaskManager` with lock-free API
+
+#### Removed Abstractions (~650 lines)
+
+1. **`ProvingOp` trait** - Task creation abstraction
+   - `create_task()` - Created proof tasks with dependencies
+   - `create_deps_tasks()` - Resolved proof dependencies
+   - `construct_proof_ctx()` - Mapped params to ProofContext
+   - `fetch_input()` - Fetched prover inputs
+   - `prove()` - Executed proof generation
+   - **Replaced by**: PaaS handles task creation, operators only provide `fetch_input()`
+
+2. **Test code** - ProvingOp unit tests
+   - GrandparentOps, ParentOps, ChildOps test stubs
+   - Dependency chain tests
+   - Task restart simulation tests
+   - **No longer needed**: PaaS library has comprehensive tests
+
+#### Simplified Operators
+
+Operators now only provide data fetching utilities, not task management:
+
+**CheckpointOperator:**
+- ✅ `fetch_input(task_id, db)` - Fetch checkpoint proof input
+- ✅ `fetch_ckp_info(idx)` - Fetch checkpoint info from CL client
+- ✅ `cl_client()` - Get CL client reference
+- ✅ `submit_checkpoint_proof()` - Submit proof to sequencer
+- ❌ ~~`create_task()`~~ - Removed (PaaS handles this)
+- ❌ ~~`create_deps_tasks()`~~ - Removed (PaaS handles this)
+- ❌ ~~`construct_proof_ctx()`~~ - Removed (not needed)
+
+**ClStfOperator:**
+- ✅ `fetch_input(task_id, db)` - Fetch CL STF proof input
+- ✅ `get_chainstate_before(blkid)` - Get chainstate before block
+- ✅ `get_block(blkid)` - Get L2 block
+- ❌ ~~`create_task()`~~ - Removed (PaaS handles this)
+- ❌ ~~`create_deps_tasks()`~~ - Removed (PaaS handles this)
+- ❌ ~~`construct_proof_ctx()`~~ - Removed (not needed)
+
+**EvmEeOperator:**
+- ✅ `fetch_input(task_id, db)` - Fetch EVM EE proof input
+- ✅ `get_block_header_by_height(num)` - Get EVM block header
+- ❌ ~~`create_task()`~~ - Removed (PaaS handles this)
+- ❌ ~~`construct_proof_ctx()`~~ - Removed (not needed)
+
+**ProofOperator:**
+- ✅ `init()` - Initialize all operators
+- ✅ `evm_ee_operator()` - Get EVM EE operator reference
+- ✅ `cl_stf_operator()` - Get CL STF operator reference
+- ✅ `checkpoint_operator()` - Get checkpoint operator reference
+- ❌ ~~`prove()`~~ - Removed (PaaS handles proving)
+- ❌ ~~`process_proof()`~~ - Removed (PaaS handles dispatching)
+
+### Migration Benefits
+
+**Before (TaskTracker + ProverManager):**
+```
+RPC → create_task() → TaskTracker.lock()
+                    → create_deps_tasks()
+                    → ProverManager spawns tokio task
+                    → Manual retry with constant backoff
+                    → No worker limits
+```
+
+**After (PaaS):**
+```
+RPC → ProverHandle.submit_task()
+    → PaaS queues task
+    → Worker pool picks up task
+    → Automatic retry with exponential backoff
+    → Configurable worker limits
+```
+
+**Impact:**
+- **-1,693 lines** of code (net reduction)
+- **Simpler codebase**: Operators only fetch data, PaaS handles orchestration
+- **Better concurrency**: Lock-free API, no mutex contention
+- **More reliable**: Built-in retry logic, graceful shutdown
+- **More configurable**: Worker limits, retry policies, status monitoring
+
 ## Future Improvements
 
 ### Planned Features
