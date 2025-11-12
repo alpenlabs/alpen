@@ -20,4 +20,4 @@ class BaseRethLoadJob(StrataLoadJob):
         return new_acc
 
     def _new_w3(self):
-        return web3.Web3(web3.Web3.HTTPProvider(self.host, session=self.client))
+        return web3.Web3(web3.Web3.HTTPProvider(self.host))
