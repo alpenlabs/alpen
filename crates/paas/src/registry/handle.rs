@@ -10,7 +10,7 @@ use crate::service::ProverServiceStatus;
 use crate::state::StatusSummary;
 use crate::task::TaskStatus;
 use crate::task_id::TaskId;
-use crate::zkvm::ZkVmBackend;
+use crate::ZkVmBackend;
 use crate::ProgramType;
 
 /// Handle for interacting with the registry-based prover service

@@ -65,40 +65,36 @@ fn test_zkvm_backend_serialization() {
 }
 
 #[test]
-fn test_zkvm_task_id_equality() {
+fn test_task_id_equality() {
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     enum TestProgram {
         Program1,
         Program2,
     }
 
-    impl ProgramId for TestProgram {
-        fn name(&self) -> String {
-            format!("{:?}", self)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum TestVariant {
+        A,
+        B,
+    }
+
+    impl ProgramType for TestProgram {
+        type RoutingKey = TestVariant;
+
+        fn routing_key(&self) -> Self::RoutingKey {
+            match self {
+                TestProgram::Program1 => TestVariant::A,
+                TestProgram::Program2 => TestVariant::B,
+            }
         }
     }
 
-    let task1 = ZkVmTaskId {
-        program: TestProgram::Program1,
-        backend: ZkVmBackend::Native,
-    };
-
-    let task2 = ZkVmTaskId {
-        program: TestProgram::Program1,
-        backend: ZkVmBackend::Native,
-    };
-
-    let task3 = ZkVmTaskId {
-        program: TestProgram::Program2,
-        backend: ZkVmBackend::Native,
-    };
-
-    let task4 = ZkVmTaskId {
-        program: TestProgram::Program1,
-        backend: ZkVmBackend::SP1,
-    };
+    let task1 = TaskId::new(TestProgram::Program1, ZkVmBackend::Native);
+    let task2 = TaskId::new(TestProgram::Program1, ZkVmBackend::Native);
+    let task3 = TaskId::new(TestProgram::Program2, ZkVmBackend::Native);
+    let task4 = TaskId::new(TestProgram::Program1, ZkVmBackend::SP1);
 
     // Same program and backend should be equal
     assert_eq!(task1, task2);
@@ -112,32 +108,37 @@ fn test_zkvm_task_id_equality() {
 }
 
 #[test]
-fn test_zkvm_task_id_hash() {
+fn test_task_id_hash() {
     use serde::{Deserialize, Serialize};
     use std::collections::HashSet;
 
-    #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     enum TestProgram {
         A,
         B,
     }
 
-    impl ProgramId for TestProgram {
-        fn name(&self) -> String {
-            format!("{:?}", self)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum TestVariant {
+        A,
+        B,
+    }
+
+    impl ProgramType for TestProgram {
+        type RoutingKey = TestVariant;
+
+        fn routing_key(&self) -> Self::RoutingKey {
+            match self {
+                TestProgram::A => TestVariant::A,
+                TestProgram::B => TestVariant::B,
+            }
         }
     }
 
     let mut set = HashSet::new();
 
-    let task1 = ZkVmTaskId {
-        program: TestProgram::A,
-        backend: ZkVmBackend::Native,
-    };
-    let task2 = ZkVmTaskId {
-        program: TestProgram::A,
-        backend: ZkVmBackend::Native,
-    };
+    let task1 = TaskId::new(TestProgram::A, ZkVmBackend::Native);
+    let task2 = TaskId::new(TestProgram::A, ZkVmBackend::Native);
 
     // Should only store one copy
     set.insert(task1);
@@ -145,10 +146,7 @@ fn test_zkvm_task_id_hash() {
     assert_eq!(set.len(), 1);
 
     // Different task should be added
-    set.insert(ZkVmTaskId {
-        program: TestProgram::B,
-        backend: ZkVmBackend::Native,
-    });
+    set.insert(TaskId::new(TestProgram::B, ZkVmBackend::Native));
     assert_eq!(set.len(), 2);
 }
 

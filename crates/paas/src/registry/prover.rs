@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::error::PaaSResult;
 use crate::task_id::TaskId;
-use crate::zkvm::ZkVmBackend;
+use crate::ZkVmBackend;
 use crate::{Prover, ProgramType};
 
 use super::core::ProgramRegistry;

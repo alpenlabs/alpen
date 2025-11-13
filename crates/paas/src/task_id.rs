@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::registry::ProgramType;
-use crate::zkvm::ZkVmBackend;
+use crate::ZkVmBackend;
 
 /// Universal task identifier with program and backend
 ///

@@ -10,7 +10,7 @@ use crate::config::PaaSConfig;
 use crate::error::PaaSResult;
 use crate::service::ProverService;
 use crate::state::ProverServiceState;
-use crate::zkvm::ZkVmBackend;
+use crate::ZkVmBackend;
 use crate::ProgramType;
 
 use super::core::{ConcreteHandler, InputFetcher, ProofStore, ProgramRegistry};
