@@ -187,7 +187,8 @@ pub fn build_test_deposit_script(
     dest_addr: Vec<u8>,
     tapnode_hash: &[u8; 32],
 ) -> ScriptBuf {
-    // Create auxiliary data: [deposit_idx (4 bytes)][tapscript_root (32 bytes)][destination address (variable)]
+    // Create auxiliary data: [deposit_idx (4 bytes)][tapscript_root (32 bytes)][destination address
+    // (variable)]
     let mut aux_data = Vec::new();
     aux_data.extend(&idx.to_be_bytes()[..]);
     aux_data.extend(tapnode_hash);
@@ -285,7 +286,8 @@ pub fn generate_withdrawal_fulfillment_data(
 
 /// Creates an OP_RETURN metadata script for withdrawal fulfillment transactions.
 ///
-/// Format: [MAGIC_BYTES (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][OPERATOR_IDX (4)][DEPOSIT_IDX (4)][DEPOSIT_TXID (32)]
+/// Format: [MAGIC_BYTES (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][OPERATOR_IDX (4)][DEPOSIT_IDX
+/// (4)][DEPOSIT_TXID (32)]
 pub fn create_opreturn_metadata(
     magic: [u8; 4],
     operator_idx: u32,
