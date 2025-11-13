@@ -14264,6 +14264,7 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-identifiers",
+ "strata-ol-chain-types-new",
  "thiserror 2.0.16",
 ]
 
