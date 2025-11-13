@@ -28,7 +28,6 @@ strata-rpc-types.workspace = true
 strata-rpc-utils.workspace = true
 strata-tasks.workspace = true
 strata-zkvm-hosts.workspace = true
-typed-sled.workspace = true
 zkaleido.workspace = true
 
 alloy-rpc-types.workspace = true
