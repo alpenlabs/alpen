@@ -1,10 +1,10 @@
-//! ProofContext integration with PaaS registry system
+//! ProofTask type for PaaS integration
 //!
-//! This module provides a newtype wrapper around ProofContext that implements
-//! the PaaS registry traits, working around orphan rule restrictions.
+//! This module defines the ProofTask newtype wrapper around ProofContext
+//! and implements the ProgramType trait for registry-based dispatch.
 
 use serde::{Deserialize, Serialize};
-use strata_paas::registry::ProgramType;
+use strata_paas::ProgramType;
 use strata_primitives::proof::ProofContext;
 
 /// Routing key for ProofContext - used for dynamic dispatch in PaaS registry
