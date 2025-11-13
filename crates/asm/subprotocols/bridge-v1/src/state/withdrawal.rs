@@ -1,8 +1,8 @@
 //! Withdrawal Command Management
 //!
-//! This module contains types for specifying withdrawal commands and outputs.
-//! Withdrawal commands define the Bitcoin outputs that operators should create
-//! when processing withdrawal requests from deposits.
+//! This module contains types for specifying withdrawal commands and requests.
+//! These types define the Bitcoin outputs that operators should create when
+//! processing withdrawal requests from deposits.
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -14,85 +14,25 @@ use strata_primitives::{
     l1::{BitcoinAmount, BitcoinTxid},
 };
 
-/// Command specifying a Bitcoin output for a withdrawal operation.
+/// Withdrawal request received from the Checkpoint subprotocol.
 ///
-/// This structure instructs operators on how to construct the Bitcoin transaction
-/// output when processing a withdrawal. It currently contains a single output specifying the
-/// destination and amount, along with the operator fee that will be deducted.
-///
-/// ## Fee Structure
-///
-/// The operator fee is deducted from the withdrawal amount before creating the Bitcoin
-/// output. This means the user receives the net amount (withdrawal amount minus operator
-/// fee) in their Bitcoin transaction, while the operator keeps the fee as compensation
-/// for processing the withdrawal.
-///
-/// ## Future Enhancements
-///
-/// - **Batching**: Support for multiple outputs in a single withdrawal command to enable efficient
-///   processing of multiple withdrawals in one Bitcoin transaction
+/// This structure represents a user's request to withdraw funds from the bridge.
+/// It contains the destination address and the amount requested. The actual amount
+/// received by the user will be less due to operator fees being deducted during
+/// conversion to [`WithdrawalCommand`].
 #[derive(
     Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
 )]
-pub struct WithdrawalCommand {
-    /// Bitcoin output to create in the withdrawal transaction.
-    output: WithdrawOutput,
-
-    /// Amount the operator can take as fees for processing withdrawal.
-    operator_fee: BitcoinAmount,
-}
-
-impl WithdrawalCommand {
-    /// Creates a new withdrawal command with the specified output and operator fee.
-    pub fn new(output: WithdrawOutput, operator_fee: BitcoinAmount) -> Self {
-        Self {
-            output,
-            operator_fee,
-        }
-    }
-
-    /// Returns a reference to the destination descriptor for this withdrawal.
-    pub fn destination(&self) -> &Descriptor {
-        &self.output.destination
-    }
-
-    /// Updates the operator fee for this withdrawal command.
-    pub fn update_fee(&mut self, new_fee: BitcoinAmount) {
-        self.operator_fee = new_fee
-    }
-
-    /// Calculates the net amount the user will receive after operator fee deduction.
-    ///
-    /// This is the amount that will actually be sent to the user's Bitcoin address,
-    /// which equals the withdrawal amount minus the operator fee.
-    pub fn net_amount(&self) -> BitcoinAmount {
-        self.output.amt().saturating_sub(self.operator_fee)
-    }
-}
-
-/// Bitcoin output specification for a withdrawal operation.
-///
-/// Each withdrawal output specifies a destination address (as a Bitcoin descriptor)
-/// and the amount to be sent. This structure provides all information needed by
-/// operators to construct the appropriate Bitcoin transaction output.
-///
-/// # Bitcoin Descriptors
-///
-/// The destination uses Bitcoin Output Script Descriptors (BOSD) which provide
-/// a standardized way to specify Bitcoin addresses and locking conditions.
-#[derive(
-    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
-)]
-pub struct WithdrawOutput {
+pub struct WithdrawalRequest {
     /// Bitcoin Output Script Descriptor specifying the destination address.
     pub destination: Descriptor,
 
-    /// Amount to withdraw (in satoshis).
+    /// Amount to withdraw (in satoshis), before fee deduction.
     pub amt: BitcoinAmount,
 }
 
-impl WithdrawOutput {
-    /// Creates a new withdrawal output with the specified destination and amount.
+impl WithdrawalRequest {
+    /// Creates a new withdrawal request with the specified destination and amount.
     pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
         Self { destination, amt }
     }
@@ -102,8 +42,62 @@ impl WithdrawOutput {
         &self.destination
     }
 
-    /// Returns the withdrawal amount.
+    /// Returns the withdrawal amount (before fee deduction).
     pub fn amt(&self) -> BitcoinAmount {
+        self.amt
+    }
+
+    /// Converts this withdrawal request into a [`WithdrawalCommand`] by deducting the operator fee.
+    ///
+    /// The resulting command contains the net amount that will be sent to the user
+    /// (requested amount minus operator fee).
+    ///
+    /// # Parameters
+    ///
+    /// - `operator_fee` - The fee amount to deduct from the requested amount
+    ///
+    /// # Returns
+    ///
+    /// A [`WithdrawalCommand`] with the net amount after fee deduction
+    pub fn into_cmd(self, operator_fee: BitcoinAmount) -> WithdrawalCommand {
+        let net_amount = self.amt.saturating_sub(operator_fee);
+        WithdrawalCommand {
+            destination: self.destination,
+            amt: net_amount,
+        }
+    }
+}
+
+/// Withdrawal command specifying the user destination and net amount user gets after fee deduction.
+///
+/// This structure is created from a [`WithdrawalRequest`] by deducting the operator fee
+/// from the requested amount. It represents the actual Bitcoin output that need to be
+/// in the withdrawal transaction, with the net amount that the user will receive for a withdrawal
+/// to be valid.
+#[derive(
+    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
+)]
+pub struct WithdrawalCommand {
+    /// Bitcoin Output Script Descriptor specifying the destination address.
+    destination: Descriptor,
+
+    /// Net amount to withdraw after operator fee deduction (in satoshis).
+    amt: BitcoinAmount,
+}
+
+impl WithdrawalCommand {
+    /// Creates a new withdrawal command with the specified destination and net amount.
+    pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
+        Self { destination, amt }
+    }
+
+    /// Returns a reference to the destination descriptor.
+    pub fn destination(&self) -> &Descriptor {
+        &self.destination
+    }
+
+    /// Returns the withdrawal amount
+    pub fn amount(&self) -> BitcoinAmount {
         self.amt
     }
 }

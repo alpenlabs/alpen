@@ -10,7 +10,7 @@ use strata_asm_common::{
     logging, AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
 };
 use strata_asm_logs::CheckpointUpdate;
-use strata_asm_proto_bridge_v1::{BridgeIncomingMsg, WithdrawOutput};
+use strata_asm_proto_bridge_v1::{BridgeIncomingMsg, WithdrawalRequest};
 use strata_asm_proto_checkpoint_txs::{
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
@@ -165,9 +165,10 @@ fn process_checkpoint_transaction_v0(
 
     // Forward each withdrawal message to the bridge subprotocol
     for intent in withdrawal_intents {
-        let withdraw_output = WithdrawOutput::new(intent.destination().clone(), *intent.amt());
+        let withdrawal_request =
+            WithdrawalRequest::new(intent.destination().clone(), *intent.amt());
         // Wrap it in [`BridgeIncomingMsg`]
-        let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
+        let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdrawal_request);
 
         // Send to bridge subprotocol
         relayer.relay_msg(&bridge_msg);

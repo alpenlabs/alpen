@@ -14,7 +14,7 @@ use crate::{
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
-        withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
+        withdrawal::{OperatorClaimUnlock, WithdrawalRequest},
     },
 };
 
@@ -196,7 +196,7 @@ impl BridgeV1State {
     ///   assignment fails
     pub fn create_withdrawal_assignment(
         &mut self,
-        withdrawal_output: &WithdrawOutput,
+        withdrawal_output: &WithdrawalRequest,
         l1_block: &L1BlockCommitment,
     ) -> Result<(), WithdrawalCommandError> {
         // Get the oldest deposit
@@ -214,7 +214,7 @@ impl BridgeV1State {
             ));
         }
 
-        let withdrawal_cmd = WithdrawalCommand::new(withdrawal_output.clone(), self.operator_fee);
+        let withdrawal_cmd = withdrawal_output.clone().into_cmd(self.operator_fee);
 
         self.assignments.add_new_assignment(
             deposit,
@@ -309,7 +309,7 @@ impl BridgeV1State {
         }
 
         // Validate withdrawal amount against assignment command
-        let expected_amount = assignment.withdrawal_command().net_amount();
+        let expected_amount = assignment.withdrawal_command().amount();
         let actual_amount = withdrawal_info.withdrawal_amount;
         if expected_amount != actual_amount {
             return Err(WithdrawalValidationError::AmountMismatch(Mismatch {
@@ -399,9 +399,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::state::{
-        assignment::AssignmentEntry, config::BridgeV1Config, withdrawal::WithdrawOutput,
-    };
+    use crate::state::{assignment::AssignmentEntry, config::BridgeV1Config};
 
     /// Helper function to create test operator keys
     ///
@@ -481,7 +479,7 @@ mod tests {
     /// Helper function to add deposits and immediately create withdrawal assignments.
     ///
     /// This is a convenience function that combines deposit creation with assignment
-    /// creation. For each deposit added, it creates a corresponding withdrawal command
+    /// creation. For each deposit added, it creates a corresponding withdrawal request
     /// and assignment. This simulates a complete deposit-to-assignment flow for testing.
     ///
     /// # Parameters
@@ -498,9 +496,11 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         for _ in 0..count {
             let l1blk: L1BlockCommitment = arb.generate();
-            let mut output: WithdrawOutput = arb.generate();
-            output.amt = state.denomination;
-            state.create_withdrawal_assignment(&output, &l1blk).unwrap();
+            let mut request: WithdrawalRequest = arb.generate();
+            request.amt = state.denomination;
+            state
+                .create_withdrawal_assignment(&request, &l1blk)
+                .unwrap();
         }
     }
 
@@ -525,7 +525,7 @@ mod tests {
             deposit_idx: assignment.deposit_idx(),
             deposit_txid: assignment.deposit_txid(),
             withdrawal_destination: assignment.withdrawal_command().destination().to_script(),
-            withdrawal_amount: assignment.withdrawal_command().net_amount(),
+            withdrawal_amount: assignment.withdrawal_command().amount(),
         }
     }
 
@@ -632,9 +632,9 @@ mod tests {
             assert_eq!(assigned_deposit_count as usize, i);
 
             let l1blk: L1BlockCommitment = arb.generate();
-            let mut output: WithdrawOutput = arb.generate();
-            output.amt = state.denomination;
-            let res = state.create_withdrawal_assignment(&output, &l1blk);
+            let mut request: WithdrawalRequest = arb.generate();
+            request.amt = state.denomination;
+            let res = state.create_withdrawal_assignment(&request, &l1blk);
             assert!(res.is_ok());
 
             let unassigned_deposit_count = state.deposits.len();
@@ -644,8 +644,8 @@ mod tests {
         }
 
         let l1blk: L1BlockCommitment = arb.generate();
-        let output: WithdrawOutput = arb.generate();
-        let res = state.create_withdrawal_assignment(&output, &l1blk);
+        let request: WithdrawalRequest = arb.generate();
+        let res = state.create_withdrawal_assignment(&request, &l1blk);
         assert!(res.is_err());
     }
 
@@ -662,16 +662,16 @@ mod tests {
         let deposit = add_deposits(&mut state, count, &privkeys)[0].clone();
 
         let l1blk: L1BlockCommitment = arb.generate();
-        let output: WithdrawOutput = arb.generate();
+        let request: WithdrawalRequest = arb.generate();
         let err = state
-            .create_withdrawal_assignment(&output, &l1blk)
+            .create_withdrawal_assignment(&request, &l1blk)
             .unwrap_err();
         assert!(matches!(
             err,
             WithdrawalCommandError::DepositWithdrawalAmountMismatch(..)
         ));
         if let WithdrawalCommandError::DepositWithdrawalAmountMismatch(mismatch) = err {
-            assert_eq!(mismatch.got, output.amt.to_sat());
+            assert_eq!(mismatch.got, request.amt.to_sat());
             assert_eq!(mismatch.expected, deposit.amt.to_sat());
         }
     }
