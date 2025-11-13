@@ -33,6 +33,7 @@ impl MempoolConfig {
         self.max_tx_count * self.max_tx_size
     }
 }
+
 /// Statistics about the mempool state.
 #[derive(Clone, Debug, Default)]
 pub struct MempoolStats {

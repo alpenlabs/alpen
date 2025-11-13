@@ -11,7 +11,7 @@ pub mod validation;
 
 // Re-export for convenience
 pub use error::{MempoolError, MempoolResult};
-pub use mempool::Mempool;
+pub use mempool::{InMemoryMempool, Mempool};
 pub use ordering::{FifoOrdering, OrderingIndex, OrderingStrategy};
 pub use provider::{OLTxProvider, OLTxProviderError};
 pub use strata_db_types::{traits::MempoolDatabase, types::MempoolTxMetadata};
