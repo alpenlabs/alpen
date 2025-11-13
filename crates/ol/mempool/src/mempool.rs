@@ -1,9 +1,10 @@
 //! Core mempool implementation.
 //!
-//! Provides the main `Mempool` trait and an in-memory implementation.
+//! Provides the main `Mempool` trait and an in-memory implementation with database persistence.
 
 use std::collections::HashMap;
 
+use strata_db_types::traits::MempoolDatabase;
 use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::OLTransaction;
 
@@ -64,8 +65,8 @@ pub trait Mempool: Send + Sync {
     fn stats(&self) -> MempoolResult<MempoolStats>;
 }
 
-/// In-memory mempool implementation.
-pub struct InMemoryMempool<S: OrderingStrategy, V: TransactionValidator> {
+/// In-memory mempool implementation with database persistence.
+pub struct InMemoryMempool<S: OrderingStrategy, V: TransactionValidator, D: MempoolDatabase> {
     /// Configuration.
     config: MempoolConfig,
 
@@ -78,11 +79,16 @@ pub struct InMemoryMempool<S: OrderingStrategy, V: TransactionValidator> {
     /// Transaction storage: txid -> (tx, metadata).
     transactions: HashMap<OLTxId, (OLTransaction, MempoolTxMetadata)>,
 
+    /// Database for persistence.
+    database: D,
+
     /// Statistics.
     stats: MempoolStats,
 }
 
-impl<S: OrderingStrategy, V: TransactionValidator> std::fmt::Debug for InMemoryMempool<S, V> {
+impl<S: OrderingStrategy, V: TransactionValidator, D: MempoolDatabase> std::fmt::Debug
+    for InMemoryMempool<S, V, D>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("InMemoryMempool")
             .field("config", &self.config)
@@ -94,17 +100,75 @@ impl<S: OrderingStrategy, V: TransactionValidator> std::fmt::Debug for InMemoryM
     }
 }
 
-impl<S: OrderingStrategy + 'static, V: TransactionValidator> InMemoryMempool<S, V> {
+impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
+    InMemoryMempool<S, V, D>
+{
     /// Create a new in-memory mempool with the given configuration, ordering strategy,
-    /// and validator.
-    pub fn new(config: MempoolConfig, strategy: S, validator: V) -> Self {
+    /// validator, and database.
+    pub fn new(config: MempoolConfig, strategy: S, validator: V, database: D) -> Self {
         Self {
             validator,
             ordering: OrderingIndex::new(strategy),
             transactions: HashMap::new(),
+            database,
             stats: MempoolStats::default(),
             config,
         }
+    }
+
+    /// Create a new mempool and restore state from database.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MempoolError::DatabaseError`] if database operations fail.
+    pub fn new_with_restore(
+        config: MempoolConfig,
+        strategy: S,
+        validator: V,
+        database: D,
+        current_slot: u64,
+    ) -> MempoolResult<Self> {
+        let mut mempool = Self::new(config, strategy, validator, database);
+        mempool.restore_from_database(current_slot)?;
+        Ok(mempool)
+    }
+
+    /// Restore mempool state from database.
+    fn restore_from_database(&mut self, current_slot: u64) -> MempoolResult<()> {
+        let txids = self
+            .database
+            .get_all_tx_ids()
+            .map_err(|e| MempoolError::DatabaseError(e.to_string()))?;
+
+        for txid in txids {
+            if let Some((tx, metadata)) = self
+                .database
+                .get_tx_entry(&txid)
+                .map_err(|e| MempoolError::DatabaseError(e.to_string()))?
+            {
+                // Re-validate transaction (may have expired)
+                if self
+                    .validator
+                    .validate(&tx, &metadata, current_slot)
+                    .is_ok()
+                {
+                    // Add to ordering index
+                    self.ordering.insert(txid, &tx, &metadata);
+
+                    // Add to in-memory storage
+                    self.transactions.insert(txid, (tx, metadata.clone()));
+
+                    // Update stats
+                    self.stats.current_tx_count += 1;
+                    self.stats.current_total_size += metadata.size_bytes;
+                } else {
+                    // Transaction no longer valid - remove from database
+                    let _ = self.database.del_tx_entry(&txid);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Check if mempool has capacity for a transaction of the given size.
@@ -118,22 +182,31 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator> InMemoryMempool<S, 
     /// Try to evict lowest priority transaction to make room.
     ///
     /// Returns true if eviction succeeded, false if no transactions to evict.
-    fn try_evict_one(&mut self) -> bool {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MempoolError::DatabaseError`] if database deletion fails.
+    fn try_evict_one(&mut self) -> MempoolResult<bool> {
         // Get the lowest priority transaction (last in ordering)
         let lowest_priority_txids = self.ordering.get_ordered_txids(usize::MAX);
 
         if let Some(txid) = lowest_priority_txids.last() {
             let txid = *txid;
             if let Some((_, metadata)) = self.transactions.remove(&txid) {
+                // Remove from database
+                self.database
+                    .del_tx_entry(&txid)
+                    .map_err(|e| MempoolError::DatabaseError(e.to_string()))?;
+
                 self.ordering.remove(&txid);
                 self.stats.current_tx_count -= 1;
                 self.stats.current_total_size -= metadata.size_bytes;
                 self.stats.evicted_tx_total += 1;
-                return true;
+                return Ok(true);
             }
         }
 
-        false
+        Ok(false)
     }
 
     /// Try to make room for a transaction of the given size.
@@ -142,7 +215,7 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator> InMemoryMempool<S, 
     fn ensure_capacity(&mut self, tx_size: usize) -> MempoolResult<()> {
         // Try evicting transactions one by one until we have capacity
         while !self.has_capacity(tx_size) {
-            if !self.try_evict_one() {
+            if !self.try_evict_one()? {
                 // No more transactions to evict - determine which limit we hit
                 if self.stats.current_tx_count >= self.config.max_tx_count {
                     return Err(MempoolError::MempoolCountLimitExceeded {
@@ -162,7 +235,9 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator> InMemoryMempool<S, 
     }
 }
 
-impl<S: OrderingStrategy + 'static, V: TransactionValidator> Mempool for InMemoryMempool<S, V> {
+impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase> Mempool
+    for InMemoryMempool<S, V, D>
+{
     fn submit_transaction(
         &mut self,
         tx: OLTransaction,
@@ -185,6 +260,11 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator> Mempool for InMemor
 
         // Ensure capacity (may evict lowest priority transactions)
         self.ensure_capacity(metadata.size_bytes)?;
+
+        // Persist to database first
+        self.database
+            .put_tx_entry(&txid, &tx, &metadata)
+            .map_err(|e| MempoolError::DatabaseError(e.to_string()))?;
 
         // Insert into ordering index
         self.ordering.insert(txid, &tx, &metadata);
@@ -219,6 +299,11 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator> Mempool for InMemor
     }
 
     fn remove_transactions(&mut self, txids: &[OLTxId]) -> MempoolResult<Vec<OLTxId>> {
+        // Remove from database first (batch operation)
+        self.database
+            .del_tx_entries(txids)
+            .map_err(|e| MempoolError::DatabaseError(e.to_string()))?;
+
         let mut removed = Vec::new();
         for txid in txids {
             if let Some((_, metadata)) = self.transactions.remove(txid) {
@@ -238,11 +323,55 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator> Mempool for InMemor
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use strata_acct_types::AccountId;
+    use strata_db_types::DbResult;
     use strata_ol_chain_types_new::{TransactionExtra, TransactionPayload};
 
     use super::*;
     use crate::{ordering::FifoOrdering, validation::BasicValidator};
+
+    /// Mock database implementation for testing (no-op).
+    #[derive(Debug, Clone)]
+    struct MockDatabase;
+
+    impl MempoolDatabase for MockDatabase {
+        fn put_tx_entry(
+            &self,
+            _txid: &OLTxId,
+            _tx: &OLTransaction,
+            _metadata: &MempoolTxMetadata,
+        ) -> DbResult<()> {
+            Ok(())
+        }
+
+        fn get_tx_entry(
+            &self,
+            _txid: &OLTxId,
+        ) -> DbResult<Option<(OLTransaction, MempoolTxMetadata)>> {
+            Ok(None)
+        }
+
+        fn get_tx_entries(
+            &self,
+            _txids: &[OLTxId],
+        ) -> DbResult<HashMap<OLTxId, (OLTransaction, MempoolTxMetadata)>> {
+            Ok(HashMap::new())
+        }
+
+        fn del_tx_entry(&self, _txid: &OLTxId) -> DbResult<()> {
+            Ok(())
+        }
+
+        fn del_tx_entries(&self, _txids: &[OLTxId]) -> DbResult<()> {
+            Ok(())
+        }
+
+        fn get_all_tx_ids(&self) -> DbResult<Vec<OLTxId>> {
+            Ok(Vec::new())
+        }
+    }
 
     fn create_test_tx(payload_bytes: Vec<u8>) -> OLTransaction {
         OLTransaction::new(
@@ -267,7 +396,8 @@ mod tests {
         let config = MempoolConfig::default();
         let strategy = FifoOrdering;
         let validator = BasicValidator::new(config.max_tx_size);
-        let mut mempool = InMemoryMempool::new(config, strategy, validator);
+        let database = MockDatabase;
+        let mut mempool = InMemoryMempool::new(config, strategy, validator, database);
 
         let tx1 = create_test_tx(vec![1, 2, 3]);
         let metadata1 = create_test_metadata(100, 100);
@@ -301,7 +431,8 @@ mod tests {
         let config = MempoolConfig::default();
         let validator = BasicValidator::new(config.max_tx_size);
         let strategy = FifoOrdering;
-        let mut mempool = InMemoryMempool::new(config, strategy, validator);
+        let database = MockDatabase;
+        let mut mempool = InMemoryMempool::new(config, strategy, validator, database);
 
         let tx = create_test_tx(vec![1, 2, 3]);
         let metadata = create_test_metadata(100, 100);
@@ -324,7 +455,8 @@ mod tests {
         let config = MempoolConfig::default();
         let validator = BasicValidator::new(config.max_tx_size);
         let strategy = FifoOrdering;
-        let mut mempool = InMemoryMempool::new(config, strategy, validator);
+        let database = MockDatabase;
+        let mut mempool = InMemoryMempool::new(config, strategy, validator, database);
 
         let tx1 = create_test_tx(vec![1, 2, 3]);
         let metadata1 = create_test_metadata(100, 100);
@@ -363,7 +495,8 @@ mod tests {
         };
         let validator = BasicValidator::new(config.max_tx_size);
         let strategy = FifoOrdering;
-        let mut mempool = InMemoryMempool::new(config, strategy, validator);
+        let database = MockDatabase;
+        let mut mempool = InMemoryMempool::new(config, strategy, validator, database);
 
         let tx1 = create_test_tx(vec![1; 200]);
         let metadata1 = create_test_metadata(100, 200);
@@ -401,7 +534,8 @@ mod tests {
         };
         let validator = BasicValidator::new(config.max_tx_size);
         let strategy = FifoOrdering;
-        let mut mempool = InMemoryMempool::new(config, strategy, validator);
+        let database = MockDatabase;
+        let mut mempool = InMemoryMempool::new(config, strategy, validator, database);
 
         let tx = create_test_tx(vec![1; 50]);
         let metadata = create_test_metadata(100, 200); // size_bytes exceeds max
@@ -421,7 +555,8 @@ mod tests {
         let config = MempoolConfig::default();
         let validator = BasicValidator::new(config.max_tx_size);
         let strategy = FifoOrdering;
-        let mut mempool = InMemoryMempool::new(config, strategy, validator);
+        let database = MockDatabase;
+        let mut mempool = InMemoryMempool::new(config, strategy, validator, database);
 
         // Submit transactions with increasing entry slots
         for i in 0..5 {
@@ -444,7 +579,8 @@ mod tests {
         let config = MempoolConfig::default();
         let validator = BasicValidator::new(config.max_tx_size);
         let strategy = FifoOrdering;
-        let mut mempool = InMemoryMempool::new(config, strategy, validator);
+        let database = MockDatabase;
+        let mut mempool = InMemoryMempool::new(config, strategy, validator, database);
 
         // Submit 5 transactions
         for i in 0..5 {
