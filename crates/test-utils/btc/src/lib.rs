@@ -14,6 +14,9 @@ use bitcoin::{
     Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
     Transaction, TxIn, TxOut, Witness,
 };
+use strata_asm_txs_bridge_v1::constants::{
+    BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE,
+};
 use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
@@ -62,8 +65,8 @@ pub fn get_btc_mainnet_block() -> Block {
 ///
 /// Generates a dummy input referencing a random previous output, and constructs a
 /// transaction with two outputs:
-/// - A payment to `out_script_pubkey` with the specified amount.
-/// - An OP_RETURN output using `opreturn_script` with zero value.
+/// - Output[0]: An OP_RETURN output using `opreturn_script` with zero value (metadata).
+/// - Output[1]: A payment to `out_script_pubkey` with the specified amount (deposit).
 ///
 /// The input is signed using Taproot key spend with `SIGHASH_DEFAULT`, and the address
 /// is derived from the provided `keypair` and `tapnode_hash`.
@@ -111,14 +114,16 @@ pub fn create_test_deposit_tx(
     }];
 
     // Construct the outputs
+    // Note: OP_RETURN metadata must be at output[0], deposit payment at output[1]
+    // This matches DEPOSIT_OUTPUT_INDEX = 1 in the deposit parser
     let outputs = vec![
-        TxOut {
-            value: amt,
-            script_pubkey: out_script_pubkey.clone(),
-        },
         TxOut {
             value: Amount::ZERO, // Amount is zero for OP_RETURN
             script_pubkey: opreturn_script.clone(),
+        },
+        TxOut {
+            value: amt,
+            script_pubkey: out_script_pubkey.clone(),
         },
     ];
 
@@ -182,11 +187,17 @@ pub fn build_test_deposit_script(
     dest_addr: Vec<u8>,
     tapnode_hash: &[u8; 32],
 ) -> ScriptBuf {
+    // Create auxiliary data: [deposit_idx (4 bytes)][tapscript_root (32 bytes)][destination address (variable)]
+    let mut aux_data = Vec::new();
+    aux_data.extend(&idx.to_be_bytes()[..]);
+    aux_data.extend(tapnode_hash);
+    aux_data.extend(dest_addr);
+
+    // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
     let mut data = dep_config.magic_bytes.clone().to_vec();
-    data.extend(&idx.to_be_bytes()[..]);
-    data.extend(dest_addr);
-    data.extend(tapnode_hash);
-    data.extend(&dep_config.deposit_amount.to_sat().to_be_bytes());
+    data.push(BRIDGE_V1_SUBPROTOCOL_ID);
+    data.push(DEPOSIT_TX_TYPE);
+    data.extend(aux_data);
 
     let builder = script::Builder::new()
         .push_opcode(OP_RETURN)
@@ -272,19 +283,26 @@ pub fn generate_withdrawal_fulfillment_data(
     (addresses, txids, deposits)
 }
 
-/// Creates an OP_RETURN metadata script.
+/// Creates an OP_RETURN metadata script for withdrawal fulfillment transactions.
+///
+/// Format: [MAGIC_BYTES (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][OPERATOR_IDX (4)][DEPOSIT_IDX (4)][DEPOSIT_TXID (32)]
 pub fn create_opreturn_metadata(
     magic: [u8; 4],
     operator_idx: u32,
     deposit_idx: u32,
     deposit_txid: &[u8; 32],
 ) -> ScriptBuf {
-    let mut metadata = [0u8; 44];
-    metadata[..4].copy_from_slice(&magic);
-    // first 4 bytes = operator idx
-    metadata[4..8].copy_from_slice(&operator_idx.to_be_bytes());
-    // next 4 bytes = deposit idx
-    metadata[8..12].copy_from_slice(&deposit_idx.to_be_bytes());
-    metadata[12..44].copy_from_slice(deposit_txid);
-    Descriptor::new_op_return(&metadata).unwrap().to_script()
+    // Create auxiliary data: [operator_idx][deposit_idx][deposit_txid]
+    let mut aux_data: Vec<u8> = Vec::new();
+    aux_data.extend(&operator_idx.to_be_bytes());
+    aux_data.extend(&deposit_idx.to_be_bytes());
+    aux_data.extend(deposit_txid);
+
+    // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+    let mut data = magic.to_vec();
+    data.push(BRIDGE_V1_SUBPROTOCOL_ID);
+    data.push(WITHDRAWAL_TX_TYPE);
+    data.extend(aux_data);
+
+    Descriptor::new_op_return(&data).unwrap().to_script()
 }
