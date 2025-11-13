@@ -4,7 +4,7 @@
 //! belong to any specific type.
 
 use alloy_consensus::Block as AlloyBlock;
-use alpen_reth_evm::collect_withdrawal_intents;
+use alpen_reth_evm::withdrawal_intents;
 use reth_evm::execute::BlockExecutionOutput;
 use reth_primitives::{Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned};
 use reth_primitives_traits::Block;
@@ -37,10 +37,7 @@ pub(crate) fn collect_withdrawal_intents_from_execution(
     transactions: Vec<TransactionSigned>,
     receipts: &[EthereumReceipt],
 ) -> Vec<alpen_reth_primitives::WithdrawalIntent> {
-    let executed_txns = transactions.iter();
-    let receipt_refs = receipts.iter();
-    let tx_receipt_pairs = executed_txns.zip(receipt_refs);
-    collect_withdrawal_intents(tx_receipt_pairs).collect()
+    withdrawal_intents(&transactions, receipts).collect()
 }
 
 /// Converts execution output to HashedPostState for state updates.
