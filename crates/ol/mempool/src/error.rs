@@ -13,10 +13,6 @@ pub enum MempoolError {
     #[error("Transaction {0} not found in mempool")]
     TransactionNotFound(OLTxId),
 
-    /// Transaction is a duplicate (already in mempool).
-    #[error("Duplicate transaction {0}")]
-    DuplicateTransaction(OLTxId),
-
     /// Failed to parse transaction blob into OLTransaction.
     #[error("Failed to parse transaction blob: {0}")]
     ParseError(String),

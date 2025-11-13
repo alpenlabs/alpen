@@ -14595,10 +14595,13 @@ dependencies = [
  "futures",
  "strata-acct-types",
  "strata-codec",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
+ "strata-storage",
  "thiserror 2.0.17",
+ "threadpool",
 ]
 
 [[package]]

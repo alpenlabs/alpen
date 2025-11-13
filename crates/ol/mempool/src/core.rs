@@ -75,6 +75,7 @@ impl MempoolCore {
     /// Submit a transaction to the mempool.
     ///
     /// Returns the transaction ID if successful.
+    /// Idempotent: returns success if transaction already exists.
     pub fn submit_transaction(
         &mut self,
         tx: OLTransaction,
@@ -83,9 +84,9 @@ impl MempoolCore {
         // Compute transaction ID
         let txid = tx.compute_txid();
 
-        // Check for duplicates
+        // Check for duplicates - idempotent operation, return success if already exists
         if self.transactions.contains_key(&txid) {
-            return Err(MempoolError::DuplicateTransaction(txid));
+            return Ok(txid);
         }
 
         // Compute metadata
@@ -284,21 +285,22 @@ mod tests {
     }
 
     #[test]
-    fn test_duplicate_rejection() {
+    fn test_duplicate_idempotency() {
         let config = MempoolConfig::default();
         let mut core = MempoolCore::new(config, 100);
 
         let (tx, size) = create_test_tx(vec![1, 2, 3]);
 
         // First submission succeeds
-        core.submit_transaction(tx.clone(), size).unwrap();
+        let txid1 = core.submit_transaction(tx.clone(), size).unwrap();
 
-        // Second submission fails
-        let result = core.submit_transaction(tx, size);
-        assert!(matches!(
-            result,
-            Err(MempoolError::DuplicateTransaction { .. })
-        ));
+        // Second submission is idempotent - returns same txid
+        let txid2 = core.submit_transaction(tx, size).unwrap();
+        assert_eq!(txid1, txid2);
+
+        // Verify only one transaction in mempool
+        let stats = core.stats();
+        assert_eq!(stats.current_tx_count, 1);
     }
 
     #[test]
