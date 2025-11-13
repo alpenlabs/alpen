@@ -3,13 +3,12 @@
 //! This module contains utility functions used during block execution that don't
 //! belong to any specific type.
 
-use alloy_consensus::{Block as AlloyBlock, TxReceipt};
+use alloy_consensus::Block as AlloyBlock;
 use alpen_reth_evm::collect_withdrawal_intents;
-use reth_evm::execute::{BlockExecutionOutput, ExecutionOutcome};
+use reth_evm::execute::BlockExecutionOutput;
 use reth_primitives::{Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned};
 use reth_primitives_traits::Block;
 use reth_trie::{HashedPostState, KeccakKeyHasher};
-use revm_primitives::alloy_primitives::Bloom;
 use strata_ee_acct_types::{EnvError, EnvResult, ExecPayload};
 
 use crate::types::EvmBlock;
@@ -33,15 +32,6 @@ pub(crate) fn build_and_recover_block(
         .map_err(|_| EnvError::InvalidBlock)
 }
 
-/// Accumulates logs bloom from all receipts in the execution output.
-pub(crate) fn accumulate_logs_bloom(receipts: &[EthereumReceipt]) -> Bloom {
-    let mut logs_bloom = Bloom::default();
-    receipts.iter().for_each(|r: &EthereumReceipt| {
-        logs_bloom.accrue_bloom(&r.bloom());
-    });
-    logs_bloom
-}
-
 /// Collects withdrawal intents from executed transactions and their receipts.
 pub(crate) fn collect_withdrawal_intents_from_execution(
     transactions: Vec<TransactionSigned>,
@@ -56,13 +46,7 @@ pub(crate) fn collect_withdrawal_intents_from_execution(
 /// Converts execution output to HashedPostState for state updates.
 pub(crate) fn compute_hashed_post_state(
     execution_output: BlockExecutionOutput<EthereumReceipt>,
-    block_number: u64,
+    _block_number: u64,
 ) -> HashedPostState {
-    let executor_outcome = ExecutionOutcome::new(
-        execution_output.state,
-        vec![execution_output.result.receipts],
-        block_number,
-        vec![execution_output.result.requests],
-    );
-    executor_outcome.hash_state_slow::<KeccakKeyHasher>()
+    HashedPostState::from_bundle_state::<KeccakKeyHasher>(&execution_output.state.state)
 }

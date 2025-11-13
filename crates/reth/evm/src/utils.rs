@@ -1,7 +1,8 @@
+use alloy_consensus::TxReceipt;
 use alloy_sol_types::SolEvent;
 use alpen_reth_primitives::{WithdrawalIntent, WithdrawalIntentEvent};
 use reth_primitives::{Receipt, TransactionSigned};
-use revm_primitives::U256;
+use revm_primitives::{alloy_primitives::Bloom, U256};
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
 use crate::constants::BRIDGEOUT_PRECOMPILE_ADDRESS;
@@ -55,4 +56,16 @@ where
             })
         })
     })
+}
+
+/// Accumulates logs bloom from all receipts in the execution output.
+///
+/// This is a general EVM function that combines blooms from all transaction receipts
+/// into a single block-level bloom filter for efficient log filtering.
+pub fn accumulate_logs_bloom(receipts: &[Receipt]) -> Bloom {
+    let mut logs_bloom = Bloom::default();
+    receipts.iter().for_each(|r| {
+        logs_bloom.accrue_bloom(&r.bloom());
+    });
+    logs_bloom
 }

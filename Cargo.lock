@@ -1222,6 +1222,7 @@ dependencies = [
 name = "alpen-reth-evm"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-consensus",
  "alloy-sol-types",
  "alpen-reth-primitives",
  "reth-evm",
