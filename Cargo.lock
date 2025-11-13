@@ -14224,7 +14224,9 @@ dependencies = [
  "strata-asm-types",
  "strata-checkpoint-types",
  "strata-csm-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
+ "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
  "strata-primitives",
  "strata-snark-acct-types",
@@ -14588,6 +14590,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "strata-acct-types",
+ "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "thiserror 2.0.17",

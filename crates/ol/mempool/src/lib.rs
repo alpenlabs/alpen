@@ -12,8 +12,9 @@ pub mod validation;
 pub use error::{MempoolError, MempoolResult};
 pub use ordering::{FifoOrdering, OrderingIndex, OrderingStrategy};
 pub use provider::{OLTxProvider, OLTxProviderError};
+pub use strata_db_types::{traits::MempoolDatabase, types::MempoolTxMetadata};
 pub use types::{
     DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE, DEFAULT_MAX_TXS_PER_ACCOUNT, MempoolConfig,
-    MempoolStats, MempoolTxMetadata,
+    MempoolStats,
 };
 pub use validation::{BasicValidator, TransactionValidator};

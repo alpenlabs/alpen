@@ -40,24 +40,6 @@ impl MempoolConfig {
         self.max_tx_count * self.max_tx_size
     }
 }
-
-/// Metadata computed in-memory for each transaction (not persisted).
-///
-/// This metadata is computed when transactions are parsed from blobs and is used
-/// for ordering and management. It is NOT stored in the database - only raw blobs are persisted.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MempoolTxMetadata {
-    /// Slot when transaction was added to mempool (for FIFO ordering).
-    pub entry_slot: u64,
-
-    /// Unix timestamp when transaction was added (for metrics).
-    pub entry_time: u64,
-
-    /// Size of the transaction blob in bytes.
-    pub size_bytes: usize,
-    // TODO: Add fee field for priority ordering when fees are implemented.
-}
-
 /// Statistics about the mempool state.
 #[derive(Clone, Debug, Default)]
 pub struct MempoolStats {

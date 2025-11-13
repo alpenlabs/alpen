@@ -7,10 +7,9 @@ use std::{
     fmt::Debug,
 };
 
+use strata_db_types::types::MempoolTxMetadata;
 use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::OLTransaction;
-
-use crate::MempoolTxMetadata;
 
 /// Strategy for ordering transactions in the mempool.
 ///

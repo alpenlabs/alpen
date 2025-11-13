@@ -317,6 +317,20 @@ pub enum CheckpointConfStatus {
     Finalized(CheckpointL1Ref),
 }
 
+/// Metadata stored with each transaction in the mempool for ordering and management.
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+pub struct MempoolTxMetadata {
+    /// Slot when transaction was added to mempool (for FIFO ordering).
+    pub entry_slot: u64,
+
+    /// Unix timestamp when transaction was added (for metrics).
+    pub entry_time: u64,
+
+    /// Size of the transaction in bytes.
+    pub size_bytes: usize,
+    // TODO: Add fee field for priority ordering.
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json;

@@ -2,9 +2,10 @@
 //!
 //! Provides pluggable validation strategies to check transaction validity before inclusion.
 
+use strata_db_types::types::MempoolTxMetadata;
 use strata_ol_chain_types_new::OLTransaction;
 
-use crate::{MempoolError, MempoolResult, MempoolTxMetadata};
+use crate::{MempoolError, MempoolResult};
 
 /// Strategy for validating transactions before mempool inclusion.
 pub trait TransactionValidator: Send + Sync {
