@@ -165,7 +165,6 @@ fn build_deposit_tx(
     let deposit_metadata = DepositTxMetadata {
         stake_index: dt_index,
         ee_address: drt_data.address.to_vec(),
-        // takeback_hash: TapNodeHash::from_byte_array(drt_data.take_back_leaf_hash),
         takeback_hash: takeback_script_hash,
     };
 

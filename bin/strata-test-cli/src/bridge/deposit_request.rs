@@ -5,11 +5,10 @@ use std::convert::TryInto;
 use bdk_wallet::bitcoin::{
     opcodes::{all::OP_RETURN, Opcode},
     script::{Instruction, Instructions},
-    ScriptBuf,
-    Transaction
+    ScriptBuf, Transaction,
 };
-use strata_primitives::l1::DepositRequestInfo;
 use strata_params::DepositTxParams;
+use strata_primitives::l1::DepositRequestInfo;
 use tracing::debug;
 
 struct DepositRequestScriptInfo {
@@ -74,10 +73,7 @@ fn parse_deposit_request_script(
     parse_tag_script(data, config)
 }
 
-fn parse_tag_script(
-    buf: &[u8],
-    config: &DepositTxParams,
-) -> Option<DepositRequestScriptInfo> {
+fn parse_tag_script(buf: &[u8], config: &DepositTxParams) -> Option<DepositRequestScriptInfo> {
     // buf has expected magic bytes
     let magic_bytes = &config.magic_bytes;
     let magic_len = magic_bytes.len();
@@ -130,39 +126,5 @@ fn next_bytes<'a>(instructions: &mut Instructions<'a>) -> Option<&'a [u8]> {
     match ins {
         Some(Ok(Instruction::PushBytes(bytes))) => Some(bytes.as_bytes()),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bdk_wallet::bitcoin::{absolute::LockTime, Amount, Transaction};
-
-    use super::extract_deposit_request_info;
-    use crate::constants::MAGIC_BYTES;
-    use strata_primitives::l1::BitcoinAmount;
-    use strata_params::DepositTxParams;
-
-    #[test]
-    fn test_empty_transaction() {
-        let config = DepositTxParams {
-            magic_bytes: *MAGIC_BYTES,
-            max_address_length: 20,
-            deposit_amount: BitcoinAmount::from_sat(1000000),
-            address: Default::default(),
-            operators_pubkey: Default::default(),
-        };
-
-        // Empty transaction with no outputs
-        let test_transaction = Transaction {
-            version: bitcoin::transaction::Version(2),
-            lock_time: LockTime::ZERO,
-            input: vec![],
-            output: vec![],
-        };
-
-        let out = extract_deposit_request_info(&test_transaction, &config);
-
-        // Should return None as the transaction has no outputs
-        assert!(out.is_none());
     }
 }

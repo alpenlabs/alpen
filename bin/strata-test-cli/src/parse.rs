@@ -1,14 +1,8 @@
 use bdk_wallet::bitcoin::{
-    bip32::Xpriv,
-    taproot::TaprootBuilder,
-    Address,
-    Network,
-    PublicKey,
-    Transaction,
-    XOnlyPublicKey
+    bip32::Xpriv, taproot::TaprootBuilder, Address, Network, PublicKey, Transaction, XOnlyPublicKey,
 };
 use secp256k1::SECP256K1;
-use strata_crypto::{EvenSecretKey, multisig::aggregate_schnorr_keys};
+use strata_crypto::{multisig::aggregate_schnorr_keys, EvenSecretKey};
 use strata_params::DepositTxParams;
 use strata_primitives::{
     buf::Buf32,
