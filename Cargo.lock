@@ -14594,6 +14594,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "strata-acct-types",
+ "strata-codec",
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
