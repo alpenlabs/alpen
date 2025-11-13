@@ -4,7 +4,7 @@ use reth_trie::HashedPostState;
 use revm_primitives::alloy_primitives::Bloom;
 use strata_codec::{Codec, CodecError};
 
-use super::{decode_bytes_with_length, encode_bytes_with_length, Hash};
+use super::{Hash, decode_bytes_with_length, encode_bytes_with_length};
 
 /// Write batch for EVM execution containing state changes.
 ///
@@ -25,11 +25,7 @@ pub struct EvmWriteBatch {
 
 impl EvmWriteBatch {
     /// Creates a new EvmWriteBatch from a HashedPostState and computed metadata.
-    pub fn new(
-        hashed_post_state: HashedPostState,
-        state_root: Hash,
-        logs_bloom: Bloom,
-    ) -> Self {
+    pub fn new(hashed_post_state: HashedPostState, state_root: Hash, logs_bloom: Bloom) -> Self {
         Self {
             hashed_post_state,
             state_root,
