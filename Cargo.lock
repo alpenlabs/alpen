@@ -14234,9 +14234,12 @@ dependencies = [
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
+ "digest 0.10.7",
  "int-enum",
+ "sha2 0.10.9",
  "strata-acct-types",
  "strata-asm-common",
+ "strata-identifiers",
  "strata-primitives",
  "strata-snark-acct-types",
 ]
