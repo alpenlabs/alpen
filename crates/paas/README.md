@@ -10,7 +10,7 @@ The `Prover` trait is the main abstraction point:
 
 ```rust
 pub trait Prover: Send + Sync + 'static {
-    type TaskId: TaskId;
+    type TaskId: TaskIdentifier;
     type Backend: Clone + Eq + Hash + Debug + Send + Sync + 'static;
 
     fn backend(&self, task_id: &Self::TaskId) -> Self::Backend;
@@ -55,64 +55,59 @@ Pending → Queued → Proving → Completed
 - Permanent failures are not retried
 - Delay calculation: `base_delay * multiplier^retry_count` (capped at max_delay)
 
-## Usage Example
+## Usage Example - Registry Pattern (Recommended)
+
+The registry pattern provides better type safety and extensibility by allowing you to register
+multiple program handlers dynamically:
 
 ```rust
-use strata_paas::{Prover, ProverServiceBuilder, PaaSConfig, PaaSError, PaaSResult};
+use strata_paas::registry::RegistryProverServiceBuilder;
+use strata_paas::PaaSConfig;
 
-// 1. Define your task ID and backend types
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
-enum ProofBackend {
-    Native,
-    SP1,
+// Define your program type with routing
+enum MyProgram {
+    TypeA(u64),
+    TypeB(String),
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
-struct ProofTask {
-    id: u64,
-    proof_type: String,
+enum MyProgramVariant {
+    TypeA,
+    TypeB,
 }
 
-// 2. Implement the Prover trait
-struct MyProver {
-    // Your proving infrastructure (clients, databases, etc.)
-}
+impl ProgramType for MyProgram {
+    type RoutingKey = MyProgramVariant;
 
-impl Prover for MyProver {
-    type TaskId = ProofTask;
-    type Backend = ProofBackend;
-
-    fn backend(&self, task: &ProofTask) -> ProofBackend {
-        match task.proof_type.as_str() {
-            "fast" => ProofBackend::Native,
-            "secure" => ProofBackend::SP1,
-            _ => ProofBackend::Native,
+    fn routing_key(&self) -> Self::RoutingKey {
+        match self {
+            MyProgram::TypeA(_) => MyProgramVariant::TypeA,
+            MyProgram::TypeB(_) => MyProgramVariant::TypeB,
         }
     }
-
-    async fn prove(&self, task: ProofTask) -> PaaSResult<()> {
-        // Your proving logic here
-        // Return transient/permanent errors as appropriate
-        Ok(())
-    }
 }
 
-// 3. Launch the service
-let prover = Arc::new(MyProver { /* ... */ });
-let config = PaaSConfig::new(HashMap::from([
-    (ProofBackend::Native, 5),
-    (ProofBackend::SP1, 20),
-]));
+// Launch with registry
+let handle = RegistryProverServiceBuilder::new(config)
+    .register::<ProgramA, _, _, _>(
+        MyProgramVariant::TypeA,
+        input_fetcher_a,
+        proof_store,
+        host_a,
+    )
+    .register::<ProgramB, _, _, _>(
+        MyProgramVariant::TypeB,
+        input_fetcher_b,
+        proof_store,
+        host_b,
+    )
+    .launch(&executor)
+    .await?;
 
-let handle = ProverServiceBuilder::new()
-    .with_prover(prover)
-    .with_config(config)
-    .launch(&executor)?;
-
-// 4. Use the handle to submit tasks and check status
-handle.submit_task(ProofTask { id: 1, proof_type: "fast".into() }).await?;
-let status = handle.get_status(&task_id).await?;
+// Submit tasks with clean API
+handle.submit_task(MyProgram::TypeA(42), ZkVmBackend::SP1).await?;
 ```
+
+See the `registry` module documentation for complete examples.
 
 ## Design Principles
 

@@ -14,8 +14,8 @@ use paas_integration::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher, ProofStore
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
-use strata_paas::{PaaSConfig, ProofContextVariant, RegistryProverServiceBuilder, ZkVmBackend};
-use strata_primitives::proof::ProofContext;
+use proof_context_integration::{ProofContextVariant, ProofTask};
+use strata_paas::{PaaSConfig, RegistryProverServiceBuilder, ZkVmBackend};
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
 use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
@@ -35,6 +35,7 @@ mod errors;
 mod host_resolver;
 mod operators;
 mod paas_integration;
+mod proof_context_integration;
 mod rpc_server;
 
 #[tokio::main]
@@ -140,7 +141,7 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // Create and launch PaaS service with registry-based API
     // Register each program type with its handler and host
-    let builder = RegistryProverServiceBuilder::<ProofContext>::new(paas_config)
+    let builder = RegistryProverServiceBuilder::<ProofTask>::new(paas_config)
         .register::<CheckpointProgram, _, _, _>(
             ProofContextVariant::Checkpoint,
             checkpoint_fetcher,

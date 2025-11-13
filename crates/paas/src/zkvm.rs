@@ -6,10 +6,13 @@
 //!
 //! ## Example Usage
 //!
+//! Note: This module provides low-level zkaleido integration. Most users should use the
+//! registry-based API from `strata_paas::registry` which provides better type safety and
+//! extensibility.
+//!
 //! ```rust,ignore
 //! use std::sync::Arc;
 //! use strata_paas::zkvm::*;
-//! use strata_paas::{ProverServiceBuilder, PaaSConfig};
 //!
 //! // 1. Define your program identifiers
 //! #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -48,42 +51,8 @@
 //!     }
 //! }
 //!
-//! // 3. Implement ProofStore to define how to store completed proofs
-//! struct MyProofStore {
-//!     db: Arc<ProofDatabase>,
-//! }
-//!
-//! impl ProofStore<MyProgram> for MyProofStore {
-//!     async fn store_proof(
-//!         &self,
-//!         task_id: &ZkVmTaskId<MyProgram>,
-//!         proof: zkaleido::ProofReceiptWithMetadata,
-//!     ) -> PaaSResult<()> {
-//!         self.db.put_proof(task_id, proof)?;
-//!         Ok(())
-//!     }
-//! }
-//!
-//! // 4. Create and launch the prover service
-//! let input_fetcher = Arc::new(MyInputFetcher { /* ... */ });
-//! let proof_store = Arc::new(MyProofStore { /* ... */ });
-//! let host = Arc::new(/* your ZkVmHost implementation */);
-//!
-//! let prover = ZkVmProver::new(input_fetcher, proof_store, host);
-//!
-//! let handle = ProverServiceBuilder::new()
-//!     .with_prover(Arc::new(prover))
-//!     .with_config(config)
-//!     .launch(&executor)
-//!     .await?;
-//!
-//! // 5. Submit tasks
-//! let task_id = ZkVmTaskId {
-//!     program: MyProgram::Checkpoint(42),
-//!     backend: ZkVmBackend::SP1,
-//! };
-//!
-//! handle.submit_task(task_id).await?;
+//! // 3. For a complete example using the registry pattern (recommended),
+//! // see the documentation in `strata_paas::registry` module.
 //! ```
 
 use std::marker::PhantomData;

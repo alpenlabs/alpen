@@ -24,10 +24,8 @@ tracing = { workspace = true }
 # ZkVm support (required)
 zkaleido = { workspace = true }
 
-# Strata primitives (for ProofContext integration)
-strata-primitives = { workspace = true }
+# Async trait for registry trait objects
 async-trait.workspace = true
-strata-zkvm-hosts = { version = "0.3.0-alpha.1", path = "../zkvm/hosts" }
 
 [dev-dependencies]
 tokio-test = "0.4"

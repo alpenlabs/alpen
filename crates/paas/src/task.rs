@@ -2,16 +2,21 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Trait for task identifiers
+/// Trait for task identifiers used internally by the framework
 ///
-/// Task IDs must be unique, hashable, cloneable, and serializable.
-pub trait TaskId:
+/// This trait defines the requirements for types that can be used as task identifiers
+/// in the PaaS framework. Task identifiers must be unique, hashable, cloneable, and
+/// serializable.
+///
+/// Note: This is an internal trait. Users typically work with the concrete `TaskId<P>`
+/// struct exported at the crate root.
+pub trait TaskIdentifier:
     Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + Serialize + for<'de> Deserialize<'de> + 'static
 {
 }
 
 // Blanket implementation for types that satisfy the requirements
-impl<T> TaskId for T where
+impl<T> TaskIdentifier for T where
     T: Clone
         + Eq
         + std::hash::Hash

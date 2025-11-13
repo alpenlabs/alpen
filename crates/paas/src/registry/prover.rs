@@ -3,10 +3,11 @@
 use std::sync::Arc;
 
 use crate::error::PaaSResult;
-use crate::registry::ProgramRegistry;
 use crate::task_id::TaskId;
 use crate::zkvm::ZkVmBackend;
 use crate::{Prover, ProgramType};
+
+use super::core::ProgramRegistry;
 
 /// Prover that uses the program registry for dynamic dispatch
 pub struct RegistryProver<P: ProgramType> {

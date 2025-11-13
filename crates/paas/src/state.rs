@@ -9,12 +9,12 @@ use strata_service::ServiceState;
 
 use crate::config::PaaSConfig;
 use crate::error::{PaaSError, PaaSResult};
-use crate::task::{TaskId, TaskStatus};
+use crate::task::{TaskIdentifier, TaskStatus};
 use crate::Prover;
 
 /// Task metadata tracked by the service
 #[derive(Debug, Clone)]
-pub(crate) struct TaskInfo<T: TaskId> {
+pub(crate) struct TaskInfo<T: TaskIdentifier> {
     pub(crate) task_id: T,
     pub(crate) status: TaskStatus,
     pub(crate) updated_at: Instant,
