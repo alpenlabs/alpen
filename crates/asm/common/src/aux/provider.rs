@@ -128,24 +128,10 @@ impl VerifiedAuxData {
     /// # Errors
     ///
     /// Returns `AuxError::ManifestLeafNotFound` if the leaf is not found at the given index.
-    pub fn get_manifest_leaf(&self, index: u64) -> AuxResult<Hash32> {
+    pub fn get_manifest_leaf(&self, index: u64) -> AuxResult<&Hash32> {
         self.manifest_leaves
             .get(&index)
-            .copied()
             .ok_or(AuxError::ManifestLeafNotFound { index })
-    }
-
-    /// Gets a range of verified manifest leaves by their MMR indices.
-    ///
-    /// Returns a vector of leaf hashes for the given index range (inclusive).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any leaf in the range is not found.
-    pub fn get_manifest_leaves(&self, start: u64, end: u64) -> AuxResult<Vec<Hash32>> {
-        (start..=end)
-            .map(|idx| self.get_manifest_leaf(idx))
-            .collect()
     }
 }
 
