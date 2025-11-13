@@ -63,30 +63,24 @@ fn index_tx<V: TxVisitor>(
     filter_config: &TxFilterConfig,
 ) -> Option<V::Output> {
     let tag = filter_config.deposit_config.magic_bytes;
-    let grouped_relevant_txs = group_txs_by_subprotocol(tag, [tx]);
 
-    for (subprotocol_id, tx_refs) in grouped_relevant_txs {
-        if subprotocol_id == BRIDGE_V1_SUBPROTOCOL_ID {
-            for tx_input in tx_refs {
-                // check if it's a deposit transaction
-                if let Ok(bridge_v1_dp) = parse_deposit_tx(&tx_input) {
-                    println!("ASH: Working on deposit Tx");
-                    let dp = convert_bridge_v1_deposit_to_protocol_deposit(bridge_v1_dp);
-                    visitor.visit_deposit(dp);
-                }
+    if let Some(tx_refs) = group_txs_by_subprotocol(tag, [tx]).remove(&BRIDGE_V1_SUBPROTOCOL_ID) {
+        for tx_input in tx_refs {
+            if let Ok(dp) =
+                parse_deposit_tx(&tx_input).map(convert_bridge_v1_deposit_to_protocol_deposit)
+            {
+                visitor.visit_deposit(dp);
+            }
 
-                // check if it's a withdrawal fulfillment
-                if let Ok(bridge_v1_wf) = parse_withdrawal_fulfillment_tx(&tx_input) {
-                    println!("ASH: Working on withdrawal Tx");
-                    let wf = convert_bridge_v1_withdrawal_to_protocol_withdrawal(bridge_v1_wf);
-                    visitor.visit_withdrawal_fulfillment(wf);
-                }
+            if let Ok(wf) = parse_withdrawal_fulfillment_tx(&tx_input)
+                .map(convert_bridge_v1_withdrawal_to_protocol_withdrawal)
+            {
+                visitor.visit_withdrawal_fulfillment(wf);
             }
         }
     }
 
     if let Some(ckpt) = parse_valid_checkpoint_envelope(tx, filter_config) {
-        println!("ASH: Isn't checkpoint coming?");
         visitor.visit_checkpoint(ckpt);
     }
 
@@ -95,7 +89,6 @@ fn index_tx<V: TxVisitor>(
     }
 
     for spend_info in find_deposit_spends(tx, filter_config) {
-        println!("ASH: Isn't spends coming?");
         visitor.visit_deposit_spend(spend_info);
     }
 
