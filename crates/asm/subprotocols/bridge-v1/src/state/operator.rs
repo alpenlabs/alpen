@@ -10,25 +10,7 @@ use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::Sorte
 
 use super::bitmap::OperatorBitmap;
 
-/// Bridge operator entry containing identification and cryptographic keys.
-///
-/// Each operator registered in the bridge has:
-///
-/// - **`idx`** - Unique identifier used to reference the operator globally
-/// - **`signing_pk`** - Public key for message signature verification between operators
-/// - **`wallet_pk`** - Public key for Bitcoin transaction signatures (MuSig2 compatible)
-///
-/// # Key Separation Design
-///
-/// The two separate keys allow for different cryptographic schemes:
-/// - Message signing can use a different mechanism than Bitcoin transactions
-/// - Currently, only `wallet_pk` is actively used for signatures
-///
-/// # Bitcoin Compatibility
-///
-/// The `wallet_pk` follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
-/// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
-/// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
+/// Bridge operator entry containing identification and cryptographic key.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
 )]
@@ -36,11 +18,12 @@ pub struct OperatorEntry {
     /// Global operator index.
     idx: OperatorIdx,
 
-    /// Public key used to verify signed messages from the operator.
-    signing_pk: Buf32,
-
     /// Wallet public key used to compute MuSig2 public key from a set of operators.
-    wallet_pk: Buf32,
+    ///
+    /// It follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
+    /// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
+    /// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
+    musig2_pk: Buf32,
 }
 
 impl PartialOrd for OperatorEntry {
@@ -57,36 +40,16 @@ impl Ord for OperatorEntry {
 
 impl OperatorEntry {
     /// Returns the unique operator index.
-    ///
-    /// # Returns
-    ///
-    /// The [`OperatorIdx`] that uniquely identifies this operator.
     pub fn idx(&self) -> OperatorIdx {
         self.idx
     }
 
-    /// Returns the signing public key for message verification.
-    ///
-    /// This key is used to verify signed messages between operators in the
-    /// bridge communication protocol.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the signing public key as [`Buf32`].
-    pub fn signing_pk(&self) -> &Buf32 {
-        &self.signing_pk
-    }
-
-    /// Returns the wallet public key for Bitcoin transactions.
+    /// Returns the operator's public key.
     ///
     /// This key is used in MuSig2 aggregation for Bitcoin transaction signatures
     /// and follows BIP 340 standard for Taproot compatibility.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the wallet public key as [`Buf32`].
-    pub fn wallet_pk(&self) -> &Buf32 {
-        &self.wallet_pk
+    pub fn musig2_pk(&self) -> &Buf32 {
+        &self.musig2_pk
     }
 }
 
@@ -131,12 +94,13 @@ pub struct OperatorTable {
     /// with the aggregated public key for signature operations.
     active_operators: OperatorBitmap,
 
-    /// Aggregated public key derived from operator wallet keys that are currently active in the N/N
-    /// multisig.
+    /// Aggregated public key derived from operator wallet keys that are currently active in the
+    /// N/N multisig.
     ///
     /// This key is computed by aggregating the wallet public keys of only those operators
-    /// marked as active in the `active_operators` bitmap, using the MuSig2 key aggregation protocol.
-    /// It serves as the collective public key for multi-signature operations and is used for:
+    /// marked as active in the `active_operators` bitmap, using the MuSig2 key aggregation
+    /// protocol. It serves as the collective public key for multi-signature operations and is
+    /// used for:
     ///
     /// - Generating deposit addresses for the bridge
     /// - Verifying multi-signatures from the current operator set
@@ -183,8 +147,7 @@ impl OperatorTable {
                     .enumerate()
                     .map(|(i, e)| OperatorEntry {
                         idx: i as OperatorIdx,
-                        signing_pk: *e.signing_pk(),
-                        wallet_pk: *e.wallet_pk(),
+                        musig2_pk: *e.wallet_pk(),
                     })
                     .collect(),
             ),
@@ -285,8 +248,7 @@ impl OperatorTable {
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
-                signing_pk: *op_keys.signing_pk(),
-                wallet_pk: *op_keys.wallet_pk(),
+                musig2_pk: *op_keys.wallet_pk(),
             };
 
             // SortedVec handles insertion and maintains sorted order
@@ -323,7 +285,7 @@ impl OperatorTable {
             let active_keys: Vec<&Buf32> = self
                 .active_operators
                 .active_indices()
-                .filter_map(|op| self.get_operator(op).map(|entry| entry.wallet_pk()))
+                .filter_map(|op| self.get_operator(op).map(|entry| entry.musig2_pk()))
                 .collect();
 
             if active_keys.is_empty() {
@@ -385,8 +347,7 @@ mod tests {
         for (i, op) in operators.iter().enumerate() {
             let entry = table.get_operator(i as u32).unwrap();
             assert_eq!(entry.idx(), i as u32);
-            assert_eq!(entry.signing_pk(), op.signing_pk());
-            assert_eq!(entry.wallet_pk(), op.wallet_pk());
+            assert_eq!(entry.musig2_pk(), op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
@@ -407,8 +368,7 @@ mod tests {
             let idx = (i + 1) as u32;
             let entry = table.get_operator(idx).unwrap();
             assert_eq!(entry.idx(), idx);
-            assert_eq!(entry.signing_pk(), op.signing_pk());
-            assert_eq!(entry.wallet_pk(), op.wallet_pk());
+            assert_eq!(entry.musig2_pk(), op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
