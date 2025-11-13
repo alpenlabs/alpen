@@ -1,5 +1,6 @@
 use std::fmt;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use digest::Digest;
 use int_enum::IntEnum;
 use sha2::Sha256;
@@ -11,7 +12,7 @@ use strata_snark_acct_types::SnarkAccountUpdate;
 use crate::Slot;
 
 /// Represents a single transaction within a block.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct OLTransaction {
     /// The actual payload for the transaction.
     payload: TransactionPayload,
@@ -99,7 +100,7 @@ impl OLTransaction {
 }
 
 /// The actual payload of the transaction.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum TransactionPayload {
     GenericAccountMessage {
         target: AccountId,
@@ -128,7 +129,7 @@ impl TransactionPayload {
 }
 
 /// Additional data in a transaction.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct TransactionExtra {
     min_slot: Option<Slot>,
     max_slot: Option<Slot>,

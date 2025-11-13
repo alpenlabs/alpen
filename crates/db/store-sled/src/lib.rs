@@ -10,6 +10,7 @@ mod init;
 pub mod l1;
 pub mod l2;
 pub mod macros;
+pub mod mempool;
 pub mod prover;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
@@ -27,6 +28,7 @@ use client_state::db::ClientStateDBSled;
 pub use config::SledDbConfig;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
+use mempool::db::MempoolDBSled;
 use strata_db_types::{DbResult, traits::DatabaseBackend};
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
@@ -62,6 +64,7 @@ pub struct SledBackend {
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
+    mempool_db: Arc<MempoolDBSled>,
 }
 
 impl SledBackend {
@@ -77,7 +80,8 @@ impl SledBackend {
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
-        let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
+        let broadcast_db = Arc::new(L1BroadcastDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
             l1_db,
@@ -88,6 +92,7 @@ impl SledBackend {
             writer_db,
             prover_db,
             broadcast_db,
+            mempool_db,
         })
     }
 }
@@ -127,5 +132,9 @@ impl DatabaseBackend for SledBackend {
 
     fn broadcast_db(&self) -> Arc<impl strata_db_types::traits::L1BroadcastDatabase> {
         self.broadcast_db.clone()
+    }
+
+    fn mempool_db(&self) -> Arc<impl strata_db_types::traits::MempoolDatabase> {
+        self.mempool_db.clone()
     }
 }

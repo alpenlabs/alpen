@@ -13908,7 +13908,9 @@ dependencies = [
  "strata-csm-types",
  "strata-db-tests",
  "strata-db-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
+ "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
  "strata-primitives",
  "strata-state",
@@ -13921,12 +13923,16 @@ name = "strata-db-tests"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "borsh",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
  "strata-csm-types",
  "strata-db-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
+ "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
  "strata-primitives",
  "strata-state",
@@ -14236,6 +14242,7 @@ dependencies = [
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "digest 0.10.7",
  "int-enum",
  "sha2 0.10.9",
@@ -14585,6 +14592,7 @@ dependencies = [
 name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "strata-acct-types",
 ]
 

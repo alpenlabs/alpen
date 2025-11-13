@@ -1,5 +1,7 @@
 //! Update message types.
 
+use borsh::{BorshDeserialize, BorshSerialize};
+
 use crate::{
     accumulators::{AccumulatorClaim, MmrEntryProof},
     messages::{MessageEntry, MessageEntryProof},
@@ -8,7 +10,7 @@ use crate::{
 };
 
 /// Represents the state update that will eventually go into DA on OL.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UpdateStateData {
     /// The new state we're claiming.
     proof_state: ProofState,
@@ -36,7 +38,7 @@ impl UpdateStateData {
 }
 
 /// Represents the input sufficient to perform a state update.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UpdateInputData {
     /// Sequence number to prevent replays, since we can't just rely on message
     /// index.
@@ -74,7 +76,7 @@ impl UpdateInputData {
 }
 
 /// Description of the operation of what we're updating.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UpdateOperationData {
     /// State update inputs.
     input: UpdateInputData,
@@ -147,7 +149,7 @@ impl From<UpdateOperationData> for UpdateInputData {
 /// Describes references to entries in accumulators available in the ledger.
 ///
 /// These is generated from a [`LedgerRefProofs`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LedgerRefs {
     l1_header_refs: Vec<AccumulatorClaim>,
 }
@@ -201,7 +203,7 @@ impl LedgerRefProofs {
 /// This is enough to verify that an update is safe to potentially apply to some
 /// current state, but not that its claimed dependencies on the ledger are
 /// actually correct.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SnarkAccountUpdate {
     /// The state change/requirements operation data itself.
     operation: UpdateOperationData,
@@ -238,6 +240,28 @@ impl SnarkAccountUpdate {
             base_update: self,
             accumulator_proofs: proofs,
         }
+    }
+}
+
+// TODO: Replace with proper SSZ serialization when available.
+// This is a temporary stub to allow compilation for mempool database implementation.
+// SnarkAccountUpdate serialization is not currently needed in practice as mempool
+// tests only use GenericAccountMessage variant.
+impl BorshSerialize for SnarkAccountUpdate {
+    fn serialize<W: std::io::Write>(&self, _writer: &mut W) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "SnarkAccountUpdate Borsh serialization not yet implemented - use SSZ when available",
+        ))
+    }
+}
+
+impl BorshDeserialize for SnarkAccountUpdate {
+    fn deserialize_reader<R: std::io::Read>(_reader: &mut R) -> std::io::Result<Self> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "SnarkAccountUpdate Borsh deserialization not yet implemented - use SSZ when available",
+        ))
     }
 }
 
