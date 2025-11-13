@@ -1,14 +1,10 @@
-//! OL transaction mempool types.
+//! OL transaction mempool.
 //!
-//! Provides types for managing pending OL transactions before they are included in blocks.
+//! Provides types and implementation for managing pending OL transactions.
 
-use strata_identifiers::OLTxId;
+pub mod error;
+pub mod types;
 
-/// Errors that can occur during mempool operations.
-#[derive(Debug, thiserror::Error)]
-pub enum MempoolError {
-    /// Transaction with the given ID doesn't exist.
-    #[error("Transaction {0} not found in mempool")]
-    TransactionNotFound(OLTxId),
-    // TODO add more errors here
-}
+// Re-export for convenience
+pub use error::{MempoolError, MempoolResult};
+pub use types::{MempoolStats, MempoolTxMetadata};

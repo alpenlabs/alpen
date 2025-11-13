@@ -14259,6 +14259,7 @@ dependencies = [
 name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
+ "strata-acct-types",
  "strata-identifiers",
  "thiserror 2.0.16",
 ]
