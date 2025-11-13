@@ -8,18 +8,18 @@ use strata_codec::{Codec, CodecError};
 pub(crate) type Hash = [u8; 32];
 
 // Module declarations
+mod block;
+mod block_body;
+mod header;
 mod partial_state;
 mod write_batch;
-mod header;
-mod block_body;
-mod block;
 
 // Re-export public types
+pub use block::EvmBlock;
+pub use block_body::EvmBlockBody;
+pub use header::EvmHeader;
 pub use partial_state::EvmPartialState;
 pub use write_batch::EvmWriteBatch;
-pub use header::EvmHeader;
-pub use block_body::EvmBlockBody;
-pub use block::EvmBlock;
 
 // Keep tests module
 #[cfg(test)]

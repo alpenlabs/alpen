@@ -12,8 +12,8 @@ use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{EnvResult, ExecPartialState};
 
 use super::{
-    decode_bytes_with_length, decode_rlp_with_length, encode_bytes_with_length,
-    encode_rlp_with_length, Hash,
+    Hash, decode_bytes_with_length, decode_rlp_with_length, encode_bytes_with_length,
+    encode_rlp_with_length,
 };
 use crate::types::EvmWriteBatch;
 
@@ -88,10 +88,7 @@ impl EvmPartialState {
     ///
     /// # Panics
     /// Panics if the header chain is invalid (block numbers or parent hashes don't match).
-    pub fn prepare_witness_db<'a>(
-        &'a self,
-        current_header: &Header,
-    ) -> TrieDB<'a> {
+    pub fn prepare_witness_db<'a>(&'a self, current_header: &Header) -> TrieDB<'a> {
         // Seal the current block header and ancestor headers by reference (no clones)
         let current_sealed = current_header.seal_ref_slow();
         let sealed_headers = std::iter::once(current_sealed)
