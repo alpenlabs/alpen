@@ -9,16 +9,16 @@ pub struct OLLog {
     // TODO: maybe use account serial,
     account_id: AccountId,
 
-    /// Opaque log payload.
-    log_type: LogType,
+    /// Inner log data.
+    log_data: LogData,
     // TODO: add more concrete fields.
 }
 
 impl OLLog {
-    pub fn new(account_id: AccountId, log_type: LogType) -> Self {
+    pub fn new(account_id: AccountId, log_data: LogData) -> Self {
         Self {
             account_id,
-            log_type,
+            log_data,
         }
     }
 
@@ -26,31 +26,29 @@ impl OLLog {
         self.account_id
     }
 
-    pub fn log_type(&self) -> &LogType {
-        &self.log_type
+    pub fn log_data(&self) -> &LogData {
+        &self.log_data
     }
 
     /// Create a withdrawal intent log.
     pub fn withdrawal_intent(account_id: AccountId, amount: BitcoinAmount, dest: Vec<u8>) -> Self {
         Self::new(
             account_id,
-            LogType::WithdrawalIntent(WithdrawalIntentLog::new(amount, dest)),
+            LogData::WithdrawalIntent(WithdrawalIntentLogData::new(amount, dest)),
         )
     }
 
     /// Create a snark account update log.
     pub fn snark_account_update(
         account_id: AccountId,
-        from_msg_idx: u64,
-        to_msg_idx: u64,
+        new_next_msg_idx: u64,
         new_proof_state: Buf32,
         extra_data: Vec<u8>,
     ) -> Self {
         Self::new(
             account_id,
-            LogType::SnarkAccountUpdate(SnarkAccountUpdateLog::new(
-                from_msg_idx,
-                to_msg_idx,
+            LogData::SnarkAccountUpdate(SnarkAccountUpdateLogData::new(
+                new_next_msg_idx,
                 new_proof_state,
                 extra_data,
             )),
@@ -65,7 +63,7 @@ impl OLLog {
     ) -> Self {
         Self::new(
             account_id,
-            LogType::DepositAck(DepositAckLog::new(subject_addr, amount)),
+            LogData::DepositAck(DepositAckLogData::new(subject_addr, amount)),
         )
     }
 
@@ -73,7 +71,7 @@ impl OLLog {
     pub fn checkpoint_ack(account_id: AccountId, epoch: EpochCommitment) -> Self {
         Self::new(
             account_id,
-            LogType::CheckpointAck(CheckpointAckLog::new(epoch)),
+            LogData::CheckpointAck(CheckpointAckLogData::new(epoch)),
         )
     }
 
@@ -94,17 +92,17 @@ pub fn compute_logs_root(logs: &[OLLog]) -> Buf32 {
 
 /// Structured representation of the type of log.
 #[derive(Clone, Debug)]
-pub enum LogType {
-    WithdrawalIntent(WithdrawalIntentLog),
-    SnarkAccountUpdate(SnarkAccountUpdateLog),
-    DepositAck(DepositAckLog),
-    CheckpointAck(CheckpointAckLog),
+pub enum LogData {
+    WithdrawalIntent(WithdrawalIntentLogData),
+    SnarkAccountUpdate(SnarkAccountUpdateLogData),
+    DepositAck(DepositAckLogData),
+    CheckpointAck(CheckpointAckLogData),
 }
 
 /// Log representing intent to withdraw amount by an account. Account is implied from the log
 /// context.
 #[derive(Clone, Debug)]
-pub struct WithdrawalIntentLog {
+pub struct WithdrawalIntentLogData {
     /// Amount intended to withdraw.
     amount: BitcoinAmount,
 
@@ -112,7 +110,7 @@ pub struct WithdrawalIntentLog {
     dest: Vec<u8>, // TODO: use bosd?
 }
 
-impl WithdrawalIntentLog {
+impl WithdrawalIntentLogData {
     pub fn new(amount: BitcoinAmount, dest: Vec<u8>) -> Self {
         Self { amount, dest }
     }
@@ -128,12 +126,9 @@ impl WithdrawalIntentLog {
 
 /// Log representing snark account update.
 #[derive(Clone, Debug)]
-pub struct SnarkAccountUpdateLog {
-    /// Start of the message index that was processed.
-    from_msg_idx: u64,
-
+pub struct SnarkAccountUpdateLogData {
     /// End of the message index that was processed.
-    to_msg_idx: u64,
+    new_next_msg_idx: u64,
 
     /// New proof state after the update.
     new_proof_state: Buf32,
@@ -142,27 +137,17 @@ pub struct SnarkAccountUpdateLog {
     extra_data: Vec<u8>,
 }
 
-impl SnarkAccountUpdateLog {
-    pub fn new(
-        from_msg_idx: u64,
-        to_msg_idx: u64,
-        new_proof_state: Buf32,
-        extra_data: Vec<u8>,
-    ) -> Self {
+impl SnarkAccountUpdateLogData {
+    pub fn new(new_next_msg_idx: u64, new_proof_state: Buf32, extra_data: Vec<u8>) -> Self {
         Self {
-            from_msg_idx,
-            to_msg_idx,
+            new_next_msg_idx,
             new_proof_state,
             extra_data,
         }
     }
 
-    pub fn from_msg_idx(&self) -> u64 {
-        self.from_msg_idx
-    }
-
     pub fn to_msg_idx(&self) -> u64 {
-        self.to_msg_idx
+        self.new_next_msg_idx
     }
 
     pub fn new_proof_state(&self) -> Buf32 {
@@ -176,14 +161,14 @@ impl SnarkAccountUpdateLog {
 
 /// Log that acknowledges deposit. The account this deposits to is in the log context.
 #[derive(Clone, Debug)]
-pub struct DepositAckLog {
+pub struct DepositAckLogData {
     /// Subject within the account to deposit to.
     subject_addr: Vec<u8>,
     /// Deposit amount.
     amount: BitcoinAmount,
 }
 
-impl DepositAckLog {
+impl DepositAckLogData {
     pub fn new(subject_addr: Vec<u8>, amount: BitcoinAmount) -> Self {
         Self {
             subject_addr,
@@ -202,11 +187,11 @@ impl DepositAckLog {
 
 /// Log that acknowledges checkpoint processing.
 #[derive(Clone, Debug)]
-pub struct CheckpointAckLog {
+pub struct CheckpointAckLogData {
     epoch: EpochCommitment,
 }
 
-impl CheckpointAckLog {
+impl CheckpointAckLogData {
     pub fn new(epoch: EpochCommitment) -> Self {
         Self { epoch }
     }

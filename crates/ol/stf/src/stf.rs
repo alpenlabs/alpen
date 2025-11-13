@@ -1,11 +1,11 @@
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
+use strata_acct_types::{AccountId, AcctError};
 use strata_asm_common::AsmManifest;
 use strata_ledger_types::{
-    AccountTypeState, IAccountState, IL1ViewState, ISnarkAccountState, StateAccessor,
+    AccountTypeState, IAccountState, IGlobalState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
 use strata_ol_chain_types_new::{
     L1BlockCommitment, L1Update, LogEmitter, OLBlock, OLBlockBody, OLLog, OLTransaction,
-    TransactionPayload,
+    TransactionExtra, TransactionPayload,
 };
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::{SnarkAccountUpdateContainer, UpdateOperationData};
@@ -31,7 +31,7 @@ pub fn execute_block<S: StateAccessor>(
     block: OLBlock,
 ) -> StfResult<ExecOutput> {
     // Do some pre execution validation
-    pre_exec_block_validate(state_accessor, &block, ctx.prev_header(), ctx.params())
+    pre_exec_block_validate(&block, ctx.prev_header(), ctx.params())
         .map_err(StfError::BlockValidation)?;
 
     let exec_output = execute_block_body(ctx, state_accessor, block.body())?;
@@ -81,7 +81,27 @@ pub fn execute_transactions(
     txs: &[OLTransaction],
 ) -> StfResult<()> {
     for tx in txs {
+        // validate tx extra
+        validate_tx_extra(state_accessor, tx.extra())?;
         execute_transaction(ctx, state_accessor, tx)?;
+    }
+    Ok(())
+}
+
+pub fn validate_tx_extra(
+    state_accessor: &impl StateAccessor,
+    extra: &TransactionExtra,
+) -> StfResult<()> {
+    let cur_slot = state_accessor.global().cur_slot();
+    if let Some(min_slot) = extra.min_slot()
+        && min_slot > cur_slot
+    {
+        return Err(StfError::InvalidTxExtra);
+    }
+    if let Some(max_slot) = extra.max_slot()
+        && max_slot < cur_slot
+    {
+        return Err(StfError::InvalidTxExtra);
     }
     Ok(())
 }
@@ -149,39 +169,22 @@ fn execute_transaction<S: StateAccessor>(
         return Err(AcctError::NonExistentAccount(target).into());
     };
 
-    let output_value = match tx.payload() {
+    // TODO: SELF-SEND BUG - We clone the account state here, then pass it to the handler.
+    // If the handler (via apply_update_outputs) sends coins/messages back to `target`,
+    // those writes go to state_accessor. Then we overwrite with the clone below, losing
+    // the self-send changes. Fix options:
+    // 1. Don't clone - work directly with state in accessor (requires refactoring borrow checker)
+    // 2. Buffer self-sends and apply after handler returns
+    // 3. Detect and explicitly fail on self-sends
+
+    match tx.payload() {
         TransactionPayload::SnarkAccountUpdate { target, update } => {
-            let type_state = acct_state.get_type_state()?;
-            let cur_balance = acct_state.balance();
-            if let AccountTypeState::Snark(mut snark_state) = type_state {
-                process_snark_update(
-                    ctx,
-                    state_accessor,
-                    *target,
-                    &mut snark_state,
-                    update,
-                    cur_balance,
-                )?;
-                update
-                    .base_update()
-                    .operation()
-                    .outputs()
-                    .compute_total_value()
-            } else {
-                Some(BitcoinAmount::zero())
-            }
+            process_snark_update(ctx, state_accessor, *target, &mut acct_state, update)?;
         }
         TransactionPayload::GenericAccountMessage { .. } => {
             return Err(StfError::UnsupportedTransaction);
         }
     };
-    // Update balance
-    let total_sent = output_value.ok_or(AcctError::BitcoinAmountOverflow)?;
-
-    let coins = acct_state.take_balance(total_sent)?;
-
-    coins.safely_consume_unchecked(); // not sure of the benefits of doing this here. It would be
-    // nice to have some kind of compile-time safety
 
     state_accessor.update_account_state(target, acct_state)?;
 
@@ -190,20 +193,27 @@ fn execute_transaction<S: StateAccessor>(
 
 /// Processes a snark account update: verification → output application → state update.
 ///
-/// Creates a [`LedgerRef`] to apply outputs, which delegates to `send_message`/`send_transfer`
-/// for handling transfers to other accounts.
+/// Creates a [`LedgerInterfaceImpl`] to apply outputs, which delegates to
+/// `send_message`/`send_transfer` for handling transfers to other accounts.
 fn process_snark_update<S: StateAccessor>(
     ctx: &BlockExecContext,
     state_accessor: &mut S,
     target: AccountId,
-    snark_state: &mut impl ISnarkAccountState,
+    acct_state: &mut impl IAccountState,
     update: &SnarkAccountUpdateContainer,
-    cur_balance: BitcoinAmount,
 ) -> StfResult<()> {
+    // Extract snark state and verify it's the right type
+    let type_state = acct_state.get_type_state()?;
+    let AccountTypeState::Snark(mut snark_state) = type_state else {
+        return Err(StfError::SnarkUpdateForNonSnarkAccount(target));
+    };
+
+    let cur_balance = acct_state.balance();
+
     let verified_update = snark_sys::verify_update_correctness(
         state_accessor,
         target,
-        snark_state,
+        &snark_state,
         update,
         cur_balance,
     )?;
@@ -211,11 +221,22 @@ fn process_snark_update<S: StateAccessor>(
     let seq_no = verified_update.operation().seq_no();
     let operation = verified_update.operation().clone();
 
-    // Create ledger ref
-    let mut ledger_ref = LedgerInterfaceImpl::new(target, state_accessor, ctx);
+    // Calculate total output value and deduct from balance
+    let total_sent = update
+        .base_update()
+        .operation()
+        .outputs()
+        .compute_total_value()
+        .ok_or(AcctError::BitcoinAmountOverflow)?;
+
+    let coins = acct_state.take_balance(total_sent)?;
+    coins.safely_consume_unchecked();
+
+    // Create ledger impl
+    let mut ledger_impl = LedgerInterfaceImpl::new(target, state_accessor, ctx);
 
     // Apply update outputs.
-    snark_sys::apply_update_outputs(&mut ledger_ref, verified_update)?;
+    snark_sys::apply_update_outputs(&mut ledger_impl, verified_update)?;
 
     // After applying updates, update the proof state.
     snark_state.set_proof_state_directly(
@@ -226,20 +247,18 @@ fn process_snark_update<S: StateAccessor>(
 
     // Construct and emit SnarkUpdate Log.
     let log = construct_update_log(target, operation);
-    LogEmitter::emit_log(ctx, log);
+    ctx.emit_log(log);
 
     Ok(())
 }
 
 fn construct_update_log(target: AccountId, operation: UpdateOperationData) -> OLLog {
-    let log_extra = vec![];
-    let to_idx = operation.new_state().next_inbox_msg_idx() - 1;
-    let from_idx = to_idx - operation.processed_messages().len() as u64 + 1;
+    let log_extra = operation.extra_data().to_vec();
+    let next_msg_idx = operation.new_state().next_inbox_msg_idx();
 
     OLLog::snark_account_update(
         target,
-        from_idx,
-        to_idx,
+        next_msg_idx,
         operation.new_state().inner_state().into(),
         log_extra,
     )

@@ -42,7 +42,7 @@ pub enum StfError {
     #[error("Invalid ASM log")]
     InvalidAsmLog,
 
-    #[error("Account error: {0}")]
+    #[error("Account: {0}")]
     Account(#[from] AcctError),
 
     #[error("Unsupported transaction type")]
@@ -52,16 +52,27 @@ pub enum StfError {
     UnsupportedTransfer(String),
 
     #[error("Epoch overflow: current epoch {cur_epoch}")]
-    EpochOverflow { cur_epoch: Epoch },
+    EpochOverflow {
+        cur_epoch: Epoch,
+    },
 
     #[error("Unsupported transfer to {0:?}")]
     UnsupportedTransferTo(AccountId),
 
-    #[error("codec error: {0}")]
+    #[error("Codec: {0}")]
     Codec(#[from] CodecError),
 
-    #[error("Preseal root mismatch. Expected {expected}, got {got}")]
-    PresealRootMismatch { expected: Buf32, got: Buf32 },
+    #[error("Preseal root mismatch(expected {expected}, got {got})")]
+    PresealRootMismatch {
+        expected: Buf32,
+        got: Buf32,
+    },
+
+    #[error("Received Snark update for non-snark account: {0:?}")]
+    SnarkUpdateForNonSnarkAccount(AccountId),
+
+    #[error("Invalid transaction extra fields")]
+    InvalidTxExtra,
 }
 
 pub type StfResult<T> = Result<T, StfError>;

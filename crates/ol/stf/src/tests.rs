@@ -240,21 +240,20 @@ struct MockStateAccessor {
     l1_view: MockL1ViewState,
     accounts: HashMap<AccountId, MockAccountState>,
     state_version: u64,
-    cur_serial: AccountSerial,
+    next_serial: AccountSerial,
     serial_acct_id_map: HashMap<AccountSerial, AccountId>,
 }
 
 impl MockStateAccessor {
-    fn with_cur_slot(mut self, slot: u64) -> Self {
-        self.global.cur_slot = slot;
-        self
+    fn set_cur_slot(&mut self, cur_slot: u64) {
+        self.global.cur_slot = cur_slot;
     }
 }
 
 impl Default for MockStateAccessor {
     fn default() -> Self {
         Self {
-            cur_serial: 0.into(),
+            next_serial: 0.into(),
             global: Default::default(),
             l1_view: Default::default(),
             accounts: Default::default(),
@@ -318,16 +317,16 @@ impl StateAccessor for MockStateAccessor {
         id: AccountId,
         state: AccountTypeState<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
-        let serial = self.cur_serial;
+        let serial = self.next_serial;
         let account = MockAccountState {
             serial,
             balance: BitcoinAmount::zero(),
             type_state: state,
         };
         self.accounts.insert(id, account);
-        self.serial_acct_id_map.insert(self.cur_serial, id);
-        let ser: u32 = self.cur_serial.into();
-        self.cur_serial = (ser + 1).into();
+        self.serial_acct_id_map.insert(self.next_serial, id);
+        let ser: u32 = self.next_serial.into();
+        self.next_serial = (ser + 1).into();
 
         Ok(serial)
     }
@@ -441,7 +440,8 @@ mod block_asm_tests {
     fn test_terminal_block_assembly_composition() {
         // Setup mock state and context
         let cur_slot = 63;
-        let mut state = MockStateAccessor::default().with_cur_slot(cur_slot);
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
         let mut initial_state = state.clone();
         let initial_root = initial_state.compute_state_root();
 
@@ -512,7 +512,8 @@ mod block_asm_tests {
     /// 3. The composed result validates via execute_block
     #[test]
     fn test_non_terminal_block_execution() {
-        let mut state = MockStateAccessor::default().with_cur_slot(10);
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(10);
         let mut initial_state = state.clone();
         let initial_root = initial_state.compute_state_root();
         let prev_header = create_test_header(10, 0, 0, initial_root); // Not a terminal block
