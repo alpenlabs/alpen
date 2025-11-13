@@ -1,0 +1,126 @@
+//! Builder for registry-based prover service
+
+use std::sync::Arc;
+
+use strata_service::ServiceBuilder;
+use strata_tasks::TaskExecutor;
+use zkaleido::ZkVmProgram;
+
+use crate::config::PaaSConfig;
+use crate::error::PaaSResult;
+use crate::registry::{ConcreteHandler, InputFetcher, ProofStore, ProgramRegistry};
+use crate::registry_handle::RegistryProverHandle;
+use crate::registry_prover::RegistryProver;
+use crate::service::ProverService;
+use crate::state::ProverServiceState;
+use crate::zkvm::ZkVmBackend;
+use crate::ProgramType;
+
+/// Builder for creating a registry-based prover service
+///
+/// This builder allows you to register multiple program handlers and then
+/// launch a unified service that can handle all of them dynamically.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// let handle = RegistryProverServiceBuilder::new(config)
+///     .register::<CheckpointProgram, _, _>(
+///         ProofContextVariant::Checkpoint,
+///         checkpoint_fetcher,
+///         checkpoint_store,
+///     )
+///     .register::<ClStfProgram, _, _>(
+///         ProofContextVariant::ClStf,
+///         cl_stf_fetcher,
+///         cl_stf_store,
+///     )
+///     .launch(&task_manager)
+///     .await?;
+/// ```
+pub struct RegistryProverServiceBuilder<P: ProgramType> {
+    registry: ProgramRegistry<P>,
+    config: PaaSConfig<ZkVmBackend>,
+}
+
+impl<P: ProgramType> RegistryProverServiceBuilder<P> {
+    /// Create a new builder with the given configuration
+    pub fn new(config: PaaSConfig<ZkVmBackend>) -> Self {
+        Self {
+            registry: ProgramRegistry::new(),
+            config,
+        }
+    }
+
+    /// Register a program handler
+    ///
+    /// This method registers a handler for a specific program variant identified by `key`.
+    /// The `input_fetcher` and `proof_store` provide the concrete implementations for
+    /// fetching inputs and storing proofs for this program type.
+    ///
+    /// ## Type Parameters
+    ///
+    /// - `Prog`: The zkaleido `ZkVmProgram` type for this program
+    /// - `I`: The input fetcher implementation
+    /// - `S`: The proof store implementation
+    /// - `H`: The zkVM host implementation
+    ///
+    /// ## Arguments
+    ///
+    /// - `key`: The routing key that identifies this program variant
+    /// - `input_fetcher`: Implementation of `InputFetcher` for fetching inputs
+    /// - `proof_store`: Implementation of `ProofStore` for storing proofs
+    /// - `host`: The zkVM host to use for proving (e.g., SP1Host, NativeHost)
+    pub fn register<Prog, I, S, H>(
+        mut self,
+        key: P::RoutingKey,
+        input_fetcher: I,
+        proof_store: S,
+        host: Arc<H>,
+    ) -> Self
+    where
+        Prog: ZkVmProgram + Send + Sync + 'static,
+        Prog::Input: Send + Sync + 'static,
+        I: InputFetcher<P, Prog> + 'static,
+        S: ProofStore<P> + 'static,
+        H: zkaleido::ZkVmHost + Send + Sync + 'static,
+    {
+        let handler = ConcreteHandler::<P, Prog, I, S, H>::new(
+            Arc::new(input_fetcher),
+            Arc::new(proof_store),
+            host,
+        );
+
+        self.registry.register(key, Arc::new(handler));
+        self
+    }
+
+    /// Launch the prover service with all registered handlers
+    ///
+    /// This creates a `RegistryProver` with the registered handlers and launches
+    /// the prover service.
+    pub async fn launch(
+        self,
+        executor: &TaskExecutor,
+    ) -> PaaSResult<RegistryProverHandle<P>> {
+        let prover = Arc::new(RegistryProver::new(Arc::new(self.registry)));
+        let state = ProverServiceState::new(prover.clone(), self.config);
+
+        // Create service builder
+        let mut service_builder =
+            ServiceBuilder::<ProverService<RegistryProver<P>>, _>::new()
+                .with_state(state);
+
+        // Create command handle
+        let command_handle = service_builder.create_command_handle(100);
+
+        // Launch service
+        let monitor = service_builder
+            .launch_async("prover", executor)
+            .await
+            .map_err(crate::error::PaaSError::Internal)?;
+
+        // Return handle
+        Ok(RegistryProverHandle::new(command_handle, monitor))
+    }
+}

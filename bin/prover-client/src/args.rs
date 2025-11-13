@@ -188,7 +188,7 @@ pub(crate) struct ResolvedConfig {
 
     /// Wait time in milliseconds for the prover manager loop.
     /// Note: Kept for config compatibility but no longer used with PaaS.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Kept for backward config compatibility with non-PaaS setups")]
     pub(crate) polling_interval: u64,
 
     /// Checkpoint polling interval in seconds.
@@ -208,7 +208,7 @@ pub(crate) struct ResolvedConfig {
 
     /// Maximum number of retries for transient failures.
     /// Note: Kept for config compatibility but no longer used with PaaS.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Kept for backward config compatibility with non-PaaS setups")]
     pub(crate) max_retry_counter: u64,
 
     /// Path to the custom rollup configuration file.

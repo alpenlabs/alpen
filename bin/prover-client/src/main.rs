@@ -10,12 +10,15 @@ use checkpoint_runner::runner::checkpoint_proof_runner;
 use db::open_sled_database;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::ProofOperator;
-use paas_integration::{DynamicHostProver, ProverInputFetcher, ProverProofStore};
+use paas_integration::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher, ProofStoreService};
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
-use strata_paas::{PaaSConfig, ProverService, ProverServiceState, ZkVmBackend};
-use strata_service::ServiceBuilder;
+use strata_paas::{PaaSConfig, ProofContextVariant, RegistryProverServiceBuilder, ZkVmBackend};
+use strata_primitives::proof::ProofContext;
+use strata_proofimpl_checkpoint::program::CheckpointProgram;
+use strata_proofimpl_cl_stf::program::ClStfProgram;
+use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
 use strata_tasks::TaskManager;
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder as _;
@@ -29,6 +32,7 @@ mod checkpoint_runner;
 mod config;
 mod db;
 mod errors;
+mod host_resolver;
 mod operators;
 mod paas_integration;
 mod rpc_server;
@@ -92,15 +96,20 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
     let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
-    // Create PaaS components
-    let input_fetcher = Arc::new(ProverInputFetcher::new(
-        operator.evm_ee_operator().clone(),
-        operator.cl_stf_operator().clone(),
-        operator.checkpoint_operator().clone(),
-        db.clone(),
-    ));
-    let proof_store = Arc::new(ProverProofStore::new(db.clone()));
-    let dynamic_prover = Arc::new(DynamicHostProver::new(input_fetcher, proof_store));
+    // Create PaaS components using registry-based API
+    let checkpoint_fetcher = CheckpointFetcher {
+        operator: operator.checkpoint_operator().clone(),
+        db: db.clone(),
+    };
+    let cl_stf_fetcher = ClStfFetcher {
+        operator: operator.cl_stf_operator().clone(),
+        db: db.clone(),
+    };
+    let evm_ee_fetcher = EvmEeFetcher {
+        operator: operator.evm_ee_operator().clone(),
+        db: db.clone(),
+    };
+    let proof_store = ProofStoreService::new(db.clone(), operator.checkpoint_operator().clone());
 
     // Create PaaS configuration
     let mut worker_counts = HashMap::new();
@@ -109,9 +118,19 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     // Configure workers for each backend
     #[cfg(feature = "sp1")]
     {
-        worker_counts.insert(ZkVmBackend::SP1, *workers.get(&strata_primitives::proof::ProofZkVm::SP1).unwrap_or(&0));
+        worker_counts.insert(
+            ZkVmBackend::SP1,
+            *workers
+                .get(&strata_primitives::proof::ProofZkVm::SP1)
+                .unwrap_or(&0),
+        );
     }
-    worker_counts.insert(ZkVmBackend::Native, *workers.get(&strata_primitives::proof::ProofZkVm::Native).unwrap_or(&1));
+    worker_counts.insert(
+        ZkVmBackend::Native,
+        *workers
+            .get(&strata_primitives::proof::ProofZkVm::Native)
+            .unwrap_or(&1),
+    );
 
     let paas_config = PaaSConfig::new(worker_counts);
 
@@ -119,18 +138,33 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     let task_manager = TaskManager::new(tokio::runtime::Handle::current());
     let executor = task_manager.create_executor();
 
-    // Create and launch PaaS service
-    let service_state = ProverServiceState::new(dynamic_prover, paas_config);
-    let mut service_builder = ServiceBuilder::<ProverService<DynamicHostProver>, _>::new()
-        .with_state(service_state);
+    // Create and launch PaaS service with registry-based API
+    // Register each program type with its handler and host
+    let builder = RegistryProverServiceBuilder::<ProofContext>::new(paas_config)
+        .register::<CheckpointProgram, _, _, _>(
+            ProofContextVariant::Checkpoint,
+            checkpoint_fetcher,
+            proof_store.clone(),
+            resolve_host!(host_resolver::sample_checkpoint()),
+        )
+        .register::<ClStfProgram, _, _, _>(
+            ProofContextVariant::ClStf,
+            cl_stf_fetcher,
+            proof_store.clone(),
+            resolve_host!(host_resolver::sample_cl_stf()),
+        )
+        .register::<EvmEeProgram, _, _, _>(
+            ProofContextVariant::EvmEeStf,
+            evm_ee_fetcher,
+            proof_store,
+            resolve_host!(host_resolver::sample_evm_ee()),
+        );
 
-    let prover_handle = service_builder.create_command_handle(100);
-    let prover_monitor = service_builder
-        .launch_async("prover", &executor)
+    // Launch the service
+    let paas_handle = builder
+        .launch(&executor)
         .await
         .context("Failed to launch prover service")?;
-
-    let paas_handle = strata_paas::ProverHandle::<strata_primitives::proof::ProofContext>::new(prover_handle, prover_monitor);
 
     debug!("Initialized PaaS prover service");
 
