@@ -98,13 +98,12 @@ impl TransactionValidator for BasicValidator {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::AccountId;
+    use strata_acct_types::{AccountId, VarVec};
     use strata_ol_chain_types_new::{GamTxPayload, TransactionAttachment, TransactionPayload};
 
     use super::*;
 
     fn create_test_tx(min_slot: Option<u64>, max_slot: Option<u64>) -> OLTransaction {
-        use strata_acct_types::VarVec;
         let payload = GamTxPayload::new(
             AccountId::new([1u8; 32]),
             VarVec::from_vec(vec![1, 2, 3]).unwrap(),
