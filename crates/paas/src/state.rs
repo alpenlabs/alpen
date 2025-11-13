@@ -20,6 +20,9 @@ pub(crate) struct TaskInfo<T: TaskId> {
     pub(crate) updated_at: Instant,
 }
 
+/// Type alias for task map to reduce complexity
+type TaskMap<T> = Arc<Mutex<HashMap<T, TaskInfo<T>>>>;
+
 /// Service state for ProverService
 pub struct ProverServiceState<P: Prover> {
     /// The prover implementation
@@ -29,7 +32,7 @@ pub struct ProverServiceState<P: Prover> {
     pub(crate) config: PaaSConfig<P::Backend>,
 
     /// Task tracker (thread-safe)
-    pub(crate) tasks: Arc<Mutex<HashMap<P::TaskId, TaskInfo<P::TaskId>>>>,
+    pub(crate) tasks: TaskMap<P::TaskId>,
 
     /// In-progress tasks per backend (for worker limits)
     pub(crate) in_progress: Arc<Mutex<HashMap<P::Backend, usize>>>,

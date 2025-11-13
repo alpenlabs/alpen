@@ -109,7 +109,7 @@ where
         let monitor = service_builder
             .launch_async("prover", executor)
             .await
-            .map_err(|e| PaaSError::Internal(e))?;
+            .map_err(PaaSError::Internal)?;
 
         // Return handle
         Ok(ProverHandle::new(command_handle, monitor))

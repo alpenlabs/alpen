@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use strata_db_types::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_paas::{ProverHandle, ZkVmBackend, ZkVmTaskId};
+use strata_paas::{RegistryProverHandle, ZkVmBackend};
 use strata_primitives::proof::{ProofContext, ProofKey};
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
@@ -23,7 +23,7 @@ struct CheckpointRunnerState {
 pub(crate) async fn checkpoint_proof_runner(
     operator: CheckpointOperator,
     poll_interval_s: u64,
-    prover_handle: ProverHandle<ProofContext>,
+    prover_handle: RegistryProverHandle<ProofContext>,
     db: Arc<ProofDBSled>,
 ) {
     info!(%poll_interval_s, "Checkpoint runner started");
@@ -41,7 +41,7 @@ pub(crate) async fn checkpoint_proof_runner(
 
 async fn process_checkpoint(
     operator: &CheckpointOperator,
-    prover_handle: &ProverHandle<ProofContext>,
+    prover_handle: &RegistryProverHandle<ProofContext>,
     db: &Arc<ProofDBSled>,
     runner_state: &mut CheckpointRunnerState,
 ) -> anyhow::Result<()> {
@@ -75,7 +75,7 @@ async fn process_checkpoint(
 async fn submit_checkpoint_task(
     checkpoint_idx: u64,
     operator: &CheckpointOperator,
-    prover_handle: &ProverHandle<ProofContext>,
+    prover_handle: &RegistryProverHandle<ProofContext>,
     db: &Arc<ProofDBSled>,
 ) -> anyhow::Result<()> {
     let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
@@ -121,13 +121,8 @@ async fn submit_checkpoint_task(
     }
 
     // Submit main checkpoint task
-    let task_id = ZkVmTaskId {
-        program: proof_ctx,
-        backend,
-    };
-
     prover_handle
-        .submit_task(task_id)
+        .submit_task(proof_ctx, backend)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to submit checkpoint task: {}", e))?;
 
@@ -138,7 +133,7 @@ async fn submit_checkpoint_task(
 /// Recursively submit a proof context and all its dependencies
 fn submit_proof_context_recursive<'a>(
     proof_ctx: ProofContext,
-    prover_handle: &'a ProverHandle<ProofContext>,
+    prover_handle: &'a RegistryProverHandle<ProofContext>,
     db: &'a Arc<ProofDBSled>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + 'a + Send>> {
     Box::pin(async move {
@@ -171,13 +166,8 @@ fn submit_proof_context_recursive<'a>(
         }
 
         // Submit main task to PaaS
-        let task_id = ZkVmTaskId {
-            program: proof_ctx,
-            backend,
-        };
-
         prover_handle
-            .submit_task(task_id)
+            .submit_task(proof_ctx, backend)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to submit task: {}", e))?;
 

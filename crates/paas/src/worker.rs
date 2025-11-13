@@ -116,12 +116,8 @@ impl<P: Prover> WorkerPool<P> {
                     error!(?task_id, error=%msg, "Transient failure");
 
                     // Get current retry count
-                    let retry_count = if let Ok(status) = state.get_status(&task_id) {
-                        if let TaskStatus::TransientFailure { retry_count, .. } = status {
-                            retry_count + 1
-                        } else {
-                            1
-                        }
+                    let retry_count = if let Ok(TaskStatus::TransientFailure { retry_count, .. }) = state.get_status(&task_id) {
+                        retry_count + 1
                     } else {
                         1
                     };

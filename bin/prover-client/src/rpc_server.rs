@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use jsonrpsee::{core::RpcResult, RpcModule};
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_paas::{ProverHandle, ZkVmBackend, ZkVmTaskId};
+use strata_paas::{RegistryProverHandle, TaskId, ZkVmBackend};
 use strata_primitives::{
     evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, proof::{ProofContext, ProofKey},
 };
@@ -62,14 +62,14 @@ where
 /// Contains fields corresponding the global context for the RPC.
 #[derive(Clone)]
 pub(crate) struct ProverClientRpc {
-    prover_handle: ProverHandle<ProofContext>,
+    prover_handle: RegistryProverHandle<ProofContext>,
     operator: Arc<ProofOperator>,
     db: Arc<ProofDBSled>,
 }
 
 impl ProverClientRpc {
     pub(crate) fn new(
-        prover_handle: ProverHandle<ProofContext>,
+        prover_handle: RegistryProverHandle<ProofContext>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDBSled>,
     ) -> Self {
@@ -132,12 +132,7 @@ impl ProverClientRpc {
             }
 
             // Submit task to PaaS (ignore if already exists)
-            let task_id = ZkVmTaskId {
-                program: proof_ctx,
-                backend,
-            };
-
-            if let Err(e) = self.prover_handle.submit_task(task_id).await {
+            if let Err(e) = self.prover_handle.submit_task(proof_ctx, backend).await {
                 // Ignore "Task already exists" error - it's okay if already submitted
                 if !e.to_string().contains("Task already exists") {
                     return Err(anyhow::anyhow!("Failed to submit task: {}", e));
@@ -323,10 +318,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
             // If proof is not in DB, check PaaS status
             None => {
                 let backend = Self::get_backend();
-                let task_id = ZkVmTaskId {
-                    program: *key.context(),
-                    backend,
-                };
+                let task_id = TaskId::new(*key.context(), backend);
 
                 let status = self
                     .prover_handle
