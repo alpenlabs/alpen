@@ -3,7 +3,7 @@
 pub mod constants;
 mod utils;
 
-pub use utils::{accumulate_logs_bloom, collect_withdrawal_intents};
+pub use utils::{accumulate_logs_bloom, withdrawal_intents};
 
 pub mod apis;
 pub mod evm;

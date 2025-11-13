@@ -30,7 +30,7 @@ use crate::{
 //FIXME: should be set with real bridge gateway account
 
 /// Address where withdrawal intent msgs are forwarded
-const BRIDGE_GATEWAY_ACCOUNT:[u8;32] = [1u8;32];
+const BRIDGE_GATEWAY_ACCOUNT: [u8; 32] = [1u8; 32];
 /// EVM Execution Environment for Alpen.
 ///
 /// This struct implements the ExecutionEnvironment trait and handles execution
@@ -92,7 +92,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // This validates header fields follow consensus rules (difficulty, nonce, gas limits, etc.)
         // Cheaper checks should go before more expensive ones if they're independent
         EthPrimitives::validate_header(
-            &block.sealed_block().sealed_header(),
+            block.sealed_block().sealed_header(),
             self.evm_config.chain_spec().clone(),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
