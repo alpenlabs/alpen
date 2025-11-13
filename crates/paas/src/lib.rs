@@ -5,17 +5,16 @@
 //!
 //! ## Architecture
 //!
-//! PaaS is built around zkaleido's `ZkVmProgram` and `ZkVmHost` abstractions.
-//! To use PaaS, you implement two traits:
+//! PaaS is built around the registry pattern for dynamic program dispatch.
+//! To use PaaS, you implement the registry traits:
 //!
-//! - `InputFetcher<P>`: Fetches inputs for your zkaleido programs
-//! - `ProofStore<P>`: Stores completed proofs
+//! - `ProgramType`: Your program type with routing key
+//! - `RegistryInputFetcher<P, Prog>`: Fetches inputs for zkaleido programs
+//! - `RegistryProofStore<P>`: Stores completed proofs
 //!
-//! Where `P` is your `ProgramId` type that identifies different zkaleido programs.
-//!
-//! ## Example
-//!
-//! See the documentation in the `zkvm` module for a complete example.
+//! See the `registry` module documentation for complete examples.
+
+use serde::{Deserialize, Serialize};
 
 mod commands;
 mod config;
@@ -26,7 +25,17 @@ mod state;
 mod task;
 mod task_id;
 mod worker;
-pub mod zkvm;
+
+/// ZkVm backend identifier
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ZkVmBackend {
+    /// Native execution (no proving)
+    Native,
+    /// SP1 prover
+    SP1,
+    /// RISC0 prover
+    Risc0,
+}
 
 // Re-export core registry types at the top level
 pub use registry::{
@@ -35,14 +44,6 @@ pub use registry::{
     RegistryProverHandle, RegistryProverServiceBuilder, RegistryProver,
 };
 pub use task_id::TaskId;
-
-// Re-export zkvm backend type
-pub use zkvm::ZkVmBackend;
-
-// Re-export legacy zkvm types for backward compatibility
-pub use zkvm::{
-    InputFetcher as ZkVmInputFetcher, ProgramId, ProofStore as ZkVmProofStore, ZkVmTaskId,
-};
 
 // Re-export framework types
 pub use config::{PaaSConfig, RetryConfig, WorkerConfig};

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram};
 
 use crate::error::{PaaSError, PaaSResult};
-use crate::zkvm::ZkVmBackend;
+use crate::ZkVmBackend;
 
 /// Trait that program types must implement for dynamic dispatch
 ///

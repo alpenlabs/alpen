@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use strata_paas::registry::ProgramType;
-use strata_paas::zkvm::ProgramId;
 use strata_primitives::proof::ProofContext;
 
 /// Routing key for ProofContext - used for dynamic dispatch in PaaS registry
@@ -45,21 +44,6 @@ impl std::ops::Deref for ProofTask {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-/// Implement ProgramId for ProofTask
-impl ProgramId for ProofTask {
-    fn name(&self) -> String {
-        match self.0 {
-            ProofContext::Checkpoint(idx) => format!("checkpoint_{}", idx),
-            ProofContext::ClStf(start, end) => {
-                format!("cl_stf_{}_{}", start.slot(), end.slot())
-            }
-            ProofContext::EvmEeStf(start, end) => {
-                format!("evm_ee_stf_{}_{}", start.slot(), end.slot())
-            }
-        }
     }
 }
 
