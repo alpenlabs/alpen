@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use alloy_consensus::Header;
-use alpen_reth_evm::evm::AlpenEvmFactory;
+use alpen_reth_evm::{accumulate_logs_bloom, evm::AlpenEvmFactory};
 use reth_chainspec::ChainSpec;
 use reth_evm::execute::{BasicBlockExecutor, Executor};
 use reth_evm_ethereum::EthEvmConfig;
@@ -22,11 +22,15 @@ use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
     utils::{
-        accumulate_logs_bloom, build_and_recover_block, collect_withdrawal_intents_from_execution,
+        build_and_recover_block, collect_withdrawal_intents_from_execution,
         compute_hashed_post_state,
     },
 };
 
+//FIXME: should be set with real bridge gateway account
+
+/// Address where withdrawal intent msgs are forwarded
+const BRIDGE_GATEWAY_ACCOUNT:[u8;32] = [1u8;32];
 /// EVM Execution Environment for Alpen.
 ///
 /// This struct implements the ExecutionEnvironment trait and handles execution
@@ -37,39 +41,35 @@ pub struct EvmExecutionEnvironment {
     evm_config: EthEvmConfig<ChainSpec, AlpenEvmFactory>,
 }
 
+/// Converts withdrawal intents to messages sent to the bridge gateway account.
+///
+/// Each withdrawal intent is encoded as a message containing:
+/// - The withdrawal amount (as message value)
+/// - The descriptor bytes + transaction ID (as message data)
+fn convert_withdrawal_intents_to_messages(
+    withdrawal_intents: Vec<alpen_reth_primitives::WithdrawalIntent>,
+    outputs: &mut BlockOutputs,
+) {
+    for intent in withdrawal_intents {
+        // Encode withdrawal intent data: descriptor bytes + txid
+        let mut msg_data = Vec::new();
+        msg_data.extend_from_slice(&intent.destination.to_bytes());
+        msg_data.extend_from_slice(&intent.withdrawal_txid.0);
+
+        let bridge_gateway_account = AccountId::from(BRIDGE_GATEWAY_ACCOUNT);
+
+        // Create message to bridge gateway with withdrawal amount and intent data
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(intent.amt), msg_data);
+        let message = SentMessage::new(bridge_gateway_account, payload);
+        outputs.add_message(message);
+    }
+}
+
 impl EvmExecutionEnvironment {
     /// Creates a new EvmExecutionEnvironment with the given chain specification.
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, AlpenEvmFactory::default());
         Self { evm_config }
-    }
-
-    /// Converts withdrawal intents to messages sent to the bridge gateway account.
-    ///
-    /// Each withdrawal intent is encoded as a message containing:
-    /// - The withdrawal amount (as message value)
-    /// - The descriptor bytes + transaction ID (as message data)
-    fn convert_withdrawal_intents_to_messages(
-        withdrawal_intents: Vec<alpen_reth_primitives::WithdrawalIntent>,
-        outputs: &mut BlockOutputs,
-    ) {
-        for intent in withdrawal_intents {
-            // Encode withdrawal intent data: descriptor bytes + txid
-            let mut msg_data = Vec::new();
-            msg_data.extend_from_slice(&intent.destination.to_bytes());
-            msg_data.extend_from_slice(&intent.withdrawal_txid.0);
-
-            // FIXME: does this come from params.json???
-            // TODO: Define the actual bridge gateway account ID
-            // This should be a well-known account ID for the bridge gateway
-            // that handles withdrawal intents from the EVM to L1
-            let bridge_gateway_account = AccountId::from([0u8; 32]);
-
-            // Create message to bridge gateway with withdrawal amount and intent data
-            let payload = MsgPayload::new(BitcoinAmount::from_sat(intent.amt), msg_data);
-            let message = SentMessage::new(bridge_gateway_account, payload);
-            outputs.add_message(message);
-        }
     }
 }
 
@@ -92,8 +92,8 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // This validates header fields follow consensus rules (difficulty, nonce, gas limits, etc.)
         // Cheaper checks should go before more expensive ones if they're independent
         EthPrimitives::validate_header(
-            block.sealed_block().sealed_header(),
-            Arc::clone(self.evm_config.chain_spec()),
+            &block.sealed_block().sealed_header(),
+            self.evm_config.chain_spec().clone(),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
@@ -117,7 +117,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // and execution_output which are not available in that context
         EthPrimitives::validate_block_post_execution(
             &block,
-            Arc::clone(self.evm_config.chain_spec()),
+            self.evm_config.chain_spec().clone(),
             &execution_output,
         )
         .map_err(|_| EnvError::InvalidBlock)?;
@@ -142,7 +142,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 12: Create BlockOutputs with withdrawal intent messages
         let mut outputs = BlockOutputs::new_empty();
-        Self::convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
+        convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
         Ok(ExecBlockOutput::new(write_batch, outputs))
     }
