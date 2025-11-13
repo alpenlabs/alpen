@@ -10,7 +10,7 @@ use strata_merkle::CompactMmr64;
 
 use crate::{
     AsmHasher, AuxError, AuxResult, Hash32,
-    aux::data::{AuxData, ManifestLeafWithProof},
+    aux::data::{AuxData, VerifiableManifestHash},
 };
 
 /// Contains verified auxiliary data for subprotocols during transaction processing.
@@ -19,7 +19,7 @@ use crate::{
 /// it in efficient lookup structures for O(1) access:
 ///
 /// - **Bitcoin transactions**: Decoded and indexed by txid in a hashmap
-/// - **Manifest leaves**: MMR proofs verified and indexed by MMR position
+/// - **Manifest hashes**: MMR proofs verified and indexed by MMR position
 ///
 /// All verification happens during construction via [`try_new`](Self::try_new), so
 /// subsequent getter method calls return already-verified data without additional
@@ -28,34 +28,47 @@ use crate::{
 pub struct VerifiedAuxData {
     /// Verified Bitcoin transactions indexed by txid
     txs: HashMap<Txid, Transaction>,
-    /// Verified manifest leaves indexed by MMR index
-    manifest_leaves: HashMap<u64, Hash32>,
+    /// Verified manifest hashes indexed by MMR index
+    manifest_hashes: HashMap<u64, Hash32>,
 }
 
 impl VerifiedAuxData {
+    /// Creates new verified auxiliary data from already-validated components.
+    ///
+    /// This constructor assumes the data has already been verified and simply
+    /// wraps it in the `VerifiedAuxData` structure.
+    ///
+    /// # Arguments
+    ///
+    /// * `txs` - Pre-verified Bitcoin transactions indexed by txid
+    /// * `manifest_hashes` - Pre-verified manifest hashes indexed by MMR position
+    fn new(txs: HashMap<Txid, Transaction>, manifest_hashes: HashMap<u64, Hash32>) -> Self {
+        Self {
+            txs,
+            manifest_hashes,
+        }
+    }
+
     /// Attempts to create new verified auxiliary data by verifying and indexing all inputs.
     ///
-    /// Decodes and verifies all Bitcoin transactions and manifest leaves from the provided
+    /// Decodes and verifies all Bitcoin transactions and manifest hashes from the provided
     /// unverified data. If any verification fails, returns an error and nothing is created.
     ///
     /// # Arguments
     ///
-    /// * `data` - Unverified auxiliary data containing Bitcoin transactions and manifest leaves
-    /// * `compact_mmr` - Compact MMR snapshot used to verify manifest leaf proofs
+    /// * `data` - Unverified auxiliary data containing Bitcoin transactions and manifest hashes
+    /// * `compact_mmr` - Compact MMR snapshot used to verify manifest hash proofs
     ///
     /// # Errors
     ///
     /// Returns `AuxError::InvalidBitcoinTx` if any transaction fails to decode or is malformed.
-    /// Returns `AuxError::InvalidMmrProof` if any manifest leaf's MMR proof fails verification.
+    /// Returns `AuxError::InvalidMmrProof` if any manifest hash's MMR proof fails verification.
     pub fn try_new(data: &AuxData, compact_mmr: &CompactMmr64<[u8; 32]>) -> AuxResult<Self> {
         let txs = Self::verify_and_index_bitcoin_txs(&data.bitcoin_txs)?;
-        let manifest_leaves =
-            Self::verify_and_index_manifest_leaves(&data.manifest_leaves, compact_mmr)?;
+        let manifest_hashes =
+            Self::verify_and_index_manifest_hashes(&data.manifest_hashes, compact_mmr)?;
 
-        Ok(Self {
-            txs,
-            manifest_leaves,
-        })
+        Ok(Self::new(txs, manifest_hashes))
     }
 
     /// Verifies and indexes Bitcoin transactions.
@@ -81,31 +94,31 @@ impl VerifiedAuxData {
         Ok(txs)
     }
 
-    /// Verifies and indexes manifest leaves using MMR proofs.
+    /// Verifies and indexes manifest hashes using MMR proofs.
     ///
-    /// Verifies each manifest leaf's MMR proof against the provided compact MMR
-    /// and indexes verified leaves by their MMR position.
+    /// Verifies each manifest hash's MMR proof against the provided compact MMR
+    /// and indexes verified hashes by their MMR position.
     ///
     /// # Errors
     ///
     /// Returns `AuxError::InvalidMmrProof` if any proof fails verification.
-    fn verify_and_index_manifest_leaves(
-        leaves: &[ManifestLeafWithProof],
+    fn verify_and_index_manifest_hashes(
+        hashes: &[VerifiableManifestHash],
         compact_mmr: &CompactMmr64<[u8; 32]>,
     ) -> AuxResult<HashMap<u64, Hash32>> {
-        let mut manifest_leaves = HashMap::with_capacity(leaves.len());
+        let mut manifest_hashes = HashMap::with_capacity(hashes.len());
 
-        for item in leaves {
-            if !compact_mmr.verify::<AsmHasher>(&item.proof, &item.leaf) {
+        for item in hashes {
+            if !compact_mmr.verify::<AsmHasher>(&item.proof, &item.hash) {
                 return Err(AuxError::InvalidMmrProof {
                     index: item.proof.index(),
-                    hash: item.leaf,
+                    hash: item.hash,
                 });
             }
-            manifest_leaves.insert(item.proof.index(), item.leaf);
+            manifest_hashes.insert(item.proof.index(), item.hash);
         }
 
-        Ok(manifest_leaves)
+        Ok(manifest_hashes)
     }
 
     /// Gets a verified Bitcoin transaction by txid.
@@ -121,17 +134,31 @@ impl VerifiedAuxData {
             .ok_or(AuxError::BitcoinTxNotFound { txid })
     }
 
-    /// Gets a verified manifest leaf by MMR index.
+    /// Gets a verified manifest hash by MMR index.
     ///
-    /// Returns the leaf hash if it exists at the given index.
+    /// Returns the manifest hash if it exists at the given index.
     ///
     /// # Errors
     ///
-    /// Returns `AuxError::ManifestLeafNotFound` if the leaf is not found at the given index.
-    pub fn get_manifest_leaf(&self, index: u64) -> AuxResult<&Hash32> {
-        self.manifest_leaves
+    /// Returns `AuxError::ManifestHashNotFound` if the hash is not found at the given index.
+    pub fn get_manifest_hash(&self, index: u64) -> AuxResult<Hash32> {
+        self.manifest_hashes
             .get(&index)
-            .ok_or(AuxError::ManifestLeafNotFound { index })
+            .copied()
+            .ok_or(AuxError::ManifestHashNotFound { index })
+    }
+
+    /// Gets a range of verified manifest hashes by their MMR indices.
+    ///
+    /// Returns a vector of manifest hashes for the given index range (inclusive).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any hash in the range is not found.
+    pub fn get_manifest_hashes(&self, start: u64, end: u64) -> AuxResult<Vec<Hash32>> {
+        (start..=end)
+            .map(|idx| self.get_manifest_hash(idx))
+            .collect()
     }
 }
 
@@ -151,7 +178,7 @@ mod tests {
         let compact: AsmCompactMmr = mmr.into();
 
         let aux_data = AuxData {
-            manifest_leaves: vec![],
+            manifest_hashes: vec![],
             bitcoin_txs: vec![],
         };
 
@@ -162,8 +189,8 @@ mod tests {
         let result = verified.get_bitcoin_tx(Txid::from(txid));
         assert!(result.is_err());
 
-        // Should return error for non-existent manifest leaf
-        let result = verified.get_manifest_leaf(100);
+        // Should return error for non-existent manifest hash
+        let result = verified.get_manifest_hash(100);
         assert!(result.is_err());
     }
 
@@ -177,7 +204,7 @@ mod tests {
         let compact: AsmCompactMmr = mmr.into();
 
         let aux_data = AuxData {
-            manifest_leaves: vec![],
+            manifest_hashes: vec![],
             bitcoin_txs: vec![raw_tx],
         };
 
@@ -195,7 +222,7 @@ mod tests {
         let compact: AsmCompactMmr = mmr.into();
 
         let aux_data = AuxData {
-            manifest_leaves: vec![],
+            manifest_hashes: vec![],
             bitcoin_txs: vec![],
         };
 

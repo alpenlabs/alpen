@@ -7,15 +7,15 @@
 //!   what auxiliary data they need.
 //!
 //! - **Fulfillment Phase**: External workers fetch the requested data and produce [`AuxData`]
-//!   containing manifest leaves with MMR proofs and raw Bitcoin transactions.
+//!   containing manifest hashes with MMR proofs and raw Bitcoin transactions.
 //!
 //! - **Processing Phase** ([`process_txs`]): Subprotocols use [`VerifiedAuxData`] to access the
 //!   verified auxiliary data. The struct verifies all data upfront during construction.
 //!
 //! ## Supported Auxiliary Data Types
 //!
-//! - **Manifest Leaves**: Manifest hashes with MMR proofs for ranges of L1 blocks. The verified
-//!   data verifies MMR proofs against the compact MMR snapshot.
+//! - **Manifest Hashes**: Hashes of [`AsmManifest`](crate::AsmManifest) with MMR proofs for ranges
+//!   of L1 blocks. The verified data verifies MMR proofs against the compact MMR snapshot.
 //!
 //! - **Bitcoin Transactions**: Raw Bitcoin transaction data by txid (for bridge subprotocol
 //!   validation). The verified data decodes and indexes transactions by their txid.

@@ -43,9 +43,9 @@ pub enum AuxError {
         txid: Txid,
     },
 
-    /// Manifest leaf not found at the given MMR index.
-    #[error("manifest leaf not found at index {index}")]
-    ManifestLeafNotFound {
+    /// Manifest hash not found at the given MMR index.
+    #[error("manifest hash not found at index {index}")]
+    ManifestHashNotFound {
         /// The requested MMR index
         index: u64,
     },

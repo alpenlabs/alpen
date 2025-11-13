@@ -4,12 +4,12 @@
 
 use bitcoin::Txid;
 
-use crate::aux::data::{AuxRequests, ManifestLeafRange};
+use crate::aux::data::{AuxRequests, ManifestHashRange};
 
 /// Collects auxiliary data requests from subprotocols.
 ///
 /// During `pre_process_txs`, subprotocols use this collector to register
-/// their auxiliary data requirements (manifest leaves and Bitcoin transactions).
+/// their auxiliary data requirements (manifest hashes and Bitcoin transactions).
 #[derive(Debug, Default)]
 pub struct AuxRequestCollector {
     requests: AuxRequests,
@@ -21,13 +21,13 @@ impl AuxRequestCollector {
         Self::default()
     }
 
-    /// Requests manifest leaves for a block height range.
+    /// Requests manifest hashes for a block height range.
     ///
     /// # Arguments
     /// * `start_height` - Starting L1 block height (inclusive)
     /// * `end_height` - Ending L1 block height (inclusive)
-    pub fn request_manifest_leaves(&mut self, start_height: u64, end_height: u64) {
-        self.requests.manifest_leaves.push(ManifestLeafRange {
+    pub fn request_manifest_hashes(&mut self, start_height: u64, end_height: u64) {
+        self.requests.manifest_hashes.push(ManifestHashRange {
             start_height,
             end_height,
         });
@@ -53,21 +53,21 @@ mod tests {
     #[test]
     fn test_collector_basic() {
         let mut collector = AuxRequestCollector::new();
-        assert!(collector.requests.manifest_leaves.is_empty());
+        assert!(collector.requests.manifest_hashes.is_empty());
         assert!(collector.requests.bitcoin_txs.is_empty());
 
-        collector.request_manifest_leaves(100, 200);
-        assert_eq!(collector.requests.manifest_leaves.len(), 1);
+        collector.request_manifest_hashes(100, 200);
+        assert_eq!(collector.requests.manifest_hashes.len(), 1);
 
-        collector.request_manifest_leaves(201, 300);
-        assert_eq!(collector.requests.manifest_leaves.len(), 2);
+        collector.request_manifest_hashes(201, 300);
+        assert_eq!(collector.requests.manifest_hashes.len(), 2);
 
         let requests = collector.into_requests();
-        assert_eq!(requests.manifest_leaves.len(), 2);
-        assert_eq!(requests.manifest_leaves[0].start_height, 100);
-        assert_eq!(requests.manifest_leaves[0].end_height, 200);
-        assert_eq!(requests.manifest_leaves[1].start_height, 201);
-        assert_eq!(requests.manifest_leaves[1].end_height, 300);
+        assert_eq!(requests.manifest_hashes.len(), 2);
+        assert_eq!(requests.manifest_hashes[0].start_height, 100);
+        assert_eq!(requests.manifest_hashes[0].end_height, 200);
+        assert_eq!(requests.manifest_hashes[1].start_height, 201);
+        assert_eq!(requests.manifest_hashes[1].end_height, 300);
     }
 
     #[test]
