@@ -10,7 +10,7 @@ use strata_snark_acct_types::SnarkAccountUpdateContainer;
 use crate::Slot;
 
 /// Represents a single transaction within a block.
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, PartialEq, Codec)]
 pub struct OLTransaction {
     /// Any extra data associated with the transaction.
     extra: TransactionAttachment,
@@ -49,8 +49,7 @@ impl OLTransaction {
 }
 
 /// The actual payload of the transaction.
-// TODO probably convert these from being struct-like variants
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[expect(
     clippy::large_enum_variant,
     reason = "will be converted to SSZ soon anyways"
@@ -103,7 +102,7 @@ impl Codec for TransactionPayload {
 /// Additional constraints that we can place on a transaction.
 ///
 /// This isn't *that* useful for now, but will be in the future.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TransactionAttachment {
     min_slot: Option<Slot>,
     max_slot: Option<Slot>,
@@ -197,7 +196,7 @@ impl fmt::Display for TxTypeId {
 }
 
 /// "Generic Account Message" tx payload.
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, Codec, PartialEq)]
 pub struct GamTxPayload {
     target: AccountId,
     payload: VarVec<u8>,
@@ -218,7 +217,7 @@ impl GamTxPayload {
 }
 
 /// Snark account update payload.
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, Codec, PartialEq)]
 pub struct SnarkAccountUpdateTxPayload {
     target: AccountId,
     update_container: CodecSsz<SnarkAccountUpdateContainer>,

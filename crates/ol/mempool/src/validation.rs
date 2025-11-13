@@ -98,7 +98,7 @@ impl TransactionValidator for BasicValidator {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::AccountId;
+    use strata_acct_types::{AccountId, VarVec};
     use strata_ol_chain_types_new::{GamTxPayload, TransactionAttachment, TransactionPayload};
 
     use super::*;
@@ -107,16 +107,12 @@ mod tests {
         let mut attachment = TransactionAttachment::new_empty();
         attachment.set_min_slot(min_slot);
         attachment.set_max_slot(max_slot);
-
-        use strata_acct_types::VarVec;
-        let payload = GamTxPayload::new(
-            AccountId::new([1u8; 32]),
-            VarVec::from_vec(vec![1, 2, 3]).unwrap(),
-        );
-
         OLTransaction::new(
             attachment,
-            TransactionPayload::GenericAccountMessage(payload),
+            TransactionPayload::GenericAccountMessage(GamTxPayload::new(
+                AccountId::new([1u8; 32]),
+                VarVec::from_vec(vec![1, 2, 3]).unwrap(),
+            )),
         )
     }
 

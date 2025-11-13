@@ -1,5 +1,6 @@
 use std::fmt;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 use ssz_derive::{Decode, Encode};
 
@@ -253,6 +254,20 @@ impl fmt::Display for AccountTypeId {
             AccountTypeId::Snark => "snark",
         };
         write!(f, "{}", s)
+    }
+}
+
+// Manual Borsh implementations for transparent wrappers
+impl BorshSerialize for AccountId {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        BorshSerialize::serialize(&self.0, writer)
+    }
+}
+
+impl BorshDeserialize for AccountId {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let inner = <[u8; 32]>::deserialize_reader(reader)?;
+        Ok(Self(inner))
     }
 }
 

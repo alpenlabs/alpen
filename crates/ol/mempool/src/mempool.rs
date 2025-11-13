@@ -417,7 +417,7 @@ impl<S: OrderingStrategy, V: TransactionValidator, D: MempoolDatabase> std::fmt:
 mod tests {
     use std::collections::HashMap;
 
-    use strata_acct_types::AccountId;
+    use strata_acct_types::{AccountId, VarVec};
     use strata_codec::encode_to_vec;
     use strata_db_types::DbResult;
     use strata_ol_chain_types_new::{GamTxPayload, TransactionAttachment, TransactionPayload};
@@ -456,7 +456,6 @@ mod tests {
     }
 
     fn create_test_tx_blob(payload_bytes: Vec<u8>) -> Vec<u8> {
-        use strata_acct_types::VarVec;
         let payload = GamTxPayload::new(
             AccountId::new([0u8; 32]),
             VarVec::from_vec(payload_bytes).unwrap(),
