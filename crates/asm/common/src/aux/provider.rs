@@ -1,6 +1,6 @@
-//! Auxiliary data provider.
+//! Verified auxiliary data.
 //!
-//! Provides verified auxiliary data to subprotocols during the processing phase.
+//! Contains verified auxiliary data for subprotocols during the processing phase.
 
 use std::collections::HashMap;
 
@@ -9,9 +9,9 @@ use strata_merkle::CompactMmr64;
 
 use crate::{AsmHasher, AuxError, AuxResult, Hash32, aux::data::AuxData};
 
-/// Provides verified auxiliary data to subprotocols during transaction processing.
+/// Contains verified auxiliary data for subprotocols during transaction processing.
 ///
-/// The provider verifies all auxiliary data upfront during construction and stores
+/// This struct verifies all auxiliary data upfront during construction and stores
 /// it in efficient lookup structures for O(1) access:
 ///
 /// - **Bitcoin transactions**: Decoded and indexed by txid in a hashmap
@@ -21,18 +21,18 @@ use crate::{AsmHasher, AuxError, AuxResult, Hash32, aux::data::AuxData};
 /// subsequent getter method calls return already-verified data without additional
 /// validation overhead.
 #[derive(Debug, Clone)]
-pub struct AuxDataProvider {
+pub struct VerifiedAuxData {
     /// Verified Bitcoin transactions indexed by txid
     txs: HashMap<Txid, Transaction>,
     /// Verified manifest leaves indexed by MMR index
     manifest_leaves: HashMap<u64, Hash32>,
 }
 
-impl AuxDataProvider {
-    /// Attempts to create a new provider by verifying and indexing all auxiliary data.
+impl VerifiedAuxData {
+    /// Attempts to create new verified auxiliary data by verifying and indexing all inputs.
     ///
     /// Decodes and verifies all Bitcoin transactions and manifest leaves from the provided
-    /// unverified data. If any verification fails, returns an error and no provider is created.
+    /// unverified data. If any verification fails, returns an error and nothing is created.
     ///
     /// # Arguments
     ///
@@ -75,7 +75,7 @@ impl AuxDataProvider {
 
     /// Gets a verified Bitcoin transaction by txid.
     ///
-    /// Returns the transaction if it exists in the provider's index.
+    /// Returns the transaction if it exists in the verified data index.
     ///
     /// # Errors
     ///
@@ -125,7 +125,7 @@ mod tests {
     use crate::{AsmCompactMmr, AsmMmr, AuxError};
 
     #[test]
-    fn test_provider_empty_data() {
+    fn test_verified_aux_data_empty() {
         let mmr = AsmMmr::new(16);
         let compact: AsmCompactMmr = mmr.into();
 
@@ -134,20 +134,20 @@ mod tests {
             bitcoin_txs: vec![],
         };
 
-        let provider = AuxDataProvider::try_new(&aux_data, &compact).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0u8; 32].into();
-        let result = provider.get_bitcoin_tx(Txid::from(txid));
+        let result = verified.get_bitcoin_tx(Txid::from(txid));
         assert!(result.is_err());
 
         // Should return error for non-existent manifest leaf
-        let result = provider.get_manifest_leaf(100);
+        let result = verified.get_manifest_leaf(100);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_provider_bitcoin_tx() {
+    fn test_verified_aux_data_bitcoin_tx() {
         let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
         let tx: Transaction = raw_tx.clone().try_into().unwrap();
         let txid = tx.compute_txid().as_raw_hash().to_byte_array();
@@ -160,16 +160,16 @@ mod tests {
             bitcoin_txs: vec![raw_tx],
         };
 
-        let provider = AuxDataProvider::try_new(&aux_data, &compact).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
 
         // Should successfully return the bitcoin tx
         let txid_buf: Buf32 = txid.into();
-        let result = provider.get_bitcoin_tx(Txid::from(txid_buf)).unwrap();
+        let result = verified.get_bitcoin_tx(Txid::from(txid_buf)).unwrap();
         assert_eq!(result.compute_txid().as_raw_hash().to_byte_array(), txid);
     }
 
     #[test]
-    fn test_provider_bitcoin_tx_not_found() {
+    fn test_verified_aux_data_bitcoin_tx_not_found() {
         let mmr = AsmMmr::new(16);
         let compact: AsmCompactMmr = mmr.into();
 
@@ -178,11 +178,11 @@ mod tests {
             bitcoin_txs: vec![],
         };
 
-        let provider = AuxDataProvider::try_new(&aux_data, &compact).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0xFF; 32].into();
-        let result = provider.get_bitcoin_tx(Txid::from(txid));
+        let result = verified.get_bitcoin_tx(Txid::from(txid));
         assert!(matches!(result, Err(AuxError::BitcoinTxNotFound { .. })));
     }
 }

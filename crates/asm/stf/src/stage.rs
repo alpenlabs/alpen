@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AuxData, AuxDataProvider, AuxRequestCollector, AuxRequests, Stage, Subprotocol,
-    SubprotocolId, TxInputRef,
+    AnchorState, AuxData, AuxRequestCollector, AuxRequests, Stage, Subprotocol, SubprotocolId,
+    TxInputRef, VerifiedAuxData,
 };
 
 use crate::manager::SubprotoManager;
@@ -56,7 +56,7 @@ pub(crate) struct ProcessStage<'c> {
     manager: &'c mut SubprotoManager,
     anchor_state: &'c AnchorState,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-    aux_provider: AuxDataProvider,
+    verified_aux_data: VerifiedAuxData,
 }
 
 impl<'c> ProcessStage<'c> {
@@ -66,16 +66,16 @@ impl<'c> ProcessStage<'c> {
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
         aux_data: &'c AuxData,
     ) -> Self {
-        // Create a single aux provider for all subprotocols
-        let aux_provider =
-            AuxDataProvider::try_new(aux_data, &anchor_state.chain_view.manifest_mmr)
-                .expect("asm: failed to create aux provider");
+        // Create a single verified aux data for all subprotocols
+        let verified_aux_data =
+            VerifiedAuxData::try_new(aux_data, &anchor_state.chain_view.manifest_mmr)
+                .expect("asm: failed to create verified aux data");
 
         Self {
             manager,
             anchor_state,
             tx_bufs,
-            aux_provider,
+            verified_aux_data,
         }
     }
 }
@@ -89,7 +89,7 @@ impl Stage for ProcessStage<'_> {
             .unwrap_or(&[]);
 
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, &self.aux_provider);
+            .invoke_process_txs::<S>(txs, self.anchor_state, &self.verified_aux_data);
     }
 }
 

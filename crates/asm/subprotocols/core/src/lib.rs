@@ -49,8 +49,8 @@ mod verification;
 use constants::CORE_SUBPROTOCOL_ID;
 pub use error::*;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxDataProvider, AuxRequestCollector, MsgRelayer, NullMsg, Subprotocol,
-    SubprotocolId, TxInputRef, logging,
+    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
+    TxInputRef, VerifiedAuxData, logging,
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_primitives::{buf::Buf32, l2::L2BlockCommitment};
@@ -119,7 +119,7 @@ impl Subprotocol for OLCoreSubproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_provider: &AuxDataProvider,
+        _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

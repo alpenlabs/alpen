@@ -9,16 +9,16 @@
 //! - **Fulfillment Phase**: External workers fetch the requested data and produce [`AuxData`]
 //!   containing manifest leaves with MMR proofs and raw Bitcoin transactions.
 //!
-//! - **Processing Phase** ([`process_txs`]): Subprotocols use [`AuxDataProvider`] to access the
-//!   verified auxiliary data. The provider verifies all data upfront during construction.
+//! - **Processing Phase** ([`process_txs`]): Subprotocols use [`VerifiedAuxData`] to access the
+//!   verified auxiliary data. The struct verifies all data upfront during construction.
 //!
 //! ## Supported Auxiliary Data Types
 //!
-//! - **Manifest Leaves**: Manifest hashes with MMR proofs for ranges of L1 blocks. The provider
-//!   verifies MMR proofs against the compact MMR snapshot.
+//! - **Manifest Leaves**: Manifest hashes with MMR proofs for ranges of L1 blocks. The verified
+//!   data verifies MMR proofs against the compact MMR snapshot.
 //!
 //! - **Bitcoin Transactions**: Raw Bitcoin transaction data by txid (for bridge subprotocol
-//!   validation). The provider decodes and indexes transactions by their txid.
+//!   validation). The verified data decodes and indexes transactions by their txid.
 mod collector;
 mod data;
 mod errors;
@@ -28,4 +28,4 @@ mod provider;
 pub use collector::AuxRequestCollector;
 pub use data::{AuxData, AuxRequests};
 pub use errors::{AuxError, AuxResult};
-pub use provider::AuxDataProvider;
+pub use provider::VerifiedAuxData;

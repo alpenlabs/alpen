@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AuxDataProvider, AuxRequestCollector, SectionState, TxInputRef,
+    AnchorState, AsmError, AuxRequestCollector, SectionState, TxInputRef, VerifiedAuxData,
     log::AsmLogEntry, msg::InterprotoMsg,
 };
 
@@ -56,7 +56,7 @@ use crate::{
 ///         state: &mut Self::State,
 ///         txs: &[TxInputRef],
 ///         anchor_pre: &AnchorState,
-///         aux_provider: &AuxDataProvider,
+///         verified_aux_data: &VerifiedAuxData,
 ///         relayer: &mut impl MsgRelayer,
 ///         params: &Self::Params,
 ///     ) {
@@ -132,14 +132,14 @@ pub trait Subprotocol: 'static {
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
     /// * `anchor_pre` - The previous anchor state for validation context
-    /// * `aux_provider` - Provider for accessing auxiliary data previously requested and validated
+    /// * `verified_aux_data` - Verified auxiliary data previously requested and validated
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
     /// * `params` - Subprotocol's current params
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        aux_provider: &AuxDataProvider,
+        verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     );
@@ -201,7 +201,7 @@ pub trait SubprotoHandler {
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
         anchor_state: &AnchorState,
-        aux_provider: &AuxDataProvider,
+        verified_aux_data: &VerifiedAuxData,
     );
 
     /// Accepts a message.  This is called while processing other subprotocols.
