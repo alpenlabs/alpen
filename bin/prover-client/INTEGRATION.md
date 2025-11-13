@@ -1,16 +1,89 @@
 # Prover Client - PaaS Integration Guide
 
-This document describes the integration of the Strata PaaS (Prover-as-a-Service) framework into the prover-client binary.
+This document describes the integration of the Strata PaaS (Prover-as-a-Service) framework into the prover-client binary, with a focus on the **registry-based architecture** introduced in ADR-002.
 
 ## Overview
 
-The prover-client has been refactored to use the PaaS framework for managing proof generation. This provides:
+The prover-client uses PaaS with a registry pattern for managing proof generation. This provides:
 
+- **Registry-based handler registration** - No discriminants in API
 - **Worker pool management** for Native and SP1 backends
 - **Automatic retry logic** with exponential backoff
 - **Task lifecycle tracking** (Pending → Queued → Proving → Completed/Failed)
 - **Graceful shutdown** with proper cleanup
 - **Status monitoring** via watch channels
+
+## Registry-Based Architecture
+
+### Key Innovation: No Discriminants in API
+
+**Before (Direct Prover):**
+```rust
+let task_id = ZkVmTaskId {
+    program: ProofContext::Checkpoint(42),
+    backend: ZkVmBackend::SP1,  // Discriminant in task ID
+};
+handle.submit_task(task_id).await?;
+```
+
+**After (Registry Pattern):**
+```rust
+// Clean API - routing happens automatically
+handle.submit_task(
+    ProofContext::Checkpoint(42),  // What to prove
+    ZkVmBackend::SP1,               // How to prove it
+).await?;
+
+// Internal routing via routing_key():
+// Checkpoint(42).routing_key() → ProofContextVariant::Checkpoint
+// Registry looks up handler for Checkpoint
+```
+
+### How Registry Works
+
+1. **Registration at Startup** (`main.rs`):
+```rust
+let builder = RegistryProverServiceBuilder::<ProofContext>::new(paas_config)
+    .register::<CheckpointProgram, _, _, _>(
+        ProofContextVariant::Checkpoint,
+        checkpoint_fetcher,
+        proof_store.clone(),
+        resolve_host!(host_resolver::sample_checkpoint()),
+    );
+```
+
+2. **Automatic Routing** (`routing_key()`):
+```rust
+impl ProgramType for ProofContext {
+    type RoutingKey = ProofContextVariant;
+
+    fn routing_key(&self) -> Self::RoutingKey {
+        match self {
+            ProofContext::Checkpoint(_) => ProofContextVariant::Checkpoint,
+            ProofContext::ClStf(..) => ProofContextVariant::ClStf,
+            ProofContext::EvmEeStf(..) => ProofContextVariant::EvmEeStf,
+        }
+    }
+}
+```
+
+3. **Handler Selection** (PaaS internals):
+```rust
+let routing_key = program.routing_key();
+let handler = registry.get_handler(&routing_key)?;
+let input = handler.fetch_input(&program).await?;
+let proof = handler.prove(input, backend).await?;
+handler.store_proof(&program, proof).await?;
+```
+
+### Registry Components
+
+**See ADR-002 for detailed architecture documentation.**
+
+Quick reference:
+- `crates/paas/src/registry*.rs` - Core registry system
+- `bin/prover-client/src/host_resolver.rs` - Host resolution
+- `bin/prover-client/src/paas_integration.rs` - Registry trait implementations
 
 ## Architecture
 
