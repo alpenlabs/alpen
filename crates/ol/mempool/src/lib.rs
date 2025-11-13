@@ -7,6 +7,7 @@ pub mod mempool;
 pub mod ordering;
 pub mod provider;
 pub mod types;
+pub mod validation;
 
 // Re-export for convenience
 pub use error::{MempoolError, MempoolResult};
@@ -16,3 +17,4 @@ pub use provider::{OLTxProvider, OLTxProviderError};
 pub use types::{
     DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE, MempoolConfig, MempoolStats, MempoolTxMetadata,
 };
+pub use validation::{BasicValidator, TransactionValidator};
