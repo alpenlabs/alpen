@@ -14578,7 +14578,6 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
- "typed-sled",
  "zkaleido",
  "zkaleido-sp1-host",
 ]

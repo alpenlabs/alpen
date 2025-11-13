@@ -7,7 +7,6 @@ use anyhow::Context;
 use args::Args;
 use bitcoind_async_client::Client;
 use checkpoint_runner::runner::checkpoint_proof_runner;
-use db::open_sled_database;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::ProofOperator;
 use paas::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher, ProofStoreService};
@@ -30,7 +29,6 @@ use zkaleido_sp1_host as _;
 mod args;
 mod checkpoint_runner;
 mod config;
-mod db;
 mod errors;
 mod host_resolver;
 mod operators;
@@ -89,8 +87,11 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         rollup_params,
     ));
 
-    let sled_db =
-        open_sled_database(&config.datadir).context("Failed to open the Sled database")?;
+    let sled_db = strata_db_store_sled::open_sled_database(
+        &config.datadir,
+        strata_db_store_sled::SLED_NAME,
+    )
+    .context("Failed to open the Sled database")?;
     let retries = 3;
     let delay_ms = 200;
     let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
