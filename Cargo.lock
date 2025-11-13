@@ -14918,7 +14918,6 @@ dependencies = [
  "bitcoin",
  "bitcoind-async-client",
  "hex",
- "strata-asm-txs-bridge-v1",
  "strata-asm-types",
  "strata-bridge-types",
  "strata-btcio",
