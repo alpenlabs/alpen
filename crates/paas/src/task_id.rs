@@ -35,5 +35,5 @@ impl<P: ProgramType> TaskId<P> {
     }
 }
 
-// Don't implement task::TaskId trait - it's for internal use only
-// TaskId<P> is the public API for registry-based tasks
+// Note: This struct automatically implements task::TaskIdentifier via blanket impl.
+// TaskId<P> is the public API for registry-based tasks.

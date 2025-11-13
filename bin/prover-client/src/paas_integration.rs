@@ -1,7 +1,7 @@
 //! PaaS integration for prover-client using registry-based API
 //!
-//! This module implements the registry traits directly on operators,
-//! eliminating the need for wrapper structs and providing a cleaner integration.
+//! This module implements the registry traits for ProofTask, bridging between
+//! PaaS (which works with ProofTask) and the operators (which work with ProofContext).
 
 use std::sync::Arc;
 
@@ -17,6 +17,7 @@ use zkaleido::ProofReceiptWithMetadata;
 use crate::{
     errors::ProvingTaskError,
     operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator},
+    proof_context_integration::ProofTask,
 };
 
 /// Convert ZkVmBackend to ProofZkVm
@@ -49,15 +50,17 @@ pub(crate) struct CheckpointFetcher {
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl RegistryInputFetcher<ProofContext, CheckpointProgram> for CheckpointFetcher {
+impl RegistryInputFetcher<ProofTask, CheckpointProgram> for CheckpointFetcher {
     fn fetch_input<'a>(
         &'a self,
-        program: &'a ProofContext,
+        program: &'a ProofTask,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = PaaSResult<CheckpointProverInput>> + Send + 'a>,
     > {
         Box::pin(async move {
-            let proof_key = ProofKey::new(*program, get_current_backend());
+            // Extract ProofContext from ProofTask wrapper
+            let proof_context = program.0;
+            let proof_key = ProofKey::new(proof_context, get_current_backend());
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -80,14 +83,16 @@ pub(crate) struct ClStfFetcher {
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl RegistryInputFetcher<ProofContext, ClStfProgram> for ClStfFetcher {
+impl RegistryInputFetcher<ProofTask, ClStfProgram> for ClStfFetcher {
     fn fetch_input<'a>(
         &'a self,
-        program: &'a ProofContext,
+        program: &'a ProofTask,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<ClStfInput>> + Send + 'a>>
     {
         Box::pin(async move {
-            let proof_key = ProofKey::new(*program, get_current_backend());
+            // Extract ProofContext from ProofTask wrapper
+            let proof_context = program.0;
+            let proof_key = ProofKey::new(proof_context, get_current_backend());
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -110,15 +115,17 @@ pub(crate) struct EvmEeFetcher {
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl RegistryInputFetcher<ProofContext, EvmEeProgram> for EvmEeFetcher {
+impl RegistryInputFetcher<ProofTask, EvmEeProgram> for EvmEeFetcher {
     fn fetch_input<'a>(
         &'a self,
-        program: &'a ProofContext,
+        program: &'a ProofTask,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = PaaSResult<EvmEeProofInput>> + Send + 'a>,
     > {
         Box::pin(async move {
-            let proof_key = ProofKey::new(*program, get_current_backend());
+            // Extract ProofContext from ProofTask wrapper
+            let proof_context = program.0;
+            let proof_key = ProofKey::new(proof_context, get_current_backend());
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -157,13 +164,16 @@ impl ProofStoreService {
     }
 }
 
-impl RegistryProofStore<ProofContext> for ProofStoreService {
+impl RegistryProofStore<ProofTask> for ProofStoreService {
     fn store_proof<'a>(
         &'a self,
-        program: &'a ProofContext,
+        program: &'a ProofTask,
         proof: ProofReceiptWithMetadata,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // Extract ProofContext from ProofTask wrapper
+            let proof_context = program.0;
+
             let backend = {
                 #[cfg(feature = "sp1")]
                 {
@@ -175,7 +185,7 @@ impl RegistryProofStore<ProofContext> for ProofStoreService {
                 }
             };
 
-            let proof_key = ProofKey::new(*program, backend_to_zkvm(backend));
+            let proof_key = ProofKey::new(proof_context, backend_to_zkvm(backend));
 
             // Store proof in database
             self.db
@@ -183,9 +193,9 @@ impl RegistryProofStore<ProofContext> for ProofStoreService {
                 .map_err(|e| PaaSError::PermanentFailure(e.to_string()))?;
 
             // If this is a checkpoint proof, submit it to the CL client
-            if let ProofContext::Checkpoint(checkpoint_idx) = program {
+            if let ProofContext::Checkpoint(checkpoint_idx) = proof_context {
                 self.checkpoint_operator
-                    .submit_checkpoint_proof(*checkpoint_idx, &proof_key, &self.db)
+                    .submit_checkpoint_proof(checkpoint_idx, &proof_key, &self.db)
                     .await
                     .map_err(|e| {
                         tracing::warn!(

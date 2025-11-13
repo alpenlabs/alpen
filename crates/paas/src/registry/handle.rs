@@ -1,4 +1,4 @@
-//! Prover service handle for API access
+//! Handle for registry-based prover service
 
 use std::sync::Arc;
 
@@ -9,24 +9,24 @@ use crate::error::{PaaSError, PaaSResult};
 use crate::service::ProverServiceStatus;
 use crate::state::StatusSummary;
 use crate::task::TaskStatus;
-use crate::zkvm::{ProgramId, ZkVmTaskId};
+use crate::task_id::TaskId;
+use crate::zkvm::ZkVmBackend;
+use crate::ProgramType;
 
-/// Handle for interacting with the prover service
+/// Handle for interacting with the registry-based prover service
 ///
-/// This handle provides a high-level API for submitting zkaleido tasks and querying status.
-/// Uses the command handle pattern for async communication with the service.
-///
-/// Generic over `P: ProgramId` - your program identifier type.
+/// This handle provides a clean API for submitting tasks without needing
+/// to specify discriminants - just pass your program and backend.
 #[derive(Clone)]
-pub struct ProverHandle<P: ProgramId> {
-    command_handle: Arc<CommandHandle<ProverCommand<ZkVmTaskId<P>>>>,
+pub struct RegistryProverHandle<P: ProgramType> {
+    command_handle: Arc<CommandHandle<ProverCommand<TaskId<P>>>>,
     monitor: ServiceMonitor<ProverServiceStatus>,
 }
 
-impl<P: ProgramId> ProverHandle<P> {
+impl<P: ProgramType> RegistryProverHandle<P> {
     /// Create a new handle
     pub fn new(
-        command_handle: CommandHandle<ProverCommand<ZkVmTaskId<P>>>,
+        command_handle: CommandHandle<ProverCommand<TaskId<P>>>,
         monitor: ServiceMonitor<ProverServiceStatus>,
     ) -> Self {
         Self {
@@ -35,20 +35,34 @@ impl<P: ProgramId> ProverHandle<P> {
         }
     }
 
-    /// Submit a task for proving
-    pub async fn submit_task(&self, task_id: ZkVmTaskId<P>) -> PaaSResult<()> {
+    /// Submit a task for proving with clean API - no discriminants!
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Just pass your program and backend - PaaS handles routing
+    /// handle.submit_task(MyProgram::VariantA(42), ZkVmBackend::SP1).await?;
+    /// handle.submit_task(MyProgram::VariantB(start, end), ZkVmBackend::Native).await?;
+    /// ```
+    pub async fn submit_task(&self, program: P, backend: ZkVmBackend) -> PaaSResult<()> {
+        let task_id = TaskId::new(program, backend);
+        self.submit_task_id(task_id).await
+    }
+
+    /// Submit a task using a TaskId directly
+    pub async fn submit_task_id(&self, task_id: TaskId<P>) -> PaaSResult<()> {
         let task_id_clone = task_id.clone();
         self.command_handle
             .send_and_wait(|completion| ProverCommand::SubmitTask {
                 task_id: task_id_clone.clone(),
-                completion
+                completion,
             })
             .await
             .map_err(|e| PaaSError::Internal(e.into()))
     }
 
     /// Get task status
-    pub async fn get_status(&self, task_id: &ZkVmTaskId<P>) -> PaaSResult<TaskStatus> {
+    pub async fn get_status(&self, task_id: &TaskId<P>) -> PaaSResult<TaskStatus> {
         self.command_handle
             .send_and_wait(|completion| ProverCommand::GetStatus {
                 task_id: task_id.clone(),

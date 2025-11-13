@@ -3,11 +3,11 @@
 use strata_service::CommandCompletionSender;
 
 use crate::state::StatusSummary;
-use crate::task::{TaskId, TaskStatus};
+use crate::task::{TaskIdentifier, TaskStatus};
 
 /// Commands that can be sent to ProverService
 #[derive(Debug)]
-pub enum ProverCommand<T: TaskId> {
+pub enum ProverCommand<T: TaskIdentifier> {
     /// Submit a new task for proving
     SubmitTask {
         task_id: T,

@@ -19,7 +19,7 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 use zkaleido::ProofReceipt;
 
-use crate::operators::ProofOperator;
+use crate::{operators::ProofOperator, proof_context_integration::ProofTask};
 
 pub(crate) async fn start<T>(
     rpc_impl: &T,
@@ -62,14 +62,14 @@ where
 /// Contains fields corresponding the global context for the RPC.
 #[derive(Clone)]
 pub(crate) struct ProverClientRpc {
-    prover_handle: RegistryProverHandle<ProofContext>,
+    prover_handle: RegistryProverHandle<ProofTask>,
     operator: Arc<ProofOperator>,
     db: Arc<ProofDBSled>,
 }
 
 impl ProverClientRpc {
     pub(crate) fn new(
-        prover_handle: RegistryProverHandle<ProofContext>,
+        prover_handle: RegistryProverHandle<ProofTask>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDBSled>,
     ) -> Self {
@@ -132,7 +132,8 @@ impl ProverClientRpc {
             }
 
             // Submit task to PaaS (ignore if already exists)
-            if let Err(e) = self.prover_handle.submit_task(proof_ctx, backend).await {
+            // Convert ProofContext to ProofTask for PaaS
+            if let Err(e) = self.prover_handle.submit_task(ProofTask(proof_ctx), backend).await {
                 // Ignore "Task already exists" error - it's okay if already submitted
                 if !e.to_string().contains("Task already exists") {
                     return Err(anyhow::anyhow!("Failed to submit task: {}", e));
@@ -318,7 +319,8 @@ impl StrataProverClientApiServer for ProverClientRpc {
             // If proof is not in DB, check PaaS status
             None => {
                 let backend = Self::get_backend();
-                let task_id = TaskId::new(*key.context(), backend);
+                // Wrap ProofContext in ProofTask for PaaS
+                let task_id = TaskId::new(ProofTask(*key.context()), backend);
 
                 let status = self
                     .prover_handle

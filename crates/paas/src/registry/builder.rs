@@ -8,13 +8,14 @@ use zkaleido::ZkVmProgram;
 
 use crate::config::PaaSConfig;
 use crate::error::PaaSResult;
-use crate::registry::{ConcreteHandler, InputFetcher, ProofStore, ProgramRegistry};
-use crate::registry_handle::RegistryProverHandle;
-use crate::registry_prover::RegistryProver;
 use crate::service::ProverService;
 use crate::state::ProverServiceState;
 use crate::zkvm::ZkVmBackend;
 use crate::ProgramType;
+
+use super::core::{ConcreteHandler, InputFetcher, ProofStore, ProgramRegistry};
+use super::handle::RegistryProverHandle;
+use super::prover::RegistryProver;
 
 /// Builder for creating a registry-based prover service
 ///
@@ -25,17 +26,19 @@ use crate::ProgramType;
 ///
 /// ```rust,ignore
 /// let handle = RegistryProverServiceBuilder::new(config)
-///     .register::<CheckpointProgram, _, _>(
-///         ProofContextVariant::Checkpoint,
-///         checkpoint_fetcher,
-///         checkpoint_store,
+///     .register::<MyProgramA, _, _, _>(
+///         MyProgramVariant::VariantA,
+///         fetcher_a,
+///         proof_store,
+///         host_a,
 ///     )
-///     .register::<ClStfProgram, _, _>(
-///         ProofContextVariant::ClStf,
-///         cl_stf_fetcher,
-///         cl_stf_store,
+///     .register::<MyProgramB, _, _, _>(
+///         MyProgramVariant::VariantB,
+///         fetcher_b,
+///         proof_store,
+///         host_b,
 ///     )
-///     .launch(&task_manager)
+///     .launch(&executor)
 ///     .await?;
 /// ```
 pub struct RegistryProverServiceBuilder<P: ProgramType> {
