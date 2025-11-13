@@ -1,13 +1,14 @@
 //! Trait definitions for low level database interfaces.  This borrows some of
 //! its naming conventions from reth.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
+use strata_identifiers::OLTxId;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_primitives::{
     prelude::*,
@@ -350,4 +351,46 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
+}
+
+/// Database interface for OL mempool persistence.
+///
+/// Provides durable storage for mempool transactions across restarts.
+/// The mempool layer maintains in-memory indices for ordering and uses
+/// this trait for persistence only.
+///
+/// Only raw transaction blobs are persisted. Metadata (entry_slot, entry_time, size_bytes)
+/// is maintained in-memory by the mempool layer and is not stored.
+pub trait MempoolDatabase: Send + Sync + 'static {
+    /// Store a raw transaction blob.
+    fn put_tx_entry(&self, txid: &OLTxId, blob: &[u8]) -> DbResult<()>;
+
+    /// Retrieve a raw transaction blob by ID.
+    ///
+    /// Returns None if the transaction doesn't exist.
+    fn get_tx_entry(&self, txid: &OLTxId) -> DbResult<Option<Vec<u8>>>;
+
+    /// Retrieve multiple transaction blobs by their IDs (batch operation).
+    ///
+    /// More efficient than calling get_tx_entry multiple times.
+    /// Returns a map of txid -> blob for transactions that exist.
+    /// Missing transactions are simply not included in the result.
+    fn get_tx_entries(&self, txids: &[OLTxId]) -> DbResult<HashMap<OLTxId, Vec<u8>>>;
+
+    /// Remove a transaction from storage.
+    ///
+    /// Returns Ok(()) even if the transaction doesn't exist.
+    fn del_tx_entry(&self, txid: &OLTxId) -> DbResult<()>;
+
+    /// Remove multiple transactions from storage (batch operation).
+    ///
+    /// More efficient than calling del_tx_entry multiple times.
+    /// Returns Ok(()) even if some transactions don't exist.
+    fn del_tx_entries(&self, txids: &[OLTxId]) -> DbResult<()>;
+
+    /// Get all transaction IDs currently in storage.
+    ///
+    /// Used during mempool initialization to restore state after restart.
+    /// The order of IDs is unspecified.
+    fn get_all_tx_ids(&self) -> DbResult<Vec<OLTxId>>;
 }
