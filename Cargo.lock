@@ -13949,7 +13949,9 @@ dependencies = [
  "strata-asm-types",
  "strata-checkpoint-types",
  "strata-csm-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
+ "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
  "strata-primitives",
  "strata-state",
@@ -14263,6 +14265,7 @@ name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
+ "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "thiserror 2.0.16",

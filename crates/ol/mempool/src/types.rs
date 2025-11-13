@@ -2,20 +2,6 @@
 
 use std::collections::HashMap;
 
-/// Metadata stored with each OL transaction for ordering and management.
-#[derive(Clone, Debug)]
-pub struct MempoolTxMetadata {
-    /// Slot when transaction was added to mempool (for FIFO ordering).
-    pub entry_slot: u64,
-
-    /// Unix timestamp when transaction was added (for metrics).
-    pub entry_time: u64,
-
-    /// Size of the transaction in bytes.
-    pub size_bytes: usize,
-    // TODO: Add fee field for priority ordering.
-}
-
 /// Statistics about the mempool state.
 #[derive(Clone, Debug, Default)]
 pub struct MempoolStats {

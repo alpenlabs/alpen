@@ -10,5 +10,6 @@ pub mod validation;
 // Re-export for convenience
 pub use error::{MempoolError, MempoolResult};
 pub use ordering::{FifoOrdering, OrderingIndex, OrderingStrategy};
-pub use types::{MempoolStats, MempoolTxMetadata};
+pub use strata_db_types::{traits::MempoolDatabase, types::MempoolTxMetadata};
+pub use types::MempoolStats;
 pub use validation::{BasicValidator, TransactionValidator};
