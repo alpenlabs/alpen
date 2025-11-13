@@ -373,7 +373,7 @@ impl BridgeV1State {
             .expect("Assignment must exist after successful validation");
 
         Ok(OperatorClaimUnlock {
-            withdrawal_txid: tx.compute_txid().into(),
+            fulfillment_txid: tx.compute_txid().into(),
             deposit_txid: removed_assignment.deposit_txid(),
             deposit_idx: removed_assignment.deposit_idx(),
             operator_idx: withdrawal_info.operator_idx,

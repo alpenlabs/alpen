@@ -125,16 +125,17 @@ impl WithdrawOutput {
 /// corresponding deposit UTXOs.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct OperatorClaimUnlock {
-    /// The transaction ID of the withdrawal transaction
-    pub withdrawal_txid: BitcoinTxid,
+    /// The transaction ID of the withdrawal fulfillment transaction, i.e. the transaction which
+    /// fronts funds to the user.
+    pub fulfillment_txid: BitcoinTxid,
 
-    /// The transaction ID of the deposit that was assigned
+    /// The transaction ID of the deposit that was assigned.
     pub deposit_txid: BitcoinTxid,
 
-    /// The transaction idx of the deposit that was assigned
+    /// The transaction idx of the deposit that was assigned.
     pub deposit_idx: u32,
 
-    /// The index of the operator who processed the withdrawal
+    /// The index of the operator who processed the withdrawal.
     pub operator_idx: OperatorIdx,
 }
 
