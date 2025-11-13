@@ -11,9 +11,10 @@ mod operator;
 mod relay;
 
 // Re-export commonly used types
+#[cfg(not(target_os = "zkvm"))]
+pub use bridge::PublickeyTable;
 pub use bridge::{
-    Musig2PartialSignature, Musig2PubNonce, Musig2SecNonce, OperatorPartialSig, PublickeyTable,
-    TxSigningData,
+    Musig2PartialSignature, Musig2PubNonce, Musig2SecNonce, OperatorPartialSig, TxSigningData,
 };
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};
 pub use bridge_state::{
