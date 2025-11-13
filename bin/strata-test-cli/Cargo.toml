@@ -15,7 +15,6 @@ shrex.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
 strata-cli-common.workspace = true
 strata-crypto.workspace = true
-strata-l1tx.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 
@@ -31,6 +30,7 @@ argh.workspace = true
 hex.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 shrex_macros.workspace = true
