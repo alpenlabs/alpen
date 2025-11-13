@@ -1,14 +1,23 @@
-use bdk_wallet::bitcoin::{bip32::Xpriv, PublicKey, Transaction, XOnlyPublicKey};
+use bdk_wallet::bitcoin::{
+    bip32::Xpriv,
+    taproot::TaprootBuilder,
+    Address,
+    Network,
+    PublicKey,
+    Transaction,
+    XOnlyPublicKey
+};
 use secp256k1::SECP256K1;
-use strata_crypto::EvenSecretKey;
-use strata_l1tx::deposit::deposit_request::extract_deposit_request_info;
+use strata_crypto::{EvenSecretKey, multisig::aggregate_schnorr_keys};
 use strata_params::DepositTxParams;
 use strata_primitives::{
+    buf::Buf32,
     constants::{EE_ADDRESS_LEN, STRATA_OP_WALLET_DERIVATION_PATH},
     l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey, DepositRequestInfo},
 };
 
 use crate::{
+    bridge::deposit_request::extract_deposit_request_info,
     constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES},
     error::Error,
 };
@@ -65,6 +74,27 @@ pub(crate) fn parse_drt(
     };
 
     extract_deposit_request_info(tx, &config).ok_or(Error::TxParser("Bad DRT".to_string()))
+}
+
+/// Generates a taproot address from operator public keys
+pub(crate) fn generate_taproot_address(
+    operator_wallet_pks: &[Buf32],
+    network: Network,
+) -> Result<(BitcoinAddress, XOnlyPublicKey), Error> {
+    let x_only_pub_key = aggregate_schnorr_keys(operator_wallet_pks.iter())
+        .map_err(|e| Error::TxBuilder(format!("aggregate schnorr keys: {}", e)))?;
+
+    let taproot_builder = TaprootBuilder::new();
+    let spend_info = taproot_builder
+        .finalize(SECP256K1, x_only_pub_key)
+        .map_err(|_| Error::TxBuilder("taproot finalization".to_string()))?;
+    let merkle_root = spend_info.merkle_root();
+
+    let addr = Address::p2tr(SECP256K1, x_only_pub_key, merkle_root, network);
+    let addr = BitcoinAddress::parse(&addr.to_string(), network)
+        .map_err(|e| Error::TxBuilder(format!("parse bitcoin address: {}", e)))?;
+
+    Ok((addr, x_only_pub_key))
 }
 
 /// Parses an [`XOnlyPublicKey`] from a hex string.

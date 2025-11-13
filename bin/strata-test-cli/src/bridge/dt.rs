@@ -23,14 +23,13 @@ use make_buf::make_buf;
 use secp256k1::{All, Secp256k1, SECP256K1};
 use strata_asm_txs_bridge_v1::{constants::DEPOSIT_TX_TYPE, BRIDGE_V1_SUBPROTOCOL_ID};
 use strata_crypto::EvenSecretKey;
-use strata_l1tx::utils::generate_taproot_address;
 use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY, l1::DepositRequestInfo};
 
 use super::{musig_signer::MusigSigner, types::DepositTxMetadata};
 use crate::{
     constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES, NETWORK},
     error::Error,
-    parse::{parse_drt, parse_operator_keys},
+    parse::{generate_taproot_address, parse_drt, parse_operator_keys},
 };
 
 /// Creates a deposit transaction (DT) from raw DRT transaction bytes (CLI wrapper)

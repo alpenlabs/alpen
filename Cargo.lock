@@ -14057,7 +14057,7 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "borsh",
- "secp256k1 0.29.1",
+ "strata-asm-stf",
  "strata-asm-txs-bridge-v1",
  "strata-asm-types",
  "strata-bridge-types",
@@ -14071,9 +14071,7 @@ dependencies = [
  "strata-params",
  "strata-primitives",
  "strata-test-utils",
- "strata-test-utils-btc",
  "strata-test-utils-l2",
- "thiserror 2.0.16",
  "tracing",
 ]
 
@@ -14630,10 +14628,10 @@ dependencies = [
  "strata-asm-txs-bridge-v1",
  "strata-cli-common",
  "strata-crypto",
- "strata-l1tx",
  "strata-params",
  "strata-primitives",
  "thiserror 2.0.16",
+ "tracing",
 ]
 
 [[package]]
