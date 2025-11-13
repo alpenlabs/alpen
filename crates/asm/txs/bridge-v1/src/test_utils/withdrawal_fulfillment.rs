@@ -4,7 +4,7 @@ use bitcoin::{
 };
 
 use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE},
+    constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_FULFILLMENT_TX_TYPE},
     test_utils::TEST_MAGIC_BYTES,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
@@ -34,7 +34,7 @@ pub fn create_test_withdrawal_fulfillment_tx(
     let mut tagged_payload = Vec::new();
     tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
     tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID
-    tagged_payload.push(WITHDRAWAL_TX_TYPE); // 1 byte transaction type
+    tagged_payload.push(WITHDRAWAL_FULFILLMENT_TX_TYPE); // 1 byte transaction type
 
     // Auxiliary data: [OPERATOR_IDX][DEPOSIT_IDX][DEPOSIT_TXID]
     tagged_payload.extend_from_slice(&withdrawal_info.operator_idx.to_be_bytes()); // 4 bytes
