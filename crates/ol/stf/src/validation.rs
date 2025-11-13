@@ -8,7 +8,6 @@ use crate::error::BlockValidationError;
 
 /// Block validation before execution. Checks continuity, signature etc.
 pub fn pre_exec_block_validate(
-    state_accessor: &impl StateAccessor,
     block: &OLBlock,
     prev_header: &OLBlockHeader,
     params: &RollupParams,
@@ -16,7 +15,6 @@ pub fn pre_exec_block_validate(
     let cur_header = block.signed_header().header();
 
     validate_block_signature(params, block)?;
-    validate_state_root_continuity(state_accessor, prev_header)?;
     validate_slot_continuity(cur_header, prev_header)?;
     validate_epoch_progression(cur_header, prev_header)?;
     validate_timestamp_progression(cur_header, prev_header)?;
@@ -40,21 +38,6 @@ fn validate_block_signature(
 
     if !verify_schnorr_sig(&block.signed_header().signature(), &header_root, &pubkey) {
         return Err(BlockValidationError::InvalidSignature);
-    }
-    Ok(())
-}
-
-fn validate_state_root_continuity(
-    state_accessor: &impl StateAccessor,
-    prev_header: &OLBlockHeader,
-) -> Result<(), BlockValidationError> {
-    let expected_pre_root = state_accessor.compute_state_root();
-    let got_pre_root = prev_header.state_root();
-    if expected_pre_root != got_pre_root {
-        return Err(BlockValidationError::PreStateRootMismatch {
-            expected: expected_pre_root,
-            got: got_pre_root,
-        });
     }
     Ok(())
 }

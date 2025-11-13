@@ -222,15 +222,11 @@ impl SnarkAccountUpdate {
 
     pub fn with_proofs(
         self,
-        message_proofs: Vec<MessageEntryProof>,
-        ledger_ref_proofs: LedgerRefProofs,
+        accumulator_proofs: UpdateAccumulatorProofs,
     ) -> SnarkAccountUpdateContainer {
         SnarkAccountUpdateContainer {
             base_update: self,
-            accumulator_proofs: UpdateAccumulatorProofs {
-                inbox_proofs: message_proofs,
-                ledger_ref_proofs,
-            },
+            accumulator_proofs,
         }
     }
 

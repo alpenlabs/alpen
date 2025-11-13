@@ -10,7 +10,7 @@ use crate::VerifiedUpdate;
 ///
 /// Called after verification succeeds and before updating the snark account's proof state.
 pub fn apply_update_outputs<'a, L: LedgerInterface>(
-    ledger_ref: &mut L,
+    ledger_impl: &mut L,
     verified_update: VerifiedUpdate<'a>,
 ) -> Result<(), L::Error> {
     let outputs = verified_update.operation().outputs();
@@ -19,13 +19,13 @@ pub fn apply_update_outputs<'a, L: LedgerInterface>(
 
     // Process transfers
     for transfer in transfers {
-        ledger_ref.send_transfer(transfer.dest(), transfer.value())?;
+        ledger_impl.send_transfer(transfer.dest(), transfer.value())?;
     }
 
     // Process messages
     for msg in messages {
         let payload = msg.payload();
-        ledger_ref.send_message(msg.dest(), payload.clone())?;
+        ledger_impl.send_message(msg.dest(), payload.clone())?;
     }
 
     Ok(())
