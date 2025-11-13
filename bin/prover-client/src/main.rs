@@ -10,11 +10,11 @@ use checkpoint_runner::runner::checkpoint_proof_runner;
 use db::open_sled_database;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::ProofOperator;
-use paas_integration::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher, ProofStoreService};
+use paas::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher, ProofStoreService};
+use paas::{ProofContextVariant, ProofTask};
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
-use proof_context_integration::{ProofContextVariant, ProofTask};
 use strata_paas::{PaaSConfig, RegistryProverServiceBuilder, ZkVmBackend};
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
@@ -34,8 +34,7 @@ mod db;
 mod errors;
 mod host_resolver;
 mod operators;
-mod paas_integration;
-mod proof_context_integration;
+mod paas;
 mod rpc_server;
 
 #[tokio::main]

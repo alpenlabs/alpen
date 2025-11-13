@@ -19,7 +19,7 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 use zkaleido::ProofReceipt;
 
-use crate::{operators::ProofOperator, proof_context_integration::ProofTask};
+use crate::{operators::ProofOperator, paas::ProofTask};
 
 pub(crate) async fn start<T>(
     rpc_impl: &T,

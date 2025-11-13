@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 use crate::{
     checkpoint_runner::fetch::fetch_next_unproven_checkpoint_index,
     operators::checkpoint::CheckpointOperator,
-    proof_context_integration::ProofTask,
+    paas::ProofTask,
 };
 
 /// Holds the current checkpoint index for the runner to track progress.
