@@ -4,7 +4,6 @@
 //! Assignments link specific deposit UTXOs to operators who are responsible for processing
 //! the corresponding withdrawal requests within specified deadlines.
 
-use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use rand_chacha::{
     ChaChaRng,
@@ -18,10 +17,9 @@ use strata_primitives::{
     sorted_vec::SortedVec,
 };
 
-use super::withdrawal::WithdrawalCommand;
 use crate::{
     errors::{WithdrawalAssignmentError, WithdrawalCommandError},
-    state::{bitmap::OperatorBitmap, deposit::DepositEntry},
+    state::{bitmap::OperatorBitmap, deposit::DepositEntry, withdrawal::WithdrawalCommand},
 };
 
 /// Filters and returns eligible operators for assignment or reassignment.
@@ -90,12 +88,12 @@ fn filter_eligible_operators(
 ///
 /// Each assignment represents a task, assigned to a specific operator to process
 /// a withdrawal of from a particular deposit UTXO.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Arbitrary)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct AssignmentEntry {
     /// Deposit entry that has been assigned
     deposit_entry: DepositEntry,
 
-    /// Withdrawal command specifying outputs and amounts.
+    /// Withdrawal command specifying destination and net amount after fee deduction.
     withdrawal_cmd: WithdrawalCommand,
 
     /// Index of the operator currently assigned to execute this withdrawal.
@@ -488,6 +486,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
+    use crate::state::withdrawal::WithdrawalCommand;
 
     #[test]
     fn test_create_with_random_assignment_success() {

@@ -7,4 +7,4 @@ use strata_l1_txfmt::{SubprotocolId, TxType};
 pub const BRIDGE_V1_SUBPROTOCOL_ID: SubprotocolId = 2;
 
 pub const DEPOSIT_TX_TYPE: TxType = 1;
-pub const WITHDRAWAL_TX_TYPE: TxType = 2;
+pub const WITHDRAWAL_FULFILLMENT_TX_TYPE: TxType = 2;

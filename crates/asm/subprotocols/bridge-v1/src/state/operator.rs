@@ -10,25 +10,7 @@ use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::Sorte
 
 use super::bitmap::OperatorBitmap;
 
-/// Bridge operator entry containing identification and cryptographic keys.
-///
-/// Each operator registered in the bridge has:
-///
-/// - **`idx`** - Unique identifier used to reference the operator globally
-/// - **`signing_pk`** - Public key for message signature verification between operators
-/// - **`wallet_pk`** - Public key for Bitcoin transaction signatures (MuSig2 compatible)
-///
-/// # Key Separation Design
-///
-/// The two separate keys allow for different cryptographic schemes:
-/// - Message signing can use a different mechanism than Bitcoin transactions
-/// - Currently, only `wallet_pk` is actively used for signatures
-///
-/// # Bitcoin Compatibility
-///
-/// The `wallet_pk` follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
-/// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
-/// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
+/// Bridge operator entry containing identification and cryptographic key.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
 )]
@@ -36,11 +18,12 @@ pub struct OperatorEntry {
     /// Global operator index.
     idx: OperatorIdx,
 
-    /// Public key used to verify signed messages from the operator.
-    signing_pk: Buf32,
-
     /// Wallet public key used to compute MuSig2 public key from a set of operators.
-    wallet_pk: Buf32,
+    ///
+    /// It follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
+    /// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
+    /// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
+    musig2_pk: Buf32,
 }
 
 impl PartialOrd for OperatorEntry {
@@ -57,36 +40,16 @@ impl Ord for OperatorEntry {
 
 impl OperatorEntry {
     /// Returns the unique operator index.
-    ///
-    /// # Returns
-    ///
-    /// The [`OperatorIdx`] that uniquely identifies this operator.
     pub fn idx(&self) -> OperatorIdx {
         self.idx
     }
 
-    /// Returns the signing public key for message verification.
-    ///
-    /// This key is used to verify signed messages between operators in the
-    /// bridge communication protocol.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the signing public key as [`Buf32`].
-    pub fn signing_pk(&self) -> &Buf32 {
-        &self.signing_pk
-    }
-
-    /// Returns the wallet public key for Bitcoin transactions.
+    /// Returns the operator's public key.
     ///
     /// This key is used in MuSig2 aggregation for Bitcoin transaction signatures
     /// and follows BIP 340 standard for Taproot compatibility.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the wallet public key as [`Buf32`].
-    pub fn wallet_pk(&self) -> &Buf32 {
-        &self.wallet_pk
+    pub fn musig2_pk(&self) -> &Buf32 {
+        &self.musig2_pk
     }
 }
 
@@ -123,20 +86,21 @@ pub struct OperatorTable {
     /// **Invariant**: MUST be sorted by `OperatorEntry::idx` field.
     operators: SortedVec<OperatorEntry>,
 
-    /// Bitmap indicating which operators are part of the current N/N multisig.
+    /// Bitmap indicating which operators are currently active in the N/N multisig.
     ///
     /// Each bit position corresponds to an operator index, where a set bit (1) indicates
-    /// the operator at that index is included in the current multisig configuration.
-    /// This bitmap is used to efficiently track multisig membership and coordinate
+    /// the operator at that index is currently active in the multisig configuration.
+    /// This bitmap is used to efficiently track active operator membership and coordinate
     /// with the aggregated public key for signature operations.
-    current_multisig: OperatorBitmap,
+    active_operators: OperatorBitmap,
 
-    /// Aggregated public key derived from operator wallet keys that are part of the current N/N
-    /// multisig.
+    /// Aggregated public key derived from operator wallet keys that are currently active in the
+    /// N/N multisig.
     ///
     /// This key is computed by aggregating the wallet public keys of only those operators
-    /// where `is_in_current_multisig` is true, using the MuSig2 key aggregation protocol.
-    /// It serves as the collective public key for multi-signature operations and is used for:
+    /// marked as active in the `active_operators` bitmap, using the MuSig2 key aggregation
+    /// protocol. It serves as the collective public key for multi-signature operations and is
+    /// used for:
     ///
     /// - Generating deposit addresses for the bridge
     /// - Verifying multi-signatures from the current operator set
@@ -183,12 +147,11 @@ impl OperatorTable {
                     .enumerate()
                     .map(|(i, e)| OperatorEntry {
                         idx: i as OperatorIdx,
-                        signing_pk: *e.signing_pk(),
-                        wallet_pk: *e.wallet_pk(),
+                        musig2_pk: *e.wallet_pk(),
                     })
                     .collect(),
             ),
-            current_multisig: bitmap,
+            active_operators: bitmap,
             agg_key: agg_operator_key,
         }
     }
@@ -233,44 +196,44 @@ impl OperatorTable {
             .map(|i| &self.operators.as_slice()[i])
     }
 
-    /// Returns whether this operator is part of the current N/N multisig set.
+    /// Returns whether this operator is currently active in the N/N multisig set.
     ///
-    /// Operators in the current multisig are eligible for new task assignments, while operators
-    /// not in the current multisig are preserved in the table but not assigned new tasks.
+    /// Active operators are eligible for new task assignments, while inactive operators
+    /// are preserved in the table but not assigned new tasks.
     ///
     /// # Returns
     ///
-    /// `true` if the operator is in the current multisig, `false` otherwise (even if the index is
+    /// `true` if the operator is active, `false` otherwise (even if the index is
     /// out-of-bounds).
     pub fn is_in_current_multisig(&self, idx: OperatorIdx) -> bool {
-        self.current_multisig.is_active(idx)
+        self.active_operators.is_active(idx)
     }
 
-    /// Returns a reference to the bitmap of currently active multisig operators.
+    /// Returns a reference to the bitmap of currently active operators.
     ///
-    /// The bitmap tracks which operators are part of the current N/N multisig configuration.
+    /// The bitmap tracks which operators are currently active in the N/N multisig configuration.
     /// This is used for assignment creation and deposit processing.
     pub fn current_multisig(&self) -> &OperatorBitmap {
-        &self.current_multisig
+        &self.active_operators
     }
 
-    /// Updates the multisig membership status for multiple operators, inserts new operators,
+    /// Updates the active status for multiple operators, inserts new operators,
     /// and recalculates the aggregated key.
     ///
     /// # Parameters
     ///
-    /// - `updates` - Slice of (operator_index, is_in_multisig) pairs for existing operators
-    /// - `inserts` - Slice of new operators to insert (marked as in multisig by default)
+    /// - `updates` - Slice of (operator_index, is_active) pairs for existing operators
+    /// - `inserts` - Slice of new operators to insert (marked as active by default)
     ///
     /// # Processing Order
     ///
     /// Inserts are processed before updates. If an operator index appears in both parameters,
-    /// the update will override the insert's `is_in_multisig` value.
+    /// the update will override the insert's `is_active` value.
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - The updates would result in no operators being in the multisig
+    /// - The updates would result in no active operators
     /// - Sequential operator insertion fails (bitmap index management error)
     /// - `next_idx` overflows `u32::MAX` when inserting new operators (since operator indices are
     ///   never reused, this limits the total number of unique operators that can ever be registered
@@ -285,15 +248,14 @@ impl OperatorTable {
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
-                signing_pk: *op_keys.signing_pk(),
-                wallet_pk: *op_keys.wallet_pk(),
+                musig2_pk: *op_keys.wallet_pk(),
             };
 
             // SortedVec handles insertion and maintains sorted order
             self.operators.insert(entry);
 
             // Set new operator as active in bitmap
-            self.current_multisig
+            self.active_operators
                 .try_set(idx, true)
                 .expect("Sequential operator insertion should always succeed");
 
@@ -301,7 +263,7 @@ impl OperatorTable {
         }
 
         // Handle updates by modifying the bitmap directly
-        for &(idx, is_in_multisig) in updates {
+        for &(idx, is_active) in updates {
             // Only update if the operator exists
             if self
                 .operators
@@ -310,20 +272,20 @@ impl OperatorTable {
                 .is_ok()
             {
                 // For existing operators, we can set their status directly
-                if (idx as usize) < self.current_multisig.len() {
-                    self.current_multisig
-                        .try_set(idx, is_in_multisig)
+                if (idx as usize) < self.active_operators.len() {
+                    self.active_operators
+                        .try_set(idx, is_active)
                         .expect("Setting existing operator status should succeed");
                 }
             }
         }
 
         if !updates.is_empty() || !inserts.is_empty() {
-            // Recalculate aggregated key based on current multisig members
+            // Recalculate aggregated key based on active operators
             let active_keys: Vec<&Buf32> = self
-                .current_multisig
+                .active_operators
                 .active_indices()
-                .filter_map(|op| self.get_operator(op).map(|entry| entry.wallet_pk()))
+                .filter_map(|op| self.get_operator(op).map(|entry| entry.musig2_pk()))
                 .collect();
 
             if active_keys.is_empty() {
@@ -385,8 +347,7 @@ mod tests {
         for (i, op) in operators.iter().enumerate() {
             let entry = table.get_operator(i as u32).unwrap();
             assert_eq!(entry.idx(), i as u32);
-            assert_eq!(entry.signing_pk(), op.signing_pk());
-            assert_eq!(entry.wallet_pk(), op.wallet_pk());
+            assert_eq!(entry.musig2_pk(), op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
@@ -402,23 +363,22 @@ mod tests {
         assert_eq!(table.len(), 3);
         assert_eq!(table.next_idx, 3);
 
-        // Verify inserted operators are correctly stored and in multisig
+        // Verify inserted operators are correctly stored and active
         for (i, op) in new_operators.iter().enumerate() {
             let idx = (i + 1) as u32;
             let entry = table.get_operator(idx).unwrap();
             assert_eq!(entry.idx(), idx);
-            assert_eq!(entry.signing_pk(), op.signing_pk());
-            assert_eq!(entry.wallet_pk(), op.wallet_pk());
+            assert_eq!(entry.musig2_pk(), op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
 
     #[test]
-    fn test_operator_table_update_multisig_membership() {
+    fn test_operator_table_update_active_status() {
         let operators = create_test_operator_pubkeys(3);
         let mut table = OperatorTable::from_operator_list(&operators);
 
-        // Initially all operators should be in multisig
+        // Initially all operators should be active
         assert!(table.is_in_current_multisig(0));
         assert!(table.is_in_current_multisig(1));
         assert!(table.is_in_current_multisig(2));
@@ -439,19 +399,19 @@ mod tests {
     }
 
     #[test]
-    fn test_current_multisig_indices() {
+    fn test_active_operators_indices() {
         let operators = create_test_operator_pubkeys(3);
         let mut table = OperatorTable::from_operator_list(&operators);
 
-        // Initially, all operators should be in the current multisig set
-        let current_indices: Vec<_> = table.current_multisig().active_indices().collect();
-        assert_eq!(current_indices, vec![0, 1, 2]);
+        // Initially, all operators should be active
+        let active_indices: Vec<_> = table.current_multisig().active_indices().collect();
+        assert_eq!(active_indices, vec![0, 1, 2]);
 
-        // Mark operator 1 as not in current multisig
+        // Mark operator 1 as inactive
         table.update_multisig_and_recalc_key(&[(1, false)], &[]);
 
-        // Now only operators 0 and 2 should be in current multisig
-        let current_indices: Vec<_> = table.current_multisig().active_indices().collect();
-        assert_eq!(current_indices, vec![0, 2]);
+        // Now only operators 0 and 2 should be active
+        let active_indices: Vec<_> = table.current_multisig().active_indices().collect();
+        assert_eq!(active_indices, vec![0, 2]);
     }
 }

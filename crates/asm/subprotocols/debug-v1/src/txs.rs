@@ -4,7 +4,7 @@
 //! injection of test data into the ASM for testing purposes.
 
 use strata_asm_common::TxInputRef;
-use strata_asm_proto_bridge_v1::WithdrawOutput;
+use strata_asm_proto_bridge_v1::WithdrawalRequest;
 use strata_l1_txfmt::TxType;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
@@ -36,7 +36,7 @@ pub(crate) struct MockAsmLogInfo {
 }
 
 /// Type alias for mock withdrawal info.
-pub(crate) type MockWithdrawInfo = WithdrawOutput;
+pub(crate) type MockWithdrawInfo = WithdrawalRequest;
 
 /// Parsed debug transaction types.
 pub(crate) enum ParsedDebugTx {
@@ -86,7 +86,7 @@ fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxPa
 }
 
 /// Parses withdrawal data from auxiliary data bytes.
-fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, DebugTxParseError> {
+fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawalRequest, DebugTxParseError> {
     if aux_data.len() < MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN {
         return Err(DebugTxParseError::AuxDataTooShort {
             expected: MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
@@ -105,8 +105,8 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
     let dest = Descriptor::from_bytes(desc_bytes)
         .map_err(|e| DebugTxParseError::InvalidDescriptorFormat(e.to_string()))?;
 
-    let withdraw_output = WithdrawOutput::new(dest, amt);
-    Ok(withdraw_output)
+    let withdrawal_request = WithdrawalRequest::new(dest, amt);
+    Ok(withdrawal_request)
 }
 
 /// Parses a mock withdrawal transaction.
