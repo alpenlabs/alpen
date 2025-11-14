@@ -144,7 +144,7 @@ impl BridgeV1State {
     ///
     /// This function takes already parsed deposit transaction information, validates it against the
     /// current state, and creates a new deposit entry in the deposits table if
-    /// validation passes. Only operators that are part of the current N/N multisig set
+    /// validation passes. Only operators that are currently active in the N/N multisig set
     /// are included as notary operators for the deposit.
     ///
     /// # Parameters
@@ -182,7 +182,7 @@ impl BridgeV1State {
     /// This retrieves the oldest unassigned deposit UTXO, validates that its amount matches
     /// the withdrawal amount, and creates a withdrawal command with the configured operator fee.
     /// The assignment is then added to the table with operators randomly selected from the
-    /// current multisig set.
+    /// currently active operators.
     ///
     /// # Parameters
     ///
