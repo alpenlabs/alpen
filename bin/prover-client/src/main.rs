@@ -8,7 +8,7 @@ use args::Args;
 use bitcoind_async_client::Client;
 use checkpoint_runner::runner::checkpoint_proof_runner;
 use jsonrpsee::http_client::HttpClientBuilder;
-use operators::ProofOperator;
+use operators::init_operators;
 use rpc_server::ProverClientRpc;
 use service::{CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider, ProofStoreService};
 use service::{ProofContextVariant, ProofTask};
@@ -78,12 +78,13 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     )
     .context("Failed to connect to the Bitcoin client")?;
 
-    let operator = Arc::new(ProofOperator::init(
+    // Initialize operators
+    let (checkpoint_operator, cl_stf_operator, evm_ee_operator) = init_operators(
         btc_client,
         el_client,
         cl_client,
         rollup_params,
-    ));
+    );
 
     let sled_db = strata_db_store_sled::open_sled_database(
         &config.datadir,
@@ -97,18 +98,18 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // Create PaaS components
     let checkpoint_input = CheckpointInputProvider::new(
-        operator.checkpoint_operator().clone(),
+        checkpoint_operator.clone(),
         db.clone(),
     );
     let cl_stf_input = ClStfInputProvider::new(
-        operator.cl_stf_operator().clone(),
+        cl_stf_operator.clone(),
         db.clone(),
     );
     let evm_ee_input = EvmEeInputProvider::new(
-        operator.evm_ee_operator().clone(),
+        evm_ee_operator.clone(),
         db.clone(),
     );
-    let proof_store = ProofStoreService::new(db.clone(), operator.checkpoint_operator().clone());
+    let proof_store = ProofStoreService::new(db.clone(), checkpoint_operator.clone());
 
     // Create PaaS configuration
     let mut worker_counts = HashMap::new();
@@ -169,13 +170,13 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // run the checkpoint runner
     if config.enable_checkpoint_runner {
-        let checkpoint_operator = operator.checkpoint_operator().clone();
+        let checkpoint_operator_clone = checkpoint_operator.clone();
         let checkpoint_handle = paas_handle.clone();
         let checkpoint_poll_interval = config.checkpoint_poll_interval;
         let checkpoint_db = db.clone();
         executor.spawn_critical_async("checkpoint-runner", async move {
             checkpoint_proof_runner(
-                checkpoint_operator,
+                checkpoint_operator_clone,
                 checkpoint_poll_interval,
                 checkpoint_handle,
                 checkpoint_db,
@@ -186,7 +187,12 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         debug!("Spawned checkpoint proof runner");
     }
 
-    let rpc_server = ProverClientRpc::new(paas_handle.clone(), operator, db);
+    let rpc_server = ProverClientRpc::new(
+        paas_handle.clone(),
+        checkpoint_operator,
+        cl_stf_operator,
+        db,
+    );
     let rpc_url = config.get_dev_rpc_url();
     let enable_dev_rpcs = config.enable_dev_rpcs;
     executor.spawn_critical_async("rpc-server", async move {

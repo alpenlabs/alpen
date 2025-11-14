@@ -23,7 +23,7 @@ use tracing::{info, warn};
 use zkaleido::ProofReceipt;
 
 use crate::{
-    operators::ProofOperator,
+    operators::{CheckpointOperator, ClStfOperator},
     service::{proof_key_for, zkvm_backend, ProofTask},
 };
 
@@ -69,19 +69,22 @@ where
 #[derive(Clone)]
 pub(crate) struct ProverClientRpc {
     prover_handle: ProverHandle<ProofTask>,
-    operator: Arc<ProofOperator>,
+    checkpoint_operator: CheckpointOperator,
+    cl_stf_operator: ClStfOperator,
     db: Arc<ProofDBSled>,
 }
 
 impl ProverClientRpc {
     pub(crate) fn new(
         prover_handle: ProverHandle<ProofTask>,
-        operator: Arc<ProofOperator>,
+        checkpoint_operator: CheckpointOperator,
+        cl_stf_operator: ClStfOperator,
         db: Arc<ProofDBSled>,
     ) -> Self {
         Self {
             prover_handle,
-            operator,
+            checkpoint_operator,
+            cl_stf_operator,
             db,
         }
     }
@@ -169,8 +172,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
         cl_block_range: (L2BlockCommitment, L2BlockCommitment),
     ) -> RpcResult<Vec<RpcProofKey>> {
         // Create ClStf dependencies first
-        self.operator
-            .cl_stf_operator()
+        self.cl_stf_operator
             .create_cl_stf_deps(cl_block_range.0, cl_block_range.1, &self.db)
             .await
             .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
@@ -184,8 +186,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
 
     async fn prove_checkpoint(&self, ckp_idx: u64) -> RpcResult<Vec<RpcProofKey>> {
         // Create checkpoint dependencies (ClStf)
-        let cl_stf_deps = self.operator
-            .checkpoint_operator()
+        let cl_stf_deps = self.checkpoint_operator
             .create_checkpoint_deps(ckp_idx, &self.db)
             .await
             .map_err(to_jsonrpsee_error("failed to create checkpoint dependencies"))?;
@@ -193,8 +194,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
         // Create ClStf dependencies (EvmEeStf) for each ClStf
         for dep_ctx in &cl_stf_deps {
             if let ProofContext::ClStf(start, end) = dep_ctx {
-                self.operator
-                    .cl_stf_operator()
+                self.cl_stf_operator
                     .create_cl_stf_deps(*start, *end, &self.db)
                     .await
                     .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
@@ -212,8 +212,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
 
     async fn prove_latest_checkpoint(&self) -> RpcResult<Vec<RpcProofKey>> {
         let next_unproven_idx = self
-            .operator
-            .checkpoint_operator()
+            .checkpoint_operator
             .cl_client()
             .get_next_unproven_checkpoint_index()
             .await
@@ -233,8 +232,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
         };
 
         // Create checkpoint dependencies (ClStf)
-        let cl_stf_deps = self.operator
-            .checkpoint_operator()
+        let cl_stf_deps = self.checkpoint_operator
             .create_checkpoint_deps(checkpoint_idx, &self.db)
             .await
             .map_err(to_jsonrpsee_error("failed to create checkpoint dependencies"))?;
@@ -242,8 +240,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
         // Create ClStf dependencies (EvmEeStf) for each ClStf
         for dep_ctx in &cl_stf_deps {
             if let ProofContext::ClStf(start, end) = dep_ctx {
-                self.operator
-                    .cl_stf_operator()
+                self.cl_stf_operator
                     .create_cl_stf_deps(*start, *end, &self.db)
                     .await
                     .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
@@ -278,8 +275,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
         }
 
         // Create ClStf dependencies (EvmEeStf)
-        self.operator
-            .cl_stf_operator()
+        self.cl_stf_operator
             .create_cl_stf_deps(l2_range.0, l2_range.1, &self.db)
             .await
             .map_err(to_jsonrpsee_error("failed to create cl stf dependencies"))?;
