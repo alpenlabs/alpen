@@ -43,6 +43,12 @@ cov-unit: ensure-cargo-llvm-cov ensure-cargo-nextest
 cov-report-html: ensure-cargo-llvm-cov ensure-cargo-nextest
     cargo llvm-cov --open --workspace --locked nextest
 
+# Run integration tests
+[group('test')]
+test-int: ensure-cargo-nextest
+    cargo nextest run -p "integration-tests" --status-level=fail --no-capture --no-tests=warn
+
+
 # Runs `nextest` under `cargo-mutants`. Caution: This can take *really* long to run
 [group('test')]
 mutants-test: ensure-cargo-mutants
