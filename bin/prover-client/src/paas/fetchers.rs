@@ -17,7 +17,7 @@ use crate::errors::ProvingTaskError;
 use crate::operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator};
 
 use super::task::ProofTask;
-use super::get_current_backend;
+use super::current_zkvm;
 
 /// Wrapper to add database dependency to CheckpointOperator
 #[derive(Clone)]
@@ -34,7 +34,7 @@ impl InputProvider<ProofTask, CheckpointProgram> for CheckpointFetcher {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let proof_key = ProofKey::new(proof_context, get_current_backend());
+            let proof_key = ProofKey::new(proof_context, current_zkvm());
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -65,7 +65,7 @@ impl InputProvider<ProofTask, ClStfProgram> for ClStfFetcher {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let proof_key = ProofKey::new(proof_context, get_current_backend());
+            let proof_key = ProofKey::new(proof_context, current_zkvm());
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -96,7 +96,7 @@ impl InputProvider<ProofTask, EvmEeProgram> for EvmEeFetcher {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let proof_key = ProofKey::new(proof_context, get_current_backend());
+            let proof_key = ProofKey::new(proof_context, current_zkvm());
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await

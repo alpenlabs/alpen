@@ -14,7 +14,7 @@ use zkaleido::ProofReceiptWithMetadata;
 use crate::operators::checkpoint::CheckpointOperator;
 
 use super::task::ProofTask;
-use super::backend_to_zkvm;
+use super::{current_paas_backend, paas_backend_to_zkvm};
 
 /// Unified proof storage service that handles all proof types
 ///
@@ -47,18 +47,8 @@ impl ProofStore<ProofTask> for ProofStoreService {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
 
-            let backend = {
-                #[cfg(feature = "sp1")]
-                {
-                    strata_paas::ZkVmBackend::SP1
-                }
-                #[cfg(not(feature = "sp1"))]
-                {
-                    strata_paas::ZkVmBackend::Native
-                }
-            };
-
-            let proof_key = ProofKey::new(proof_context, backend_to_zkvm(backend));
+            let backend = current_paas_backend();
+            let proof_key = ProofKey::new(proof_context, paas_backend_to_zkvm(&backend));
 
             // Store proof in database
             self.db

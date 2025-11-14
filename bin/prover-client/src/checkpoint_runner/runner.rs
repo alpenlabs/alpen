@@ -2,15 +2,15 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_paas::{ProverHandle, ZkVmBackend};
-use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
+use strata_paas::ProverHandle;
+use strata_primitives::proof::{ProofContext, ProofKey};
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
 use crate::{
     checkpoint_runner::fetch::fetch_next_unproven_checkpoint_index,
     operators::checkpoint::CheckpointOperator,
-    paas::ProofTask,
+    paas::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
 };
 
 /// Holds the current checkpoint index for the runner to track progress.
@@ -82,12 +82,8 @@ async fn submit_checkpoint_task(
     let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
 
     // Determine backend based on features
-    let backend = get_backend();
-    let zkvm = match backend {
-        ZkVmBackend::SP1 => ProofZkVm::SP1,
-        ZkVmBackend::Native => ProofZkVm::Native,
-        ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
-    };
+    let backend = current_paas_backend();
+    let zkvm = paas_backend_to_zkvm(&backend);
 
     let proof_key = ProofKey::new(proof_ctx, zkvm);
 
@@ -139,12 +135,8 @@ fn submit_proof_context_recursive<'a>(
     db: &'a Arc<ProofDBSled>,
 ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a + Send>> {
     Box::pin(async move {
-        let backend = get_backend();
-        let zkvm = match backend {
-            ZkVmBackend::SP1 => ProofZkVm::SP1,
-            ZkVmBackend::Native => ProofZkVm::Native,
-            ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
-        };
+        let backend = current_paas_backend();
+        let zkvm = paas_backend_to_zkvm(&backend);
 
         let proof_key = ProofKey::new(proof_ctx, zkvm);
 
@@ -178,17 +170,6 @@ fn submit_proof_context_recursive<'a>(
     })
 }
 
-/// Helper to determine backend based on features
-fn get_backend() -> ZkVmBackend {
-    #[cfg(feature = "sp1")]
-    {
-        ZkVmBackend::SP1
-    }
-    #[cfg(not(feature = "sp1"))]
-    {
-        ZkVmBackend::Native
-    }
-}
 
 fn should_update_checkpoint(current: Option<u64>, new: u64) -> bool {
     current.is_none_or(|current| new > current)
