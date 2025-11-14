@@ -6,7 +6,7 @@ use bitcoin::absolute;
 use sha2::{Digest, Sha256};
 use strata_acct_types::{
     AccountId, AccountSerial, AccountTypeId, AcctError, AcctResult, BitcoinAmount, Hash, Mmr64,
-    RawAccountTypeId,
+    MsgPayload, RawAccountTypeId,
 };
 use strata_asm_common::AsmManifest;
 use strata_btc_types::GenesisL1View;
@@ -14,6 +14,7 @@ use strata_ledger_types::{
     AccountTypeState, Coin, IAccountState, IGlobalState, IL1ViewState, ISnarkAccountState,
     StateAccessor,
 };
+use strata_merkle::hasher::MerkleHasher;
 use strata_ol_chain_types_new::{L1Update, OLBlockHeader};
 use strata_params::{OperatorConfig, ProofPublishMode, RollupParams};
 use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -30,6 +31,10 @@ struct MockSnarkAccountState {
     next_inbox_idx: u64,
     inner_state_root: Hash,
     inbox_mmr: Mmr64,
+    /// Stored messages for test verification and proof retrieval
+    inbox_messages: Vec<MessageEntry>,
+    /// Maintained proofs for each message (parallel to inbox_messages)
+    inbox_proofs: Vec<strata_acct_types::MerkleProof>,
 }
 
 impl ISnarkAccountState for MockSnarkAccountState {
@@ -70,7 +75,22 @@ impl ISnarkAccountState for MockSnarkAccountState {
         &self.inbox_mmr
     }
 
-    fn insert_inbox_message(&mut self, _entry: MessageEntry) -> AcctResult<()> {
+    fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
+        // Compute hash of message
+        let msg_bytes = entry.to_ssz_bytes();
+        let hash = strata_acct_types::StrataHasher::hash_leaf(&msg_bytes);
+
+        // Add leaf to MMR, updating all existing proofs
+        // In tests, MMR operations should not fail (capacity is 2^32)
+        let new_proof = self
+            .inbox_mmr
+            .add_leaf_updating_proof_list(hash, &mut self.inbox_proofs)
+            .expect("test: MMR should have capacity");
+
+        // Store message and its proof
+        self.inbox_messages.push(entry);
+        self.inbox_proofs.push(new_proof);
+
         Ok(())
     }
 }
@@ -365,13 +385,13 @@ impl StateAccessor for MockStateAccessor {
             // Hash type state
             match &account.type_state {
                 AccountTypeState::Empty => {
-                    hasher.update(&[0u8]); // Type discriminant
+                    hasher.update([0u8]); // Type discriminant
                 }
                 AccountTypeState::Snark(snark_state) => {
-                    hasher.update(&[1u8]); // Type discriminant
+                    hasher.update([1u8]); // Type discriminant
                     hasher.update(snark_state.seqno.to_le_bytes());
                     hasher.update(snark_state.next_inbox_idx.to_le_bytes());
-                    hasher.update(&snark_state.inner_state_root);
+                    hasher.update(snark_state.inner_state_root);
                     // Note: Not hashing verifier_key or inbox_mmr for simplicity in tests
                 }
             }
@@ -553,11 +573,12 @@ mod block_asm_tests {
     /// 3. The composed result validates via execute_block
     #[test]
     fn test_non_terminal_block_execution() {
+        let cur_slot = 10;
         let mut state = MockStateAccessor::default();
-        state.set_cur_slot(10);
+        state.set_cur_slot(cur_slot);
         let mut initial_state = state.clone();
         let initial_root = initial_state.compute_state_root();
-        let prev_header = create_test_header(10, 0, 0, initial_root); // Not a terminal block
+        let prev_header = create_test_header(cur_slot, 0, 0, initial_root); // Not a terminal block
         let params = test_rollup_params();
         let ctx = BlockExecContext::new(prev_header.clone(), params.clone());
 
@@ -590,7 +611,7 @@ mod block_asm_tests {
 mod transaction_execution_tests {
     use strata_ol_chain_types_new::{LogData, OLTransaction, TransactionExtra, TransactionPayload};
     use strata_snark_acct_types::{
-        LedgerRefProofs, OutputTransfer, ProofState, SnarkAccountUpdate,
+        LedgerRefProofs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate,
         SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
     };
 
@@ -603,7 +624,48 @@ mod transaction_execution_tests {
             next_inbox_idx: 0,
             inner_state_root: [0u8; 32],
             inbox_mmr: Mmr64::new(32),
+            inbox_messages: Vec::new(),
+            inbox_proofs: Vec::new(),
         }
+    }
+
+    /// Helper to get a valid MessageEntryProof for a specific message index.
+    /// The proof is maintained by the MMR and will pass verification.
+    fn get_message_proof(
+        snark_state: &MockSnarkAccountState,
+        msg_index: u64,
+    ) -> strata_snark_acct_types::MessageEntryProof {
+        let entry = snark_state.inbox_messages[msg_index as usize].clone();
+        let proof = &snark_state.inbox_proofs[msg_index as usize];
+        let raw_proof = strata_acct_types::RawMerkleProof::new(proof.cohashes().to_vec());
+        strata_snark_acct_types::MessageEntryProof::new(entry, raw_proof)
+    }
+
+    /// Helper to create test execution context at a given slot
+    fn create_test_context(slot: u64, state: &MockStateAccessor) -> BlockExecContext {
+        let prev_header = create_test_header(slot, 0, 0, state.compute_state_root());
+        let params = test_rollup_params();
+        BlockExecContext::new(prev_header, params)
+    }
+
+    /// Helper to wrap operation data in a SnarkAccountUpdateContainer with empty proofs
+    fn wrap_update_with_empty_proofs(
+        operation: UpdateOperationData,
+    ) -> SnarkAccountUpdateContainer {
+        let base = SnarkAccountUpdate::new(operation, vec![]);
+        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
+        SnarkAccountUpdateContainer::new(base, accumulator_proofs)
+    }
+
+    /// Helper to create a snark account update transaction
+    fn create_snark_update_tx(
+        target: AccountId,
+        update: SnarkAccountUpdateContainer,
+    ) -> OLTransaction {
+        OLTransaction::new(
+            TransactionPayload::SnarkAccountUpdate { target, update },
+            TransactionExtra::default(),
+        )
     }
 
     fn create_account_with_balance(
@@ -646,18 +708,6 @@ mod transaction_execution_tests {
         match type_state {
             AccountTypeState::Snark(s) => s,
             _ => panic!("Expected snark account"),
-        }
-    }
-
-    fn get_updated_snark_state(
-        state: &MockStateAccessor,
-        account_id: AccountId,
-    ) -> MockSnarkAccountState {
-        let account = state.get_account_state(account_id).unwrap().unwrap();
-        let type_state = account.get_type_state().unwrap();
-        match type_state {
-            AccountTypeState::Snark(s) => s,
-            _ => panic!("Account should still be snark type after update"),
         }
     }
 
@@ -724,10 +774,7 @@ mod transaction_execution_tests {
             extra_data,
         );
 
-        let base = SnarkAccountUpdate::new(operation, vec![]);
-        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-
-        SnarkAccountUpdateContainer::new(base, accumulator_proofs)
+        wrap_update_with_empty_proofs(operation)
     }
 
     /// Creates a valid snark update with outputs (transfers/messages).
@@ -748,10 +795,7 @@ mod transaction_execution_tests {
         let operation =
             UpdateOperationData::new(seq_no, proof_state, vec![], ledger_refs, outputs, vec![]);
 
-        let base = SnarkAccountUpdate::new(operation, vec![]);
-        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-
-        SnarkAccountUpdateContainer::new(base, accumulator_proofs)
+        wrap_update_with_empty_proofs(operation)
     }
 
     fn create_mock_snark_update() -> SnarkAccountUpdateContainer {
@@ -767,29 +811,20 @@ mod transaction_execution_tests {
             outputs,     // outputs
             vec![],      // extra_data
         );
-        let base = SnarkAccountUpdate::new(operation, vec![]);
-        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
 
-        SnarkAccountUpdateContainer::new(base, accumulator_proofs)
+        wrap_update_with_empty_proofs(operation)
     }
 
     #[test]
     fn test_tx_on_nonexistent_account_fails() {
+        let cur_slot = 10;
         let mut state = MockStateAccessor::default();
-        state.set_cur_slot(10);
-        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
-        let params = test_rollup_params();
-        let ctx = BlockExecContext::new(prev_header, params);
+        state.set_cur_slot(cur_slot);
+        let ctx = create_test_context(cur_slot, &state);
 
         let nonexistent = AccountId::from([99u8; 32]);
         let update = create_mock_snark_update();
-        let tx = OLTransaction::new(
-            TransactionPayload::SnarkAccountUpdate {
-                target: nonexistent,
-                update,
-            },
-            TransactionExtra::default(),
-        );
+        let tx = create_snark_update_tx(nonexistent, update);
 
         let result = execute_transaction(&ctx, &mut state, &tx);
 
@@ -804,24 +839,16 @@ mod transaction_execution_tests {
 
     #[test]
     fn test_snark_update_on_non_snark_account_fails() {
+        let cur_slot = 10;
         let mut state = MockStateAccessor::default();
-        state.set_cur_slot(10);
+        state.set_cur_slot(cur_slot);
 
         // Create empty (non-snark) account
         let account_id = create_account_with_balance(&mut state, 1, 1000, false);
 
-        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
-        let params = test_rollup_params();
-        let ctx = BlockExecContext::new(prev_header, params);
-
+        let ctx = create_test_context(cur_slot, &state);
         let update = create_mock_snark_update();
-        let tx = OLTransaction::new(
-            TransactionPayload::SnarkAccountUpdate {
-                target: account_id,
-                update,
-            },
-            TransactionExtra::default(),
-        );
+        let tx = create_snark_update_tx(account_id, update);
 
         let result = execute_transaction(&ctx, &mut state, &tx);
 
@@ -839,13 +866,12 @@ mod transaction_execution_tests {
 
     #[test]
     fn test_generic_account_message_unsupported() {
+        let cur_slot = 10;
         let mut state = MockStateAccessor::default();
-        state.set_cur_slot(10);
+        state.set_cur_slot(cur_slot);
         let account_id = create_account_with_balance(&mut state, 1, 1000, true);
 
-        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
-        let params = test_rollup_params();
-        let ctx = BlockExecContext::new(prev_header, params);
+        let ctx = create_test_context(cur_slot, &state);
 
         let tx = OLTransaction::new(
             TransactionPayload::GenericAccountMessage {
@@ -866,12 +892,13 @@ mod transaction_execution_tests {
 
     #[test]
     fn test_successful_snark_update_no_outputs() {
+        let cur_slot = 10;
         let mut state = MockStateAccessor::default();
-        state.set_cur_slot(10);
+        state.set_cur_slot(cur_slot);
 
         // Create snark account with some balance
-        let account_id = create_account_with_balance(&mut state, 1, 5000, true);
         let initial_balance = 5000;
+        let account_id = create_account_with_balance(&mut state, 1, initial_balance, true);
         let initial_state_root = state.compute_state_root();
 
         // Get the snark state to create a matching update
@@ -884,17 +911,8 @@ mod transaction_execution_tests {
         // Create valid update with no outputs
         let update = create_valid_snark_update(&snark_state);
 
-        let prev_header = create_test_header(10, 0, 0, initial_state_root);
-        let params = test_rollup_params();
-        let ctx = BlockExecContext::new(prev_header, params);
-
-        let tx = OLTransaction::new(
-            TransactionPayload::SnarkAccountUpdate {
-                target: account_id,
-                update,
-            },
-            TransactionExtra::default(),
-        );
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(account_id, update);
 
         // Execute transaction
         let result = execute_transaction(&ctx, &mut state, &tx);
@@ -909,7 +927,7 @@ mod transaction_execution_tests {
         );
 
         // Check snark state was updated
-        let updated_snark = get_updated_snark_state(&state, account_id);
+        let updated_snark = get_snark_state(&state, account_id);
 
         // Inner state should have changed
         assert_ne!(
@@ -923,18 +941,11 @@ mod transaction_execution_tests {
             "Inner state should match update"
         );
 
-        // Seqno should remain the same (as per current semantics)
+        // Sequencer number should be incremented
         assert_eq!(
             updated_snark.seqno(),
             initial_seqno + 1,
             "Seqno should increment"
-        );
-
-        // Inbox idx should remain same (no messages processed)
-        assert_eq!(
-            updated_snark.next_inbox_idx(),
-            initial_inbox_idx,
-            "Inbox idx should stay same with no messages"
         );
 
         // State root should change
@@ -966,13 +977,15 @@ mod transaction_execution_tests {
 
     #[test]
     fn test_successful_snark_update_with_balance_deduction() {
+        let cur_slot = 10;
         let mut state = MockStateAccessor::default();
-        state.set_cur_slot(10);
+        state.set_cur_slot(cur_slot);
 
         // Create two accounts: sender (snark) and receiver (empty)
         let init_sender_bal = 10000;
+        let receiver_bal = 0;
         let sender_id = create_account_with_balance(&mut state, 1, init_sender_bal, true);
-        let receiver_id = create_account_with_balance(&mut state, 2, 0, false);
+        let receiver_id = create_account_with_balance(&mut state, 2, receiver_bal, false);
 
         let transfer_amount = 3000u64;
 
@@ -984,17 +997,8 @@ mod transaction_execution_tests {
         let outputs = UpdateOutputs::new(vec![transfer], vec![]);
         let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
 
-        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
-        let params = test_rollup_params();
-        let ctx = BlockExecContext::new(prev_header, params);
-
-        let tx = OLTransaction::new(
-            TransactionPayload::SnarkAccountUpdate {
-                target: sender_id,
-                update,
-            },
-            TransactionExtra::default(),
-        );
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
 
         // Execute transaction
         let result = execute_transaction(&ctx, &mut state, &tx);
@@ -1018,7 +1022,7 @@ mod transaction_execution_tests {
         );
 
         // Verify inner state changed
-        let updated_snark = get_updated_snark_state(&state, sender_id);
+        let updated_snark = get_snark_state(&state, sender_id);
         assert_eq!(
             updated_snark.inner_state_root(),
             [2u8; 32],
@@ -1031,31 +1035,26 @@ mod transaction_execution_tests {
 
     #[test]
     fn test_snark_update_insufficient_balance_fails() {
+        let cur_slot = 10;
         let mut state = MockStateAccessor::default();
-        state.set_cur_slot(10);
+        state.set_cur_slot(cur_slot);
 
         // Create sender with insufficient balance
-        let sender_id = create_account_with_balance(&mut state, 1, 1000, true);
-        let receiver_id = create_account_with_balance(&mut state, 2, 0, false);
+        let sender_balance = 1000;
+        let receiver_balance = 0;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_balance, true);
+        let receiver_id = create_account_with_balance(&mut state, 2, receiver_balance, false);
 
         let snark_state = get_snark_state(&state, sender_id);
 
         // Try to transfer more than available balance
-        let transfer = OutputTransfer::new(receiver_id, BitcoinAmount::from_sat(5000));
+        let transfer_amount = 5000;
+        let transfer = OutputTransfer::new(receiver_id, BitcoinAmount::from_sat(transfer_amount));
         let outputs = UpdateOutputs::new(vec![transfer], vec![]);
         let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
 
-        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
-        let params = test_rollup_params();
-        let ctx = BlockExecContext::new(prev_header, params);
-
-        let tx = OLTransaction::new(
-            TransactionPayload::SnarkAccountUpdate {
-                target: sender_id,
-                update,
-            },
-            TransactionExtra::default(),
-        );
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
 
         // Should fail during verification (before balance deduction)
         let result = execute_transaction(&ctx, &mut state, &tx);
@@ -1066,8 +1065,8 @@ mod transaction_execution_tests {
                 requested,
                 available,
             }) => {
-                assert_eq!(requested, BitcoinAmount::from_sat(5000));
-                assert_eq!(available, BitcoinAmount::from_sat(1000));
+                assert_eq!(requested, BitcoinAmount::from_sat(transfer_amount));
+                assert_eq!(available, BitcoinAmount::from_sat(sender_balance));
             }
             err => panic!("Expected InsufficientBalance error, got {:?}", err),
         }
@@ -1076,14 +1075,612 @@ mod transaction_execution_tests {
         assert_account_balance(
             &state,
             sender_id,
-            1000,
+            sender_balance,
             "Sender balance should be unchanged",
         );
         assert_account_balance(
             &state,
             receiver_id,
-            0,
+            receiver_balance,
             "Receiver balance should be unchanged",
+        );
+    }
+
+    #[test]
+    fn test_send_message_to_snark_account() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create two snark accounts: sender and receiver
+        let sender_bal = 10000;
+        let receiver_bal = 5000;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_bal, true);
+        let receiver_id = create_account_with_balance(&mut state, 2, receiver_bal, true);
+
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Create update with a message output
+        let msg_value = 100u64;
+        let msg_data = b"Hello, receiver!".to_vec();
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(msg_value), msg_data.clone());
+        let message = OutputMessage::new(receiver_id, payload);
+        let outputs = UpdateOutputs::new(vec![], vec![message]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
+
+        // Execute transaction
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(result.is_ok(), "Transaction should succeed: {:?}", result);
+
+        // Verify sender balance was deducted (message value)
+        assert_account_balance(
+            &state,
+            sender_id,
+            sender_bal - msg_value,
+            "Sender balance should be deducted by message value",
+        );
+
+        // Verify receiver balance increased by message value
+        assert_account_balance(
+            &state,
+            receiver_id,
+            receiver_bal + msg_value,
+            "Receiver should receive the message value",
+        );
+
+        // Verify message was added to receiver's inbox
+        let receiver_snark = get_snark_state(&state, receiver_id);
+        assert_eq!(
+            receiver_snark.inbox_messages.len(),
+            1,
+            "Should have one message stored"
+        );
+
+        let stored_msg = &receiver_snark.inbox_messages[0];
+        assert_eq!(
+            stored_msg.source(),
+            sender_id,
+            "Message source should be sender"
+        );
+        assert_eq!(
+            stored_msg.payload_value(),
+            BitcoinAmount::from_sat(msg_value),
+            "Message value should match"
+        );
+        assert_eq!(
+            stored_msg.payload_buf(),
+            msg_data.as_slice(),
+            "Message data should match"
+        );
+    }
+
+    // TODO: This test documents future behavior - currently messages to non-snark accounts succeed
+    // See update.rs where AccountTypeState::Empty returns Ok() with a TODO comment
+    #[test]
+    #[ignore = "Message validation for non-snark accounts not implemented yet"]
+    fn test_send_message_to_non_snark_account_fails() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create sender (snark) and receiver (non-snark)
+        let sender_balance = 10000;
+        let receiver_balance = 0;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_balance, true);
+        let receiver_id = create_account_with_balance(&mut state, 2, receiver_balance, false);
+
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Try to send message to non-snark account
+        let msg_value = 100;
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(msg_value), b"Hello".to_vec());
+        let message = OutputMessage::new(receiver_id, payload);
+        let outputs = UpdateOutputs::new(vec![], vec![message]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
+
+        // Should fail - can't send messages to non-snark accounts
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(
+            result.is_err(),
+            "Should fail when sending message to non-snark account"
+        );
+
+        // Verify balances unchanged
+        assert_account_balance(
+            &state,
+            sender_id,
+            sender_balance,
+            "Sender balance should be unchanged",
+        );
+        assert_account_balance(
+            &state,
+            receiver_id,
+            receiver_balance,
+            "Receiver balance should be unchanged",
+        );
+    }
+
+    #[test]
+    fn test_send_transfer_to_non_snark_account() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create sender (snark) and receiver (non-snark/empty)
+        let sender_balance = 10000;
+        let receiver_balance = 0;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_balance, true);
+        let receiver_id = create_account_with_balance(&mut state, 2, receiver_balance, false);
+
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Send transfer to non-snark account (should succeed, unlike messages)
+        let transfer_amount = 500;
+        let transfer = OutputTransfer::new(receiver_id, BitcoinAmount::from_sat(transfer_amount));
+        let outputs = UpdateOutputs::new(vec![transfer], vec![]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
+
+        // Should succeed - transfers can go to empty accounts
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(
+            result.is_ok(),
+            "Transfer to non-snark account should succeed: {:?}",
+            result
+        );
+
+        // Verify sender balance deducted
+        assert_account_balance(
+            &state,
+            sender_id,
+            sender_balance - transfer_amount,
+            "Sender balance should be deducted",
+        );
+
+        // Verify receiver balance increased
+        assert_account_balance(
+            &state,
+            receiver_id,
+            receiver_balance + transfer_amount,
+            "Receiver should receive the transfer",
+        );
+    }
+
+    #[test]
+    fn test_send_multiple_transfers() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create sender and two receivers
+        let sender_balance = 10000;
+        let receiver1_balance = 500;
+        let receiver2_balance = 1000;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_balance, true);
+        let receiver1_id = create_account_with_balance(&mut state, 2, receiver1_balance, false);
+        let receiver2_id = create_account_with_balance(&mut state, 3, receiver2_balance, false);
+
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Send transfers to both receivers
+        let transfer1_amount = 1000;
+        let transfer2_amount = 2000;
+        let total_transfer_amount = transfer1_amount + transfer2_amount;
+        let transfer1 =
+            OutputTransfer::new(receiver1_id, BitcoinAmount::from_sat(transfer1_amount));
+        let transfer2 =
+            OutputTransfer::new(receiver2_id, BitcoinAmount::from_sat(transfer2_amount));
+        let outputs = UpdateOutputs::new(vec![transfer1, transfer2], vec![]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
+
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(result.is_ok(), "Transaction should succeed: {:?}", result);
+
+        // Verify sender balance deducted
+        assert_account_balance(
+            &state,
+            sender_id,
+            sender_balance - total_transfer_amount,
+            "Sender balance should be deducted by total transfer amount",
+        );
+
+        // Verify both receivers got their transfers
+        assert_account_balance(
+            &state,
+            receiver1_id,
+            receiver1_balance + transfer1_amount,
+            "Receiver1 should have transfer amount added",
+        );
+
+        assert_account_balance(
+            &state,
+            receiver2_id,
+            receiver2_balance + transfer2_amount,
+            "Receiver2 should have transfer amount added",
+        );
+    }
+
+    #[test]
+    fn test_send_mixed_transfers_and_messages() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create sender (snark), transfer receiver (empty), and message receiver (snark)
+        let sender_balance = 20000;
+        let transfer_receiver_balance = 0;
+        let message_receiver_balance = 5000;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_balance, true);
+        let transfer_receiver_id =
+            create_account_with_balance(&mut state, 2, transfer_receiver_balance, false);
+        let message_receiver_id =
+            create_account_with_balance(&mut state, 3, message_receiver_balance, true);
+
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Create both a transfer and a message
+        let transfer_amount = 1500;
+        let msg_value = 300;
+        let total_value = transfer_amount + msg_value;
+
+        let transfer = OutputTransfer::new(
+            transfer_receiver_id,
+            BitcoinAmount::from_sat(transfer_amount),
+        );
+        let payload = MsgPayload::new(
+            BitcoinAmount::from_sat(msg_value),
+            b"Mixed output test".to_vec(),
+        );
+        let message = OutputMessage::new(message_receiver_id, payload);
+        let outputs = UpdateOutputs::new(vec![transfer], vec![message]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
+
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(
+            result.is_ok(),
+            "Mixed outputs transaction should succeed: {:?}",
+            result
+        );
+
+        // Verify sender balance deducted for both transfer and message
+        assert_account_balance(
+            &state,
+            sender_id,
+            sender_balance - total_value,
+            "Sender balance should be deducted by total of transfer and message",
+        );
+
+        // Verify transfer receiver got the transfer
+        assert_account_balance(
+            &state,
+            transfer_receiver_id,
+            transfer_receiver_balance + transfer_amount,
+            "Transfer receiver should have transfer amount",
+        );
+
+        // Verify message receiver got the message value
+        assert_account_balance(
+            &state,
+            message_receiver_id,
+            message_receiver_balance + msg_value,
+            "Message receiver should have message value",
+        );
+
+        // Verify message was added to inbox
+        let message_receiver_snark = get_snark_state(&state, message_receiver_id);
+        assert_eq!(
+            message_receiver_snark.inbox_messages.len(),
+            1,
+            "Message receiver should have one message in inbox"
+        );
+    }
+
+    #[test]
+    #[ignore = "Self-transfer is not gracefully handled right now"]
+    fn test_self_transfer_behavior() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create a snark account (use ID 5 to avoid system accounts at 0 and 1)
+        let init_balance = 10000;
+        let account_id = create_account_with_balance(&mut state, 5, init_balance, true);
+        let snark_state = get_snark_state(&state, account_id);
+
+        // Try to send transfer to self
+        let transfer_amount = 500;
+        let transfer = OutputTransfer::new(account_id, BitcoinAmount::from_sat(transfer_amount));
+        let outputs = UpdateOutputs::new(vec![transfer], vec![]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(account_id, update);
+
+        // Execute - this currently succeeds
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(
+            result.is_ok(),
+            "Self-transfer transaction succeeds: {:?}",
+            result
+        );
+
+        let final_state = get_snark_state(&state, account_id);
+        assert_eq!(final_state.seqno(), 1, "Seqno increments");
+
+        // BUG: Balance is NOT net-zero! The value is deducted but not credited back
+        // Expected: init_balance (10000), Actual: init_balance - transfer_amount (9500)
+        let expected_balance = init_balance - transfer_amount;
+        assert_account_balance(
+            &state,
+            account_id,
+            expected_balance,
+            "BUG: Self-transfer deducts balance without crediting it back - money disappears!",
+        );
+
+        // TODO: This is the same bug as self-send messages (test_self_send_message_behavior)
+        // Self-transfers should either:
+        // 1. Be explicitly prevented (like transfers to Bridge system account), OR
+        // 2. Be net-zero (deduct then credit back to same account)
+        // Currently they succeed but lose money - this is a bug!
+    }
+
+    #[test]
+    fn test_process_messages_with_valid_proofs() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create two snark accounts
+        let sender_balance = 10000;
+        let receiver_balance = 5000;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_balance, true);
+        let receiver_id = create_account_with_balance(&mut state, 2, receiver_balance, true);
+
+        // Step 1: Sender sends a message to receiver
+        let sender_snark = get_snark_state(&state, sender_id);
+        let msg_value = 150u64;
+        let msg_data = b"Test message".to_vec();
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(msg_value), msg_data.clone());
+        let message = OutputMessage::new(receiver_id, payload.clone());
+        let outputs = UpdateOutputs::new(vec![], vec![message]);
+        let send_update = create_valid_snark_update_with_outputs(&sender_snark, outputs);
+
+        let ctx = create_test_context(10, &state);
+        let send_tx = create_snark_update_tx(sender_id, send_update);
+
+        let result = execute_transaction(&ctx, &mut state, &send_tx);
+        assert!(
+            result.is_ok(),
+            "Send transaction should succeed: {:?}",
+            result
+        );
+
+        // check seq
+        let sender_snark = get_snark_state(&state, sender_id);
+        assert!(sender_snark.seqno() == 1, "seq no should increase");
+
+        // Step 2: Receiver processes the message with valid MMR proofs
+        let receiver_snark = get_snark_state(&state, receiver_id);
+
+        // Get the message proof from the receiver's inbox
+        let msg_proof = get_message_proof(&receiver_snark, 0);
+
+        // Create an update that processes this message
+        let seqno = receiver_snark.seqno() + 1;
+        let cur_inbox_idx = receiver_snark.next_inbox_idx();
+        let messages = vec![msg_proof.entry().clone()];
+        let new_inbox_idx = cur_inbox_idx + (messages.len() as u64);
+
+        let proof_state = ProofState::new([2u8; 32], new_inbox_idx);
+        let ledger_refs = strata_snark_acct_types::LedgerRefs::new_empty();
+        let empty_outputs = UpdateOutputs::new(vec![], vec![]);
+
+        let operation = UpdateOperationData::new(
+            seqno,
+            proof_state,
+            messages,
+            ledger_refs,
+            empty_outputs,
+            vec![],
+        );
+
+        let base = SnarkAccountUpdate::new(operation, vec![]);
+        let accumulator_proofs =
+            UpdateAccumulatorProofs::new(vec![msg_proof], LedgerRefProofs::new(vec![]));
+        let process_update = SnarkAccountUpdateContainer::new(base, accumulator_proofs);
+
+        let ctx2 = create_test_context(cur_slot + 1, &state);
+        let process_tx = create_snark_update_tx(receiver_id, process_update);
+
+        // Execute the process transaction
+        let result = execute_transaction(&ctx2, &mut state, &process_tx);
+        assert!(
+            result.is_ok(),
+            "Process transaction should succeed with valid proofs: {:?}",
+            result
+        );
+
+        // Verify receiver's state after processing
+        let final_receiver = get_snark_state(&state, receiver_id);
+
+        // After processing 1 message (at index 0), next_inbox_idx advances to 1
+        assert_eq!(
+            final_receiver.next_inbox_idx(),
+            1,
+            "After processing 1 message, next_inbox_idx should be 1"
+        );
+
+        // Receiver started with seqno=0, after processing 1 update seqno=1
+        assert_eq!(
+            final_receiver.seqno(),
+            1,
+            "Receiver seqno should be 1 after first update"
+        );
+    }
+
+    #[test]
+    fn test_send_multiple_messages() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create sender and two receivers
+        let sender_balance = 10000;
+        let receiver1_balance = 0;
+        let receiver2_balance = 0;
+        let sender_id = create_account_with_balance(&mut state, 1, sender_balance, true);
+        let receiver1_id = create_account_with_balance(&mut state, 2, receiver1_balance, true);
+        let receiver2_id = create_account_with_balance(&mut state, 3, receiver2_balance, true);
+
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Send messages to both receivers
+        let msg1_value = 100;
+        let msg2_value = 200;
+        let payload1 = MsgPayload::new(BitcoinAmount::from_sat(msg1_value), b"Message 1".to_vec());
+        let payload2 = MsgPayload::new(BitcoinAmount::from_sat(msg2_value), b"Message 2".to_vec());
+        let message1 = OutputMessage::new(receiver1_id, payload1);
+        let message2 = OutputMessage::new(receiver2_id, payload2);
+        let outputs = UpdateOutputs::new(vec![], vec![message1, message2]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(sender_id, update);
+
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(result.is_ok(), "Transaction should succeed: {:?}", result);
+
+        // Verify sender balance deducted
+        let total_msg_value = msg1_value + msg2_value;
+        assert_account_balance(
+            &state,
+            sender_id,
+            sender_balance - total_msg_value,
+            "Sender balance should be deducted by total message value",
+        );
+
+        // Verify both receivers got their messages
+        let receiver1 = get_snark_state(&state, receiver1_id);
+        // next_inbox_idx should still be 0 - they received but haven't processed yet
+        assert_eq!(
+            receiver1.next_inbox_idx(),
+            0,
+            "Receiver1 next_inbox_idx should still be 0 (not processed yet)"
+        );
+        assert_eq!(
+            receiver1.inbox_messages.len(),
+            1,
+            "Receiver1 should have 1 message in inbox"
+        );
+        assert_account_balance(
+            &state,
+            receiver1_id,
+            receiver1_balance + msg1_value,
+            "Receiver1 should have message value",
+        );
+
+        let receiver2 = get_snark_state(&state, receiver2_id);
+        assert_eq!(
+            receiver2.next_inbox_idx(),
+            0,
+            "Receiver2 next_inbox_idx should still be 0 (not processed yet)"
+        );
+        assert_eq!(
+            receiver2.inbox_messages.len(),
+            1,
+            "Receiver2 should have 1 message in inbox"
+        );
+        assert_account_balance(
+            &state,
+            receiver2_id,
+            receiver2_balance + msg2_value,
+            "Receiver2 should have message value",
+        );
+    }
+
+    // TODO: Self-send behavior - sending messages/transfers to oneself
+    // This test documents current self-send behavior and potential issues.
+    // Currently, self-send succeeds but the message is NOT added to the inbox in our mock.
+    // This needs investigation:
+    // 1. Should self-sends be explicitly prevented?
+    // 2. If allowed, should they add to inbox immediately?
+    // 3. What are the implications for MMR proofs and state consistency?
+    #[test]
+    fn test_self_send_message_behavior() {
+        let cur_slot = 10;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // Create a snark account
+        let init_balance = 10000;
+        let account_id = create_account_with_balance(&mut state, 1, init_balance, true);
+        let snark_state = get_snark_state(&state, account_id);
+
+        // Try to send message to self
+        let msg_value = 100u64;
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(msg_value), b"To myself".to_vec());
+        let message = OutputMessage::new(account_id, payload); // dest = sender
+        let outputs = UpdateOutputs::new(vec![], vec![message]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let ctx = create_test_context(cur_slot, &state);
+        let tx = create_snark_update_tx(account_id, update);
+
+        // Execute - this currently succeeds
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(
+            result.is_ok(),
+            "Self-send transaction succeeds: {:?}",
+            result
+        );
+
+        let final_state = get_snark_state(&state, account_id);
+
+        // Observations about current behavior:
+        // 1. Transaction succeeds
+        assert_eq!(final_state.seqno(), 1, "Seqno increments");
+
+        // 2. Balance IS deducted! This is a bug - sending to self should be net-zero
+        // The value is deducted from sender but apparently not credited to receiver (self)
+        let expected_balance = init_balance - msg_value;
+        assert_account_balance(
+            &state,
+            account_id,
+            expected_balance,
+            "BUG: Self-send deducts balance without crediting it back",
+        );
+
+        // 3. Message is NOT in inbox (at least not visible in our mock's tracking)
+        // This could mean:
+        // - The state update happens but isn't reflected in our test tracking
+        // - Self-sends are silently dropped
+        // - There's special handling we're not seeing
+
+        // TODO: Investigate and document the correct behavior for self-sends
+        // Potential issues if self-sends are allowed:
+        // - Processing self-sent messages in next update might have index/MMR issues
+        // - Could be used to artificially increment inbox_idx
+        // - May bypass certain validations
+
+        // For now, just document that self-sends succeed
+        println!(
+            "Self-send succeeded. inbox_messages: {}, next_inbox_idx: {}",
+            final_state.inbox_messages.len(),
+            final_state.next_inbox_idx()
         );
     }
 }

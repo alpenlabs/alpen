@@ -14293,6 +14293,7 @@ dependencies = [
  "strata-btc-types",
  "strata-crypto",
  "strata-ledger-types",
+ "strata-merkle",
  "strata-ol-chain-types-new",
  "strata-params",
  "strata-predicate",
