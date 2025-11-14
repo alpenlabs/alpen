@@ -18,6 +18,20 @@ use crate::operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, ev
 use super::proof_key_for;
 use super::task::ProofTask;
 
+/// Convert ProvingTaskError to PaaSError
+///
+/// Classifies errors as transient (retriable) or permanent based on the error type.
+/// Transient errors include RPC failures and missing dependencies, which may resolve
+/// on retry. All other errors are considered permanent.
+fn to_paas_error(e: ProvingTaskError) -> PaaSError {
+    match e {
+        ProvingTaskError::RpcError(_)
+        | ProvingTaskError::ProofNotFound(_)
+        | ProvingTaskError::DependencyNotFound(_) => PaaSError::TransientFailure(e.to_string()),
+        _ => PaaSError::PermanentFailure(e.to_string()),
+    }
+}
+
 /// Input provider for checkpoint proofs
 #[derive(Clone)]
 pub(crate) struct CheckpointInputProvider {
@@ -37,14 +51,7 @@ impl InputProvider<ProofTask, CheckpointProgram> for CheckpointInputProvider {
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
-                .map_err(|e| match e {
-                    ProvingTaskError::RpcError(_)
-                    | ProvingTaskError::ProofNotFound(_)
-                    | ProvingTaskError::DependencyNotFound(_) => {
-                        PaaSError::TransientFailure(e.to_string())
-                    }
-                    _ => PaaSError::PermanentFailure(e.to_string()),
-                })
+                .map_err(to_paas_error)
         })
     }
 }
@@ -68,14 +75,7 @@ impl InputProvider<ProofTask, ClStfProgram> for ClStfInputProvider {
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
-                .map_err(|e| match e {
-                    ProvingTaskError::RpcError(_)
-                    | ProvingTaskError::ProofNotFound(_)
-                    | ProvingTaskError::DependencyNotFound(_) => {
-                        PaaSError::TransientFailure(e.to_string())
-                    }
-                    _ => PaaSError::PermanentFailure(e.to_string()),
-                })
+                .map_err(to_paas_error)
         })
     }
 }
@@ -99,14 +99,7 @@ impl InputProvider<ProofTask, EvmEeProgram> for EvmEeInputProvider {
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
-                .map_err(|e| match e {
-                    ProvingTaskError::RpcError(_)
-                    | ProvingTaskError::ProofNotFound(_)
-                    | ProvingTaskError::DependencyNotFound(_) => {
-                        PaaSError::TransientFailure(e.to_string())
-                    }
-                    _ => PaaSError::PermanentFailure(e.to_string()),
-                })
+                .map_err(to_paas_error)
         })
     }
 }
