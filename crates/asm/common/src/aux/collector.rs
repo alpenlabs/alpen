@@ -46,7 +46,7 @@ impl AuxRequestCollector {
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::Buf32;
+    use bitcoin::hashes::Hash;
 
     use super::*;
 
@@ -74,15 +74,15 @@ mod tests {
     fn test_collector_bitcoin_tx() {
         let mut collector = AuxRequestCollector::new();
 
-        let txid1: Buf32 = [1u8; 32].into();
-        let txid2: Buf32 = [2u8; 32].into();
-        collector.request_bitcoin_tx(txid1.into());
-        collector.request_bitcoin_tx(txid2.into());
+        let txid1 = Txid::from_byte_array([1u8; 32]);
+        let txid2 = Txid::from_byte_array([2u8; 32]);
+        collector.request_bitcoin_tx(txid1);
+        collector.request_bitcoin_tx(txid2);
 
         assert_eq!(collector.requests.bitcoin_txs.len(), 2);
 
         let requests = collector.into_requests();
-        assert_eq!(requests.bitcoin_txs[0], [1u8; 32].into());
-        assert_eq!(requests.bitcoin_txs[1], [2u8; 32].into());
+        assert_eq!(requests.bitcoin_txs[0], txid1.into());
+        assert_eq!(requests.bitcoin_txs[1], txid2.into());
     }
 }

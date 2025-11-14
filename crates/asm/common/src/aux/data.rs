@@ -5,8 +5,7 @@
 //! to subprotocols after verification.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_btc_types::RawBitcoinTx;
-use strata_identifiers::Buf32;
+use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
 
 use crate::{AsmMerkleProof, Hash32};
 
@@ -20,8 +19,7 @@ pub struct AuxRequests {
     pub manifest_hashes: Vec<ManifestHashRange>,
 
     /// [Txid](bitcoin::Txid) of the requested transactions.
-    // NOTE: Using Buf32 here instead of Txid because of borsh serialization requirement
-    pub bitcoin_txs: Vec<Buf32>,
+    pub bitcoin_txs: Vec<BitcoinTxid>,
 }
 
 /// Collection of auxiliary data responses for subprotocols.
