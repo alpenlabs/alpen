@@ -42,6 +42,9 @@ const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
 /// Operator key environment variable.
 const OPKEY_ENVVAR: &str = "STRATA_OP_KEY";
 
+/// Bitcoin network environment variable.
+const BITCOIN_NETWORK_ENVVAR: &str = "BITCOIN_NETWORK";
+
 /// The default network to use.
 ///
 /// Right now this is [`Network::Signet`].
@@ -52,13 +55,33 @@ const DEFAULT_CHAIN_SPEC: &str =
     include_str!("../../../crates/reth/chainspec/src/res/alpen-dev-chain.json");
 
 /// Resolves a [`Network`] from a string.
+///
+/// Priority:
+///
+/// 1. Command-line argument (if provided)
+/// 2. `BITCOIN_NETWORK` environment variable (if set)
+/// 3. Default network (Signet)
 pub(super) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
-    match arg {
-        Some("signet") => Ok(Network::Signet),
-        Some("regtest") => Ok(Network::Regtest),
-        Some(n) => anyhow::bail!("unsupported network option: {n}"),
-        None => Ok(DEFAULT_NETWORK),
+    // First, check if a command-line argument was provided
+    if let Some(network_str) = arg {
+        return match network_str {
+            "signet" => Ok(Network::Signet),
+            "regtest" => Ok(Network::Regtest),
+            n => anyhow::bail!("unsupported network option: {n}"),
+        };
     }
+
+    // If no argument provided, check environment variable
+    if let Ok(env_network) = std::env::var(BITCOIN_NETWORK_ENVVAR) {
+        return match env_network.as_str() {
+            "signet" => Ok(Network::Signet),
+            "regtest" => Ok(Network::Regtest),
+            n => anyhow::bail!("unsupported network option in {BITCOIN_NETWORK_ENVVAR}: {n}"),
+        };
+    }
+
+    // Fall back to default
+    Ok(DEFAULT_NETWORK)
 }
 
 /// Executes a `gen*` subcommand.
