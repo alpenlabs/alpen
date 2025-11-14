@@ -1,24 +1,26 @@
-//! PaaS integration for prover-client
+//! Service layer for PaaS integration
 //!
 //! This module bridges between PaaS (which works with ProofTask) and the
-//! operators (which work with ProofContext), implementing the registry-based
-//! PaaS API.
+//! operators (which work with ProofContext), implementing the input provisioning
+//! and proof storage for the PaaS service.
 //!
 //! ## Structure
 //!
 //! - `task` - ProofTask type and ProgramType implementation
-//! - `fetchers` - InputFetcher implementations for each program type
+//! - `inputs` - InputProvider implementations for each program type
 //! - `store` - ProofStore implementation for proof persistence
 
 use strata_paas::ZkVmBackend;
 use strata_primitives::proof::ProofZkVm;
 
-mod fetchers;
+mod inputs;
 mod store;
 mod task;
 
 // Re-export public types
-pub(crate) use fetchers::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher};
+pub(crate) use inputs::{
+    CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider,
+};
 pub(crate) use store::ProofStoreService;
 pub(crate) use task::{ProofContextVariant, ProofTask};
 

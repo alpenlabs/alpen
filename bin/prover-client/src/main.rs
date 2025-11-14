@@ -9,9 +9,9 @@ use bitcoind_async_client::Client;
 use checkpoint_runner::runner::checkpoint_proof_runner;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::ProofOperator;
-use paas::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher, ProofStoreService};
-use paas::{ProofContextVariant, ProofTask};
 use rpc_server::ProverClientRpc;
+use service::{CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider, ProofStoreService};
+use service::{ProofContextVariant, ProofTask};
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
 use strata_paas::{PaaSConfig, ProverServiceBuilder, ZkVmBackend};
@@ -32,8 +32,8 @@ mod config;
 mod errors;
 mod host_resolver;
 mod operators;
-mod paas;
 mod rpc_server;
+mod service;
 
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -96,16 +96,16 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
     let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
-    // Create PaaS components using registry-based API
-    let checkpoint_fetcher = CheckpointFetcher {
+    // Create PaaS components
+    let checkpoint_input = CheckpointInputProvider {
         operator: operator.checkpoint_operator().clone(),
         db: db.clone(),
     };
-    let cl_stf_fetcher = ClStfFetcher {
+    let cl_stf_input = ClStfInputProvider {
         operator: operator.cl_stf_operator().clone(),
         db: db.clone(),
     };
-    let evm_ee_fetcher = EvmEeFetcher {
+    let evm_ee_input = EvmEeInputProvider {
         operator: operator.evm_ee_operator().clone(),
         db: db.clone(),
     };
@@ -144,19 +144,19 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let builder = ProverServiceBuilder::<ProofTask>::new(paas_config)
         .with_program::<CheckpointProgram, _, _, _>(
             ProofContextVariant::Checkpoint,
-            checkpoint_fetcher,
+            checkpoint_input,
             proof_store.clone(),
             resolve_host!(host_resolver::sample_checkpoint()),
         )
         .with_program::<ClStfProgram, _, _, _>(
             ProofContextVariant::ClStf,
-            cl_stf_fetcher,
+            cl_stf_input,
             proof_store.clone(),
             resolve_host!(host_resolver::sample_cl_stf()),
         )
         .with_program::<EvmEeProgram, _, _, _>(
             ProofContextVariant::EvmEeStf,
-            evm_ee_fetcher,
+            evm_ee_input,
             proof_store,
             resolve_host!(host_resolver::sample_evm_ee()),
         );
