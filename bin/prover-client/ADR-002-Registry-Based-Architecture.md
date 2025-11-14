@@ -246,9 +246,8 @@ impl RegistryProofStore<ProofContext> for ProofStoreService {
         proof: ProofReceiptWithMetadata,
     ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            // Determine backend from features
-            let backend = get_current_backend();
-            let proof_key = ProofKey::new(*program, backend_to_zkvm(backend));
+            // Create proof key using helper function
+            let proof_key = proof_key_for(*program);
 
             // Store proof in database
             self.db.put_proof(proof_key, proof)

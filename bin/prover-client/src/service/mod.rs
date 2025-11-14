@@ -11,7 +11,7 @@
 //! - `store` - ProofStore implementation for proof persistence
 
 use strata_paas::ZkVmBackend;
-use strata_primitives::proof::ProofZkVm;
+use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 
 mod inputs;
 mod store;
@@ -31,7 +31,7 @@ pub(crate) use task::{ProofContextVariant, ProofTask};
 /// Get the current zkVM backend based on feature flags
 ///
 /// Returns `ZkVmBackend::SP1` if the `sp1` feature is enabled, otherwise `Native`.
-/// Use this when interacting with PaaS APIs or submitting tasks.
+/// Use this when submitting tasks to PaaS.
 ///
 /// # Example
 /// ```ignore
@@ -50,28 +50,24 @@ pub(crate) fn zkvm_backend() -> ZkVmBackend {
     }
 }
 
-/// Convert ZkVmBackend to ProofZkVm for database operations
+/// Create a ProofKey for the given ProofContext using the current backend
 ///
-/// Use this when creating ProofKeys or interacting with the proof database.
-/// Typically used as `backend_to_zkvm(&zkvm_backend())` to get the current zkVM type.
+/// This is the primary way to create ProofKeys in the prover-client.
+/// It automatically determines the correct zkVM type based on feature flags.
 ///
 /// # Example
 /// ```ignore
-/// let backend = zkvm_backend();
-/// let zkvm = backend_to_zkvm(&backend);
-/// let proof_key = ProofKey::new(proof_ctx, zkvm);
-/// db.get_proof(&proof_key)?;
+/// let proof_key = proof_key_for(ProofContext::Checkpoint(42));
+/// let proof = db.get_proof(&proof_key)?;
 /// ```
-///
-/// # Panics
-/// Panics if `backend` is `Risc0` as it's not supported.
 #[inline]
-pub(crate) fn backend_to_zkvm(backend: &ZkVmBackend) -> ProofZkVm {
-    match backend {
+pub(crate) fn proof_key_for(proof_ctx: ProofContext) -> ProofKey {
+    let zkvm = match zkvm_backend() {
         ZkVmBackend::SP1 => ProofZkVm::SP1,
         ZkVmBackend::Native => ProofZkVm::Native,
         ZkVmBackend::Risc0 => panic!("Risc0 backend is not supported"),
-    }
+    };
+    ProofKey::new(proof_ctx, zkvm)
 }
 
 /// Macro to resolve zkVM host based on proof context variant and feature flags

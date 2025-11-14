@@ -270,13 +270,13 @@ async fn submit_checkpoint_task(
     db: &Arc<ProofDBSled>,
 ) -> anyhow::Result<()> {
     let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
-    let backend = get_backend();  // SP1 if feature enabled, else Native
-
     // Check if proof already exists
-    let proof_key = ProofKey::new(proof_ctx, zkvm_from_backend(backend));
+    let proof_key = proof_key_for(proof_ctx);
     if db.get_proof(&proof_key)?.is_some() {
         return Ok(());  // Already proven
     }
+
+    let backend = zkvm_backend();  // SP1 if feature enabled, else Native
 
     // Get and submit dependencies
     let deps = db.get_proof_deps(proof_ctx)?.unwrap_or_default();
@@ -974,7 +974,10 @@ fn zkvm_to_backend(zkvm: ProofZkVm) -> ZkVmBackend {
         _ => panic!("Unsupported zkVM"),
     }
 }
-// Only backend_to_zkvm() is needed (reverse direction)
+
+// REMOVED - backend_to_zkvm() replaced by proof_key_for()
+// which takes ProofContext and returns ProofKey directly
+fn backend_to_zkvm(backend: &ZkVmBackend) -> ProofZkVm { ... }
 ```
 
 #### Suppressed Backwards-Compatible Config Warnings

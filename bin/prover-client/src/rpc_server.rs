@@ -24,7 +24,7 @@ use zkaleido::ProofReceipt;
 
 use crate::{
     operators::ProofOperator,
-    service::{backend_to_zkvm, zkvm_backend, ProofTask},
+    service::{proof_key_for, zkvm_backend, ProofTask},
 };
 
 pub(crate) async fn start<T>(
@@ -101,10 +101,7 @@ impl ProverClientRpc {
         proof_ctx: ProofContext,
     ) -> Pin<Box<dyn Future<Output = Result<ProofKey, anyhow::Error>> + 'a + Send>> {
         Box::pin(async move {
-            let backend = zkvm_backend();
-            let zkvm = backend_to_zkvm(&backend);
-
-            let proof_key = ProofKey::new(proof_ctx, zkvm);
+            let proof_key = proof_key_for(proof_ctx);
 
             // Check if proof already exists
             if self.db.get_proof(&proof_key).map_err(|e| anyhow::anyhow!("DB error: {}", e))?.is_some() {
@@ -123,7 +120,7 @@ impl ProverClientRpc {
 
             // Submit task to PaaS (ignore if already exists)
             // Convert ProofContext to ProofTask for PaaS
-            if let Err(e) = self.prover_handle.submit_task(ProofTask(proof_ctx), backend).await {
+            if let Err(e) = self.prover_handle.submit_task(ProofTask(proof_ctx), zkvm_backend()).await {
                 // Ignore "Task already exists" error - it's okay if already submitted
                 if !e.to_string().contains("Task already exists") {
                     return Err(anyhow::anyhow!("Failed to submit task: {}", e));
