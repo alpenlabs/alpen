@@ -32,20 +32,30 @@ fn to_paas_error(e: ProvingTaskError) -> PaaSError {
     }
 }
 
-/// Input provider for checkpoint proofs
+/// Generic input provider for proof operators
+///
+/// This provider works with any operator implementing [`ProofInputFetcher`],
+/// eliminating code duplication across different proof types.
 #[derive(Clone)]
-pub(crate) struct CheckpointInputProvider {
-    pub(crate) operator: CheckpointOperator,
+pub(crate) struct ProofInputProvider<O> {
+    pub(crate) operator: O,
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl InputProvider<ProofTask, CheckpointProgram> for CheckpointInputProvider {
+impl<O> ProofInputProvider<O> {
+    /// Create a new input provider with the given operator and database
+    pub(crate) fn new(operator: O, db: Arc<ProofDBSled>) -> Self {
+        Self { operator, db }
+    }
+}
+
+// Implementation for CheckpointOperator
+impl InputProvider<ProofTask, CheckpointProgram> for ProofInputProvider<CheckpointOperator> {
     fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
     ) -> Pin<Box<dyn Future<Output = PaaSResult<CheckpointProverInput>> + Send + 'a>> {
         Box::pin(async move {
-            // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
             let proof_key = proof_key_for(proof_context);
             self.operator
@@ -56,20 +66,13 @@ impl InputProvider<ProofTask, CheckpointProgram> for CheckpointInputProvider {
     }
 }
 
-/// Input provider for CL STF proofs
-#[derive(Clone)]
-pub(crate) struct ClStfInputProvider {
-    pub(crate) operator: ClStfOperator,
-    pub(crate) db: Arc<ProofDBSled>,
-}
-
-impl InputProvider<ProofTask, ClStfProgram> for ClStfInputProvider {
+// Implementation for ClStfOperator
+impl InputProvider<ProofTask, ClStfProgram> for ProofInputProvider<ClStfOperator> {
     fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
     ) -> Pin<Box<dyn Future<Output = PaaSResult<ClStfInput>> + Send + 'a>> {
         Box::pin(async move {
-            // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
             let proof_key = proof_key_for(proof_context);
             self.operator
@@ -80,20 +83,13 @@ impl InputProvider<ProofTask, ClStfProgram> for ClStfInputProvider {
     }
 }
 
-/// Input provider for EVM EE proofs
-#[derive(Clone)]
-pub(crate) struct EvmEeInputProvider {
-    pub(crate) operator: EvmEeOperator,
-    pub(crate) db: Arc<ProofDBSled>,
-}
-
-impl InputProvider<ProofTask, EvmEeProgram> for EvmEeInputProvider {
+// Implementation for EvmEeOperator
+impl InputProvider<ProofTask, EvmEeProgram> for ProofInputProvider<EvmEeOperator> {
     fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
     ) -> Pin<Box<dyn Future<Output = PaaSResult<EvmEeProofInput>> + Send + 'a>> {
         Box::pin(async move {
-            // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
             let proof_key = proof_key_for(proof_context);
             self.operator
@@ -103,3 +99,8 @@ impl InputProvider<ProofTask, EvmEeProgram> for EvmEeInputProvider {
         })
     }
 }
+
+// Type aliases for backward compatibility and clarity
+pub(crate) type CheckpointInputProvider = ProofInputProvider<CheckpointOperator>;
+pub(crate) type ClStfInputProvider = ProofInputProvider<ClStfOperator>;
+pub(crate) type EvmEeInputProvider = ProofInputProvider<EvmEeOperator>;
