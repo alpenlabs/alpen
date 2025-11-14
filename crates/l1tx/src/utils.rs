@@ -4,8 +4,13 @@ use bitcoin::{
     script::{Instruction, Instructions},
     secp256k1::SECP256K1,
     taproot::TaprootBuilder,
-    Address, Network, Opcode, XOnlyPublicKey,
+    Address, Network, Opcode, Txid, XOnlyPublicKey,
 };
+use strata_asm_txs_bridge_v1::{
+    deposit::DepositInfo as BridgeV1DepositInfo,
+    withdrawal_fulfillment::WithdrawalFulfillmentInfo as BridgeV1WithdrawInfo,
+};
+use strata_asm_types::{DepositInfo, WithdrawalFulfillmentInfo};
 use strata_crypto::multisig::aggregate_schnorr_keys;
 use strata_params::{OperatorConfig, RollupParams};
 use strata_primitives::{buf::Buf32, l1::BitcoinAddress};
@@ -145,5 +150,27 @@ pub mod test_utils {
         filterconfig.expected_withdrawal_fulfillments =
             FlatTable::try_from_unsorted(exp_fulfillments).expect("types: malformed deposits");
         filterconfig
+    }
+}
+
+pub(crate) fn convert_bridge_v1_deposit_to_protocol_deposit(
+    bridge_v1_deposit: BridgeV1DepositInfo,
+) -> DepositInfo {
+    DepositInfo {
+        deposit_idx: bridge_v1_deposit.deposit_idx,
+        amt: bridge_v1_deposit.amt,
+        outpoint: bridge_v1_deposit.outpoint,
+        address: bridge_v1_deposit.address,
+    }
+}
+
+pub(crate) fn convert_bridge_v1_withdrawal_to_protocol_withdrawal(
+    bridge_v1_withdrawal: BridgeV1WithdrawInfo,
+) -> WithdrawalFulfillmentInfo {
+    WithdrawalFulfillmentInfo {
+        deposit_idx: bridge_v1_withdrawal.deposit_idx,
+        operator_idx: bridge_v1_withdrawal.operator_idx,
+        amt: bridge_v1_withdrawal.withdrawal_amount,
+        txid: Buf32::from(Txid::from(bridge_v1_withdrawal.deposit_txid)),
     }
 }

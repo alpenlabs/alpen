@@ -261,15 +261,15 @@ where
         lock_time: LockTime::from_height(0).unwrap(),
         input: vec![], // dont care
         output: vec![
+            // metadata with operator index (MUST be at index 0 for SPS-50 format)
+            TxOut {
+                script_pubkey: create_opreturn_metadata(*b"ALPN", 1, 2, &txids[0]),
+                value: Amount::from_sat(0),
+            },
             // front payment
             TxOut {
                 script_pubkey: addresses[0].to_script(),
                 value: amt - OPERATOR_FEE,
-            },
-            // metadata with operator index
-            TxOut {
-                script_pubkey: create_opreturn_metadata(*b"ALPN", 1, 2, &txids[0]),
-                value: Amount::from_sat(0),
             },
             // change
             TxOut {
@@ -297,7 +297,7 @@ where
                     deposit_idx: 2,
                     operator_idx: 1,
                     amt: (amt - OPERATOR_FEE).into(),
-                    txid: tx.compute_txid().into()
+                    txid: txids[0].into()
                 }
             );
         }
