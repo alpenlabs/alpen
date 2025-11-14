@@ -13,11 +13,11 @@ use crate::state::ProverServiceState;
 use crate::ZkVmBackend;
 use crate::ProgramType;
 
-use super::core::{ConcreteHandler, InputFetcher, ProofStore, ProgramRegistry};
+use super::core::{ConcreteHandler, InputProvider, ProofStore, ProgramRegistry};
 use super::handle::RegistryProverHandle;
 use super::prover::RegistryProver;
 
-/// Builder for creating a registry-based prover service
+/// Builder for creating a prover service
 ///
 /// This builder allows you to register multiple program handlers and then
 /// launch a unified service that can handle all of them dynamically.
@@ -25,14 +25,14 @@ use super::prover::RegistryProver;
 /// ## Example
 ///
 /// ```rust,ignore
-/// let handle = RegistryProverServiceBuilder::new(config)
-///     .register::<MyProgramA, _, _, _>(
+/// let handle = ProverServiceBuilder::new(config)
+///     .with_program::<MyProgramA, _, _, _>(
 ///         MyProgramVariant::VariantA,
 ///         fetcher_a,
 ///         proof_store,
 ///         host_a,
 ///     )
-///     .register::<MyProgramB, _, _, _>(
+///     .with_program::<MyProgramB, _, _, _>(
 ///         MyProgramVariant::VariantB,
 ///         fetcher_b,
 ///         proof_store,
@@ -41,12 +41,12 @@ use super::prover::RegistryProver;
 ///     .launch(&executor)
 ///     .await?;
 /// ```
-pub struct RegistryProverServiceBuilder<P: ProgramType> {
+pub struct ProverServiceBuilder<P: ProgramType> {
     registry: ProgramRegistry<P>,
     config: PaaSConfig<ZkVmBackend>,
 }
 
-impl<P: ProgramType> RegistryProverServiceBuilder<P> {
+impl<P: ProgramType> ProverServiceBuilder<P> {
     /// Create a new builder with the given configuration
     pub fn new(config: PaaSConfig<ZkVmBackend>) -> Self {
         Self {
@@ -58,38 +58,38 @@ impl<P: ProgramType> RegistryProverServiceBuilder<P> {
     /// Register a program handler
     ///
     /// This method registers a handler for a specific program variant identified by `key`.
-    /// The `input_fetcher` and `proof_store` provide the concrete implementations for
-    /// fetching inputs and storing proofs for this program type.
+    /// The `input_provider` and `proof_store` provide the concrete implementations for
+    /// providing inputs and storing proofs for this program type.
     ///
     /// ## Type Parameters
     ///
     /// - `Prog`: The zkaleido `ZkVmProgram` type for this program
-    /// - `I`: The input fetcher implementation
+    /// - `I`: The input provider implementation
     /// - `S`: The proof store implementation
     /// - `H`: The zkVM host implementation
     ///
     /// ## Arguments
     ///
     /// - `key`: The routing key that identifies this program variant
-    /// - `input_fetcher`: Implementation of `InputFetcher` for fetching inputs
+    /// - `input_provider`: Implementation of `InputProvider` for providing inputs
     /// - `proof_store`: Implementation of `ProofStore` for storing proofs
     /// - `host`: The zkVM host to use for proving (e.g., SP1Host, NativeHost)
-    pub fn register<Prog, I, S, H>(
+    pub fn with_program<Prog, I, S, H>(
         mut self,
         key: P::RoutingKey,
-        input_fetcher: I,
+        input_provider: I,
         proof_store: S,
         host: Arc<H>,
     ) -> Self
     where
         Prog: ZkVmProgram + Send + Sync + 'static,
         Prog::Input: Send + Sync + 'static,
-        I: InputFetcher<P, Prog> + 'static,
+        I: InputProvider<P, Prog> + 'static,
         S: ProofStore<P> + 'static,
         H: zkaleido::ZkVmHost + Send + Sync + 'static,
     {
         let handler = ConcreteHandler::<P, Prog, I, S, H>::new(
-            Arc::new(input_fetcher),
+            Arc::new(input_provider),
             Arc::new(proof_store),
             host,
         );
@@ -100,7 +100,7 @@ impl<P: ProgramType> RegistryProverServiceBuilder<P> {
 
     /// Launch the prover service with all registered handlers
     ///
-    /// This creates a `RegistryProver` with the registered handlers and launches
+    /// This creates a prover with the registered handlers and launches
     /// the prover service.
     pub async fn launch(
         self,

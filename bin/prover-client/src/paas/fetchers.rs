@@ -1,13 +1,13 @@
-//! InputFetcher implementations for PaaS registry
+//! InputProvider implementations for PaaS
 //!
-//! This module implements RegistryInputFetcher for each program type,
+//! This module implements InputProvider for each program type,
 //! bridging between operators (which work with ProofContext) and PaaS
 //! (which works with ProofTask).
 
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_paas::{PaaSError, PaaSResult, RegistryInputFetcher};
+use strata_paas::{InputProvider, PaaSError, PaaSResult};
 use strata_primitives::proof::ProofKey;
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
@@ -26,13 +26,11 @@ pub(crate) struct CheckpointFetcher {
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl RegistryInputFetcher<ProofTask, CheckpointProgram> for CheckpointFetcher {
-    fn fetch_input<'a>(
+impl InputProvider<ProofTask, CheckpointProgram> for CheckpointFetcher {
+    fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = PaaSResult<CheckpointProverInput>> + Send + 'a>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<CheckpointProverInput>> + Send + 'a>> {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
@@ -59,12 +57,11 @@ pub(crate) struct ClStfFetcher {
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl RegistryInputFetcher<ProofTask, ClStfProgram> for ClStfFetcher {
-    fn fetch_input<'a>(
+impl InputProvider<ProofTask, ClStfProgram> for ClStfFetcher {
+    fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<ClStfInput>> + Send + 'a>>
-    {
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<ClStfInput>> + Send + 'a>> {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
@@ -91,13 +88,11 @@ pub(crate) struct EvmEeFetcher {
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl RegistryInputFetcher<ProofTask, EvmEeProgram> for EvmEeFetcher {
-    fn fetch_input<'a>(
+impl InputProvider<ProofTask, EvmEeProgram> for EvmEeFetcher {
+    fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = PaaSResult<EvmEeProofInput>> + Send + 'a>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<EvmEeProofInput>> + Send + 'a>> {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;

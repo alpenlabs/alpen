@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
-use strata_db_types::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_paas::{RegistryProverHandle, ZkVmBackend};
-use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_db_types::traits::ProofDatabase;
+use strata_paas::{ProverHandle, ZkVmBackend};
+use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
@@ -24,7 +24,7 @@ struct CheckpointRunnerState {
 pub(crate) async fn checkpoint_proof_runner(
     operator: CheckpointOperator,
     poll_interval_s: u64,
-    prover_handle: RegistryProverHandle<ProofTask>,
+    prover_handle: ProverHandle<ProofTask>,
     db: Arc<ProofDBSled>,
 ) {
     info!(%poll_interval_s, "Checkpoint runner started");
@@ -42,7 +42,7 @@ pub(crate) async fn checkpoint_proof_runner(
 
 async fn process_checkpoint(
     operator: &CheckpointOperator,
-    prover_handle: &RegistryProverHandle<ProofTask>,
+    prover_handle: &ProverHandle<ProofTask>,
     db: &Arc<ProofDBSled>,
     runner_state: &mut CheckpointRunnerState,
 ) -> anyhow::Result<()> {
@@ -76,7 +76,7 @@ async fn process_checkpoint(
 async fn submit_checkpoint_task(
     checkpoint_idx: u64,
     operator: &CheckpointOperator,
-    prover_handle: &RegistryProverHandle<ProofTask>,
+    prover_handle: &ProverHandle<ProofTask>,
     db: &Arc<ProofDBSled>,
 ) -> anyhow::Result<()> {
     let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
@@ -84,8 +84,8 @@ async fn submit_checkpoint_task(
     // Determine backend based on features
     let backend = get_backend();
     let zkvm = match backend {
-        ZkVmBackend::SP1 => strata_primitives::proof::ProofZkVm::SP1,
-        ZkVmBackend::Native => strata_primitives::proof::ProofZkVm::Native,
+        ZkVmBackend::SP1 => ProofZkVm::SP1,
+        ZkVmBackend::Native => ProofZkVm::Native,
         ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
     };
 
@@ -135,14 +135,14 @@ async fn submit_checkpoint_task(
 /// Recursively submit a proof context and all its dependencies
 fn submit_proof_context_recursive<'a>(
     proof_ctx: ProofContext,
-    prover_handle: &'a RegistryProverHandle<ProofTask>,
+    prover_handle: &'a ProverHandle<ProofTask>,
     db: &'a Arc<ProofDBSled>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + 'a + Send>> {
+) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a + Send>> {
     Box::pin(async move {
         let backend = get_backend();
         let zkvm = match backend {
-            ZkVmBackend::SP1 => strata_primitives::proof::ProofZkVm::SP1,
-            ZkVmBackend::Native => strata_primitives::proof::ProofZkVm::Native,
+            ZkVmBackend::SP1 => ProofZkVm::SP1,
+            ZkVmBackend::Native => ProofZkVm::Native,
             ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
         };
 

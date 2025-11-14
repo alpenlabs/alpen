@@ -1,13 +1,13 @@
-//! ProofStore implementation for PaaS registry
+//! ProofStore implementation for PaaS
 //!
-//! This module implements RegistryProofStore, handling proof persistence
+//! This module implements ProofStore, handling proof persistence
 //! and checkpoint submission to the CL client.
 
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
-use strata_db_types::traits::ProofDatabase;
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_paas::{PaaSError, PaaSResult, RegistryProofStore};
+use strata_db_types::traits::ProofDatabase;
+use strata_paas::{PaaSError, PaaSResult, ProofStore};
 use strata_primitives::proof::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -37,12 +37,12 @@ impl ProofStoreService {
     }
 }
 
-impl RegistryProofStore<ProofTask> for ProofStoreService {
+impl ProofStore<ProofTask> for ProofStoreService {
     fn store_proof<'a>(
         &'a self,
         program: &'a ProofTask,
         proof: ProofReceiptWithMetadata,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<()>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;

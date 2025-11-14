@@ -13,12 +13,12 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use strata_paas::registry::RegistryProverServiceBuilder;
+//! use strata_paas::ProverServiceBuilder;
 //!
-//! let handle = RegistryProverServiceBuilder::new(config)
-//!     .register::<MyProgram, _, _, _>(
+//! let handle = ProverServiceBuilder::new(config)
+//!     .with_program::<MyProgram, _, _, _>(
 //!         MyVariant::A,
-//!         input_fetcher,
+//!         input_provider,
 //!         proof_store,
 //!         host,
 //!     )
@@ -32,10 +32,10 @@ mod handle;
 mod prover;
 
 // Re-export public API types
-pub use builder::RegistryProverServiceBuilder;
+pub use builder::ProverServiceBuilder;
 pub use core::{
-    BoxedInput, BoxedProof, ConcreteHandler, InputFetcher, ProgramHandler, ProgramRegistry,
+    BoxedInput, BoxedProof, ConcreteHandler, InputProvider, ProgramHandler, ProgramRegistry,
     ProgramType, ProofStore,
 };
-pub use handle::RegistryProverHandle;
+pub use handle::RegistryProverHandle as ProverHandle;
 pub use prover::RegistryProver;

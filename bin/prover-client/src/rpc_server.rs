@@ -1,15 +1,18 @@
 //! Bootstraps an RPC server for the prover client.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use jsonrpsee::{core::RpcResult, RpcModule};
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_paas::{RegistryProverHandle, TaskId, ZkVmBackend};
+use strata_paas::{ProverHandle, TaskId, ZkVmBackend};
 use strata_primitives::{
-    evm_exec::EvmEeBlockCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment, proof::{ProofContext, ProofKey},
+    evm_exec::EvmEeBlockCommitment,
+    l1::L1BlockCommitment,
+    l2::L2BlockCommitment,
+    proof::{ProofContext, ProofKey, ProofZkVm},
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
 use strata_rpc_api::StrataApiClient;
@@ -62,14 +65,14 @@ where
 /// Contains fields corresponding the global context for the RPC.
 #[derive(Clone)]
 pub(crate) struct ProverClientRpc {
-    prover_handle: RegistryProverHandle<ProofTask>,
+    prover_handle: ProverHandle<ProofTask>,
     operator: Arc<ProofOperator>,
     db: Arc<ProofDBSled>,
 }
 
 impl ProverClientRpc {
     pub(crate) fn new(
-        prover_handle: RegistryProverHandle<ProofTask>,
+        prover_handle: ProverHandle<ProofTask>,
         operator: Arc<ProofOperator>,
         db: Arc<ProofDBSled>,
     ) -> Self {
@@ -105,12 +108,12 @@ impl ProverClientRpc {
     fn submit_proof_context<'a>(
         &'a self,
         proof_ctx: ProofContext,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProofKey, anyhow::Error>> + 'a + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ProofKey, anyhow::Error>> + 'a + Send>> {
         Box::pin(async move {
             let backend = Self::get_backend();
             let zkvm = match backend {
-                ZkVmBackend::SP1 => strata_primitives::proof::ProofZkVm::SP1,
-                ZkVmBackend::Native => strata_primitives::proof::ProofZkVm::Native,
+                ZkVmBackend::SP1 => ProofZkVm::SP1,
+                ZkVmBackend::Native => ProofZkVm::Native,
                 ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
             };
 
