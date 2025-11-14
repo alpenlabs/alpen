@@ -5,7 +5,7 @@
 
 use bitcoin::absolute;
 use strata_asm_common::{
-    AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
     logging::{error, info},
 };
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
@@ -38,8 +38,6 @@ impl Subprotocol for BridgeV1Subproto {
 
     type Msg = BridgeIncomingMsg;
 
-    type AuxInput = ();
-
     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
         Ok(BridgeV1State::new(params))
     }
@@ -61,7 +59,7 @@ impl Subprotocol for BridgeV1Subproto {
     /// - `state` - Mutable reference to the bridge state
     /// - `txs` - Array of transaction input references to process
     /// - `anchor_pre` - Current anchor state containing chain view and block information
-    /// - `_aux_inputs` - Auxiliary inputs (unused in Bridge V1)
+    /// - `_verified_aux_data` - Verified auxiliary data (unused in Bridge V1)
     /// - `relayer` - Message relayer for emitting logs and events
     ///
     /// # Transaction Types Processed
@@ -88,7 +86,7 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_inputs: &Self::AuxInput,
+        _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

@@ -256,15 +256,6 @@ impl DepositsTable {
     /// - `Ok(())` if the deposit was successfully inserted
     /// - `Err(DepositValidationError::DepositIdxAlreadyExists)` if a deposit with this index
     ///   already exists
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let mut table = DepositsTable::new_empty();
-    /// let entry = DepositEntry::new(0, output_ref, operators, amount);
-    /// let result = table.insert_deposit(entry);
-    /// assert!(result.is_ok());
-    /// ```
     pub fn insert_deposit(&mut self, entry: DepositEntry) -> Result<(), DepositValidationError> {
         let idx = entry.deposit_idx;
         match self.get_deposit(idx) {

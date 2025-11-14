@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::block::Header;
-use strata_asm_common::{AnchorState, AsmManifest, AuxPayload, AuxRequest, TxInputRef};
+use strata_asm_common::{AnchorState, AsmManifest, AuxData, AuxRequests, TxInputRef};
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::SubprotocolId;
 
@@ -10,15 +10,15 @@ use strata_l1_txfmt::SubprotocolId;
 pub struct AsmStfInput<'i> {
     pub header: &'i Header,
     pub wtxids_root: Buf32,
+    pub aux_data: AuxData,
     pub protocol_txs: BTreeMap<SubprotocolId, Vec<TxInputRef<'i>>>,
-    pub aux_input: &'i BTreeMap<SubprotocolId, AuxPayload>,
 }
 
 /// Output of ASM input preprocessing.
 #[derive(Debug)]
 pub struct AsmPreProcessOutput<'i> {
-    pub txs: Vec<TxInputRef<'i>>,
-    pub aux_requests: BTreeMap<SubprotocolId, AuxRequest>,
+    pub txs: BTreeMap<SubprotocolId, Vec<TxInputRef<'i>>>,
+    pub aux_requests: AuxRequests,
 }
 
 /// Overall output of applying ASM STF.

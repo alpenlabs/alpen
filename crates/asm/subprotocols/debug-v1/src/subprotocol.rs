@@ -5,7 +5,7 @@
 
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
-    TxInputRef, logging,
+    TxInputRef, VerifiedAuxData, logging,
 };
 use strata_asm_proto_bridge_v1::BridgeIncomingMsg;
 
@@ -27,7 +27,6 @@ impl Subprotocol for DebugSubproto {
     type Msg = NullMsg<DEBUG_SUBPROTOCOL_ID>;
     type Params = ();
     type State = ();
-    type AuxInput = ();
 
     fn init(_config: &Self::Params) -> Result<Self::State, AsmError> {
         logging::info!("Initializing debug subprotocol state");
@@ -38,7 +37,7 @@ impl Subprotocol for DebugSubproto {
         _state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         _anchor_pre: &AnchorState,
-        _aux_inputs: &Self::AuxInput,
+        _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {

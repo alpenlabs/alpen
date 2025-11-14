@@ -64,7 +64,7 @@ impl MohoProgram for AsmStfProgram {
         let stf_input = AsmStfInput {
             protocol_txs,
             header: &input.block.0.header,
-            aux_input: &input.aux_inputs,
+            aux_data: input.aux_data.clone(),
             wtxids_root,
         };
 

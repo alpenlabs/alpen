@@ -1,6 +1,8 @@
 use bitcoin::Transaction;
 use strata_l1_txfmt::TagDataRef;
 
+pub type L1TxIndex = u32;
+
 /// A wrapper containing a reference to a Bitcoin [`Transaction`] together with its
 /// parsed SPS-50 payload.
 ///

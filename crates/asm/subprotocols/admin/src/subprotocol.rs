@@ -5,6 +5,7 @@
 
 use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData,
 };
 use strata_asm_txs_admin::{constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx};
 
@@ -31,8 +32,6 @@ impl Subprotocol for AdministrationSubprotocol {
 
     type Msg = NullMsg<ADMINISTRATION_SUBPROTOCOL_ID>;
 
-    type AuxInput = ();
-
     fn init(params: &Self::Params) -> Result<AdministrationSubprotoState, AsmError> {
         Ok(AdministrationSubprotoState::new(params))
     }
@@ -54,7 +53,7 @@ impl Subprotocol for AdministrationSubprotocol {
         state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _aux_input: &Self::AuxInput,
+        _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     ) {
