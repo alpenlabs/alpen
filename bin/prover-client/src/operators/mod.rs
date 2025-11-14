@@ -12,6 +12,8 @@
 //! - Native
 //! - SP1 (requires `sp1` feature enabled)
 
+use std::future::Future;
+
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_primitives::proof::ProofKey;
 
@@ -29,10 +31,9 @@ pub(crate) use operator::ProofOperator;
 /// This provides a unified interface for all proof operators to fetch
 /// the inputs required for proof generation. All operators (Checkpoint,
 /// ClStf, EvmEe) implement this trait, establishing a common contract.
-#[allow(dead_code)]
-pub(crate) trait ProofInputFetcher {
+pub(crate) trait ProofInputFetcher: Send + Sync {
     /// The type of input this operator fetches
-    type Input;
+    type Input: Send;
 
     /// Fetch the input required for proof generation
     ///
@@ -40,10 +41,10 @@ pub(crate) trait ProofInputFetcher {
     ///
     /// * `task_id` - The proof key identifying what to prove
     /// * `db` - The proof database for retrieving dependencies
-    async fn fetch_input(
+    fn fetch_input(
         &self,
         task_id: &ProofKey,
         db: &ProofDBSled,
-    ) -> Result<Self::Input, ProvingTaskError>;
+    ) -> impl Future<Output = Result<Self::Input, ProvingTaskError>> + Send;
 }
 
