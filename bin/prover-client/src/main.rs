@@ -96,18 +96,18 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
     // Create PaaS components
-    let checkpoint_input = CheckpointInputProvider {
-        operator: operator.checkpoint_operator().clone(),
-        db: db.clone(),
-    };
-    let cl_stf_input = ClStfInputProvider {
-        operator: operator.cl_stf_operator().clone(),
-        db: db.clone(),
-    };
-    let evm_ee_input = EvmEeInputProvider {
-        operator: operator.evm_ee_operator().clone(),
-        db: db.clone(),
-    };
+    let checkpoint_input = CheckpointInputProvider::new(
+        operator.checkpoint_operator().clone(),
+        db.clone(),
+    );
+    let cl_stf_input = ClStfInputProvider::new(
+        operator.cl_stf_operator().clone(),
+        db.clone(),
+    );
+    let evm_ee_input = EvmEeInputProvider::new(
+        operator.evm_ee_operator().clone(),
+        db.clone(),
+    );
     let proof_store = ProofStoreService::new(db.clone(), operator.checkpoint_operator().clone());
 
     // Create PaaS configuration
