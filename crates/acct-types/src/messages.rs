@@ -1,5 +1,7 @@
 //! Account message types.
 
+use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
+
 use crate::{
     AccountId, BitcoinAmount,
     ssz_generated::ssz::messages::{MsgPayload, ReceivedMessage, SentMessage},
@@ -50,13 +52,46 @@ impl MsgPayload {
     }
 }
 
+impl Codec for MsgPayload {
+    fn encode(&self, encoder: &mut impl Encoder) -> Result<(), CodecError> {
+        self.value.encode(encoder)?;
+
+        // encode data length
+        let len = Varint::new_usize(self.data.len()).ok_or(CodecError::OobInteger)?;
+        len.encode(encoder)?;
+
+        // encode data
+        encoder.write_buf(&self.data)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let amt_raw = u64::decode(dec)?;
+        let amt = BitcoinAmount::from_sat(amt_raw);
+
+        // decode data length
+        let len = Varint::decode(dec)?.inner();
+
+        // decode data
+        let mut data = vec![0u8; len as usize];
+        dec.read_buf(&mut data)?;
+
+        Ok(Self {
+            value: amt,
+            data: data.into(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
+    use strata_codec::{BufDecoder, Codec};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
+    use crate::MsgPayload;
 
     mod msg_payload {
         use super::*;
@@ -144,6 +179,23 @@ mod tests {
             let encoded = msg.as_ssz_bytes();
             let decoded = ReceivedMessage::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(msg.source(), decoded.source());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_msg_payload_codec_roundtrip(
+            value in 0u64..u64::MAX,
+            data in prop::collection::vec(any::<u8>(), 0..1000)
+        ) {
+            let msg = MsgPayload::new(value.into(), data);
+            let mut buf = vec![];
+
+            msg.encode(&mut buf).unwrap();
+
+            let mut dec = BufDecoder::new(buf);
+            let decoded = MsgPayload::decode(&mut dec).unwrap();
+            assert_eq!(msg, decoded);
         }
     }
 }

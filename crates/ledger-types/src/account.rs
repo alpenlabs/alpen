@@ -1,6 +1,7 @@
 use strata_acct_types::{
     AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64, RawAccountTypeId,
 };
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::MessageEntry;
 
 use crate::coin::Coin;
@@ -8,7 +9,7 @@ use crate::coin::Coin;
 type Seqno = u64;
 
 /// Abstract account state.
-pub trait IAccountState: Sized {
+pub trait IAccountState: Sized + Clone {
     /// Type representing snark account state.
     type SnarkAccountState: ISnarkAccountState;
 
@@ -33,8 +34,11 @@ pub trait IAccountState: Sized {
     /// Gets the account type state, if valid.
     fn get_type_state(&self) -> AcctResult<AccountTypeState<Self>>;
 
+    /// Gets the mutable account type state, if valid.
+    fn get_type_state_mut(&mut self) -> AcctResult<&mut AccountTypeState<Self>>;
+
     /// Sets the account type state.
-    fn set_type_state(&self, state: AccountTypeState<Self>) -> AcctResult<()>;
+    fn set_type_state(&mut self, state: AccountTypeState<Self>) -> AcctResult<()>;
 }
 
 /// Account type state enum.
@@ -49,16 +53,22 @@ pub enum AccountTypeState<T: IAccountState> {
 
 /// Abstract snark account state.
 pub trait ISnarkAccountState: Sized {
+    /// Verifier key to verify the updates.
+    fn verifier_key(&self) -> &PredicateKey;
+
     // Proof state accessors
 
     /// Gets the update seqno.
     fn seqno(&self) -> Seqno;
 
+    /// Gets the next inbox index.
+    fn next_inbox_idx(&self) -> u64;
+
     /// Gets the inner state root hash.
     fn inner_state_root(&self) -> Hash;
 
     /// Sets the inner state root unconditionally.
-    fn set_proof_state_directly(&mut self, state: Hash, seqno: Seqno);
+    fn set_proof_state_directly(&mut self, state: Hash, next_inbox_idx: u64, seqno: Seqno);
 
     /// Sets an account's inner state, but also taking the update extra data arg
     /// (which is not used directly, but is useful for DA reasons).
@@ -73,7 +83,7 @@ pub trait ISnarkAccountState: Sized {
 
     // Inbox accessors
 
-    /// Gets current the inbox MMR state, which we can use to check proofs
+    /// Gets the current inbox MMR state, which we can use to check proofs
     /// against the state.
     fn inbox_mmr(&self) -> &Mmr64;
 

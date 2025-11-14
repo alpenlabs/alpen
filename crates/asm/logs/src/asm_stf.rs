@@ -3,7 +3,7 @@ use strata_asm_common::AsmLog;
 use strata_msg_fmt::TypeId;
 use strata_predicate::PredicateKey;
 
-use crate::constants::ASM_STF_UPDATE_LOG_TYPE;
+use crate::constants::LogTypeId;
 
 /// Details for an execution environment verification key update.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -20,5 +20,5 @@ impl AsmStfUpdate {
 }
 
 impl AsmLog for AsmStfUpdate {
-    const TY: TypeId = ASM_STF_UPDATE_LOG_TYPE;
+    const TY: TypeId = LogTypeId::AsmStfUpdate as u16;
 }

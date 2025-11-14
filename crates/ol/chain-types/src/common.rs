@@ -1,10 +1,7 @@
-use strata_primitives::buf::Buf32;
+use strata_primitives::{L1BlockId, Slot, buf::Buf32};
 
 /// Type aliases for clarity
-pub type Slot = u64;
-pub type Epoch = u32;
 pub type OLBlockId = Buf32;
-pub type L1BlockId = Buf32;
 
 /// Commitment to a block by ID at a particular slot.
 #[derive(Clone, Debug)]
@@ -24,38 +21,6 @@ impl OLBlockCommitment {
 
     pub fn blkid(&self) -> &OLBlockId {
         &self.blkid
-    }
-}
-
-/// Commitment to the terminal block of a particular epoch.
-#[derive(Clone, Debug)]
-pub struct EpochCommitment {
-    epoch: Epoch,
-    terminal_block: OLBlockCommitment,
-}
-
-impl EpochCommitment {
-    pub fn new(epoch: Epoch, terminal_block: OLBlockCommitment) -> Self {
-        Self {
-            epoch,
-            terminal_block,
-        }
-    }
-
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
-    }
-
-    pub fn terminal_block(&self) -> &OLBlockCommitment {
-        &self.terminal_block
-    }
-
-    pub fn terminal_slot(&self) -> Slot {
-        self.terminal_block.slot()
-    }
-
-    pub fn terminal_blkid(&self) -> &OLBlockId {
-        self.terminal_block.blkid()
     }
 }
 

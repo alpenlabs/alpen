@@ -2,9 +2,8 @@ use std::fmt;
 
 use int_enum::IntEnum;
 use strata_acct_types::AccountId;
-use strata_snark_acct_types::SnarkAccountUpdate;
-
-use crate::Slot;
+use strata_primitives::Slot;
+use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 /// Represents a single transaction within a block.
 #[derive(Clone, Debug)]
@@ -39,6 +38,7 @@ impl OLTransaction {
 }
 
 /// The actual payload of the transaction.
+#[expect(clippy::large_enum_variant, reason = "..")]
 #[derive(Clone, Debug)]
 pub enum TransactionPayload {
     GenericAccountMessage {
@@ -47,7 +47,7 @@ pub enum TransactionPayload {
     },
     SnarkAccountUpdate {
         target: AccountId,
-        update: SnarkAccountUpdate,
+        update: SnarkAccountUpdateContainer,
     },
 }
 

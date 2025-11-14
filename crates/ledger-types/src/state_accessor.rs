@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountId, AccountSerial, AcctResult};
+use strata_identifiers::Buf32;
 
 use crate::{
     account::{AccountTypeState, IAccountState},
@@ -36,6 +37,9 @@ pub trait StateAccessor {
     /// Checks if an account exists.
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;
 
+    /// Gets account id from serial.
+    fn get_account_id_from_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>>;
+
     /// Gets a ref to an account, if it exists.
     fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>>;
 
@@ -59,4 +63,7 @@ pub trait StateAccessor {
         id: AccountId,
         state: AccountTypeState<Self::AccountState>,
     ) -> AcctResult<AccountSerial>;
+
+    /// Computes the state root.
+    fn compute_state_root(&self) -> Buf32;
 }

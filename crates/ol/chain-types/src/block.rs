@@ -1,7 +1,10 @@
-use strata_asm_common::AsmLogEntry;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_asm_common::AsmManifest;
+use strata_primitives::{
+    Epoch, Slot,
+    buf::{Buf32, Buf64},
+};
 
-use crate::{Epoch, OLBlockId, OLTransaction, Slot};
+use crate::{OLBlockId, OLTransaction};
 
 /// The Orchestration Layer(OL) block.
 #[derive(Clone, Debug)]
@@ -106,7 +109,7 @@ impl OLBlockHeader {
         self.slot
     }
 
-    pub fn epoch(&self) -> u32 {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 
@@ -125,6 +128,11 @@ impl OLBlockHeader {
     pub fn state_root(&self) -> Buf32 {
         self.state_root
     }
+
+    pub fn compute_root(&self) -> Buf32 {
+        // TODO: use ssz
+        Buf32::zero()
+    }
 }
 
 /// OL block body containing transactions and l1 updates
@@ -134,11 +142,11 @@ pub struct OLBlockBody {
     tx_segment: OLTxSegment,
 
     /// Updates from L1.
-    l1_update: L1Update,
+    l1_update: Option<L1Update>,
 }
 
 impl OLBlockBody {
-    pub fn new(tx_segment: OLTxSegment, l1_update: L1Update) -> Self {
+    pub fn new(tx_segment: OLTxSegment, l1_update: Option<L1Update>) -> Self {
         Self {
             tx_segment,
             l1_update,
@@ -149,12 +157,17 @@ impl OLBlockBody {
         self.tx_segment.txs()
     }
 
-    pub fn l1_update(&self) -> &L1Update {
+    pub fn l1_update(&self) -> &Option<L1Update> {
         &self.l1_update
     }
 
     pub fn tx_segment(&self) -> &OLTxSegment {
         &self.tx_segment
+    }
+
+    pub fn compute_root(&self) -> Buf32 {
+        // TODO: compute
+        Buf32::zero()
     }
 }
 
@@ -181,27 +194,14 @@ pub struct L1Update {
     /// The state root before applying updates from L1.
     pub preseal_state_root: Buf32,
 
-    /// L1 height the manifests are read upto.
-    pub new_l1_blk_height: u64,
-
-    /// L1 block hash the manifests are read upto.
-    pub new_l1_blkid: Buf32,
-
     /// Manifests from last l1 height to the new l1 height.
     pub manifests: Vec<AsmManifest>,
 }
 
 impl L1Update {
-    pub fn new(
-        preseal_state_root: Buf32,
-        new_l1_blk_height: u64,
-        new_l1_blkid: Buf32,
-        manifests: Vec<AsmManifest>,
-    ) -> Self {
+    pub fn new(preseal_state_root: Buf32, manifests: Vec<AsmManifest>) -> Self {
         Self {
             preseal_state_root,
-            new_l1_blk_height,
-            new_l1_blkid,
             manifests,
         }
     }
@@ -210,35 +210,7 @@ impl L1Update {
         self.preseal_state_root
     }
 
-    pub fn new_l1_blk_height(&self) -> u64 {
-        self.new_l1_blk_height
-    }
-
-    pub fn new_l1_blkid(&self) -> Buf32 {
-        self.new_l1_blkid
-    }
-}
-
-/// A manifest containing ASM data corresponding to a L1 block.
-#[derive(Debug, Clone)]
-pub struct AsmManifest {
-    /// L1 block id.
-    l1blkid: Buf32,
-
-    /// Logs from ASM STF.
-    logs: Vec<AsmLogEntry>,
-}
-
-impl AsmManifest {
-    pub fn new(l1blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
-        Self { l1blkid, logs }
-    }
-
-    pub fn l1blkid(&self) -> Buf32 {
-        self.l1blkid
-    }
-
-    pub fn logs(&self) -> &[AsmLogEntry] {
-        &self.logs
+    pub fn manifests(&self) -> &[AsmManifest] {
+        &self.manifests
     }
 }

@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{EvmEeBlockCommitment, L2BlockCommitment};
 
-pub type Epoch = u64;
-
 /// Represents a context for different types of proofs.
 ///
 /// This enum categorizes proofs by their associated context, including the type of proof and its

@@ -220,6 +220,16 @@ impl SnarkAccountUpdate {
         }
     }
 
+    pub fn with_proofs(
+        self,
+        accumulator_proofs: UpdateAccumulatorProofs,
+    ) -> SnarkAccountUpdateContainer {
+        SnarkAccountUpdateContainer {
+            base_update: self,
+            accumulator_proofs,
+        }
+    }
+
     pub fn operation(&self) -> &UpdateOperationData {
         &self.operation
     }
@@ -260,7 +270,7 @@ pub struct UpdateAccumulatorProofs {
 }
 
 impl UpdateAccumulatorProofs {
-    fn new(inbox_proofs: Vec<MessageEntryProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
+    pub fn new(inbox_proofs: Vec<MessageEntryProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
         Self {
             inbox_proofs,
             ledger_ref_proofs,
