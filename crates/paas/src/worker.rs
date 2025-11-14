@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::{spawn, time::sleep};
 use tracing::{debug, error, info};
 
-use crate::error::PaaSError;
+use crate::error::ProverServiceError;
 use crate::state::ProverServiceState;
 use crate::task::TaskStatus;
 use crate::Prover;
@@ -112,7 +112,7 @@ impl<P: Prover> WorkerPool<P> {
                         error!(?task_id, ?e, "Failed to mark task as completed");
                     }
                 }
-                Err(PaaSError::TransientFailure(msg)) => {
+                Err(ProverServiceError::TransientFailure(msg)) => {
                     error!(?task_id, error=%msg, "Transient failure");
 
                     // Get current retry count
@@ -143,7 +143,7 @@ impl<P: Prover> WorkerPool<P> {
                         }
                     }
                 }
-                Err(PaaSError::PermanentFailure(msg)) => {
+                Err(ProverServiceError::PermanentFailure(msg)) => {
                     error!(?task_id, error=%msg, "Permanent failure");
                     if let Err(e) = state.update_status(
                         &task_id,

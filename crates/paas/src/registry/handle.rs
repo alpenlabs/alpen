@@ -5,7 +5,7 @@ use std::sync::Arc;
 use strata_service::{CommandHandle, ServiceMonitor};
 
 use crate::commands::ProverCommand;
-use crate::error::{PaaSError, PaaSResult};
+use crate::error::{ProverServiceError, ProverServiceResult};
 use crate::service::ProverServiceStatus;
 use crate::state::StatusSummary;
 use crate::task::TaskStatus;
@@ -44,13 +44,13 @@ impl<P: ProgramType> ProverHandle<P> {
     /// handle.submit_task(MyProgram::VariantA(42), ZkVmBackend::SP1).await?;
     /// handle.submit_task(MyProgram::VariantB(start, end), ZkVmBackend::Native).await?;
     /// ```
-    pub async fn submit_task(&self, program: P, backend: ZkVmBackend) -> PaaSResult<()> {
+    pub async fn submit_task(&self, program: P, backend: ZkVmBackend) -> ProverServiceResult<()> {
         let task_id = TaskId::new(program, backend);
         self.submit_task_id(task_id).await
     }
 
     /// Submit a task using a TaskId directly
-    pub async fn submit_task_id(&self, task_id: TaskId<P>) -> PaaSResult<()> {
+    pub async fn submit_task_id(&self, task_id: TaskId<P>) -> ProverServiceResult<()> {
         let task_id_clone = task_id.clone();
         self.command_handle
             .send_and_wait(|completion| ProverCommand::SubmitTask {
@@ -58,26 +58,26 @@ impl<P: ProgramType> ProverHandle<P> {
                 completion,
             })
             .await
-            .map_err(|e| PaaSError::Internal(e.into()))
+            .map_err(|e| ProverServiceError::Internal(e.into()))
     }
 
     /// Get task status
-    pub async fn get_status(&self, task_id: &TaskId<P>) -> PaaSResult<TaskStatus> {
+    pub async fn get_status(&self, task_id: &TaskId<P>) -> ProverServiceResult<TaskStatus> {
         self.command_handle
             .send_and_wait(|completion| ProverCommand::GetStatus {
                 task_id: task_id.clone(),
                 completion,
             })
             .await
-            .map_err(|e| PaaSError::Internal(e.into()))
+            .map_err(|e| ProverServiceError::Internal(e.into()))
     }
 
     /// Get status summary
-    pub async fn get_summary(&self) -> PaaSResult<StatusSummary> {
+    pub async fn get_summary(&self) -> ProverServiceResult<StatusSummary> {
         self.command_handle
             .send_and_wait(|completion| ProverCommand::GetSummary { completion })
             .await
-            .map_err(|e| PaaSError::Internal(e.into()))
+            .map_err(|e| ProverServiceError::Internal(e.into()))
     }
 
     /// Get the current service status summary

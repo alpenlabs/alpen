@@ -17,7 +17,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram};
 
-use crate::error::{PaaSError, PaaSResult};
+use crate::error::{ProverServiceError, ProverServiceResult};
 use crate::ZkVmBackend;
 
 /// Trait that program types must implement for dynamic dispatch
@@ -52,17 +52,17 @@ impl BoxedInput {
     }
 
     /// Downcast to concrete type
-    pub fn downcast<T: 'static>(self) -> Result<Box<T>, PaaSError> {
+    pub fn downcast<T: 'static>(self) -> Result<Box<T>, ProverServiceError> {
         self.0
             .downcast::<T>()
-            .map_err(|_| PaaSError::PermanentFailure("Type mismatch in BoxedInput".to_string()))
+            .map_err(|_| ProverServiceError::PermanentFailure("Type mismatch in BoxedInput".to_string()))
     }
 
     /// Downcast reference to concrete type
-    pub fn downcast_ref<T: 'static>(&self) -> Result<&T, PaaSError> {
+    pub fn downcast_ref<T: 'static>(&self) -> Result<&T, ProverServiceError> {
         self.0
             .downcast_ref::<T>()
-            .ok_or_else(|| PaaSError::PermanentFailure("Type mismatch in BoxedInput".to_string()))
+            .ok_or_else(|| ProverServiceError::PermanentFailure("Type mismatch in BoxedInput".to_string()))
     }
 }
 
@@ -76,10 +76,10 @@ impl BoxedProof {
     }
 
     /// Downcast to concrete type
-    pub fn downcast<T: 'static>(self) -> Result<Box<T>, PaaSError> {
+    pub fn downcast<T: 'static>(self) -> Result<Box<T>, ProverServiceError> {
         self.0
             .downcast::<T>()
-            .map_err(|_| PaaSError::PermanentFailure("Type mismatch in BoxedProof".to_string()))
+            .map_err(|_| ProverServiceError::PermanentFailure("Type mismatch in BoxedProof".to_string()))
     }
 }
 
@@ -89,21 +89,21 @@ pub trait ProgramHandler<P: ProgramType>: Send + Sync + 'static {
     fn fetch_input<'a>(
         &'a self,
         program: &'a P,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedInput>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<BoxedInput>> + Send + 'a>>;
 
     /// Prove with the given backend
     fn prove<'a>(
         &'a self,
         input: BoxedInput,
         backend: &'a ZkVmBackend,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedProof>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<BoxedProof>> + Send + 'a>>;
 
     /// Store the completed proof
     fn store_proof<'a>(
         &'a self,
         program: &'a P,
         proof: BoxedProof,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<()>> + Send + 'a>>;
 }
 
 /// Registry that routes programs to their handlers
@@ -135,11 +135,11 @@ impl<P: ProgramType> ProgramRegistry<P> {
     }
 
     /// Fetch input using the appropriate handler
-    pub async fn fetch_input(&self, program: &P) -> PaaSResult<BoxedInput> {
+    pub async fn fetch_input(&self, program: &P) -> ProverServiceResult<BoxedInput> {
         let handler = self
             .get_handler(program)
             .ok_or_else(|| {
-                PaaSError::PermanentFailure(format!(
+                ProverServiceError::PermanentFailure(format!(
                     "No handler registered for program: {:?}",
                     program
                 ))
@@ -154,11 +154,11 @@ impl<P: ProgramType> ProgramRegistry<P> {
         program: &P,
         input: BoxedInput,
         backend: &ZkVmBackend,
-    ) -> PaaSResult<BoxedProof> {
+    ) -> ProverServiceResult<BoxedProof> {
         let handler = self
             .get_handler(program)
             .ok_or_else(|| {
-                PaaSError::PermanentFailure(format!(
+                ProverServiceError::PermanentFailure(format!(
                     "No handler registered for program: {:?}",
                     program
                 ))
@@ -172,11 +172,11 @@ impl<P: ProgramType> ProgramRegistry<P> {
         &self,
         program: &P,
         proof: BoxedProof,
-    ) -> PaaSResult<()> {
+    ) -> ProverServiceResult<()> {
         let handler = self
             .get_handler(program)
             .ok_or_else(|| {
-                PaaSError::PermanentFailure(format!(
+                ProverServiceError::PermanentFailure(format!(
                     "No handler registered for program: {:?}",
                     program
                 ))
@@ -249,7 +249,7 @@ where
     fn fetch_input<'a>(
         &'a self,
         program: &'a P,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedInput>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<BoxedInput>> + Send + 'a>> {
         Box::pin(async move {
             let input = self.input_provider.provide_input(program).await?;
             Ok(BoxedInput::new(input))
@@ -260,7 +260,7 @@ where
         &'a self,
         input: BoxedInput,
         _backend: &'a ZkVmBackend,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedProof>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<BoxedProof>> + Send + 'a>> {
         Box::pin(async move {
             // Downcast to concrete input type
             let concrete_input = input.downcast::<Prog::Input>()?;
@@ -268,7 +268,7 @@ where
             // Prove using the stored host
             // The backend parameter is ignored - the host determines the backend
             let proof = Prog::prove(&concrete_input, self.host.as_ref())
-                .map_err(|e| PaaSError::PermanentFailure(format!("Proving failed: {}", e)))?;
+                .map_err(|e| ProverServiceError::PermanentFailure(format!("Proving failed: {}", e)))?;
 
             Ok(BoxedProof::new(proof))
         })
@@ -278,7 +278,7 @@ where
         &'a self,
         program: &'a P,
         proof: BoxedProof,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Downcast to concrete proof type
             let concrete_proof = proof.downcast::<ProofReceiptWithMetadata>()?;
@@ -298,7 +298,7 @@ where
     fn provide_input<'a>(
         &'a self,
         program: &'a P,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<Prog::Input>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<Prog::Input>> + Send + 'a>>;
 }
 
 /// Trait for storing completed proofs
@@ -311,5 +311,5 @@ where
         &'a self,
         program: &'a P,
         proof: ProofReceiptWithMetadata,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<()>> + Send + 'a>>;
 }

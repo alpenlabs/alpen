@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 /// Main PaaS configuration
 #[derive(Debug, Clone)]
-pub struct PaaSConfig<B: Clone + Eq + std::hash::Hash> {
+pub struct ProverServiceConfig<B: Clone + Eq + std::hash::Hash> {
     /// Worker configuration
     pub workers: WorkerConfig<B>,
 
@@ -13,7 +13,7 @@ pub struct PaaSConfig<B: Clone + Eq + std::hash::Hash> {
     pub retry: RetryConfig,
 }
 
-impl<B: Clone + Eq + std::hash::Hash> PaaSConfig<B> {
+impl<B: Clone + Eq + std::hash::Hash> ProverServiceConfig<B> {
     /// Create a new configuration with worker counts per backend
     pub fn new(worker_counts: HashMap<B, usize>) -> Self {
         Self {

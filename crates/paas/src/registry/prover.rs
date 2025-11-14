@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::error::PaaSResult;
+use crate::error::ProverServiceResult;
 use crate::task_id::TaskId;
 use crate::ZkVmBackend;
 use crate::{Prover, ProgramType};
@@ -34,7 +34,7 @@ impl<P: ProgramType> Prover for RegistryProver<P> {
         task_id.backend.clone()
     }
 
-    async fn prove(&self, task_id: Self::TaskId) -> PaaSResult<()> {
+    async fn prove(&self, task_id: Self::TaskId) -> ProverServiceResult<()> {
         // Fetch input using registry
         let input = self.registry.fetch_input(&task_id.program).await?;
 

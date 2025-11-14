@@ -3,11 +3,11 @@
 use thiserror::Error;
 
 /// Result type for PaaS operations
-pub type PaaSResult<T> = Result<T, PaaSError>;
+pub type ProverServiceResult<T> = Result<T, ProverServiceError>;
 
 /// PaaS error types
 #[derive(Error, Debug)]
-pub enum PaaSError {
+pub enum ProverServiceError {
     /// Task not found
     #[error("Task not found: {0}")]
     TaskNotFound(String),
@@ -40,7 +40,7 @@ pub enum PaaSError {
     Internal(#[from] anyhow::Error),
 }
 
-impl PaaSError {
+impl ProverServiceError {
     /// Create a transient failure error
     pub fn transient(msg: impl Into<String>) -> Self {
         Self::TransientFailure(msg.into())
