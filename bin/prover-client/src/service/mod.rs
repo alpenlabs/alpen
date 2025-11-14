@@ -104,7 +104,7 @@ macro_rules! resolve_host {
         // Resolve host based on feature flags
         #[cfg(feature = "sp1")]
         {
-            std::sync::Arc::from(strata_zkvm_hosts::sp1::get_host(&ctx))
+            strata_zkvm_hosts::sp1::get_host(&ctx) // Already returns Arc<SP1Host>
         }
         #[cfg(not(feature = "sp1"))]
         {
