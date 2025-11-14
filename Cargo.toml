@@ -226,8 +226,8 @@ strata-service = { git = "https://github.com/alpenlabs/strata-common" }
 strata-tasks = { git = "https://github.com/alpenlabs/strata-common" }
 
 # sled wrapper
-typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 moho-types = { git = "https://github.com/alpenlabs/moho" }
+typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17" }

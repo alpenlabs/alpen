@@ -72,11 +72,8 @@ pub(crate) fn init_operators(
         Arc::new(evm_ee_operator.clone()),
         rollup_params.clone(),
     );
-    let checkpoint_operator = CheckpointOperator::new(
-        cl_client.clone(),
-        Arc::new(cl_stf_operator.clone()),
-    );
+    let checkpoint_operator =
+        CheckpointOperator::new(cl_client.clone(), Arc::new(cl_stf_operator.clone()));
 
     (checkpoint_operator, cl_stf_operator, evm_ee_operator)
 }
-

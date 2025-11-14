@@ -1,7 +1,6 @@
 //! Prover client.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use args::Args;
@@ -10,18 +9,20 @@ use checkpoint_runner::runner::checkpoint_proof_runner;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::init_operators;
 use rpc_server::ProverClientRpc;
-use service::{CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider, ProofStoreService};
-use service::{ProofContextVariant, ProofTask};
+use service::{
+    CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider, ProofContextVariant,
+    ProofStoreService, ProofTask,
+};
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
-use strata_paas::{ProverServiceConfig, ProverServiceBuilder, ZkVmBackend};
+use strata_paas::{ProverServiceBuilder, ProverServiceConfig, ZkVmBackend};
 use strata_primitives::proof::ProofZkVm;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
 use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
-use strata_tasks::TaskManager;
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder as _;
+use strata_tasks::TaskManager;
 use tracing::{debug, info};
 #[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
@@ -79,36 +80,21 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     .context("Failed to connect to the Bitcoin client")?;
 
     // Initialize operators
-    let (checkpoint_operator, cl_stf_operator, evm_ee_operator) = init_operators(
-        btc_client,
-        el_client,
-        cl_client,
-        rollup_params,
-    );
+    let (checkpoint_operator, cl_stf_operator, evm_ee_operator) =
+        init_operators(btc_client, el_client, cl_client, rollup_params);
 
-    let sled_db = strata_db_store_sled::open_sled_database(
-        &config.datadir,
-        strata_db_store_sled::SLED_NAME,
-    )
-    .context("Failed to open the Sled database")?;
+    let sled_db =
+        strata_db_store_sled::open_sled_database(&config.datadir, strata_db_store_sled::SLED_NAME)
+            .context("Failed to open the Sled database")?;
     let retries = 3;
     let delay_ms = 200;
     let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
     let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
     // Create Prover Service components
-    let checkpoint_input = CheckpointInputProvider::new(
-        checkpoint_operator.clone(),
-        db.clone(),
-    );
-    let cl_stf_input = ClStfInputProvider::new(
-        cl_stf_operator.clone(),
-        db.clone(),
-    );
-    let evm_ee_input = EvmEeInputProvider::new(
-        evm_ee_operator.clone(),
-        db.clone(),
-    );
+    let checkpoint_input = CheckpointInputProvider::new(checkpoint_operator.clone(), db.clone());
+    let cl_stf_input = ClStfInputProvider::new(cl_stf_operator.clone(), db.clone());
+    let evm_ee_input = EvmEeInputProvider::new(evm_ee_operator.clone(), db.clone());
     let proof_store = ProofStoreService::new(db.clone(), checkpoint_operator.clone());
 
     // Create Prover Service configuration

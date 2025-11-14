@@ -11,7 +11,15 @@ use serde::{Deserialize, Serialize};
 /// Note: This is an internal trait. Users typically work with the concrete `TaskId<P>`
 /// struct exported at the crate root.
 pub trait TaskIdentifier:
-    Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + Serialize + for<'de> Deserialize<'de> + 'static
+    Clone
+    + Eq
+    + std::hash::Hash
+    + std::fmt::Debug
+    + Send
+    + Sync
+    + Serialize
+    + for<'de> Deserialize<'de>
+    + 'static
 {
 }
 

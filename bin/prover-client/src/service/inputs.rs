@@ -10,11 +10,14 @@ use strata_db_store_sled::prover::ProofDBSled;
 use strata_paas::{InputProvider, ProverServiceError, ProverServiceResult};
 use zkaleido::ZkVmProgram;
 
-use crate::errors::ProvingTaskError;
-use crate::operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator, ProofInputFetcher};
-
-use super::proof_key_for;
-use super::task::ProofTask;
+use super::{proof_key_for, task::ProofTask};
+use crate::{
+    errors::ProvingTaskError,
+    operators::{
+        checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator,
+        ProofInputFetcher,
+    },
+};
 
 /// Convert ProvingTaskError to ProverServiceError
 ///
@@ -25,7 +28,9 @@ fn to_paas_error(e: ProvingTaskError) -> ProverServiceError {
     match e {
         ProvingTaskError::RpcError(_)
         | ProvingTaskError::ProofNotFound(_)
-        | ProvingTaskError::DependencyNotFound(_) => ProverServiceError::TransientFailure(e.to_string()),
+        | ProvingTaskError::DependencyNotFound(_) => {
+            ProverServiceError::TransientFailure(e.to_string())
+        }
         _ => ProverServiceError::PermanentFailure(e.to_string()),
     }
 }

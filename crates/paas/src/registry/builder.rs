@@ -6,16 +6,15 @@ use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 use zkaleido::ZkVmProgram;
 
-use crate::config::ProverServiceConfig;
-use crate::error::ProverServiceResult;
-use crate::service::ProverService;
-use crate::state::ProverServiceState;
-use crate::ZkVmBackend;
-use crate::ProgramType;
-
-use super::core::{ConcreteHandler, InputProvider, ProofStore, ProgramRegistry};
-use super::handle::ProverHandle;
-use super::prover::RegistryProver;
+use super::{
+    core::{ConcreteHandler, InputProvider, ProgramRegistry, ProofStore},
+    handle::ProverHandle,
+    prover::RegistryProver,
+};
+use crate::{
+    config::ProverServiceConfig, error::ProverServiceResult, service::ProverService,
+    state::ProverServiceState, ProgramType, ZkVmBackend,
+};
 
 /// Builder for creating a prover service
 ///
@@ -102,17 +101,13 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
     ///
     /// This creates a prover with the registered handlers and launches
     /// the prover service.
-    pub async fn launch(
-        self,
-        executor: &TaskExecutor,
-    ) -> ProverServiceResult<ProverHandle<P>> {
+    pub async fn launch(self, executor: &TaskExecutor) -> ProverServiceResult<ProverHandle<P>> {
         let prover = Arc::new(RegistryProver::new(Arc::new(self.registry)));
         let state = ProverServiceState::new(prover.clone(), self.config);
 
         // Create service builder
         let mut service_builder =
-            ServiceBuilder::<ProverService<RegistryProver<P>>, _>::new()
-                .with_state(state);
+            ServiceBuilder::<ProverService<RegistryProver<P>>, _>::new().with_state(state);
 
         // Create command handle
         let command_handle = service_builder.create_command_handle(100);

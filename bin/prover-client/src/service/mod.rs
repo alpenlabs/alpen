@@ -18,9 +18,7 @@ mod store;
 mod task;
 
 // Re-export public types
-pub(crate) use inputs::{
-    CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider,
-};
+pub(crate) use inputs::{CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider};
 pub(crate) use store::ProofStoreService;
 pub(crate) use task::{ProofContextVariant, ProofTask};
 

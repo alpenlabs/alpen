@@ -34,7 +34,8 @@ pub(crate) async fn checkpoint_proof_runner(
     loop {
         ticker.tick().await;
 
-        if let Err(e) = process_checkpoint(&operator, &prover_handle, &db, &mut runner_state).await {
+        if let Err(e) = process_checkpoint(&operator, &prover_handle, &db, &mut runner_state).await
+        {
             error!(err = ?e, "error processing checkpoint");
         }
     }
@@ -84,7 +85,8 @@ async fn submit_checkpoint_task(
     let proof_key = proof_key_for(proof_ctx);
 
     // Check if proof already exists
-    if db.get_proof(&proof_key)
+    if db
+        .get_proof(&proof_key)
         .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
         .is_some()
     {
@@ -134,7 +136,8 @@ fn submit_proof_context_recursive<'a>(
         let proof_key = proof_key_for(proof_ctx);
 
         // Check if proof already exists
-        if db.get_proof(&proof_key)
+        if db
+            .get_proof(&proof_key)
             .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
             .is_some()
         {
@@ -162,7 +165,6 @@ fn submit_proof_context_recursive<'a>(
         Ok(())
     })
 }
-
 
 fn should_update_checkpoint(current: Option<u64>, new: u64) -> bool {
     current.is_none_or(|current| new > current)

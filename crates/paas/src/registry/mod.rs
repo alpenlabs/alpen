@@ -32,10 +32,11 @@ mod handle;
 mod prover;
 
 // Re-export public API types
-pub use builder::ProverServiceBuilder;
 pub use core::{
     BoxedInput, BoxedProof, ConcreteHandler, InputProvider, ProgramHandler, ProgramRegistry,
     ProgramType, ProofStore,
 };
+
+pub use builder::ProverServiceBuilder;
 pub use handle::ProverHandle;
 pub use prover::RegistryProver;
