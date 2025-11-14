@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 use crate::{
     checkpoint_runner::fetch::fetch_next_unproven_checkpoint_index,
     operators::checkpoint::CheckpointOperator,
-    paas::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
+    service::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
 };
 
 /// Holds the current checkpoint index for the runner to track progress.

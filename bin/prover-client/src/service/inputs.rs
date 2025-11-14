@@ -1,4 +1,4 @@
-//! InputProvider implementations for PaaS
+//! Input providers for PaaS service
 //!
 //! This module implements InputProvider for each program type,
 //! bridging between operators (which work with ProofContext) and PaaS
@@ -16,17 +16,17 @@ use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, program::EvmEePro
 use crate::errors::ProvingTaskError;
 use crate::operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator};
 
-use super::task::ProofTask;
 use super::current_zkvm;
+use super::task::ProofTask;
 
-/// Wrapper to add database dependency to CheckpointOperator
+/// Input provider for checkpoint proofs
 #[derive(Clone)]
-pub(crate) struct CheckpointFetcher {
+pub(crate) struct CheckpointInputProvider {
     pub(crate) operator: CheckpointOperator,
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl InputProvider<ProofTask, CheckpointProgram> for CheckpointFetcher {
+impl InputProvider<ProofTask, CheckpointProgram> for CheckpointInputProvider {
     fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
@@ -50,14 +50,14 @@ impl InputProvider<ProofTask, CheckpointProgram> for CheckpointFetcher {
     }
 }
 
-/// Wrapper to add database dependency to ClStfOperator
+/// Input provider for CL STF proofs
 #[derive(Clone)]
-pub(crate) struct ClStfFetcher {
+pub(crate) struct ClStfInputProvider {
     pub(crate) operator: ClStfOperator,
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl InputProvider<ProofTask, ClStfProgram> for ClStfFetcher {
+impl InputProvider<ProofTask, ClStfProgram> for ClStfInputProvider {
     fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
@@ -81,14 +81,14 @@ impl InputProvider<ProofTask, ClStfProgram> for ClStfFetcher {
     }
 }
 
-/// Wrapper to add database dependency to EvmEeOperator
+/// Input provider for EVM EE proofs
 #[derive(Clone)]
-pub(crate) struct EvmEeFetcher {
+pub(crate) struct EvmEeInputProvider {
     pub(crate) operator: EvmEeOperator,
     pub(crate) db: Arc<ProofDBSled>,
 }
 
-impl InputProvider<ProofTask, EvmEeProgram> for EvmEeFetcher {
+impl InputProvider<ProofTask, EvmEeProgram> for EvmEeInputProvider {
     fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,

@@ -24,7 +24,7 @@ use zkaleido::ProofReceipt;
 
 use crate::{
     operators::ProofOperator,
-    paas::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
+    service::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
 };
 
 pub(crate) async fn start<T>(
