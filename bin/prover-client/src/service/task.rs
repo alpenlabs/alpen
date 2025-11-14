@@ -1,4 +1,4 @@
-//! ProofTask type for PaaS integration
+//! ProofTask type for Prover Service integration
 //!
 //! This module defines the ProofTask newtype wrapper around ProofContext
 //! and implements the ProgramType trait for registry-based dispatch.
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use strata_paas::ProgramType;
 use strata_primitives::proof::ProofContext;
 
-/// Routing key for ProofContext - used for dynamic dispatch in PaaS registry
+/// Routing key for ProofContext - used for dynamic dispatch in Prover Service registry
 ///
 /// This enum represents the different variants of ProofContext without carrying
 /// the actual data, allowing the registry to route requests to the correct handler.
@@ -22,7 +22,7 @@ pub enum ProofContextVariant {
 ///
 /// This wrapper works around Rust's orphan rule, which prevents implementing
 /// foreign traits on foreign types. By wrapping ProofContext, we can implement
-/// PaaS traits in this crate.
+/// Prover Service traits in this crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ProofTask(pub ProofContext);
@@ -47,7 +47,7 @@ impl std::ops::Deref for ProofTask {
     }
 }
 
-/// Implement ProgramType for ProofTask to enable registry-based PaaS API
+/// Implement ProgramType for ProofTask to enable registry-based Prover Service API
 impl ProgramType for ProofTask {
     type RoutingKey = ProofContextVariant;
 

@@ -121,8 +121,8 @@ impl ProverClientRpc {
                 self.submit_proof_context(*dep_ctx).await?;
             }
 
-            // Submit task to PaaS (ignore if already exists)
-            // Convert ProofContext to ProofTask for PaaS
+            // Submit task to Prover Service (ignore if already exists)
+            // Convert ProofContext to ProofTask for Prover Service
             if let Err(e) = self.prover_handle.submit_task(ProofTask(proof_ctx), zkvm_backend()).await {
                 // Ignore "Task already exists" error - it's okay if already submitted
                 if !e.to_string().contains("Task already exists") {
@@ -299,10 +299,10 @@ impl StrataProverClientApiServer for ProverClientRpc {
         match proof {
             // If proof is in DB, it was completed
             Some(_) => Ok("Completed".to_string()),
-            // If proof is not in DB, check PaaS status
+            // If proof is not in DB, check Prover Service status
             None => {
                 let backend = zkvm_backend();
-                // Wrap ProofContext in ProofTask for PaaS
+                // Wrap ProofContext in ProofTask for Prover Service
                 let task_id = TaskId::new(ProofTask(*key.context()), backend);
 
                 let status = self

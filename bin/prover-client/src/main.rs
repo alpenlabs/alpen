@@ -96,7 +96,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
     let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
-    // Create PaaS components
+    // Create Prover Service components
     let checkpoint_input = CheckpointInputProvider::new(
         checkpoint_operator.clone(),
         db.clone(),
@@ -111,7 +111,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     );
     let proof_store = ProofStoreService::new(db.clone(), checkpoint_operator.clone());
 
-    // Create PaaS configuration
+    // Create Prover Service configuration
     let mut worker_counts = HashMap::new();
     let workers = config.get_workers();
 
@@ -128,7 +128,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         *workers.get(&ProofZkVm::Native).unwrap_or(&1),
     );
 
-    let paas_config = ProverServiceConfig::new(worker_counts);
+    let service_config = ProverServiceConfig::new(worker_counts);
 
     // Create runtime and task manager
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -139,9 +139,9 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let task_manager = TaskManager::new(runtime.handle().clone());
     let executor = task_manager.create_executor();
 
-    // Create and launch PaaS service
+    // Create and launch Prover Service
     // Register each program type with its handler and host
-    let builder = ProverServiceBuilder::<ProofTask>::new(paas_config)
+    let builder = ProverServiceBuilder::<ProofTask>::new(service_config)
         .with_program::<CheckpointProgram, _, _, _>(
             ProofContextVariant::Checkpoint,
             checkpoint_input,
@@ -162,16 +162,16 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         );
 
     // Launch the service
-    let paas_handle = runtime
+    let service_handle = runtime
         .block_on(builder.launch(&executor))
         .context("Failed to launch prover service")?;
 
-    debug!("Initialized PaaS prover service");
+    debug!("Initialized Prover Service");
 
     // run the checkpoint runner
     if config.enable_checkpoint_runner {
         let checkpoint_operator_clone = checkpoint_operator.clone();
-        let checkpoint_handle = paas_handle.clone();
+        let checkpoint_handle = service_handle.clone();
         let checkpoint_poll_interval = config.checkpoint_poll_interval;
         let checkpoint_db = db.clone();
         executor.spawn_critical_async("checkpoint-runner", async move {
@@ -188,7 +188,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     }
 
     let rpc_server = ProverClientRpc::new(
-        paas_handle.clone(),
+        service_handle.clone(),
         checkpoint_operator,
         cl_stf_operator,
         db,
