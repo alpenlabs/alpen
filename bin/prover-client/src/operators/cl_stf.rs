@@ -18,7 +18,7 @@ use strata_rpc_types::RpcBlockHeader;
 use strata_zkvm_hosts::get_verification_key;
 use tracing::{error, info};
 
-use super::evm_ee::EvmEeOperator;
+use super::{evm_ee::EvmEeOperator, ProofInputFetcher};
 use crate::errors::ProvingTaskError;
 
 /// Operator for Consensus Layer (CL) State Transition Function (STF) proof generation.
@@ -211,5 +211,18 @@ impl ClStfOperator {
             l2_blocks,
             evm_ee_proof_with_vk,
         })
+    }
+}
+
+impl ProofInputFetcher for ClStfOperator {
+    type Input = ClStfInput;
+
+    async fn fetch_input(
+        &self,
+        task_id: &ProofKey,
+        db: &ProofDBSled,
+    ) -> Result<Self::Input, ProvingTaskError> {
+        // Delegate to the existing method
+        self.fetch_input(task_id, db).await
     }
 }

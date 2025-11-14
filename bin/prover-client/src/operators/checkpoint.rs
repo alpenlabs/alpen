@@ -10,7 +10,7 @@ use strata_rpc_types::RpcCheckpointInfo;
 use strata_zkvm_hosts::get_verification_key;
 use tracing::{error, info};
 
-use super::cl_stf::ClStfOperator;
+use super::{cl_stf::ClStfOperator, ProofInputFetcher};
 use crate::{
     checkpoint_runner::{errors::CheckpointResult, submit::submit_checkpoint_proof},
     errors::ProvingTaskError,
@@ -144,6 +144,19 @@ impl CheckpointOperator {
         proof_db: &ProofDBSled,
     ) -> CheckpointResult<()> {
         submit_checkpoint_proof(checkpoint_index, self.cl_client(), proof_key, proof_db).await
+    }
+}
+
+impl ProofInputFetcher for CheckpointOperator {
+    type Input = CheckpointProverInput;
+
+    async fn fetch_input(
+        &self,
+        task_id: &ProofKey,
+        db: &ProofDBSled,
+    ) -> Result<Self::Input, ProvingTaskError> {
+        // Delegate to the existing method
+        self.fetch_input(task_id, db).await
     }
 }
 
