@@ -8,7 +8,6 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_paas::{InputProvider, PaaSError, PaaSResult};
-use strata_primitives::proof::ProofKey;
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
 use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, program::EvmEeProgram};
@@ -16,7 +15,7 @@ use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, program::EvmEePro
 use crate::errors::ProvingTaskError;
 use crate::operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator};
 
-use super::{backend_to_zkvm, zkvm_backend};
+use super::proof_key_for;
 use super::task::ProofTask;
 
 /// Input provider for checkpoint proofs
@@ -34,8 +33,7 @@ impl InputProvider<ProofTask, CheckpointProgram> for CheckpointInputProvider {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let zkvm = backend_to_zkvm(&zkvm_backend());
-            let proof_key = ProofKey::new(proof_context, zkvm);
+            let proof_key = proof_key_for(proof_context);
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -66,8 +64,7 @@ impl InputProvider<ProofTask, ClStfProgram> for ClStfInputProvider {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let zkvm = backend_to_zkvm(&zkvm_backend());
-            let proof_key = ProofKey::new(proof_context, zkvm);
+            let proof_key = proof_key_for(proof_context);
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -98,8 +95,7 @@ impl InputProvider<ProofTask, EvmEeProgram> for EvmEeInputProvider {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let zkvm = backend_to_zkvm(&zkvm_backend());
-            let proof_key = ProofKey::new(proof_context, zkvm);
+            let proof_key = proof_key_for(proof_context);
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await

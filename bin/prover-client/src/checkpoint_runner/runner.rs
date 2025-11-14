@@ -3,14 +3,14 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
 use strata_paas::ProverHandle;
-use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_primitives::proof::ProofContext;
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
 use crate::{
     checkpoint_runner::fetch::fetch_next_unproven_checkpoint_index,
     operators::checkpoint::CheckpointOperator,
-    service::{backend_to_zkvm, zkvm_backend, ProofTask},
+    service::{proof_key_for, zkvm_backend, ProofTask},
 };
 
 /// Holds the current checkpoint index for the runner to track progress.
@@ -81,11 +81,7 @@ async fn submit_checkpoint_task(
 ) -> anyhow::Result<()> {
     let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
 
-    // Determine backend based on features
-    let backend = zkvm_backend();
-    let zkvm = backend_to_zkvm(&backend);
-
-    let proof_key = ProofKey::new(proof_ctx, zkvm);
+    let proof_key = proof_key_for(proof_ctx);
 
     // Check if proof already exists
     if db.get_proof(&proof_key)
@@ -120,7 +116,7 @@ async fn submit_checkpoint_task(
     // Submit main checkpoint task
     // Convert ProofContext to ProofTask for PaaS
     prover_handle
-        .submit_task(ProofTask(proof_ctx), backend)
+        .submit_task(ProofTask(proof_ctx), zkvm_backend())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to submit checkpoint task: {}", e))?;
 
@@ -135,10 +131,7 @@ fn submit_proof_context_recursive<'a>(
     db: &'a Arc<ProofDBSled>,
 ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a + Send>> {
     Box::pin(async move {
-        let backend = zkvm_backend();
-        let zkvm = backend_to_zkvm(&backend);
-
-        let proof_key = ProofKey::new(proof_ctx, zkvm);
+        let proof_key = proof_key_for(proof_ctx);
 
         // Check if proof already exists
         if db.get_proof(&proof_key)
@@ -162,7 +155,7 @@ fn submit_proof_context_recursive<'a>(
         // Submit main task to PaaS
         // Convert ProofContext to ProofTask for PaaS
         prover_handle
-            .submit_task(ProofTask(proof_ctx), backend)
+            .submit_task(ProofTask(proof_ctx), zkvm_backend())
             .await
             .map_err(|e| anyhow::anyhow!("Failed to submit task: {}", e))?;
 

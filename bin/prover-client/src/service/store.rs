@@ -8,13 +8,13 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
 use strata_paas::{PaaSError, PaaSResult, ProofStore};
-use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_primitives::proof::ProofContext;
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::operators::checkpoint::CheckpointOperator;
 
 use super::task::ProofTask;
-use super::{backend_to_zkvm, zkvm_backend};
+use super::proof_key_for;
 
 /// Unified proof storage service that handles all proof types
 ///
@@ -47,8 +47,7 @@ impl ProofStore<ProofTask> for ProofStoreService {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
 
-            let backend = zkvm_backend();
-            let proof_key = ProofKey::new(proof_context, backend_to_zkvm(&backend));
+            let proof_key = proof_key_for(proof_context);
 
             // Store proof in database
             self.db
